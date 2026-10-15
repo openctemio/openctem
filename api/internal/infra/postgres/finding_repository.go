@@ -2117,9 +2117,24 @@ func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shar
 	if len(ids) == 0 {
 		return nil
 	}
-	reasonArg, verificationArg, err := closureArgs(status, closure)
+	query, args, err := statusWriteSQL(tenantID, ids, status, resolution, resolvedBy, closure, acceptanceEnd, from)
 	if err != nil {
 		return err
+	}
+	if _, err := r.db.execStatusWrite(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to update findings status: %w", err)
+	}
+
+	return nil
+}
+
+// statusWriteSQL builds the status write of updateStatusBatch, so a caller
+// that writes the status inside its own transaction (an approved request)
+// runs the same statement.
+func statusWriteSQL(tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) (string, []any, error) {
+	reasonArg, verificationArg, err := closureArgs(status, closure)
+	if err != nil {
+		return "", nil, err
 	}
 
 	// Security: tenant_id is first parameter for isolation. $7 holds the
@@ -2153,11 +2168,7 @@ func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shar
 		WHERE tenant_id = $1 AND source != 'pentest' AND status = ANY($7) AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
-	if _, err := r.db.execStatusWrite(ctx, query, args...); err != nil {
-		return fmt.Errorf("failed to update findings status: %w", err)
-	}
-
-	return nil
+	return query, args, nil
 }
 
 // fromOrLifecycle is the from-statuses a status write accepts: the caller's

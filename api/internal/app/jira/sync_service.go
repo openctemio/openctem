@@ -195,6 +195,9 @@ type SyncService struct {
 	applier      InboundStatusApplier
 	workItems    WorkItemFindingLister
 	refusalGuard RefusalCommentGuard
+	// profiles renders published ticket mapping profiles (nil → built-in
+	// fields and status sync only).
+	profiles ProfileSource
 
 	// campaignSink receives inbound epic status changes so a linked remediation
 	// campaign can be completed (epic Done → campaign completed). nil → inbound
@@ -474,6 +477,13 @@ func firstJiraIssueKey(uris []string) string {
 // On a workflow with no transition to the target, it falls back to a comment so
 // the change is visible to a human rather than failing.
 func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, findingID shared.ID, mapping MappingConfig) error {
+	// A published mapping profile for the issue's project decides the move
+	// itself (its status map is the explicit opt-in for that destination).
+	if s.profiles != nil {
+		if handled, err := s.syncWithProfile(ctx, tenantID, findingID); handled {
+			return err
+		}
+	}
 	if !mapping.SyncEnabled {
 		return nil // outbound sync is opt-in per integration (default off)
 	}
@@ -618,17 +628,23 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		issueType = "Bug"
 	}
 
-	result, err := jiraClient.CreateIssue(ctx, CreateIssueInput{
-		ProjectKey:  projectKey,
-		Summary:     ticketSummary(finding),
-		Description: ticketDescription(finding),
-		IssueType:   issueType,
-		Priority:    priority,
-		Labels:      []string{"openctem", "security", string(finding.Severity())},
-		ParentKey:   strings.TrimSpace(input.ParentKey),
-	})
+	result, handled, err := s.createFromProfile(ctx, jiraClient, tenantID, findingID, projectKey, issueType, strings.TrimSpace(input.ParentKey))
 	if err != nil {
-		return nil, fmt.Errorf("create jira ticket: %w", err)
+		return nil, err
+	}
+	if !handled {
+		result, err = jiraClient.CreateIssue(ctx, CreateIssueInput{
+			ProjectKey:  projectKey,
+			Summary:     ticketSummary(finding),
+			Description: ticketDescription(finding),
+			IssueType:   issueType,
+			Priority:    priority,
+			Labels:      []string{"openctem", "security", string(finding.Severity())},
+			ParentKey:   strings.TrimSpace(input.ParentKey),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create jira ticket: %w", err)
+		}
 	}
 
 	// Auto-link the created ticket to the finding
@@ -649,6 +665,24 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		TicketURL: result.BrowseURL,
 		LinkedAt:  time.Now().UTC(),
 	}, nil
+}
+
+// syncWithProfile loads the finding's linked issue and lets a published
+// profile move it. handled is false when there is no profile to apply.
+func (s *SyncService) syncWithProfile(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return false, nil //nolint:nilerr // the built-in path reports the lookup error
+	}
+	issueKey := firstJiraIssueKey(finding.WorkItemURIs())
+	if issueKey == "" {
+		return false, nil
+	}
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return false, nil //nolint:nilerr // the built-in path reports a missing integration
+	}
+	return s.syncStatusFromProfile(ctx, client, tenantID, findingID, issueKey)
 }
 
 // CreateEpic creates a Jira epic for the given tenant and returns its key and
