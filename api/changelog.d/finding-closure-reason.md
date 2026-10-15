@@ -21,6 +21,8 @@
 - Existing closed findings are backfilled from what `resolution_method`
   recorded; everything else becomes `unknown` (never guessed), and a resolved
   finding of unknown reason still counts in MTTR as before.
-- Migrations `002260_finding_closure_reason`, `002261_finding_closure_reason_validate`.
+- Migrations `002270_finding_closure_columns` (columns), `002271_finding_closure_backfill`
+  (batches of 1000 rows, each committed), `002272_finding_closure_trigger` (trigger and
+  CHECK `NOT VALID`), `002273_finding_closure_validate`, `002274_finding_closure_drop_resolution_method`.
 - **Upgrade note:** the migration drops `findings.resolution_method`; stop the
   API while it runs (old code reads that column).
