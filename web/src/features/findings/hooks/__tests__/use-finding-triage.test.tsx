@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, render } from '@testing-library/react'
+import { renderHook, render, act } from '@testing-library/react'
 
 import { useFindingTriage, type FindingTriageTarget } from '../use-finding-triage'
 import type { FindingUser } from '../../types'
@@ -110,5 +110,23 @@ describe('useFindingTriage — no render loop', () => {
     // A loop would blow past React's ~50 update-depth limit. A handful (mount +
     // StrictMode double-invoke + one settling pass) is expected.
     expect(renders).toBeLessThan(10)
+  })
+})
+
+describe('useFindingTriage — Undo', () => {
+  it('offers Undo on a non-closing move, never on a resolve', async () => {
+    const { toast } = await import('sonner')
+    const { result } = renderHook(() => useFindingTriage(target({ status: 'confirmed' })))
+    await act(async () => {
+      await result.current.changeStatus('in_progress')
+    })
+    const opened = vi.mocked(toast.success).mock.calls.at(-1)?.[1] as { action?: unknown }
+    expect(opened?.action).toBeTruthy()
+
+    await act(async () => {
+      await result.current.changeStatus('resolved')
+    })
+    const resolved = vi.mocked(toast.success).mock.calls.at(-1)?.[1] as { action?: unknown }
+    expect(resolved?.action).toBeUndefined()
   })
 })

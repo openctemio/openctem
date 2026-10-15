@@ -1062,6 +1062,12 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 			[]cirun.ToolLabel{{Name: report.Tool.Name, Version: report.Tool.Version}}); err != nil {
 			s.log.Warn("ci run tools not recorded", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
 		}
+		// A report of a capability that failed in an earlier attempt clears
+		// that capability, and only that one: the report's tool name is
+		// matched against the tool registry.
+		if err := s.repo.ClearCarriedCapabilities(ctx, run.TenantID, run.ID, report.Tool.Name); err != nil {
+			return nil, fmt.Errorf("clear carried capabilities: %w", err)
+		}
 		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
 	s.suggestImageLinks(ctx, run, report)

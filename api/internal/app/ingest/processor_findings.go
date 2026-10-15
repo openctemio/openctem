@@ -1314,6 +1314,33 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ct
 	if ctisFinding.Vulnerability.ExploitAvailable {
 		f.SetMetadata(vulnerability.FindingMetaScannerExploitAvailable, true)
 	}
+	// The versions that fix this package, as the scanner reported them. Kept
+	// on the finding for the same reason (the catalog is not written from a
+	// report); the detail view picks the nearest one for the installed version.
+	if fixed := vulnerability.NormalizeFixedVersions(ctisFinding.Vulnerability.FixedVersion,
+		ctisFinding.Vulnerability.FixedVersions); len(fixed) > 0 {
+		f.SetMetadata(vulnerability.FindingMetaFixedVersions, fixed)
+	}
+	setAdvisoryMetadata(f, ctisFinding)
+}
+
+// setAdvisoryMetadata keeps what the scanner's advisory said on the finding
+// (the catalog is not written from a report): its references (http(s) only,
+// bounded), publication dates and who scored the primary CVSS.
+func setAdvisoryMetadata(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	v := ctisFinding.Vulnerability
+	if refs := vulnerability.NormalizeReferences(ctisFinding.References); len(refs) > 0 {
+		f.SetMetadata(vulnerability.FindingMetaReferences, refs)
+	}
+	if v.PublishedAt != nil && !v.PublishedAt.IsZero() {
+		f.SetMetadata(vulnerability.FindingMetaPublishedAt, v.PublishedAt.UTC().Format(time.RFC3339))
+	}
+	if v.ModifiedAt != nil && !v.ModifiedAt.IsZero() {
+		f.SetMetadata(vulnerability.FindingMetaModifiedAt, v.ModifiedAt.UTC().Format(time.RFC3339))
+	}
+	if src := vulnerability.NormalizeScoreSource(v.CVSSSource); src != "" {
+		f.SetMetadata(vulnerability.FindingMetaCVSSSource, src)
+	}
 }
 
 // setFindingTypeAndSpecializedFields sets the finding type discriminator and specialized fields.
