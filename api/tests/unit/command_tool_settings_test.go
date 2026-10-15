@@ -22,17 +22,19 @@ import (
 // command's creator put in settings_layers never reaches the sensor.
 
 type fakeToolSettings struct {
-	layers map[string]map[string]any // tenant|sensor|tool
-	err    error
-	calls  int
+	layers  map[string]map[string]any // tenant|sensor|tool: the sensor layer
+	tenants map[string]map[string]any // tenant|sensor|tool: the inherited organization layer
+	err     error
+	calls   int
 }
 
-func (f *fakeToolSettings) SensorToolSettingsLayer(_ context.Context, tenantID, sensorID shared.ID, tool string) (map[string]any, error) {
+func (f *fakeToolSettings) ToolSettingsLayers(_ context.Context, tenantID, sensorID shared.ID, tool string) (tenant, sensor map[string]any, err error) {
 	f.calls++
 	if f.err != nil {
-		return nil, f.err
+		return nil, nil, f.err
 	}
-	return f.layers[tenantID.String()+"|"+sensorID.String()+"|"+tool], nil
+	key := tenantID.String() + "|" + sensorID.String() + "|" + tool
+	return f.tenants[key], f.layers[key], nil
 }
 
 type capturingSigner struct{ statements []jobsign.Statement }
@@ -108,6 +110,42 @@ func TestToolSettings_PayloadCarriesTheSensorLayer(t *testing.T) {
 				if len(f.signer.statements) != 1 || f.signer.statements[0].PayloadSHA256 != jobsign.PayloadDigest(got.Payload) {
 					t.Fatalf("signed digest does not cover the delivered payload: %+v", f.signer.statements)
 				}
+			}
+		})
+	}
+}
+
+// The organization's defaults the sensor inherits ride next to the sensor's
+// own values, inside the signed payload.
+func TestToolSettings_PayloadCarriesTheTenantLayer(t *testing.T) {
+	for _, path := range toolSettingsPaths {
+		t.Run(path, func(t *testing.T) {
+			f := newToolSettingsFixture()
+			key := f.tenant.String() + "|" + f.sensor.String() + "|nuclei"
+			f.src.tenants = map[string]map[string]any{key: {"retries": json.Number("2")}}
+			f.src.layers[key] = map[string]any{"rate_limit": json.Number("300")}
+			c := f.repo.add(f.tenant, commanddom.CommandTypeScan, `{"scanner":"nuclei","targets":["a.example.com"]}`, nil)
+			got, err := f.run(path, c)
+			if err != nil || got == nil {
+				t.Fatalf("not handed out: %v", err)
+			}
+			layers := settingsLayers(t, got.Payload)
+			if fmt.Sprint(layers["tenant"]["retries"]) != "2" || fmt.Sprint(layers["sensor"]["rate_limit"]) != "300" || len(layers) != 2 {
+				t.Fatalf("settings_layers = %v", layers)
+			}
+			if path == "claim-N" && f.signer.statements[0].PayloadSHA256 != jobsign.PayloadDigest(got.Payload) {
+				t.Fatal("signed digest does not cover the delivered payload")
+			}
+			// Only the tenant layer: it is delivered alone.
+			f2 := newToolSettingsFixture()
+			f2.src.tenants = map[string]map[string]any{f2.tenant.String() + "|" + f2.sensor.String() + "|nuclei": {"retries": json.Number("0")}}
+			c2 := f2.repo.add(f2.tenant, commanddom.CommandTypeScan, `{"scanner":"nuclei"}`, nil)
+			got2, err := f2.run(path, c2)
+			if err != nil || got2 == nil {
+				t.Fatalf("not handed out: %v", err)
+			}
+			if l := settingsLayers(t, got2.Payload); len(l) != 1 || fmt.Sprint(l["tenant"]["retries"]) != "0" {
+				t.Fatalf("settings_layers = %v", l)
 			}
 		})
 	}
