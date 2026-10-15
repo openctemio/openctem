@@ -344,16 +344,18 @@ func (w *SoftwarePackageWriter) WritePackages(ctx context.Context, tenantID shar
 		locList = append(locList, l)
 	}
 	if snap.Replace && len(locList) > 0 {
-		// A report prunes only the links of its own channel (and links from
-		// before channels were recorded): another producer's inventory of
-		// the same file is not this report's to remove.
+		// A report prunes only the links of its own channel: another
+		// producer's inventory of the same file is not this report's to
+		// remove. Links from before channels were recorded (the legacy
+		// component table kept no producer, so none can be backfilled) are
+		// pruned only by a full inventory, never by a partial list.
 		// Rows written above carry last_seen_at = now() (the transaction start).
 		r, err := tx.ExecContext(ctx, `
 			DELETE FROM asset_software
 			WHERE tenant_id = $1 AND asset_id = $2 AND source = 'package'
 			  AND location = ANY($3) AND last_seen_at < now()
-			  AND (channel IS NULL OR channel = $4)`,
-			tenantID.String(), snap.AssetID.String(), pq.Array(locList), channel)
+			  AND (channel = $4 OR (channel IS NULL AND NOT $5))`,
+			tenantID.String(), snap.AssetID.String(), pq.Array(locList), channel, snap.Partial)
 		if err != nil {
 			return res, fmt.Errorf("prune package links: %w", err)
 		}
@@ -363,8 +365,8 @@ func (w *SoftwarePackageWriter) WritePackages(ctx context.Context, tenantID shar
 			DELETE FROM asset_software_edges e
 			USING asset_software s
 			WHERE e.tenant_id = $1 AND e.asset_id = $2 AND s.id = e.child_id AND s.location = ANY($3)
-			  AND (s.channel IS NULL OR s.channel = $4)`,
-			tenantID.String(), snap.AssetID.String(), pq.Array(locList), channel); err != nil {
+			  AND (s.channel = $4 OR (s.channel IS NULL AND NOT $5))`,
+			tenantID.String(), snap.AssetID.String(), pq.Array(locList), channel, snap.Partial); err != nil {
 			return res, fmt.Errorf("replace package edges: %w", err)
 		}
 	}

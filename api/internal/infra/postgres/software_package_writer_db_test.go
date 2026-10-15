@@ -251,6 +251,60 @@ func TestPackageWriter_PartialListKeepsOtherChannelsInventory(t *testing.T) {
 	}
 }
 
+// Links stored before channels were recorded have no producer. A partial
+// CI list leaves them alone; only a full inventory may prune them.
+func TestPackageWriter_LegacyLinksSurvivePartialLists(t *testing.T) {
+	db := catalogTestDB(t)
+	ctx := context.Background()
+	w := NewSoftwarePackageWriter(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	sfx := shared.NewID().String()[:8]
+	app, old, vuln := "pkg:npm/app-"+sfx+"@1.0.0", "pkg:npm/old-"+sfx+"@1.0.0", "pkg:npm/vuln-"+sfx+"@0.1.0"
+	count := func(purl string) int {
+		t.Helper()
+		var n int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM asset_software s JOIN software_versions v ON v.id = s.software_version_id
+			WHERE s.tenant_id = $1 AND s.asset_id = $2 AND v.purl = $3`, tenant.String(), asset.String(), purl).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	// A legacy list: written, then its channel cleared as the migration left it.
+	if _, err := w.WritePackages(ctx, tenant, software.PackageSnapshot{AssetID: asset, Replace: true,
+		Packages: []software.PackageNode{pkgNode(t, app, "app", "direct", "old"), pkgNode(t, old, "old", "transitive")}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE asset_software SET channel = NULL WHERE tenant_id = $1 AND asset_id = $2`,
+		tenant.String(), asset.String()); err != nil {
+		t.Fatal(err)
+	}
+
+	replace, partial := software.SnapshotMode(software.ChannelCI)
+	if _, err := w.WritePackages(ctx, tenant, software.PackageSnapshot{AssetID: asset, Channel: software.ChannelCI,
+		Replace: replace, Partial: partial,
+		Packages: []software.PackageNode{pkgNode(t, app, "app", "direct", "vuln"), pkgNode(t, vuln, "vuln", "transitive")}}); err != nil {
+		t.Fatal(err)
+	}
+	if count(old) != 1 {
+		t.Fatal("a partial CI list pruned a link stored before channels were recorded")
+	}
+	var edges int
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM asset_software_edges WHERE asset_id = $1`, asset.String()).Scan(&edges)
+	if edges != 2 {
+		t.Fatalf("edges = %d, want the legacy app->old and CI's app->vuln", edges)
+	}
+
+	// A full inventory without it does prune it.
+	if _, err := w.WritePackages(ctx, tenant, software.PackageSnapshot{AssetID: asset, Channel: software.ChannelSBOMUpload,
+		Replace: true, Packages: []software.PackageNode{pkgNode(t, app, "app", "direct")}}); err != nil {
+		t.Fatal(err)
+	}
+	if count(old) != 0 || count(vuln) != 1 {
+		t.Fatalf("after a full SBOM: old=%d vuln=%d, want the legacy link pruned and CI's kept", count(old), count(vuln))
+	}
+}
+
 func TestPackageWriter_LicensesAreTenantLocal(t *testing.T) {
 	db := catalogTestDB(t)
 	ctx := context.Background()
