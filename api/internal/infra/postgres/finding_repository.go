@@ -815,13 +815,22 @@ func findingUpsertConflictSQL() string {
 			cve_id = EXCLUDED.cve_id,
 			cwe_ids = EXCLUDED.cwe_ids,
 			owasp_ids = EXCLUDED.owasp_ids,
-			-- SLA: the incoming row's deadline was recomputed at ingest by the
-			-- applier from its (possibly re-classified) priority. Take it when
-			-- present, but never wipe an existing deadline if the new computation
-			-- was absent (applier failure → NULL). Move sla_status in lockstep
-			-- with the deadline so the two never disagree.
-			sla_deadline = COALESCE(EXCLUDED.sla_deadline, findings.sla_deadline),
-			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END,
+			-- SLA: the incoming row's deadline was computed at ingest from now
+			-- and its (possibly re-classified) priority. An existing deadline of
+			-- an open finding only tightens (min of the two); a closed finding
+			-- keeps its own; a missing computation (applier failure) never wipes
+			-- one. sla_status is recomputed from the kept deadline.
+			sla_deadline = CASE
+				WHEN EXCLUDED.sla_deadline IS NULL THEN findings.sla_deadline
+				WHEN findings.sla_deadline IS NULL THEN EXCLUDED.sla_deadline
+				WHEN NOT is_open_finding_status(findings.status) THEN findings.sla_deadline
+				ELSE LEAST(findings.sla_deadline, EXCLUDED.sla_deadline) END,
+			sla_status = CASE
+				WHEN EXCLUDED.sla_deadline IS NULL THEN findings.sla_status
+				WHEN findings.sla_deadline IS NULL THEN EXCLUDED.sla_status
+				WHEN NOT is_open_finding_status(findings.status) THEN findings.sla_status
+				WHEN EXCLUDED.sla_deadline < findings.sla_deadline THEN EXCLUDED.sla_status
+				ELSE findings.sla_status END,
 			-- Tags merge on a re-sighting, the rule EnrichFrom applies on the
 			-- enrich path: the stored tags (a user may have set them) stay
 			-- first, new non-empty ones not already there are appended, and
