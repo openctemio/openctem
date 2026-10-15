@@ -164,6 +164,20 @@ request is audited as `organization.owner_recovery` in `admin_audit_logs` (high
 severity, refusals included) and as `user.created` with `owner_recovery: true`
 at critical severity in the organization's audit log.
 
+### Ownership transfer (RFC-095 §3.5)
+
+The owner hands the organization to an existing member from Settings >
+Members (Transfer ownership). The member must be an active person with
+two-factor authentication on and not managed by another organization; an
+outside member no organization manages becomes internal, after the owner
+confirms it. The owner re-authenticates to ask and chooses what they become
+(administrator by default, or member or viewer). The member accepts on the
+Members page with their own re-authentication within 72 hours, or declines;
+the owner can cancel until then. Accepting changes both memberships in one
+transaction that ends with exactly one owner. Both people are emailed at each
+step and the audit log records it. The owner can never be demoted, suspended
+or offboarded any other way.
+
 ### Administrator-created accounts
 
 Request: `{"email": "...", "name": "...", "role_ids": ["<rbac role id>", ...]}`.
@@ -265,6 +279,13 @@ removed when the list changes.
 | Seats | checked when the invitation is created (members plus pending invitations) and again at acceptance |
 | Pending list | shows `member_kind` (internal or external at creation), `privileged` (two-factor will be required), the end of access, the last send and the resend count |
 | Acceptance | re-classifies the invitee and re-authorizes the invitation as the inviter (RFC-095 §3.2); both acceptance paths run the same code |
+
+
+Teams: an invitation can add the person to up to 20 teams (data access), so
+they do not join with no data. The inviter can add only teams they may add a
+member to (a team carrying a privileged role needs the owner, with step-up),
+and the check runs again at acceptance; a team carrying a role above member
+counts toward the outside-member two-factor rule.
 
 ### IP allowlist (`security.ip_whitelist`)
 

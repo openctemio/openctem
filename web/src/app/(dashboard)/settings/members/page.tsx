@@ -76,6 +76,7 @@ import {
   UserMinus,
   Eraser,
   CalendarClock,
+  Crown,
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
@@ -114,13 +115,16 @@ type MemberRolesMap = Map<string, MemberRBACRole[]>
 const MemberRolesContext = createContext<MemberRolesMap>(new Map())
 import { fetcherWithOptions } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
-import { getErrorMessage } from '@/lib/api/error-handler'
+import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
 import { MemberBadges } from '@/features/organization/components/member-badges'
 import { MemberAccessDialog } from '@/features/organization/components/member-access-dialog'
 import { suspendedReasonText } from '@/features/organization/lib/external-access'
 import { useTenantSettings } from '@/features/organization/api/use-tenant-settings'
+import { usePendingOwnershipTransfer } from '@/features/organization/api/use-ownership-transfer'
+import { TransferOwnershipDialog } from '@/features/organization/components/transfer-ownership-dialog'
+import { OwnershipTransferBanner } from '@/features/organization/components/ownership-transfer-banner'
 
 /**
  * The management actions of an administrator row, disabled for a caller who
@@ -458,7 +462,6 @@ function EditUserRolesDialog({
               onChange={setSelectedRoleIds}
               loading={isLoading}
               disabled={isSetting}
-              className="max-h-[400px]"
             />
           </div>
         </DialogBody>
@@ -611,6 +614,10 @@ export default function UsersPage() {
   const [offboardMember, setOffboardMember] = useState<MemberWithUser | null>(null)
   // Erase personal data (owner only, offboarded members): confirmation.
   const [eraseConfirmMember, setEraseConfirmMember] = useState<MemberWithUser | null>(null)
+  // Ownership transfer (RFC-095): the member the owner is asking, and the
+  // open request the caller is part of (owner or member asked).
+  const [transferMember, setTransferMember] = useState<MemberWithUser | null>(null)
+  const { transfer: pendingTransfer, mutate: mutateTransfer } = usePendingOwnershipTransfer()
   const [isErasing, setIsErasing] = useState(false)
 
   // Track if sheet is fully closed (after animation completes)
@@ -784,6 +791,21 @@ export default function UsersPage() {
                   >
                     <ShieldOff className="me-2 h-4 w-4" />
                     Reset 2FA
+                  </DropdownMenuItem>
+                </>
+              )}
+              {!isOwnerRow && !offboarded && caller.isOwner && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={!!pendingTransfer}
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      setTransferMember(member)
+                    }}
+                  >
+                    <Crown className="me-2 h-4 w-4" />
+                    {t('org.ownership.action', 'Transfer ownership...')}
                   </DropdownMenuItem>
                 </>
               )}
@@ -969,9 +991,14 @@ export default function UsersPage() {
       await fetcherWithOptions(tenantEndpoints.resendInvitation(tenantSlug, invitation.id), {
         method: 'POST',
       })
-      toast.success('Invitation email resent')
-    } catch {
-      toast.error('Failed to resend invitation')
+      toast.success(t('org.invitations.resent'))
+      mutateInvitations()
+    } catch (err) {
+      toast.error(
+        err instanceof ApiClientError && err.code === 'INVITATION_RESEND_TOO_SOON'
+          ? t('org.invitations.resendTooSoon')
+          : t('org.invitations.resendFailed')
+      )
     }
   }
   const cancelInvite = async (invitation: Invitation) => {
@@ -993,7 +1020,26 @@ export default function UsersPage() {
       accessorKey: 'email',
       header: 'Email',
       enableSorting: false,
-      cell: ({ row }) => <span className="font-medium">{row.original.email}</span>,
+      cell: ({ row }) => (
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="font-medium">{row.original.email}</span>
+          {row.original.member_kind === 'external' && (
+            <Badge variant="outline" className="text-xs" data-testid="invitation-badge-external">
+              {t('org.invitations.external')}
+            </Badge>
+          )}
+          {row.original.privileged && (
+            <Badge
+              variant="outline"
+              className="border-warning/50 text-xs text-warning"
+              data-testid="invitation-badge-mfa"
+              title={t('org.invitations.mfaHint')}
+            >
+              {t('org.invitations.mfa')}
+            </Badge>
+          )}
+        </div>
+      ),
     },
     {
       id: 'roles',
@@ -1167,6 +1213,14 @@ export default function UsersPage() {
             </Button>
           </Can>
         </PageHeader>
+
+        <OwnershipTransferBanner
+          transfer={pendingTransfer}
+          onChanged={() => {
+            void mutateTransfer()
+            refreshData()
+          }}
+        />
 
         {membersError && !membersLoading ? (
           <Alert variant="destructive" className="mt-5">
@@ -1500,6 +1554,14 @@ export default function UsersPage() {
       />
 
       {/* Offboarding wizard (RFC-050) */}
+      <TransferOwnershipDialog
+        member={transferMember}
+        onOpenChange={(open) => {
+          if (!open) setTransferMember(null)
+        }}
+        onStarted={() => void mutateTransfer()}
+      />
+
       <OffboardMemberDialog
         tenantSlug={tenantSlug}
         member={offboardMember}

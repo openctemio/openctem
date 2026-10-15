@@ -115,6 +115,52 @@ export interface ApiFindingComponent {
   depth?: number
 }
 
+/** A branch a finding was seen on. */
+export interface ApiFindingBranch {
+  name: string
+  is_default: boolean
+  status: string
+  first_seen_at: string
+  last_seen_at: string
+  first_commit?: string
+  last_commit?: string
+}
+
+/** A CI run that reported a finding (only for callers with scans:ci:read). */
+export interface ApiFindingRun {
+  id: string
+  provider: string
+  external_run_id?: string
+  pipeline_url?: string
+  branch?: string
+  commit_sha?: string
+  pull_request?: string
+  is_default_branch: boolean
+  event?: string
+  created_at: string
+}
+
+/** Where and when a finding was seen (GET /findings/{id}). */
+export interface ApiFindingProvenance {
+  branches?: ApiFindingBranch[]
+  runs?: ApiFindingRun[]
+  first_run?: ApiFindingRun
+}
+
+/** Vulnerability intelligence with sources and freshness (GET /findings/{id}). */
+export interface ApiFindingIntel {
+  cvss_source?: string
+  published_at?: string
+  modified_at?: string
+  /** http(s) only, at most 25. */
+  references?: string[]
+  /** YYYY-MM-DD of the EPSS score the finding carries. */
+  epss_date?: string
+  /** YYYY-MM-DD the CVE was added to CISA KEV. */
+  kev_date_added?: string
+  kev_ransomware?: boolean
+}
+
 /** One open finding in a package fix plan. */
 export interface ApiFindingFixPlanItem {
   id: string
@@ -194,11 +240,15 @@ export interface ApiFinding {
   component?: ApiFindingComponent
   /** The package's upgrade plan on this asset (single-finding response only). */
   package_fix?: ApiFindingFixPlan
+  /** Advisory facts kept on the finding and the dates of its feed values (single-finding response only). */
+  intel?: ApiFindingIntel
   /** The CVE record the finding is an instance of (single-finding response only). */
   vulnerability?: ApiFindingVulnerability
   source: FindingSource
   tool_name: string
   tool_version?: string
+  /** The tool of the latest sighting (tool_name stays the first reporter). */
+  last_seen_tool?: string
   rule_id?: string
   rule_name?: string
   file_path?: string
@@ -261,6 +311,8 @@ export interface ApiFinding {
   first_detected_commit?: string
   last_seen_branch?: string
   last_seen_commit?: string
+  /** Where and when it was seen (single-finding response only). */
+  provenance?: ApiFindingProvenance
   scan_id?: string
   fingerprint: string
   location?: string

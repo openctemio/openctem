@@ -1064,8 +1064,8 @@ func (p *FindingProcessor) buildFinding(
 	source := vulnerability.FindingSourceExternal
 	toolName := UnknownValue
 	toolVersion := ""
-	if report.Tool != nil || report.Metadata.Capability != "" {
-		source = reportFindingSource(report)
+	if report.Tool != nil || reportCapability(report) != "" {
+		source = findingTechnique(report, ctisFinding)
 	}
 	if report.Tool != nil {
 		toolName = report.Tool.Name
@@ -1320,6 +1320,26 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ct
 	if fixed := vulnerability.NormalizeFixedVersions(ctisFinding.Vulnerability.FixedVersion,
 		ctisFinding.Vulnerability.FixedVersions); len(fixed) > 0 {
 		f.SetMetadata(vulnerability.FindingMetaFixedVersions, fixed)
+	}
+	setAdvisoryMetadata(f, ctisFinding)
+}
+
+// setAdvisoryMetadata keeps what the scanner's advisory said on the finding
+// (the catalog is not written from a report): its references (http(s) only,
+// bounded), publication dates and who scored the primary CVSS.
+func setAdvisoryMetadata(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	v := ctisFinding.Vulnerability
+	if refs := vulnerability.NormalizeReferences(ctisFinding.References); len(refs) > 0 {
+		f.SetMetadata(vulnerability.FindingMetaReferences, refs)
+	}
+	if v.PublishedAt != nil && !v.PublishedAt.IsZero() {
+		f.SetMetadata(vulnerability.FindingMetaPublishedAt, v.PublishedAt.UTC().Format(time.RFC3339))
+	}
+	if v.ModifiedAt != nil && !v.ModifiedAt.IsZero() {
+		f.SetMetadata(vulnerability.FindingMetaModifiedAt, v.ModifiedAt.UTC().Format(time.RFC3339))
+	}
+	if src := vulnerability.NormalizeScoreSource(v.CVSSSource); src != "" {
+		f.SetMetadata(vulnerability.FindingMetaCVSSSource, src)
 	}
 }
 
