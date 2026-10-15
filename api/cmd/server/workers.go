@@ -28,6 +28,7 @@ import (
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -751,41 +752,20 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
-	// B1/B2 priority reclassification sweep — drains the in-memory
-	// queue populated by ControlChangePublisher (and future EPSS/KEV/
-	// rule producers) and re-runs ClassifyFinding on the scoped set.
-	// Nil-safe only against a missing queue/reclassifier — svc itself
-	// is a required argument to NewWorkers (an earlier redundant
-	// svc != nil check confused staticcheck; the function dereferences
-	// svc unconditionally above this point).
-	if svc.ReclassifyQueue != nil && svc.Reclassifier != nil {
-		w.ControllerManager.Register(controller.NewPriorityReclassifyController(
-			svc.ReclassifyQueue,
-			svc.Reclassifier,
-			&controller.PriorityReclassifyConfig{
-				// Drained every minute: an attribution decision reclassifies
-				// its assets' findings within two minutes (research/22 P0-9).
-				Interval: time.Minute,
-				Logger:   log.With("controller", "priority-reclassify"),
-			},
-		))
-
-		// Periodic *producer* for the same queue: on a low-frequency timer it
-		// enqueues one whole-tenant reclassify per active tenant. Without this
-		// the consumer above has nothing to drain except discrete producer
-		// events (control-change, KEV/EPSS refresh), so never-classified
-		// findings (priority_class IS NULL) and slow EPSS drift are never
-		// re-swept. Nil-safe on a missing queue/tenant repo.
-		if repos.Tenant != nil {
-			w.ControllerManager.Register(controller.NewPriorityReclassifySweepController(
-				svc.ReclassifyQueue,
-				repos.Tenant,
-				&controller.PriorityReclassifySweepConfig{
-					Interval: 12 * time.Hour,
-					Logger:   log.With("controller", "priority-reclassify-sweep"),
-				},
-			))
+	// Finding-priority recompute (docs/architecture/scoring-versions.md):
+	// the worker drains the durable queue every 10 s, tenant-fair; the
+	// reconcile queues stale findings at once and every open finding once a
+	// day. This build's model versions are registered first so a model bump
+	// makes the old values stale.
+	if svc.Reclassifier != nil && svc.Scoring != nil {
+		regCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := svc.Scoring.RegisterModels(regCtx); err != nil {
+			log.Warn("register scoring model versions failed", "error", err)
 		}
+		cancel()
+		w.ControllerManager.Register(controller.NewFindingPriorityController(
+			svc.Reclassifier, 0, reclassify.DefaultQueueBatch, reclassify.DefaultPerTenant))
+		w.ControllerManager.Register(controller.NewFindingPriorityReconcileController(svc.Reclassifier, 0))
 	}
 
 	// SLA escalation — marks overdue findings as breached every 15 min (RFC-005 Gap 7).
@@ -808,6 +788,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// inventory once a day as a safety net (docs/architecture/asset-risk-score.md).
 	if svc != nil && svc.Asset != nil {
 		svc.Asset.SetRiskQueue(postgres.NewAssetRiskQueueRepository(&postgres.DB{DB: deps.DB}), repos.Asset)
+		if svc.Scoring != nil {
+			svc.Asset.SetScoringVersions(svc.Scoring)
+		}
 		w.ControllerManager.Register(controller.NewAssetRiskScoreController(svc.Asset, 0))
 		w.ControllerManager.Register(controller.NewAssetRiskReconcileController(svc.Asset, 0))
 	}

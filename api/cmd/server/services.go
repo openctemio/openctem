@@ -741,10 +741,11 @@ type Services struct {
 	// VulnMatch is inventory vulnerability matching (RFC-066).
 	VulnMatch *vulnmatch.Service
 
-	// B1/B2 reclassification pipeline — memory queue,
-	// publisher (called from control CRUD), reclassifier (consumed
-	// by the PriorityReclassifyController registered in workers.go).
-	ReclassifyQueue  *reclassify.MemoryQueue
+	// Finding-priority recompute (docs/architecture/scoring-versions.md):
+	// the durable queue, the publisher producers call, and the reclassifier
+	// drained by the finding-priority worker registered in workers.go.
+	ReclassifyQueue  *reclassify.Queue
+	Scoring          *postgres.ScoringRepository
 	ControlChangePub *controller.ControlChangePublisher
 	Reclassifier     *reclassify.Reclassifier
 
@@ -1337,16 +1338,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// — no verdict / low confidence → no effect, never an escalation.
 	s.PriorityClassification.SetAITriageVerdictLookup(postgres.NewAITriagePriorityLookupRepo(deps.DB))
 
-	// B1/B2 reclassification pipeline wiring:
-	//   producers → ControlChangePublisher → MemoryQueue
-	//   PriorityReclassifyController (workers.go) → Reclassifier → ClassifyFinding
-	// The publisher is nil-safe; handlers can call PublishChange even
-	// when the queue/controller aren't running (logs a warn and drops).
-	s.ReclassifyQueue = reclassify.NewMemoryQueue()
+	// Finding-priority recompute wiring:
+	//   producers → ControlChangePublisher → finding_priority_queue (DB;
+	//   triggers queue the rest) → finding-priority worker (workers.go) →
+	//   Reclassifier → EnrichAndClassifyBatch on the asset's open findings.
+	s.Scoring = postgres.NewScoringRepository(&postgres.DB{DB: deps.DB})
+	s.ReclassifyQueue = reclassify.NewQueue(s.Scoring)
 	s.ControlChangePub = controller.NewControlChangePublisher(s.ReclassifyQueue, log)
 	s.Reclassifier = reclassify.NewReclassifier(
 		repos.Finding, repos.Asset, s.PriorityClassification, log,
 	)
+	s.Reclassifier.SetQueue(s.Scoring, s.Scoring)
+	s.Reclassifier.SetWriter(s.Scoring)
 	// Recompute the SLA deadline when a sweep escalates a finding's priority
 	// (e.g. a CVE newly listed in KEV → P0), so the deadline tightens instead
 	// of staying at its laxer pre-escalation value.
@@ -1614,8 +1617,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 		// On triage completion, enqueue an asset-scoped reclassify so a
 		// high-confidence false-positive verdict de-escalates the finding's
-		// priority. Reuses the same MemoryQueue → Reclassifier → ClassifyFinding
-		// scan workflow the control/rule producers use (wired above).
+		// priority, through the finding-priority queue (wired above).
 		s.AITriage.SetReclassifyEnqueuer(aiTriageReclassifyEnqueuer{pub: s.ControlChangePub})
 		// A confident false-positive verdict on a medium or low finding is
 		// recorded as a pending approval for a person; never applied.
@@ -2879,6 +2881,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Tenant.SetLifecycleNotifier(s.Notification)
 	// Teams on invitations: checked for the inviter, applied at acceptance.
 	s.Tenant.SetInvitationTeams(s.Group)
+	// Ownership transfer: owner asks, the member accepts with step-up.
+	s.Tenant.SetOwnershipTransferRepository(repos.OwnershipTransfer)
 
 	// Sensor pairing approvals need step-up re-authentication and notify
 	// every administrator (RFC-052 D-2, D-6).
