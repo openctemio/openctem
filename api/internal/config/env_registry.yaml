@@ -1151,7 +1151,7 @@ vars:
     group: "Ingest"
     type: string
     default: "dry_run"
-    description: "How a VEX `not_affected` statement acts on the matching open finding: `off`, `dry_run` or `enforce` (the finding becomes a false positive with the justification)."
+    description: "How a VEX `not_affected` statement in a scan report acts on the matching open finding: `off`, `dry_run` or `enforce`. A false positive needs four-eyes, so `enforce` requests one (a pending approval by the actor `vex`, with the justification) that a person with `findings:approve` decides; it never sets the status itself."
   - name: SENSOR_PROTOCOL_V2_RESULTS
     component: api
     group: "Ingest"
