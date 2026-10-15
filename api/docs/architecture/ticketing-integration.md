@@ -21,8 +21,9 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   `X-Hub-Signature: sha256=<HMAC-SHA256 of the raw body>` under that
   integration's own secret (stored encrypted in the integration metadata,
   generated or entered in the settings page, shown once, never returned).
-  Replays are refused by delivery id (`X-Atlassian-Webhook-Identifier`, else the
-  body hash, kept 24 h in Redis) and by the payload `timestamp` (at most one
+  Replays are refused by body hash and by delivery id
+  (`X-Atlassian-Webhook-Identifier`), kept 24 h in Redis and released when
+  processing fails (so Jira's retry is processed; no store means 503) and by the payload `timestamp` (at most one
   hour old). Per-IP and per-integration rate limits sit in front of the
   secret lookup. Secret routes: `GET /api/v1/integrations/{id}/jira-webhook`
   (URL, whether a secret is set), `POST .../jira-webhook/secret/rotate` and
