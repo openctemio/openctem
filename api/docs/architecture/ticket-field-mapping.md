@@ -32,3 +32,17 @@ simulate: state ──► BFS path + screen values      tracker status (+resolut
 - Redaction and encoding run on every rendered value and cannot be disabled by a profile.
 - An unreachable target status or a missing required transition value is an error, never a guessed status.
 - A tracker never closes a finding: intents are claims and requests.
+
+## Engine (outbound, findings)
+
+- `SyncService.CreateTicketFromFinding` asks `ProfileSource.RenderFindingCreate` (the mapping service) for the
+  published profile of the destination (the client's own integration, project, issue type). With one, the issue
+  is created from the rendered fields (`CreateIssueFields`, issue type by id); in dry run the profile's fields are
+  logged and the built-in fields are sent.
+- `SyncFindingStatusToTicket` asks `FindingStatusTarget` first. A published profile for the issue's project is
+  its own opt-in: the state's target status is reached by `runStatusPath` (`internal/app/jira/profile_engine.go`):
+  read the current status and the transitions available now, follow the shortest path of the published workflow
+  (or only a direct transition when the site exposes no workflow), fill required screen fields (the resolution on
+  the final step), comment on the final step. A path that does not exist is an error, never a guess.
+- Tracker 4xx and impossible paths are permanent: the job is not retried (`asynq.SkipRetry`); 429 carries
+  `Retry-After`.
