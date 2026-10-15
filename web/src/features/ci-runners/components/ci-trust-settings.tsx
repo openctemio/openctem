@@ -79,6 +79,7 @@ import { CITrustPreview } from './ci-trust-preview'
 import { CIOverrideDialog } from './ci-override-dialog'
 import { CITrustRefusals } from './ci-refusals'
 import { CISetupEntry } from './ci-setup-wizard'
+import { CITrustScopeEntries, manageScopeSupported } from './ci-trust-scope'
 import type { CIGatePolicy, CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
 import {
   GATE_FIELDS,
@@ -295,6 +296,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
                     : t('scans.ci.trust.never', 'never'),
                 })}
               </span>
+              <CITrustScopeEntries config={c} onChanged={() => void mutate()} />
             </CardContent>
           </Card>
         ))
@@ -320,7 +322,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
         })}
         desc={t(
           'confirm.ciTrust.deleteDesc',
-          'Pipelines it admits can no longer send results. Tokens already issued expire within 15 minutes. This cannot be undone.'
+          'Pipelines it admits can no longer send results. Tokens already issued expire within 15 minutes. The repository scope entries it added are removed. This cannot be undone.'
         )}
         confirmText={t('confirm.delete', 'Delete')}
         destructive
@@ -372,6 +374,11 @@ function TrustConfigDialog({
   const [allowForks, setAllowForks] = useState(!!config?.rules?.allow_fork_pull_requests)
   const [protectedRef, setProtectedRef] = useState(!!config?.rules?.require_protected_ref)
   const [enabled, setEnabled] = useState(config?.enabled ?? true)
+  const { can } = usePermissions()
+  const canScope = can(Permission.ScopeWrite)
+  // On by default for someone who may change scope; the API refuses it for
+  // anyone else.
+  const [manageScope, setManageScope] = useState(config?.manage_scope ?? canScope)
   const traits = PROVIDER_TRAITS[provider]
 
   const chooseProvider = (p: CIProvider) => {
@@ -397,6 +404,7 @@ function TrustConfigDialog({
     audience: traits.fixedAudience ? undefined : audience.trim() || undefined,
     default_branch: defaultBranch.trim() || undefined,
     enabled,
+    manage_scope: manageScopeSupported(provider) && canScope ? manageScope : undefined,
     rules: {
       owners: parseList(owners),
       repositories: parseList(repositories),
@@ -793,6 +801,28 @@ function TrustConfigDialog({
                       )}
                 </AlertDescription>
               </Alert>
+            )}
+            {manageScopeSupported(provider) && (
+              <div className="space-y-1">
+                <SwitchRow
+                  id="ci-manage-scope"
+                  label={t('scans.ci.trust.manageScope', 'Trust and add to scope')}
+                  checked={manageScope}
+                  onChange={setManageScope}
+                  disabled={!canScope}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {canScope
+                    ? t(
+                        'scans.ci.trust.manageScopeHint',
+                        "Each owner or repository becomes a repository scope entry (for example gitlab.com/your-group/*), kept in step with this trust and removed with it. The entries follow your organization's scope approval rules."
+                      )
+                    : t(
+                        'scans.ci.trust.manageScopeNoPermission',
+                        'Adding repositories to scope needs the scope write permission.'
+                      )}
+                </p>
+              </div>
             )}
             <SwitchRow
               id="ci-enabled"
@@ -1670,18 +1700,20 @@ function SwitchRow({
   label,
   checked,
   onChange,
+  disabled,
 }: {
   id: string
   label: string
   checked: boolean
   onChange: (v: boolean) => void
+  disabled?: boolean
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <Label htmlFor={id} className="font-normal">
         {label}
       </Label>
-      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+      <Switch id={id} checked={checked} onCheckedChange={onChange} disabled={disabled} />
     </div>
   )
 }
