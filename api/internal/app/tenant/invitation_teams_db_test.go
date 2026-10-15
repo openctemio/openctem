@@ -46,6 +46,9 @@ type itEnv struct {
 	svc    *tenantapp.TenantService
 	stepUp *bool
 	users  []string
+	// ownsDomain: the organization holds a verified domain, so an unclaimed
+	// work address becomes external.
+	ownsDomain *bool
 }
 
 func newITEnv(t *testing.T) *itEnv {
@@ -76,9 +79,10 @@ func newITEnv(t *testing.T) *itEnv {
 	svc.SetRoleService(roles)
 	svc.SetStepUpGate(gate)
 	svc.SetInvitationTeams(groups)
+	owns := false
 	svc.SetAddressClassifier(tenantapp.NewAddressClassifier(itNoDomains{},
-		func(context.Context, shared.ID) (bool, error) { return false, nil }))
-	return &itEnv{t: t, db: raw, svc: svc, stepUp: &ok}
+		func(context.Context, shared.ID) (bool, error) { return owns, nil }))
+	return &itEnv{t: t, db: raw, svc: svc, stepUp: &ok, ownsDomain: &owns}
 }
 
 func (e *itEnv) exec(q string, args ...any) {
@@ -194,6 +198,11 @@ func TestInvitationTeams_AppliedAtAcceptance(t *testing.T) {
 	}
 	if n := e.count(`SELECT count(*) FROM group_members WHERE user_id = $1 AND group_id IN ($2, $3)`, uid, teamA, teamB); n != 2 {
 		t.Fatalf("joined %d teams, want 2", n)
+	}
+	// The acceptance audit lists the teams granted.
+	if n := e.count(`SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'invitation.accepted'
+		AND metadata::text LIKE '%' || $2 || '%' AND metadata::text LIKE '%' || $3 || '%'`, org, teamA, teamB); n != 1 {
+		t.Fatalf("acceptance audit rows listing both teams = %d, want 1", n)
 	}
 }
 
@@ -357,5 +366,39 @@ func TestInvitationGrants_ForTheAcceptancePage(t *testing.T) {
 	g2 := e.svc.InvitationGrants(context.Background(), inv2)
 	if g2.MemberKind != "internal" || g2.MFARequired || len(g2.Teams) != 1 {
 		t.Fatalf("insider grants = %+v", g2)
+	}
+}
+
+// TestInvitationTeams_RecheckUsesClassificationAtAcceptance: an invitee who
+// was internal when invited but is outside the organization at acceptance
+// (the organization verified a domain since) never gets full data access
+// through a team; the invitation is void and nothing is granted.
+func TestInvitationTeams_RecheckUsesClassificationAtAcceptance(t *testing.T) {
+	e := newITEnv(t)
+	org := e.org()
+	owner := e.member(org, "owner")
+	team := e.team(org, "team")
+	role := uuid.NewString()
+	e.exec(`INSERT INTO roles (id, tenant_id, slug, name, is_system, has_full_data_access) VALUES ($1, $2, $3, 'All data', false, true)`, role, org, "all-"+role[:8])
+	e.exec(`INSERT INTO group_role_bindings (tenant_id, group_id, role_id) VALUES ($1, $2, $3)`, org, team, role)
+
+	email := "later-outside-" + uuid.NewString()[:8] + "@it.test"
+	token, err := e.invite(org, owner, email, []string{team}, nil)
+	if err != nil {
+		t.Fatalf("invite an insider to a full-data team: %v", err)
+	}
+	if n := e.count(`SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND invitee_kind = 'internal'`, org); n != 1 {
+		t.Fatal("the invitee was not classified internal at creation")
+	}
+	*e.ownsDomain = true // the address is now outside the organization
+	uid, err := e.accept(org, token, email)
+	if !errors.Is(err, tenantapp.ErrInvitationNoLongerValid) {
+		t.Fatalf("accept: %v, want no longer valid", err)
+	}
+	if n := e.count(`SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND user_id = $2`, org, uid); n != 0 {
+		t.Fatal("membership created")
+	}
+	if n := e.count(`SELECT count(*) FROM group_members WHERE user_id = $1`, uid); n != 0 {
+		t.Fatal("team membership created")
 	}
 }
