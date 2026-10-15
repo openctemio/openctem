@@ -149,3 +149,25 @@ func TestTestTicketingConnection_NoBaseURLFails(t *testing.T) {
 		t.Fatal("an integration without a base URL must not test as connected")
 	}
 }
+
+// The client and the mapping come from the same integration: when the first
+// connected integration cannot build a client, the mapping must not be read
+// from it while the client comes from the next one.
+func TestResolveMapping_SameIntegrationAsTheClient(t *testing.T) {
+	broken := newJiraIntegration(t, integration.StatusConnected,
+		"https://acme.atlassian.net", "rawtoken", map[string]any{"ticketing": map[string]any{"project_key": "BAD"}})
+	good := newJiraIntegration(t, integration.StatusConnected,
+		"https://acme.atlassian.net", `{"email":"sec@acme.com","api_token":"abc"}`,
+		map[string]any{"ticketing": map[string]any{"project_key": "GOOD"}})
+	r := newResolver(&stubIntegrationRepo{byProvider: []*integration.Integration{broken, good}})
+	if _, err := r.Resolve(context.Background(), shared.NewID()); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	m, err := r.ResolveMapping(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatalf("mapping: %v", err)
+	}
+	if m.DefaultProjectKey != "GOOD" {
+		t.Fatalf("mapping came from another integration than the client: %q", m.DefaultProjectKey)
+	}
+}
