@@ -11,7 +11,7 @@
   shorter; an end past the cap is refused, never shortened. The finding
   response carries `max_acceptance_days` and the approval dialog limits its
   date to it.
-- Migrations `002461_acceptance_cap_review` and
-  `002462_acceptance_cap_review_validate`: accepted findings whose end is past
+- Migrations `002531_acceptance_cap_review` and
+  `002532_acceptance_cap_review_validate`: accepted findings whose end is past
   the new cap are flagged for review (`acceptance_exceeds_cap`, with a timeline
   entry), not shortened; the migration reports how many.
