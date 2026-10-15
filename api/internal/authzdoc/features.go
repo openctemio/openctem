@@ -119,7 +119,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery},
 		Registers: []string{
 			"registerSensorManagementRoutes", "registerSensorInstallRoutes", "registerSensorPairingRoutes", "registerScanZoneRoutes",
-			"registerFleetRoutes", "mountSensorV2",
+			"mountSensorV2",
 		},
 	},
 	{
