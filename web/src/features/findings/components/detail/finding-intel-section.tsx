@@ -11,6 +11,7 @@
 import { ChevronRight, ExternalLink, Radar } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
+import { safeHref } from '@/lib/safe-href'
 import {
   DetailField,
   DetailFieldGrid,
@@ -26,7 +27,7 @@ function ExtLink({ link, mono }: { link: IntelLink; mono?: boolean }) {
   if (!link.href) return <span className={cls}>{link.label}</span>
   return (
     <a
-      href={link.href}
+      href={safeHref(link.href)}
       target="_blank"
       rel="noopener noreferrer nofollow"
       className={`inline-flex max-w-full items-center gap-1 underline-offset-2 hover:underline ${cls}`}
