@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -91,16 +92,47 @@ func TestCIRunRepository(t *testing.T) {
 		t.Fatalf("unrestricted list: %d", total)
 	}
 
-	// Replay: one exchange per token id.
+	// Replay: a token id is claimed once; the same token (organization and
+	// digest) may be counted again up to the bound, nothing else may.
 	jti := "jti-" + shared.NewID().String()
-	if ok, err := repo.ClaimJTI(ctx, "https://issuer.test", jti, now.Add(time.Hour)); err != nil || !ok {
+	digest := []byte("0123456789abcdef0123456789abcdef")
+	planned := shared.NewID()
+	claim := cirun.Replay{Issuer: "https://issuer.test", JTI: jti, TenantID: &tenant, TokenSHA256: digest, RunID: &planned,
+		ExpiresAt: now.Add(time.Hour)}
+	if ok, _, err := repo.ClaimReplay(ctx, claim); err != nil || !ok {
 		t.Fatalf("first claim: %v %v", ok, err)
 	}
-	if ok, _ := repo.ClaimJTI(ctx, "https://issuer.test", jti, now.Add(time.Hour)); ok {
-		t.Fatal("replayed token id accepted")
+	ok, prior, err := repo.ClaimReplay(ctx, claim)
+	if err != nil || ok || prior == nil || prior.RunID == nil || *prior.RunID != planned || prior.TenantID == nil ||
+		*prior.TenantID != tenant || prior.Exchanges != 1 || !bytes.Equal(prior.TokenSHA256, digest) {
+		t.Fatalf("second claim: %v %+v %v", ok, prior, err)
 	}
-	if ok, _ := repo.ClaimJTI(ctx, "https://other-issuer.test", jti, now.Add(time.Hour)); !ok {
+	otherIss := claim
+	otherIss.Issuer = "https://other-issuer.test"
+	if ok, _, _ := repo.ClaimReplay(ctx, otherIss); !ok {
 		t.Fatal("same id from another issuer refused")
+	}
+	if rp, _ := repo.ReuseReplay(ctx, claim.Issuer, jti, shared.NewID(), digest, 5); rp != nil {
+		t.Fatal("reused from another organization")
+	}
+	if rp, _ := repo.ReuseReplay(ctx, claim.Issuer, jti, tenant, []byte("other-token-digest-0123456789abc"), 5); rp != nil {
+		t.Fatal("reused with another token's digest")
+	}
+	for want := 2; want <= 5; want++ {
+		rp, err := repo.ReuseReplay(ctx, claim.Issuer, jti, tenant, digest, 5)
+		if err != nil || rp == nil || rp.Exchanges != want {
+			t.Fatalf("reuse %d: %+v %v", want, rp, err)
+		}
+	}
+	if rp, _ := repo.ReuseReplay(ctx, claim.Issuer, jti, tenant, digest, 5); rp != nil {
+		t.Fatal("reused past the bound")
+	}
+	// The recorded run is kept: binding another run does not move it.
+	if err := repo.BindReplayRun(ctx, claim.Issuer, jti, tenant, shared.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, prior, _ := repo.ClaimReplay(ctx, claim); prior == nil || prior.RunID == nil || *prior.RunID != planned {
+		t.Fatalf("recorded run moved: %+v", prior)
 	}
 
 	// The findings cap holds across reports.

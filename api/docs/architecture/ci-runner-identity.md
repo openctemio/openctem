@@ -57,15 +57,38 @@ graph TD
 
 | Route | Chain |
 |---|---|
-| `POST /api/v1/ci/oidc/exchange` | per-IP token-exchange limit (60/min, shared store) → handler (32 KB body, unknown fields refused) |
+| `POST /api/v1/ci/oidc/exchange` | per-address backstop (600/min) → per pipeline identity limit (60/min per organization + token issuer at one address; claims read unverified, only to pick the bucket) → handler (32 KB body, unknown fields refused). Both in the shared store; see "Exchange rate limit" below |
 | `POST /api/v1/ci/trust-configs/preview` | session tenant chain → `scans` module → `scans:ci:write` → per-person limit (10/min) |
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
 
+### Exchange rate limit
+
+Hosted CI runners put many customers behind one egress address, so one strict
+budget per address let one busy fleet, or an attacker on the same runners,
+throttle every other organization's jobs. The exchange counts instead:
+
+- per address, 600 a minute, before the body is read: the flood backstop;
+- per organization (`tenant_id`) and token issuer (`iss`, read without
+  checking the signature) at that address, 60 a minute. The claims only pick
+  a bucket and grant nothing; invented ids get fresh buckets but stay inside
+  the address backstop. The address is part of the key so that someone who
+  knows an organization's id (it appears in public pipeline files) cannot use
+  up that organization's budget from elsewhere with junk tokens naming it.
+  A request whose body or token cannot be read falls in one bucket per
+  address.
+
+Both need the real client address: behind the built-in gateway and a front
+proxy, set the gateway's `OPENCTEM_TRUSTED_PROXIES` (and
+`OPENCTEM_CLIENT_IP_HEADERS` behind a Cloudflare Tunnel).
+
 Budgets beyond the chains: at most 200 reports per run (`cirun.MaxRunReports`,
 `409`), at most 300 runs per pipeline per hour (`cirun.MaxPipelineRunsPerHour`,
 refused at the exchange and audited `pipeline_rate`), 100,000 recorded
-findings per run.
+findings per run (`cirun.MaxRunFindings`). A run that sights more is marked
+`ci_runs.findings_over_cap` and its gate fails with `too_many_findings`; it is
+never judged on the first 100,000 only. Warn mode and a break-glass still apply
+to it like any other blocking reason.
 | `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
 | `GET /api/v1/fleet` | session tenant chain → `sensors:read` or `scans:ci:read`; the handler lists each mode under its own permission (runner rows also need the `scans` module) |
 
@@ -91,6 +114,10 @@ findings per run.
   `ci_run_tokens`.
 - `ci_oidc_replay`: `(issuer, jti)`, global. A provider that sends no `jti`
   (Bitbucket, CircleCI, Jenkins) is recorded under `sha256:<token hash>`.
+  Each row keeps the organization, the token's SHA-256, the run it opened or
+  joined and an exchange count (migration `002137`): the same token again
+  (at most `cirun.MaxTokenExchanges` = 5 times) gets a token for that run,
+  added to `ci_run_tokens` (`internal/app/cirun/reexchange.go`).
 - `ci_runs.commit_verified` (migration `001261`): false when the provider
   signs no commit and the run's commit is the job's report; such a commit
   never matches a break-glass.
@@ -221,6 +248,12 @@ A decision made on the platform holds on the next run of the same repository:
   scope; the fleet handler adds no query of its own.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
+- A pull or merge request run records its findings on its own scope:
+  `pull/<n>` (GitHub, Azure Pipelines, Bitbucket, CircleCI, Jenkins) or
+  `merge-requests/<n>` (GitLab), never on its head branch's name, which the
+  author picks and may equal a real branch (a fork's `main`, `release/1.x`).
+  A fork event records on `fork/pr-<n>`. Runs stored before this rule keep
+  their rows; new uploads to such a run go to the pull request scope.
 - A run's report changes only its repository asset; the baseline branch is
   decided server-side.
 - A finding the run sees only on a non-counting branch is branch-only: left
@@ -253,5 +286,7 @@ A decision made on the platform holds on the next run of the same repository:
   baseline-diff,evaluate}`: every session, API-key, console and MCP route
   refuses it, and the run routes refuse every other credential
   (`routes/ci_run_token_scope_db_test.go`). Another run's id answers 404.
-- Refusals are uniform to the caller and detailed in the audit log only after
-  the token verified.
+- Refusals before a trust configuration admitted the token are uniform to the
+  caller (`CI_TOKEN_NOT_TRUSTED`) and detailed in the audit log only after the
+  token verified; refusals after admission tell the pipeline the reason
+  (`CI_TOKEN_<reason>`, no other repository's or owner's data).
