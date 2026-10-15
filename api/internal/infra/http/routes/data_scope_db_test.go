@@ -101,7 +101,11 @@ func (h *dsHarness) dsAuth(next http.Handler) http.Handler {
 		if f := strings.Fields(r.Header.Get("Authorization")); user == "" && len(f) >= 2 && f[0] == "Test" {
 			user, admin = f[1], len(f) > 2 && f[2] == "admin"
 		}
-		ctx = context.WithValue(ctx, middleware.UserIDKey, user)
+		// No user (an organization API key) leaves the user id unset, as the
+		// API key authenticator does.
+		if user != "" && user != (shared.ID{}).String() {
+			ctx = context.WithValue(ctx, middleware.UserIDKey, user)
+		}
 		ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenant.String())
 		ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
 		perms := dsMemberPerms

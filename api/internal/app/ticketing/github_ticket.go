@@ -286,7 +286,7 @@ func (s *GitHubTicketService) resolveCredential(ctx context.Context, tenantID sh
 // issueTitle is the GitHub issue title (plain text, at most 256 characters):
 // secret-redacted, cleaned of control and bidi characters, one line, capped.
 func issueTitle(finding *vulnerability.Finding) string {
-	return safetext.SingleLine(RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())), safetext.MaxTitleRunes)
+	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())), safetext.MaxTitleRunes)
 }
 
 // buildIssueBody renders the markdown body of the issue, mirroring the
@@ -306,7 +306,7 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 	fmt.Fprintf(&b, "**Status:** %s\n", finding.Status())
 
 	if loc := findingLocation(finding); loc != "" {
-		fmt.Fprintf(&b, "**Location:** %s\n", safetext.MarkdownInline(RedactSecrets(loc), safetext.MaxInlineRunes))
+		fmt.Fprintf(&b, "**Location:** %s\n", safetext.MarkdownInline(safetext.RedactSecrets(loc), safetext.MaxInlineRunes))
 	}
 	b.WriteString("\n")
 
@@ -321,7 +321,7 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 	}
 
 	if desc := strings.TrimSpace(finding.Description()); desc != "" {
-		b.WriteString(safetext.MarkdownBlock(RedactSecrets(desc), safetext.MaxDescriptionRunes))
+		b.WriteString(safetext.MarkdownBlock(safetext.RedactSecrets(desc), safetext.MaxDescriptionRunes))
 		b.WriteString("\n")
 	}
 
@@ -331,16 +331,16 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 
 // appendMobilizationBrief appends the CTEM Mobilization brief (definition of
 // done + acceptable fixes) to the issue body when the finding carries one. The
-// brief holds only operator-entered guidance — never a finding-embedded secret.
-// It keeps its markdown (it is written for the ticket) but loses control and
-// bidi characters.
+// brief is written by people with write access, so it is treated like any
+// other text that leaves the platform: secret-redacted, capped, and placed in a
+// fenced block so it cannot add links, images, HTML or @mentions.
 func appendMobilizationBrief(b *strings.Builder, finding *vulnerability.Finding) {
-	brief := safetext.Clean(finding.Remediation().MobilizationBrief())
+	brief := strings.TrimSpace(finding.Remediation().MobilizationBrief())
 	if brief == "" {
 		return
 	}
 	b.WriteString("\n")
-	b.WriteString(brief)
+	b.WriteString(safetext.MarkdownBlock(safetext.RedactSecrets(brief), safetext.MaxBriefRunes))
 	b.WriteString("\n")
 }
 
