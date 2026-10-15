@@ -21,5 +21,5 @@
   `finding_approval.settings_changed` with before/after, and the approvers are
   told in-app).
 - The approvals list returns `self_approval_available` for the viewer.
-- Migration `002305` (`finding_approval_self_approved`): a boolean with a
+- Migration `002446` (`finding_approval_self_approved`): a boolean with a
   constant default and a nullable text column.
