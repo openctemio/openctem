@@ -2,6 +2,7 @@ package entitlement
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -93,5 +94,48 @@ func (s *Service) ApplyControlPlane(ctx context.Context, tenantID shared.ID, lim
 		Build()
 	entry.AdminEmail = ControlPlaneActor
 	s.createAudit(ctx, ActionControlPlaneApplied, entry)
+	return nil
+}
+
+// Usage counts what the organization uses (aggregate counts only); findings
+// only when asked, the count being costly.
+func (s *Service) Usage(ctx context.Context, tenantID shared.ID, withFindings bool) (map[limits.Key]int, error) {
+	return s.repo.Usage(ctx, tenantID, withFindings)
+}
+
+// ApplySelfServiceDefaultsFromControlPlane replaces the self-service default
+// limits (the limits every organization a person creates starts with, and
+// the per-person cap), as the control plane. Audited critical as the
+// control-plane actor.
+func (s *Service) ApplySelfServiceDefaultsFromControlPlane(ctx context.Context, d limits.Limits, call ControlPlaneCall) error {
+	if !ValidReason(call.Reason) {
+		return limits.ErrInvalid
+	}
+	if err := d.Validate(); err != nil {
+		return err
+	}
+	_, version, err := s.repo.GetSelfServiceDefaults(ctx)
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
+		return err
+	}
+	v, err := s.repo.SaveSelfServiceDefaults(ctx, d, version, nil, s.now().UTC())
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.cached, s.version, s.cachedAt = d, v, s.now()
+	s.mu.Unlock()
+	body := map[string]any{"version": v, "reason": strings.TrimSpace(call.Reason), "subject": call.Subject, "token_id": call.TokenID}
+	for k, val := range d {
+		body["limit."+string(k)] = val
+	}
+	entry := admin.NewAuditLogBuilder(nil, ActionSelfServiceDefaultsChanged).
+		Resource("self_service_default_limits", nil, "").
+		Context(call.IP, "").
+		Request("PUT", "", body).
+		Critical().
+		Build()
+	entry.AdminEmail = ControlPlaneActor
+	s.createAudit(ctx, ActionSelfServiceDefaultsChanged, entry)
 	return nil
 }
