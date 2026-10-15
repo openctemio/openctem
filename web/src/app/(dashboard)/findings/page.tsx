@@ -1,5 +1,7 @@
 'use client'
 
+import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-transitions'
+import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
 import { useListParams } from '@/hooks/use-list-params'
 import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
@@ -961,10 +963,31 @@ function FindingsContent() {
   }
 
   const handleBulkStatusChange = async (status: string, resolution?: string) => {
-    const findingIds = selectedFindingIds
-    if (findingIds.length === 0) return
+    if (selectedFindingIds.length === 0) return
 
     try {
+      // Dry run first (the API's transition engine): only the findings that
+      // may move are sent; the others are reported with the reason.
+      const dryRun = summarizeDryRun(
+        t,
+        await evaluateFindingTransitions(selectedFindingIds, status)
+      )
+      const refusedText = dryRun.refused.map((r) => `${r.reason} (${r.count})`).join('; ')
+      if (dryRun.allowed.length === 0) {
+        toast.error(t('findings.bulk.noneCanMove', 'None of the selected findings can move'), {
+          description: refusedText,
+        })
+        return
+      }
+      if (dryRun.refused.length > 0) {
+        toast.warning(
+          t('findings.bulk.someCannotMove', '{count} of the selected findings cannot move', {
+            count: selectedFindingIds.length - dryRun.allowed.length,
+          }),
+          { description: refusedText }
+        )
+      }
+      const findingIds = dryRun.allowed
       const response = await csrfFetch('/api/v1/findings/bulk/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
