@@ -32,6 +32,10 @@ export type FixGuidance =
       /** direct | transitive | undefined (unknown). */
       dependencyType?: string
       manifestFile?: string
+      /** The package's line in manifestFile. */
+      manifestLine?: number
+      /** Transitive: the packages that bring it in, direct dependency first. */
+      via?: string[]
       commands: FixCommand[]
       /** Other release lines with a fix (6.0.6 when the advice is 7.0.5). */
       otherFixedVersions: string[]
@@ -62,6 +66,23 @@ export type FixGuidance =
       text: string
       fixCode?: string
     }
+
+/**
+ * The packages that bring a transitive package in, direct dependency first:
+ * the scanner's path without its last entry when that entry is the package
+ * itself (name@version, as trivy writes package ids).
+ */
+export function dependencyVia(
+  path: string[] | undefined,
+  name: string,
+  version: string
+): string[] | undefined {
+  if (!path?.length) return undefined
+  const last = path[path.length - 1].toLowerCase()
+  const self = last === `${name}@${version}`.toLowerCase() || last === name.toLowerCase()
+  const via = self ? path.slice(0, -1) : path
+  return via.length ? via : undefined
+}
 
 /** The upgrade command(s) for a package, by ecosystem. */
 export function upgradeCommands(
@@ -168,6 +189,8 @@ export function fixGuidance(
         ecosystem,
         dependencyType: f.component?.dependencyType,
         manifestFile: f.component?.manifestFile,
+        manifestLine: f.component?.manifestLine,
+        via: dependencyVia(f.component?.dependencyPath, pkg, from),
         commands: ecosystem ? upgradeCommands(ecosystem, pkg, to, f.component?.dependencyType) : [],
         otherFixedVersions: fixed.filter((v) => v !== to),
         majorUpgrade: !!f.component?.fixedInMajor,

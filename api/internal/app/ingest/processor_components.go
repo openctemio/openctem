@@ -146,7 +146,7 @@ func clipVersion(v string) string {
 }
 
 // ProcessBatch writes the report's dependencies, one snapshot per owning
-// asset. A report is a full inventory of the locations it names.
+// asset, written as its channel's mode says (software.SnapshotMode).
 func (p *ComponentProcessor) ProcessBatch(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -175,9 +175,10 @@ func (p *ComponentProcessor) ProcessBatch(
 		}
 		byAsset[depAssetIDs[i]] = append(byAsset[depAssetIDs[i]], nodes[i])
 	}
+	replace, partial := software.SnapshotMode(channel)
 	for _, assetID := range order {
 		res, err := p.writer.WritePackages(ctx, tenantID, software.PackageSnapshot{
-			AssetID: assetID, Channel: channel, Packages: byAsset[assetID], Replace: true,
+			AssetID: assetID, Channel: channel, Packages: byAsset[assetID], Replace: replace, Partial: partial,
 		})
 		if err != nil {
 			p.logger.Warn("failed to write packages", "asset_id", assetID.String(), "error", sanitizeIngestLogField(err.Error()))

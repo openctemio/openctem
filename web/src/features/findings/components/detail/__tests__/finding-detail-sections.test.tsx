@@ -221,6 +221,80 @@ describe('FindingFixCard', () => {
     )
   })
 
+  it('says which dependency brings a transitive package in and links its lock file line', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          repositoryUrl: 'https://github.com/acme/shop',
+          commitSha: '3f1c2a9e',
+          component: {
+            name: 'body-parser',
+            version: '1.19.0',
+            ecosystem: 'npm',
+            fixedIn: '1.20.3',
+            dependencyType: 'transitive',
+            dependencyPath: ['express@4.17.1', 'body-parser@1.19.0'],
+            manifestFile: 'package-lock.json',
+            manifestLine: 34,
+          },
+        })}
+      />
+    )
+    const card = screen.getByRole('region', { name: 'Fix' })
+    expect(card).toHaveTextContent('Transitive via express@4.17.1')
+    expect(card).not.toHaveTextContent('express@4.17.1 → body-parser')
+    expect(within(card).getByRole('link', { name: /package-lock\.json:34/ })).toHaveAttribute(
+      'href',
+      'https://github.com/acme/shop/blob/3f1c2a9e/package-lock.json#L34'
+    )
+  })
+
+  it('shortens a long chain and keeps the line without a repository link', () => {
+    const path = ['a@1', 'b@1', 'c@1', 'd@1', 'e@1', 'f@1', 'body-parser@1.19.0']
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          component: {
+            name: 'body-parser',
+            version: '1.19.0',
+            ecosystem: 'npm',
+            fixedIn: '1.20.3',
+            dependencyType: 'transitive',
+            dependencyPath: path,
+            manifestFile: 'package-lock.json',
+            manifestLine: 34,
+          },
+        })}
+      />
+    )
+    const card = screen.getByRole('region', { name: 'Fix' })
+    const chain = within(card).getByText('Transitive via a@1 → … → e@1 → f@1')
+    expect(chain).toHaveAttribute('title', 'a@1 → b@1 → c@1 → d@1 → e@1 → f@1')
+    expect(card).toHaveTextContent('in package-lock.json:34')
+    expect(within(card).queryByRole('link', { name: /package-lock/ })).toBeNull()
+  })
+
+  it('says direct for a direct dependency', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          component: {
+            name: 'lodash',
+            version: '4.17.20',
+            ecosystem: 'npm',
+            fixedIn: '4.17.21',
+            dependencyType: 'direct',
+            dependencyPath: ['lodash@4.17.20'],
+          },
+        })}
+      />
+    )
+    expect(screen.getByRole('region', { name: 'Fix' })).toHaveTextContent('Direct dependency')
+  })
+
   it('flags a major upgrade', () => {
     render(
       <FindingFixCard
