@@ -6,6 +6,9 @@
 > [RFC-006](../rfcs/RFC-006-ticketing-provider-and-mapping.md) /
 > [RFC-006 Phase 3](../rfcs/RFC-006-phase-3-bidirectional-sync.md).
 > Ticketing is the CTEM **Mobilization** pillar.
+> Ticket links live in `ticket_links` (one row per finding or task ↔ issue,
+> with the owning integration, the issue key and a state); the ticket paths
+> move onto it from the `findings.work_item_uris` strings (display only).
 
 ## Overview
 
