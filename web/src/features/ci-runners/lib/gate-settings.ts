@@ -1,5 +1,5 @@
 /**
- * Per-repository CI gate settings (api docs/rfcs/RFC-095-ci-per-repository-settings.md):
+ * Per-repository CI gate settings (api docs/rfcs/RFC-096-ci-per-repository-settings.md):
  * each gate field has an effective value, the layer it comes from and an
  * optional lock from a layer above. These helpers mirror the API's
  * "loosens" rules so the console offers only stricter values for a locked
