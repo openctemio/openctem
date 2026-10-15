@@ -64,8 +64,6 @@ type FindingProcessor struct {
 	// Nil-safe: when unwired, no evidence is kept.
 	evidence EvidenceStore
 
-	// activityService records audit trail for auto-reopen events
-	activityService activityRecorder
 	// regressions follows up on reopened findings (fresh SLA, announcement).
 	regressions RegressionHandler
 
@@ -131,11 +129,6 @@ type RegressionHandler interface {
 	HandleRegressions(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner string)
 }
 
-// activityRecorder is the subset of FindingActivityService needed by the processor.
-type activityRecorder interface {
-	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner, scanID string) error
-}
-
 // RemediationKeyApplier derives and persists each finding's remediation group
 // key. Runs POST-insert (needs persisted finding IDs). Implemented by
 // *remediation.KeyApplier. Best-effort: errors are logged, never fatal.
@@ -177,11 +170,6 @@ func (p *FindingProcessor) SetComponentRepository(repo software.PackageWriter) {
 // SetDataFlowRepository sets the data flow repository for persisting data flow traces.
 func (p *FindingProcessor) SetDataFlowRepository(repo vulnerability.DataFlowRepository) {
 	p.dataFlowRepo = repo
-}
-
-// SetActivityService sets the activity service for recording auto-reopen audit trail.
-func (p *FindingProcessor) SetActivityService(svc activityRecorder) {
-	p.activityService = svc
 }
 
 // SetRegressionHandler wires the follow-up on scan regressions (RFC-039 D2).
@@ -545,7 +533,13 @@ func (p *FindingProcessor) processBatch(
 	// PERFORMANCE: Single query instead of N queries per existing finding
 	existingFingerprints = p.withoutHumanResolved(ctx, tenantID, existingFingerprints, guardedFingerprints, output)
 	if len(existingFingerprints) > 0 {
-		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(ctx, tenantID, existingFingerprints)
+		scanner := ""
+		if report.Tool != nil {
+			scanner = report.Tool.Name
+		}
+		// Each reopen writes its timeline entry with the scan behind it.
+		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": report.Metadata.ID})
+		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints)
 		if err != nil {
 			p.logger.Warn("failed to batch auto-reopen findings", "error", err)
 		} else if len(reopenedMap) > 0 {
@@ -556,16 +550,6 @@ func (p *FindingProcessor) processBatch(
 			reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
 			for _, rf := range reopenedMap {
 				reopened = append(reopened, rf)
-			}
-			scanner := ""
-			if report.Tool != nil {
-				scanner = report.Tool.Name
-			}
-			// Record the regression on each finding, with who had resolved it.
-			if p.activityService != nil {
-				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopened, scanner, report.Metadata.ID); err != nil {
-					p.logger.Warn("failed to record auto-reopen activities", "error", err)
-				}
 			}
 			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5),
 			// for findings that count as exposure.
@@ -1329,6 +1313,13 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ct
 	// tenant's CVE views read it from here (global-catalog-trust.md).
 	if ctisFinding.Vulnerability.ExploitAvailable {
 		f.SetMetadata(vulnerability.FindingMetaScannerExploitAvailable, true)
+	}
+	// The versions that fix this package, as the scanner reported them. Kept
+	// on the finding for the same reason (the catalog is not written from a
+	// report); the detail view picks the nearest one for the installed version.
+	if fixed := vulnerability.NormalizeFixedVersions(ctisFinding.Vulnerability.FixedVersion,
+		ctisFinding.Vulnerability.FixedVersions); len(fixed) > 0 {
+		f.SetMetadata(vulnerability.FindingMetaFixedVersions, fixed)
 	}
 }
 
