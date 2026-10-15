@@ -737,6 +737,7 @@ type Services struct {
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
 	RemediationTask     *remediation.TaskService
+	RemediationSuggest  *remediation.SuggestionService
 	RemediationGroup    *remediation.GroupService
 
 	// Business Units
@@ -1554,6 +1555,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
 	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Remediation suggestions: algorithms propose, a person accepts.
+	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
+	s.RemediationSuggest.SetDataScope(s.DataScope)
+	s.RemediationSuggest.SetAuditLogger(s.Audit)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
