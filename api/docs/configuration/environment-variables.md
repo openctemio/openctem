@@ -225,7 +225,8 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `CI_RUNNER_LATEST_VERSION` | string | `versions.yaml` ci.latest, built into the API |  |  | Newest CI runner release (openctemio/ci: the openctem-ci action and image). The console's pipeline snippets pin it, and a pipeline on an older runner shows an update. CI runners have their own release line; the sensor settings never apply to them. `none` or `off` turns the comparison off. |
 | `CI_RUNNER_MIN_VERSION` | string | `versions.yaml` ci.min, built into the API |  |  | Oldest accepted CI runner release. The token exchange refuses an older runner (`RUNNER_OUTDATED`) and its pipeline is shown as degraded. Empty, `none` or `off`: no minimum. |
 | `SENSOR_COMMAND_LEASE` | duration | `3m` |  |  | How long a sensor holds a claimed task without renewing it; an expired lease puts the task back in the queue. |
-| `SENSOR_CONFIG_TEMPLATES_DIR` | string | `configs/sensor-templates` |  |  | Directory of the sensor configuration templates shown in the console. |
+| `SENSOR_CONFIG_TEMPLATES_DIR` | string | `configs/sensor-products` |  |  | Directory of the sensor install snippet templates shown in the console: one directory per snippet set (<set>/<format>.tmpl). A sensor product of your own adds a directory here. |
+| `SENSOR_PRODUCTS_FILE` | string | empty |  |  | File of extra sensor products (for example your own sensor built on the SDK), in the versions.yaml product format; added to the built-in catalog. An invalid file stops the API from starting. |
 | `SENSOR_HEALTH_SLOW_HEARTBEAT` | duration | `2s` |  |  | Heartbeat handling p95 that counts as slow. While the platform is slow, no sensor is marked offline. |
 | `SENSOR_HEALTH_STARTUP_GRACE` | duration | `0` |  |  | Time after API start during which no sensor is marked offline. |
 | `SENSOR_HEARTBEAT_BUSY_INTERVAL` | duration | `5s` |  |  | Interval advised while work is waiting for the sensor. |
