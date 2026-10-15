@@ -76,12 +76,7 @@ import {
   sensorState,
   type FleetThresholds,
 } from '../lib/sensor-state'
-import {
-  normalizeSensorVersion,
-  sensorSdkStatus,
-  sensorSdkVersion,
-  sensorVersionStatus,
-} from '../lib/sensor-version'
+import { normalizeSensorVersion, sensorSdkStatus, sensorSdkVersion } from '../lib/sensor-version'
 import {
   activeFilterCount,
   filterSensors,
@@ -94,6 +89,7 @@ import {
   type SensorProtocolFilter,
   SENSOR_POLICY_FILTERS,
   type SensorPolicyFilter,
+  versionStatusIn,
 } from '../lib/fleet'
 
 interface SensorsSectionProps {
@@ -377,16 +373,14 @@ export function SensorsSection({
   )
   const channel = useMemo<ReleaseChannel>(
     () => ({
-      latest: normalizeSensorVersion(tenantSensorStats?.latest_version),
-      min: normalizeSensorVersion(tenantSensorStats?.min_version),
+      products: tenantSensorStats?.products ?? [],
       sdkLatest: normalizeSensorVersion(tenantSensorStats?.sdk_latest_version),
-      sdkMin: normalizeSensorVersion(tenantSensorStats?.sdk_min_version),
+      sdkAdvisories: tenantSensorStats?.sdk_advisories ?? [],
     }),
     [
-      tenantSensorStats?.latest_version,
-      tenantSensorStats?.min_version,
+      tenantSensorStats?.products,
       tenantSensorStats?.sdk_latest_version,
-      tenantSensorStats?.sdk_min_version,
+      tenantSensorStats?.sdk_advisories,
     ]
   )
 
@@ -622,7 +616,7 @@ export function SensorsSection({
         },
         {
           header: t('sensors.list.csv.versionStatus'),
-          accessor: (s) => sensorVersionStatus(s, channel.latest, channel.min),
+          accessor: (s) => versionStatusIn(s, channel),
         },
         { header: t('sensors.list.csv.sdk'), accessor: (s) => s.sdk_name ?? '' },
         { header: t('sensors.list.csv.sdkVersion'), accessor: (s) => sensorSdkVersion(s) ?? '' },
@@ -663,7 +657,7 @@ export function SensorsSection({
       filters={filters}
       onChange={setFilters}
       activeCount={filterCount}
-      hasChannel={!!channel.latest || !!channel.min}
+      hasChannel={(channel.products?.length ?? 0) > 0}
       hasProtocolInfo={summary.hasProtocolInfo}
       sdkVersions={tenantSensorStats?.by_sdk_version}
     />
