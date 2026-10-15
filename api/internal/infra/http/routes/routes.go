@@ -188,13 +188,6 @@ type Handlers struct {
 	TicketMapping *handler.TicketMappingHandler
 	GitHubWebhook *handler.GitHubWebhookHandler // nil if not initialized (no database)
 
-	// JiraWebhookSecretResolver resolves the per-tenant Jira inbound-webhook
-	// HMAC secrets (stored on each tenant's Jira integration). When non-nil,
-	// the incoming-webhook route verifies against the requesting tenant's own
-	// secrets (plus the platform fallback), closing the cross-tenant spoofing
-	// gap of a single shared secret. nil falls back to the platform secret only.
-	JiraWebhookSecretResolver JiraWebhookSecretResolver
-
 	// Pentest Campaign Management handlers
 	Pentest                *handler.PentestHandler               // nil if not initialized (no database)
 	PentestCampaignRoleQry middleware.CampaignRoleQuerier        // Campaign role resolver for RBAC middleware
@@ -635,7 +628,7 @@ func Register(
 	}
 
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
-	registerIncomingWebhookRoutes(router, h.JiraWebhook, h.JiraWebhookSecretResolver, log)
+	registerIncomingWebhookRoutes(router, h.JiraWebhook, log)
 
 	// Public GitHub webhook endpoint — verified in the handler via GitHub's
 	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
