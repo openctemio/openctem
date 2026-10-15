@@ -389,7 +389,7 @@ func (s *RemediationCampaignService) scopedFilter(ctx context.Context, campaign 
 		out[k] = v
 	}
 	delete(out, "finding_id")
-	if ids := stringValues(raw, "finding_ids", "finding_id"); len(ids) > 0 {
+	if ids := filterFindingIDs(raw); len(ids) > 0 {
 		out["finding_ids"] = s.inScopeFindingIDs(ctx, campaign.TenantID(), ids, scope)
 	}
 	if assetID := firstString(raw, "asset_id"); assetID != "" {
@@ -1330,6 +1330,29 @@ func findingFilterHasScope(f vulnerability.FindingFilter) bool {
 		f.AssetID != nil ||
 		f.ToolName != nil ||
 		f.Search != nil
+}
+
+// filterFindingIDs collects the explicit finding ids of a stored filter
+// ("finding_ids" list or "finding_id" string).
+func filterFindingIDs(raw map[string]any) []string {
+	var out []string
+	add := func(v any) {
+		switch t := v.(type) {
+		case string:
+			out = append(out, t)
+		case []string:
+			out = append(out, t...)
+		case []any:
+			for _, x := range t {
+				if s, ok := x.(string); ok {
+					out = append(out, s)
+				}
+			}
+		}
+	}
+	add(raw["finding_ids"])
+	add(raw["finding_id"])
+	return out
 }
 
 // firstString returns the value of key as a string, or "" when absent or not a
