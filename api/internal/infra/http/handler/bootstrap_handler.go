@@ -90,6 +90,10 @@ type BootstrapResponse struct {
 	// Announcements are the platform notices shown now, as GET
 	// /announcements returns them in `data`. Platform-wide, not per tenant.
 	Announcements *[]AnnouncementResponse `json:"announcements,omitempty"`
+	// LimitsApply: a limit or module deny applies to the organization (owners
+	// and admins only; the settings rail lists Usage & limits then). Absent
+	// otherwise.
+	LimitsApply bool `json:"limits_apply,omitempty"`
 }
 
 // BootstrapBadges are the counts the app shell shows on every page. A count
@@ -121,6 +125,9 @@ type BootstrapSession struct {
 	// Announcements is AnnouncementHandler.ActiveResponses (the
 	// /announcements body).
 	Announcements func(ctx context.Context) ([]AnnouncementResponse, error)
+	// LimitsApply reports whether a limit or deny applies to the
+	// organization (entitlement.Service.Applies; no usage is counted).
+	LimitsApply func(ctx context.Context, tenantID shared.ID) (bool, error)
 }
 
 // BootstrapPermissions contains user permissions and version.
@@ -447,6 +454,18 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			mu.Lock()
 			badges.EASMReview = &n
 			hasBadg = true
+			mu.Unlock()
+		})
+	}
+	if h.session.LimitsApply != nil && middleware.IsAdmin(ctx) {
+		run(func() {
+			applies, err := h.session.LimitsApply(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: limits unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			resp.LimitsApply = applies
 			mu.Unlock()
 		})
 	}

@@ -259,6 +259,25 @@ func (s *Service) Effective(ctx context.Context, tenantID shared.ID) (*Summary, 
 	return sum, nil
 }
 
+// Applies reports whether a limit or a deny applies to the organization, without
+// counting usage (the session bootstrap asks on every page load).
+func (s *Service) Applies(ctx context.Context, tenantID shared.ID) (bool, error) {
+	byKey, err := s.stored(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	for _, l := range byKey {
+		if l.Value != limits.Unlimited {
+			return true, nil
+		}
+	}
+	denies, err := s.activeDenies(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	return len(denies) > 0, nil
+}
+
 // limitAndUsage returns the organization's limit of key and, when it is not
 // Unlimited, its usage. An unlimited key costs no usage query.
 func (s *Service) limitAndUsage(ctx context.Context, tenantID shared.ID, key limits.Key) (limit, used int, err error) {
