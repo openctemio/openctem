@@ -97,8 +97,8 @@ type CIExchangeRequest struct {
 	// repository id the token signs.
 	Repository string `json:"repository,omitempty"`
 	// BaseRef, optional, is the pull request's target branch as the job sees
-	// it (GitHub signs it). It only picks among the repository's branches
-	// that count as exposure as the gate's baseline.
+	// it. It is accepted and ignored: the gate's baseline comes from a signed
+	// claim or the code host, never from the job.
 	BaseRef string `json:"base_ref,omitempty"`
 	// Aggregate, optional, joins the run every capability job of the same
 	// pipeline run reports into (opening it for the first job); each job
