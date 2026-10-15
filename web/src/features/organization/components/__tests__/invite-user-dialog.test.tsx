@@ -9,6 +9,10 @@ import type { InvitationPreview } from '../../types/member.types'
 import { InviteUserDialog, buildInvitationLink } from '../invite-user-dialog'
 
 vi.mock('@/features/access-control/api/use-roles', () => ({ useRoles: vi.fn() }))
+const { mockGroups } = vi.hoisted(() => ({
+  mockGroups: { groups: [] as unknown[], isLoading: false },
+}))
+vi.mock('@/features/access-control/api/use-groups', () => ({ useGroups: () => mockGroups }))
 vi.mock('../../api/use-members', () => ({
   createTenantInvitation: vi.fn(),
   previewInvitation: vi.fn(),
@@ -76,6 +80,7 @@ async function fillAndSend() {
 describe('InviteUserDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGroups.groups = []
     mockPreview.mockResolvedValue(preview())
     vi.mocked(useRoles).mockReturnValue({
       roles: [role('r-viewer', 'Viewer', 'viewer')],
@@ -271,6 +276,50 @@ describe('InviteUserDialog roles', () => {
 })
 
 describe('buildInvitationLink', () => {
+  it('adds the invitee to the chosen teams and previews with them', async () => {
+    mockGroups.groups = [
+      { id: 'g-red', name: 'Red team', group_type: 'team', is_active: true },
+      { id: 'g-old', name: 'Old team', group_type: 'team', is_active: false },
+    ]
+    mockCreate.mockResolvedValue({
+      id: 'inv1',
+      email: 'ann@co.com',
+      role: 'member',
+      role_ids: ['r-viewer'],
+      invited_by: 'u1',
+      expires_at: '2026-10-08T00:00:00Z',
+      created_at: '2026-10-01T00:00:00Z',
+      pending: true,
+    })
+    render(<InviteUserDialog tenantSlug="acme" open onOpenChange={vi.fn()} />)
+    expect(screen.queryByText('Old team')).toBeNull()
+    const user = await typeEmail()
+    await user.click(screen.getByRole('checkbox', { name: /red team/i }))
+    await waitFor(() =>
+      expect(mockPreview).toHaveBeenLastCalledWith(
+        expect.objectContaining({ group_ids: ['g-red'] })
+      )
+    )
+    await user.click(screen.getByRole('button', { name: /send invitation/i }))
+    await waitFor(() =>
+      expect(mockCreate).toHaveBeenCalledWith(
+        'acme',
+        expect.objectContaining({ group_ids: ['g-red'] })
+      )
+    )
+  })
+
+  it('explains a team the inviter cannot add people to', async () => {
+    mockGroups.groups = [{ id: 'g-lead', name: 'Leads', group_type: 'team', is_active: true }]
+    mockPreview.mockResolvedValue(preview({ allowed: false, reason: 'TEAM_NOT_GRANTABLE' }))
+    render(<InviteUserDialog tenantSlug="acme" open onOpenChange={vi.fn()} />)
+    const user = await typeEmail()
+    await user.click(screen.getByRole('checkbox', { name: /leads/i }))
+    expect(
+      await screen.findByText('You cannot add people to one of these teams.')
+    ).toBeInTheDocument()
+  })
+
   it('points at the invitation page', () => {
     expect(buildInvitationLink('GWEu-eZWS_bit', 'https://x.test')).toBe(
       'https://x.test/invitations#token=GWEu-eZWS_bit'
