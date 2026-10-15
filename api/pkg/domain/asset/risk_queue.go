@@ -49,4 +49,25 @@ type RiskQueueRepository interface {
 	// StatsForPlatform returns the queue depth and the age of its oldest
 	// due row.
 	StatsForPlatform(ctx context.Context) (RiskQueueStats, error)
+
+	// RefreshRollups recomputes the stored roll-ups (business units, asset
+	// groups) that contain any of the given assets of the tenant.
+	RefreshRollups(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error
+}
+
+// RiskContributor is one open finding that drives an asset's score.
+type RiskContributor struct {
+	FindingID        shared.ID
+	Title            string
+	Severity         string
+	EPSSScore        *float64
+	InKEV            bool
+	ExploitAvailable bool
+}
+
+// RiskContributorReader lists the open findings that drive an asset's score.
+type RiskContributorReader interface {
+	// TopContributors returns up to limit active findings of the asset of
+	// the tenant, worst first: severity, then KEV, known exploit, EPSS.
+	TopContributors(ctx context.Context, tenantID, assetID shared.ID, limit int) ([]RiskContributor, error)
 }

@@ -1,30 +1,85 @@
 # Asset risk score
 
 Every asset carries a risk score from 0 to 100 (`assets.risk_score`). This
-document describes how the score is kept fresh. The formula itself lives in
-`pkg/domain/asset/risk_scoring.go` and is configured per organization under
-Settings > Risk scoring (`GET/PATCH /api/v1/settings/risk-scoring`).
+document describes the model and how the score is kept fresh. The model lives
+in `pkg/domain/asset/risk_model.go` and `risk_scoring.go`, and is configured
+per organization under Settings > Risk scoring
+(`GET/PATCH /api/v1/settings/risk-scoring`).
 
-## Inputs
+## Model
 
-The score of an asset is computed from:
+The default model (`score_composition_mode: likelihood_impact`, preset
+`default`) reads risk as likelihood times impact:
 
-- its open findings: the active statuses only (`new`, `confirmed`,
-  `in_progress`, `fix_applied`, `not_observed`; see
-  `vulnerability.ActiveFindingStatuses`). Resolved, accepted, false-positive
-  and duplicate findings, validated fixes awaiting close and unpublished
-  pentest drafts carry no risk. Findings seen only on a feature branch do not
-  count either;
-- its effective criticality: the highest of its own criticality, its business
-  units (with parent inheritance), the business services it powers and the
-  assets it is the control plane of (`assetdom.EffectiveCriticality`, the same
-  rule finding priority uses);
-- its exposure and its data context (internet accessible, PII/PHI, data
-  classification, compliance scope);
-- the organization's risk-scoring settings.
+```
+risk = findings score × exposure factor × criticality factor × (1 − control reduction)
+```
 
-The same `asset.finding_count` and per-severity counts the API returns are the
-ones the score uses.
+**Findings score (0-100).** Only open findings count: the active statuses
+(`new`, `confirmed`, `in_progress`, `fix_applied`, `not_observed`; see
+`vulnerability.ActiveFindingStatuses`) on the default branch. Resolved,
+accepted, false-positive and duplicate findings, validated fixes awaiting
+close and unpublished pentest drafts carry no risk; informational findings
+add nothing. The asset's `finding_count` and severity counts in the API are
+the same population. The worst
+severity tier sets the score. The first finding of a tier scores the tier's
+base; each further finding of the same tier closes 35% of the gap to the
+tier's ceiling, so the score rises with diminishing returns and a tier never
+passes its ceiling:
+
+| Tier | First finding | Ceiling | 2 | 5 | 10 |
+|---|---|---|---|---|---|
+| critical | 70 | 100 | 81 | 95 | 99 |
+| high | 50 | 85 | 62 | 79 | 84 |
+| medium | 25 | 55 | 36 | 50 | 54 |
+| low | 10 | 25 | 15 | 22 | 25 |
+
+So 500 low findings (25) stay below one high (50), and two highs (62) pass
+one critical-free medium backlog of any size (55). A finding with an
+exploitation signal (in CISA KEV, EPSS at or above 0.5, or a known public
+exploit) counts one severity up; an exploitable critical counts twice. The
+signals come from the finding row, which threat-intel refreshes update.
+
+**Exposure factor.** The organization's exposure score of the asset's
+exposure, read as a percentage. Defaults: public 100, restricted 90,
+private 75, isolated 50, unknown 90. An asset whose exposure nobody
+established is not assumed to be safe.
+
+**Criticality factor.** The organization's criticality score of the asset's
+effective criticality, as a percentage: the highest of its own criticality,
+its business units (with parent inheritance), the business services it
+powers and the assets it is the control plane of
+(`assetdom.EffectiveCriticality`, the rule finding priority uses). A crown
+jewel counts as critical; "not rated" counts as medium. Defaults: critical
+100, high 90, medium 80, low 60, not rated 80.
+
+**Control reduction.** The strongest active compensating control on the asset
+that has not failed its test and has not expired (its reduction factor),
+capped at 75%: a control lowers the likelihood, it does not remove the
+weakness.
+
+**No open finding means 0.** Exposure and criticality scale risk; they are not
+risk on their own.
+
+**Levels.** The organization's risk levels (defaults 80/60/40/20) band the
+score into critical, high, medium, low and minimal (1 to the low bound);
+0 is "no open risk". The console uses the same bands everywhere.
+
+The weighted models (`multiply`, `amplify_headroom`: weighted sum of exposure,
+criticality, findings and data-context points, times an exposure multiplier)
+remain available to an organization that chooses them; the industry presets
+use them.
+
+**Roll-ups.** Business units and asset groups show the average score of their
+assets, and a unit its open and critical finding counts; they are refreshed
+after every rescore of a member asset.
+
+### Example
+
+The repository from the original report: 5 critical, 10 high, 59 medium and 7
+low open findings, exposure unknown, criticality not rated. Critical tier:
+95. Score: 95 × 90% × 80% = 68, high. The same repository marked internet
+facing and critical scores 95.
 
 ## Freshness
 
@@ -50,6 +105,8 @@ any write path ──► findings / assets / business_* tables
 | `business_unit_assets`, `business_service_assets` | insert, delete |
 | `business_units` | update of `criticality` or `parent_id` (every unit member of the organization) |
 | `business_services` | update of `criticality` (the service's assets) |
+| `compensating_control_assets` | insert, delete |
+| `compensating_controls` | update of `status`, `test_result`, `reduction_factor`, `expires_at` (the control's assets) |
 
 So CI uploads, sensor ingest, imports, bulk triage, auto-resolve, retests,
 threat-intel refreshes that rewrite EPSS or KEV on findings, and manual edits
@@ -84,6 +141,17 @@ an asset that another asset is the control plane of).
 **Settings.** Saving the risk-scoring settings and the manual
 `POST /api/v1/settings/risk-scoring/recalculate` rescore the whole
 organization at once, as before.
+
+## Explanation
+
+`GET /api/v1/assets/{id}/risk` (permission `assets:read`, the asset's tenant
+and data scope; out of scope answers 404) returns the stored score, its level
+and freshness, the breakdown of the current model (findings score per tier
+with counts and exploitable counts, exposure and criticality factors, the
+effective criticality, crown jewel, control reduction) and the five open
+findings that drive it, worst first. The breakdown is computed from the
+current inputs, so while a rescore is pending it may already show the next
+score.
 
 ## Freshness in the API
 
