@@ -249,22 +249,22 @@ type campaignFindingResolver struct {
 // abuse guard still enforces the tenant ceiling / hourly budget within this.
 const maxCampaignResolve = 2000
 
-func (a campaignFindingResolver) ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in exposure.CampaignResolveInput) (int, error) {
+func (a campaignFindingResolver) ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in exposure.CampaignResolveInput) (*exposure.CampaignResolveResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	filter.ExcludeStatuses = vulnerability.ClosedFindingStatuses()
 	ids, err := a.vuln.ListFindingIDs(ctx, filter, maxCampaignResolve)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if len(ids) == 0 {
-		return 0, nil
+		return &exposure.CampaignResolveResult{}, nil
 	}
 	if a.guard != nil {
 		if err := a.guard.CheckBulk(ctx, tid, len(ids), in.Approved); err != nil {
-			return 0, err
+			return nil, err
 		}
 	}
 	idStrs := make([]string, len(ids))
@@ -282,11 +282,26 @@ func (a campaignFindingResolver) ResolveOpenByFilter(ctx context.Context, tenant
 		ActorID:               in.ActorID,
 		HasVerifyPermission:   in.HasVerifyPermission,
 		HasFixApplyPermission: in.HasFixApplyPermission,
+		WalkToFixApplied:      true,
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return res.Updated, nil
+	return campaignResolveResult(res), nil
+}
+
+// campaignResolveResult carries the bulk path's outcome, with the reason for
+// every finding not updated, to the campaign resolve response.
+func campaignResolveResult(res *finding.BulkUpdateResult) *exposure.CampaignResolveResult {
+	out := &exposure.CampaignResolveResult{
+		Updated: res.Updated, Skipped: res.Skipped, Failed: res.Failed,
+		ValidationsQueued: res.ValidationsQueued,
+		Rows:              make([]exposure.CampaignResolveRow, 0, len(res.Rows)),
+	}
+	for _, r := range res.Rows {
+		out.Rows = append(out.Rows, exposure.CampaignResolveRow{FindingID: r.FindingID, Outcome: r.Outcome, Reason: r.Reason})
+	}
+	return out
 }
 
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
@@ -308,10 +323,10 @@ func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID,
 	return a.keys.CountByKeyInScope(ctx, tenantID, key, closedStrs, scope)
 }
 
-func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (int, error) {
+func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (*exposure.CampaignResolveResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	res, err := a.group.ResolveGroup(ctx, tid, remediation.ResolveGroupInput{
 		Key:                   key,
@@ -323,9 +338,9 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 		OperatorApproved:      in.Approved,
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return res.Updated, nil
+	return campaignResolveResult(res), nil
 }
 
 // httpDataScopeCaller reads the acting user and the admin decision from the
@@ -1169,6 +1184,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.FindingActions.SetDataScope(s.DataScope)
 	// Every route that marks a fix applied uses the same ownership rule.
 	s.Vulnerability.SetFixApplierCheck(s.FindingActions.FixAppliers)
+	// A bulk fix claim (findings bulk, remediation group and campaign
+	// resolves) queues a proof-of-fix re-check per finding, like the
+	// dedicated fix-applied action.
+	s.Vulnerability.SetProofOfFixQueuer(s.FindingActions.QueueProofOfFix)
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.

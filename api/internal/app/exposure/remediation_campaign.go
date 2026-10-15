@@ -47,13 +47,35 @@ type CampaignEpicCreator interface {
 // Jira's default done state; per-tenant override is a documented follow-up.
 const epicDoneStatus = "Done"
 
-// CampaignFindingResolver bulk-resolves the OPEN findings matching a filter,
-// turning a campaign from a passive progress tracker into an active closer
-// (RFC-015 Phase 3). Nil → the resolve action is unavailable. Implemented by an
+// CampaignFindingResolver marks the OPEN findings matching a filter fixed
+// ("mark fixed": legal steps to fix_applied, a proof-of-fix re-check per
+// finding). Nil → the resolve action is unavailable. Implemented by an
 // adapter over the finding bulk-status path + its abuse guard.
 type CampaignFindingResolver interface {
-	ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in CampaignResolveInput) (resolvedCount int, err error)
+	ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in CampaignResolveInput) (*CampaignResolveResult, error)
 }
+
+// CampaignResolveRow is one finding a campaign resolve did not update, and why.
+type CampaignResolveRow struct {
+	FindingID string `json:"finding_id"`
+	Outcome   string `json:"outcome"` // skipped | failed
+	Reason    string `json:"reason"`
+}
+
+// CampaignResolveResult is the outcome of a campaign resolve: how many
+// findings were marked fixed, skipped (already fix_applied) or refused, the
+// reason for each one not updated, and the proof-of-fix re-checks queued.
+type CampaignResolveResult struct {
+	Updated           int                  `json:"updated"`
+	Skipped           int                  `json:"skipped"`
+	Failed            int                  `json:"failed"`
+	ValidationsQueued int                  `json:"validations_queued"`
+	Rows              []CampaignResolveRow `json:"rows"`
+}
+
+// ErrCampaignResolveClosesNothing refuses a campaign resolve that asks to
+// close findings: each finding is verified on its own.
+var ErrCampaignResolveClosesNothing = fmt.Errorf("%w: a campaign resolve marks its findings fixed (fix_applied); each finding is then verified on its own (covered scan, retest or a reviewer), never closed for the campaign", shared.ErrValidation)
 
 // CampaignKeyResolver serves campaigns scoped to a remediation-group key (a
 // "solution family" — every finding one fix resolves). Progress and resolution
@@ -65,15 +87,15 @@ type CampaignKeyResolver interface {
 	// CountByKey returns (total, resolved) findings sharing the remediation key.
 	// A non-nil scope counts only findings on the scope's assets.
 	CountByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (total, resolved int64, err error)
-	// ResolveGroupByKey bulk-resolves the OPEN findings under the key, reusing
+	// ResolveGroupByKey marks the OPEN findings under the key fixed, reusing
 	// the same guarded bulk-status path as the standalone group resolve.
-	ResolveGroupByKey(ctx context.Context, tenantID string, key string, in CampaignResolveInput) (resolvedCount int, err error)
+	ResolveGroupByKey(ctx context.Context, tenantID string, key string, in CampaignResolveInput) (*CampaignResolveResult, error)
 }
 
 // CampaignResolveInput parameterizes a campaign resolve.
 type CampaignResolveInput struct {
-	Status              string // fix_applied (default) or resolved
-	Resolution          string
+	Status              string // fix_applied (the default and the only target)
+	Resolution          string // the note of the fix claim (required)
 	ActorID             string
 	HasVerifyPermission bool
 	// HasFixApplyPermission: a fix_applied target needs findings:fix_apply.
@@ -338,14 +360,27 @@ func (s *RemediationCampaignService) SetKeyResolver(r CampaignKeyResolver) {
 	s.keyResolver = r
 }
 
-// ResolveCampaignFindings resolves every OPEN finding matching the campaign's
-// filter in one action — reusing the finding bulk-status path + abuse guard.
-// Defaults to fix_applied ("patched, pending rescan verification"). Returns the
-// number of findings transitioned.
-func (s *RemediationCampaignService) ResolveCampaignFindings(ctx context.Context, tenantID, campaignID string, in CampaignResolveInput) (int, error) {
+// ResolveCampaignFindings marks every OPEN finding of the campaign fixed in
+// one action ("mark fixed" on the finding bulk path: legal steps to
+// fix_applied, findings:fix_apply, a note, only the person's own findings, a
+// proof-of-fix re-check per finding, the abuse guard). It never closes a
+// finding: each one is verified on its own. The result names every finding
+// that was not updated and why.
+func (s *RemediationCampaignService) ResolveCampaignFindings(ctx context.Context, tenantID, campaignID string, in CampaignResolveInput) (*CampaignResolveResult, error) {
+	if in.Status != "" && in.Status != string(vulnerability.FindingStatusFixApplied) {
+		return nil, ErrCampaignResolveClosesNothing
+	}
+	in.Status = string(vulnerability.FindingStatusFixApplied)
+	if !in.HasFixApplyPermission {
+		return nil, fmt.Errorf("%w: marking findings fixed requires findings:fix_apply", shared.ErrForbidden)
+	}
+	if strings.TrimSpace(in.Resolution) == "" {
+		return nil, fmt.Errorf("%w: a note is required to mark findings fixed", shared.ErrValidation)
+	}
+
 	campaign, err := s.GetCampaign(ctx, tenantID, campaignID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	// A keyed campaign (solution family) MUST resolve through the key path only.
@@ -354,35 +389,35 @@ func (s *RemediationCampaignService) ResolveCampaignFindings(ctx context.Context
 	// close every finding in the tenant. Fail closed if the key path is unwired.
 	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
 		if s.keyResolver == nil {
-			return 0, fmt.Errorf("%w: keyed campaign resolve is not configured", shared.ErrValidation)
+			return nil, fmt.Errorf("%w: keyed campaign resolve is not configured", shared.ErrValidation)
 		}
-		n, kerr := s.keyResolver.ResolveGroupByKey(ctx, tenantID, key, in)
+		res, kerr := s.keyResolver.ResolveGroupByKey(ctx, tenantID, key, in)
 		if kerr != nil {
-			return 0, kerr
+			return nil, kerr
 		}
-		s.logger.Info("resolved remediation campaign findings by key",
+		s.logger.Info("marked remediation campaign findings fixed by key",
 			"tenant", sanitizeLogValue(tenantID), "campaign_id", sanitizeLogValue(campaignID),
-			"resolved", n, "status", sanitizeLogValue(in.Status))
-		return n, nil
+			"updated", res.Updated, "skipped", res.Skipped, "failed", res.Failed)
+		return res, nil
 	}
 
 	if s.resolver == nil {
-		return 0, fmt.Errorf("%w: campaign resolve is not configured", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: campaign resolve is not configured", shared.ErrValidation)
 	}
 	filter := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
 	// Refuse to resolve an unscoped campaign: an empty filter would map to a
 	// tenant-only filter and close every open finding in the tenant.
 	if !findingFilterHasScope(filter) {
-		return 0, fmt.Errorf("%w: campaign has no scope — refusing tenant-wide resolve", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: campaign has no scope — refusing tenant-wide resolve", shared.ErrValidation)
 	}
-	n, err := s.resolver.ResolveOpenByFilter(ctx, tenantID, filter, in)
+	res, err := s.resolver.ResolveOpenByFilter(ctx, tenantID, filter, in)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	s.logger.Info("resolved remediation campaign findings",
+	s.logger.Info("marked remediation campaign findings fixed",
 		"tenant", sanitizeLogValue(tenantID), "campaign_id", sanitizeLogValue(campaignID),
-		"resolved", n, "status", sanitizeLogValue(in.Status))
-	return n, nil
+		"updated", res.Updated, "skipped", res.Skipped, "failed", res.Failed)
+	return res, nil
 }
 
 // sanitizeLogValue strips CR/LF and control characters from a

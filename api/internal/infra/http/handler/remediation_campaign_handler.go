@@ -179,8 +179,11 @@ func (h *RemediationCampaignHandler) ListFindings(w http.ResponseWriter, r *http
 }
 
 // UpdateStatus transitions campaign status.
-// Resolve handles POST /api/v1/remediation/campaigns/{id}/resolve — actively
-// resolves the campaign's open findings in one action (RFC-015 Phase 3).
+// Resolve handles POST /api/v1/remediation/campaigns/{id}/resolve: marks the
+// campaign's open, in-scope findings fixed in one action (fix_applied through
+// the legal steps, a note, the caller's own findings, a proof-of-fix re-check
+// per finding). It never closes a finding; every finding not updated is
+// listed with the reason.
 func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -196,12 +199,12 @@ func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
-	if req.Status != "" && req.Status != "fix_applied" && req.Status != "resolved" {
-		apierror.BadRequest("status must be fix_applied or resolved").WriteJSON(w)
+	if req.Status != "" && req.Status != "fix_applied" {
+		apierror.BadRequest("status must be fix_applied: a campaign resolve marks its findings fixed and each one is verified on its own").WriteJSON(w)
 		return
 	}
 
-	resolved, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, exposure.CampaignResolveInput{
+	res, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, exposure.CampaignResolveInput{
 		Status:                req.Status,
 		Resolution:            req.Resolution,
 		ActorID:               middleware.GetUserID(r.Context()),
@@ -213,7 +216,12 @@ func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Requ
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"resolved": resolved})
+	rows := make([]MarkFixedRow, 0, len(res.Rows))
+	for _, r := range res.Rows {
+		rows = append(rows, MarkFixedRow(r))
+	}
+	writeJSON(w, http.StatusOK, MarkFixedResponse{Updated: res.Updated, Skipped: res.Skipped, Failed: res.Failed,
+		ValidationsQueued: res.ValidationsQueued, Rows: rows})
 }
 
 func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
