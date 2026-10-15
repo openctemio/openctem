@@ -19,9 +19,15 @@ import {
   takeInvitationToken,
 } from '@/features/auth/lib/invitation-token'
 import { registerHref } from '@/features/auth/lib/self-register'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
+import {
+  InvitationGrantsNotice,
+  type InvitationGrants,
+} from '@/features/organization/components/invitation-grants'
 
 interface InvitationData {
-  invitation: {
+  invitation: InvitationGrants & {
     id: string
     email: string
     role: string
@@ -64,6 +70,9 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
 
 export function InvitationView({ hasSession }: InvitationViewProps) {
   const router = useRouter()
+  const { t } = useTranslation()
+  const [confirmDecline, setConfirmDecline] = useState(false)
+  const [declined, setDeclined] = useState(false)
 
   const [isPending, startTransition] = useTransition()
   const [isLoading, setIsLoading] = useState(true)
@@ -81,35 +90,35 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   useEffect(() => {
     const found = takeInvitationToken()
     if (!found) {
-      setError(
-        'This invitation link is incomplete. Open the link from your invitation email again.'
-      )
+      setError(t('org.acceptInvite.incomplete'))
       setIsLoading(false)
       return
     }
     setToken(found)
 
-    async function fetchInvitation(t: string) {
+    async function fetchInvitation(tok: string) {
       try {
-        const response = await postToken(endpoints.invitations.lookup(), t)
+        const response = await postToken(endpoints.invitations.lookup(), tok)
         if (!response.ok) {
           if (response.status === 404) {
             clearInvitationToken()
-            setError('Invitation not found or has expired')
+            setError(t('org.acceptInvite.notFound'))
           } else {
-            setError(await errorMessage(response, 'Failed to load invitation'))
+            setError(await errorMessage(response, t('org.acceptInvite.loadFailed')))
           }
           return
         }
         setInvitation(await response.json())
       } catch {
-        setError('Failed to load invitation. Please try again.')
+        setError(t('org.acceptInvite.loadFailed'))
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchInvitation(found)
+    // Runs once per page load; t only changes with the locale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Accepting sets fresh auth/tenant cookies: navigate client-side, then refresh
@@ -130,7 +139,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
         const response = await postToken(endpoints.invitations.accept(), token)
 
         if (response.ok) {
-          toast.success('You have joined the team!')
+          toast.success(t('org.acceptInvite.joined'))
           navigateWithFreshSession('/dashboard')
           return
         }
@@ -140,7 +149,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
           const refreshResponse = await postToken(endpoints.invitations.acceptWithRefresh(), token)
 
           if (refreshResponse.ok) {
-            toast.success('You have joined the team!')
+            toast.success(t('org.acceptInvite.joined'))
             navigateWithFreshSession('/dashboard')
             return
           }
@@ -151,40 +160,40 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             return
           }
 
-          const errorMsg = await errorMessage(refreshResponse, 'Failed to accept invitation')
+          const errorMsg = await errorMessage(refreshResponse, t('org.acceptInvite.acceptFailed'))
           setAcceptError(errorMsg)
           toast.error(errorMsg)
           return
         }
 
-        const errorMsg = await errorMessage(response, 'Failed to accept invitation')
+        const errorMsg = await errorMessage(response, t('org.acceptInvite.acceptFailed'))
         setAcceptError(errorMsg)
         toast.error(errorMsg)
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to accept invitation'
+        const message = err instanceof Error ? err.message : t('org.acceptInvite.acceptFailed')
         setAcceptError(message)
         toast.error(message)
       }
     })
   }
 
-  // Decline invitation
+  // Decline the invitation. The decline endpoint needs only the token, so it
+  // works signed out too; the page then says so instead of redirecting.
   function handleDecline() {
     if (!token) return
     startTransition(async () => {
       try {
         const response = await postToken(endpoints.invitations.decline(), token)
         if (!response.ok) {
-          throw new Error(await errorMessage(response, 'Failed to decline invitation'))
+          throw new Error(await errorMessage(response, t('org.acceptInvite.declineFailed')))
         }
         clearInvitationToken()
-        toast.success('Invitation declined')
-        router.push('/')
+        setDeclined(true)
+        toast.success(t('org.acceptInvite.declinedToast'))
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to decline invitation'
-        toast.error(message)
-        // Still redirect to home even if decline fails
-        router.push('/')
+        toast.error(err instanceof Error ? err.message : t('org.acceptInvite.declineFailed'))
+      } finally {
+        setConfirmDecline(false)
       }
     })
   }
@@ -225,7 +234,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
               <AlertTriangle className="h-6 w-6 text-destructive" />
             </div>
-            <CardTitle className="text-xl">Invitation Error</CardTitle>
+            <CardTitle className="text-xl">{t('org.acceptInvite.errorTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <Alert variant="destructive">
@@ -234,12 +243,36 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             <div className="flex flex-col gap-2">
               <Button variant="outline" className="w-full" onClick={() => router.push('/login')}>
                 <LogIn className="me-2 h-4 w-4" />
-                Go to Login
+                {t('org.acceptInvite.goToLogin')}
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => router.push('/')}>
-                Go to Home
+                {t('org.acceptInvite.goHome')}
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Declined here: say so (the visitor may have no session to go anywhere).
+  if (declined && invitation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <X className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <CardTitle className="text-xl">{t('org.acceptInvite.declinedTitle')}</CardTitle>
+            <CardDescription>
+              {t('org.acceptInvite.declinedBody', undefined, { org: invitation.tenant.name })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" className="w-full" onClick={() => router.push('/')}>
+              {t('org.acceptInvite.goHome')}
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -249,7 +282,6 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   // Invitation expired or already accepted
   if (invitation && !invitation.invitation.pending) {
     const isExpired = new Date(invitation.invitation.expires_at) < new Date()
-    const statusText = isExpired ? 'Expired' : 'Already Accepted'
     const StatusIcon = isExpired ? Clock : Check
 
     return (
@@ -261,34 +293,28 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             >
               <StatusIcon className={`h-6 w-6 ${isExpired ? 'text-warning' : 'text-success'}`} />
             </div>
-            <CardTitle className="text-xl">Invitation {statusText}</CardTitle>
+            <CardTitle className="text-xl">
+              {isExpired ? t('org.acceptInvite.expiredTitle') : t('org.acceptInvite.acceptedTitle')}
+            </CardTitle>
             <CardDescription>
-              {isExpired
-                ? 'This invitation has expired. Please contact the team admin for a new invitation.'
-                : 'This invitation has already been accepted.'}
+              {isExpired ? t('org.acceptInvite.expiredBody') : t('org.acceptInvite.acceptedBody')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Team Info */}
             <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
               <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10 text-primary">
                 <Building2 className="h-5 w-5" />
               </div>
-              <div>
-                <p className="font-medium">{invitation.tenant.name}</p>
-                <p className="text-sm text-muted-foreground capitalize">
-                  {invitation.invitation.role}
-                </p>
-              </div>
+              <p className="font-medium">{invitation.tenant.name}</p>
             </div>
 
             <div className="flex flex-col gap-2">
               <Button className="w-full" onClick={() => router.push('/login')}>
                 <LogIn className="me-2 h-4 w-4" />
-                Go to Login
+                {t('org.acceptInvite.goToLogin')}
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => router.push('/')}>
-                Go to Home
+                {t('org.acceptInvite.goHome')}
               </Button>
             </div>
           </CardContent>
@@ -298,6 +324,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   }
 
   const daysUntilExpiry = getDaysUntilExpiry()
+  const orgName = invitation?.tenant.name ?? ''
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
@@ -306,55 +333,63 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
             <Building2 className="h-7 w-7 text-primary" />
           </div>
-          <CardTitle className="text-xl">Team Invitation</CardTitle>
-          <CardDescription>You&apos;ve been invited to join a team</CardDescription>
+          <CardTitle className="text-xl">{t('org.acceptInvite.title')}</CardTitle>
+          <CardDescription>
+            {t('org.acceptInvite.subtitle', undefined, {
+              name:
+                invitation?.invitation.inviter_name?.trim() || t('org.acceptInvite.aTeamMember'),
+              org: orgName,
+            })}
+          </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-5">
-          {/* Team Info Card */}
+          {/* The organization */}
           <div className="rounded-lg border bg-card p-4">
-            <div className="flex items-start gap-4">
+            <div className="flex items-center gap-4">
               <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-primary text-primary-foreground font-bold text-lg">
-                {invitation?.tenant.name.charAt(0).toUpperCase()}
+                {orgName.charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-lg truncate">{invitation?.tenant.name}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <Badge variant="secondary" className="capitalize">
-                    {invitation?.invitation.role}
+                <p className="font-semibold text-lg truncate">{orgName}</p>
+                {daysUntilExpiry <= 3 && daysUntilExpiry > 0 && (
+                  <Badge variant="outline" className="mt-1 text-warning border-warning/50">
+                    <Clock className="h-3 w-3 me-1" />
+                    {daysUntilExpiry === 1
+                      ? t('org.acceptInvite.expiresInOne')
+                      : t('org.acceptInvite.expiresInDays', undefined, { days: daysUntilExpiry })}
                   </Badge>
-                  {daysUntilExpiry <= 3 && daysUntilExpiry > 0 && (
-                    <Badge variant="outline" className="text-warning border-warning/50">
-                      <Clock className="h-3 w-3 me-1" />
-                      Expires in {daysUntilExpiry} day{daysUntilExpiry > 1 ? 's' : ''}
-                    </Badge>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Invitation Details */}
+          {/* Who and for whom */}
           <div className="space-y-2 text-sm">
-            <div className="flex items-center justify-between py-2 border-b">
-              <span className="text-muted-foreground">Invited by</span>
-              <span className="font-medium">
+            <div className="flex items-center justify-between gap-4 py-2 border-b">
+              <span className="text-muted-foreground">{t('org.acceptInvite.invitedBy')}</span>
+              <span className="font-medium text-end">
                 {/* The API names the inviter (display name only, never an
                     email); an unnamed account falls back to a neutral label. */}
-                {invitation?.invitation.inviter_name?.trim() || 'A team member'}
+                {invitation?.invitation.inviter_name?.trim() || t('org.acceptInvite.aTeamMember')}
               </span>
             </div>
-            <div className="flex items-center justify-between py-2">
-              <span className="text-muted-foreground">Invitation for</span>
-              <span className="font-medium">{invitation?.invitation.email}</span>
+            <div className="flex items-center justify-between gap-4 py-2">
+              <span className="text-muted-foreground">{t('org.acceptInvite.invitationFor')}</span>
+              <span className="font-medium break-all text-end">{invitation?.invitation.email}</span>
             </div>
           </div>
+
+          {/* What accepting gives */}
+          {invitation && (
+            <InvitationGrantsNotice grants={invitation.invitation} organization={orgName} />
+          )}
 
           {/* Accept Error */}
           {acceptError && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Cannot accept invitation</AlertTitle>
+              <AlertTitle>{t('org.acceptInvite.cannotAccept')}</AlertTitle>
               <AlertDescription>{acceptError}</AlertDescription>
             </Alert>
           )}
@@ -365,7 +400,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
               <Button asChild className="w-full" size="lg">
                 <Link href={invitationLoginHref}>
                   <LogIn className="me-2 h-4 w-4" />
-                  Sign in to accept
+                  {t('org.acceptInvite.signInToAccept')}
                 </Link>
               </Button>
               <Button asChild variant="outline" className="w-full">
@@ -376,55 +411,68 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
                   })}
                 >
                   <UserPlus className="me-2 h-4 w-4" />
-                  Create your account
+                  {t('org.acceptInvite.createAccount')}
                 </Link>
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                New here? Create an account for <strong>{invitation.invitation.email}</strong>, then
-                accept the invitation.
+                {t('org.acceptInvite.newHere', undefined, { email: invitation.invitation.email })}
               </p>
             </div>
           )}
 
-          {/* Action Buttons */}
+          {/* Accept */}
           {hasSession && (
-            <div className="flex flex-col gap-2">
-              <Button className="w-full" size="lg" onClick={handleAccept} disabled={isPending}>
-                {isPending ? (
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Check className="me-2 h-4 w-4" />
-                )}
-                Accept Invitation
-              </Button>
+            <Button className="w-full" size="lg" onClick={handleAccept} disabled={isPending}>
+              {isPending ? (
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="me-2 h-4 w-4" />
+              )}
+              {t('org.acceptInvite.accept')}
+            </Button>
+          )}
 
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleDecline}
-                disabled={isPending}
-              >
-                <X className="me-2 h-4 w-4" />
-                Decline
-              </Button>
-            </div>
+          {/* Decline: always offered; it needs only the invitation. */}
+          {invitation && (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setConfirmDecline(true)}
+              disabled={isPending}
+            >
+              <X className="me-2 h-4 w-4" />
+              {t('org.acceptInvite.decline')}
+            </Button>
           )}
 
           {/* Switch account link */}
           {hasSession && (
             <p className="text-xs text-center text-muted-foreground">
-              Not <strong>{invitation?.invitation.email}</strong>?{' '}
+              {t('org.acceptInvite.notYou', undefined, {
+                email: invitation?.invitation.email ?? '',
+              })}{' '}
               <button
                 type="button"
                 className="text-primary hover:underline"
                 onClick={() => router.push(invitationLoginHref)}
               >
-                Log in with different account
+                {t('org.acceptInvite.otherAccount')}
               </button>
             </p>
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmDecline}
+        onOpenChange={setConfirmDecline}
+        title={t('org.acceptInvite.declineTitle')}
+        desc={t('org.acceptInvite.declineBody', undefined, { org: orgName })}
+        confirmText={t('org.acceptInvite.decline')}
+        destructive
+        isLoading={isPending}
+        handleConfirm={handleDecline}
+      />
     </div>
   )
 }

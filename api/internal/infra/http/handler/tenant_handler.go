@@ -256,6 +256,8 @@ type InvitationResponse struct {
 	// LastSentAt and ResendCount: resends are limited (RFC-095 §5).
 	LastSentAt  time.Time `json:"last_sent_at"`
 	ResendCount int       `json:"resend_count"`
+	// GroupIDs: the teams the invitee joins at acceptance.
+	GroupIDs []string `json:"group_ids"`
 }
 
 // =============================================================================
@@ -299,6 +301,10 @@ type CreateInvitationRequest struct {
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 	// AccessReason says why the external invitee gets access (shown to admins).
 	AccessReason string `json:"access_reason,omitempty" validate:"max=500"`
+	// GroupIDs adds the invitee to these teams (data access) when they accept:
+	// at most 20, each one the inviter may add a member to, checked again at
+	// acceptance.
+	GroupIDs []string `json:"group_ids,omitempty" validate:"max=20"`
 }
 
 // UpdateMemberAccessRequest sets when an external member's access ends.
@@ -420,6 +426,7 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 		Privileged:      inv.InviteeInfo().Privileged,
 		LastSentAt:      inv.LastSentAt(),
 		ResendCount:     inv.ResendCount(),
+		GroupIDs:        nonNilIDs(inv.GroupIDs()),
 	}
 	if includeToken {
 		resp.Token = inv.Token()
@@ -430,6 +437,14 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 // =============================================================================
 // Helpers
 // =============================================================================
+
+// nonNilIDs answers an empty list instead of null.
+func nonNilIDs(ids []string) []string {
+	if ids == nil {
+		return []string{}
+	}
+	return ids
+}
 
 // buildAuditContext builds an app.AuditContext from the HTTP request.
 func (h *TenantHandler) buildAuditContext(r *http.Request) auditsvc.AuditContext {
@@ -1208,6 +1223,7 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 		RoleIDs:         req.RoleIDs,
 		AccessExpiresAt: req.AccessExpiresAt,
 		AccessReason:    req.AccessReason,
+		GroupIDs:        req.GroupIDs,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -1230,6 +1246,8 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 type PreviewInvitationRequest struct {
 	Email   string   `json:"email" validate:"required,max=254"`
 	RoleIDs []string `json:"role_ids" validate:"max=10"`
+	// GroupIDs: the teams the invitee would join.
+	GroupIDs []string `json:"group_ids,omitempty" validate:"max=20"`
 }
 
 // PreviewInvitationResponse says what inviting the address would do.
@@ -1277,7 +1295,7 @@ func (h *TenantHandler) PreviewInvitation(w http.ResponseWriter, r *http.Request
 		h.handleValidationError(w, err)
 		return
 	}
-	p, err := h.service.PreviewInvitation(r.Context(), actx.TenantID, req.Email, req.RoleIDs, actx)
+	p, err := h.service.PreviewInvitationWithTeams(r.Context(), actx.TenantID, req.Email, req.RoleIDs, req.GroupIDs, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1686,6 +1704,15 @@ type InvitationLookupInvitation struct {
 	Pending     bool      `json:"pending"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	InviterName string    `json:"inviter_name"`
+	// What accepting gives (RFC-095 §5): the roles with their risk, the
+	// teams, the end of access, outside-member status and whether two-factor
+	// authentication will be required.
+	Roles           []tenantapp.InvitationGrantRole `json:"roles"`
+	Teams           []tenantapp.InvitationGrantTeam `json:"teams"`
+	MemberKind      string                          `json:"member_kind"`
+	AccessExpiresAt *time.Time                      `json:"access_expires_at,omitempty"`
+	MFARequired     bool                            `json:"mfa_required"`
+	MFAReason       string                          `json:"mfa_reason,omitempty"`
 }
 
 // InvitationLookupTenant is the organization part of InvitationLookupResponse.
@@ -1697,7 +1724,7 @@ type InvitationLookupTenant struct {
 
 // LookupInvitation handles POST /api/v1/invitations/lookup (public).
 // @Summary      Look up an invitation
-// @Description  What an invitation token grants, readable before sign-in: the organization, the invited email and role, and whether it is still pending. The token travels in the body, never in the URL.
+// @Description  What an invitation token grants, readable before sign-in: the organization, the invited email, the roles with their risk, the teams, the end of access, whether the person is outside the organization and whether two-factor authentication will be required, and whether it is still pending. The token travels in the body, never in the URL.
 // @Tags         Invitations
 // @Accept       json
 // @Produce      json
@@ -1737,16 +1764,23 @@ func (h *TenantHandler) writeInvitationLookup(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	grants := h.service.InvitationGrants(r.Context(), invitation)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(InvitationLookupResponse{
 		Invitation: InvitationLookupInvitation{
-			ID:          invitation.ID().String(),
-			Email:       invitation.Email(),
-			Role:        invitation.Role().String(),
-			Pending:     invitation.IsPending(),
-			ExpiresAt:   invitation.ExpiresAt(),
-			InviterName: h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
+			ID:              invitation.ID().String(),
+			Email:           invitation.Email(),
+			Role:            invitation.Role().String(),
+			Pending:         invitation.IsPending(),
+			ExpiresAt:       invitation.ExpiresAt(),
+			InviterName:     h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
+			Roles:           grants.Roles,
+			Teams:           grants.Teams,
+			MemberKind:      grants.MemberKind,
+			AccessExpiresAt: invitation.Access().ExpiresAt,
+			MFARequired:     grants.MFARequired,
+			MFAReason:       grants.MFAReason,
 		},
 		Tenant: InvitationLookupTenant{ID: t.ID().String(), Name: t.Name(), Slug: t.Slug()},
 	})
