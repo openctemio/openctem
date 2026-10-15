@@ -64,6 +64,8 @@ func registerAssetRoutes(
 		r.GET("/{id}/freshness", h.GetFreshness, middleware.Require(permission.AssetsRead))
 		// What each capability the asset needs has done and why (RFC-093).
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
+		// Why the risk score is what it is (docs/architecture/asset-risk-score.md).
+		r.GET("/{id}/risk", h.GetRisk, middleware.Require(permission.AssetsRead))
 
 		// Status operations
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AssetsWrite))

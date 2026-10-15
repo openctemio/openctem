@@ -16,6 +16,8 @@
     - AssetChangeTimelineController
     - AssetLifecycleController
     - AssetPurgeController
+    - AssetRiskScoreController
+    - AssetRiskReconcileController
     - OwnerResolutionController
     - DataExpirationController
     - DomainReverifyController

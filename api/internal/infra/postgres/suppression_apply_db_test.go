@@ -47,11 +47,17 @@ func seedOpenFinding(ctx context.Context, t *testing.T, db *sql.DB, tenant share
 	case "resolved", "false_positive", "accepted", "duplicate":
 		resolvedAt = time.Now()
 	}
+	// A duplicate names its canonical finding: a resolved one, which no
+	// suppression rule touches.
+	var dupOf any
+	if s.status == "duplicate" {
+		dupOf = seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: s.asset, status: "resolved"}).String()
+	}
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, rule_id, file_path, message, severity, fingerprint, status, resolved_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'msg', 'high', $8, $9, $10)`,
+		INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, rule_id, file_path, message, severity, fingerprint, status, resolved_at, duplicate_of)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'msg', 'high', $8, $9, $10, $11)`,
 		id.String(), tenant.String(), s.asset.String(), s.source, s.tool, s.rule, path,
-		"fp-"+id.String(), s.status, resolvedAt); err != nil {
+		"fp-"+id.String(), s.status, resolvedAt, dupOf); err != nil {
 		t.Fatalf("seed finding: %v", err)
 	}
 	return id
