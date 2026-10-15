@@ -85,6 +85,11 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	if in.ScanFailures < 0 {
 		in.ScanFailures = 0
 	}
+	// A re-run of only the gate job cannot drop the failures of the scans
+	// it did not run again: they count until a later attempt reports.
+	if run.CarriedScanFailures > in.ScanFailures {
+		in.ScanFailures = run.CarriedScanFailures
+	}
 	// The first verdict is final: asking again returns it unchanged, so a job
 	// cannot turn a stored failure into a pass by evaluating again.
 	if run.Status == cirun.StatusEvaluated {
@@ -163,8 +168,11 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, fmt.Errorf("load expected capabilities: %w", err)
 	}
+	// A run nothing was uploaded to cannot pass: there is nothing to judge.
+	noResults := run.ReportsCount == 0
 	gv := cirun.Evaluate(cirun.GateInput{
-		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
+		NoResults: noResults,
+		Policy:    policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
 		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, BaselineEstablished: cmp.established, ScanFailures: in.ScanFailures,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,

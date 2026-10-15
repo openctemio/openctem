@@ -206,13 +206,14 @@ A pipeline that runs one job per scan capability in parallel (the
 `openctemio/ci` GitHub reusable workflow and GitLab `all` template) reports
 into ONE run and is judged once. Each job sends `aggregate: true`:
 
-- The run is keyed by the pipeline, the provider's pipeline run id, the
-  attempt and the commit, all from the verified token (GitHub `run_id` and
-  `run_attempt`, GitLab `pipeline_id`). The first job opens it
-  (`ci_runs.aggregate`); every later job of the same pipeline run joins it.
-  At most one aggregate run is open per key (`idx_ci_runs_aggregate_open`,
-  partial unique on `status = 'running'`), so racing jobs land in the same
-  run. A token without a pipeline run id is refused (`aggregate_no_run_id`).
+- The run is keyed by the pipeline, the provider's pipeline run id and the
+  commit, all from the verified token (GitHub `run_id`, GitLab
+  `pipeline_id`), **whatever the attempt or the run's status**: a pipeline run
+  is the unit of evidence. The first job opens it (`ci_runs.aggregate`,
+  `evidence_union`); every later job, retry and re-run attempt of the same
+  pipeline run joins it. One run per key (`idx_ci_runs_pipeline_run`), so
+  racing jobs land in the same run. A token without a pipeline run id is
+  refused (`aggregate_no_run_id`).
 - Every job gets its own 15-minute token for the run (`ci_run_tokens`, one
   hash per exchange); a job joining never invalidates another job's token.
   A continuation (`run_id`) on an aggregate run adds a token instead of
@@ -220,8 +221,20 @@ into ONE run and is judged once. Each job sends `aggregate: true`:
 - The scan jobs upload; a final job (which joins the same way) calls
   `evaluate` with the number of capability jobs that did not report as
   `scan_failures`. The verdict covers every report of the run. Once
-  evaluated, the run takes no more results, and the next aggregate exchange
-  of that pipeline run opens a new run.
+  evaluated, the run takes no more results until a later attempt of the same
+  pipeline run joins: that **re-opens** it (running again, `run_attempt`
+  recorded) and the next `evaluate` judges the union of every attempt's
+  reports with today's decisions. A re-run of only the gate job therefore
+  never judges an empty run (it used to open a new run with no reports, which
+  passed, and the commit check took that latest verdict). An exception
+  approved since, or a flaky scan that succeeds on re-run, can turn it green
+  without a new commit.
+- The scanner failures of the verdict before a re-open are carried
+  (`carried_scan_failures`) and keep failing the run until a later attempt
+  uploads a report; a gate-only retry that reports no failure cannot drop
+  them.
+- A run, aggregate or not, that no report was uploaded to fails
+  (`no_results`): there is nothing to judge.
 - The response says `aggregate: true`; a client that asked for an aggregate
   run and does not see it refuses to continue (otherwise its gate would judge
   an empty run).
@@ -435,6 +448,7 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | Cross-tenant through the fleet union | Each source tenant-scoped; the union adds no query; tests assert another tenant's fleet lists none of the pipelines |
 | A report on another asset | `REPORT_OUT_OF_SCOPE`; the `ci_run` binding can change only the repository asset |
 | Baseline poisoning | The baseline branch is server-side (known default branch, else the configuration's); a run's branch comes from the token |
+| A re-run of only the gate job judging an empty run and passing | Retries and re-runs re-open the pipeline run's one aggregate run (section 4.1); carried scanner failures; a run with no report fails (`no_results`) |
 | A failed default-branch run becoming its own baseline (rerun whitewash) | Default-branch runs compare only with the recorded gate baseline (section 6.2); runs never write it |
 | SSRF through a self-managed GitLab issuer or a Jenkins issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host; the preview validates the draft before any fetch |
 | A token valid for other services (Azure's fixed audience, a CI organization's default audience) | Azure: `org_id` pinned to the issuer, one exchange per `jti`, five-minute tokens; elsewhere a tenant-bound audience is required |
