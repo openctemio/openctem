@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -22,6 +23,15 @@ func (f *fakeResolver) ResolveOpenByFilter(_ context.Context, _ string, filter v
 	f.gotFilter = filter
 	f.gotStatus = in.Status
 	return &CampaignResolveResult{Updated: f.n}, nil
+}
+
+// activate moves a test campaign to active: only an active or validating
+// campaign marks findings fixed.
+func activate(t *testing.T, s *RemediationCampaignService, tid shared.ID, c *remediation.Campaign) {
+	t.Helper()
+	if _, err := s.UpdateCampaignStatus(context.Background(), tid.String(), c.ID().String(), "active", auditapp.AuditContext{}); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
 }
 
 // fixClaim is a valid campaign "mark fixed" request.
@@ -43,6 +53,7 @@ func TestResolveCampaignFindings_NoResolver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create campaign: %v", err)
 	}
+	activate(t, s, tid, c)
 	_, err = s.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), fixClaim())
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("expected ErrValidation when resolver unwired, got %v", err)
@@ -66,6 +77,7 @@ func TestResolveCampaignFindings_DelegatesWithFilter(t *testing.T) {
 		t.Fatalf("create campaign: %v", err)
 	}
 
+	activate(t, s, tid, c)
 	out, err := s.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), fixClaim())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -116,5 +128,33 @@ func TestResolveCampaignFindings_RefusesCloseAndClaimWithoutRules(t *testing.T) 
 	}
 	if res.called {
 		t.Fatal("the resolver ran for a refused request")
+	}
+}
+
+// Only an active or validating campaign marks findings fixed; a draft,
+// paused, completed or canceled one is refused before the resolver runs.
+func TestResolveCampaignFindings_OnlyActiveOrValidating(t *testing.T) {
+	s := newService(newFakeCampaignRepo(), nil)
+	res := &fakeResolver{n: 1}
+	s.SetFindingResolver(res)
+	tid := shared.NewID()
+	c, err := s.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
+		TenantID: tid.String(), Name: "Draft", FindingFilter: map[string]any{"severity": "high"},
+	}, auditapp.AuditContext{})
+	if err != nil {
+		t.Fatalf("create campaign: %v", err)
+	}
+	if _, err := s.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), fixClaim()); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("draft resolve: err = %v, want a validation error", err)
+	}
+	activate(t, s, tid, c)
+	if _, err := s.UpdateCampaignStatus(context.Background(), tid.String(), c.ID().String(), "paused", auditapp.AuditContext{}); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	if _, err := s.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), fixClaim()); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("paused resolve: err = %v, want a validation error", err)
+	}
+	if res.called {
+		t.Fatal("the resolver ran for a campaign that is not being worked on")
 	}
 }
