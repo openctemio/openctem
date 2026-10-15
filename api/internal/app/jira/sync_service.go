@@ -718,6 +718,9 @@ func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, is
 // See https://developer.atlassian.com/cloud/jira/platform/webhooks/
 type WebhookPayload struct {
 	WebhookEvent string `json:"webhookEvent"` // "jira:issue_updated"
+	// Timestamp is when Jira created the event, in milliseconds since the
+	// epoch (the inbound route refuses an old delivery).
+	Timestamp int64 `json:"timestamp"`
 	// User is the Jira account that made the change (accountId on Cloud,
 	// name/key on Data Center), recorded on every finding it moves.
 	User      WebhookUser  `json:"user"`
