@@ -60,9 +60,9 @@ func (m *vdMem) ListSSOClaims(context.Context, string) ([]*verifieddomain.Verifi
 func domainPolicyRequest(method, path, body string, tenantID shared.ID, domainID string) *http.Request {
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("domainId", domainID)
+	rctx.URLParams.Add("domain_id", domainID)
 	ctx := context.WithValue(r.Context(), chi.RouteCtxKey, rctx)
-	return r.WithContext(context.WithValue(ctx, middleware.TeamIDKey, tenantID))
+	return r.WithContext(context.WithValue(ctx, middleware.TenantIDKey, tenantID.String()))
 }
 
 // Settings > Domains is scoped to the caller's organization: another
