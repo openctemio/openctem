@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
 )
 
@@ -397,7 +398,7 @@ func (r *SoftwareMatchRepository) OpenCVEsOnAssets(ctx context.Context, tenantID
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.asset_id, upper(f.cve_id) FROM findings f
 		WHERE f.tenant_id = $1 AND f.asset_id = ANY($2::uuid[]) AND f.cve_id IS NOT NULL AND f.cve_id <> ''
-		  AND f.status IN ('new', 'confirmed', 'in_progress', 'fix_applied')`, tenantID.String(), pq.Array(ids))
+		  AND `+vulnerability.OpenStatusSQL("f.status"), tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("open cves: %w", err)
 	}
