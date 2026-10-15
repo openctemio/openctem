@@ -816,6 +816,10 @@ export interface Finding {
   // Timestamps
   discoveredAt: string
   resolvedAt?: string
+  /** Why it is closed (lib/closure.ts); absent while open. */
+  closureReason?: string
+  /** How a resolve was proven. */
+  verification?: string
   verifiedAt?: string
   createdAt: string
   updatedAt: string
@@ -1307,6 +1311,8 @@ export interface ApiApproval {
    */
   requested_by_actor?: string
   justification: string
+  /** The closure reason the request applies (absent on older requests). */
+  closure_reason?: string
   approved_by?: string
   approved_at?: string
   rejected_by?: string

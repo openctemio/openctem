@@ -545,7 +545,16 @@ export function useRequestApproval(findingId: string) {
     currentTenant ? `/api/v1/findings/${findingId}/approvals` : null,
     async (
       url: string,
-      { arg }: { arg: { requested_status: string; justification: string; expires_at?: string } }
+      {
+        arg,
+      }: {
+        arg: {
+          requested_status: string
+          justification: string
+          closure_reason: string
+          expires_at?: string
+        }
+      }
     ) => {
       const response = await post(url, arg)
       return response

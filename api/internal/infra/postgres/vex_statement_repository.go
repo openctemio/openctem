@@ -298,7 +298,7 @@ func (r *VEXStatementRepository) MarkExpired(ctx context.Context, tenantID, id s
 // (product and raw version) and every vulnerability id it carries.
 const findingRefSelect = `
 	SELECT f.id::text, f.asset_id::text, v.product_id::text, v.raw, f.status, f.source,
-		COALESCE(f.resolution_method, ''), f.vex_statement_id::text, f.vex_at,
+		COALESCE(f.closure_reason, ''), COALESCE(f.verification, ''), f.vex_statement_id::text, f.vex_at,
 		array_remove(ARRAY[upper(f.cve_id), upper(f.rule_id)], NULL)
 		|| COALESCE((SELECT array_agg(upper(x)) FROM unnest(f.cve_ids::text[]) x), '{}')
 		|| COALESCE((SELECT array_agg(upper(e->>'id')) FROM jsonb_array_elements(
@@ -322,7 +322,7 @@ func (r *VEXStatementRepository) queryFindingRefs(ctx context.Context, query str
 			ids                pq.StringArray
 			f                  vex.FindingRef
 		)
-		if err := rows.Scan(&id, &asset, &product, &f.Version, &f.Status, &f.Source, &f.ResolutionMethod,
+		if err := rows.Scan(&id, &asset, &product, &f.Version, &f.Status, &f.Source, &f.ClosureReason, &f.Verification,
 			&stmt, &vexAt, &ids); err != nil {
 			return nil, fmt.Errorf("scan vex finding: %w", err)
 		}
@@ -422,14 +422,15 @@ func (r *VEXStatementRepository) WriteEffects(ctx context.Context, tenantID shar
 				vex_statement_id = $8,
 				status            = COALESCE($9, status),
 				resolution        = CASE WHEN $9::text IS NULL THEN resolution ELSE NULLIF($10, '') END,
-				resolution_method = CASE WHEN $9::text IS NULL THEN resolution_method ELSE NULLIF($11, '') END,
+				closure_reason    = CASE WHEN $9::text IS NULL THEN closure_reason ELSE NULLIF($11, '') END,
+				verification      = CASE WHEN $9::text IS NULL THEN verification ELSE NULLIF($13, '') END,
 				resolved_at       = CASE WHEN $9::text IS NULL THEN resolved_at
 				                         WHEN $9 IN ('false_positive', 'resolved') THEN NOW() ELSE NULL END,
 				resolved_by       = CASE WHEN $9::text IS NULL THEN resolved_by ELSE NULL END,
 				updated_at        = NOW()
 			WHERE tenant_id = $1 AND id = $2 AND status = $12`,
 			tenantID.String(), e.FindingID.String(), status, just, statement, source, at, stmtID,
-			newStatus, e.Resolution, e.ResolutionMethod, e.OldStatus)
+			newStatus, e.Resolution, e.ClosureReason, e.OldStatus, e.Verification)
 		if err != nil {
 			return nil, fmt.Errorf("write vex effect: %w", err)
 		}
@@ -446,9 +447,9 @@ func (r *VEXStatementRepository) WriteEffects(ctx context.Context, tenantID shar
 			INSERT INTO finding_activities (id, tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, created_at)
 			VALUES (gen_random_uuid(), $1, $2, 'status_changed', 'system', 'system: VEX statement',
 				jsonb_build_object('old_status', $3::text, 'new_status', $4::text, 'reason', $5::text,
-					'vex_statement_id', $6::text, 'resolution_method', NULLIF($7, '')),
+					'vex_statement_id', $6::text, 'closure_reason', NULLIF($7, '')),
 				'auto', NOW())`,
-			tenantID.String(), e.FindingID.String(), e.OldStatus, e.NewStatus, reason, sid, e.ResolutionMethod); err != nil {
+			tenantID.String(), e.FindingID.String(), e.OldStatus, e.NewStatus, reason, sid, e.ClosureReason); err != nil {
 			return nil, fmt.Errorf("record vex activity: %w", err)
 		}
 		moved = append(moved, e.FindingID)
