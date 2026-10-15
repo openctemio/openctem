@@ -111,51 +111,57 @@ func (r *FindingRepository) ApplyVEXDocument(ctx context.Context, tenantID share
 	for i, id := range ids {
 		idStrs[i] = id.String()
 	}
-	rows, err := r.db.QueryContext(ctx, `
-		WITH t AS (
-			SELECT f.id,
-				($8 AND f.status IN `+vexFalsePositiveFromSQL+` AND f.source NOT IN `+coverageProtectedSources+`) AS closable
-			FROM findings f
-			WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])
-			FOR UPDATE
-		)
-		UPDATE findings f SET
-			vex_status        = $3,
-			vex_justification = $4,
-			vex_statement     = $5,
-			vex_source        = $6,
-			vex_at            = $7,
-			status            = CASE WHEN t.closable THEN 'false_positive' ELSE f.status END,
-			resolution        = CASE WHEN t.closable THEN $9 ELSE f.resolution END,
-			resolution_method = CASE WHEN t.closable THEN 'vex_not_affected' ELSE f.resolution_method END,
-			resolved_at       = CASE WHEN t.closable THEN NOW() ELSE f.resolved_at END,
-			updated_at        = NOW()
-		FROM t
-		WHERE f.tenant_id = $1 AND f.id = t.id
-		RETURNING f.id::text, t.closable`,
-		tenantID.String(), pq.Array(idStrs), sv.Status, nullString(sv.Justification), nullString(sv.Statement),
-		nullString(sv.Source), at, closeNotAffected, reason)
+	err = r.db.withFindingTransition(ctx, findingTransition{
+		Source: "vex", Reason: "vex_not_affected", ActorType: "integration", ActorName: "system: VEX document",
+		Message: "An uploaded VEX document says the component is not affected",
+	}, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `
+			WITH t AS (
+				SELECT f.id,
+					($8 AND f.status IN `+vexFalsePositiveFromSQL+` AND f.source NOT IN `+coverageProtectedSources+`) AS closable
+				FROM findings f
+				WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])
+				FOR UPDATE
+			)
+			UPDATE findings f SET
+				vex_status        = $3,
+				vex_justification = $4,
+				vex_statement     = $5,
+				vex_source        = $6,
+				vex_at            = $7,
+				status            = CASE WHEN t.closable THEN 'false_positive' ELSE f.status END,
+				resolution        = CASE WHEN t.closable THEN $9 ELSE f.resolution END,
+				resolution_method = CASE WHEN t.closable THEN 'vex_not_affected' ELSE f.resolution_method END,
+				resolved_at       = CASE WHEN t.closable THEN NOW() ELSE f.resolved_at END,
+				updated_at        = NOW()
+			FROM t
+			WHERE f.tenant_id = $1 AND f.id = t.id
+			RETURNING f.id::text, t.closable`,
+			tenantID.String(), pq.Array(idStrs), sv.Status, nullString(sv.Justification), nullString(sv.Statement),
+			nullString(sv.Source), at, closeNotAffected, reason)
+		if err != nil {
+			return fmt.Errorf("apply vex document: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var idStr string
+			var wasClosed sql.NullBool
+			if err := rows.Scan(&idStr, &wasClosed); err != nil {
+				return fmt.Errorf("scan vex document row: %w", err)
+			}
+			id, perr := shared.IDFromString(idStr)
+			if perr != nil {
+				continue
+			}
+			stored = append(stored, id)
+			if wasClosed.Bool {
+				closed = append(closed, id)
+			}
+		}
+		return rows.Err()
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("apply vex document: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var idStr string
-		var wasClosed sql.NullBool
-		if err := rows.Scan(&idStr, &wasClosed); err != nil {
-			return nil, nil, fmt.Errorf("scan vex document row: %w", err)
-		}
-		id, perr := shared.IDFromString(idStr)
-		if perr != nil {
-			continue
-		}
-		stored = append(stored, id)
-		if wasClosed.Bool {
-			closed = append(closed, id)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("iterate vex document rows: %w", err)
+		return nil, nil, err
 	}
 	return stored, closed, nil
 }

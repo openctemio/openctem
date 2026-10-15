@@ -212,11 +212,22 @@ func (r *SuppressionRepository) liftSuppressionsInTx(
 				ON CONFLICT (finding_id, suppression_rule_id) DO NOTHING`, c.id, cover.ID().String()); err != nil {
 				return 0, fmt.Errorf("re-link suppressed finding: %w", err)
 			}
+			if err := setFindingTransition(ctx, tx, findingTransition{
+				Source: "suppression_rule", Reason: "suppression_relinked", ActorName: "system: suppression rule",
+				Message: "Its suppression rule was lifted; another active rule covers it",
+				Changes: map[string]any{"suppression_rule_id": cover.ID().String(), "previous_rule_id": ruleID.String()},
+			}); err != nil {
+				return 0, err
+			}
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE findings SET status = $3, updated_at = NOW()
 				WHERE tenant_id = $1 AND id = $2 AND status <> $3 AND status IN `+suppressionRelinkFromSQL+``,
 				tenantID.String(), c.id, cover.SuppressionType().Disposition()); err != nil {
 				return 0, fmt.Errorf("re-apply suppression disposition: %w", err)
+			}
+			// The lift below records its own entries.
+			if err := clearFindingTransition(ctx, tx); err != nil {
+				return 0, err
 			}
 			continue
 		}
