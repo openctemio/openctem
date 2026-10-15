@@ -261,7 +261,12 @@ func TestRemediationKeys_BackfillRetargetsCampaigns(t *testing.T) {
 	finding(a.tenant, "aaaa", "sol:same")
 	finding(a.tenant, "bbbb", "sol:split")
 	finding(a.tenant, "cccc", "sol:split")
+	// "sol:a" and "sol:b" both become one key: retargeting a campaign of
+	// "sol:a" would widen it to "sol:b"'s findings.
+	finding(a.tenant, "eeee", "sol:a")
+	finding(a.tenant, "eeee", "sol:b")
 	same, split, gone := campaign(a.tenant, "sol:same"), campaign(a.tenant, "sol:split"), campaign(a.tenant, "sol:gone")
+	merged := campaign(a.tenant, "sol:a")
 	// Tenant B tracks the same old key on its own findings.
 	finding(b.tenant, "dddd", "sol:same")
 	other := campaign(b.tenant, "sol:same")
@@ -282,13 +287,30 @@ func TestRemediationKeys_BackfillRetargetsCampaigns(t *testing.T) {
 	assert.Equal(t, remediation.CampaignAmbiguous, got[split.String()].Action)
 	assert.Equal(t, 2, got[split.String()].Findings)
 	assert.Equal(t, remediation.CampaignStale, got[gone.String()].Action)
+	assert.Equal(t, remediation.CampaignAmbiguous, got[merged.String()].Action, "keys merging would widen the campaign")
+	assert.Equal(t, 1, got[merged.String()].Findings)
 	assert.NotContains(t, got, other.String(), "another tenant's campaign is not reported")
 	assert.Equal(t, "sol:same", tracked(same), "a dry run writes nothing")
 
+	keys.SetAuditWriter(postgres.NewAuditRepository(&postgres.DB{DB: r.db}))
 	applied, err := keys.Backfill(ctx, a.tenant, true, 2)
 	require.NoError(t, err)
 	assert.Equal(t, remediation.CampaignRetargeted, byID(applied)[same.String()].Action)
 	assert.Equal(t, "rotate:secret:aaaa", tracked(same))
+	assert.Equal(t, "sol:a", tracked(merged), "a campaign that would widen is left alone")
+	version := func(id shared.ID) int {
+		var v int
+		require.NoError(t, r.db.QueryRow(`SELECT version FROM remediation_campaigns WHERE id = $1`, id.String()).Scan(&v))
+		return v
+	}
+	assert.Equal(t, 2, version(same), "a retarget bumps the version")
+	assert.Equal(t, 1, version(merged))
+	var audits int
+	require.NoError(t, r.db.QueryRow(`SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND resource_id = $2
+		AND action = 'remediation_campaign.updated' AND changes->'before'->>'remediation_key' = 'sol:same'
+		AND changes->'after'->>'remediation_key' = 'rotate:secret:aaaa' AND actor_agent = 'refingerprint -remediation-keys'`,
+		a.tenant.String(), same.String()).Scan(&audits))
+	assert.Equal(t, 1, audits, "one audit row per retargeted campaign")
 	assert.Equal(t, "sol:split", tracked(split), "an ambiguous campaign is left alone")
 	assert.Equal(t, "sol:same", tracked(other), "another tenant's campaign is untouched")
 
@@ -296,4 +318,5 @@ func TestRemediationKeys_BackfillRetargetsCampaigns(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, byID(again), same.String(), "idempotent: nothing left to retarget")
 	assert.Equal(t, "rotate:secret:aaaa", tracked(same))
+	assert.Equal(t, 2, version(same))
 }

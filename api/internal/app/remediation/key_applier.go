@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -21,7 +22,19 @@ import (
 type KeyApplier struct {
 	repo   remediationdom.KeyRepository
 	logger *logger.Logger
+	audit  AuditWriter
 }
+
+// AuditWriter records an audit entry (the audit log repository).
+type AuditWriter interface {
+	Create(ctx context.Context, log *auditdom.AuditLog) error
+}
+
+// SetAuditWriter records an audit entry per campaign the backfill retargets.
+func (a *KeyApplier) SetAuditWriter(w AuditWriter) { a.audit = w }
+
+// backfillActor names the backfill as the actor of its audit entries.
+const backfillActor = "refingerprint -remediation-keys"
 
 // NewKeyApplier constructs a KeyApplier.
 func NewKeyApplier(repo remediationdom.KeyRepository, log *logger.Logger) *KeyApplier {
@@ -42,8 +55,9 @@ type KeyChanges struct {
 	// Campaigns are the backfill's changes to campaigns that track a key.
 	Campaigns []CampaignKeyChange `json:"campaigns,omitempty"`
 
-	// moves counts, per stored key, the keys its findings get now ("" when
-	// they get none). A key whose findings all keep it maps to itself.
+	// moves counts, per stored key ("" for a finding with none), the keys its
+	// findings get now ("" when they get none). A key whose findings all keep
+	// it maps to itself.
 	moves map[string]map[string]int
 }
 
@@ -53,8 +67,9 @@ const (
 	CampaignRetargeted = "retargeted"
 	// CampaignWouldRetarget: a dry run; the campaign would be retargeted.
 	CampaignWouldRetarget = "would_retarget"
-	// CampaignAmbiguous: the old key's findings split over several new keys
-	// (or lost their key); a person must re-create the campaign.
+	// CampaignAmbiguous: the old key's findings split over several new keys,
+	// lost their key, or their new key also gets other findings (old keys
+	// merging, which would widen the campaign); a person must re-create it.
 	CampaignAmbiguous = "ambiguous"
 	// CampaignStale: the campaign tracks a key no finding has.
 	CampaignStale = "stale"
@@ -76,9 +91,6 @@ func newKeyChanges() *KeyChanges {
 }
 
 func (c *KeyChanges) move(from, to string) {
-	if from == "" {
-		return
-	}
 	if c.moves[from] == nil {
 		c.moves[from] = map[string]int{}
 	}
@@ -248,8 +260,19 @@ func (a *KeyApplier) Backfill(ctx context.Context, tenantID shared.ID, write boo
 // alone. Campaigns tracking a key that no finding has are reported as stale.
 // With write false nothing is written.
 func (a *KeyApplier) retargetCampaigns(ctx context.Context, tenantID shared.ID, moves map[string]map[string]int, write bool) ([]CampaignKeyChange, error) {
+	// landing counts every finding of the tenant per key it has after the
+	// backfill (the backfill visits them all).
+	landing := map[string]int{}
+	for _, tos := range moves {
+		for to, n := range tos {
+			landing[to] += n
+		}
+	}
 	changed := make([]string, 0, len(moves))
 	for from, tos := range moves {
+		if from == "" {
+			continue
+		}
 		if _, kept := tos[from]; !kept || len(tos) > 1 {
 			changed = append(changed, from)
 		}
@@ -269,8 +292,11 @@ func (a *KeyApplier) retargetCampaigns(ctx context.Context, tenantID shared.ID, 
 			c.Findings += n
 			c.NewKey = to
 		}
-		if len(tos) != 1 || c.NewKey == "" {
-			c.NewKey = ""
+		// Retarget only when the new group is exactly the old one: every
+		// finding of the old key lands on one key that no other finding gets.
+		// Otherwise (a split, a lost key, or old keys merging into one) the
+		// campaign would shrink or widen, so a person decides.
+		if len(tos) != 1 || c.NewKey == "" || landing[c.NewKey] != c.Findings {
 			out = append(out, c)
 			continue
 		}
@@ -282,6 +308,9 @@ func (a *KeyApplier) retargetCampaigns(ctx context.Context, tenantID shared.ID, 
 			}
 			if ok {
 				c.Action = CampaignRetargeted
+				if err := a.auditRetarget(ctx, tenantID, ref, c.NewKey, c.Findings); err != nil {
+					return out, err
+				}
 			}
 		}
 		out = append(out, c)
@@ -302,4 +331,26 @@ func (a *KeyApplier) retargetCampaigns(ctx context.Context, tenantID shared.ID, 
 // Tenants lists the tenants a backfill of every tenant visits.
 func (a *KeyApplier) Tenants(ctx context.Context) ([]shared.ID, error) {
 	return a.repo.TenantsWithFindings(ctx)
+}
+
+// auditRetarget records one campaign the backfill moved to a new key.
+func (a *KeyApplier) auditRetarget(ctx context.Context, tenantID shared.ID, ref remediationdom.CampaignKeyRef, newKey string, findings int) error {
+	if a.audit == nil {
+		return nil
+	}
+	entry, err := auditdom.NewAuditLog(auditdom.ActionRemediationCampaignUpdated, auditdom.ResourceTypeRemediationCampaign,
+		ref.ID.String(), auditdom.ResultSuccess)
+	if err != nil {
+		return err
+	}
+	ch := auditdom.NewChanges()
+	ch.Before["remediation_key"] = ref.Key
+	ch.After["remediation_key"] = newKey
+	entry.WithTenantID(tenantID).WithActorUserAgent(backfillActor).WithResourceName(ref.Name).WithChanges(ch).
+		WithMessage(fmt.Sprintf("Remediation key backfill moved the campaign from %s to %s (%d findings)", ref.Key, newKey, findings)).
+		WithMetadata("source", "remediation_key_backfill")
+	if err := a.audit.Create(ctx, entry); err != nil {
+		return fmt.Errorf("audit campaign retarget: %w", err)
+	}
+	return nil
 }
