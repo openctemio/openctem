@@ -38,7 +38,7 @@ func (f *fakeGitLab) GroupMember(context.Context, int64, int64) (bool, error) { 
 func (f *fakeGitLab) MergeRequest(context.Context, string, int) (*gitlabapi.MergeRequest, error) {
 	return nil, nil
 }
-func (f *fakeGitLab) SetCommitStatus(context.Context, string, string, string, string, string, string) error {
+func (f *fakeGitLab) SetCommitStatus(context.Context, string, string, string, string, string, string, int64) error {
 	return nil
 }
 func (f *fakeGitLab) UpsertMergeRequestNote(context.Context, string, int, int64, string, string) error {

@@ -7,6 +7,7 @@ package cirun
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,6 +32,11 @@ import (
 // that is not accepted, whatever the reason: the reason goes to the log and,
 // for a verified token, to the tenant's audit log.
 var ErrExchangeRefused = errors.New("ci token exchange refused")
+
+// ErrIssuerUnavailable: the token's issuer keys cannot be obtained right now
+// (unreachable beyond the stale bound, or a key rotation not yet fetched).
+// The token was not claimed; the job may retry it (503 with Retry-After).
+var ErrIssuerUnavailable = errors.New("ci token issuer keys unavailable")
 
 // ErrRunnerOutdated refuses an exchange from a runner that reports a version
 // below the minimum CI runner release (CI_RUNNER_MIN_VERSION). It is told to
@@ -116,6 +122,16 @@ type Config struct {
 	// (openctemio/ci) are versioned apart from sensors, so the sensor's
 	// release settings never apply to them.
 	Versions cirun.StatusPolicy
+	// KnownLimit bounds the decided results one upload response lists
+	// (zero takes cirun.MaxKnownInResponse).
+	KnownLimit int
+}
+
+func (c Config) knownLimit() int {
+	if c.KnownLimit <= 0 {
+		return cirun.MaxKnownInResponse
+	}
+	return c.KnownLimit
 }
 
 func (c Config) caps() cirun.PipelineCaps {
@@ -149,7 +165,14 @@ type Service struct {
 	stepUp    shared.RecentAuthGate
 	rules     SuppressionRules
 	modules   ModuleGuard
+	gitlab    GitLabClients
 }
+
+// SetGitLab lets the gate read a GitLab merge request's target branch through
+// the organization's GitLab connection, the only verified source of a GitLab
+// merge request run's baseline (its token signs none). Without it such a run
+// is compared with the default branch.
+func (s *Service) SetGitLab(g GitLabClients) { s.gitlab = g }
 
 // Deps are the service's collaborators.
 type Deps struct {
@@ -241,6 +264,9 @@ type ExchangeOutput struct {
 	JobID string
 	// Joined: the job joined an aggregate run another job had opened.
 	Joined bool
+	// Exchanges is how many times the job's OIDC token has been exchanged,
+	// this one included (more than 1: a re-exchange for the same run).
+	Exchanges int
 }
 
 // Exchange verifies a CI job's OIDC token against the tenant's trust
@@ -270,6 +296,13 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	if err != nil {
 		s.log.Info("ci exchange refused: token did not verify", "tenant_id", tenantID.String(),
 			"issuer", logger.SanitizeValue(issuer), "error", logger.SanitizeError(err))
+		if errors.Is(err, oidc.ErrJWKSUnavailable) || errors.Is(err, oidc.ErrKeyNotFound) {
+			// The issuer's keys cannot be had right now (the issuer is
+			// unreachable past the stale bound, or it rotated to a key the
+			// platform may fetch only once per interval). Nothing was
+			// claimed: the job may retry the same token shortly.
+			return nil, ErrIssuerUnavailable
+		}
 		return nil, ErrExchangeRefused
 	}
 
@@ -284,7 +317,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		return nil, err
 	} else if refusal != nil {
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
-		return nil, ErrExchangeRefused
+		return nil, publicRefusal(refusal)
 	}
 	// The organization or namespace stays the one first admitted under its
 	// name (checkOwnerPin).
@@ -292,7 +325,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		return nil, err
 	} else if refusal != nil {
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
-		return nil, ErrExchangeRefused
+		return nil, publicRefusal(refusal)
 	}
 	// The pipeline's identity comes from the verified claims only: a token
 	// without an immutable repository id or a usable workflow path is not
@@ -300,7 +333,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	key, refusal := cirun.PipelineKeyFromClaims(cfg.Provider, cfg.Issuer, claims)
 	if refusal != nil {
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
-		return nil, ErrExchangeRefused
+		return nil, publicRefusal(refusal)
 	}
 	legacy := claims.Audience != cfg.Audience
 	if legacy {
@@ -308,7 +341,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 			return nil, err
 		} else if refusal != nil {
 			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
-			return nil, ErrExchangeRefused
+			return nil, publicRefusal(refusal)
 		}
 	}
 	if v := s.runnerVersion(in.UserAgent); runnerRefusal(v, s.cfg.Versions) != nil {
@@ -319,39 +352,53 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		}
 		return nil, &RunnerOutdatedError{Version: v, Min: s.cfg.Versions.MinVersion, Pin: pin}
 	}
-	fresh, err := s.repo.ClaimJTI(ctx, tok.Issuer, tok.JTI, tok.ExpiresAt.Add(time.Hour))
+	// The token's replay record: the first exchange claims it; the same
+	// token presented again (an answer lost, a second step of the job) gets
+	// a fresh upload token for the same run only (reexchange.go).
+	digest := sha256.Sum256([]byte(in.IDToken))
+	var runID *shared.ID
+	if strings.TrimSpace(in.RunID) == "" && !in.Aggregate {
+		// A plain run's id is chosen before it exists, so a re-exchange
+		// after a failed creation makes this run and never a second one.
+		id := shared.NewID()
+		runID = &id
+	}
+	fresh, prior, err := s.repo.ClaimReplay(ctx, cirun.Replay{Issuer: tok.Issuer, JTI: tok.JTI, TenantID: &tenantID,
+		TokenSHA256: digest[:], RunID: runID, ExpiresAt: tok.ExpiresAt.Add(time.Hour)})
 	if err != nil {
 		return nil, fmt.Errorf("record token id: %w", err)
 	}
+	exchanges := 1
 	if !fresh {
-		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "replay", Detail: "this token was exchanged before"}})
-		return nil, ErrExchangeRefused
+		rp, err := s.reuseToken(ctx, tenantID, in, claims, tok, digest[:], prior)
+		if err != nil {
+			return nil, err
+		}
+		exchanges, runID = rp.Exchanges, rp.RunID
 	}
 
 	var out *ExchangeOutput
-	if strings.TrimSpace(in.RunID) != "" {
-		out, err = s.continueRun(ctx, tenantID, cfg, claims, in.RunID)
+	switch {
+	case !fresh && runID != nil:
+		out, err = s.resumeRun(ctx, tenantID, cfg, claims, key, in, *runID, prior)
+	case strings.TrimSpace(in.RunID) != "":
+		out, err = s.continueRun(ctx, tenantID, cfg, claims, in.RunID, false)
 		if errors.Is(err, ErrExchangeRefused) {
 			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "run_mismatch",
 				Detail: "the token does not belong to the run it asked to continue"}})
+			err = &RefusedError{Code: "run_mismatch", Message: "This CI token does not belong to the run it asked to continue."}
 		}
-	} else {
-		out, err = s.createRun(ctx, tenantID, cfg, claims, key, in.UserAgent, in.Aggregate)
-		if errors.Is(err, errAggregateNoRunID) {
-			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "aggregate_no_run_id",
-				Detail: "the token names no pipeline run, so it cannot join an aggregate run"}})
-			return nil, ErrExchangeRefused
+	default:
+		out, err = s.createRun(ctx, tenantID, cfg, claims, key, in.UserAgent, in.Aggregate, runID)
+		err = s.refuseCreate(ctx, tenantID, in, claims, err)
+	}
+	if err == nil && (fresh || runID == nil || *runID != out.Run.ID) {
+		if berr := s.repo.BindReplayRun(ctx, tok.Issuer, tok.JTI, tenantID, out.Run.ID); berr != nil {
+			s.log.Warn("ci token run not recorded", "error", logger.SanitizeError(berr))
 		}
-		if errors.Is(err, errPipelineRate) {
-			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_rate",
-				Detail: fmt.Sprintf("the pipeline started %d or more runs in the last hour", cirun.MaxPipelineRunsPerHour)}})
-			return nil, ErrExchangeRefused
-		}
-		if errors.Is(err, cirun.ErrPipelineCap) {
-			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_cap",
-				Detail: "the organization or the trust configuration has the most CI pipelines it may have"}})
-			return nil, ErrExchangeRefused
-		}
+	}
+	if err == nil {
+		out.Exchanges = exchanges
 	}
 	if err != nil {
 		return nil, err
@@ -510,7 +557,7 @@ func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Cl
 }
 
 func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims,
-	key cirun.PipelineKey, userAgent string, aggregate bool) (*ExchangeOutput, error) {
+	key cirun.PipelineKey, userAgent string, aggregate bool, runID *shared.ID) (*ExchangeOutput, error) {
 	if aggregate && strings.TrimSpace(c.RunID) == "" {
 		return nil, errAggregateNoRunID
 	}
@@ -551,8 +598,12 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		return nil, err
 	}
 	expires := now.Add(cirun.TokenTTL)
+	id := shared.NewID()
+	if runID != nil && !aggregate {
+		id = *runID
+	}
 	run := &cirun.Run{
-		ID:                shared.NewID(),
+		ID:                id,
 		TenantID:          tenantID,
 		TrustConfigID:     &cfgID,
 		RepositoryAssetID: repoAsset.ID(),
@@ -684,7 +735,7 @@ func (s *Service) refreshPipeline(ctx context.Context, tenantID shared.ID, pipel
 // the run recorded one; not yet evaluated and recent. Anything else is
 // ErrExchangeRefused: another job of the pipeline, or a re-run, gets its own
 // run.
-func (s *Service) continueRun(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims, rawRunID string) (*ExchangeOutput, error) {
+func (s *Service) continueRun(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims, rawRunID string, keepTokens bool) (*ExchangeOutput, error) {
 	runID, err := shared.IDFromString(strings.TrimSpace(rawRunID))
 	if err != nil {
 		return nil, ErrExchangeRefused
@@ -708,8 +759,9 @@ func (s *Service) continueRun(ctx context.Context, tenantID shared.ID, cfg *ciru
 		return nil, err
 	}
 	expires := now.Add(cirun.TokenTTL)
-	if run.Aggregate {
-		// Another job's token of the run must keep working: add a token
+	if run.Aggregate || keepTokens {
+		// Another job's token of the run (or, on a re-exchange, the token
+		// the same job already holds) must keep working: add a token
 		// instead of rotating one.
 		if err := s.repo.AddRunToken(ctx, tenantID, run.ID, hash, truncate(c.JobID, 64), expires); err != nil {
 			return nil, fmt.Errorf("add run token: %w", err)
@@ -824,6 +876,7 @@ func (s *Service) auditIssued(ctx context.Context, tenantID shared.ID, in Exchan
 		WithMetadata("run_attempt", r.RunAttempt).
 		WithMetadata("job_id", out.JobID).
 		WithMetadata("continuation", strings.TrimSpace(in.RunID) != "").
+		WithMetadata("token_exchanges", out.Exchanges).
 		WithMetadata("aggregate", r.Aggregate).
 		WithMetadata("joined", out.Joined).
 		WithMetadata("pipeline_url", r.PipelineURL).

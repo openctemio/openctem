@@ -6,7 +6,8 @@ package routes
 // route (one chi mount, no group middleware):
 //
 //   - POST /oidc/exchange: public. A CI job's OIDC token is the credential;
-//     shared per-IP token-exchange rate limit, 32 KB body.
+//     a budget per organization + issuer at each address, under a wide
+//     per-address backstop (middleware/ci_exchange_ratelimit.go), 32 KB body.
 //   - /runs/{id}/{results,baseline-diff,evaluate}: a run upload token
 //     (octci_..., 15 minutes, one run on one repository). Per-run rate
 //     limit; results add the ingest per-tenant limit and concurrency cap.
@@ -27,11 +28,15 @@ import (
 // runners share egress addresses, so the per-IP budgets are wider than a
 // person's sign-in budget.
 const (
-	ciRunRatePerSecond  = 2.0
-	ciRunBurst          = 30
-	ciIPRatePerSecond   = 10.0
-	ciIPBurst           = 100
-	ciExchangePerMinute = 60
+	ciRunRatePerSecond = 2.0
+	ciRunBurst         = 30
+	ciIPRatePerSecond  = 10.0
+	ciIPBurst          = 100
+	// Token exchanges: per organization + issuer at one address, and per
+	// address across organizations. Shared runners put many customers
+	// behind one egress address; the backstop is sized for that.
+	ciExchangePerMinute   = 60
+	ciExchangeIPPerMinute = 600
 	// A trust preview reads an issuer's keys: ten a minute per person.
 	ciPreviewPerSecond = 10.0 / 60
 	ciPreviewBurst     = 10
@@ -48,9 +53,9 @@ func registerCIRoutes(
 	var exchangeRL, runRL Middleware
 	var runChain, resultsChain []Middleware
 	if runner != nil {
-		cfg := middleware.DefaultAuthRateLimitConfig()
-		cfg.TokenExchangeRatePerMin = ciExchangePerMinute
-		exchangeRL = middleware.NewDistributedAuthRateLimiter(cfg, nil, authRateLimitBackend, "ci-oidc").TokenExchangeMiddleware()
+		exchangeRL = middleware.NewCIExchangeRateLimiter(middleware.CIExchangeRateLimitConfig{
+			PerIdentityPerMin: ciExchangePerMinute, PerIPPerMin: ciExchangeIPPerMinute,
+		}, authRateLimitBackend, log).Middleware()
 		// Before the token lookup: a client guessing tokens is throttled by
 		// address before it reaches the database.
 		ipRL := middleware.NewTelemetryRateLimiter(ciIPRatePerSecond, ciIPBurst, time.Hour, log).
