@@ -218,15 +218,69 @@ func (r *CIRunRepository) TouchTrustConfig(ctx context.Context, tenantID, id sha
 
 // --------------------------------------------------------------- replay ---
 
-// ClaimJTI records a token id; false when it was exchanged before.
-func (r *CIRunRepository) ClaimJTI(ctx context.Context, issuer, jti string, expiresAt time.Time) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_oidc_replay (issuer, jti, expires_at) VALUES ($1, $2, $3)
-		ON CONFLICT (issuer, jti) DO NOTHING`, issuer, jti, expiresAt)
+// ClaimReplay records a token's first exchange; when the token id was
+// claimed before it returns the earlier record.
+func (r *CIRunRepository) ClaimReplay(ctx context.Context, rp cirun.Replay) (bool, *cirun.Replay, error) {
+	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_oidc_replay (issuer, jti, expires_at, tenant_id, token_sha256, run_id)
+		VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (issuer, jti) DO NOTHING`,
+		rp.Issuer, rp.JTI, rp.ExpiresAt, nullID(rp.TenantID), rp.TokenSHA256, nullID(rp.RunID))
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	n, err := res.RowsAffected()
-	return n == 1, err
+	if err != nil {
+		return false, nil, err
+	}
+	if n == 1 {
+		return true, nil, nil
+	}
+	prior, err := scanReplay(r.db.QueryRowContext(ctx, `SELECT `+replayColumns+` FROM ci_oidc_replay
+		WHERE issuer = $1 AND jti = $2`, rp.Issuer, rp.JTI))
+	if errors.Is(err, sql.ErrNoRows) {
+		// Purged between the insert and the read: a replay all the same.
+		return false, &cirun.Replay{Issuer: rp.Issuer, JTI: rp.JTI}, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+	return false, prior, nil
+}
+
+// ReuseReplay counts one more exchange of the same token, atomically, while
+// it is under max.
+func (r *CIRunRepository) ReuseReplay(ctx context.Context, issuer, jti string, tenantID shared.ID, digest []byte, max int) (*cirun.Replay, error) {
+	rp, err := scanReplay(r.db.QueryRowContext(ctx, `UPDATE ci_oidc_replay SET exchanges = exchanges + 1
+		WHERE issuer = $1 AND jti = $2 AND tenant_id = $3 AND token_sha256 = $4 AND exchanges < $5
+		RETURNING `+replayColumns, issuer, jti, tenantID.String(), digest, max))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return rp, err
+}
+
+// BindReplayRun records the run a token's exchange produced.
+func (r *CIRunRepository) BindReplayRun(ctx context.Context, issuer, jti string, tenantID, runID shared.ID) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_oidc_replay SET run_id = $4
+		WHERE issuer = $1 AND jti = $2 AND tenant_id = $3 AND (run_id IS NULL OR run_id = $4)`,
+		issuer, jti, tenantID.String(), runID.String())
+	return err
+}
+
+const replayColumns = `issuer, jti, tenant_id, token_sha256, run_id, exchanges, first_at, expires_at`
+
+func scanReplay(row *sql.Row) (*cirun.Replay, error) {
+	var rp cirun.Replay
+	var tenant, run sql.NullString
+	if err := row.Scan(&rp.Issuer, &rp.JTI, &tenant, &rp.TokenSHA256, &run, &rp.Exchanges, &rp.FirstAt, &rp.ExpiresAt); err != nil {
+		return nil, err
+	}
+	if id, err := shared.IDFromString(tenant.String); tenant.Valid && err == nil {
+		rp.TenantID = &id
+	}
+	if id, err := shared.IDFromString(run.String); run.Valid && err == nil {
+		rp.RunID = &id
+	}
+	return &rp, nil
 }
 
 // PurgeExpiredJTIs drops token ids that expired before the given time.
@@ -366,11 +420,12 @@ func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) 
 	return &open, n == 1, nil
 }
 
-// AddRunToken adds a job's upload token to a running aggregate run.
+// AddRunToken adds an upload token to a running run (a job of an aggregate
+// run, or a re-exchange of the token that opened a run).
 func (r *CIRunRepository) AddRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, jobID string, expiresAt time.Time) error {
 	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_run_tokens (token_hash, tenant_id, run_id, external_job_id, expires_at)
 		SELECT $3, tenant_id, id, $4, $5 FROM ci_runs
-		WHERE tenant_id = $1 AND id = $2 AND aggregate AND status = 'running'`,
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
 		tenantID.String(), runID.String(), hash, jobID, expiresAt)
 	if err != nil {
 		return err

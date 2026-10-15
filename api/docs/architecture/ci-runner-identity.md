@@ -94,6 +94,10 @@ to it like any other blocking reason.
   `ci_run_tokens`.
 - `ci_oidc_replay`: `(issuer, jti)`, global. A provider that sends no `jti`
   (Bitbucket, CircleCI, Jenkins) is recorded under `sha256:<token hash>`.
+  Each row keeps the organization, the token's SHA-256, the run it opened or
+  joined and an exchange count (migration `002137`): the same token again
+  (at most `cirun.MaxTokenExchanges` = 5 times) gets a token for that run,
+  added to `ci_run_tokens` (`internal/app/cirun/reexchange.go`).
 - `ci_runs.commit_verified` (migration `001261`): false when the provider
   signs no commit and the run's commit is the job's report; such a commit
   never matches a break-glass.
@@ -256,5 +260,7 @@ A decision made on the platform holds on the next run of the same repository:
   baseline-diff,evaluate}`: every session, API-key, console and MCP route
   refuses it, and the run routes refuse every other credential
   (`routes/ci_run_token_scope_db_test.go`). Another run's id answers 404.
-- Refusals are uniform to the caller and detailed in the audit log only after
-  the token verified.
+- Refusals before a trust configuration admitted the token are uniform to the
+  caller (`CI_TOKEN_NOT_TRUSTED`) and detailed in the audit log only after the
+  token verified; refusals after admission tell the pipeline the reason
+  (`CI_TOKEN_<reason>`, no other repository's or owner's data).
