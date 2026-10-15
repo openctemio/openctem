@@ -220,6 +220,14 @@ A repository with an expected-scan list (**Coverage**, **Expect**) fails a
 run that reports no tool for one of its expected capabilities
 (`missing_capability`, "Expected scan missing").
 
+The verdict request also carries each capability's state as the job saw it
+(`capabilities: [{name, tool, state, reason}]`). Any state but `uploaded`
+(`failed`, `partial`, `not_uploaded`, `missing`, or one the platform does not
+know) fails the run with `capability_failed` ("Scan did not reach the
+platform"), naming the capability and its reason, whatever the job's
+`scan_failures` count says. At most 64 states are read; a runner that sends
+none is judged as before.
+
 When the platform cannot decide, `--fail-on <severity>` (`fail-on` input,
 `OPENCTEM_FAIL_ON` on GitLab) makes `openctem-ci` judge locally instead.
 

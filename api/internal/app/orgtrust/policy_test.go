@@ -54,13 +54,14 @@ func TestPolicy_APIKeyAllowance(t *testing.T) {
 	settings := orgtrust.DefaultSettings()
 	tr, _ := orgtrust.New(host, home, settings, shared.NewID())
 
-	// Requested (not accepted) trust: no keys.
-	if ok, _, _ := NewPolicy(memTrusts{tr}, oneMember{ext}).APIKeyAllowance(ctx, host, ext.UserID()); ok {
-		t.Fatal("a trust not yet accepted allows no keys")
+	// Requested (not accepted) trust: no trust in force, so keys follow the
+	// member, bounded by the end of access.
+	if ok, at, _ := NewPolicy(memTrusts{tr}, oneMember{ext}).APIKeyAllowance(ctx, host, ext.UserID()); !ok || at == nil || !at.Equal(until) {
+		t.Fatal("without a trust in force an outside member creates keys up to the end of access")
 	}
 	_ = tr.Accept(shared.NewID(), false, time.Now())
 	if ok, _, _ := NewPolicy(memTrusts{tr}, oneMember{ext}).APIKeyAllowance(ctx, host, ext.UserID()); ok {
-		t.Fatal("keys are off unless the trust allows them")
+		t.Fatal("an active trust that does not allow keys forbids them")
 	}
 	tr.Settings.AllowAPIKeys = true
 	ok, at, err := NewPolicy(memTrusts{tr}, oneMember{ext}).APIKeyAllowance(ctx, host, ext.UserID())
@@ -72,13 +73,13 @@ func TestPolicy_APIKeyAllowance(t *testing.T) {
 	if ok, at, _ := NewPolicy(memTrusts{nil}, oneMember{in}).APIKeyAllowance(ctx, host, in.UserID()); !ok || at != nil {
 		t.Fatal("internal members create keys as before")
 	}
-	// An unmanaged external (no home) never gets keys.
+	// An unmanaged external (no home) creates keys up to the end of access.
 	m, _ := tenantdom.NewMembership(shared.NewID(), host, tenantdom.RoleViewer, nil)
 	u := time.Now().Add(time.Hour)
 	_ = m.Classify(tenantdom.Classification{Kind: tenantdom.MemberKindExternal, Domain: "gmail.com", Personal: true},
 		tenantdom.ExternalAccess{ExpiresAt: &u}, time.Now())
-	if ok, _, _ := NewPolicy(memTrusts{tr}, oneMember{m}).APIKeyAllowance(ctx, host, m.UserID()); ok {
-		t.Fatal("an unmanaged external member never creates keys")
+	if ok, at, _ := NewPolicy(memTrusts{tr}, oneMember{m}).APIKeyAllowance(ctx, host, m.UserID()); !ok || at == nil || !at.Equal(u) {
+		t.Fatal("an unmanaged external member creates keys up to the end of access")
 	}
 }
 
@@ -92,9 +93,9 @@ func TestPolicy_MaxRoleAndDefaultExpiry(t *testing.T) {
 	tr, _ := orgtrust.New(host, home, s, shared.NewID())
 	p := NewPolicy(memTrusts{tr}, oneMember{})
 
-	// Not accepted: the default ceiling, no proposed expiry.
-	if r, _ := p.MaxRoleFor(ctx, host, home); r != orgtrust.MaxRoleMember {
-		t.Fatalf("ceiling without an active trust = %s, want member", r)
+	// Not accepted: no ceiling (the host decides per person), no proposed expiry.
+	if r, _ := p.MaxRoleFor(ctx, host, home); r != "" {
+		t.Fatalf("ceiling without an active trust = %q, want none", r)
 	}
 	_ = tr.Accept(shared.NewID(), false, time.Now())
 	if r, _ := p.MaxRoleFor(ctx, host, home); r != orgtrust.MaxRoleViewer {
