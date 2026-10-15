@@ -10,8 +10,8 @@ const state = {
   perms: new Set<string>(),
   moduleIds: [] as string[],
   subModules: {} as Record<string, { slug: string; release_status?: string }[]>,
-  limits: undefined as { applies: boolean } | undefined,
-  limitsEnabled: [] as boolean[],
+  limitsApply: undefined as boolean | undefined,
+  fetchers: [] as unknown[],
 }
 
 vi.mock('@/lib/permissions/hooks', () => ({
@@ -29,10 +29,10 @@ vi.mock('@/context/bootstrap-provider', () => ({
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useTenantModules: () => ({ subModules: state.subModules }),
 }))
-vi.mock('@/features/limits/api/use-organization-limits', () => ({
-  useOrganizationLimits: (enabled: boolean) => {
-    state.limitsEnabled.push(enabled)
-    return { data: enabled ? state.limits : undefined }
+vi.mock('swr', () => ({
+  default: (key: string, fetcher: unknown) => {
+    state.fetchers.push(fetcher)
+    return { data: key === 'bootstrap:limits_apply' ? state.limitsApply : undefined }
   },
 }))
 vi.mock('@/context/i18n-provider', () => ({
@@ -50,8 +50,8 @@ beforeEach(() => {
   state.perms = new Set()
   state.moduleIds = []
   state.subModules = {}
-  state.limits = undefined
-  state.limitsEnabled = []
+  state.limitsApply = undefined
+  state.fetchers = []
 })
 
 describe('useSettingsNav', () => {
@@ -105,16 +105,24 @@ describe('useSettingsNav', () => {
 
   it('lists Usage & limits only while a limit applies to the organization', () => {
     state.perms = new Set([Permission.TeamUpdate])
-    state.limits = { applies: false }
+    expect(ids()).not.toContain('limits') // nothing seeded: hidden
+    state.limitsApply = false
     expect(ids()).not.toContain('limits')
-    state.limits = { applies: true }
+    state.limitsApply = true
     expect(ids()).toContain('limits')
   })
 
-  it('never reads the limits for a user who may not open Usage & limits', () => {
+  it('reads limits_apply from the bootstrap cache, never from the network', () => {
+    state.perms = new Set([Permission.TeamUpdate])
+    state.limitsApply = true
+    ids()
+    expect(state.fetchers.length).toBeGreaterThan(0)
+    expect(state.fetchers.every((f) => f === null)).toBe(true)
+  })
+
+  it('hides Usage & limits from a user who may not open it', () => {
     state.perms = new Set([Permission.AuditRead])
-    state.limits = { applies: true }
+    state.limitsApply = true
     expect(ids()).not.toContain('limits')
-    expect(state.limitsEnabled.every((e) => e === false)).toBe(true)
   })
 })
