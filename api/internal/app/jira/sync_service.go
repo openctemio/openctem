@@ -658,9 +658,12 @@ func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, is
 // WebhookPayload is the envelope sent by Jira issue-updated webhooks.
 // See https://developer.atlassian.com/cloud/jira/platform/webhooks/
 type WebhookPayload struct {
-	WebhookEvent string       `json:"webhookEvent"` // "jira:issue_updated"
-	Issue        WebhookIssue `json:"issue"`
-	Changelog    *Changelog   `json:"changelog,omitempty"`
+	WebhookEvent string `json:"webhookEvent"` // "jira:issue_updated"
+	// Timestamp is when Jira created the event, in milliseconds since the
+	// epoch (the inbound route refuses an old delivery).
+	Timestamp int64        `json:"timestamp"`
+	Issue     WebhookIssue `json:"issue"`
+	Changelog *Changelog   `json:"changelog,omitempty"`
 }
 
 // WebhookIssue represents the issue block inside a Jira webhook payload.
