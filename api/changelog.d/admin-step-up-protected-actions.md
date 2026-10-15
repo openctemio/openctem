@@ -1,0 +1,6 @@
+### Security: console identity and trust changes need a fresh authenticator code
+
+- Every protected platform-console action asks for a fresh authenticator code (step-up), or rides the five-minute step-up window of the same console session: provisioning, changing, deleting or resetting an administrator, a break-glass test, unbinding an administrator from the platform identity provider, replacing or removing the platform identity provider, creating an organization, approving an access request, creating or recovering an organization owner, and every organization SSO write. A stolen console session alone can no longer add an administrator or swap the console's identity provider.
+- The API answers `401 ADMIN_STEP_UP_REQUIRED` without a code (header `X-Admin-Step-Up`); the console asks for it and retries. Owner recovery sends its code in that header instead of `totp_code`.
+- Migration 002400 adds `admin_sessions.step_up_at` (nullable, no backfill).
+- **Upgrade note:** an administrator who signs in only through the platform identity provider has no console authenticator and gets `403 STEP_UP_UNAVAILABLE` on these actions; keep at least one super admin with a console authenticator (every break-glass account has one).

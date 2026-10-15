@@ -277,6 +277,9 @@ type Handlers struct {
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
+	// AdminStepUp confirms protected console actions (route-level step-up).
+	// Nil refuses every protected route.
+	AdminStepUp middleware.AdminStepUpConfirmer
 
 	// Admin Audit middleware (audit logging for admin operations)
 	AdminAuditMiddleware *middleware.AuditMiddleware
