@@ -10,6 +10,48 @@ import {
 } from '../asset-overview-sections'
 import type { Asset } from '../../types/asset.types'
 
+vi.mock('../../hooks/use-asset-risk', () => ({
+  useAssetRisk: () => ({
+    isLoading: false,
+    error: undefined,
+    data: {
+      asset_id: 'a1',
+      score: 68,
+      level: 'high',
+      pending: false,
+      breakdown: {
+        model: 'likelihood_impact',
+        score: 68,
+        findings_score: 95,
+        tiers: [
+          { severity: 'critical', count: 5, exploitable: 1, effective: 6, score: 97 },
+          { severity: 'high', count: 0, exploitable: 0, effective: 0, score: 0 },
+          { severity: 'medium', count: 0, exploitable: 0, effective: 0, score: 0 },
+          { severity: 'low', count: 0, exploitable: 0, effective: 0, score: 0 },
+        ],
+        exposure: 'unknown',
+        exposure_factor: 90,
+        criticality: 'none',
+        effective_criticality: 'none',
+        crown_jewel: false,
+        criticality_factor: 80,
+        control_reduction: 0,
+      },
+      contributors: [
+        {
+          finding_id: 'f1',
+          title: 'SQL injection in login',
+          severity: 'critical',
+          in_kev: true,
+          exploit_available: false,
+          epss_score: 0.62,
+        },
+      ],
+      risk_levels: { critical_min: 80, high_min: 60, medium_min: 40, low_min: 20 },
+    },
+  }),
+}))
+
 const DAY = 86_400_000
 
 function makeAsset(overrides: Partial<Asset> = {}): Asset {
@@ -46,6 +88,42 @@ describe('RiskSummarySection', () => {
   it('says so when there are no open findings', () => {
     render(<RiskSummarySection asset={makeAsset({ findingCount: 0, findingSeverityCounts: {} })} />)
     expect(screen.getByText('No open findings on this asset.')).toBeInTheDocument()
+  })
+
+  it('shows Not yet scored instead of 0 for an asset never scored', () => {
+    render(<RiskSummarySection asset={makeAsset({ riskScore: 0, riskScored: false })} />)
+    expect(screen.getByText('Not yet scored')).toBeInTheDocument()
+    expect(screen.queryByText(/^0 - /)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Why this score?' })).not.toBeInTheDocument()
+  })
+
+  it('shows Calculating while the first score is queued', () => {
+    render(
+      <RiskSummarySection
+        asset={makeAsset({ riskScore: 0, riskScored: false, riskScorePending: true })}
+      />
+    )
+    expect(screen.getByText('Calculating…')).toBeInTheDocument()
+  })
+
+  it('shows when the score was computed', () => {
+    render(
+      <RiskSummarySection
+        asset={makeAsset({ riskScored: true, riskScoredAt: new Date().toISOString() })}
+      />
+    )
+    expect(screen.getByText('Score updated')).toBeInTheDocument()
+  })
+
+  it('explains the score with its factors and the findings that drive it', async () => {
+    render(<RiskSummarySection asset={makeAsset({ riskScored: true })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Why this score?' }))
+    expect(screen.getByText(/Findings 95 × exposure 90% × criticality 80%/)).toBeInTheDocument()
+    expect(screen.getByText('1 exploitable')).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: 'SQL injection in login' })
+    expect(link).toHaveAttribute('href', '/findings/f1')
+    expect(screen.getByText('KEV')).toBeInTheDocument()
+    expect(screen.getByText('EPSS 62%')).toBeInTheDocument()
   })
 
   it('links to the Findings tab', async () => {
