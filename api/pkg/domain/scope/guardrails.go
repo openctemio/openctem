@@ -14,9 +14,11 @@ package scope
 //     ranges are gated by scan zones).
 
 import (
+	_ "embed"
 	"math/big"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -31,7 +33,27 @@ var (
 	ErrPublicSuffix = shared.NewDomainError("PUBLIC_SUFFIX", "the pattern is, or covers, a public suffix shared by many organizations", shared.ErrValidation)
 	ErrDenyList     = shared.NewDomainError("DENY_LIST", "the platform does not allow this target; contact support", shared.ErrValidation)
 	ErrCIDRTooLarge = shared.NewDomainError("CIDR_TOO_LARGE", "the public address range is larger than the platform allows", shared.ErrValidation)
+	// ErrSharedCodeHost refuses a whole-host repository entry on a code host
+	// many organizations share: name a namespace (host/namespace/*).
+	ErrSharedCodeHost = shared.NewDomainError("SHARED_CODE_HOST", "this code host is shared by many organizations: name your namespace, such as github.com/your-org/*", shared.ErrValidation)
 )
+
+//go:embed public_code_hosts.txt
+var publicCodeHostsData string
+
+// builtinPublicCodeHosts are the code hosts in public_code_hosts.txt.
+var builtinPublicCodeHosts = parseHostList(publicCodeHostsData)
+
+func parseHostList(data string) []string {
+	var out []string
+	for _, line := range strings.Split(data, "\n") {
+		line = strings.ToLower(strings.TrimSpace(line))
+		if line != "" && !strings.HasPrefix(line, "#") {
+			out = append(out, line)
+		}
+	}
+	return out
+}
 
 // Default CIDR caps (RFC-054 §8.3).
 const (
@@ -73,6 +95,9 @@ type Guardrails struct {
 	MaxPublicCIDRv6 int
 	deniedSuffixes  []string
 	deniedPrefixes  []netip.Prefix
+	// codeHosts are the code hosts many organizations share
+	// (public_code_hosts.txt plus the operator's).
+	codeHosts []string
 }
 
 // NewGuardrails builds the guardrails with the operator's caps (0: default)
@@ -87,6 +112,7 @@ func NewGuardrails(maxV4, maxV6 int, extra []string) (g Guardrails, bad []string
 		g.MaxPublicCIDRv6 = DefaultMaxPublicCIDRv6
 	}
 	g.deniedSuffixes = append(g.deniedSuffixes, deniedNames...)
+	g.codeHosts = append(g.codeHosts, builtinPublicCodeHosts...)
 	for _, p := range builtinDeniedPrefixes {
 		g.deniedPrefixes = append(g.deniedPrefixes, netip.MustParsePrefix(p))
 	}
@@ -118,10 +144,43 @@ func DefaultGuardrails() Guardrails {
 	return g
 }
 
+// WithPublicCodeHosts adds the operator's shared code hosts
+// (SCOPE_PUBLIC_CODE_HOSTS_EXTRA) to the built-in list. Blank entries are
+// ignored.
+func (g Guardrails) WithPublicCodeHosts(extra []string) Guardrails {
+	hosts := slices.Clone(g.codeHosts)
+	for _, h := range extra {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" && !slices.Contains(hosts, h) {
+			hosts = append(hosts, h)
+		}
+	}
+	g.codeHosts = hosts
+	return g
+}
+
+// PublicCodeHost reports whether host is a code host many organizations
+// share, where a repository entry must name at least a namespace.
+func (g Guardrails) PublicCodeHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if i := strings.LastIndexByte(host, ':'); i > 0 {
+		host = host[:i]
+	}
+	return slices.Contains(g.codeHosts, host)
+}
+
 // CheckPattern refuses a scope entry the platform does not allow
-// (PUBLIC_SUFFIX, DENY_LIST, CIDR_TOO_LARGE). Other types pass.
+// (PUBLIC_SUFFIX, DENY_LIST, CIDR_TOO_LARGE, SHARED_CODE_HOST). Other types
+// pass.
 func (g Guardrails) CheckPattern(t TargetType, pattern string) error {
 	switch t {
+	case TargetTypeRepository:
+		host := RepositoryPatternHost(pattern)
+		if g.deniedHost(host) {
+			return ErrDenyList
+		}
+		if RepositoryHostWide(pattern) && g.PublicCodeHost(host) {
+			return ErrSharedCodeHost
+		}
 	case TargetTypeDomain, TargetTypeSubdomain, TargetTypeEmailDomain:
 		wild, host := splitDomainWildcard(pattern)
 		return g.checkHost(host, wild)
