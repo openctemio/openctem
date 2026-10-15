@@ -14,6 +14,7 @@ import type {
   MemberStats,
   InvitationListResponse,
   Invitation,
+  InvitationPreview,
   CreateInvitationInput,
   UpdateMemberRoleInput,
   MemberWithUser,
@@ -307,6 +308,17 @@ export function updateMemberAccess(memberId: string, input: UpdateMemberAccessIn
  */
 export function createTenantInvitation(tenantIdOrSlug: string, input: CreateInvitationInput) {
   return fetcherWithOptions<Invitation>(tenantEndpoints.createInvitation(tenantIdOrSlug), {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+/**
+ * What inviting this address with these roles would do (RFC-095): policy,
+ * outside or personal, step-up and two-factor needs. Nothing is sent.
+ */
+export function previewInvitation(input: { email: string; role_ids: string[] }) {
+  return fetcherWithOptions<InvitationPreview>('/api/v1/organization/invitations/preview', {
     method: 'POST',
     body: JSON.stringify(input),
   })
