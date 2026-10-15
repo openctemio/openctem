@@ -150,7 +150,7 @@ func (s *GroupService) checkMembershipGrant(ctx context.Context, g *groupdom.Gro
 			return true, err
 		}
 		if external {
-			return true, ErrExternalRoleCeiling
+			return true, ErrExternalTeamFullData
 		}
 	}
 	return true, nil
@@ -279,7 +279,7 @@ func (s *GroupService) BindRole(ctx context.Context, groupID, roleID string, act
 			return err
 		}
 		if external {
-			return ErrExternalRoleCeiling
+			return ErrExternalTeamFullData
 		}
 	}
 	var by *shared.ID

@@ -761,7 +761,7 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	if err := actor.mayGrant(r); err != nil {
 		return err
 	}
-	if err := s.capExternalTarget(ctx, tid, uid, r); err != nil {
+	if err := s.capExternalTarget(ctx, assignedBy, tid, uid, r); err != nil {
 		return err
 	}
 	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
@@ -914,7 +914,7 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		if err := actor.mayGrant(r); err != nil {
 			return err
 		}
-		if err := s.capExternalTarget(ctx, tid, uid, r); err != nil {
+		if err := s.capExternalTarget(ctx, assignedBy, tid, uid, r); err != nil {
 			return err
 		}
 		if rid == roledom.OwnerRoleID {
@@ -1052,7 +1052,7 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 			skipped++
 			continue
 		}
-		if err := s.capExternalTarget(ctx, tid, uid, r); err != nil {
+		if err := s.capExternalTarget(ctx, assignedBy, tid, uid, r); err != nil {
 			return nil, err
 		}
 		if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
