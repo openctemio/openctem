@@ -32,7 +32,12 @@ type LimitsHandler struct {
 	svc    *entitlement.Service
 	stepUp StepUpVerifier
 	logger *logger.Logger
+	// portalURL is the hosted service's account page (ACCOUNT_PORTAL_URL).
+	portalURL string
 }
+
+// SetAccountPortalURL sets the account page linked when a limit applies.
+func (h *LimitsHandler) SetAccountPortalURL(u string) { h.portalURL = u }
 
 // NewLimitsHandler creates the handler.
 func NewLimitsHandler(svc *entitlement.Service, stepUp StepUpVerifier, log *logger.Logger) *LimitsHandler {
@@ -443,6 +448,9 @@ type OrganizationLimitsResponse struct {
 	OverLimit bool                        `json:"over_limit"`
 	Limits    []OrganizationLimit         `json:"limits"`
 	Denied    []OrganizationDeniedFeature `json:"denied_features"`
+	// AccountPortalURL is the service operator's account page, present only
+	// when one is configured and a limit or deny applies.
+	AccountPortalURL string `json:"account_portal_url,omitempty"`
 }
 
 // GetOwnLimits returns the limits and unavailable features that apply to the
@@ -474,6 +482,9 @@ func (h *LimitsHandler) GetOwnLimits(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, d := range sum.Denied {
 		resp.Denied = append(resp.Denied, OrganizationDeniedFeature{Feature: d.Feature, ReadOnlyUntil: d.ReadOnlyUntil})
+	}
+	if resp.Applies {
+		resp.AccountPortalURL = h.portalURL
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
