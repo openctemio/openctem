@@ -49,6 +49,10 @@ func (rtNucleiOnline) HasRetestSensor(context.Context, shared.ID, string) (bool,
 	return false, nil
 }
 
+func (rtNucleiOnline) RetestTools(context.Context, shared.ID) ([]string, error) {
+	return []string{"nuclei"}, nil
+}
+
 type rtHarness struct {
 	t   *testing.T
 	db  *sql.DB

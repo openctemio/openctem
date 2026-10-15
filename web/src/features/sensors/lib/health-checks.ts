@@ -13,6 +13,7 @@ import {
 } from './sensor-state'
 import {
   normalizeSensorVersion,
+  releaseLineOf,
   sensorSdkStatus,
   sensorSdkVersion,
   sensorVersionStatus,
@@ -345,7 +346,8 @@ export function sensorHealthChecks(
 
   // Version
   const v = normalizeSensorVersion(sensor.version)
-  const vs = sensorVersionStatus(sensor, channel.latest, channel.min)
+  const line = releaseLineOf(sensor, channel.products)
+  const vs = sensorVersionStatus(sensor, line.latest, line.min)
   checks.push(
     !v
       ? {
@@ -363,7 +365,7 @@ export function sensorHealthChecks(
               tr,
               'sensors.checks.version.unsupported',
               '{version}, older than the minimum supported {min}. Upgrade the sensor.',
-              { version: v, min: channel.min ?? '' }
+              { version: v, min: line.min ?? '' }
             ),
             action: 'install',
           }
@@ -376,7 +378,7 @@ export function sensorHealthChecks(
                 tr,
                 'sensors.checks.version.available',
                 '{version}; {latest} is available.',
-                { version: v, latest: channel.latest ?? '' }
+                { version: v, latest: line.latest ?? '' }
               ),
               action: 'install',
             }
@@ -395,18 +397,18 @@ export function sensorHealthChecks(
   // SDK, only when it needs attention (the version line covers the rest)
   const sdk = sensorSdkVersion(sensor)
   const sdkStatus = sensorSdkStatus(sensor)
-  const sdkReason = sensor.health_reasons?.find((r) => r.code === 'sdk_unsupported')
+  const sdkReason = sensor.health_reasons?.find((r) => r.code === 'sdk_advisory')
   const sdkName = sdk ?? msg(tr, 'sensors.checks.sdk.the', 'The SDK')
-  if (sdkStatus === 'unsupported' || sdkReason) {
+  if (sdkStatus === 'advisory' || sdkReason) {
     checks.push({
       key: 'sdk',
       label: L.sdk,
       status: 'warning',
       text: msg(
         tr,
-        'sensors.checks.sdk.unsupported',
-        '{sdk} is below the minimum supported{min}. Upgrade the sensor.',
-        { sdk: sdkName, min: channel.sdkMin ? ` ${channel.sdkMin}` : '' }
+        'sensors.checks.sdk.advisory',
+        '{sdk} has a published security advisory. Upgrade the sensor to a build with a fixed SDK.',
+        { sdk: sdkName }
       ),
       action: 'install',
     })

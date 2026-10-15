@@ -483,7 +483,7 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 // claimed commands go back when their lease ends): a job never leaves
 // without the organization's layer.
 func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules,
-	layers map[shared.ID]map[string]any,
+	layers map[shared.ID]settingsLayers,
 ) ([]*commanddom.Command, error) {
 	if s.httpPolicy != nil {
 		for i, c := range cmds {
@@ -587,7 +587,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	}
 
 	var rules *bp.JobRules
-	var layer map[string]any
+	var layer settingsLayers
 	if !cmd.CanBeAcknowledged() {
 		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
 	}
@@ -641,7 +641,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	if err != nil {
 		return got, err
 	}
-	withLayer, err := withToolSettings([]*commanddom.Command{got}, map[shared.ID]map[string]any{got.ID: layer})
+	withLayer, err := withToolSettings([]*commanddom.Command{got}, map[shared.ID]settingsLayers{got.ID: layer})
 	if err != nil {
 		return nil, err
 	}

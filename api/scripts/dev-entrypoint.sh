@@ -74,9 +74,9 @@ main() {
     rm -rf /app/tmp/openctem 2>/dev/null || true
 
     # Build from the go.mod pins only, exactly like CI and the release image
-    # (both run with GOWORK=off). The API needs one SDK module,
-    # github.com/openctemio/sdk-go/pkg/transfer, resolved from its tag; a
-    # mounted SDK checkout or a stale go.work in the source mount is ignored.
+    # (both run with GOWORK=off). The API needs no sensor SDK module (it
+    # depends on contracts only, ctis among them); a mounted SDK checkout or
+    # a stale go.work in the source mount is ignored.
     export GOWORK=off
 
     # Ensure go dependencies are in sync

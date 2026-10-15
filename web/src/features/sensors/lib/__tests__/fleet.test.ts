@@ -89,7 +89,11 @@ const fleet = () => {
   ]
 }
 
-const channel = { latest: 'v0.4.2', min: 'v0.4.0' }
+const channel = {
+  products: [
+    { id: 'openctemio-sensor', latest_version: 'v0.4.2', min_version: 'v0.4.0', image: '' },
+  ],
+}
 
 describe('summarizeFleet', () => {
   it('counts the health strip from the same ladder the rows use', () => {
@@ -126,11 +130,11 @@ describe('summarizeFleet', () => {
     expect(s.attentionKinds).toContain('content')
   })
 
-  it('an unsupported SDK (sdk_unsupported) counts as SDK attention', () => {
+  it('an SDK advisory (sdk_advisory) counts as SDK attention', () => {
     const f = fleet()
     f[1] = {
       ...f[1],
-      health_reasons: [{ code: 'sdk_unsupported', severity: 'warning', message: 'm' }],
+      health_reasons: [{ code: 'sdk_advisory', severity: 'warning', message: 'm' }],
     }
     const s = summarizeFleet(f, NOW, undefined, channel)
     expect(s.needsAttention).toBe(3)

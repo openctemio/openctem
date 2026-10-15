@@ -341,7 +341,7 @@ idle interval stays online: interval + grace) and `offline_after_seconds`
 whatever the state: `outbox_backlog` (results waiting over an hour),
 `outbox_dead_letters`, `outbox_evicted`, `key_expired`, `key_expiring` (within
 7 days), `identity_cloned` (two live processes use the key; see "Key use and
-cloned identities"), `version_unsupported`, `sdk_unsupported` (see "Build information"),
+cloned identities"), `version_unsupported`, `sdk_advisory` (see "Build information"),
 `no_tools` (a scanning daemon with no tools), `error_reported`,
 `heartbeat_late` (the sensor is late or stale, or its last delivered heartbeat
 came more than 1.5 intervals after the previous one, `control.gap_s`) and
@@ -349,13 +349,25 @@ came more than 1.5 intervals after the previous one, `control.gap_s`) and
 config report (below) `config_check_failed`, `config_check_warning` and
 `config_report_stale`. An online sensor with any reason is `degraded`.
 
-**Release channel**: `SENSOR_LATEST_VERSION` (default: the newest sensor release
-when the API was built, `none` turns it off) and `SENSOR_MIN_VERSION` (default
-none). `version` is normalized to one form (`0.4.2`, `v0.4.2` and `vv0.4.2` all
-read `v0.4.2`); `version_status` is `latest`, `update_available`, `unsupported`
-or `unknown` (no version, a dev build, or no channel). A git-describe build
-(`v0.4.2-3-gabc1234`) counts as its tag. Both settings are in the stats
-response (`latest_version`, `min_version`).
+**Sensor products and release lines** (RFC-037 §11): the platform knows
+several sensor products, listed in `versions.yaml` and built into the API
+(`internal/versions`): the scanning sensor (`openctemio-sensor`) and the
+Tenable.sc connector (`openctemio-connector-tenable`), each with its own
+`latest` and `min`. A sensor's product is what it reports (heartbeat
+`sensor.name`, else its User-Agent product token); one that reports none is
+the scanning sensor. `product` in the sensor response is that product,
+`product_known` whether the catalog lists it, and `product_latest_version` /
+`product_min_version` its release line. `version` is normalized to one form
+(`0.4.2`, `v0.4.2` and `vv0.4.2` all read `v0.4.2`); `version_status` compares
+it with the product's own line: `latest`, `update_available`, `unsupported`
+(below the product's minimum: health reason `version_unsupported`) or
+`unknown` (no version, a dev build, or a product the catalog does not list: a
+custom sensor gets no version verdict; its compatibility is the protocol and
+the capabilities it advertises). A git-describe build (`v0.4.2-3-gabc1234`)
+counts as its tag. The stats response lists the catalog (`products`: `id`,
+`latest_version`, `min_version`, `image`). A release bump changes
+`versions.yaml` only; there is no setting for it (`SENSOR_LATEST_VERSION` and
+`SENSOR_MIN_VERSION` are refused at startup).
 
 **Other fields**: `key_expires_at`, `last_offline_at`, `last_error_at`,
 `started_at` and `uptime_seconds` (from the heartbeat's `uptime_seconds`, stored
@@ -434,14 +446,14 @@ it is empty. Stored in `sensors.sdk_name`, `sdk_version`, `sensor_product`,
 `sensor_commit`, `sensor_build_time` (migration 000255); an empty part leaves
 the stored value.
 
-**SDK policy**: `SENSOR_SDK_MIN_VERSION` and `SENSOR_SDK_LATEST_VERSION`
-(default none; `none` turns one off). `sdk_status` per sensor is `unsupported`
-(below the minimum: health reason `sdk_unsupported`, so a heartbeating sensor
-is `degraded`), `outdated` (below the latest), `current`, or `unknown` (no SDK
-version known). The sensor responses carry `sdk_name`, `sdk_version`,
-`sdk_status`, `sensor_product`, `sensor_commit`, `sensor_build_time`; the stats
-add `sdk_min_version`, `sdk_latest_version`, `by_sdk_version` (`unknown` for
-none) and `by_sdk_status`; `GET /sensors?sdk_version=v0.9.0` (or `unknown`)
+**SDK**: informational, from `versions.yaml` (`sdk.latest`, `sdk.advisories`).
+`sdk_status` per sensor is `advisory` (an SDK release with a published
+security advisory: health reason `sdk_advisory`, so a heartbeating sensor is
+`degraded`), `outdated` (below the latest, no health effect), `current`, or
+`unknown` (no SDK version known). There is no SDK minimum. The sensor
+responses carry `sdk_name`, `sdk_version`, `sdk_status`, `sensor_product`,
+`sensor_commit`, `sensor_build_time`; the stats add `sdk_latest_version`,
+`sdk_advisories`, `by_sdk_version` (`unknown` for none) and `by_sdk_status`; `GET /sensors?sdk_version=v0.9.0` (or `unknown`)
 filters on it.
 
 ## Activity
@@ -524,17 +536,46 @@ reason, instead of the generic empty state.
 page shows: `docker` (docker run), `compose` (compose.yaml), `kubernetes`
 (Secret + PVC + Deployment; a Job for a one-shot sensor), `helm` (turns on the
 sensor bundled with the openctem chart), `yaml` (sensor.yaml), `env`, `cli`.
-Templates: `configs/sensor-templates/*.tmpl` (editable on the API host,
-`SENSOR_CONFIG_TEMPLATES_DIR`); the built-in fallbacks in
-`internal/app/sensor/config_templates_builtin.go` are generated from them
-(`go generate ./internal/app/sensor/`, a test keeps them identical).
+Templates: `configs/sensor-products/<set>/<format>.tmpl`, one directory per
+install snippet set (the `install` key of the product in `versions.yaml`:
+`sensor/`, `collector/`, `connector-tenable/`), editable on the API host
+(`SENSOR_CONFIG_TEMPLATES_DIR`). The built-in fallbacks in
+`internal/app/sensor/config_templates_builtin.go` are generated from the
+shipped sets (`go generate ./internal/app/sensor/`, a test keeps them
+identical). Templates are product data: the platform passes the same closed
+data to every set (API URL, key reference, the product's image and tag from
+the catalog, CA, name) and never names a sensor's settings itself.
+
+**A new sensor product needs no platform change** (RFC-094 I2). A product of
+your own (for example a sensor built on the SDK) is:
+
+1. a section in the file named by `SENSOR_PRODUCTS_FILE`, in the
+   `versions.yaml` product format (`product`, `latest`, `min`, `image`,
+   `install`, and `release_identity`, which may be `""`). It may not redefine
+   a built-in product or a fixed section, and an invalid file stops the API
+   from starting;
+2. its snippet set: `<SENSOR_CONFIG_TEMPLATES_DIR>/<install>/docker.tmpl`
+   (required) and any other formats.
+
+The Sensors page then lists the product (named by its id), the install
+dialog offers its snippets (`?product=<id>`), and its sensors are judged
+against its own release line. A sensor reporting a product the catalog does
+not list gets version status `unknown`.
 
 Every snippet works as pasted for the release it pins (tests run `bash -n` on
 the shell ones and parse the YAML ones; `docker compose config` accepts the
 compose file):
 
-- **Image** `SENSOR_IMAGE` (default `ghcr.io/openctemio/sensor`) with the tag
-  `SENSOR_LATEST_VERSION`, never `latest`. The response's `image` says which.
+- **Product** `?product=<id>`: a catalog product (400 otherwise); default the
+  product the sensor reports when the catalog lists it, else the scanning
+  sensor. Each product has its own snippet set (`versions.yaml` `install`:
+  `sensor` is `<format>.tmpl`, another set is `<set>-<format>.tmpl` and may
+  ship only some formats; the others come back empty). A collector always gets
+  the collector's set. The response's `product` says which.
+- **Image** the product's `image` with its `latest` tag, never `latest`;
+  `SENSOR_IMAGE` replaces the scanning sensor's repository (a mirror). The
+  response's `image` says which. A product set with a `release_identity` shows
+  the `cosign verify` command for that release.
 - **URL** `SENSOR_PUBLIC_API_URL`, else `APP_URL` (`api_url` in the response).
 - **Key** only when the caller passes the freshly issued key in
   `X-Sensor-API-Key` (validated: key characters only, it lands in a shell
@@ -579,7 +620,7 @@ compose file):
   (`-tool <name>`), a different mode. The sensor name becomes a slug.
 
 - **Collectors** (sensor type `collector`) get the asset collector's own
-  commands (`configs/sensor-templates/collector-*.tmpl`): the image
+  commands (`configs/sensor-products/collector/*.tmpl`): the image
   `SENSOR_COLLECTOR_IMAGE` (default `ghcr.io/openctemio/asset-collector:latest`
   until the collector tags a release), `SENSOR_API_URL`, the API key and
   vendor passwords as files (`SENSOR_API_KEY_FILE`, `LDAP_PASSWORD_FILE`),
@@ -1666,7 +1707,7 @@ and narrows dispatch:
   affect (`GET /scans/sensor-opt-in-impact`). Trigger refusals
   `SENSOR_POLICY_REFUSED` and `SENSOR_OPT_IN_DISABLED` carry a next-step hint.
 - **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
-  sensor-policy/v1 template (`configs/sensor-templates/policy.tmpl`)
+  sensor-policy/v1 template (`configs/sensor-products/sensor/policy.tmpl`)
   prefilled with the ranges of the sensor's scan zones (none for a sensor in
   the default zone, which scans public targets), tools from the sensor, and
   custom templates and interactsh off. The docker, Compose and Kubernetes
@@ -1844,13 +1885,65 @@ inside it. Use one zone per segment (scan-zones.md).
 ## Tool settings (RFC-038)
 
 > Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
-> **per-sensor tool settings, per-scan settings, the scan-layer preview and
-> the save-time check of scan and step options shipped** (below); tenant
-> policy and dangerous-option enablement are planned.
+> **organization tool defaults, per-sensor overrides, per-scan settings, the
+> scan-layer preview and the save-time check of scan and step options
+> shipped** (below); dangerous-option enablement is planned.
 
-**Per-sensor tool settings (shipped).** An owner or administrator configures
-each tool of one of the organization's own sensors from the sensor drawer's
-"Tool settings" tab.
+**Layers.** A tool's value comes from the first of these that sets it,
+reading upward:
+
+```
+tool default (the manifest's settings schema)
+  → organization default   (Settings → Scanning → Tool defaults; may raise or lower)
+  → sensor override        (sensor drawer → Tool settings; may raise or lower)
+  → scan profile / workflow step / scan   (scope "scan" keys; lower-only for rate, concurrency, retries)
+  → job decision           (the platform's budget, fitted under the value in force)
+  → sensor local policy    (on the sensor, last; only narrows)
+```
+
+The organization layer is a default, not a cap: a sensor overrides a key in
+either direction. Only the two administrators' layers may raise rate,
+concurrency or retries above the tool's default.
+
+**Organization tool defaults (shipped).** An owner or administrator sets,
+per tool, the values every one of the organization's own sensors runs the
+tool with, from Settings → Scanning → Tool defaults.
+
+- *Schema.* The tools listed are those that a current manifest of the
+  organization's own sensors declares settings for (never a platform
+  sensor). The form uses the reference schema, which is the one from the most
+  recently reported manifest.
+- *Validation.* A save is validated against **every** distinct schema the
+  organization's sensors report for the tool (at most 200 sensors, one per
+  schema digest), as a tenant layer (`ValidateTenantToolSettings`). A
+  value one sensor's tool version refuses is a 422 whose message names that
+  sensor. A non-default dangerous (T2) value is refused.
+- *Storage.* Table `tenant_tool_settings` (migration `002136`): `tenant_id`,
+  `tool`, `values`, `schema_digest` (of the reference schema), `updated_by`,
+  `updated_at`; primary key (`tenant_id`, `tool`); foreign key to `tenants`
+  with `ON DELETE CASCADE`.
+- *Audit.* Saving and resetting log `settings.updated` on the organization
+  (`resource_type` `tenant`, resource name `tool defaults: <tool>`) with one
+  change per key (`tool_settings.<tool>.<key>`), redacted like the
+  sensor's. A change that sets an Impact option is high severity.
+- *Problems.* Defaults that a sensor's schema refuses (a sensor joined or was
+  upgraded with an older or narrower tool) are listed per sensor on the page
+  and in that sensor's Tool settings tab. That sensor's jobs of the tool fail
+  with `TOOL_SETTINGS_INVALID` until the defaults change. They are never
+  silently dropped.
+
+**Impact options need step-up.** Setting an `x-octm-tier: T1` (Impact) key
+to a new value, in either the organization or the sensor layer, needs the
+acting user's recent re-authentication (403 `STEP_UP_REQUIRED`;
+docs/architecture/step-up-reauth.md). Removing such a value does not.
+`sensors:write` is reserved for the owner and admin roles, which hold every
+permission, so a separate permission would add no control. Step-up is the
+control.
+
+**Per-sensor overrides (shipped).** An owner or administrator overrides the
+organization's defaults for one of the organization's own sensors from the
+sensor drawer's "Tool settings" tab. Each option shows its effective value
+and its source (tool default, organization or this sensor).
 
 - *Schema.* The settings schema is the `config` object of the tool's
   descriptor (Tool Contract v1), which the sensor already reports in its
@@ -1879,10 +1972,18 @@ each tool of one of the organization's own sensors from the sensor drawer's
   sensitive or write-only key, or of a key the schema no longer knows, is
   written as `[redacted]`.
 - *Delivery.* When a sensor claims a scan job (claim-N, poll, claim by id;
-  `internal/app/command/tool_settings.go`), the platform looks up that
-  sensor's stored values for the job's tool and puts them into the payload
-  as `settings_layers: {"sensor": {...}}` before the job is signed, so the
-  job signature (payload SHA-256) covers them. The stored command is never
+  `internal/app/command/tool_settings.go`), the platform looks up the
+  organization's defaults and that sensor's stored values for the job's
+  tool and puts them into the payload as `settings_layers: {"tenant": {...},
+  "sensor": {...}}` before the job is signed, so the job signature (payload
+  SHA-256) covers them. `tenant` is the organization's defaults *without
+  the keys the sensor overrides* (`InheritedValues`), so the two layers
+  never share a key. The sensor resolves them with the unchanged settings
+  contract (whose tenant layer would otherwise cap the sensor's), and its
+  report names each key's source. `tenant` is added only when the claiming
+  sensor is one of the command's organization's own sensors, never for a
+  shared platform sensor. The organization's values are validated against
+  the claiming sensor's schema on every claim. The stored command is never
   changed, and a `settings_layers` that a command's creator put in the
   payload is replaced or removed. If the sensor's current schema digest
   differs from the stored one (a sensor upgrade), the values are validated
@@ -1896,16 +1997,22 @@ each tool of one of the organization's own sensors from the sensor drawer's
 
 | Route | Gate | |
 |---|---|---|
-| `GET /api/v1/sensors/{id}/tool-settings` | `sensors:read` | per tool with a schema: `schema`, `schema_digest`, `values`, `stored`, `problems` |
+| `GET /api/v1/sensors/tool-defaults` | `sensors:read` | per tool the organization's own sensors declare settings for: reference `schema`, `values`, `stored`, `sensors` (count), `problems` per sensor |
+| `PUT /api/v1/sensors/tool-defaults/{tool}` | `sensors:write` (+ step-up for an Impact change) | body `{"values": {...}}`; 422 by path, naming the sensor that refuses a value |
+| `DELETE /api/v1/sensors/tool-defaults/{tool}` | `sensors:write` | back to the tool's defaults; works for a tool no sensor reports any more |
+| `GET /api/v1/sensors/{id}/tool-settings` | `sensors:read` | per tool with a schema: `schema`, `schema_digest`, `values`, `stored`, `problems`, `organization_values`, `organization_problems` |
 | `PUT /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | body `{"values": {...}}`; 422 with `details: [{path, message}]` |
 | `DELETE /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | back to defaults; works for a tool the manifest no longer lists |
-| `GET /api/v1/sensors/{id}/tool-settings/{tool}/effective` | `sensors:read` | every key with `value`, `source` (`default`/`sensor`), `flag`, `common`, `scope`, `tier` |
-| `POST /api/v1/sensors/{id}/tool-settings/{tool}/preview` | `sensors:read` | read-only; body `{"config": {...}}` (a scan's or step's options); every key with its `source` (`default`/`sensor`/`scan`) and the `ignored` config keys; 422 by path when the sensor would refuse the config |
+| `GET /api/v1/sensors/{id}/tool-settings/{tool}/effective` | `sensors:read` | every key with `value`, `source` (`default`/`tenant`/`sensor`), `chain` (every layer that sets it, lowest first), `flag`, `common`, `scope`, `tier` |
+| `POST /api/v1/sensors/{id}/tool-settings/{tool}/preview` | `sensors:read` | read-only; body `{"config": {...}}` (a scan's or step's options); every key with its `source` (`default`/`tenant`/`sensor`/`scan`), `chain`, and the `ignored` config keys; 422 by path when the sensor would refuse the config |
 
-Every route ends with the own-sensor check: another organization's sensor
-and a platform sensor answer 404. Key files:
+Every route on one sensor ends with the own-sensor check: another
+organization's sensor and a platform sensor answer 404; the tool-defaults
+routes take the organization from the authenticated context. Key files:
 `pkg/domain/sensor/tool_settings.go`, `internal/app/sensor/tool_settings.go`,
+`internal/app/sensor/tool_defaults.go`,
 `internal/infra/postgres/sensor_tool_settings.go`,
+`internal/infra/postgres/tenant_tool_settings.go`,
 `internal/infra/http/handler/sensor_tool_settings_handler.go`,
 `internal/app/command/tool_settings.go`; web
 `web/src/features/sensors/components/sensor-tool-settings.tsx` and
@@ -1918,10 +2025,10 @@ workflow step's options are checked the way the sensor will resolve them
 schema declares, minus the keys the sensor's executor reads itself
 (`rate_limit`, `concurrency`, `bulk_size` are the job's limits, which only
 ever lower the value in force; `allow_interactsh`, `exclude`); other keys
-are ignored, as on the sensor. Over the sensor's stored values, the scan
-layer may only set `scan`-scope keys within their bounds, may not raise
-rate, concurrency or retries above the value in force (the sensor's raise,
-or the default), and may not give a dangerous (T2) key a non-default value.
+are ignored, as on the sensor. Over the organization's defaults and the
+sensor's stored values, the scan layer may only set `scan`-scope keys within
+their bounds, may not raise rate, concurrency or retries above the value in
+force (the sensor's, the organization's, or the default), and may not give a dangerous (T2) key a non-default value.
 
 - *Preview.* `POST .../tool-settings/{tool}/preview` answers what a job of
   that config runs with on that sensor, before the job's own limits and the
