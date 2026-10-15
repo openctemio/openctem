@@ -406,8 +406,13 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 		return fmt.Errorf("lookup finding by issue url: %w", err)
 	}
 
-	// A ticket never closes a finding (see IsTicketInboundTarget).
-	if !target.IsTicketInboundTarget() {
+	// A ticket never closes a finding: the transition engine allows a ticket
+	// work-state moves only (IsTicketInboundTarget), along the lifecycle.
+	ticket := vulnerability.TransitionActor{Kind: vulnerability.TransitionActorTicket}
+	facts := vulnerability.TransitionFacts{Status: finding.Status(), Source: finding.Source(), Severity: finding.Severity()}
+	if d := vulnerability.EvaluateTransition(facts, ticket, target); !d.Allowed {
+		s.logger.Warn("github webhook: the transition engine refused the move",
+			"finding_id", finding.ID().String(), "current", finding.Status(), "target", target, "error", d.Err())
 		return nil
 	}
 	oldStatus := finding.Status()
