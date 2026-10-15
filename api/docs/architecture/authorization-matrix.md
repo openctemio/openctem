@@ -515,11 +515,6 @@ the billing page in the UI.
 > scope). Every change, every token exchange (issued or refused after
 > verification) and every verdict is audited; no token is ever written.
 > Pipelines follow the repository data scope like runs.
->
-> `GET /api/v1/fleet` (the Sensors page) admits `sensors:read` **or**
-> `scans:ci:read`; the handler lists daemon rows only with `sensors:read` and
-> runner rows (CI pipelines) only with `scans:ci:read` and the `scans` module,
-> under the data scope. Asking for a mode without its permission is 403.
 
 #### Template sources and the secret store (`/api/v1/template-sources`, `/api/v1/secret-store`)
 
@@ -1326,28 +1321,53 @@ provisioning or SSO JIT re-activates a tombstone from zero (only the new
 role). Tombstones yield no token, no tenant-switcher entry, are left out of
 the default member list (`?status=offboarded|all` shows them) and out of SCIM.
 
-### External members (RFC-058)
+### External members (RFC-058, amended by RFC-095)
 
 A member whose email domain the organization does not hold is **external**.
 The domain may belong to another organization (their home organization), be
 a personal address, or be a work domain nobody has verified.
 
+- **Who may be invited** is the organization's policy, `Security.invitees`:
+  `any` (default), `verified_domains`, or `allow_list` (verified domains plus
+  `allowed_domains`). An organization with `allowed_domains` from before reads
+  as `allow_list`. Refusals carry the codes `INVITEE_NOT_ON_VERIFIED_DOMAIN`
+  (403) and `INVITEE_DOMAIN_NOT_ALLOWED` (400).
 - They join only by accepting an invitation addressed to them. Adding an
   existing account or creating an account for them is refused
   (`ErrExternalNeedsInvitation`).
-- They join as a **viewer** with no data scope until added to a team.
-  An invitation offering more is refused.
-- They never hold the owner role (DB CHECK and triggers on `tenant_members`
-  and `user_roles`). They are never granted the admin role or a role with full
-  data access (`RoleService.capExternalTarget`, every grant path, system paths
-  included; `ErrExternalRoleCeiling`, 403).
-- Without a home organization, their access must end:
+- They may be invited to, or given, **any role but owner**. They never hold
+  the owner role (DB CHECK and triggers on `tenant_members` and `user_roles`).
+  A role "above member" (the admin role, full data access, or a privileged
+  permission the built-in member role does not carry: members, teams, roles,
+  API keys, settings; `permission.IsAboveMember`):
+  - needs the inviter's or assigner's **step-up** (`CreateInvitation`,
+    `RoleService.capExternalTarget` on every assignment path,
+    `UpdateMemberRole`); a grant carried out for someone else, such as an
+    invitation being accepted, is not asked again;
+  - makes every token mint for that member require a **second factor**
+    (`AuthService.enforceOutsidePrivilegePolicy`), including the token the
+    refresh-token acceptance mints;
+  - is refused when an active trust with their home organization caps them
+    (`max_role` viewer or member, `ErrExternalRoleCeiling`);
+  - never comes through a team: full data access reaches an outside person
+    only through a role given to them directly (`ErrExternalTeamFullData`).
+- **End of access** is optional for everyone. With
+  `Security.external_access_end_required` on, an outside person no
+  organization manages must have one:
   - 90 days by default, 365 at most;
   - `MemberAccessExpiryController` suspends the membership within a minute
     (`suspended_reason = expired`), in that organization only;
   - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
     `members:write`) sets a new end date and re-enables them;
   - a plain reactivation is refused.
+- **API keys** follow the member: allowed unless an active trust with their
+  home forbids keys, and never beyond the end of access.
+- **Acceptance re-authorizes the invitation** as the inviter: an inviter who
+  left, was suspended, or no longer holds the owner or admin role (or, for the
+  admin role, is no longer the owner), or can no longer grant one of the
+  roles, voids the invitation (`INVITATION_NO_LONGER_VALID`, 403) and nothing
+  is granted. Both acceptance paths (`/invitations/accept` and
+  `/invitations/accept-with-refresh`) run the same `TenantService.AcceptInvitation`.
 - The host sees the home organization's name only.
 - **Trusted organizations** (`/api/v1/organization/trusts`):
   - reading needs owner/admin plus `members:read`; every change needs an owner with step-up;
@@ -1956,13 +1976,14 @@ deliberately.
 
 ## Role templates
 
-The built-in roles (`permission.SystemRoles`) are deliberately coarse.
-Least-privilege roles for the people in a CTEM program are custom roles,
-created from a **role template** (`permission.RoleTemplates`,
-`GET /api/v1/roles/templates`, `team:roles:read`). A template is a starting
-point and grants nothing. Creating a role from one is an ordinary
-`POST /api/v1/roles`: the grant ceiling, the admin-only refusal and the audit
-apply, so a template never lets anyone build a role above their own grants.
+The built-in roles (`permission.SystemRoles`) are deliberately few: **owner,
+admin, member and viewer**. Every other role is a custom role of the
+organization, usually created from a **role template**
+(`permission.RoleTemplates`, `GET /api/v1/roles/templates`, `team:roles:read`;
+design: RFC-095). A template is a starting point and grants nothing. Creating
+a role from one is an ordinary `POST /api/v1/roles` with `template_id`: the
+grant ceiling, the admin-only refusal and the audit apply, so a template never
+lets anyone build a role above their own grants.
 
 | Template | For | Full data |
 |---|---|---|
@@ -1971,13 +1992,38 @@ apply, so a template never lets anyone build a role above their own grants.
 | `vulnerability-manager` | backlog routing, assignment rules, campaigns, scan schedules, reports | no |
 | `remediation-owner` | asset owners, IT, developers: comments, remediation, fix applied | no |
 | `appsec-engineer` | code and dependency scanning, application findings, the CI gate | no |
+| `ci-integrator` | platform engineers keeping pipelines connected: CI runs and gate results, read only | no |
 | `scan-operator` | scans and scan workflows on approved scope | no |
+| `sensor-operator` | sensor health, zones and commands; pairing and keys stay with administrators | no |
 | `validation-engineer` | pentest campaigns, simulations, control tests, retests | no |
 | `external-tester` | a vendor tester: only the campaigns they are a member of | no |
+| `researcher` | bug-bounty researchers: programs, scans and findings of their programs (RFC-065) | no |
+| `bounty-triager` | triages researcher reports; never approves or changes program scope | no |
 | `threat-intel-analyst` | attacker profiles, threat intel, external exposures | no |
 | `risk-approver` | GRC: approves risk acceptance and suppressions, compliance | no |
 | `auditor` | read-only evidence, the audit log and exports | yes |
 | `executive` | dashboards, cycle outcomes and reports; less than viewer | no |
+
+**Versions.** Each template has a version. A role created from a template
+records the template id, the version and the template's permissions at that
+version (`roles.template_id`, `template_version`, `template_permissions`).
+A later change to the template never changes the role. When the catalog has a
+newer version, the role's responses carry `template.update_available` and the
+difference (in `GET /api/v1/roles/{id}` and the role list); an editor applies it with
+`POST /api/v1/roles/{id}/template/apply {version}` (`team:roles:write`). The
+update adds what the template added and removes what it removed, keeps the
+role's own edits, never changes full data access, and goes through
+`UpdateRole`, so the editor ceiling and the team-binding guard apply. A
+version other than the one the editor reviewed answers 409.
+`TestRoleTemplates_VersionPinned` pins each template's version to a digest of
+its grants, so a grant change without a new version fails CI.
+
+**Summaries.** Role and template responses carry `summary`: a risk tier
+(`critical` for owner and admin; `high` for full data, people, roles, keys,
+settings or secrets; `medium` for any change, scan run or approval; `low` for
+reads), the reasons, and per product area whether the role views or changes
+it (`permission.Summarize`). The console shows these instead of a permission
+count.
 
 Unit tests (`templates_test.go`) keep the templates honest:
 - every permission is in the catalog and none is admin-only;
@@ -1989,7 +2035,9 @@ Unit tests (`templates_test.go`) keep the templates honest:
 - no template administers the organization or deletes anything;
 - only `program-lead` and `auditor` see all data;
 - `auditor` and `executive` are read-only, and `executive` is within viewer;
-- `external-tester` holds no organization-wide findings, exposures, members or scans.
+- `external-tester` holds no organization-wide findings, exposures, members or scans;
+- the CI gate policy and break-glass stay with `appsec-engineer`;
+- `researcher` comments but never re-scores or approves.
 
 `TestRoleTemplates_CreationIsBoundedByTheCreator` checks two things: the owner can create every template, and a delegated role manager can create only the templates their own grants cover.
 
@@ -2039,7 +2087,7 @@ role. A custom role created later needs them explicitly for those reads.
 `PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
 finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
 reactions (`/comments/{comment_id}/reactions*`). The migration granted both to
-every role that held `findings:write`, except that the built-in Researcher role
+every role that held `findings:write`, except that the built-in Researcher role (now the `researcher` template, RFC-095)
 gets `findings:comment` only (researchers report and discuss; triage owns
 severity). A custom role without `findings:severity`
 (the remediation-owner template) can fix and discuss a finding but not
@@ -2071,7 +2119,7 @@ report all read it.
 | Binding is a grant | `POST/DELETE /api/v1/groups/{groupId}/roles` need `team:roles:assign` and `team:groups:write`; the actor must hold every permission of the role (and full data if it has it) and, without full data access, every asset of the team (D13) |
 | Membership of a team that carries roles is a grant | adding, extending or removing someone needs the same ceiling for each bound role; nobody but the owner adds themselves |
 | Privileged roles are the owner's | a role with full data access or a permission in `permission.PrivilegedPermissions` (member, team, role, API key, secret store or settings administration) is bound, unbound, its team's membership changed, or an existing bound role made privileged, by the owner only, with a recent sign-in |
-| External members | never hold a full-data role through a team (refused on add and on bind) |
+| External members | never hold a full-data role through a team (refused on add and on bind, `ErrExternalTeamFullData`) |
 | Limits | at most 10 roles per team; a bound role cannot be deleted (409 `ROLE_IN_USE`) |
 | Freshness | every bind, unbind, add, remove, end-date change, expiry and role edit invalidates the affected members' cached permissions (role edits fan out to direct and team holders) |
 | Audit | `role.assigned` / `role.unassigned` on the team (metadata `binding=team`, the role, `privileged`, member count), High, Critical when privileged |
