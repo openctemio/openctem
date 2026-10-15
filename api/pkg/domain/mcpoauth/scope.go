@@ -57,7 +57,7 @@ var catalog = map[Scope]scopeInfo{ //nolint:gochecknoglobals // fixed scope tabl
 	},
 	ScopeFindingsComment: {
 		perms: []permission.Permission{permission.FindingsComment},
-		title: "Add comments to findings, each one confirmed by you in OpenCTEM",
+		title: "Add comments to findings, each one confirmed by you in the platform",
 		write: true,
 	},
 	ScopePentestRead: {
