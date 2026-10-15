@@ -165,7 +165,14 @@ type Service struct {
 	stepUp    shared.RecentAuthGate
 	rules     SuppressionRules
 	modules   ModuleGuard
+	gitlab    GitLabClients
 }
+
+// SetGitLab lets the gate read a GitLab merge request's target branch through
+// the organization's GitLab connection, the only verified source of a GitLab
+// merge request run's baseline (its token signs none). Without it such a run
+// is compared with the default branch.
+func (s *Service) SetGitLab(g GitLabClients) { s.gitlab = g }
 
 // Deps are the service's collaborators.
 type Deps struct {
