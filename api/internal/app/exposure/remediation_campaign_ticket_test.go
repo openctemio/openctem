@@ -238,7 +238,7 @@ func TestCampaignTicketsFor_Batch(t *testing.T) {
 // it never completes the campaign. A non-epic issue is not handled.
 func TestHandleEpicStatusChange_DoneClaimsFixNeverCompletes(t *testing.T) {
 	c := newCampaign(t)
-	c.SetFindingFilter(map[string]any{"severity": "high"})
+	c.SetFindingFilter(map[string]any{"severity": "high", "tool_name": "trivy"})
 	if err := c.Activate(); err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func (failingResolver) ResolveOpenByFilter(context.Context, string, vulnerabilit
 // The epic comment never carries internal error text.
 func TestHandleEpicStatusChange_FailureCommentIsFixed(t *testing.T) {
 	c := newCampaign(t)
-	c.SetFindingFilter(map[string]any{"severity": "high"})
+	c.SetFindingFilter(map[string]any{"severity": "high", "tool_name": "trivy"})
 	link, err := remediation.NewCampaignTicket(c.TenantID(), c.ID(), "jira", "SEC-9", "https://x.atlassian.net/browse/SEC-9")
 	if err != nil {
 		t.Fatal(err)
