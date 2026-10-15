@@ -300,6 +300,9 @@ services:
       # Who creates organizations: admin_only (platform administrator: console or
       # bootstrap-admin -org-*) or self_service (any signed-in user; SaaS/trial).
       TENANT_CREATION_MODE: ${TENANT_CREATION_MODE:-admin_only}
+      # Starting limits of self-service organizations (required with self_service):
+      # a JSON object of limits, or unlimited.
+      SELF_SERVICE_START_LIMITS: ${SELF_SERVICE_START_LIMITS:-}
       # Platform e-mail (SMTP) is set in the admin console: System > E-mail.
       # Sensors: the install snippets on the Sensors page install the
       # gateway's internal CA (TLS mode internal; the file is absent in the

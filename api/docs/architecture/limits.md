@@ -109,6 +109,20 @@ same setting holds `orgs_per_user`. Organizations created by the platform
 (bootstrap-admin, the console, an approved access request) start with none.
 Changing the defaults does not change existing organizations.
 
+**Self-service sign-up requires starting limits.** A public sign-up must
+never hand out unlimited organizations by accident, so while sign-up is
+`self_service` (`TENANT_CREATION_MODE`, or the console sign-up policy):
+
+- the API refuses to start, and the console refuses to switch sign-up to
+  self-service (409), unless starting limits are configured;
+- configured means one of: a saved console setting (System > Limits, even an
+  empty one), `SELF_SERVICE_START_LIMITS` (a JSON object of limits, or
+  `unlimited` for an explicit choice of none), or the internal entitlements
+  API of a hosted service (its control plane sets them);
+- the console setting wins over the environment value.
+
+An `admin_only` installation (the default) needs none of this.
+
 ## Enforcement
 
 The check sits at the **insert** (`internal/infra/postgres/limits_check.go`),

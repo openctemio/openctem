@@ -203,3 +203,34 @@ func TestUpdate_NothingStoredStartsFromVersionZero(t *testing.T) {
 		t.Fatalf("expected the first save to work, got %+v %v", st, err)
 	}
 }
+
+// Self-service sign-up cannot be turned on while no starting limits are
+// configured; admin_only always can; a read error refuses too.
+func TestUpdate_SelfServiceNeedsStartLimits(t *testing.T) {
+	repo := &memRepo{}
+	actor := mustAdmin(t, "alice@op.example")
+	svc := NewService(repo, nil, nil, nil, nil)
+	ctx := context.Background()
+	_ = svc.Seed(ctx, "admin_only")
+	configured, readErr := false, error(nil)
+	svc.SetStartLimitsCheck(func(context.Context) (bool, error) { return configured, readErr })
+
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 1, "", ""); !errors.Is(err, ErrStartLimitsRequired) {
+		t.Fatalf("no starting limits: %v", err)
+	}
+	if svc.Current(ctx).AllowsSelfService() {
+		t.Fatal("a refused update must not change the policy")
+	}
+	readErr = errors.New("db down")
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 1, "", ""); err == nil {
+		t.Fatal("an unreadable check must refuse")
+	}
+	readErr = nil
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly}, 1, "", ""); err != nil {
+		t.Fatalf("admin_only needs nothing: %v", err)
+	}
+	configured = true
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 2, "", ""); err != nil {
+		t.Fatalf("configured: %v", err)
+	}
+}
