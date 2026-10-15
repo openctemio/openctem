@@ -89,7 +89,7 @@ func TestCampaignAudit_Create(t *testing.T) {
 
 func TestCampaignAudit_UpdateRecordsOnlyChangedFields(t *testing.T) {
 	svc, rec, c := newAuditedService(t, &fakeCounter{total: 4})
-	name, prio := "Patch log4j everywhere", "urgent"
+	name, prio := "Patch log4j everywhere", "critical"
 	if _, err := svc.UpdateCampaign(context.Background(), c.TenantID().String(), c.ID().String(),
 		UpdateRemediationCampaignInput{Name: &name, Priority: &prio}, actor); err != nil {
 		t.Fatalf("UpdateCampaign: %v", err)
@@ -101,7 +101,7 @@ func TestCampaignAudit_UpdateRecordsOnlyChangedFields(t *testing.T) {
 	if ev.Changes.Before["name"] != "Patch log4j" || ev.Changes.After["name"] != name {
 		t.Errorf("name change = %v -> %v", ev.Changes.Before["name"], ev.Changes.After["name"])
 	}
-	if ev.Changes.Before["priority"] != "high" || ev.Changes.After["priority"] != "urgent" {
+	if ev.Changes.Before["priority"] != "high" || ev.Changes.After["priority"] != "critical" {
 		t.Errorf("priority change = %v -> %v", ev.Changes.Before["priority"], ev.Changes.After["priority"])
 	}
 	if _, ok := ev.Changes.After["description"]; ok {
