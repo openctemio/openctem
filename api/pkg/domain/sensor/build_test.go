@@ -51,21 +51,37 @@ func TestResolveBuild(t *testing.T) {
 func ptrTime(t time.Time) *time.Time { return &t }
 
 func TestClassifySDK(t *testing.T) {
+	adv := []string{"v0.7.4", "v0.9.0"}
 	cases := []struct {
-		v, latest, min string
-		want           SDKStatus
+		v, latest string
+		want      SDKStatus
 	}{
-		{"", "v0.9.0", "v0.8.0", SDKUnknown},
-		{"v0.7.4", "v0.9.0", "v0.8.0", SDKUnsupported},
-		{"v0.8.5", "v0.9.0", "v0.8.0", SDKOutdated},
-		{"v0.9.0", "v0.9.0", "v0.8.0", SDKCurrent},
-		{"v0.9.0", "", "", SDKCurrent},
-		{"v0.7.0", "", "v0.8.0", SDKUnsupported},
+		{"", "v0.9.0", SDKUnknown},
+		{"v0.7.4", "v0.9.0", SDKAdvisory},
+		{"0.7.4", "v0.9.0", SDKAdvisory},
+		{"v0.7.4-3-gabcdef1", "v0.9.0", SDKAdvisory}, // a build after the advised tag
+		{"v0.7.5", "v0.9.0", SDKOutdated},            // older, but no advisory: informational
+		{"v0.7.0", "v0.9.0", SDKOutdated},
+		{"v0.9.0", "v0.9.0", SDKAdvisory}, // the latest can have an advisory too
+		{"v0.9.1", "v0.9.0", SDKCurrent},
+		{"v0.1.0", "", SDKCurrent},
 	}
 	for _, c := range cases {
-		if got := ClassifySDK(c.v, c.latest, c.min); got != c.want {
-			t.Errorf("ClassifySDK(%q, %q, %q) = %s, want %s", c.v, c.latest, c.min, got, c.want)
+		if got := ClassifySDK(c.v, c.latest, adv); got != c.want {
+			t.Errorf("ClassifySDK(%q, %q) = %s, want %s", c.v, c.latest, got, c.want)
 		}
+	}
+	if got := ClassifySDK("v0.7.4", "v0.9.0", nil); got != SDKOutdated {
+		t.Errorf("no advisories: %s", got)
+	}
+}
+
+func TestBuildInfo_ProductID(t *testing.T) {
+	if got := (BuildInfo{}).ProductID(); got != DefaultProduct {
+		t.Errorf("no product reported -> %q, want %q", got, DefaultProduct)
+	}
+	if got := (BuildInfo{Product: "openctemio-connector-tenable"}).ProductID(); got != "openctemio-connector-tenable" {
+		t.Errorf("reported product -> %q", got)
 	}
 }
 
