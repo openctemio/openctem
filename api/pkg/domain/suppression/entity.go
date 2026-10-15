@@ -90,6 +90,12 @@ type Rule struct {
 	// Expiration
 	expiresAt *time.Time
 
+	// Review flag: set when the platform gave the rule an end it did not
+	// have (rules made before an end was required); cleared when a person
+	// edits the rule.
+	reviewFlaggedAt *time.Time
+	reviewReason    string
+
 	// Audit
 	createdAt time.Time
 	updatedAt time.Time
@@ -116,8 +122,11 @@ func NewRule(
 	}
 
 	now := time.Now().UTC()
+	// Every rule ends; callers set the asked end with SetExpiresAt.
+	end := now.Add(DefaultRuleDuration)
 	return &Rule{
 		id:              shared.NewID(),
+		expiresAt:       &end,
 		tenantID:        tenantID,
 		name:            name,
 		suppressionType: suppressionType,
@@ -154,6 +163,8 @@ type RuleData struct {
 	ExpiresAt        *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	ReviewFlaggedAt  *time.Time
+	ReviewReason     string
 }
 
 // ReconstituteRule recreates a Rule from persistence.
@@ -180,6 +191,8 @@ func ReconstituteRule(data RuleData) *Rule {
 		expiresAt:        data.ExpiresAt,
 		createdAt:        data.CreatedAt,
 		updatedAt:        data.UpdatedAt,
+		reviewFlaggedAt:  data.ReviewFlaggedAt,
+		reviewReason:     data.ReviewReason,
 	}
 }
 
@@ -208,6 +221,17 @@ func (r *Rule) RejectionReason() string  { return r.rejectionReason }
 func (r *Rule) ExpiresAt() *time.Time    { return r.expiresAt }
 func (r *Rule) CreatedAt() time.Time     { return r.createdAt }
 func (r *Rule) UpdatedAt() time.Time     { return r.updatedAt }
+
+// ReviewFlaggedAt is when the rule was flagged for review (nil = not
+// flagged); ReviewReason says why (ReviewReasonNoEndDate).
+func (r *Rule) ReviewFlaggedAt() *time.Time { return r.reviewFlaggedAt }
+func (r *Rule) ReviewReason() string        { return r.reviewReason }
+
+// ClearReview drops the review flag: a person changed the rule.
+func (r *Rule) ClearReview() {
+	r.reviewFlaggedAt = nil
+	r.reviewReason = ""
+}
 
 // Setters for criteria
 

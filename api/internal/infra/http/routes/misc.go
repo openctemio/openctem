@@ -86,6 +86,17 @@ func registerLegalRoute(router Router, h *handler.AdminLegalHandler) {
 	router.GET("/api/v1/legal", h.Public)
 }
 
+// registerBrandRoutes registers the public instance brand: GET /api/v1/brand
+// and its images. Public on purpose (the sign-in page shows the brand);
+// nothing secret or tenant-specific is in it (docs/architecture/brand.md).
+func registerBrandRoutes(router Router, h *handler.BrandHandler) {
+	if h == nil {
+		return
+	}
+	router.GET("/api/v1/brand", h.Get)
+	router.GET("/api/v1/brand/images/{kind}", h.Asset)
+}
+
 // registerDocsRoutes registers the API documentation (the OpenAPI spec and
 // the API reference page). The public documentation lives on the docs site,
 // so in production the API serves:

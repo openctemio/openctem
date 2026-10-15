@@ -72,6 +72,7 @@ import (
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -173,7 +174,7 @@ func setupMailer(ctx context.Context, db *sql.DB, log *logger.Logger) tenantapp.
 		startTLS := os.Getenv("BOOTSTRAP_SMTP_STARTTLS") != "false"
 		created, err := svc.Seed(ctx, platformemail.Input{
 			Host: host, Port: port, Username: os.Getenv("BOOTSTRAP_SMTP_USER"), Password: password,
-			From: os.Getenv("BOOTSTRAP_SMTP_FROM"), FromName: firstNonEmpty(os.Getenv("BOOTSTRAP_SMTP_FROM_NAME"), "OpenCTEM"), StartTLS: startTLS,
+			From: os.Getenv("BOOTSTRAP_SMTP_FROM"), FromName: firstNonEmpty(os.Getenv("BOOTSTRAP_SMTP_FROM_NAME"), os.Getenv("BRAND_NAME"), brand.DefaultName), StartTLS: startTLS,
 		})
 		if err != nil {
 			fatal("BOOTSTRAP_SMTP_*: %v", err)
@@ -184,7 +185,7 @@ func setupMailer(ctx context.Context, db *sql.DB, log *logger.Logger) tenantapp.
 			fmt.Println("Platform e-mail settings already stored; BOOTSTRAP_SMTP_* ignored.")
 		}
 	}
-	mailer := authapp.NewEmailService(svc.Sender(), config.SMTPFromEnv(), firstNonEmpty(os.Getenv("APP_NAME"), "openctem"), log)
+	mailer := authapp.NewEmailService(svc.Sender(), config.SMTPFromEnv(), firstNonEmpty(os.Getenv("BRAND_NAME"), brand.DefaultName), log)
 	if !mailer.IsConfigured() {
 		return nil
 	}
