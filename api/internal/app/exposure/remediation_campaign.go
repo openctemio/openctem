@@ -962,7 +962,7 @@ func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context,
 	}
 	if !campaign.IsDone() {
 		s.logger.Warn("inbound epic done but the campaign is not done; not completing",
-			"campaign_id", campaign.ID().String(), "issue_key", issueKey,
+			"campaign_id", campaign.ID().String(), "issue_key", sanitizeLogValue(issueKey),
 			"findings", campaign.FindingCount(), "closed", campaign.ResolvedCount(), "verified", campaign.VerifiedCount())
 		return nil
 	}
@@ -979,7 +979,7 @@ func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context,
 	}
 	s.auditStatusChange(ctx, campaign, epicFrom, auditapp.AuditContext{ActorEmail: campaignAuditSystemActor}, "jira_epic")
 	s.logger.Info("remediation campaign completed from inbound jira epic",
-		"campaign_id", campaign.ID().String(), "issue_key", issueKey, "jira_status", jiraStatus)
+		"campaign_id", campaign.ID().String(), "issue_key", sanitizeLogValue(issueKey), "jira_status", sanitizeLogValue(jiraStatus))
 	return nil
 }
 
@@ -1256,7 +1256,7 @@ func (s *RemediationCampaignService) CreateTicket(ctx context.Context, tenantID,
 		return nil, fmt.Errorf("persist campaign ticket link: %w", err)
 	}
 
-	s.logger.Info("campaign jira epic created", "campaign_id", campaignID, "issue_key", key)
+	s.logger.Info("campaign jira epic created", "campaign_id", sanitizeLogValue(campaignID), "issue_key", sanitizeLogValue(key))
 	return &CampaignTicketInfo{
 		CampaignID: campaignID, Provider: provider,
 		IssueKey: key, IssueURL: url,
