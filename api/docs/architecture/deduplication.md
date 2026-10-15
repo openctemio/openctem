@@ -475,14 +475,19 @@ with an activity on both and a `finding.duplicate_marked` audit row naming
 both ids (`metadata.reason = dast_identity_repair`). A second run changes
 nothing.
 
-### A changed taint source suspends a decision
+### A changed taint source flags a decision for review
 
 A trace is never part of a finding's identity, but the source of a taint
 finding is what a false-positive or accepted decision usually argues about.
 When a re-scan reports a decided finding whose trace starts at another source
 (`vulnerability.TaintSourceHash`: the source step's file and code; lines and
-intermediate steps ignored), the decision is suspended before the trace is
-replaced: the finding is `confirmed` again with resolution
-`decision_suspended`, the earlier decision is kept in
-`finding_decision_suspensions` and an audit row records it. A report without
-a trace, or one whose intermediate steps changed, keeps the decision.
+intermediate steps ignored), the decision **stands** and a review flag is
+raised before the trace is replaced: a row in `finding_decision_reviews`
+(reason `taint_source_changed`, the old and new source hashes), a
+`decision_review` timeline entry and an audit row, in one transaction. A
+person with the approve permission revisits the decision; the flag clears when
+the finding's status changes. A changed source is a reason to look again,
+never proof the decision was wrong, so the platform does not reopen it (it
+did before migration `002154`; rows in `finding_decision_suspensions` are that
+history). A report without a trace, or one whose intermediate steps changed,
+raises nothing.
