@@ -353,6 +353,8 @@
   "settings.jiraWebhook.copied": "Đã sao chép",
   "settings.jiraWebhook.copyFailed": "Không sao chép được",
   "settings.jiraWebhook.close": "Đóng",
+  "settings.item.ticket-field-mapping": "Ánh xạ trường ticket",
+  "settings.desc.ticket-field-mapping": "Các trường và trạng thái đồng bộ với Jira, theo từng dự án.",
   "settings.item.limits": "Mức dùng và giới hạn",
   "settings.desc.limits": "Các giới hạn áp dụng cho tổ chức này và mức tổ chức đang dùng."
 }
