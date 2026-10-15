@@ -2,11 +2,8 @@ package controller
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -25,20 +22,44 @@ type ApprovalExpirationControllerConfig struct {
 	Logger *logger.Logger
 }
 
-// ApprovalExpirationController auto-reopens findings whose risk acceptances have expired.
-// It scans for approved approvals with an expires_at in the past, marks them as expired,
-// and transitions the associated findings back to "confirmed" status.
+// AcceptanceExpiryStore ends accepted risks whose acceptance end has passed,
+// each in one transaction (finding, approval, timeline, SLA clock).
+// Implemented by *postgres.FindingAcceptanceExpiryRepository.
+type AcceptanceExpiryStore interface {
+	ListDue(ctx context.Context, limit int) ([]vulnerability.AcceptanceDue, error)
+	Expire(ctx context.Context, due vulnerability.AcceptanceDue, newDeadline *time.Time, now time.Time) (bool, error)
+	ExpireStaleRequests(ctx context.Context) (int64, error)
+}
+
+// SLADeadlineCalculator computes a finding's SLA deadline from a start time
+// with the tenant's policy. Implemented by *sla.Service.
+type SLADeadlineCalculator interface {
+	CalculateSLADeadlineForPriority(ctx context.Context, tenantID, assetID, priorityClass string,
+		severity vulnerability.Severity, detectedAt time.Time) (time.Time, error)
+}
+
+// ApprovalExpirationController ends risk acceptances whose end has passed.
+//
+// A finding is the unit: every accepted finding whose acceptance_expires_at
+// has passed returns to confirmed, with a new SLA clock from the reopen and
+// its approved acceptance requests marked expired, in one transaction with
+// its timeline entries (AcceptanceExpiryStore.Expire). A failure leaves
+// nothing half done, and the next run retries it. Approved requests whose
+// end passed while the finding had already moved on (or holds a newer
+// acceptance) are only marked expired.
 type ApprovalExpirationController struct {
-	approvalRepo vulnerability.ApprovalRepository
-	findingRepo  vulnerability.FindingRepository
-	config       *ApprovalExpirationControllerConfig
-	logger       *logger.Logger
+	store  AcceptanceExpiryStore
+	sla    SLADeadlineCalculator
+	now    func() time.Time
+	config *ApprovalExpirationControllerConfig
+	logger *logger.Logger
 }
 
 // NewApprovalExpirationController creates a new ApprovalExpirationController.
+// sla may be nil (no new SLA clock is computed then).
 func NewApprovalExpirationController(
-	approvalRepo vulnerability.ApprovalRepository,
-	findingRepo vulnerability.FindingRepository,
+	store AcceptanceExpiryStore,
+	sla SLADeadlineCalculator,
 	config *ApprovalExpirationControllerConfig,
 ) *ApprovalExpirationController {
 	if config == nil {
@@ -55,10 +76,11 @@ func NewApprovalExpirationController(
 	}
 
 	return &ApprovalExpirationController{
-		approvalRepo: approvalRepo,
-		findingRepo:  findingRepo,
-		config:       config,
-		logger:       config.Logger,
+		store:  store,
+		sla:    sla,
+		now:    time.Now,
+		config: config,
+		logger: config.Logger,
 	}
 }
 
@@ -72,106 +94,70 @@ func (c *ApprovalExpirationController) Interval() time.Duration {
 	return c.config.Interval
 }
 
-// Reconcile finds expired approved approvals and reopens associated findings.
+// Reconcile ends the acceptances that are due, then marks the remaining
+// approved requests whose end has passed as expired. Returns how many
+// findings were reopened.
 func (c *ApprovalExpirationController) Reconcile(ctx context.Context) (int, error) {
-	expired, err := c.approvalRepo.ListExpiredApproved(ctx, c.config.BatchSize)
+	due, err := c.store.ListDue(ctx, c.config.BatchSize)
 	if err != nil {
-		c.logger.Error("failed to list expired approvals", "error", err)
+		c.logger.Error("failed to list ended acceptances", "error", err)
 		return 0, err
 	}
-
-	if len(expired) == 0 {
-		return 0, nil
-	}
-
-	c.logger.Info("found expired approved approvals", "count", len(expired))
-
-	processed := 0
-	for _, approval := range expired {
-		if err := c.processExpiredApproval(ctx, approval); err != nil {
-			c.logger.Error("failed to process expired approval",
-				"approval_id", approval.ID,
-				"finding_id", approval.FindingID,
-				"tenant_id", approval.TenantID,
-				"error", err,
-			)
+	reopened := 0
+	for _, d := range due {
+		now := c.now().UTC()
+		ok, err := c.store.Expire(ctx, d, c.newDeadline(ctx, d, now), now)
+		if err != nil {
+			c.logger.Error("failed to end acceptance", "finding_id", d.FindingID, "tenant_id", d.TenantID, "error", err)
 			continue
 		}
-		processed++
+		if ok {
+			reopened++
+			c.logger.Info("reopened finding: risk acceptance ended",
+				"finding_id", d.FindingID, "tenant_id", d.TenantID, "expired_at", d.ExpiresAt)
+		}
 	}
 
-	if processed > 0 {
-		c.logger.Info("processed expired approvals",
-			"processed", processed,
-			"total", len(expired),
-		)
+	if err := c.expireStaleApprovals(ctx); err != nil {
+		return reopened, err
 	}
-
-	return processed, nil
+	return reopened, nil
 }
 
-// processExpiredApproval handles a single expired approval:
-// 1. Mark the approval status as canceled (expired)
-// 2. Transition the finding back to "confirmed"
-func (c *ApprovalExpirationController) processExpiredApproval(ctx context.Context, approval *vulnerability.Approval) error {
-	// Step 1: Mark approval as expired
-	if err := approval.Expire(); err != nil {
-		// Approval may no longer be in approved state (race condition)
-		if errors.Is(err, shared.ErrValidation) {
-			c.logger.Debug("approval no longer expirable, skipping",
-				"approval_id", approval.ID,
-				"status", approval.Status,
-			)
-			return nil
-		}
-		return err
-	}
-
-	if err := c.approvalRepo.Update(ctx, approval); err != nil {
-		if errors.Is(err, vulnerability.ErrConcurrentModification) {
-			c.logger.Debug("approval concurrently modified, skipping",
-				"approval_id", approval.ID,
-			)
-			return nil
-		}
-		return fmt.Errorf("failed to update approval: %w", err)
-	}
-
-	// Step 2: Reopen the finding to "confirmed" status, only while it still
-	// holds the status the approval gave it: a finding someone has moved on
-	// since (resolved, reopened, marked duplicate) is left alone.
-	f, err := c.findingRepo.GetByID(ctx, approval.TenantID, approval.FindingID)
-	if err != nil {
-		if errors.Is(err, shared.ErrNotFound) {
-			return nil
-		}
-		return fmt.Errorf("failed to load finding: %w", err)
-	}
-	if string(f.Status()) != approval.RequestedStatus {
-		c.logger.Debug("finding no longer holds the expired approval's status, not reopening",
-			"approval_id", approval.ID, "finding_id", approval.FindingID, "status", f.Status())
+// newDeadline is the SLA deadline of a new clock started at now (owner
+// decision D3: an expired acceptance starts a new SLA clock), or nil when the
+// finding has no SLA or the policy cannot be read (the reopen still happens).
+func (c *ApprovalExpirationController) newDeadline(ctx context.Context, d vulnerability.AcceptanceDue, now time.Time) *time.Time {
+	if c.sla == nil {
 		return nil
 	}
-	findingIDs := []shared.ID{approval.FindingID}
-	err = c.findingRepo.UpdateStatusBatch(
-		ctx,
-		approval.TenantID,
-		findingIDs,
-		vulnerability.FindingStatusConfirmed,
-		"auto_reopened_expired_acceptance",
-		nil, // no resolvedBy — system action
-		"",  // a reopen clears resolution_method
-	)
+	sev, err := vulnerability.ParseSeverity(d.Severity)
 	if err != nil {
-		return fmt.Errorf("failed to reopen finding: %w", err)
+		sev = vulnerability.SeverityMedium
 	}
+	assetID := ""
+	if !d.AssetID.IsZero() {
+		assetID = d.AssetID.String()
+	}
+	deadline, err := c.sla.CalculateSLADeadlineForPriority(ctx, d.TenantID.String(), assetID, d.PriorityClass, sev, now)
+	if err != nil {
+		c.logger.Warn("acceptance expiry: SLA deadline not computed", "finding_id", d.FindingID, "error", err)
+		return nil
+	}
+	if deadline.IsZero() {
+		return nil
+	}
+	return &deadline
+}
 
-	c.logger.Info("reopened finding due to expired risk acceptance",
-		"finding_id", approval.FindingID,
-		"approval_id", approval.ID,
-		"tenant_id", approval.TenantID,
-		"expired_at", approval.ExpiresAt,
-	)
-
+// expireStaleApprovals marks approved requests whose end has passed as
+// expired when their finding was not an ended acceptance (it moved on, or
+// holds a newer acceptance). A finding whose end failed above keeps its
+// request approved, so the next run ends both together.
+func (c *ApprovalExpirationController) expireStaleApprovals(ctx context.Context) error {
+	if _, err := c.store.ExpireStaleRequests(ctx); err != nil {
+		c.logger.Error("failed to expire stale acceptance requests", "error", err)
+		return err
+	}
 	return nil
 }
