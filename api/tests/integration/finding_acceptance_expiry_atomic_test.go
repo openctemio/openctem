@@ -260,3 +260,40 @@ func TestAcceptanceExpiry_MigrationGivesMissingEnds(t *testing.T) {
 		t.Errorf("an existing end changed: %v, want %v", got, kept)
 	}
 }
+
+// A stale accepted-risk request (its finding moved on) is marked expired with a
+// timeline entry and an audit row in its tenant; an approved false-positive
+// request that happens to carry a past end is never expired.
+func TestAcceptanceExpiry_StaleRequestsOnlyAcceptedRisk(t *testing.T) {
+	f := newAcceptanceFixture(t)
+	ctx := context.Background()
+	accepted := f.acceptEnded(t, f.findingID)
+	f.exec(t, `UPDATE findings SET status = 'resolved' WHERE id = $1`, f.findingID.String())
+	fp := shared.NewID()
+	f.exec(t, `INSERT INTO finding_status_approvals (id, tenant_id, finding_id, requested_status, requested_by,
+			justification, approved_by, approved_at, status, expires_at)
+		VALUES ($1, $2, $3, 'false_positive', $4, 'scanner wrong', $5, NOW() - INTERVAL '30 days', 'approved', NOW() - INTERVAL '1 day')`,
+		fp.String(), f.tenant.String(), f.findingID.String(), f.requester.String(), f.approver.String())
+
+	if _, err := f.expiryController().Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.approvalStatus(t, accepted); got != "expired" {
+		t.Errorf("stale accepted-risk request = %s, want expired", got)
+	}
+	if got := f.approvalStatus(t, fp.String()); got != "approved" {
+		t.Errorf("false-positive request = %s, want approved (it never expires)", got)
+	}
+	var entries, audits int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM finding_activities WHERE tenant_id = $1 AND finding_id = $2
+		AND activity_type = 'approval_canceled' AND changes->>'approval_id' = $3`, f.tenant.String(), f.findingID.String(), accepted).Scan(&entries); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND metadata->>'approval_id' = $2`,
+		f.tenant.String(), accepted).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if entries != 1 || audits != 1 {
+		t.Errorf("timeline entries %d, audit rows %d; want 1 and 1", entries, audits)
+	}
+}
