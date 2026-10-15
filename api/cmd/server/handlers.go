@@ -794,6 +794,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	if svc.Entitlement != nil {
 		handlers.Limits = handler.NewLimitsHandler(svc.Entitlement, adminConsoleSvc, log)
+		handlers.Limits.SetAccountPortalURL(cfg.AccountPortalURL)
 	}
 	if svc.IdleWorkspaces != nil {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
