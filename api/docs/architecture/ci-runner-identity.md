@@ -65,7 +65,10 @@ graph TD
 Budgets beyond the chains: at most 200 reports per run (`cirun.MaxRunReports`,
 `409`), at most 300 runs per pipeline per hour (`cirun.MaxPipelineRunsPerHour`,
 refused at the exchange and audited `pipeline_rate`), 100,000 recorded
-findings per run.
+findings per run (`cirun.MaxRunFindings`). A run that sights more is marked
+`ci_runs.findings_over_cap` and its gate fails with `too_many_findings`; it is
+never judged on the first 100,000 only. Warn mode and a break-glass still apply
+to it like any other blocking reason.
 | `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
 | `GET /api/v1/fleet` | session tenant chain → `sensors:read` or `scans:ci:read`; the handler lists each mode under its own permission (runner rows also need the `scans` module) |
 
