@@ -161,16 +161,6 @@ func (s *stubFindingRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.ID,
 func (s *stubFindingRepo) CountBySeverityForScan(_ context.Context, _ shared.ID, _ string) (vulnerability.SeverityCounts, error) {
 	return vulnerability.SeverityCounts{}, nil
 }
-func (s *stubFindingRepo) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-
-func (s *stubFindingRepo) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-func (s *stubFindingRepo) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
-	return nil, nil
-}
 func (s *stubFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
 	return nil, nil
 }
