@@ -248,7 +248,11 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	if err := countRefusals(out, gated.Refused); err != nil {
 		return nil, err
 	}
-	gateScannerKinds(sc.ScannerName, out, func(t string) bool { _, ok := types[t]; return ok })
+	typeOf := func(t string) (asset.TypeRef, bool) { ref, ok := types[t]; return ref, ok }
+	gateScannerKinds(sc.ScannerName, out, typeOf)
+	if err := s.gateScannerPaths(ctx, sc.TenantID, sc.ScannerName, out, typeOf); err != nil {
+		return nil, err
+	}
 	for _, t := range out.Targets {
 		if ref, typed := types[t]; typed && ref.Type != "" {
 			if out.TargetTypes == nil {
@@ -368,11 +372,12 @@ func isInternalAddr(a netip.Addr) bool {
 
 // gateScannerKinds leaves out of a single-scanner run every typed-in target
 // whose kind the scanner's stage does not take (stage.AcceptsKind), and
-// every range, typed in or from the inventory: a network range never
-// reaches an HTTP prober or a template scanner. Inventory targets are
-// otherwise decided by their stored type (scannerTypeGate). They are
-// counted as incompatible, with the reason.
-func gateScannerKinds(scanner string, out *resolvedTargets, typed func(string) bool) {
+// every range and repository, typed in or from the inventory: a network
+// range never reaches an HTTP prober or a template scanner, a repository
+// never reaches a network tool. Inventory targets are otherwise decided by
+// their stored type (scannerTypeGate). They are counted as incompatible,
+// with the reason.
+func gateScannerKinds(scanner string, out *resolvedTargets, typed func(string) (asset.TypeRef, bool)) {
 	if scanner == "" {
 		return
 	}
