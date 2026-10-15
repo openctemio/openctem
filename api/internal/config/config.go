@@ -56,6 +56,10 @@ type Config struct {
 	Ingest       IngestConfig
 	Metrics      MetricsConfig
 
+	// AccountPortalURL (ACCOUNT_PORTAL_URL) is the hosted service's account
+	// page, linked from Usage & limits when a limit applies. Empty: no link.
+	AccountPortalURL string
+
 	// InternalAPI is the control-plane listener (docs/architecture/limits.md):
 	// off unless INTERNAL_API_ADDR is set.
 	InternalAPI InternalAPIConfig
@@ -221,6 +225,19 @@ type InternalAPIConfig struct {
 	JWTPublicKeysFile string
 	// JWTIssuer is the expected iss claim.
 	JWTIssuer string
+}
+
+// validateAccountPortalURL accepts an empty value or an absolute https URL
+// (the link is shown to organization administrators).
+func validateAccountPortalURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return errors.New("ACCOUNT_PORTAL_URL must be an absolute https URL without credentials")
+	}
+	return nil
 }
 
 // Enabled reports whether the internal API listener is configured.
@@ -1523,6 +1540,7 @@ func Load() (*Config, error) {
 			SourceResolve:         getEnv("INGEST_SOURCE_RESOLVE", "dry_run"),
 			VEX:                   getEnv("INGEST_VEX", "dry_run"),
 		},
+		AccountPortalURL: getEnv("ACCOUNT_PORTAL_URL", ""),
 		InternalAPI: InternalAPIConfig{
 			Addr:              getEnv("INTERNAL_API_ADDR", ""),
 			CertFile:          getEnv("INTERNAL_API_TLS_CERT", ""),
@@ -1660,6 +1678,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.InternalAPI.validate(); err != nil {
+		return err
+	}
+	if err := validateAccountPortalURL(c.AccountPortalURL); err != nil {
 		return err
 	}
 	if c.App.Env == EnvProduction {
