@@ -232,7 +232,7 @@ func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Ru
 			FOR UPDATE
 		)
 		UPDATE findings f SET
-			status = $4, resolution = 'suppressed', resolution_method = NULL,
+			status = $4, resolution = 'suppressed', closure_reason = CASE WHEN $4::varchar = 'accepted' THEN 'risk_accepted' END, verification = NULL,
 			resolved_at = NOW(), resolved_by = NULL, updated_at = NOW(),
 			acceptance_expires_at = CASE WHEN $4::varchar = 'accepted' THEN $5::timestamptz END
 		FROM old

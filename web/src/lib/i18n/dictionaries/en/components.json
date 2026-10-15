@@ -241,5 +241,12 @@
   "components.vexImport.updated": "Updated",
   "components.vulns.empty": "No vulnerabilities recorded for this package on the assets you can see.",
   "components.vulns.includeResolved": "Include closed findings",
-  "components.vulns.none": "None"
+  "components.vulns.none": "None",
+  "components.selfApprove.title": "Approve your own request",
+  "components.selfApprove.description": "Nobody else in your organization can approve \"{subject}\". As the owner you may approve it yourself with a reason and a code from your authenticator app. It is recorded in the audit log.",
+  "components.selfApprove.reason": "Why may it take effect without a second person?",
+  "components.selfApprove.code": "Code from your authenticator app",
+  "components.selfApprove.cancel": "Cancel",
+  "components.selfApprove.submit": "Approve",
+  "components.selfApprove.failed": "Could not approve the request."
 }

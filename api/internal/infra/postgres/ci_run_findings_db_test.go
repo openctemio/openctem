@@ -47,7 +47,7 @@ func TestCIRunFindingsHonorActiveSuppressionsOnly(t *testing.T) {
 	rule := func(tid shared.ID, status string, expires *time.Time) string {
 		id := shared.NewID().String()
 		if _, err := db.ExecContext(ctx, `INSERT INTO suppression_rules (id, tenant_id, rule_id, name, status, expires_at)
-				VALUES ($1, $2, 'r1', 'rule', $3, $4)`, id, tid.String(), status, expires); err != nil {
+				VALUES ($1, $2, 'r1', 'rule', $3, COALESCE($4::timestamptz, NOW() + interval '30 days'))`, id, tid.String(), status, expires); err != nil {
 			t.Fatalf("seed rule: %v", err)
 		}
 		return id
