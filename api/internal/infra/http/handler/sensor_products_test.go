@@ -62,3 +62,35 @@ func TestSensorHandler_InstallProduct(t *testing.T) {
 		t.Fatal("SetHealthPolicy dropped the catalog's release lines")
 	}
 }
+
+// A sensor product the platform has never heard of, added as data
+// (SENSOR_PRODUCTS_FILE): the Sensors page lists it (the console names it by
+// its id), its install dialog can be asked for it, and its sensors are judged
+// against its own release line. No Go code names it.
+func TestSensorHandler_ProductAddedAsData(t *testing.T) {
+	t.Cleanup(func() { _ = versions.LoadExtraProducts("") })
+	if err := versions.LoadExtraProducts("../../../versions/testdata/toy-products.yaml"); err != nil {
+		t.Fatal(err)
+	}
+	h := NewSensorHandler(nil, nil, logger.NewNop())
+	h.SetProducts(CatalogInstallProducts())
+	var listed *SensorProductResponse
+	for _, p := range h.productResponses() {
+		if p.ID == "acme-toy-sensor" {
+			listed = &p
+		}
+	}
+	if listed == nil || listed.Image != "ghcr.io/acme/toy-sensor:v1.2.3" || listed.LatestVersion != "v1.2.3" || listed.MinVersion != "v1.0.0" {
+		t.Fatalf("toy product in /sensors/stats products: %+v", listed)
+	}
+	if p, ok := h.installProduct("acme-toy-sensor", &sensor.Sensor{}); !ok || p.Install != "acme-toy" {
+		t.Fatalf("install product = %+v (%v)", p, ok)
+	}
+	reporting := &sensor.Sensor{Build: sensor.BuildInfo{Product: "acme-toy-sensor"}}
+	if p, ok := h.installProduct("", reporting); !ok || p.ID != "acme-toy-sensor" {
+		t.Fatalf("a toy sensor gets its own snippets: %+v (%v)", p, ok)
+	}
+	if l, ok := h.healthPolicy.ReleaseLineFor("acme-toy-sensor"); !ok || l.Latest != "v1.2.3" || l.Min != "v1.0.0" {
+		t.Fatalf("toy release line = %+v (%v)", l, ok)
+	}
+}

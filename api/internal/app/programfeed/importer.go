@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/sdk-go/pkg/transfer"
+	"github.com/openctemio/ctis/transfer"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/logger"
