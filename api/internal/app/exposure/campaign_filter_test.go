@@ -63,7 +63,7 @@ func TestFindingFilterHasScope_StatusAloneAndInvalid(t *testing.T) {
 	if findingFilterHasScope(campaignFilterToFindingFilter(tid, map[string]any{"asset_id": "bad", "severity": "critical"})) {
 		t.Error("an invalid stored filter counts as scope (a condition was dropped)")
 	}
-	if !findingFilterHasScope(campaignFilterToFindingFilter(tid, map[string]any{"severity": "critical", "status": "new"})) {
-		t.Error("severity + status lost its scope")
+	if !findingFilterHasScope(campaignFilterToFindingFilter(tid, map[string]any{"cve_id": "CVE-2021-44228", "status": "new"})) {
+		t.Error("cve + status lost its scope")
 	}
 }

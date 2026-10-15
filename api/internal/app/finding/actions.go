@@ -560,7 +560,7 @@ func (s *FindingActionsService) BulkVerify(
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue
 		}
-		if err := f.SetResolutionMethod(string(vulnerability.ResolutionMethodSecurityReviewed)); err != nil {
+		if err := f.SetClosure(vulnerability.Fixed(vulnerability.VerificationSecurityReview)); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue
@@ -682,13 +682,18 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 		Source: string(vulnerability.SourceAPI), Reason: "verified_by_filter", ActorType: "user", ActorID: uid.String(), Message: resolution,
 	})
 	count, err := s.findingRepo.BulkUpdateStatusByFilter(moveCtx, tid, input.Filter,
-		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.ResolutionMethodSecurityReviewed)
+		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.Fixed(verifyByFilterVerification))
 	if err != nil {
 		return 0, fmt.Errorf("failed to verify findings: %w", err)
 	}
 
 	return count, nil
 }
+
+// verifyByFilterVerification is how a verify-by-filter close is recorded: it
+// reads no per-finding verification checklist, so it is a findings:verify
+// holder's attestation, not a checklist-backed security review.
+const verifyByFilterVerification = vulnerability.VerificationAttested
 
 // RejectByFilterInput is the input for bulk reject by filter.
 type RejectByFilterInput struct {
@@ -723,7 +728,7 @@ func (s *FindingActionsService) BulkRejectByFilter(
 		Source: string(vulnerability.SourceAPI), Reason: "fix_rejected_by_filter", ActorType: "user", ActorID: uid.String(), Message: input.Reason,
 	})
 	count, err := s.findingRepo.BulkUpdateStatusByFilter(moveCtx, tid, input.Filter,
-		vulnerability.FindingStatusInProgress, input.Reason, &uid, "")
+		vulnerability.FindingStatusInProgress, input.Reason, &uid, vulnerability.Closure{})
 	if err != nil {
 		return 0, fmt.Errorf("failed to reject findings: %w", err)
 	}
