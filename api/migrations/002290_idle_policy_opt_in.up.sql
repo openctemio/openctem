@@ -20,6 +20,7 @@ ALTER TABLE tenant_idle_lifecycle
 
 UPDATE tenant_idle_lifecycle SET stage = 'active', stage_changed_at = now() WHERE stage <> 'active';
 
+-- expand-contract-ok: contract step in the same release (owner rule: no release wait); the API stops for this migration (changelog upgrade note), and only the replaced exemption code read these columns.
 ALTER TABLE tenant_idle_lifecycle
     DROP CONSTRAINT chk_tenant_idle_lifecycle_exempt_reason,
     DROP COLUMN exempt,
