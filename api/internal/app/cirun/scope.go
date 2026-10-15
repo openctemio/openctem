@@ -31,8 +31,25 @@ type ScopeLinker interface {
 // SetScopeLinker wires the scope service. Without it trusts manage no scope.
 func (s *Service) SetScopeLinker(l ScopeLinker) { s.scope = l }
 
+// scopeReader is the read part of the scope service for the trust API.
+type scopeReader interface {
+	CITrustLinksVisible(ctx context.Context, tenantID shared.ID, trustID *shared.ID, scope *shared.DataScope) (map[string][]scopedom.CITrustLink, error)
+}
+
+// TrustScopes lists the repository scope links of one trust (trustID set)
+// or of every trust of the tenant, in one read, by trust id. The evidence's
+// repository, run and owner are left out where the reader's data scope does
+// not reach that repository.
+func (s *Service) TrustScopes(ctx context.Context, tenantID shared.ID, trustID *shared.ID, scope *shared.DataScope) (map[string][]scopedom.CITrustLink, error) {
+	r, ok := s.scope.(scopeReader)
+	if !ok {
+		return map[string][]scopedom.CITrustLink{}, nil
+	}
+	return r.CITrustLinksVisible(ctx, tenantID, trustID, scope)
+}
+
 // TrustScope lists a trust's repository scope links (patterns, entries,
-// evidence of a verified run).
+// evidence of a verified run), unfiltered: for the platform's own use.
 func (s *Service) TrustScope(ctx context.Context, tenantID, id shared.ID) ([]scopedom.CITrustLink, error) {
 	if s.scope == nil {
 		return nil, nil
