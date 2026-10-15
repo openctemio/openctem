@@ -163,18 +163,26 @@ export function defaultFixFormat(formats: string[], runtimeKind?: string): strin
 
 /**
  * The docs link as an href, or null when it is not one we link to: only an
- * https URL on docs.openctem.io or a same-origin path ("/docs/…"), after the
+ * https URL on the documentation site (the default one, or `docsOrigin`, the
+ * brand's) or a same-origin path ("/docs/…"), after the
  * shared `safeHref` encoder (no other scheme, no `//host` or `/\host`, no
  * control or bidi characters). Credentials and ports are refused too.
  */
-export function safeDocsHref(url: string | null | undefined): string | null {
+export function safeDocsHref(
+  url: string | null | undefined,
+  docsOrigin: string = DOCS_ORIGIN
+): string | null {
   const safe = safeHref(url)
   if (!safe) return null
   if (safe.startsWith('/') && !safe.startsWith('//')) return safe
-  if (typeof url !== 'string' || !url.startsWith(`${DOCS_ORIGIN}/`)) return null
+  if (typeof url !== 'string') return null
+  const allowed = [DOCS_ORIGIN, docsOrigin].filter((o) => url.startsWith(`${o}/`))
+  if (allowed.length === 0) return null
   try {
     const u = new URL(safe)
-    if (u.origin !== DOCS_ORIGIN || u.username || u.password) return null
+    if (!allowed.some((o) => new URL(o).origin === u.origin) || u.username || u.password)
+      return null
+    if (u.port && !allowed.some((o) => new URL(o).port === u.port)) return null
     return u.href
   } catch {
     return null

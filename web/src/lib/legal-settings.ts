@@ -1,11 +1,16 @@
 import { env } from '@/lib/env'
+import type { Brand } from '@/lib/brand'
+import { brandSettings } from '@/lib/brand-settings'
 
 /**
  * The operator's legal information, set in the admin console (System >
  * Legal) and served by the API at the public GET /api/v1/legal. It is read
  * on the server, per request (with a short cache), and handed to legalConfig /
  * securityTxt in the shape they read. When the API cannot be reached the
- * defaults apply (OpenCTEM contacts, no external links, legal pages off).
+ * defaults apply (the brand's contacts, no external links, legal pages off).
+ * Values the operator did not set there come from the instance brand
+ * (src/lib/brand.ts): the service name, contact email, website, docs and the
+ * terms and privacy links.
  */
 
 type LegalRecord = Record<string, string | undefined>
@@ -46,8 +51,30 @@ export function toLegalRecord(s: LegalSettingsResponse): LegalRecord {
   }
 }
 
-/** Fetches the legal information; {} (the defaults) on any failure. */
+/** Fills the values the legal settings leave unset from the brand. */
+export function withBrand(rec: LegalRecord, brand: Brand): LegalRecord {
+  const fill: LegalRecord = {
+    LEGAL_SERVICE_NAME: brand.name,
+    LEGAL_CONTACT_EMAIL: brand.supportEmail,
+    LEGAL_WEBSITE_URL: brand.websiteUrl,
+    LEGAL_DOCS_URL: brand.docsUrl,
+    LEGAL_TERMS_URL: brand.termsUrl,
+    LEGAL_PRIVACY_URL: brand.privacyUrl,
+  }
+  const out: LegalRecord = { ...rec }
+  for (const [k, v] of Object.entries(fill)) {
+    if (!out[k]?.trim() && v) out[k] = v
+  }
+  return out
+}
+
+/** Fetches the legal information, filled from the brand; brand values only on any failure. */
 export async function legalSettings(): Promise<LegalRecord> {
+  const [rec, brand] = await Promise.all([legalRecord(), brandSettings()])
+  return withBrand(rec, brand)
+}
+
+async function legalRecord(): Promise<LegalRecord> {
   try {
     const res = await fetch(`${env.api.url}/api/v1/legal`, {
       headers: { Accept: 'application/json' },

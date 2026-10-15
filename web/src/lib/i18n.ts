@@ -1,4 +1,5 @@
 import { en, vi } from './i18n/dictionaries'
+import { DEFAULT_BRAND } from './brand'
 
 export const rtlLocales = new Set(['ar', 'he', 'fa', 'ur'])
 export function getDirFromLocale(locale?: string): 'ltr' | 'rtl' {
@@ -50,10 +51,11 @@ export function translate(
   vars?: TranslateVars
 ): string {
   let str = dict[key] ?? enDict[key] ?? fallback ?? key
-  if (vars) {
-    for (const [name, value] of Object.entries(vars)) {
-      str = str.split(`{${name}}`).join(String(value))
-    }
+  // The brand variables default to the OpenCTEM brand; I18nProvider passes
+  // the instance brand (src/context/i18n-provider.tsx).
+  const all = { product: DEFAULT_BRAND.name, productShort: DEFAULT_BRAND.shortName, ...vars }
+  for (const [name, value] of Object.entries(all)) {
+    str = str.split(`{${name}}`).join(String(value))
   }
   return str
 }

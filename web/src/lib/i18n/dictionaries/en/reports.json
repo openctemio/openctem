@@ -1,4 +1,5 @@
 {
   "reports.schedulesHint": "Finding-summary digests emailed to recipients on a schedule.",
-  "reports.executiveHint": "Program-level risk, findings, SLA and MTTR for the selected window."
+  "reports.executiveHint": "Program-level risk, findings, SLA and MTTR for the selected window.",
+  "reports.schedule.newDescription": "On the chosen cadence, {product} renders a finding-summary digest and emails it to the recipients below. It does not store a downloadable file."
 }

@@ -20,7 +20,7 @@ export const SENSOR_PROTOCOL_REFUSAL = {
   error: 'WRONG_ENDPOINT',
   code: 'WRONG_ENDPOINT',
   message:
-    'This is the OpenCTEM web UI, not the API. Set the sensor SENSOR_API_URL to the API base URL ' +
+    'This is the web console, not the API. Set the sensor SENSOR_API_URL to the API base URL ' +
     '(the address that serves /health from the API), not the web UI address.',
 } as const
 

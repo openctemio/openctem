@@ -26,6 +26,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
+import { useBrand } from '@/context/brand-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -154,6 +155,7 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
+  const brand = useBrand()
   const snippet = useMemo(
     () =>
       created
@@ -165,9 +167,10 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
             tenantId: currentTenant?.id ?? '',
             audience: created.audience ?? '',
             defaultBranch: created.default_branch,
+            productName: brand.name,
           })
         : '',
-    [created, provider, currentTenant]
+    [created, provider, currentTenant, brand.name]
   )
 
   const stepIndex = STEPS.indexOf(step)

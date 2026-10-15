@@ -267,7 +267,12 @@ function ConfigureTicketingDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Configure {integration.name}</DialogTitle>
-          <DialogDescription>Control how OpenCTEM syncs with this tracker.</DialogDescription>
+          <DialogDescription>
+            {t(
+              'settings.ticketing.configureDescription',
+              'Control how {product} syncs with this tracker.'
+            )}
+          </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="space-y-4">
@@ -314,8 +319,10 @@ function ConfigureTicketingDialog({
                   Bidirectional status sync
                 </Label>
                 <p className="text-muted-foreground text-xs">
-                  When a finding&apos;s status changes in OpenCTEM, move the linked Jira issue to
-                  match. Jira-side status changes already sync back automatically.
+                  {t(
+                    'settings.ticketing.syncDescription',
+                    "When a finding's status changes in {product}, move the linked Jira issue to match. Jira-side status changes already sync back automatically."
+                  )}
                 </p>
               </div>
               <Switch id="sync-enabled" checked={syncEnabled} onCheckedChange={setSyncEnabled} />
@@ -325,7 +332,10 @@ function ConfigureTicketingDialog({
             <div className="space-y-3 rounded-lg border p-3">
               <Label className="font-medium">Ticket defaults &amp; mapping</Label>
               <p className="text-muted-foreground text-xs">
-                Override how OpenCTEM fills new tickets. Leave blank to use the defaults.
+                {t(
+                  'settings.ticketing.defaultsDescription',
+                  'Override how {product} fills new tickets. Leave blank to use the defaults.'
+                )}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">

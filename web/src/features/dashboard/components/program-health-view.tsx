@@ -258,7 +258,7 @@ export function ProgramHealthView() {
         target: '> 90%',
         status: remediationCompletionState(completion),
         source: 'executive-summary (p0_resolved_period ÷ p0_open + p0_resolved_period)',
-        hint: 'OpenCTEM P0 = the guide’s P1 (most-urgent class).',
+        hint: 'P0 here = the guide’s P1 (most-urgent class).',
       },
       {
         id: 'remediation-time',

@@ -118,7 +118,7 @@ export function buildNavigatorLayer(
     name,
     versions: { attack: attackVersion(coverage.dataset_version), navigator: '4.9.1', layer: '4.5' },
     domain: 'enterprise-attack',
-    description: `OpenCTEM threat-model coverage — generated ${coverage.generated_at}`,
+    description: `Threat-model coverage — generated ${coverage.generated_at}`,
     techniques,
     gradient: { colors: ['#94a3b8', '#ef4444'], minValue: 0, maxValue: 10 },
     legendItems: [

@@ -1,5 +1,6 @@
 'use client'
 
+import { useDocsHref } from '@/context/brand-provider'
 import React from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, BookOpen, ChevronRight, Laptop, Moon, Sun } from 'lucide-react'
@@ -24,6 +25,7 @@ import { DOCS_URL } from '@/lib/docs-links'
 import { ScrollArea } from './ui/scroll-area'
 
 export function CommandMenu() {
+  const docsHref = useDocsHref()
   const router = useRouter()
   const { setTheme } = useTheme()
   const { open, setOpen } = useSearch()
@@ -149,7 +151,7 @@ export function CommandMenu() {
               value={t('help.documentation', 'Documentation')}
               keywords={['Help', 'Docs']}
               onSelect={() => {
-                runCommand(() => window.open(DOCS_URL, '_blank', 'noopener,noreferrer'))
+                runCommand(() => window.open(docsHref(DOCS_URL), '_blank', 'noopener,noreferrer'))
               }}
             >
               <BookOpen />

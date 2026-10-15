@@ -6,6 +6,10 @@
  * or heading fails the build instead of sending users to a 404.
  *
  * Pages use pretty permalinks: `scanning/tools.md` is `/scanning/tools/`.
+ *
+ * The links name the default documentation site; components pass them
+ * through `useDocsHref()` (src/context/brand-provider.tsx), which moves them
+ * onto the brand's documentation site when one is configured.
  */
 
 /** The docs site origin: docs links from the API must start with it. */
@@ -24,5 +28,11 @@ export const DOCS = {
   },
   sensors: {
     transportPlatform: 'https://docs.openctem.io/sensors/transport/#what-the-platform-offers',
+  },
+  pentest: {
+    reportTemplates: 'https://docs.openctem.io/pentest/report-templates/',
+  },
+  developers: {
+    toolAuthoring: 'https://docs.openctem.io/developers/tool-authoring/',
   },
 } as const

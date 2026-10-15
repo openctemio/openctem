@@ -4,6 +4,8 @@ import { useEffect } from 'react'
 import { ThemeProvider } from '@/context/theme-provider'
 import { DirectionProvider } from '@/context/direction-provider'
 import { I18nProvider } from '@/context/i18n-provider'
+import { BrandProvider } from '@/context/brand-provider'
+import type { Brand } from '@/lib/brand'
 import { SWRProvider } from '@/lib/swr-config'
 import { AppToaster } from '@/components/app-toaster'
 import { config as zodConfig } from 'zod/v4/core'
@@ -25,12 +27,15 @@ export function Providers({
   dir,
   locale,
   nonce,
+  brand,
 }: {
   children: React.ReactNode
   dir: 'ltr' | 'rtl'
   locale: string
   /** CSP nonce for the theme script (see src/proxy.ts). */
   nonce?: string
+  /** The instance brand, read on the server (src/lib/brand-settings.ts). */
+  brand: Brand
 }) {
   // Count uncaught errors and chunk-load failures for operator alerting
   // (kind only; see src/lib/client-errors.ts).
@@ -58,7 +63,9 @@ export function Providers({
     >
       <SWRProvider>
         <DirectionProvider dir={dir}>
-          <I18nProvider locale={locale}>{children}</I18nProvider>
+          <BrandProvider brand={brand}>
+            <I18nProvider locale={locale}>{children}</I18nProvider>
+          </BrandProvider>
           <AppToaster />
         </DirectionProvider>
       </SWRProvider>
