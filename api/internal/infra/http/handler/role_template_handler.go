@@ -68,32 +68,6 @@ type ApplyRoleTemplateUpdateRequest struct {
 	Version int `json:"version" validate:"required,min=1"`
 }
 
-// GetRoleTemplateStatus handles GET /api/v1/roles/{roleId}/template.
-//
-// @Summary      Template status of a custom role
-// @Description  For a role created from a role template: the version it took, the template's current version and, when newer, the permissions the update adds and removes. A template change never changes the role by itself. 404 for a role that was not created from a template or belongs to another organization.
-// @Tags         Roles
-// @Produce      json
-// @Param        roleId  path  string  true  "Role ID"
-// @Success      200  {object}  RoleTemplateStatusResponse
-// @Failure      404  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /roles/{roleId}/template [get]
-func (h *RoleHandler) GetRoleTemplateStatus(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	_, st, err := h.service.RoleTemplateStatus(ctx, middleware.MustGetTenantID(ctx), chi.URLParam(r, "roleId"))
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	if st == nil {
-		apierror.NotFound("Role template").WriteJSON(w)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toRoleTemplateStatusResponse(st))
-}
-
 // ApplyRoleTemplateUpdate handles POST /api/v1/roles/{roleId}/template/apply.
 //
 // @Summary      Apply a role template update
