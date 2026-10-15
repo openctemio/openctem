@@ -15,7 +15,7 @@
   leaves the request pending and the finding unchanged.
 - A request can only be made for a finding inside the requester's data scope.
 - The approval API returns `decide_by`.
-- Migrations `002300`–`002303` (`finding_approval_decide_by`,
+- Migrations `002419`–`002422` (`finding_approval_decide_by`,
   `finding_approval_decide_by_backfill`, `finding_approval_pending_dedupe`,
   `finding_approval_one_pending`); safe on a populated table (the table is
   small; new column nullable, backfill touches pending rows only).
