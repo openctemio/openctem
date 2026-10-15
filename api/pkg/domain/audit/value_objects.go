@@ -131,6 +131,10 @@ const (
 	ActionAssetBulkStatusChanged Action = "asset.bulk_status_changed"
 	ActionAssetCrownJewelChanged Action = "asset.crown_jewel_changed"
 	ActionAssetImported          Action = "asset.imported"
+	// ActionAssetRenamed: a repository asset took its code host's current
+	// name (found by the host's immutable repository id after a rename or
+	// transfer). Metadata: old and new name, provider, repository id, source.
+	ActionAssetRenamed Action = "asset.renamed"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -675,7 +679,7 @@ func (a Action) IsValid() bool {
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
-		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
 		ActionMemberAccessChanged,
@@ -1117,7 +1121,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
 		ActionAssetCreateMerged,
-		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,
