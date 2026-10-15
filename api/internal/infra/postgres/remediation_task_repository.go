@@ -267,7 +267,7 @@ func (r *RemediationTaskRepository) ListTasks(ctx context.Context, tenantID shar
 		return pagination.Result[*remediation.Task]{}, fmt.Errorf("list remediation tasks: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]*remediation.Task, 0, page.Limit())
+	out := make([]*remediation.Task, 0)
 	for rows.Next() {
 		t, err := scanTask(rows.Scan)
 		if err != nil {
@@ -938,7 +938,7 @@ func (r *RemediationTaskRepository) ListMembers(ctx context.Context, tenantID, t
 		return pagination.Result[remediation.TaskMember]{}, fmt.Errorf("list task members: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]remediation.TaskMember, 0, page.Limit())
+	out := make([]remediation.TaskMember, 0)
 	for rows.Next() {
 		var (
 			m                 remediation.TaskMember
@@ -975,7 +975,7 @@ func (r *RemediationTaskRepository) ListEvents(ctx context.Context, tenantID, ta
 		return pagination.Result[remediation.TaskEvent]{}, fmt.Errorf("list task events: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]remediation.TaskEvent, 0, page.Limit())
+	out := make([]remediation.TaskEvent, 0)
 	for rows.Next() {
 		var (
 			e     remediation.TaskEvent
