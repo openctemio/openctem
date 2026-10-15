@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // LimitsRepository stores per-organization limits (tenant_limits), feature
@@ -51,7 +52,7 @@ func (r *LimitsRepository) GetSelfServiceDefaults(ctx context.Context) (limits.L
 
 // SaveSelfServiceDefaults stores the defaults when the stored version is
 // expected (0: nothing stored yet).
-func (r *LimitsRepository) SaveSelfServiceDefaults(ctx context.Context, l limits.Limits, expectedVersion int, by shared.ID, at time.Time) (int, error) {
+func (r *LimitsRepository) SaveSelfServiceDefaults(ctx context.Context, l limits.Limits, expectedVersion int, by *shared.ID, at time.Time) (int, error) {
 	raw, err := l.Encode()
 	if err != nil {
 		return 0, err
@@ -62,13 +63,13 @@ func (r *LimitsRepository) SaveSelfServiceDefaults(ctx context.Context, l limits
 			INSERT INTO platform_settings (key, value, version, source, updated_by, updated_at)
 			VALUES ($1, $2, 1, 'console', $3, $4)
 			ON CONFLICT (key) DO NOTHING
-			RETURNING version`, limits.SelfServiceDefaultsKey, raw, by.String(), at).Scan(&version)
+			RETURNING version`, limits.SelfServiceDefaultsKey, raw, nullID(by), at).Scan(&version)
 	} else {
 		err = r.db.QueryRowContext(ctx, `
 			UPDATE platform_settings
 			   SET value = $2, version = version + 1, source = 'console', updated_by = $3, updated_at = $4
 			 WHERE key = $1 AND version = $5
-			RETURNING version`, limits.SelfServiceDefaultsKey, raw, by.String(), at, expectedVersion).Scan(&version)
+			RETURNING version`, limits.SelfServiceDefaultsKey, raw, nullID(by), at, expectedVersion).Scan(&version)
 	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -319,4 +320,51 @@ func (r *LimitsRepository) EndGrace(ctx context.Context, tenantID shared.ID, fea
 		return fmt.Errorf("end feature grace: %w", err)
 	}
 	return nil
+}
+
+// OrganizationExists reports whether the organization exists (the internal
+// API checks it before writing; the platform system organization is never
+// one).
+func (r *LimitsRepository) OrganizationExists(ctx context.Context, id shared.ID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE id = $1 AND id <> $2)`,
+		id.String(), tenant.SystemTenantID).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("check organization: %w", err)
+	}
+	return ok, nil
+}
+
+// OrganizationPage lists organization ids and creation times in id order,
+// after the given id (the platform system organization excluded). It reads
+// nothing else.
+func (r *LimitsRepository) OrganizationPage(ctx context.Context, after *shared.ID, limit int) ([]shared.ID, []time.Time, error) {
+	from := "00000000-0000-0000-0000-000000000000"
+	if after != nil {
+		from = after.String()
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, created_at FROM tenants WHERE id > $1 AND id <> $2 ORDER BY id LIMIT $3`,
+		from, tenant.SystemTenantID, limit)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list organizations: %w", err)
+	}
+	defer rows.Close()
+	var ids []shared.ID
+	var created []time.Time
+	for rows.Next() {
+		var (
+			s  string
+			at time.Time
+		)
+		if err := rows.Scan(&s, &at); err != nil {
+			return nil, nil, fmt.Errorf("scan organization: %w", err)
+		}
+		id, err := shared.IDFromString(s)
+		if err != nil {
+			continue
+		}
+		ids, created = append(ids, id), append(created, at)
+	}
+	return ids, created, rows.Err()
 }

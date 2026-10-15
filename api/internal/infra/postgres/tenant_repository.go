@@ -362,12 +362,28 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 	// Limits the organization starts with (the instance's self-service
 	// defaults, when an operator set some) are stored in the same
 	// transaction: the organization is never briefly without them.
-	for _, l := range t.InitialLimits() {
+	initial := t.Initial()
+	for _, l := range initial.Limits {
 		if l.TenantID != t.ID() {
 			return fmt.Errorf("%w: initial limit for another organization", shared.ErrValidation)
 		}
 		if _, err = tx.ExecContext(ctx, upsertLimitSQL, limitArgs(l)...); err != nil {
 			return fmt.Errorf("failed to store the organization limits: %w", err)
+		}
+	}
+	for _, d := range initial.Denies {
+		if d.TenantID != t.ID() {
+			return fmt.Errorf("%w: initial deny for another organization", shared.ErrValidation)
+		}
+		if _, err = tx.ExecContext(ctx, upsertDenySQL, denyArgs(d)...); err != nil {
+			return fmt.Errorf("failed to store the organization feature denies: %w", err)
+		}
+	}
+	if initial.IdlePolicy {
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO tenant_idle_lifecycle (tenant_id, stage, stage_changed_at, policy_enabled, policy_reason, policy_set_at)
+			VALUES ($1, 'active', $2, true, $3, $2)`, t.ID().String(), t.CreatedAt(), initial.IdleReason); err != nil {
+			return fmt.Errorf("failed to store the organization idle policy: %w", err)
 		}
 	}
 
