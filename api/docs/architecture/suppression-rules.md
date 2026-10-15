@@ -18,7 +18,7 @@ routes in `registerSuppressionRoutes` (`internal/infra/http/routes/scanning.go`)
 |---|---|---|
 | Request | `findings:suppressions:write` | A pending rule. An asset-bound rule must name an asset the requester may see. |
 | Preview | `findings:suppressions:approve` | `GET /api/v1/suppressions/{id}/preview` returns `{matching_open_findings, capped, limit}`: the open findings an approval would close now. |
-| Approve | `findings:suppressions:approve` | Four-eyes: the approver is not the requester, unless the owner is the only eligible approver (audited Critical). The request names the `reviewed_updated_at` it approves; a rule edited since is refused (409). The approval closes the open findings the rule matches (below). |
+| Approve | `findings:suppressions:approve` | Four-eyes: the approver is not the requester, unless the owner is the only eligible approver and sends `self_approval_reason` and a fresh `totp_code` from their authenticator app (audited Critical; a refused own approval is audited High as `suppression_rule.self_approval_refused`). The request names the `reviewed_updated_at` it approves; a rule edited since is refused (409). The approval closes the open findings the rule matches (below). |
 | Reject | `findings:suppressions:approve` | The rule never applies. |
 | Expire / delete | data-expiration controller / `findings:suppressions:delete` | The rule's suppressions are lifted (below). |
 
@@ -82,7 +82,8 @@ A finding someone has moved since is left alone.
   organization-wide too. It is a number, never a finding, and only people who
   may approve see it (`authorization-matrix.md`).
 - Separation of duties: the requester cannot approve their own rule while
-  someone else can; the approval pins the reviewed version, so a rule widened
+  someone else can; a lone owner approves their own rule only with a reason
+  and a fresh authenticator code, never as a side effect of a plain approve; the approval pins the reviewed version, so a rule widened
   after review cannot be approved by mistake.
 - Abuse: a broad rule (for example rule id `*`) closes at most
   the cap per approval, and every change is attributable (activity per finding,

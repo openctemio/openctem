@@ -381,8 +381,16 @@ approval. For a **high or critical** item it takes two people:
 The requester never confirms their own request. The organization owner may,
 only when nobody else in the organization holds every permission the route
 requires (counted as active owners, admins and members whose roles grant
-them); that approval applies at once and is audited Critical
-(`exposure.disposition_self_approved`). Every request, approval and rejection
+them), and never automatically: the owner's request stays pending like any
+other, and the owner approves it in a separate call to the same route with
+`self_approve: true`, a reason and a fresh `totp_code` from their
+authenticator app (a stolen session or password alone is not enough). The
+approval is audited Critical (`exposure.disposition_self_approved`); every
+refused attempt (not allowed, no reason, no code, a wrong or reused code) is
+audited High (`exposure.disposition_self_approval_refused`) and changes
+nothing. Without the authenticator check wired, an own approval is refused.
+The pending view carries `self_approval_available` for the requester so the
+web offers the call only when it can succeed. Every request, approval and rejection
 is in the audit log (`exposure.disposition_*`) and the state change keeps both
 reasons in the exposure's state history. Low and medium items keep the
 one-step path. A request is created only for an exposure of the caller's

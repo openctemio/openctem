@@ -48,6 +48,23 @@ func (s *ExposureService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e 
 // SetDispositionGate wires the four-eyes rule for dispositions.
 func (s *ExposureService) SetDispositionGate(g *DispositionGate) { s.dispositions = g }
 
+// SetDispositionTOTP wires the authenticator check of an owner's own
+// approval of a disposition (fail closed without it).
+func (s *ExposureService) SetDispositionTOTP(v TOTPVerifier) {
+	if s.dispositions != nil {
+		s.dispositions.SetTOTP(v)
+	}
+}
+
+// SelfApprovalAvailable reports whether the user could approve their own
+// disposition request in the tenant (false when the gate is not wired).
+func (s *ExposureService) SelfApprovalAvailable(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	if s.dispositions == nil {
+		return false, nil
+	}
+	return s.dispositions.SelfApprovalAvailable(ctx, tenantID, userID, ExposureApproverPermissions)
+}
+
 // ExposureApproverPermissions are the permissions the exposure accept and
 // false-positive routes require; a second approver holds both.
 var ExposureApproverPermissions = []string{"findings:approve", "exposures:triage"}
@@ -686,6 +703,8 @@ type DispositionCall struct {
 	State      exposuredom.State
 	Reason     string
 	Audit      auditapp.AuditContext
+	// Self is the owner's explicit approval of their own request.
+	Self SelfApproval
 }
 
 // DispositionOutcome is the exposure after the call and, for a high or
@@ -767,7 +786,8 @@ func (s *ExposureService) changeStateGated(ctx context.Context, in DispositionCa
 	decision := DispositionDecision{Apply: true, Notes: in.Reason}
 	if s.dispositions != nil {
 		decision, err = s.dispositions.Decide(ctx, DispositionInput{TenantID: tenantID, Event: event, ActorID: actor,
-			State: in.State, Reason: in.Reason, ApproverPermissions: ExposureApproverPermissions, Audit: in.Audit})
+			State: in.State, Reason: in.Reason, ApproverPermissions: ExposureApproverPermissions, Audit: in.Audit,
+			SelfApprove: in.Self.Requested, TOTPCode: in.Self.Code})
 		if err != nil {
 			return nil, err
 		}
