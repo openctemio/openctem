@@ -26,10 +26,10 @@ func (f *fakeKeyResolver) CountByKey(_ context.Context, _ shared.ID, key string,
 	return f.total, f.resolved, nil
 }
 
-func (f *fakeKeyResolver) ResolveGroupByKey(_ context.Context, _ string, key string, _ CampaignResolveInput) (int, error) {
+func (f *fakeKeyResolver) ResolveGroupByKey(_ context.Context, _ string, key string, _ CampaignResolveInput) (*CampaignResolveResult, error) {
 	f.resolveCalls++
 	f.gotKey = key
-	return f.n, nil
+	return &CampaignResolveResult{Updated: f.n}, nil
 }
 
 // A campaign scoped to a remediation-group key must compute its progress from
@@ -85,11 +85,11 @@ func TestResolveCampaignFindings_KeyedRoutesToKeyResolver(t *testing.T) {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
 
-	n, err := svc.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), CampaignResolveInput{Status: "resolved"})
+	out, err := svc.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), fixClaim())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if n != 7 {
+	if n := out.Updated; n != 7 {
 		t.Errorf("expected 7 resolved via key path, got %d", n)
 	}
 	if kr.resolveCalls != 1 || kr.gotKey != "sol:deadbeef" {
@@ -119,7 +119,7 @@ func TestResolveCampaignFindings_KeyedButNoKeyResolver_FailsClosed(t *testing.T)
 		t.Fatalf("CreateCampaign: %v", err)
 	}
 
-	_, err = svc.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), CampaignResolveInput{})
+	_, err = svc.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), fixClaim())
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("expected ErrValidation when keyed campaign has no key resolver, got %v", err)
 	}
