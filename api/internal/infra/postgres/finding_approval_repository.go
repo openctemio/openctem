@@ -174,6 +174,9 @@ func (r *FindingApprovalRepository) Update(ctx context.Context, a *vulnerability
 			rejection_reason = $7,
 			version = $8
 		WHERE id = $1 AND version = $9 AND tenant_id = $10
+		  -- A request past its decide-by time can no longer be rejected (the
+		  -- expiry job expires it); the database decides, not the caller's clock.
+		  AND NOT ($2 = 'rejected' AND decide_by IS NOT NULL AND decide_by <= now())
 	`
 
 	var approvedBy, rejectedBy *string
@@ -351,7 +354,8 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 			UPDATE finding_status_approvals SET
 				status = 'approved', approved_by = $3, approved_at = $4, expires_at = $5, version = $6,
 				self_approved = $8, self_approval_reason = $9
-			WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND version = $7`,
+			WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND version = $7
+			  AND (decide_by IS NULL OR decide_by > now())`,
 			a.ID.String(), a.TenantID.String(), a.ApprovedBy.String(), a.ApprovedAt, a.ExpiresAt,
 			a.Version, a.Version-1, a.SelfApproved, nullString(a.SelfApprovalReason))
 		if err != nil {
@@ -360,7 +364,7 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 		if n, err := res.RowsAffected(); err != nil {
 			return fmt.Errorf("failed to approve request: %w", err)
 		} else if n == 0 {
-			return vulnerability.ErrConcurrentModification
+			return claimFailure(ctx, tx, a)
 		}
 		if err := markStatusWriteTx(ctx, tx); err != nil {
 			return err
@@ -393,7 +397,10 @@ func (r *FindingApprovalRepository) ExpireOverdueRequests(ctx context.Context) (
 	err := r.db.QueryRowContext(ctx, `
 		WITH ended AS (
 			UPDATE finding_status_approvals a SET status = 'expired', version = a.version + 1
-			WHERE a.status = 'pending' AND a.decide_by IS NOT NULL AND a.decide_by < NOW()
+			WHERE a.status = 'pending'
+			  -- A row without a decide-by time (written by an older writer)
+			  -- gets the default window from its creation.
+			  AND COALESCE(a.decide_by, a.created_at + INTERVAL '14 days') < NOW()
 			RETURNING a.id, a.tenant_id, a.finding_id, a.requested_status, a.decide_by
 		), timeline AS (
 			INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
@@ -435,4 +442,19 @@ func (r *FindingApprovalRepository) MarkReminded(ctx context.Context, tenantID, 
 		return false, fmt.Errorf("rows affected: %w", err)
 	}
 	return n == 1, nil
+}
+
+// claimFailure explains why an approve claimed no row: the request is past
+// its decide-by time (ErrDecisionOverdue), or someone else decided or
+// changed it first (ErrConcurrentModification).
+func claimFailure(ctx context.Context, tx *sql.Tx, a *vulnerability.Approval) error {
+	var overdue bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT status = 'pending' AND decide_by IS NOT NULL AND decide_by <= now()
+		FROM finding_status_approvals WHERE id = $1 AND tenant_id = $2`,
+		a.ID.String(), a.TenantID.String()).Scan(&overdue)
+	if err == nil && overdue {
+		return vulnerability.ErrDecisionOverdue
+	}
+	return vulnerability.ErrConcurrentModification
 }
