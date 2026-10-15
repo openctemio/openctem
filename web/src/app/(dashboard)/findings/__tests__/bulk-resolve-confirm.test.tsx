@@ -33,6 +33,7 @@ vi.mock('swr', () => ({
 }))
 
 vi.mock('@/features/findings/api/use-findings-api', () => ({
+  useFindingApi: () => ({ data: undefined }),
   useFindingsApi: () => ({
     data: {
       data: [

@@ -1,3 +1,5 @@
+-- (Renamed from 002186_finding_regression_not_person_move, which shared its
+-- version with 002186_invitation_teams.)
 -- A regression is a fix that evidence shows did not hold: a scan sees the
 -- finding again, a retest fails, the vendor withdraws a fixed statement, an
 -- indicator matches. A person moving a finding back from resolved (Undo, a
