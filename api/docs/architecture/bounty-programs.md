@@ -50,9 +50,9 @@ paste / CSV ──► bountyprogram.ParseScope ──► items (in / out / not s
 
 ## Researcher role and data scope
 
-- Permissions `attack_surface:programs:read|write`; the built-in Researcher
-  role (`…0005`) holds them with scans, findings and read-only assets and
-  sensors. Owners and administrators hold every program permission.
+- Permissions `attack_surface:programs:read|write`; a role created from the
+  `researcher` template (RFC-095; the built-in Researcher role until then)
+  holds them with scans, findings and read-only assets and sensors. Owners and administrators hold every program permission.
 - Every program has a group (type `project`). The program assignment pass
   keeps `asset_owners` rows with `assignment_source = 'program'` for the
   assets the program's active entries cover; the `asset_owners` trigger keeps

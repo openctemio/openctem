@@ -44,6 +44,9 @@ const (
 	// ReasonSecretPreExisting notes a secret already open on the baseline
 	// branch: it blocks default-branch runs, not pull requests.
 	ReasonSecretPreExisting = "secret_pre_existing"
+	// ReasonTooManyFindings: the run reported more findings than the gate
+	// records (MaxRunFindings), so it cannot be judged on all of them.
+	ReasonTooManyFindings = "too_many_findings"
 )
 
 // Break-glass limits.
@@ -240,6 +243,9 @@ type GateInput struct {
 	// every open secret blocks.
 	DefaultBranch bool
 	ScanFailures  int
+	// FindingsOverCap: the run reported more findings than it could record;
+	// judging only the recorded ones would miss the rest, so it fails.
+	FindingsOverCap bool
 	// MissingCapabilities are the capabilities the repository is expected
 	// to report (coverage expectation) that the run reported no tool for.
 	MissingCapabilities []string
@@ -384,6 +390,10 @@ func Evaluate(in GateInput) GateVerdict {
 	if in.ScanFailures > 0 {
 		add(GateReason{Code: ReasonScanFailure,
 			Message: fmt.Sprintf("%d scanner(s) failed to run or to report: the run cannot be judged", in.ScanFailures)})
+	}
+	if in.FindingsOverCap {
+		add(GateReason{Code: ReasonTooManyFindings,
+			Message: fmt.Sprintf("the run reported more than %d findings, more than the gate can judge: the run cannot be judged; split the scan or narrow it", MaxRunFindings)})
 	}
 	for _, c := range in.MissingCapabilities {
 		add(GateReason{Code: ReasonMissingCapability,

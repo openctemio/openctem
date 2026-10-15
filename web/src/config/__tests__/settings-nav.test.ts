@@ -86,9 +86,10 @@ describe('settings nav config', () => {
   })
 
   for (const group of settingsNav) {
-    it(`group "${group.title}" has 2 to 8 items`, () => {
+    // Scanning holds 9 (Tool defaults joined its 8); keep groups scannable.
+    it(`group "${group.title}" has 2 to 9 items`, () => {
       expect(group.items.length).toBeGreaterThanOrEqual(2)
-      expect(group.items.length).toBeLessThanOrEqual(8)
+      expect(group.items.length).toBeLessThanOrEqual(9)
     })
   }
 

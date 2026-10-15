@@ -69,9 +69,10 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 //getbyid:unsafe - Tenants ARE the scope unit; lookup by tenant ID alone is the correct primary-key access pattern.
 func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.Tenant, error) {
 	query := `
-		SELECT id, name, slug, description, logo_url, settings, created_by, created_at, updated_at
-		FROM tenants
-		WHERE id = $1
+		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
+		       ` + tenantPlanExpr + `
+		FROM tenants t
+		WHERE t.id = $1
 	`
 
 	return r.scanTenant(r.db.QueryRowContext(ctx, query, id.String()))
@@ -80,9 +81,10 @@ func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.T
 // GetBySlug retrieves a tenant by slug.
 func (r *TenantRepository) GetBySlug(ctx context.Context, slug string) (*tenant.Tenant, error) {
 	query := `
-		SELECT id, name, slug, description, logo_url, settings, created_by, created_at, updated_at
-		FROM tenants
-		WHERE slug = $1
+		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
+		       ` + tenantPlanExpr + `
+		FROM tenants t
+		WHERE t.slug = $1
 	`
 
 	return r.scanTenant(r.db.QueryRowContext(ctx, query, slug))
@@ -359,6 +361,16 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 	); err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
+	// A plan chosen at creation (Free for a self-service organization) is
+	// stored in the same transaction: an organization never exists without
+	// it and so never falls back to plan.Unassigned by accident.
+	if p, ok := t.StoredPlan(); ok {
+		if _, err = tx.ExecContext(ctx,
+			`INSERT INTO tenant_plans (tenant_id, plan, updated_at) VALUES ($1, $2, $3)`,
+			t.ID().String(), string(p), t.CreatedAt()); err != nil {
+			return fmt.Errorf("failed to store the organization plan: %w", err)
+		}
+	}
 
 	var invitedBy sql.NullString
 	if m.InvitedBy() != nil {
@@ -626,6 +638,7 @@ func (r *TenantRepository) ListMembersByTenant(ctx context.Context, tenantID sha
 func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.ID) ([]*tenant.TenantWithRole, error) {
 	query := `
 		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
+		       ` + tenantPlanExpr + `,
 		       COALESCE(ver.role, 'member') as role, m.joined_at,
 		       m.status, m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.suspended_reason
 		FROM tenants t
@@ -649,6 +662,7 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 			description, logoURL sql.NullString
 			settingsJSON         []byte
 			createdAt, updatedAt time.Time
+			planStr              string
 			roleStr              string
 			joinedAt             time.Time
 			memberStatus         string
@@ -661,7 +675,7 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 
 		err := rows.Scan(
 			&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt,
-			&roleStr, &joinedAt,
+			&planStr, &roleStr, &joinedAt,
 			&memberStatus, &kind, &homeTenantID, &homeDomain, &expiresAt, &suspendedReason,
 		)
 		if err != nil {
@@ -680,6 +694,9 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 			id, name, slug, description.String, logoURL.String,
 			settings, createdBy.String, createdAt, updatedAt,
 		)
+		if err := t.SetPlan(plan.Plan(planStr)); err != nil {
+			return nil, fmt.Errorf("organization %s has an unknown plan %q", idStr, planStr)
+		}
 
 		var homeID *shared.ID
 		if homeTenantID.Valid {
@@ -1624,9 +1641,10 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 		description, logoURL sql.NullString
 		settingsJSON         []byte
 		createdAt, updatedAt time.Time
+		planStr              string
 	)
 
-	err := row.Scan(&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt)
+	err := row.Scan(&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt, &planStr)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -1641,10 +1659,14 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 		settings = make(map[string]any)
 	}
 
-	return tenant.Reconstitute(
+	t := tenant.Reconstitute(
 		id, name, slug, description.String, logoURL.String,
 		settings, createdBy.String, createdAt, updatedAt,
-	), nil
+	)
+	if err := t.SetPlan(plan.Plan(planStr)); err != nil {
+		return nil, fmt.Errorf("organization %s has an unknown plan %q", idStr, planStr)
+	}
+	return t, nil
 }
 
 func (r *TenantRepository) scanMembership(row *sql.Row) (*tenant.Membership, error) {
