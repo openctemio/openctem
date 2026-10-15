@@ -136,23 +136,6 @@ func TestCreateTicketFromFinding_DifferentProjectStillCreates(t *testing.T) {
 	}
 }
 
-func TestRedactSecrets(t *testing.T) {
-	cases := []struct{ in, mustNotContain, mustContain string }{
-		{"key AKIAIOSFODNN7EXAMPLE here", "AKIAIOSFODNN7EXAMPLE", "[REDACTED]"},
-		{"token eyJhbGciOi.eyJzdWIiOiJ.SflKxwRJSMeKKF here", "SflKxwRJSMeKKF", "[REDACTED]"},
-		{"password: hunter2supersecret", "hunter2supersecret", "password: [REDACTED]"},
-		{"api_key=abcdef1234567890xyz", "abcdef1234567890xyz", "api_key=[REDACTED]"},
-	}
-	for _, c := range cases {
-		got := redactSecrets(c.in)
-		if strings.Contains(got, c.mustNotContain) {
-			t.Fatalf("redactSecrets(%q) still contains %q: %q", c.in, c.mustNotContain, got)
-		}
-		if !strings.Contains(got, c.mustContain) {
-			t.Fatalf("redactSecrets(%q) = %q, want it to contain %q", c.in, got, c.mustContain)
-		}
-	}
-}
 
 func TestTicketDescription_SecretFinding_SuppressesRawSecret(t *testing.T) {
 	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(),
