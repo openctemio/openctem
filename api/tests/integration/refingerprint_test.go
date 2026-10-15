@@ -151,7 +151,7 @@ func TestRefingerprint_ResumableAndPausesAutoResolve(t *testing.T) {
 
 	// D11: a scan that does not produce the old keys must not close them.
 	repo := postgres.NewFindingRepository(&postgres.DB{DB: f.db})
-	closed, err := repo.AutoResolveStaleByAssets(ctx, f.tenant, []shared.ID{f.keep}, "trivy", "new-scan", nil)
+	closed, err := repo.ResolveRepoCoverageStale(ctx, f.tenant, ids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestRefingerprint_ResumableAndPausesAutoResolve(t *testing.T) {
 	if _, err := f.db.Exec(`UPDATE finding_rekey_runs SET updated_at = NOW() - INTERVAL '3 hours' WHERE tenant_id = $1`, f.tenant.String()); err != nil {
 		t.Fatal(err)
 	}
-	closed, err = repo.AutoResolveStaleByAssets(ctx, f.tenant, []shared.ID{f.keep}, "trivy", "new-scan", nil)
+	closed, err = repo.ResolveRepoCoverageStale(ctx, f.tenant, ids)
 	if err != nil {
 		t.Fatal(err)
 	}

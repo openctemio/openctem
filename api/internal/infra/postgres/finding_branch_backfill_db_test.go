@@ -150,7 +150,7 @@ func TestBackfillFindingBranches(t *testing.T) {
 	})
 
 	t.Run("backfilled finding is now auto-resolvable", func(t *testing.T) {
-		resolved, err := repo.AutoResolveStaleByAssets(ctx, tenantID, []shared.ID{repoID}, "semgrep", "scan-2", nil)
+		resolved, err := repo.ResolveRepoCoverageStale(ctx, tenantID, []shared.ID{noBranch, onFeature})
 		if err != nil {
 			t.Fatalf("auto-resolve: %v", err)
 		}

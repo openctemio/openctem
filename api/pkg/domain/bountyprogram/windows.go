@@ -112,5 +112,20 @@ func MergeJobRules(programs []*Program) (*JobRules, error) {
 			out.RateLimit = r.RateLimitRPS
 		}
 	}
+	// What the job carries must be what a sensor sends: more headers than
+	// one program may require (several programs together), or a value saved
+	// before values had to be ASCII, would be refused by the sensor; the
+	// job fails here with the reason instead.
+	if len(out.Headers) > MaxHeaders {
+		return nil, fmt.Errorf("%w: together the programs require %d headers, more than %d", ErrRulesConflict, len(out.Headers), MaxHeaders)
+	}
+	for name, v := range out.Headers {
+		if !printableASCII(v) {
+			return nil, fmt.Errorf("%w: the value of header %s is not printable ASCII; edit the program's rules", ErrRulesConflict, name)
+		}
+	}
+	if !printableASCII(out.UserAgent) {
+		return nil, fmt.Errorf("%w: the User-Agent is not printable ASCII; edit the program's rules", ErrRulesConflict)
+	}
 	return out, nil
 }
