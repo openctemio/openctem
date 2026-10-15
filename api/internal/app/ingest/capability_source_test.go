@@ -49,3 +49,37 @@ func TestBoundSecretsReportIsRedacted(t *testing.T) {
 		t.Fatal("the snippet of a bound secret scan was kept")
 	}
 }
+
+// openctem-ci puts the capability in metadata.properties: the IaC job of the
+// trivy image (capabilities sca, misconfiguration, secret) is IaC, not SCA.
+func TestReportFindingSourceFromCapabilityProperty(t *testing.T) {
+	r := &ctis.Report{Tool: &ctis.Tool{Name: "trivy", Capabilities: []string{"sca", "misconfiguration", "secret"}},
+		Metadata: ctis.ReportMetadata{Properties: ctis.Properties{"capability": "iac.misconfig@1"}}}
+	if got := reportFindingSource(r); got != vulnerability.FindingSourceIaC {
+		t.Fatalf("capability property: got %s, want iac", got)
+	}
+}
+
+// An unbound multi-capability report (a native trivy JSON with dependencies,
+// misconfigurations and secrets) files each finding by its type; a bound one
+// keeps the capability's technique.
+func TestFindingTechniqueByTypeWhenUnbound(t *testing.T) {
+	r := &ctis.Report{Tool: &ctis.Tool{Name: "trivy", Capabilities: []string{"sca", "misconfiguration", "secret"}}}
+	for typ, want := range map[ctis.FindingType]vulnerability.FindingSource{
+		ctis.FindingTypeVulnerability:    vulnerability.FindingSourceSCA,
+		ctis.FindingTypeMisconfiguration: vulnerability.FindingSourceIaC,
+		ctis.FindingTypeSecret:           vulnerability.FindingSourceSecret,
+	} {
+		if got := findingTechnique(r, &ctis.Finding{Type: typ}); got != want {
+			t.Errorf("%s: got %s, want %s", typ, got, want)
+		}
+	}
+	r.Metadata.Capability = "sca.deps@1"
+	if got := findingTechnique(r, &ctis.Finding{Type: ctis.FindingTypeMisconfiguration}); got != vulnerability.FindingSourceSCA {
+		t.Errorf("bound report keeps its technique, got %s", got)
+	}
+	sast := &ctis.Report{Tool: &ctis.Tool{Name: "opengrep"}}
+	if got := findingTechnique(sast, &ctis.Finding{Type: ctis.FindingTypeSecret}); got != vulnerability.FindingSourceSAST {
+		t.Errorf("only an SCA fallback is split by type, got %s", got)
+	}
+}

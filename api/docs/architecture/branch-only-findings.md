@@ -79,6 +79,26 @@ branch that does not count, so it opens the branch's own findings), the branch p
 id, and the secret-to-credential bridge (a secret pushed to any branch of a
 hosted repository is already exposed).
 
+## Provenance in the finding detail
+
+`GET /api/v1/findings/{id}` returns `provenance`:
+
+- `branches`: every branch the finding was seen on (`finding_branch_occurrences`
+  joined to `repository_branches`), the default branch first: first and last
+  commit, first and last time, and the branch status (`open`, `auto_fixed`,
+  `resolved`). At most 20.
+- `runs` and `first_run`: the CI runs that reported it (`ci_runs` joined
+  through `ci_run_findings` on the finding's fingerprint), newest five and the
+  first one, with the pipeline URL (http(s) only), external run id, branch,
+  commit and merge request. Only for a caller holding `scans:ci:read`; the
+  run's actor and token data are never part of it.
+
+`findings.last_seen_branch` / `last_seen_commit` follow the latest sighting:
+`Finding.EnrichFrom` moves them with the scan id, and the batch enrich
+update writes them (before, a re-sighting kept the first sighting's branch
+and commit forever). The drawer reads "last seen" from the newest branch
+occurrence.
+
 ## Security
 
 - Every query that reads or changes the mark is tenant-scoped
