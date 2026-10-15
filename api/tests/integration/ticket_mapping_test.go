@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -68,7 +69,14 @@ func (r tmTrackers) ForIntegration(_ context.Context, tenantID, integrationID sh
 	return tmTracker{meta: r.meta}, nil
 }
 
-type tmScope struct{ hidden map[shared.ID]bool }
+type tmScope struct {
+	hidden     map[shared.ID]bool
+	restricted bool
+}
+
+func (s *tmScope) FilterFindings(_ context.Context, _ shared.ID, ids []shared.ID) (func(shared.ID) bool, bool, error) {
+	return func(id shared.ID) bool { return !s.hidden[id] }, s.restricted, nil
+}
 
 func (s *tmScope) AssertFinding(_ context.Context, _ shared.ID, id shared.ID) error {
 	if s.hidden[id] {
@@ -79,6 +87,8 @@ func (s *tmScope) AssertFinding(_ context.Context, _ shared.ID, id shared.ID) er
 
 type tmObjects struct {
 	findings map[shared.ID]*vulnerability.Finding
+	tasks    map[shared.ID]*remediation.Campaign
+	members  map[shared.ID][]*vulnerability.Finding
 }
 
 func (o *tmObjects) Finding(_ context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error) {
@@ -94,11 +104,19 @@ func (o *tmObjects) Asset(context.Context, shared.ID, shared.ID) (*appticketmap.
 func (o *tmObjects) User(context.Context, shared.ID, shared.ID) (*appticketmap.UserInfo, error) {
 	return nil, shared.ErrNotFound
 }
-func (o *tmObjects) Task(context.Context, shared.ID, shared.ID) (*remediation.Campaign, error) {
-	return nil, shared.ErrNotFound
+func (o *tmObjects) Task(_ context.Context, tenantID, id shared.ID) (*remediation.Campaign, error) {
+	c, ok := o.tasks[id]
+	if !ok || c.TenantID() != tenantID {
+		return nil, shared.ErrNotFound
+	}
+	return c, nil
 }
-func (o *tmObjects) TaskMembers(context.Context, shared.ID, shared.ID, int) ([]*vulnerability.Finding, int64, error) {
-	return nil, 0, nil
+
+// TaskMembers returns every member, unfiltered, so the test proves the
+// service filters by scope itself.
+func (o *tmObjects) TaskMembers(_ context.Context, _, id shared.ID, _ int) ([]*vulnerability.Finding, int64, error) {
+	m := o.members[id]
+	return m, int64(len(m)), nil
 }
 
 func tmMeta() *ticketmap.ProjectMeta {
@@ -160,7 +178,7 @@ func newTMFixture(t *testing.T) tmFixture {
 	})
 	f.repo = postgres.NewTicketMappingRepository(&postgres.DB{DB: db})
 	f.scope = &tmScope{hidden: map[shared.ID]bool{}}
-	f.objects = &tmObjects{findings: map[shared.ID]*vulnerability.Finding{}}
+	f.objects = &tmObjects{findings: map[shared.ID]*vulnerability.Finding{}, tasks: map[shared.ID]*remediation.Campaign{}, members: map[shared.ID][]*vulnerability.Finding{}}
 	trackers := tmTrackers{owner: map[shared.ID]shared.ID{f.intgA: f.tenantA, f.intgB: f.tenantB}, meta: tmMeta()}
 	f.svc = appticketmap.NewService(f.repo, trackers, f.scope, f.objects, "https://app.example.test", logger.NewNop())
 	return f
@@ -408,5 +426,71 @@ func TestTicketMapping_EngineUsesOnlyThePublishedProfileOfTheTenant(t *testing.T
 	}
 	if pc, _ := f.svc.RenderFindingCreate(ctx, f.tenantA, f.intgA, "SEC", "Bug", fd.ID()); pc == nil || !pc.DryRun {
 		t.Fatalf("dry run not carried: %+v", pc)
+	}
+}
+
+func TestTicketMapping_TaskPreviewIsScoped(t *testing.T) {
+	f := newTMFixture(t)
+	ctx := context.Background()
+	v, _, err := f.svc.CreateProfile(ctx, appticketmap.CreateProfileInput{
+		TenantID: f.tenantA, IntegrationID: f.intgA, ObjectKind: ticketmap.ObjectTask,
+		ProjectKey: "PAY", IssueTypeID: "10001", IssueType: "Task", Preset: "security_task",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	camp, err := remediation.NewCampaign(f.tenantA, "Upgrade django", remediation.CampaignPriorityHigh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.objects.tasks[camp.ID()] = camp
+	mk := func(title string) *vulnerability.Finding {
+		fd, err := vulnerability.NewFinding(f.tenantA, shared.NewID(), vulnerability.FindingSourceSCA, "trivy", vulnerability.SeverityHigh, title)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fd
+	}
+	in, out := mk("visible-cve"), mk("hidden-cve")
+	f.objects.members[camp.ID()] = []*vulnerability.Finding{in, out}
+	f.scope.hidden[out.ID()] = true
+	f.scope.restricted = true
+
+	p, err := f.svc.PreviewOutbound(ctx, f.tenantA, v.Profile.ID, 0, camp.ID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desc := fmt.Sprint(p.Fields["description"])
+	if !strings.Contains(desc, "visible\\-cve") && !strings.Contains(desc, "visible-cve") {
+		t.Fatalf("visible member missing: %s", desc)
+	}
+	if strings.Contains(desc, "hidden") {
+		t.Fatalf("out-of-scope member rendered: %s", desc)
+	}
+	// No member in scope: the task is not found for this caller.
+	f.scope.hidden[in.ID()] = true
+	if _, err := f.svc.PreviewOutbound(ctx, f.tenantA, v.Profile.ID, 0, camp.ID(), true); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("task without visible members: want not found, got %v", err)
+	}
+	// An unrestricted caller sees the whole task.
+	f.scope.restricted = false
+	f.scope.hidden = map[shared.ID]bool{}
+	if p, err := f.svc.PreviewOutbound(ctx, f.tenantA, v.Profile.ID, 0, camp.ID(), true); err != nil || !strings.Contains(fmt.Sprint(p.Fields["description"]), "hidden") {
+		t.Fatalf("unrestricted: %v", err)
+	}
+	// Another tenant's task id is not found.
+	if _, err := f.svc.PreviewOutbound(ctx, f.tenantB, v.Profile.ID, 0, camp.ID(), true); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant: %v", err)
+	}
+}
+
+func TestTicketMapping_ProfileCannotNameAnotherTenantsIntegration(t *testing.T) {
+	f := newTMFixture(t)
+	p, err := ticketmap.NewProfile(f.tenantA, f.intgB, ticketmap.ObjectFinding, "", "SEC", "10001", "Bug", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.repo.CreateProfile(context.Background(), p, nil); err == nil {
+		t.Fatal("the database accepted a profile naming another tenant's integration")
 	}
 }

@@ -90,7 +90,7 @@ export function MappingPreview({ profileId, kind, fields, dirty }: Props) {
   return (
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
       {dirty && (
-        <p className="text-xs text-amber-700 dark:text-amber-400">
+        <p className="text-xs text-warning">
           {t(
             'ticketMapping.preview.unsaved',
             'The preview uses the saved draft: save your changes first.'

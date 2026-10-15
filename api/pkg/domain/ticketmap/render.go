@@ -260,7 +260,7 @@ func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOpt
 		}
 		return map[string]string{"accountId": acct}, true, ""
 	case shapeOption:
-		s := mapped(v.String())
+		s := redact(mapped(v.String()))
 		if s == "" {
 			return nil, false, ""
 		}
@@ -292,7 +292,7 @@ func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOpt
 		items := v.Strings()
 		out := make([]map[string]string, 0, len(items))
 		for _, it := range items {
-			s := mapped(it)
+			s := redact(mapped(it))
 			if s == "" {
 				continue
 			}

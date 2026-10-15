@@ -2,6 +2,7 @@ package ticketmap
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -416,5 +417,20 @@ func TestRender_TemplateLinksSummaryAndLines(t *testing.T) {
 	}
 	if strings.Contains(d, "https://evil.test") || !strings.Contains(d, "\n") {
 		t.Fatalf("value text not encoded or lines lost: %q", d)
+	}
+}
+
+func TestRender_OptionValuesAreRedacted(t *testing.T) {
+	spec := Spec{Minimization: MinFull, Fields: []Row{
+		{ID: "o", Source: Source{Kind: SourceAttr, Attr: "finding.tool"}, Target: Target{FieldID: "customfield_9", Schema: FieldSchema{Type: "option"}}, Direction: DirOut},
+		{ID: "m", Source: Source{Kind: SourceAttr, Attr: "finding.tags"}, Target: Target{FieldID: "customfield_8", Schema: FieldSchema{Type: "array", Items: "option"}}, Direction: DirOut},
+	}}
+	redact := func(s string) string { return strings.ReplaceAll(s, "AKIAABCDEFGHIJKLMNOP", "[REDACTED]") }
+	r := RenderOutbound(ObjectFinding, spec, Values{
+		"finding.tool": Text("AKIAABCDEFGHIJKLMNOP"),
+		"finding.tags": List("x-AKIAABCDEFGHIJKLMNOP"),
+	}, nil, RenderOptions{Redact: redact, Creating: true})
+	if got := fmt.Sprint(r.Fields); strings.Contains(got, "AKIA") {
+		t.Fatalf("option values not redacted: %s", got)
 	}
 }

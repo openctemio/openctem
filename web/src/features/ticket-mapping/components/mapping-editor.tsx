@@ -57,10 +57,7 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
   const { t } = useTranslation()
   if (issues.length === 0) {
     return (
-      <p
-        className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400"
-        role="status"
-      >
+      <p className="flex items-center gap-2 text-sm text-success" role="status">
         <ShieldCheck className="h-4 w-4" aria-hidden />
         {t('ticketMapping.editor.noIssues', 'No problems found against the Jira project.')}
       </p>
@@ -76,7 +73,7 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
             i.severity === 'error'
               ? 'bg-destructive/10 text-destructive'
               : i.severity === 'warning'
-                ? 'bg-amber-500/10 text-amber-800 dark:text-amber-300'
+                ? 'bg-warning/10 text-warning'
                 : 'bg-muted text-muted-foreground'
           )}
         >
