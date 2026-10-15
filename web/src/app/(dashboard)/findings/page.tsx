@@ -141,6 +141,7 @@ import type { GroupByDimension } from '@/features/findings/api/use-finding-group
 import { FindingContextChips } from '@/features/findings/components/finding-context-chips'
 import { MarkFixedDialog } from '@/features/findings/components/mark-fixed-dialog'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
+import { useCanCreateTicket } from '@/features/findings/hooks/use-can-create-ticket'
 import { LinkFindingsToRemediationDialog } from '@/features/remediation/components/link-findings-dialog'
 import { VerifyGroupActions } from '@/features/findings/components/verify-group-actions'
 import { type FindingGroup } from '@/features/findings/api/use-finding-groups'
@@ -656,7 +657,7 @@ function FindingsContent() {
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on
   // OSS where no modules are reported).
   const remediationEnabled = useModuleEnabled('remediation')
-  const integrationsEnabled = useModuleEnabled('integrations')
+  const canCreateTicket = useCanCreateTicket()
 
   // Statuses hidden from default dashboard view (pentest WIP, not ready for visibility)
   const HIDDEN_STATUSES = useMemo(() => [...FINDINGS_LIST_HIDDEN_STATUSES], [])
@@ -1370,10 +1371,10 @@ function FindingsContent() {
                   <CheckCircle className="me-2 h-4 w-4" />
                   Change Status
                 </DropdownMenuItem>
-                {integrationsEnabled && (
+                {canCreateTicket && (
                   <DropdownMenuItem onClick={() => handleRowAction('create_ticket', finding)}>
                     <Ticket className="me-2 h-4 w-4" />
-                    Create Jira Ticket
+                    {t('findings.header.createTicket', 'Create ticket')}
                   </DropdownMenuItem>
                 )}
                 {hasPermission('findings:remediation:write') && remediationEnabled && (
@@ -1423,7 +1424,7 @@ function FindingsContent() {
     hasPermission,
     hasAnyPriority,
     remediationEnabled,
-    integrationsEnabled,
+    canCreateTicket,
     t,
   ])
 
