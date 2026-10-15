@@ -145,6 +145,8 @@ export interface CreateInvitationInput {
    */
   access_expires_at?: string
   access_reason?: string
+  /** Teams (data access) the invitee joins when they accept; at most 20. */
+  group_ids?: string[]
 }
 
 // ============================================

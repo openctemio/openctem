@@ -266,6 +266,13 @@ removed when the list changes.
 | Pending list | shows `member_kind` (internal or external at creation), `privileged` (two-factor will be required), the end of access, the last send and the resend count |
 | Acceptance | re-classifies the invitee and re-authorizes the invitation as the inviter (RFC-095 §3.2); both acceptance paths run the same code |
 
+
+Teams: an invitation can add the person to up to 20 teams (data access), so
+they do not join with no data. The inviter can add only teams they may add a
+member to (a team carrying a privileged role needs the owner, with step-up),
+and the check runs again at acceptance; a team carrying a role above member
+counts toward the outside-member two-factor rule.
+
 ### IP allowlist (`security.ip_whitelist`)
 
 Empty = no restriction. Otherwise every request made with a user's access token

@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -242,7 +243,7 @@ func charCases() []charCase {
 			wantActTargets: []string{"passive-only.example.com"},
 		},
 		{
-			name: "internal addresses without scan zones; non-network members are kept", scanner: "nuclei",
+			name: "internal addresses without scan zones; a repository never reaches a network scanner", scanner: "nuclei",
 			direct: []string{"10.20.0.5", "203.0.113.7", "169.254.169.254"},
 			members: []charMember{
 				{name: "192.168.50.10", typ: asset.AssetTypeIPAddress},
@@ -252,17 +253,17 @@ func charCases() []charCase {
 				{name: "github.com/acme/app", typ: asset.AssetTypeRepository},
 				{name: "nginx:1.25", typ: asset.AssetType("container")},
 			},
-			wantTargets:  []string{"203.0.113.7", "app.example.com", "github.com/acme/app", "nginx:1.25"},
-			wantInternal: 5,
-			wantTypes: map[string]string{"app.example.com": "domain", "github.com/acme/app": "repository",
-				"nginx:1.25": "container"},
-			wantWarnings:   []string{"5 internal address target(s) were skipped: internal addresses are scanned only inside a scan zone of this organization"},
-			wantActTargets: []string{"10.20.0.5", "203.0.113.7", "169.254.169.254"},
-			wantActMembers: []string{"192.168.50.10", "app.example.com", "http://127.0.0.1:8080/", "100.64.0.1", "github.com/acme/app", "nginx:1.25"},
-			wantRunContext: map[string]any{"resolved_target_count": 4, "internal_outside_zones_target_count": 5,
-				"dispatch_warnings": []string{"5 internal address target(s) were skipped: internal addresses are scanned only inside a scan zone of this organization"},
-				RunContextKeyTargetTypes: map[string]string{"app.example.com": "domain", "github.com/acme/app": "repository",
-					"nginx:1.25": "container"}},
+			wantTargets:      []string{"203.0.113.7", "app.example.com", "nginx:1.25"},
+			wantInternal:     5,
+			wantIncompatible: 1,
+			wantTypes:        map[string]string{"app.example.com": "domain", "nginx:1.25": "container"},
+			wantWarnings:     []string{charRepoSkipped, "5 internal address target(s) were skipped: internal addresses are scanned only inside a scan zone of this organization"},
+			wantActTargets:   []string{"10.20.0.5", "203.0.113.7", "169.254.169.254"},
+			wantActMembers:   []string{"192.168.50.10", "app.example.com", "http://127.0.0.1:8080/", "100.64.0.1", "github.com/acme/app", "nginx:1.25"},
+			wantRunContext: map[string]any{"resolved_target_count": 3, "internal_outside_zones_target_count": 5,
+				"incompatible_target_count": 1,
+				"dispatch_warnings":         []string{charRepoSkipped, "5 internal address target(s) were skipped: internal addresses are scanned only inside a scan zone of this organization"},
+				RunContextKeyTargetTypes:    map[string]string{"app.example.com": "domain", "nginx:1.25": "container"}},
 		},
 		{
 			name: "with scan zones the trigger leaves internal addresses to zone planning", scanner: "nuclei", noGroup: true,
@@ -428,6 +429,10 @@ func newCharFixture(t *testing.T, c charCase) *charFixture {
 	}
 	return f
 }
+
+// charRepoSkipped is the warning a run records for a repository a network
+// scanner (nuclei) would have been handed.
+const charRepoSkipped = "1 target(s) were skipped: 1 path target(s): Vulnerability templates does not take them (" + stage.ReasonPathTarget + ")"
 
 func TestResolveScanTargets_Characterization(t *testing.T) {
 	for _, c := range charCases() {
