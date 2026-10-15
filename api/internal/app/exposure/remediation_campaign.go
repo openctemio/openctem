@@ -65,6 +65,9 @@ type CampaignKeyResolver interface {
 	// CountByKey returns (total, resolved) findings sharing the remediation key.
 	// A non-nil scope counts only findings on the scope's assets.
 	CountByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (total, resolved int64, err error)
+	// CountVerifiedByKey returns how many findings sharing the key are
+	// resolved (a verified fix), on the scope's assets when scope is non-nil.
+	CountVerifiedByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, error)
 	// ResolveGroupByKey bulk-resolves the OPEN findings under the key, reusing
 	// the same guarded bulk-status path as the standalone group resolve.
 	ResolveGroupByKey(ctx context.Context, tenantID string, key string, in CampaignResolveInput) (resolvedCount int, err error)
@@ -286,44 +289,64 @@ func (s *RemediationCampaignService) ApplyViewerScope(ctx context.Context, campa
 		}
 		return
 	}
-	total, resolved, err := s.scopedProgress(ctx, campaign, scope)
+	total, resolved, verified, err := s.scopedProgress(ctx, campaign, scope)
 	if err != nil {
 		s.logger.Warn("campaign scoped progress failed", "id", campaign.ID().String(), "error", err)
-		total, resolved = 0, 0
+		total, resolved, verified = 0, 0, 0
 	}
 	campaign.UpdateProgress(int(total), int(resolved))
+	campaign.SetVerifiedCount(int(verified))
 }
 
 // scopedProgress counts the campaign's findings and closed findings on the
 // scope's assets, with the same rules as recomputeProgress.
-func (s *RemediationCampaignService) scopedProgress(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) (int64, int64, error) {
+func (s *RemediationCampaignService) scopedProgress(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) (total, closed, verified int64, err error) {
+	return s.countProgress(ctx, campaign, scope)
+}
+
+// countProgress counts the campaign's findings, its closed findings and its
+// verified-fixed (resolved) findings, on the scope's assets when scope is
+// non-nil. The total ignores any status the filter pins, so it stays stable as
+// findings close.
+func (s *RemediationCampaignService) countProgress(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) (total, closed, verified int64, err error) {
 	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
 		if s.keyResolver == nil {
-			return 0, 0, nil
+			return 0, 0, 0, nil
 		}
-		return s.keyResolver.CountByKey(ctx, campaign.TenantID(), key, scope)
+		if total, closed, err = s.keyResolver.CountByKey(ctx, campaign.TenantID(), key, scope); err != nil {
+			return 0, 0, 0, fmt.Errorf("count campaign findings by key: %w", err)
+		}
+		if verified, err = s.keyResolver.CountVerifiedByKey(ctx, campaign.TenantID(), key, scope); err != nil {
+			return 0, 0, 0, fmt.Errorf("count verified campaign findings by key: %w", err)
+		}
+		return total, closed, verified, nil
 	}
 	if s.finding == nil {
-		return 0, 0, nil
+		return 0, 0, 0, nil
 	}
 	base := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
+	// An unscoped campaign ({} filter) tracks nothing until it gets a scope.
 	if !findingFilterHasScope(base) {
-		return 0, 0, nil
+		return 0, 0, 0, nil
 	}
-	base = base.WithDataScope(scope)
-	totalFilter := base
-	totalFilter.Statuses = nil
-	total, err := s.finding.Count(ctx, totalFilter)
-	if err != nil {
-		return 0, 0, err
+	if scope != nil {
+		base = base.WithDataScope(scope)
 	}
-	resolvedFilter := base
-	resolvedFilter.Statuses = vulnerability.ClosedFindingStatuses()
-	resolved, err := s.finding.Count(ctx, resolvedFilter)
-	if err != nil {
-		return 0, 0, err
+	count := func(statuses []vulnerability.FindingStatus) (int64, error) {
+		f := base
+		f.Statuses = statuses
+		return s.finding.Count(ctx, f)
 	}
-	return total, resolved, nil
+	if total, err = count(nil); err != nil {
+		return 0, 0, 0, fmt.Errorf("count campaign findings: %w", err)
+	}
+	if closed, err = count(vulnerability.ClosedFindingStatuses()); err != nil {
+		return 0, 0, 0, fmt.Errorf("count closed campaign findings: %w", err)
+	}
+	if verified, err = count([]vulnerability.FindingStatus{vulnerability.FindingStatusResolved}); err != nil {
+		return 0, 0, 0, fmt.Errorf("count verified campaign findings: %w", err)
+	}
+	return total, closed, verified, nil
 }
 
 // SetFindingResolver wires the bulk resolver that makes ResolveCampaignFindings
@@ -613,6 +636,19 @@ type UpdateRemediationCampaignInput struct {
 	Version *int
 }
 
+// deadlineOnlyTightens allows setting a first due date or moving it to an
+// earlier day; moving it later or clearing it is refused (a campaign's
+// deadline only tightens). Days are compared, as the column stores a date.
+func deadlineOnlyTightens(current, next *time.Time) error {
+	if current == nil {
+		return nil
+	}
+	if next == nil || remediation.DueDayEnd(*next).After(remediation.DueDayEnd(*current)) {
+		return remediation.ErrCampaignDeadlineOnlyTightens
+	}
+	return nil
+}
+
 // checkVersion refuses a change made on a stale copy of the campaign.
 func checkVersion(campaign *remediation.Campaign, expected *int) error {
 	if expected != nil && *expected != campaign.Version() {
@@ -666,6 +702,9 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		due, derr := optionalCampaignDate("due_date", *input.DueDate, true)
 		if derr != nil {
 			return nil, derr
+		}
+		if err := deadlineOnlyTightens(campaign.DueDate(), due); err != nil {
+			return nil, err
 		}
 		campaign.SetDueDate(due)
 	}
@@ -725,12 +764,23 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 
 // UpdateCampaignStatus transitions campaign status.
 func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, tenantID, campaignID, newStatus string, actx auditapp.AuditContext) (*remediation.Campaign, error) {
-	return s.UpdateCampaignStatusAt(ctx, tenantID, campaignID, newStatus, nil, actx)
+	return s.UpdateCampaignStatusAt(ctx, tenantID, campaignID, newStatus, CampaignStatusOptions{}, actx)
+}
+
+// CampaignStatusOptions qualify a status change.
+type CampaignStatusOptions struct {
+	// ExpectedVersion: the campaign version the caller saw (nil = the
+	// version read here).
+	ExpectedVersion *int
+	// CloseWithOpenMembers completes a campaign that is not done (findings
+	// still open, or none verified fixed). Explicit and audited.
+	CloseWithOpenMembers bool
 }
 
 // UpdateCampaignStatusAt transitions campaign status when the campaign is
-// still at expectedVersion (nil = the version read here).
-func (s *RemediationCampaignService) UpdateCampaignStatusAt(ctx context.Context, tenantID, campaignID, newStatus string, expectedVersion *int, actx auditapp.AuditContext) (*remediation.Campaign, error) {
+// still at opts.ExpectedVersion.
+func (s *RemediationCampaignService) UpdateCampaignStatusAt(ctx context.Context, tenantID, campaignID, newStatus string, opts CampaignStatusOptions, actx auditapp.AuditContext) (*remediation.Campaign, error) {
+	expectedVersion := opts.ExpectedVersion
 	tid, _ := shared.IDFromString(tenantID)
 	cid, _ := shared.IDFromString(campaignID)
 
@@ -755,12 +805,24 @@ func (s *RemediationCampaignService) UpdateCampaignStatusAt(ctx context.Context,
 
 	switch remediation.CampaignStatus(newStatus) {
 	case remediation.CampaignStatusActive:
-		err = campaign.Activate()
+		// Active from completed is a Reopen (the work was not done); from
+		// draft, paused or validating it is a start, a resume or rework
+		// after a failed validation.
+		if campaign.Status() == remediation.CampaignStatusCompleted {
+			err = campaign.Reopen()
+		} else {
+			err = campaign.Activate()
+		}
 	case remediation.CampaignStatusPaused:
 		err = campaign.Pause()
 	case remediation.CampaignStatusValidating:
 		err = campaign.StartValidation()
 	case remediation.CampaignStatusCompleted:
+		// Done means every finding closed and at least one verified fixed.
+		// Anything less needs the explicit, audited override.
+		if !campaign.IsDone() && !opts.CloseWithOpenMembers {
+			return nil, remediation.ErrCampaignNotDone
+		}
 		err = campaign.Complete()
 	case remediation.CampaignStatusCanceled:
 		err = campaign.Cancel()
@@ -782,7 +844,11 @@ func (s *RemediationCampaignService) UpdateCampaignStatusAt(ctx context.Context,
 		s.syncEpicOnCompletion(ctx, tid, cid, campaign.Name())
 	}
 
-	s.auditStatusChange(ctx, campaign, fromStatus, actx, "manual")
+	trigger := "manual"
+	if campaign.Status() == remediation.CampaignStatusCompleted && !campaign.IsDone() {
+		trigger = "manual_with_open_members"
+	}
+	s.auditStatusChange(ctx, campaign, fromStatus, actx, trigger)
 
 	s.logger.Info("remediation campaign status updated", "id", sanitizeLogValue(campaignID), "status", sanitizeLogValue(newStatus))
 	return campaign, nil
@@ -837,6 +903,17 @@ func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context,
 		return nil // already terminal — echo-guard against the outbound loop
 	}
 
+	// A closed epic is a claim, not evidence: the campaign completes only
+	// when its findings say it is done (all closed, at least one verified).
+	if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
+		return fmt.Errorf("count campaign findings for inbound epic sync: %w", rerr)
+	}
+	if !campaign.IsDone() {
+		s.logger.Warn("inbound epic done but the campaign is not done; not completing",
+			"campaign_id", campaign.ID().String(), "issue_key", issueKey,
+			"findings", campaign.FindingCount(), "closed", campaign.ResolvedCount(), "verified", campaign.VerifiedCount())
+		return nil
+	}
 	epicFrom := campaign.Status()
 	if cerr := campaign.Complete(); cerr != nil {
 		// Complete() requires active/validating; a draft/paused campaign can't be
@@ -990,61 +1067,24 @@ func (s *RemediationCampaignService) ReconcileProgress(ctx context.Context) (int
 // true when either count changed (so the caller knows whether to persist).
 // No-op (false, nil) when no finding counter is wired.
 func (s *RemediationCampaignService) recomputeProgress(ctx context.Context, campaign *remediation.Campaign) (bool, error) {
-	// Keyed campaigns (solution families) count from the remediation side-table:
-	// the remediation_key can't be expressed as a FindingFilter, so the generic
-	// counter would count the wrong (tenant-wide) set.
-	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
+	if campaignRemediationKey(campaign.FindingFilter()) != "" {
 		if s.keyResolver == nil {
 			return false, nil
 		}
-		total, resolved, err := s.keyResolver.CountByKey(ctx, campaign.TenantID(), key, nil)
-		if err != nil {
-			return false, fmt.Errorf("count campaign findings by key: %w", err)
-		}
-		prevFindings, prevResolved := campaign.FindingCount(), campaign.ResolvedCount()
-		campaign.UpdateProgress(int(total), int(resolved))
-		return prevFindings != campaign.FindingCount() || prevResolved != campaign.ResolvedCount(), nil
-	}
-
-	if s.finding == nil {
+	} else if s.finding == nil {
 		return false, nil
 	}
-
-	base := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
-
-	// An unscoped campaign ({} filter) maps to a tenant-only filter that matches
-	// every finding — so all such campaigns would report the same tenant-wide
-	// count. Treat "no scope" as "tracks nothing" until it is given a filter/key.
-	if !findingFilterHasScope(base) {
-		prevFindings, prevResolved := campaign.FindingCount(), campaign.ResolvedCount()
-		campaign.UpdateProgress(0, 0)
-		return prevFindings != 0 || prevResolved != 0, nil
-	}
-
-	// The denominator must be the WHOLE campaign scope regardless of status, so
-	// it stays stable as findings resolve. If the campaign filter pinned a
-	// status (e.g. status=open), counting `total` against it while counting
-	// `resolved` against the closed statuses made the two sets DISJOINT — as
-	// findings moved open→closed, total shrank while resolved grew, so
-	// resolved/total exceeded 100% and TryAutoComplete could fire prematurely.
-	totalFilter := base
-	totalFilter.Statuses = nil
-	total, err := s.finding.Count(ctx, totalFilter)
+	// The denominator is the WHOLE campaign scope regardless of status (a
+	// pinned status would make total and closed disjoint and let progress
+	// pass 100%). Unscoped campaigns count 0/0 (countProgress).
+	total, closed, verified, err := s.countProgress(ctx, campaign, nil)
 	if err != nil {
-		return false, fmt.Errorf("count campaign findings: %w", err)
+		return false, err
 	}
-
-	resolvedFilter := base
-	resolvedFilter.Statuses = vulnerability.ClosedFindingStatuses()
-	resolved, err := s.finding.Count(ctx, resolvedFilter)
-	if err != nil {
-		return false, fmt.Errorf("count resolved campaign findings: %w", err)
-	}
-
 	prevFindings, prevResolved := campaign.FindingCount(), campaign.ResolvedCount()
-	campaign.UpdateProgress(int(total), int(resolved))
-	changed := prevFindings != campaign.FindingCount() || prevResolved != campaign.ResolvedCount()
-	return changed, nil
+	campaign.UpdateProgress(int(total), int(closed))
+	campaign.SetVerifiedCount(int(verified))
+	return prevFindings != campaign.FindingCount() || prevResolved != campaign.ResolvedCount(), nil
 }
 
 // campaignRemediationKey returns the remediation-group key a campaign is scoped
@@ -1347,8 +1387,8 @@ func (s *RemediationCampaignService) auditStatusChange(ctx context.Context, camp
 	switch to {
 	case remediation.CampaignStatusCompleted:
 		open := max(campaign.FindingCount()-campaign.ResolvedCount(), 0)
-		ev = ev.WithMetadata("open_findings", open)
-		if open > 0 {
+		ev = ev.WithMetadata("open_findings", open).WithMetadata("verified_findings", campaign.VerifiedCount())
+		if open > 0 || campaign.VerifiedCount() == 0 {
 			// Closing a campaign with work left is worth a reviewer's look.
 			ev = ev.WithSeverity(auditdom.SeverityMedium)
 		}

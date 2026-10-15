@@ -14,6 +14,7 @@ import (
 // the generic filter path is NOT).
 type fakeKeyResolver struct {
 	total, resolved int64
+	verified        int64
 	countCalls      int
 	resolveCalls    int
 	gotKey          string
@@ -24,6 +25,10 @@ func (f *fakeKeyResolver) CountByKey(_ context.Context, _ shared.ID, key string,
 	f.countCalls++
 	f.gotKey = key
 	return f.total, f.resolved, nil
+}
+
+func (f *fakeKeyResolver) CountVerifiedByKey(_ context.Context, _ shared.ID, _ string, _ *shared.DataScope) (int64, error) {
+	return f.verified, nil
 }
 
 func (f *fakeKeyResolver) ResolveGroupByKey(_ context.Context, _ string, key string, _ CampaignResolveInput) (int, error) {

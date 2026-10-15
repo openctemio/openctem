@@ -79,6 +79,8 @@ func (r *fakeCampaignRepo) ListNonTerminal(_ context.Context, _ int) ([]*remedia
 type fakeCounter struct {
 	total    int64
 	resolved int64
+	// verified, when set, answers the resolved-only count (else resolved).
+	verified *int64
 	calls    int
 	err      error
 }
@@ -87,6 +89,9 @@ func (c *fakeCounter) Count(_ context.Context, filter vulnerability.FindingFilte
 	c.calls++
 	if c.err != nil {
 		return 0, c.err
+	}
+	if c.verified != nil && len(filter.Statuses) == 1 && filter.Statuses[0] == vulnerability.FindingStatusResolved {
+		return *c.verified, nil
 	}
 	if len(filter.Statuses) > 0 {
 		return c.resolved, nil
