@@ -1,4 +1,4 @@
--- Risk acceptance is capped by priority (owner decision C2,
+-- Risk acceptance is capped by priority (see
 -- pkg/domain/vulnerability/evidence_matrix.go): P0 or KEV 30 days, P1 90,
 -- P2 180, P3 (and unclassified) 365. New requests are held to it by the API.
 -- An acceptance that already runs longer is never shortened silently: it is

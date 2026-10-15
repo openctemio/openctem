@@ -293,10 +293,11 @@ and remediation group and campaign resolves (which use the bulk path).
   asset (`FindingActionsService.FixAppliers`, wired into the status service
   with `SetFixApplierCheck`). The bulk paths skip, and report, each finding
   that is not theirs.
-- **Resolved:** `findings:verify` (unchanged). A resolve backed by a complete
-  verification checklist is verified by `security_review`; any other person's
-  resolve is `attested` and needs a note. A bulk resolve reads no
-  checklist, so it always needs one.
+- **Resolved:** `findings:verify` (unchanged), plus evidence in proportion to
+  risk (see "Evidence by risk" below). A resolve backed by a retest that
+  confirmed the fix is verified by `retest`, one backed by a complete
+  verification checklist by `security_review`; any other person's resolve is
+  `attested` and needs a note.
 - **Callers without a user** (an organization API key) get the same rules,
   never an exemption: they need the permission and the note, and cannot claim
   a fix at all (`ErrFixApplyNotAPerson`). Only an explicit system move, a
@@ -365,11 +366,49 @@ When the priority or the SLA policy changes, an open finding's deadline only
 tightens (`min(old, now + new SLA)`) and never moves later; see
 [scoring versions](scoring-versions.md#sla-on-a-priority-change).
 
+## Evidence by risk
+
+A person's resolve needs evidence in proportion to how risky the finding is
+(`vulnerability.FindingRiskTier`, enforced by the transition engine on every
+route, so the drawer, `PATCH /status`, the bulk paths, `/actions/verify` and
+its by-filter form all answer the same):
+
+| Tier | Finding | A person may resolve it with |
+| --- | --- | --- |
+| critical | severity critical, priority P0, or a KEV | a retest that confirmed the fix, or the verification checklist completed by someone other than the person resolving |
+| high | severity high or priority P1 | the verification checklist complete, or a confirming retest |
+| standard | medium, low, info | a note (attested) |
+
+- A blocked move is reported by `GET /findings/{id}/transitions` and the bulk
+  preview with the code `evidence_required` (critical) or
+  `checklist_required` (high), so the web disables it with the reason instead
+  of failing on submit. `PATCH /status` answers 400 with the same reason.
+- A covered scan that no longer sees the finding, and a retest with
+  `retest.auto_resolve`, close it without a person and are not affected.
+- The by-filter verify evaluates each matching finding (up to 1000 per call)
+  and resolves only those whose evidence is in place; the response counts
+  what moved.
+
 ## Risk acceptance end
 
 An accepted risk always ends; a false positive does not (it is re-reviewed
 instead).
 
+- **Capped by priority.** The longest a risk may stay accepted is P0 or KEV
+  30 days, P1 90, P2 180, P3 (and unclassified) 365
+  (`vulnerability.MaxAcceptanceFor`). A request that names no end gets 90
+  days, or the cap when it is shorter; a request whose end is past the cap is
+  refused with the limit, never shortened silently. Approving a request whose
+  end is past the finding's current cap (its priority rose since) is refused
+  too; the requester asks again with a shorter end. The finding response
+  carries `max_acceptance_days`, and the approval dialog limits its date
+  picker to it.
+- **Existing acceptances over the cap are flagged, not cut.** Migration
+  `002461_acceptance_cap_review` opens a decision review
+  (`acceptance_exceeds_cap`) with a timeline entry for every accepted finding
+  whose end is past its cap, and reports the count (`NOTICE`). The end is not
+  changed; a person decides. `002462_acceptance_cap_review_validate`
+  validates the widened review-reason constraint.
 - **One value, one meaning.** `finding_status_approvals.expires_at` is the end
   of the decision the request asks for. A request for `accepted` gets 90 days
   when it names no end and is refused with an end in the past or more than a

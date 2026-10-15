@@ -133,7 +133,7 @@ func TestBulkFixApplied_WithoutVerify_StillAllowed(t *testing.T) {
 	}
 }
 
-// The evidence a person's resolve needs grows with risk (C1): a medium
+// The evidence a person's resolve needs grows with risk: a medium
 // finding may be attested with a note, a high one needs the verification
 // checklist, a critical one a retest or a second verifier. With no evidence
 // recorded, the bulk resolve refuses the high and critical rows and closes
