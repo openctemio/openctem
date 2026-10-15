@@ -199,8 +199,10 @@ type Repositories struct {
 	AccessControl   *postgres.AccessControlRepository
 	DataScope       *postgres.DataScopeRepository
 	MemberLifecycle *postgres.MemberLifecycleRepository
-	Role            *postgres.RoleRepository
-	RolePermission  *postgres.PermissionRepository
+	// OwnershipTransfer: owner-to-member ownership transfer requests.
+	OwnershipTransfer *postgres.OwnershipTransferRepository
+	Role              *postgres.RoleRepository
+	RolePermission    *postgres.PermissionRepository
 
 	// Session (raw *sql.DB required)
 	Session      *postgres.SessionRepository
@@ -487,14 +489,15 @@ func newRepositories(db *postgres.DB) *Repositories {
 		FindingCorrelation: postgres.NewFindingCorrelationRepository(db),
 
 		// Access Control
-		Group:            postgres.NewGroupRepository(db),
-		GroupRoleBinding: postgres.NewGroupRoleBindingRepository(db),
-		ServiceAccount:   postgres.NewServiceAccountRepository(db),
-		AccessControl:    postgres.NewAccessControlRepository(db),
-		DataScope:        postgres.NewDataScopeRepository(db),
-		MemberLifecycle:  postgres.NewMemberLifecycleRepository(db),
-		Role:             postgres.NewRoleRepository(db),
-		RolePermission:   postgres.NewPermissionRepository(db),
+		Group:             postgres.NewGroupRepository(db),
+		GroupRoleBinding:  postgres.NewGroupRoleBindingRepository(db),
+		ServiceAccount:    postgres.NewServiceAccountRepository(db),
+		AccessControl:     postgres.NewAccessControlRepository(db),
+		DataScope:         postgres.NewDataScopeRepository(db),
+		MemberLifecycle:   postgres.NewMemberLifecycleRepository(db),
+		OwnershipTransfer: postgres.NewOwnershipTransferRepository(db),
+		Role:              postgres.NewRoleRepository(db),
+		RolePermission:    postgres.NewPermissionRepository(db),
 
 		// Session (raw *sql.DB required)
 		Session:      postgres.NewSessionRepository(db.DB),

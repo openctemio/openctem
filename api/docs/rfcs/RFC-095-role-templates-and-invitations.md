@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner feedback on the invite dialog, 2026-10-15). Implemented: §2 role templates (minimal built-in roles, versioned library, summaries). In implementation: §3 escalation safety at acceptance, §4 invitations for people outside the organization, §5 invitation lifecycle, §6 console |
+| Status | Accepted (owner feedback on the invite dialog, 2026-10-15). Implemented: §2 role templates (minimal built-in roles, versioned library, summaries), §3.1 ownership transfer (API). In implementation: §3 escalation safety at acceptance, §4 invitations for people outside the organization, §5 invitation lifecycle, §6 console |
 | Scope | api (roles, invitations, token mint), web (invite dialog, roles, accept page, authentication settings) |
 | Related | RFC-050 (asset access model), RFC-058 (external members, amended by §4), RFC-065 (bug-bounty programs: the Researcher role), RFC-022 (platform admin console) |
 
@@ -104,11 +104,28 @@ template response carries it as `summary`.
 3. **Owner-only powers are not permissions** (§2.2).
 4. **Last owner.** The membership owner cannot be demoted, suspended,
    offboarded or lose the owner role; ownership changes only by transfer.
-5. **Ownership transfer** (owner, step-up): the target is an active member,
-   not a service account, with two-factor authentication, and not managed by
-   another organization; an unmanaged outside member becomes internal as part
-   of the transfer. The previous owner becomes an administrator. Atomic,
-   audited at critical severity, both people notified.
+5. **Ownership transfer**: see §3.1.
+
+### 3.1 Ownership transfer
+
+Ownership is the one power no role carries, so it moves only by an explicit
+transfer with an accept step.
+
+| Step | Rule |
+|---|---|
+| Ask | `POST /api/v1/organization/ownership-transfer` `{member_id, previous_owner_role, confirm_internal}`: the organization's active owner, with a recent re-authentication (step-up). |
+| Who can be asked | an active member of the same organization, a person (not a service account), with two-factor authentication on, and not managed by another organization (no home organization). An outside member no organization manages qualifies only with `confirm_internal`: they become an internal member, with no end of access, when they accept. |
+| Previous owner | becomes `admin` (default), `member` or `viewer`, chosen when asking; custom roles stay. |
+| One at a time | at most one pending request per organization (a partial unique index); a second one is refused until the first is canceled, declined, accepted or lapses. |
+| Accept | `POST .../ownership-transfer/approve`: only the member asked, with their own step-up, within 72 hours. Everything is checked again inside one transaction that locks the request and the memberships involved: the person who asked is still the active owner (else the request is void), and the member still qualifies. The previous owner's role changes first, then the member becomes the owner; the transaction ends only if the organization has exactly one owner, by membership and by role. |
+| Decline, cancel | `POST .../ownership-transfer/reject` (the member asked) and `DELETE .../ownership-transfer` (the owner). |
+| Read | `GET .../ownership-transfer`: the owner who asked and the member asked see the open request; anyone else gets 404. |
+| Afterwards | both people's cached membership and permissions are dropped and their permission versions bumped, so tokens minted before re-read the new roles. |
+| Record | audit `member.ownership_transfer_requested` (high), `member.ownership_transferred` (critical), `member.ownership_transfer_canceled`, `member.ownership_transfer_declined`; both people are emailed at every step; the member gets an in-app notice when asked; owners and administrators get one when the owner changes. |
+
+The last-owner protection is unchanged: the owner cannot be demoted,
+suspended or offboarded, and the error says to use the transfer instead.
+Data: `tenant_ownership_transfers` (migration `002170`).
 
 ## 4. Invitations for people outside the organization (amends RFC-058 §3)
 
@@ -218,3 +235,6 @@ domain, nor which.
 | An organization learns about other organizations through the invite form | the pre-check reports only inside/outside/personal (§4.3) |
 | Invitation flooding or quota evasion | rate limits, resend cooldown, revocations still count (§5) |
 | A trusted organization's people exceed the agreed ceiling | the trust's `max_role` still applies (§4.2) |
+| A hijacked owner session hands the organization away, or a member takes it | transfer needs the owner's step-up, and acceptance the member's own step-up and two-factor authentication (§3.1) |
+| Ownership goes to someone another organization controls | a managed member cannot be asked; an unmanaged outsider becomes internal only with the owner's explicit confirmation (§3.1) |
+| Two transfers, or a transfer and a cancellation, race | one pending request per organization; acceptance locks the request and memberships and verifies exactly one owner before committing (§3.1) |
