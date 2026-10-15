@@ -335,6 +335,68 @@ func (r *ScoringRepository) ClaimDrainedSummaries(ctx context.Context, limit int
 	return out, nil
 }
 
+// EnqueueIntelChanges queues, after a threat-intel refresh, only the assets
+// of open findings whose intel moved in a way a model can see: the catalog
+// EPSS crossed a threshold the classifier or one of the tenant's active
+// priority rules uses (relative to the EPSS stored on the finding), or the
+// CVE entered or left the KEV catalog. Never a whole tenant. Each finding's
+// own tenant_id goes on its queue row.
+func (r *ScoringRepository) EnqueueIntelChanges(ctx context.Context) (int64, error) {
+	open := vulnerability.OpenStatusSQL("f.status")
+	epss := `
+		WITH th AS (
+			SELECT NULL::uuid AS tenant_id, v FROM unnest(ARRAY[0.01, 0.1, 0.5]::numeric[]) AS v
+			UNION ALL
+			SELECT r.tenant_id, (c->>'value')::numeric
+			FROM priority_override_rules r, jsonb_array_elements(r.conditions) c
+			WHERE r.is_active AND c->>'field' = 'epss_score' AND jsonb_typeof(c->'value') = 'number'
+		), moved AS (
+			SELECT DISTINCT f.asset_id, f.tenant_id
+			FROM findings f
+			JOIN epss_scores e ON e.cve_id = f.cve_id
+			JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id AND a.deleted_at IS NULL
+			WHERE ` + open + `
+			  AND COALESCE(f.epss_score, 0) <> e.epss_score
+			  AND EXISTS (
+				SELECT 1 FROM th
+				WHERE (th.tenant_id IS NULL OR th.tenant_id = f.tenant_id)
+				  AND LEAST(COALESCE(f.epss_score, 0), e.epss_score) <= th.v
+				  AND GREATEST(COALESCE(f.epss_score, 0), e.epss_score) >= th.v)
+		)
+		INSERT INTO finding_priority_queue (asset_id, tenant_id, reason)
+		SELECT asset_id, tenant_id, '` + scoring.ReasonIntel + `' FROM moved
+		ORDER BY asset_id
+		ON CONFLICT (asset_id) DO UPDATE SET enqueued_at = EXCLUDED.enqueued_at
+			WHERE finding_priority_queue.enqueued_at > EXCLUDED.enqueued_at`
+	kev := `
+		INSERT INTO finding_priority_queue (asset_id, tenant_id, reason)
+		SELECT DISTINCT f.asset_id, f.tenant_id, '` + scoring.ReasonIntel + `'
+		FROM findings f
+		JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id AND a.deleted_at IS NULL
+		WHERE ` + open + ` AND f.cve_id IS NOT NULL AND f.cve_id <> ''
+		  AND COALESCE(f.is_in_kev, false) <> EXISTS (SELECT 1 FROM kev_catalog k WHERE k.cve_id = f.cve_id)
+		ORDER BY f.asset_id
+		ON CONFLICT (asset_id) DO UPDATE SET enqueued_at = EXCLUDED.enqueued_at
+			WHERE finding_priority_queue.enqueued_at > EXCLUDED.enqueued_at`
+	var total int64
+	for _, q := range []string{epss, kev} {
+		var res sql.Result
+		var err error
+		for attempt := 0; attempt < 3; attempt++ {
+			res, err = r.db.ExecContext(ctx, q)
+			if !isForeignKeyViolation(err) {
+				break
+			}
+		}
+		if err != nil {
+			return total, fmt.Errorf("enqueue intel changes: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		total += n
+	}
+	return total, nil
+}
+
 // tenantIDs lists every tenant id.
 func (r *ScoringRepository) tenantIDs(ctx context.Context) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id FROM tenants ORDER BY id`)
