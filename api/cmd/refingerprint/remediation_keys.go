@@ -59,6 +59,17 @@ func runRemediationKeys(ctx context.Context, db *sql.DB, tenantFlag string, appl
 			}
 			fmt.Printf("tenant %s (%s): scanned %d, added %d, changed %d, removed %d, unchanged %d, failed %d; keys before %s; after %s\n",
 				t, mode, ch.Scanned, ch.Added, ch.Changed, ch.Removed, ch.Unchanged, ch.Failed, kinds(ch.Before), kinds(ch.After))
+			for _, c := range ch.Campaigns {
+				switch c.Action {
+				case remediation.CampaignAmbiguous:
+					fmt.Printf("  WARNING campaign %s %q tracks %s: its %d findings split over several keys or lost their key; re-create it from the new groups\n",
+						c.CampaignID, c.Name, c.OldKey, c.Findings)
+				case remediation.CampaignStale:
+					fmt.Printf("  WARNING campaign %s %q tracks %s, which no finding has\n", c.CampaignID, c.Name, c.OldKey)
+				default:
+					fmt.Printf("  campaign %s %q %s: %s -> %s (%d findings)\n", c.CampaignID, c.Name, c.Action, c.OldKey, c.NewKey, c.Findings)
+				}
+			}
 		}
 	}
 	if asJSON {
