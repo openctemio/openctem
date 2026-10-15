@@ -226,6 +226,14 @@ func (c *Campaign) SetCreatedBy(userID shared.ID) {
 	c.createdBy = &userID
 }
 
+// RedactForViewer replaces what a restricted viewer sees: the filter with
+// out-of-scope references removed and no organization-wide risk values. It
+// is a view, never saved, and does not touch updatedAt.
+func (c *Campaign) RedactForViewer(filter map[string]any) {
+	c.findingFilter = filter
+	c.riskBefore, c.riskAfter, c.riskReduction = nil, nil, nil
+}
+
 // UpdateProgress updates finding counts and progress percentage.
 func (c *Campaign) UpdateProgress(findingCount, resolvedCount int) {
 	c.findingCount = findingCount

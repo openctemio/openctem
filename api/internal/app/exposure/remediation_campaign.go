@@ -296,6 +296,64 @@ func (s *RemediationCampaignService) ApplyViewerScope(ctx context.Context, campa
 	}
 	campaign.UpdateProgress(int(total), int(resolved))
 	campaign.SetVerifiedCount(int(verified))
+	campaign.RedactForViewer(s.scopedFilter(ctx, campaign, scope))
+}
+
+// scopedFilter is the campaign's finding filter as a scoped viewer may see
+// it: explicit finding ids and the asset id outside the caller's data scope
+// are removed (they name findings and assets the viewer cannot open). Fails
+// closed: on any lookup error the references are dropped.
+func (s *RemediationCampaignService) scopedFilter(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) map[string]any {
+	raw := campaign.FindingFilter()
+	out := make(map[string]any, len(raw))
+	for k, v := range raw {
+		out[k] = v
+	}
+	delete(out, "finding_id")
+	if ids := stringValues(raw, "finding_ids", "finding_id"); len(ids) > 0 {
+		out["finding_ids"] = s.inScopeFindingIDs(ctx, campaign.TenantID(), ids, scope)
+	}
+	if assetID := firstString(raw, "asset_id"); assetID != "" {
+		id, err := shared.IDFromString(assetID)
+		in := false
+		if err == nil && s.dataScope != nil {
+			in, err = s.dataScope.InScope(ctx, scope, id)
+		}
+		if err != nil || !in {
+			delete(out, "asset_id")
+		}
+	}
+	return out
+}
+
+// inScopeFindingIDs keeps the ids of the tenant's findings on the scope's
+// assets, in the order given.
+func (s *RemediationCampaignService) inScopeFindingIDs(ctx context.Context, tenantID shared.ID, ids []string, scope *shared.DataScope) []string {
+	kept := make([]string, 0, len(ids))
+	if s.lister == nil {
+		return kept
+	}
+	visible := make(map[string]bool, len(ids))
+	const batch = 100 // the list page size limit
+	for start := 0; start < len(ids); start += batch {
+		chunk := ids[start:min(start+batch, len(ids))]
+		f := vulnerability.NewFindingFilter().WithTenantID(tenantID).WithDataScope(scope)
+		f.FindingIDs = chunk
+		res, err := s.lister.List(ctx, f, vulnerability.NewFindingListOptions(), pagination.New(1, len(chunk)))
+		if err != nil {
+			s.logger.Warn("campaign filter scope check failed", "error", logger.SanitizeError(err))
+			return kept
+		}
+		for _, fd := range res.Data {
+			visible[fd.ID().String()] = true
+		}
+	}
+	for _, id := range ids {
+		if visible[id] {
+			kept = append(kept, id)
+		}
+	}
+	return kept
 }
 
 // scopedProgress counts the campaign's findings and closed findings on the

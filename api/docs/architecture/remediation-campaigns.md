@@ -124,6 +124,19 @@ Base path `/api/v1/remediation/campaigns` (permissions: `remediation:read` /
 | POST   | `/{id}/refresh`  | recompute progress + auto-complete now   |
 | DELETE | `/{id}`          | delete                                   |
 
+## What a restricted member sees
+
+A member restricted by data scope sees a campaign through that scope only:
+`finding_count`, `resolved_count`, `verified_count` and `progress` count the
+findings on their in-scope assets; the explicit `finding_ids` and the
+`asset_id` of the `finding_filter` that are outside the scope are removed
+(they name findings and assets the member cannot open); and the
+organization-wide risk fields are not shown. This is a view: nothing is
+written back, and the stored counts (used for auto-complete) stay
+organization-wide. On a lookup error the references are dropped (fail
+closed). The remediation side table (`finding_remediation_keys`) is joined to
+findings of the same tenant only.
+
 ## Saves
 
 Every full save is optimistic: `UPDATE … WHERE version = <read version>`,
