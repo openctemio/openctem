@@ -129,7 +129,7 @@ previews need `integrations:manage`.
 | Step | Content | State |
 |---|---|---|
 | 1 | Model, validation, metadata discovery, preview, simulator, presets, import/export, API | implemented |
-| 2 | Outbound engine: create and field updates from the published profile; dry run; field-attributed errors | designed |
+| 2 | Outbound engine: create from the published profile and status moves along its workflow path (findings); dry run; no retry on refusals. Field updates on change, task issues and labels follow | implemented (findings: create + status) |
 | 3 | Inbound engine: field commands and status intents through the service paths | designed |
 | 4 | Console: two-column mapper, workflow mapper with simulator, preview, history and diff, health | implemented |
 | 5 | Nightly drift check with a health banner and notification | designed |

@@ -378,3 +378,52 @@ func (c *Client) CreateIssueFields(ctx context.Context, projectKey, issueTypeID 
 func asUpstream(err error, target **httpsec.UpstreamStatusError) bool {
 	return errors.As(err, target)
 }
+
+// IssueStatus is an issue's current workflow status.
+type IssueStatus struct {
+	ID       string
+	Name     string
+	Category string
+}
+
+// GetIssueStatusRef reads an issue's current status with its id and category.
+func (c *Client) GetIssueStatusRef(ctx context.Context, issueKey string) (IssueStatus, error) {
+	var resp struct {
+		Fields struct {
+			Status struct {
+				ID             string `json:"id"`
+				Name           string `json:"name"`
+				StatusCategory struct {
+					Key string `json:"key"`
+				} `json:"statusCategory"`
+			} `json:"status"`
+		} `json:"fields"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/rest/api/2/issue/"+url.PathEscape(issueKey)+"?fields=status", nil, &resp); err != nil {
+		return IssueStatus{}, err
+	}
+	s := resp.Fields.Status
+	return IssueStatus{ID: s.ID, Name: s.Name, Category: s.StatusCategory.Key}, nil
+}
+
+// DoTransitionWithFields moves an issue through a transition, setting screen
+// fields (the resolution by name, other fields as given) and an optional
+// comment in the same call.
+func (c *Client) DoTransitionWithFields(ctx context.Context, issueKey, transitionID string, fields map[string]string, comment string) error {
+	body := map[string]any{"transition": map[string]string{"id": transitionID}}
+	if len(fields) > 0 {
+		f := make(map[string]any, len(fields))
+		for id, v := range fields {
+			if id == "resolution" {
+				f[id] = map[string]string{"name": v}
+				continue
+			}
+			f[id] = v
+		}
+		body["fields"] = f
+	}
+	if comment != "" {
+		body["update"] = map[string]any{"comment": []map[string]any{{"add": map[string]string{"body": comment}}}}
+	}
+	return c.doJSON(ctx, http.MethodPost, "/rest/api/2/issue/"+url.PathEscape(issueKey)+"/transitions", body, nil)
+}
