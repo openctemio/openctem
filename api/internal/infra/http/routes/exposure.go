@@ -317,6 +317,11 @@ func registerVulnerabilityRoutes(
 		// Jira: open a ticket for a finding.
 		if jiraHandler != nil {
 			r.POST("/{id}/create-ticket", jiraHandler.CreateTicket, middleware.Require(permission.FindingsWrite))
+			// Ticket links: the finding's linked issues; link an existing
+			// issue of the organization's Jira site; unlink.
+			r.GET("/{id}/ticket-links", jiraHandler.ListTicketLinks, middleware.Require(permission.FindingsRead))
+			r.POST("/{id}/ticket-links", jiraHandler.LinkTicketIssue, middleware.Require(permission.FindingsWrite))
+			r.DELETE("/{id}/ticket-links/{link_id}", jiraHandler.UnlinkTicketIssue, middleware.Require(permission.FindingsWrite))
 		}
 
 		// Delete operations

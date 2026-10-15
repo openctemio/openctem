@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/safetext"
@@ -188,6 +189,9 @@ type SyncService struct {
 
 	// activity records inbound status changes with the integration as actor.
 	activity StatusActivityRecorder
+
+	// links stores ticket link records (nil → URL strings only).
+	links ticketlink.Repository
 
 	// profiles renders published ticket mapping profiles (nil → built-in
 	// fields and status sync only).
@@ -588,6 +592,8 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 			return nil, fmt.Errorf("create jira ticket: %w", err)
 		}
 	}
+
+	s.recordCreatedLink(ctx, jiraClient, tenantID, findingID, result, strings.TrimSpace(input.ParentKey))
 
 	// Auto-link the created ticket to the finding
 	finding.AddWorkItemURI(result.BrowseURL)

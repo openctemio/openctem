@@ -14,15 +14,16 @@ import { findingStatusesInCategory } from '@/features/findings/types/finding.typ
 import Link from '@/components/link'
 import { useId, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
-import { ArrowUpRight, ChevronRight, ExternalLink } from 'lucide-react'
+import { ArrowUpRight, ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { DetailCopyId } from '@/features/shared/components/detail-sheet'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { daysUntil, isBreach } from '@/features/sla/lib/sla'
-import { cn, sanitizeExternalUrl } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import type { FindingDetail } from '../../types'
 import type { FindingTriage } from '../../hooks/use-finding-triage'
 import { StatusSelect } from '../status-select'
+import { FindingTicketLinks } from './finding-ticket-links'
 import { SeveritySelect } from '../severity-select'
 import { useCanMutate } from '@/lib/permissions'
 import { AssigneeSelect } from '../assignee-select'
@@ -333,24 +334,9 @@ export function FindingProperties({
             </span>
           </Row>
         )}
-        {finding.workItemUris && finding.workItemUris.length > 0 && (
-          <Row label={t('findings.properties.tickets', 'Tickets')}>
-            <span className="flex flex-col gap-0.5">
-              {finding.workItemUris.map((uri) => (
-                <a
-                  key={uri}
-                  href={sanitizeExternalUrl(uri)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex min-w-0 items-center gap-1 text-sm hover:underline"
-                >
-                  <span className="truncate">{uri.replace(/^https?:\/\//, '')}</span>
-                  <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
-                </a>
-              ))}
-            </span>
-          </Row>
-        )}
+        <Row label={t('findings.properties.tickets', 'Tickets')}>
+          <FindingTicketLinks findingId={finding.id} workItemUris={finding.workItemUris} />
+        </Row>
         {tags.length > 0 && (
           <Row label={t('findings.properties.tags', 'Tags')}>
             <span className="flex flex-wrap gap-1 py-1">

@@ -992,5 +992,19 @@
   "findings.verification.security_review": "Đánh giá bảo mật",
   "findings.verification.attested": "Đóng không có bằng chứng",
   "findings.verification.none": "Không cần xác minh",
-  "findings.verification.unknown": "Không được ghi nhận"
+  "findings.verification.unknown": "Không được ghi nhận",
+  "findings.ticketLinks.linked": "Đã liên kết {key}",
+  "findings.ticketLinks.linkFailed": "Không liên kết được issue",
+  "findings.ticketLinks.syncError": "Lỗi đồng bộ",
+  "findings.ticketLinks.unlinkAria": "Bỏ liên kết {key}",
+  "findings.ticketLinks.linkExisting": "Liên kết một issue có sẵn",
+  "findings.ticketLinks.dialogTitle": "Liên kết một issue Jira có sẵn",
+  "findings.ticketLinks.dialogDescription": "Issue phải nằm trên trang Jira của tổ chức và integration nhìn thấy được.",
+  "findings.ticketLinks.issueLabel": "Mã hoặc URL của issue",
+  "findings.ticketLinks.cancel": "Hủy",
+  "findings.ticketLinks.link": "Liên kết",
+  "findings.ticketLinks.unlinkTitle": "Bỏ liên kết {key}?",
+  "findings.ticketLinks.unlinkDescription": "Phát hiện ngừng đồng bộ với issue này. Bản thân issue không thay đổi.",
+  "findings.ticketLinks.unlink": "Bỏ liên kết",
+  "findings.ticketLinks.unlinkFailed": "Không bỏ liên kết được issue"
 }
