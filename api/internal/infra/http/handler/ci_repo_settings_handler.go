@@ -1,7 +1,7 @@
 package handler
 
 // A repository's effective CI gate settings and where each value comes from
-// (docs/rfcs/RFC-095-ci-per-repository-settings.md).
+// (docs/rfcs/RFC-096-ci-per-repository-settings.md).
 
 import (
 	"context"
