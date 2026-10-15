@@ -1,6 +1,6 @@
 # RFC-058: External members and trusted organizations
 
-- **Status:** Accepted (owner delegated GA1–GA28, 2026-10-08). Parts 1 (external membership model), 2 (trusted organizations, home-realm sign-in) and 3 (home cascade) in implementation.
+- **Status:** Accepted (owner delegated GA1–GA28, 2026-10-08). Parts 1 (external membership model), 2 (trusted organizations, home-realm sign-in) and 3 (home cascade) in implementation. **Amended by RFC-095 §4 (2026-10-15):** the viewer-only entry and the mandatory end of access are replaced by an invitation policy, any role but owner, step-up and two-factor for roles above member, and an optional end of access; §3 below describes the amended rules.
 - **Related:**
   - RFC-050 (member lifecycle, data scope);
   - RFC-022 (platform admin console);
@@ -29,9 +29,10 @@ Accounts are global and memberships are per organization, so one person can belo
 | Rule | Where |
 |---|---|
 | An invitee is classified when the invitation is created and again when it is accepted (the domain may have been claimed or released in between). | `tenant.AddressClassifier`, `TenantService.ClassifyAcceptedInvitation` |
-| An external invitee joins as a **viewer** and has **no data scope** until a host administrator adds them to a team. An invitation offering more than viewer is refused; an acceptance re-classified as external grants viewer only. | `CreateInvitation`, `ApplyInviteeClassification` |
-| An external member can **never be an owner**: a CHECK on `tenant_members` plus triggers on `user_roles` and on `tenant_members.kind`. The role grant guard also refuses them the admin role and any full-data-access role, on every path (role assignment, role set, bulk assign, invitation acceptance, membership role change). | migration 001316, `RoleService.capExternalTarget`, `UpdateMemberRole` |
-| An **unmanaged** external member must have an access end date: 90 days by default, 365 at most. A managed external member may have one (optional). | `tenant.ExternalAccess.Validate`, `SettleExternalAccess` |
+| Who may be invited is the organization's policy `Security.invitees`: any address (default), its verified domains, or those plus `allowed_domains` (RFC-095 §4.1). | `TenantService.requireInvitable` |
+| An external invitee joins with the **invited roles**, any role but owner. A role above member (admin, full data access, or a privileged permission the member role lacks) needs the inviter's step-up, and the member must then prove a second factor at every token mint. A trust with the home organization caps them at its `max_role`. Like everyone, they have **no data scope** until a team includes them, unless a role gives full data access. | `CreateInvitation`, `requireWithinTrustCeiling`, `AuthService.enforceOutsidePrivilegePolicy` |
+| An external member can **never be an owner**: a CHECK on `tenant_members` plus triggers on `user_roles` and on `tenant_members.kind`. Full data access never reaches them through a team. | migration 001316, `RoleService.capExternalTarget`, `UpdateMemberRole`, `ErrExternalTeamFullData` |
+| An end of access is **optional**. With `Security.external_access_end_required` on, an **unmanaged** external member must have one: 90 days by default, 365 at most. | `tenant.ExternalAccess.Validate`, `SettleExternalAccess`, `Classification.EndOptional` |
 | An expired membership is **suspended within a minute** (`suspended_reason = expired`) in its own organization only. Access is cut, the organization's own IdP sessions end, administrators are told, and an audit row is written. | `MemberAccessExpiryController`, `TenantService.ExpireMemberships` |
 | An expired member comes back only with a new end date. `PATCH /api/v1/organization/members/{member_id}/access` takes `expires_at` and `reason`, needs owner/admin plus `members:write`, re-enables an expired membership and is audited as `member.access_changed`. A plain reactivation is refused. | `ExtendMemberAccess`, `ReactivateMember` |
 | External people join **only by accepting an invitation** addressed to them (their consent). An administrator cannot add an existing account directly, nor create an account for them. Adding an existing account or creating one directly needs more than "not external": the address must be on an email domain **this organization has verified**. An organization with no verified domain (where every work address counts as internal for invitations) invites everyone. The platform administrator's first-owner bootstrap and provisioning by the organization's own IdP (which checks the domain itself) are exempt. | `AddMember`, `UserProvisioningService.CreateUser`, `AddressClassifier.HeldBy` |
@@ -56,8 +57,9 @@ Every existing membership stays `internal`, so nothing changes for existing memb
 
 | Threat | Control |
 |---|---|
-| A host grants an outsider owner or admin, or full data access | DB CHECK and triggers for owner; grant guard for admin and full data access; viewer-only on entry |
-| An outsider keeps access after leaving their company | Mandatory expiry for unmanaged members. Home cascade for managed members (part 3). |
+| A host grants an outsider owner | DB CHECK and triggers |
+| An outsider's mailbox, which the host does not control, is used with a privileged role | Inviter step-up, second factor at every token mint for roles above member, badges everywhere (RFC-095 §4.2) |
+| An outsider keeps access after leaving their company | Optional end of access (mandatory by policy), home cascade for managed members (part 3) |
 | An administrator attaches someone else's account to their organization without consent | Externals join only through an invitation addressed to them, accepted while signed in as that address |
 | An organization squats on another company's domain by creating accounts there | Account creation for an external address is refused |
 | One organization signs a person out of their other organizations | Tenant-scoped revocation (separate change) |
@@ -72,7 +74,7 @@ Every existing membership stays `internal`, so nothing changes for existing memb
 | **Home-realm sign-in.** A session counts as an SSO sign-in of the host for an external member when all of these hold: the session was issued by the member's home organization's identity provider; the trust is active and accepts home sign-in; the home still holds the member's email domain; and, if the trust requires it, the provider proved a second factor. This applies at token exchange and refresh. The token's `auth_method` is then `sso`, so the per-request SSO gate agrees. | `AuthService.assuranceAt`, `authMethodAt` |
 | **Never weaker than the host.** These never count: a password session, social login, a third organization's identity provider, or a trust that is not accepted. When the host requires 2FA, the home sign-in passes only with MFA evidence on the session or the home owner's attestation that its IdP enforces MFA. | `enforceSSOPolicy`, `enforceMFAPolicy` |
 | **MFA evidence** is recorded on the session (`sessions.mfa_evidence`), only from the verified id_token (`amr` contains `mfa`) or assertion (multi-factor `AuthnContextClassRef`). | `oidcMFAEvidence`, `samlMFAEvidence` |
-| **Role ceiling.** The trust caps the home's people at `viewer` or `member` (default member). Admin and owner are never possible: a CHECK, plus the grant guard. | `RoleService.capExternalTarget`, `UpdateMemberRole` |
+| **Role ceiling.** An active trust caps the home's people at `viewer` or `member` (default member): admin, full data access and other roles above member are refused for them. Owner is never possible (CHECK). Without an active trust there is no ceiling but owner (RFC-095). | `RoleService.capExternalTarget`, `UpdateMemberRole` |
 | **API keys.** An external member may create an API key only when the trust allows keys. The key may not outlive the member's access. Unmanaged externals never get keys. | `apikey.Service` + `orgtrust.Policy.APIKeyAllowance` |
 | **Default end of access.** The trust may propose one for new members from the home. | `orgtrust.Policy.DefaultExpiryFor` |
 | **Ending a trust** suspends, in the host only, every external member homed there (`suspended_reason = trust_revoked`). | `TenantService.SuspendExternalMembersFromHome` |
@@ -138,7 +140,7 @@ Every way into an organization starts at the lowest privilege. Raising it is a d
 
 | Path | Default and guard | Where |
 |---|---|---|
-| Invitation, created user | The console preselects the viewer role. Admin is offered only to the owner; the role ceiling and the external viewer-only rule apply as before. | `defaultViewerRoleId`, `CreateInvitation` |
+| Invitation, created user | The console preselects the viewer role. Admin is offered only to the owner; the role ceiling applies, and a role above member for someone outside needs step-up (RFC-095). | `defaultViewerRoleId`, `CreateInvitation` |
 | SSO just-in-time | The role of the domain (part 5), else the identity provider's default, which is viewer for a new OIDC provider and a new SAML configuration. | `jitRoleFor`, `samlprovider.New` |
 | SCIM | A provisioned person is a viewer. A group change only applies a role group that matches (mapped, or named member / viewer). Without one the role is kept: nothing is raised, and an administrator falls back to member. | `scim.ProvisioningService`, `reconcileUser` |
 | Data scope | No path adds a team or a grant: a newcomer sees no data until a team includes them. | unchanged |
@@ -148,7 +150,7 @@ Every way into an organization starts at the lowest privilege. Raising it is a d
 
 ## 12. Parts still to build
 
-1. **Policy:** `Security.ExternalMembers` (off / invite-only / trusted-only).
+1. **Policy:** built as `Security.invitees` (RFC-095 §4.1).
 2. **Home cascade, remaining cause:** the home organization itself being suspended or scheduled for deletion. This waits for organization lifecycle states (suspended, scheduled for deletion).
 3. **Personal accounts:** a second factor (TOTP) for social-login accounts.
 4. **Domains:**

@@ -4,6 +4,8 @@
 #   OPENCTEM_TLS_MODE=http
 #   OPENCTEM_ALLOW_PLAIN_HTTP=true
 #   OPENCTEM_TRUSTED_PROXIES=<your proxy's address or CIDR>   (client IPs)
+#   OPENCTEM_CLIENT_IP_HEADERS=Cf-Connecting-Ip   (only behind a Cloudflare Tunnel
+#                                                connector; default X-Forwarded-For)
 #
 #   docker compose -f docker-compose.yml -f docker-compose.plain-http.yml up -d
 #
