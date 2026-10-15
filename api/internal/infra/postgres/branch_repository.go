@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -528,14 +529,14 @@ func (r *BranchRepository) CompareBranches(ctx context.Context, tenantID, reposi
 			FROM findings f
 			JOIN repository_branches rb ON f.branch_id = rb.id
 			WHERE rb.repository_id = $1 AND rb.name = $2 AND f.tenant_id = $4
-			  AND f.status NOT IN ('resolved', 'false_positive')
+			  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		),
 		compare_findings AS (
 			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
 			FROM findings f
 			JOIN repository_branches rb ON f.branch_id = rb.id
 			WHERE rb.repository_id = $1 AND rb.name = $3 AND f.tenant_id = $4
-			  AND f.status NOT IN ('resolved', 'false_positive')
+			  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		)
 		SELECT
 			(SELECT COUNT(*) FROM compare_findings cf WHERE cf.fingerprint NOT IN (SELECT fingerprint FROM base_findings)) as new_count,
@@ -566,13 +567,13 @@ func (r *BranchRepository) CompareBranches(ctx context.Context, tenantID, reposi
 			FROM findings f
 			JOIN repository_branches rb ON f.branch_id = rb.id
 			WHERE rb.repository_id = $1 AND rb.name = $3 AND f.tenant_id = $4
-			  AND f.status NOT IN ('resolved', 'false_positive')
+			  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		) cf
 		WHERE cf.fingerprint NOT IN (
 			SELECT f.fingerprint FROM findings f
 			JOIN repository_branches rb ON f.branch_id = rb.id
 			WHERE rb.repository_id = $1 AND rb.name = $2 AND f.tenant_id = $4
-			  AND f.status NOT IN ('resolved', 'false_positive')
+			  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		)
 		ORDER BY CASE cf.severity
 			WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4

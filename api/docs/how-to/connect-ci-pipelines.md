@@ -202,6 +202,8 @@ The upload answers with `known`: the results of that report that already
 carry a decision (false positive, duplicate, accepted risk that has not
 ended, approved suppression rule), by index. `openctem-ci` leaves them out of
 its log, SARIF and merge request report; the platform still records them.
+The list holds at most 10,000 results; `known_total` counts them all and
+`known_truncated` says when some were left out (those are shown, not hidden).
 Every accepted risk has an end date (90 days unless set, at most a year), and
 the gate counts the finding again once it passes.
 
@@ -217,6 +219,14 @@ raw value never leaves the job.
 A repository with an expected-scan list (**Coverage**, **Expect**) fails a
 run that reports no tool for one of its expected capabilities
 (`missing_capability`, "Expected scan missing").
+
+The verdict request also carries each capability's state as the job saw it
+(`capabilities: [{name, tool, state, reason}]`). Any state but `uploaded`
+(`failed`, `partial`, `not_uploaded`, `missing`, or one the platform does not
+know) fails the run with `capability_failed` ("Scan did not reach the
+platform"), naming the capability and its reason, whatever the job's
+`scan_failures` count says. At most 64 states are read; a runner that sends
+none is judged as before.
 
 When the platform cannot decide, `--fail-on <severity>` (`fail-on` input,
 `OPENCTEM_FAIL_ON` on GitLab) makes `openctem-ci` judge locally instead.
