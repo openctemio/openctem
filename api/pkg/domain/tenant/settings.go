@@ -193,6 +193,18 @@ type SecuritySettings struct {
 	IPWhitelist    []string `json:"ip_whitelist"`    // Allowed IP addresses/CIDR ranges
 	AllowedDomains []string `json:"allowed_domains"` // Allowed email domains for signup
 
+	// Invitees says who may be invited (RFC-095 §4.1): any address (empty or
+	// "any", the default), addresses on the organization's verified domains
+	// ("verified_domains"), or those plus AllowedDomains ("allow_list"). An
+	// organization that set AllowedDomains before this setting existed reads
+	// as allow_list (InviteesPolicy.Effective).
+	Invitees InviteesPolicy `json:"invitees,omitempty"`
+	// ExternalAccessEndRequired requires an end of access, within
+	// MaxExternalAccessDays (DefaultExternalAccessDays when none is given),
+	// for people outside the organization that no organization manages.
+	// Off by default: the inviter may still set one.
+	ExternalAccessEndRequired bool `json:"external_access_end_required,omitempty"`
+
 	// PersonalAccounts says whether members with a personal address may use
 	// the organization (RFC-058): allowed (empty), allowed_with_mfa (the
 	// default for new organizations) or blocked.
@@ -858,6 +870,12 @@ func (s *SecuritySettings) Validate() error {
 	}
 	if !s.PersonalAccounts.IsValid() {
 		return fmt.Errorf("%w: personal_accounts must be one of: allowed, allowed_with_mfa, blocked", shared.ErrValidation)
+	}
+	if !s.Invitees.IsValid() {
+		return fmt.Errorf("%w: invitees must be one of: any, verified_domains, allow_list", shared.ErrValidation)
+	}
+	if s.Invitees == InviteesAllowList && len(s.AllowedDomains) == 0 {
+		return fmt.Errorf("%w: invitees allow_list needs at least one allowed domain", shared.ErrValidation)
 	}
 	if len(s.SSOExceptions) > 100 {
 		return fmt.Errorf("%w: at most 100 sso exceptions", shared.ErrValidation)
