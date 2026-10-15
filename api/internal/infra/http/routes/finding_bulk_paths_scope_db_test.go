@@ -48,7 +48,9 @@ func TestBulkStatus_PentestFindingRefusedLikeSinglePath(t *testing.T) {
 		}
 	}
 
-	// Non-pentest findings in the same call still move.
+	// Non-pentest findings in the same call still move (a fix claim is the
+	// assignee's).
+	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id = $1`, h.findingA.String(), h.owner.String())
 	status, body := h.do(h.owner, true, http.MethodPost, "/api/v1/findings/bulk/status",
 		map[string]any{"finding_ids": []string{h.findingA.String(), h.findingP.String()}, "status": "fix_applied", "resolution": "patched"})
 	if status != http.StatusOK || !strings.Contains(body, `"updated":1`) || !strings.Contains(body, `"failed":1`) {
