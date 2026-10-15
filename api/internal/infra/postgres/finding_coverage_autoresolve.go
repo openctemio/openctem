@@ -185,7 +185,7 @@ func (r *FindingRepository) ResolveCoverageStale(ctx context.Context, tenantID s
 		UPDATE findings f
 		SET status = 'resolved',
 			resolution = 'auto_fixed',
-			resolution_method = 'scan_verified',
+			closure_reason = 'fixed', verification = 'covered_scan',
 			resolved_at = NOW(),
 			updated_at = NOW()
 		WHERE f.tenant_id = $1
@@ -237,7 +237,7 @@ func (r *FindingRepository) ResolveSourceMitigated(ctx context.Context, tenantID
 		UPDATE findings f
 		SET status = 'resolved',
 			resolution = 'auto_fixed',
-			resolution_method = 'source_mitigated',
+			closure_reason = 'fixed', verification = 'source_reported',
 			resolved_at = NOW(),
 			updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.id IN (` + match + `)
