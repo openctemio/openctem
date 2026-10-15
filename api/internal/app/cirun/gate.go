@@ -200,7 +200,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now, run.FindingsCount); err != nil {
+	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now, run.FindingsCount, capabilityNames(failedCaps)); err != nil {
 		if errors.Is(err, cirun.ErrRunChanged) {
 			return nil, err
 		}
@@ -212,9 +212,6 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	}
 	if err := s.repo.RecordRunOutcome(ctx, run.TenantID, run.ID, in.ScanFailures); err != nil {
 		return nil, fmt.Errorf("save run outcome: %w", err)
-	}
-	if err := s.repo.RecordFailedCapabilities(ctx, run.TenantID, run.ID, capabilityNames(failedCaps)); err != nil {
-		return nil, fmt.Errorf("save failed capabilities: %w", err)
 	}
 	s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	s.auditVerdict(ctx, run, in, v)
