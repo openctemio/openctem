@@ -1026,6 +1026,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if len(badDeny) > 0 {
 		return nil, fmt.Errorf("SCOPE_DENY_EXTRA has entries that are neither a domain nor an address range: %v", badDeny)
 	}
+	scopeGuardrails = scopeGuardrails.WithPublicCodeHosts(cfg.Scope.PublicCodeHostsExtra)
 	s.Scope.SetGuardrails(scopeGuardrails)
 	s.ScopeGuardrails = scopeGuardrails
 	scopeCoverage := postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB})
@@ -1343,6 +1344,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.Finding, repos.Asset, s.PriorityClassification, log,
 	)
 	s.Reclassifier.SetQueue(s.Scoring, s.Scoring)
+	s.Reclassifier.SetWriter(s.Scoring)
 	// Recompute the SLA deadline when a sweep escalates a finding's priority
 	// (e.g. a CVE newly listed in KEV → P0), so the deadline tightens instead
 	// of staying at its laxer pre-escalation value.
