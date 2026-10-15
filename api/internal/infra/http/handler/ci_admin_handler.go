@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -92,6 +93,61 @@ type CITrustConfigResponse struct {
 	// that existed then may still request it until they use Audience once.
 	LegacyAudience      string     `json:"legacy_audience,omitempty"`
 	LegacyAudienceUntil *time.Time `json:"legacy_audience_until,omitempty"`
+	// ManageScope: the trusted repositories are repository scope entries
+	// linked to the configuration ("Trust and add to scope").
+	ManageScope bool `json:"manage_scope"`
+	// ScopeEntries (on GET by id, create and change) are the repository
+	// patterns the configuration claims, the scope entry of each and the
+	// evidence of the first verified pipeline run under it.
+	ScopeEntries []CITrustScopeEntry `json:"scope_entries,omitempty"`
+}
+
+// CITrustScopeEntry is one repository pattern a trust configuration claims.
+type CITrustScopeEntry struct {
+	Pattern string `json:"pattern"`
+	// ScopeTargetID is the scope entry carrying it (empty until the next
+	// sync when a person deleted an existing entry the trust had linked).
+	ScopeTargetID string `json:"scope_target_id,omitempty"`
+	// SeenAt and the other seen_* fields: the first verified pipeline run
+	// under the pattern (evidence, never required unless the organization
+	// turned on ci_scope_requires_proof).
+	SeenAt         *time.Time `json:"seen_at,omitempty"`
+	SeenRunID      string     `json:"seen_run_id,omitempty"`
+	SeenRepository string     `json:"seen_repository,omitempty"`
+}
+
+// ciTrustScopeLister is the optional part of the service that lists a
+// trust's scope entries.
+type ciTrustScopeLister interface {
+	TrustScope(ctx context.Context, tenantID, id shared.ID) ([]scopedom.CITrustLink, error)
+}
+
+// withScope adds the trust's scope entries to the response (best effort:
+// the configuration is answered without them on a read error).
+func (h *CIAdminHandler) withScope(ctx context.Context, tenantID shared.ID, resp *CITrustConfigResponse) {
+	lister, ok := h.svc.(ciTrustScopeLister)
+	if !ok {
+		return
+	}
+	id, err := shared.IDFromString(resp.ID)
+	if err != nil {
+		return
+	}
+	links, err := lister.TrustScope(ctx, tenantID, id)
+	if err != nil {
+		h.logger.Warn("ci trust scope entries not listed", "error", logger.SanitizeError(err))
+		return
+	}
+	for _, l := range links {
+		e := CITrustScopeEntry{Pattern: l.Pattern, SeenAt: l.SeenAt, SeenRepository: l.SeenRepository}
+		if l.TargetID != nil {
+			e.ScopeTargetID = l.TargetID.String()
+		}
+		if l.SeenRunID != nil {
+			e.SeenRunID = l.SeenRunID.String()
+		}
+		resp.ScopeEntries = append(resp.ScopeEntries, e)
+	}
 }
 
 // ciOwnerPinLister is the optional part of the service that lists pins.
@@ -102,7 +158,7 @@ type ciOwnerPinLister interface {
 func toCITrustResponse(c *cirun.TrustConfig) CITrustConfigResponse {
 	return CITrustConfigResponse{ID: c.ID.String(), Name: c.Name, Provider: string(c.Provider), Issuer: c.Issuer,
 		Audience: c.Audience, DefaultBranch: c.DefaultBranch, Rules: c.Rules, Enabled: c.Enabled,
-		LastUsedAt: c.LastUsedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		ManageScope: c.ManageScope, LastUsedAt: c.LastUsedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		LegacyAudience: c.LegacyAudience, LegacyAudienceUntil: c.LegacyAudienceUntil}
 }
 
@@ -125,6 +181,9 @@ type CITrustConfigRequest struct {
 	DefaultBranch string      `json:"default_branch,omitempty"`
 	Rules         cirun.Rules `json:"rules"`
 	Enabled       *bool       `json:"enabled,omitempty"`
+	// ManageScope adds the trusted repositories to scope (default true on
+	// create; unchanged when omitted on a change).
+	ManageScope *bool `json:"manage_scope,omitempty"`
 }
 
 // CITrustConfigListResponse lists trust configurations.
@@ -446,6 +505,7 @@ func (h *CIAdminHandler) GetTrustConfig(w http.ResponseWriter, r *http.Request) 
 		}
 		resp.OwnerPins = pins
 	}
+	h.withScope(r.Context(), tenantID, &resp)
 	ciWriteJSON(w, http.StatusOK, resp)
 }
 
@@ -473,13 +533,15 @@ func (h *CIAdminHandler) CreateTrustConfig(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	c, err := h.svc.CreateTrustConfig(r.Context(), tenantID, cirunapp.TrustConfigInput{Name: req.Name, Provider: req.Provider,
-		Issuer: req.Issuer, Audience: req.Audience, DefaultBranch: req.DefaultBranch, Rules: req.Rules, Enabled: req.Enabled},
-		h.actor(r))
+		Issuer: req.Issuer, Audience: req.Audience, DefaultBranch: req.DefaultBranch, Rules: req.Rules, Enabled: req.Enabled,
+		ManageScope: req.ManageScope}, h.actor(r))
 	if err != nil {
 		h.writeErr(w, err, "create trust configuration", "CI trust configuration")
 		return
 	}
-	ciWriteJSON(w, http.StatusCreated, toCITrustResponse(c))
+	resp := toCITrustResponse(c)
+	h.withScope(r.Context(), tenantID, &resp)
+	ciWriteJSON(w, http.StatusCreated, resp)
 }
 
 // UpdateTrustConfig handles PUT /api/v1/ci/trust-configs/{id}
@@ -511,13 +573,15 @@ func (h *CIAdminHandler) UpdateTrustConfig(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	c, err := h.svc.UpdateTrustConfig(r.Context(), tenantID, id, cirunapp.TrustConfigInput{Name: req.Name, Provider: req.Provider,
-		Issuer: req.Issuer, Audience: req.Audience, DefaultBranch: req.DefaultBranch, Rules: req.Rules, Enabled: req.Enabled},
-		h.actor(r))
+		Issuer: req.Issuer, Audience: req.Audience, DefaultBranch: req.DefaultBranch, Rules: req.Rules, Enabled: req.Enabled,
+		ManageScope: req.ManageScope}, h.actor(r))
 	if err != nil {
 		h.writeErr(w, err, "change trust configuration", "CI trust configuration")
 		return
 	}
-	ciWriteJSON(w, http.StatusOK, toCITrustResponse(c))
+	resp := toCITrustResponse(c)
+	h.withScope(r.Context(), tenantID, &resp)
+	ciWriteJSON(w, http.StatusOK, resp)
 }
 
 // DeleteTrustConfig handles DELETE /api/v1/ci/trust-configs/{id}
