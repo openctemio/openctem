@@ -75,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_ticket_links_created_by
     ON ticket_links (created_by) WHERE created_by IS NOT NULL;
 
 -- Backfill from the URL strings: a browse URL on the site of one of the
--- tenant's Jira integrations (the oldest such integration when several share
+-- tenant's Jira integrations (a literal prefix match: no wildcards) (the oldest such integration when several share
 -- a site).
 INSERT INTO ticket_links (tenant_id, integration_id, finding_id, external_key, project_key, url, source)
 SELECT DISTINCT ON (f.tenant_id, f.id, u.key)
@@ -87,7 +87,7 @@ CROSS JOIN LATERAL (
 ) u
 JOIN integrations i ON i.tenant_id = f.tenant_id AND i.provider = 'jira'
     AND COALESCE(i.base_url, '') <> ''
-    AND u.uri LIKE rtrim(i.base_url, '/') || '/browse/%'
+    AND starts_with(u.uri, rtrim(i.base_url, '/') || '/browse/')
 WHERE u.key IS NOT NULL
 ORDER BY f.tenant_id, f.id, u.key, i.created_at
 ON CONFLICT DO NOTHING;
@@ -98,7 +98,7 @@ SELECT DISTINCT ON (t.tenant_id, t.campaign_id, t.issue_key)
 FROM remediation_campaign_tickets t
 JOIN integrations i ON i.tenant_id = t.tenant_id AND i.provider = 'jira'
     AND COALESCE(i.base_url, '') <> ''
-    AND t.issue_url LIKE rtrim(i.base_url, '/') || '/browse/%'
+    AND starts_with(t.issue_url, rtrim(i.base_url, '/') || '/browse/')
 WHERE t.provider = 'jira' AND t.issue_key ~ '^[A-Z][A-Z0-9_]*-[0-9]+$'
 ORDER BY t.tenant_id, t.campaign_id, t.issue_key, i.created_at
 ON CONFLICT DO NOTHING;

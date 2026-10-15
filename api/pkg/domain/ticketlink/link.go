@@ -98,8 +98,9 @@ func KeyFromURL(site, raw string) (string, error) {
 	return key, nil
 }
 
-// New builds a link of a finding or a campaign (exactly one).
-func New(tenantID, integrationID shared.ID, findingID, campaignID *shared.ID, key, externalID, browseURL, role, source string, by *shared.ID) (*Link, error) {
+// New builds a link of a finding or a campaign (exactly one). site is the
+// integration's base URL: the link's URL must be https on that same host.
+func New(tenantID, integrationID shared.ID, findingID, campaignID *shared.ID, key, externalID, site, browseURL, role, source string, by *shared.ID) (*Link, error) {
 	if (findingID == nil) == (campaignID == nil) {
 		return nil, fmt.Errorf("%w: a link names a finding or a task", shared.ErrValidation)
 	}
@@ -109,6 +110,14 @@ func New(tenantID, integrationID shared.ID, findingID, campaignID *shared.ID, ke
 	}
 	if browseURL == "" || len(browseURL) > 2048 || len(externalID) > 64 {
 		return nil, fmt.Errorf("%w: invalid issue URL", shared.ErrValidation)
+	}
+	su, err := url.Parse(strings.TrimSpace(site))
+	if err != nil || su.Host == "" {
+		return nil, fmt.Errorf("%w: the integration has no site URL", shared.ErrValidation)
+	}
+	bu, err := url.Parse(browseURL)
+	if err != nil || bu.Scheme != "https" || !strings.EqualFold(bu.Host, su.Host) || bu.User != nil {
+		return nil, fmt.Errorf("%w: the issue URL must be https on the integration's site", shared.ErrValidation)
 	}
 	switch role {
 	case RoleOwn, RoleSubtask, RoleEpic:

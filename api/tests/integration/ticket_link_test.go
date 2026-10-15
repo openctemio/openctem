@@ -65,7 +65,7 @@ func TestTicketLinks_IsolationAndUniqueness(t *testing.T) {
 	repo := postgres.NewTicketLinkRepository(&postgres.DB{DB: db})
 
 	link := func(tenant, intg, finding shared.ID, key string) *ticketlink.Link {
-		l, err := ticketlink.New(tenant, intg, &finding, nil, key, "100", "https://acme.atlassian.net/browse/"+key, ticketlink.RoleOwn, ticketlink.SourcePerson, nil)
+		l, err := ticketlink.New(tenant, intg, &finding, nil, key, "100", "https://acme.atlassian.net", "https://acme.atlassian.net/browse/"+key, ticketlink.RoleOwn, ticketlink.SourcePerson, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
