@@ -244,6 +244,18 @@ A decision made on the platform holds on the next run of the same repository:
   offline and never dispatched.
 - A pipeline is created only at a verified, admitted exchange, keyed by signed
   immutable ids; branch, job and tool labels never create rows.
+- A repository asset is keyed by its code host and the host's immutable
+  repository id (GitHub `repository_id`, GitLab `project_id`, Bitbucket
+  repository UUID), not its name. The exchange finds it in order: the asset of
+  an existing pipeline of that repository id; the asset whose repository
+  extension carries the id on the same host (`asset_repositories.repo_id`,
+  host from its web address; written by repository import from the code
+  host's API and stamped by CI from the signed token); the asset named
+  `host/path`; else a new one. A renamed or transferred repository therefore
+  keeps its asset (findings, branches, baseline, gate policy, expectation,
+  break-glass, owners) and the asset takes the new name when it is free.
+  Repository import uses the same id first and names new assets `host/path`,
+  so import and CI share one asset. Every lookup is tenant-scoped.
 - Every fleet source is tenant-scoped and the runner rows follow the data
   scope; the fleet handler adds no query of its own.
 - The run's branch, commit, pull request and pipeline URL come from the
