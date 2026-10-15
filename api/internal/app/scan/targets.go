@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/openctemio/ctis/addrscope"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -332,9 +334,11 @@ func applyTargetsToPayload(payload map[string]any, scanner string, targets []str
 	}
 }
 
-// hasInternalTarget reports whether any target is (or names) a private,
-// loopback, link-local or unspecified address. Such targets must never be
-// routed to shared platform sensors.
+// hasInternalTarget reports whether any target is (or names) an internal
+// address or range (ctis addrscope: private, loopback, link-local, CGNAT,
+// reserved, multicast, and IPv6 forms carrying such an IPv4 address) or an
+// internal suffix. Such targets must never be routed to shared platform
+// sensors.
 func hasInternalTarget(targets []string) bool {
 	for _, t := range targets {
 		if isInternalTarget(t) {
@@ -351,8 +355,10 @@ func isInternalTarget(target string) bool {
 			host = u.Hostname()
 		}
 	}
+	// A range is internal when any of its addresses is, not only its
+	// first one ("8.0.0.0/6" holds 10.0.0.0/8).
 	if p, err := netip.ParsePrefix(host); err == nil {
-		return isInternalAddr(p.Addr())
+		return addrscope.IsInternalPrefix(p)
 	}
 	host = asset.HostOf(host)
 	if a, err := netip.ParseAddr(host); err == nil {
@@ -363,12 +369,8 @@ func isInternalTarget(target string) bool {
 		strings.HasSuffix(lower, ".local") || strings.HasSuffix(lower, ".internal")
 }
 
-func isInternalAddr(a netip.Addr) bool {
-	a = a.Unmap()
-	return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() ||
-		a.IsLinkLocalMulticast() || a.IsUnspecified() ||
-		netip.MustParsePrefix("100.64.0.0/10").Contains(a) // carrier-grade NAT
-}
+// isInternalAddr is the one definition shared with sensors (ctis addrscope).
+func isInternalAddr(a netip.Addr) bool { return addrscope.IsInternal(a) }
 
 // gateScannerKinds leaves out of a single-scanner run every typed-in target
 // whose kind the scanner's stage does not take (stage.AcceptsKind), and
