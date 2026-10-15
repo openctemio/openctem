@@ -391,3 +391,30 @@ func TestSuggestRows(t *testing.T) {
 		t.Fatalf("CVSS not suggested: %+v", rows)
 	}
 }
+
+func TestRender_TemplateLinksSummaryAndLines(t *testing.T) {
+	spec := Spec{Minimization: MinSummary, Fields: []Row{
+		{ID: "s", Source: Source{Kind: SourceTemplate, Template: "[{{ finding.severity | upper }}] {{ finding.title }}"}, Target: Target{FieldID: "summary", Schema: FieldSchema{Type: "string"}}, Direction: DirOut},
+		{ID: "d", Source: Source{Kind: SourceTemplate, Template: "Asset: {{ finding.asset_name }}\nOpen: {{ finding.url }}"}, Target: Target{FieldID: "description", Schema: FieldSchema{Type: "string"}}, Direction: DirOut},
+	}}
+	inline := func(s string, _ int) string { // stand-in encoder: escape brackets, defang
+		return strings.NewReplacer("[", `\[`, "]", `\]`, "http://", "http[:]//", "https://", "https[:]//").Replace(s)
+	}
+	vals := Values{
+		"finding.severity":   Text("high"),
+		"finding.title":      Text("XSS [x|https://evil.test]"),
+		"finding.asset_name": Text("zzoclink0000000000000000zz https://evil.test"),
+		"finding.url":        Text("https://app.example.test/findings/1"),
+	}
+	r := RenderOutbound(ObjectFinding, spec, vals, nil, RenderOptions{EncodeInline: inline, EncodeSummary: func(s string, n int) string { return s }, Creating: true})
+	if got := r.Fields["summary"]; got != "[HIGH] XSS [x|https://evil.test]" {
+		t.Fatalf("summary is plain text, got %q", got)
+	}
+	d := r.Fields["description"].(string)
+	if !strings.Contains(d, "Open: https://app.example.test/findings/1") {
+		t.Fatalf("platform link not kept: %q", d)
+	}
+	if strings.Contains(d, "https://evil.test") || !strings.Contains(d, "\n") {
+		t.Fatalf("value text not encoded or lines lost: %q", d)
+	}
+}
