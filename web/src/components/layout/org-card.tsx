@@ -82,13 +82,17 @@ function capitalize(value: string): string {
   return value ? value[0].toUpperCase() + value.slice(1) : value
 }
 
-/** Translated role / plan names, falling back to the raw value capitalized. */
+/**
+ * Translated role / plan names, falling back to the raw value capitalized.
+ * Plan names are the ones Settings > Plan & usage shows (plan.name.*), so the
+ * sidebar card and that page name a plan the same way.
+ */
 export function useOrgLabels() {
   const { t } = useTranslation()
   return React.useMemo(
     () => ({
       role: (role?: string) => (role ? t(`org.role.${role}`, capitalize(role)) : ''),
-      plan: (plan?: string) => (plan ? t(`org.plan.${plan}`, capitalize(plan)) : ''),
+      plan: (plan?: string) => (plan ? t(`plan.name.${plan}`, capitalize(plan)) : ''),
     }),
     [t]
   )
