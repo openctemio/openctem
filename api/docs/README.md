@@ -49,7 +49,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 **Assets and scope**
 - [Asset inventory v2](architecture/asset-inventory-v2.md), [asset schema](architecture/asset-schema.md), [asset properties schema](asset-properties-schema.md)
 - [Asset identity resolution](architecture/asset-identity-resolution.md), [IP/hostname correlation](architecture/asset-ip-hostname-correlation.md), [deduplication](architecture/deduplication.md), [source priority](architecture/asset-source-priority.md)
-- [Asset ownership](architecture/asset-ownership.md), [asset deletion](architecture/asset-deletion.md), [asset group recalculation](architecture/asset-group-recalculation.md), [criticality propagation](architecture/criticality-propagation.md)
+- [Asset ownership](architecture/asset-ownership.md), [asset deletion](architecture/asset-deletion.md), [asset group recalculation](architecture/asset-group-recalculation.md), [criticality propagation](architecture/criticality-propagation.md), [asset risk score](architecture/asset-risk-score.md)
 - [Data provenance](architecture/data-sources.md), [component relationships](architecture/component-relationship-best-practices.md), [web surface](architecture/web-surface.md)
 - [Scoping overview](architecture/scoping-overview.md), [active-probe gate](architecture/active-probe-gate.md)
 - [EASM](architecture/easm.md), [EASM DNS checks](architecture/easm-dns-checks.md), [certificate transparency monitoring](architecture/certificate-transparency-monitoring.md), [change detection](architecture/change-detection.md)

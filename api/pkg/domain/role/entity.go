@@ -57,8 +57,6 @@ var (
 	AdminRoleID  = MustParseID("00000000-0000-0000-0000-000000000002")
 	MemberRoleID = MustParseID("00000000-0000-0000-0000-000000000003")
 	ViewerRoleID = MustParseID("00000000-0000-0000-0000-000000000004")
-	// ResearcherRoleID tests programs the organization follows (RFC-065).
-	ResearcherRoleID = MustParseID("00000000-0000-0000-0000-000000000005")
 )
 
 // Role represents a role entity that defines a set of permissions.
@@ -75,6 +73,44 @@ type Role struct {
 	createdAt         time.Time
 	updatedAt         time.Time
 	createdBy         *ID
+	// template is the role template this custom role was created from, if
+	// any: the template id, the version taken and the permissions the
+	// template had at that version. The role's own permissions may differ
+	// (the role is the organization's to edit).
+	template *TemplateOrigin
+}
+
+// TemplateOrigin records which version of a role template a custom role was
+// created from (or last updated to), and the template's permissions at that
+// version. Comparing them with the current template gives the update an
+// editor may apply; the role never changes by itself.
+type TemplateOrigin struct {
+	ID          string
+	Version     int
+	Permissions []string
+}
+
+// Template returns the template origin, or nil for a role not created from
+// a template.
+func (r *Role) Template() *TemplateOrigin {
+	if r.template == nil {
+		return nil
+	}
+	t := *r.template
+	t.Permissions = append([]string(nil), r.template.Permissions...)
+	return &t
+}
+
+// SetTemplate records the template origin (create from a template, apply a
+// template update, or load from persistence). Nil clears it.
+func (r *Role) SetTemplate(t *TemplateOrigin) {
+	if t == nil || t.ID == "" {
+		r.template = nil
+		return
+	}
+	c := *t
+	c.Permissions = append([]string(nil), t.Permissions...)
+	r.template = &c
 }
 
 // New creates a new custom role for a tenant.
