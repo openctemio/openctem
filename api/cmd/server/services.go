@@ -1559,6 +1559,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
+	s.RemediationSuggest.SetTasks(s.RemediationTask)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 

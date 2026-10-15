@@ -50,6 +50,7 @@ type SuggestionService struct {
 	audit     TaskAuditLogger
 	notifier  SuggestionNotifier
 	modules   ModuleGuard
+	tasks     *TaskService
 	logger    *logger.Logger
 	now       func() time.Time
 }
@@ -100,11 +101,20 @@ func (s *SuggestionService) RunTenant(ctx context.Context, tenantID shared.ID) (
 		return remediationdom.RunStats{}, err
 	}
 	ss := remediationdom.BuildSuggestions(tenantID, cands, accepted, excluded)
+	// The auto-join rule a person turned on applies before anything is
+	// proposed; what it could not take (cap, task state) stays a suggestion.
+	autoJoined := s.applyAutoJoin(ctx, tenantID, ss, accepted)
+	if autoJoined > 0 {
+		if cands, err = s.repo.Candidates(ctx, tenantID); err != nil {
+			return remediationdom.RunStats{}, err
+		}
+		ss = remediationdom.BuildSuggestions(tenantID, cands, accepted, excluded)
+	}
 	st, err := s.repo.ApplyRun(ctx, tenantID, ss, s.now())
 	if err != nil {
 		return st, err
 	}
-	st.Candidates = len(cands)
+	st.Candidates, st.AutoJoined = len(cands), autoJoined
 	return st, nil
 }
 
