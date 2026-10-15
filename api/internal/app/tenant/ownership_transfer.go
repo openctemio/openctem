@@ -115,6 +115,7 @@ func (s *TenantService) StartOwnershipTransfer(ctx context.Context, input StartO
 	if err != nil {
 		return nil, err
 	}
+	s.expireLapsedTransfers(ctx, store, tenantID)
 	if _, err := s.requireActiveOwner(ctx, tenantID, actorID); err != nil {
 		return nil, err
 	}
@@ -170,6 +171,7 @@ func (s *TenantService) PendingOwnershipTransfer(ctx context.Context, actx audit
 	if err != nil {
 		return nil, err
 	}
+	s.expireLapsedTransfers(ctx, store, tenantID)
 	t, err := store.PendingOwnershipTransfer(ctx, tenantID, time.Now().UTC())
 	if err != nil {
 		return nil, err
@@ -204,6 +206,7 @@ func (s *TenantService) closeTransfer(ctx context.Context, actx auditapp.AuditCo
 	if err != nil {
 		return err
 	}
+	s.expireLapsedTransfers(ctx, store, tenantID)
 	now := time.Now().UTC()
 	open, err := store.PendingOwnershipTransfer(ctx, tenantID, now)
 	if err != nil {
@@ -247,6 +250,7 @@ func (s *TenantService) AcceptOwnershipTransfer(ctx context.Context, actx audita
 	if err != nil {
 		return nil, err
 	}
+	s.expireLapsedTransfers(ctx, store, tenantID)
 	now := time.Now().UTC()
 	open, err := store.PendingOwnershipTransfer(ctx, tenantID, now)
 	if err != nil {
@@ -296,6 +300,22 @@ func (s *TenantService) AcceptOwnershipTransfer(ctx context.Context, actx audita
 			displayOr(view.FromName, "the previous owner"), roleLabel(res.PreviousOwnerRole)), notificationdom.SeverityHigh)
 	view.Status = string(tenantdom.OwnershipTransferAccepted)
 	return view, nil
+}
+
+// expireLapsedTransfers closes and audits the requests whose 72 hours are
+// up, so a lapsed request leaves a trace when it is noticed. Best effort.
+func (s *TenantService) expireLapsedTransfers(ctx context.Context, store tenantdom.OwnershipTransferRepository, tenantID shared.ID) {
+	lapsed, err := store.ExpireLapsedOwnershipTransfers(ctx, tenantID, time.Now().UTC())
+	if err != nil {
+		s.logger.Warn("expire lapsed ownership transfers", "error", err)
+		return
+	}
+	for _, t := range lapsed {
+		// The system closed it, not the person whose request noticed it.
+		sys := auditapp.AuditContext{TenantID: t.TenantID.String()}
+		s.auditTransfer(ctx, sys, audit.ActionMemberOwnershipTransferExpired, t, audit.SeverityLow,
+			"Ownership transfer expired without an answer")
+	}
 }
 
 func (s *TenantService) transferView(ctx context.Context, t *tenantdom.OwnershipTransfer, viewer string) *OwnershipTransferView {

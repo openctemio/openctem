@@ -18,10 +18,7 @@ import (
 // Otherwise the acceptance is refused and nothing is granted: a removed,
 // suspended or demoted administrator's pending invitations stop working.
 func (s *TenantService) authorizeInvitationGrant(ctx context.Context, inv *tenantdom.Invitation) error {
-	if err := s.authorizeInvitationRoles(ctx, inv); err != nil {
-		return err
-	}
-	return s.reauthorizeInvitationTeams(ctx, inv)
+	return s.authorizeInvitationRoles(ctx, inv)
 }
 
 // authorizeInvitationRoles is the role half of authorizeInvitationGrant.

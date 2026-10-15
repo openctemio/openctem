@@ -387,6 +387,13 @@ func TestOwnershipTransfer_ExpiresAfter72Hours(t *testing.T) {
 		t.Fatalf("accept after expiry: %v", err)
 	}
 	e.checkOneOwner(org, owner)
+	// Noticing the lapse closes the request and records it.
+	if n := e.count(`SELECT count(*) FROM tenant_ownership_transfers WHERE tenant_id = $1 AND status = 'expired'`, org); n != 1 {
+		t.Fatalf("expired rows after the lapse was noticed = %d, want 1", n)
+	}
+	if n := e.count(`SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'member.ownership_transfer_expired'`, org); n != 1 {
+		t.Fatalf("expiry audit rows = %d, want 1", n)
+	}
 	// The store closes a lapsed request it is asked to accept.
 	store := postgres.NewOwnershipTransferRepository(&postgres.DB{DB: e.db})
 	var id string
@@ -396,8 +403,8 @@ func TestOwnershipTransfer_ExpiresAfter72Hours(t *testing.T) {
 	tid, _ := shared.IDFromString(org)
 	tr, _ := shared.IDFromString(id)
 	uid, _ := shared.IDFromString(target.userID)
-	if _, err := store.AcceptOwnershipTransfer(ctx, tid, tr, uid, time.Now()); !errors.Is(err, tenantdom.ErrOwnershipTransferExpired) {
-		t.Fatalf("store accept after expiry: %v", err)
+	if _, err := store.AcceptOwnershipTransfer(ctx, tid, tr, uid, time.Now()); !errors.Is(err, tenantdom.ErrOwnershipTransferNotFound) {
+		t.Fatalf("store accept of an expired request: %v", err)
 	}
 	if n := e.count(`SELECT count(*) FROM tenant_ownership_transfers WHERE tenant_id = $1 AND status = 'expired'`, org); n != 1 {
 		t.Fatalf("expired rows = %d", n)

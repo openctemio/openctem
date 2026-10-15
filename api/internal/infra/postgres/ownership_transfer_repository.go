@@ -177,6 +177,27 @@ func (r *OwnershipTransferRepository) PendingOwnershipTransfer(ctx context.Conte
 	return t, nil
 }
 
+// ExpireLapsedOwnershipTransfers implements tenant.OwnershipTransferRepository.
+func (r *OwnershipTransferRepository) ExpireLapsedOwnershipTransfers(ctx context.Context, tenantID shared.ID, now time.Time) ([]*tenant.OwnershipTransfer, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		UPDATE tenant_ownership_transfers SET status = 'expired', decided_at = expires_at
+		WHERE tenant_id = $1 AND status = 'pending' AND expires_at <= $2
+		RETURNING `+otColumns, tenantID.String(), now)
+	if err != nil {
+		return nil, fmt.Errorf("expire lapsed ownership transfers: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*tenant.OwnershipTransfer
+	for rows.Next() {
+		t, err := scanOwnershipTransfer(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan expired ownership transfer: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // CloseOwnershipTransfer implements tenant.OwnershipTransferRepository.
 func (r *OwnershipTransferRepository) CloseOwnershipTransfer(ctx context.Context, tenantID, id shared.ID, status tenant.OwnershipTransferStatus, by shared.ID, now time.Time) (*tenant.OwnershipTransfer, error) {
 	if status != tenant.OwnershipTransferCanceled && status != tenant.OwnershipTransferDeclined {
