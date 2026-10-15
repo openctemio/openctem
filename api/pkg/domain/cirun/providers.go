@@ -399,7 +399,7 @@ func ParseJenkinsClaims(m map[string]any) Claims {
 	case jenkinsPRRE.MatchString(branch):
 		c.PullRequest = jenkinsPRRE.FindStringSubmatch(branch)[1]
 		c.Ref = "refs/pull/" + c.PullRequest + "/head"
-		c.Branch = "pull/" + c.PullRequest
+		c.Branch = PullRequestBranch(c.PullRequest)
 	case branch != "":
 		c.Ref, c.Branch = "refs/heads/"+branch, branch
 	}
@@ -445,7 +445,7 @@ func (c *Claims) setBranchFromRef() {
 		c.PullRequest = pullRefRE.FindStringSubmatch(c.Ref)[1]
 		// The token names the pull request, not its source branch: its
 		// results belong to the pull request, never to a real branch.
-		c.Branch = "pull/" + c.PullRequest
+		c.Branch = PullRequestBranch(c.PullRequest)
 	case strings.HasPrefix(c.Ref, "refs/heads/"):
 		c.Branch = strings.TrimPrefix(c.Ref, "refs/heads/")
 	}

@@ -39,7 +39,7 @@ func (fakeMRAPI) GroupMember(context.Context, int64, int64) (bool, error) { retu
 func (f fakeMRAPI) MergeRequest(_ context.Context, _ string, iid int) (*gitlabapi.MergeRequest, error) {
 	return &gitlabapi.MergeRequest{IID: iid, TargetBranch: f.target}, nil
 }
-func (fakeMRAPI) SetCommitStatus(context.Context, string, string, string, string, string, string) error {
+func (fakeMRAPI) SetCommitStatus(context.Context, string, string, string, string, string, string, int64) error {
 	return nil
 }
 func (fakeMRAPI) UpsertMergeRequestNote(context.Context, string, int, int64, string, string) error {
