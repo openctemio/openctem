@@ -13,6 +13,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -131,14 +132,19 @@ func (r *AssetRiskQueueRepository) EnqueueAllForPlatform(ctx context.Context, de
 	}
 
 	const q = `
-		WITH batch AS (
-			SELECT a.id, a.tenant_id FROM assets a
+		WITH cur AS (SELECT scoring_version($1, 'asset_risk', $5) AS v),
+		batch AS (
+			SELECT a.id, a.tenant_id,
+			       (a.risk_version IS NULL OR a.risk_version < cur.v) AS stale
+			FROM assets a CROSS JOIN cur
 			WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND a.id > $2::uuid
 			ORDER BY a.id
 			LIMIT $3
 		), ins AS (
 			INSERT INTO asset_risk_queue (asset_id, tenant_id, enqueued_at)
-			SELECT b.id, b.tenant_id, now() + make_interval(secs => $4) FROM batch b
+			SELECT b.id, b.tenant_id,
+			       CASE WHEN b.stale THEN now() ELSE now() + make_interval(secs => $4) END
+			FROM batch b
 			ORDER BY b.id
 			ON CONFLICT (asset_id) DO NOTHING
 			RETURNING 1
@@ -156,7 +162,7 @@ func (r *AssetRiskQueueRepository) EnqueueAllForPlatform(ctx context.Context, de
 			)
 			var err error
 			for attempt := 0; attempt < 3; attempt++ {
-				err = r.db.QueryRowContext(ctx, q, tid, after, riskReconcileBatch, delay.Seconds()).Scan(&seen, &last, &queued)
+				err = r.db.QueryRowContext(ctx, q, tid, after, riskReconcileBatch, delay.Seconds(), scoring.RiskModelVersion).Scan(&seen, &last, &queued)
 				if !isForeignKeyViolation(err) {
 					break
 				}
@@ -193,6 +199,25 @@ func (r *AssetRiskQueueRepository) tenantIDs(ctx context.Context) ([]string, err
 		return nil, fmt.Errorf("iterate tenants: %w", err)
 	}
 	return tenants, nil
+}
+
+// StampRiskVersion records the scoring version the given assets of the
+// tenant were scored with (only rows whose version differs are written).
+func (r *AssetRiskQueueRepository) StampRiskVersion(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, version int64) error {
+	if len(assetIDs) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		ids = append(ids, id.String())
+	}
+	const q = `
+		UPDATE assets SET risk_version = $3
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND risk_version IS DISTINCT FROM $3`
+	if _, err := r.db.ExecContext(ctx, q, tenantID.String(), pq.Array(ids), version); err != nil {
+		return fmt.Errorf("stamp asset risk version: %w", err)
+	}
+	return nil
 }
 
 // StatsForPlatform returns the queue depth and the age of the oldest due row.

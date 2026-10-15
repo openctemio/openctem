@@ -20,6 +20,7 @@ import (
 	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -49,6 +50,9 @@ const (
 type scoringConfigEntry struct {
 	config    *assetdom.RiskScoringConfig
 	expiresAt time.Time
+	// version is the scoring version read before the config was loaded
+	// (0 = unknown); a newer version makes the entry stale.
+	version int64
 }
 
 // AssetService handles asset-related business operations.
@@ -61,7 +65,8 @@ type AssetService struct {
 	scoringProvider   assetdom.ScoringConfigProvider
 	riskQueue         assetdom.RiskQueueRepository // rescore queue (risk_freshness.go)
 	riskReader        AssetBatchReader
-	controlLookup     ControlReductionLookup // compensating controls (nil = no reduction)
+	scoringVersions   scoring.VersionRepository // stamps risk_version (risk_freshness.go)
+	controlLookup     ControlReductionLookup    // compensating controls (nil = no reduction)
 	riskContributors  assetdom.RiskContributorReader
 	redisClient       *redis.Client
 	logger            *logger.Logger
@@ -271,6 +276,15 @@ func (s *AssetService) HasRepositoryExtensionRepository() bool {
 // getScoringConfig returns the scoring config for a tenant, using cache when available.
 // Falls back to legacy config if no provider is configured.
 func (s *AssetService) getScoringConfig(ctx context.Context, tenantID shared.ID) *assetdom.RiskScoringConfig {
+	return s.getScoringConfigAt(ctx, tenantID, 0)
+}
+
+// getScoringConfigAt returns the tenant's scoring config, loaded no earlier
+// than scoring version minVersion was read: a cached entry loaded before a
+// newer version is reloaded, so a score stamped with a version is never
+// computed with older settings (another replica's settings change does not
+// wait for the cache TTL).
+func (s *AssetService) getScoringConfigAt(ctx context.Context, tenantID shared.ID, minVersion int64) *assetdom.RiskScoringConfig {
 	if s.scoringProvider == nil {
 		legacy := assetdom.LikelihoodImpactRiskScoringConfig()
 		return &legacy
@@ -280,7 +294,7 @@ func (s *AssetService) getScoringConfig(ctx context.Context, tenantID shared.ID)
 
 	// Check cache (read lock)
 	s.scoringCacheMu.RLock()
-	if entry, ok := s.scoringCache[key]; ok && time.Now().Before(entry.expiresAt) {
+	if entry, ok := s.scoringCache[key]; ok && time.Now().Before(entry.expiresAt) && entry.version >= minVersion {
 		s.scoringCacheMu.RUnlock()
 		return entry.config
 	}
@@ -299,6 +313,7 @@ func (s *AssetService) getScoringConfig(ctx context.Context, tenantID shared.ID)
 	s.scoringCache[key] = scoringConfigEntry{
 		config:    config,
 		expiresAt: time.Now().Add(scoringConfigCacheTTL),
+		version:   minVersion,
 	}
 	s.scoringCacheMu.Unlock()
 
