@@ -43,21 +43,23 @@ func (p *Policy) activeTrust(ctx context.Context, host, home shared.ID) (*orgtru
 }
 
 // MaxRoleFor returns the role ceiling for external members homed in home:
-// the trust's, or member when there is no active trust.
+// the active trust's max_role (viewer or member), or "" when no active trust
+// caps them (RFC-095 §4.2: without a trust the host decides per person).
 func (p *Policy) MaxRoleFor(ctx context.Context, host, home shared.ID) (orgtrust.MaxRole, error) {
 	t, err := p.activeTrust(ctx, host, home)
 	if err != nil {
 		return "", err
 	}
 	if t == nil {
-		return orgtrust.MaxRoleMember, nil
+		return "", nil
 	}
 	return t.Settings.MaxRole, nil
 }
 
 // APIKeyAllowance implements apikey.ExternalKeyPolicy: an internal member is
-// always allowed; an external member only when the trust with their home
-// allows keys, and never past the end of their access.
+// always allowed; an external member too, never past the end of their access,
+// unless an active trust with their home organization forbids keys
+// (RFC-095 §4.2: keys follow the member and are revoked with them).
 func (p *Policy) APIKeyAllowance(ctx context.Context, tenantID, userID shared.ID) (bool, *time.Time, error) {
 	m, err := p.members.GetMembership(ctx, userID, tenantID)
 	if err != nil {
@@ -66,15 +68,14 @@ func (p *Policy) APIKeyAllowance(ctx context.Context, tenantID, userID shared.ID
 	if !m.IsExternal() {
 		return true, nil, nil
 	}
-	if m.HomeTenantID() == nil {
-		return false, nil, nil
-	}
-	t, err := p.activeTrust(ctx, tenantID, *m.HomeTenantID())
-	if err != nil {
-		return false, nil, err
-	}
-	if t == nil || !t.Settings.AllowAPIKeys {
-		return false, nil, nil
+	if m.HomeTenantID() != nil {
+		t, err := p.activeTrust(ctx, tenantID, *m.HomeTenantID())
+		if err != nil {
+			return false, nil, err
+		}
+		if t != nil && !t.Settings.AllowAPIKeys {
+			return false, nil, nil
+		}
 	}
 	return true, m.ExpiresAt(), nil
 }

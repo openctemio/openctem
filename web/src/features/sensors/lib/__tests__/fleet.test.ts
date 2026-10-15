@@ -111,12 +111,52 @@ describe('summarizeFleet', () => {
     expect(s.jobSlots).toBe(13)
   })
 
-  it('needs attention: enabled sensors with a health reason or below the minimum', () => {
+  it('needs attention: enabled sensors not connected, with a health reason or below the minimum', () => {
     const s = summarizeFleet(fleet(), NOW, undefined, channel)
-    // dmz (outbox backlog) and branch-hn-01 (v0.3.0 below v0.4.0); the
-    // disabled collector does not count.
-    expect(s.needsAttention).toBe(2)
-    expect(s.attentionKinds).toEqual(['backlog', 'version'])
+    // dmz (outbox backlog), k8s-scanner-b (stale) and branch-hn-01 (offline,
+    // v0.3.0 below v0.4.0). The idle one-shot sensor and the disabled
+    // collector do not count.
+    expect(s.needsAttention).toBe(3)
+    expect(s.attentionKinds).toEqual(['backlog', 'offline', 'version'])
+  })
+
+  it('a sensor that never connected needs attention; a disabled one does not', () => {
+    seq = 0
+    const s = summarizeFleet(
+      [
+        sensor({ name: 'new', last_seen_at: undefined }),
+        sensor({ name: 'off', status: 'disabled', last_seen_at: ago(12 * 3600) }),
+      ],
+      NOW,
+      undefined,
+      channel
+    )
+    expect(s.byState.never_connected).toBe(1)
+    expect(s.needsAttention).toBe(1)
+    expect(s.attentionKinds).toEqual(['offline'])
+  })
+
+  it('a failed or stale setup check (preflight) and a cloned identity count', () => {
+    seq = 0
+    const s = summarizeFleet(
+      [
+        sensor({
+          health_reasons: [{ code: 'config_check_failed', severity: 'critical', message: 'm' }],
+        }),
+        sensor({
+          health_reasons: [{ code: 'config_report_stale', severity: 'warning', message: 'm' }],
+        }),
+        sensor({
+          health_reasons: [{ code: 'identity_cloned', severity: 'critical', message: 'm' }],
+        }),
+        sensor(),
+      ],
+      NOW,
+      undefined,
+      channel
+    )
+    expect(s.needsAttention).toBe(3)
+    expect(s.attentionKinds).toEqual(['preflight', 'key'])
   })
 
   it('content reasons count as scanner-content attention (RFC-031)', () => {
@@ -126,7 +166,7 @@ describe('summarizeFleet', () => {
       health_reasons: [{ code: 'content_stale', severity: 'warning', message: 'm' }],
     }
     const s = summarizeFleet(f, NOW, undefined, channel)
-    expect(s.needsAttention).toBe(3)
+    expect(s.needsAttention).toBe(4)
     expect(s.attentionKinds).toContain('content')
   })
 
@@ -137,7 +177,7 @@ describe('summarizeFleet', () => {
       health_reasons: [{ code: 'sdk_advisory', severity: 'warning', message: 'm' }],
     }
     const s = summarizeFleet(f, NOW, undefined, channel)
-    expect(s.needsAttention).toBe(3)
+    expect(s.needsAttention).toBe(4)
     expect(s.attentionKinds).toContain('sdk')
   })
 
@@ -185,7 +225,7 @@ describe('filterSensors', () => {
     expect(run({ versions: ['unsupported'] })).toEqual(['branch-hn-01'])
   })
   it('the "needs attention" metric', () => {
-    expect(run({ attention: true })).toEqual(['dmz-scanner-01', 'branch-hn-01'])
+    expect(run({ attention: true })).toEqual(['dmz-scanner-01', 'k8s-scanner-b', 'branch-hn-01'])
   })
   it('protocol (RFC-029 telemetry; unknown until the API reports it)', () => {
     const f = fleet()
