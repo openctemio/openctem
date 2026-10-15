@@ -10,19 +10,19 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// methodStubRepo records the resolution method the bulk path writes.
+// methodStubRepo records the closure the bulk path writes.
 type methodStubRepo struct {
 	bulkStubRepo
-	method vulnerability.ResolutionMethod
+	method vulnerability.Closure
 	by     *shared.ID
 }
 
 // AcceptUntil records an accept like UpdateStatusBatch does.
-func (r *methodStubRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
-	return r.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+func (r *methodStubRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID, _ vulnerability.ClosureReason) error {
+	return r.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, vulnerability.Closure{})
 }
 
-func (r *methodStubRepo) UpdateStatusBatch(ctx context.Context, tid shared.ID, ids []shared.ID, st vulnerability.FindingStatus, res string, by *shared.ID, m vulnerability.ResolutionMethod) error {
+func (r *methodStubRepo) UpdateStatusBatch(ctx context.Context, tid shared.ID, ids []shared.ID, st vulnerability.FindingStatus, res string, by *shared.ID, m vulnerability.Closure) error {
 	r.method, r.by = m, by
 	return r.bulkStubRepo.UpdateStatusBatch(ctx, tid, ids, st, res, by, m)
 }
@@ -70,7 +70,7 @@ func TestBulkResolve_WithoutVerify_RefusedForEverySource(t *testing.T) {
 }
 
 // With findings:verify the bulk resolve goes through and records the actor
-// and the resolution method (admin_direct: no per-finding checklist read).
+// and the closure (fixed, attested: no per-finding checklist read).
 func TestBulkResolve_WithVerify_RecordsMethodAndActor(t *testing.T) {
 	tenantID := shared.NewID()
 	f := fixAppliedFinding(t, tenantID)
@@ -88,8 +88,8 @@ func TestBulkResolve_WithVerify_RecordsMethodAndActor(t *testing.T) {
 	if err != nil || res.Updated != 1 {
 		t.Fatalf("verify holder bulk resolve = %+v, %v; want 1 updated", res, err)
 	}
-	if repo.method != vulnerability.ResolutionMethodAdminDirect {
-		t.Errorf("resolution method = %q, want admin_direct", repo.method)
+	if repo.method != vulnerability.Fixed(vulnerability.VerificationAttested) {
+		t.Errorf("closure = %+v, want fixed / attested", repo.method)
 	}
 	if repo.by == nil || *repo.by != actor {
 		t.Errorf("resolved_by = %v, want the actor %s", repo.by, actor)
@@ -117,10 +117,10 @@ func TestBulkFixApplied_WithoutVerify_StillAllowed(t *testing.T) {
 	if err != nil || res.Updated != 1 {
 		t.Fatalf("bulk fix_applied without verify = %+v, %v; want 1 updated", res, err)
 	}
-	if repo.method != vulnerability.ResolutionMethodAdminDirect {
-		// The service always names admin_direct; the repository ignores it for
-		// any status other than resolved (it stores NULL).
-		t.Errorf("method passed = %q", repo.method)
+	if repo.method != vulnerability.Fixed(vulnerability.VerificationAttested) {
+		// The service always names its resolve closure; the repository
+		// ignores it for an open status (it stores NULL).
+		t.Errorf("closure passed = %+v", repo.method)
 	}
 }
 
