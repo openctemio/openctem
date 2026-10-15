@@ -49,7 +49,8 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 				COALESCE(MAX(risk_score), 0) AS max_risk,
 				CASE WHEN COUNT(*) = 0 THEN 0
 					ELSE COUNT(*) FILTER(WHERE EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = assets.id)) * 100.0 / COUNT(*)
-				END AS ownership_pct
+				END AS ownership_pct,
+				MIN(risk_version) AS risk_version
 			FROM assets WHERE deleted_at IS NULL GROUP BY tenant_id
 		),
 		finding_metrics AS (
@@ -63,7 +64,8 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 				CASE WHEN COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND ` + openSQL + `) = 0 THEN 100
 					ELSE COUNT(*) FILTER(WHERE sla_status NOT IN ('exceeded','overdue') AND sla_deadline IS NOT NULL AND ` + openSQL + `)
 						* 100.0 / NULLIF(COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND ` + openSQL + `), 0)
-				END AS sla_pct
+				END AS sla_pct,
+				MIN(priority_version) FILTER(WHERE ` + openSQL + `) AS priority_version
 			FROM findings WHERE NOT branch_only GROUP BY tenant_id
 		),
 		mttr_metrics AS (
@@ -90,7 +92,7 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 			exposures_active, sla_compliance_pct,
 			mttr_critical_hours, mttr_high_hours, mttr_medium_hours, mttr_low_hours,
 			p0_open, p1_open, p2_open, p3_open,
-			asset_ownership_pct, created_at
+			asset_ownership_pct, risk_version, priority_version, created_at
 		)
 		SELECT
 			t.id, $1::date,
@@ -99,7 +101,7 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 			COALESCE(e.active_count, 0), COALESCE(f.sla_pct, 100),
 			m.mttr_c, m.mttr_h, m.mttr_m, m.mttr_l,
 			COALESCE(f.p0, 0), COALESCE(f.p1, 0), COALESCE(f.p2, 0), COALESCE(f.p3, 0),
-			COALESCE(a.ownership_pct, 0), NOW()
+			COALESCE(a.ownership_pct, 0), a.risk_version, f.priority_version, NOW()
 		FROM tenants t
 		LEFT JOIN asset_metrics a ON a.tenant_id = t.id
 		LEFT JOIN finding_metrics f ON f.tenant_id = t.id
@@ -126,7 +128,9 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 			p1_open = EXCLUDED.p1_open,
 			p2_open = EXCLUDED.p2_open,
 			p3_open = EXCLUDED.p3_open,
-			asset_ownership_pct = EXCLUDED.asset_ownership_pct
+			asset_ownership_pct = EXCLUDED.asset_ownership_pct,
+			risk_version = EXCLUDED.risk_version,
+			priority_version = EXCLUDED.priority_version
 	`
 
 	result, err := c.db.ExecContext(ctx, query, today)

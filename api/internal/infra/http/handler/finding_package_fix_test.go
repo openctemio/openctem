@@ -88,3 +88,50 @@ func TestGetFinding_PackagePlanNotReachableCrossTenant(t *testing.T) {
 		t.Fatalf("cross-tenant read: status %d, lister called=%v", rr.Code, !lister.tenant.IsZero())
 	}
 }
+
+// The scanner's dependency chain and the package's line in the lock file
+// reach the detail: transitive with its path, or direct, over the asset's
+// unknown relationship.
+func TestGetFinding_DependencyPathAndLockfileLine(t *testing.T) {
+	tenant, asset, versionID := shared.NewID(), shared.NewID(), shared.NewID()
+	detail := func(direct bool, path []string, manifest string) *FindingComponentInfo {
+		t.Helper()
+		f, err := vulnerability.NewFinding(tenant, asset, vulnerability.FindingSourceSCA, "trivy",
+			vulnerability.SeverityHigh, "body-parser: denial of service")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.SetComponentID(versionID)
+		f.SetLocation("package-lock.json", 34, 54, 0, 0)
+		if d := vulnerability.NewDependencyInfo(direct, path); d != nil {
+			f.SetMetadata(vulnerability.FindingMetaDependency, d.Meta())
+		}
+		svc := findingapp.NewVulnerabilityService(&detailVulnRepo{}, &detailFindingRepo{f: f}, logger.NewNop())
+		h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
+		h.SetComponentService(&detailComponents{c: &component.FindingComponent{VersionID: versionID.String(),
+			ProductID: shared.NewID().String(), Name: "body-parser", Version: "1.19.0", Ecosystem: "npm",
+			PURL: "pkg:npm/body-parser@1.19.0", Relationship: "unknown", Location: manifest}})
+		rr, resp := getFindingDetail(t, h, tenant.String(), f.ID().String())
+		if rr.Code != http.StatusOK || resp.Component == nil {
+			t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+		}
+		return resp.Component
+	}
+
+	c := detail(false, []string{"express@4.17.1", "body-parser@1.19.0"}, "")
+	if c.DependencyType != "transitive" || len(c.DependencyPath) != 2 || c.DependencyPath[0] != "express@4.17.1" {
+		t.Fatalf("component = %+v, want transitive via express", c)
+	}
+	if c.ManifestFile != "package-lock.json" || c.ManifestLine != 34 {
+		t.Errorf("manifest = %q:%d, want package-lock.json:34", c.ManifestFile, c.ManifestLine)
+	}
+	c = detail(true, []string{"body-parser@1.19.0"}, "package-lock.json")
+	if c.DependencyType != "direct" || c.DependencyPath != nil || c.ManifestLine != 34 {
+		t.Fatalf("component = %+v, want direct with the line", c)
+	}
+	// Another lock file on the asset: the finding's line is not its line.
+	c = detail(false, nil, "web/package-lock.json")
+	if c.DependencyType != "unknown" || c.ManifestLine != 0 {
+		t.Fatalf("component = %+v, want the asset's relationship and no line", c)
+	}
+}
