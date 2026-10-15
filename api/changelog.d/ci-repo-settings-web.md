@@ -14,3 +14,4 @@
 - A CI run's drawer splits findings into baseline (not blocking) and new, announces a baseline recorded on the
   first run with its due date, offers "Connect GitLab" (or "Install the GitHub App") when the check could not
   be posted for lack of a connection, and runs of the same commit are labelled "Attempt N of M".
+- Deleting a business unit or repository gate policy asks for a reason, which the API requires when the deletion loosens the gate; resetting a repository's last override does too.
