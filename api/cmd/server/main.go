@@ -324,7 +324,7 @@ func run() int {
 		}
 		services.AccessRequest = accessrequestapp.NewService(repos.AccessRequest, services.Signup,
 			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
-			accessRequestMailer{email: services.Email, appName: cfg.App.Name, log: log},
+			accessRequestMailer{email: services.Email, appName: cfg.Brand.DisplayName(), log: log},
 			captcha, cfg.SMTP.BaseURL, log)
 	}
 
