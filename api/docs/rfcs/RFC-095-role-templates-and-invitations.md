@@ -64,8 +64,8 @@ grants. A template change never changes an existing role. When the catalog
 has a newer version:
 
 - role responses carry `template {template_id, version_taken,
-  current_version, update_available, diff {added, removed}}`;
-  `GET /api/v1/roles/{id}/template` returns the same (`team:roles:read`);
+  current_version, update_available, diff {added, removed}}` (role list and
+  `GET /api/v1/roles/{id}`, `team:roles:read`);
 - `POST /api/v1/roles/{id}/template/apply {version}` (`team:roles:write`)
   applies it: the template's additions are added, its removals removed, the
   role's own edits kept, full data access unchanged. It goes through the role
