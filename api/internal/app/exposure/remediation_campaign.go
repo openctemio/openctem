@@ -1101,15 +1101,15 @@ func campaignFilterToFindingFilter(tenantID shared.ID, raw map[string]any) vulne
 // own nothing (count 0) and must never resolve. Keyed campaigns are handled on a
 // separate path and always have scope.
 //
-// A status alone is not scope: "every new finding" is the whole organization.
+// Scope needs a real dimension that names what is fixed: an asset, CVEs,
+// linked findings or a tool (a fix key goes through the keyed path).
+// Severity, source, status and free-text search only narrow it: "every
+// critical finding" or "every new finding" is the whole organization.
 func findingFilterHasScope(f vulnerability.FindingFilter) bool {
-	return len(f.Severities) > 0 ||
-		len(f.Sources) > 0 ||
-		len(f.CVEIDs) > 0 ||
+	return len(f.CVEIDs) > 0 ||
 		len(f.FindingIDs) > 0 ||
 		f.AssetID != nil ||
-		f.ToolName != nil ||
-		f.Search != nil
+		f.ToolName != nil
 }
 
 // firstString returns the value of key as a string, or "" when absent or not a
