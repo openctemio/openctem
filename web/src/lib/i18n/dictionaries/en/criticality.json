@@ -8,5 +8,5 @@
   "criticality.high.hint": "Important asset with significant business impact",
   "criticality.medium.hint": "Standard asset with moderate business impact",
   "criticality.low.hint": "Non-critical asset with minimal business impact",
-  "criticality.none.hint": "Not rated yet: adds no criticality weight to risk"
+  "criticality.none.hint": "Not rated yet: risk is scored as for a medium asset until it is rated"
 }

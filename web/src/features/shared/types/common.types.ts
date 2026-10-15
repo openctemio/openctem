@@ -83,15 +83,58 @@ export const DEFAULT_RISK_LEVELS: RiskLevelThresholds = {
 }
 
 // Risk level configuration — supports optional custom thresholds
+/** Risk level band key; the label is `t(\`riskScore.level.${key}\`)`. */
+export type RiskLevelKey = 'critical' | 'high' | 'medium' | 'low' | 'minimal' | 'none'
+
+/**
+ * The band of a 0-100 risk score, from the organization's risk levels (the
+ * same bands the API uses): critical/high/medium/low from their lower bounds,
+ * minimal above 0 and below the low bound, none at 0 (no open risk).
+ * `label` is the English fallback of `riskScore.level.<key>`.
+ */
 export const getRiskLevel = (score: number, thresholds?: RiskLevelThresholds) => {
   const t = thresholds ?? DEFAULT_RISK_LEVELS
   if (score >= t.critical_min)
-    return { label: 'Critical', color: 'bg-red-500', textColor: 'text-white' }
-  if (score >= t.high_min) return { label: 'High', color: 'bg-orange-500', textColor: 'text-white' }
+    return {
+      key: 'critical' as RiskLevelKey,
+      label: 'Critical',
+      color: 'bg-red-500',
+      textColor: 'text-white',
+    }
+  if (score >= t.high_min)
+    return {
+      key: 'high' as RiskLevelKey,
+      label: 'High',
+      color: 'bg-orange-500',
+      textColor: 'text-white',
+    }
   if (score >= t.medium_min)
-    return { label: 'Medium', color: 'bg-yellow-500', textColor: 'text-black' }
-  if (score >= t.low_min) return { label: 'Low', color: 'bg-blue-500', textColor: 'text-white' }
-  return { label: 'Info', color: 'bg-green-500', textColor: 'text-white' }
+    return {
+      key: 'medium' as RiskLevelKey,
+      label: 'Medium',
+      color: 'bg-yellow-500',
+      textColor: 'text-black',
+    }
+  if (score >= t.low_min)
+    return {
+      key: 'low' as RiskLevelKey,
+      label: 'Low',
+      color: 'bg-blue-500',
+      textColor: 'text-white',
+    }
+  if (score > 0)
+    return {
+      key: 'minimal' as RiskLevelKey,
+      label: 'Minimal',
+      color: 'bg-green-500',
+      textColor: 'text-white',
+    }
+  return {
+    key: 'none' as RiskLevelKey,
+    label: 'No open risk',
+    color: 'bg-green-500',
+    textColor: 'text-white',
+  }
 }
 
 // ============================================
