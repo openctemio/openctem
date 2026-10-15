@@ -11,6 +11,9 @@ export type TaskStatus = 'open' | 'in_progress' | 'review' | 'completed' | 'bloc
 /** The API's campaign priorities (critical, high, medium, low). */
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
 
+/** The API's campaign priorities, highest first. */
+export const TASK_PRIORITIES: TaskPriority[] = ['critical', 'high', 'medium', 'low']
+
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   open: 'Open',
   in_progress: 'In Progress',

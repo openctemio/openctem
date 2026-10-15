@@ -44,7 +44,6 @@ interface LinkFindingsToRemediationDialogProps {
   onDone?: () => void
 }
 
-// The API's campaign priorities.
 const PRIORITIES = ['critical', 'high', 'medium', 'low'] as const
 
 /**
