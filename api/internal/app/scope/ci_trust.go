@@ -380,6 +380,25 @@ func (s *Service) CITrustLinksFor(ctx context.Context, tenantID shared.ID, ids [
 	return out, nil
 }
 
+// CITrustLinksVisible lists one trust's links (or every trust's, trustID
+// nil) for a reader with this data scope, by trust id.
+func (s *Service) CITrustLinksVisible(ctx context.Context, tenantID shared.ID, trustID *shared.ID, scope *shared.DataScope) (map[string][]scopedom.CITrustLink, error) {
+	out := map[string][]scopedom.CITrustLink{}
+	if s.ciTrustLinks == nil {
+		return out, nil
+	}
+	links, err := s.ciTrustLinks.ListVisible(ctx, tenantID, trustID, scope)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range links {
+		if l.TenantID.Equals(tenantID) {
+			out[l.TrustConfigID.String()] = append(out[l.TrustConfigID.String()], l)
+		}
+	}
+	return out, nil
+}
+
 // CITrustLinks lists one trust's links (patterns, entries, evidence).
 func (s *Service) CITrustLinks(ctx context.Context, tenantID, trustID shared.ID) ([]scopedom.CITrustLink, error) {
 	if s.ciTrustLinks == nil {
