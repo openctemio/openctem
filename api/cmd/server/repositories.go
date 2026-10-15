@@ -96,6 +96,7 @@ type Repositories struct {
 	// Remediation Campaigns
 	RemediationCampaign       *postgres.RemediationCampaignRepository
 	RemediationCampaignTicket *postgres.RemediationCampaignTicketRepository
+	TicketLink                *postgres.TicketLinkRepository
 	FindingRemediationKey     *postgres.FindingRemediationKeyRepository
 
 	// Business Units
@@ -416,6 +417,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Remediation Campaigns
 		RemediationCampaign:       postgres.NewRemediationCampaignRepository(db),
 		RemediationCampaignTicket: postgres.NewRemediationCampaignTicketRepository(db),
+		TicketLink:                postgres.NewTicketLinkRepository(db),
 		FindingRemediationKey:     postgres.NewFindingRemediationKeyRepository(db),
 
 		// Business Units
