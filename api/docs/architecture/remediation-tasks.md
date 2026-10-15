@@ -91,10 +91,27 @@ The generator only proposes; nothing is created until a person accepts.
 A restricted member sees a suggestion through its in-scope findings only (no ids of the others,
 `hidden_members` counts them) and may not decide on one with hidden findings.
 
+## Accepting suggestions
+
+- `POST /api/v1/remediation/suggestions/{id}/approve` (`findings:remediation:write`), at the suggestion's
+  `version`: `new_group` creates the action (`origin = suggestion`) and one task per partition owner;
+  `task_route` creates a task under the existing action; `join` adds the findings to the target task (the caller
+  must see all of that task's findings). Edits: `title`, `exclude_finding_ids` (remembered in
+  `remediation_key_exclusions`), `owners` per partition index, `deadline`, `auto_join`.
+- Findings that closed or joined another task since the suggestion are left out and returned in `dropped`; with
+  none left the accept answers 400.
+- `POST /api/v1/remediation/suggestions/approve` accepts up to 50 suggestions (5000 findings) as they are, each
+  on its own.
+- Auto-join (`remediation_actions.auto_join`, `PATCH /api/v1/remediation/actions/{id}`): exact keys only
+  (`upgrade`, `rotate`); needs a caller with no data-scope restriction. Each generator run first adds new
+  findings of such a key to the owner's `open` or `in_progress` task (join source `auto_join`, at most 200 per
+  action per day); a `verifying`, held or closed task gets a `join` suggestion instead. It never changes a
+  finding's status.
+
 ## Shipped and planned
 
-Shipped: everything above. Planned (RFC-098 §6–§8): accept flows and auto-join, moves, split, merge and
-detach, task-level mark fixed and regression tasks, the new Remediation console.
+Shipped: everything above. Planned (RFC-098 §7–§8): moves, split, merge and detach, task-level mark fixed and
+regression tasks, the new Remediation console.
 
 ## Key files
 
