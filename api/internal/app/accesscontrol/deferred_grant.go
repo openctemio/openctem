@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 )
 
@@ -60,4 +61,38 @@ func (s *RoleService) AuthorizeDeferredGrant(ctx context.Context, tenantID, gran
 		}
 	}
 	return nil
+}
+
+// HoldsAboveMember reports whether the user's EFFECTIVE grants in the tenant,
+// direct roles and team role bindings alike, are above the built-in member
+// role (permission.IsAboveMember): the owner or admin role, full data
+// access, or a privileged permission the member role lacks. The outside
+// member two-factor rule at token mint uses it (RFC-095 §4.2).
+func (s *RoleService) HoldsAboveMember(ctx context.Context, tenantID, userID string) (bool, error) {
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return false, fmt.Errorf("invalid tenant id: %w", err)
+	}
+	uid, err := roledom.ParseID(userID)
+	if err != nil {
+		return false, fmt.Errorf("invalid user id: %w", err)
+	}
+	roles, err := s.roleRepo.GetUserRoles(ctx, tid, uid)
+	if err != nil {
+		return false, fmt.Errorf("load roles: %w", err)
+	}
+	for _, r := range roles {
+		if r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID {
+			return true, nil
+		}
+	}
+	perms, err := s.roleRepo.GetUserPermissions(ctx, tid, uid)
+	if err != nil {
+		return false, fmt.Errorf("load effective permissions: %w", err)
+	}
+	full, err := s.roleRepo.HasFullDataAccess(ctx, tid, uid)
+	if err != nil {
+		return false, fmt.Errorf("load full data access: %w", err)
+	}
+	return permission.IsAboveMember(perms, full), nil
 }
