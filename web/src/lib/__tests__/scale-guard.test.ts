@@ -44,6 +44,10 @@ const NOT_A_SCALE = new Map<string, string>([
     'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
   ],
   [
+    'features/remediation/types/remediation.types.ts|critical,high,medium,low',
+    'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
+  ],
+  [
     'features/remediation/components/link-findings-dialog.tsx|critical,high,medium,low',
     'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
   ],

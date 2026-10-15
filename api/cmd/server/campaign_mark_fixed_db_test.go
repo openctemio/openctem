@@ -121,3 +121,93 @@ func TestCampaignResolve_MarksFixedThroughLegalSteps(t *testing.T) {
 		}
 	}
 }
+
+// flipOnRead is the postgres finding repository with one race injected: right
+// after the bulk path reads the findings, another actor closes one of them as
+// an approved false positive.
+type flipOnRead struct {
+	*postgres.FindingRepository
+	db     *sql.DB
+	target shared.ID
+	done   bool
+}
+
+func (r *flipOnRead) GetByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]*vulnerability.Finding, error) {
+	out, err := r.FindingRepository.GetByIDs(ctx, tenantID, ids)
+	if err == nil && !r.done {
+		r.done = true
+		_, err = r.db.ExecContext(ctx, `UPDATE findings SET status = 'false_positive' WHERE id = $1 AND tenant_id = $2`, r.target.String(), tenantID.String())
+	}
+	return out, err
+}
+
+// A finding closed while a fix claim runs is never walked back open: every
+// step writes only its exact predecessor statuses, not the lifecycle's wider
+// list (confirmed is also reached from false_positive).
+func TestMarkFixed_FindingClosedDuringTheWalkStaysClosed(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping DB-backed test")
+	}
+	sqlDB, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+	ctx := context.Background()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := sqlDB.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("seed: %v\n%s", err, q)
+		}
+	}
+	tenant, owner, asset, racing, other := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tenant.String(), "cmr-"+tenant.String())
+	t.Cleanup(func() {
+		_, _ = sqlDB.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenant.String())
+		_, _ = sqlDB.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, owner.String())
+	})
+	exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'cmr')`, owner.String(), owner.String()+"@cmr.test")
+	exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, owner.String(), tenant.String())
+	exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, 'cmr-asset', 'domain', 'public', 'high')`,
+		asset.String(), tenant.String())
+	exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'primary', 'owner_ref')`,
+		asset.String(), owner.String())
+	for _, id := range []shared.ID{racing, other} {
+		exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
+			VALUES ($1::uuid, $2, $3, 'sast', 'cmr-tool', 'cmr finding', 'high', $1::text, 'new')`, id.String(), tenant.String(), asset.String())
+	}
+
+	db := &postgres.DB{DB: sqlDB}
+	log := logger.NewNop()
+	repo := &flipOnRead{FindingRepository: postgres.NewFindingRepository(db), db: sqlDB, target: racing}
+	accessRepo := postgres.NewAccessControlRepository(db)
+	vuln := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), repo, log)
+	vuln.SetAccessControlRepository(accessRepo)
+	actions := finding.NewFindingActionsService(repo, accessRepo, nil, postgres.NewAssetRepository(db), nil, sqlDB, log)
+	vuln.SetFixApplierCheck(actions.FixAppliers)
+
+	res, err := vuln.BulkUpdateFindingsStatus(ctx, tenant.String(), finding.BulkUpdateStatusInput{
+		FindingIDs: []string{racing.String(), other.String()}, Status: "fix_applied", Resolution: "patched",
+		ActorID: owner.String(), HasFixApplyPermission: true, WalkToFixApplied: true,
+	})
+	if err != nil {
+		t.Fatalf("mark fixed: %v", err)
+	}
+	status := func(id shared.ID) string {
+		var s string
+		if err := sqlDB.QueryRowContext(ctx, `SELECT status FROM findings WHERE id = $1`, id.String()).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	if got := status(racing); got != "false_positive" {
+		t.Fatalf("a finding closed during the walk was moved to %s", got)
+	}
+	if got := status(other); got != "fix_applied" {
+		t.Errorf("the other finding is %s, want fix_applied", got)
+	}
+	if res.Updated != 1 || res.Failed != 1 {
+		t.Errorf("result = %+v, want 1 updated and the closed one reported", res)
+	}
+}
