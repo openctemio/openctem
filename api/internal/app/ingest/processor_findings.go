@@ -129,9 +129,6 @@ type RegressionHandler interface {
 	HandleRegressions(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner string)
 }
 
-// RemediationKeyApplier derives and persists each finding's remediation group
-// key. Runs POST-insert (needs persisted finding IDs). Implemented by
-// *remediation.KeyApplier. Best-effort: errors are logged, never fatal.
 // VEXStatementApplier applies the organization's VEX statements to the
 // findings with these fingerprints (internal/app/vex). Returns how many
 // findings changed status.
@@ -139,8 +136,14 @@ type VEXStatementApplier interface {
 	ApplyToFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (int, error)
 }
 
+// RemediationKeyApplier derives and persists each finding's remediation group
+// key. Runs POST-insert (needs persisted finding IDs) for created findings and
+// after enrichment for re-sighted ones, so a key follows a new fix version.
+// Implemented by *remediation.KeyApplier. Best-effort: errors are logged,
+// never fatal.
 type RemediationKeyApplier interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
+	ApplyByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) error
 }
 
 // ExposureBridge promotes secret-scan findings into the exposure/credential
@@ -569,6 +572,10 @@ func (p *FindingProcessor) processBatch(
 	// AFTER insert, once the findings have persisted IDs. Nil-safe.
 	suppressionDecisions := p.applySuppressions(ctx, tenantID, newFindings)
 
+	// Fingerprints of findings that already existed: their remediation keys
+	// are re-derived after enrichment (Step 5c).
+	var resighted []string
+
 	// Step 4: Batch create new findings with partial success support
 	if len(newFindings) > 0 {
 		// Enrich BEFORE inserting so EPSS/KEV/priority/SLA are written by the
@@ -605,6 +612,8 @@ func (p *FindingProcessor) processBatch(
 				if result.WasInserted(i) {
 					createdFindings = append(createdFindings, f)
 					createdIndex[i] = struct{}{}
+				} else {
+					resighted = append(resighted, f.Fingerprint())
 				}
 			}
 
@@ -704,6 +713,15 @@ func (p *FindingProcessor) processBatch(
 					)
 				}
 			}
+		}
+	}
+
+	// Step 5c: Re-derive the remediation keys of re-sighted findings: a new
+	// fixed version or changed advice moves the finding to the right group.
+	resighted = append(resighted, existingFingerprints...)
+	if p.remediationKeyApplier != nil && len(resighted) > 0 {
+		if err := p.remediationKeyApplier.ApplyByFingerprints(ctx, tenantID, resighted); err != nil {
+			p.logger.Warn("failed to refresh remediation keys", "error", err)
 		}
 	}
 
@@ -1697,9 +1715,12 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 		}
 		f.SetAttachments(atts)
 	}
-	if len(ctisFinding.WorkItemURIs) > 0 {
-		f.SetWorkItemURIs(ctisFinding.WorkItemURIs)
-	}
+	// work_item_uris are the finding's ticket links, and the ticket sync acts
+	// on them (moves and comments on the linked issue, and an inbound issue
+	// change moves the finding). A report never sets them: only the platform
+	// (create ticket) or a person links a ticket. A sensor or an imported
+	// file could otherwise point a finding at any issue of the tenant's
+	// tracker.
 	if ctisFinding.HostedViewerURI != "" {
 		f.SetHostedViewerURI(ctisFinding.HostedViewerURI)
 	}
