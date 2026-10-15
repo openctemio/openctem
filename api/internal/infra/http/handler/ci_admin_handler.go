@@ -34,7 +34,7 @@ type CIAdminService interface {
 	ListGatePolicies(ctx context.Context, tenantID shared.ID) ([]cirun.GatePolicy, error)
 	CreateGatePolicy(ctx context.Context, tenantID shared.ID, in cirunapp.GatePolicyInput, a cirunapp.Actor) (*cirun.GatePolicy, error)
 	UpdateGatePolicy(ctx context.Context, tenantID, id shared.ID, in cirunapp.GatePolicyInput, a cirunapp.Actor) (*cirun.GatePolicy, error)
-	DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, a cirunapp.Actor) error
+	DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, reason string, a cirunapp.Actor) error
 	CreateOverride(ctx context.Context, tenantID shared.ID, in cirunapp.OverrideInput, a cirunapp.Actor) (*cirun.GateOverride, error)
 	ListOverrides(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope) ([]cirun.GateOverride, error)
 	GetGatePolicy(ctx context.Context, tenantID, id shared.ID) (*cirun.GatePolicy, error)
@@ -721,9 +721,16 @@ func (h *CIAdminHandler) ListGatePolicies(w http.ResponseWriter, r *http.Request
 	out := CIGatePolicyListResponse{Data: make([]CIGatePolicyResponse, 0, len(list)), Default: toCIPolicyResponse(&def),
 		OverrideCounts: map[string]int{}}
 	now := time.Now()
+	// A repository policy names an asset: only callers who may see it. An
+	// unrestricted caller (no data scope) sees every one without a check
+	// per repository.
+	scope, err := resolveDataScope(r.Context(), h.dataScope, tenantID)
+	if err != nil {
+		h.writeErr(w, err, "resolve data scope", "CI gate policy")
+		return
+	}
 	for i := range list {
-		// A repository policy names an asset: only callers who may see it.
-		if list[i].ScopeType == cirun.ScopeRepository && list[i].ScopeID != nil &&
+		if scope != nil && list[i].ScopeType == cirun.ScopeRepository && list[i].ScopeID != nil &&
 			!assetInDataScope(r.Context(), h.dataScope, tenantID, *list[i].ScopeID) {
 			continue
 		}
@@ -880,8 +887,11 @@ func (h *CIAdminHandler) UpdateGatePolicy(w http.ResponseWriter, r *http.Request
 // @Summary      Delete a CI gate policy
 // @Tags         CI
 // @Security     BearerAuth
+// @Description  A deletion that loosens the gate (what applies afterwards lets findings pass that failed before) needs a recent sign-in and, for a business unit or repository policy, a reason of 10 to 500 characters.
 // @Param        id path string true "Policy ID"
+// @Param        reason query string false "Why (required when the deletion loosens a business unit or repository policy)"
 // @Success      204
+// @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Router       /ci/gate-policies/{id} [delete]
 func (h *CIAdminHandler) DeleteGatePolicy(w http.ResponseWriter, r *http.Request) {
@@ -896,7 +906,7 @@ func (h *CIAdminHandler) DeleteGatePolicy(w http.ResponseWriter, r *http.Request
 	if !h.policyOfCaller(w, r, tenantID, id) {
 		return
 	}
-	if err := h.svc.DeleteGatePolicy(r.Context(), tenantID, id, h.actor(r)); err != nil {
+	if err := h.svc.DeleteGatePolicy(r.Context(), tenantID, id, r.URL.Query().Get("reason"), h.actor(r)); err != nil {
 		h.writeErr(w, err, "delete gate policy", "CI gate policy")
 		return
 	}

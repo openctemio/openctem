@@ -455,7 +455,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); v["verdict"] != "pass" || v["would_fail"] != true {
 		t.Fatalf("warn policy: %v", v)
 	}
-	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, pol.ID, cirunapp.Actor{}); err != nil {
+	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, pol.ID, "", cirunapp.Actor{}); err != nil {
 		t.Fatal(err)
 	}
 	// A policy for another tenant's repository is refused as not found.
