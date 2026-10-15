@@ -259,6 +259,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.DomainVerify != nil {
 		tenantHandler.SetSignupDomainPolicy(svc.DomainVerify)
 		tenantHandler.SetDomainSignupPolicy(svc.DomainVerify, svc.Audit)
+		if svc.Onboarding != nil {
+			tenantHandler.SetJoinRequests(svc.Onboarding)
+		}
 		if svc.Email != nil {
 			domains, email, users := svc.DomainVerify, svc.Email, repos.User
 			tenantHandler.SetDomainCapture(func(ctx context.Context, vd *verifieddomain.VerifiedDomain) {
@@ -988,6 +991,9 @@ func InitLocalAuthHandler(
 		log.Info("local auth handler initialized")
 		if svc.Signup != nil {
 			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
+			if svc.Onboarding != nil {
+				handlers.LocalAuth.SetOnboarding(svc.Onboarding)
+			}
 		}
 		// The same CAPTCHA as the request-access form, on registration.
 		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the `SIGNUP_MODE` ceiling with the start-up guards and the console lock; verification of every self-registered account under `domain`/`open`; the policy split (`accounts` and `mode`) with the `domain_account` and `sso_required` admission outcomes; domain sign-up policies (join policy, role, discoverable, SSO required, block new organizations, subdomains, the notice to existing accounts) with the owner settings API. Designed: domain policies, join requests, the onboarding fork, account and organization lifecycle, sign-up events, the region field |
+| Status | Accepted (2026-10-15). Implemented: the `SIGNUP_MODE` ceiling with the start-up guards and the console lock; verification of every self-registered account under `domain`/`open`; the policy split (`accounts` and `mode`) with the `domain_account` and `sso_required` admission outcomes; domain sign-up policies (join policy, role, discoverable, SSO required, block new organizations, subdomains, the notice to existing accounts) with the owner settings API; the onboarding options and accept API with opaque per-account references, join requests and the organization's inbox. Designed: domain policies, join requests, the onboarding fork, account and organization lifecycle, sign-up events, the region field |
 | Scope | api, web, deployment |
 | Related | RFC-022 (admin console), RFC-025 (user onboarding), RFC-079 (console platform settings), RFC-095 (role templates and invitations) |
 
@@ -39,8 +39,8 @@ provider, its directory, or an invitation sent to that exact address). None of t
 organization.
 
 **`domain` today.** With `accounts: domain`, an address on a domain whose owner set `join_policy`
-to `approval` or `auto` may create an account; joining the organization after verification
-arrives with join requests (step 5). Organization self-service stays locked. It already requires the platform e-mail at start, so a deployment
+to `approval` or `auto` may create an account; after verification the onboarding offers that organization
+(join at once or ask to join). Organization self-service stays locked. It already requires the platform e-mail at start, so a deployment
 that sets it is ready when those steps arrive.
 
 ## 3. Start-up guards

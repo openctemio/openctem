@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/onboarding"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -27,7 +28,9 @@ import (
 
 // LocalAuthHandler handles local authentication requests.
 type LocalAuthHandler struct {
-	authService    *auth.AuthService
+	authService *auth.AuthService
+	// onboarding serves the fork of an account without an organization.
+	onboarding     *onboarding.Service
 	sessionService *auth.SessionService
 	emailService   *auth.EmailService
 	platformAdmin  PlatformAdminChecker
