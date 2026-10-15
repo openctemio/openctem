@@ -68,8 +68,11 @@ func TestCIRunner_AggregateRun(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, out := join(map[string]any{"job_id": "70" + string(rune('0'+i)), "pipeline_id": "1003"}, sha)
+			code, out := join(map[string]any{"job_id": "70" + string(rune('0'+i)), "pipeline_id": "1003"}, sha)
 			ids[i], _ = out["run_id"].(string)
+			if ids[i] == "" {
+				t.Logf("racing job %d: %d %v", i, code, out)
+			}
 		}(i)
 	}
 	wg.Wait()
