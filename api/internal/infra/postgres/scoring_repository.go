@@ -397,6 +397,43 @@ func (r *ScoringRepository) EnqueueIntelChanges(ctx context.Context) (int64, err
 	return total, nil
 }
 
+// SavePriorities writes what a finding-priority pass computed, and only
+// that: class and reason (unless a person overrode the class), derived
+// reachability, the EPSS / KEV enrichment and the SLA deadline and status.
+// Only a finding that is still open is written, so a finding closed while
+// the pass ran stays frozen, and no other column (status, assignee, ...) a
+// concurrent edit may have changed is overwritten. Returns how many rows
+// were written.
+func (r *ScoringRepository) SavePriorities(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) (int, error) {
+	q := `
+		UPDATE findings SET
+			priority_class = CASE WHEN priority_class_override THEN priority_class ELSE $3 END,
+			priority_class_reason = CASE WHEN priority_class_override THEN priority_class_reason ELSE $4 END,
+			is_reachable = $5, reachable_from_count = $6,
+			epss_score = $7, epss_percentile = $8, is_in_kev = $9, kev_due_date = $10,
+			sla_deadline = $11, sla_status = $12,
+			updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND ` + vulnerability.OpenStatusSQL("status")
+	saved := 0
+	for _, f := range findings {
+		if f == nil {
+			continue
+		}
+		res, err := r.db.ExecContext(ctx, q, tenantID.String(), f.ID().String(),
+			nullPriorityClass(f.PriorityClass()), nullString(f.PriorityClassReason()),
+			f.IsReachable(), f.ReachableFromCount(),
+			nullFloat64(f.EPSSScore()), nullFloat64(f.EPSSPercentile()), f.IsInKEV(), nullTime(f.KEVDueDate()),
+			nullTime(f.SLADeadline()), string(f.SLAStatus()))
+		if err != nil {
+			return saved, fmt.Errorf("save finding priority: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			saved++
+		}
+	}
+	return saved, nil
+}
+
 // tenantIDs lists every tenant id.
 func (r *ScoringRepository) tenantIDs(ctx context.Context) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id FROM tenants ORDER BY id`)
