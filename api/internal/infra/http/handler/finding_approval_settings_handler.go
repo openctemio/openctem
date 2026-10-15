@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -91,10 +93,28 @@ func (h *VulnerabilityHandler) SelfApproveApproval(w http.ResponseWriter, r *htt
 // settings.
 type FindingApprovalSettingsResponse struct {
 	BackupContactEmail string `json:"backup_contact_email"`
+	// FPApproval is the false-positive approval level in force: all,
+	// high_and_above or off.
+	FPApproval string `json:"fp_approval" enums:"all,high_and_above,off"`
+	// PendingFPApproval is a lower level that takes effect at
+	// PendingFPApprovalAt (a lowering waits 24 hours).
+	PendingFPApproval   string  `json:"pending_fp_approval,omitempty"`
+	PendingFPApprovalAt *string `json:"pending_fp_approval_at,omitempty"`
+	SecondLookPercent   int     `json:"second_look_percent"`
 }
 
 func toFindingApprovalSettingsResponse(s *tenantdom.FindingApprovalSettings) FindingApprovalSettingsResponse {
-	return FindingApprovalSettingsResponse{BackupContactEmail: s.BackupContactEmail}
+	now := time.Now()
+	out := FindingApprovalSettingsResponse{
+		BackupContactEmail: s.BackupContactEmail,
+		FPApproval:         s.EffectiveFPApproval(now),
+		SecondLookPercent:  s.SecondLookPercent,
+	}
+	if s.PendingFPApproval != "" && s.PendingFPApprovalAt != nil && now.Before(*s.PendingFPApprovalAt) {
+		at := s.PendingFPApprovalAt.UTC().Format(time.RFC3339)
+		out.PendingFPApproval, out.PendingFPApprovalAt = s.PendingFPApproval, &at
+	}
+	return out
 }
 
 // GetFindingApprovalSettings handles GET /organization/settings/finding-approvals.
@@ -116,6 +136,10 @@ func (h *VulnerabilityHandler) GetFindingApprovalSettings(w http.ResponseWriter,
 // keeps its value.
 type UpdateFindingApprovalSettingsRequest struct {
 	BackupContactEmail *string `json:"backup_contact_email" validate:"omitempty,max=254"`
+	// FPApproval: all, high_and_above or off. A lower level than the one in
+	// force takes effect 24 hours later; a higher one at once.
+	FPApproval        *string `json:"fp_approval" validate:"omitempty,oneof=all high_and_above off"`
+	SecondLookPercent *int    `json:"second_look_percent" validate:"omitempty,min=0,max=10"`
 }
 
 // UpdateFindingApprovalSettings handles PUT /organization/settings/finding-approvals
@@ -137,9 +161,17 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 		return
 	}
 	tenantID := middleware.GetTenantID(r.Context())
-	_, after, err := h.approvalSettings.UpdateFindingApprovalSettings(r.Context(), tenantID, func(s *tenantdom.FindingApprovalSettings) error {
+	before, after, err := h.approvalSettings.UpdateFindingApprovalSettings(r.Context(), tenantID, func(s *tenantdom.FindingApprovalSettings) error {
 		if req.BackupContactEmail != nil {
 			s.BackupContactEmail = *req.BackupContactEmail
+		}
+		if req.FPApproval != nil {
+			if err := s.SetFPApproval(*req.FPApproval, time.Now()); err != nil {
+				return err
+			}
+		}
+		if req.SecondLookPercent != nil {
+			s.SecondLookPercent = *req.SecondLookPercent
 		}
 		return nil
 	}, configAuditContext(r))
@@ -147,8 +179,51 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 		h.handleServiceError(w, err, "finding approval settings")
 		return
 	}
+	body := "An administrator changed how this organization approves finding decisions. Review the change in Settings."
+	resp := toFindingApprovalSettingsResponse(after)
+	if resp.PendingFPApproval != "" && resp.PendingFPApproval != toFindingApprovalSettingsResponse(before).PendingFPApproval {
+		body = fmt.Sprintf("An administrator lowered the false-positive approval level to %q. It takes effect at %s unless it is raised again before then.",
+			resp.PendingFPApproval, *resp.PendingFPApprovalAt)
+	}
 	h.service.NotifyApprovalSettingsChanged(r.Context(), tenantID, middleware.GetUserID(r.Context()),
-		"Finding approval settings changed", "An administrator changed how this organization approves finding decisions. Review the change in Settings.")
+		"Finding approval settings changed", body)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toFindingApprovalSettingsResponse(after))
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// FalsePositivePolicyResponse is how a false positive on one finding is
+// decided now.
+type FalsePositivePolicyResponse struct {
+	FPApproval string `json:"fp_approval"`
+	// SinglePerson: a holder of findings:approve may mark this finding a
+	// false positive alone (it applies at once, a closure reason and a note
+	// still required). CanDecideAlone adds that the caller holds it.
+	SinglePerson        bool    `json:"single_person"`
+	CanDecideAlone      bool    `json:"can_decide_alone"`
+	Material            bool    `json:"material"`
+	PendingFPApproval   string  `json:"pending_fp_approval,omitempty"`
+	PendingFPApprovalAt *string `json:"pending_fp_approval_at,omitempty"`
+}
+
+// GetFalsePositivePolicy handles GET /findings/{id}/approvals/policy
+// (findings:read; the finding must be in the caller's data scope).
+func (h *VulnerabilityHandler) GetFalsePositivePolicy(w http.ResponseWriter, r *http.Request) {
+	d, err := h.service.FalsePositivePolicy(r.Context(), middleware.GetTenantID(r.Context()), r.PathValue("id"))
+	if err != nil {
+		h.handleServiceError(w, err, "finding")
+		return
+	}
+	out := FalsePositivePolicyResponse{
+		FPApproval:        d.Level,
+		SinglePerson:      d.SinglePerson,
+		CanDecideAlone:    d.SinglePerson && middleware.HasPermission(r.Context(), permission.FindingsApprove.String()),
+		Material:          d.Material,
+		PendingFPApproval: d.PendingLevel,
+	}
+	if d.PendingAt != nil {
+		at := d.PendingAt.UTC().Format(time.RFC3339)
+		out.PendingFPApprovalAt = &at
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
