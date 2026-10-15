@@ -81,6 +81,7 @@ func TestBulkResolve_WithVerify_RecordsMethodAndActor(t *testing.T) {
 	res, err := svc.BulkUpdateFindingsStatus(context.Background(), tenantID.String(), BulkUpdateStatusInput{
 		FindingIDs:          []string{f.ID().String()},
 		Status:              vulnerability.FindingStatusResolved.String(),
+		Resolution:          "patched in 4.2", // an attested close carries a note
 		ActorID:             actor.String(),
 		HasVerifyPermission: true,
 	})
@@ -108,6 +109,10 @@ func TestBulkFixApplied_WithoutVerify_StillAllowed(t *testing.T) {
 	res, err := newBulkTestService(repo).BulkUpdateFindingsStatus(context.Background(), tenantID.String(), BulkUpdateStatusInput{
 		FindingIDs: []string{f.ID().String()},
 		Status:     vulnerability.FindingStatusFixApplied.String(),
+		// A fix claim is a person's, with findings:fix_apply and a note.
+		Resolution:            "patched",
+		ActorID:               shared.NewID().String(),
+		HasFixApplyPermission: true,
 	})
 	if err != nil || res.Updated != 1 {
 		t.Fatalf("bulk fix_applied without verify = %+v, %v; want 1 updated", res, err)

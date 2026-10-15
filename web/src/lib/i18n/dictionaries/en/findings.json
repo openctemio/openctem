@@ -62,7 +62,9 @@
   "findings.fixCard.copySnippet": "Copy {label} snippet",
   "findings.fixCard.directDep": "Direct dependency",
   "findings.fixCard.transitiveDep": "Transitive dependency",
-  "findings.fixCard.inFile": "in {file}",
+  "findings.fixCard.transitiveVia": "Transitive via {path}",
+  "findings.fixCard.inPrefix": "in",
+  "findings.fixCard.openLockfile": "Open the lock file at this line",
   "findings.fixCard.upgrade": "Upgrade",
   "findings.fixCard.to": "to",
   "findings.fixCard.alsoFixedIn": "Also fixed in",
@@ -950,5 +952,13 @@
   "findings.typePanel.location": "Location",
   "findings.typePanel.history": "History",
   "findings.typePanel.historyOnly": "Only in the repository history, not in the current files",
-  "findings.typePanel.httpEvidence": "HTTP evidence"
+  "findings.typePanel.httpEvidence": "HTTP evidence",
+  "findings.statusNote.title.fix_applied": "Mark fix applied",
+  "findings.statusNote.title.resolved": "Resolve finding",
+  "findings.statusNote.desc.fix_applied": "Say what was changed. A retest, a covered scan or a security reviewer verifies the fix.",
+  "findings.statusNote.desc.resolved": "Say how the fix was verified. Without the verification checklist the close is recorded as attested by you.",
+  "findings.statusNote.label": "Note (required)",
+  "findings.statusNote.placeholder": "e.g. Upgraded the library to 4.2 in release 2026.10",
+  "findings.statusNote.confirm": "Save",
+  "findings.statusNote.cancel": "Cancel"
 }
