@@ -14,6 +14,7 @@ import (
 	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -184,11 +185,16 @@ func (h *FindingActionHandler) updateStatus(ctx context.Context, input *ActionIn
 		// Get optional resolution from config
 		resolution, _ := input.ActionConfig["resolution"].(string)
 
-		// Use the actual UpdateFindingStatus method from finding.VulnerabilityService
-		_, err := h.vulnerabilityService.UpdateFindingStatus(ctx, findingID, input.TenantID.String(), finding.UpdateFindingStatusInput{
+		// The workflow is the actor, not a person: the move and its timeline
+		// entry (actor "workflow:<id>") commit together. Before, the actor id
+		// "workflow:<uuid>" was passed as a user id and the entry failed.
+		moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+			Source: "workflow", Reason: "workflow_action", ActorName: "workflow:" + input.WorkflowID.String(),
+			Message: resolution, Changes: map[string]any{"workflow_id": input.WorkflowID.String()},
+		})
+		_, err := h.vulnerabilityService.UpdateFindingStatus(moveCtx, findingID, input.TenantID.String(), finding.UpdateFindingStatusInput{
 			Status:     status,
 			Resolution: resolution,
-			ActorID:    "workflow:" + input.WorkflowID.String(),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to update finding status: %w", err)

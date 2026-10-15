@@ -677,7 +677,11 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 		resolution = input.Note
 	}
 
-	count, err := s.findingRepo.BulkUpdateStatusByFilter(ctx, tid, input.Filter,
+	// Each verified finding gets its timeline entry in the same transaction.
+	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+		Source: string(vulnerability.SourceAPI), Reason: "verified_by_filter", ActorType: "user", ActorID: uid.String(), Message: resolution,
+	})
+	count, err := s.findingRepo.BulkUpdateStatusByFilter(moveCtx, tid, input.Filter,
 		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.ResolutionMethodSecurityReviewed)
 	if err != nil {
 		return 0, fmt.Errorf("failed to verify findings: %w", err)
@@ -715,7 +719,10 @@ func (s *FindingActionsService) BulkRejectByFilter(
 		return 0, err
 	}
 
-	count, err := s.findingRepo.BulkUpdateStatusByFilter(ctx, tid, input.Filter,
+	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+		Source: string(vulnerability.SourceAPI), Reason: "fix_rejected_by_filter", ActorType: "user", ActorID: uid.String(), Message: input.Reason,
+	})
+	count, err := s.findingRepo.BulkUpdateStatusByFilter(moveCtx, tid, input.Filter,
 		vulnerability.FindingStatusInProgress, input.Reason, &uid, "")
 	if err != nil {
 		return 0, fmt.Errorf("failed to reject findings: %w", err)
@@ -824,7 +831,14 @@ func (s *FindingActionsService) AutoAssignToOwners(
 				_ = f.TransitionStatus(vulnerability.FindingStatusInProgress, "", nil)
 			}
 
-			if err := s.findingRepo.Update(ctx, f); err != nil {
+			// The automatic move to in_progress writes its timeline entry in
+			// the same transaction as the assignment.
+			moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+				Source: "auto_assign", Reason: "assigned_to_owner", ActorType: "user", ActorID: aid.String(),
+				Message: "Assigned to the asset owner: work started",
+				Changes: map[string]any{"assigned_to": info.ownerID.String()},
+			})
+			if err := s.findingRepo.Update(moveCtx, f); err != nil {
 				s.logger.Warn("failed to assign finding", "finding_id", f.ID(), "error", err)
 				continue
 			}
