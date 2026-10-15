@@ -262,12 +262,14 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatal("exchange not audited")
 	}
 
-	// The same OIDC token twice: replay.
-	if code, _ := r.exchange(r.tenant, mainTok); code != http.StatusUnauthorized {
-		t.Fatalf("replayed token: %d", code)
+	// The same OIDC token again (an answer lost, a second step of the job):
+	// a fresh upload token for the SAME run; the first token keeps working.
+	code, reEx := r.exchange(r.tenant, mainTok)
+	if code != http.StatusCreated || reEx["run_id"] != runID || reEx["token"] == token {
+		t.Fatalf("re-exchanged token: %d %v, want a new token for run %s", code, reEx, runID)
 	}
-	if r.auditCount(r.tenant, "ci_run.token_refused", "replay") != 1 {
-		t.Fatal("replay not audited")
+	if r.auditCount(r.tenant, "ci_run.token_issued", `"token_exchanges": 2`) != 1 {
+		t.Fatal("re-exchange not audited with its count")
 	}
 	// Another repository, an unlisted branch, a fork-capable event: refused and audited.
 	if code, _ := r.exchange(r.tenant, r.idp.token(t, aud, "evil/api", "main", sha1, nil)); code != http.StatusUnauthorized {

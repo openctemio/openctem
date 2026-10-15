@@ -73,11 +73,21 @@ func (s *Service) applyActiveRules(ctx context.Context, tenantID shared.ID, find
 }
 
 // KnownFindings returns, for the report a run just uploaded, the results that
-// carry a decision the gate honors, by their index in that report. Only
-// findings on the run's repository are read, so a job learns nothing beyond
-// the results it reported. A lookup failure returns none: the job then shows
-// every result, which is safe.
-func (s *Service) KnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) []cirun.KnownFinding {
+// carry a decision the gate honors, by their index in that report, at most
+// the configured limit (lowest indexes first), and how many there are in
+// all. Only findings on the run's repository are read, so a job learns
+// nothing beyond the results it reported. A lookup failure returns none: the
+// job then shows every result, which is safe.
+func (s *Service) KnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) ([]cirun.KnownFinding, int) {
+	known := s.allKnownFindings(ctx, run, out)
+	total := len(known)
+	if limit := s.cfg.knownLimit(); total > limit {
+		known = known[:limit]
+	}
+	return known, total
+}
+
+func (s *Service) allKnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) []cirun.KnownFinding {
 	if run == nil || out == nil || len(out.FingerprintsByIndex) == 0 {
 		return nil
 	}
