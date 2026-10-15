@@ -750,6 +750,14 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 	// Apply-time guard: whatever the mapping says, a ticket never closes a
 	// finding (no verify gate, no approval, no person). FindingStatusForJira
 	// already refuses these; this keeps the rule if the mapping code changes.
+	ticket := vulnerability.TransitionActor{Kind: vulnerability.TransitionActorTicket}
+	facts := vulnerability.TransitionFacts{Status: finding.Status(), Source: finding.Source(), Severity: finding.Severity()}
+	if d := vulnerability.EvaluateTransition(facts, ticket, newFindingStatus); !d.Allowed {
+		s.logger.Warn("jira webhook: the transition engine refused the move",
+			"finding_id", finding.ID().String(), "current_status", finding.Status(),
+			"target_status", logger.SanitizeValue(string(newFindingStatus)), "error", d.Err())
+		return nil
+	}
 	if !newFindingStatus.IsTicketInboundTarget() {
 		s.logger.Warn("jira webhook: refused a closing status from a ticket",
 			"issue_key", logger.SanitizeValue(payload.Issue.Key), "target_status", logger.SanitizeValue(string(newFindingStatus)))
