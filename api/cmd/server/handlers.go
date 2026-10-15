@@ -285,6 +285,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetProvenanceLister(repos.Finding)
 	vulnHandler.SetPackageFixLister(repos.Finding)
 	vulnHandler.SetIntelFeeds(repos.ThreatIntel.EPSS(), repos.ThreatIntel.KEV())
+	// The approvals inbox names each requester from this tenant's members.
+	vulnHandler.SetApprovalMemberNamer(postgres.NewScopeActorRepository(deps.DB))
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
