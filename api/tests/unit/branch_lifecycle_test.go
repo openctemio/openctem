@@ -129,11 +129,11 @@ func (m *MockFindingRepoForLifecycle) BatchCountByAssetIDs(ctx context.Context, 
 
 // Security: UpdateStatusBatch now requires tenantID for tenant isolation
 // AcceptUntil records an accept like UpdateStatusBatch does.
-func (m *MockFindingRepoForLifecycle) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
-	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+func (m *MockFindingRepoForLifecycle) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID, _ vulnerability.ClosureReason) error {
+	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, vulnerability.Closure{})
 }
 
-func (m *MockFindingRepoForLifecycle) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.ResolutionMethod) error {
+func (m *MockFindingRepoForLifecycle) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.Closure) error {
 	return nil
 }
 
@@ -388,7 +388,7 @@ func (m *MockFindingRepoForLifecycle) ListFindingGroups(_ context.Context, _ sha
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *MockFindingRepoForLifecycle) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
+func (m *MockFindingRepoForLifecycle) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) (int64, error) {
 	return 0, nil
 }
 

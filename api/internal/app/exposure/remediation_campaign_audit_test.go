@@ -159,7 +159,12 @@ func TestCampaignAudit_CompleteWithOpenFindingsRecordsLiveOpenCount(t *testing.T
 	}
 	// One finding closed since the last refresh: completion must see it.
 	counter.resolved = 1
-	got, err := svc.UpdateCampaignStatus(ctx, tid, cid, "completed", actor)
+	// Not done: refused unless the person explicitly closes it with open
+	// members.
+	if _, err := svc.UpdateCampaignStatus(ctx, tid, cid, "completed", actor); !errors.Is(err, remediation.ErrCampaignNotDone) {
+		t.Fatalf("complete without the override = %v, want ErrCampaignNotDone", err)
+	}
+	got, err := svc.UpdateCampaignStatusAt(ctx, tid, cid, "completed", CampaignStatusOptions{CloseWithOpenMembers: true}, actor)
 	if err != nil {
 		t.Fatalf("complete: %v", err)
 	}
@@ -179,6 +184,9 @@ func TestCampaignAudit_CompleteWithOpenFindingsRecordsLiveOpenCount(t *testing.T
 	}
 	if completed == nil {
 		t.Fatalf("no completion audit event; got %v", rec.actions())
+	}
+	if completed.Metadata["trigger"] != "manual_with_open_members" {
+		t.Errorf("trigger = %v, want manual_with_open_members", completed.Metadata["trigger"])
 	}
 	if completed.Metadata["open_findings"] != 3 {
 		t.Errorf("open_findings = %v, want 3", completed.Metadata["open_findings"])
