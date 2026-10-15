@@ -1433,6 +1433,7 @@
   "scans.ci.reason.override": "Break-glass",
   "scans.ci.reason.no_baseline": "No baseline",
   "scans.ci.reason.secret_pre_existing": "Secret already on the default branch",
+  "scans.ci.reason.too_many_findings": "Too many findings to judge",
   "scans.ci.feedback.tab": "Pull request feedback",
   "scans.ci.feedback.description": "OpenCTEM posts each verdict as the \"OpenCTEM gate\" check (GitHub) or commit status (GitLab) and keeps one comment on the pull or merge request. The check of a commit takes the strictest verdict of every pipeline on it. Make the check required in branch protection and set its expected source to the OpenCTEM app: any other source, such as a workflow's own token, could post a check with the same name.",
   "scans.ci.feedback.github": "GitHub App",
