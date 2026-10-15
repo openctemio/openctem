@@ -284,6 +284,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
 	}
 	vulnHandler.SetFindingCorrelations(repos.FindingCorrelation)
+	vulnHandler.SetProvenanceLister(repos.Finding)
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
