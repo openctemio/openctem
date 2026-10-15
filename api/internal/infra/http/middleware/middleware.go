@@ -169,6 +169,9 @@ func LoggerWithConfig(log *logger.Logger, cfg LoggerConfig) func(http.Handler) h
 				"duration", duration,
 				"request_id", GetRequestID(r.Context()),
 				"remote_addr", r.RemoteAddr,
+				// The address the audit log and the per-address limits use
+				// (trusted-proxy rule applied), so an operator can check it.
+				"client_ip", getClientIP(r),
 				"user_agent", logUserAgent(r.UserAgent()),
 			}
 
