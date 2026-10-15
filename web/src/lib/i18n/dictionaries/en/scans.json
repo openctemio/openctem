@@ -1825,5 +1825,19 @@
   "scans.ci.trust.legacyAudience": "Pipelines that existed before may still use the old audience {value} until {until}, until they use the new one once. Update their pipeline to the current snippet.",
   "scans.ci.hint.pipelines.one": "1 CI pipeline reports through CI/CD",
   "scans.ci.hint.pipelines.other": "{count} CI pipelines report through CI/CD",
-  "scans.ci.hint.failing": "{count} failing gate"
+  "scans.ci.hint.failing": "{count} failing gate",
+  "scans.ci.trust.manageScope": "Trust and add to scope",
+  "scans.ci.trust.manageScopeHint": "Each owner or repository becomes a repository scope entry (for example gitlab.com/your-group/*), kept in step with this trust and removed with it. The entries follow your organization's scope approval rules.",
+  "scans.ci.trust.manageScopeNoPermission": "Adding repositories to scope needs the scope write permission.",
+  "scans.ci.trust.scope.title": "In scope",
+  "scans.ci.trust.scope.seen": "Seen in a verified pipeline",
+  "scans.ci.trust.scope.seenHint": "A verified pipeline of {repository} ran under this trust on {at}.",
+  "scans.ci.trust.scope.notSeen": "No verified pipeline yet",
+  "scans.ci.trust.scope.missing": "Not in scope: the entry could not be added (see the audit log) or is waiting for approval.",
+  "scans.ci.trust.scope.removed": "Removed from scope by a person on {at}; this trust will not add it again.",
+  "scans.ci.trust.scope.off": "Scope: not added (Trust and add to scope is off).",
+  "scans.ci.trust.scope.disabled": "Scope: none while the trust is disabled.",
+  "scans.ci.trust.scope.adopt": "Add these repositories to scope",
+  "scans.ci.trust.scope.adopted": "Repositories added to scope",
+  "scans.ci.trust.scope.seenHintNoRepo": "A verified pipeline ran under this trust on {at}."
 }
