@@ -77,7 +77,8 @@ export function ApprovalDialog({
   const [step, setStep] = useState<'input' | 'confirm'>('input')
   const { trigger: requestApproval, isMutating } = useRequestApproval(findingId)
 
-  const statusLabel = FINDING_STATUS_CONFIG[targetStatus]?.label || targetStatus
+  const statusConfig = FINDING_STATUS_CONFIG[targetStatus]
+  const statusLabel = statusConfig ? t(statusConfig.labelKey, statusConfig.label) : targetStatus
   const showExpiryPicker = targetStatus === 'accepted'
   const minDate = acceptanceDate(1)
   const maxDate = capDays >= 365 ? acceptanceDate(0, 1) : acceptanceDate(capDays)
