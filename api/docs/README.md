@@ -58,6 +58,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Sensors](architecture/sensors.md), [sensor identity](architecture/agent-identity.md), [sensor pairing](architecture/sensor-pairing.md), [sensor ↔ platform trust](architecture/sensor-platform-trust.md), [signed jobs](architecture/job-signing.md), [result binding](architecture/sensor-result-binding.md)
 - [Scan lifecycle](architecture/scan-lifecycle.md), [scan orchestration](architecture/scan-orchestration.md), [scan stages](architecture/scan-stages.md), [scan zones](architecture/scan-zones.md), [placement](architecture/placement.md), [scan naming](architecture/scan-naming.md)
 - [Tool contract](architecture/tool-contract.md), [tool availability](architecture/tool-availability.md), [secret scanning](architecture/secret-scanning.md)
+- [Content packs](architecture/content-packs.md), [content catalog](architecture/content-catalog.md): signed content packages, offline import, installs and revocation
 - [Platform contracts](architecture/platform-contracts.md): the platform depends on contracts only, never on a sensor or the SDK
 - [CI runner identity and gate](architecture/ci-runner-identity.md), [shift-left CI scanning](architecture/shift-left-ci-scanning.md), [branch-only findings](architecture/branch-only-findings.md)
 - [Scan coverage (Tenable)](architecture/scan-coverage.md), [Tenable.sc connector](architecture/tenable-sc-connector.md)
