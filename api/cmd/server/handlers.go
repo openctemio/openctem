@@ -292,6 +292,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// secondary provider on the same create-ticket endpoint.
 	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
+	var ticketMappingHandler *handler.TicketMappingHandler
+	if svc.TicketMapping != nil {
+		ticketMappingHandler = handler.NewTicketMappingHandler(svc.TicketMapping, svc.Audit, log)
+	}
 	// Inbound Jira deliveries: the integration in the URL and its own secret
 	// authenticate them; replays are ignored for 24 hours (all replicas).
 	jiraWebhookHandler.SetDeliveryVerifier(svc.Integration)
@@ -469,6 +473,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}(),
 		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:          jiraWebhookHandler,
+		TicketMapping:        ticketMappingHandler,
 		GitHubWebhook:        githubWebhookHandler,
 		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
