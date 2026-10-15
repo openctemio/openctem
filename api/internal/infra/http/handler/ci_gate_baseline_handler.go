@@ -64,7 +64,7 @@ func (h *CIAdminHandler) baselineRepository(w http.ResponseWriter, r *http.Reque
 	return tenantID, id, true
 }
 
-// GetGateBaseline handles GET /api/v1/ci/repositories/{id}/gate-baseline
+// GetGateBaseline handles GET /api/v1/ci/gate-baselines/{id}
 // @Summary      A repository's CI gate baseline
 // @Description  The findings open on the repository's default branch when an administrator recorded them. A default-branch run is judged against it only; 404 when none is recorded (every finding of a default-branch run counts as new) or the repository is outside the caller's data scope.
 // @Tags         CI
@@ -73,7 +73,7 @@ func (h *CIAdminHandler) baselineRepository(w http.ResponseWriter, r *http.Reque
 // @Param        id path string true "Repository asset ID"
 // @Success      200  {object}  CIGateBaselineResponse
 // @Failure      404  {object}  apierror.Error
-// @Router       /ci/repositories/{id}/gate-baseline [get]
+// @Router       /ci/gate-baselines/{id} [get]
 func (h *CIAdminHandler) GetGateBaseline(w http.ResponseWriter, r *http.Request) {
 	tenantID, id, ok := h.baselineRepository(w, r)
 	if !ok {
@@ -87,7 +87,7 @@ func (h *CIAdminHandler) GetGateBaseline(w http.ResponseWriter, r *http.Request)
 	ciWriteJSON(w, http.StatusOK, toCIGateBaseline(b))
 }
 
-// SetGateBaseline handles POST /api/v1/ci/repositories/{id}/gate-baseline
+// SetGateBaseline handles PUT /api/v1/ci/gate-baselines/{id}
 // @Summary      Record a repository's CI gate baseline now
 // @Description  Records the findings open now on the repository's default branch; they stop failing default-branch runs and the gate then blocks only findings new since. Replaces an earlier baseline. Needs a recent sign-in; audited at high severity and announced to the administrators. Nothing a CI job sends can record or change a baseline.
 // @Tags         CI
@@ -97,7 +97,7 @@ func (h *CIAdminHandler) GetGateBaseline(w http.ResponseWriter, r *http.Request)
 // @Success      200  {object}  CIGateBaselineResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
-// @Router       /ci/repositories/{id}/gate-baseline [post]
+// @Router       /ci/gate-baselines/{id} [put]
 func (h *CIAdminHandler) SetGateBaseline(w http.ResponseWriter, r *http.Request) {
 	tenantID, id, ok := h.baselineRepository(w, r)
 	if !ok {
@@ -111,7 +111,7 @@ func (h *CIAdminHandler) SetGateBaseline(w http.ResponseWriter, r *http.Request)
 	ciWriteJSON(w, http.StatusOK, toCIGateBaseline(b))
 }
 
-// DeleteGateBaseline handles DELETE /api/v1/ci/repositories/{id}/gate-baseline
+// DeleteGateBaseline handles DELETE /api/v1/ci/gate-baselines/{id}
 // @Summary      Remove a repository's CI gate baseline
 // @Description  Every finding of a default-branch run counts as new again (stricter). Audited.
 // @Tags         CI
@@ -119,7 +119,7 @@ func (h *CIAdminHandler) SetGateBaseline(w http.ResponseWriter, r *http.Request)
 // @Param        id path string true "Repository asset ID"
 // @Success      204
 // @Failure      404  {object}  apierror.Error
-// @Router       /ci/repositories/{id}/gate-baseline [delete]
+// @Router       /ci/gate-baselines/{id} [delete]
 func (h *CIAdminHandler) DeleteGateBaseline(w http.ResponseWriter, r *http.Request) {
 	tenantID, id, ok := h.baselineRepository(w, r)
 	if !ok {
