@@ -17,8 +17,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -66,20 +64,10 @@ func (s *AuthService) outsideMemberPrivileged(ctx context.Context, m *tenantdom.
 	if s.roleService == nil {
 		return false, nil
 	}
-	roles, err := s.roleService.GetUserRoles(ctx, tid.String(), userID.String())
+	// Effective grants: direct roles and team role bindings alike.
+	above, err := s.roleService.HoldsAboveMember(ctx, tid.String(), userID.String())
 	if err != nil {
-		return false, fmt.Errorf("failed to load roles for the outside member policy: %w", err)
+		return false, fmt.Errorf("failed to load grants for the outside member policy: %w", err)
 	}
-	for _, r := range roles {
-		if r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID ||
-			permission.IsAboveMember(r.Permissions(), r.HasFullDataAccess()) {
-			return true, nil
-		}
-	}
-	// Full data access may also come through a team's role binding.
-	full, err := s.roleService.HasFullDataAccess(ctx, tid.String(), userID.String())
-	if err != nil {
-		return false, fmt.Errorf("failed to load full data access for the outside member policy: %w", err)
-	}
-	return full, nil
+	return above, nil
 }

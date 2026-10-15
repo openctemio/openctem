@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	branchdom "github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -172,24 +173,70 @@ func (s *IntegrationService) SyncAllConnectedSCMIntegrations(ctx context.Context
 	return total, nil
 }
 
+// RepositoryIdentity finds a repository asset by the code host's immutable
+// repository id and renames it (postgres.RepositoryIdentityRepository).
+type RepositoryIdentity interface {
+	FindRepositoryByProviderID(ctx context.Context, tenantID shared.ID, host, repoID string) (shared.ID, bool, error)
+	RenameRepositoryAsset(ctx context.Context, tenantID, assetID shared.ID, name string) (bool, error)
+}
+
+// SetRepositoryIdentity makes repository import find a repository by its
+// code host id first and name new assets host/path, the name CI uses, so one
+// repository is one asset whichever reports it first. Without it import
+// dedups by full name only.
+func (s *IntegrationService) SetRepositoryIdentity(r RepositoryIdentity) { s.repoIdentity = r }
+
 // upsertRepositoryAsset creates (or refreshes) a repository asset + extension
 // from an SCM repository DTO. Returns created=true on first import.
+//
+// One repository is one asset, keyed by the code host and its immutable
+// repository id: the asset is found by that id first (a renamed or
+// transferred repository, or one CI reported first), then by full name (an
+// asset imported before), then by its host/path name (created by CI). A new
+// asset is named host/path, and an existing one is renamed to it when the
+// name is free.
 func (s *IntegrationService) upsertRepositoryAsset(ctx context.Context, tenantID shared.ID, r scm.Repository) (bool, error) {
 	visibility := assetdom.RepoVisibilityPublic
 	if r.IsPrivate {
 		visibility = assetdom.RepoVisibilityPrivate
 	}
-
-	// Dedup by full name within the tenant — refresh metadata if it exists.
-	if existing, _ := s.repoExtRepo.GetByFullName(ctx, tenantID, r.FullName); existing != nil {
-		applyRepoFields(existing, r, visibility)
-		if err := s.repoExtRepo.Update(ctx, existing); err != nil {
+	canonical, host := canonicalRepositoryName(r)
+	refresh := func(ext *assetdom.RepositoryExtension) (bool, error) {
+		applyRepoFields(ext, r, visibility)
+		if err := s.repoExtRepo.Update(ctx, ext); err != nil {
 			return false, fmt.Errorf("update repository extension: %w", err)
 		}
+		s.renameToCanonical(ctx, tenantID, ext.AssetID(), canonical)
 		return false, nil
 	}
 
-	a, err := assetdom.NewAssetWithTenant(tenantID, r.FullName, assetdom.AssetTypeRepository, assetdom.CriticalityMedium)
+	if s.repoIdentity != nil && canonical != "" && r.ID != "" {
+		id, found, err := s.repoIdentity.FindRepositoryByProviderID(ctx, tenantID, host, r.ID)
+		if err != nil {
+			return false, err
+		}
+		if found {
+			if ext, _ := s.repoExtRepo.GetByAssetID(ctx, id); ext != nil {
+				return refresh(ext)
+			}
+		}
+	}
+	// Dedup by full name within the tenant — refresh metadata if it exists.
+	if existing, _ := s.repoExtRepo.GetByFullName(ctx, tenantID, r.FullName); existing != nil {
+		return refresh(existing)
+	}
+	name := r.FullName
+	if canonical != "" {
+		name = canonical
+		// A repository CI reported first is already an asset of that name.
+		if a, err := s.assetRepo.GetByName(ctx, tenantID, canonical); err == nil && a != nil && a.Type() == assetdom.AssetTypeRepository {
+			if ext, _ := s.repoExtRepo.GetByAssetID(ctx, a.ID()); ext != nil {
+				return refresh(ext)
+			}
+		}
+	}
+
+	a, err := assetdom.NewAssetWithTenant(tenantID, name, assetdom.AssetTypeRepository, assetdom.CriticalityMedium)
 	if err != nil {
 		return false, fmt.Errorf("new repository asset: %w", err)
 	}
@@ -216,6 +263,32 @@ func (s *IntegrationService) upsertRepositoryAsset(ctx context.Context, tenantID
 		return false, fmt.Errorf("create repository extension: %w", err)
 	}
 	return true, nil
+}
+
+// canonicalRepositoryName is a repository's asset name, its code host and
+// path from its web (else clone) address in lower case
+// ("github.com/acme/api"), and the host; ("", "") without a usable address.
+func canonicalRepositoryName(r scm.Repository) (name, host string) {
+	host, path := cirun.RepositoryFromURL(r.HTMLURL)
+	if host == "" || path == "" {
+		host, path = cirun.RepositoryFromURL(r.CloneURL)
+	}
+	if host == "" || path == "" {
+		return "", ""
+	}
+	return assetdom.NormalizeName(host+"/"+path, assetdom.AssetTypeRepository, ""), host
+}
+
+// renameToCanonical gives an existing repository asset its host/path name
+// when no other asset holds it (best effort: a name held by a duplicate is
+// settled by the duplicate merge).
+func (s *IntegrationService) renameToCanonical(ctx context.Context, tenantID, assetID shared.ID, canonical string) {
+	if s.repoIdentity == nil || canonical == "" {
+		return
+	}
+	if _, err := s.repoIdentity.RenameRepositoryAsset(ctx, tenantID, assetID, canonical); err != nil {
+		s.logger.Warn("repository asset not renamed", "asset_id", assetID.String(), "error", err)
+	}
 }
 
 // applyRepoFields copies SCM repo metadata onto a repository extension.

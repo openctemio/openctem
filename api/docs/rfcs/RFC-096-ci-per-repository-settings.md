@@ -1,4 +1,4 @@
-# RFC-095: CI gate settings per repository
+# RFC-096: CI gate settings per repository
 
 | | |
 |---|---|
