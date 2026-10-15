@@ -18,8 +18,8 @@ a **central gate policy** instead of a flag in each pipeline.
 A CI run is not a sensor row: it has no row in `sensors`, no heartbeat, no
 offline alert and no key to rotate. Its logical identity is the **CI
 pipeline** (one workflow file of one repository, section 10), listed on the
-Sensors page as a sensor in **runner mode**: fresh or stale against its own
-cadence, never offline, never dispatched.
+CI/CD page (never on the Sensors page: a pipeline is not a sensor): fresh or
+stale against its own cadence, never offline, never dispatched.
 
 ```
 CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs (tenant) ──▶ run + octci_ token (≤15 min)
@@ -402,7 +402,7 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | A CI identity receiving work | Pipelines are a separate table with no key and no zone; no claim query reads them |
 | Withdrawn trust | Disabling, deleting or re-pointing a configuration revokes its pipelines and its running runs' tokens at once |
 | Personal data in claims | `user_email` never read; actor login only |
-| Cross-tenant through the fleet union | Each source tenant-scoped; the union adds no query; tests assert another tenant's fleet lists none of the pipelines |
+| Cross-tenant pipeline reads | The pipeline list and detail are tenant-scoped and follow the repository data scope; tests assert another tenant reads and lists none of the pipelines |
 | A report on another asset | `REPORT_OUT_OF_SCOPE`; the `ci_run` binding can change only the repository asset |
 | Baseline poisoning | The baseline branch is server-side (known default branch, else the configuration's); a run's branch comes from the token |
 | SSRF through a self-managed GitLab issuer or a Jenkins issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host; the preview validates the draft before any fetch |
@@ -433,7 +433,7 @@ custom roles).
 | R4 | Remote repository execution by a zoned daemon sensor | Open (needs the executor sandbox and the credential broker) |
 | R5 | Signed runner image, GitHub Action and GitLab component, SARIF upload | Implemented (openctemio/ci) |
 | F1 | CI pipelines: identity, JIT creation, caps, revocation, status, fleet read model (section 10, migration 001084) | Implemented |
-| F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented |
+| F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented, then revised (2026-10-15): pipelines live only on the CI/CD page; Sensors keeps one line linking there (FI-4) |
 | F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6, migration 001099) | Implemented |
 | F4, F5 | Sensor pools; policy timeouts for daemons (section 10.7) | Design only |
 | P1 | Azure Pipelines, Bitbucket Pipelines, CircleCI and Jenkins trust; trust preview (section 3.1, migration 001261) | Implemented |
@@ -464,8 +464,12 @@ ever listed as "offline".
 - **FI-3** Liveness per kind: heartbeat for daemons; for pipelines, freshness
   against the expected cadence. "Offline" is never used for a pipeline.
 - **FI-4** Pipelines live in their own table (`ci_pipelines`) and are never
-  dispatchable: no key, no zone, no claim query reads them. One read model
-  (`GET /api/v1/fleet`) unifies the console.
+  dispatchable: no key, no zone, no claim query reads them. Revised
+  2026-10-15: each kind has one home in the console. Sensors lists the
+  sensors (`GET /api/v1/sensors`), CI/CD lists the pipelines
+  (`GET /api/v1/ci/pipelines`), and Sensors shows only a one-line link with
+  the pipeline count. The earlier union read model, `GET /api/v1/fleet`, made
+  the Sensors page list every pipeline next to the sensors, and was removed.
 - **FI-5** Alerts only on signals (missed schedule, coverage regression,
   opt-in failing gate, outdated runner), never per run (section 10.6).
 - **FI-6** Coverage (repository x capability) is a first-class output
@@ -537,7 +541,6 @@ revocation.
 
 | Endpoint | Permission |
 |---|---|
-| `GET /api/v1/fleet?mode=all\|daemon\|runner` (`role`, `status`, `attention`, `include_inactive`, `search`, paging) | `sensors:read` for daemon rows, `scans:ci:read` (and the scans module) for runner rows; each mode filtered by its own permission, 403 with neither |
 | `GET /api/v1/ci/pipelines` (`status`, `include_inactive`, `provider`, `repository_asset_id`, `search`, paging; status counts) | `scans:ci:read` |
 | `GET /api/v1/ci/pipelines/{id}` (status, branches, default-branch gate trend) | `scans:ci:read` |
 | `GET /api/v1/ci/runs?pipeline_id=` | `scans:ci:read` |

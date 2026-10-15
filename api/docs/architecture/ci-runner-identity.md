@@ -44,8 +44,7 @@ graph TD
 | Repository | `internal/infra/postgres/ci_run_repository.go` |
 | Routes and their chains | `internal/infra/http/routes/ci.go` |
 | Console | `web/src/features/ci-runners`: CI/CD integration page `/ci-cd` (pipelines, runs, coverage; Trust and gate tab, `?tab=setup`; "Connect a pipeline" setup and "Recent refused pipelines" from `GET /api/v1/ci/trust-refusals`); `/ci-runners` and `/runners` redirect to `/ci-cd` |
-| Pipelines: identity, status, fleet rows | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
-| Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
+| Pipelines: identity, status | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
 | Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
 | Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts`, `001144_ci_db_model`, `001145_ci_db_model_validate` |
@@ -67,7 +66,6 @@ Budgets beyond the chains: at most 200 reports per run (`cirun.MaxRunReports`,
 refused at the exchange and audited `pipeline_rate`), 100,000 recorded
 findings per run.
 | `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
-| `GET /api/v1/fleet` | session tenant chain → `sensors:read` or `scans:ci:read`; the handler lists each mode under its own permission (runner rows also need the `scans` module) |
 
 ## Data model
 
@@ -213,12 +211,11 @@ A decision made on the platform holds on the next run of the same repository:
 ## Invariants
 
 - A run never creates a sensor row and has no heartbeat; offline alerts never
-  see it. Its pipeline is listed in the fleet in runner mode and is never
-  offline and never dispatched.
+  see it. Its pipeline is listed on the CI/CD page (never with the sensors)
+  and is never offline and never dispatched.
 - A pipeline is created only at a verified, admitted exchange, keyed by signed
   immutable ids; branch, job and tool labels never create rows.
-- Every fleet source is tenant-scoped and the runner rows follow the data
-  scope; the fleet handler adds no query of its own.
+- Pipeline reads are tenant-scoped and follow the repository data scope.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
 - A run's report changes only its repository asset; the baseline branch is
