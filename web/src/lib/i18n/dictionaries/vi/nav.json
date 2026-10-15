@@ -108,5 +108,6 @@
   "nav.item.business-context": "Bối cảnh kinh doanh",
   "nav.item.threat-model": "Mô hình mối đe dọa",
   "nav.item.scope": "Phạm vi",
-  "nav.item.programs": "Chương trình"
+  "nav.item.programs": "Chương trình",
+  "nav.item.approvals": "Phê duyệt"
 }
