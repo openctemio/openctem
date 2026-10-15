@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
@@ -113,6 +114,17 @@ func run() int {
 	for _, w := range cfg.WideTrustedProxies() {
 		log.Warn("SECURITY: a trusted-proxy range covers more than 16 addresses; every host in it can set the client IP (rate limits, audit, IP allowlists)",
 			"setting", w, "remediation", "list only the gateway's and the web server's addresses")
+	}
+
+	// Sensor products the operator adds to the built-in catalog (a
+	// customer's own sensor): data only, read before anything uses the
+	// catalog. An invalid file stops the start.
+	if err := versions.LoadExtraProducts(cfg.SensorConfig.ProductsFile); err != nil {
+		log.Error("failed to load the sensor products file", "error", err)
+		return 1
+	}
+	if n := len(versions.Products()) - len(versions.Embedded().Products); n > 0 {
+		log.Info("sensor products added from SENSOR_PRODUCTS_FILE", "count", n)
 	}
 
 	if httpsec.AllowPrivate() {

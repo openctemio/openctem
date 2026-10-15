@@ -37,9 +37,9 @@ platform:
 #   min               a sensor of this product below it is degraded ("version
 #                     unsupported"); "" = no minimum
 #   image             the published image repository, without a tag
-#   install           the install snippet set: "sensor" is
-#                     configs/sensor-templates/<format>.tmpl, anything else
-#                     names its own files, <install>-<format>.tmpl
+#   install           the install snippet set: the directory
+#                     api/configs/sensor-products/<install>/ of
+#                     <format>.tmpl files (docker required)
 #   release_identity  the workflow that signs the image (keyless cosign); the
 #                     certificate identity is it + "@refs/tags/<tag>"
 
