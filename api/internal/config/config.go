@@ -237,8 +237,9 @@ type IngestConfig struct {
 
 	// VEX is how a VEX not_affected statement in a report acts on the
 	// matching open finding (CTIS 1.4): "off", "dry_run" (default: count,
-	// log and audit, no state change) or "enforce" (the finding becomes
-	// false_positive with the justification). INGEST_VEX.
+	// log and audit, no state change) or "enforce" (a pending false-positive
+	// request by the actor "vex" that a person approves: a false positive
+	// needs four-eyes). INGEST_VEX.
 	VEX string
 }
 
