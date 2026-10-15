@@ -1702,6 +1702,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 		s.TicketMapping = appticketmap.NewService(repos.TicketMapping, infrajira.NewMappingTrackerResolver(jiraResolver),
 			s.DataScope, objects, cfg.SMTP.BaseURL, log)
+		// Published profiles drive issue creation and status moves for their
+		// destinations; without one the built-in behavior is unchanged.
+		s.JiraSync.SetProfileSource(s.TicketMapping)
 	}
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
