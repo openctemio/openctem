@@ -32,7 +32,7 @@ import (
 // (and its fingerprint) when SENSOR_CA_CERT_FILE names a certificate.
 func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 	f := newFleetHarness(t, sensordom.HealthPolicy{})
-	f.sh.SetTemplateService(sensor.NewSensorConfigTemplateService("../../../../configs/sensor-templates", logger.NewNop()))
+	f.sh.SetTemplateService(sensor.NewSensorConfigTemplateService("../../../../configs/sensor-products", logger.NewNop()))
 	f.sh.SetPublicAPIURL("https://192.0.2.204")
 	f.sh.SetProducts([]SensorInstallProduct{
 		{ID: sensordom.DefaultProduct, Latest: "v0.4.2", Image: "ghcr.io/openctemio/sensor:v0.4.2", Install: "sensor"},

@@ -297,8 +297,12 @@ type SensorConfigConfig struct {
 	// TemplatesDir is the filesystem path containing sensor config templates
 	// (yaml.tmpl, env.tmpl, docker.tmpl, cli.tmpl). Operators can edit these
 	// without rebuilding the API or UI.
-	// Default: configs/sensor-templates
+	// Default: configs/sensor-products
 	TemplatesDir string
+	// ProductsFile is an operator's file of extra sensor products
+	// (versions.ParseExtraProducts format), added to the built-in catalog;
+	// "" = none (SENSOR_PRODUCTS_FILE).
+	ProductsFile string
 	// PublicAPIURL is the URL sensors will connect to (embedded in templates).
 	// If empty, falls back to App.URL.
 	PublicAPIURL string
@@ -1212,6 +1216,7 @@ func Load() (*Config, error) {
 				MTLSTrustedProxies: getEnvSlice("SENSOR_MTLS_TRUSTED_PROXIES", nil),
 			},
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
+			ProductsFile:      getEnv("SENSOR_PRODUCTS_FILE", ""),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
 			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
@@ -2196,7 +2201,7 @@ func defaultCookieSecure(appEnv string) bool {
 }
 
 // DefaultSensorConfigTemplatesDir is SENSOR_CONFIG_TEMPLATES_DIR when unset.
-const DefaultSensorConfigTemplatesDir = "configs/sensor-templates"
+const DefaultSensorConfigTemplatesDir = "configs/sensor-products"
 
 // retiredEnv lists environment variable names that are no longer read: the
 // pre-sensor names, and knobs that became console settings. Startup refuses to run while one is set: silently ignoring,

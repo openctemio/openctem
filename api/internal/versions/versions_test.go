@@ -179,3 +179,64 @@ func TestGettersReturnCopies(t *testing.T) {
 		t.Fatal("Products() exposes the catalog")
 	}
 }
+
+// A new sensor product is data: the operator's products file adds it to the
+// catalog, with its own release line and image, and no Go names it.
+func TestLoadExtraProducts_ToyProduct(t *testing.T) {
+	t.Cleanup(func() { _ = LoadExtraProducts("") })
+	if err := LoadExtraProducts(filepath.Join("testdata", "toy-products.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := LookupProduct("acme-toy-sensor")
+	if !ok || p.Latest != "v1.2.3" || p.Min != "v1.0.0" || p.ImageRef() != "ghcr.io/acme/toy-sensor:v1.2.3" || p.Install != "acme-toy" {
+		t.Fatalf("toy product = %+v (%v)", p, ok)
+	}
+	all := Products()
+	if len(all) != len(Embedded().Products)+1 || all[len(all)-1].ID != "acme-toy-sensor" {
+		t.Fatalf("catalog = %+v", all)
+	}
+	if _, ok := Embedded().Product("acme-toy-sensor"); ok {
+		t.Fatal("the embedded manifest must not change")
+	}
+	// Clearing the file clears the products.
+	if err := LoadExtraProducts(""); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := LookupProduct("acme-toy-sensor"); ok {
+		t.Fatal("toy product still listed after clearing")
+	}
+}
+
+// SECURITY: the operator's file can add products only. It cannot redefine a
+// built-in product (its image or release line), smuggle a fixed section, or
+// put a value in a shell snippet that is not a plain token.
+func TestParseExtraProducts_Refusals(t *testing.T) {
+	ok := "acme:\n  product: acme-x\n  latest: v1.0.0\n  min: \"\"\n  image: ghcr.io/acme/x\n  install: acme-x\n  release_identity: \"\"\n"
+	if ps, err := ParseExtraProducts([]byte(ok), Embedded()); err != nil || len(ps) != 1 {
+		t.Fatalf("valid file: %v %v", ps, err)
+	}
+	if ps, err := ParseExtraProducts([]byte("# nothing\n"), Embedded()); err != nil || len(ps) != 0 {
+		t.Fatalf("empty file: %v %v", ps, err)
+	}
+	cases := map[string]string{
+		"built-in product id": strings.Replace(ok, "acme-x\n  latest", DefaultProductID+"\n  latest", 1),
+		"built-in section":    strings.Replace(ok, "acme:", "sensor:", 1),
+		"fixed section":       "sdk:\n  latest: v9.9.9\n  advisories: \"\"\n",
+		"tag in the image":    strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x:latest", 1),
+		"shell in the image":  strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x;curl", 1),
+		"install path":        strings.Replace(ok, "install: acme-x", "install: ../etc", 1),
+		"identity not GitHub": strings.Replace(ok, "release_identity: \"\"", "release_identity: https://example.com/x.yml", 1),
+		"unknown key":         ok + "  extra: x\n",
+		"listed twice":        ok + strings.Replace(ok, "acme:", "acme2:", 1),
+		"version not semver":  strings.Replace(ok, "v1.0.0", "1.0", 1),
+		"not a mapping":       "- a\n- b\n",
+	}
+	for name, body := range cases {
+		if _, err := ParseExtraProducts([]byte(body), Embedded()); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if err := LoadExtraProducts(filepath.Join("testdata", "missing.yaml")); err == nil {
+		t.Error("a missing file must stop the start")
+	}
+}

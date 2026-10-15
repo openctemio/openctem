@@ -536,10 +536,31 @@ reason, instead of the generic empty state.
 page shows: `docker` (docker run), `compose` (compose.yaml), `kubernetes`
 (Secret + PVC + Deployment; a Job for a one-shot sensor), `helm` (turns on the
 sensor bundled with the openctem chart), `yaml` (sensor.yaml), `env`, `cli`.
-Templates: `configs/sensor-templates/*.tmpl` (editable on the API host,
-`SENSOR_CONFIG_TEMPLATES_DIR`); the built-in fallbacks in
-`internal/app/sensor/config_templates_builtin.go` are generated from them
-(`go generate ./internal/app/sensor/`, a test keeps them identical).
+Templates: `configs/sensor-products/<set>/<format>.tmpl`, one directory per
+install snippet set (the `install` key of the product in `versions.yaml`:
+`sensor/`, `collector/`, `connector-tenable/`), editable on the API host
+(`SENSOR_CONFIG_TEMPLATES_DIR`). The built-in fallbacks in
+`internal/app/sensor/config_templates_builtin.go` are generated from the
+shipped sets (`go generate ./internal/app/sensor/`, a test keeps them
+identical). Templates are product data: the platform passes the same closed
+data to every set (API URL, key reference, the product's image and tag from
+the catalog, CA, name) and never names a sensor's settings itself.
+
+**A new sensor product needs no platform change** (RFC-094 I2). A product of
+your own (for example a sensor built on the SDK) is:
+
+1. a section in the file named by `SENSOR_PRODUCTS_FILE`, in the
+   `versions.yaml` product format (`product`, `latest`, `min`, `image`,
+   `install`, and `release_identity`, which may be `""`). It may not redefine
+   a built-in product or a fixed section, and an invalid file stops the API
+   from starting;
+2. its snippet set: `<SENSOR_CONFIG_TEMPLATES_DIR>/<install>/docker.tmpl`
+   (required) and any other formats.
+
+The Sensors page then lists the product (named by its id), the install
+dialog offers its snippets (`?product=<id>`), and its sensors are judged
+against its own release line. A sensor reporting a product the catalog does
+not list gets version status `unknown`.
 
 Every snippet works as pasted for the release it pins (tests run `bash -n` on
 the shell ones and parse the YAML ones; `docker compose config` accepts the
@@ -599,7 +620,7 @@ compose file):
   (`-tool <name>`), a different mode. The sensor name becomes a slug.
 
 - **Collectors** (sensor type `collector`) get the asset collector's own
-  commands (`configs/sensor-templates/collector-*.tmpl`): the image
+  commands (`configs/sensor-products/collector/*.tmpl`): the image
   `SENSOR_COLLECTOR_IMAGE` (default `ghcr.io/openctemio/asset-collector:latest`
   until the collector tags a release), `SENSOR_API_URL`, the API key and
   vendor passwords as files (`SENSOR_API_KEY_FILE`, `LDAP_PASSWORD_FILE`),
@@ -1686,7 +1707,7 @@ and narrows dispatch:
   affect (`GET /scans/sensor-opt-in-impact`). Trigger refusals
   `SENSOR_POLICY_REFUSED` and `SENSOR_OPT_IN_DISABLED` carry a next-step hint.
 - **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
-  sensor-policy/v1 template (`configs/sensor-templates/policy.tmpl`)
+  sensor-policy/v1 template (`configs/sensor-products/sensor/policy.tmpl`)
   prefilled with the ranges of the sensor's scan zones (none for a sensor in
   the default zone, which scans public targets), tools from the sensor, and
   custom templates and interactsh off. The docker, Compose and Kubernetes
