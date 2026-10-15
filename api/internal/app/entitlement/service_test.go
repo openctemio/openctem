@@ -393,3 +393,53 @@ func TestAllowAddition(t *testing.T) {
 		}
 	}
 }
+
+func TestStartLimits(t *testing.T) {
+	ctx := context.Background()
+	repo := &memRepo{}
+	svc := NewService(repo, nil, nil)
+	if ok, err := svc.StartLimitsConfigured(ctx); err != nil || ok {
+		t.Fatalf("nothing configured: %v %v", ok, err)
+	}
+	if err := svc.SetStartLimits(`{"gold":1}`); err == nil {
+		t.Fatal("unknown key must be refused")
+	}
+	if err := svc.SetStartLimits(`not json`); err == nil {
+		t.Fatal("garbage must be refused")
+	}
+	if err := svc.SetStartLimits("unlimited"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := svc.StartLimitsConfigured(ctx); !ok {
+		t.Fatal("explicit unlimited is configured")
+	}
+	if d, _, _ := svc.SelfServiceDefaults(ctx); len(d) != 0 {
+		t.Fatalf("unlimited: %v", d)
+	}
+	svc2 := NewService(repo, nil, nil)
+	if err := svc2.SetStartLimits(`{"seats":5,"orgs_per_user":1}`); err != nil {
+		t.Fatal(err)
+	}
+	if d, _, _ := svc2.SelfServiceDefaults(ctx); d.Get(limits.Seats) != 5 || d.Get(limits.OrgsPerUser) != 1 {
+		t.Fatalf("environment defaults: %v", d)
+	}
+	// A console setting wins over the environment and counts as configured.
+	svc3 := NewService(&memRepo{defaults: limits.Limits{limits.Seats: 9}, defaultsVersion: 1}, nil, nil)
+	_ = svc3.SetStartLimits(`{"seats":5}`)
+	if d, _, _ := svc3.SelfServiceDefaults(ctx); d.Get(limits.Seats) != 9 {
+		t.Fatalf("console wins: %v", d)
+	}
+	svc4 := NewService(&memRepo{defaults: limits.Limits{}, defaultsVersion: 1}, nil, nil)
+	if ok, _ := svc4.StartLimitsConfigured(ctx); !ok {
+		t.Fatal("a saved console setting (even empty) is configured")
+	}
+	svc5 := NewService(repo, nil, nil)
+	svc5.SetSources(NewControlPlaneSource(repo))
+	if ok, _ := svc5.StartLimitsConfigured(ctx); !ok {
+		t.Fatal("a control-plane source is configured")
+	}
+	svc6 := NewService(&memRepo{err: errors.New("down")}, nil, nil)
+	if _, err := svc6.StartLimitsConfigured(ctx); err == nil {
+		t.Fatal("a read error is reported")
+	}
+}

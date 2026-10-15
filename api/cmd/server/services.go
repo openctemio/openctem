@@ -2675,6 +2675,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// The sign-up policy (Console > System > Sign-up). TENANT_CREATION_MODE
 	// seeds it on the first start only; afterwards the console value wins.
 	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
+	if s.Entitlement != nil {
+		s.Signup.SetStartLimitsCheck(s.Entitlement.StartLimitsConfigured)
+	}
 	if err := s.Signup.Seed(context.Background(), cfg.Auth.TenantCreationMode); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
