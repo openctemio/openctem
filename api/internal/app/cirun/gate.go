@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -267,20 +268,19 @@ func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []ci
 	return set, base, true, nil
 }
 
-// baselineBranch picks the branch a run is compared with: the pull
-// request's base branch when the repository has scanned it and it counts as
-// exposure (default, protected, main or release type), else the repository's
-// default branch. ok is false when that branch was never scanned. A base
-// branch the job reports can therefore only choose among branches whose
-// findings are real exposure; it never makes a feature branch the baseline.
+// baselineBranch picks the branch a run is compared with: the pull or merge
+// request's verified base branch when the repository has scanned it and it
+// may serve as a baseline (default or protected), else the repository's
+// default branch. ok is false when that branch was never scanned. Nothing the
+// job reports chooses the baseline (cirun.Hints.BaseRef).
 func (s *Service) baselineBranch(ctx context.Context, run *cirun.Run) (shared.ID, string, bool) {
 	if s.branches == nil || s.baseline == nil {
 		return shared.ID{}, run.DefaultBranch, false
 	}
-	if run.BaseRef != "" && run.BaseRef != run.DefaultBranch {
-		if br, err := s.branches.GetByName(ctx, run.RepositoryAssetID, run.BaseRef); err == nil && br != nil {
+	if base := s.verifiedBaseRef(ctx, run); base != "" && base != run.DefaultBranch {
+		if br, err := s.branches.GetByName(ctx, run.RepositoryAssetID, base); err == nil && br != nil {
 			if counts, err := s.baseline.BranchCountsAsExposure(ctx, run.TenantID, br.ID()); err == nil && counts {
-				return br.ID(), run.BaseRef, true
+				return br.ID(), base, true
 			}
 		}
 	}
@@ -292,6 +292,49 @@ func (s *Service) baselineBranch(ctx context.Context, run *cirun.Run) (shared.ID
 		return shared.ID{}, run.DefaultBranch, false
 	}
 	return br.ID(), run.DefaultBranch, true
+}
+
+// verifiedBaseRef is a pull or merge request run's base branch from a
+// verified source, "" when there is none:
+//   - GitHub: base_ref, signed in the pull request's token (the only claim
+//     that fills Run.BaseRef: the job's hint is ignored);
+//   - GitLab: the merge request's target branch, read from GitLab through the
+//     organization's connection (the token signs none);
+//   - other providers: none, so the default branch is the baseline.
+func (s *Service) verifiedBaseRef(ctx context.Context, run *cirun.Run) string {
+	if run.PullRequest == "" || run.Fork {
+		return ""
+	}
+	switch run.Provider {
+	case cirun.ProviderGitHub:
+		return run.BaseRef
+	case cirun.ProviderGitLab:
+		return s.gitlabTargetBranch(ctx, run)
+	}
+	return ""
+}
+
+// gitlabTargetBranch reads a GitLab merge request run's target branch from
+// GitLab. Any failure gives "" (compared with the default branch).
+func (s *Service) gitlabTargetBranch(ctx context.Context, run *cirun.Run) string {
+	if s.gitlab == nil {
+		return ""
+	}
+	host, project, found := strings.Cut(strings.ToLower(run.Repository), "/")
+	iid, err := strconv.Atoi(run.PullRequest)
+	if !found || host == "" || project == "" || err != nil || iid <= 0 {
+		return ""
+	}
+	api, _, err := s.gitlab.GitLabClientFor(ctx, run.TenantID, host, project)
+	if err != nil {
+		return ""
+	}
+	mr, err := api.MergeRequest(ctx, project, iid)
+	if err != nil || mr == nil || (mr.IID != 0 && mr.IID != iid) {
+		s.log.Debug("ci gate: merge request target not read", "run_id", run.ID.String())
+		return ""
+	}
+	return cirun.CleanBranchName(mr.TargetBranch)
 }
 
 func (s *Service) webURL(path string) string {
