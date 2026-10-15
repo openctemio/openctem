@@ -328,3 +328,26 @@ func TestFindingMergeCoversEveryFindingReference(t *testing.T) {
 		t.Errorf("findingMergeRefs names references that are not in the schema: %v", stale)
 	}
 }
+
+// Both copies wait for a decision: one pending request per finding holds
+// after the merge. The survivor's request stands; the loser's is kept,
+// cancelled, in the survivor's history.
+func TestApproveAndMerge_OnePendingApprovalSurvives(t *testing.T) {
+	f := newMergeFixture(t, "merge-approvals")
+	old := time.Now().Add(-48 * time.Hour)
+	keepCopy := f.composite(f.keep, "base-p", "confirmed", old)
+	awayCopy := f.composite(f.away, "base-p", "confirmed", old.Add(time.Hour))
+	for _, id := range []shared.ID{keepCopy, awayCopy} {
+		if _, err := f.db.Exec(`INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by, justification, status)
+			VALUES ($1, $2, 'false_positive', $3, 'fixture', 'pending')`, f.tenant.String(), id.String(), f.user.String()); err != nil {
+			t.Fatalf("seed request: %v", err)
+		}
+	}
+	f.merge()
+	if n := f.count(`SELECT count(*) FROM finding_status_approvals WHERE finding_id=$1 AND status='pending'`, keepCopy.String()); n != 1 {
+		t.Fatalf("pending requests on the survivor: %d", n)
+	}
+	if n := f.count(`SELECT count(*) FROM finding_status_approvals WHERE finding_id=$1 AND status='canceled'`, keepCopy.String()); n != 1 {
+		t.Fatalf("the loser's request is not kept cancelled: %d", n)
+	}
+}
