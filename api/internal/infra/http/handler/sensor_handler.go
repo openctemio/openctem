@@ -1418,7 +1418,7 @@ var sensorAPIKeyHeaderRegexp = regexp.MustCompile(`^[A-Za-z0-9_-]{8,256}$`)
 // GetConfigTemplates handles GET /api/v1/sensors/{id}/config-templates
 // Returns rendered install and configuration snippets (docker run, Compose,
 // Kubernetes, Helm, YAML, env, CLI) for a sensor.
-// Templates are loaded from configs/sensor-templates/*.tmpl on the API host
+// Templates are loaded from configs/sensor-products/<set>/<format>.tmpl on the API host
 // and can be edited without rebuilding the frontend.
 //
 // @Summary Get sensor configuration templates

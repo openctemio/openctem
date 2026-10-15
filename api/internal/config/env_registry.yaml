@@ -882,8 +882,14 @@ vars:
     component: api
     group: "Sensors"
     type: string
-    default: "configs/sensor-templates"
-    description: "Directory of the sensor configuration templates shown in the console."
+    default: "configs/sensor-products"
+    description: "Directory of the sensor install snippet templates shown in the console: one directory per snippet set (<set>/<format>.tmpl). A sensor product of your own adds a directory here."
+  - name: SENSOR_PRODUCTS_FILE
+    component: api
+    group: "Sensors"
+    type: string
+    default: ""
+    description: "File of extra sensor products (for example your own sensor built on the SDK), in the versions.yaml product format; added to the built-in catalog. An invalid file stops the API from starting."
   - name: SENSOR_HEALTH_SLOW_HEARTBEAT
     component: api
     group: "Sensors"
