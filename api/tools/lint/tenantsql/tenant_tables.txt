@@ -178,6 +178,7 @@ scm_gitlab_connections
 scope_exclusions
 scope_snapshots
 scope_target_approvals
+scope_target_ci_trusts
 scope_targets
 sensor_config_reports
 sensor_content_policies
