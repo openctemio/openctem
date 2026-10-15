@@ -49,6 +49,30 @@ func newMockBatchAssetRepository() *mockBatchAssetRepository {
 	}
 }
 
+// GetByIDs lets the rescore path (UpdateRiskScores) read the mock's assets.
+func (m *mockBatchAssetRepository) GetByIDs(_ context.Context, _ shared.ID, ids []shared.ID) (map[string]*asset.Asset, error) {
+	out := make(map[string]*asset.Asset, len(ids))
+	for _, id := range ids {
+		if a, ok := m.assets[id.String()]; ok {
+			out[id.String()] = a
+		}
+	}
+	return out, nil
+}
+
+// rescoreAll scores every asset of the mock through the worker's path.
+func rescoreAll(t *testing.T, svc *assetapp.AssetService, repo *mockBatchAssetRepository) {
+	t.Helper()
+	svc.SetRiskQueue(nil, repo)
+	ids := make([]shared.ID, 0, len(repo.assets))
+	for _, a := range repo.assets {
+		ids = append(ids, a.ID())
+	}
+	if err := svc.UpdateRiskScores(context.Background(), serviceTenantID, ids); err != nil {
+		t.Fatalf("rescore: %v", err)
+	}
+}
+
 func (m *mockBatchAssetRepository) BatchUpdateRiskScores(_ context.Context, _ shared.ID, assets []*asset.Asset) error {
 	m.batchUpdateCalls++
 	if m.batchUpdateErr != nil {
@@ -216,137 +240,65 @@ func TestAssetService_ScoringConfig_ProviderError_FallbackToLegacy(t *testing.T)
 }
 
 // =============================================================================
-// RecalculateAllRiskScores Tests
+// PreviewRiskImpact Tests
 // =============================================================================
 
-func TestAssetService_RecalculateAllRiskScores_ProcessesBatches(t *testing.T) {
+// The preview scores every asset with the new settings exactly as the worker
+// will, counts band moves, and writes nothing.
+func TestAssetService_PreviewRiskImpact(t *testing.T) {
 	repo := newMockBatchAssetRepository()
 	svc := newTestAssetService(repo)
 
-	customConfig := asset.LegacyRiskScoringConfig()
-	provider := &mockScoringConfigProvider{config: &customConfig}
-	svc.SetScoringConfigProvider(provider)
-
-	// Add 3 assets with different risk scores
-	for range 3 {
-		a := makeTestAssetForService(asset.ExposurePublic, asset.CriticalityCritical, 5)
-		a.SetTenantID(serviceTenantID)
-		// Set a risk score that differs from what the engine would calculate
-		// so they appear as "changed"
-		repo.assets[a.ID().String()] = a
-	}
-
-	updated, err := svc.RecalculateAllRiskScores(context.Background(), serviceTenantID)
-	if err != nil {
-		t.Fatalf("RecalculateAllRiskScores failed: %v", err)
-	}
-
-	if updated < 0 {
-		t.Errorf("expected non-negative updated count, got %d", updated)
-	}
-}
-
-func TestAssetService_RecalculateAllRiskScores_EmptyAssets(t *testing.T) {
-	repo := newMockBatchAssetRepository()
-	svc := newTestAssetService(repo)
-
-	customConfig := asset.LegacyRiskScoringConfig()
-	provider := &mockScoringConfigProvider{config: &customConfig}
-	svc.SetScoringConfigProvider(provider)
-
-	updated, err := svc.RecalculateAllRiskScores(context.Background(), serviceTenantID)
-	if err != nil {
-		t.Fatalf("RecalculateAllRiskScores with empty assets failed: %v", err)
-	}
-
-	if updated != 0 {
-		t.Errorf("expected 0 updated for empty repo, got %d", updated)
-	}
-
-	if repo.batchUpdateCalls != 0 {
-		t.Errorf("expected 0 batch update calls for empty repo, got %d", repo.batchUpdateCalls)
-	}
-}
-
-func TestAssetService_RecalculateAllRiskScores_ListError(t *testing.T) {
-	repo := newMockBatchAssetRepository()
-	repo.listErr = errors.New("db connection error")
-	svc := newTestAssetService(repo)
-
-	customConfig := asset.LegacyRiskScoringConfig()
-	provider := &mockScoringConfigProvider{config: &customConfig}
-	svc.SetScoringConfigProvider(provider)
-
-	_, err := svc.RecalculateAllRiskScores(context.Background(), serviceTenantID)
-	if err == nil {
-		t.Fatal("RecalculateAllRiskScores should fail when List returns error")
-	}
-}
-
-func TestAssetService_RecalculateAllRiskScores_BatchUpdateError(t *testing.T) {
-	repo := newMockBatchAssetRepository()
-	repo.batchUpdateErr = errors.New("batch update failed")
-	svc := newTestAssetService(repo)
-
-	customConfig := asset.LegacyRiskScoringConfig()
-	provider := &mockScoringConfigProvider{config: &customConfig}
-	svc.SetScoringConfigProvider(provider)
-
-	// Add an asset that will need update
-	a := makeTestAssetForService(asset.ExposurePublic, asset.CriticalityCritical, 10)
-	a.SetTenantID(serviceTenantID)
-	repo.assets[a.ID().String()] = a
-
-	_, err := svc.RecalculateAllRiskScores(context.Background(), serviceTenantID)
-	if err == nil {
-		t.Fatal("RecalculateAllRiskScores should fail when BatchUpdateRiskScores errors")
-	}
-}
-
-// =============================================================================
-// PreviewRiskScoreChanges Tests
-// =============================================================================
-
-func TestAssetService_PreviewRiskScoreChanges(t *testing.T) {
-	repo := NewMockAssetRepository()
-	svc := newTestAssetService(repo)
-
-	customConfig := asset.LegacyRiskScoringConfig()
-	provider := &mockScoringConfigProvider{config: &customConfig}
-	svc.SetScoringConfigProvider(provider)
-
-	// Add some assets
+	current := asset.LegacyRiskScoringConfig()
+	svc.SetScoringConfigProvider(&mockScoringConfigProvider{config: &current})
 	for i := range 5 {
 		a := makeTestAssetForService(asset.ExposurePublic, asset.CriticalityCritical, i)
 		a.SetTenantID(serviceTenantID)
-		a.CalculateRiskScoreWithConfig(&customConfig)
+		a.CalculateRiskScoreWithConfig(&current)
 		repo.assets[a.ID().String()] = a
 	}
+	stored := map[string]int{}
+	for id, a := range repo.assets {
+		stored[id] = a.RiskScore()
+	}
 
-	// Preview with a different config
 	newConfig := asset.LegacyRiskScoringConfig()
-	newConfig.Weights = asset.ComponentWeights{Exposure: 80, Criticality: 10, Findings: 10, CTEM: 0}
+	newConfig.Weights = asset.ComponentWeights{Exposure: 10, Criticality: 10, Findings: 80, CTEM: 0}
+	engine := asset.NewRiskScoringEngine(newConfig)
 
-	items, totalCount, err := svc.PreviewRiskScoreChanges(context.Background(), serviceTenantID, &newConfig)
+	impact, err := svc.PreviewRiskImpact(context.Background(), serviceTenantID, &newConfig)
 	if err != nil {
-		t.Fatalf("PreviewRiskScoreChanges failed: %v", err)
+		t.Fatalf("PreviewRiskImpact: %v", err)
 	}
-
-	if len(items) == 0 {
-		t.Error("expected preview items, got 0")
+	if impact.TotalAssets != 5 {
+		t.Fatalf("total = %d, want 5", impact.TotalAssets)
 	}
-
-	if totalCount < int64(len(items)) {
-		t.Errorf("total count %d should be >= sample count %d", totalCount, len(items))
+	moved := 0
+	for _, bc := range impact.BandChanges {
+		moved += bc.Count
 	}
-
-	for _, item := range items {
-		if item.AssetName == "" {
-			t.Error("preview item missing asset name")
+	if moved != impact.ChangedBands {
+		t.Fatalf("band changes sum %d != changed bands %d", moved, impact.ChangedBands)
+	}
+	for _, c := range impact.TopChanges {
+		a := repo.assets[c.AssetID]
+		if want := engine.CalculateScore(a); c.NewScore != want {
+			t.Fatalf("preview score %d, engine %d", c.NewScore, want)
 		}
-		if item.Delta != item.NewScore-item.CurrentScore {
-			t.Errorf("delta mismatch: got %d, expected %d", item.Delta, item.NewScore-item.CurrentScore)
+		if c.CurrentLevel != current.Level(c.CurrentScore) || c.NewLevel != newConfig.Level(c.NewScore) {
+			t.Fatalf("levels: %+v", c)
 		}
+	}
+	if impact.Changed != len(impact.TopChanges) || impact.Raised+impact.Lowered != impact.Changed {
+		t.Fatalf("counts: %+v", impact)
+	}
+	for id, a := range repo.assets {
+		if a.RiskScore() != stored[id] {
+			t.Fatal("the preview changed a stored score")
+		}
+	}
+	if repo.batchUpdateCalls != 0 {
+		t.Fatal("the preview wrote scores")
 	}
 }
 
@@ -482,110 +434,4 @@ func (m *mockLargeAssetRepo) List(
 		result.Total = m.overrideTotal
 	}
 	return result, nil
-}
-
-func TestAssetService_RecalculateAllRiskScores_ExceedsMaxAssets(t *testing.T) {
-	repo := &mockLargeAssetRepo{
-		mockBatchAssetRepository: mockBatchAssetRepository{
-			MockAssetRepository: MockAssetRepository{
-				assets: make(map[string]*asset.Asset),
-			},
-		},
-		overrideTotal: 200_000, // exceeds maxRecalcAssets (100K)
-	}
-	svc := newTestAssetService(repo)
-
-	customConfig := asset.LegacyRiskScoringConfig()
-	provider := &mockScoringConfigProvider{config: &customConfig}
-	svc.SetScoringConfigProvider(provider)
-
-	_, err := svc.RecalculateAllRiskScores(context.Background(), serviceTenantID)
-	if err == nil {
-		t.Fatal("expected error when asset count exceeds max limit")
-	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got: %v", err)
-	}
-}
-
-// =============================================================================
-// Concurrent Recalculation (simulated without Redis)
-// =============================================================================
-
-func TestAssetService_RecalculateAllRiskScores_WithoutRedis_Succeeds(t *testing.T) {
-	// Without Redis, the lock is skipped (logged as warning) and recalculation proceeds.
-	repo := newMockBatchAssetRepository()
-	svc := newTestAssetService(repo)
-
-	customConfig := asset.LegacyRiskScoringConfig()
-	provider := &mockScoringConfigProvider{config: &customConfig}
-	svc.SetScoringConfigProvider(provider)
-
-	a := makeTestAssetForService(asset.ExposurePublic, asset.CriticalityCritical, 5)
-	repo.assets[a.ID().String()] = a
-
-	// No Redis set — should work without lock
-	updated, err := svc.RecalculateAllRiskScores(context.Background(), serviceTenantID)
-	if err != nil {
-		t.Fatalf("expected success without Redis, got: %v", err)
-	}
-	if updated < 0 {
-		t.Errorf("expected non-negative updated count, got %d", updated)
-	}
-}
-
-// =============================================================================
-// Preview with distinct score changes
-// =============================================================================
-
-func TestAssetService_PreviewRiskScoreChanges_ShowsDeltas(t *testing.T) {
-	repo := NewMockAssetRepository()
-	svc := newTestAssetService(repo)
-
-	// Current config: legacy (40% exposure, 25% criticality, 35% findings)
-	legacyCfg := asset.LegacyRiskScoringConfig()
-	provider := &mockScoringConfigProvider{config: &legacyCfg}
-	svc.SetScoringConfigProvider(provider)
-
-	// Add assets with varied profiles
-	profiles := []struct {
-		exp  asset.Exposure
-		crit asset.Criticality
-		fc   int
-	}{
-		{asset.ExposurePublic, asset.CriticalityCritical, 10},
-		{asset.ExposurePrivate, asset.CriticalityLow, 0},
-		{asset.ExposureIsolated, asset.CriticalityMedium, 3},
-	}
-	for _, p := range profiles {
-		a := makeTestAssetForService(p.exp, p.crit, p.fc)
-		a.CalculateRiskScoreWithConfig(&legacyCfg)
-		repo.assets[a.ID().String()] = a
-	}
-
-	// Preview with exposure-heavy config
-	newConfig := asset.LegacyRiskScoringConfig()
-	newConfig.Weights = asset.ComponentWeights{Exposure: 90, Criticality: 5, Findings: 5, CTEM: 0}
-
-	items, _, err := svc.PreviewRiskScoreChanges(context.Background(), serviceTenantID, &newConfig)
-	if err != nil {
-		t.Fatalf("PreviewRiskScoreChanges failed: %v", err)
-	}
-
-	if len(items) != 3 {
-		t.Errorf("expected 3 preview items, got %d", len(items))
-	}
-
-	// Each item should have valid scores
-	for _, item := range items {
-		if item.AssetID == "" {
-			t.Error("preview item missing asset ID")
-		}
-		if item.CurrentScore < 0 || item.CurrentScore > 100 {
-			t.Errorf("current score out of range: %d", item.CurrentScore)
-		}
-		if item.NewScore < 0 || item.NewScore > 100 {
-			t.Errorf("new score out of range: %d", item.NewScore)
-		}
-	}
 }
