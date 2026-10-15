@@ -11,6 +11,6 @@
 - `POST /api/v1/approvals/{id}/remind` (`findings:write`, the finding in the
   caller's data scope) reminds the same approvers, at most once an hour per
   request (409 otherwise), audited as `finding_approval.reminded`.
-- Migration `002445` (`finding_approval_reminded_at`): a nullable column.
+- Migration `002524` (`finding_approval_reminded_at`): a nullable column.
 - VEX-created requests (batch, per scan report) are not notified one by one
   yet.

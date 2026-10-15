@@ -26,7 +26,7 @@
   material in between turns it into a normal request for a second person.
 - `GET /api/v1/findings/{id}/approvals/policy` says how a false positive on
   that finding is decided now (for the request dialog).
-- Migrations `002306`-`002308` (`finding_approval_single_person`,
+- Migrations `002521`-`002523` (`finding_approval_single_person`,
   `finding_single_person_fp_review`, `finding_decision_review_reason_validate`):
   a boolean with a constant default; two triggers (short lock, no scan; the
   findings trigger fires only when a false positive's severity or KEV flag
