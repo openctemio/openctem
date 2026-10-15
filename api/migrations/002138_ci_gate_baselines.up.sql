@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS ci_gate_baseline_findings (
     repository_asset_id UUID NOT NULL,
     fingerprint         VARCHAR(255) NOT NULL,
     PRIMARY KEY (tenant_id, repository_asset_id, fingerprint),
-    FOREIGN KEY (tenant_id, repository_asset_id) REFERENCES ci_gate_baselines (tenant_id, repository_asset_id) ON DELETE CASCADE
+    FOREIGN KEY (tenant_id, repository_asset_id) REFERENCES ci_gate_baselines (tenant_id, repository_asset_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 COMMENT ON TABLE ci_gate_baseline_findings IS 'The findings (by fingerprint) of a repository''s CI gate baseline; they do not block while it applies.';
