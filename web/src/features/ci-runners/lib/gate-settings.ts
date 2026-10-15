@@ -8,6 +8,7 @@
  * loosening change without a reason (400).
  */
 
+import { SEVERITY_LEVELS } from '@/lib/severity'
 import type { CIGatePolicy, CIGatePolicyRequest } from '../types'
 
 /** Gate policy fields, in the API's display order. */
@@ -53,7 +54,11 @@ export const GATE_SOURCE_LABEL: Record<string, string> = {
   repository: 'This repository',
 }
 
-export const SEVERITY_ORDER = ['low', 'medium', 'high', 'critical', 'none'] as const
+/** Fail-on severities, strictest first: the shared scale without info, then none. */
+export const SEVERITY_ORDER: string[] = [
+  ...SEVERITY_LEVELS.filter((s) => s !== 'info').reverse(),
+  'none',
+]
 /** Capabilities a finding mode can be set for (api cirun.modeCapabilities). */
 export const MODE_CAPABILITIES = ['sast', 'sca', 'secrets', 'iac', 'container'] as const
 export const FINDING_MODES = ['block', 'comment', 'monitor'] as const

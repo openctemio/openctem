@@ -50,6 +50,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
+import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 
 import {
@@ -241,7 +242,7 @@ export function GateFieldRow({
               })}
             >
               <RotateCcw className="size-4" aria-hidden />
-              <span className="hidden sm:inline">
+              <span className="sr-only sm:not-sr-only">
                 {t('scans.ci.repoSettings.reset', 'Reset to inherited')}
               </span>
             </Button>
@@ -795,7 +796,7 @@ export function CIRepositorySettingsTab({ repositoryAssetId }: { repositoryAsset
         actions={
           canAudit ? (
             <Button asChild size="sm" variant="ghost">
-              <Link href={auditHistoryHref(repositoryAssetId)}>
+              <Link href={safeHref(auditHistoryHref(repositoryAssetId)) ?? '/settings/audit-log'}>
                 <History className="size-4" aria-hidden />
                 {t('scans.ci.repoSettings.history', 'History')}
               </Link>
