@@ -262,15 +262,35 @@ func TestCheckFreeTeam(t *testing.T) {
 	}
 }
 
-func TestAssignFree(t *testing.T) {
+// An organization with no stored plan is on plan.Unassigned, the value every
+// SQL reader resolves a missing row to as well.
+func TestPlanOf_UnassignedWhenNoneStored(t *testing.T) {
+	svc := NewService(&fakeRepo{}, nil, nil, nil, nil)
+	p, err := svc.PlanOf(context.Background(), shared.NewID())
+	if err != nil || p != plan.Unassigned {
+		t.Fatalf("got %q %v", p, err)
+	}
+}
+
+// A plan change records the plan it replaced, so the audit names both.
+func TestChangeTenantPlan_AuditsFromAndTo(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo, nil, nil, nil, nil)
-	id := shared.NewID()
-	if err := svc.AssignFree(context.Background(), id); err != nil {
+	audit := &fakeAudit{}
+	svc := NewService(repo, audit, nil, nil, nil)
+	id := freeTenant(repo)
+	actor := newAdmin(t, "ops@example.test", admin.AdminRoleOpsAdmin)
+	if err := svc.ChangeTenantPlan(context.Background(), actor, id, plan.Enterprise, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if repo.plans[id] != plan.Free {
-		t.Fatalf("got %q", repo.plans[id])
+	if repo.plans[id] != plan.Enterprise {
+		t.Fatalf("stored %q", repo.plans[id])
+	}
+	if len(audit.rows) != 1 || audit.rows[0].Action != ActionTenantPlanSet {
+		t.Fatalf("audit rows %+v", audit.rows)
+	}
+	body := audit.rows[0].RequestBody
+	if body["from"] != "free" || body["plan"] != "enterprise" {
+		t.Fatalf("audit body %v", body)
 	}
 }
 
