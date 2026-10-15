@@ -280,10 +280,29 @@ instead).
   of the decision the request asks for. A request for `accepted` gets 90 days
   when it names no end and is refused with an end in the past or more than a
   year ahead; a request for `false_positive` is refused when it names an end.
-  A pending request has no separate approve-by deadline: once the requested
-  end has passed it can no longer be approved (it would accept nothing) and is
-  submitted again with a new end. Approving an older `accepted` request that
-  has no end gives it the 90-day default from the approval.
+  Once the requested end has passed the request can no longer be approved (it
+  would accept nothing). Approving an older `accepted` request that has no end
+  gives it the 90-day default from the approval.
+- **Decide-by, separate from the end.** Every request also has
+  `finding_status_approvals.decide_by` (14 days after it was made,
+  `vulnerability.DefaultDecisionWindow`). A pending request past it cannot be
+  approved or rejected, and the hourly `approval-expiration` controller marks
+  it `expired` with a timeline entry (`reason: decision_overdue`) and an audit
+  row (`finding_approval.expired`) in its tenant
+  (`FindingApprovalRepository.ExpireOverdueRequests`). A new request can then
+  be made.
+- **One pending request per finding.** The unique partial index
+  `ux_finding_status_approvals_pending` allows one pending request per
+  finding, from a person or a platform actor; a second one answers 409. An
+  identity merge whose two findings both wait for a decision keeps the
+  survivor's request and cancels the other (`settleLoserPendingApproval`).
+- **Approve is one transaction.** The request row (claimed with its version
+  while still pending), the finding's status and acceptance end, and the
+  `approval_approved` timeline entry commit together
+  (`FindingApprovalRepository.ApproveAndApply`). Of two approvers deciding at
+  once only one applies it (the other gets 409); a finding that moved in
+  between rolls everything back and the request stays pending. A request is
+  for a finding inside the requester's data scope (404 otherwise).
 - **On the finding, on every accept path.** Approving `accepted` stores the
   end in `findings.acceptance_expires_at` in the same statement as the status
   (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix
