@@ -37,6 +37,10 @@ const ALLOWED: { path: RegExp; why: string }[] = [
     why: 'generated authorization reference (CI routes)',
   },
   { path: /^src\/features\/sensors\//, why: 'runner-mode sensors run inside a CI pipeline' },
+  {
+    path: /^src\/features\/scope\/(api\/scope-api\.types\.ts|components\/scope-(entries-table|settings-form)\.tsx)$/,
+    why: 'CI trust scope entries: evidence from a verified CI pipeline run',
+  },
   { path: /^src\/features\/shared\/components\/tone-pill\.tsx$/, why: 'a CI pipeline status' },
   {
     path: /^src\/features\/assets\/types\/asset\.types\.ts$/,
