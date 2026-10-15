@@ -195,7 +195,8 @@ func TestFindingStatusUpdate_AllClosedStatusesSetResolvedBy(t *testing.T) {
 		{vulnerability.FindingStatusResolved, "resolved"},
 		{vulnerability.FindingStatusFalsePositive, "false_positive"},
 		{vulnerability.FindingStatusAccepted, "accepted"},
-		{vulnerability.FindingStatusDuplicate, "duplicate"},
+		// duplicate is made by MarkAsDuplicate (it names the canonical
+		// finding); a plain transition to it is refused.
 	}
 
 	for _, tc := range closedStatuses {
