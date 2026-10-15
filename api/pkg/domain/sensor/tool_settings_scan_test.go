@@ -67,7 +67,7 @@ func TestValidateScanSettings(t *testing.T) {
 		{"nothing to check", nil, map[string]any{}, ""},
 	}
 	for _, c := range cases {
-		err := ValidateScanSettings(schema, c.sensor, c.scan)
+		err := ValidateScanSettings(schema, AdminValues{Sensor: c.sensor}, c.scan)
 		if c.path == "" {
 			if err != nil {
 				t.Errorf("%s: %v", c.name, err)
@@ -82,7 +82,7 @@ func TestValidateScanSettings(t *testing.T) {
 
 // The preview names where each value comes from, the scan included.
 func TestEffectiveToolSettingsWithScan(t *testing.T) {
-	eff, err := EffectiveToolSettingsWithScan(scanTestSchema(t), values(t, `{"retries": 3, "workers": 50}`), map[string]any{"retries": 2})
+	eff, err := EffectiveToolSettingsWithScan(scanTestSchema(t), AdminValues{Sensor: values(t, `{"retries": 3, "workers": 50}`)}, map[string]any{"retries": 2})
 	if err != nil {
 		t.Fatal(err)
 	}

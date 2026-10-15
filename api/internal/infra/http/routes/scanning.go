@@ -86,6 +86,14 @@ func registerSensorManagementRoutes(
 		// Tenant-wide aggregated stats — must be registered BEFORE /{id} so
 		// chi doesn't treat "stats" as a path param.
 		r.GET("/stats", h.GetStats, middleware.Require(permission.SensorsRead))
+		// Organization tool defaults: per tool, the values every one of the
+		// organization's own sensors runs with unless it overrides a key.
+		// Before /{id}. Saving and resetting change what every sensor's scan
+		// jobs run with, so they need sensors:write (owners and
+		// administrators); changing an Impact option also needs step-up.
+		r.GET("/tool-defaults", h.ListToolDefaults, middleware.Require(permission.SensorsRead))
+		r.PUT("/tool-defaults/{tool}", h.UpdateToolDefaults, middleware.Require(permission.SensorsWrite))
+		r.DELETE("/tool-defaults/{tool}", h.ResetToolDefaults, middleware.Require(permission.SensorsWrite))
 		// Scanner content (RFC-031): the tenant policy and refresh requests.
 		// Before /{id} for the same reason. Writes queue commands for the
 		// fleet, so they need sensors:write (owners and administrators).
