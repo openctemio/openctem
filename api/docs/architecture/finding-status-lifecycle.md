@@ -25,10 +25,61 @@ The list is `vulnerability.AllFindingStatuses()`; the database CHECK
 (`web/src/features/findings/types/finding.types.ts`, labels in en and vi) hold
 exactly the same values, and tests on each side pin them.
 
-How a finding was closed is its `resolution_method`, not a status:
-`scan_verified`, `retest_verified`, `security_reviewed`, `admin_direct`,
-`source_mitigated`, `source_retired`, `vex_not_affected`. A pentest finding
-whose retest passed is `resolved` with `retest_verified`.
+## Closure reason and verification
+
+Why a closed finding is closed, and how a closing claim was proven, are two
+fields beside the status (`pkg/domain/vulnerability/closure.go`), never a
+status. A closed finding always has a `closure_reason`; an open one never has
+one. The reasons are a closed set per status, aligned with the VEX
+justifications so they export without translation:
+
+| Status | `closure_reason` | Counts as remediated |
+|---|---|---|
+| `resolved` | `fixed`, `mitigated` | yes |
+| `resolved` | `obsolete_asset`, `obsolete_source`, `obsolete_rule` (the finding went away without a fix) | **no** |
+| `false_positive` | `component_not_present`, `vulnerable_code_not_present`, `vulnerable_code_not_in_execute_path`, `vulnerable_code_cannot_be_controlled_by_adversary`, `inline_mitigations_already_exist`, `detection_error`, `test_or_example_code` | no |
+| `accepted` | `risk_accepted`, `compensating_control`, `wont_fix`, `no_fix_available` | no |
+| `duplicate` | `duplicate`, `correlated` | no |
+| any closed | `unknown`: closed before reasons existed, or by a writer that knows none; never guessed | `resolved`/`unknown` still counts, as it always did |
+
+`verification` says how a resolve (and a false positive the platform or an
+approval established) was proven: `covered_scan`, `retest`, `source_reported`
+(a scanner's own "mitigated" state, a new installed version, a changed
+advisory), `vex_statement`, `security_review` (`findings:verify` with the
+verification checklist, or a four-eyes approval of a false positive),
+`attested` (a `findings:verify` holder closed it without the checklist),
+`none` (an obsolete closure) or `unknown`.
+
+Who writes what:
+
+| Writer | Closure |
+|---|---|
+| Covered scan (coverage auto-resolve, repository default branch) | `fixed` / `covered_scan` |
+| Retest | `fixed` / `retest` |
+| Source "mitigated" state | `fixed` / `source_reported` |
+| Software matcher: new installed version / advisory changed | `fixed` / `source_reported`; `false_positive` `detection_error` / `source_reported` |
+| VEX statement or VEX document | `fixed` or the statement's justification / `vex_statement` |
+| CI pipeline retired | `obsolete_source` / `none` |
+| License policy no longer flags the package | `obsolete_rule` / `none` |
+| Person resolve (`PATCH /status`, bulk, verify) | `fixed` (or `mitigated`, `closure_reason` in the request) / `security_review` with the checklist, else `attested` |
+| Approved false positive or accepted risk | the reason named in the request (`closure_reason`, required) / `security_review` for a false positive |
+| Accepted-risk suppression rule | `risk_accepted` |
+| Duplicate, correlation | `duplicate`, `correlated` |
+
+The database keeps the pair consistent for every writer
+(`trg_findings_settle_closure`, migrations `finding_closure_*`, run after every trigger that changes the status): it
+clears both on an open status, drops a value left over from the previous
+status that does not fit the new one, and fills the status default when a
+writer names none. `chk_findings_closure` (via `finding_closure_valid`, pinned
+to the Go tables by `TestFindingClosureValidMatchesGo`) refuses a reason of
+another status.
+
+MTTR, the risk snapshot's closed-today and MTTR, the executive summary, the
+risk velocity fix count and the mean time to remediate after validation count
+**remediated** findings only (`vulnerability.RemediatedSQL`): resolved and not
+obsolete.
+
+A pentest finding whose retest passed is `resolved` with `fixed` / `retest`.
 
 ## Open, fixed, dispositioned, closed: one definition
 
@@ -132,7 +183,7 @@ the same transaction as the change.
   `internal/infra/postgres/finding_transition.go`). The trigger
   `trg_findings_record_transition` (migration `002180`) then writes one entry
   per finding the transaction moves: the old and new status, what the
-  resolution was before (`previous_resolution`, `previous_resolution_method`,
+  resolution was before (`previous_resolution`, `previous_closure_reason`, `previous_verification`,
   `previous_resolved_by`, `previous_resolved_at`), a reason code, the source,
   the actor and evidence references (scanner, scan or command, pipeline, rule,
   statement). The move and its entry commit or roll back together.
@@ -200,8 +251,8 @@ and remediation group and campaign resolves (which use the bulk path).
   with `SetFixApplierCheck`). The bulk paths skip, and report, each finding
   that is not theirs.
 - **Resolved:** `findings:verify` (unchanged). A resolve backed by a complete
-  verification checklist is `security_reviewed`; any other person's resolve is
-  attested (`admin_direct`) and needs a note. A bulk resolve reads no
+  verification checklist is verified by `security_review`; any other person's
+  resolve is `attested` and needs a note. A bulk resolve reads no
   checklist, so it always needs one.
 - **Callers without a user** (an organization API key) get the same rules,
   never an exemption: they need the permission and the note, and cannot claim
@@ -424,7 +475,8 @@ responses carry `pending_disposition` the same way.
 
 Migration `001378` maps stored values of the retired pentest statuses
 (`remediation` -> `in_progress`, `retest` -> `fix_applied`, `verified` ->
-`resolved` with `resolution_method = retest_verified`, `accepted_risk` ->
+`resolved` with what was then `resolution_method = retest_verified` (now
+`fixed` / `retest`), `accepted_risk` ->
 `accepted`) and `open` -> `new`, in `findings`, `pentest_findings`, approvals
 and retests, then adds the CHECKs (`NOT VALID`, then `VALIDATE`). It is
 idempotent. The down migration restores the old CHECK; mapped rows keep their

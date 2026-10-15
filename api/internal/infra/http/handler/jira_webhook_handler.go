@@ -276,8 +276,13 @@ func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.
 	claimed := make([]string, 0, len(keys))
 	release := func() {
 		if rel, ok := h.deliveries.(WebhookDeliveryReleaser); ok {
+			// Not the request context: a client that disconnects while the
+			// delivery is processed must not leave its keys held, or Jira's
+			// retry would be dropped as a replay.
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+			defer cancel()
 			for _, k := range claimed {
-				if err := rel.ReleaseDelivery(r.Context(), k); err != nil {
+				if err := rel.ReleaseDelivery(ctx, k); err != nil {
 					h.logger.Warn("jira webhook: could not release delivery key", "error", err)
 				}
 			}

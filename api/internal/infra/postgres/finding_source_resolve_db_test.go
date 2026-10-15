@@ -79,11 +79,11 @@ func TestResolveSourceMitigated_DB(t *testing.T) {
 		t.Fatalf("open finding is %q, want resolved", got)
 	}
 	var method string
-	if err := f.db.QueryRowContext(ctx, `SELECT COALESCE(resolution_method, '') FROM findings WHERE id = $1`, open.String()).Scan(&method); err != nil {
+	if err := f.db.QueryRowContext(ctx, `SELECT COALESCE(closure_reason, '') || '/' || COALESCE(verification, '') FROM findings WHERE id = $1`, open.String()).Scan(&method); err != nil {
 		t.Fatal(err)
 	}
-	if method != "source_mitigated" {
-		t.Fatalf("resolution_method %q, want source_mitigated", method)
+	if method != "fixed/source_reported" {
+		t.Fatalf("closure %q, want fixed/source_reported", method)
 	}
 	for id, want := range map[shared.ID]string{
 		accepted: "accepted", fp1: "false_positive", otherTool: "new", seenAfter: "confirmed", manual: "new",

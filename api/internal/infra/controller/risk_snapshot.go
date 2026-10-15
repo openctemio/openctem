@@ -37,11 +37,12 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 
 	// Pre-aggregate all metrics with GROUP BY tenant_id, then JOIN to tenants.
 	// This executes a fixed number of table scans regardless of tenant count.
-	// Open, fixed and remediated use the one shared definition: a disposition
-	// (false positive, accepted, duplicate) is neither closed today as a fix
+	// Open and remediated use the one shared definition: a disposition
+	// (false positive, accepted, duplicate) or an obsolete closure (asset
+	// retired, source removed, rule changed) is neither closed today as a fix
 	// nor part of MTTR.
 	openSQL := vulnerability.OpenStatusSQL("status")
-	fixedSQL := vulnerability.FixedStatusSQL("status")
+	fixedSQL := vulnerability.RemediatedSQL("")
 	query := `
 		WITH asset_metrics AS (
 			SELECT tenant_id,
