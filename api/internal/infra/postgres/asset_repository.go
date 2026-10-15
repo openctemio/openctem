@@ -475,6 +475,10 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 	return r.scanAsset(row, shared.ID{})
 }
 
+// exploitSignalClause marks a finding with an exploitation signal: in CISA
+// KEV, EPSS at or above asset.ExploitEPSSThreshold, or a known exploit.
+const exploitSignalClause = `(f.is_in_kev OR f.exploit_available OR COALESCE(f.epss_score, 0) >= 0.5)`
+
 func (r *AssetRepository) selectQuery() string {
 	return `
 		SELECT a.id, a.tenant_id, a.parent_id, a.owner_ref, a.name, a.asset_type, a.sub_type, a.criticality, a.status,
@@ -485,6 +489,10 @@ func (r *AssetRepository) selectQuery() string {
 			   COALESCE(fc.finding_medium, 0) as finding_medium,
 			   COALESCE(fc.finding_low, 0) as finding_low,
 			   COALESCE(fc.finding_info, 0) as finding_info,
+			   COALESCE(fc.finding_critical_x, 0) as finding_critical_x,
+			   COALESCE(fc.finding_high_x, 0) as finding_high_x,
+			   COALESCE(fc.finding_medium_x, 0) as finding_medium_x,
+			   COALESCE(fc.finding_low_x, 0) as finding_low_x,
 			   a.description, a.tags, a.properties,
 			   a.provider, a.external_id, a.classification, a.sync_status, a.last_synced_at, a.sync_error,
 			   a.discovery_source, a.discovery_tool, a.discovered_at,
@@ -493,7 +501,9 @@ func (r *AssetRepository) selectQuery() string {
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at,
 			   a.lifecycle_paused_until, a.manual_status_override,
 			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
-			   a.is_crown_jewel
+			   a.is_crown_jewel,
+			   a.risk_scored_at,
+			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id) AS risk_score_pending
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -507,7 +517,11 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'high') as finding_high,
 				COUNT(*) FILTER (WHERE f.severity = 'medium') as finding_medium,
 				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
-				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info
+				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info,
+				COUNT(*) FILTER (WHERE f.severity = 'critical' AND ` + exploitSignalClause + `) as finding_critical_x,
+				COUNT(*) FILTER (WHERE f.severity = 'high' AND ` + exploitSignalClause + `) as finding_high_x,
+				COUNT(*) FILTER (WHERE f.severity = 'medium' AND ` + exploitSignalClause + `) as finding_medium_x,
+				COUNT(*) FILTER (WHERE f.severity = 'low' AND ` + exploitSignalClause + `) as finding_low_x
 			FROM findings f
 			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND NOT f.branch_only
 		) fc ON true
@@ -823,6 +837,10 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		findingMedium   int
 		findingLow      int
 		findingInfo     int
+		findingCritX    int
+		findingHighX    int
+		findingMediumX  int
+		findingLowX     int
 		description     sql.NullString
 		tags            pq.StringArray
 		properties      []byte
@@ -859,12 +877,15 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		impactIntegrity       sql.NullString
 		impactAvailability    sql.NullString
 		isCrownJewel          bool
+		riskScoredAt          sql.NullTime
+		riskScorePending      bool
 	)
 
 	err := scan(
 		&idStr, &tenantIDStr, &parentIDStr, &ownerRef, &name, &assetType, &subType, &criticality, &status,
 		&scope, &exposure, &riskScore, &findingCount,
 		&findingCritical, &findingHigh, &findingMedium, &findingLow, &findingInfo,
+		&findingCritX, &findingHighX, &findingMediumX, &findingLowX,
 		&description, &tags, &properties,
 		&provider, &externalID, &classification, &syncStatus, &lastSyncedAt, &syncError,
 		&discoverySource, &discoveryTool, &discoveredAt,
@@ -874,6 +895,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		&lifecyclePausedUntil, &manualStatusOverride,
 		&impactConfidentiality, &impactIntegrity, &impactAvailability,
 		&isCrownJewel,
+		&riskScoredAt, &riskScorePending,
 	)
 	if err != nil {
 		return nil, err
@@ -896,12 +918,23 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 	}
 
 	a.SetCrownJewel(isCrownJewel)
+	var scoredAt *time.Time
+	if riskScoredAt.Valid {
+		t := riskScoredAt.Time
+		scoredAt = &t
+	}
+	a.SetRiskFreshness(scoredAt, riskScorePending)
 	a.SetFindingSeverityCounts(&asset.FindingSeverityCounts{
 		Critical: findingCritical,
 		High:     findingHigh,
 		Medium:   findingMedium,
 		Low:      findingLow,
 		Info:     findingInfo,
+
+		CriticalExploitable: findingCritX,
+		HighExploitable:     findingHighX,
+		MediumExploitable:   findingMediumX,
+		LowExploitable:      findingLowX,
 	})
 
 	return a, nil
@@ -2230,16 +2263,20 @@ func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shar
 	return nil
 }
 
-// BatchUpdateRiskScores updates risk_score for multiple assets in a single query.
+// BatchUpdateRiskScores stores the risk_score of several assets of one tenant
+// in a single query and stamps risk_scored_at. A row whose score did not
+// change and that was scored before is left alone, so a periodic rescore does
+// not touch every asset's updated_at.
 func (r *AssetRepository) BatchUpdateRiskScores(ctx context.Context, tenantID shared.ID, assets []*asset.Asset) error {
 	if len(assets) == 0 {
 		return nil
 	}
 
 	query := `
-		UPDATE assets SET risk_score = data.score, updated_at = NOW()
+		UPDATE assets SET risk_score = data.score, risk_scored_at = NOW()
 		FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS score) AS data
 		WHERE assets.id = data.id AND assets.tenant_id = $3
+		  AND (assets.risk_score IS DISTINCT FROM data.score OR assets.risk_scored_at IS NULL)
 	`
 
 	ids := make([]string, 0, len(assets))
