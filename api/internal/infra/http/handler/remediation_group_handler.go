@@ -92,12 +92,13 @@ func (h *RemediationGroupHandler) ResolveGroup(w http.ResponseWriter, r *http.Re
 	}
 
 	result, err := h.service.ResolveGroup(r.Context(), tenantID, appremediation.ResolveGroupInput{
-		Key:                 key,
-		Status:              req.Status,
-		Resolution:          req.Resolution,
-		ActorID:             middleware.GetUserID(r.Context()),
-		HasVerifyPermission: middleware.HasPermission(r.Context(), string(permission.FindingsVerify)),
-		OperatorApproved:    req.Approved,
+		Key:                   key,
+		Status:                req.Status,
+		Resolution:            req.Resolution,
+		ActorID:               middleware.GetUserID(r.Context()),
+		HasVerifyPermission:   middleware.HasPermission(r.Context(), string(permission.FindingsVerify)),
+		HasFixApplyPermission: middleware.HasPermission(r.Context(), string(permission.FindingsFixApply)),
+		OperatorApproved:      req.Approved,
 	})
 	if err != nil {
 		writeGroupResolveError(w, err)
