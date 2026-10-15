@@ -197,3 +197,42 @@ func TestFindingApprovals_SelfApprovalOnlyOwnRequest_DB(t *testing.T) {
 	h.exec(`UPDATE tenant_members SET status = 'active' WHERE user_id = $1 AND tenant_id = $2`, member.id, org)
 	h.expect(member, http.MethodPut, "/api/v1/organization/settings/finding-approvals/", `{"backup_contact_email":"x@example.com"}`, http.StatusForbidden)
 }
+
+// A member suspended or removed in the last 7 days keeps the sole owner from
+// approving their own request (a stolen owner session cannot remove the other
+// approver and self-approve); after 7 days the path opens. Another
+// organization's changes do not count.
+func TestFindingApprovals_SoloRefusedAfterRecentMemberRemoval_DB(t *testing.T) {
+	h := newSoloHarness(t)
+	org, other := h.tenantWithFindings(), h.tenantWithFindings()
+	owner := h.member(org, "owner")
+	gone := h.member(org, "admin")
+	h.exec(`UPDATE tenant_members SET status = 'suspended', suspended_at = now() - interval '2 days' WHERE user_id = $1 AND tenant_id = $2`, gone.id, org)
+	// A removal in another organization does not count.
+	otherGone := h.member(other, "admin")
+	h.exec(`UPDATE tenant_members SET status = 'suspended', suspended_at = now() WHERE user_id = $1 AND tenant_id = $2`, otherGone.id, other)
+
+	f := h.newFinding(org, "low")
+	a := h.requestStatus(owner, f, "false_positive")
+	if h.listSelfApprovalAvailable(owner) {
+		t.Fatal("self-approval offered right after a member was suspended")
+	}
+	out := h.selfApprove(owner, a, "111111", http.StatusForbidden)
+	if out["code"] != "SELF_APPROVAL_AFTER_MEMBER_REMOVAL" {
+		t.Fatalf("refusal: %v", out)
+	}
+	if n := h.countRows(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'finding_approval.self_approval_refused' AND resource_id = $2`, org, a); n != 1 {
+		t.Fatalf("refusal audit rows: %d", n)
+	}
+	// A member deleted outright shows only in the audit log.
+	h.exec(`UPDATE tenant_members SET suspended_at = now() - interval '8 days' WHERE user_id = $1 AND tenant_id = $2`, gone.id, org)
+	h.exec(`INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
+		VALUES (gen_random_uuid(), $1, 'member.removed', 'membership', 'x', 'success', 'medium', 'removed', now() - interval '3 days')`, org)
+	h.selfApprove(owner, a, "111111", http.StatusForbidden)
+	// Eight days later the path opens.
+	h.exec(`UPDATE audit_logs SET logged_at = now() - interval '8 days' WHERE tenant_id = $1 AND action = 'member.removed'`, org)
+	if !h.listSelfApprovalAvailable(owner) {
+		t.Fatal("self-approval still closed after 7 days")
+	}
+	h.selfApprove(owner, a, "222222", http.StatusOK)
+}
