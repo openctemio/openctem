@@ -8,7 +8,9 @@
 -- else:
 --
 --   tenant_id     the organization the token was admitted into; a
---                 re-exchange into another organization is refused;
+--                 re-exchange into another organization is refused. Set to
+--                 NULL when the organization is deleted: the token id stays
+--                 claimed (refused), and no row names the deleted tenant;
 --   token_sha256  SHA-256 of the exact token: same issuer and jti with other
 --                 bytes is refused as a replay;
 --   run_id        the run the token opened or joined (NULL until known);
@@ -23,7 +25,7 @@
 -- Nullable columns and non-volatile defaults: no table rewrite, no backfill.
 
 ALTER TABLE ci_oidc_replay
-    ADD COLUMN IF NOT EXISTS tenant_id uuid,
+    ADD COLUMN IF NOT EXISTS tenant_id uuid REFERENCES tenants (id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS token_sha256 bytea,
     ADD COLUMN IF NOT EXISTS run_id uuid,
     ADD COLUMN IF NOT EXISTS exchanges integer DEFAULT 1 NOT NULL,
