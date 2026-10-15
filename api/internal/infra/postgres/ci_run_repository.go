@@ -436,19 +436,10 @@ func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) 
 	return &open, n == 1, nil
 }
 
-// RecordFailedCapabilities stores the capabilities a verdict found failed.
-func (r *CIRunRepository) RecordFailedCapabilities(ctx context.Context, tenantID, runID shared.ID, names []string) error {
-	if names == nil {
-		names = []string{}
-	}
-	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET failed_capabilities = $3 WHERE tenant_id = $1 AND id = $2`,
-		tenantID.String(), runID.String(), pq.Array(names))
-	return err
-}
-
 // ClearCarriedCapabilities drops the carried failed capabilities that the
-// named tool provides, by the tool registry (the platform's tools and the
-// tenant's own), never by what the report claims.
+// named tool provides: the report's tool name is matched against the tool
+// registry (the platform's tools and the tenant's own), whose capabilities
+// decide what is cleared.
 func (r *CIRunRepository) ClearCarriedCapabilities(ctx context.Context, tenantID, runID shared.ID, tool string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs r SET carried_failed_capabilities = ARRAY(
 			SELECT c FROM unnest(r.carried_failed_capabilities) AS c
@@ -784,12 +775,18 @@ func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 // A run marked over the findings cap stores only a verdict that names the
 // cap (ReasonTooManyFindings): one computed before the mark is refused as
 // changed and judged again.
-func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error {
+func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int, failedCapabilities []string) error {
+	if failedCapabilities == nil {
+		failedCapabilities = []string{}
+	}
+	// The failed capabilities are written with the verdict, in one
+	// statement: a later attempt re-opening the run carries exactly the list
+	// of the verdict it re-opens.
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
-		evaluated_at = $5, updated_at = NOW(),`+decorationQueued+`
+		evaluated_at = $5, failed_capabilities = $7, updated_at = NOW(),`+decorationQueued+`
 		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6
 		  AND (NOT findings_over_cap OR $4::jsonb @> '{"reasons":[{"code":"`+cirun.ReasonTooManyFindings+`"}]}')`,
-		tenantID.String(), runID.String(), verdict, detail, at, expectFindings)
+		tenantID.String(), runID.String(), verdict, detail, at, expectFindings, pq.Array(failedCapabilities))
 	if err != nil {
 		return err
 	}
