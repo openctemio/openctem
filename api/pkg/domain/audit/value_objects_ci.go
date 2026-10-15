@@ -44,6 +44,11 @@ const (
 	// failed before (logged with the created/updated/deleted event).
 	ActionCIGatePolicyLoosened Action = "ci_gate_policy.loosened"
 
+	// A repository's gate baseline: recorded (its open findings stop
+	// blocking default-branch runs) or removed.
+	ActionCIGateBaselineSet     Action = "ci_gate_baseline.set"
+	ActionCIGateBaselineDeleted Action = "ci_gate_baseline.deleted"
+
 	// Break-glass: created, revoked, and each time it lets a failing run pass.
 	ActionCIGateOverrideCreated Action = "ci_gate_override.created"
 	ActionCIGateOverrideRevoked Action = "ci_gate_override.revoked"
@@ -78,6 +83,7 @@ const (
 	ResourceTypeCITrustConfig  ResourceType = "ci_trust_config"
 	ResourceTypeCIRun          ResourceType = "ci_run"
 	ResourceTypeCIGatePolicy   ResourceType = "ci_gate_policy"
+	ResourceTypeCIGateBaseline ResourceType = "ci_gate_baseline"
 	ResourceTypeCodeScan       ResourceType = "code_scan"
 	ResourceTypeCIGateOverride ResourceType = "ci_gate_override"
 	ResourceTypeCIPipeline     ResourceType = "ci_pipeline"
@@ -100,6 +106,8 @@ var _ = registerActions("ci", map[Action]Severity{
 	ActionCIGatePolicyUpdated:         SeverityMedium,
 	ActionCIGatePolicyDeleted:         SeverityMedium,
 	ActionCIGatePolicyLoosened:        SeverityHigh,
+	ActionCIGateBaselineSet:           SeverityHigh,
+	ActionCIGateBaselineDeleted:       SeverityMedium,
 	ActionCIGateOverrideCreated:       SeverityHigh,
 	ActionCIGateOverrideRevoked:       SeverityMedium,
 	ActionCIGateOverrideUsed:          SeverityHigh,
@@ -117,7 +125,7 @@ var _ = registerActions("ci", map[Action]Severity{
 })
 
 func init() {
-	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateOverride, ResourceTypeCIPipeline, ResourceTypeCISettings, ResourceTypeSCMApp, ResourceTypeCodeScan} {
+	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateBaseline, ResourceTypeCIGateOverride, ResourceTypeCIPipeline, ResourceTypeCISettings, ResourceTypeSCMApp, ResourceTypeCodeScan} {
 		configResourceTypes[r] = struct{}{}
 	}
 }
