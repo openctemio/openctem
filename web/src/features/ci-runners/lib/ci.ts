@@ -435,6 +435,7 @@ export const REASON_LABEL: Record<string, string> = {
   override: 'Break-glass',
   no_baseline: 'No baseline',
   secret_pre_existing: 'Secret already on the default branch',
+  too_many_findings: 'Too many findings to judge',
 }
 
 export const SEVERITY_OPTIONS = ['critical', 'high', 'medium', 'low', 'none'] as const
