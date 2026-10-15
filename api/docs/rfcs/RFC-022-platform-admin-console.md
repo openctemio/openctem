@@ -699,7 +699,13 @@ it.
 - Server-side sessions: deactivating an admin or resetting credentials deletes
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes
-  are written to `admin_audit_logs`.
+  are written to `admin_audit_logs`. That log is append-only and hash-chained
+  (migration 002401): the database chains every insert, refuses updates,
+  deletes and truncation, and removes only the oldest prefix older than a
+  year through `admin_audit_prune`, anchoring the chain where it stopped.
+  `GET /api/v1/admin/audit-logs/chain` (any admin; shown on Security >
+  Activity) and `bootstrap-admin verify-audit` report every row that does not
+  verify. See `docs/architecture/audit-hash-chain.md`.
 - Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
   code from the console authenticator, single use (the sign-in replay guard),
   counted toward lockout when wrong, audited as `console.step_up` /

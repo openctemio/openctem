@@ -552,5 +552,13 @@
   "admin.legal.title": "Thông tin pháp lý",
   "admin.legal.websiteUrl": "Trang web (https)",
   "admin.nav.legal": "Pháp lý",
-  "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}"
+  "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}",
+  "admin.auditChain.unavailable": "Hiện không thể kiểm tra chuỗi nhật ký kiểm toán.",
+  "admin.auditChain.reasonChanged": "đã bị sửa sau khi ghi",
+  "admin.auditChain.reasonGap": "thiếu các dòng trước nó",
+  "admin.auditChain.reasonLink": "không nối tiếp dòng trước nó",
+  "admin.auditChain.okTitle": "Nhật ký kiểm toán nguyên vẹn",
+  "admin.auditChain.okBody": "Cả {count} mục đều hợp lệ: không mục nào bị sửa hay xóa kể từ khi ghi.",
+  "admin.auditChain.brokenTitle": "Nhật ký kiểm toán đã bị can thiệp",
+  "admin.auditChain.brokenBody": "{count} mục không hợp lệ. Hãy xử lý như một sự cố bảo mật: đối chiếu với bản sao nhật ký lưu ở nơi khác."
 }

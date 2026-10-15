@@ -82,6 +82,11 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "storage" {
 		os.Exit(runStorage(os.Args[2:]))
 	}
+	// `bootstrap-admin verify-audit`: check the administrators' audit chain
+	// (verify_audit.go).
+	if len(os.Args) > 1 && os.Args[1] == "verify-audit" {
+		os.Exit(runVerifyAudit(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	dbURL := flag.String("db", "", "Database URL (or set DATABASE_URL env)")
 	email := flag.String("email", "", "Admin email (or set ADMIN_EMAIL env)")
 	name := flag.String("name", "", "Admin name (defaults to email prefix)")

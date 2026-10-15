@@ -178,3 +178,30 @@ signed.
 
 The rebaseline also appears in the audit log itself: filter on action
 `audit.chain_rebaselined`.
+
+## The administrators' audit log
+
+`admin_audit_logs` (platform administrators' actions) has its own, single
+chain, built differently from the tenant chain: the database computes it
+(migration 002401), so every writer is covered, the API, the console service
+and the `bootstrap-admin` CLI alike.
+
+| Piece | Where |
+|---|---|
+| Chain columns on the row: `chain_position`, `prev_hash`, `hash` | `admin_audit_logs` |
+| `hash = SHA-256(prev_hash \| payload)`, payload = every other column as a fixed-order JSON array, the timestamp as epoch microseconds | `admin_audit_row_payload`, `admin_audit_row_hash` (SQL) |
+| Append: a `BEFORE INSERT` trigger takes a transaction-scoped advisory lock, reads the tail and overwrites whatever chain values the writer sent | `admin_audit_chain_append` |
+| Append-only: `UPDATE`, `DELETE` and `TRUNCATE` are refused by triggers, and the API role holds no `UPDATE`/`DELETE`/`TRUNCATE` grant on the table (the migration and `deploy/postgres/least-privilege-roles.sql` revoke them) | `admin_audit_refuse_change` |
+| Retention: `admin_audit_prune(cutoff, max_rows)` (`SECURITY DEFINER`, runs as the table owner) deletes only the oldest prefix older than `max(cutoff, now - 365 days)` and records an anchor | `admin_audit_chain_anchors`; the admin audit retention controller calls it |
+| Verify: recompute each online row with the same SQL function, check links from the newest anchor and that no position is missing | `AuditLogRepository.VerifyChain`; `GET /api/v1/admin/audit-logs/chain` (any admin, Security > Activity); `bootstrap-admin verify-audit [-json]` (exit 1 on a break) |
+
+The administrator a row names is history: the foreign key from `admin_id` to
+`admin_users` is dropped, so deleting an administrator never rewrites a row.
+
+Threat model. The chain detects a row edited or removed by anyone who can
+bypass the triggers (the table owner disabling them, a restore from an edited
+dump); it cannot stop the owner from re-signing the whole chain, so keep an
+off-box copy of the administrators' actions. With the single-role database
+setup the API role is the owner, so the guarantee then rests on the triggers
+alone; the least-privilege roles make it a database permission.
+
