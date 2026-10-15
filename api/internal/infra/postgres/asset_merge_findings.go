@@ -400,7 +400,7 @@ func settleLoserPendingRetest(ctx context.Context, tx *sql.Tx, tenantID, survivo
 
 // settleLoserPendingApproval cancels the loser's pending status request when
 // the survivor has one too (one pending request per finding); the survivor's
-// request stands and the loser's is kept, cancelled, in its history.
+// request stands and the loser's is kept, canceled, in its history.
 func settleLoserPendingApproval(ctx context.Context, tx *sql.Tx, tenantID, survivorID, loserID string) error {
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE finding_status_approvals SET status = 'canceled', version = version + 1

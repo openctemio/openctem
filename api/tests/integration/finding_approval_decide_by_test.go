@@ -205,7 +205,7 @@ func TestFindingApproval_OnePendingRequestPerFinding(t *testing.T) {
 	if n := f.count(t, `SELECT COUNT(*) FROM finding_status_approvals WHERE finding_id = $1 AND status = 'pending'`, fid.String()); n != 1 {
 		t.Fatalf("pending requests: %d", n)
 	}
-	// Once decided (cancelled), a new request may be made.
+	// Once decided (canceled), a new request may be made.
 	if _, err := f.svc.CancelApproval(ctx, finding.CancelApprovalInput{TenantID: f.tenant.String(), ApprovalID: first.ID.String(), CanceledBy: f.requester.String()}); err != nil {
 		t.Fatal(err)
 	}
