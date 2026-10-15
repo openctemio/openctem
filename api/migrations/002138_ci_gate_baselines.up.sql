@@ -7,7 +7,7 @@
 
 CREATE TABLE IF NOT EXISTS ci_gate_baselines (
     tenant_id           UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    repository_asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    repository_asset_id UUID NOT NULL,
     source              VARCHAR(20) NOT NULL DEFAULT 'manual',
     branch              VARCHAR(255) NOT NULL DEFAULT '',
     findings_count      INTEGER NOT NULL DEFAULT 0,
@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS ci_gate_baselines (
     set_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     cleared_at          TIMESTAMPTZ,
     PRIMARY KEY (tenant_id, repository_asset_id),
+    FOREIGN KEY (tenant_id, repository_asset_id) REFERENCES assets (tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT chk_ci_gate_baselines_source CHECK (source IN ('manual', 'first_run'))
 );
 
