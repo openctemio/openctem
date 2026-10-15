@@ -316,6 +316,17 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
         }
       : undefined,
     packageFix: api.package_fix ? mapFixPlan(api.package_fix) : undefined,
+    intel: api.intel
+      ? {
+          cvssSource: api.intel.cvss_source,
+          publishedAt: api.intel.published_at,
+          modifiedAt: api.intel.modified_at,
+          references: api.intel.references ?? [],
+          epssDate: api.intel.epss_date,
+          kevDateAdded: api.intel.kev_date_added,
+          kevRansomware: api.intel.kev_ransomware,
+        }
+      : undefined,
     advisory: v
       ? {
           cveId: v.cve_id,
