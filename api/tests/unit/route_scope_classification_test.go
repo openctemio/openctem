@@ -69,7 +69,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/version":                     {classSystem, "build identity"},
 	"/api/v1/announcements":               {classSystem, "platform operator notices (plain text); no tenant data"},
 	"/api/v1/brand$":                      {classSystem, "instance brand shown before sign-in; server configuration, no tenant data"},
-	"/api/v1/brand/assets/":               {classSystem, "instance brand images; server configuration, no tenant data"},
+	"/api/v1/brand/images/":               {classSystem, "instance brand images; server configuration, no tenant data"},
 	"/api/v1/legal":                       {classSystem, "operator legal information shown before sign-in; no tenant data"},
 	"/api/v1/client-errors":               {classSystem, "web error kind for operator metrics; reads and stores nothing"},
 	"/api/v1/auth":                        {classSystem, "authentication flows"},

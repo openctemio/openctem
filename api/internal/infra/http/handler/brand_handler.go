@@ -46,7 +46,7 @@ func (h *BrandHandler) Get(w http.ResponseWriter, _ *http.Request) {
 // @Param        kind  path  string  true  "logo-light, logo-dark or favicon"
 // @Success      200
 // @Failure      404
-// @Router       /brand/assets/{kind} [get]
+// @Router       /brand/images/{kind} [get]
 func (h *BrandHandler) Asset(w http.ResponseWriter, r *http.Request) {
 	kind := brand.AssetKind(chi.URLParam(r, "kind"))
 	a, ok := h.brand.Assets[kind]
