@@ -13,6 +13,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -80,6 +81,28 @@ const maxScopeApprovers = 200
 // attack_surface:scope:approve through a role. Owners first, then by name.
 // Tenant-scoped: only this organization's memberships and role rows.
 func (r *ScopeActorRepository) ScopeApprovers(ctx context.Context, tenantID shared.ID) ([]scope.Approver, error) {
+	return r.approversWith(ctx, tenantID, scopeApprovePermission)
+}
+
+// FindingApprovers lists the members who may approve finding false-positive
+// and accepted-risk requests: the same rule as ScopeApprovers with
+// findings:approve. The data scope of each is checked by the caller.
+func (r *ScopeActorRepository) FindingApprovers(ctx context.Context, tenantID shared.ID) ([]finding.FindingApprover, error) {
+	all, err := r.approversWith(ctx, tenantID, permission.FindingsApprove.String())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]finding.FindingApprover, 0, len(all))
+	for _, a := range all {
+		out = append(out, finding.FindingApprover{UserID: a.UserID, Name: a.Name, Email: a.Email, Owner: a.Owner})
+	}
+	return out, nil
+}
+
+// approversWith lists active members with an active account and an
+// unexpired membership whose effective role is owner or admin, or who hold
+// perm through a role. Owners first, then by name.
+func (r *ScopeActorRepository) approversWith(ctx context.Context, tenantID shared.ID, perm string) ([]scope.Approver, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT u.id::text, u.name, u.email, COALESCE(ver.role = 'owner', false) AS owner
 		FROM tenant_members m
@@ -95,9 +118,9 @@ func (r *ScopeActorRepository) ScopeApprovers(ctx context.Context, tenantID shar
 		          AND rp.permission_id = $2))
 		ORDER BY COALESCE(ver.role = 'owner', false) DESC, u.name, u.id
 		LIMIT $3`,
-		tenantID.String(), scopeApprovePermission, maxScopeApprovers)
+		tenantID.String(), perm, maxScopeApprovers)
 	if err != nil {
-		return nil, fmt.Errorf("list scope approvers: %w", err)
+		return nil, fmt.Errorf("list approvers: %w", err)
 	}
 	defer rows.Close()
 	var out []scope.Approver

@@ -414,3 +414,22 @@ func (r *FindingApprovalRepository) ExpireOverdueRequests(ctx context.Context) (
 	}
 	return n, nil
 }
+
+// MarkReminded records a reminder for a pending request when the last one is
+// at least minInterval old (atomic: two clicks at once remind once). It
+// answers whether the reminder was recorded.
+func (r *FindingApprovalRepository) MarkReminded(ctx context.Context, tenantID, id shared.ID, now time.Time, minInterval time.Duration) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE finding_status_approvals SET reminded_at = $3
+		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+		  AND (reminded_at IS NULL OR reminded_at <= $4)`,
+		tenantID.String(), id.String(), now, now.Add(-minInterval))
+	if err != nil {
+		return false, fmt.Errorf("mark approval reminded: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return n == 1, nil
+}
