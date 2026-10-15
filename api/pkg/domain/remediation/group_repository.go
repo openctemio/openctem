@@ -26,6 +26,13 @@ type KeySource struct {
 	Input        KeyInput
 }
 
+// CampaignKeyRef is a campaign that tracks a remediation key.
+type CampaignKeyRef struct {
+	ID   shared.ID
+	Name string
+	Key  string
+}
+
 // KeyRepository persists per-finding remediation keys and answers group queries.
 // It owns the finding_remediation_keys side-table; it never writes findings.
 type KeyRepository interface {
@@ -52,6 +59,19 @@ type KeyRepository interface {
 
 	// TenantsWithFindings lists the tenants that have at least one finding.
 	TenantsWithFindings(ctx context.Context) ([]shared.ID, error)
+
+	// CampaignsTrackingKeys lists the tenant's campaigns whose finding filter
+	// tracks one of these remediation keys.
+	CampaignsTrackingKeys(ctx context.Context, tenantID shared.ID, keys []string) ([]CampaignKeyRef, error)
+
+	// CampaignsWithStaleKey lists the tenant's campaigns whose finding filter
+	// tracks a remediation key that no finding of the tenant has.
+	CampaignsWithStaleKey(ctx context.Context, tenantID shared.ID) ([]CampaignKeyRef, error)
+
+	// RetargetCampaignKey moves one campaign of the tenant from oldKey to
+	// newKey. It changes nothing (false) when the campaign no longer tracks
+	// oldKey, so a repeated run is a no-op.
+	RetargetCampaignKey(ctx context.Context, tenantID, campaignID shared.ID, oldKey, newKey string) (bool, error)
 
 	// ListGroups returns groups rolled up over the tenant's OPEN findings.
 	// excludeStatuses are the closed finding statuses to leave out; pentest
