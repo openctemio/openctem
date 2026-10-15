@@ -100,7 +100,7 @@ func TestInvitationOutsidePolicy(t *testing.T) {
 	}
 
 	t.Run("an outside person joins with the invited role and no imposed end", func(t *testing.T) {
-		inv, err := invite("m-"+shared.NewID().String()[:8]+"@gmail.com", invMemberRole)
+		inv, err := invite("m-"+shared.NewID().String()[24:]+"@gmail.com", invMemberRole)
 		if err != nil {
 			t.Fatalf("invite an outside person as member: %v", err)
 		}
@@ -125,7 +125,7 @@ func TestInvitationOutsidePolicy(t *testing.T) {
 			VALUES ($1, $2, 'inv-reader', 'Reader of all', false, 10, true)`, fullData, host.String()); err != nil {
 			t.Fatal(err)
 		}
-		email := "p-" + shared.NewID().String()[:8] + "@gmail.com"
+		email := "p-" + shared.NewID().String()[24:] + "@gmail.com"
 		if _, err := invite(email, fullData); !errors.Is(err, errInvStepUp) {
 			t.Fatalf("without step-up: want step-up, got %v", err)
 		}
@@ -140,7 +140,7 @@ func TestInvitationOutsidePolicy(t *testing.T) {
 		}
 		// An insider needs no step-up for the same role.
 		fresh = false
-		if _, err := invite("in-"+shared.NewID().String()[:8]+"@host.example", fullData); err != nil {
+		if _, err := invite("in-"+shared.NewID().String()[24:]+"@host.example", fullData); err != nil {
 			t.Fatalf("insider with a full-data role: %v", err)
 		}
 	})
@@ -153,16 +153,16 @@ func TestInvitationOutsidePolicy(t *testing.T) {
 		defer func() {
 			_, _ = db.ExecContext(ctx, `UPDATE tenants SET settings = settings #- '{security,invitees}' WHERE id = $1`, host.String())
 		}()
-		if _, err := invite("v-"+shared.NewID().String()[:8]+"@gmail.com", invMemberRole); !errors.Is(err, tenant.ErrInviteeNotOnVerifiedDomain) {
+		if _, err := invite("v-"+shared.NewID().String()[24:]+"@gmail.com", invMemberRole); !errors.Is(err, tenant.ErrInviteeNotOnVerifiedDomain) {
 			t.Fatalf("outside address: want ErrInviteeNotOnVerifiedDomain, got %v", err)
 		}
-		if _, err := invite("v-"+shared.NewID().String()[:8]+"@host.example", invMemberRole); err != nil {
+		if _, err := invite("v-"+shared.NewID().String()[24:]+"@host.example", invMemberRole); err != nil {
 			t.Fatalf("own domain: %v", err)
 		}
 	})
 
 	t.Run("a demoted inviter's invitation no longer grants anything", func(t *testing.T) {
-		inv, err := invite("late-"+shared.NewID().String()[:8]+"@gmail.com", invMemberRole)
+		inv, err := invite("late-"+shared.NewID().String()[24:]+"@gmail.com", invMemberRole)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -190,7 +190,7 @@ func TestInvitationOutsidePolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err := svc.CreateInvitation(ctx, host.String(), tenant.CreateInvitationInput{
-			Email: "f-" + shared.NewID().String()[:8] + "@gmail.com", Role: "member", RoleIDs: []string{foreign},
+			Email: "f-" + shared.NewID().String()[24:] + "@gmail.com", Role: "member", RoleIDs: []string{foreign},
 		}, owner, audit.AuditContext{TenantID: host.String(), ActorID: owner.String()})
 		if err == nil {
 			t.Fatal("an invitation with another organization's role was created")
