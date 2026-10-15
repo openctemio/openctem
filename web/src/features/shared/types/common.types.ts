@@ -98,41 +98,41 @@ export const getRiskLevel = (score: number, thresholds?: RiskLevelThresholds) =>
     return {
       key: 'critical' as RiskLevelKey,
       label: 'Critical',
-      color: 'bg-red-500',
+      color: 'bg-red-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
       textColor: 'text-white',
     }
   if (score >= t.high_min)
     return {
       key: 'high' as RiskLevelKey,
       label: 'High',
-      color: 'bg-orange-500',
+      color: 'bg-orange-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
       textColor: 'text-white',
     }
   if (score >= t.medium_min)
     return {
       key: 'medium' as RiskLevelKey,
       label: 'Medium',
-      color: 'bg-yellow-500',
+      color: 'bg-yellow-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
       textColor: 'text-black',
     }
   if (score >= t.low_min)
     return {
       key: 'low' as RiskLevelKey,
       label: 'Low',
-      color: 'bg-blue-500',
+      color: 'bg-blue-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
       textColor: 'text-white',
     }
   if (score > 0)
     return {
       key: 'minimal' as RiskLevelKey,
       label: 'Minimal',
-      color: 'bg-green-500',
+      color: 'bg-green-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
       textColor: 'text-white',
     }
   return {
     key: 'none' as RiskLevelKey,
     label: 'No open risk',
-    color: 'bg-green-500',
+    color: 'bg-green-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
     textColor: 'text-white',
   }
 }
