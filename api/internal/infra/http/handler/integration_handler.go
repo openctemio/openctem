@@ -1771,6 +1771,19 @@ func (h *IntegrationHandler) jiraIntegrationID(w http.ResponseWriter, r *http.Re
 
 // GetJiraWebhook handles GET /api/v1/integrations/{id}/jira-webhook: the
 // webhook URL and whether a secret is set (never the secret).
+// @Summary      Inbound Jira webhook of an integration
+// @Description  The webhook URL to configure in Jira and whether a secret is set (the secret is never returned).
+// @Tags         Integrations
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Integration ID"  format(uuid)
+// @Success      200  {object}  JiraWebhookConfigResponse
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden (permission or step-up)"
+// @Failure      404  {object}  map[string]string  "Not found (no such Jira integration in this organization)"
+// @Security     BearerAuth
+// @Router       /integrations/{id}/jira-webhook [get]
 func (h *IntegrationHandler) GetJiraWebhook(w http.ResponseWriter, r *http.Request) {
 	tid, id, ok := h.jiraIntegrationID(w, r)
 	if !ok {
@@ -1788,6 +1801,19 @@ func (h *IntegrationHandler) GetJiraWebhook(w http.ResponseWriter, r *http.Reque
 // RotateJiraWebhookSecret handles POST /api/v1/integrations/{id}/jira-webhook/secret/rotate:
 // a new random secret, returned in this response only. The previous secret
 // stops verifying immediately.
+// @Summary      Generate a new inbound Jira webhook secret
+// @Description  Generates a new secret and returns it in this response only; the old one stops working at once. Requires step-up.
+// @Tags         Integrations
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Integration ID"  format(uuid)
+// @Success      200  {object}  JiraWebhookConfigResponse
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden (permission or step-up)"
+// @Failure      404  {object}  map[string]string  "Not found (no such Jira integration in this organization)"
+// @Security     BearerAuth
+// @Router       /integrations/{id}/jira-webhook/secret/rotate [post]
 func (h *IntegrationHandler) RotateJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
 	tid, id, ok := h.jiraIntegrationID(w, r)
 	if !ok {
@@ -1811,6 +1837,20 @@ type SetJiraWebhookSecretRequest struct {
 
 // SetJiraWebhookSecret handles PUT /api/v1/integrations/{id}/jira-webhook/secret:
 // stores the secret entered in Jira's webhook form (encrypted; never returned).
+// @Summary      Set the inbound Jira webhook secret
+// @Description  Stores the secret entered in Jira's webhook form (16 to 256 printable characters, no spaces), encrypted; it is never returned. Requires step-up.
+// @Tags         Integrations
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Integration ID"  format(uuid)
+// @Param        request  body  SetJiraWebhookSecretRequest  true  "The secret"
+// @Success      200  {object}  JiraWebhookConfigResponse
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden (permission or step-up)"
+// @Failure      404  {object}  map[string]string  "Not found (no such Jira integration in this organization)"
+// @Security     BearerAuth
+// @Router       /integrations/{id}/jira-webhook/secret [put]
 func (h *IntegrationHandler) SetJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
 	tid, id, ok := h.jiraIntegrationID(w, r)
 	if !ok {

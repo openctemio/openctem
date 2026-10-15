@@ -170,7 +170,7 @@ export function JiraWebhookDialog({
                       value={shownSecret}
                       label={t('settings.jiraWebhook.copySecret', 'Copy the secret')}
                     />
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                    <p className="text-xs text-warning">
                       {t(
                         'settings.jiraWebhook.shownOnce',
                         'Copy it now and paste it into Jira. It is not shown again.'
