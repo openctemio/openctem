@@ -354,6 +354,14 @@ func honored(f RunFinding, now time.Time) bool { return Decision(f, now) != "" }
 // decision, so the job leaves it out of its own output (console, SARIF,
 // merge request report). Index is the result's position in the uploaded
 // report. The job learns nothing about findings it did not report.
+// MaxKnownInResponse bounds the decided results an upload response lists
+// (about 1 MB of JSON). The rest are counted (KnownTotal), never dropped
+// silently: a job that sees fewer shows more of its own results, which is
+// safe, and the gate on the platform judges every finding either way. A
+// response that grew with the report could exceed what a client reads and
+// make a stored report look like a failed upload.
+const MaxKnownInResponse = 10_000
+
 type KnownFinding struct {
 	Index     int        `json:"index"`
 	Decision  string     `json:"decision"`
