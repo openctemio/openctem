@@ -56,7 +56,9 @@ func TestRegression_UndoIsNotARegression(t *testing.T) {
 	move := func(id shared.ID, status string) {
 		t.Helper()
 		if _, err := svc.UpdateFindingStatus(ctx, id.String(), tenant.String(), finding.UpdateFindingStatusInput{
-			Status: status, ActorID: person.String(), HasVerifyPermission: true,
+			// A resolve without the verification checklist is attested and
+			// needs a note.
+			Status: status, Resolution: "verified by the owner", ActorID: person.String(), HasVerifyPermission: true,
 		}); err != nil {
 			t.Fatalf("move to %s: %v", status, err)
 		}

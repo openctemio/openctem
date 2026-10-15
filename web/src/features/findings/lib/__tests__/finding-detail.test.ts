@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ApiFinding } from '../../api/finding-api.types'
 import { findingDescription, findingShortName, toFindingDetail } from '../finding-detail'
 import { riskSignals } from '../finding-signals'
-import { fixGuidance, upgradeCommands } from '../fix-guidance'
+import { dependencyVia, fixGuidance, upgradeCommands } from '../fix-guidance'
 
 /** The live reference finding: cross-spawn ReDoS on demo-web-storefront. */
 function crossSpawn(over: Partial<ApiFinding> = {}): ApiFinding {
@@ -288,6 +288,35 @@ describe('fixGuidance', () => {
     })
     if (g?.kind !== 'upgrade') throw new Error('expected an upgrade')
     expect(g.commands[0].code).toContain('"cross-spawn": "^7.0.5"')
+  })
+
+  it('keeps the chain that brings a transitive package in, without the package itself', () => {
+    expect(
+      dependencyVia(['express@4.17.1', 'body-parser@1.19.0'], 'body-parser', '1.19.0')
+    ).toEqual(['express@4.17.1'])
+    expect(dependencyVia(['lodash@4.17.20'], 'lodash', '4.17.20')).toBeUndefined()
+    expect(dependencyVia(['requests', 'urllib3'], 'urllib3', '1.26.0')).toEqual(['requests'])
+    expect(dependencyVia(undefined, 'x', '1')).toBeUndefined()
+  })
+
+  it('maps the dependency path and the lock file line from the API', () => {
+    const d = toFindingDetail({
+      ...crossSpawn(),
+      component: {
+        ...crossSpawn().component!,
+        dependency_path: ['express@4.17.1', 'cross-spawn@7.0.3'],
+        manifest_file: 'package-lock.json',
+        manifest_line: 34,
+      },
+    })
+    expect(d.component).toMatchObject({
+      dependencyPath: ['express@4.17.1', 'cross-spawn@7.0.3'],
+      manifestLine: 34,
+    })
+    const g = fixGuidance(d)
+    if (g?.kind !== 'upgrade') throw new Error('expected an upgrade')
+    expect(g.via).toEqual(['express@4.17.1'])
+    expect(g.manifestLine).toBe(34)
   })
 
   it('installs a direct npm dependency directly', () => {
