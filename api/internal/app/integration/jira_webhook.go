@@ -68,47 +68,52 @@ func (s *IntegrationService) storeSecretOnIntegration(ctx context.Context, intg 
 	return nil
 }
 
-// primaryJiraIntegration returns the tenant's most-recently-created Jira
-// integration (ListByProvider orders by created_at DESC). Returns
-// ErrNoJiraIntegration if the tenant has none.
-func (s *IntegrationService) primaryJiraIntegration(ctx context.Context, tenantID shared.ID) (*integrationdom.Integration, error) {
-	intgs, err := s.repo.ListByProvider(ctx, tenantID, integrationdom.ProviderJira)
+// MinJiraWebhookSecretLen and MaxJiraWebhookSecretLen bound a secret an
+// administrator types in (one Jira generated or chose). A shorter one is too
+// easy to guess; a generated one is 64 hex characters.
+const (
+	MinJiraWebhookSecretLen = 16
+	MaxJiraWebhookSecretLen = 256
+)
+
+// ErrJiraWebhookUnauthorized refuses an inbound delivery. One error for every
+// cause (unknown integration, another provider, disabled, no secret, a bad or
+// missing signature), so a caller cannot probe which integrations exist.
+var ErrJiraWebhookUnauthorized = fmt.Errorf("%w: invalid webhook signature", shared.ErrUnauthorized)
+
+// ErrInvalidJiraWebhookSecret refuses a secret outside the allowed shape.
+var ErrInvalidJiraWebhookSecret = fmt.Errorf("%w: the webhook secret must be %d to %d printable characters without spaces",
+	shared.ErrValidation, MinJiraWebhookSecretLen, MaxJiraWebhookSecretLen)
+
+// jiraIntegrationOf returns the tenant's Jira integration with this id, or
+// not found (another tenant's integration, or a non-Jira one, is not found).
+func (s *IntegrationService) jiraIntegrationOf(ctx context.Context, tenantID, integrationID shared.ID) (*integrationdom.Integration, error) {
+	intg, err := s.repo.GetByTenantAndID(ctx, tenantID, integrationID)
 	if err != nil {
-		return nil, fmt.Errorf("list jira integrations: %w", err)
+		return nil, err
 	}
-	if len(intgs) == 0 {
+	if intg.Provider() != integrationdom.ProviderJira {
 		return nil, ErrNoJiraIntegration
 	}
-	return intgs[0], nil
+	return intg, nil
 }
 
-// EnsureJiraWebhookSecret returns the tenant's Jira inbound-webhook secret,
-// lazily generating and persisting one on the tenant's primary Jira integration
-// if none exists. The plaintext secret is returned so the caller can show it to
-// the tenant admin to configure in Jira. Requires a Jira integration to exist.
-func (s *IntegrationService) EnsureJiraWebhookSecret(ctx context.Context, tenantID shared.ID) (string, error) {
-	intg, err := s.primaryJiraIntegration(ctx, tenantID)
+// JiraWebhookHasSecret reports whether the tenant's Jira integration has an
+// inbound webhook secret. The secret itself is never returned after it is
+// set: it is shown once, on rotation.
+func (s *IntegrationService) JiraWebhookHasSecret(ctx context.Context, tenantID, integrationID shared.ID) (bool, error) {
+	intg, err := s.jiraIntegrationOf(ctx, tenantID, integrationID)
 	if err != nil {
-		return "", err
+		return false, err
 	}
-	if existing := s.secretFromIntegration(intg); existing != "" {
-		return existing, nil
-	}
-	secret, err := generateWebhookSecret()
-	if err != nil {
-		return "", err
-	}
-	if err := s.storeSecretOnIntegration(ctx, intg, secret); err != nil {
-		return "", err
-	}
-	s.logger.Info("generated Jira webhook secret", "tenant_id", tenantID.String(), "integration_id", intg.ID().String())
-	return secret, nil
+	return s.secretFromIntegration(intg) != "", nil
 }
 
-// RotateJiraWebhookSecret generates a new secret on the tenant's primary Jira
-// integration and returns it. The previous secret stops verifying immediately.
-func (s *IntegrationService) RotateJiraWebhookSecret(ctx context.Context, tenantID shared.ID) (string, error) {
-	intg, err := s.primaryJiraIntegration(ctx, tenantID)
+// RotateJiraWebhookSecret generates a new inbound webhook secret for one of
+// the tenant's Jira integrations and returns it, the only time it is shown.
+// The previous secret stops verifying immediately.
+func (s *IntegrationService) RotateJiraWebhookSecret(ctx context.Context, tenantID, integrationID shared.ID) (string, error) {
+	intg, err := s.jiraIntegrationOf(ctx, tenantID, integrationID)
 	if err != nil {
 		return "", err
 	}
@@ -123,24 +128,54 @@ func (s *IntegrationService) RotateJiraWebhookSecret(ctx context.Context, tenant
 	return secret, nil
 }
 
-// ListJiraWebhookSecrets returns the decrypted webhook secrets configured on all
-// of the tenant's Jira integrations (excluding disabled ones). These are the
-// candidate secrets used to verify an inbound Jira webhook for that tenant. The
-// result is tenant-scoped, so a secret from one tenant can never verify
-// another tenant's webhook.
-func (s *IntegrationService) ListJiraWebhookSecrets(ctx context.Context, tenantID shared.ID) ([]string, error) {
-	intgs, err := s.repo.ListByProvider(ctx, tenantID, integrationdom.ProviderJira)
+// ReplaceJiraWebhookSecret stores a secret the administrator chose (for example
+// the one Jira generated in its webhook form). Stored encrypted; never
+// returned.
+func (s *IntegrationService) ReplaceJiraWebhookSecret(ctx context.Context, tenantID, integrationID shared.ID, secret string) error {
+	if !validJiraWebhookSecret(secret) {
+		return ErrInvalidJiraWebhookSecret
+	}
+	intg, err := s.jiraIntegrationOf(ctx, tenantID, integrationID)
 	if err != nil {
-		return nil, fmt.Errorf("list jira integrations: %w", err)
+		return err
 	}
-	secrets := make([]string, 0, len(intgs))
-	for _, intg := range intgs {
-		if intg.Status() == integrationdom.StatusDisabled {
-			continue
-		}
-		if secret := s.secretFromIntegration(intg); secret != "" {
-			secrets = append(secrets, secret)
+	if err := s.storeSecretOnIntegration(ctx, intg, secret); err != nil {
+		return err
+	}
+	s.logger.Info("set Jira webhook secret", "tenant_id", tenantID.String(), "integration_id", intg.ID().String())
+	return nil
+}
+
+func validJiraWebhookSecret(secret string) bool {
+	if len(secret) < MinJiraWebhookSecretLen || len(secret) > MaxJiraWebhookSecretLen {
+		return false
+	}
+	for _, r := range secret {
+		if r <= ' ' || r > '~' {
+			return false
 		}
 	}
-	return secrets, nil
+	return true
+}
+
+// VerifyJiraDelivery authenticates an inbound Jira webhook delivered to the
+// per-integration URL. The integration id in the URL names exactly one
+// integration and so one tenant; the delivery must carry
+// X-Hub-Signature: sha256=<hex HMAC-SHA256 of the raw body> under that
+// integration's own secret. It returns the integration's tenant. Every
+// failure is ErrJiraWebhookUnauthorized.
+func (s *IntegrationService) VerifyJiraDelivery(ctx context.Context, integrationID shared.ID, body []byte, signature string) (shared.ID, error) {
+	// Unscoped by design: the URL is the only identity an unauthenticated
+	// sender has, and the secret of that one integration is the proof.
+	intg, err := s.repo.GetByID(ctx, integrationID)
+	if err != nil || intg == nil ||
+		intg.Provider() != integrationdom.ProviderJira ||
+		intg.Status() == integrationdom.StatusDisabled {
+		return shared.ID{}, ErrJiraWebhookUnauthorized
+	}
+	secret := s.secretFromIntegration(intg)
+	if secret == "" || !VerifyHubSignature(body, signature, secret) {
+		return shared.ID{}, ErrJiraWebhookUnauthorized
+	}
+	return intg.TenantID(), nil
 }
