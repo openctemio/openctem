@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -49,6 +50,7 @@ type Reclassifier struct {
 	sla        SLARecomputer
 	queue      scoring.PriorityQueue
 	versions   scoring.VersionRepository
+	summaries  SummaryPublisher
 	logger     *logger.Logger
 	// Page size for the open findings of one asset.
 	perPage int
@@ -79,6 +81,16 @@ func (r *Reclassifier) SetSLARecomputer(s SLARecomputer) {
 	r.sla = s
 }
 
+// SummaryPublisher sends the one notification of a scoring change.
+type SummaryPublisher interface {
+	PublishScoringSummary(ctx context.Context, s scoring.ChangeSummary) error
+}
+
+// SetSummaryPublisher wires the scoring change summary notification.
+func (r *Reclassifier) SetSummaryPublisher(p SummaryPublisher) {
+	r.summaries = p
+}
+
 // SetQueue wires the durable queue and the version source.
 func (r *Reclassifier) SetQueue(q scoring.PriorityQueue, v scoring.VersionRepository) {
 	r.queue = q
@@ -99,31 +111,77 @@ func (r *Reclassifier) ProcessQueue(ctx context.Context, limit, perTenant int) (
 	}
 	res.Claimed = len(items)
 
-	byTenant := make(map[shared.ID][]shared.ID)
-	order := make([]shared.ID, 0)
+	// A pass is grouped by tenant and by the scoring change that queued the
+	// asset: a change's findings are recomputed without per-finding events
+	// and its counts go to the change's summary.
+	type group struct {
+		tenant shared.ID
+		change int64 // 0 = not a scoring change
+		assets []shared.ID
+	}
+	idx := make(map[[2]string]int)
+	var groups []group
 	for _, it := range items {
-		if _, ok := byTenant[it.TenantID]; !ok {
-			order = append(order, it.TenantID)
+		var change int64
+		if it.ScoringChangeID != nil {
+			change = *it.ScoringChangeID
 		}
-		byTenant[it.TenantID] = append(byTenant[it.TenantID], it.AssetID)
+		k := [2]string{it.TenantID.String(), fmt.Sprint(change)}
+		i, ok := idx[k]
+		if !ok {
+			i = len(groups)
+			idx[k] = i
+			groups = append(groups, group{tenant: it.TenantID, change: change})
+		}
+		groups[i].assets = append(groups[i].assets, it.AssetID)
 	}
 
 	var errs []error
-	for _, tid := range order {
-		ids := byTenant[tid]
-		checked, changed, err := r.ReclassifyAssets(ctx, tid, ids)
-		res.Checked += checked
-		res.Changed += changed
+	for _, g := range groups {
+		gctx := ctx
+		if g.change > 0 {
+			gctx = finding.WithCoalescedChangeEvents(ctx)
+		}
+		impact, err := r.ReclassifyAssets(gctx, g.tenant, g.assets)
+		res.Checked += impact.Checked
+		res.Changed += impact.Changed
+		if g.change > 0 && impact.Checked > 0 {
+			if ierr := r.queue.RecordImpact(ctx, g.tenant, g.change, impact); ierr != nil {
+				errs = append(errs, fmt.Errorf("tenant %s: %w", g.tenant, ierr))
+			}
+		}
 		if err != nil {
-			errs = append(errs, fmt.Errorf("tenant %s: %w", tid, err))
+			errs = append(errs, fmt.Errorf("tenant %s: %w", g.tenant, err))
 			requeueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-			if qerr := r.queue.EnqueueAssets(requeueCtx, tid, ids, scoring.ReasonFindingChange); qerr != nil {
-				errs = append(errs, fmt.Errorf("tenant %s requeue: %w", tid, qerr))
+			if qerr := r.queue.EnqueueAssets(requeueCtx, g.tenant, g.assets, scoring.ReasonFindingChange); qerr != nil {
+				errs = append(errs, fmt.Errorf("tenant %s requeue: %w", g.tenant, qerr))
 			}
 			cancel()
 		}
 	}
+	if err := r.publishDrainedSummaries(ctx); err != nil {
+		errs = append(errs, err)
+	}
 	return res, errors.Join(errs...)
+}
+
+// publishDrainedSummaries sends one notification per scoring change whose
+// recompute has drained for a tenant.
+func (r *Reclassifier) publishDrainedSummaries(ctx context.Context) error {
+	summaries, err := r.queue.ClaimDrainedSummaries(ctx, 50)
+	if err != nil {
+		return err
+	}
+	for _, s := range summaries {
+		if r.summaries == nil {
+			continue
+		}
+		if err := r.summaries.PublishScoringSummary(ctx, s); err != nil {
+			r.logger.Warn("scoring change summary not sent", "tenant_id", s.TenantID.String(),
+				"scoring_change_id", s.ChangeID, "error", err)
+		}
+	}
+	return nil
 }
 
 // QueueStats returns the queue depth and the oldest due row's age.
@@ -147,23 +205,24 @@ func (r *Reclassifier) EnqueueReconcile(ctx context.Context, delay time.Duration
 // tenant and stamps them with the version read before computing: a change
 // that lands during the pass leaves an older stamp, so the findings are
 // computed again (a stamp is never newer than the inputs it was computed
-// with). Returns the findings checked and those whose stored values changed.
-func (r *Reclassifier) ReclassifyAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (checked, changed int, err error) {
+// with). Returns what the pass did to the findings.
+func (r *Reclassifier) ReclassifyAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (scoring.ChangeImpact, error) {
+	var impact scoring.ChangeImpact
 	var version int64
 	if r.versions != nil {
-		version, err = r.versions.CurrentVersion(ctx, tenantID, scoring.KindFindingPriority)
+		v, err := r.versions.CurrentVersion(ctx, tenantID, scoring.KindFindingPriority)
 		if err != nil {
-			return 0, 0, err
+			return impact, err
 		}
+		version = v
 	}
 	var firstErr error
 	for _, assetID := range assetIDs {
 		if ctx.Err() != nil {
-			return checked, changed, ctx.Err()
+			return impact, ctx.Err()
 		}
-		ids, n, err := r.reclassifyAsset(ctx, tenantID, assetID)
-		checked += len(ids)
-		changed += n
+		ids, im, err := r.reclassifyAsset(ctx, tenantID, assetID)
+		impact.Add(im)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("asset %s: %w", assetID, err)
@@ -176,20 +235,21 @@ func (r *Reclassifier) ReclassifyAssets(ctx context.Context, tenantID shared.ID,
 			}
 		}
 	}
-	return checked, changed, firstErr
+	return impact, firstErr
 }
 
 // reclassifyAsset recomputes the open findings of one asset. It returns the
-// ids of the findings it computed (persisted or confirmed unchanged) and how
-// many changed.
-func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID shared.ID) ([]shared.ID, int, error) {
+// ids of the findings it computed (persisted or confirmed unchanged) and what
+// changed.
+func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID shared.ID) ([]shared.ID, scoring.ChangeImpact, error) {
+	var impact scoring.ChangeImpact
 	a, err := r.assets.GetByID(ctx, tenantID, assetID)
 	if err != nil {
 		// Asset gone: its findings are cleaned by lifecycle jobs.
 		if errors.Is(err, shared.ErrNotFound) {
-			return nil, 0, nil
+			return nil, impact, nil
 		}
-		return nil, 0, fmt.Errorf("load asset: %w", err)
+		return nil, impact, fmt.Errorf("load asset: %w", err)
 	}
 	assets := map[shared.ID]*asset.Asset{a.ID(): a}
 
@@ -200,13 +260,12 @@ func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID sh
 
 	var (
 		computed []shared.ID
-		changed  int
 		failed   error
 	)
 	for {
 		res, err := r.findings.List(ctx, filter, opts, page)
 		if err != nil {
-			return computed, changed, fmt.Errorf("list findings: %w", err)
+			return computed, impact, fmt.Errorf("list findings: %w", err)
 		}
 		if len(res.Data) == 0 {
 			break
@@ -223,7 +282,7 @@ func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID sh
 			before[f.ID()] = snapshotOf(f)
 		}
 		if err := r.classifier.EnrichAndClassifyBatch(ctx, tenantID, open, assets); err != nil {
-			return computed, changed, fmt.Errorf("classify: %w", err)
+			return computed, impact, fmt.Errorf("classify: %w", err)
 		}
 		if r.sla != nil {
 			if err := r.sla.ApplyBatch(ctx, tenantID, open); err != nil {
@@ -233,7 +292,8 @@ func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID sh
 		for _, f := range open {
 			// Rewriting an unchanged row costs a tuple in every findings index
 			// for nothing: only a change is persisted.
-			if snapshotOf(f) == before[f.ID()] {
+			after := snapshotOf(f)
+			if after == before[f.ID()] {
 				computed = append(computed, f.ID())
 				continue
 			}
@@ -245,14 +305,15 @@ func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID sh
 				continue
 			}
 			computed = append(computed, f.ID())
-			changed++
+			tallyChange(&impact, before[f.ID()], after)
 		}
 		if len(res.Data) < page.PerPage {
 			break
 		}
 		page.Page++
 	}
-	return computed, changed, failed
+	impact.Checked = len(computed)
+	return computed, impact, failed
 }
 
 // classSnapshot is what a pass can change on a finding: the priority class
@@ -287,4 +348,23 @@ func snapshotOf(f *vulnerability.Finding) classSnapshot {
 		s.slaDeadline = d.UnixNano()
 	}
 	return s
+}
+
+// tallyChange counts one persisted change: a class move (a lower class string
+// is a higher priority: P0 < P3) and a deadline that moved earlier.
+func tallyChange(im *scoring.ChangeImpact, before, after classSnapshot) {
+	if before.class != after.class && before.class != "" {
+		im.Changed++
+		if after.class < before.class {
+			im.Raised++
+			if after.class == string(vulnerability.PriorityP0) {
+				im.RaisedToP0++
+			}
+		} else {
+			im.Lowered++
+		}
+	}
+	if before.slaDeadline != 0 && after.slaDeadline != 0 && after.slaDeadline < before.slaDeadline {
+		im.DeadlinesTightened++
+	}
 }
