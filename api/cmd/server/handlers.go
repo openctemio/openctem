@@ -1449,6 +1449,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin.SetCoverageService(ciSvc)
 	admin.SetSettingsService(ciSvc)
 	admin.SetGateBaselineService(ciSvc)
+	admin.SetRepositorySettingsService(ciSvc)
 	if repos.CodeScan != nil {
 		var csAudit codescanapp.Auditor
 		if svc.Audit != nil {
