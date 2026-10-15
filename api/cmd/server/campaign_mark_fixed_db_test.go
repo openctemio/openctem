@@ -14,6 +14,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/remediation"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -73,7 +74,7 @@ func TestCampaignResolve_MarksFixedThroughLegalSteps(t *testing.T) {
 	queued := 0
 	vuln.SetProofOfFixQueuer(func(_ context.Context, _ shared.ID, ids []shared.ID) int { queued += len(ids); return len(ids) })
 
-	resolver := campaignFindingResolver{vuln: vuln}
+	resolver := remediation.NewCampaignFilterResolver(vuln, nil)
 	filter := vulnerability.NewFindingFilter().WithTenantID(tenant).
 		WithFindingIDs([]string{ids["new"].String(), ids["confirmed"].String(), ids["fix_applied"].String()})
 	claim := func(actor shared.ID) *exposure.CampaignResolveResult {
