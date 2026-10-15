@@ -5,7 +5,7 @@
   now judged against the repository's **gate baseline** only.
 - The first verified default-branch run of a repository records its baseline (the findings open on the default
   branch) and passes on them, once per repository; the verdict and the audit log say so. Secrets still block.
-- New: `GET/POST/DELETE /api/v1/ci/repositories/{id}/gate-baseline`. Recording a new baseline by hand needs
+- New: `GET/PUT/DELETE /api/v1/ci/gate-baselines/{id}`. Recording a new baseline by hand needs
   `scans:ci:policy` and a recent sign-in, is audited at high severity and announced to administrators; removing it
   makes every finding count as new again and no run records another. Once a repository has a baseline, a pull
   request into the default branch treats a finding as pre-existing only if it is also in the baseline. Migration

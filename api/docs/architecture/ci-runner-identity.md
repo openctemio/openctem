@@ -111,7 +111,7 @@ findings per run.
   repository's effective policy with the source of every field; the gate
   and `GET /api/v1/ci/gate-settings/{id}` both use it.
 - `ci_gate_baselines` and `ci_gate_baseline_findings`: one gate baseline per repository (tenant, repository
-  asset), and the fingerprints it holds. Written only by `POST /api/v1/ci/repositories/{id}/gate-baseline`
+  asset), and the fingerprints it holds. Written only by `PUT /api/v1/ci/gate-baselines/{id}`
   (`scans:ci:policy`, step-up, audited high); a default-branch run is judged against it only (RFC-051 §6.2).
 - `ci_gate_overrides`: per tenant, composite FK to the repository asset. The
   creator is `created_by` (a user id); its email is read from `users` when the

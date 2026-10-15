@@ -134,9 +134,9 @@ func registerCIRoutes(
 		// pass default-branch runs, so it needs the policy permission and
 		// step-up; removing it is stricter.
 		r.GET("/gate-settings/{id}", admin.GetRepositorySettings, middleware.Require(permission.CIRead))
-		r.GET("/repositories/{id}/gate-baseline", admin.GetGateBaseline, middleware.Require(permission.CIRead))
-		r.POST("/repositories/{id}/gate-baseline", admin.SetGateBaseline, middleware.Require(permission.CIPolicy), requireStepUp())
-		r.DELETE("/repositories/{id}/gate-baseline", admin.DeleteGateBaseline, middleware.Require(permission.CIPolicy))
+		r.GET("/gate-baselines/{id}", admin.GetGateBaseline, middleware.Require(permission.CIRead))
+		r.PUT("/gate-baselines/{id}", admin.SetGateBaseline, middleware.Require(permission.CIPolicy), requireStepUp())
+		r.DELETE("/gate-baselines/{id}", admin.DeleteGateBaseline, middleware.Require(permission.CIPolicy))
 
 		r.GET("/gate-overrides", admin.ListOverrides, middleware.Require(permission.CIRead))
 		r.POST("/gate-overrides", admin.CreateOverride, middleware.Require(permission.CIOverride), requireStepUp())
