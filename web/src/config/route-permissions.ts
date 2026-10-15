@@ -636,8 +636,8 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/modules': {
     permission: Permission.TeamUpdate,
   },
-  // Plan & usage: owners and admins (GET /organization/plan needs admin).
-  '/settings/plan': {
+  // Usage & limits: owners and admins (GET /organization/limits needs admin).
+  '/settings/limits': {
     permission: Permission.TeamUpdate,
   },
   // The user's own notification settings live at /account/notifications

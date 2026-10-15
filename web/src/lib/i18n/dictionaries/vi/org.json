@@ -5,7 +5,6 @@
   "org.role.admin": "Quản trị viên",
   "org.role.member": "Thành viên",
   "org.role.viewer": "Người xem",
-  "org.planLabel": "Gói",
   "org.members": "Thành viên",
   "org.memberCount.one": "1 thành viên",
   "org.memberCount.other": "{count} thành viên",
@@ -105,7 +104,6 @@
   "org.invite.code.ROLE_NOT_GRANTABLE": "Không thể cấp một trong các vai trò này.",
   "org.invite.code.ADMIN_NEEDS_OWNER": "Chỉ chủ sở hữu mới có thể chỉ định quản trị viên.",
   "org.invite.code.INVITATIONS_RATE_LIMITED": "Bạn đã gửi nhiều lời mời trong một giờ qua. Hãy thử lại sau.",
-  "org.invite.code.PLAN_LIMIT": "Đã đạt giới hạn của gói (số chỗ hoặc số lời mời mỗi ngày).",
   "org.invite.code.STEP_UP_FAILED": "Xác nhận danh tính không thành công. Hãy thử lại.",
   "org.invite.code.generic": "Không thể tạo lời mời. Hãy thử lại.",
   "org.invitations.external": "Ngoài tổ chức",
@@ -233,5 +231,6 @@
   "org.ownership.error.confirmInternal": "Hãy xác nhận người này trở thành thành viên nội bộ.",
   "org.ownership.error.previousRole": "Hãy chọn quản trị viên, thành viên hoặc người xem cho chính bạn.",
   "org.ownership.action": "Chuyển quyền sở hữu...",
-  "org.ownership.error.action": "Không thể hoàn tất thao tác này"
+  "org.ownership.error.action": "Không thể hoàn tất thao tác này",
+  "org.invite.code.LIMIT_REACHED": "Đã đạt giới hạn của tổ chức (số chỗ hoặc số lời mời mỗi ngày)."
 }

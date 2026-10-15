@@ -36,7 +36,7 @@ const ORG = {
   active_identity_providers: 0,
   verified_domains: 0,
   sso_enforced: false,
-  plan: 'free',
+  limits_apply: false,
 }
 
 async function fillOrg(user: ReturnType<typeof userEvent.setup>) {
