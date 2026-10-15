@@ -552,5 +552,13 @@
   "admin.legal.title": "Legal information",
   "admin.legal.websiteUrl": "Website (https)",
   "admin.nav.legal": "Legal",
-  "admin.ops.fleet.advisories": "security advisory: {v}"
+  "admin.ops.fleet.advisories": "security advisory: {v}",
+  "admin.auditChain.unavailable": "The audit chain could not be checked right now.",
+  "admin.auditChain.reasonChanged": "changed after it was written",
+  "admin.auditChain.reasonGap": "rows are missing before it",
+  "admin.auditChain.reasonLink": "does not follow the row before it",
+  "admin.auditChain.okTitle": "Audit log intact",
+  "admin.auditChain.okBody": "All {count} entries verify: none was changed or removed since it was written.",
+  "admin.auditChain.brokenTitle": "Audit log tampered with",
+  "admin.auditChain.brokenBody": "{count} entries do not verify. Treat this as a security incident: compare with your off-site copy of the log."
 }
