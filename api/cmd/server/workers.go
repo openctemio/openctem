@@ -544,8 +544,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	registerSignerLedgerSync(w.ControllerManager, svc, log)
 
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(
-		repos.FindingApproval,
-		repos.Finding,
+		repos.FindingAcceptanceExpiry,
+		svc.SLA,
 		&controller.ApprovalExpirationControllerConfig{
 			Interval:  1 * time.Hour,
 			BatchSize: 100,
