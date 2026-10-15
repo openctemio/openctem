@@ -238,16 +238,7 @@ func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, asset
 		return ScopeStatusOutOfScope, nil, nil
 	}
 	if a.Type() == asset.AssetTypeRepository {
-		// A repository is judged by repository entries ("host/namespace/*")
-		// and by entries for its code host, whatever network its host is on.
-		cover, err := g.CoverOf(ctx, tenantID, []string{a.Name()})
-		if err != nil {
-			return "", nil, err
-		}
-		if v, ok := cover[a.Name()]; ok {
-			return ScopeStatusInScope, &v, nil
-		}
-		return ScopeStatusOutOfScope, nil, nil
+		return g.repositoryScope(ctx, tenantID, a.Name())
 	}
 	if isInternalName(a.Name()) {
 		return ScopeStatusInternal, nil, nil
@@ -260,6 +251,36 @@ func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, asset
 		return "", nil, err
 	}
 	if v, ok := cover[a.Name()]; ok {
+		return ScopeStatusInScope, &v, nil
+	}
+	return ScopeStatusOutOfScope, nil, nil
+}
+
+// repositoryScope judges a repository by repository entries
+// ("host/namespace/*"). On a self-hosted code host an entry for the host
+// (a domain entry) covers its repositories too; on a code host many
+// organizations share (scopedom.Guardrails.PublicCodeHost) only repository
+// entries do, so a domain entry "github.com" claims nobody's repositories.
+func (g *ActiveGate) repositoryScope(ctx context.Context, tenantID shared.ID, name string) (string, *scopeauth.Via, error) {
+	gr := scopedom.DefaultGuardrails()
+	if g.guardrails != nil {
+		gr = *g.guardrails
+	}
+	if gr.PublicCodeHost(scopedom.RepositoryPatternHost(name)) {
+		auth, err := scopeauth.Load(ctx, tenantID, g.scope, g.roots)
+		if err != nil {
+			return "", nil, err
+		}
+		if v, ok := auth.CoversRepository(name); ok {
+			return ScopeStatusInScope, &v, nil
+		}
+		return ScopeStatusOutOfScope, nil, nil
+	}
+	cover, err := g.CoverOf(ctx, tenantID, []string{name})
+	if err != nil {
+		return "", nil, err
+	}
+	if v, ok := cover[name]; ok {
 		return ScopeStatusInScope, &v, nil
 	}
 	return ScopeStatusOutOfScope, nil, nil
