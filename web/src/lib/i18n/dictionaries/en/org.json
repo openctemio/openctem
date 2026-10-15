@@ -5,8 +5,6 @@
   "org.role.admin": "Admin",
   "org.role.member": "Member",
   "org.role.viewer": "Viewer",
-  "org.plan.free": "Free",
-  "org.plan.paid": "Paid",
   "org.planLabel": "Plan",
   "org.members": "Members",
   "org.memberCount.one": "1 member",
