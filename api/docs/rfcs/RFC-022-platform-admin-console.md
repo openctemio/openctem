@@ -682,24 +682,36 @@ A console session alone no longer changes who may sign in or what they may
 do. Every protected action takes a route-level step-up
 (`middleware.RequireAdminStepUp`): a fresh authenticator code in the
 `X-Admin-Step-Up` header. One confirmation opens a five-minute window on the
-same console session (`admin_sessions.step_up_at`, migration 002400); another
+same console session (`admin_sessions.step_up_at`, migration 002420); another
 session, another administrator or a pending session never rides it. Without
 a code or window the API answers `401 ADMIN_STEP_UP_REQUIRED`; the console's
 one step-up dialog asks for the code and retries the same request. A wrong
 code counts toward the sign-in lockout; each confirmation is audited
 (`console.step_up`, with the action as its purpose).
 
-Protected actions: provisioning an administrator; changing, deleting or
-resetting one; recording a break-glass test; unbinding one from the platform
-identity provider; replacing or removing the platform identity provider;
-creating an organization; approving an access request (it creates an
-organization and its owner); creating or recovering an organization's owner;
-every organization SSO write (SAML, identity providers, verified domains,
-SSO enforcement). The settings that already asked for a code in the request
-body (sign-up mode, e-mail, legal, plans, modules, scan approval, platform
-sensor proof, content packs, program feed, audit-chain rebaseline, ending a
-session) keep that check. Every console write is classified in
-`adminWriteInventory`; CI fails on a new write that is not.
+Protected actions: every console write except the routine ones. Identity
+and privilege: provisioning, changing, deleting or resetting an administrator,
+a break-glass test, unbinding an administrator from the platform identity
+provider, replacing or removing that provider, ending another administrator's
+session, and the account support actions on a user (revoke sessions, unlock,
+password reset, verification e-mail). Organizations: creating one, approving
+an access request (it creates an organization and its owner), creating or
+recovering an owner, every SSO write (SAML, identity providers, verified
+domains, SSO enforcement), module grants, the scan-approval policy and the
+audit-chain rebaseline. Platform settings and trust: sign-up mode, e-mail,
+legal pages, default limits and modules, the scan-approval default, platform
+sensor domain proof, content packs and the program feed. The handlers that
+read a code from the request body check it with the same helper, which
+accepts the route's confirmation, so a form that already asked for a code
+sends it once (`adminFetch` puts a body `totp_code` in the header).
+
+The routine writes, each with its reason in `adminWriteInventory`: an
+organization's limits and idle exemption, rejecting an access request, the
+e-mail test (to the caller's own address), announcements, threat-intel sync,
+blocking or unblocking an AI client, and scanner target mappings. CI fails on
+a console write that is not classified, on a listed route that does not
+exist, on a step-up route that reaches its handler without a code, and on a
+routine route that asks for one.
 
 An administrator who signs in only through the platform identity provider has
 no console authenticator, so protected actions answer

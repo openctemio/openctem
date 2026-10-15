@@ -120,6 +120,23 @@ describe('adminFetch step-up', () => {
     expect(prompt).not.toHaveBeenCalled()
   })
 
+  it('sends a code the form put in the body as the step-up header too', async () => {
+    const prompt = vi.fn()
+    setAdminStepUpPrompt(prompt)
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    await adminFetch('/settings/legal', {
+      method: 'PUT',
+      body: { totp_code: '445566', version: 2 },
+    })
+    expect(fetchMock.mock.calls[0][1].headers[ADMIN_STEP_UP_HEADER]).toBe('445566')
+    const form = new FormData()
+    form.set('totp_code', '778899')
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 201 }))
+    await adminFetch('/content-packs', { method: 'POST', body: form })
+    expect(fetchMock.mock.calls[1][1].headers[ADMIN_STEP_UP_HEADER]).toBe('778899')
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
   it('never prompts for other refusals', async () => {
     const prompt = vi.fn()
     setAdminStepUpPrompt(prompt)

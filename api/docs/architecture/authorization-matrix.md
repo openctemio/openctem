@@ -787,16 +787,19 @@ authenticator gets `403 STEP_UP_UNAVAILABLE`. Each confirmation is audited
 (`console.step_up`, the purpose names the action), a wrong code counts toward
 the sign-in lockout. Every console write is classified in
 `adminWriteInventory` (`routes/admin_step_up_inventory_test.go`): step-up,
-step-up checked in the handler (a body code on every call), routine (with the
-reason), or sign-in; CI fails on an unclassified write. Rows marked
-**step-up** below take it.
+routine (with the reason), or sign-in; CI fails on an unclassified write.
+Every write is step-up except the routine ones: an organization's limits and
+idle exemption, rejecting an access request, the e-mail test, announcements,
+threat-intel sync, AI-client blocks and target mappings. Where a row below
+says "a fresh authenticator code", that is this step-up (a body `totp_code`
+is still accepted and checked the same way).
 
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
 | `GET /api/v1/admin/platform-users?q=` | any admin (3+ characters; account-level facts only) |
 | `GET /api/v1/admin/platform-users/{user_id}` | any admin (audited `platform_user.view`) |
-| `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
+| `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
 | `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
 | `GET /api/v1/admin/operations` | any admin (build, schema, database, Redis, queues, sensor versions, controllers; no tenant content) |
