@@ -189,6 +189,9 @@ type OwnershipTransferRepository interface {
 	// PendingOwnershipTransfer returns the open, unexpired request, or
 	// ErrOwnershipTransferNotFound.
 	PendingOwnershipTransfer(ctx context.Context, tenantID shared.ID, now time.Time) (*OwnershipTransfer, error)
+	// ExpireLapsedOwnershipTransfers closes the pending requests of tenantID
+	// whose time is up and returns them (for the audit log).
+	ExpireLapsedOwnershipTransfers(ctx context.Context, tenantID shared.ID, now time.Time) ([]*OwnershipTransfer, error)
 	// CloseOwnershipTransfer moves the open request id to status (canceled
 	// or declined). ErrOwnershipTransferNotFound when it is no longer open.
 	CloseOwnershipTransfer(ctx context.Context, tenantID, id shared.ID, status OwnershipTransferStatus, by shared.ID, now time.Time) (*OwnershipTransfer, error)

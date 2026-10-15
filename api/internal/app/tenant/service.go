@@ -1490,6 +1490,12 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	if err := s.ClassifyAcceptedInvitation(ctx, invitation, membership, time.Now().UTC()); err != nil {
 		return nil, err
 	}
+	// The teams are checked for the inviter with the classification just
+	// made: someone who became an outsider since the invitation was sent
+	// never gets full data access through a team.
+	if err := s.reauthorizeInvitationTeams(ctx, invitation, membership.IsExternal()); err != nil {
+		return nil, err
+	}
 
 	// Use transaction to ensure atomicity - both invitation update and membership creation succeed or fail together
 	if err := s.repo.AcceptInvitationTx(ctx, invitation, membership); err != nil {
@@ -1511,7 +1517,8 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		WithResourceName(userEmail).
 		WithMessage(fmt.Sprintf("Invitation accepted by %s", userEmail)).
 		WithMetadata("role", invitation.Role().String()).
-		WithMetadata("role_ids_count", len(invitation.RoleIDs()))
+		WithMetadata("role_ids_count", len(invitation.RoleIDs())).
+		WithMetadata("group_ids", invitation.GroupIDs())
 	s.logAudit(ctx, actx, event)
 
 	return membership, nil
