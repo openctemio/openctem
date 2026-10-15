@@ -138,6 +138,27 @@ reopens each to `confirmed` with a timeline entry instead of failing the delete.
 Migration `002151` repaired existing orphan duplicates the same way (status
 `confirmed`, timeline reason `duplicate_link_missing`).
 
+## The same claim and close rules on every route
+
+Marking a fix applied and resolving follow the same rules on every route a
+person can use: the dedicated actions (`/actions/fix-applied`,
+`/actions/verify`), `PATCH /findings/{id}/status`, the bulk status change,
+and remediation group and campaign resolves (which use the bulk path).
+
+- **Fix applied:** `findings:fix_apply`, a note, and the finding must be the
+  person's: the assignee, a member of an assigned group, or an owner of the
+  asset (`FindingActionsService.FixAppliers`, wired into the status service
+  with `SetFixApplierCheck`). The bulk paths skip, and report, each finding
+  that is not theirs.
+- **Resolved:** `findings:verify` (unchanged). A resolve backed by a complete
+  verification checklist is `security_reviewed`; any other person's resolve is
+  attested (`admin_direct`) and needs a note. A bulk resolve reads no
+  checklist, so it always needs one.
+- Errors: `ErrFixApplyRequiresPermission` and `ErrFixApplyNotYours` (403),
+  `ErrNoteRequired` (400).
+- The web asks for the note in the drawer's status control, the bulk resolve
+  dialog and the group and campaign resolve dialogs.
+
 ## Risk acceptance end
 
 An accepted risk always ends; a false positive does not (it is re-reviewed

@@ -81,6 +81,7 @@ func TestBulkResolve_WithVerify_RecordsMethodAndActor(t *testing.T) {
 	res, err := svc.BulkUpdateFindingsStatus(context.Background(), tenantID.String(), BulkUpdateStatusInput{
 		FindingIDs:          []string{f.ID().String()},
 		Status:              vulnerability.FindingStatusResolved.String(),
+		Resolution:          "patched in 4.2", // an attested close carries a note
 		ActorID:             actor.String(),
 		HasVerifyPermission: true,
 	})
