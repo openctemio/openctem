@@ -115,7 +115,7 @@ type MemberRolesMap = Map<string, MemberRBACRole[]>
 const MemberRolesContext = createContext<MemberRolesMap>(new Map())
 import { fetcherWithOptions } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
-import { getErrorMessage } from '@/lib/api/error-handler'
+import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
 import { MemberBadges } from '@/features/organization/components/member-badges'
@@ -462,7 +462,6 @@ function EditUserRolesDialog({
               onChange={setSelectedRoleIds}
               loading={isLoading}
               disabled={isSetting}
-              className="max-h-[400px]"
             />
           </div>
         </DialogBody>
@@ -992,9 +991,14 @@ export default function UsersPage() {
       await fetcherWithOptions(tenantEndpoints.resendInvitation(tenantSlug, invitation.id), {
         method: 'POST',
       })
-      toast.success('Invitation email resent')
-    } catch {
-      toast.error('Failed to resend invitation')
+      toast.success(t('org.invitations.resent'))
+      mutateInvitations()
+    } catch (err) {
+      toast.error(
+        err instanceof ApiClientError && err.code === 'INVITATION_RESEND_TOO_SOON'
+          ? t('org.invitations.resendTooSoon')
+          : t('org.invitations.resendFailed')
+      )
     }
   }
   const cancelInvite = async (invitation: Invitation) => {
@@ -1016,7 +1020,26 @@ export default function UsersPage() {
       accessorKey: 'email',
       header: 'Email',
       enableSorting: false,
-      cell: ({ row }) => <span className="font-medium">{row.original.email}</span>,
+      cell: ({ row }) => (
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="font-medium">{row.original.email}</span>
+          {row.original.member_kind === 'external' && (
+            <Badge variant="outline" className="text-xs" data-testid="invitation-badge-external">
+              {t('org.invitations.external')}
+            </Badge>
+          )}
+          {row.original.privileged && (
+            <Badge
+              variant="outline"
+              className="border-warning/50 text-xs text-warning"
+              data-testid="invitation-badge-mfa"
+              title={t('org.invitations.mfaHint')}
+            >
+              {t('org.invitations.mfa')}
+            </Badge>
+          )}
+        </div>
+      ),
     },
     {
       id: 'roles',

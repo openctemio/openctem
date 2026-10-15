@@ -263,6 +263,11 @@ func (r *CIRunRepository) ListPipelines(ctx context.Context, tenantID shared.ID,
 		args = append(args, f.Provider)
 		where = append(where, fmt.Sprintf("provider = $%d", len(args)))
 	}
+	if f.HasPolicyOverride {
+		where = append(where, `EXISTS (SELECT 1 FROM ci_gate_policies gp WHERE gp.tenant_id = ci_pipelines.tenant_id
+			AND gp.scope_type = 'repository' AND gp.repository_asset_id = ci_pipelines.repository_asset_id AND gp.enabled
+			AND (gp.expires_at IS NULL OR gp.expires_at > now()))`)
+	}
 	var cond string
 	cond, args = dataScopeCond("repository_asset_id", f.DataScope, args)
 	where = append(where, cond)
