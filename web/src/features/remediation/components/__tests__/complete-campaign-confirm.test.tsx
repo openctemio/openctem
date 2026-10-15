@@ -21,7 +21,7 @@ function Harness({
   fallback,
 }: {
   ids: string[]
-  proceed: () => void
+  proceed: (closeWithOpenMembers: boolean) => void
   fallback?: Record<string, CampaignCounts>
 }) {
   const { confirmCompletion, completionDialog } = useConfirmCampaignCompletion()
@@ -59,6 +59,21 @@ describe('useConfirmCampaignCompletion', () => {
 
     await user.click(screen.getByRole('button', { name: 'Complete anyway' }))
     expect(proceed).toHaveBeenCalledTimes(1)
+    // Confirmed: the API is told this closes a campaign that is not done.
+    expect(proceed).toHaveBeenCalledWith(true)
+  })
+
+  it('asks before completing a campaign whose findings are closed but none verified fixed', async () => {
+    mockGet.mockResolvedValue({ finding_count: 2, resolved_count: 2, verified_count: 0 })
+    const proceed = vi.fn()
+    render(<Harness ids={['c1']} proceed={proceed} />)
+
+    const user = await clickComplete()
+
+    expect(await screen.findByText('Complete without a verified fix?')).toBeInTheDocument()
+    expect(proceed).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Complete anyway' }))
+    expect(proceed).toHaveBeenCalledWith(true)
   })
 
   it('does not complete when the user cancels', async () => {
@@ -74,14 +89,14 @@ describe('useConfirmCampaignCompletion', () => {
     expect(screen.queryByText('Complete with open findings?')).not.toBeInTheDocument()
   })
 
-  it('completes without asking when every finding is closed', async () => {
-    mockGet.mockResolvedValue({ finding_count: 4, resolved_count: 4 })
+  it('completes without asking when every finding is closed and one is verified fixed', async () => {
+    mockGet.mockResolvedValue({ finding_count: 4, resolved_count: 4, verified_count: 1 })
     const proceed = vi.fn()
     render(<Harness ids={['c1']} proceed={proceed} />)
 
     await clickComplete()
 
-    await vi.waitFor(() => expect(proceed).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(proceed).toHaveBeenCalledWith(false))
     expect(screen.queryByText('Complete with open findings?')).not.toBeInTheDocument()
   })
 
@@ -105,7 +120,7 @@ describe('useConfirmCampaignCompletion', () => {
   it('words a bulk completion for several tasks', async () => {
     mockGet
       .mockResolvedValueOnce({ finding_count: 4, resolved_count: 0 })
-      .mockResolvedValueOnce({ finding_count: 2, resolved_count: 2 })
+      .mockResolvedValueOnce({ finding_count: 2, resolved_count: 2, verified_count: 1 })
     render(<Harness ids={['c1', 'c2']} proceed={vi.fn()} />)
 
     await clickComplete()

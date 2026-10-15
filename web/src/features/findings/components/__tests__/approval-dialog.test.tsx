@@ -107,6 +107,15 @@ vi.mock('@/lib/api/error-handler', () => ({
 // SETUP
 // ============================================
 
+// The Reason select scrolls its options into view; jsdom has no layout.
+if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {}
+
+/** Picks a closure reason in the Reason select. */
+async function chooseReason(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByRole('combobox'))
+  await user.click(await screen.findByRole('option', { name: label }))
+}
+
 const defaultProps = {
   findingId: 'finding-123',
   targetStatus: 'false_positive' as const,
@@ -185,15 +194,25 @@ describe('ApprovalDialog', () => {
       expect(reviewButton).toBeDisabled()
     })
 
-    it('review button is enabled when justification has text', async () => {
+    it('review button stays disabled until a reason is chosen', async () => {
       const user = userEvent.setup()
       render(<ApprovalDialog {...defaultProps} />)
 
-      const textarea = screen.getByLabelText('Justification')
-      await user.type(textarea, 'This is a valid justification')
+      await user.type(screen.getByLabelText('Justification'), 'This is a valid justification')
+      expect(screen.getByText('Review')).toBeDisabled()
 
-      const reviewButton = screen.getByText('Review')
-      expect(reviewButton).toBeEnabled()
+      await chooseReason(user, 'Scanner was wrong')
+      expect(screen.getByText('Review')).toBeEnabled()
+    })
+
+    it('offers only the reasons of the requested status', async () => {
+      const user = userEvent.setup()
+      render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
+      await user.click(screen.getByRole('combobox'))
+      expect(
+        await screen.findByRole('option', { name: 'Compensating control' })
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('option', { name: 'Scanner was wrong' })).not.toBeInTheDocument()
     })
   })
 
@@ -230,6 +249,7 @@ describe('ApprovalDialog', () => {
 
       const textarea = screen.getByLabelText('Justification')
       await user.type(textarea, 'This is a justified reason')
+      await chooseReason(user, 'Test or example code')
 
       // Step 1: Click Review to go to confirmation step
       const reviewButton = screen.getByText('Review')
@@ -242,6 +262,7 @@ describe('ApprovalDialog', () => {
       expect(mockRequestApproval).toHaveBeenCalledWith({
         requested_status: 'false_positive',
         justification: 'This is a justified reason',
+        closure_reason: 'test_or_example_code',
       })
     })
 
@@ -255,11 +276,13 @@ describe('ApprovalDialog', () => {
       expect(expiry.max).not.toBe('')
 
       await user.type(screen.getByLabelText('Justification'), 'Compensating control')
+      await chooseReason(user, 'Compensating control')
       await user.click(screen.getByText('Review'))
       await user.click(screen.getByText('Submit for Approval'))
 
       const body = mockRequestApproval.mock.calls[0][0]
       expect(body.requested_status).toBe('accepted')
+      expect(body.closure_reason).toBe('compensating_control')
       const days = (new Date(body.expires_at).getTime() - Date.now()) / 86_400_000
       expect(days).toBeGreaterThan(88)
       expect(days).toBeLessThan(91)

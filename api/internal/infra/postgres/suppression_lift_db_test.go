@@ -16,7 +16,8 @@ import (
 func seedSuppressionRule(ctx context.Context, t *testing.T, db *sql.DB, tenant, requester shared.ID, ruleID string, expires *time.Time) shared.ID {
 	t.Helper()
 	id := shared.NewID()
-	var exp any
+	// Every rule has an end; nil means "not soon".
+	exp := time.Now().Add(30 * 24 * time.Hour)
 	if expires != nil {
 		exp = *expires
 	}

@@ -102,10 +102,6 @@ func (o Outcome) Conclusive() bool { return o == OutcomeConfirmedFixed || o == O
 // ActorName is the audit actor of every status change a retest makes.
 const ActorName = "system: retest"
 
-// ResolutionMethodRetestVerified is the resolution_method a retest stamps when
-// it resolves a finding.
-const ResolutionMethodRetestVerified = vulnerability.ResolutionMethodRetestVerified
-
 // Sentinel errors. They wrap the shared kinds so the HTTP layer maps them.
 var (
 	// ErrNotEligible: the finding has no deterministic re-check (no tool rule

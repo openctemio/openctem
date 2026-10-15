@@ -186,7 +186,7 @@ with no change to any check:
   every query scoped by `tenant_id`; `limits_check.go`: the insert seam.
 - `internal/infra/http/handler/limits_handler.go`: console and organization
   endpoints; `WriteLimitError` (403 `LIMIT_REACHED`).
-- Migration `limits_replace_plans` (002291): moved every organization's plan
+- Migration `limits_replace_plans` (002441): moved every organization's plan
   limits and plan-excluded modules to operator rows, then dropped plans.
 
 Modules and their grace are described in [modules.md](modules.md) and
