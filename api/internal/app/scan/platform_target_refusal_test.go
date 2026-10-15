@@ -66,7 +66,7 @@ func TestPlatformTargetRefusal(t *testing.T) {
 		{"proof lookup fails", true, sharedCheckGate{err: errors.New("db down")}, []string{"owned.example"}, false, "error"},
 	}
 	for _, tc := range cases {
-		svc := &Service{logger: logger.NewNop(), attributionGate: tc.gate, proofPolicy: StaticProofPolicy(tc.proof)}
+		svc := &Service{logger: logger.NewNop(), attributionGate: tc.gate, proofPolicy: StaticProofPolicy(tc.proof), zoneResolver: publicResolver{}}
 		err := svc.PlatformTargetRefusal(ctx, shared.NewID(), tc.targets, tc.group)
 		var de *shared.DomainError
 		switch {
