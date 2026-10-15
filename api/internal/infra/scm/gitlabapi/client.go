@@ -176,6 +176,8 @@ type MergeRequest struct {
 	IID   int    `json:"iid"`
 	SHA   string `json:"sha"`
 	State string `json:"state"`
+	// TargetBranch is the branch the merge request merges into.
+	TargetBranch string `json:"target_branch"`
 }
 
 // MergeRequest reads a merge request of a project.

@@ -227,6 +227,13 @@ A decision made on the platform holds on the next run of the same repository:
   verified token; the report's own branch information is replaced.
 - A run's report changes only its repository asset; the baseline branch is
   decided server-side.
+- A pull or merge request is compared with its base branch only when that
+  base is verified and the branch may serve as a baseline; otherwise with the
+  default branch. Verified: GitHub's signed `base_ref`; a GitLab merge
+  request's target branch read from GitLab through the organization's GitLab
+  connection (the token signs none); no other provider. A base branch the job
+  reports (`base_ref` in the exchange) is ignored. A baseline branch is the
+  default branch or a protected one; a name (`release/*`) never qualifies.
 - A finding the run sees only on a non-counting branch is branch-only: left
   out of exposure views until a counting branch sees it
   (`branch-only-findings.md`).
