@@ -302,12 +302,11 @@ func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr
 //
 // Resolution order:
 //  1. Tenant setting (if tenantID provided AND setting is "always" or "never")
-//  2. Single-tenant fallback (when tenantID is empty): if the platform has
-//     exactly one active tenant, treat it as the "default" tenant and apply
-//     its setting. Most OSS deployments are single-tenant — without this
-//     branch the admin's "never" setting was ignored at register time
-//     because the new user wasn't a member of any tenant yet.
-//  3. SMTP availability (auto mode):
+//  2. No tenant under a domain or open ceiling (SIGNUP_MODE): always. One
+//     organization's setting never decides platform-wide sign-up (there is
+//     no "the only organization is the default" rule).
+//  3. SMTP availability (auto mode; the disabled ceiling only, where only
+//     invited and administrator-created accounts exist):
 //     - tenant SMTP configured → require verification
 //     - system SMTP configured → require verification
 //     - no SMTP at all → SKIP verification (graceful, no chicken-and-egg)
@@ -326,28 +325,12 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 		}
 	}
 
-	// 2. Single-tenant fallback. When the caller has no tenant context
-	// (typically the self-registration path), look at the platform: if
-	// there's exactly one active tenant, that's almost certainly the
-	// tenant the new user is going to belong to. Use its setting so the
-	// admin's intent is respected.
-	if tenantID == "" && s.tenantRepo != nil {
-		ids, err := s.tenantRepo.ListActiveTenantIDs(ctx)
-		if err == nil && len(ids) == 1 {
-			soleID := ids[0].String()
-			if mode, ok := s.lookupTenantVerificationMode(ctx, soleID); ok {
-				switch mode {
-				case tenantdom.EmailVerificationAlways:
-					return true
-				case tenantdom.EmailVerificationNever:
-					return false
-				}
-				// auto → fall through to SMTP check below, with the
-				// resolved tenant id so HasTenantSMTP picks up any
-				// per-tenant SMTP override
-				tenantID = soleID
-			}
-		}
+	// 2. A deployment that allows public sign-up (SIGNUP_MODE=domain or open)
+	// verifies every account that is not tied to an organization: missing
+	// SMTP never skips it there (start-up refuses that configuration, and
+	// sign-up closes at run time without e-mail).
+	if tenantID == "" && s.config.PublicSignup() {
+		return true
 	}
 
 	// 3. Smart auto-detection via SMTP availability
@@ -366,6 +349,19 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 
 	// 4. Fallback to global env config
 	return s.config.RequireEmailVerification
+}
+
+// selfRegistrationMustVerify decides verification for an account created by
+// self-registration (no invitation for this address). Under a domain or open
+// ceiling it is always verified: an organization's email_verification_mode
+// governs only the accounts invited into that organization, never public
+// sign-up, and a token for another address does not make its organization's
+// setting apply. Under the disabled ceiling the platform rule applies.
+func (s *AuthService) selfRegistrationMustVerify(ctx context.Context, invitationTenantID string) bool {
+	if s.config.PublicSignup() {
+		return true
+	}
+	return s.shouldRequireEmailVerification(ctx, invitationTenantID)
 }
 
 // lookupTenantVerificationMode resolves a tenant id to its
@@ -446,7 +442,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	}
 	requireVerification := false
 	if !invited {
-		requireVerification = s.shouldRequireEmailVerification(ctx, invitationTenantID)
+		requireVerification = s.selfRegistrationMustVerify(ctx, invitationTenantID)
 	}
 
 	// Check if email already exists

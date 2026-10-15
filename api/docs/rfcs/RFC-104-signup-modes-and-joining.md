@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the `SIGNUP_MODE` ceiling with the start-up guards and the console lock. Designed: verification hardening, the policy split, domain policies, join requests, the onboarding fork, account and organization lifecycle, sign-up events, the region field |
+| Status | Accepted (2026-10-15). Implemented: the `SIGNUP_MODE` ceiling with the start-up guards and the console lock; verification of every self-registered account under `domain`/`open`. Designed: the policy split, domain policies, join requests, the onboarding fork, account and organization lifecycle, sign-up events, the region field |
 | Scope | api, web, deployment |
 | Related | RFC-022 (admin console), RFC-025 (user onboarding), RFC-079 (console platform settings), RFC-095 (role templates and invitations) |
 

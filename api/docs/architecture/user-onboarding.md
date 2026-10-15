@@ -56,6 +56,25 @@ Start-up refuses to run when:
 
 A deployment with `domain` or `open` logs a WARN line at every start.
 
+### Email verification of self-registered accounts
+
+Under `domain` and `open` every account created by self-registration (no
+pending invitation for that exact address) verifies its address before it can
+sign in. The verification rule is decided before the account lookup, the same
+way for a new and an existing address, so it does not enumerate.
+
+- An organization's `security.email_verification_mode` governs only the
+  accounts **invited** into that organization (the invitation proves the
+  mailbox, so an invited registration is verified at once). It never decides
+  public sign-up: there is no "the only organization is the default" rule, and
+  an invitation token for another address does not make its organization's
+  setting apply.
+- Missing SMTP never skips verification there. Start-up refuses `domain`/`open`
+  without the platform e-mail, and sign-up closes at run time without it.
+- Under `disabled` only invited and administrator-created accounts exist; the
+  organization setting, then the platform e-mail (auto: no e-mail, no
+  verification) and `AUTH_REQUIRE_EMAIL_VERIFICATION` apply as before.
+
 ## Sign-up policy (Console > System > Sign-up)
 
 Who may create an organization on this deployment is **one platform setting**,
