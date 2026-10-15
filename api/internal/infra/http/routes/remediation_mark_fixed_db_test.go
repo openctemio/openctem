@@ -62,7 +62,7 @@ func (h *gsHarness) findingRow(id shared.ID) (status, resolution, by string) {
 
 func TestRemediationGroupMarkFixed_LegalStepsReasonsAndProofOfFix(t *testing.T) {
 	h := newGroupScopeHarness(t)
-	const key = "upgrade:npm/mark-fixed-lib:2.0.0"
+	const key = "upgrade:npm-mark-fixed-lib:2.0.0"
 	var queued []shared.ID
 	h.vuln.SetProofOfFixQueuer(func(_ context.Context, tenantID shared.ID, ids []shared.ID) int {
 		if tenantID != h.tenant {
