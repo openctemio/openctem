@@ -10,7 +10,7 @@
 - Each now writes one entry per moved finding in the same transaction as the
   move, with the old and new status, the previous resolution, a reason code,
   the actor and the evidence behind it (scanner, scan, pipeline, rule,
-  statement). Migration `002153` adds the trigger
+  statement). Migration `002180` adds the trigger
   `trg_findings_record_transition` that writes it for a writer that names
   itself for its transaction.
 - A workflow's status change is recorded with the actor `workflow:<id>`;
