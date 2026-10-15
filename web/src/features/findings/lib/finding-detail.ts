@@ -282,6 +282,8 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     resolvedAt: api.resolved_at,
     closureReason: api.closure_reason,
     verification: api.verification,
+    observation: api.observation,
+    validation: api.validation,
     verifiedAt: api.verified_at,
     createdAt: api.created_at,
     updatedAt: api.updated_at,

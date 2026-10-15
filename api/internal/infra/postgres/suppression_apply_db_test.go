@@ -128,14 +128,13 @@ func TestSuppressionApprove_ClosesMatchingOpenFindings_DB(t *testing.T) {
 		seedOpenFinding(ctx, t, db, tenant, match("new")),
 		seedOpenFinding(ctx, t, db, tenant, match("confirmed")),
 		seedOpenFinding(ctx, t, db, tenant, match("in_progress")),
-		seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: other, rule: "py_sqli.fmt", path: "src/x.py", status: "not_observed"}),
+		seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: other, rule: "py_sqli.fmt", path: "src/x.py", status: "fix_applied"}),
 	}
 	untouched := map[string]shared.ID{
 		"already accepted":       seedOpenFinding(ctx, t, db, tenant, match("accepted")),
 		"already false positive": seedOpenFinding(ctx, t, db, tenant, match("false_positive")),
 		"resolved":               seedOpenFinding(ctx, t, db, tenant, match("resolved")),
 		"duplicate":              seedOpenFinding(ctx, t, db, tenant, match("duplicate")),
-		"validated_fixed":        seedOpenFinding(ctx, t, db, tenant, match("validated_fixed")),
 		"pentest source":         seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: asset, source: "pentest", rule: "py_sqli.raw", path: "src/app/db.py"}),
 		"manual source":          seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: asset, source: "manual", rule: "py_sqli.raw", path: "src/app/db.py"}),
 		"path outside glob":      seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: asset, rule: "py_sqli.raw", path: "test/db.py"}),

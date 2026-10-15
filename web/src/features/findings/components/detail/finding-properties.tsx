@@ -320,6 +320,20 @@ export function FindingProperties({
             <span className="tabular-nums">{formatDate(finding.resolvedAt)}</span>
           </Row>
         )}
+        {finding.observation === 'stale' && (
+          <Row label={t('findings.properties.observation', 'Observation')}>
+            <span>{t('findings.observation.stale', 'Stale: not reported lately, not fixed')}</span>
+          </Row>
+        )}
+        {finding.validation && (
+          <Row label={t('findings.properties.validation', 'Validation')}>
+            <span>
+              {finding.validation === 'not_reproducible'
+                ? t('findings.validation.not_reproducible', 'Not reproducible')
+                : t('findings.validation.reproducible', 'Reproducible')}
+            </span>
+          </Row>
+        )}
         {finding.closureReason && (
           <Row label={t('findings.properties.closedAs', 'Closed as')}>
             <span>

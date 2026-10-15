@@ -303,6 +303,10 @@ export interface ApiFinding {
   closure_reason?: string
   /** How a resolve (or a platform false positive) was proven. */
   verification?: string
+  /** present, or stale: no longer reported and no coverage proof (never fixed). */
+  observation?: 'present' | 'stale'
+  /** Latest re-check verdict; absent when never validated. */
+  validation?: 'reproducible' | 'not_reproducible'
   resolved_at?: string
   resolved_by?: string
   assigned_to?: string

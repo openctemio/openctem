@@ -750,8 +750,6 @@
   "findings.status.confirmed": "Đã xác nhận",
   "findings.status.in_progress": "Đang xử lý",
   "findings.status.fix_applied": "Đã áp dụng bản sửa",
-  "findings.status.validated_fixed": "Đã xác thực khắc phục",
-  "findings.status.not_observed": "Không còn quan sát thấy",
   "findings.status.resolved": "Đã khắc phục",
   "findings.status.false_positive": "Dương tính giả",
   "findings.status.accepted": "Chấp nhận rủi ro",
@@ -992,5 +990,10 @@
   "findings.verification.security_review": "Đánh giá bảo mật",
   "findings.verification.attested": "Đóng không có bằng chứng",
   "findings.verification.none": "Không cần xác minh",
-  "findings.verification.unknown": "Không được ghi nhận"
+  "findings.verification.unknown": "Không được ghi nhận",
+  "findings.properties.observation": "Quan sát",
+  "findings.properties.validation": "Xác thực",
+  "findings.observation.stale": "Cũ: gần đây không còn được báo cáo, chưa khắc phục",
+  "findings.validation.not_reproducible": "Không tái hiện được",
+  "findings.validation.reproducible": "Tái hiện được"
 }

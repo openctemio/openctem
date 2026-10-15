@@ -26,7 +26,7 @@ func NewFindingSLARestartRepository(db *DB) *FindingSLARestartRepository {
 }
 
 // openStatusesForSLA are the statuses whose SLA clock runs.
-var openStatusesForSLA = []string{"new", "confirmed", "in_progress", "fix_applied", "validated_fixed"} //nolint:gochecknoglobals // static list
+var openStatusesForSLA = []string{"new", "confirmed", "in_progress", "fix_applied"} //nolint:gochecknoglobals // static list
 
 // LoadRegressionCandidates returns the tenant's open findings among ids.
 func (r *FindingSLARestartRepository) LoadRegressionCandidates(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]sladom.RegressionCandidate, error) {

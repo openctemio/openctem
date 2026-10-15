@@ -24,8 +24,6 @@ const CANONICAL: FindingStatus[] = [
   'confirmed',
   'in_progress',
   'fix_applied',
-  'validated_fixed',
-  'not_observed',
   'resolved',
   'false_positive',
   'accepted',
@@ -111,21 +109,9 @@ describe('STATUS_TRANSITIONS', () => {
   })
 })
 
-describe('not_observed status', () => {
-  it('is an open (in progress) status, never closed', () => {
-    expect(FINDING_STATUS_CONFIG.not_observed.category).toBe('in_progress')
-    expect(FINDING_STATUS_CONFIG.not_observed.label).toBe('Not Observed')
-  })
-
-  it('cannot be chosen by a person: no transition leads to it', () => {
-    for (const [from, targets] of Object.entries(STATUS_TRANSITIONS)) {
-      expect(targets, `${from} offers not_observed`).not.toContain('not_observed' as FindingStatus)
-    }
-  })
-
-  it('leaves to an open state, a verified close or a disposition', () => {
-    expect(STATUS_TRANSITIONS.not_observed).toEqual(
-      expect.arrayContaining(['confirmed', 'in_progress', 'resolved'])
-    )
+describe('retired statuses', () => {
+  it('validated_fixed and not_observed are fields now, not statuses', () => {
+    expect(Object.keys(FINDING_STATUS_CONFIG)).not.toContain('validated_fixed')
+    expect(Object.keys(FINDING_STATUS_CONFIG)).not.toContain('not_observed')
   })
 })

@@ -12,8 +12,6 @@ lifecycle.
 | `confirmed` | open | A real issue that needs a fix |
 | `in_progress` | in progress | Being fixed |
 | `fix_applied` | in progress | Marked fixed; a scan, a retest or a security reviewer still has to verify it |
-| `validated_fixed` | in progress | A validation re-check no longer observes it; a person closes it |
-| `not_observed` | in progress | Not reported lately and no coverage proof: stale, not fixed ([finding-status-not-observed.md](finding-status-not-observed.md)) |
 | `resolved` | closed | Verified fixed |
 | `false_positive` | closed | Not a real issue (approval) |
 | `accepted` | closed | Risk accepted, with an expiry (approval) |
@@ -24,6 +22,16 @@ The list is `vulnerability.AllFindingStatuses()`; the database CHECK
 `chk_findings_status` (migration `001378`) and the web registry
 (`web/src/features/findings/types/finding.types.ts`, labels in en and vi) hold
 exactly the same values, and tests on each side pin them.
+
+## Observation and validation: fields, not statuses
+
+Whether the scanner still reports a finding and whether a re-check still
+reproduces it are fields beside the status
+([finding-status-not-observed.md](finding-status-not-observed.md)): a finding
+can be in progress, stale and not reproducible at once. The statuses
+`validated_fixed` and `not_observed` were retired for them (migration
+`finding_status_dimensions`); the API refuses them with a 400 that names the
+filter replacing them (`observation=stale`, `validation=not_reproducible`).
 
 ## Closure reason and verification
 
@@ -88,7 +96,7 @@ Every count, metric, list and job asks "open?" or "fixed?" the same way
 
 | Set | Statuses | SQL predicate |
 |---|---|---|
-| Open | `new`, `confirmed`, `in_progress`, `fix_applied`, `validated_fixed`, `not_observed` | `vulnerability.OpenStatusSQL(col)`; in the database `is_open_finding_status(status)` |
+| Open | `new`, `confirmed`, `in_progress`, `fix_applied` | `vulnerability.OpenStatusSQL(col)`; in the database `is_open_finding_status(status)` |
 | Fixed | `resolved` | `vulnerability.FixedStatusSQL(col)` |
 | Dispositioned | `false_positive`, `accepted`, `duplicate` | `vulnerability.DispositionedStatusSQL(col)` |
 | Closed | Fixed and Dispositioned | `vulnerability.ClosedStatusSQL(col)` |
@@ -120,10 +128,8 @@ a list filter; it never maps one to another.
   reopen).
 - `PlatformStatusTransitions`: the extra moves only the platform makes, each on
   evidence a person does not hand over: a covered scan or a source's own
-  "mitigated" state closes open work (`new`/`in_progress` -> `resolved`), a
-  stale source or expired feature branch marks open work `not_observed`, a VEX
-  `not_affected` statement marks it `false_positive`, a retest moves
-  `fix_applied`/`not_observed` to `validated_fixed`, an approved suppression
+  "mitigated" state closes open work (`new`/`in_progress` -> `resolved`), a VEX
+  `not_affected` statement marks it `false_positive`, an approved suppression
   rule gives a new finding, and on approval the open findings it matches
   (`SuppressionApplyFromStatuses`), its disposition, and lifting the rule
   returns them to `new` (`suppression-rules.md`).
