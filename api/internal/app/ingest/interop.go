@@ -204,9 +204,10 @@ func vexNotAffectedItems(sightings []vexSighting) []vulnerability.VEXNotAffected
 			continue
 		}
 		out = append(out, vulnerability.VEXNotAffected{
-			Fingerprint: fm.fingerprint,
-			AssetID:     fm.assetID.String(),
-			Resolution:  vulnerability.VEXResolutionText(iv),
+			Fingerprint:   fm.fingerprint,
+			AssetID:       fm.assetID.String(),
+			Resolution:    vulnerability.VEXResolutionText(iv),
+			ClosureReason: vulnerability.ClosureReasonFromVEXJustification(iv.Justification),
 		})
 	}
 	return out

@@ -137,3 +137,20 @@ func (db *DB) execStatusWrite(ctx context.Context, query string, args ...any) (s
 	})
 	return res, err
 }
+
+// markStatusWriteTx marks tx like execStatusWrite marks its own transaction
+// (the platform transition or a person's move carried by ctx), for a status
+// write that runs inside a caller's transaction.
+func markStatusWriteTx(ctx context.Context, tx *sql.Tx) error {
+	if t, platform := vulnerability.StatusTransitionFrom(ctx); platform {
+		if err := setFindingTransition(ctx, tx, t); err != nil {
+			return err
+		}
+	}
+	if vulnerability.IsPersonMove(ctx) {
+		if _, err := tx.ExecContext(ctx, `SELECT set_config('openctem.person_move', 'on', true)`); err != nil {
+			return fmt.Errorf("mark person move: %w", err)
+		}
+	}
+	return nil
+}

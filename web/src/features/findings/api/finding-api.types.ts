@@ -299,6 +299,10 @@ export interface ApiFinding {
   status: FindingStatus
   is_triaged: boolean // true if status != "new"
   resolution?: string
+  /** Why a closed finding is closed (lib/closure.ts); absent while open. */
+  closure_reason?: string
+  /** How a resolve (or a platform false positive) was proven. */
+  verification?: string
   resolved_at?: string
   resolved_by?: string
   assigned_to?: string

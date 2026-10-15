@@ -387,6 +387,11 @@ class, the tenant with the fewest platform jobs in flight goes first
 
 ## Platform sensors on the tenant plane
 
+Platform sensors become **shared sensors** (instance scope) in every edition;
+the design, access layers, deployment defaults and rollout are in
+[RFC-100](../rfcs/RFC-100-shared-sensors.md). Until its gate (§11) is met,
+no organization may use them.
+
 A platform sensor's row carries a `tenant_id` (the operator's), but it is
 never that tenant's sensor. Managing platform sensors belongs to the platform
 admin console (RFC-022); on the tenant plane they do not exist:
@@ -871,7 +876,7 @@ Each segment runs through the v1 pipeline with the v2 options:
   guard applies. `INGEST_COVERAGE_AUTO_RESOLVE` = `dry_run` (default: log,
   `findings_coverage_auto_resolve_total{mode,result}` and an
   `ingest.coverage_auto_resolve_dry_run` audit entry listing the findings, no
-  state change), `enforce` (closes them as `auto_fixed`/`scan_verified`,
+  state change), `enforce` (closes them as `auto_fixed`, `fixed` / `covered_scan`,
   audited as `ingest.coverage_auto_resolved`) or `off`.
 - An uncommitted report expires 60 minutes after its last segment; its
   upserts stay and it never resolves anything. A segment's outcome is stored

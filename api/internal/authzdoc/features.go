@@ -98,7 +98,7 @@ var Features = []Feature{
 		Description: "Remediation campaigns, suppression and exception rules, assignment rules and automation workflows.",
 		Stages:      []string{StageMobilization},
 		Registers: []string{
-			"registerRemediationCampaignRoutes", "registerSuppressionRoutes", "registerAssignmentRuleRoutes",
+			"registerRemediationCampaignRoutes", "registerRemediationTaskRoutes", "registerRemediationSuggestionRoutes", "registerSuppressionRoutes", "registerAssignmentRuleRoutes",
 			"registerWorkflowRoutes",
 		},
 	},
@@ -210,7 +210,7 @@ var Features = []Feature{
 		ID: "system", Title: "System endpoints",
 		Description: "Health, metrics, version, API documentation and client error reports.",
 		Registers: []string{
-			"registerHealthRoutes", "registerDocsRoutes", "registerVersionRoute", "registerClientErrorRoute", "registerLegalRoute",
+			"registerHealthRoutes", "registerDocsRoutes", "registerVersionRoute", "registerClientErrorRoute", "registerLegalRoute", "registerBrandRoutes",
 		},
 	},
 }

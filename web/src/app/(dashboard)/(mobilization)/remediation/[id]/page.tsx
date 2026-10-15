@@ -55,6 +55,7 @@ import {
 import { SeverityBadge } from '@/features/shared'
 import { StatusSelect } from '@/features/findings/components/status-select'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
+import { useCanCreateTicket } from '@/features/findings/hooks/use-can-create-ticket'
 import type { Severity } from '@/features/shared/types'
 import type { FindingStatus } from '@/features/findings'
 import { patch } from '@/lib/api/client'
@@ -212,6 +213,7 @@ export default function CampaignDetailPage() {
   const linkedFindings = campaignFindingsData?.data ?? []
   const campaignFindingTotal = campaignFindingsData?.total ?? 0
   const [ticketFinding, setTicketFinding] = useState<{ id: string; title: string } | null>(null)
+  const canCreateTicket = useCanCreateTicket()
 
   // Inline finding actions on the campaign (reuse the finding endpoints).
   const handleFindingStatus = async (findingId: string, status: FindingStatus) => {
@@ -288,9 +290,13 @@ export default function CampaignDetailPage() {
   }
 
   const handleStatusChange = async (newStatus: string) => {
-    const apply = async () => {
+    const apply = async (closeWithOpenMembers = false) => {
       try {
-        await updateStatus({ status: newStatus, version: campaign?.version })
+        await updateStatus({
+          status: newStatus,
+          version: campaign?.version,
+          ...(closeWithOpenMembers ? { close_with_open_members: true } : {}),
+        })
         await mutateCampaign()
         globalMutate(
           (key: unknown) => typeof key === 'string' && key.includes('/remediation/campaigns')
@@ -533,13 +539,16 @@ export default function CampaignDetailPage() {
                         <DropdownMenuItem onClick={() => router.push(`/findings/${f.id}`)}>
                           <ExternalLink className="me-2 h-4 w-4" /> Open finding
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() =>
-                            setTicketFinding({ id: f.id, title: f.title || f.message || f.id })
-                          }
-                        >
-                          <Ticket className="me-2 h-4 w-4" /> Create ticket
-                        </DropdownMenuItem>
+                        {canCreateTicket && (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setTicketFinding({ id: f.id, title: f.title || f.message || f.id })
+                            }
+                          >
+                            <Ticket className="me-2 h-4 w-4" />{' '}
+                            {t('findings.header.createTicket', 'Create ticket')}
+                          </DropdownMenuItem>
+                        )}
                         {linkedFindingIds.includes(f.id) && (
                           <Can permission={Permission.RemediationWrite}>
                             <DropdownMenuItem
