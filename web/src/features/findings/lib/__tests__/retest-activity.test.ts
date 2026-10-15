@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { retestActivity } from '../retest-activity'
-import { isRetestable } from '../../api/use-finding-retests'
+import { hasRetestHistory, isRetestable } from '../../api/use-finding-retests'
 
 describe('retestActivity', () => {
   it('ignores other activity types', () => {
@@ -51,11 +51,14 @@ describe('retestActivity', () => {
 })
 
 describe('isRetestable', () => {
-  it('needs a nuclei template and a retestable status', () => {
+  it('needs a rule of any tool and a retestable status; the API decides the tool', () => {
     expect(isRetestable({ toolName: 'nuclei', ruleId: 'tpl', status: 'resolved' })).toBe(true)
     expect(isRetestable({ toolName: 'Nuclei', ruleId: 'tpl', status: 'fix_applied' })).toBe(true)
     expect(isRetestable({ toolName: 'nuclei', ruleId: '', status: 'confirmed' })).toBe(false)
-    expect(isRetestable({ toolName: 'trivy', ruleId: 'CVE-1', status: 'confirmed' })).toBe(false)
+    expect(isRetestable({ toolName: 'trivy', ruleId: 'CVE-1', status: 'confirmed' })).toBe(true)
+    expect(isRetestable({ toolName: '', ruleId: 'CVE-1', status: 'confirmed' })).toBe(false)
+    expect(hasRetestHistory({ toolName: 'any-tool', ruleId: 'r1' })).toBe(true)
+    expect(hasRetestHistory({ toolName: 'any-tool' })).toBe(false)
     expect(isRetestable({ toolName: 'nuclei', ruleId: 'tpl', status: 'false_positive' })).toBe(
       false
     )

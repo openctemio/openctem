@@ -29,6 +29,16 @@ func (s toolSensors) HasRetestSensor(_ context.Context, _ shared.ID, tool string
 	return s[tool], nil
 }
 
+func (s toolSensors) RetestTools(context.Context, shared.ID) ([]string, error) {
+	caps := []string{validation.SensorCapabilityValidateNuclei}
+	for tool, on := range s {
+		if on {
+			caps = append(caps, validation.RetestCapability(tool))
+		}
+	}
+	return validation.RetestToolsOf(caps), nil
+}
+
 // finishTool completes a retest command with the verdicts the sensor's kit
 // reports (metadata.retest.verdicts), or fails it when verdicts is nil.
 func (fx *fixture) finishTool(cmd *shared.ID, verdicts []map[string]any) {
