@@ -335,7 +335,8 @@ func (r *FindingRemediationKeyRepository) CampaignsWithStaleKey(ctx context.Cont
 func (r *FindingRemediationKeyRepository) RetargetCampaignKey(ctx context.Context, tenantID, campaignID shared.ID, oldKey, newKey string) (bool, error) {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE remediation_campaigns
-		SET finding_filter = jsonb_set(finding_filter, '{remediation_key}', to_jsonb($4::text)), updated_at = NOW()
+		SET finding_filter = jsonb_set(finding_filter, '{remediation_key}', to_jsonb($4::text)),
+		    version = version + 1, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2 AND finding_filter->>'remediation_key' = $3`,
 		tenantID.String(), campaignID.String(), oldKey, newKey)
 	if err != nil {
