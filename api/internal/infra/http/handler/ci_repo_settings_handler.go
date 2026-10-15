@@ -53,7 +53,7 @@ type CIRepositorySettingsResponse struct {
 	CheckedAt time.Time `json:"checked_at"`
 }
 
-// GetRepositorySettings handles GET /api/v1/ci/repositories/{id}/settings
+// GetRepositorySettings handles GET /api/v1/ci/gate-settings/{id}
 // @Summary      A repository's effective CI gate settings
 // @Description  Every gate setting with its effective value, the value inherited without the repository's own policy, the layer it comes from (default, tenant, business_unit, repository) and any lock. The gate judges the repository's runs with exactly these values. 404 when the repository is outside the caller's data scope.
 // @Tags         CI
@@ -62,7 +62,7 @@ type CIRepositorySettingsResponse struct {
 // @Param        id path string true "Repository asset ID"
 // @Success      200  {object}  CIRepositorySettingsResponse
 // @Failure      404  {object}  apierror.Error
-// @Router       /ci/repositories/{id}/settings [get]
+// @Router       /ci/gate-settings/{id} [get]
 func (h *CIAdminHandler) GetRepositorySettings(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenant(w, r)
 	if !ok {

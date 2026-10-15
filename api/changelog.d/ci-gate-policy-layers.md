@@ -8,6 +8,6 @@
   severity and is announced to administrators. A repository policy can end (`expires_at`, within 365 days).
 - Gate baseline settings join the policy: `baseline_on_first_run` (default on), `baseline_grace_days` (the
   baseline findings block again after it), and `baseline_secrets_block` (default on).
-- New: `GET /api/v1/ci/repositories/{id}/settings`: every setting with its effective value, inherited value,
+- New: `GET /api/v1/ci/gate-settings/{id}`: every setting with its effective value, inherited value,
   source and lock; `has_policy_override=true` on the pipelines list; `override_counts` per field on the gate policy
   list. Migration `ci_gate_policy_layers`.

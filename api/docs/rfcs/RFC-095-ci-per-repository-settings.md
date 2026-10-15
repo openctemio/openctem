@@ -48,7 +48,7 @@ findings' due date), and `baseline_secrets_block` (default on).
 | POST, PATCH | `/api/v1/ci/gate-policies[/{id}]` | `scans:ci:policy` | adds `fields`, `locked_fields`, `reason`, `expires_at`, and the three baseline fields |
 | GET | `/api/v1/ci/pipelines?has_policy_override=true` | `scans:ci:read` | pipelines whose repository has its own enabled, unexpired policy |
 | GET | `/api/v1/ci/gate-policies` | `scans:ci:read` | adds `override_counts`: per field, the active repository policies (that the caller may see) that set it |
-| GET | `/api/v1/ci/repositories/{id}/settings` | `scans:ci:read` | each field: effective value, inherited value, source (`default`, `tenant`, `business_unit`, `repository`), lock, ignored. Also the repository's own policy and whether it expired |
+| GET | `/api/v1/ci/gate-settings/{id}` | `scans:ci:read` | each field: effective value, inherited value, source (`default`, `tenant`, `business_unit`, `repository`), lock, ignored. Also the repository's own policy and whether it expired |
 
 Existing policies keep their behaviour: the migration gives every row all fields.
 
