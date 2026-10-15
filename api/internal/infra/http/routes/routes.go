@@ -182,7 +182,10 @@ type Handlers struct {
 	FindingEvidenceItems *handler.FindingEvidenceItemsHandler
 
 	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
-	JiraWebhook   *handler.JiraWebhookHandler   // nil if not initialized (no database)
+	JiraWebhook *handler.JiraWebhookHandler // nil if not initialized (no database)
+	// TicketMapping serves the ticket field and status mapping editor (nil
+	// without a database).
+	TicketMapping *handler.TicketMappingHandler
 	GitHubWebhook *handler.GitHubWebhookHandler // nil if not initialized (no database)
 
 	// Pentest Campaign Management handlers
@@ -270,6 +273,8 @@ type Handlers struct {
 	AdminEmail *handler.AdminEmailHandler
 	// AdminLegal: Console > System > Legal and the public GET /api/v1/legal (RFC-079).
 	AdminLegal *handler.AdminLegalHandler
+	// Brand: the public instance brand (GET /api/v1/brand).
+	Brand *handler.BrandHandler
 	// AdminScanPolicy: the platform policy for scan approval
 	// (RFC-073), platform default and per organization.
 	AdminScanPolicy *handler.AdminScanPolicyHandler
@@ -507,6 +512,7 @@ func Register(
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
 	registerLegalRoute(router, h.AdminLegal)
+	registerBrandRoutes(router, h.Brand)
 	// API documentation: public outside production; in production the spec
 	// needs a signed-in user and the reference page a platform administrator.
 	if h.Docs != nil {
@@ -804,7 +810,7 @@ func Register(
 	// Integration routes (tenant from JWT token)
 	if h.Integration != nil {
 		registerIntegrationRoutes(router, h.Integration, h.JiraWebhook, h.DefectDojo, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleIntegrations),
-			h.Scan, h.ModuleGate.RequireModule(moduledom.ModuleScans))
+			h.Scan, h.ModuleGate.RequireModule(moduledom.ModuleScans), h.TicketMapping)
 	}
 
 	// Asset Group routes (tenant from JWT token)
