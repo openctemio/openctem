@@ -23,8 +23,11 @@ type EvaluateInput struct {
 	ScanFailures int
 	// RepoPolicy is the repository's .openctem.yml (nil without one).
 	RepoPolicy *cirun.RepoPolicy
-	ClientIP   string
-	UserAgent  string
+	// Capabilities is what the job reports about each capability; any
+	// capability not uploaded cleanly fails the gate.
+	Capabilities []cirun.CapabilityState
+	ClientIP     string
+	UserAgent    string
 }
 
 // Verdict is a gate verdict with its links.
@@ -171,6 +174,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	gv := cirun.Evaluate(cirun.GateInput{
 		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
 		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, BaselineEstablished: cmp.established, ScanFailures: in.ScanFailures,
+		FailedCapabilities:  cirun.FailedCapabilities(in.Capabilities),
 		FindingsOverCap:     overCap,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
