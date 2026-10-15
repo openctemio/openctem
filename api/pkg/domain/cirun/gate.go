@@ -44,10 +44,59 @@ const (
 	// ReasonSecretPreExisting notes a secret already open on the baseline
 	// branch: it blocks default-branch runs, not pull requests.
 	ReasonSecretPreExisting = "secret_pre_existing"
+	// ReasonCapabilityFailed: the job reported that a capability it ran
+	// did not fully reach the platform (failed, partial, not uploaded or
+	// missing), whatever its scan_failures count says.
+	ReasonCapabilityFailed = "capability_failed"
 	// ReasonTooManyFindings: the run reported more findings than the gate
 	// records (MaxRunFindings), so it cannot be judged on all of them.
 	ReasonTooManyFindings = "too_many_findings"
 )
+
+// CapabilityState is what the CI job reports about one capability at
+// evaluation: its name, tool, state and a fixed reason word. Only
+// CapabilityUploaded is a clean state; any other state fails the gate.
+type CapabilityState struct {
+	Name   string `json:"name"`
+	Tool   string `json:"tool,omitempty"`
+	State  string `json:"state"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// CapabilityUploaded is the state of a capability whose results all reached
+// the platform. The CI runner also sends partial, failed, not_uploaded and
+// missing; an unknown state counts as not clean (fail closed).
+const CapabilityUploaded = "uploaded"
+
+// MaxCapabilityStates bounds the capability states one evaluation reads.
+const MaxCapabilityStates = 64
+
+// FailedCapabilities returns the reported capabilities that are not clean,
+// with their labels sanitized (they are job input, shown in the verdict and
+// the merge request comment). Past MaxCapabilityStates the rest are ignored;
+// an empty name is reported as "unknown".
+func FailedCapabilities(states []CapabilityState) []CapabilityState {
+	out := []CapabilityState{}
+	for i, c := range states {
+		if i >= MaxCapabilityStates {
+			break
+		}
+		state := SanitizeLabel(strings.ToLower(c.State), 32)
+		if state == CapabilityUploaded {
+			continue
+		}
+		name := SanitizeLabel(c.Name, 64)
+		if name == "" {
+			name = "unknown"
+		}
+		if state == "" {
+			state = "unknown"
+		}
+		out = append(out, CapabilityState{Name: name, Tool: SanitizeLabel(c.Tool, 64), State: state,
+			Reason: SanitizeLabel(c.Reason, 64)})
+	}
+	return out
+}
 
 // Break-glass limits.
 const (
@@ -243,6 +292,9 @@ type GateInput struct {
 	// every open secret blocks.
 	DefaultBranch bool
 	ScanFailures  int
+	// FailedCapabilities are the capabilities the job reported as not clean
+	// (FailedCapabilities).
+	FailedCapabilities []CapabilityState
 	// FindingsOverCap: the run reported more findings than it could record;
 	// judging only the recorded ones would miss the rest, so it fails.
 	FindingsOverCap bool
@@ -398,6 +450,18 @@ func Evaluate(in GateInput) GateVerdict {
 	if in.ScanFailures > 0 {
 		add(GateReason{Code: ReasonScanFailure,
 			Message: fmt.Sprintf("%d scanner(s) failed to run or to report: the run cannot be judged", in.ScanFailures)})
+	}
+	for _, c := range in.FailedCapabilities {
+		what := c.Name
+		if c.Tool != "" {
+			what += " (" + c.Tool + ")"
+		}
+		why := c.State
+		if c.Reason != "" {
+			why += ": " + c.Reason
+		}
+		add(GateReason{Code: ReasonCapabilityFailed,
+			Message: fmt.Sprintf("the %s scan did not fully reach the platform (%s): the run cannot be judged", what, why)})
 	}
 	if in.FindingsOverCap {
 		add(GateReason{Code: ReasonTooManyFindings,
