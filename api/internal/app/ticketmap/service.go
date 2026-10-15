@@ -540,11 +540,12 @@ type StatusPlan struct {
 // rendering, wiki encoding).
 func renderOptions(creating bool) ticketmapdom.RenderOptions {
 	return ticketmapdom.RenderOptions{
-		Redact:       safetext.RedactSecrets,
-		EncodeBlock:  safetext.JiraWikiBlock,
-		EncodeInline: safetext.JiraWikiInline,
-		Table:        wikiTable,
-		Creating:     creating,
+		Redact:        safetext.RedactSecrets,
+		EncodeBlock:   safetext.JiraWikiBlock,
+		EncodeInline:  safetext.JiraWikiInline,
+		EncodeSummary: safetext.SingleLine,
+		Table:         wikiTable,
+		Creating:      creating,
 	}
 }
 

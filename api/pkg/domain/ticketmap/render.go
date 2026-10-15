@@ -1,6 +1,9 @@
 package ticketmap
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -17,6 +20,8 @@ type RenderOptions struct {
 	// tracker's markup (so a value cannot add links, mentions or macros).
 	EncodeBlock  func(s string, maxRunes int) string
 	EncodeInline func(s string, maxRunes int) string
+	// EncodeSummary cleans the one-line plain-text summary (no markup).
+	EncodeSummary func(s string, maxRunes int) string
 	// Table renders a table block in the tracker's markup.
 	Table func(t Table) string
 	// Account maps an OpenCTEM user to a tracker account id ("" = unknown).
@@ -93,7 +98,24 @@ func RenderOutbound(kind ObjectKind, s Spec, values Values, meta *ProjectMeta, o
 				drop(r, "template", err.Error())
 				continue
 			}
-			v = Text(tpl.Render(visible))
+			withLinks, links := linkSentinels(kind, visible)
+			v = Text(tpl.Render(withLinks))
+			out, ok, note := shapeValue(r, v, schema, fm, opt, redact)
+			if note != "" {
+				res.Notes = append(res.Notes, Issue{Severity: IssueInfo, Code: "note", RowID: r.ID, FieldID: r.Target.FieldID, Message: note})
+			}
+			if !ok {
+				drop(r, "empty", "no value")
+				continue
+			}
+			if str, isStr := out.(string); isStr {
+				for sentinel, url := range links {
+					str = strings.ReplaceAll(str, sentinel, url)
+				}
+				out = str
+			}
+			res.Fields[r.Target.FieldID] = out
+			continue
 		case SourceAttr:
 			a, ok := LookupAttr(kind, r.Source.Attr)
 			if !ok {
@@ -105,6 +127,12 @@ func RenderOutbound(kind ObjectKind, s Spec, values Values, meta *ProjectMeta, o
 				continue
 			}
 			v = visible[r.Source.Attr]
+			if a.Type == TypeLink && shapeOf(schema) == shapeText && v.Str != nil && *v.Str != "" {
+				// A platform-built link (configured base URL + object id):
+				// sent as is so the tracker links it.
+				res.Fields[r.Target.FieldID] = *v.Str
+				continue
+			}
 		}
 
 		out, ok, note := shapeValue(r, v, schema, fm, opt, redact)
@@ -182,8 +210,16 @@ func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOpt
 			return nil, false, ""
 		}
 		if r.Target.FieldID == "summary" {
-			s = strings.Join(strings.Fields(s), " ")
-			return text(s, maxSummaryRunes, false), true, ""
+			s = redact(strings.Join(strings.Fields(s), " "))
+			if opt.EncodeSummary != nil {
+				return opt.EncodeSummary(s, maxSummaryRunes), true, ""
+			}
+			return truncateRunes(s, maxSummaryRunes), true, ""
+		}
+		if r.Source.Kind == SourceTemplate || r.Source.Kind == SourceConst {
+			// Admin-written layout: keep the lines, encode each one so no
+			// value inside can add markup.
+			return truncateRunes(textLines(redact(s), opt), maxTextRunes), true, ""
 		}
 		block := r.Target.FieldID == "description" || r.Target.FieldID == "environment" || strings.Contains(s, "\n")
 		return text(s, maxTextRunes, block), true, ""
@@ -275,6 +311,42 @@ func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOpt
 		return nil, false, ""
 	}
 	return text(s, maxTextRunes, false), true, ""
+}
+
+// textLines encodes text line by line (inline encoding keeps no markup).
+func textLines(s string, opt RenderOptions) string {
+	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	for i, l := range lines {
+		if opt.EncodeInline != nil {
+			lines[i] = opt.EncodeInline(l, maxTextRunes)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// linkSentinels replaces the platform-built link values with random tokens
+// that survive encoding, so the links can be put back as is after the
+// template's text is encoded (and its other URLs defanged). The token carries
+// a random nonce: text inside a value cannot forge it.
+func linkSentinels(kind ObjectKind, values Values) (Values, map[string]string) {
+	out := make(Values, len(values))
+	links := map[string]string{}
+	var nonce [8]byte
+	_, _ = rand.Read(nonce[:])
+	n := hex.EncodeToString(nonce[:])
+	i := 0
+	for path, v := range values {
+		a, ok := LookupAttr(kind, path)
+		if ok && a.Type == TypeLink && v.Str != nil && *v.Str != "" {
+			token := fmt.Sprintf("zzoclink%s%dzz", n, i)
+			i++
+			links[token] = *v.Str
+			out[path] = Text(token)
+			continue
+		}
+		out[path] = v
+	}
+	return out, links
 }
 
 // labelSafe makes a tracker label: no whitespace, bounded.

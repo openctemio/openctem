@@ -153,3 +153,11 @@ func TaskStateOf(c *remediation.Campaign) string {
 	}
 	return ticketmapdom.TaskOpen
 }
+
+// findingTitle is the finding's title, or its message when it has none.
+func findingTitle(f *vulnerability.Finding) string {
+	if t := strings.TrimSpace(f.Title()); t != "" {
+		return t
+	}
+	return strings.TrimSpace(f.Message())
+}

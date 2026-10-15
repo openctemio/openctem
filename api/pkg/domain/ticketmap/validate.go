@@ -302,7 +302,12 @@ func validateStatus(kind ObjectKind, m StatusMap, meta *ProjectMeta) []Issue {
 			}
 			reachable++
 		}
+		target, _ := wf.Status(t.StatusID)
 		switch {
+		case reachable <= 1 && len(wf.Statuses) > 1 && target.Category == CategoryNew:
+			// A to-do status only new issues are in: nothing moves back there.
+			out = append(out, Issue{Severity: IssueWarning, Code: "status_initial_only", State: st,
+				Message: fmt.Sprintf("%s → %s: only new issues are in this status; an issue that moved on is left where it is", st, statusLabel(t))})
 		case reachable <= 1 && len(wf.Statuses) > 1:
 			out = append(out, Issue{Severity: IssueError, Code: "status_unreachable", State: st,
 				Message: fmt.Sprintf("%s → %s cannot be reached: %v", st, statusLabel(t), firstErr)})
