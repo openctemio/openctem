@@ -125,8 +125,20 @@ automatic recomputes only tighten:
 A deadline that moves later by itself would hide overdue work, so an
 extension is an explicit decision (a regression or an expired acceptance
 starts a new clock with its own `sla_restarted` entry), never a side effect.
-The ingest upsert applies the same rule (`LEAST` of the stored and incoming
-deadline for an open finding).
+The ingest upsert and the recompute writer (`SavePriorities`) apply the same
+rule (`LEAST` of the stored and incoming deadline for an open finding).
+
+The database enforces it for every writer: the BEFORE UPDATE trigger
+`trg_findings_sla_deadline_guard` keeps the stored deadline (and the SLA
+status for it) when an update would move an open finding's deadline later
+or clear it, so a writer holding an older copy of the row (a full-row
+update, a recompute that read the row before a tightening) cannot extend it.
+Only a transaction marked `SET LOCAL openctem.sla_restart = on` may move it
+later: the regression restart (`FindingSLARestartRepository.RestartSLA`) and
+the acceptance expiry, which start a new clock on purpose. The promotion of
+a branch-only finding (its clock starts when a counting branch first sees
+it) is recognised by `branch_only` going from true to false. Closed findings
+and a first deadline are not guarded.
 
 Every tightening of an open finding writes a `sla_deadline_tightened`
 timeline entry (database trigger, whatever wrote the deadline) with both
