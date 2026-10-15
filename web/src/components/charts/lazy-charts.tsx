@@ -76,7 +76,7 @@ export {
 }
 
 // Re-export other recharts components directly (they're tree-shaken)
-export { Cell, Legend, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts'
+export { Cell, Legend, Tooltip, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts'
 
 /**
  * Series draw-in only when the chart first appears. Recharts otherwise replays
