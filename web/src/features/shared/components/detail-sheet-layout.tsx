@@ -296,7 +296,7 @@ export function DetailSheet({
         <DrawerContent
           data-slot="detail-sheet"
           className={cn(
-            'w-full gap-0 overflow-hidden p-0 outline-none',
+            'w-full gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip p-0 outline-none',
             // One height whatever the content (svh: the browser's bars never
             // cover it), clear of the home indicator.
             'rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)]',
@@ -320,7 +320,7 @@ export function DetailSheet({
         side="right"
         data-slot="detail-sheet"
         className={cn(
-          'flex w-full flex-col gap-0 overflow-hidden p-0 outline-none [&>button]:hidden',
+          'flex w-full flex-col gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip p-0 outline-none [&>button]:hidden',
           WIDTH[width],
           className
         )}
