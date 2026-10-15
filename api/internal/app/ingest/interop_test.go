@@ -175,7 +175,7 @@ func TestVEX_DryRunIsTheDefaultAndStoresTheStatement(t *testing.T) {
 	assert.Equal(t, []bool{true}, repo.vexDry)
 	assert.Equal(t, 1, out.FindingsVEXNotAffected)
 	assert.Equal(t, 1, out.FindingsVEXWouldClose)
-	assert.Equal(t, 0, out.FindingsVEXClosed)
+	assert.Equal(t, 0, out.FindingsVEXRequested)
 	require.Len(t, repo.vexItems, 1)
 	assert.Contains(t, repo.vexItems[0].Resolution, "component_not_present")
 	assert.Contains(t, repo.vexItems[0].Resolution, "vex.example")
@@ -191,7 +191,7 @@ func TestVEX_EnforceClosesOnlyWhenCommandBound(t *testing.T) {
 	repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
 	out, _ := runInterop(t, SourceResolveEnforce, vexScope(), []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}, repo)
 	assert.Equal(t, []bool{false}, repo.vexDry)
-	assert.Equal(t, 1, out.FindingsVEXClosed)
+	assert.Equal(t, 1, out.FindingsVEXRequested)
 	assert.Len(t, out.VEXIDs, 1)
 
 	// Not bound to a command, or mode off: no state change at all.
@@ -238,14 +238,33 @@ func TestVEX_LimitedToTheCommandsToolAndAssets(t *testing.T) {
 			repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
 			out, _ := runInterop(t, SourceResolveEnforce, scope, notAffected, repo)
 			assert.Equal(t, 0, repo.vexCalls)
-			assert.Equal(t, 0, out.FindingsVEXClosed)
+			assert.Equal(t, 0, out.FindingsVEXRequested)
 			assert.Len(t, repo.updates, 1, "the statement is still stored")
 		})
 	}
 	repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
 	out, _ := runInterop(t, SourceResolveEnforce, vexScope(), notAffected, repo)
 	assert.Equal(t, 1, repo.vexCalls)
-	assert.Equal(t, 1, out.FindingsVEXClosed)
+	assert.Equal(t, 1, out.FindingsVEXRequested)
+}
+
+// A connector sync has no target list: its statements count only for assets
+// the same report carries.
+func TestVEX_ConnectorSyncOnlyForItsOwnAssets(t *testing.T) {
+	notAffected := []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}
+	sync := func(seen bool) *alterScope {
+		s := newAlterScope(Binding{Kind: BindingCommand, Tool: "trivy", CommandType: command.CommandTypeConnectorSync})
+		if seen {
+			s.seen = map[shared.ID]seenAsset{interopHost: {}}
+		}
+		return s
+	}
+	repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
+	_, _ = runInterop(t, SourceResolveEnforce, sync(false), notAffected, repo)
+	assert.Equal(t, 0, repo.vexCalls, "an asset the sync did not carry")
+	repo = &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
+	_, _ = runInterop(t, SourceResolveEnforce, sync(true), notAffected, repo)
+	assert.Equal(t, 1, repo.vexCalls, "an asset the sync carries")
 }
 
 func TestParseVEXMode(t *testing.T) {

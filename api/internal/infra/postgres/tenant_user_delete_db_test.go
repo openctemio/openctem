@@ -228,6 +228,13 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		}
 		return nil
 	},
+	// The new owner is a second person (a transfer to oneself is refused).
+	"tenant_ownership_transfers": func(s *schemaSeeder) map[string]any {
+		other := shared.NewID().String()
+		mustExecTx(s.t, s.tx, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'FK Delete Test 2')`, other, "fkdel-"+other+"@example.test")
+		return map[string]any{"from_user_id": s.userID, "to_user_id": other, "status": "pending",
+			"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-04T00:00:00Z"}
+	},
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},

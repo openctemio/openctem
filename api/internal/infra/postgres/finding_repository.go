@@ -733,7 +733,10 @@ func findingUpsertConflictSQL() string {
 			-- provenance moves to the sighting table it belongs on. See
 			-- docs/architecture/decisions/004-finding-provenance.md.
 			ingest_channel = COALESCE(findings.ingest_channel, EXCLUDED.ingest_channel),
-			tool_version = EXCLUDED.tool_version,
+			-- The version belongs to tool_name (the first reporter): a later
+			-- sighting by another tool must not pair its version with it.
+			tool_version = CASE WHEN findings.tool_name = EXCLUDED.tool_name
+				THEN EXCLUDED.tool_version ELSE findings.tool_version END,
 			snippet = COALESCE(EXCLUDED.snippet, findings.snippet),
 			context_snippet = COALESCE(EXCLUDED.context_snippet, findings.context_snippet),
 			context_start_line = COALESCE(EXCLUDED.context_start_line, findings.context_start_line),
@@ -3883,7 +3886,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 73
+const enrichColumnsPerRow = 75
 
 // enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
 // 1000 rows × 50 columns = 50,000 params (safely under limit).
@@ -3973,6 +3976,8 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"cvss_version", "text"},
 	{"cve_ids", "text[]"},
 	{"patch_published_at", "timestamptz"},
+	{"last_seen_branch", "text"},
+	{"last_seen_commit", "text"},
 }
 
 // EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
@@ -4158,7 +4163,9 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		f.SLAStatus().String(),
 		nullString(f.LastSeenTool()),
 		// Network location — EnrichFrom fills it first-wins (enrichNetwork).
-	}, append(findingNetworkArgs(f), findingScannerArgs(f)...)...), nil
+	}, append(append(findingNetworkArgs(f), findingScannerArgs(f)...),
+		// Last sighting's branch and commit (EnrichFrom: latest non-empty).
+		nullString(f.LastSeenBranch()), nullString(f.LastSeenCommit()))...), nil
 }
 
 // buildBatchEnrichQuery builds a VALUES-based UPDATE query for the given number of rows.
