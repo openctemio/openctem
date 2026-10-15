@@ -30,6 +30,32 @@ How a finding was closed is its `resolution_method`, not a status:
 `source_mitigated`, `source_retired`, `vex_not_affected`. A pentest finding
 whose retest passed is `resolved` with `retest_verified`.
 
+## Open, fixed, dispositioned, closed: one definition
+
+Every count, metric, list and job asks "open?" or "fixed?" the same way
+(`pkg/domain/vulnerability/status_sets.go`):
+
+| Set | Statuses | SQL predicate |
+|---|---|---|
+| Open | `new`, `confirmed`, `in_progress`, `fix_applied`, `validated_fixed`, `not_observed` | `vulnerability.OpenStatusSQL(col)`; in the database `is_open_finding_status(status)` |
+| Fixed | `resolved` | `vulnerability.FixedStatusSQL(col)` |
+| Dispositioned | `false_positive`, `accepted`, `duplicate` | `vulnerability.DispositionedStatusSQL(col)` |
+| Closed | Fixed and Dispositioned | `vulnerability.ClosedStatusSQL(col)` |
+
+Pentest `draft` and `in_review` are in no set (they are not published).
+`ActiveFindingStatuses()` is the open set. The findings tabs, the dashboards,
+the risk snapshot (open count, closed today and MTTR count only fixes), asset
+and asset-group finding counts, repository branch counters, active CVEs, the
+grouped view, KEV escalation, SLA escalation and the threat-intel exposure
+lists all use it. The web console's copy is
+`web/src/features/findings/lib/list-defaults.ts`.
+
+`TestNoHandWrittenFindingStatusLists` (`internal/infra/postgres`) fails when Go
+code hand-writes a SQL list of two or more finding statuses; the few lists that
+are a different set (a pentest report's published findings, the mean time to
+validate population) are allow-listed there with their reason, and
+`TestFindingStatusSets_SQLMatchesGo` pins the SQL function to the Go set.
+
 `open` is a lens and a category of the findings list (`state=open`), never a
 status. The API refuses an unknown status with a 400, in a status change and in
 a list filter; it never maps one to another.
@@ -80,6 +106,24 @@ a list filter; it never maps one to another.
 Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
+
+## Duplicates name their canonical finding
+
+A duplicate is a tombstone of another finding: `duplicate_of` is always set
+(CHECK `chk_findings_duplicate_has_target`, migration `002151`). It is made only
+by `POST /api/v1/findings/{id}/duplicates` (`findings:triage`, plus
+`findings:approve` when either side carries a decision), by correlation and by
+merges. `PATCH /findings/{id}/status`, the bulk status change and the workflow
+`update_status` action refuse `duplicate` with a 400 naming that route
+(`vulnerability.ErrDuplicateNeedsCanonical`, enforced in
+`Finding.TransitionStatus` and `ApplyPlatformTransition` too); the drawer's
+status control does not offer it (Mark duplicate picks the canonical finding).
+
+When a canonical finding is deleted its duplicates lose `duplicate_of`
+(`ON DELETE SET NULL`); the trigger `trg_findings_reopen_orphaned_duplicate`
+reopens each to `confirmed` with a timeline entry instead of failing the delete.
+Migration `002151` repaired existing orphan duplicates the same way (status
+`confirmed`, timeline reason `duplicate_link_missing`).
 
 ## Risk acceptance end
 

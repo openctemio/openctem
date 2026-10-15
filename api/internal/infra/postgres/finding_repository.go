@@ -1384,7 +1384,7 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 
 	statusFilter := ""
 	if !filter.IncludeResolved {
-		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+		statusFilter = " AND " + vulnerability.OpenStatusSQL("f.status")
 	}
 	// Layer 2: a restricted caller's CVEs, counts and dates come only from
 	// findings on assets in their scope ($2, $3).
@@ -1449,11 +1449,14 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 				COUNT(DISTINCT f.asset_id)               AS affected_assets_count,
 				COUNT(DISTINCT f.component_id) FILTER (WHERE f.component_id IS NOT NULL) AS affected_components_count,
 				COUNT(*)                                 AS total_finding_count,
-				COUNT(*) FILTER (WHERE f.status IN ('new','confirmed','in_progress')) AS open_finding_count,
+				COUNT(*) FILTER (WHERE ` + vulnerability.OpenStatusSQL("f.status") + `) AS open_finding_count,
 				MIN(CASE f.status
 					WHEN 'new'         THEN 1
 					WHEN 'confirmed'   THEN 2
 					WHEN 'in_progress' THEN 3
+					WHEN 'fix_applied' THEN 3
+					WHEN 'validated_fixed' THEN 3
+					WHEN 'not_observed' THEN 3
 					WHEN 'accepted'    THEN 4
 					WHEN 'false_positive' THEN 5
 					WHEN 'resolved'    THEN 6
@@ -1553,7 +1556,7 @@ func (r *FindingRepository) GetActiveCVEStats(
 ) (*vulnerability.ActiveCVEStats, error) {
 	statusFilter := ""
 	if !includeResolved {
-		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+		statusFilter = " AND " + vulnerability.OpenStatusSQL("f.status")
 	}
 	args := []any{tenantID.String()}
 	if scope != nil {
@@ -1612,7 +1615,7 @@ func (r *FindingRepository) ListAffectedAssetsByVulnerabilityID(
 	// When includeResolved=false, restrict to open statuses (new/confirmed/in_progress).
 	statusFilter := ""
 	if !includeResolved {
-		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+		statusFilter = " AND " + vulnerability.OpenStatusSQL("f.status")
 	}
 	// Layer 2: $3/$4 are the data-scope user/tenant when a scope is set; the
 	// pagination placeholders follow the scope arguments.
@@ -1630,7 +1633,7 @@ func (r *FindingRepository) ListAffectedAssetsByVulnerabilityID(
 			SELECT
 				f.asset_id,
 				COUNT(*) AS finding_count,
-				COUNT(*) FILTER (WHERE f.status IN ('new','confirmed','in_progress')) AS open_count,
+				COUNT(*) FILTER (WHERE ` + vulnerability.OpenStatusSQL("f.status") + `) AS open_count,
 				MIN(CASE f.severity
 					WHEN 'critical' THEN 1
 					WHEN 'high'     THEN 2
@@ -2965,10 +2968,10 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 		FROM findings
 		WHERE tenant_id = $1
 			AND asset_id IS NOT NULL
-			-- Canonical active set (ActiveFindingStatuses): includes fix_applied,
-			-- which is "fix marked, NOT yet verified" — such a KEV/critical finding
-			-- is still a live exposure and must stay on the attack path.
-			AND status IN ('new','confirmed','in_progress','fix_applied')
+			-- The open set (OpenStatuses): includes fix_applied, which is
+			-- "fix marked, NOT yet verified" — such a KEV/critical finding is
+			-- still a live exposure and must stay on the attack path.
+			AND ` + vulnerability.OpenStatusSQL("status") + `
 			-- A version-based match below the likely threshold is a
 			-- potential vulnerability, not an attack-path hop (RFC-066 §4).
 			AND NOT (tool_name = 'version-match' AND COALESCE(last_seen_tool, tool_name) = 'version-match'
@@ -3012,7 +3015,7 @@ func (r *FindingRepository) CountOpenByAssetID(ctx context.Context, tenantID, as
 	// in_progress/fix_applied/resolved/...), so the old IN ('open','in_progress')
 	// silently counted ONLY in_progress and dropped new+confirmed. Use the same
 	// open-status set the rest of this repository uses for open counts.
-	query := `SELECT COUNT(*) FROM findings WHERE asset_id = $1 AND tenant_id = $2 AND status IN ('new','confirmed','in_progress')`
+	query := `SELECT COUNT(*) FROM findings WHERE asset_id = $1 AND tenant_id = $2 AND ` + vulnerability.OpenStatusSQL("status")
 
 	var count int64
 	err := r.db.QueryRowContext(ctx, query, assetID.String(), tenantID.String()).Scan(&count)
@@ -3965,7 +3968,7 @@ func (r *FindingRepository) CountBySeverityForScan(ctx context.Context, tenantID
 			COALESCE(SUM(CASE WHEN severity IN ('info', 'none') THEN 1 ELSE 0 END), 0) AS info,
 			COUNT(*) AS total
 		FROM findings
-		WHERE tenant_id = $1 AND scan_id = $2 AND status NOT IN ('false_positive', 'resolved')
+		WHERE tenant_id = $1 AND scan_id = $2 AND ` + vulnerability.OpenStatusSQL("status") + `
 	`
 
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), scanID).Scan(
