@@ -9,7 +9,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // =============================================================================
@@ -407,31 +406,4 @@ func TestAssetService_ScoringConfig_CacheTTLBehavior(t *testing.T) {
 	if provider.getCalls != 2 {
 		t.Errorf("expected 2 provider calls after invalidation, got %d", provider.getCalls)
 	}
-}
-
-// =============================================================================
-// Max Asset Count Limit Test
-// =============================================================================
-
-// mockLargeAssetRepo overrides List to return a large Total count without
-// actually storing that many assets, to test the max asset limit.
-type mockLargeAssetRepo struct {
-	mockBatchAssetRepository
-	overrideTotal int64 // if > 0, returned as Total in List result
-}
-
-func (m *mockLargeAssetRepo) List(
-	ctx context.Context,
-	f asset.Filter,
-	opts asset.ListOptions,
-	page pagination.Pagination,
-) (pagination.Result[*asset.Asset], error) {
-	result, err := m.mockBatchAssetRepository.MockAssetRepository.List(ctx, f, opts, page)
-	if err != nil {
-		return result, err
-	}
-	if m.overrideTotal > 0 {
-		result.Total = m.overrideTotal
-	}
-	return result, nil
 }

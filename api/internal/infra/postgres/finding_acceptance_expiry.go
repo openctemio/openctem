@@ -158,22 +158,43 @@ func (r *FindingAcceptanceExpiryRepository) Expire(ctx context.Context, due vuln
 	return wrote, err
 }
 
-// ExpireStaleRequests marks approved acceptance requests whose end has passed
-// as expired when their finding is not an ended acceptance waiting for Expire
-// (it moved on, or holds a newer acceptance). The finding is never touched.
-// Returns how many requests it marked.
+// ExpireStaleRequests marks approved **accepted-risk** requests whose end
+// has passed as expired when their finding is not an ended acceptance waiting
+// for Expire (it moved on, or holds a newer acceptance). The finding's status
+// is never touched; each expired request gets a timeline entry on its finding
+// and an audit row in its tenant, in the same statement. A false-positive
+// request never expires (it carries no end), and an old one that does carry
+// an end is left alone. Returns how many requests it marked.
 func (r *FindingAcceptanceExpiryRepository) ExpireStaleRequests(ctx context.Context) (int64, error) {
-	res, err := r.db.ExecContext(ctx, `
-		UPDATE finding_status_approvals a SET status = 'expired', version = a.version + 1
-		WHERE a.status = 'approved' AND a.expires_at IS NOT NULL AND a.expires_at < NOW()
-		  AND NOT EXISTS (
-			SELECT 1 FROM findings f
-			WHERE f.tenant_id = a.tenant_id AND f.id = a.finding_id AND f.status = 'accepted'
-			  AND (f.acceptance_expires_at IS NULL OR f.acceptance_expires_at <= NOW()))`)
+	var n int64
+	err := r.db.QueryRowContext(ctx, `
+		WITH ended AS (
+			UPDATE finding_status_approvals a SET status = 'expired', version = a.version + 1
+			WHERE a.status = 'approved' AND a.requested_status = 'accepted'
+			  AND a.expires_at IS NOT NULL AND a.expires_at < NOW()
+			  AND NOT EXISTS (
+				SELECT 1 FROM findings f
+				WHERE f.tenant_id = a.tenant_id AND f.id = a.finding_id AND f.status = 'accepted'
+				  AND (f.acceptance_expires_at IS NULL OR f.acceptance_expires_at <= NOW()))
+			RETURNING a.id, a.tenant_id, a.finding_id, a.expires_at
+		), timeline AS (
+			INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
+			SELECT e.tenant_id, e.finding_id, 'approval_canceled', 'system', 'system: acceptance expiry',
+			       jsonb_build_object('approval_id', e.id, 'approval_status', 'expired',
+			                          'reason', 'acceptance_request_ended', 'expired_at', e.expires_at),
+			       'auto', 'The accepted-risk request ended; the finding had already moved on'
+			FROM ended e
+		), audit AS (
+			INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, metadata, logged_at)
+			SELECT gen_random_uuid(), e.tenant_id, 'finding.updated', 'finding', e.finding_id::text, 'success', 'low',
+			       'An accepted-risk request ended and was marked expired',
+			       jsonb_build_object('approval_id', e.id, 'reason', 'acceptance_request_ended'), NOW()
+			FROM ended e
+		)
+		SELECT COUNT(*) FROM ended`).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("expire stale acceptance requests: %w", err)
 	}
-	n, _ := res.RowsAffected()
 	return n, nil
 }
 

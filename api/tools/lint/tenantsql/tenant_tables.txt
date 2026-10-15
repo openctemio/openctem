@@ -179,6 +179,7 @@ scm_gitlab_connections
 scope_exclusions
 scope_snapshots
 scope_target_approvals
+scope_target_ci_trusts
 scope_targets
 scoring_change_impacts
 scoring_changes
@@ -210,6 +211,7 @@ tenant_members
 tenant_module_grace
 tenant_module_grants
 tenant_modules
+tenant_ownership_transfers
 tenant_plan_overrides
 tenant_plans
 tenant_tool_configs
