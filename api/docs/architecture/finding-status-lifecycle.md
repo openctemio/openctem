@@ -125,6 +125,28 @@ reopens each to `confirmed` with a timeline entry instead of failing the delete.
 Migration `002151` repaired existing orphan duplicates the same way (status
 `confirmed`, timeline reason `duplicate_link_missing`).
 
+## SLA status follows the status
+
+`findings.sla_status` is recomputed on every status or deadline change, by the
+trigger `trg_findings_recompute_sla_status` (migration `002156`) for every
+writer, and by `Finding.UpdateSLAStatus` with the same rules
+(`finding_sla_status_for`):
+
+| Finding | `sla_status` |
+|---|---|
+| no deadline | `not_applicable` |
+| `false_positive`, `accepted`, `duplicate` | `not_applicable` (a decision not to fix leaves the SLA) |
+| `resolved` | `on_track` when closed by the deadline (met), else `exceeded` (missed): the clock stops at the verified fix; `fix_applied` keeps it running |
+| open, past the deadline | `overdue` |
+| open, otherwise | `on_track`, or `warning` when the escalation job set it and the deadline did not change |
+
+The warning has **one definition**: the SLA escalation job's policy
+`warning_threshold_percent` of the window from the later of
+`first_detected_at` and `last_reopened_at` to the deadline (a regression's
+restarted deadline is measured from the reopen). The domain no longer warns 24
+hours before a deadline on its own. Migration `002156` also recomputed stale
+values (closed findings left `overdue`, dispositions `exceeded`).
+
 ## Risk acceptance end
 
 An accepted risk always ends; a false positive does not (it is re-reviewed
