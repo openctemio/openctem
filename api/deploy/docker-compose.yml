@@ -74,6 +74,7 @@ services:
       TLS_KEY_FILE: ${TLS_KEY_FILE:-tls.key}
       OPENCTEM_ALLOW_PLAIN_HTTP: ${OPENCTEM_ALLOW_PLAIN_HTTP:-false}
       OPENCTEM_TRUSTED_PROXIES: ${OPENCTEM_TRUSTED_PROXIES:-}
+      OPENCTEM_CLIENT_IP_HEADERS: ${OPENCTEM_CLIENT_IP_HEADERS:-X-Forwarded-For}
       GATEWAY_MAX_BODY_SIZE: ${GATEWAY_MAX_BODY_SIZE:-256MB}
     volumes:
       # A directory, not single files: editors replace a file's inode on save
