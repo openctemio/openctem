@@ -1,7 +1,7 @@
 package postgres
 
 // Content catalog (docs/rfcs/RFC-099-content-packages.md; migration
-// 002420_content_catalog). Every query that takes a tenant id reads that
+// 002529_content_catalog). Every query that takes a tenant id reads that
 // organization's rows and the instance catalog (tenant_id IS NULL) only, and
 // every write carries the tenant id.
 
