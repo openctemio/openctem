@@ -63,6 +63,7 @@ func TestCIInlineIgnores_BecomePendingRequests(t *testing.T) {
 
 	// The default branch: still counted (it blocks), and three requests
 	// (the inline rule+path, two ignore-file paths) named after the CI job.
+	r.emptyBaseline(r.tenant, repoName)
 	v = run("main", "2")
 	if v["verdict"] != "fail" {
 		t.Fatalf("the ignored high finding did not block the default branch: %v", v)
