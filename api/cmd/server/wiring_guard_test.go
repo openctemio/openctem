@@ -158,6 +158,8 @@ var guardedInertSeams = []struct {
 	{".Pentest", "SetTenantMemberChecker", "pentest cross-tenant member check"},
 	{".Tenant", "SetMemberStatusEmailNotifier", "member suspend/reactivate emails"},
 	{".Tenant", "SetInvitationTeams", "teams on invitations"},
+	{".Tenant", "SetOwnershipTransferNotifier", "ownership transfer emails"},
+	{".Tenant", "SetOwnershipTransferRepository", "ownership transfer"},
 	{".Module", "SetWSBroadcaster", "module.updated WebSocket push on module toggle"},
 	{".SCIMProvisioning", "SetDomainVerifier", "SCIM attaches existing accounts only on a verified domain"},
 }

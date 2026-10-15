@@ -138,7 +138,10 @@ func TestTransitionTimeline_AutomaticMovesAreRecorded(t *testing.T) {
 		[]vulnerability.VEXNotAffected{{Fingerprint: vfp, AssetID: f.asset.String(), Resolution: "not affected"}}, false); err != nil {
 		t.Fatal(err)
 	}
-	f.wantOne(t, "ingest VEX", vexed, "status_changed", "vex", "new", "false_positive", map[string]any{"reason": "vex_not_affected"})
+	// A false positive needs four-eyes: the statement requests it, the status stays.
+	if es := f.entries(t, vexed); len(es) != 1 || es[0].kind != "approval_requested" || es[0].changes["requested_status"] != "false_positive" {
+		t.Errorf("ingest VEX: entries %+v, want one approval_requested for false_positive", es)
+	}
 
 	// A scan re-detects a resolved finding.
 	reopened, rfp := f.finding(t, "confirmed")

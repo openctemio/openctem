@@ -138,6 +138,7 @@ func registerCIRoutes(
 		// A repository's gate baseline: recording one lets its open findings
 		// pass default-branch runs, so it needs the policy permission and
 		// step-up; removing it is stricter.
+		r.GET("/gate-settings/{id}", admin.GetRepositorySettings, middleware.Require(permission.CIRead))
 		r.GET("/gate-baselines/{id}", admin.GetGateBaseline, middleware.Require(permission.CIRead))
 		r.PUT("/gate-baselines/{id}", admin.SetGateBaseline, middleware.Require(permission.CIPolicy), requireStepUp())
 		r.DELETE("/gate-baselines/{id}", admin.DeleteGateBaseline, middleware.Require(permission.CIPolicy))
