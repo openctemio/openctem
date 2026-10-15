@@ -15,11 +15,19 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useRequestApproval } from '../api/use-findings-api'
 import { FINDING_STATUS_CONFIG } from '../types'
 import type { FindingStatus } from '../types'
+import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
 
 /** Days an accepted risk lasts unless the requester picks another date. */
 const DEFAULT_ACCEPTANCE_DAYS = 90
@@ -51,6 +59,10 @@ export function ApprovalDialog({
 }: ApprovalDialogProps) {
   const { t } = useTranslation()
   const [justification, setJustification] = useState('')
+  // Why the finding is not a risk to fix: a VEX-aligned code the server
+  // requires and stores as the closure reason.
+  const [reason, setReason] = useState('')
+  const reasons = PERSON_CLOSURE_REASONS[targetStatus] ?? []
   // An accepted risk always ends: 90 days ahead unless changed, at most a year.
   const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(DEFAULT_ACCEPTANCE_DAYS))
   const [step, setStep] = useState<'input' | 'confirm'>('input')
@@ -67,7 +79,13 @@ export function ApprovalDialog({
     'Justification is required'
   )
 
+  const reasonRequired = t('findings.approvalDialog.reasonRequired', 'Choose a reason')
+
   const handleNext = () => {
+    if (!reason) {
+      toast.error(reasonRequired)
+      return
+    }
     if (!justification.trim()) {
       toast.error(justificationRequired)
       return
@@ -95,6 +113,7 @@ export function ApprovalDialog({
       await requestApproval({
         requested_status: targetStatus,
         justification: justification.trim(),
+        closure_reason: reason,
         ...(showExpiryPicker && expiresAt
           ? { expires_at: new Date(`${expiresAt}T00:00:00`).toISOString() }
           : {}),
@@ -105,6 +124,7 @@ export function ApprovalDialog({
         })
       )
       setJustification('')
+      setReason('')
       setExpiresAt(acceptanceDate(DEFAULT_ACCEPTANCE_DAYS))
       setStep('input')
       onOpenChange(false)
@@ -146,6 +166,28 @@ export function ApprovalDialog({
             </DialogHeader>
             <DialogBody>
               <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="closure-reason">
+                    {t('findings.approvalDialog.reason', 'Reason')}
+                  </Label>
+                  <Select value={reason} onValueChange={setReason}>
+                    <SelectTrigger id="closure-reason">
+                      <SelectValue
+                        placeholder={t(
+                          'findings.approvalDialog.reasonPlaceholder',
+                          'Choose a reason'
+                        )}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {reasons.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {closureReasonLabel(t, r)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="grid gap-2">
                   <Label htmlFor="justification">
                     {t('findings.approvalDialog.justification', 'Justification')}
@@ -195,7 +237,10 @@ export function ApprovalDialog({
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 {t('findings.approvalDialog.cancel', 'Cancel')}
               </Button>
-              <Button onClick={handleNext} disabled={!justification.trim() || !expiryValid}>
+              <Button
+                onClick={handleNext}
+                disabled={!reason || !justification.trim() || !expiryValid}
+              >
                 {t('findings.approvalDialog.review', 'Review')}
               </Button>
             </DialogFooter>
@@ -221,6 +266,14 @@ export function ApprovalDialog({
                   </span>{' '}
                   <strong>{statusLabel}</strong>
                 </div>
+                {reason && (
+                  <div>
+                    <span className="font-medium text-muted-foreground">
+                      {t('findings.approvalDialog.reasonLabel', 'Reason:')}
+                    </span>{' '}
+                    {closureReasonLabel(t, reason)}
+                  </div>
+                )}
                 <div>
                   <span className="font-medium text-muted-foreground">
                     {t('findings.approvalDialog.justificationLabel', 'Justification:')}

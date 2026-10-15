@@ -117,10 +117,10 @@ func TestFindingVEXDocument_DB(t *testing.T) {
 	}
 	var status, method string
 	var vexStatus *string
-	if err := f.db.QueryRowContext(ctx, `SELECT status, COALESCE(resolution_method, ''), vex_status FROM findings WHERE id = $1`, onHost.String()).Scan(&status, &method, &vexStatus); err != nil {
+	if err := f.db.QueryRowContext(ctx, `SELECT status, COALESCE(verification, ''), vex_status FROM findings WHERE id = $1`, onHost.String()).Scan(&status, &method, &vexStatus); err != nil {
 		t.Fatal(err)
 	}
-	if status != "false_positive" || method != "vex_not_affected" || vexStatus == nil || *vexStatus != "not_affected" {
+	if status != "false_positive" || method != "vex_statement" || vexStatus == nil || *vexStatus != "not_affected" {
 		t.Errorf("closed finding = %s %s %v", status, method, vexStatus)
 	}
 	if err := f.db.QueryRowContext(ctx, `SELECT status FROM findings WHERE id = $1`, pentest.String()).Scan(&status); err != nil || status != "new" {
