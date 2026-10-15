@@ -200,6 +200,10 @@ A recompute caused by a scoring change (a queue row with a
 whose version is stale, such as after a new platform model) does not send one
 `finding_priority_escalated` notification per finding. The classification
 and its audit entry are unchanged; only the per-finding event is held back.
+A move **into P0** is the exception: it still sends its own event, so the
+ticket and the workflow a P0 needs start at once (the priority flood guard
+still bounds them); the summary counts it too. A P1 move has no separate
+escalation setting today, so it is in the summary only.
 The worker adds the pass's counts to `scoring_change_impacts` (per tenant and
 change: findings checked, changed, raised, raised to P0, lowered, deadlines
 moved earlier) and, once no asset of that change is left in the tenant's
@@ -210,6 +214,10 @@ finding became P0, high when one rose or a deadline moved earlier), so the
 channel's severity filter still applies; the event is on by default and
 migration `scoring_change_impacts` turns it on for every channel that already
 receives priority escalations. A change that moved nothing sends nothing.
+The summary's outbox row is written in the same transaction that marks the
+summary notified (`ClaimDrainedSummaries`, one savepoint per summary, rows
+locked with `FOR UPDATE SKIP LOCKED`): an enqueue that fails leaves it
+pending and the next pass sends it, so a failure never loses a summary.
 
 Recomputes for other reasons (new findings, intel, asset context, controls)
 keep their per-finding events and the priority flood guard.
