@@ -30,8 +30,8 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 	query := `
 		INSERT INTO finding_status_approvals (
 			id, tenant_id, finding_id, requested_status, requested_by,
-			justification, status, expires_at, version, created_at, requested_by_actor
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			justification, status, expires_at, version, created_at, requested_by_actor, decide_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
 	var requestedBy any
@@ -42,12 +42,12 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 		a.ID.String(), a.TenantID.String(), a.FindingID.String(),
 		a.RequestedStatus, requestedBy,
 		a.Justification, string(a.Status), a.ExpiresAt, a.Version, a.CreatedAt,
-		nullString(a.RequestedByActor),
+		nullString(a.RequestedByActor), a.DecideBy,
 	)
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == "23505" {
-			return fmt.Errorf("%w: a pending request by %s already exists for this finding", shared.ErrConflict, a.RequestedByActor)
+			return vulnerability.ErrPendingRequestExists
 		}
 		return fmt.Errorf("failed to create approval: %w", err)
 	}
@@ -247,7 +247,7 @@ func (r *FindingApprovalRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, finding_id, requested_status, requested_by,
 			justification, approved_by, approved_at, rejected_by, rejected_at,
-			rejection_reason, status, expires_at, created_at, version, requested_by_actor
+			rejection_reason, status, expires_at, created_at, version, requested_by_actor, decide_by
 		FROM finding_status_approvals
 	`
 }
@@ -271,12 +271,13 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		status          string
 		expiresAt       *time.Time
 		actor           sql.NullString
+		decideBy        *time.Time
 	)
 
 	err := scanner.Scan(
 		&id, &tenantID, &findingID, &a.RequestedStatus, &requestedBy,
 		&a.Justification, &approvedBy, &approvedAt, &rejectedBy, &rejectedAt,
-		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor,
+		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor, &decideBy,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -296,6 +297,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 	a.ApprovedAt = approvedAt
 	a.RejectedAt = rejectedAt
 	a.ExpiresAt = expiresAt
+	a.DecideBy = decideBy
 
 	if approvedBy != nil {
 		aid, _ := shared.IDFromString(*approvedBy)
@@ -318,4 +320,97 @@ func (r *FindingApprovalRepository) scanApproval(row *sql.Row) (*vulnerability.A
 
 func (r *FindingApprovalRepository) scanApprovalFromRows(rows *sql.Rows) (*vulnerability.Approval, error) {
 	return r.scanApprovalRow(rows)
+}
+
+// ApproveAndApply implements vulnerability.ApprovalRepository: the request
+// row, the finding's status (and acceptance end) and the timeline entry are
+// written in one transaction. The request is claimed with its version and
+// pending status, so a concurrent approver or a cancel makes this one fail
+// with ErrConcurrentModification; a finding that is no longer in a status
+// the lifecycle allows to move from rolls everything back.
+func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vulnerability.Approval, entry *vulnerability.FindingActivity) error {
+	if a == nil || a.Status != vulnerability.ApprovalStatusApproved || a.ApprovedBy == nil {
+		return fmt.Errorf("%w: only an approved request is applied", shared.ErrValidation)
+	}
+	status := vulnerability.FindingStatus(a.RequestedStatus)
+	var acceptanceEnd *time.Time
+	if status == vulnerability.FindingStatusAccepted {
+		if a.ExpiresAt == nil {
+			return fmt.Errorf("%w: an accepted risk needs an end", shared.ErrValidation)
+		}
+		acceptanceEnd = a.ExpiresAt
+	}
+	query, args, err := statusWriteSQL(a.TenantID, []shared.ID{a.FindingID}, status, "", a.ApprovedBy, "", acceptanceEnd, nil)
+	if err != nil {
+		return err
+	}
+	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE finding_status_approvals SET
+				status = 'approved', approved_by = $3, approved_at = $4, expires_at = $5, version = $6
+			WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND version = $7`,
+			a.ID.String(), a.TenantID.String(), a.ApprovedBy.String(), a.ApprovedAt, a.ExpiresAt,
+			a.Version, a.Version-1)
+		if err != nil {
+			return fmt.Errorf("failed to approve request: %w", err)
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return fmt.Errorf("failed to approve request: %w", err)
+		} else if n == 0 {
+			return vulnerability.ErrConcurrentModification
+		}
+		if err := markStatusWriteTx(ctx, tx); err != nil {
+			return err
+		}
+		res, err = tx.ExecContext(ctx, query, args...)
+		if err != nil {
+			return fmt.Errorf("failed to apply approved status: %w", err)
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return fmt.Errorf("failed to apply approved status: %w", err)
+		} else if n == 0 {
+			return fmt.Errorf("%w: the finding changed since the request; it can no longer move to %s", shared.ErrValidation, status)
+		}
+		if entry != nil {
+			if err := insertFindingActivity(ctx, tx, entry); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// ExpireOverdueRequests expires pending requests whose decide-by time has
+// passed, across tenants (the hourly approval expiration job). Each expired
+// request gets a timeline entry on its finding and an audit row in its
+// tenant, in the same statement. The finding itself is not touched. Returns
+// how many requests it expired.
+func (r *FindingApprovalRepository) ExpireOverdueRequests(ctx context.Context) (int64, error) {
+	var n int64
+	err := r.db.QueryRowContext(ctx, `
+		WITH ended AS (
+			UPDATE finding_status_approvals a SET status = 'expired', version = a.version + 1
+			WHERE a.status = 'pending' AND a.decide_by IS NOT NULL AND a.decide_by < NOW()
+			RETURNING a.id, a.tenant_id, a.finding_id, a.requested_status, a.decide_by
+		), timeline AS (
+			INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
+			SELECT e.tenant_id, e.finding_id, 'approval_canceled', 'system', 'system: approval expiry',
+			       jsonb_build_object('approval_id', e.id, 'approval_status', 'expired',
+			                          'requested_status', e.requested_status,
+			                          'reason', 'decision_overdue', 'decide_by', e.decide_by),
+			       'auto', 'Nobody decided the request in time; it expired'
+			FROM ended e
+		), audit AS (
+			INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, metadata, logged_at)
+			SELECT gen_random_uuid(), e.tenant_id, 'finding_approval.expired', 'finding_approval', e.id::text, 'success', 'low',
+			       'A pending finding approval request was not decided in time and expired',
+			       jsonb_build_object('finding_id', e.finding_id, 'requested_status', e.requested_status,
+			                          'decide_by', e.decide_by), NOW()
+			FROM ended e
+		)
+		SELECT COUNT(*) FROM ended`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("expire overdue approval requests: %w", err)
+	}
+	return n, nil
 }
