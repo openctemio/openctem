@@ -377,11 +377,11 @@ func registerVulnerabilityRoutes(
 	}, tenantMiddlewares...)
 
 	// The organization's finding approval settings: read with findings:read;
-	// change with settings:write and a recent re-authentication (audited,
-	// approvers told).
+	// change only by an owner or administrator holding settings:write, with a
+	// recent re-authentication (audited, approvers told).
 	router.Group("/api/v1/organization/settings/finding-approvals", func(r Router) {
 		r.GET("/", h.GetFindingApprovalSettings, middleware.Require(permission.FindingsRead))
-		r.PUT("/", h.UpdateFindingApprovalSettings, middleware.Require(permission.SettingsWrite), requireStepUp())
+		r.PUT("/", h.UpdateFindingApprovalSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 }
 

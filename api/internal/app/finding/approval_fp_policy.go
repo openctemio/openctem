@@ -107,7 +107,7 @@ func (s *VulnerabilityService) falsePositivePolicy(ctx context.Context, tid, fid
 	if settings.PendingFPApproval != "" && settings.PendingFPApprovalAt != nil && now.Before(*settings.PendingFPApprovalAt) {
 		d.PendingLevel, d.PendingAt = settings.PendingFPApproval, settings.PendingFPApprovalAt
 	}
-	d.SecondLookPercent = settings.SecondLookPercent
+	d.SecondLookPercent = settings.EffectiveSecondLookPercent(now)
 	facts, err := store.FalsePositiveFacts(ctx, tid, fid)
 	if err != nil {
 		return d, err

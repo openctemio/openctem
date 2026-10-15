@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -370,6 +372,13 @@ func (r *FindingApprovalRepository) CreateApplied(ctx context.Context, a *vulner
 		return fmt.Errorf("%w: only a single-person decision is created applied", shared.ErrValidation)
 	}
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		// The organization's level and the finding's facts are read again
+		// inside the transaction, with the finding locked: a level raised or
+		// a finding that became material since the caller decided makes the
+		// decision fall back to a request for a second person.
+		if err := recheckSinglePersonFP(ctx, tx, a.TenantID, a.FindingID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO finding_status_approvals (
 				id, tenant_id, finding_id, requested_status, requested_by, justification, status,
@@ -523,4 +532,46 @@ func claimFailure(ctx context.Context, tx *sql.Tx, a *vulnerability.Approval) er
 		return vulnerability.ErrDecisionOverdue
 	}
 	return vulnerability.ErrConcurrentModification
+}
+
+// recheckSinglePersonFP answers vulnerability.ErrSinglePersonNotAllowed
+// unless the organization's level in force still lets one person decide a
+// false positive on the finding. The finding row is locked (FOR UPDATE) and
+// the tenant's settings row is read FOR SHARE, so a concurrent change of
+// either waits for this decision or is seen by it.
+func recheckSinglePersonFP(ctx context.Context, tx *sql.Tx, tenantID, findingID shared.ID) error {
+	var raw []byte
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(settings->'finding_approvals', '{}'::jsonb) FROM tenants WHERE id = $1 FOR SHARE`,
+		tenantID.String()).Scan(&raw); err != nil {
+		return fmt.Errorf("read the approval level: %w", err)
+	}
+	var settings tenantdom.FindingApprovalSettings
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		return vulnerability.ErrSinglePersonNotAllowed // unreadable: a second person decides
+	}
+	var (
+		f        vulnerability.FPFacts
+		severity string
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT f.severity, COALESCE(f.is_in_kev, false), COALESCE(f.priority_class, ''),
+		       COALESCE(f.validation_outcome = 'reproducible', false),
+		       COALESCE(a.is_crown_jewel, false), COALESCE(a.is_internet_accessible, false)
+		FROM findings f
+		LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
+		WHERE f.tenant_id = $1 AND f.id = $2
+		FOR UPDATE OF f`,
+		tenantID.String(), findingID.String()).Scan(&severity, &f.KEV, &f.PriorityClass, &f.ExploitValidated, &f.CrownJewel, &f.InternetExposed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: finding not found", shared.ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("read false-positive facts: %w", err)
+	}
+	f.Severity = vulnerability.Severity(severity)
+	if !vulnerability.SinglePersonFP(settings.EffectiveFPApproval(time.Now()), f) {
+		return vulnerability.ErrSinglePersonNotAllowed
+	}
+	return nil
 }
