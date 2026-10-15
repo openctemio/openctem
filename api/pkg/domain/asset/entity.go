@@ -15,6 +15,14 @@ type FindingSeverityCounts struct {
 	Medium   int
 	Low      int
 	Info     int
+
+	// Of the counts above, the findings with an exploitation signal: listed
+	// in CISA KEV, EPSS at or above ExploitEPSSThreshold, or a known public
+	// exploit. The likelihood-impact model counts them one severity up.
+	CriticalExploitable int
+	HighExploitable     int
+	MediumExploitable   int
+	LowExploitable      int
 }
 
 // Asset represents an asset entity in the domain.
@@ -31,6 +39,8 @@ type Asset struct {
 	scope                 Scope
 	exposure              Exposure
 	riskScore             int
+	riskScoredAt          *time.Time // when riskScore was last computed; nil = never scored
+	riskScorePending      bool       // an input changed and the rescore is queued
 	findingCount          int
 	findingSeverityCounts *FindingSeverityCounts
 	description           string
@@ -389,6 +399,24 @@ func (a *Asset) SetExposure(exposure Exposure) {
 // RiskScore returns the asset risk score.
 func (a *Asset) RiskScore() int {
 	return a.riskScore
+}
+
+// RiskScoredAt returns when the stored risk score was last computed, or nil
+// when the asset has never been scored (its risk score is then not a real 0).
+func (a *Asset) RiskScoredAt() *time.Time {
+	return a.riskScoredAt
+}
+
+// RiskScorePending reports whether an input of the risk score changed and the
+// rescore is still queued, so the stored score may be out of date.
+func (a *Asset) RiskScorePending() bool {
+	return a.riskScorePending
+}
+
+// SetRiskFreshness sets the stored score's freshness as read from storage.
+func (a *Asset) SetRiskFreshness(scoredAt *time.Time, pending bool) {
+	a.riskScoredAt = scoredAt
+	a.riskScorePending = pending
 }
 
 // FindingCount returns the number of findings for this asset.

@@ -1,12 +1,12 @@
 /**
- * CI pipelines in the fleet (api RFC-051 §10): one workflow file of one
- * repository, shown on the Sensors page as a sensor in runner mode. Its
+ * CI pipelines (api RFC-051 §10): one workflow file of one repository,
+ * listed on the CI/CD page (never on Sensors: a pipeline is not a sensor). Its
  * status is computed by the API from its runs against its own cadence; a
  * pipeline is never "offline".
  */
 
 import type { PillTone } from '@/features/shared/components/tone-pill'
-import type { CIPipelineStatus, FleetMode } from '../types'
+import type { CIPipelineStatus } from '../types'
 
 export interface PipelineStatusMeta {
   label: string
@@ -102,12 +102,6 @@ export const HEALTH_REASON_LABEL: Record<string, string> = {
   outdated_runner: 'Runner older than the minimum supported version',
 }
 
-/** The fleet mode as the UI names it. */
-export const MODE_LABEL: Record<FleetMode, string> = {
-  daemon: 'Daemon',
-  runner: 'Runner',
-}
-
 /** "the workflow file without its folder" for a compact cell. */
 export function workflowFile(path: string | undefined): string {
   if (!path) return ''
@@ -169,29 +163,4 @@ export function pipelinesURL(base: string, f: PipelineListFilters = {}): string 
   q.set('page', String(f.page ?? 1))
   q.set('per_page', String(f.perPage ?? 25))
   return `${base}/pipelines?${q.toString()}`
-}
-
-export interface FleetListFilters {
-  mode?: 'all' | FleetMode
-  role?: string
-  status?: string[]
-  attention?: boolean
-  includeInactive?: boolean
-  search?: string
-  page?: number
-  perPage?: number
-}
-
-/** GET /api/v1/fleet with its filters; exported for tests. */
-export function fleetURL(f: FleetListFilters = {}): string {
-  const q = new URLSearchParams()
-  q.set('mode', f.mode ?? 'all')
-  if (f.role) q.set('role', f.role)
-  if (f.status?.length) q.set('status', f.status.join(','))
-  if (f.attention) q.set('attention', 'true')
-  if (f.includeInactive) q.set('include_inactive', 'true')
-  if (f.search) q.set('search', f.search)
-  q.set('page', String(f.page ?? 1))
-  q.set('per_page', String(f.perPage ?? 25))
-  return `/api/v1/fleet?${q.toString()}`
 }
