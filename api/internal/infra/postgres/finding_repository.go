@@ -1144,7 +1144,7 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 		finding.SLAStatus().String(),    // $42
 	}
 	args = append(args, findingTypeArgs(finding)...) // $43…
-	result, err := r.db.ExecContext(ctx, query, args...)
+	result, err := r.db.execFindingStatusWrite(ctx, query, args...)
 
 	if err != nil {
 		return fmt.Errorf("failed to update finding: %w", err)
@@ -2087,7 +2087,7 @@ func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shar
 		WHERE tenant_id = $1 AND source != 'pentest' AND status = ANY($6) AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
-	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+	if _, err := r.db.execFindingStatusWrite(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to update findings status: %w", err)
 	}
 
