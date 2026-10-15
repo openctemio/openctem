@@ -105,6 +105,9 @@ type TenantService struct {
 	// and the in-app notice to administrators. Optional.
 	lifecycle         tenantdom.LifecycleRepository
 	lifecycleNotifier LifecycleInAppNotifier
+	// invitationTeams checks and applies the teams of an invitation
+	// (invitation_teams.go).
+	invitationTeams InvitationTeams
 	// classifier decides whether an invitee is internal or external
 	// (external_members.go).
 	classifier *AddressClassifier
@@ -1171,6 +1174,9 @@ type CreateInvitationInput struct {
 	// (defaults to 90 days); ignored for an internal invitee.
 	AccessExpiresAt *time.Time `json:"-"`
 	AccessReason    string     `json:"-"`
+	// GroupIDs: teams of the organization the invitee joins at acceptance
+	// (at most 20), each one the inviter may add a member to.
+	GroupIDs []string `json:"-"`
 }
 
 // CreateInvitation creates an invitation to join a tenant.
@@ -1226,6 +1232,10 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	if err := s.requirePersonalAllowed(ctx, parsedID, class); err != nil {
 		return nil, err
 	}
+	groupIDs, err := normalizeTeamIDs(input.GroupIDs)
+	if err != nil {
+		return nil, err
+	}
 	privileged := false
 	if class.Kind == tenantdom.MemberKindExternal {
 		if err := access.Validate(class, time.Now().UTC()); err != nil {
@@ -1237,10 +1247,22 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		if privileged, err = s.privilegedRoleSet(ctx, parsedID, input.RoleIDs); err != nil {
 			return nil, err
 		}
+		// A team carrying a role above member counts like the role itself.
+		teamsAbove, terr := s.checkInvitationTeams(ctx, parsedID, inviterUserID.String(), groupIDs, true, access.ExpiresAt)
+		if terr != nil {
+			return nil, terr
+		}
+		privileged = privileged || teamsAbove
 		if privileged {
 			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
 				return nil, err
 			}
+		}
+	}
+
+	if class.Kind != tenantdom.MemberKindExternal {
+		if _, err := s.checkInvitationTeams(ctx, parsedID, inviterUserID.String(), groupIDs, false, access.ExpiresAt); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1276,6 +1298,7 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		return nil, err
 	}
 	invitation.SetAccess(access)
+	invitation.SetGroupIDs(groupIDs)
 	if err := invitation.SetInviteeInfo(tenantdom.InviteeInfo{Kind: class.Kind, Privileged: privileged}); err != nil {
 		return nil, err
 	}
@@ -1307,7 +1330,8 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		WithMetadata("role", role.String()).
 		WithMetadata("member_kind", string(class.Kind)).
 		WithMetadata("privileged", privileged).
-		WithMetadata("mfa_required", privileged)
+		WithMetadata("mfa_required", privileged).
+		WithMetadata("group_ids", groupIDs)
 	if privileged {
 		// A privileged role for someone outside the organization.
 		event = event.WithSeverity(audit.SeverityHigh)
@@ -1474,6 +1498,9 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	}
 
 	s.applyInvitationRoles(ctx, invitation, userID)
+	if teams := invitation.GroupIDs(); len(teams) > 0 && s.invitationTeams != nil {
+		s.invitationTeams.ApplyInvitationTeams(ctx, invitation.TenantID().String(), userID, teams)
+	}
 
 	// Never log the token, not even a prefix: it is a bearer credential.
 	s.logger.Info("invitation accepted", "invitation_id", invitation.ID().String(), "user_id", userID.String(),
