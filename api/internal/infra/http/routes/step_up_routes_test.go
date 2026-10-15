@@ -85,7 +85,7 @@ var stepUpRoutes = []string{
 	"PATCH /api/v1/tenants/acme/settings/risk-scoring",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
 	// A domain's sign-up policy decides who may join and who must use SSO.
-	"PUT /api/v1/tenants/acme/settings/domains/{id}/signup-policy",
+	"PUT /api/v1/organization/settings/domains/{id}/signup-policy",
 	"DELETE /api/v1/tenants/acme",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
