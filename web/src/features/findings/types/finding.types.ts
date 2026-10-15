@@ -1314,8 +1314,17 @@ export interface ApiApproval {
   rejected_at?: string
   rejection_reason?: string
   status: ApprovalStatus
+  /** End of the accepted risk asked for (none for a false positive). */
   expires_at?: string
+  /** When a pending request expires undecided. */
+  decide_by?: string
   created_at: string
+  /**
+   * The sole member of the organization approved their own request
+   * (authenticator code and a reason), not a second person.
+   */
+  self_approved?: boolean
+  self_approval_reason?: string
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'
