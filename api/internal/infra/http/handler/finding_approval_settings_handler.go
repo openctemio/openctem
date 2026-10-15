@@ -246,6 +246,15 @@ type FalsePositivePolicyResponse struct {
 
 // GetFalsePositivePolicy handles GET /findings/{id}/approvals/policy
 // (findings:read; the finding must be in the caller's data scope).
+// @Summary      How a false positive on a finding is decided
+// @Description  Whether the organization's false-positive approval level lets one person mark this finding a false positive now, and whether the caller may. Requires findings:read and the finding in the caller's data scope.
+// @Tags         Findings
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Finding ID"
+// @Success      200  {object}  FalsePositivePolicyResponse
+// @Failure      404  {object}  map[string]string
+// @Router       /findings/{id}/approvals/policy [get]
 func (h *VulnerabilityHandler) GetFalsePositivePolicy(w http.ResponseWriter, r *http.Request) {
 	d, err := h.service.FalsePositivePolicy(r.Context(), middleware.GetTenantID(r.Context()), r.PathValue("id"))
 	if err != nil {
