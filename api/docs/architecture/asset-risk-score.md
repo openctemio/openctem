@@ -9,12 +9,11 @@ Settings > Risk scoring (`GET/PATCH /api/v1/settings/risk-scoring`).
 
 The score of an asset is computed from:
 
-- its open findings: the active statuses only (`new`, `confirmed`,
-  `in_progress`, `fix_applied`, `not_observed`; see
-  `vulnerability.ActiveFindingStatuses`). Resolved, accepted, false-positive
-  and duplicate findings, validated fixes awaiting close and unpublished
-  pentest drafts carry no risk. Findings seen only on a feature branch do not
-  count either;
+- its open findings (`vulnerability.OpenStatuses`: new, confirmed,
+  in_progress, fix_applied, validated_fixed, not_observed). Resolved,
+  accepted, false-positive and duplicate findings and unpublished pentest
+  drafts carry no risk. Findings seen only on a feature branch do not count
+  either;
 - its effective criticality: the highest of its own criticality, its business
   units (with parent inheritance), the business services it powers and the
   assets it is the control plane of (`assetdom.EffectiveCriticality`, the same
