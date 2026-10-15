@@ -367,45 +367,59 @@ func (s *RemediationCampaignService) getWritable(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, err
 	}
-	if s.dataScope == nil {
-		return campaign, nil
+	if err := s.requireAllInScope(ctx, campaign); err != nil {
+		return nil, err
 	}
-	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	return campaign, nil
+}
+
+// requireAllInScope refuses (ErrCampaignOutsideScope) a restricted caller
+// unless the campaign's asset (if any) and every one of its findings are in
+// their scope, or it has no finding and they created it. It is checked on the
+// stored campaign before a change, and on a new or changed filter before it
+// is saved, so a restricted member can neither change another team's
+// campaign nor point one at another team's assets or CVEs. Callers with no
+// scope pass.
+func (s *RemediationCampaignService) requireAllInScope(ctx context.Context, campaign *remediation.Campaign) error {
+	if s.dataScope == nil {
+		return nil
+	}
+	scope, err := s.dataScope.Resolve(ctx, campaign.TenantID())
 	if err != nil {
-		return nil, fmt.Errorf("resolve data scope: %w", err)
+		return fmt.Errorf("resolve data scope: %w", err)
 	}
 	if scope == nil {
-		return campaign, nil
+		return nil
 	}
 	if assetID := firstString(campaign.FindingFilter(), "asset_id"); assetID != "" {
 		id, perr := shared.IDFromString(assetID)
 		in := false
 		if perr == nil {
 			if in, perr = s.dataScope.InScope(ctx, scope, id); perr != nil {
-				return nil, fmt.Errorf("campaign asset scope: %w", perr)
+				return fmt.Errorf("campaign asset scope: %w", perr)
 			}
 		}
 		if !in {
-			return nil, ErrCampaignOutsideScope
+			return ErrCampaignOutsideScope
 		}
 	}
 	all, _, _, err := s.countProgress(ctx, campaign, nil)
 	if err != nil {
-		return nil, fmt.Errorf("campaign scope: %w", err)
+		return fmt.Errorf("campaign scope: %w", err)
 	}
 	mine, _, _, err := s.countProgress(ctx, campaign, scope)
 	if err != nil {
-		return nil, fmt.Errorf("campaign scope: %w", err)
+		return fmt.Errorf("campaign scope: %w", err)
 	}
 	if mine < all {
-		return nil, ErrCampaignOutsideScope
+		return ErrCampaignOutsideScope
 	}
 	if all == 0 {
 		if by := campaign.CreatedBy(); by == nil || by.String() != s.dataScope.CallerUserID(ctx) {
-			return nil, ErrCampaignOutsideScope
+			return ErrCampaignOutsideScope
 		}
 	}
-	return campaign, nil
+	return nil
 }
 
 // visibleIn reports whether a campaign touches the scope (nil = everything).
@@ -708,6 +722,10 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		actorID, _ := shared.IDFromString(input.ActorID)
 		campaign.SetCreatedBy(actorID)
 	}
+	// A restricted member may create a campaign only over their own scope.
+	if err := s.requireAllInScope(ctx, campaign); err != nil {
+		return nil, err
+	}
 	if input.AssignedTo != "" || input.AssignedTeam != "" {
 		var toPtr, teamPtr *shared.ID
 		if input.AssignedTo != "" {
@@ -973,6 +991,11 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 			return nil, err
 		}
 		campaign.SetFindingFilter(input.FindingFilter)
+		// The new scope must be the caller's too: a restricted member may not
+		// point a campaign at another team's assets or CVEs.
+		if err := s.requireAllInScope(ctx, campaign); err != nil {
+			return nil, err
+		}
 		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
 			s.logger.Warn("recompute after re-scope failed", "id", sanitizeLogValue(campaignID), "error", logger.SanitizeError(rerr))
 		}
