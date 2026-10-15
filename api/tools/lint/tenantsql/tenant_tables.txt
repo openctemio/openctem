@@ -205,6 +205,7 @@ tenant_modules
 tenant_plan_overrides
 tenant_plans
 tenant_tool_configs
+tenant_tool_settings
 threat_actors
 threat_model_threats
 threat_models

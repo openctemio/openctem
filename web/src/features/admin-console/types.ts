@@ -398,7 +398,8 @@ export interface AdminOperations {
     sdk_version?: string
     count: number
   }[]
-  sdk_min_version?: string
+  /** SDK releases with a published security advisory. */
+  sdk_advisories?: string[]
   /** How sensors reach this installation; absent when not wired. */
   sensor_transport?: AdminSensorTransport
   controllers: {
