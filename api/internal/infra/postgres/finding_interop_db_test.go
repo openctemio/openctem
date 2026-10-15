@@ -150,6 +150,10 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 	accepted, accFP := insert(f.tenant, f.host, "accepted", "sca")
 	resolved, resFP := insert(f.tenant, f.host, "resolved", "sca")
 	pentest, penFP := insert(f.tenant, f.host, "confirmed", "pentest")
+	// Another tool's finding on the same asset: a trivy report's VEX never
+	// speaks for it.
+	otherTool, otherToolFP := insert(f.tenant, f.host, "new", "sca")
+	f.exec(t, `UPDATE findings SET tool_name = 'grype', last_seen_tool = 'grype' WHERE id = $1`, otherTool)
 
 	otherTenant := shared.NewID()
 	f.exec(t, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, otherTenant, "vex-o-"+otherTenant.String())
@@ -164,13 +168,14 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 		{Fingerprint: accFP, AssetID: f.host.String(), Resolution: reason},
 		{Fingerprint: resFP, AssetID: f.host.String(), Resolution: reason},
 		{Fingerprint: penFP, AssetID: f.host.String(), Resolution: reason},
+		{Fingerprint: otherToolFP, AssetID: f.host.String(), Resolution: reason},
 		// Right key, wrong asset.
 		{Fingerprint: openFP, AssetID: f.otherHost.String(), Resolution: reason},
 		// Another tenant's finding, named with its own key and asset.
 		{Fingerprint: foreignFP, AssetID: otherAsset.String(), Resolution: reason},
 	}
 
-	ids, err := repo.ApplyVEXNotAffected(ctx, f.tenant, items, true)
+	ids, err := repo.ApplyVEXNotAffected(ctx, f.tenant, "trivy", items, true)
 	if err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
@@ -181,7 +186,7 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 		t.Fatalf("dry run changed the status to %q", got)
 	}
 
-	ids, err = repo.ApplyVEXNotAffected(ctx, f.tenant, items, false)
+	ids, err = repo.ApplyVEXNotAffected(ctx, f.tenant, "trivy", items, false)
 	if err != nil {
 		t.Fatalf("enforce: %v", err)
 	}
@@ -196,13 +201,13 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 	if status != "false_positive" || method != "vex_not_affected" || !strings.Contains(resolution, "component_not_present") || !strings.Contains(resolution, "vex-doc") {
 		t.Errorf("closed finding: %s / %s / %s", status, method, resolution)
 	}
-	for id, want := range map[shared.ID]string{accepted: "accepted", resolved: "resolved", pentest: "confirmed", foreign: "new"} {
+	for id, want := range map[shared.ID]string{accepted: "accepted", resolved: "resolved", pentest: "confirmed", foreign: "new", otherTool: "new"} {
 		if got := f.status(t, id); got != want {
 			t.Errorf("finding %s is %q, want %q (must not be touched)", id, got, want)
 		}
 	}
 	// Idempotent: a second run closes nothing more.
-	if ids, _ := repo.ApplyVEXNotAffected(ctx, f.tenant, items, false); len(ids) != 0 {
+	if ids, _ := repo.ApplyVEXNotAffected(ctx, f.tenant, "trivy", items, false); len(ids) != 0 {
 		t.Errorf("second run closed %v", ids)
 	}
 }

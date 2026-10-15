@@ -804,7 +804,7 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 	p.storeInterop(ctx, tenantID, interop)
-	p.applyVEX(ctx, tenantID, vexNotAffectedItems(vexSightings), scope, output)
+	p.applyVEX(ctx, tenantID, report, vexNotAffectedItems(vexSightings), scope, output)
 
 	// Step 7c: the organization's VEX statements cover findings reported
 	// after the statement was made. Best-effort, like 7b.
@@ -2123,7 +2123,7 @@ func withoutDecided(findings []*vulnerability.Finding) []*vulnerability.Finding 
 // taintSourceSuspender suspends decisions whose taint source changed (the
 // postgres data flow repository).
 type taintSourceSuspender interface {
-	SuspendOnTaintSourceChange(ctx context.Context, tenantID shared.ID, traces []vulnerability.FindingTrace) ([]shared.ID, error)
+	ReviewOnTaintSourceChange(ctx context.Context, tenantID shared.ID, traces []vulnerability.FindingTrace) ([]shared.ID, error)
 }
 
 // persistDataFlows stores each trace on the tenant's finding with its
@@ -2134,13 +2134,14 @@ func (p *FindingProcessor) persistDataFlows(ctx context.Context, tenantID shared
 	if p.dataFlowRepo == nil || len(traces) == 0 {
 		return
 	}
-	// A decision on a taint finding is suspended for review when its source
-	// changed (checked against the stored trace before it is replaced).
+	// A decision on a taint finding is flagged for review when its source
+	// changed (checked against the stored trace before it is replaced); the
+	// decision itself stands.
 	if sus, ok := p.dataFlowRepo.(taintSourceSuspender); ok {
-		if ids, err := sus.SuspendOnTaintSourceChange(ctx, tenantID, traces); err != nil {
+		if ids, err := sus.ReviewOnTaintSourceChange(ctx, tenantID, traces); err != nil {
 			p.logger.Warn("taint source check failed", "error", err)
 		} else if len(ids) > 0 {
-			p.logger.Info("decisions suspended: taint source changed", "count", len(ids))
+			p.logger.Info("decisions flagged for review: taint source changed", "count", len(ids))
 		}
 	}
 	n, err := p.dataFlowRepo.ReplaceDataFlows(ctx, tenantID, traces)
