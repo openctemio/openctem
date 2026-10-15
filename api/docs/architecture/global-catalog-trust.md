@@ -121,6 +121,19 @@ so they must not decide what another tenant's view shows:
   `cvss_source`). The single-finding response returns them as `intel`, with
   the date of the EPSS score and the CISA KEV date added (and ransomware use)
   read from the feeds (`epss_scores`, `kev_catalog`) for the finding's CVE.
+- **How the package reaches the project**: a scanner that reports
+  `vulnerability.is_direct` and `vulnerability.dependency_path` (CTIS; trivy
+  through the CI runner or an uploaded trivy report) has them kept as
+  `metadata.dependency` = `{direct, path}`: the path runs from the direct
+  dependency to the vulnerable package, at most 32 package ids of at most 256
+  bytes, ids with control characters dropped; a longer chain keeps its first
+  entry and the entries nearest the package. Unlike the other metadata keys a
+  later sighting replaces it, since it describes the lock file as last
+  scanned. The single-finding response returns it on `component` as
+  `dependency_type` (`direct` or `transitive`, over the asset's dependency
+  list) and `dependency_path`, with `manifest_line`, the package's line in
+  the finding's lock file. It is read only through a finding the caller can
+  already see.
 
 Display-only fields (a CVE's title in a list, a component's description) still
 come from the catalog. The first reporter can choose them for a CVE or
