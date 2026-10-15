@@ -145,10 +145,11 @@ func (h *ScopeHandler) targetOut(r *http.Request, t *scopedom.Target) ScopeTarge
 // ScopeManagedByResponse is a CI trust configuration that claims an entry,
 // with the evidence of the first verified pipeline run under it.
 type ScopeManagedByResponse struct {
-	TrustConfigID  string     `json:"trust_config_id"`
-	TrustName      string     `json:"trust_name"`
-	SeenAt         *time.Time `json:"seen_at,omitempty"`
-	SeenRepository string     `json:"seen_repository,omitempty"`
+	TrustConfigID string `json:"trust_config_id"`
+	TrustName     string `json:"trust_name"`
+	// SeenAt: a verified pipeline ran under the trust's pattern (the
+	// repository is shown on the trust, filtered by data scope).
+	SeenAt *time.Time `json:"seen_at,omitempty"`
 }
 
 // addCITrustLinks names the CI trusts that claim each entry (best effort:
@@ -178,7 +179,7 @@ func (h *ScopeHandler) addCITrustLinks(r *http.Request, outs []*ScopeTargetRespo
 		}
 		for _, l := range links[t.ID().String()] {
 			outs[i].ManagedBy = append(outs[i].ManagedBy, ScopeManagedByResponse{TrustConfigID: l.TrustConfigID.String(),
-				TrustName: l.TrustName, SeenAt: l.SeenAt, SeenRepository: l.SeenRepository})
+				TrustName: l.TrustName, SeenAt: l.SeenAt})
 		}
 	}
 }

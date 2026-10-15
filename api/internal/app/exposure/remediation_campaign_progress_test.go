@@ -14,9 +14,10 @@ import (
 
 // fakeCampaignRepo is an in-memory CampaignRepository for tests.
 type fakeCampaignRepo struct {
-	store     map[string]*remediation.Campaign
-	updateErr error
-	updates   int
+	store        map[string]*remediation.Campaign
+	updateErr    error
+	updates      int
+	countUpdates int
 }
 
 func newFakeCampaignRepo() *fakeCampaignRepo {
@@ -42,6 +43,11 @@ func (r *fakeCampaignRepo) Update(_ context.Context, c *remediation.Campaign) er
 	}
 	r.updates++
 	r.store[c.ID().String()] = c
+	return nil
+}
+
+func (r *fakeCampaignRepo) UpdateCounts(_ context.Context, _ *remediation.Campaign) error {
+	r.countUpdates++
 	return nil
 }
 
@@ -226,8 +232,10 @@ func TestReconcileProgress_AutoCompletes(t *testing.T) {
 	if got.Status() != remediation.CampaignStatusCompleted {
 		t.Fatalf("expected auto-completed, got status %s", got.Status())
 	}
-	if got.RiskReduction() == nil || *got.RiskReduction() != 3 {
-		t.Fatalf("expected risk reduction 3, got %v", got.RiskReduction())
+	// The risk fields hold risk, never finding counts: nothing measures
+	// campaign risk yet, so they stay unset.
+	if got.RiskReduction() != nil || got.RiskBefore() != nil {
+		t.Fatalf("risk fields must stay unset, got %v / %v", got.RiskBefore(), got.RiskReduction())
 	}
 }
 
@@ -248,7 +256,7 @@ func TestCampaignFilterToFindingFilter_MapsKeys(t *testing.T) {
 	raw := map[string]any{
 		"severities":  []any{"critical", "high"},
 		"cve_id":      "CVE-2021-44228",
-		"source":      "trivy",
+		"source":      "sast",
 		"search":      "log4j",
 		"finding_ids": []any{"01930000-0000-7000-8000-000000000001"},
 	}
