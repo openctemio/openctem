@@ -165,6 +165,10 @@ func registerRoleRoutes(
 		r.PUT("/{roleId}", h.UpdateRole, middleware.Require(permission.RolesWrite))
 		r.DELETE("/{roleId}", h.DeleteRole, middleware.Require(permission.RolesDelete))
 
+		// Template status and update of a role created from a template.
+		r.GET("/{roleId}/template", h.GetRoleTemplateStatus, middleware.Require(permission.RolesRead))
+		r.POST("/{roleId}/template/apply", h.ApplyRoleTemplateUpdate, middleware.Require(permission.RolesWrite))
+
 		// Role members
 		r.GET("/{roleId}/members", h.ListRoleMembers, middleware.Require(permission.RolesRead))
 
