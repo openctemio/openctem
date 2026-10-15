@@ -48,6 +48,10 @@ same file is never its to remove.
 | `ci` | the vulnerable packages and the packages on their paths (trimmed by the CI runner) | partial snapshot: refreshes the links it names without taking them over, removes only CI's own links there that it no longer lists |
 | `finding_import` | the packages its findings name | add only |
 
+Links stored before channels were recorded (copied from the legacy component
+table, which kept no producer, so the channel cannot be backfilled) are
+pruned only by a full inventory, never by a partial list.
+
 So a CI run never deletes the rest of a lock file that an SBOM upload or a
 code-host connector stored, and an SBOM that later confirms a package CI
 listed first takes it over. A scanner finding that names a package only
