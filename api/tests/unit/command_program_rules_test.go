@@ -43,11 +43,16 @@ const programPayload = `{"scanner":"nuclei","step_key":"probe","targets":["app.b
 // identitySensor is a sensor that reports it sends the job's identification
 // (http.identity@1) when honors, else one that does not; its SDK version is
 // deliberately new, so the decision can only come from the capability.
+// Its report goes through the heartbeat sanitizer, with the sensor-wide
+// capabilities a sensor v0.23 sends, so a capability the sanitizer drops
+// shows up here as a job that never leaves.
 func identitySensor(id, tenant shared.ID, honors bool) *sensor.Sensor {
 	s := &sensor.Sensor{ID: id, TenantID: &tenant, Build: sensor.BuildInfo{SDKVersion: "v9.0.0"}}
+	caps := []string{"validate", "scope.limits@1", "net.confined@1"}
 	if honors {
-		s.Reported.Capabilities = []string{sensor.CapabilityHTTPIdentity}
+		caps = append(caps, "http.identity@1")
 	}
+	s.Reported = sensor.CapabilityReportInput{Capabilities: caps}.Sanitize(map[string]bool{"nuclei": true}, nil)
 	return s
 }
 

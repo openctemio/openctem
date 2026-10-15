@@ -117,9 +117,57 @@ indicator matches it. A person moving a finding back from `resolved` (the
 drawer's Undo, a correction, a bulk change) is not a regression: the status
 endpoint and the bulk change mark their transaction
 `openctem.person_move` (`vulnerability.WithPersonMove`), and the trigger skips
-it (migration `002176`). The drawer offers Undo only for moves that do not
+it (migration `002186`). The drawer offers Undo only for moves that do not
 close the finding; reopening a resolved finding is a deliberate move from the
 status control.
+
+## Every move is on the timeline
+
+A finding's timeline (`finding_activities`) explains every status change, in
+the same transaction as the change.
+
+- **Platform writers** name themselves for their transaction with
+  `set_config('openctem.transition', <json>, true)` (Go:
+  `findingTransition` / `vulnerability.StatusTransition` in
+  `internal/infra/postgres/finding_transition.go`). The trigger
+  `trg_findings_record_transition` (migration `002180`) then writes one entry
+  per finding the transaction moves: the old and new status, what the
+  resolution was before (`previous_resolution`, `previous_resolution_method`,
+  `previous_resolved_by`, `previous_resolved_at`), a reason code, the source,
+  the actor and evidence references (scanner, scan or command, pipeline, rule,
+  statement). The move and its entry commit or roll back together.
+- Covered by it: coverage and default-branch auto-resolve and the source's own
+  "mitigated" state (`auto_resolved`), scan re-detection (`auto_reopened`;
+  `observed_again` for a stale finding), template drift, feature-branch
+  expiry, CI pipeline stale and retired, VEX in scan reports and VEX
+  documents, the software vulnerability matcher, correlation link and release,
+  taint-source suspension, suppression re-link, and the bulk verify / reject by
+  filter.
+- **Application paths acting for the platform** (validation verdicts, the IOC
+  correlator, workflow `update_status`, auto-assign to owners) attach the
+  transition to the request context (`vulnerability.WithStatusTransition`);
+  `FindingRepository.Update` and `UpdateStatusBatch` then write the move and its
+  entry in one transaction. A workflow is recorded as `workflow:<id>` (before,
+  its entry failed on an invalid actor id).
+- Evidence such as the scan behind an auto-resolve travels in the context
+  (`vulnerability.WithTransitionEvidence`).
+- Without a named transition the trigger writes nothing: a person's change is
+  recorded by its service with the person as the actor.
+- `TestFindingStatusSQL_EveryStatusWriteIsOnTheTimeline` fails when a file that
+  writes `findings.status` records no timeline entry.
+
+## Automatic signals never reverse a decision
+
+A false positive, an accepted risk or a duplicate is a person's decision
+(approved, for the first two). No automatic signal moves it:
+
+- a changed taint source and an indicator-of-compromise match raise a
+  **review flag** instead (`finding_decision_reviews`, migration `002154`,
+  reasons `taint_source_changed` and `ioc_match`), with a `decision_review`
+  timeline entry in the same transaction and an audit event; one open flag per
+  finding and reason; it clears when the finding's status changes;
+- an IOC match still reopens a finding closed as `resolved` (the match is
+  evidence it is not fixed).
 
 ## Duplicates name their canonical finding
 
@@ -138,6 +186,28 @@ When a canonical finding is deleted its duplicates lose `duplicate_of`
 reopens each to `confirmed` with a timeline entry instead of failing the delete.
 Migration `002151` repaired existing orphan duplicates the same way (status
 `confirmed`, timeline reason `duplicate_link_missing`).
+
+## SLA status follows the status
+
+`findings.sla_status` is recomputed on every status or deadline change, by the
+trigger `trg_findings_recompute_sla_status` (migration `002181`) for every
+writer, and by `Finding.UpdateSLAStatus` with the same rules
+(`finding_sla_status_for`):
+
+| Finding | `sla_status` |
+|---|---|
+| no deadline | `not_applicable` |
+| `false_positive`, `accepted`, `duplicate` | `not_applicable` (a decision not to fix leaves the SLA) |
+| `resolved` | `on_track` when closed by the deadline (met), else `exceeded` (missed): the clock stops at the verified fix; `fix_applied` keeps it running |
+| open, past the deadline | `overdue` |
+| open, otherwise | `on_track`, or `warning` when the escalation job set it and the deadline did not change |
+
+The warning has **one definition**: the SLA escalation job's policy
+`warning_threshold_percent` of the window from the later of
+`first_detected_at` and `last_reopened_at` to the deadline (a regression's
+restarted deadline is measured from the reopen). The domain no longer warns 24
+hours before a deadline on its own. Migration `002181` also recomputed stale
+values (closed findings left `overdue`, dispositions `exceeded`).
 
 ## Risk acceptance end
 
