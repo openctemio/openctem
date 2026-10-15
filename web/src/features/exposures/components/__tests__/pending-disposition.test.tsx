@@ -24,7 +24,11 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.f
 
 import { PendingDispositionPanel } from '../pending-disposition'
 
-const exposure = (requestedBy: string, state: 'accepted' | 'false_positive'): ExposureEvent =>
+const exposure = (
+  requestedBy: string,
+  state: 'accepted' | 'false_positive',
+  selfApprovalAvailable = false
+): ExposureEvent =>
   ({
     id: 'exp-1',
     title: 'Open port',
@@ -36,6 +40,7 @@ const exposure = (requestedBy: string, state: 'accepted' | 'false_positive'): Ex
       requested_by: requestedBy,
       reason: '<img src=x onerror=alert(1)>',
       created_at: '2026-10-14T00:00:00Z',
+      self_approval_available: selfApprovalAvailable,
     },
   }) as unknown as ExposureEvent
 
@@ -76,5 +81,26 @@ describe('PendingDispositionPanel', () => {
     expect(screen.queryByRole('button')).toBeNull()
     expect(container.querySelector('img')).toBeNull()
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument()
+  })
+
+  it('lets a lone owner approve their own request only with a reason and a code', async () => {
+    render(<PendingDispositionPanel exposure={exposure('me', 'accepted', true)} />)
+    expect(screen.queryByRole('button', { name: /^Approve$/ })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /Approve my own request/ }))
+    const submit = screen.getByRole('button', { name: /^Approve$/ })
+    expect(submit).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/without a second person/), 'only member')
+    await userEvent.type(screen.getByLabelText(/authenticator app/), '123456')
+    await userEvent.click(submit)
+    expect(acceptExposure).toHaveBeenCalledWith('exp-1', {
+      reason: 'only member',
+      self_approve: true,
+      totp_code: '123456',
+    })
+  })
+
+  it('offers no own approval when the API says it is not available', () => {
+    render(<PendingDispositionPanel exposure={exposure('me', 'accepted', false)} />)
+    expect(screen.queryByRole('button', { name: /Approve my own request/ })).toBeNull()
   })
 })
