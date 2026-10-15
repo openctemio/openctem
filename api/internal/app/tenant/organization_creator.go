@@ -34,6 +34,9 @@ type CreateOrganizationInput struct {
 	OwnerEmail string
 	// OwnerName is used only for a new account (defaults to the email).
 	OwnerName string
+	// Provisioned: the control plane's limits, denies and idle policy,
+	// written with the organization (nil from the console).
+	Provisioned *ProvisionedEntitlements
 }
 
 // CreatedOrganization is the result of OrganizationCreator.Create.
@@ -98,7 +101,7 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 	}
 
 	t, err := c.tenants.CreateTenant(ctx, CreateTenantInput{
-		Name: in.Name, Slug: in.Slug, Description: in.Description,
+		Name: in.Name, Slug: in.Slug, Description: in.Description, Provisioned: in.Provisioned,
 	}, owner.ID(), actx)
 	if err != nil {
 		// tenantdom.ErrPlatformAdminMembership (the owner is a platform
