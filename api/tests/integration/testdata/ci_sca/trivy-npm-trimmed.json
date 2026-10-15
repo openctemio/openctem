@@ -1,0 +1,255 @@
+{
+ "version": "1.6",
+ "metadata": {
+  "id": "ci-sca-fixture",
+  "timestamp": "2026-10-15T00:00:00Z",
+  "source_type": "scanner"
+ },
+ "tool": {
+  "name": "trivy",
+  "version": "0.75.0",
+  "capabilities": [
+   "sca"
+  ]
+ },
+ "assets": [
+  {
+   "id": "asset-1",
+   "type": "repository",
+   "value": "REPLACED-BY-TEST"
+  }
+ ],
+ "findings": [
+  {
+   "type": "vulnerability",
+   "title": "body-parser: Denial of Service Vulnerability in body-parser",
+   "description": "body-parser is Node.js body parsing middleware. body-parser <1.20.3 is vulnerabl",
+   "severity": "high",
+   "rule_id": "CVE-2024-45590",
+   "asset_ref": "asset-1",
+   "location": {
+    "path": "package-lock.json",
+    "start_line": 34,
+    "end_line": 54
+   },
+   "vulnerability": {
+    "cve_id": "CVE-2024-45590",
+    "cve_ids": [
+     "CVE-2024-45590"
+    ],
+    "cwe_ids": [
+     "CWE-405"
+    ],
+    "cwe_id": "CWE-405",
+    "cvss_version": "3.1",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+    "cvss_source": "nvd",
+    "package": "body-parser",
+    "purl": "pkg:npm/body-parser@1.19.0",
+    "affected_version": "1.19.0",
+    "fixed_version": "1.20.3",
+    "dependency_path": [
+     "express@4.17.1",
+     "body-parser@1.19.0"
+    ],
+    "severity_source": "ghsa",
+    "vuln_status": "fixed"
+   },
+   "remediation": {
+    "recommendation": "Upgrade body-parser to 1.20.3",
+    "fix_available": true,
+    "solution_type": "upgrade"
+   },
+   "references": [
+    "https://avd.aquasec.com/nvd/cve-2024-45590"
+   ],
+   "tags": [
+    "trivy",
+    "package-lock.json"
+   ],
+   "fingerprint": "90d0c2e54824a92b4cf2c6c248361b85bfe1d3b60ce18ce7e4ff497bb85ea7e4",
+   "source_extra": {
+    "pkg_id": "body-parser@1.19.0",
+    "target": "package-lock.json"
+   }
+  },
+  {
+   "type": "vulnerability",
+   "title": "nodejs-lodash: command injection via template",
+   "description": "Lodash versions prior to 4.17.21 are vulnerable to Command Injection via the tem",
+   "severity": "high",
+   "rule_id": "CVE-2021-23337",
+   "asset_ref": "asset-1",
+   "location": {
+    "path": "package-lock.json",
+    "start_line": 274,
+    "end_line": 279
+   },
+   "vulnerability": {
+    "cve_id": "CVE-2021-23337",
+    "cve_ids": [
+     "CVE-2021-23337"
+    ],
+    "cwe_ids": [
+     "CWE-94"
+    ],
+    "cwe_id": "CWE-94",
+    "cvss_version": "3.1",
+    "cvss_score": 7.2,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+    "cvss_source": "nvd",
+    "package": "lodash",
+    "purl": "pkg:npm/lodash@4.17.20",
+    "affected_version": "4.17.20",
+    "fixed_version": "4.17.21",
+    "is_direct": true,
+    "dependency_path": [
+     "lodash@4.17.20"
+    ],
+    "severity_source": "ghsa",
+    "vuln_status": "fixed"
+   },
+   "remediation": {
+    "recommendation": "Upgrade lodash to 4.17.21",
+    "fix_available": true,
+    "solution_type": "upgrade"
+   },
+   "references": [
+    "https://avd.aquasec.com/nvd/cve-2021-23337"
+   ],
+   "tags": [
+    "trivy",
+    "package-lock.json"
+   ],
+   "fingerprint": "9f1db051a46c4baac14700fead4409a55b87a5daeaecc735132329518c73a91b",
+   "source_extra": {
+    "pkg_id": "lodash@4.17.20",
+    "target": "package-lock.json"
+   }
+  },
+  {
+   "type": "vulnerability",
+   "title": "express: \"qs\" prototype poisoning causes the hang of the node process",
+   "description": "qs before 6.10.3, as used in Express before 4.17.3 and other products, allows at",
+   "severity": "high",
+   "rule_id": "CVE-2022-24999",
+   "asset_ref": "asset-1",
+   "location": {
+    "path": "package-lock.json",
+    "start_line": 396,
+    "end_line": 404
+   },
+   "vulnerability": {
+    "cve_id": "CVE-2022-24999",
+    "cve_ids": [
+     "CVE-2022-24999"
+    ],
+    "cwe_ids": [
+     "CWE-1321"
+    ],
+    "cwe_id": "CWE-1321",
+    "cvss_version": "3.1",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+    "cvss_source": "nvd",
+    "package": "qs",
+    "purl": "pkg:npm/qs@6.7.0",
+    "affected_version": "6.7.0",
+    "fixed_version": "6.10.3, 6.9.7, 6.8.3, 6.7.3, 6.6.1, 6.5.3, 6.4.1, 6.3.3, 6.2.4",
+    "dependency_path": [
+     "express@4.17.1",
+     "qs@6.7.0"
+    ],
+    "severity_source": "ghsa",
+    "vuln_status": "fixed"
+   },
+   "remediation": {
+    "recommendation": "Upgrade qs to 6.10.3, 6.9.7, 6.8.3, 6.7.3, 6.6.1, 6.5.3, 6.4.1, 6.3.3, 6.2.4",
+    "fix_available": true,
+    "solution_type": "upgrade"
+   },
+   "references": [
+    "https://avd.aquasec.com/nvd/cve-2022-24999"
+   ],
+   "tags": [
+    "trivy",
+    "package-lock.json"
+   ],
+   "fingerprint": "4c652147b83cfd48e2840600b9ef572e29e0796c05f562108b2cc949ff47e4f2",
+   "source_extra": {
+    "pkg_id": "qs@6.7.0",
+    "target": "package-lock.json"
+   }
+  }
+ ],
+ "dependencies": [
+  {
+   "id": "express@4.17.1",
+   "name": "express",
+   "version": "4.17.1",
+   "purl": "pkg:npm/express@4.17.1",
+   "relationship": "direct",
+   "depends_on": [
+    "body-parser@1.19.0",
+    "qs@6.7.0"
+   ],
+   "path": "package-lock.json",
+   "locations": [
+    {
+     "path": "package-lock.json",
+     "start_line": 154,
+     "end_line": 194
+    }
+   ]
+  },
+  {
+   "id": "lodash@4.17.20",
+   "name": "lodash",
+   "version": "4.17.20",
+   "purl": "pkg:npm/lodash@4.17.20",
+   "relationship": "direct",
+   "path": "package-lock.json",
+   "locations": [
+    {
+     "path": "package-lock.json",
+     "start_line": 274,
+     "end_line": 279
+    }
+   ]
+  },
+  {
+   "id": "body-parser@1.19.0",
+   "name": "body-parser",
+   "version": "1.19.0",
+   "purl": "pkg:npm/body-parser@1.19.0",
+   "relationship": "indirect",
+   "depends_on": [
+    "qs@6.7.0"
+   ],
+   "path": "package-lock.json",
+   "locations": [
+    {
+     "path": "package-lock.json",
+     "start_line": 34,
+     "end_line": 54
+    }
+   ]
+  },
+  {
+   "id": "qs@6.7.0",
+   "name": "qs",
+   "version": "6.7.0",
+   "purl": "pkg:npm/qs@6.7.0",
+   "relationship": "indirect",
+   "path": "package-lock.json",
+   "locations": [
+    {
+     "path": "package-lock.json",
+     "start_line": 396,
+     "end_line": 404
+    }
+   ]
+  }
+ ]
+}
