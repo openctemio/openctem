@@ -63,5 +63,10 @@
   "insights.programMetrics.controls.logging.title": "Critical storage without logging",
   "insights.programMetrics.controls.edr.info": "Hosts rated critical or marked as crown jewels whose \"EDR installed\" attribute is false or not recorded. Not recorded counts as a gap: no source has reported EDR on the host.",
   "insights.programMetrics.controls.mfa.info": "Cloud accounts and identities rated critical or marked as crown jewels whose \"MFA\" attribute is false or not recorded. Not recorded counts as a gap.",
-  "insights.programMetrics.controls.logging.info": "Storage assets rated critical or marked as crown jewels whose \"Logging\" attribute is false or not recorded. Not recorded counts as a gap."
+  "insights.programMetrics.controls.logging.info": "Storage assets rated critical or marked as crown jewels whose \"Logging\" attribute is false or not recorded. Not recorded counts as a gap.",
+  "insights.scoringChange.note": "Scoring changed on {date} ({what}): values before and after are not directly comparable.",
+  "insights.scoringChange.source.platform_model": "new scoring model",
+  "insights.scoringChange.source.risk_settings": "risk scoring settings",
+  "insights.scoringChange.source.priority_rules": "priority rules",
+  "insights.scoringChange.source.sla_policy": "SLA policy"
 }
