@@ -35,11 +35,6 @@ export type CIVerdictFilter = '' | 'pass' | 'fail' | 'none'
 export type CIPipeline = S['internal_infra_http_handler.CIPipelineResponse']
 export type CIPipelineList = S['internal_infra_http_handler.CIPipelineListResponse']
 export type CIPipelineDetail = S['internal_infra_http_handler.CIPipelineDetailResponse']
-export type FleetItem = S['internal_infra_http_handler.FleetItem']
-export type FleetList = S['internal_infra_http_handler.FleetListResponse']
-
-/** The fleet mode: a sensor row (daemon) or a CI pipeline (runner). */
-export type FleetMode = 'daemon' | 'runner'
 export type CIPipelineStatus =
   | 'retired'
   | 'revoked'

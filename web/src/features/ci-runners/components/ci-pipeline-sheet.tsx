@@ -44,7 +44,7 @@ import { validRetireReason } from '../lib/coverage'
 import { PROVIDER_LABEL, shortSHA } from '../lib/ci'
 import { FRESHNESS_LABEL, HEALTH_REASON_LABEL, cadenceLabel, workflowFile } from '../lib/pipeline'
 import type { CIPipelineDetail, CIRun } from '../types'
-import { FleetModeBadge, GateLabel, PipelineStatusBadge } from './ci-pipeline-cells'
+import { GateLabel, PipelineStatusBadge } from './ci-pipeline-cells'
 import { CIRunSheet, VerdictBadge } from './ci-runs-view'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -469,14 +469,7 @@ export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: (
       header={
         <DetailHeader
           title={p?.repository ?? t('scans.ci.mode.ciPipeline', 'CI pipeline')}
-          badges={
-            p && (
-              <>
-                <PipelineStatusBadge status={p.status} />
-                <FleetModeBadge mode="runner" />
-              </>
-            )
-          }
+          badges={p && <PipelineStatusBadge status={p.status} />}
           meta={
             p ? [PROVIDER_LABEL[p.provider ?? ''] ?? p.provider, workflowFile(p.workflow_path)] : []
           }
