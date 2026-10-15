@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
@@ -135,13 +136,15 @@ func TestRecordResolvedTargets_NothingCompatibleIsRefused(t *testing.T) {
 	}
 }
 
-// The gate cannot be decided for a tool without target types, a tool the
-// platform does not know, or a workflow run (no scanner): nothing is left out.
+// The type gate cannot be decided for a tool without target types, a tool
+// the platform does not know, or a workflow run (no scanner): nothing is
+// left out by type. A repository is the exception for a scanner
+// (TestResolveScanTargets_RepositoriesOnlyToCodeScanners).
 func TestResolveScanTargets_UndecidableToolsKeepEveryMember(t *testing.T) {
 	for _, scanner := range []string{"freeform", "not-a-tool", ""} {
 		svc := allowAllChecks(&Service{
 			assetGroupRepo: &typedMembersRepo{members: []*assetgroup.ScanMember{
-				member("github.com/acme/app", asset.AssetTypeRepository, ""),
+				member("registry.example.com/app:1.2.3", asset.AssetType("container"), ""),
 			}},
 			toolRepo: gateTools,
 			logger:   logger.NewNop(),
@@ -155,7 +158,7 @@ func TestResolveScanTargets_UndecidableToolsKeepEveryMember(t *testing.T) {
 		if len(got.Targets) != 1 || got.Incompatible != 0 {
 			t.Fatalf("%q: targets %v incompatible %d", scanner, got.Targets, got.Incompatible)
 		}
-		if got.TargetTypes["github.com/acme/app"] != "repository" {
+		if got.TargetTypes["registry.example.com/app:1.2.3"] != "container" {
 			t.Fatalf("%q: a workflow step needs the member's type: %v", scanner, got.TargetTypes)
 		}
 	}
@@ -268,5 +271,90 @@ func TestStepCommandPayload_StepTargets(t *testing.T) {
 	ctx, _ := p["context"].(map[string]any)
 	if _, leaked := ctx[RunContextKeyTargetTypes]; leaked || !reflect.DeepEqual(ctx["targets"], []string{"a"}) {
 		t.Fatalf("context = %v", ctx)
+	}
+}
+
+// A repository is handed only to a scanner that scans code: never to a
+// network scanner (whatever it declares), nor to a tool nothing is known
+// about. A tenant tool that declares repositories gets it; a workflow run
+// leaves it to each step. Every refusal is counted with its reason.
+func TestResolveScanTargets_RepositoriesOnlyToCodeScanners(t *testing.T) {
+	tools := &stubTools{tools: map[string]*tool.Tool{
+		"nuclei":    {Name: "nuclei", SupportedTargets: []string{"url", "domain", "repository"}}, // a wrong declaration
+		"semgrep":   {Name: "semgrep", SupportedTargets: []string{"repository", "file"}},
+		"freeform":  {Name: "freeform"},
+		"repo-tool": {Name: "repo-tool", SupportedTargets: []string{"repository"}},
+	}}
+	for _, c := range []struct {
+		scanner string
+		kept    bool
+	}{
+		{"nuclei", false}, {"freeform", false}, {"not-a-tool", false},
+		{"semgrep", true}, {"repo-tool", true}, {"", true},
+	} {
+		svc := allowAllChecks(&Service{
+			assetGroupRepo: &typedMembersRepo{members: []*assetgroup.ScanMember{
+				member("github.com/acme/app", asset.AssetTypeRepository, ""),
+				member("acme-app", asset.AssetTypeRepository, ""),
+			}},
+			toolRepo: tools,
+			logger:   logger.NewNop(),
+		})
+		sc := testScan(c.scanner)
+		sc.AssetGroupID = shared.NewID()
+		got, err := svc.resolveScanTargets(context.Background(), sc)
+		if err != nil {
+			t.Fatalf("%q: %v", c.scanner, err)
+		}
+		if c.kept {
+			if len(got.Targets) != 2 || got.Incompatible != 0 {
+				t.Errorf("%q: targets %v incompatible %d, want both repositories", c.scanner, got.Targets, got.Incompatible)
+			}
+			continue
+		}
+		if len(got.Targets) != 0 || got.Incompatible != 2 {
+			t.Errorf("%q: targets %v incompatible %d, want both repositories refused", c.scanner, got.Targets, got.Incompatible)
+		}
+		if !strings.Contains(got.IncompatibleReason, stage.ReasonPathTarget) {
+			t.Errorf("%q: reason %q does not say why", c.scanner, got.IncompatibleReason)
+		}
+		err = recordResolvedTargets(sc, got, map[string]any{})
+		var de *shared.DomainError
+		if !errors.As(err, &de) || de.Code != codeNoCompatibleTargets {
+			t.Errorf("%q: a run left with nothing: %v, want %s", c.scanner, err, codeNoCompatibleTargets)
+		}
+	}
+}
+
+// Every workflow step's tool is gated the same way: a network tool, or a
+// tool nothing is known about, loses the run's repositories (with the
+// reason); a code tool keeps them; a step left with nothing fails.
+func TestFilterStepTargets_RepositoriesOnlyToCodeTools(t *testing.T) {
+	svc := &Service{toolRepo: gateTools, logger: logger.NewNop()}
+	rc := map[string]any{
+		"targets":                []any{"github.com/acme/app", "acme-app", "app.example.com"},
+		RunContextKeyTargetTypes: map[string]any{"acme-app": "repository", "github.com/acme/app": "repository"},
+	}
+	for _, tool := range []string{"httpx", "nuclei", "freeform", "not-a-tool"} {
+		got, err := svc.FilterStepTargets(context.Background(), shared.NewID(), tool, rc)
+		if err != nil {
+			t.Fatalf("%s: %v", tool, err)
+		}
+		if len(got.Targets) != 1 || got.Targets[0] != "app.example.com" || got.Refused != 2 {
+			t.Errorf("%s: targets %v refused %d", tool, got.Targets, got.Refused)
+		}
+		if !strings.Contains(got.Reason, stage.ReasonPathTarget) {
+			t.Errorf("%s: reason %q", tool, got.Reason)
+		}
+	}
+	got, err := svc.FilterStepTargets(context.Background(), shared.NewID(), "semgrep", rc)
+	if err != nil || len(got.Targets) != 3 || got.Refused != 0 {
+		t.Fatalf("semgrep: %v %v", got, err)
+	}
+	only := map[string]any{"targets": []any{"github.com/acme/app"}}
+	_, err = svc.FilterStepTargets(context.Background(), shared.NewID(), "nuclei", only)
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code != codeIncompatibleTargets {
+		t.Fatalf("a step left with no target: %v, want %s", err, codeIncompatibleTargets)
 	}
 }
