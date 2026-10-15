@@ -982,7 +982,7 @@
   "findings.approvals.col.requester": "Người yêu cầu",
   "findings.approvals.col.justification": "Lý do",
   "findings.approvals.col.created": "Ngày tạo",
-  "findings.approvals.col.expires": "Hết hạn",
+  "findings.approvals.col.expires": "Chấp nhận rủi ro kết thúc",
   "findings.approvals.requesterYou": "Bạn",
   "findings.approvals.requesterFormer": "Cựu thành viên",
   "findings.approvals.actor.ai_triage": "AI phân loại",
@@ -1007,5 +1007,10 @@
   "findings.approvals.toast.rejectFailed": "Từ chối yêu cầu thất bại",
   "findings.approvals.toast.canceled": "Đã hủy yêu cầu",
   "findings.approvals.toast.cancelFailed": "Hủy yêu cầu thất bại",
-  "findings.approvals.toast.refreshed": "Đã làm mới danh sách phê duyệt"
+  "findings.approvals.toast.refreshed": "Đã làm mới danh sách phê duyệt",
+  "findings.approvals.col.decideBy": "Hạn quyết định",
+  "findings.approvals.action.remind": "Nhắc người phê duyệt",
+  "findings.approvals.toast.reminded": "Đã nhắc {count} người phê duyệt",
+  "findings.approvals.toast.remindTooSoon": "Người phê duyệt đã được nhắc trong một giờ qua.",
+  "findings.approvals.toast.remindFailed": "Gửi lời nhắc thất bại"
 }

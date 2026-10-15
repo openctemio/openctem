@@ -982,7 +982,7 @@
   "findings.approvals.col.requester": "Requester",
   "findings.approvals.col.justification": "Justification",
   "findings.approvals.col.created": "Created",
-  "findings.approvals.col.expires": "Expires",
+  "findings.approvals.col.expires": "Acceptance ends",
   "findings.approvals.requesterYou": "You",
   "findings.approvals.requesterFormer": "Former member",
   "findings.approvals.actor.ai_triage": "AI triage",
@@ -1007,5 +1007,10 @@
   "findings.approvals.toast.rejectFailed": "Failed to reject request",
   "findings.approvals.toast.canceled": "Approval request canceled",
   "findings.approvals.toast.cancelFailed": "Failed to cancel request",
-  "findings.approvals.toast.refreshed": "Approvals refreshed"
+  "findings.approvals.toast.refreshed": "Approvals refreshed",
+  "findings.approvals.col.decideBy": "Decide by",
+  "findings.approvals.action.remind": "Remind approvers",
+  "findings.approvals.toast.reminded": "Reminded {count} approver(s)",
+  "findings.approvals.toast.remindTooSoon": "The approvers were already reminded in the last hour.",
+  "findings.approvals.toast.remindFailed": "Failed to send the reminder"
 }
