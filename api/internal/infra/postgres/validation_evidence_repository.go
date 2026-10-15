@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // ValidationEvidenceRepository persists CTEM Stage-4 validation evidence
@@ -85,7 +86,7 @@ func (r *ValidationEvidenceRepository) Create(ctx context.Context, ev validation
 // history would show a permanently low coverage. Findings with no severity are
 // grouped under "".
 func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error) {
-	const q = `
+	q := `
 		SELECT f.severity,
 		       COUNT(DISTINCT f.id)            AS total,
 		       COUNT(DISTINCT ve.finding_id)   AS validated
@@ -93,7 +94,7 @@ func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, t
 		  LEFT JOIN validation_evidence ve
 		         ON ve.tenant_id = f.tenant_id AND ve.finding_id = f.id
 		 WHERE f.tenant_id = $1
-		   AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
+		   AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		 GROUP BY f.severity
 		 ORDER BY f.severity
 	`
