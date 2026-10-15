@@ -43,41 +43,26 @@ type VerdictLinks struct {
 	Findings string `json:"findings"`
 }
 
-// ResolvePolicy picks the policy for a repository asset: its own, else the
-// strictest of its business units', else the tenant's, else the built-in
-// default.
+// ResolvePolicy returns the effective policy of a repository asset and the
+// most specific layer it takes a field from (repository, business_unit,
+// tenant or default).
 func (s *Service) ResolvePolicy(ctx context.Context, tenantID, assetID shared.ID) (cirun.GatePolicy, string, error) {
-	ps, err := s.repo.GatePoliciesFor(ctx, tenantID, assetID)
+	res, err := s.ResolveRepositoryPolicy(ctx, tenantID, assetID)
 	if err != nil {
-		return cirun.GatePolicy{}, "", fmt.Errorf("load gate policies: %w", err)
+		return cirun.GatePolicy{}, "", err
 	}
-	p, source := resolveFrom(ps)
-	return p, source, nil
+	return res.Policy, res.Source, nil
 }
 
-// resolveFrom picks among enabled policies that may apply to one
-// repository: its own, else the strictest business unit's, else the
-// tenant's, else the built-in default.
-func resolveFrom(ps []cirun.GatePolicy) (cirun.GatePolicy, string) {
-	var units []cirun.GatePolicy
-	var tenant *cirun.GatePolicy
-	for i := range ps {
-		switch ps[i].ScopeType {
-		case cirun.ScopeRepository:
-			return ps[i], cirun.ScopeRepository
-		case cirun.ScopeBusinessUnit:
-			units = append(units, ps[i])
-		case cirun.ScopeTenant:
-			tenant = &ps[i]
-		}
+// ResolveRepositoryPolicy returns the effective policy of a repository
+// asset with the source of every field, from the policies stored now (never
+// from anything the CI job sends).
+func (s *Service) ResolveRepositoryPolicy(ctx context.Context, tenantID, assetID shared.ID) (cirun.Resolution, error) {
+	ps, err := s.repo.GatePoliciesFor(ctx, tenantID, assetID)
+	if err != nil {
+		return cirun.Resolution{}, fmt.Errorf("load gate policies: %w", err)
 	}
-	switch {
-	case len(units) > 0:
-		return cirun.Strictest(units), cirun.ScopeBusinessUnit
-	case tenant != nil:
-		return *tenant, cirun.ScopeTenant
-	}
-	return cirun.DefaultGatePolicy(), cirun.ScopeDefault
+	return cirun.Resolve(ps, s.now().UTC()), nil
 }
 
 // Evaluate judges the run against the policy and stores the verdict.
@@ -143,7 +128,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	// An approved rule covers findings that existed before it was approved
 	// (an exception a repository asked for), not only new ones.
 	s.applyActiveRules(ctx, run.TenantID, findings, run.RepositoryAssetID)
-	cmp, err := s.newFindings(ctx, run, findings)
+	cmp, err := s.newFindings(ctx, run, findings, policy)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +150,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	}
 	gv := cirun.Evaluate(cirun.GateInput{
 		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
-		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, BaselineEstablished: cmp.established, ScanFailures: in.ScanFailures,
+		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, BaselineEstablished: cmp.established, BaselineDueAt: cmp.dueAt, ScanFailures: in.ScanFailures,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
 		Override:            override, Now: now, FindingURL: s.findingURL,
@@ -237,6 +222,8 @@ type comparison struct {
 	baselineAt *time.Time
 	// established: this run recorded the repository's first baseline.
 	established bool
+	// dueAt ends the baseline's grace (nil: no end).
+	dueAt *time.Time
 }
 
 // newFindings tells which findings the run introduced.
@@ -255,13 +242,13 @@ type comparison struct {
 // requests into the default branch too until it is fixed, accepted or
 // recorded in a new baseline. A pull request into another protected branch
 // (a release branch) is compared with that branch only.
-func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []cirun.RunFinding) (comparison, error) {
+func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []cirun.RunFinding, policy cirun.GatePolicy) (comparison, error) {
 	baseline, err := s.repo.GateBaseline(ctx, run.TenantID, run.RepositoryAssetID)
 	if err != nil {
 		return comparison{}, err
 	}
 	established := false
-	if baseline == nil {
+	if baseline == nil && policy.BaselineOnFirstRun {
 		if baseline, err = s.firstRunBaseline(ctx, run); err != nil {
 			return comparison{}, err
 		}
@@ -287,6 +274,14 @@ func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []ci
 		for _, f := range findings {
 			if !baseline.Covers(f) {
 				delete(inBaseline, f.Fingerprint)
+			}
+		}
+		// After its grace the baseline's debt blocks again.
+		if policy.BaselineGraceDays != nil {
+			due := baseline.SetAt.AddDate(0, 0, *policy.BaselineGraceDays)
+			cmp.dueAt = &due
+			if !s.now().Before(due) {
+				inBaseline = map[string]bool{}
 			}
 		}
 	}

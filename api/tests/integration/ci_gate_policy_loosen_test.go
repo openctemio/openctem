@@ -71,7 +71,8 @@ func TestCIGatePolicy_LooseningNeedsStepUpAndIsAnnounced(t *testing.T) {
 	}
 
 	// A repository policy looser than the organization's (high) needs it.
-	looser := cirunapp.GatePolicyInput{ScopeType: cirun.ScopeRepository, ScopeID: &repoID, FailOnSeverity: "high", NewFindingsOnly: &no}
+	looser := cirunapp.GatePolicyInput{ScopeType: cirun.ScopeRepository, ScopeID: &repoID, FailOnSeverity: "high", NewFindingsOnly: &no,
+		Reason: "legacy service, migrating"}
 	if _, err := r.svc.CreateGatePolicy(ctx, r.tenant, looser, admin); !errors.Is(err, errNeedsStepUp) {
 		t.Fatalf("loosening repository policy without step-up: %v", err)
 	}
