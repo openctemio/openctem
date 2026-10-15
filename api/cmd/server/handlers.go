@@ -1425,6 +1425,16 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		}
 		ciSvc.SetSuppressionRules(svc.Suppression, mg)
 	}
+	if repos.RepoIdentity != nil {
+		ciSvc.SetRepositoryIdentity(repos.RepoIdentity)
+	}
+	// A GitLab merge request run's baseline is its target branch as GitLab
+	// reports it through the organization's connection.
+	if repos.SCMApp != nil && svc.Encryptor != nil {
+		gl := scmappsvc.NewService(repos.SCMApp, nil, cfg.Auth.JWTSecret, nil, log)
+		gl.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+		ciSvc.SetGitLab(gl)
+	}
 	if repos.RelationshipSuggestion != nil {
 		ciSvc.SetImageLinker(ciImageLinker{repos.CIRun, repos.RelationshipSuggestion})
 	}

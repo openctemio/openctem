@@ -326,6 +326,8 @@ type AssetResponse struct {
 	Scope                 string                   `json:"scope"`
 	Exposure              string                   `json:"exposure"`
 	RiskScore             int                      `json:"risk_score"`
+	RiskScoredAt          *time.Time               `json:"risk_scored_at,omitempty"` // absent = never scored: risk_score is not a real 0
+	RiskScorePending      bool                     `json:"risk_score_pending"`       // an input changed and the rescore is queued
 	FindingCount          int                      `json:"finding_count"`
 	FindingSeverityCounts *FindingSeverityResponse `json:"finding_severity_counts,omitempty"`
 	Description           string                   `json:"description,omitempty"`
@@ -491,6 +493,8 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		LifecyclePausedUntil: a.LifecyclePausedUntil(),
 		ManualStatusOverride: a.ManualStatusOverride(),
 	}
+	resp.RiskScoredAt = a.RiskScoredAt()
+	resp.RiskScorePending = a.RiskScorePending()
 
 	// Include finding severity breakdown if available
 	if counts := a.FindingSeverityCounts(); counts != nil {

@@ -3,6 +3,7 @@ package cirun
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -186,6 +187,7 @@ func TestWarnModeIsNeutral(t *testing.T) {
 
 type fakeGitLabAPI struct {
 	mrSHA    string
+	head     *gitlabapi.Pipeline
 	statuses []string
 	notes    []string
 }
@@ -195,10 +197,14 @@ func (f *fakeGitLabAPI) CurrentUser(context.Context) (*gitlabapi.User, error)   
 func (f *fakeGitLabAPI) Group(context.Context, string) (*gitlabapi.Group, error) { return nil, nil }
 func (f *fakeGitLabAPI) GroupMember(context.Context, int64, int64) (bool, error) { return true, nil }
 func (f *fakeGitLabAPI) MergeRequest(context.Context, string, int) (*gitlabapi.MergeRequest, error) {
-	return &gitlabapi.MergeRequest{SHA: f.mrSHA}, nil
+	return &gitlabapi.MergeRequest{SHA: f.mrSHA, HeadPipeline: f.head}, nil
 }
-func (f *fakeGitLabAPI) SetCommitStatus(_ context.Context, project, sha, state, name, _, _ string) error {
-	f.statuses = append(f.statuses, project+"@"+sha+":"+state+":"+name)
+func (f *fakeGitLabAPI) SetCommitStatus(_ context.Context, project, sha, state, name, _, _ string, pipelineID int64) error {
+	s := project + "@" + sha + ":" + state + ":" + name
+	if pipelineID > 0 {
+		s += fmt.Sprintf("#%d", pipelineID)
+	}
+	f.statuses = append(f.statuses, s)
 	return nil
 }
 func (f *fakeGitLabAPI) UpsertMergeRequestNote(_ context.Context, _ string, _ int, authorID int64, marker, body string) error {
@@ -247,6 +253,38 @@ func TestDecorateGitLab(t *testing.T) {
 	if st, _ := job.decorate(ctx, &other); st != cirun.DecorationSkipped {
 		t.Fatalf("other tenant: %s", st)
 	}
+	// A merged results pipeline runs on the merge result's commit, never on
+	// the merge request's head: it posts when it is the merge request's head
+	// pipeline, its status attached to that pipeline.
+	merged := run
+	merged.Ref, merged.ExternalRunID, merged.CommitSHA = "refs/merge-requests/3/merge", "501", "mrc"
+	api3 := &fakeGitLabAPI{mrSHA: "head", head: &gitlabapi.Pipeline{ID: 501, SHA: "mrc"}}
+	job.SetGitLab(fakeGitLabClients{tenant: tenant, api: api3})
+	if st, d := job.decorate(ctx, &merged); st != cirun.DecorationPosted || len(api3.statuses) != 1 ||
+		api3.statuses[0] != "acme/api@mrc:failed:"+CheckName+"#501" || len(api3.notes) != 1 {
+		t.Fatalf("merged results: %s %s %v %v", st, d, api3.statuses, api3.notes)
+	}
+	// Not the head pipeline any more, another commit, a merge train, or a
+	// detached run whose head moved: nothing is posted.
+	for name, tc := range map[string]struct {
+		ref  string
+		head *gitlabapi.Pipeline
+	}{
+		"newer pipeline":   {"refs/merge-requests/3/merge", &gitlabapi.Pipeline{ID: 502, SHA: "mrc2"}},
+		"another commit":   {"refs/merge-requests/3/merge", &gitlabapi.Pipeline{ID: 501, SHA: "other"}},
+		"no head pipeline": {"refs/merge-requests/3/merge", nil},
+		"merge train":      {"refs/merge-requests/3/train", &gitlabapi.Pipeline{ID: 501, SHA: "mrc"}},
+		"detached":         {"refs/merge-requests/3/head", &gitlabapi.Pipeline{ID: 501, SHA: "mrc"}},
+	} {
+		r := merged
+		r.Ref = tc.ref
+		a := &fakeGitLabAPI{mrSHA: "head", head: tc.head}
+		job.SetGitLab(fakeGitLabClients{tenant: tenant, api: a})
+		if st, _ := job.decorate(ctx, &r); st != cirun.DecorationSkipped || len(a.statuses) != 0 || len(a.notes) != 0 {
+			t.Fatalf("%s: %s %v", name, st, a.statuses)
+		}
+	}
+	job.SetGitLab(fakeGitLabClients{tenant: tenant, api: api})
 	// A GitHub run without a GitHub App is skipped, not failed.
 	gh := run
 	gh.Provider, gh.Repository = cirun.ProviderGitHub, "github.com/acme/api"
