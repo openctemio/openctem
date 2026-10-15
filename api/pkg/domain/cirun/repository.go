@@ -43,9 +43,18 @@ type Repository interface {
 	CIRequireOIDC(ctx context.Context, tenantID shared.ID) (bool, error)
 	SetCIRequireOIDC(ctx context.Context, tenantID shared.ID, require bool) error
 
-	// ClaimJTI records an OIDC token id; false means it was exchanged
-	// before (replay). Global, not tenant-scoped: one token, one exchange.
-	ClaimJTI(ctx context.Context, issuer, jti string, expiresAt time.Time) (bool, error)
+	// ClaimReplay records the first exchange of an OIDC token (issuer,
+	// jti). When the token was exchanged before it returns fresh false and
+	// the earlier record. Global, not tenant-scoped: a token id is claimed
+	// once across all organizations.
+	ClaimReplay(ctx context.Context, r Replay) (fresh bool, prior *Replay, err error)
+	// ReuseReplay counts one more exchange of the same token (same issuer,
+	// jti, organization and digest) while it has had fewer than max; nil
+	// when the record does not match or the bound is reached.
+	ReuseReplay(ctx context.Context, issuer, jti string, tenantID shared.ID, digest []byte, max int) (*Replay, error)
+	// BindReplayRun records the run a token's exchange produced (only while
+	// none is recorded, or the same one).
+	BindReplayRun(ctx context.Context, issuer, jti string, tenantID, runID shared.ID) error
 	PurgeExpiredJTIs(ctx context.Context, before time.Time) (int64, error)
 
 	CreateRun(ctx context.Context, r *Run) error
@@ -63,7 +72,8 @@ type Repository interface {
 	// run (pipeline, external run id, attempt, commit), creating it from
 	// the given run when there is none; created says which.
 	OpenAggregateRun(ctx context.Context, r *Run) (open *Run, created bool, err error)
-	// AddRunToken adds a job's upload token to a running aggregate run.
+	// AddRunToken adds an upload token to a running run (a job of an aggregate
+	// run, or a re-exchange of the token that opened a run).
 	AddRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, jobID string, expiresAt time.Time) error
 	ListRuns(ctx context.Context, tenantID shared.ID, f RunFilter) ([]Run, int, error)
 	// ReserveRunReport takes one of the run's MaxRunReports report slots,
@@ -73,7 +83,11 @@ type Repository interface {
 	ReserveRunReport(ctx context.Context, tenantID, runID shared.ID) error
 	// RecordRunReport adds the fingerprints a report sighted (capped at
 	// MaxRunFindings per run); ErrRunEvaluated once the run has its verdict.
+	// A report past the cap marks the run (RunFindingsOverCap).
 	RecordRunReport(ctx context.Context, tenantID, runID shared.ID, fingerprints []string) error
+	// RunFindingsOverCap reports whether the run sighted more findings than
+	// it could record; such a run fails its gate.
+	RunFindingsOverCap(ctx context.Context, tenantID, runID shared.ID) (bool, error)
 	// RunFindings returns the findings on the run's repository asset whose
 	// fingerprints the run recorded.
 	RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]RunFinding, error)
@@ -233,3 +247,24 @@ type TokenRefusal struct {
 
 // MaxTokenRefusals bounds a refusal listing.
 const MaxTokenRefusals = 50
+
+// Replay is the record of an exchanged OIDC token (ci_oidc_replay).
+type Replay struct {
+	Issuer string
+	JTI    string
+	// TenantID is the organization the token was admitted into (nil for a
+	// record written before re-exchange existed).
+	TenantID *shared.ID
+	// TokenSHA256 is the digest of the exact token.
+	TokenSHA256 []byte
+	// RunID is the run the token opened or joined (nil until known).
+	RunID     *shared.ID
+	Exchanges int
+	FirstAt   time.Time
+	ExpiresAt time.Time
+}
+
+// MaxTokenExchanges bounds how many times one OIDC token may be exchanged
+// (the first exchange included). Each re-exchange returns a token for the
+// same run; the bound keeps a token from minting upload tokens without end.
+const MaxTokenExchanges = 5

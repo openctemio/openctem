@@ -37,7 +37,7 @@ type CIRunService interface {
 	Exchange(ctx context.Context, in cirunapp.ExchangeInput) (*cirunapp.ExchangeOutput, error)
 	Authenticate(ctx context.Context, token string) (*cirun.Run, error)
 	UploadReport(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, error)
-	KnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) []cirun.KnownFinding
+	KnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) ([]cirun.KnownFinding, int)
 	UploadImported(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error)
 	BaselineDiff(ctx context.Context, run *cirun.Run, fingerprints []string) (*cirunapp.BaselineDiffOutput, error)
 	Evaluate(ctx context.Context, run *cirun.Run, in cirunapp.EvaluateInput) (*cirunapp.Verdict, error)
@@ -97,8 +97,8 @@ type CIExchangeRequest struct {
 	// repository id the token signs.
 	Repository string `json:"repository,omitempty"`
 	// BaseRef, optional, is the pull request's target branch as the job sees
-	// it (GitHub signs it). It only picks among the repository's branches
-	// that count as exposure as the gate's baseline.
+	// it. It is accepted and ignored: the gate's baseline comes from a signed
+	// claim or the code host, never from the job.
 	BaseRef string `json:"base_ref,omitempty"`
 	// Aggregate, optional, joins the run every capability job of the same
 	// pipeline run reports into (opening it for the first job); each job
@@ -139,7 +139,7 @@ func (h *CIRunnerHandler) SetSecretKeys(k SecretKeys) { h.secretKeys = k }
 
 // Exchange handles POST /api/v1/ci/oidc/exchange
 // @Summary      Exchange a CI OIDC token for a run upload token
-// @Description  A CI job (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, CircleCI, Jenkins with its OpenID Connect provider plugin) presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. Each OIDC token can be exchanged once. With aggregate true, the jobs of one pipeline run (same pipeline, provider run id, attempt and commit, from the verified token) share one run, each with its own token, and one final job evaluates it. Every refusal answers the same 401.
+// @Description  A CI job (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, CircleCI, Jenkins with its OpenID Connect provider plugin) presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. The same OIDC token exchanged again (a bounded number of times, while valid) gets a new token for the same run only. With aggregate true, the jobs of one pipeline run (same pipeline, provider run id, attempt and commit, from the verified token) share one run, each with its own token, and one final job evaluates it. Every refusal answers 401: before the token is admitted by a trust configuration with one generic message (CI_TOKEN_NOT_TRUSTED), after it with the reason (CI_TOKEN_<reason>).
 // @Tags         CI
 // @Accept       json
 // @Produce      json
@@ -149,6 +149,7 @@ func (h *CIRunnerHandler) SetSecretKeys(k SecretKeys) { h.secretKeys = k }
 // @Failure      401  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error "RUNNER_OUTDATED: the runner reports a version below the minimum supported one"
 // @Failure      429  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error "CI_ISSUER_UNAVAILABLE: the provider's keys cannot be fetched now; retry (Retry-After)"
 // @Router       /ci/oidc/exchange [post]
 // runnerOutdatedMessage tells the job exactly which line to change: the
 // openctemio/ci release to pin, in each form a pipeline uses it.
@@ -167,6 +168,19 @@ func runnerOutdatedMessage(err error) string {
 		"other CI systems `ghcr.io/openctemio/ci:%[3]s`.", have, oe.Min, oe.Pin)
 }
 
+// ciRefusalHelp points the job at the refusal list.
+const ciRefusalHelp = "See https://github.com/openctemio/ci/blob/main/docs/troubleshooting.md"
+
+// ciNotTrustedMessage answers every refusal before a trust configuration
+// admitted the token. It lists what to check without saying which check
+// failed: a token from anyone on a shared issuer reaches this point, and the
+// organization's configuration is not theirs to learn. An administrator
+// sees the exact reason in the audit log.
+const ciNotTrustedMessage = "The CI token was not accepted. Check that OPENCTEM_TENANT_ID is your organization's id, " +
+	"that the job's id_token audience is openctem:tenant:<that id>, that the token is not expired, and that a CI trust " +
+	"configuration of the organization admits this issuer, repository and ref (an administrator sees the exact reason " +
+	"in the audit log). " + ciRefusalHelp
+
 func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	r.Body = http.MaxBytesReader(w, r.Body, maxExchangeBody)
@@ -181,8 +195,23 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		RunID: req.RunID, Aggregate: req.Aggregate, Hints: cirun.Hints{CommitSHA: req.CommitSHA, Repository: req.Repository, BaseRef: req.BaseRef},
 		ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
 	if err != nil {
+		var refused *cirunapp.RefusedError
+		if errors.As(err, &refused) {
+			// The token was admitted by the organization's trust
+			// configuration: the job is told why it was refused.
+			apierror.New(http.StatusUnauthorized, apierror.Code("CI_TOKEN_"+strings.ToUpper(refused.Code)),
+				"The CI token was not accepted: "+refused.Message+" "+ciRefusalHelp).WriteJSON(w)
+			return
+		}
 		if errors.Is(err, cirunapp.ErrExchangeRefused) {
-			apierror.Unauthorized("The CI token was not accepted").WriteJSON(w)
+			apierror.New(http.StatusUnauthorized, "CI_TOKEN_NOT_TRUSTED", ciNotTrustedMessage).WriteJSON(w)
+			return
+		}
+		if errors.Is(err, cirunapp.ErrIssuerUnavailable) {
+			// Nothing was claimed: the same token may be retried.
+			w.Header().Set("Retry-After", "30")
+			apierror.New(http.StatusServiceUnavailable, "CI_ISSUER_UNAVAILABLE",
+				"The CI provider's signing keys cannot be fetched right now (the provider is unreachable or has just rotated its keys); retry in 30 seconds").WriteJSON(w)
 			return
 		}
 		if errors.Is(err, cirunapp.ErrRunnerOutdated) {
@@ -242,7 +271,7 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 
 // UploadResults handles POST /api/v1/ci/runs/{id}/results
 // @Summary      Upload a CI run's results
-// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict. For a CTIS report, known lists the report's results that carry a decision the gate honors (false positive, duplicate, accepted risk, approved suppression), by index, so the job can leave them out of its own output.
+// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict. For a CTIS report, known lists the report's results that carry a decision the gate honors (false positive, duplicate, accepted risk, approved suppression), by index, so the job can leave them out of its own output: at most 10,000 (lowest indexes first), with known_total counting them all and known_truncated set when some were left out.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
@@ -282,16 +311,29 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(CIUploadResponse{IngestResponse: newIngestResponse(out), Known: h.svc.KnownFindings(r.Context(), run, out)})
+	known, total := h.svc.KnownFindings(r.Context(), run, out)
+	if known == nil {
+		known = []cirun.KnownFinding{}
+	}
+	_ = json.NewEncoder(w).Encode(CIUploadResponse{IngestResponse: newIngestResponse(out), Known: known,
+		KnownTotal: total, KnownTruncated: total > len(known)})
 }
 
 // CIUploadResponse is the result of a CI report upload: the ingest counts,
 // and the results of this report that carry a decision the gate honors (a
 // false positive, duplicate, accepted risk or approved suppression), by their
 // index in the report. The job leaves those out of its own output.
+//
+// The response stays small whatever the report's size: known lists at most
+// cirun.MaxKnownInResponse results (lowest indexes first); known_total counts
+// them all and known_truncated says some were left out. A job that reads
+// only known shows the rest of its results, which is safe; the gate judges
+// every finding on the platform either way.
 type CIUploadResponse struct {
 	IngestResponse
-	Known []cirun.KnownFinding `json:"known"`
+	Known          []cirun.KnownFinding `json:"known"`
+	KnownTotal     int                  `json:"known_total"`
+	KnownTruncated bool                 `json:"known_truncated,omitempty"`
 }
 
 // decodeCTISReport accepts {"report": {...}} or a bare report, refusing
