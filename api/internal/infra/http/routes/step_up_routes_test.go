@@ -80,6 +80,9 @@ var stepUpRoutes = []string{
 	"POST /api/v1/ci/scm-apps/github/installations",
 	"POST /api/v1/ci/scm-apps/gitlab-connections",
 	"PATCH /api/v1/tenants/acme/settings/security",
+	// Risk scoring settings decide every asset's risk band and, with the
+	// ownership floor, finding priorities (docs/architecture/scoring-versions.md).
+	"PATCH /api/v1/tenants/acme/settings/risk-scoring",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
 	"DELETE /api/v1/tenants/acme",
 	"DELETE /api/v1/organization/members/{id}/mfa",
