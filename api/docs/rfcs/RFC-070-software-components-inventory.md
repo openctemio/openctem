@@ -171,10 +171,13 @@ asset_software (RFC-066) gains:
 - Confidence is 100 for a version read from a lock file or SBOM with a purl,
   80 for a name and version without a purl.
 - `superseded_at` is not used for packages: several versions of one package
-  legitimately coexist in one lock file. A full snapshot (a sensor or CI
-  report, an SBOM) replaces the links at the locations it names, so an
-  upgrade shows as the old version's link going away; partial reports (a
-  finding that names a package) only add or refresh.
+  legitimately coexist in one lock file. A snapshot replaces its own
+  channel's links at the locations it names, so an upgrade shows as the old
+  version's link going away. A full inventory (a sensor or integration
+  report, an SBOM) takes the links it names over; a CI upload, whose list is
+  trimmed to the vulnerable packages and their paths, refreshes them without
+  taking them over, so it never removes another producer's inventory of the
+  same file; a finding import only adds.
 
 ### 5.4 Dependency graph: `asset_software_edges`
 

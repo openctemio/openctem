@@ -52,9 +52,7 @@ func TestAssetService_RiskScore_CriticalBURaisesScore(t *testing.T) {
 	}}
 	svc.SetBusinessContextLookup(stub)
 
-	if _, err := svc.RecalculateAllRiskScores(context.Background(), serviceTenantID); err != nil {
-		t.Fatalf("RecalculateAllRiskScores: %v", err)
-	}
+	rescoreAll(t, svc, repo)
 
 	if stub.calls == 0 {
 		t.Fatal("scoring path must consult the business-context lookup")
@@ -93,9 +91,7 @@ func TestAssetService_RiskScore_LowBUNeverLowers(t *testing.T) {
 		inLowBU.ID(): {BusinessUnitCriticality: asset.CriticalityLow, BusinessUnitName: "IT"},
 	}})
 
-	if _, err := svc.RecalculateAllRiskScores(context.Background(), serviceTenantID); err != nil {
-		t.Fatalf("RecalculateAllRiskScores: %v", err)
-	}
+	rescoreAll(t, svc, repo)
 
 	if inLowBU.RiskScore() != noBU.RiskScore() {
 		t.Fatalf("a low BU must not lower a critical asset's score: inLowBU=%d noBU=%d",
@@ -117,9 +113,7 @@ func TestAssetService_RiskScore_NoLookupUnchanged(t *testing.T) {
 	repo.assets[a.ID().String()] = a
 
 	// No SetBusinessContextLookup call.
-	if _, err := svc.RecalculateAllRiskScores(context.Background(), serviceTenantID); err != nil {
-		t.Fatalf("RecalculateAllRiskScores: %v", err)
-	}
+	rescoreAll(t, svc, repo)
 
 	engine := asset.NewRiskScoringEngine(cfg)
 	control := makeTestAssetForService(asset.ExposurePrivate, asset.CriticalityMedium, 3)
