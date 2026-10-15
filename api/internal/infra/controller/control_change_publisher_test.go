@@ -25,10 +25,6 @@ func (c *captureQueue) Enqueue(_ context.Context, r ReclassifyRequest) error {
 	return nil
 }
 
-func (c *captureQueue) DequeueBatch(_ context.Context, _ int) ([]ReclassifyRequest, error) {
-	return nil, nil
-}
-
 func TestControlChangePublish_EmptyAssetList_NoOp(t *testing.T) {
 	q := &captureQueue{}
 	p := NewControlChangePublisher(q, nil)

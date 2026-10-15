@@ -85,6 +85,9 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
 	"POST /api/v1/organization/members/{id}/erase",
+	// Ownership transfer: the owner asks, the member asked accepts.
+	"POST /api/v1/organization/ownership-transfer",
+	"POST /api/v1/organization/ownership-transfer/approve",
 	"GET /api/v1/integrations/jira/webhook-secret",
 	"POST /api/v1/integrations/jira/webhook-secret/rotate",
 	"GET /api/v1/integrations/github/webhook-secret",
