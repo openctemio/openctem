@@ -6,12 +6,12 @@
 > [RFC-006](../rfcs/RFC-006-ticketing-provider-and-mapping.md) /
 > [RFC-006 Phase 3](../rfcs/RFC-006-phase-3-bidirectional-sync.md).
 > Ticketing is the CTEM **Mobilization** pillar.
-> Field and status mapping profiles per destination and object (finding or
-> task) are described in [ticket field and status mapping](ticket-field-mapping.md)
-> ([RFC-097](../rfcs/RFC-097-ticket-field-mapping.md)).
 > Ticket links live in `ticket_links` (one row per finding or task ↔ issue,
 > with the owning integration, the issue key and a state); the ticket paths
 > move onto it from the `findings.work_item_uris` strings (display only).
+> Field and status mapping profiles per destination and object (finding or
+> task) are described in [ticket field and status mapping](ticket-field-mapping.md)
+> ([RFC-097](../rfcs/RFC-097-ticket-field-mapping.md)).
 
 ## Overview
 
