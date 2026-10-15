@@ -39,10 +39,17 @@ import (
 )
 
 // SoleOwnerChecker answers whether a user is the only active person of the
-// organization and its owner (*postgres.ScopeActorRepository).
+// organization and its owner, and when a member was last suspended or
+// removed (*postgres.ScopeActorRepository).
 type SoleOwnerChecker interface {
 	IsSoleActiveOwner(ctx context.Context, tenantID shared.ID, userID string) (bool, error)
+	RecentMemberRemoval(ctx context.Context, tenantID shared.ID, window time.Duration) (*time.Time, error)
 }
+
+// SoloAfterRemovalWait is how long after a member was suspended or removed
+// the sole remaining owner must wait before approving their own request: a
+// stolen owner session cannot remove the other approver and self-approve.
+const SoloAfterRemovalWait = 7 * 24 * time.Hour
 
 // ApprovalTOTPVerifier checks a fresh authenticator code. It answers
 // vulnerability.ErrSoloApprovalNeedsTOTP when the account has no
@@ -93,7 +100,11 @@ func (s *VulnerabilityService) SelfApprovalAvailable(ctx context.Context, tenant
 		return false
 	}
 	ok, err := s.soleOwners.IsSoleActiveOwner(ctx, tid, userID)
-	return err == nil && ok
+	if err != nil || !ok {
+		return false
+	}
+	removed, err := s.soleOwners.RecentMemberRemoval(ctx, tid, SoloAfterRemovalWait)
+	return err == nil && removed == nil
 }
 
 // SelfApproveSolo applies the caller's own pending request when they are
@@ -133,15 +144,8 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 	case a.RequestedBy.IsZero() || a.RequestedBy != uid:
 		return nil, vulnerability.ErrSoloApprovalNotAllowed
 	}
-	if s.soleOwners == nil {
-		return nil, vulnerability.ErrSoloApprovalNotAllowed
-	}
-	sole, err := s.soleOwners.IsSoleActiveOwner(ctx, tid, in.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("check the organization's members: %w", err)
-	}
-	if !sole {
-		return nil, vulnerability.ErrSoloApprovalNotAllowed
+	if err := s.checkSoleMember(ctx, tid, in.UserID); err != nil {
+		return nil, err
 	}
 	reason := strings.TrimSpace(in.Reason)
 	if reason == "" || len(reason) > vulnerability.MaxSelfApprovalReasonLength {
@@ -236,4 +240,30 @@ func (s *VulnerabilityService) announceSelfApproval(ctx context.Context, a *vuln
 <p>This was confirmed with a code from the member's authenticator app and is recorded in the organization's audit log.</p>`,
 		html.EscapeString(summary), html.EscapeString(oneLineTitle(reason)))
 	s.approvalMail.SendFindingApprovalMail(ctx, a.TenantID.String(), []string{settings.BackupContactEmail}, "[Findings] "+title, body)
+}
+
+// checkSoleMember is the membership rule of a sole member's own approval:
+// the only active person and an owner, and no member suspended or removed
+// within SoloAfterRemovalWait.
+func (s *VulnerabilityService) checkSoleMember(ctx context.Context, tid shared.ID, userID string) error {
+	if s.soleOwners == nil {
+		return vulnerability.ErrSoloApprovalNotAllowed
+	}
+	sole, err := s.soleOwners.IsSoleActiveOwner(ctx, tid, userID)
+	if err != nil {
+		return fmt.Errorf("check the organization's members: %w", err)
+	}
+	if !sole {
+		return vulnerability.ErrSoloApprovalNotAllowed
+	}
+	removed, err := s.soleOwners.RecentMemberRemoval(ctx, tid, SoloAfterRemovalWait)
+	if err != nil {
+		return fmt.Errorf("check recent member changes: %w", err)
+	}
+	if removed != nil {
+		return shared.NewDomainError("SELF_APPROVAL_AFTER_MEMBER_REMOVAL",
+			fmt.Sprintf("a member was suspended or removed recently; approving your own request is possible again from %s",
+				removed.Add(SoloAfterRemovalWait).UTC().Format("2006-01-02 15:04 UTC")), shared.ErrForbidden)
+	}
+	return nil
 }

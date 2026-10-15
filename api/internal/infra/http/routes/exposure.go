@@ -383,7 +383,6 @@ func registerVulnerabilityRoutes(
 		r.GET("/", h.GetFindingApprovalSettings, middleware.Require(permission.FindingsRead))
 		r.PUT("/", h.UpdateFindingApprovalSettings, middleware.Require(permission.SettingsWrite), requireStepUp())
 	}, tenantMiddlewares...)
-
 }
 
 // registerFindingActivityRoutes registers finding activity endpoints.
