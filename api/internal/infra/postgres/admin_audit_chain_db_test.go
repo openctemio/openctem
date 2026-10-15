@@ -13,7 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// The administrators' audit log (migration 002401) is append-only and
+// The administrators' audit log (migration 002470) is append-only and
 // hash-chained: every insert extends the chain whatever the writer sends,
 // updates, deletes and truncation are refused, a tampered row is reported by
 // VerifyChain, and retention removes only the oldest prefix older than a
