@@ -87,7 +87,7 @@ matched against the tenant's findings:
 
 Then, outside a preview, the statement is stored on every matched finding
 (the `vex_*` columns of migration 001105). A `not_affected` statement closes
-a finding (`false_positive`, `resolution_method = vex_not_affected`, the
+a finding (`false_positive`, closure reason = the statement's justification, verification `vex_statement`, the
 justification and source as the resolution) only when all of these hold:
 
 - `INGEST_VEX=enforce`;
