@@ -383,6 +383,35 @@ func (s *Service) StepUp(ctx context.Context, a *admin.AdminUser, code, purpose 
 	return nil
 }
 
+// ConfirmProtected is the step-up gate of a protected console action, for the
+// route-level middleware. Within admin.StepUpWindow of the session's last
+// confirmation the action passes without a code (the action itself is still
+// audited by its route). Otherwise a fresh code is checked exactly like
+// StepUp, and on success the session's window restarts. No code outside the
+// window is ErrStepUpRequired; a session that is not a verified console
+// session never passes.
+func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, client ClientInfo) error {
+	if a == nil || sess == nil || !sess.MFAVerified || sess.AdminID != a.ID() {
+		return admin.ErrStepUpRequired
+	}
+	now := s.now()
+	if code == "" {
+		if sess.SteppedUp(now) {
+			return nil
+		}
+		return admin.ErrStepUpRequired
+	}
+	if err := s.StepUp(ctx, a, code, purpose, client); err != nil {
+		return err
+	}
+	if err := s.console.MarkSessionStepUp(ctx, sess.ID, now); err != nil {
+		// The code was valid and is spent: this action goes ahead, the next
+		// one asks again.
+		s.log.Warn("record console step-up window", "error", err)
+	}
+	return nil
+}
+
 // openVerifiedSession issues a verified console session and records the
 // sign-in. A break-glass sign-in is alerted every time.
 func (s *Service) openVerifiedSession(ctx context.Context, a *admin.AdminUser, authMethod string, client ClientInfo, note string) (string, error) {
