@@ -37,7 +37,7 @@ type CIRunService interface {
 	Exchange(ctx context.Context, in cirunapp.ExchangeInput) (*cirunapp.ExchangeOutput, error)
 	Authenticate(ctx context.Context, token string) (*cirun.Run, error)
 	UploadReport(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, error)
-	KnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) []cirun.KnownFinding
+	KnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) ([]cirun.KnownFinding, int)
 	UploadImported(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error)
 	BaselineDiff(ctx context.Context, run *cirun.Run, fingerprints []string) (*cirunapp.BaselineDiffOutput, error)
 	Evaluate(ctx context.Context, run *cirun.Run, in cirunapp.EvaluateInput) (*cirunapp.Verdict, error)
@@ -97,8 +97,8 @@ type CIExchangeRequest struct {
 	// repository id the token signs.
 	Repository string `json:"repository,omitempty"`
 	// BaseRef, optional, is the pull request's target branch as the job sees
-	// it (GitHub signs it). It only picks among the repository's branches
-	// that count as exposure as the gate's baseline.
+	// it. It is accepted and ignored: the gate's baseline comes from a signed
+	// claim or the code host, never from the job.
 	BaseRef string `json:"base_ref,omitempty"`
 	// Aggregate, optional, joins the run every capability job of the same
 	// pipeline run reports into (opening it for the first job); each job
@@ -271,7 +271,7 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 
 // UploadResults handles POST /api/v1/ci/runs/{id}/results
 // @Summary      Upload a CI run's results
-// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict. For a CTIS report, known lists the report's results that carry a decision the gate honors (false positive, duplicate, accepted risk, approved suppression), by index, so the job can leave them out of its own output.
+// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict. For a CTIS report, known lists the report's results that carry a decision the gate honors (false positive, duplicate, accepted risk, approved suppression), by index, so the job can leave them out of its own output: at most 10,000 (lowest indexes first), with known_total counting them all and known_truncated set when some were left out.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
@@ -311,16 +311,29 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(CIUploadResponse{IngestResponse: newIngestResponse(out), Known: h.svc.KnownFindings(r.Context(), run, out)})
+	known, total := h.svc.KnownFindings(r.Context(), run, out)
+	if known == nil {
+		known = []cirun.KnownFinding{}
+	}
+	_ = json.NewEncoder(w).Encode(CIUploadResponse{IngestResponse: newIngestResponse(out), Known: known,
+		KnownTotal: total, KnownTruncated: total > len(known)})
 }
 
 // CIUploadResponse is the result of a CI report upload: the ingest counts,
 // and the results of this report that carry a decision the gate honors (a
 // false positive, duplicate, accepted risk or approved suppression), by their
 // index in the report. The job leaves those out of its own output.
+//
+// The response stays small whatever the report's size: known lists at most
+// cirun.MaxKnownInResponse results (lowest indexes first); known_total counts
+// them all and known_truncated says some were left out. A job that reads
+// only known shows the rest of its results, which is safe; the gate judges
+// every finding on the platform either way.
 type CIUploadResponse struct {
 	IngestResponse
-	Known []cirun.KnownFinding `json:"known"`
+	Known          []cirun.KnownFinding `json:"known"`
+	KnownTotal     int                  `json:"known_total"`
+	KnownTruncated bool                 `json:"known_truncated,omitempty"`
 }
 
 // decodeCTISReport accepts {"report": {...}} or a bare report, refusing
