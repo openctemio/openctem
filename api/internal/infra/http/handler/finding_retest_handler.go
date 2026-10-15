@@ -84,6 +84,10 @@ type FindingRetestResponse struct {
 // FindingRetestListResponse is a finding's retest history, newest first.
 type FindingRetestListResponse struct {
 	Data []FindingRetestResponse `json:"data"`
+	// CanRetest: a retest of this finding would be accepted now (eligible,
+	// target gates pass, an online sensor can re-check it). The console
+	// offers "Retest now" from it.
+	CanRetest bool `json:"can_retest"`
 }
 
 func toFindingRetestResponse(rt *retestdom.Retest) FindingRetestResponse {
@@ -241,6 +245,11 @@ func (h *FindingRetestHandler) List(w http.ResponseWriter, r *http.Request) {
 	if limit > 0 && len(out.Data) > limit {
 		out.Data = out.Data[:limit]
 	}
+	can, err := h.service.CanRetest(r.Context(), tenantID, findingID)
+	if err != nil {
+		h.logger.Warn("retest availability check failed", "finding_id", findingID.String(), "error", err)
+	}
+	out.CanRetest = can
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
 }
