@@ -355,6 +355,8 @@
   "settings.jiraWebhook.copied": "Copied",
   "settings.jiraWebhook.copyFailed": "Could not copy",
   "settings.jiraWebhook.close": "Close",
+  "settings.item.ticket-field-mapping": "Ticket field mapping",
+  "settings.desc.ticket-field-mapping": "Which fields and statuses sync with Jira, per project.",
   "settings.connectedApps.empty": "When you connect an AI assistant to {product}, it appears here.",
   "settings.preferences.appearanceDescription": "Customize how {product} looks on your device",
   "settings.ticketing.configureDescription": "Control how {product} syncs with this tracker.",
