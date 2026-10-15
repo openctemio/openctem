@@ -2681,7 +2681,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 
 	// Two-factor authentication (TOTP). Secrets are encrypted with the same
 	// AES-GCM key as integration credentials.
-	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.App.Name)
+	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.Brand.DisplayName())
 	s.Session.SetMFAChallengeCleanup(repos.UserMFA)
 
 	// Immediate session revocation: signing a session out (logout, "sign out
@@ -2889,7 +2889,7 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 		log.Warn("platform e-mail settings unavailable - email features will be disabled")
 		return nil
 	}
-	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.App.Name, log)
+	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.Brand.DisplayName(), log)
 	if !s.Email.IsConfigured() {
 		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
 	}

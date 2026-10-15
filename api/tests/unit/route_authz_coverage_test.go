@@ -43,10 +43,12 @@ var gateFuncs = map[string]bool{
 // source, with {param} placeholders). Adding a route here is a SECURITY-
 // sensitive change — it declares a route public/self/machine-scoped.
 var routeAuthzAllowlist = map[string]string{
-	"POST /api/v1/client-errors": "public on purpose: the web console reports an error kind (fixed set, nothing else accepted or stored) for operator alerting, also before sign-in; per-address and overall rate limits",
-	"GET /api/v1/announcements":  "any signed-in user (authMiddleware): the platform operator's active notices for the banner; plain text, no tenant data",
-	"GET /api/v1/version":        "any signed-in user (authMiddleware): build identity for Help > About; no tenant data, and kept off the public /health",
-	"GET /api/v1/legal":          "public on purpose: the operator's legal links, legal page values and security.txt contact, shown to visitors before sign-in; no secret, no tenant data; written only by the admin console (RFC-079)",
+	"POST /api/v1/client-errors":      "public on purpose: the web console reports an error kind (fixed set, nothing else accepted or stored) for operator alerting, also before sign-in; per-address and overall rate limits",
+	"GET /api/v1/announcements":       "any signed-in user (authMiddleware): the platform operator's active notices for the banner; plain text, no tenant data",
+	"GET /api/v1/version":             "any signed-in user (authMiddleware): build identity for Help > About; no tenant data, and kept off the public /health",
+	"GET /api/v1/brand":               "public on purpose: the instance brand (product name, color, links, image URLs) the sign-in page shows; no secret, no tenant data; set only by server configuration",
+	"GET /api/v1/brand/assets/{kind}": "public on purpose: the instance brand images, validated at startup and served with nosniff and a sandbox policy",
+	"GET /api/v1/legal":               "public on purpose: the operator's legal links, legal page values and security.txt contact, shown to visitors before sign-in; no secret, no tenant data; written only by the admin console (RFC-079)",
 	// CI runner identity (RFC-051): machine credentials, not permissions.
 	"POST /api/v1/ci/oidc/exchange":                  "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
 	"POST /api/v1/ci/runs/{id}/results":              "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
