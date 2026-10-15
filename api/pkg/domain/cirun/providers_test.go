@@ -346,8 +346,8 @@ func TestBaseRefFromTokenOrHint(t *testing.T) {
 	}
 	gl := ParseClaims(ProviderGitLab, map[string]any{"project_path": "acme/api", "ref": "fix", "ref_type": "branch"})
 	gl.ApplyHints(Hints{BaseRef: "refs/heads/release/3"})
-	if gl.BaseRef != "release/3" {
-		t.Fatalf("hint: %q", gl.BaseRef)
+	if gl.BaseRef != "" {
+		t.Fatalf("a job's base branch hint was taken: %q", gl.BaseRef)
 	}
 	for _, bad := range []string{"", "  ", "a\nb", strings.Repeat("x", 256)} {
 		if got := CleanBranchName(bad); got != "" {

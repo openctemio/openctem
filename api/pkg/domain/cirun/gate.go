@@ -48,6 +48,9 @@ const (
 	// did not fully reach the platform (failed, partial, not uploaded or
 	// missing), whatever its scan_failures count says.
 	ReasonCapabilityFailed = "capability_failed"
+	// ReasonTooManyFindings: the run reported more findings than the gate
+	// records (MaxRunFindings), so it cannot be judged on all of them.
+	ReasonTooManyFindings = "too_many_findings"
 )
 
 // CapabilityState is what the CI job reports about one capability at
@@ -292,6 +295,9 @@ type GateInput struct {
 	// FailedCapabilities are the capabilities the job reported as not clean
 	// (FailedCapabilities).
 	FailedCapabilities []CapabilityState
+	// FindingsOverCap: the run reported more findings than it could record;
+	// judging only the recorded ones would miss the rest, so it fails.
+	FindingsOverCap bool
 	// MissingCapabilities are the capabilities the repository is expected
 	// to report (coverage expectation) that the run reported no tool for.
 	MissingCapabilities []string
@@ -400,6 +406,14 @@ func honored(f RunFinding, now time.Time) bool { return Decision(f, now) != "" }
 // decision, so the job leaves it out of its own output (console, SARIF,
 // merge request report). Index is the result's position in the uploaded
 // report. The job learns nothing about findings it did not report.
+// MaxKnownInResponse bounds the decided results an upload response lists
+// (about 1 MB of JSON). The rest are counted (KnownTotal), never dropped
+// silently: a job that sees fewer shows more of its own results, which is
+// safe, and the gate on the platform judges every finding either way. A
+// response that grew with the report could exceed what a client reads and
+// make a stored report look like a failed upload.
+const MaxKnownInResponse = 10_000
+
 type KnownFinding struct {
 	Index     int        `json:"index"`
 	Decision  string     `json:"decision"`
@@ -448,6 +462,10 @@ func Evaluate(in GateInput) GateVerdict {
 		}
 		add(GateReason{Code: ReasonCapabilityFailed,
 			Message: fmt.Sprintf("the %s scan did not fully reach the platform (%s): the run cannot be judged", what, why)})
+	}
+	if in.FindingsOverCap {
+		add(GateReason{Code: ReasonTooManyFindings,
+			Message: fmt.Sprintf("the run reported more than %d findings, more than the gate can judge: the run cannot be judged; split the scan or narrow it", MaxRunFindings)})
 	}
 	for _, c := range in.MissingCapabilities {
 		add(GateReason{Code: ReasonMissingCapability,

@@ -44,7 +44,7 @@ func TestScopeImported(t *testing.T) {
 	if len(rep.Assets) != 1 || rep.Assets[0].Value != run.Repository {
 		t.Fatalf("assets = %+v", rep.Assets)
 	}
-	if b := rep.Metadata.Branch; b == nil || b.Name != "feature/x" || b.CommitSHA != "abc" || b.PullRequestNumber != 7 {
+	if b := rep.Metadata.Branch; b == nil || b.Name != "pull/7" || b.CommitSHA != "abc" || b.PullRequestNumber != 7 {
 		t.Fatalf("branch = %+v", b)
 	}
 }

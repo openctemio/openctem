@@ -1973,14 +1973,15 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 	return n, nil
 }
 
-// BranchCountsAsExposure reports whether a branch of the tenant is a release
-// line in its own right: default, protected, or of type main or release. Unlike
-// branch_counts_as_exposure it does not count every branch of a repository
-// whose default branch is unknown, so a job's base-branch hint can never make
-// a feature branch the baseline.
+// BranchCountsAsExposure reports whether a branch of the tenant may serve as
+// a gate baseline: the default branch or a protected one (protection comes
+// from the code host or an administrator). A branch type guessed from the
+// name (main, release/...) never counts: anyone who can push can create
+// "release/x". Unlike branch_counts_as_exposure it does not count every
+// branch of a repository whose default branch is unknown.
 func (r *FindingRepository) BranchCountsAsExposure(ctx context.Context, tenantID, branchID shared.ID) (bool, error) {
 	var ok bool
-	err := r.db.QueryRowContext(ctx, `SELECT b.is_default OR b.is_protected OR b.branch_type IN ('main', 'release')
+	err := r.db.QueryRowContext(ctx, `SELECT b.is_default OR b.is_protected
 		FROM repository_branches b JOIN assets a ON a.id = b.repository_id
 		WHERE b.id = $2 AND a.tenant_id = $1`, tenantID.String(), branchID.String()).Scan(&ok)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -202,6 +202,8 @@ The upload answers with `known`: the results of that report that already
 carry a decision (false positive, duplicate, accepted risk that has not
 ended, approved suppression rule), by index. `openctem-ci` leaves them out of
 its log, SARIF and merge request report; the platform still records them.
+The list holds at most 10,000 results; `known_total` counts them all and
+`known_truncated` says when some were left out (those are shown, not hidden).
 Every accepted risk has an end date (90 days unless set, at most a year), and
 the gate counts the finding again once it passes.
 
