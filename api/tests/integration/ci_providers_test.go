@@ -172,8 +172,9 @@ func TestCIProviders_AzurePipelines(t *testing.T) {
 	if !r.commitVerified(ex["run_id"].(string)) {
 		t.Fatal("azure commit not verified")
 	}
-	if code, _ := r.exchangeWith(r.tenant, tok, nil); code != http.StatusUnauthorized {
-		t.Fatalf("replayed azure token: %d", code)
+	// The same token again: the same run (idempotent re-exchange).
+	if code, again := r.exchangeWith(r.tenant, tok, nil); code != http.StatusCreated || again["run_id"] != ex["run_id"] {
+		t.Fatalf("re-exchanged azure token: %d %v, want run %v", code, again["run_id"], ex["run_id"])
 	}
 	// Another tenant that does not trust the organization.
 	if code, _ := r.exchangeWith(r.other, r.idp.sign(t, claims, jti()), nil); code != http.StatusUnauthorized {
@@ -219,8 +220,9 @@ func TestCIProviders_BitbucketPipelines(t *testing.T) {
 	if code != http.StatusCreated || ex["repository"] != "bitbucket.org/acme/api" {
 		t.Fatalf("bitbucket exchange: %d %v", code, ex)
 	}
-	if code, _ := r.exchangeWith(r.tenant, tok, map[string]string{"repository": "acme/api"}); code != http.StatusUnauthorized {
-		t.Fatalf("replayed bitbucket token: %d", code)
+	// The same token (its hash is the replay key) again: the same run.
+	if code, again := r.exchangeWith(r.tenant, tok, map[string]string{"repository": "acme/api"}); code != http.StatusCreated || again["run_id"] != ex["run_id"] {
+		t.Fatalf("re-exchanged bitbucket token: %d %v, want run %v", code, again["run_id"], ex["run_id"])
 	}
 	// Another repository of the workspace cannot report under that name.
 	if code, _ := r.exchangeWith(r.tenant, r.idp.sign(t, claims(pBBRepo2), nil), map[string]string{"repository": "api"}); code != http.StatusUnauthorized {
