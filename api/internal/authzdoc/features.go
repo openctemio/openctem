@@ -210,7 +210,7 @@ var Features = []Feature{
 		ID: "system", Title: "System endpoints",
 		Description: "Health, metrics, version, API documentation and client error reports.",
 		Registers: []string{
-			"registerHealthRoutes", "registerDocsRoutes", "registerVersionRoute", "registerClientErrorRoute", "registerLegalRoute",
+			"registerHealthRoutes", "registerDocsRoutes", "registerVersionRoute", "registerClientErrorRoute", "registerLegalRoute", "registerBrandRoutes",
 		},
 	},
 }
