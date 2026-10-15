@@ -33,6 +33,11 @@ import (
 // for a verified token, to the tenant's audit log.
 var ErrExchangeRefused = errors.New("ci token exchange refused")
 
+// ErrIssuerUnavailable: the token's issuer keys cannot be obtained right now
+// (unreachable beyond the stale bound, or a key rotation not yet fetched).
+// The token was not claimed; the job may retry it (503 with Retry-After).
+var ErrIssuerUnavailable = errors.New("ci token issuer keys unavailable")
+
 // ErrRunnerOutdated refuses an exchange from a runner that reports a version
 // below the minimum CI runner release (CI_RUNNER_MIN_VERSION). It is told to
 // the caller (only after its token verified and was admitted): the fix is on
@@ -274,6 +279,13 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	if err != nil {
 		s.log.Info("ci exchange refused: token did not verify", "tenant_id", tenantID.String(),
 			"issuer", logger.SanitizeValue(issuer), "error", logger.SanitizeError(err))
+		if errors.Is(err, oidc.ErrJWKSUnavailable) || errors.Is(err, oidc.ErrKeyNotFound) {
+			// The issuer's keys cannot be had right now (the issuer is
+			// unreachable past the stale bound, or it rotated to a key the
+			// platform may fetch only once per interval). Nothing was
+			// claimed: the job may retry the same token shortly.
+			return nil, ErrIssuerUnavailable
+		}
 		return nil, ErrExchangeRefused
 	}
 
