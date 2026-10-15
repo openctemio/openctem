@@ -111,25 +111,78 @@ func (r *AssetRiskQueueRepository) EnqueueTenant(ctx context.Context, tenantID s
 	return n, nil
 }
 
-// EnqueueAllForPlatform queues every live asset with a later due time. An
-// asset already queued keeps its row (DO NOTHING), so a real change is never
-// pushed back.
+// riskReconcileBatch is how many assets one reconcile statement queues.
+const riskReconcileBatch = 5000
+
+// EnqueueAllForPlatform queues every live asset with a later due time,
+// tenant by tenant in id-ordered batches so no statement holds many rows.
+// An asset already queued keeps its row (DO NOTHING), so a real change is
+// never pushed back. A batch that races a concurrent asset delete (foreign
+// key violation) is retried: its next snapshot no longer sees the asset.
 func (r *AssetRiskQueueRepository) EnqueueAllForPlatform(ctx context.Context, delay time.Duration) (int64, error) {
 	if delay < 0 {
 		delay = 0
 	}
-	const q = `
-		INSERT INTO asset_risk_queue (asset_id, tenant_id, enqueued_at)
-		SELECT a.id, a.tenant_id, now() + make_interval(secs => $1)
-		FROM assets a
-		WHERE a.deleted_at IS NULL AND a.tenant_id IS NOT NULL
-		ON CONFLICT (asset_id) DO NOTHING`
-	res, err := r.db.ExecContext(ctx, q, delay.Seconds())
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM tenants ORDER BY id`)
 	if err != nil {
-		return 0, fmt.Errorf("enqueue risk reconcile: %w", err)
+		return 0, fmt.Errorf("list tenants for risk reconcile: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	return n, nil
+	var tenants []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, fmt.Errorf("scan tenant: %w", err)
+		}
+		tenants = append(tenants, id)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterate tenants: %w", err)
+	}
+
+	const q = `
+		WITH batch AS (
+			SELECT a.id, a.tenant_id FROM assets a
+			WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND a.id > $2::uuid
+			ORDER BY a.id
+			LIMIT $3
+		), ins AS (
+			INSERT INTO asset_risk_queue (asset_id, tenant_id, enqueued_at)
+			SELECT b.id, b.tenant_id, now() + make_interval(secs => $4) FROM batch b
+			ORDER BY b.id
+			ON CONFLICT (asset_id) DO NOTHING
+			RETURNING 1
+		)
+		SELECT (SELECT COUNT(*) FROM batch),
+		       COALESCE((SELECT b.id::text FROM batch b ORDER BY b.id DESC LIMIT 1), ''),
+		       (SELECT COUNT(*) FROM ins)`
+	var total int64
+	for _, tid := range tenants {
+		after := "00000000-0000-0000-0000-000000000000"
+		for {
+			var (
+				seen, queued int64
+				last         string
+			)
+			var err error
+			for attempt := 0; attempt < 3; attempt++ {
+				err = r.db.QueryRowContext(ctx, q, tid, after, riskReconcileBatch, delay.Seconds()).Scan(&seen, &last, &queued)
+				if !isForeignKeyViolation(err) {
+					break
+				}
+			}
+			if err != nil {
+				return total, fmt.Errorf("enqueue risk reconcile: %w", err)
+			}
+			total += queued
+			if seen < riskReconcileBatch || last == "" {
+				break
+			}
+			after = last
+		}
+	}
+	return total, nil
 }
 
 // StatsForPlatform returns the queue depth and the age of the oldest due row.
