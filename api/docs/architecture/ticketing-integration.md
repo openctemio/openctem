@@ -230,6 +230,32 @@ target `project_key` (+ optional `issue_type`):
   the resolver (group-membership wiring is a follow-up) — use `scope`/
   `criticality`/`severity`/`tag` today.
 
+### How an inbound status change is applied
+
+An inbound change goes through the finding service, never a direct row write
+(`VulnerabilityService.ApplyTicketStatus`, wired as the sync service's
+`InboundStatusApplier`):
+
+- **Every linked finding.** All findings of the tenant whose `work_item_uris`
+  contain the issue's browse URL (partial GIN index `idx_findings_work_item_uris`,
+  at most 500), not one arbitrary finding.
+- **Same rules as a person's bulk change**, with the Jira integration as the
+  recorded actor (`StatusTransition{Source: "jira", ActorType: "integration"}`,
+  so each step's timeline entry commits with it): the transition map, the
+  pentest and approval gates, tenant scope.
+- **Done = fix claimed.** A target of `fix_applied` is a "mark fixed": legal
+  steps (`new → confirmed → in_progress → fix_applied`), the ticket named in the
+  note, a proof-of-fix re-check queued per finding (plus the verification-scan
+  hook). A finding already `fix_applied` is left alone. Nothing is ever closed:
+  a retest, a covered scan or a reviewer verifies.
+- **In Progress / reopen** walk the legal open steps (`new → confirmed →
+  in_progress`, `fix_applied → in_progress`).
+- **Refusals are commented back** on the issue: one comment listing each finding
+  the rules kept where it is (a closed finding, a pentest finding, ...) with the
+  reason, not repeated for the same issue, status and reasons within an hour.
+- **A campaign's epic**: Done marks the campaign's findings fixed through the
+  campaign resolve; it never completes the campaign.
+
 > Inbound never auto-applies `false_positive`/`accepted` (they require approval),
 > and every Jira "done"-like status maps to `fix_applied` (not `resolved`, which
 > needs verification) — the rescan hook promotes to `resolved`. See
