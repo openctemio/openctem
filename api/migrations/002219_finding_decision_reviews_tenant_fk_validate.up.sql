@@ -1,0 +1,1 @@
+ALTER TABLE finding_decision_reviews VALIDATE CONSTRAINT fk_finding_decision_reviews_finding_tenant;
