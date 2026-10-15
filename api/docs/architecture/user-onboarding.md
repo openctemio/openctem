@@ -151,6 +151,37 @@ exists signs in as before: a mode change never locks anyone out.
 `AUTH_ALLOW_REGISTRATION` and `TENANT_CREATION_MODE` are retired: start-up
 refuses to run while either is set and names `SIGNUP_MODE` instead.
 
+### Domain sign-up policy (Settings > Domains, owner only)
+
+An organization that holds a domain **verified for SSO** (exclusive
+platform-wide, DNS TXT, set up by the platform administrator) decides what
+that claim does to accounts on the domain. Every effect is **off by default**
+and applies only while the claim is verified and unambiguous: a lapsed claim
+(DNS proof gone) or a claim in conflict stops every effect at once.
+
+| Setting | Effect |
+|---------|--------|
+| `join_policy` `off` / `approval` / `auto` | Whether a verified holder of an address on the domain may ask to join (`approval`) or joins at once (`auto`); with `accounts: domain` this is what admits a public sign-up (`domain_account`) |
+| `join_role` `viewer` / `member` | Role of people who join by domain; never an administrator |
+| `discoverable` | Show the organization to verified holders of the domain during onboarding |
+| `sso_required` | Refuse password and social sign-up for addresses on the domain (403 `SSO_REQUIRED`, nothing written); they come in through the organization's SSO. Needs a working SSO connection |
+| `block_new_workspaces` | Accounts on the domain cannot create organizations (create-first-team, `POST /tenants`) |
+| `include_subdomains` | The effects also cover `*.domain` addresses; the exact claim of a subdomain wins |
+
+- `GET /api/v1/tenants/{tenant}/settings/domains` (owner or admin) lists the
+  organization's domains with their policy and `effective`.
+- `PUT /api/v1/tenants/{tenant}/settings/domains/{domainId}/signup-policy`
+  (owner, step-up) changes it; audited as
+  `sso.verified_domain_signup_policy_changed` (high). A domain id of another
+  organization answers 404.
+- **Existing accounts.** The first time `sso_required` or
+  `block_new_workspaces` turns on, every active account on the domain outside
+  the organization gets its own e-mail naming only the domain (once,
+  `capture_notified_at`). Nothing is moved: the account's other organizations
+  and data stay its own and are never shown to the claimant.
+- An unreadable domain policy refuses the sign-up or the organization
+  creation (fail-closed).
+
 ### Request access
 
 When the policy is `admin_only` with `request_access` on, the "not set up"

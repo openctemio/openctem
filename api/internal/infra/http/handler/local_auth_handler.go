@@ -79,6 +79,16 @@ func writeSignupNotAvailable(w http.ResponseWriter) {
 		"Your organization isn't set up yet. Ask your administrator to invite you.").WriteJSON(w)
 }
 
+// CodeSignupSSORequired is the error code of a sign-up refused because the
+// address's domain requires its organization's SSO. The answer names no
+// organization; the web sends the person through email-first discovery.
+const CodeSignupSSORequired apierror.Code = "SSO_REQUIRED"
+
+func writeSignupSSORequired(w http.ResponseWriter) {
+	apierror.New(http.StatusForbidden, CodeSignupSSORequired,
+		"Your organization requires single sign-on for this address. Sign in with your organization's SSO.").WriteJSON(w)
+}
+
 // NewLocalAuthHandler creates a new LocalAuthHandler.
 func NewLocalAuthHandler(
 	authService *auth.AuthService,
@@ -1258,6 +1268,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	case WritePlanLimitError(w, err):
 	case errors.Is(err, auth.ErrRegistrationDisabled), errors.Is(err, auth.ErrSignupNotAvailable):
 		writeSignupNotAvailable(w)
+	case errors.Is(err, auth.ErrSignupSSORequired):
+		writeSignupSSORequired(w)
 	case errors.Is(err, auth.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):
