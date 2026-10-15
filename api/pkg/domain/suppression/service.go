@@ -104,14 +104,20 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 		return nil, err
 	}
 
-	// Parse and set expiration if provided
+	// Every rule ends: the default when none is asked, at most a year ahead.
+	var requested *time.Time
 	if input.ExpiresAt != nil && *input.ExpiresAt != "" {
 		expiresAt, err := time.Parse(time.RFC3339, *input.ExpiresAt)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid expires_at format (expected RFC3339)", shared.ErrValidation)
 		}
-		rule.SetExpiresAt(&expiresAt)
+		requested = &expiresAt
 	}
+	end, err := RuleEnd(requested, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	rule.SetExpiresAt(&end)
 
 	// Save the rule and its audit entry atomically.
 	if err := s.repo.SaveWithAudit(ctx, rule, "created", &input.RequestedBy, map[string]any{
@@ -351,16 +357,23 @@ func (s *Service) UpdateRule(ctx context.Context, input UpdateRuleInput) (*Rule,
 	}
 	if input.ExpiresAt != nil {
 		if *input.ExpiresAt == "" {
-			rule.SetExpiresAt(nil)
-			changes["expires_at"] = nil
-		} else {
-			expiresAt, err := time.Parse(time.RFC3339, *input.ExpiresAt)
-			if err != nil {
-				return nil, fmt.Errorf("%w: invalid expires_at format (expected RFC3339)", shared.ErrValidation)
-			}
-			rule.SetExpiresAt(&expiresAt)
-			changes["expires_at"] = *input.ExpiresAt
+			return nil, ErrRuleEndRequired
 		}
+		expiresAt, err := time.Parse(time.RFC3339, *input.ExpiresAt)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid expires_at format (expected RFC3339)", shared.ErrValidation)
+		}
+		end, err := RuleEnd(&expiresAt, time.Now().UTC())
+		if err != nil {
+			return nil, err
+		}
+		rule.SetExpiresAt(&end)
+		changes["expires_at"] = *input.ExpiresAt
+	}
+	// A person reviewed and changed the rule: the review flag is done.
+	if rule.ReviewFlaggedAt() != nil && len(changes) > 0 {
+		rule.ClearReview()
+		changes["review_cleared"] = true
 	}
 
 	// Validate after changes
