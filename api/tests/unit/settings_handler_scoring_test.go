@@ -739,3 +739,31 @@ func TestRiskScoringHandler_Update_InvalidatesScoringCache(t *testing.T) {
 	h.PreviewRiskScoringChanges(previewRR, previewReq)
 	assert.Equal(t, http.StatusOK, previewRR.Code)
 }
+
+// The preview is a whole-organization dry run: six per minute per tenant,
+// then 429 with Retry-After; another tenant has its own budget.
+func TestRiskScoringHandler_Preview_RateLimitedPerTenant(t *testing.T) {
+	repo := newMockTenantRepo()
+	_, tenantA := createTenantWithSettings(repo)
+	h := newTenantHandlerForScoring(repo)
+
+	call := func(tid shared.ID) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/test-org/settings/risk-scoring/preview",
+			bytes.NewReader(marshalJSON(t, validLegacySettings())))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.PreviewRiskScoringChanges(rr, withTeamContext(req, tid))
+		return rr
+	}
+	for i := range 6 {
+		rr := call(tenantA)
+		require.NotEqual(t, http.StatusTooManyRequests, rr.Code, "call %d was limited", i+1)
+	}
+	rr := call(tenantA)
+	assert.Equal(t, http.StatusTooManyRequests, rr.Code)
+	assert.NotEmpty(t, rr.Header().Get("Retry-After"))
+
+	// Another tenant is not affected by tenant A's use.
+	tenantB := shared.NewID()
+	assert.NotEqual(t, http.StatusTooManyRequests, call(tenantB).Code)
+}

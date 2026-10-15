@@ -338,6 +338,10 @@ func (r *ScoringRepository) ClaimDrainedSummaries(ctx context.Context, limit int
 // SavePriorities writes what a finding-priority pass computed, and only
 // that: class and reason (unless a person overrode the class), derived
 // reachability, the EPSS / KEV enrichment and the SLA deadline and status.
+// The deadline only tightens (min of the stored and the computed one, a
+// missing computation keeps the stored one), so a pass that read the row
+// before a concurrent tightening cannot undo it; the findings trigger
+// trg_findings_sla_deadline_guard enforces the same rule for every writer.
 // Only a finding that is still open is written, so a finding closed while
 // the pass ran stays frozen, and no other column (status, assignee, ...) a
 // concurrent edit may have changed is overwritten. Returns how many rows
@@ -349,7 +353,14 @@ func (r *ScoringRepository) SavePriorities(ctx context.Context, tenantID shared.
 			priority_class_reason = CASE WHEN priority_class_override THEN priority_class_reason ELSE $4 END,
 			is_reachable = $5, reachable_from_count = $6,
 			epss_score = $7, epss_percentile = $8, is_in_kev = $9, kev_due_date = $10,
-			sla_deadline = $11, sla_status = $12,
+			sla_deadline = CASE
+				WHEN $11::timestamptz IS NULL THEN sla_deadline
+				WHEN sla_deadline IS NULL THEN $11
+				ELSE LEAST(sla_deadline, $11) END,
+			sla_status = CASE
+				WHEN $11::timestamptz IS NULL THEN sla_status
+				WHEN sla_deadline IS NULL OR $11 < sla_deadline THEN $12
+				ELSE sla_status END,
 			updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND ` + vulnerability.OpenStatusSQL("status")
 	saved := 0
