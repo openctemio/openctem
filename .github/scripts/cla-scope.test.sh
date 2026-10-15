@@ -20,6 +20,7 @@ allowlist=$(sed -n 's/^  CLA_ALLOWLIST: "\(.*\)"$/\1/p' "$wf")
 [ -n "$allowlist" ] || { echo "CLA_ALLOWLIST not found in $wf"; exit 1; }
 
 mkdir -p "$tmp/bin"
+# shellcheck disable=SC2016 # the stub expands $FIXTURE when it runs
 printf '#!/usr/bin/env bash\ncat "$FIXTURE"\n' > "$tmp/bin/gh"
 chmod +x "$tmp/bin/gh"
 

@@ -108,7 +108,7 @@ jobs:
           done < "$RUNNER_TEMP/commits.tsv"
           [ "$opener_allowed" = true ] || run=true
           if [ -n "$forged" ]; then
-            echo "::error::commits name an allowlisted account but are not authored, committed and signed by allowlisted accounts:$forged. Author them under your own account."
+            echo "::error::commits use an allowlisted identity without an allowlisted author, committer and verified signature:$forged"
             exit 1
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
