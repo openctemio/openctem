@@ -25,6 +25,8 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { invitationLink } from '@/features/auth/lib/invitation-token'
 
 import { createTenantInvitation, previewInvitation } from '../api/use-members'
+import { useGroups } from '@/features/access-control/api/use-groups'
+import { TeamPicker } from './team-picker'
 import type { InvitationPreview } from '../types/member.types'
 import { dateInputDaysFromNow, endOfDayISO } from '../lib/external-access'
 import { RolePicker, defaultViewerRoleId } from './role-checklist'
@@ -48,6 +50,7 @@ const KNOWN_CODES = new Set([
   'ALREADY_MEMBER',
   'ALREADY_INVITED',
   'ROLE_NOT_GRANTABLE',
+  'TEAM_NOT_GRANTABLE',
   'ADMIN_NEEDS_OWNER',
   'INVITATIONS_RATE_LIMITED',
   'PLAN_LIMIT',
@@ -86,6 +89,7 @@ export function InviteUserDialog({
   const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
+  const [groupIds, setGroupIds] = useState<string[]>([])
   const [seeded, setSeeded] = useState(false)
   const [accessEnds, setAccessEnds] = useState('')
   const [busy, setBusy] = useState(false)
@@ -103,6 +107,7 @@ export function InviteUserDialog({
   const previewSeq = useRef(0)
 
   const { roles, isLoading: rolesLoading } = useRoles({ skip: !open })
+  const { groups: teams, isLoading: teamsLoading } = useGroups(undefined, open)
   const viewerId = defaultViewerRoleId(roles)
   if (open && !seeded && viewerId) {
     setSeeded(true)
@@ -121,7 +126,7 @@ export function InviteUserDialog({
     }
     const seq = ++previewSeq.current
     const timer = setTimeout(() => {
-      previewInvitation({ email: trimmed, role_ids: roleIds })
+      previewInvitation({ email: trimmed, role_ids: roleIds, group_ids: groupIds })
         .then((p) => {
           if (seq === previewSeq.current) setPreview(p)
         })
@@ -130,7 +135,7 @@ export function InviteUserDialog({
         })
     }, 350)
     return () => clearTimeout(timer)
-  }, [open, trimmed, emailLooksValid, roleIds])
+  }, [open, trimmed, emailLooksValid, roleIds, groupIds])
 
   const codeMessage = (code: string | undefined) =>
     code && KNOWN_CODES.has(code) ? t(`org.invite.code.${code}`) : t('org.invite.code.generic')
@@ -139,6 +144,7 @@ export function InviteUserDialog({
     onOpenChange(false)
     setEmail('')
     setRoleIds([])
+    setGroupIds([])
     setSeeded(false)
     setAccessEnds('')
     setError(null)
@@ -164,6 +170,7 @@ export function InviteUserDialog({
       const invitation = await createTenantInvitation(tenantSlug, {
         email: trimmed,
         role_ids: roleIds,
+        group_ids: groupIds.length > 0 ? groupIds : undefined,
         access_expires_at: outside && accessEnds ? endOfDayISO(accessEnds) : undefined,
       })
       const who = invitation.email || trimmed
@@ -345,6 +352,21 @@ export function InviteUserDialog({
                     onChange={setRoleIds}
                     loading={rolesLoading}
                     disabled={busy}
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <Label id="invite-teams-label">{t('org.invite.teams.label')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('org.invite.teams.hint')}</p>
+                  </div>
+                  <TeamPicker
+                    teams={teams}
+                    selected={groupIds}
+                    onChange={setGroupIds}
+                    loading={teamsLoading}
+                    disabled={busy}
+                    labelledBy="invite-teams-label"
                   />
                 </div>
 
