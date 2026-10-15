@@ -15,6 +15,8 @@ import { get } from '@/lib/api/client'
 export interface CampaignCounts {
   finding_count: number
   resolved_count: number
+  /** Findings closed as resolved (a verified fix). Missing reads as 0. */
+  verified_count?: number
 }
 
 export interface CompletionWarning {
@@ -24,6 +26,12 @@ export interface CompletionWarning {
   total: number
   /** How many of the campaigns still have open findings. */
   campaigns: number
+  /**
+   * How many campaigns have nothing open but no verified fix either (all
+   * accepted, false positive or duplicate, or no findings). The API counts a
+   * campaign as done only with every finding closed and one verified fixed.
+   */
+  unverified: number
 }
 
 /** Findings in scope that are not closed. Never negative. */
@@ -33,18 +41,24 @@ export function openFindingCount(c: CampaignCounts): number {
   return Math.max(0, total - resolved)
 }
 
-/** Null when nothing is left open, so completing needs no confirmation. */
+/**
+ * Null when every campaign is done (nothing open, one finding verified
+ * fixed), so completing needs no confirmation. Otherwise completing is an
+ * explicit "close with open members" the API records.
+ */
 export function completionWarning(counts: CampaignCounts[]): CompletionWarning | null {
   let open = 0
   let total = 0
   let campaigns = 0
+  let unverified = 0
   for (const c of counts) {
     const o = openFindingCount(c)
     open += o
     total += Math.max(0, c.finding_count || 0)
     if (o > 0) campaigns += 1
+    else if (!((c.verified_count ?? 0) > 0)) unverified += 1
   }
-  return open > 0 ? { open, total, campaigns } : null
+  return open > 0 || unverified > 0 ? { open, total, campaigns, unverified } : null
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
