@@ -245,9 +245,9 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 type ticketStatusApplier struct{ vuln *finding.VulnerabilityService }
 
 func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref string,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
 ) ([]shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref)
+	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
 	if err != nil {
 		return nil, nil, err
 	}
