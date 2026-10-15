@@ -523,3 +523,34 @@ func TestCITrustScope_RunsNeverCreate(t *testing.T) {
 		t.Fatal("the trust change did not add acme")
 	}
 }
+
+// A verified run puts a proof-waiting entry into effect only while the
+// organization needs no approvals: if scan approval turned Strict after the
+// trust was saved, the entry waits for its approvals instead.
+func TestCITrustScope_ProofNeverBypassesStrict(t *testing.T) {
+	r := newCIScopeRig(t)
+	r.settings.set(r.tenant, tenant.ScopeSettings{CIScopeRequiresProof: true})
+	cfg := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	pattern := r.host + "/acme/*"
+	if e := r.entry(r.tenant, pattern); e == nil || e.Status() != scopedom.StatusInactive {
+		t.Fatalf("before proof: %+v", e)
+	}
+	r.gov.set(scangov.ModeStrict)
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, cfg.Audience, "acme/api", "main", strings.Repeat("9", 40), nil)); code != http.StatusCreated {
+		t.Fatalf("exchange: %d", code)
+	}
+	e := r.entry(r.tenant, pattern)
+	if e == nil || e.Status() != scopedom.StatusPending || e.ApprovalsRequired() < 1 {
+		t.Fatalf("proof under Strict: %+v", e)
+	}
+	active, _ := r.scope.ListActiveTargets(context.Background(), r.tenant.String())
+	for _, a := range active {
+		if a.ID().Equals(e.ID()) {
+			t.Fatal("a proven entry authorizes without its approvals")
+		}
+	}
+	// The evidence is still recorded.
+	if l := r.links(r.tenant, cfg.ID); len(l) != 1 || l[0].SeenAt == nil {
+		t.Fatalf("evidence: %+v", l)
+	}
+}
