@@ -96,9 +96,9 @@ func TestSettleExternalAccess_DefaultsTheRequiredExpiry(t *testing.T) {
 	}
 }
 
-// An address that became external after the invitation was sent still joins
-// as a viewer, whatever the invitation granted.
-func TestApplyInviteeClassification_ExternalBecomesViewer(t *testing.T) {
+// An outside invitee keeps the invited roles (RFC-095 §4.2): the membership
+// is classified external with the settled access, nothing is clamped.
+func TestApplyInviteeClassification_ExternalKeepsInvitedRoles(t *testing.T) {
 	tid, inviter := shared.NewID(), shared.NewID()
 	inv, err := tenantdom.NewInvitation(tid, "x@gmail.com", tenantdom.RoleMember, inviter, []string{roledom.MemberRoleID.String()})
 	if err != nil {
@@ -110,26 +110,20 @@ func TestApplyInviteeClassification_ExternalBecomesViewer(t *testing.T) {
 	if err := ApplyInviteeClassification(inv, m, class, SettleExternalAccess(class, tenantdom.ExternalAccess{}, now), now); err != nil {
 		t.Fatal(err)
 	}
-	if m.Role() != tenantdom.RoleViewer || !m.IsExternal() || m.ExpiresAt() == nil {
+	if m.Role() != tenantdom.RoleMember || !m.IsExternal() || m.ExpiresAt() == nil {
 		t.Fatalf("role=%s external=%v expires=%v", m.Role(), m.IsExternal(), m.ExpiresAt())
 	}
-	if ids := inv.RoleIDs(); len(ids) != 1 || ids[0] != roledom.ViewerRoleID.String() {
-		t.Fatalf("granted roles = %v, want viewer only", ids)
+	if ids := inv.RoleIDs(); len(ids) != 1 || ids[0] != roledom.MemberRoleID.String() {
+		t.Fatalf("granted roles = %v, want the invited member role", ids)
 	}
-}
 
-func TestRequireViewerOnly(t *testing.T) {
-	if err := requireViewerOnly([]string{roledom.ViewerRoleID.String()}); err != nil {
+	// With the end of access optional, no end is imposed.
+	m2, _ := tenantdom.NewMembership(shared.NewID(), tid, tenantdom.RoleMember, &inviter)
+	class.EndOptional = true
+	if err := ApplyInviteeClassification(inv, m2, class, SettleExternalAccess(class, tenantdom.ExternalAccess{}, now), now); err != nil {
 		t.Fatal(err)
 	}
-	for _, ids := range [][]string{
-		{roledom.MemberRoleID.String()},
-		{roledom.ViewerRoleID.String(), roledom.MemberRoleID.String()},
-		{roledom.AdminRoleID.String()},
-		nil,
-	} {
-		if err := requireViewerOnly(ids); !errors.Is(err, ErrExternalViewerOnly) {
-			t.Errorf("%v: want ErrExternalViewerOnly, got %v", ids, err)
-		}
+	if m2.ExpiresAt() != nil {
+		t.Fatalf("optional end of access imposed %v", m2.ExpiresAt())
 	}
 }
