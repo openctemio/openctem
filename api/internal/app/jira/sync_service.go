@@ -235,7 +235,7 @@ type CampaignEpicSink interface {
 	// in Jira. It returns the refusals to comment back on the epic (one line
 	// per finding the rules kept where it is), and handled=false when the
 	// issue is not a campaign epic.
-	HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus string) (refusals []string, handled bool, err error)
+	HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, jiraAccount string) (refusals []string, handled bool, err error)
 }
 
 // InboundRefusal is one finding an inbound ticket change did not move, with
@@ -251,7 +251,7 @@ type InboundRefusal struct {
 // fix. Never a direct repository write.
 type InboundStatusApplier interface {
 	ApplyTicketStatus(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
-		target vulnerability.FindingStatus, integration, ref string) (applied []shared.ID, refused []InboundRefusal, err error)
+		target vulnerability.FindingStatus, integration, ref, externalActor string) (applied []shared.ID, refused []InboundRefusal, err error)
 }
 
 // WorkItemFindingLister lists every finding of the tenant linked to a ticket
@@ -741,9 +741,32 @@ func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, is
 // WebhookPayload is the envelope sent by Jira issue-updated webhooks.
 // See https://developer.atlassian.com/cloud/jira/platform/webhooks/
 type WebhookPayload struct {
-	WebhookEvent string       `json:"webhookEvent"` // "jira:issue_updated"
-	Issue        WebhookIssue `json:"issue"`
-	Changelog    *Changelog   `json:"changelog,omitempty"`
+	WebhookEvent string `json:"webhookEvent"` // "jira:issue_updated"
+	// User is the Jira account that made the change (accountId on Cloud,
+	// name/key on Data Center), recorded on every finding it moves.
+	User      WebhookUser  `json:"user"`
+	Issue     WebhookIssue `json:"issue"`
+	Changelog *Changelog   `json:"changelog,omitempty"`
+}
+
+// WebhookUser is the actor block of a Jira webhook payload.
+type WebhookUser struct {
+	AccountID string `json:"accountId"`
+	Name      string `json:"name"`
+	Key       string `json:"key"`
+}
+
+// ID is the account identifier to record: accountId, else name, else key,
+// cleaned and capped.
+func (u WebhookUser) ID() string {
+	id := u.AccountID
+	if id == "" {
+		id = u.Name
+	}
+	if id == "" {
+		id = u.Key
+	}
+	return safetext.SingleLine(id, 128)
 }
 
 // WebhookIssue represents the issue block inside a Jira webhook payload.
@@ -796,7 +819,7 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 	// A campaign's epic: the campaign service decides (Done claims the fix
 	// of the campaign's findings; it never completes the campaign).
 	if s.campaignSink != nil {
-		refusals, handled, cerr := s.campaignSink.HandleEpicStatusChange(ctx, tenantID, payload.Issue.Key, newJiraStatus)
+		refusals, handled, cerr := s.campaignSink.HandleEpicStatusChange(ctx, tenantID, payload.Issue.Key, newJiraStatus, payload.User.ID())
 		if cerr != nil {
 			s.logger.Warn("jira webhook: inbound campaign epic sync failed",
 				"issue_key", logger.SanitizeValue(payload.Issue.Key), "error", cerr)
@@ -841,7 +864,7 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		return nil
 	}
 
-	applied, refused, err := s.applier.ApplyTicketStatus(ctx, tenantID, ids, newFindingStatus, "jira", payload.Issue.Key)
+	applied, refused, err := s.applier.ApplyTicketStatus(ctx, tenantID, ids, newFindingStatus, "jira", payload.Issue.Key, payload.User.ID())
 	if err != nil {
 		return fmt.Errorf("apply jira status to linked findings: %w", err)
 	}
