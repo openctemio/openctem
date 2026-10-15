@@ -29,6 +29,7 @@ import {
   type FindingStatus,
   type FindingUser,
 } from '../types'
+import { FINDINGS_CLOSED_STATUSES } from '@/features/findings/lib/list-defaults'
 
 export interface FindingTriageTarget {
   id: string
@@ -93,9 +94,12 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       })
       opts.onStatusChange?.(next)
       await invalidateFindingsCache()
+      // No Undo on a closing move (resolve): reverting it is a reopen, which
+      // a person makes deliberately from the status control.
+      const closing = (FINDINGS_CLOSED_STATUSES as readonly string[]).includes(next)
       toast.success(
         `Status updated to ${FINDING_STATUS_CONFIG[next].label}`,
-        isUndo
+        isUndo || closing
           ? { duration: 3000 }
           : {
               action: { label: 'Undo', onClick: () => void changeStatus(previous, true) },

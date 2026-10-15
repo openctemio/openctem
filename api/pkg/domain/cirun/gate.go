@@ -40,7 +40,10 @@ const (
 	// with it, for example because the pipeline was edited to skip it.
 	ReasonMissingCapability = "missing_capability"
 	ReasonOverride          = "override"
-	ReasonNoBaseline        = "no_baseline"
+	// ReasonNoResults: no scan results were uploaded to the run, so it
+	// cannot be judged (fail closed).
+	ReasonNoResults  = "no_results"
+	ReasonNoBaseline = "no_baseline"
 	// ReasonBaselineEstablished notes that this run recorded the
 	// repository's first gate baseline: its open findings stopped blocking.
 	ReasonBaselineEstablished = "baseline_established"
@@ -301,6 +304,8 @@ type GateInput struct {
 	// every open secret blocks.
 	DefaultBranch bool
 	ScanFailures  int
+	// NoResults: nothing was uploaded to the run.
+	NoResults bool
 	// FailedCapabilities are the capabilities the job reported as not clean
 	// (FailedCapabilities).
 	FailedCapabilities []CapabilityState
@@ -466,6 +471,10 @@ func Evaluate(in GateInput) GateVerdict {
 	if in.ScanFailures > 0 {
 		add(GateReason{Code: ReasonScanFailure,
 			Message: fmt.Sprintf("%d scanner(s) failed to run or to report: the run cannot be judged", in.ScanFailures)})
+	}
+	if in.NoResults {
+		add(GateReason{Code: ReasonNoResults,
+			Message: "no scan results were uploaded to this run: it cannot be judged"})
 	}
 	for _, c := range in.FailedCapabilities {
 		what := c.Name
