@@ -19,7 +19,7 @@ manual states (on hold, canceled).
 
 - States: `open`, `in_progress`, `verifying`, `done`, `closed_unverified`, `on_hold`, `canceled`, `archived`
   (rules in RFC-098 §3). `done` needs every finding closed and at least one verified fixed: resolved with
-  `resolution_method` `scan_verified`, `retest_verified` or `security_reviewed`.
+  `closure_reason` `fixed` and `verification` `covered_scan`, `retest` or `security_review`.
 - `deadline` is the earliest of the open findings' `sla_deadline`, the task's `manual_deadline` and its
   campaign's due date (end of that day, UTC), so a manual or campaign deadline only tightens.
 - `risk_points` sums the open findings' weights (P0 8, P1 4, P2 2, P3 1; unclassified: critical 4, high 2,
@@ -67,7 +67,7 @@ merge and detach, task-level mark fixed and regression tasks, the new Remediatio
 
 ## Key files
 
-- `api/migrations/002290_remediation_tasks.up.sql`, `002291`/`002292` (finding activity type)
+- `api/migrations/*_remediation_tasks.up.sql`, `*_remediation_task_activity_type*.sql` (finding activity type)
 - `api/pkg/domain/remediation/task.go`, `task_repository.go`
 - `api/internal/infra/postgres/remediation_task_repository.go`
 - `api/internal/app/remediation/tasks.go`

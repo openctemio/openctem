@@ -297,15 +297,15 @@ func moveFindingInTx(ctx context.Context, tx *sql.Tx, in retest.SettleInput, pri
 	if next == vulnerability.FindingStatusResolved {
 		_, err = tx.ExecContext(ctx, `
 			UPDATE findings
-			SET status = 'resolved', resolution = $3, resolution_method = $4,
+			SET status = 'resolved', resolution = $3, closure_reason = 'fixed', verification = $4,
 				resolved_at = NOW(), resolved_by = $5, updated_at = NOW()
 			WHERE tenant_id = $1 AND id = $2`,
 			in.TenantID.String(), in.FindingID.String(), retest.ResolutionNote(in.TemplateID),
-			string(retest.ResolutionMethodRetestVerified), nullIDPtr(in.ResolvedBy))
+			string(vulnerability.VerificationRetest), nullIDPtr(in.ResolvedBy))
 	} else {
 		_, err = tx.ExecContext(ctx, `
 			UPDATE findings
-			SET status = $3, resolution = NULL, resolution_method = NULL,
+			SET status = $3, resolution = NULL, closure_reason = NULL, verification = NULL,
 				resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
 			WHERE tenant_id = $1 AND id = $2`,
 			in.TenantID.String(), in.FindingID.String(), string(next))
