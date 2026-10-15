@@ -90,7 +90,7 @@ func (r *FindingRepository) RaiseDecisionReview(ctx context.Context, tenantID, f
 // timeline entry commit together. Returns whether it moved the finding.
 func (r *FindingRepository) ReopenResolved(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
 	res, err := r.db.execStatusWrite(ctx, `
-		UPDATE findings SET status = 'confirmed', resolution = NULL, resolution_method = NULL,
+		UPDATE findings SET status = 'confirmed', resolution = NULL, closure_reason = NULL, verification = NULL,
 			resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2 AND status IN `+fixedReopenFromSQL,
 		tenantID.String(), findingID.String())

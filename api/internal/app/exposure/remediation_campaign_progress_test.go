@@ -79,6 +79,8 @@ func (r *fakeCampaignRepo) ListNonTerminal(_ context.Context, _ int) ([]*remedia
 type fakeCounter struct {
 	total    int64
 	resolved int64
+	// verified, when set, answers the resolved-only count (else resolved).
+	verified *int64
 	calls    int
 	err      error
 }
@@ -87,6 +89,9 @@ func (c *fakeCounter) Count(_ context.Context, filter vulnerability.FindingFilte
 	c.calls++
 	if c.err != nil {
 		return 0, c.err
+	}
+	if c.verified != nil && len(filter.Statuses) == 1 && filter.Statuses[0] == vulnerability.FindingStatusResolved {
+		return *c.verified, nil
 	}
 	if len(filter.Statuses) > 0 {
 		return c.resolved, nil
@@ -150,9 +155,22 @@ func TestFindingFilterHasScope(t *testing.T) {
 	if findingFilterHasScope(empty) {
 		t.Error("empty campaign filter must have no scope")
 	}
-	scoped := campaignFilterToFindingFilter(tid, map[string]any{"severities": []any{"critical"}})
-	if !findingFilterHasScope(scoped) {
-		t.Error("severity-scoped campaign filter must have scope")
+	// Severity alone is every critical finding of the organization: no scope.
+	if findingFilterHasScope(campaignFilterToFindingFilter(tid, map[string]any{"severities": []any{"critical"}})) {
+		t.Error("a severity-only campaign filter must have no scope")
+	}
+	if findingFilterHasScope(campaignFilterToFindingFilter(tid, map[string]any{"sources": []any{"sast"}, "search": "log4j"})) {
+		t.Error("source and search only narrow: no scope")
+	}
+	for _, raw := range []map[string]any{
+		{"severities": []any{"critical"}, "tool_name": "trivy"},
+		{"cve_id": "CVE-2021-44228"},
+		{"asset_id": shared.NewID().String()},
+		{"finding_ids": []any{shared.NewID().String()}},
+	} {
+		if !findingFilterHasScope(campaignFilterToFindingFilter(tid, raw)) {
+			t.Errorf("%v must have scope", raw)
+		}
 	}
 }
 
@@ -181,7 +199,7 @@ func TestGetCampaign_RefreshesLive(t *testing.T) {
 	c, err := svc.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
 		TenantID:      tid,
 		Name:          "C",
-		FindingFilter: map[string]any{"severities": []any{"critical"}},
+		FindingFilter: map[string]any{"severities": []any{"critical"}, "tool_name": "trivy"},
 	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
@@ -209,7 +227,7 @@ func TestReconcileProgress_AutoCompletes(t *testing.T) {
 	c, err := svc.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
 		TenantID:      tid,
 		Name:          "Activate me",
-		FindingFilter: map[string]any{"severities": []any{"critical"}},
+		FindingFilter: map[string]any{"severities": []any{"critical"}, "tool_name": "trivy"},
 	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
@@ -296,7 +314,7 @@ func TestReconcileProgress_SkipsTenantsWithRemediationOff(t *testing.T) {
 
 	activate := func(tid string) string {
 		c, err := svc.CreateCampaign(ctx, CreateRemediationCampaignInput{
-			TenantID: tid, Name: "c " + tid, FindingFilter: map[string]any{"severities": []any{"critical"}},
+			TenantID: tid, Name: "c " + tid, FindingFilter: map[string]any{"severities": []any{"critical"}, "tool_name": "trivy"},
 		}, auditapp.AuditContext{})
 		if err != nil {
 			t.Fatal(err)
