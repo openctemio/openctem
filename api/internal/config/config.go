@@ -100,6 +100,10 @@ type ScopeConfig struct {
 	// DenyExtra are the operator's own names and ranges no tenant may
 	// target (SCOPE_DENY_EXTRA, comma-separated domains and CIDRs).
 	DenyExtra []string
+	// PublicCodeHostsExtra are code hosts many organizations share, in
+	// addition to the built-in list (SCOPE_PUBLIC_CODE_HOSTS_EXTRA): a
+	// repository scope entry there must name a namespace, never the host.
+	PublicCodeHostsExtra []string
 	// ZoneResolver is the DNS resolver scan-zone routing resolves hostnames
 	// with (SCAN_ZONE_RESOLVER): "system" (the platform's own resolver, which
 	// may know internal names) or host[:port] of a recursive resolver.
@@ -1489,10 +1493,11 @@ func Load() (*Config, error) {
 			WebURL:         getEnv("GITHUB_APP_WEB_URL", ""),
 		},
 		Scope: ScopeConfig{
-			ZoneResolver:    getEnv("SCAN_ZONE_RESOLVER", ""),
-			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
-			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
-			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
+			ZoneResolver:         getEnv("SCAN_ZONE_RESOLVER", ""),
+			MaxPublicCIDRv4:      getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
+			MaxPublicCIDRv6:      getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
+			DenyExtra:            getEnvSlice("SCOPE_DENY_EXTRA", nil),
+			PublicCodeHostsExtra: getEnvSlice("SCOPE_PUBLIC_CODE_HOSTS_EXTRA", nil),
 			// The public program feed (RFC-065 §16).
 			ProgramFeedDir:            getEnv("PROGRAMFEED_DIR", ""),
 			ProgramFeedRootKeyID:      getEnv("PROGRAMFEED_ROOT_KEY_ID", ""),
