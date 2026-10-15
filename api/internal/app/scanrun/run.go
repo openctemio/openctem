@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -2067,7 +2068,7 @@ func gateStepKinds(resolved scanapp.StepTool, st *scanapp.StepTargets, runContex
 		return st, nil
 	}
 	types := runTargetTypes(runContext)
-	kept, refused := resolved.Stage.FilterKinds(targets, func(t string) bool { _, ok := types[t]; return ok })
+	kept, refused := resolved.Stage.FilterKinds(targets, func(t string) (asset.TypeRef, bool) { ref, ok := types[t]; return ref, ok })
 	if len(refused) == 0 {
 		return st, nil
 	}
@@ -2089,17 +2090,23 @@ func gateStepKinds(resolved scanapp.StepTool, st *scanapp.StepTargets, runContex
 }
 
 // runTargetTypes reads the run's target_types (a map[string]string before
-// the run is stored, a map[string]any after a JSON round trip).
-func runTargetTypes(rc map[string]any) map[string]bool {
-	out := map[string]bool{}
+// the run is stored, a map[string]any after a JSON round trip): target ->
+// its stored pair.
+func runTargetTypes(rc map[string]any) map[string]asset.TypeRef {
+	out := map[string]asset.TypeRef{}
+	read := func(k, label string) {
+		t, sub, _ := strings.Cut(label, "/")
+		out[k] = asset.TypeRef{Type: asset.AssetType(t), SubType: sub}
+	}
 	switch m := rc[scanapp.RunContextKeyTargetTypes].(type) {
 	case map[string]string:
-		for k := range m {
-			out[k] = true
+		for k, v := range m {
+			read(k, v)
 		}
 	case map[string]any:
-		for k := range m {
-			out[k] = true
+		for k, v := range m {
+			label, _ := v.(string)
+			read(k, label)
 		}
 	}
 	return out
