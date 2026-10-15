@@ -1027,7 +1027,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ScopeGuardrails = scopeGuardrails
 	scopeCoverage := postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetCoverage(scopeCoverage, s.DataScope)
-	s.Scope.SetExclusionMatches(scopeCoverage) // bulk exclusion preview (research/124)
+	s.Scope.SetCITrustLinks(postgres.NewScopeCITrustLinkRepository(&postgres.DB{DB: deps.DB})) // CI trusts manage repository entries
+	s.Scope.SetExclusionMatches(scopeCoverage)                                                 // bulk exclusion preview (research/124)
 	// Program entries (RFC-065) cover nothing a program lists as out of
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})

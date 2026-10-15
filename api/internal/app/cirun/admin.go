@@ -26,6 +26,9 @@ type TrustConfigInput struct {
 	DefaultBranch string
 	Rules         cirun.Rules
 	Enabled       *bool
+	// ManageScope: add the trusted repositories to scope (nil: on for a new
+	// trust, unchanged for an existing one).
+	ManageScope *bool
 }
 
 // ListTrustConfigs returns the tenant's trust configurations.
@@ -48,9 +51,12 @@ func (s *Service) CreateTrustConfig(ctx context.Context, tenantID shared.ID, in 
 	now := s.now().UTC()
 	c := &cirun.TrustConfig{ID: shared.NewID(), TenantID: tenantID, Name: in.Name, Provider: cirun.Provider(in.Provider),
 		Issuer: in.Issuer, Audience: in.Audience, DefaultBranch: in.DefaultBranch, Rules: in.Rules, Enabled: true,
-		CreatedAt: now, UpdatedAt: now}
+		ManageScope: true, CreatedAt: now, UpdatedAt: now}
 	if in.Enabled != nil {
 		c.Enabled = *in.Enabled
+	}
+	if in.ManageScope != nil {
+		c.ManageScope = *in.ManageScope
 	}
 	if uid, err := shared.IDFromString(a.UserID); err == nil {
 		c.CreatedBy = &uid
@@ -66,6 +72,7 @@ func (s *Service) CreateTrustConfig(ctx context.Context, tenantID shared.ID, in 
 		WithResourceName(c.Name).
 		WithMessage(fmt.Sprintf("CI trust configuration %q created for %s", c.Name, c.Issuer)).
 		WithChanges(auditdom.NewChanges().SetAfter("config", trustSnapshot(c))))
+	s.syncScope(ctx, tenantID, c, false, a)
 	return c, nil
 }
 
@@ -84,6 +91,9 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 	next.Name, next.Issuer, next.Audience, next.DefaultBranch, next.Rules = in.Name, in.Issuer, in.Audience, in.DefaultBranch, in.Rules
 	if in.Enabled != nil {
 		next.Enabled = *in.Enabled
+	}
+	if in.ManageScope != nil {
+		next.ManageScope = *in.ManageScope
 	}
 	next.Normalize()
 	if err := next.Validate(); err != nil {
@@ -112,6 +122,7 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 		WithResourceName(next.Name).
 		WithMessage(fmt.Sprintf("CI trust configuration %q changed", next.Name)).
 		WithChanges(auditdom.NewChanges().Set("config", before, trustSnapshot(&next))))
+	s.syncScope(ctx, tenantID, &next, false, a)
 	return &next, nil
 }
 
@@ -126,6 +137,8 @@ func (s *Service) DeleteTrustConfig(ctx context.Context, tenantID, id shared.ID,
 	if err := s.revokePipelines(ctx, tenantID, cur, a, "the trust configuration was deleted"); err != nil {
 		return err
 	}
+	// Its scope entries are retired first: the links go with the trust.
+	s.syncScope(ctx, tenantID, cur, true, a)
 	if err := s.repo.DeleteTrustConfig(ctx, tenantID, id); err != nil {
 		return err
 	}
@@ -154,7 +167,7 @@ func (s *Service) revokePipelines(ctx context.Context, tenantID shared.ID, c *ci
 
 func trustSnapshot(c *cirun.TrustConfig) map[string]any {
 	return map[string]any{"name": c.Name, "provider": string(c.Provider), "issuer": c.Issuer, "audience": c.Audience,
-		"default_branch": c.DefaultBranch, "enabled": c.Enabled, "rules": c.Rules}
+		"default_branch": c.DefaultBranch, "enabled": c.Enabled, "rules": c.Rules, "manage_scope": c.ManageScope}
 }
 
 // -------------------------------------------------------------------- runs --

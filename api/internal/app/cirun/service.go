@@ -149,6 +149,7 @@ type Service struct {
 	stepUp    shared.RecentAuthGate
 	rules     SuppressionRules
 	modules   ModuleGuard
+	scope     ScopeLinker
 }
 
 // Deps are the service's collaborators.
@@ -365,6 +366,12 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		}
 	}
 	s.auditIssued(ctx, tenantID, in, cfg, out, legacy)
+	if !legacy {
+		// A token whose audience names this organization is evidence that
+		// one of its pipelines runs under the trust's scope; a legacy
+		// audience proves nothing about this organization.
+		s.scopeSeen(ctx, tenantID, cfg, claims, out)
+	}
 	return out, nil
 }
 
