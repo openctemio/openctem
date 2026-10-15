@@ -18,7 +18,9 @@ import (
 
 // EmailClient implements the Client interface for email notifications via SMTP.
 type EmailClient struct {
-	config EmailConfig
+	product    string // brand name in test messages and the footer
+	productURL string
+	config     EmailConfig
 }
 
 // EmailConfig holds the SMTP configuration.
@@ -57,7 +59,9 @@ func NewEmailClient(config Config) (*EmailClient, error) {
 	}
 
 	return &EmailClient{
-		config: *emailConfig,
+		product:    config.productName(),
+		productURL: config.ProductURL,
+		config:     *emailConfig,
 	}, nil
 }
 
@@ -133,7 +137,7 @@ func (c *EmailClient) Send(ctx context.Context, msg Message) (*SendResult, error
 // TestConnection tests the SMTP configuration.
 func (c *EmailClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	testMsg := Message{
-		Title:    "OpenCTEM Test Notification",
+		Title:    c.product + " Test Notification",
 		Body:     "This is a test notification to verify your email integration is working correctly.",
 		Severity: "low",
 	}
@@ -256,6 +260,8 @@ func (c *EmailClient) buildHTMLEmail(msg Message) (string, error) {
 		Fields     map[string]string
 		FooterText string
 		Timestamp  string
+		Product    string
+		ProductURL string
 	}{
 		Title:      msg.Title,
 		Body:       msg.Body,
@@ -265,6 +271,8 @@ func (c *EmailClient) buildHTMLEmail(msg Message) (string, error) {
 		Fields:     msg.Fields,
 		FooterText: msg.FooterText,
 		Timestamp:  time.Now().Format("2006-01-02 15:04:05 MST"),
+		Product:    c.product,
+		ProductURL: c.productURL,
 	}
 
 	tmpl, err := template.New("email").Parse(emailHTMLTemplate)
@@ -328,7 +336,7 @@ const emailHTMLTemplate = `<!DOCTYPE html>
         </div>
         <div class="footer">
             {{if .FooterText}}{{.FooterText}}<br>{{end}}
-            Sent by <a href="https://openctem.io">OpenCTEM</a> at {{.Timestamp}}
+            Sent by {{if .ProductURL}}<a href="{{.ProductURL}}">{{.Product}}</a>{{else}}{{.Product}}{{end}} at {{.Timestamp}}
         </div>
     </div>
 </body>
