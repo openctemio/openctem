@@ -316,7 +316,7 @@ func TestSyncFindingStatus_ClosedFindingClosesIssue(t *testing.T) {
 	if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil); err != nil {
 		t.Fatalf("to confirmed: %v", err)
 	}
-	if err := f.TransitionStatus(vulnerability.FindingStatusDuplicate, "dup", nil); err != nil {
+	if err := f.MarkAsDuplicate(shared.NewID()); err != nil {
 		t.Fatalf("to duplicate: %v", err)
 	}
 	ir := &fakeIntegrationRepo{list: []*integration.Integration{connectedGitHubIntegration(t, tenantID)}}
