@@ -30,13 +30,17 @@ import (
 //	                                            code (audited high)
 //	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
 //	                          audited)          audited; platform admins refused
-//	/admin/users              super_admin       super_admin (+ audited)
-//	/admin/administrators     —                 super_admin (audited)
+//	/admin/users              super_admin       super_admin + step-up (audited)
+//	/admin/administrators     —                 super_admin + step-up (audited)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         ops_admin+ (+ audited)
-//	/admin/platform-idp       super_admin       super_admin (audited)
-//	/admin/access-requests    any admin         ops_admin+ (approve/reject, audited)
+//	/admin/platform-idp       super_admin       super_admin + step-up (audited)
+//	/admin/access-requests    any admin         ops_admin+ (approve: + step-up;
+//	                                            reject; audited)
+//	/admin/tenants            any admin         create, first owner: ops_admin+ +
+//	                                            step-up; SSO writes: super_admin +
+//	                                            step-up (audited)
 //	/admin/settings/plans     any admin         super_admin + fresh TOTP code
 //	/admin/settings/plan-modules
 //	                          any admin         super_admin + fresh TOTP code
@@ -64,6 +68,11 @@ import (
 //	/admin/program-feed       any admin         local bundle switch: super_admin +
 //	                                            reason + fresh TOTP code (audited)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
+//
+// "step-up" is the route-level gate (middleware.RequireAdminStepUp): a fresh
+// authenticator code in X-Admin-Step-Up, or the five-minute step-up window of
+// the same console session. "fresh TOTP code" is the older check in the
+// handler (a code in the request body, every time).
 //
 // Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
 
@@ -93,6 +102,15 @@ func registerAdminRoutes(
 	// (append onto a fresh slice so the shared base chain is never aliased.)
 	superAdminOnly := append(append([]Middleware{}, adminMiddlewares...),
 		h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin))
+
+	// stepUp is the route-level step-up of a protected action: a fresh
+	// authenticator code in X-Admin-Step-Up, or the step-up window of the same
+	// console session. Every identity, privilege and platform-trust change
+	// takes it; adminWriteInventory (admin_step_up_inventory_test.go) lists
+	// every console write and fails on one that is not classified.
+	stepUp := func(purpose string) Middleware {
+		return middleware.RequireAdminStepUp(h.AdminStepUp, purpose)
+	}
 
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
 	// per route. /validate needs a verified console session. The console steps (RFC-022) run after the normal /login: the
@@ -232,8 +250,8 @@ func registerAdminRoutes(
 	// organization, requester as owner) or rejecting needs ops_admin+, audited.
 	if h.AccessRequest != nil {
 		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
-		decide := func(action string) []Middleware {
-			mws := []Middleware{requireOps}
+		decide := func(action string, extra ...Middleware) []Middleware {
+			mws := append([]Middleware{requireOps}, extra...)
 			if h.AdminAuditMiddleware != nil {
 				mws = append(mws, h.AdminAuditMiddleware.AuditLog(action, "access_request", "id"))
 			}
@@ -241,7 +259,9 @@ func registerAdminRoutes(
 		}
 		router.Group("/api/v1/admin/access-requests", func(r Router) {
 			r.GET("/", h.AccessRequest.List)
-			r.POST("/{id}/approve", h.AccessRequest.Approve, decide("access_request.approve")...)
+			// Approving creates an organization with the requester as owner:
+			// an identity change, so it takes step-up.
+			r.POST("/{id}/approve", h.AccessRequest.Approve, decide("access_request.approve", stepUp("access_request.approve"))...)
 			r.POST("/{id}/reject", h.AccessRequest.Reject, decide("access_request.reject")...)
 		}, adminMiddlewares...)
 	}
@@ -281,20 +301,21 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// Provisioning a platform administrator (links or creates the users-table
-	// account they sign in with). Super admin only; the service writes the
-	// audit row (console.admin_provisioned).
+	// Provisioning a platform administrator (always a new users-table
+	// account). Super admin only, with step-up; the service writes the audit
+	// row (console.admin_provisioned).
 	if h.AdminConsole != nil {
 		router.Group("/api/v1/admin/administrators", func(r Router) {
-			r.POST("/", h.AdminConsole.Provision)
+			r.POST("/", h.AdminConsole.Provision, stepUp("admin.provision"))
 		}, superAdminOnly...)
 
-		// The administrators' identity provider (System -> Admin sign-in). The
+		// The administrators' identity provider (System -> Admin sign-in):
+		// who may sign in to the console, so every change takes step-up. The
 		// service writes high-severity audit rows for every change.
 		router.Group("/api/v1/admin/platform-idp", func(r Router) {
 			r.GET("/", h.AdminConsole.GetPlatformIdP)
-			r.PUT("/", h.AdminConsole.PutPlatformIdP)
-			r.DELETE("/", h.AdminConsole.DeletePlatformIdP)
+			r.PUT("/", h.AdminConsole.PutPlatformIdP, stepUp("platform_idp.update"))
+			r.DELETE("/", h.AdminConsole.DeletePlatformIdP, stepUp("platform_idp.delete"))
 		}, superAdminOnly...)
 	}
 
@@ -322,11 +343,16 @@ func registerAdminRoutes(
 			return out
 		}
 		read := []Middleware{scope}
-		write := func(action string) []Middleware { return with([]Middleware{superWrite, scope}, audit(action)) }
+		// Organization SSO writes change who may sign in to the organization:
+		// super admin, step-up, audited.
+		ssoStepUp := stepUp("organization.sso_change")
+		write := func(action string) []Middleware {
+			return with([]Middleware{superWrite, ssoStepUp, scope}, audit(action))
+		}
 
 		router.Group("/api/v1/admin/tenants", func(r Router) {
 			r.GET("/", h.AdminOrganization.List)
-			r.POST("/", h.AdminOrganization.Create, with([]Middleware{opsWrite}, audit("organization.create"))...)
+			r.POST("/", h.AdminOrganization.Create, with([]Middleware{opsWrite, stepUp("organization.create")}, audit("organization.create"))...)
 			r.GET("/{tenantId}", h.AdminOrganization.Get)
 
 			// Organization users: list, and bootstrap the FIRST owner of an
@@ -334,12 +360,14 @@ func registerAdminRoutes(
 			// administrator never adds users to an organization that has an
 			// owner (409); the owner and its administrators do that.
 			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, read...)
+			// Creating the first owner (or recovering one) hands an
+			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
-				with([]Middleware{opsWrite, scope}, audit("organization.user_create"))...)
+				with([]Middleware{opsWrite, stepUp("organization.owner_create"), scope}, audit("organization.user_create"))...)
 
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
-				with([]Middleware{superWrite}, audit("organization.sso_enforcement"))...)
+				with([]Middleware{superWrite, ssoStepUp}, audit("organization.sso_enforcement"))...)
 
 			if h.SAML != nil {
 				r.GET("/{tenantId}/sso/saml", h.SAML.GetConfig, read...)
@@ -456,26 +484,26 @@ func registerAdminRoutes(
 	// (AUTHZ-8: List/Get were previously ungated, so any admin key — including
 	// readonly — could enumerate all admins). Writes are additionally audited.
 	if h.AdminUser != nil {
+		// Every roster write changes an administrator's identity or
+		// privilege: step-up on each, audited.
+		var auditUpdate, auditDelete []Middleware
+		if h.AdminAuditMiddleware != nil {
+			auditUpdate = []Middleware{h.AdminAuditMiddleware.AuditAdminUpdate()}
+			auditDelete = []Middleware{h.AdminAuditMiddleware.AuditAdminDelete()}
+		}
+		withAudit := func(purpose string, audit []Middleware) []Middleware {
+			return append([]Middleware{stepUp(purpose)}, audit...)
+		}
 		router.Group("/api/v1/admin/users", func(r Router) {
 			r.GET("/", h.AdminUser.List)
 			r.GET("/{id}", h.AdminUser.Get)
-
-			if h.AdminAuditMiddleware != nil {
-				r.PATCH("/{id}", h.AdminUser.Update, h.AdminAuditMiddleware.AuditAdminUpdate())
-				r.DELETE("/{id}", h.AdminUser.Delete, h.AdminAuditMiddleware.AuditAdminDelete())
-				if h.AdminConsole != nil {
-					r.POST("/{id}/reset-credentials", h.AdminConsole.ResetCredentials)
-					r.POST("/{id}/break-glass-test", h.AdminConsole.ConfirmBreakGlassTest)
-					r.DELETE("/{id}/idp-binding", h.AdminConsole.UnbindIdP)
-				}
-			} else {
-				r.PATCH("/{id}", h.AdminUser.Update)
-				r.DELETE("/{id}", h.AdminUser.Delete)
-				if h.AdminConsole != nil {
-					r.POST("/{id}/reset-credentials", h.AdminConsole.ResetCredentials)
-					r.POST("/{id}/break-glass-test", h.AdminConsole.ConfirmBreakGlassTest)
-					r.DELETE("/{id}/idp-binding", h.AdminConsole.UnbindIdP)
-				}
+			r.PATCH("/{id}", h.AdminUser.Update, withAudit("admin.update", auditUpdate)...)
+			r.DELETE("/{id}", h.AdminUser.Delete, withAudit("admin.delete", auditDelete)...)
+			if h.AdminConsole != nil {
+				// The console service writes these audit rows itself.
+				r.POST("/{id}/reset-credentials", h.AdminConsole.ResetCredentials, stepUp("admin.reset_credentials"))
+				r.POST("/{id}/break-glass-test", h.AdminConsole.ConfirmBreakGlassTest, stepUp("admin.break_glass_test"))
+				r.DELETE("/{id}/idp-binding", h.AdminConsole.UnbindIdP, stepUp("admin.idp_unbind"))
 			}
 		}, superAdminOnly...)
 	}
