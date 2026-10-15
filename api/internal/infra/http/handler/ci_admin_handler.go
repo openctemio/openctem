@@ -51,6 +51,7 @@ type CIAdminHandler struct {
 	coverage  CICoverageService
 	settings  CISettingsService
 	codeScan  CICodeScanService
+	baseline  CIGateBaselineService
 	refusals  CIRefusalService
 	dataScope DataScopeEnforcer
 	logger    *logger.Logger
