@@ -1393,22 +1393,31 @@ func (s *CredentialImportService) ResolveCredential(ctx context.Context, tenantI
 // leak needs a second approver: the first call leaves it as it is and
 // returns the item with its PendingDisposition.
 func (s *CredentialImportService) AcceptCredential(ctx context.Context, tenantID, credentialID, userID, notes string) (*CredentialItem, error) {
-	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, exposure.StateAccepted, notes, auditapp.AuditContext{})
+	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, exposure.StateAccepted, notes, auditapp.AuditContext{}, exposureapp.SelfApproval{})
 }
 
 // MarkCredentialFalsePositive marks a credential as a false positive, under
 // the same four-eyes rule as AcceptCredential.
 func (s *CredentialImportService) MarkCredentialFalsePositive(ctx context.Context, tenantID, credentialID, userID, notes string) (*CredentialItem, error) {
-	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, exposure.StateFalsePositive, notes, auditapp.AuditContext{})
+	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, exposure.StateFalsePositive, notes, auditapp.AuditContext{}, exposureapp.SelfApproval{})
 }
 
 // ApplyCredentialDisposition is AcceptCredential / MarkCredentialFalsePositive
 // with the request's audit context.
-func (s *CredentialImportService) ApplyCredentialDisposition(ctx context.Context, tenantID, credentialID, userID string, state exposure.State, notes string, actx auditapp.AuditContext) (*CredentialItem, error) {
+func (s *CredentialImportService) ApplyCredentialDisposition(ctx context.Context, tenantID, credentialID, userID string, state exposure.State, notes string, actx auditapp.AuditContext, self exposureapp.SelfApproval) (*CredentialItem, error) {
 	if !exposure.IsGatedState(state) {
 		return nil, fmt.Errorf("%w: unsupported state transition", shared.ErrValidation)
 	}
-	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, state, notes, actx)
+	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, state, notes, actx, self)
+}
+
+// SelfApprovalAvailable reports whether the user could approve their own
+// disposition request of a credential (false when the gate is not wired).
+func (s *CredentialImportService) SelfApprovalAvailable(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	if s.dispositions == nil {
+		return false, nil
+	}
+	return s.dispositions.SelfApprovalAvailable(ctx, tenantID, userID, CredentialApproverPermissions)
 }
 
 // RejectCredentialDisposition rejects (or, for the requester, cancels) the
@@ -1513,10 +1522,10 @@ func (s *CredentialImportService) ReactivateCredential(ctx context.Context, tena
 
 // changeCredentialState changes the state of a credential.
 func (s *CredentialImportService) changeCredentialState(ctx context.Context, tenantID, credentialID, userID string, newState exposure.State, notes string) (*CredentialItem, error) {
-	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, newState, notes, auditapp.AuditContext{})
+	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, newState, notes, auditapp.AuditContext{}, exposureapp.SelfApproval{})
 }
 
-func (s *CredentialImportService) changeCredentialStateAudited(ctx context.Context, tenantID, credentialID, userID string, newState exposure.State, notes string, actx auditapp.AuditContext) (*CredentialItem, error) {
+func (s *CredentialImportService) changeCredentialStateAudited(ctx context.Context, tenantID, credentialID, userID string, newState exposure.State, notes string, actx auditapp.AuditContext, self exposureapp.SelfApproval) (*CredentialItem, error) {
 	event, err := s.loadCredential(ctx, tenantID, credentialID)
 	if err != nil {
 		return nil, err
@@ -1535,7 +1544,8 @@ func (s *CredentialImportService) changeCredentialStateAudited(ctx context.Conte
 	if s.dispositions != nil && exposure.IsGatedState(newState) {
 		decision, err = s.dispositions.Decide(ctx, exposureapp.DispositionInput{TenantID: event.TenantID(), Event: event,
 			ActorID: parsedUserID, State: newState, Reason: notes,
-			ApproverPermissions: CredentialApproverPermissions, Audit: actx})
+			ApproverPermissions: CredentialApproverPermissions, Audit: actx,
+			SelfApprove: self.Requested, TOTPCode: self.Code})
 		if err != nil {
 			return nil, err
 		}
