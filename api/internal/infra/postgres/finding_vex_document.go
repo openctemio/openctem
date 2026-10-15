@@ -90,8 +90,8 @@ func (r *FindingRepository) MatchVEXDocument(ctx context.Context, tenantID share
 // closeNotAffected (a not_affected statement under INGEST_VEX=enforce, from
 // an uploader allowed to approve false positives), each of them that is open
 // and not from a human source (pentest, manual, bug bounty, red team) also
-// becomes false_positive with resolution_method 'vex_not_affected' and
-// resolution reason. Returns the ids it stored the statement on and the ids
+// becomes false_positive for the statement's justification, verified by
+// vex_statement, with resolution reason. Returns the ids it stored the statement on and the ids
 // it closed.
 func (r *FindingRepository) ApplyVEXDocument(ctx context.Context, tenantID shared.ID, ids []shared.ID,
 	v vulnerability.InteropVEX, closeNotAffected bool, reason string) (stored, closed []shared.ID, err error) {
@@ -132,14 +132,16 @@ func (r *FindingRepository) ApplyVEXDocument(ctx context.Context, tenantID share
 				vex_at            = $7,
 				status            = CASE WHEN t.closable THEN 'false_positive' ELSE f.status END,
 				resolution        = CASE WHEN t.closable THEN $9 ELSE f.resolution END,
-				resolution_method = CASE WHEN t.closable THEN 'vex_not_affected' ELSE f.resolution_method END,
+				closure_reason    = CASE WHEN t.closable THEN $10 ELSE f.closure_reason END,
+				verification      = CASE WHEN t.closable THEN 'vex_statement' ELSE f.verification END,
 				resolved_at       = CASE WHEN t.closable THEN NOW() ELSE f.resolved_at END,
 				updated_at        = NOW()
 			FROM t
 			WHERE f.tenant_id = $1 AND f.id = t.id
 			RETURNING f.id::text, t.closable`,
 			tenantID.String(), pq.Array(idStrs), sv.Status, nullString(sv.Justification), nullString(sv.Statement),
-			nullString(sv.Source), at, closeNotAffected, reason)
+			nullString(sv.Source), at, closeNotAffected, reason,
+			string(vulnerability.ClosureReasonFromVEXJustification(sv.Justification)))
 		if err != nil {
 			return fmt.Errorf("apply vex document: %w", err)
 		}

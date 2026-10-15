@@ -286,11 +286,11 @@ func TestResultBinding_UnsolicitedCannotAlterExistingAsset(t *testing.T) {
 func TestResultBinding_UnsolicitedCannotReopenHumanResolved(t *testing.T) {
 	r := newBindingRig(t, sensorresult.ModeWarn)
 	r.trusted(withFindings(hostReport("nmap", false, "app-1.corp.example"), "human", "machine"))
-	if _, err := r.db.Exec(`UPDATE findings SET status = 'resolved', resolution = 'fixed', resolution_method = 'security_reviewed'
+	if _, err := r.db.Exec(`UPDATE findings SET status = 'resolved', resolution = 'fixed', closure_reason = 'fixed', verification = 'security_review'
 		WHERE tenant_id = $1 AND rule_id = 'human'`, r.tenant.String()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.db.Exec(`UPDATE findings SET status = 'resolved', resolution = 'auto_fixed', resolution_method = 'scan_verified'
+	if _, err := r.db.Exec(`UPDATE findings SET status = 'resolved', resolution = 'auto_fixed', closure_reason = 'fixed', verification = 'covered_scan'
 		WHERE tenant_id = $1 AND rule_id = 'machine'`, r.tenant.String()); err != nil {
 		t.Fatal(err)
 	}
