@@ -59,6 +59,7 @@ var findingStatusWriters = map[string]int{
 	"ci_coverage_repository.go":            2, // staleFromSQL, sourceRetiredFromSQL
 	"finding_acceptance_expiry.go":         1, // accepted -> confirmed when the acceptance ended (guarded by status under lock)
 	"finding_branch_only.go":               1, // branchOnlyExpiryFromSQL
+	"finding_decision_review.go":           1, // ReopenResolved: resolved -> confirmed, guarded by fixedReopenFromSQL
 	"finding_correlation_repository.go":    2, // correlate: open -> duplicate (isOpenStatus checked under lock); release: duplicate -> prior open status
 	"finding_coverage_autoresolve.go":      2, // autoResolveFromSQL
 	"finding_group_repository.go":          1, // UserFromStatuses($6)
