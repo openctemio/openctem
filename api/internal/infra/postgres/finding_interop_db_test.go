@@ -191,24 +191,26 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 		t.Fatalf("enforce: %v", err)
 	}
 	if len(ids) != 1 || ids[0] != open {
-		t.Fatalf("enforce closed %v, want only %s", ids, open)
+		t.Fatalf("enforce requested %v, want only %s", ids, open)
 	}
-	var status, resolution, method string
-	if err := f.db.QueryRowContext(ctx, `SELECT status, resolution, resolution_method FROM findings WHERE id = $1`, open.String()).
-		Scan(&status, &resolution, &method); err != nil {
-		t.Fatal(err)
+	// A false positive needs four-eyes: the statement only requests it.
+	var justification, actor, reqStatus string
+	if err := f.db.QueryRowContext(ctx, `SELECT justification, requested_by_actor, status FROM finding_status_approvals
+		WHERE tenant_id = $1 AND finding_id = $2 AND requested_status = 'false_positive'`, f.tenant.String(), open.String()).
+		Scan(&justification, &actor, &reqStatus); err != nil {
+		t.Fatalf("pending request: %v", err)
 	}
-	if status != "false_positive" || method != "vex_not_affected" || !strings.Contains(resolution, "component_not_present") || !strings.Contains(resolution, "vex-doc") {
-		t.Errorf("closed finding: %s / %s / %s", status, method, resolution)
+	if actor != vulnerability.ApprovalActorVEX || reqStatus != "pending" || !strings.Contains(justification, "component_not_present") {
+		t.Errorf("request: actor=%s status=%s justification=%q", actor, reqStatus, justification)
 	}
-	for id, want := range map[shared.ID]string{accepted: "accepted", resolved: "resolved", pentest: "confirmed", foreign: "new", otherTool: "new"} {
+	for id, want := range map[shared.ID]string{open: "new", accepted: "accepted", resolved: "resolved", pentest: "confirmed", foreign: "new", otherTool: "new"} {
 		if got := f.status(t, id); got != want {
-			t.Errorf("finding %s is %q, want %q (must not be touched)", id, got, want)
+			t.Errorf("finding %s is %q, want %q (a statement never changes the status)", id, got, want)
 		}
 	}
-	// Idempotent: a second run closes nothing more.
+	// Idempotent: a second run requests nothing more (one pending request).
 	if ids, _ := repo.ApplyVEXNotAffected(ctx, f.tenant, "trivy", items, false); len(ids) != 0 {
-		t.Errorf("second run closed %v", ids)
+		t.Errorf("second run requested %v", ids)
 	}
 }
 
