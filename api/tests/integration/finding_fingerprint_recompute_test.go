@@ -331,7 +331,7 @@ func TestFindingMergeCoversEveryFindingReference(t *testing.T) {
 
 // Both copies wait for a decision: one pending request per finding holds
 // after the merge. The survivor's request stands; the loser's is kept,
-// cancelled, in the survivor's history.
+// canceled, in the survivor's history.
 func TestApproveAndMerge_OnePendingApprovalSurvives(t *testing.T) {
 	f := newMergeFixture(t, "merge-approvals")
 	old := time.Now().Add(-48 * time.Hour)
@@ -348,6 +348,6 @@ func TestApproveAndMerge_OnePendingApprovalSurvives(t *testing.T) {
 		t.Fatalf("pending requests on the survivor: %d", n)
 	}
 	if n := f.count(`SELECT count(*) FROM finding_status_approvals WHERE finding_id=$1 AND status='canceled'`, keepCopy.String()); n != 1 {
-		t.Fatalf("the loser's request is not kept cancelled: %d", n)
+		t.Fatalf("the loser's request is not kept canceled: %d", n)
 	}
 }
