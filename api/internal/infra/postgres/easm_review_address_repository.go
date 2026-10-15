@@ -95,9 +95,9 @@ func (r *AttributionRepository) sensorNames(ctx context.Context, tenantID shared
 		return out, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id::text, CASE WHEN tenant_id = $1 AND NOT is_platform_sensor THEN name ELSE 'platform sensor' END
+		SELECT id::text, CASE WHEN tenant_id = $1 AND scope = 'organization' THEN name ELSE 'platform sensor' END
 		FROM sensors
-		WHERE id = ANY($2::uuid[]) AND (tenant_id = $1 OR is_platform_sensor)`,
+		WHERE id = ANY($2::uuid[]) AND (tenant_id = $1 OR scope = 'instance')`,
 		tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("read sensor names for review evidence: %w", err)

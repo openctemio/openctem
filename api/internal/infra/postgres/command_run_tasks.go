@@ -133,7 +133,7 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		            THEN jsonb_array_length(commands.result->'metadata'->'refused_targets') ELSE 0 END
 		FROM commands
 		LEFT JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
-		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id AND NOT s.is_platform_sensor
+		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id AND s.scope = 'organization'
 		WHERE `+where+`
 		ORDER BY commands.created_at, commands.id
 		LIMIT $`+strconv.Itoa(len(args)), args...)

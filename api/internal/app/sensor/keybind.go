@@ -137,7 +137,7 @@ func (s *SensorService) BindSigningKey(ctx context.Context, id SensorIdentity, i
 		return &KeyBindResult{SensorID: a.ID, TenantID: tenantID, Name: a.Name, KeyID: id.KeyThumbprint(), Confirmed: true}, nil
 	}
 	// A key-bound sensor, a paused one or a platform sensor never binds.
-	if a.KeyBound() || id.KeyBound() || id.Paused || a.IsPlatformSensor || a.Status != sensordom.SensorStatusActive {
+	if a.KeyBound() || id.KeyBound() || id.Paused || a.IsShared() || a.Status != sensordom.SensorStatusActive {
 		return refuse("not an active bearer-key sensor", sensordom.ErrKeyBindConflict)
 	}
 	required, err := s.KeyBindRequiresApproval(ctx, tenantID)
