@@ -58,11 +58,11 @@ const CodeCaptchaFailed apierror.Code = "CAPTCHA_FAILED"
 // SetSignupPolicy wires the platform sign-up policy.
 func (h *LocalAuthHandler) SetSignupPolicy(p signupdom.PolicySource) { h.signupPolicy = p }
 
-// registrationEnabled reports whether anyone may create an account: the
-// self_service sign-up mode.
+// registrationEnabled reports whether some public account sign-up is open
+// (accounts domain or open in the policy in force).
 func (h *LocalAuthHandler) registrationEnabled(r *http.Request) bool {
 	if h.signupPolicy != nil {
-		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
+		return h.signupPolicy.Current(r.Context()).AllowsPublicSignup()
 	}
 	return h.authConfig.SignupOpen()
 }

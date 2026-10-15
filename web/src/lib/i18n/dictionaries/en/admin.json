@@ -589,5 +589,15 @@
   "admin.signup.confirmBody": "Existing organizations, users and sessions are not affected. The change is recorded in the admin audit log and the other administrators are emailed.",
   "admin.signup.saving": "Saving",
   "admin.signup.confirm": "Confirm",
-  "admin.signup.code": "Code from your authenticator"
+  "admin.signup.code": "Code from your authenticator",
+  "admin.signup.accounts.title": "Who can create an account?",
+  "admin.signup.accounts.closed": "Nobody by public sign-up",
+  "admin.signup.accounts.closedHint": "Accounts come from you, an invitation or an organization's single sign-on.",
+  "admin.signup.accounts.domain": "People on an organization's verified domain",
+  "admin.signup.accounts.domainHint": "Someone whose address is on a domain an organization verified and opened to joining may sign up; they join that organization and never create one.",
+  "admin.signup.accounts.open": "Anyone",
+  "admin.signup.accounts.openHint": "Anyone may sign up (disposable addresses are refused). Every address is verified by e-mail.",
+  "admin.signup.accounts.locked": "Locked by the server configuration (SIGNUP_MODE).",
+  "admin.signup.mode.selfServiceNeedsOpen": "Needs \"Anyone\" above: people must be able to sign up to create an organization.",
+  "admin.signup.confirmAccounts": "New accounts: {accounts}."
 }
