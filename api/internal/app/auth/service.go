@@ -126,9 +126,10 @@ type AuthService struct {
 	// revocations records revoked session ids so their access tokens stop
 	// working immediately (nil = they expire naturally).
 	revocations SessionRevocationStore
-	// inviteeClassifier classifies an invitee at acceptance (external
-	// members join as viewers with an expiry, RFC-058).
-	inviteeClassifier InviteeClassifier
+	// invitationAcceptor accepts an invitation for the refresh-token path
+	// (TenantService.AcceptInvitation), so both acceptance paths apply the
+	// same rules.
+	invitationAcceptor InvitationAcceptor
 	// Home-realm sign-in for external members (home_realm.go, RFC-058).
 	homeTrusts TrustLookup
 	homeOwners HomeDomainOwnerLookup
@@ -146,14 +147,16 @@ type LapsedDomainChecker interface {
 // SetLapsedDomainChecker wires the lapsed-domain rule for password resets.
 func (s *AuthService) SetLapsedDomainChecker(c LapsedDomainChecker) { s.lapsedDomains = c }
 
-// InviteeClassifier classifies an invitee at acceptance and applies the outcome
-// to the new membership (TenantService.ClassifyAcceptedInvitation).
-type InviteeClassifier interface {
-	ClassifyAcceptedInvitation(ctx context.Context, inv *tenantdom.Invitation, m *tenantdom.Membership, now time.Time) error
+// InvitationAcceptor accepts an invitation for a signed-in user and returns
+// the new membership (TenantService.AcceptInvitation): who may be invited,
+// the invitee's classification, the inviter's authority now, seats, the role
+// grant and the audit.
+type InvitationAcceptor interface {
+	AcceptInvitation(ctx context.Context, token string, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error)
 }
 
-// SetInviteeClassifier wires external-member classification at acceptance.
-func (s *AuthService) SetInviteeClassifier(c InviteeClassifier) { s.inviteeClassifier = c }
+// SetInvitationAcceptor wires invitation acceptance for the refresh-token path.
+func (s *AuthService) SetInvitationAcceptor(a InvitationAcceptor) { s.invitationAcceptor = a }
 
 // SMTPAvailabilityCheck reports whether outbound email is available, either via
 // the system SMTP config or for a specific tenant. Used by smart email
@@ -1099,6 +1102,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
+	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
 
 	// Rotate before minting: the presented token is spent first, and a
 	// failure to record that refuses the exchange. Marking it after minting
@@ -1395,6 +1401,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, err
 	}
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 
@@ -2055,106 +2064,46 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Get the invitation by token (stored hashed at rest — hash before lookup)
-	invitation, err := s.tenantRepo.GetInvitationByToken(ctx, crypto.HashToken(input.InvitationToken))
+	// The acceptance itself is the organization's: who may be invited, the
+	// invitee's classification, the inviter's authority now, seats and the
+	// audit (TenantService.AcceptInvitation), exactly as for a signed-in
+	// acceptance.
+	if s.invitationAcceptor == nil {
+		return nil, errors.New("invitation acceptance is not configured")
+	}
+	membership, err := s.invitationAcceptor.AcceptInvitation(ctx, input.InvitationToken, u.ID(), u.Email(),
+		auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email()})
 	if err != nil {
-		if errors.Is(err, shared.ErrNotFound) {
-			return nil, fmt.Errorf("%w: invitation not found or expired", shared.ErrNotFound)
-		}
-		return nil, fmt.Errorf("failed to get invitation: %w", err)
-	}
-
-	// Verify the invitation is for this user's email (case-insensitive)
-	if !strings.EqualFold(invitation.Email(), u.Email()) {
-		return nil, fmt.Errorf("%w: this invitation was sent to a different email address", shared.ErrValidation)
-	}
-
-	if !invitation.IsPending() {
-		if invitation.IsExpired() {
-			return nil, fmt.Errorf("%w: invitation has expired", shared.ErrValidation)
-		}
-		if invitation.IsAccepted() {
-			return nil, fmt.Errorf("%w: invitation has already been accepted", shared.ErrValidation)
-		}
-	}
-
-	// Check if user is already a member. A suspended membership cannot be
-	// bypassed via invitation accept — that would silently erase the
-	// suspension audit trail. The admin must reactivate via Members page.
-	// An offboarded tombstone is not a membership: accepting re-joins from
-	// zero (AcceptInvitationTx re-activates the row).
-	existingMembership, err := s.tenantRepo.GetMembership(ctx, u.ID(), invitation.TenantID())
-	if err == nil && !existingMembership.IsOffboarded() {
-		if existingMembership.IsSuspended() {
-			return nil, fmt.Errorf(
-				"%w: your access to this team is suspended — please contact an administrator to be reactivated",
-				shared.ErrValidation,
-			)
-		}
-		return nil, fmt.Errorf("%w: you are already a member of this team", shared.ErrValidation)
-	}
-	if err != nil && !errors.Is(err, shared.ErrNotFound) {
-		return nil, fmt.Errorf("failed to check membership: %w", err)
+		return nil, err
 	}
 
 	// Get the tenant info
-	t, err := s.tenantRepo.GetByID(ctx, invitation.TenantID())
+	t, err := s.tenantRepo.GetByID(ctx, membership.TenantID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant: %w", err)
 	}
-	// The organization may have restricted member email domains after the
-	// invitation was sent.
-	if !t.TypedSettings().Security.EmailDomainAllowed(u.Email()) {
-		return nil, fmt.Errorf("%w: email domain is not allowed for this organization", shared.ErrValidation)
-	}
 
-	// Accept the invitation
-	if err := invitation.Accept(); err != nil {
+	// The token minted below obeys the organization's sign-in policies like
+	// any other: SSO enforcement, required 2FA, personal accounts, and 2FA for
+	// a privileged outside member. When one refuses, the person has joined but
+	// gets no token yet; they meet the requirement (for example set up 2FA)
+	// and sign in to the organization.
+	if err := s.enforceSSOPolicy(ctx, sess, t.ID().String(), membership.Role().String()); err != nil {
 		return nil, err
 	}
-
-	// Create membership. The role follows the invitation's RBAC roles: a
-	// viewer-only invitation must not become a 'member' membership, which the
-	// tenant_members trigger would turn into the member role.
-	invitedBy := invitation.InvitedBy()
-	membership, err := tenantdom.NewMembership(u.ID(), invitation.TenantID(), accesscontrol.InvitationMembershipRole(invitation), &invitedBy)
-	if err != nil {
+	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), t.ID().String()); err != nil {
 		return nil, err
 	}
-	// Someone outside the organization joins as a viewer, with an expiry when
-	// no organization manages their address (RFC-058).
-	if s.inviteeClassifier != nil {
-		if err := s.inviteeClassifier.ClassifyAcceptedInvitation(ctx, invitation, membership, time.Now().UTC()); err != nil {
-			return nil, err
-		}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), t.ID().String()); err != nil {
+		return nil, err
 	}
-
-	// Use transaction to ensure atomicity
-	if err := s.tenantRepo.AcceptInvitationTx(ctx, invitation, membership); err != nil {
-		return nil, fmt.Errorf("failed to accept invitation: %w", err)
-	}
-
-	// Make the invitation's RBAC roles the user's complete role set, replacing
-	// the role the trigger copied from the membership. Best-effort: on failure
-	// the membership keeps that trigger role, which is no broader than the
-	// invitation, and an administrator can fix roles from Settings.
-	if s.roleService != nil && len(invitation.RoleIDs()) > 0 {
-		invitedByStr := invitation.InvitedBy().String()
-		invActx := auditapp.AuditContext{ActorID: invitedByStr, TenantID: invitation.TenantID().String()}
-		if err := s.roleService.GrantExactRoles(ctx, invitation.TenantID().String(), u.ID().String(),
-			invitation.RoleIDs(), invitedByStr, invActx); err != nil {
-			s.logger.Error("failed to apply invitation roles on accept",
-				"invitation_id", invitation.ID().String(),
-				"user_id", u.ID().String(),
-				"error", err)
-		}
+	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), t.ID().String()); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("invitation accepted with refresh token",
-		"invitation_id", invitation.ID().String(),
 		"user_id", u.ID().String(),
 		"tenant_id", t.ID().String(),
-		"role_count", len(invitation.RoleIDs()),
 	)
 
 	// Mark old refresh token as used (token rotation)
