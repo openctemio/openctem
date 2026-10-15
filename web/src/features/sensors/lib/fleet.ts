@@ -46,14 +46,35 @@ export function scanningSensorLine(channel: ReleaseChannel) {
 
 /** What a health reason is about, for the "Needs attention" caption. */
 export type AttentionKind =
-  'backlog' | 'key' | 'version' | 'sdk' | 'heartbeat' | 'tools' | 'content' | 'error'
+  | 'offline'
+  | 'backlog'
+  | 'key'
+  | 'version'
+  | 'sdk'
+  | 'heartbeat'
+  | 'tools'
+  | 'content'
+  | 'preflight'
+  | 'error'
 
-function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKind[] {
+/**
+ * The states of an enabled sensor that is not connected: it stopped
+ * heartbeating, or never connected after it was created. Each needs someone
+ * to look at the host ("Idle" is a one-shot sensor between runs, not a fault).
+ */
+export const NOT_CONNECTED_STATES: SensorState[] = ['stale', 'offline', 'never_connected']
+
+function attentionKindsOf(
+  sensor: Sensor,
+  channel: ReleaseChannel,
+  state: SensorState
+): AttentionKind[] {
   const kinds: AttentionKind[] = []
+  if (NOT_CONNECTED_STATES.includes(state)) kinds.push('offline')
   for (const r of sensor.health_reasons ?? []) {
     const kind: AttentionKind | null = r.code.startsWith('outbox_')
       ? 'backlog'
-      : r.code.startsWith('key_')
+      : r.code.startsWith('key_') || r.code === 'identity_cloned'
         ? 'key'
         : r.code === 'version_unsupported'
           ? 'version'
@@ -65,9 +86,11 @@ function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKin
                 ? 'tools'
                 : r.code.startsWith('content_')
                   ? 'content'
-                  : r.code === 'error_reported'
-                    ? 'error'
-                    : null
+                  : r.code.startsWith('config_')
+                    ? 'preflight'
+                    : r.code === 'error_reported'
+                      ? 'error'
+                      : null
     if (kind && !kinds.includes(kind)) kinds.push(kind)
   }
   // Older APIs send no reasons: derive what the page can see itself.
@@ -84,16 +107,20 @@ function isEnabled(state: SensorState): boolean {
   return state !== 'disabled' && state !== 'revoked'
 }
 
-/** An enabled sensor with something to fix (the "Needs attention" metric). */
+/**
+ * An enabled sensor with something to fix (the "Needs attention" metric): not
+ * connected, a health reason the API reports (backlog, key, version, SDK
+ * advisory, heartbeat, tools, content, failed preflight, errors), or below
+ * its product's minimum.
+ */
 export function needsAttention(
   sensor: Sensor,
   now: number,
   thresholds: FleetThresholds | undefined,
   channel: ReleaseChannel
 ): boolean {
-  return (
-    isEnabled(sensorState(sensor, now, thresholds)) && attentionKindsOf(sensor, channel).length > 0
-  )
+  const state = sensorState(sensor, now, thresholds)
+  return isEnabled(state) && attentionKindsOf(sensor, channel, state).length > 0
 }
 
 export interface FleetSummary {
@@ -160,7 +187,7 @@ export function summarizeFleet(
     if (s.protocol) hasProtocolInfo = true
     if (isEnabled(state) && sensorProtocolOf(s) === 'v1') protocolV1++
     if (isEnabled(state)) {
-      const kinds = attentionKindsOf(s, channel)
+      const kinds = attentionKindsOf(s, channel, state)
       if (kinds.length) attention++
       for (const k of kinds) if (!attentionKinds.includes(k)) attentionKinds.push(k)
     }
