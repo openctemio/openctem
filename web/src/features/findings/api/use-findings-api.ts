@@ -556,9 +556,36 @@ export function useRequestApproval(findingId: string) {
         }
       }
     ) => {
-      const response = await post(url, arg)
+      // Usually a pending request; an approved one (single_person) when the
+      // organization lets the requester decide this false positive alone.
+      const response = await post<ApiApproval>(url, arg)
       return response
     }
+  )
+}
+
+/** How a false positive on one finding is decided now. */
+export interface FalsePositivePolicy {
+  fp_approval: FPApprovalLevel
+  /** One person holding findings:approve may decide it alone. */
+  single_person: boolean
+  /** ...and the caller is such a person: it applies at once. */
+  can_decide_alone: boolean
+  /** The finding is material (always four-eyes under high_and_above). */
+  material: boolean
+  pending_fp_approval?: FPApprovalLevel
+  pending_fp_approval_at?: string
+}
+
+/** GET /api/v1/findings/{id}/approvals/policy, only while `enabled`. */
+export function useFalsePositivePolicy(findingId: string, enabled: boolean) {
+  const { currentTenant } = useTenant()
+  return useSWR<FalsePositivePolicy>(
+    currentTenant && enabled && findingId
+      ? `/api/v1/findings/${encodeURIComponent(findingId)}/approvals/policy`
+      : null,
+    get,
+    defaultConfig
   )
 }
 
@@ -626,9 +653,19 @@ export function selfApproveFindingApproval(id: string, input: { reason: string; 
 }
 
 /** The organization's finding approval settings. */
+/** Who decides a false positive (accepted risk always needs a second person). */
+export type FPApprovalLevel = 'all' | 'high_and_above' | 'off'
+
 export interface FindingApprovalSettings {
   /** Emailed when the sole member approves their own request. */
   backup_contact_email: string
+  /** The false-positive approval level in force. */
+  fp_approval?: FPApprovalLevel
+  /** A lower level chosen less than 24 hours ago, in force at pending_fp_approval_at. */
+  pending_fp_approval?: FPApprovalLevel
+  pending_fp_approval_at?: string
+  /** Share (0-10 %) of single-person false positives flagged for a second look. */
+  second_look_percent?: number
 }
 
 const FINDING_APPROVAL_SETTINGS_URL = '/api/v1/organization/settings/finding-approvals'
