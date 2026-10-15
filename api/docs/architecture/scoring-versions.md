@@ -108,6 +108,31 @@ Metrics: `openctem_finding_priority_queue_depth`,
 - A reopened finding is queued by the reopen trigger and recomputed with the
   current version.
 
+## SLA on a priority change
+
+The SLA applier (`internal/app/sla/applier.go`) computes a finding's first
+deadline from detection: `first_detected_at + SLA(class)`. After that,
+automatic recomputes only tighten:
+
+| Change | Deadline |
+|---|---|
+| priority rises (rule, model, KEV, EPSS, asset context) | `min(old, now + SLA(new class))`: the new SLA counts from the change, never a deadline already in the past |
+| priority drops | kept; an overdue finding stays overdue |
+| SLA policy shortened | `min(old, now + new days)` |
+| SLA policy lengthened | kept; new findings use the new policy |
+| finding closed | kept as it was when closed |
+
+A deadline that moves later by itself would hide overdue work, so an
+extension is an explicit decision (a regression or an expired acceptance
+starts a new clock with its own `sla_restarted` entry), never a side effect.
+The ingest upsert applies the same rule (`LEAST` of the stored and incoming
+deadline for an open finding).
+
+Every tightening of an open finding writes a `sla_deadline_tightened`
+timeline entry (database trigger, whatever wrote the deadline) with both
+deadlines, both classes and the reason (`priority_raised` or
+`sla_policy_changed`).
+
 ## Security
 
 - Settings are a security control: they decide what is P0 and when work is
@@ -124,10 +149,10 @@ Metrics: `openctem_finding_priority_queue_depth`,
 ## Shipped and planned
 
 Shipped: versions, the durable queue, triggers, the worker and reconcile,
-closed findings frozen.
+closed findings frozen; SLA deadlines that only tighten, with a timeline
+entry.
 
-Planned in the same series: SLA deadlines that only tighten on a priority
-rise or policy change (with a timeline entry); a whole-tenant preview before
+Planned in the same series: a whole-tenant preview before
 applying risk settings, with step-up; version stamps on risk snapshots and
 markers on trend charts; one summary notification per scoring change instead
 of one per finding; recompute scoped to the CVEs whose EPSS or KEV status
@@ -141,4 +166,5 @@ changed.
 - `internal/app/reclassify/reclassifier.go`, `queue.go`
 - `internal/infra/controller/priority_reclassify.go`
 - `internal/app/asset/risk_freshness.go` (risk version stamp)
-- `tests/integration/scoring_versions_test.go`
+- `internal/app/sla/applier.go`, `migrations/*_sla_deadline_tighten_only.up.sql`
+- `tests/integration/scoring_versions_test.go`, `tests/integration/sla_tighten_only_test.go`
