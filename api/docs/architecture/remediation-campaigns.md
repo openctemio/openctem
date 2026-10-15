@@ -162,6 +162,8 @@ separate `CampaignKeyResolver` seam:
   (`KeyRepository.CountByKey` → total + resolved), not the findings filter.
 - **Resolve** — delegated to the same guarded group-resolve path as the standalone
   "resolve group" action (`GroupService.ResolveGroup`, abuse-guarded, non-pentest).
+  Every campaign resolve, keyed or not, is a "mark fixed" that never closes a
+  finding (see `finding-status-lifecycle.md`, "Mark fixed").
 
 **Safety invariant:** a keyed campaign's resolve branches *before* the generic
 filter is ever built, and **fails closed** if the key resolver is unwired. This is
