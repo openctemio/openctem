@@ -21,7 +21,7 @@
 # Retired and removed names live in config.go (retiredEnv, removedEnv).
 
 # Prefixes the API owns: any variable under them must be listed here.
-prefixes: [APP_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_]
+prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_]
 
 vars:
   - name: APP_ENV
@@ -36,13 +36,89 @@ vars:
     group: "Application"
     type: string
     default: "openctem"
-    description: "Application name used in logs and in email templates."
+    description: "Technical name of the service in logs. The product name users see is `BRAND_NAME`."
   - name: APP_URL
     component: api
     group: "Application"
     type: string
     example: "http://localhost:8080"
     description: "Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment."
+  - name: BRAND_FILE
+    component: api
+    group: "Brand"
+    type: path
+    description: "Optional YAML file with the brand settings (`name`, `short_name`, `primary_color`, `docs_url`, `website_url`, `support_url`, `support_email`, `terms_url`, `privacy_url`, `email_footer`, `powered_by`, `logo_light_file`, `logo_dark_file`, `favicon_file`; image paths relative to the file). A `BRAND_*` variable wins over the file. See `docs/architecture/brand.md`."
+  - name: BRAND_NAME
+    component: api
+    group: "Brand"
+    type: string
+    description: "Default `OpenCTEM`. Product name shown in the console, emails, reports and notifications (at most 64 characters; no markup characters)."
+  - name: BRAND_SHORT_NAME
+    component: api
+    group: "Brand"
+    type: string
+    description: "Short product name for narrow places (the sidebar, the browser tab). Defaults to `BRAND_NAME`."
+  - name: BRAND_PRIMARY_COLOR
+    component: api
+    group: "Brand"
+    type: string
+    description: "Primary color as `#rrggbb`. Unset keeps the theme color."
+  - name: BRAND_DOCS_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Default `https://docs.openctem.io`. Documentation site (https). Documentation links in the console and API messages keep their path on this origin."
+  - name: BRAND_WEBSITE_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Default `https://openctem.io`. Product website (https)."
+  - name: BRAND_SUPPORT_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Support page (https). Unset hides the support link."
+  - name: BRAND_SUPPORT_EMAIL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Default `info@openctem.io`. Support email address."
+  - name: BRAND_TERMS_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Terms of service (https). The admin console legal settings win when set there."
+  - name: BRAND_PRIVACY_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Privacy policy (https). The admin console legal settings win when set there."
+  - name: BRAND_EMAIL_FOOTER
+    component: api
+    group: "Brand"
+    type: string
+    description: "Plain-text line added to the footer of every email (at most 500 characters)."
+  - name: BRAND_POWERED_BY
+    component: api
+    group: "Brand"
+    type: bool
+    default: "true"
+    description: "Show a \"Powered by OpenCTEM\" credit next to a brand other than OpenCTEM."
+  - name: BRAND_LOGO_LIGHT_FILE
+    component: api
+    group: "Brand"
+    type: path
+    description: "Logo for light backgrounds: PNG, JPEG, WebP or SVG, at most 512 KiB. SVG is reduced to drawing elements; a file with script, external references or event handlers is refused at startup. Unset keeps the built-in logo."
+  - name: BRAND_LOGO_DARK_FILE
+    component: api
+    group: "Brand"
+    type: path
+    description: "Logo for dark backgrounds (same rules as `BRAND_LOGO_LIGHT_FILE`). Unset uses the light logo."
+  - name: BRAND_FAVICON_FILE
+    component: api
+    group: "Brand"
+    type: path
+    description: "Browser tab icon: PNG, ICO or SVG, at most 512 KiB. Unset keeps the built-in icon."
   - name: MAX_CONCURRENT_REQUESTS
     component: api
     group: "HTTP server"
@@ -1608,7 +1684,7 @@ vars:
     component: tool
     group: "Administration tools"
     type: string
-    description: "`bootstrap-admin`: sender name (default OpenCTEM)."
+    description: "`bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM)."
   - name: BOOTSTRAP_SMTP_STARTTLS
     component: tool
     group: "Administration tools"
