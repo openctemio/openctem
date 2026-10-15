@@ -1430,6 +1430,7 @@
   "scans.ci.reason.severity": "Severity",
   "scans.ci.reason.scan_failure": "Scan failure",
   "scans.ci.reason.missing_capability": "Expected scan missing",
+  "scans.ci.reason.capability_failed": "Scan did not reach the platform",
   "scans.ci.reason.override": "Break-glass",
   "scans.ci.reason.no_baseline": "No baseline",
   "scans.ci.reason.secret_pre_existing": "Secret already on the default branch",

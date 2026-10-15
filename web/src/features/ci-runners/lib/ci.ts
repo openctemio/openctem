@@ -432,6 +432,7 @@ export const REASON_LABEL: Record<string, string> = {
   severity: 'Severity',
   scan_failure: 'Scan failure',
   missing_capability: 'Expected scan missing',
+  capability_failed: 'Scan did not reach the platform',
   override: 'Break-glass',
   no_baseline: 'No baseline',
   secret_pre_existing: 'Secret already on the default branch',
