@@ -6,7 +6,7 @@
   (`BRAND_LOGO_LIGHT_FILE`, `BRAND_LOGO_DARK_FILE`, `BRAND_FAVICON_FILE`), or
   one YAML `BRAND_FILE`, set the brand users see. Unset, everything stays
   OpenCTEM.
-- Public `GET /api/v1/brand` and `GET /api/v1/brand/assets/{kind}` serve it to
+- Public `GET /api/v1/brand` and `GET /api/v1/brand/images/{kind}` serve it to
   the sign-in page and the console.
 - Every value is checked at startup: https-only links, a bare email address,
   `#rrggbb`, names without markup; images at most 512 KiB, identified by

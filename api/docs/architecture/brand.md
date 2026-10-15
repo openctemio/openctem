@@ -90,9 +90,9 @@ endpoint.
   `primary_color`, `docs_url`, `website_url`, `support_url`, `support_email`,
   `terms_url`, `privacy_url`, `email_footer`, `powered_by`, `logo_light_url`,
   `logo_dark_url`, `favicon_url`). An image URL is empty when the built-in
-  image applies; otherwise it is `/api/v1/brand/assets/<kind>?v=<version>`.
+  image applies; otherwise it is `/api/v1/brand/images/<kind>?v=<version>`.
   `powered_by` is already resolved (false for the OpenCTEM brand itself).
-- `GET /api/v1/brand/assets/{kind}`: `logo-light`, `logo-dark` (falls back to
+- `GET /api/v1/brand/images/{kind}`: `logo-light`, `logo-dark` (falls back to
   the light logo) or `favicon`; 404 for anything else. Conditional requests
   with `If-None-Match` answer 304.
 

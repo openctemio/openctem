@@ -94,7 +94,7 @@ func registerBrandRoutes(router Router, h *handler.BrandHandler) {
 		return
 	}
 	router.GET("/api/v1/brand", h.Get)
-	router.GET("/api/v1/brand/assets/{kind}", h.Asset)
+	router.GET("/api/v1/brand/images/{kind}", h.Asset)
 }
 
 // registerDocsRoutes registers the API documentation (the OpenAPI spec and
