@@ -50,14 +50,25 @@ the console shows them.
 
 ## Which plan an organization is on
 
-- `tenant_plans` (migration 001325) holds the plan.
-- An organization without a row was created before plans existed and is
-  **Enterprise** (no limits). The migration changes nothing for existing
-  organizations.
+- `tenant_plans` (migration 001325) holds the plan. It is the only source:
+  limit enforcement, Settings > Plan & usage (`GET /api/v1/organization/plan`),
+  the membership list behind the sidebar organization card
+  (`GET /api/v1/users/me/tenants` and the session bootstrap), the
+  organization (`GET /api/v1/tenants/{id}`), the console and plan module
+  grace all read it.
+- An organization without a row is on `plan.Unassigned`, which is
+  **Enterprise** (no limits). Every reader resolves a missing row to that one
+  value: `entitlement.PlanOf` in Go and `tenantPlanExpr` in SQL.
+- An organization without a row is one created before plans existed, or by
+  the platform: bootstrap-admin's first organization, Console >
+  Organizations > Create and an approved access request. It stays
+  unlimited until an administrator picks a plan.
 - An organization a person creates themselves (onboarding create-first-team,
-  `POST /api/v1/tenants`) starts on **Free**.
-- An organization the platform administrator creates has no row (unlimited)
-  until the administrator picks a plan.
+  `POST /api/v1/tenants`) starts on **Free**. The Free row is written in the
+  same transaction as the organization, so a self-service organization can
+  never be left without it (and so unlimited).
+- A plan change (`PUT /api/v1/admin/tenants/{id}/plan`) is audited with the
+  plan it replaced (`from`) and the new one (`plan`).
 
 ## Effective limit
 

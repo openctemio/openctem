@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	moduleTypes "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -323,7 +324,7 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 		Slug:        t.Slug(),
 		Description: t.Description(),
 		LogoURL:     t.LogoURL(),
-		Plan:        t.Plan().String(),
+		Plan:        string(t.Plan()),
 		CreatedAt:   t.CreatedAt(),
 		UpdatedAt:   t.UpdatedAt(),
 	}
@@ -565,10 +566,13 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A self-service organization starts on the Free plan, stored with the
+	// organization in one transaction.
 	input := tenantapp.CreateTenantInput{
 		Name:        req.Name,
 		Slug:        req.Slug,
 		Description: req.Description,
+		Plan:        plan.Free,
 	}
 
 	if h.freePlan != nil {
@@ -586,13 +590,6 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
-	// A self-service organization starts on the Free plan.
-	if h.freePlan != nil {
-		if err := h.freePlan.AssignFree(r.Context(), t.ID()); err != nil {
-			h.logger.Error("assign the Free plan to a new organization", "tenant_id", t.ID().String(), "error", err)
-		}
-	}
-
 	// Apply the chosen module preset if one was picked during creation.
 	// Failures are logged but do NOT abort the tenant creation — the
 	// admin can always apply the preset later from Settings → Modules.
