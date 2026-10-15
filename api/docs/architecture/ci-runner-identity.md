@@ -207,7 +207,12 @@ A decision made on the platform holds on the next run of the same repository:
   its console summary, SARIF and merge request report and says how many it
   hid. It learns nothing about findings it did not report, and nothing about
   another repository or tenant; a lookup failure returns an empty list, so
-  the job shows everything.
+  the job shows everything. The response stays small whatever the report's
+  size: `known` lists at most 10,000 results (`cirun.MaxKnownInResponse`,
+  lowest indexes first, about 1 MB), `known_total` counts them all and
+  `known_truncated` is true when some were left out. A job that reads only
+  `known` shows the rest of its results, which is safe; the gate judges every
+  finding on the platform either way.
 - **Identity.** The finding is the same when its key is (RFC-043 §4.2): a SAST
   key is the rule, the path and the flagged code, so a line shift keeps the
   decision and a material change to the code is a new finding that is judged
