@@ -5,7 +5,7 @@ package routes
 // findings:write but NOT findings:verify cannot close a fix_applied finding
 // through PATCH /findings/{id}/status, POST /findings/bulk/status or
 // POST /findings/remediation-groups/{key}/resolve. A findings:verify holder
-// can, and every such close records resolution_method and resolved_by.
+// can, and every such close records its closure and resolved_by.
 
 import (
 	"bytes"
@@ -54,7 +54,7 @@ func (h *gsHarness) doPerms(user shared.ID, perms []string, method, path string,
 func (h *gsHarness) closure(id shared.ID) (status, method, by string) {
 	h.t.Helper()
 	var m, b sql.NullString
-	if err := h.db.QueryRow(`SELECT status, resolution_method, resolved_by::text FROM findings WHERE id = $1`, id.String()).
+	if err := h.db.QueryRow(`SELECT status, NULLIF(COALESCE(closure_reason, '') || '/' || COALESCE(verification, ''), '/'), resolved_by::text FROM findings WHERE id = $1`, id.String()).
 		Scan(&status, &m, &b); err != nil {
 		h.t.Fatal(err)
 	}
@@ -97,14 +97,14 @@ func TestResolveGate_MemberWithoutVerifyCannotClose(t *testing.T) {
 
 	// Each route, for a findings:verify holder: resolved, with method and actor.
 	for _, a := range attempts {
-		h.exec(`UPDATE findings SET status = 'fix_applied', resolution_method = NULL, resolved_by = NULL, resolved_at = NULL WHERE id = $1`, fa)
+		h.exec(`UPDATE findings SET status = 'fix_applied', resolved_by = NULL, resolved_at = NULL WHERE id = $1`, fa)
 		status, body := h.doPerms(h.memberA, rgVerifierPerms(), a.method, a.path, a.body)
 		if status != http.StatusOK {
 			t.Fatalf("%s resolve with findings:verify = %d %.300s, want 200", a.name, status, body)
 		}
 		st, method, by := h.closure(h.findingA)
-		if st != "resolved" || method != "admin_direct" || by != h.memberA.String() {
-			t.Errorf("%s: status=%s method=%q resolved_by=%q, want resolved / admin_direct / the actor", a.name, st, method, by)
+		if st != "resolved" || method != "fixed/attested" || by != h.memberA.String() {
+			t.Errorf("%s: status=%s closure=%q resolved_by=%q, want resolved / fixed/attested / the actor", a.name, st, method, by)
 		}
 	}
 

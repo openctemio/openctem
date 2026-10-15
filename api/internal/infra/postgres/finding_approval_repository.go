@@ -30,8 +30,8 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 	query := `
 		INSERT INTO finding_status_approvals (
 			id, tenant_id, finding_id, requested_status, requested_by,
-			justification, status, expires_at, version, created_at, requested_by_actor
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			justification, status, expires_at, version, created_at, requested_by_actor, closure_reason
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
 	var requestedBy any
@@ -42,7 +42,7 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 		a.ID.String(), a.TenantID.String(), a.FindingID.String(),
 		a.RequestedStatus, requestedBy,
 		a.Justification, string(a.Status), a.ExpiresAt, a.Version, a.CreatedAt,
-		nullString(a.RequestedByActor),
+		nullString(a.RequestedByActor), nullString(a.ClosureReason.String()),
 	)
 	if err != nil {
 		var pqErr *pq.Error
@@ -247,7 +247,7 @@ func (r *FindingApprovalRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, finding_id, requested_status, requested_by,
 			justification, approved_by, approved_at, rejected_by, rejected_at,
-			rejection_reason, status, expires_at, created_at, version, requested_by_actor
+			rejection_reason, status, expires_at, created_at, version, requested_by_actor, closure_reason
 		FROM finding_status_approvals
 	`
 }
@@ -271,12 +271,13 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		status          string
 		expiresAt       *time.Time
 		actor           sql.NullString
+		closureReason   sql.NullString
 	)
 
 	err := scanner.Scan(
 		&id, &tenantID, &findingID, &a.RequestedStatus, &requestedBy,
 		&a.Justification, &approvedBy, &approvedAt, &rejectedBy, &rejectedAt,
-		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor,
+		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor, &closureReason,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -292,6 +293,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		a.RequestedBy, _ = shared.IDFromString(requestedBy.String)
 	}
 	a.RequestedByActor = actor.String
+	a.ClosureReason = vulnerability.ClosureReason(closureReason.String)
 	a.Status = vulnerability.ApprovalStatus(status)
 	a.ApprovedAt = approvedAt
 	a.RejectedAt = rejectedAt
