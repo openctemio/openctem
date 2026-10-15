@@ -115,6 +115,7 @@ func (r *FindingRepository) ApplyVEXDocument(ctx context.Context, tenantID share
 		Source: "vex", Reason: "vex_not_affected", ActorType: "integration", ActorName: "system: VEX document",
 		Message: "An uploaded VEX document says the component is not affected",
 	}, func(tx *sql.Tx) error {
+		//nolint:gosec // G202: fixed SQL fragments (lifecycle lists) and numbered placeholders only
 		rows, err := tx.QueryContext(ctx, `
 			WITH t AS (
 				SELECT f.id,

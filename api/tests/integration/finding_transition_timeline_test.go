@@ -75,6 +75,9 @@ func (f *timelineFixture) entries(t *testing.T, id shared.ID) []timelineEntry {
 		_ = json.Unmarshal(raw, &e.changes)
 		out = append(out, e)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 

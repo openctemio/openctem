@@ -365,6 +365,7 @@ func (r *CIRunRepository) MarkStaleSourceFindings(ctx context.Context, tenantID 
 		Source: "ci_stale", Reason: "source_stale", ActorName: "system: CI pipeline stale",
 		Message: "Not reported lately by its only CI pipeline, which went stale", Changes: map[string]any{"pipeline_id": p.ID.String()},
 	}, func(tx *sql.Tx) error {
+		//nolint:gosec // G202: fixed SQL fragments (lifecycle lists) and numbered placeholders only
 		rows, err := tx.QueryContext(ctx, `UPDATE findings f SET status = 'not_observed', resolution = 'source_stale',
 			resolution_method = NULL, resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
 			WHERE `+soleSourceFindings+` AND f.status IN `+staleFromSQL+`
