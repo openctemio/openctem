@@ -804,7 +804,7 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 	p.storeInterop(ctx, tenantID, interop)
-	p.applyVEX(ctx, tenantID, vexNotAffectedItems(vexSightings), scope, output)
+	p.applyVEX(ctx, tenantID, report, vexNotAffectedItems(vexSightings), scope, output)
 
 	// Step 7c: the organization's VEX statements cover findings reported
 	// after the statement was made. Best-effort, like 7b.

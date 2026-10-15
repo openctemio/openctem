@@ -31,8 +31,9 @@ func TestSettingsFromMap_MatchesWholeBlobDecode(t *testing.T) {
 		t.Fatalf("empty blob must give DefaultSettings")
 	}
 	s := SettingsFromMap(map[string]any{"general": map[string]any{"timezone": "UTC"}})
-	if s.RiskScoring.Preset != LegacyRiskScoringSettings().Preset {
-		t.Fatalf("absent risk_scoring must use the legacy formula, got %+v", s.RiskScoring.Preset)
+	if s.RiskScoring.Preset != DefaultRiskScoringPreset().Preset ||
+		s.RiskScoring.ScoreCompositionMode != ScoreCompositionLikelihoodImpact {
+		t.Fatalf("absent risk_scoring must use the default likelihood-impact model, got %+v", s.RiskScoring.Preset)
 	}
 	if s.Security.EmailVerificationMode != "" {
 		t.Fatalf("absent section must keep its zero value (as the whole-blob decode did), got %q", s.Security.EmailVerificationMode)
