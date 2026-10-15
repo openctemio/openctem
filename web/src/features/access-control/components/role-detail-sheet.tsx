@@ -4,6 +4,8 @@ import { useState, useMemo, useCallback } from 'react'
 import { csrfFetch } from '@/lib/api/client'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { RoleRiskBadge, RoleSummaryLine } from './role-risk'
+import { RoleTemplateUpdate } from './role-template-update'
 import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -372,6 +374,13 @@ export function RoleDetailSheet({
             {role.description && (
               <p className="text-sm text-muted-foreground">{role.description}</p>
             )}
+            {role.summary && (
+              <div className="space-y-1">
+                <RoleRiskBadge risk={role.summary.risk} />
+                <RoleSummaryLine summary={role.summary} max={8} />
+              </div>
+            )}
+            <RoleTemplateUpdate role={role} />
 
             <DetailStatGrid aria-label="Key numbers">
               <DetailStat

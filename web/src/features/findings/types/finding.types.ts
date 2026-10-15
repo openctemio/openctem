@@ -428,6 +428,17 @@ export interface FindingProvenance {
   firstRun?: FindingRunSighting
 }
 
+/** Vulnerability intelligence with sources and freshness (detail only). */
+export interface FindingIntel {
+  cvssSource?: string
+  publishedAt?: string
+  modifiedAt?: string
+  references: string[]
+  epssDate?: string
+  kevDateAdded?: string
+  kevRansomware?: boolean
+}
+
 /** One open finding of a package fix plan. */
 export interface FindingFixPlanItem {
   id: string
@@ -1239,6 +1250,8 @@ export interface FindingDetail extends Finding {
   provenance?: FindingProvenance
   /** The package's upgrade plan on this asset. */
   packageFix?: FindingFixPlan
+  /** Advisory facts and feed dates. */
+  intel?: FindingIntel
   /** The CVE record, when the finding is an instance of one. */
   advisory?: FindingAdvisory
   /** The raw finding message (the title falls back to it). */
