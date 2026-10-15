@@ -58,8 +58,10 @@ func TestRemediationCampaign_RestrictedViewerSeesOnlyTheirScope_DB(t *testing.T)
 		"finding_ids": []string{h.findingA.String(), h.findingB.String()},
 		"asset_id":    h.assetB.String(),
 	})
-	h.exec(`INSERT INTO remediation_campaigns (id, tenant_id, name, status, finding_filter, risk_score_before, risk_score_after, risk_reduction)
-		VALUES ($1, $2, 'rc-viewer', 'active', $3, 80, 20, 60)`, campaign.String(), h.tenant.String(), string(filter))
+	// memberA created it, so they see it although its findings, filtered by
+	// FA/FB AND asset B, are all outside their scope.
+	h.exec(`INSERT INTO remediation_campaigns (id, tenant_id, name, status, finding_filter, risk_score_before, risk_score_after, risk_reduction, created_by)
+		VALUES ($1, $2, 'rc-viewer', 'active', $3, 80, 20, 60, $4)`, campaign.String(), h.tenant.String(), string(filter), h.memberA.String())
 
 	perms := strings.Join(append(append([]string{}, dsMemberPerms...), permission.RemediationRead.String()), ",")
 	type wire struct {
@@ -126,11 +128,9 @@ func TestRemediationCampaign_RestrictedViewerSeesOnlyTheirScope_DB(t *testing.T)
 			t.Errorf("restricted view %d shows organization-wide risk %v/%v", i, w.RiskBefore, w.RiskReduction)
 		}
 	}
-	// A member without any scope row sees no ids at all.
-	for i, w := range view(h.memberStrict.String(), false) {
-		if got := ids(w); len(got) != 0 {
-			t.Errorf("member without scope view %d finding_ids = %v, want none", i, got)
-		}
+	// A member without any scope row does not see the campaign at all.
+	if code := get("/api/v1/remediation/campaigns/"+campaign.String(), h.memberStrict.String(), false, nil); code != http.StatusNotFound {
+		t.Errorf("member without scope GET = %d, want 404", code)
 	}
 	// The owner sees the campaign as stored.
 	for i, w := range view(h.owner.String(), true) {
@@ -192,4 +192,142 @@ func TestRemediationKeys_JoinStaysInTheTenant_DB(t *testing.T) {
 			t.Fatalf("group built from another tenant's finding: %+v", g)
 		}
 	}
+}
+
+// A restricted member can neither read nor change a campaign that does not
+// touch their data scope: every read and write answers 404 and the campaign
+// is not listed. A campaign over their own findings, or one they created,
+// stays fully usable.
+func TestRemediationCampaign_RestrictedMemberCannotTouchOtherTeamsCampaign_DB(t *testing.T) {
+	h := newDSHarness(t)
+	db := &postgres.DB{DB: h.db}
+	log := logger.NewNop()
+	tenantRepo := postgres.NewTenantRepository(db)
+	enforcer := datascope.New(postgres.NewDataScopeRepository(db),
+		func(ctx context.Context) datascope.Caller {
+			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
+		}, log)
+	enforcer.SetAdminLookup(func(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+		m, err := tenantRepo.GetMembership(ctx, userID, tenantID)
+		if err != nil {
+			return false, err
+		}
+		return m.IsOwner() || m.IsAdmin(), nil
+	})
+	svc := exposure.NewRemediationCampaignService(postgres.NewRemediationCampaignRepository(db), log)
+	svc.SetFindingCounter(postgres.NewFindingRepository(db))
+	svc.SetFindingLister(postgres.NewFindingRepository(db))
+	svc.SetDataScope(enforcer)
+	epics := &refusingEpicCreator{t: t}
+	svc.SetTicketing(postgres.NewRemediationCampaignTicketRepository(db), epics)
+	router := infrahttp.NewChiRouter()
+	registerRemediationCampaignRoutes(router, handler.NewRemediationCampaignHandler(svc, log), Middleware(h.dsAuth), nil, passthrough)
+	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
+	t.Cleanup(srv.Close)
+
+	insert := func(name string, filter map[string]any) shared.ID {
+		id := shared.NewID()
+		raw, _ := json.Marshal(filter)
+		h.exec(`INSERT INTO remediation_campaigns (id, tenant_id, name, status, finding_filter)
+			VALUES ($1, $2, $3, 'active', $4)`, id.String(), h.tenant.String(), name, string(raw))
+		return id
+	}
+	// Another team's campaigns: over FB (asset B), and over asset B by id.
+	otherTeam := insert("rcw-other-findings", map[string]any{"finding_ids": []string{h.findingB.String()}})
+	otherAsset := insert("rcw-other-asset", map[string]any{"asset_id": h.assetB.String(), "severities": []string{"critical"}})
+	mine := insert("rcw-mine", map[string]any{"finding_ids": []string{h.findingA.String()}})
+
+	perms := strings.Join(append(append([]string{}, dsMemberPerms...),
+		permission.RemediationRead.String(), permission.RemediationWrite.String(), permission.FindingsFixApply.String()), ",")
+	call := func(method, path string, body any) (int, map[string]any) {
+		t.Helper()
+		var rd *strings.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rd = strings.NewReader(string(b))
+		} else {
+			rd = strings.NewReader("")
+		}
+		r, _ := http.NewRequestWithContext(context.Background(), method, srv.URL+path, rd)
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("X-Test-User", h.memberA.String())
+		r.Header.Set("X-Test-Perms", perms)
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out := map[string]any{}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+
+	for _, id := range []shared.ID{otherTeam, otherAsset} {
+		base := "/api/v1/remediation/campaigns/" + id.String()
+		for _, c := range []struct {
+			method, path string
+			body         any
+		}{
+			{http.MethodGet, base, nil},
+			{http.MethodGet, base + "/findings", nil},
+			{http.MethodPatch, base, map[string]any{"name": "taken over"}},
+			{http.MethodPatch, base + "/status", map[string]any{"status": "paused"}},
+			{http.MethodPost, base + "/resolve", map[string]any{"status": "fix_applied", "resolution": "done"}},
+			{http.MethodPost, base + "/refresh", nil},
+			{http.MethodPost, base + "/create-ticket", map[string]any{"project_key": "SEC"}},
+			{http.MethodDelete, base, nil},
+		} {
+			if code, _ := call(c.method, c.path, c.body); code != http.StatusNotFound {
+				t.Errorf("%s %s by a member outside its scope = %d, want 404", c.method, c.path, code)
+			}
+		}
+		var name, status string
+		if err := h.db.QueryRowContext(context.Background(), `SELECT name, status FROM remediation_campaigns WHERE tenant_id = $1 AND id = $2`,
+			h.tenant.String(), id.String()).Scan(&name, &status); err != nil {
+			t.Fatalf("campaign %s gone after the refused calls: %v", id, err)
+		}
+		if name == "taken over" || status != "active" {
+			t.Errorf("campaign %s changed by refused calls: %s/%s", id, name, status)
+		}
+	}
+
+	// The list shows only campaigns that touch the member's scope, and its
+	// total counts only those.
+	_, page := call(http.MethodGet, "/api/v1/remediation/campaigns/", nil)
+	listed := map[string]bool{}
+	data, _ := page["data"].([]any)
+	for _, d := range data {
+		listed[d.(map[string]any)["id"].(string)] = true
+	}
+	if listed[otherTeam.String()] || listed[otherAsset.String()] || !listed[mine.String()] {
+		t.Errorf("restricted list = %v, want only the member's campaign", listed)
+	}
+	if page["total"] != float64(len(listed)) {
+		t.Errorf("restricted list total = %v, want %d", page["total"], len(listed))
+	}
+
+	// Their own campaign stays usable, and so does an empty one they create.
+	if code, _ := call(http.MethodPatch, "/api/v1/remediation/campaigns/"+mine.String(), map[string]any{"name": "mine renamed"}); code != http.StatusOK {
+		t.Errorf("PATCH the member's campaign = %d, want 200", code)
+	}
+	code, created := call(http.MethodPost, "/api/v1/remediation/campaigns/", map[string]any{"name": "rcw-new", "priority": "high"})
+	if code != http.StatusCreated {
+		t.Fatalf("create = %d %v", code, created)
+	}
+	if code, _ := call(http.MethodGet, "/api/v1/remediation/campaigns/"+created["id"].(string), nil); code != http.StatusOK {
+		t.Errorf("GET the campaign the member created = %d, want 200", code)
+	}
+}
+
+// refusingEpicCreator fails the test if an epic is created or moved: the
+// refused calls must stop before reaching the tracker.
+type refusingEpicCreator struct{ t *testing.T }
+
+func (r *refusingEpicCreator) CreateEpic(context.Context, shared.ID, string, string, string, []string) (string, string, error) {
+	r.t.Error("an epic was created for a campaign outside the caller's scope")
+	return "", "", nil
+}
+
+func (r *refusingEpicCreator) TransitionEpic(context.Context, shared.ID, string, string, string) error {
+	return nil
 }

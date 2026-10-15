@@ -126,7 +126,14 @@ Base path `/api/v1/remediation/campaigns` (permissions: `remediation:read` /
 
 ## What a restricted member sees
 
-A member restricted by data scope sees a campaign through that scope only:
+A member restricted by data scope reaches only the campaigns that touch their
+scope: at least one of the campaign's findings, or its `asset_id`, is on an
+in-scope asset, or they created it. Any other campaign answers 404 for every
+read and write (get, findings, update, status, resolve, refresh,
+create-ticket, delete) and is left out of the list, whose total counts only
+the visible campaigns (the list examines at most 1,000 campaigns of the
+tenant for such a caller). Within a visible campaign the member sees it
+through their scope only:
 `finding_count`, `resolved_count`, `verified_count` and `progress` count the
 findings on their in-scope assets; the explicit `finding_ids` and the
 `asset_id` of the `finding_filter` that are outside the scope are removed
