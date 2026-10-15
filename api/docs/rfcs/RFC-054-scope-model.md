@@ -1482,7 +1482,7 @@ not a gate. The owner also decided that self-hosted code hosts may be claimed wh
 
 ### 17.3 Data
 
-Migrations `002145_ci_trust_managed_scope` (renumbered at merge as needed) add:
+Migrations `002164_ci_trust_managed_scope` (renumbered at merge as needed) add:
 - `ci_trust_configs.manage_scope`;
 - the origin `ci_trust`;
 - the table `scope_target_ci_trusts` (tenant, trust, pattern, target, evidence, `target_removed_at`), with
