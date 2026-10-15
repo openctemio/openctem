@@ -254,9 +254,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
-	if svc.Entitlement != nil {
-		tenantHandler.SetFreePlan(svc.Entitlement)
-	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}
