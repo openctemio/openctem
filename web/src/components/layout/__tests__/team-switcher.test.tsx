@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { I18nProvider } from '@/context/i18n-provider'
 
 // Radix Popover measures its content; jsdom has no ResizeObserver.
 globalThis.ResizeObserver ??= class {
@@ -111,6 +112,26 @@ describe('TeamSwitcher', () => {
     const trigger = screen.getByTestId('team-switcher-trigger')
     expect(trigger).toHaveTextContent('ORG tenant')
     expect(trigger).toHaveTextContent('Free')
+  })
+
+  it('names every plan as Settings > Plan & usage does, in each language', async () => {
+    const current = tenantState.currentTenant!
+    tenantState.currentTenant = { ...current, plan: 'enterprise' }
+    tenantState.tenants = [{ ...org(ORG_ID, 'ORG tenant', 'owner'), plan: 'enterprise' }]
+    try {
+      render(
+        <I18nProvider locale="vi">
+          <SidebarProvider>
+            <TeamSwitcher />
+          </SidebarProvider>
+        </I18nProvider>
+      )
+      expect(screen.getByTestId('team-switcher-trigger')).toHaveTextContent('Doanh nghiệp')
+      const { card } = await openCard()
+      expect(within(card).getByTestId('org-card-plan')).toHaveTextContent('Doanh nghiệp')
+    } finally {
+      tenantState.currentTenant = current
+    }
   })
 
   it('opens the card with a single organization, without a chevron', async () => {
