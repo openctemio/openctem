@@ -110,17 +110,43 @@ export interface Invitation {
   access_expires_at?: string
   /** Members whose address reaches the same mailbox (a warning, create only). */
   lookalike_of?: string[]
+  /** internal or external, as classified when the invitation was created. */
+  member_kind?: 'internal' | 'external'
+  /** The roles are above member for an outside invitee: two-factor will be required. */
+  privileged?: boolean
+  last_sent_at?: string
+  resend_count?: number
+}
+
+/** POST /organization/invitations/preview: what inviting an address would do. */
+export interface InvitationPreview {
+  allowed: boolean
+  reason?: string
+  outside: boolean
+  personal: boolean
+  privileged: boolean
+  step_up_required: boolean
+  mfa_required: boolean
+  access_end_required: boolean
+  default_access_end_days: number
+  max_access_end_days: number
+  sso_exception_needed: boolean
+  already_member: boolean
+  already_invited: boolean
 }
 
 export interface CreateInvitationInput {
   email: string
   role_ids: string[] // RBAC roles to assign when user accepts invitation (required)
   /**
-   * End of access for an invitee outside the organization (RFC 3339). The
-   * API proposes 90 days when omitted and ignores it for an internal invitee.
+   * End of access for an invitee outside the organization (RFC 3339).
+   * Optional unless the organization requires one (the API then proposes 90
+   * days when omitted); ignored for an internal invitee.
    */
   access_expires_at?: string
   access_reason?: string
+  /** Teams (data access) the invitee joins when they accept; at most 20. */
+  group_ids?: string[]
 }
 
 // ============================================
