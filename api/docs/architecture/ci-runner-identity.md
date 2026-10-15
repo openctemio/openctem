@@ -64,7 +64,10 @@ graph TD
 Budgets beyond the chains: at most 200 reports per run (`cirun.MaxRunReports`,
 `409`), at most 300 runs per pipeline per hour (`cirun.MaxPipelineRunsPerHour`,
 refused at the exchange and audited `pipeline_rate`), 100,000 recorded
-findings per run.
+findings per run (`cirun.MaxRunFindings`). A run that sights more is marked
+`ci_runs.findings_over_cap` and its gate fails with `too_many_findings`; it is
+never judged on the first 100,000 only. Warn mode and a break-glass still apply
+to it like any other blocking reason.
 | `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
 
 ## Data model
@@ -222,6 +225,12 @@ A decision made on the platform holds on the next run of the same repository:
 - Pipeline reads are tenant-scoped and follow the repository data scope.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
+- A pull or merge request run records its findings on its own scope:
+  `pull/<n>` (GitHub, Azure Pipelines, Bitbucket, CircleCI, Jenkins) or
+  `merge-requests/<n>` (GitLab), never on its head branch's name, which the
+  author picks and may equal a real branch (a fork's `main`, `release/1.x`).
+  A fork event records on `fork/pr-<n>`. Runs stored before this rule keep
+  their rows; new uploads to such a run go to the pull request scope.
 - A run's report changes only its repository asset; the baseline branch is
   decided server-side.
 - A finding the run sees only on a non-counting branch is branch-only: left
