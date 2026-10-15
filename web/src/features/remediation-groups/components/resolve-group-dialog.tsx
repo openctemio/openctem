@@ -28,6 +28,7 @@ import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { useResolveRemediationGroup } from '../api/use-remediation-groups'
 import type { RemediationGroup, ResolveGroupStatus } from '../types'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface ResolveGroupDialogProps {
   open: boolean
@@ -47,6 +48,7 @@ export function ResolveGroupDialog({
   onSuccess,
 }: ResolveGroupDialogProps) {
   const [status, setStatus] = useState<ResolveGroupStatus>('fix_applied')
+  const { t } = useTranslation()
   const [resolution, setResolution] = useState('')
   const [approved, setApproved] = useState(false)
 
@@ -67,7 +69,7 @@ export function ResolveGroupDialog({
     try {
       const result = await trigger({
         status,
-        resolution: resolution.trim() || undefined,
+        resolution: resolution.trim(),
         approved: approved || undefined,
       })
       toast.success(
@@ -126,7 +128,9 @@ export function ResolveGroupDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="resolve-note">Note (optional)</Label>
+              <Label htmlFor="resolve-note">
+                {t('findings.statusNote.label', 'Note (required)')}
+              </Label>
               <Textarea
                 id="resolve-note"
                 placeholder="e.g. Patched via change CR-1234"
@@ -155,7 +159,7 @@ export function ResolveGroupDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isMutating}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isMutating || !group}>
+          <Button onClick={handleSubmit} disabled={isMutating || !group || !resolution.trim()}>
             {isMutating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Resolve group
           </Button>

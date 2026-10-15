@@ -42,16 +42,16 @@ func NewRoleHandler(svc *accesscontrol.RoleService, v *validator.Validator, log 
 
 // RoleResponse represents a role in API responses.
 type RoleResponse struct {
-	ID                string    `json:"id"`
-	TenantID          *string   `json:"tenant_id,omitempty"`
-	Slug              string    `json:"slug"`
-	Name              string    `json:"name"`
-	Description       string    `json:"description,omitempty"`
-	IsSystem          bool      `json:"is_system"`
-	HierarchyLevel    int       `json:"hierarchy_level"`
-	HasFullDataAccess bool      `json:"has_full_data_access"`
-	Permissions       []string  `json:"permissions"`
-	PermissionCount   int       `json:"permission_count"`
+	ID                string   `json:"id"`
+	TenantID          *string  `json:"tenant_id,omitempty"`
+	Slug              string   `json:"slug"`
+	Name              string   `json:"name"`
+	Description       string   `json:"description,omitempty"`
+	IsSystem          bool     `json:"is_system"`
+	HierarchyLevel    int      `json:"hierarchy_level"`
+	HasFullDataAccess bool     `json:"has_full_data_access"`
+	Permissions       []string `json:"permissions"`
+	PermissionCount   int      `json:"permission_count"`
 	// Summary is what the role can do, in words: risk, why, and per area.
 	Summary permission.Summary `json:"summary"`
 	// Template is set for a role created from a role template.

@@ -865,5 +865,13 @@
   "findings.signals.publicAsset": "Public asset",
   "findings.signals.restrictedAsset": "Restricted asset",
   "findings.signals.privateAsset": "Private asset",
-  "findings.signals.isolatedAsset": "Isolated asset"
+  "findings.signals.isolatedAsset": "Isolated asset",
+  "findings.statusNote.title.fix_applied": "Mark fix applied",
+  "findings.statusNote.title.resolved": "Resolve finding",
+  "findings.statusNote.desc.fix_applied": "Say what was changed. A retest, a covered scan or a security reviewer verifies the fix.",
+  "findings.statusNote.desc.resolved": "Say how the fix was verified. Without the verification checklist the close is recorded as attested by you.",
+  "findings.statusNote.label": "Note (required)",
+  "findings.statusNote.placeholder": "e.g. Upgraded the library to 4.2 in release 2026.10",
+  "findings.statusNote.confirm": "Save",
+  "findings.statusNote.cancel": "Cancel"
 }

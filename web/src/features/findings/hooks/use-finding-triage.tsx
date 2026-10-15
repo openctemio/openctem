@@ -23,6 +23,11 @@ import {
 } from '../api/use-findings-api'
 import { ApprovalDialog } from '../components/approval-dialog'
 import {
+  StatusNoteDialog,
+  needsStatusNote,
+  type NotedStatus,
+} from '../components/status-note-dialog'
+import {
   FINDING_STATUS_CONFIG,
   SEVERITY_CONFIG,
   requiresApproval,
@@ -48,6 +53,8 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
   const [severity, setSeverity] = useState<Severity>(finding.severity)
   const [assignee, setAssignee] = useState<FindingUser | undefined>(finding.assignee)
   const [approvalTarget, setApprovalTarget] = useState<FindingStatus | null>(null)
+  // A fix claim or a resolve waits here for its note (the API requires one).
+  const [noteTarget, setNoteTarget] = useState<NotedStatus | null>(null)
 
   // Follow the server after a revalidation or when another finding is shown.
   //
@@ -78,19 +85,20 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
   const { trigger: assignUser, isMutating: assigning } = useAssignFindingApi(finding.id)
   const { trigger: unassignUser, isMutating: unassigning } = useUnassignFindingApi(finding.id)
 
-  const changeStatus = async (next: FindingStatus, isUndo = false) => {
+  const changeStatus = async (next: FindingStatus, isUndo = false, note?: string) => {
     if (next === status) return
     if (requiresApproval(next)) {
       setApprovalTarget(next)
       return
     }
+    if (!isUndo && note === undefined && needsStatusNote(next)) {
+      setNoteTarget(next)
+      return
+    }
     const previous = status
     setStatus(next)
     try {
-      await updateStatus({
-        status: next,
-        resolution: next === 'resolved' ? 'Resolved via UI' : undefined,
-      })
+      await updateStatus({ status: next, resolution: note })
       opts.onStatusChange?.(next)
       await invalidateFindingsCache()
       toast.success(
@@ -157,7 +165,22 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
 
   // The dialog is mounted only while a status waits for approval, so it is
   // always open when rendered; closing it clears the pending status.
-  const dialogs: ReactNode = approvalTarget ? (
+  const noteDialog: ReactNode = noteTarget ? (
+    <StatusNoteDialog
+      status={noteTarget}
+      open
+      onOpenChange={(open) => {
+        if (!open) setNoteTarget(null)
+      }}
+      onConfirm={(note) => {
+        const target = noteTarget
+        setNoteTarget(null)
+        void changeStatus(target, false, note)
+      }}
+    />
+  ) : null
+
+  const approvalDialog: ReactNode = approvalTarget ? (
     <ApprovalDialog
       findingId={finding.id}
       targetStatus={approvalTarget}
@@ -168,6 +191,13 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       onSuccess={() => void invalidateFindingsCache()}
     />
   ) : null
+
+  const dialogs: ReactNode = (
+    <>
+      {approvalDialog}
+      {noteDialog}
+    </>
+  )
 
   return {
     status,

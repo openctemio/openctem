@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, render } from '@testing-library/react'
+import { renderHook, render, act } from '@testing-library/react'
 
 import { useFindingTriage, type FindingTriageTarget } from '../use-finding-triage'
 import type { FindingUser } from '../../types'
@@ -110,5 +110,16 @@ describe('useFindingTriage — no render loop', () => {
     // A loop would blow past React's ~50 update-depth limit. A handful (mount +
     // StrictMode double-invoke + one settling pass) is expected.
     expect(renders).toBeLessThan(10)
+  })
+})
+
+describe('useFindingTriage — notes', () => {
+  it('asks for a note before a fix claim, sending nothing until then', async () => {
+    const { result } = renderHook(() => useFindingTriage(target({ status: 'in_progress' })))
+    act(() => result.current.changeStatus('fix_applied'))
+    // The note dialog is shown; nothing is sent and the status is unchanged.
+    expect(result.current.status).toBe('in_progress')
+    render(<>{result.current.dialogs}</>)
+    expect(document.querySelector('#status-note')).not.toBeNull()
   })
 })

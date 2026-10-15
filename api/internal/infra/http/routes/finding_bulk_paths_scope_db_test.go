@@ -39,7 +39,7 @@ func TestBulkStatus_PentestFindingRefusedLikeSinglePath(t *testing.T) {
 		admin bool
 	}{{"owner", h.owner, true}, {"in-scope member not on the campaign", h.memberA, false}} {
 		status, body := h.do(who.user, who.admin, http.MethodPost, "/api/v1/findings/bulk/status",
-			map[string]any{"finding_ids": []string{h.findingP.String()}, "status": "fix_applied", "resolution": "patched"})
+			map[string]any{"finding_ids": []string{h.findingP.String()}, "status": "confirmed", "resolution": "back to triage"})
 		if status != http.StatusOK || !strings.Contains(body, `"updated":0`) || !strings.Contains(body, "pentest") {
 			t.Errorf("%s bulk status on pentest finding = %d %.300s, want updated 0 and a pentest error", who.name, status, body)
 		}

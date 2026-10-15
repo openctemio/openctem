@@ -865,5 +865,13 @@
   "findings.signals.publicAsset": "Tài sản công khai",
   "findings.signals.restrictedAsset": "Tài sản truy cập hạn chế",
   "findings.signals.privateAsset": "Tài sản nội bộ",
-  "findings.signals.isolatedAsset": "Tài sản cô lập"
+  "findings.signals.isolatedAsset": "Tài sản cô lập",
+  "findings.statusNote.title.fix_applied": "Đánh dấu đã áp dụng bản sửa",
+  "findings.statusNote.title.resolved": "Đóng phát hiện",
+  "findings.statusNote.desc.fix_applied": "Mô tả thay đổi đã thực hiện. Retest, lần quét có độ phủ hoặc người rà soát bảo mật sẽ xác minh bản sửa.",
+  "findings.statusNote.desc.resolved": "Mô tả cách bản sửa đã được xác minh. Khi không có danh sách kiểm tra xác minh, việc đóng được ghi nhận là do bạn xác nhận.",
+  "findings.statusNote.label": "Ghi chú (bắt buộc)",
+  "findings.statusNote.placeholder": "VD: Đã nâng cấp thư viện lên 4.2 trong bản phát hành 2026.10",
+  "findings.statusNote.confirm": "Lưu",
+  "findings.statusNote.cancel": "Hủy"
 }
