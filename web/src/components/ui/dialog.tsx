@@ -135,7 +135,7 @@ function DialogContent({
           modalSurfaceClassName,
           MODAL_SIZE[size],
           layout.sections
-            ? 'flex flex-col gap-0 overflow-hidden p-0'
+            ? 'flex flex-col gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip p-0'
             : 'grid gap-4 overflow-x-hidden overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-6',
           className
         )}

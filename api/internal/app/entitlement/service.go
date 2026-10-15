@@ -104,15 +104,16 @@ func (s *Service) Defaults(ctx context.Context) (plan.Defaults, int, error) {
 	return d, v, nil
 }
 
-// PlanOf returns the organization's plan: Enterprise when none is stored (an
-// organization created before plans).
+// PlanOf returns the organization's plan: plan.Unassigned when none is
+// stored. Limits, Settings > Plan & usage and modules read it; the membership
+// list and the console read the same row (postgres tenantPlanExpr).
 func (s *Service) PlanOf(ctx context.Context, tenantID shared.ID) (plan.Plan, error) {
 	p, ok, err := s.repo.TenantPlan(ctx, tenantID)
 	if err != nil {
 		return "", err
 	}
 	if !ok {
-		return plan.Enterprise, nil
+		return plan.Unassigned, nil
 	}
 	return p, nil
 }
@@ -277,11 +278,6 @@ func (s *Service) CheckFreeTeam(ctx context.Context, userID shared.ID) error {
 	return nil
 }
 
-// AssignFree records a new self-service organization as Free.
-func (s *Service) AssignFree(ctx context.Context, tenantID shared.ID) error {
-	return s.repo.SetTenantPlan(ctx, tenantID, plan.Free, nil, s.now().UTC())
-}
-
 // UpdateDefaults saves the plan defaults (the caller checked super admin and
 // a fresh authenticator code). Audited at critical severity; the other
 // administrators are told.
@@ -328,6 +324,10 @@ func (s *Service) ChangeTenantPlan(ctx context.Context, actor *admin.AdminUser, 
 	if !p.IsValid() {
 		return plan.ErrInvalid
 	}
+	from, err := s.PlanOf(ctx, tenantID)
+	if err != nil {
+		return err
+	}
 	id := actor.ID()
 	lost, regained, err := s.lostAndRegained(ctx, tenantID, func() error {
 		return s.repo.SetTenantPlan(ctx, tenantID, p, &id, s.now().UTC())
@@ -336,7 +336,7 @@ func (s *Service) ChangeTenantPlan(ctx context.Context, actor *admin.AdminUser, 
 		return err
 	}
 	s.applyGrace(ctx, tenantID, lost, regained)
-	s.writeAudit(ctx, actor, ActionTenantPlanSet, &tenantID, "tenant", map[string]any{"plan": string(p)}, ip, ua)
+	s.writeAudit(ctx, actor, ActionTenantPlanSet, &tenantID, "tenant", map[string]any{"plan": string(p), "from": string(from)}, ip, ua)
 	// The plan decides the organization's modules: refresh them.
 	if s.modulesChanged != nil {
 		s.modulesChanged(tenantID.String())
