@@ -169,9 +169,34 @@ func (s *Service) FilterStepTargets(ctx context.Context, tenantID shared.ID, too
 		}
 	}
 	targets := contextTargets(runContext)
-	out, err := s.filterStepTypes(ctx, tenantID, toolName, targets, contextTargetTypes(runContext))
+	types := contextTargetTypes(runContext)
+	out, err := s.filterStepTypes(ctx, tenantID, toolName, targets, types)
 	if err != nil {
 		return nil, err
+	}
+	// A repository goes only to a tool that scans code
+	// (path_target_gate.go). A step with no tool of its own is decided by
+	// its catalog stage at dispatch (stage.FilterKinds).
+	if strings.TrimSpace(toolName) != "" {
+		kept, n, reason, err := s.filterPathTargets(ctx, tenantID, toolName, nil, out.Targets, func(t string) (asset.TypeRef, bool) {
+			label, ok := types[t]
+			return parseTypeLabel(label), ok
+		})
+		if err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			out.Targets = kept
+			out.Refused += n
+			if out.Reason != "" {
+				out.Reason += "; "
+			}
+			out.Reason += reason
+			if len(kept) == 0 {
+				return nil, shared.NewDomainError(codeIncompatibleTargets,
+					"No target of this step can be scanned: "+out.Reason+".", shared.ErrValidation)
+			}
+		}
 	}
 	// The step's own tier: its tool's ceiling against the scope entries,
 	// and proof for an intrusive tool (RFC-054 §4.2 step 6, §8.1).
