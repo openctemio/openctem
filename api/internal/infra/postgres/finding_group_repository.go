@@ -823,7 +823,7 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg,
 		pq.Array(statusStrings(vulnerability.UserFromStatuses(status)))}, filterArgs...)
 
-	result, err := r.db.ExecContext(ctx, query, args...)
+	result, err := r.db.execStatusWrite(ctx, query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("bulk update status by filter: %w", err)
 	}

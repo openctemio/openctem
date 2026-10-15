@@ -489,7 +489,10 @@ func (r *SoftwareMatchRepository) CloseFindings(ctx context.Context, tenantID sh
 	if autoResolvePaused(ctx, r.db, tenantID.String()) {
 		return nil, nil
 	}
-	return r.updateFindings(ctx, `
+	return r.updateFindings(ctx, findingTransition{
+		Source: "vulnmatch", Reason: string(kind), ActorName: "system: software vulnerability matcher",
+		Message: "The software vulnerability matcher re-evaluated the installed version",
+	}, `
 		UPDATE findings f SET `+set+`, updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[]) AND `+matcherOwnedSQL+`
 		  AND f.status IN `+from+`
@@ -502,7 +505,10 @@ func (r *SoftwareMatchRepository) ReopenFindings(ctx context.Context, tenantID s
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	return r.updateFindings(ctx, `
+	return r.updateFindings(ctx, findingTransition{
+		Source: "vulnmatch", Reason: "matched_again", ActorName: "system: software vulnerability matcher",
+		Message: "The software vulnerability matcher matched it again",
+	}, `
 		UPDATE findings f SET status = 'confirmed', resolution = NULL, resolution_method = NULL,
 			resolved_at = NULL, updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[]) AND `+matcherOwnedSQL+`
@@ -511,25 +517,16 @@ func (r *SoftwareMatchRepository) ReopenFindings(ctx context.Context, tenantID s
 		RETURNING f.id::text`, tenantID, ids)
 }
 
-func (r *SoftwareMatchRepository) updateFindings(ctx context.Context, query string, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+func (r *SoftwareMatchRepository) updateFindings(ctx context.Context, t findingTransition, query string, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	strs := make([]string, len(ids))
 	for i, id := range ids {
 		strs[i] = id.String()
 	}
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(strs))
+	out, err := r.db.queryIDsWithTransition(ctx, t, query, tenantID.String(), pq.Array(strs))
 	if err != nil {
 		return nil, fmt.Errorf("matcher findings update: %w", err)
 	}
-	defer rows.Close()
-	var out []shared.ID
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return nil, fmt.Errorf("matcher findings update: %w", err)
-		}
-		out = append(out, shared.MustIDFromString(s))
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // EnsureDefinitions (see softwarematch.Store): a CVE nobody reported yet

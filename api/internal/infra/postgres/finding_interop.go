@@ -236,23 +236,12 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 			AND f.status IN ` + vexFalsePositiveFromSQL + `
 		RETURNING f.id::text`
 	}
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(fps), pq.Array(assets), pq.Array(reasons))
+	out, err := r.db.queryIDsWithTransition(ctx, findingTransition{
+		Source: "vex", Reason: "vex_not_affected", ActorType: "scanner", ActorName: "system: VEX in a scan report",
+		Message: "A VEX statement in a scan report says the component is not affected",
+	}, query, tenantID.String(), pq.Array(fps), pq.Array(assets), pq.Array(reasons))
 	if err != nil {
 		return nil, fmt.Errorf("apply vex not_affected: %w", err)
-	}
-	defer rows.Close()
-	var out []shared.ID
-	for rows.Next() {
-		var idStr string
-		if err := rows.Scan(&idStr); err != nil {
-			return nil, fmt.Errorf("scan vex finding id: %w", err)
-		}
-		if id, err := shared.IDFromString(idStr); err == nil {
-			out = append(out, id)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate vex findings: %w", err)
 	}
 	return out, nil
 }
