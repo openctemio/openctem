@@ -315,7 +315,6 @@ R9 POST /api/v1/users/me/2fa/setup
 R9 POST /api/v1/users/me/change-password
 R9 POST /api/v1/validation/evidence
 R9 POST /api/v1/webhooks/incoming/github
-R9 POST /api/v1/webhooks/incoming/jira
 R9 PUT /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R9 PUT /api/v1/users/me
 R9 PUT /api/v1/users/me/preferences
