@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner feedback on the invite dialog, 2026-10-15). Implemented: §2 role templates (minimal built-in roles, versioned library, summaries). In implementation: §3 escalation safety at acceptance, §4 invitations for people outside the organization, §5 invitation lifecycle, §6 console |
+| Status | Accepted (owner feedback on the invite dialog, 2026-10-15). Implemented: §2 role templates (minimal built-in roles, versioned library, summaries), §3.1–§3.4 escalation safety, §4 invitations for people outside the organization, §5 invitation lifecycle, §6 console (invite dialog, role picker, roles, settings). Not built yet: §3.5 ownership transfer, the acceptance page notices and teams on an invitation |
 | Scope | api (roles, invitations, token mint), web (invite dialog, roles, accept page, authentication settings) |
 | Related | RFC-050 (asset access model), RFC-058 (external members, amended by §4), RFC-065 (bug-bounty programs: the Researcher role), RFC-022 (platform admin console) |
 
