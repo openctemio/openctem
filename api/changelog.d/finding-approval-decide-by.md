@@ -4,7 +4,9 @@
   separate from the end of the acceptance it asks for. A pending request past
   it can no longer be decided and the hourly approval expiration job marks it
   expired, with a timeline entry and an audit row (`finding_approval.expired`).
-  Before, a pending request waited forever.
+  Before, a pending request waited forever. The database enforces it too
+  (approve and reject claim no row past it), and any writer that names no
+  decide-by time (VEX and AI-triage requests) gets the 14-day default.
 - A finding holds at most one pending request (from a person or a platform
   actor); a second request answers 409. Older duplicates are cancelled by a
   migration (newest pending request kept), with a timeline entry.
