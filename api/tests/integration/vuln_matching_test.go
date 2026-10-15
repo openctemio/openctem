@@ -110,7 +110,7 @@ type matchRow struct {
 
 func (e *matchEnv) findings(tenantID shared.ID) []matchRow {
 	e.t.Helper()
-	rows, err := e.pdb.Query(`SELECT status, source, COALESCE(resolution_method, ''), COALESCE(confidence, 0), COALESCE(priority_class, '')
+	rows, err := e.pdb.Query(`SELECT status, source, COALESCE(closure_reason, '') || '/' || COALESCE(verification, ''), COALESCE(confidence, 0), COALESCE(priority_class, '')
 		FROM findings WHERE tenant_id = $1 AND tool_name = 'version-match' AND cve_id = $2 ORDER BY created_at`, tenantID.String(), e.cveID)
 	require.NoError(e.t, err)
 	defer rows.Close()
@@ -155,7 +155,7 @@ func TestVulnMatching_EndToEnd(t *testing.T) {
 	got = e.findings(affected)
 	require.Len(t, got, 1)
 	assert.Equal(t, "resolved", got[0].Status)
-	assert.Equal(t, "version_changed", got[0].Method)
+	assert.Equal(t, "fixed/source_reported", got[0].Method)
 
 	// Downgrade back into range: the same finding reopens.
 	e.observe(affected, assetA, "1.4.2")
@@ -187,7 +187,7 @@ func TestVulnMatching_AdvisoryUpdatedAndStale(t *testing.T) {
 	got := e.findings(advisory)
 	require.Len(t, got, 1)
 	assert.Equal(t, "false_positive", got[0].Status)
-	assert.Equal(t, "advisory_updated", got[0].Method)
+	assert.Equal(t, "detection_error/source_reported", got[0].Method)
 	got = e.findings(stale)
 	require.Len(t, got, 1)
 	assert.Equal(t, "not_observed", got[0].Status)
