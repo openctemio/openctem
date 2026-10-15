@@ -96,8 +96,9 @@ func RepositoryPatternHost(pattern string) string {
 
 // matchRepository reports whether a repository value (a repository name, or
 // another pattern when patterns are compared) falls under pattern, segment
-// by segment: "gitlab.com/acme/*" covers "gitlab.com/acme/sub/app" and
-// "gitlab.com/acme/*", never "gitlab.com/acme-evil/app".
+// by segment: "gitlab.com/acme/*" covers the namespace "gitlab.com/acme"
+// itself, "gitlab.com/acme/sub/app" and "gitlab.com/acme/*", never
+// "gitlab.com/acme-evil/app".
 func matchRepository(pattern, value string) bool {
 	p := NormalizeRepositoryPattern(pattern)
 	v := NormalizeRepositoryPattern(value)
@@ -111,5 +112,5 @@ func matchRepository(pattern, value string) bool {
 		return false
 	}
 	prefix := strings.TrimSuffix(p, "/*")
-	return strings.HasPrefix(v, prefix+"/")
+	return v == prefix || strings.HasPrefix(v, prefix+"/")
 }
