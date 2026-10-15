@@ -46,8 +46,6 @@
   "exceptions.form.ruleId": "ID quy tắc",
   "exceptions.form.pathPattern": "Mẫu đường dẫn",
   "exceptions.form.criteriaRequired": "Nhập ID quy tắc hoặc mẫu đường dẫn để quy tắc có thể khớp phát hiện.",
-  "exceptions.form.expires": "Hết hạn (không bắt buộc)",
-  "exceptions.form.expiresHint": "Để trống nếu quy tắc không bao giờ hết hạn.",
   "exceptions.form.cancel": "Hủy",
   "exceptions.form.saving": "Đang lưu...",
   "exceptions.form.creating": "Đang tạo...",
@@ -99,5 +97,13 @@
   "exceptions.page.empty.pending": "Không có quy tắc loại trừ đang chờ.",
   "exceptions.page.empty.approved": "Không có quy tắc loại trừ đã phê duyệt.",
   "exceptions.page.empty.rejected": "Không có quy tắc loại trừ bị từ chối.",
-  "exceptions.page.empty.expired": "Không có quy tắc loại trừ đã hết hạn."
+  "exceptions.page.empty.expired": "Không có quy tắc loại trừ đã hết hạn.",
+  "exceptions.form.endsAt": "Kết thúc",
+  "exceptions.form.endMissing": "Chọn thời điểm quy tắc kết thúc.",
+  "exceptions.form.endPast": "Thời điểm kết thúc phải ở tương lai.",
+  "exceptions.form.endTooLate": "Quy tắc phải kết thúc trong vòng 365 ngày.",
+  "exceptions.form.endsHint": "Mọi quy tắc đều có hạn: mặc định 90 ngày, tối đa 365 ngày. Muốn tiếp tục ẩn sau thời điểm đó, hãy gửi một quy tắc mới để phê duyệt.",
+  "exceptions.detail.reviewTitle": "Cần xem lại quy tắc này",
+  "exceptions.detail.reviewBody": "Quy tắc này trước đây không có ngày kết thúc và đã được đặt một ngày ({when}). Hãy kiểm tra xem nó còn nên ẩn phát hiện không; muốn giữ sau ngày đó, hãy gửi một quy tắc mới.",
+  "exceptions.page.reviewBadge": "Xem lại"
 }

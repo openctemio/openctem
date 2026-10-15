@@ -382,8 +382,9 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 
 // GetMTTRMetrics returns Mean Time To Remediate metrics by severity.
 // MTTR = average time between first detection and resolution, over the last
-// `days` days. Only genuinely-remediated findings (resolved/verified) count;
-// false_positive/accepted are excluded as they are not remediations.
+// `days` days. Only remediated findings count (vulnerability.RemediatedSQL):
+// dispositions and obsolete closures (asset retired, source removed, rule
+// changed) are not remediations.
 func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error) {
 	if days <= 0 || days > 365 {
 		days = 90
@@ -398,7 +399,7 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 		FROM findings
 		WHERE tenant_id = $1
 		AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
-		AND status = 'resolved'
+		AND ` + vulnerability.RemediatedSQL("") + `
 		AND resolved_at IS NOT NULL AND first_detected_at IS NOT NULL
 		AND resolved_at >= first_detected_at
 		AND resolved_at >= NOW() - ($2::int || ' days')::interval
@@ -444,7 +445,7 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 		w.week_start,
 		COALESCE(SUM(CASE WHEN f.created_at >= w.week_start AND f.created_at < w.week_start + '1 week'::interval THEN 1 ELSE 0 END), 0) as new_count,
 		COALESCE(SUM(CASE WHEN f.resolved_at >= w.week_start AND f.resolved_at < w.week_start + '1 week'::interval
-			AND ` + vulnerability.FixedStatusSQL("f.status") + ` THEN 1 ELSE 0 END), 0) as resolved_count
+			AND ` + vulnerability.RemediatedSQL("f") + ` THEN 1 ELSE 0 END), 0) as resolved_count
 	FROM weeks w
 	LEFT JOIN findings f ON f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + `
 	GROUP BY w.week_start
@@ -696,12 +697,12 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			SELECT severity, priority_class, resolved_at, first_detected_at
 			FROM findings
 			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
-				AND status = 'resolved'
+				AND ` + vulnerability.RemediatedSQL("") + `
 				AND resolved_at >= NOW() - ($2::int || ' days')::interval
 		),
 		total_resolved AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND status = 'resolved'
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + vulnerability.RemediatedSQL("") + `
 		),
 		regressions AS (
 			SELECT COUNT(*) AS cnt FROM findings
@@ -872,7 +873,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 		FROM findings
 		WHERE tenant_id = $1
 			AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
-			AND status = 'resolved'
+			AND ` + vulnerability.RemediatedSQL("") + `
 			AND resolved_at >= NOW() - ($2::int || ' days')::interval
 			AND resolved_at IS NOT NULL
 			AND first_detected_at IS NOT NULL

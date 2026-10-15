@@ -194,7 +194,7 @@ func (r *LicensePolicyRepository) LicenseFindings(ctx context.Context, tenantID 
 	args := &sqlArgs{}
 	tenant := args.add(tenantID.String())
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT f.id::text, f.fingerprint, f.status, f.severity, COALESCE(f.resolution_method, '')
+		SELECT f.id::text, f.fingerprint, f.status, f.severity, COALESCE(f.closure_reason, '')
 		FROM findings f
 		WHERE f.tenant_id = `+tenant+` AND f.tool_name = `+licenseToolName+` AND f.finding_type = 'license'`+
 		assetFilter(args, "f.asset_id", assetIDs), args.vals...)
@@ -206,7 +206,7 @@ func (r *LicensePolicyRepository) LicenseFindings(ctx context.Context, tenantID 
 	for rows.Next() {
 		var e licapp.ExistingFinding
 		var id string
-		if err := rows.Scan(&id, &e.Fingerprint, &e.Status, &e.Severity, &e.ResolutionMethod); err != nil {
+		if err := rows.Scan(&id, &e.Fingerprint, &e.Status, &e.Severity, &e.ClosureReason); err != nil {
 			return nil, fmt.Errorf("scan license finding: %w", err)
 		}
 		parsed, perr := shared.IDFromString(id)
@@ -238,7 +238,7 @@ func (r *LicensePolicyRepository) ResolveFindings(ctx context.Context, tenantID 
 		WITH moved AS (
 			UPDATE findings f SET status = 'resolved',
 				resolution = 'The license policy no longer flags this package',
-				resolution_method = '`+licapp.ResolutionMethod+`', resolved_at = NOW(), resolved_by = NULL, updated_at = NOW()
+				closure_reason = '`+licapp.ClosureReason+`', verification = 'none', resolved_at = NOW(), resolved_by = NULL, updated_at = NOW()
 			WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[]) AND f.tool_name = `+licenseToolName+`
 			  AND f.status IN `+autoResolveFromSQL+`
 			RETURNING f.id
@@ -253,10 +253,10 @@ func (r *LicensePolicyRepository) ResolveFindings(ctx context.Context, tenantID 
 func (r *LicensePolicyRepository) ReopenFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID) (int, error) {
 	return r.moveFindings(ctx, `
 		WITH moved AS (
-			UPDATE findings f SET status = 'confirmed', resolution = NULL, resolution_method = NULL,
+			UPDATE findings f SET status = 'confirmed', resolution = NULL, closure_reason = NULL, verification = NULL,
 				resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
 			WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[]) AND f.tool_name = `+licenseToolName+`
-			  AND f.status IN `+fixedReopenFromSQL+` AND f.resolution_method = '`+licapp.ResolutionMethod+`'
+			  AND f.status IN `+fixedReopenFromSQL+` AND f.closure_reason = '`+licapp.ClosureReason+`'
 			RETURNING f.id
 		)
 		INSERT INTO finding_activities (id, tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, created_at)
