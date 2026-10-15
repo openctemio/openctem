@@ -79,8 +79,9 @@ tenant only):
 - otherwise the delivered copy carries the headers and User-Agent in
   `http_policy` and a `rate_limit` capped at the smallest program rate; the
   stored command is unchanged;
-- headers or a User-Agent go only to a sensor whose SDK is v0.19.0 or later
-  (older sensors would ignore them); a failed lookup withholds the job.
+- headers or a User-Agent go only to a sensor that reports the capability
+  `http.identity@1` (its tools send them on every request; others would
+  ignore them); a failed lookup withholds the job.
 
 The trigger refuses conflicting rules up front (`PROGRAM_RULES_CONFLICT`);
 a run outside a testing window waits, a scheduled one is deferred to the
