@@ -8,6 +8,8 @@ import type {
   ApiDataFlow,
   ApiDataFlowLocation,
   ApiFinding,
+  ApiFindingFixPlan,
+  ApiFindingFixPlanItem,
   ApiFindingSourceData,
 } from '../api/finding-api.types'
 import type {
@@ -20,6 +22,8 @@ import type {
   DataFlowLocation,
   DataFlowLocationType,
   FindingDetail,
+  FindingFixPlan,
+  FindingFixPlanItem,
   FindingSourceData,
   FindingStatus,
   FindingType,
@@ -143,6 +147,30 @@ export function mapDataFlow(df: ApiDataFlow | undefined): DataFlow | undefined {
       .map(({ loc, type }, i) => mapDataFlowLocation(loc, type, i))
   }
   return steps.length > 0 ? { steps, commitSha: trace?.commit_sha || undefined } : undefined
+}
+
+function mapFixPlanItems(items: ApiFindingFixPlanItem[] | undefined): FindingFixPlanItem[] {
+  return (items ?? []).map((i) => ({
+    id: i.id,
+    title: i.title,
+    severity: i.severity,
+    cveId: i.cve_id,
+  }))
+}
+
+function mapFixPlan(p: ApiFindingFixPlan): FindingFixPlan {
+  return {
+    targetVersion: p.target_version,
+    majorUpgrade: p.major_upgrade,
+    openFindings: p.open_findings,
+    resolvesCount: p.resolves_count,
+    truncated: p.truncated,
+    resolves: mapFixPlanItems(p.resolves),
+    remaining: mapFixPlanItems(p.remaining),
+    completeVersion: p.complete_version,
+    completeMajor: p.complete_major,
+    completeResolves: p.complete_resolves,
+  }
 }
 
 export function toFindingDetail(api: ApiFinding): FindingDetail {
@@ -281,8 +309,22 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
           purl: c.purl,
           license: c.license,
           fixedIn: c.fixed_in,
+          fixedInMajor: c.fixed_in_major,
+          fixedVersions: c.fixed_versions,
           dependencyType: c.dependency_type,
           manifestFile: c.manifest_file,
+        }
+      : undefined,
+    packageFix: api.package_fix ? mapFixPlan(api.package_fix) : undefined,
+    intel: api.intel
+      ? {
+          cvssSource: api.intel.cvss_source,
+          publishedAt: api.intel.published_at,
+          modifiedAt: api.intel.modified_at,
+          references: api.intel.references ?? [],
+          epssDate: api.intel.epss_date,
+          kevDateAdded: api.intel.kev_date_added,
+          kevRansomware: api.intel.kev_ransomware,
         }
       : undefined,
     advisory: v
