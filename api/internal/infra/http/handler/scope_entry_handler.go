@@ -128,6 +128,9 @@ type ScopeSettingsResponse struct {
 	AutoCoverage *bool `json:"auto_coverage"`
 	// AutoCoverageEffective: automatic coverage runs now (read-only).
 	AutoCoverageEffective bool `json:"auto_coverage_effective"`
+	// CIScopeRequiresProof: a CI trust's new repository entries wait
+	// inactive for a verified pipeline run under them (opt-in, default off).
+	CIScopeRequiresProof bool `json:"ci_scope_requires_proof"`
 	// OneOffTargets: admins, admins_and_requests or disabled.
 	OneOffTargets string `json:"one_off_targets"`
 	OneOffMaxDays int    `json:"one_off_max_days"`
@@ -184,11 +187,13 @@ type ScopeSettingsRequest struct {
 	// value.
 	UnclassifiedScans string `json:"unclassified_scans" validate:"omitempty,oneof=off low_impact full"`
 	// AutoCoverage: true or false; omitted keeps the stored choice.
-	AutoCoverage      *bool  `json:"auto_coverage"`
-	OneOffTargets     string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
-	OneOffMaxDays     int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
-	WideningApprovals *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
-	DefaultMaxTier    string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
+	AutoCoverage *bool `json:"auto_coverage"`
+	// CIScopeRequiresProof: true or false; omitted keeps the stored value.
+	CIScopeRequiresProof *bool  `json:"ci_scope_requires_proof"`
+	OneOffTargets        string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
+	OneOffMaxDays        int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
+	WideningApprovals    *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
+	DefaultMaxTier       string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
 }
 
 func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss tenant.ScopeSettings) (ScopeSettingsResponse, error) {
@@ -202,7 +207,8 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, ConfirmAddsToScope: !ss.ConfirmAddsToScopeDisabled,
 		ReviewBeforeInventory: ss.ReviewBeforeInventory,
 		AutoCoverage:          ss.AutoCoverage, AutoCoverageEffective: ss.AutoCoverageOn(mode == scangov.ModeStrict),
-		UnclassifiedScans: ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
+		CIScopeRequiresProof: ss.CIScopeRequiresProof,
+		UnclassifiedScans:    ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
 		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
@@ -292,10 +298,14 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if req.ReviewBeforeInventory != nil {
 		ss.ReviewBeforeInventory = *req.ReviewBeforeInventory
 	}
+	if req.CIScopeRequiresProof != nil {
+		ss.CIScopeRequiresProof = *req.CIScopeRequiresProof
+	}
 	// A client that does not know confirm_adds_to_scope,
 	// review_before_inventory or unclassified_scans keeps the stored value
 	// instead of resetting it.
-	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil {
+	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil ||
+		req.CIScopeRequiresProof == nil {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -313,6 +323,9 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.AutoCoverage == nil {
 			ss.AutoCoverage = before.AutoCoverage
+		}
+		if req.CIScopeRequiresProof == nil {
+			ss.CIScopeRequiresProof = before.CIScopeRequiresProof
 		}
 
 	}
