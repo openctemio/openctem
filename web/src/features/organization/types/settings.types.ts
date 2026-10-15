@@ -63,6 +63,10 @@ export interface SecuritySettings {
   sso_enforced?: boolean
   /** Whether personal email accounts may join (api RFC-058). */
   personal_accounts?: PersonalAccountsPolicy
+  /** Who may be invited (api RFC-095). */
+  invitees?: InviteesPolicy
+  /** Outside people no organization manages need an end of access. */
+  external_access_end_required?: boolean
   /** Members who may sign in without SSO while it is enforced. */
   sso_exceptions?: SSOException[]
   /** SSO newcomers wait for an administrator's approval (api RFC-058). */
@@ -70,6 +74,8 @@ export interface SecuritySettings {
 }
 
 export type PersonalAccountsPolicy = 'allowed' | 'allowed_with_mfa' | 'blocked'
+
+export type InviteesPolicy = 'any' | 'verified_domains' | 'allow_list'
 
 export interface SSOException {
   user_id: string
@@ -91,6 +97,8 @@ export interface UpdateSecuritySettingsInput {
   tool_http_user_agent?: string
   forbid_tool_insecure_tls?: boolean
   personal_accounts?: PersonalAccountsPolicy
+  invitees?: InviteesPolicy
+  external_access_end_required?: boolean
   /** Replaces the whole list. */
   sso_exceptions?: SSOException[]
   jit_requires_approval?: boolean

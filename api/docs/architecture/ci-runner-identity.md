@@ -106,7 +106,10 @@ to it like any other blocking reason.
   marks the run shared by the parallel capability jobs of one pipeline run:
   one per pipeline, external run id and commit, whatever the attempt
   (`evidence_union`, `idx_ci_runs_pipeline_run`, migration
-  `ci_run_evidence_union`). A later attempt re-opens it and carries the
+  `ci_run_evidence_union`). It is the only unique index matching these rows:
+  the older attempt-keyed `idx_ci_runs_aggregate_open` covers only runs from
+  before it (`NOT evidence_union`), so concurrent joins fall back to
+  `ON CONFLICT DO NOTHING` instead of a unique violation. A later attempt re-opens it and carries the
   verdict's failed capabilities (`carried_failed_capabilities`, each cleared
   only by a report of that capability) and its scanner failure count
   (`carried_scan_failures`, cleared by the next upload). A re-opened run
@@ -131,6 +134,15 @@ to it like any other blocking reason.
   `repository_asset_id`, a business-unit policy `business_unit_id`, each a
   composite FK (cascade); the repository's policy follows it on asset merge
   (the kept repository's own wins). The API keeps `scope_type` + `scope_id`.
+  Per-field layering (RFC-096, migration `ci_gate_policy_layers`): `fields`
+  lists what a business unit or repository policy sets (the rest is
+  inherited; the organization sets all), `locked_fields` (organization and
+  business unit) are fields no layer below may loosen, and a repository
+  policy carries `reason` and an optional `expires_at`. The gate baseline
+  settings (`baseline_on_first_run`, `baseline_grace_days`,
+  `baseline_secrets_block`) are policy fields too. `cirun.Resolve` builds a
+  repository's effective policy with the source of every field; the gate
+  and `GET /api/v1/ci/gate-settings/{id}` both use it.
 - `ci_gate_baselines` and `ci_gate_baseline_findings`: one gate baseline per repository (tenant, repository
   asset), and the fingerprints it holds. Written only by `PUT /api/v1/ci/gate-baselines/{id}`
   (`scans:ci:policy`, step-up, audited high); a default-branch run is judged against it only (RFC-051 §6.2).
