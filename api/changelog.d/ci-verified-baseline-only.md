@@ -10,6 +10,6 @@
 - **Behaviour change:** a branch typed `main` or `release` from its name no longer counts as exposure for
   baselines or for promoting branch-only findings to organization findings; only the default branch and
   protected branches (from repository import or set by an administrator) do. Findings already promoted stay
-  promoted. Migration `002139_exposure_default_or_protected_only` replaces `branch_counts_as_exposure`.
+  promoted. Migration `002147_exposure_default_or_protected_only` replaces `branch_counts_as_exposure`.
 - **Upgrade note:** to compare merge requests into a release line with that line, mark the branch protected
   (repository import reads protection from the code host) and, for GitLab, connect the group.
