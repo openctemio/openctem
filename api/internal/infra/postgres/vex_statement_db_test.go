@@ -105,7 +105,7 @@ func (f *vexFixture) finding(tenant, asset shared.ID, version, cve, source, stat
 func (f *vexFixture) state(id shared.ID) (status, method string, stmt *string) {
 	f.t.Helper()
 	var m, s sql.NullString
-	if err := f.db.QueryRow(`SELECT status, resolution_method, vex_statement_id::text FROM findings WHERE id = $1`, id.String()).
+	if err := f.db.QueryRow(`SELECT status, verification, vex_statement_id::text FROM findings WHERE id = $1`, id.String()).
 		Scan(&status, &m, &s); err != nil {
 		f.t.Fatal(err)
 	}
@@ -154,8 +154,8 @@ func TestVEXStatements_DB(t *testing.T) {
 	if res.Closed != 2 {
 		t.Errorf("closed %d, want 2 (%+v)", res.Closed, res)
 	}
-	f.wantStatus(f1, "false_positive", "vex_not_affected")
-	f.wantStatus(f2, "false_positive", "vex_not_affected")
+	f.wantStatus(f1, "false_positive", "vex_statement")
+	f.wantStatus(f2, "false_positive", "vex_statement")
 	f.wantStatus(f3, "in_progress", "")
 	f.wantStatus(other, "new", "")
 	f.wantStatus(foreign, "new", "")
@@ -179,12 +179,12 @@ func TestVEXStatements_DB(t *testing.T) {
 		t.Fatalf("asset-bound create: %v", err)
 	}
 	f.wantStatus(f1, "new", "")
-	f.wantStatus(f2, "false_positive", "vex_not_affected")
+	f.wantStatus(f2, "false_positive", "vex_statement")
 	f.wantStatus(f3, "in_progress", "")
 	if _, err := svc.Delete(ctx, f.tenant, onA1.ID.String(), actx); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	f.wantStatus(f1, "false_positive", "vex_not_affected")
+	f.wantStatus(f1, "false_positive", "vex_statement")
 
 	// 3. Widening to a range covers 4.17.21 too; status fixed resolves.
 	rng := ">=4.17.0,<4.17.22"
@@ -192,12 +192,12 @@ func TestVEXStatements_DB(t *testing.T) {
 	if _, res, err = svc.Update(ctx, f.tenant, st.ID.String(), vexapp.Patch{VersionRange: &rng}, actx); err != nil {
 		t.Fatalf("update range: %v", err)
 	}
-	f.wantStatus(f3, "false_positive", "vex_not_affected")
+	f.wantStatus(f3, "false_positive", "vex_statement")
 	if _, _, err = svc.Update(ctx, f.tenant, st.ID.String(), vexapp.Patch{Status: &fixed}, actx); err != nil {
 		t.Fatalf("update status: %v", err)
 	}
 	for _, id := range []shared.ID{f1, f2, f3} {
-		f.wantStatus(id, "resolved", "vex_fixed")
+		f.wantStatus(id, "resolved", "vex_statement")
 	}
 
 	// 4. A finding reported later is covered (sticky), and a scan that
@@ -206,7 +206,7 @@ func TestVEXStatements_DB(t *testing.T) {
 	if n, err := svc.ApplyToFingerprints(ctx, f.tenant, []string{"fp-" + f4.String()}); err != nil || n != 1 {
 		t.Fatalf("sticky: %d %v", n, err)
 	}
-	f.wantStatus(f4, "resolved", "vex_fixed")
+	f.wantStatus(f4, "resolved", "vex_statement")
 	reopened, err := NewFindingRepository(&DB{DB: f.db}).AutoReopenByFingerprintsBatch(ctx, f.tenant, []string{"fp-" + f4.String()})
 	if err != nil || len(reopened) != 0 {
 		t.Fatalf("regression reopen must skip a vex_fixed finding: %v %v", reopened, err)
@@ -370,7 +370,7 @@ func TestVEXStatements_Import_DB(t *testing.T) {
 	if res.Created != 1 || res.Applied.Closed != 1 {
 		t.Fatalf("import: %+v", res)
 	}
-	f.wantStatus(fnd, "false_positive", "vex_not_affected")
+	f.wantStatus(fnd, "false_positive", "vex_statement")
 	var origin, ref string
 	_ = f.db.QueryRow(`SELECT origin, document_ref FROM vex_statements WHERE tenant_id = $1`, f.tenant.String()).Scan(&origin, &ref)
 	if origin != "document" || !strings.HasPrefix(ref, "openvex") {
