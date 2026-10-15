@@ -61,7 +61,7 @@ var (
 	})
 	findingPriorityChanged = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "openctem", Subsystem: "finding_priority", Name: "changed_total",
-		Help: "Findings whose stored priority, enrichment or SLA deadline changed",
+		Help: "Findings whose priority class changed",
 	})
 )
 

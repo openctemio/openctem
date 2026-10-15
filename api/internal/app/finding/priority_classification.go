@@ -543,6 +543,11 @@ func (s *PriorityClassificationService) publishIfChanged(
 	if previousClass != nil && *previousClass == c.Class {
 		return // no transition
 	}
+	if changeEventsCoalesced(ctx) {
+		// A recompute caused by a scoring change: the worker sends one
+		// summary for the whole change instead of one event per finding.
+		return
+	}
 
 	// anti-flap — when the tenant has burned its rolling budget at
 	// the protected class we RECORD the classification (already done

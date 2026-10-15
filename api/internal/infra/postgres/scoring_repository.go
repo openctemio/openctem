@@ -207,10 +207,12 @@ func (r *ScoringRepository) EnqueueReconcile(ctx context.Context, delay time.Dur
 			WHERE f.tenant_id = $1 AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			GROUP BY f.asset_id
 		), ins AS (
-			INSERT INTO finding_priority_queue (asset_id, tenant_id, reason, enqueued_at)
-			SELECT t.asset_id, $1::uuid, '` + scoring.ReasonReconcile + `',
+			INSERT INTO finding_priority_queue (asset_id, tenant_id, reason, scoring_change_id, enqueued_at)
+			SELECT t.asset_id, $1::uuid,
+			       CASE WHEN t.stale THEN '` + scoring.ReasonScoringChange + `' ELSE '` + scoring.ReasonReconcile + `' END,
+			       CASE WHEN t.stale AND cur.v > 0 THEN cur.v END,
 			       CASE WHEN t.stale THEN now() ELSE now() + make_interval(secs => $2) END
-			FROM todo t
+			FROM todo t CROSS JOIN cur
 			ORDER BY t.asset_id
 			ON CONFLICT (asset_id) DO NOTHING
 			RETURNING 1
@@ -254,6 +256,83 @@ func (r *ScoringRepository) StampVersion(ctx context.Context, tenantID shared.ID
 		return fmt.Errorf("stamp finding priority version: %w", err)
 	}
 	return nil
+}
+
+// RecordImpact adds a pass's counts to the change's summary row of the
+// tenant.
+func (r *ScoringRepository) RecordImpact(ctx context.Context, tenantID shared.ID, changeID int64, im scoring.ChangeImpact) error {
+	const q = `
+		INSERT INTO scoring_change_impacts (scoring_change_id, tenant_id, findings_checked, findings_changed,
+			findings_raised, raised_to_p0, findings_lowered, deadlines_tightened)
+		SELECT c.id, $2, $3, $4, $5, $6, $7, $8 FROM scoring_changes c
+		WHERE c.id = $1 AND (c.tenant_id = $2 OR c.tenant_id IS NULL)
+		ON CONFLICT (tenant_id, scoring_change_id) DO UPDATE SET
+			findings_checked = scoring_change_impacts.findings_checked + EXCLUDED.findings_checked,
+			findings_changed = scoring_change_impacts.findings_changed + EXCLUDED.findings_changed,
+			findings_raised = scoring_change_impacts.findings_raised + EXCLUDED.findings_raised,
+			raised_to_p0 = scoring_change_impacts.raised_to_p0 + EXCLUDED.raised_to_p0,
+			findings_lowered = scoring_change_impacts.findings_lowered + EXCLUDED.findings_lowered,
+			deadlines_tightened = scoring_change_impacts.deadlines_tightened + EXCLUDED.deadlines_tightened,
+			notified_at = NULL,
+			updated_at = now()`
+	if _, err := r.db.ExecContext(ctx, q, changeID, tenantID.String(), im.Checked, im.Changed,
+		im.Raised, im.RaisedToP0, im.Lowered, im.DeadlinesTightened); err != nil {
+		return fmt.Errorf("record scoring change impact: %w", err)
+	}
+	return nil
+}
+
+// ClaimDrainedSummaries marks as notified, and returns, the summaries whose
+// change has no asset of the tenant left in the queue. Each is claimed once
+// (the UPDATE is the claim); a later pass of the same change (a requeue)
+// re-opens it with its new counts.
+func (r *ScoringRepository) ClaimDrainedSummaries(ctx context.Context, limit int) ([]scoring.ChangeSummary, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	const q = `
+		WITH due AS (
+			SELECT i.tenant_id, i.scoring_change_id FROM scoring_change_impacts i
+			WHERE i.notified_at IS NULL
+			  AND NOT EXISTS (
+				SELECT 1 FROM finding_priority_queue q
+				WHERE q.tenant_id = i.tenant_id AND q.scoring_change_id = i.scoring_change_id)
+			ORDER BY i.updated_at
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE scoring_change_impacts i SET notified_at = now()
+		FROM due, scoring_changes c
+		WHERE i.tenant_id = due.tenant_id AND i.scoring_change_id = due.scoring_change_id
+		  AND c.id = i.scoring_change_id
+		RETURNING i.tenant_id, i.scoring_change_id, c.source, c.summary, i.findings_checked, i.findings_changed,
+			i.findings_raised, i.raised_to_p0, i.findings_lowered, i.deadlines_tightened`
+	rows, err := r.db.QueryContext(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("claim scoring change summaries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []scoring.ChangeSummary
+	for rows.Next() {
+		var (
+			s   scoring.ChangeSummary
+			tid string
+		)
+		if err := rows.Scan(&tid, &s.ChangeID, &s.Source, &s.Summary, &s.Checked, &s.Changed,
+			&s.Raised, &s.RaisedToP0, &s.Lowered, &s.DeadlinesTightened); err != nil {
+			return nil, fmt.Errorf("scan scoring change summary: %w", err)
+		}
+		id, err := shared.IDFromString(tid)
+		if err != nil {
+			continue
+		}
+		s.TenantID = id
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate scoring change summaries: %w", err)
+	}
+	return out, nil
 }
 
 // tenantIDs lists every tenant id.

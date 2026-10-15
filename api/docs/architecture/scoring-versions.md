@@ -177,6 +177,32 @@ are never recomputed when a model or settings change.
   "Scoring changed on <date> (<what>): values before and after are not
   directly comparable", so a step is not read as a change in risk.
 
+## No alert storms
+
+A recompute caused by a scoring change (a queue row with a
+`scoring_change_id`: the settings triggers, and the reconcile for findings
+whose version is stale, such as after a new platform model) does not send one
+`finding_priority_escalated` notification per finding. The classification
+and its audit entry are unchanged; only the per-finding event is held back.
+The worker adds the pass's counts to `scoring_change_impacts` (per tenant and
+change: findings checked, changed, raised, raised to P0, lowered, deadlines
+moved earlier) and, once no asset of that change is left in the tenant's
+queue, sends **one** `scoring_change_applied` notification: "Scoring changed
+(<what>): N findings changed priority", with the counts in the body and the
+metadata. Its severity follows the most urgent movement (critical when a
+finding became P0, high when one rose or a deadline moved earlier), so the
+channel's severity filter still applies; the event is on by default and
+migration `scoring_change_impacts` turns it on for every channel that already
+receives priority escalations. A change that moved nothing sends nothing.
+
+Recomputes for other reasons (new findings, intel, asset context, controls)
+keep their per-finding events and the priority flood guard.
+
+Ticket priority: Jira's priority follows the finding's severity, set when the
+ticket is created, so a scoring change updates no ticket and creates none.
+If ticket priority ever follows the priority class, it must be a batched
+field update under the same summary, never new tickets.
+
 ## Security
 
 - Settings are a security control: they decide what is P0 and when work is
@@ -197,8 +223,10 @@ closed findings frozen; SLA deadlines that only tighten, with a timeline
 entry; the whole-organization preview and the step-up apply; version stamps
 on risk snapshots and markers on trend charts.
 
-Planned in the same series: one summary notification per scoring change instead
-of one per finding; recompute scoped to the CVEs whose EPSS or KEV status
+Shipped here: one summary notification per scoring change instead of one
+per finding.
+
+Planned in the same series: recompute scoped to the CVEs whose EPSS or KEV status
 changed.
 
 ## Key files
@@ -214,5 +242,7 @@ changed.
 - `internal/infra/controller/risk_snapshot.go`, `internal/infra/postgres/dashboard_repository.go` (trend markers)
 - `web/src/features/organization/components/scoring-impact-dialog.tsx`
 - `web/src/features/dashboard/components/ctem/scoring-change-note.tsx`
+- `internal/app/finding/scoring_summary.go`, `migrations/*_scoring_change_impacts.up.sql`
 - `tests/integration/scoring_versions_test.go`, `tests/integration/sla_tighten_only_test.go`,
-  `tests/integration/scoring_preview_test.go`, `tests/integration/scoring_trend_test.go`
+  `tests/integration/scoring_preview_test.go`, `tests/integration/scoring_trend_test.go`,
+  `tests/integration/scoring_summary_test.go`
