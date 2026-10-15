@@ -135,6 +135,13 @@ func registerCIRoutes(
 		r.DELETE("/code-scanning/repositories/{id}/settings", admin.ResetCodeScanRepository, middleware.Require(permission.CIWrite))
 		r.POST("/code-scanning/repositories/{id}/baseline", admin.RebaselineCodeScanRepository, middleware.Require(permission.CIWrite))
 
+		// A repository's gate baseline: recording one lets its open findings
+		// pass default-branch runs, so it needs the policy permission and
+		// step-up; removing it is stricter.
+		r.GET("/gate-baselines/{id}", admin.GetGateBaseline, middleware.Require(permission.CIRead))
+		r.PUT("/gate-baselines/{id}", admin.SetGateBaseline, middleware.Require(permission.CIPolicy), requireStepUp())
+		r.DELETE("/gate-baselines/{id}", admin.DeleteGateBaseline, middleware.Require(permission.CIPolicy))
+
 		r.GET("/gate-overrides", admin.ListOverrides, middleware.Require(permission.CIRead))
 		r.POST("/gate-overrides", admin.CreateOverride, middleware.Require(permission.CIOverride), requireStepUp())
 		r.POST("/gate-overrides/{id}/revoke", admin.RevokeOverride, middleware.Require(permission.CIOverride))

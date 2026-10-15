@@ -274,3 +274,22 @@ func (tenantAttribution) UncoveredTargets(context.Context, shared.ID, []string) 
 func (failingAttribution) UncoveredTargets(context.Context, shared.ID, []string) ([]string, error) {
 	return nil, nil
 }
+
+// A probe never goes to a repository: by the asset type, or by a target in
+// the path form. The gate is not even asked.
+func TestCheckTarget_RefusesRepositories(t *testing.T) {
+	for _, tg := range []Target{
+		{AssetID: shared.NewID(), Type: "repository", Address: "https://github.com", AssetName: "github.com/acme/app"},
+		{Address: "github.com/acme/app"},
+		{Address: "git@github.com:acme/app"},
+	} {
+		g := &recordingGate{out: &scanapp.DispatchTargets{Allowed: []string{tg.Address}}}
+		_, err := CheckTarget(context.Background(), g, shared.NewID(), tg)
+		if !errors.Is(err, ErrTargetRefused) {
+			t.Errorf("%+v: err = %v, want refused", tg, err)
+		}
+		if len(g.got) != 0 {
+			t.Errorf("%+v: the gate was asked", tg)
+		}
+	}
+}
