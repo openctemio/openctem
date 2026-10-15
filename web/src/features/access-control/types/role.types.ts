@@ -20,9 +20,35 @@ export interface Role {
   has_full_data_access: boolean
   permissions: string[]
   permission_count: number
+  /** What the role can do, in words: risk, why, and per area (RFC-095). */
+  summary?: RoleSummary
+  /** Set for a role created from a role template. */
+  template?: RoleTemplateStatus
   members_count?: number // Number of users assigned to this role
   created_at: string
   updated_at: string
+}
+
+export type RoleRisk = 'low' | 'medium' | 'high' | 'critical'
+
+/** permission.Summarize on the API: the console shows it instead of a count. */
+export interface RoleSummary {
+  risk: RoleRisk
+  /** Stable reason codes: admin, full_data, manage_people, secrets, api_keys, settings, approve, run_scans, delete. */
+  reasons: string[]
+  /** Per product area (first segment of a permission id): view or change. */
+  areas: { area: string; level: 'view' | 'change' }[]
+}
+
+/** How a custom role relates to the template it was created from. */
+export interface RoleTemplateStatus {
+  template_id: string
+  template_name?: string
+  version_taken: number
+  current_version?: number
+  update_available: boolean
+  retired?: boolean
+  diff: { added: string[]; removed: string[] }
 }
 
 /**
@@ -88,6 +114,8 @@ export interface CreateRoleInput {
   hierarchy_level?: number
   has_full_data_access?: boolean
   permissions?: string[]
+  /** The role template the role starts from: the role records its version. */
+  template_id?: string
 }
 
 export interface UpdateRoleInput {
