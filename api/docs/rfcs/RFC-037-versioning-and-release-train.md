@@ -4,7 +4,8 @@
 > implemented in this repository (`versions.yaml`, the Release Train, Release
 > Publish and Release Reminder workflows, the version/commit/channel triple in
 > `pkg/version`); P3 and P4 belong to the sdk-go, sensor and helm-charts
-> repositories (§9).
+> repositories (§9). The sensor product catalog (§11) is implemented: the API
+> embeds `versions.yaml`, and each sensor product has its own release line.
 > Scope: `openctemio/openctem` (api + web), `openctemio/sdk-go`,
 > `openctemio/sensor`, `openctemio/helm-charts`, `openctemio/docs`.
 >
@@ -109,6 +110,8 @@ checkouts should set `git config remote.origin.tagOpt --tags`.
 
 - A version string appears in the source only as (a) a release tag, (b) a
   copy of `versions.yaml` written by `sync-versions.sh`, or (c) test data.
+  No Go file holds one: the API reads every version default from its
+  embedded copy of `versions.yaml` (§11).
 - `web/package.json` is `"version": "0.0.0"` permanently. npm requires the
   field to be valid SemVer; the web app's version comes from the build.
 - Release builds get the version from the tag (`--build-arg VERSION`,
@@ -120,21 +123,27 @@ checkouts should set `git config remote.origin.tagOpt --tags`.
 # versions.yaml (repository root)
 platform:
   release: v0.8.0   # newest released tag; on release/vX.Y.Z: vX.Y.Z (set by the cut)
-sensor:
+sensor:             # one section per sensor product (§11)
+  product: openctemio-sensor
   latest: v0.6.4    # install snippets pin it; older sensors show "update available"
   min: ""           # older sensors are degraded "version unsupported"; "" = none
+  image: ghcr.io/openctemio/sensor
+  install: sensor
+  release_identity: https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml
 sdk:
-  latest: v0.14.0   # sensors built with an older SDK are "outdated"
-  min: ""           # older is degraded "SDK below minimum"; "" = none
+  latest: v0.14.0   # sensors built with an older SDK are "outdated" (informational)
+  advisories: ""    # SDK releases with a security advisory: a warning; "" = none
+ci:
+  latest: v0.3.0
+  min: v0.3.0
 chart:
   version: 0.4.1    # newest published chart whose appVersion is platform.release
 ```
 
-`.github/scripts/release/sync-versions.sh` copies it into its consumers:
-`config.Default*` in `api/internal/config`, the install-snippet image in the
-sensor handler, the `SENSOR_*` defaults in `api/deploy/docker-compose.yml`,
-`OPENCTEM_VERSION` in `api/deploy/.env.example`, and the examples in
-`api/.env.example`. The consumer table in the script is the only place a
+`.github/scripts/release/sync-versions.sh` copies it into its consumers: the
+API's embedded copy `api/internal/versions/versions.yaml` (whole file),
+`OPENCTEM_VERSION` in `api/deploy/.env.example` and the compose files, and the
+console's CI runner pin. The consumer table in the script is the only place a
 versioned default may live. With `--check` it is the **Version consistency**
 CI job, which also fails when `web/package.json` is not `0.0.0` or when
 `platform.release` names a tag that does not exist. The one exception is the
@@ -149,8 +158,10 @@ Who bumps what:
 | Field | Bumped by |
 |---|---|
 | `platform.release` | the platform release workflow: one commit on the release branch (`cut-release.sh`); `develop` gets it when `main` is merged back (a hotfix: the post-release PR sets it) |
-| `sensor.latest` | the sensor release workflow, in a PR to `openctem` after it tags (until that exists: by hand) |
+| `sensor.latest` | the sensor release workflow, in a PR to `openctemio/openctem` after it tags |
+| `<product>.latest` of another product | its release workflow the same way, or a person (YAML only) |
 | `sdk.latest` | the sdk-go release workflow, same way |
+| `sdk.advisories` | a person, when an SDK security advisory is published |
 | `*.min` | a person, deliberately: raising a minimum degrades fleets |
 | `chart.version` | the platform release workflow, in the post-release PR to `develop`, together with the helm-charts PR it opens (the chart is published after the tag, so a tag names the previous chart) |
 
@@ -338,3 +349,91 @@ Same rule, own tags, no merge queue (both ship from `main`):
 - **Merging `main` back into `develop`.** For a train the merge is trivial
   (`main`'s tree is an earlier `develop` tree) and the script refuses if the
   result differs from `develop`. Hotfixes skip it.
+
+## 11. Sensor product catalog (2026-10-14)
+
+### 11.1 Problem
+
+The platform assumed one sensor product. `SENSOR_LATEST_VERSION`,
+`SENSOR_MIN_VERSION` and the SDK floor were one sensor-wide channel, so the
+Tenable.sc connector and any custom sensor built on
+sdk-go were judged against the scanning sensor's releases ("unsupported" at
+v0.1.0 against a v0.9.0 minimum). The defaults were Go constants rewritten by
+`sync-versions.sh`, so every sensor release opened a pull request that changed
+Go code in `config.go` and the sensor handler.
+
+### 11.2 Design
+
+- **The catalog is data.** Every top-level section of `versions.yaml` other
+  than `platform`, `sdk`, `ci` and `chart` is one sensor product: `product`
+  (the token the sensor reports), `latest`, `min`, `image` (no tag), `install`
+  (its install-snippet set) and `release_identity` (the workflow that signs
+  its image). The format stays two levels so the release scripts in every
+  repository keep reading and writing it with `rel_yaml_get`/`rel_yaml_set`,
+  and the sensor and sdk-go release workflows keep bumping `sensor.latest`
+  and `sdk.latest` unchanged.
+- **Embedded, never copied into Go.** `go:embed` cannot reach outside the Go
+  module (`api/`), so `sync-versions.sh` writes a byte-for-byte copy to
+  `api/internal/versions/versions.yaml`; `--check` (CI) fails while they
+  differ, and so does a Go test. Package `internal/versions` parses it once at
+  load and panics on anything malformed: every test of every importing package
+  fails, so a bad manifest cannot build a passing API. Bumping any product,
+  the SDK or the CI runner changes these two YAML files only.
+- **The sensor reports its product.** It already does: the heartbeat's
+  `sensor.name` (sdk-go `BaseSensorConfig.ProductName`, else the product set
+  with `useragent.SetProduct`) or the User-Agent product token
+  (`openctemio-sensor/0.22.2`). No contract change is needed in sdk-go or ctis.
+  A sensor that reports none is the scanning sensor, which was the only
+  product before products were reported.
+- **Verdicts per product.** A sensor of a listed product is compared with that
+  product's `latest` and `min` (update available, unsupported). A product the
+  catalog does not list (a custom sensor) gets
+  `version_status: unknown`: no outdated or unsupported verdict. Whether such a
+  sensor works with this platform is the protocol check (a v1 sensor is
+  refused) and the capabilities and tools it advertises, which dispatch already
+  matches.
+- **SDK.** `sdk.latest` is informational ("outdated", no health effect). The
+  SDK floor is gone; `sdk.advisories` lists SDK releases with a published
+  security advisory, and a sensor built with one is degraded with the warning
+  `sdk_advisory`.
+- **Install snippets per product.** `GET /sensors/{id}/config-templates`
+  takes `?product=<id>` (a catalog id; anything else is 400), defaulting to
+  the product the sensor reports when it is listed, else the scanning sensor.
+  The snippets pin the product's `latest` image; `SENSOR_IMAGE` still replaces
+  the scanning sensor's repository for a mirror. `GET /sensors/stats` returns
+  the catalog (`products`) for the Add sensor dialog, which offers the listed
+  products and, for a custom one, a link to the tool-author documentation.
+- **Settings.** `SENSOR_LATEST_VERSION`, `SENSOR_MIN_VERSION`,
+  `SENSOR_SDK_LATEST_VERSION` and `SENSOR_SDK_MIN_VERSION` are removed: the
+  API refuses to start while one is set and says why. A per-product override
+  would bring back a second source of truth for little use; a newer release
+  reaches the platform through the YAML-only bump. `CI_RUNNER_*` keep their
+  overrides, with defaults from the embedded manifest.
+
+### 11.3 Threat model
+
+- The product token, version and SDK version are the sensor's own claims,
+  reduced to safe tokens before they are stored. They choose which release
+  line a sensor is compared with and so only change display and health
+  reasons, never what the sensor may do: authorization, grants, scope and
+  dispatch do not read them. A sensor that claims another product can hide an
+  "unsupported" verdict, which it could already do by claiming a newer version.
+- The product query parameter is matched against the catalog (bounded token
+  shape first), so nothing a caller sends reaches a shell snippet; catalog
+  images and identities are validated when the manifest is parsed (image
+  repository without tag, `https://github.com/openctemio/...` workflow).
+- The catalog is the same for every tenant; the stats and templates responses
+  carry no tenant data beyond what they did, and stay behind the existing
+  `sensors:read` gates.
+
+### 11.4 Later (documented, not built)
+
+- **Updatable catalog feed.** A signed catalog document fetched from the
+  project, verified with a public key built into the API (the way the
+  vulnerability feed is), so a new product or release reaches a running
+  platform without an upgrade; off by default and for air-gapped
+  installations, which keep the embedded catalog.
+- **Tenant-registered custom products.** A tenant names its own sensor
+  product with its own release line, scoped to that tenant, so its sensors get
+  update verdicts too.
+

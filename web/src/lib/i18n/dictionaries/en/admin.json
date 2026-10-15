@@ -213,7 +213,6 @@
   "admin.ops.down": "Unreachable",
   "admin.ops.fleet": "Sensor fleet",
   "admin.ops.fleet.customer": "Customer sensors (online / total)",
-  "admin.ops.fleet.min": "minimum {v}",
   "admin.ops.fleet.none": "No active sensor.",
   "admin.ops.fleet.platform": "Platform sensors (online / total)",
   "admin.ops.fleet.versions": "SDK versions in the field",
@@ -552,5 +551,6 @@
   "admin.legal.termsUrl": "Terms of service link (https)",
   "admin.legal.title": "Legal information",
   "admin.legal.websiteUrl": "Website (https)",
-  "admin.nav.legal": "Legal"
+  "admin.nav.legal": "Legal",
+  "admin.ops.fleet.advisories": "security advisory: {v}"
 }

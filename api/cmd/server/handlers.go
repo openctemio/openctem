@@ -50,6 +50,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -1029,8 +1030,8 @@ func newSensorHandlerWithTemplates(
 		publicAPIURL = cfg.App.URL
 	}
 	h.SetPublicAPIURL(publicAPIURL)
-	h.SetHealthPolicy(sensorHealthPolicy(cfg, log))
-	h.SetSensorImage(sensorInstallImage(cfg, log))
+	h.SetHealthPolicy(sensorHealthPolicy(cfg))
+	h.SetProducts(sensorInstallProducts(cfg, log))
 	h.SetCollectorImage(collectorInstallImage(cfg, log))
 	h.SetCACertificateFile(cfg.SensorConfig.CACertFile)
 
@@ -1040,26 +1041,30 @@ func newSensorHandlerWithTemplates(
 // imageRepositoryRegexp is an image repository safe to put in a shell snippet.
 var imageRepositoryRegexp = regexp.MustCompile(`^[a-z0-9][a-z0-9._/:-]{0,254}$`)
 
-// sensorInstallImage is the image the install snippets run: SENSOR_IMAGE with
-// the release-channel tag (never "latest"). An unusable SENSOR_IMAGE falls
-// back to the published image.
-func sensorInstallImage(cfg *config.Config, log *logger.Logger) string {
+// sensorInstallProducts is the sensor product catalog built into the API
+// (versions.yaml), each product's install snippets pinned to its latest
+// release (never "latest"). SENSOR_IMAGE replaces the scanning sensor's image
+// repository (a mirror); an unusable value falls back to the published image.
+func sensorInstallProducts(cfg *config.Config, log *logger.Logger) []handler.SensorInstallProduct {
+	products := handler.CatalogInstallProducts()
 	repo := strings.TrimSpace(cfg.SensorConfig.Image)
-	if !imageRepositoryRegexp.MatchString(repo) || strings.Contains(repo, "@") {
-		if repo != "" {
-			log.Warn("ignoring SENSOR_IMAGE that is not an image repository", "value", repo)
-		}
-		repo = config.DefaultSensorImageRepository
+	if repo == "" || repo == versions.SensorImage() {
+		return products
 	}
-	// A tag in SENSOR_IMAGE is dropped: the tag is the release channel's.
+	if !imageRepositoryRegexp.MatchString(repo) || strings.Contains(repo, "@") {
+		log.Warn("ignoring SENSOR_IMAGE that is not an image repository", "value", repo)
+		return products
+	}
+	// A tag in SENSOR_IMAGE is dropped: the tag is the product's release.
 	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
 		repo = repo[:i]
 	}
-	tag := sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion)
-	if !sensordom.IsReleaseVersion(tag) {
-		tag = config.DefaultSensorLatestVersion
+	for i, p := range products {
+		if p.ID == versions.DefaultProductID {
+			products[i].Image = repo + ":" + p.Latest
+		}
 	}
-	return repo + ":" + tag
+	return products
 }
 
 // collectorInstallImage is the image a collector's install snippets run:
@@ -1076,30 +1081,25 @@ func collectorInstallImage(cfg *config.Config, log *logger.Logger) string {
 	return img
 }
 
-// sensorHealthPolicy maps the heartbeat settings and the sensor release
-// channel onto the fleet-health thresholds. Each sensor is judged against
-// its own heartbeat deadline (pkg/domain/sensor/liveness.go); the policy adds
-// the online window of the idle interval (informational) and the
-// WORKER_HEARTBEAT_TIMEOUT backstop.
-func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.HealthPolicy {
+// sensorHealthPolicy maps the heartbeat settings, the sensor products'
+// release lines and the SDK entries of the version manifest onto the
+// fleet-health thresholds. Each sensor is judged against its own heartbeat
+// deadline (pkg/domain/sensor/liveness.go) and its own product's release
+// line; the policy adds the online window of the idle interval
+// (informational) and the WORKER_HEARTBEAT_TIMEOUT backstop.
+func sensorHealthPolicy(cfg *config.Config) sensordom.HealthPolicy {
 	sc := cfg.SensorConfig
-	for name, v := range map[string]string{
-		"SENSOR_LATEST_VERSION": sc.LatestVersion, "SENSOR_MIN_VERSION": sc.MinVersion,
-		"SENSOR_SDK_LATEST_VERSION": sc.SDKLatestVersion, "SENSOR_SDK_MIN_VERSION": sc.SDKMinVersion,
-	} {
-		if v != "" && !sensordom.IsReleaseVersion(v) {
-			log.Warn("ignoring sensor release setting that is not a version (want e.g. v0.4.2, or none)",
-				"setting", name, "value", v)
-		}
-	}
 	offline := cfg.Worker.HeartbeatTimeout
+	lines := map[string]sensordom.ReleaseLine{}
+	for _, p := range versions.Products() {
+		lines[p.ID] = sensordom.ReleaseLine{Latest: p.Latest, Min: p.Min}
+	}
 	return sensordom.HealthPolicy{
 		OnlineWindow:     sensordom.OnlineWindowFor(sc.HeartbeatInterval, offline),
 		OfflineAfter:     offline,
-		LatestVersion:    sc.LatestVersion,
-		MinVersion:       sc.MinVersion,
-		SDKLatestVersion: sc.SDKLatestVersion,
-		SDKMinVersion:    sc.SDKMinVersion,
+		Products:         lines,
+		SDKLatestVersion: versions.SDKLatest(),
+		SDKAdvisories:    versions.SDKAdvisories(),
 	}.Normalized()
 }
 

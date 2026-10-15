@@ -21,7 +21,7 @@ export interface SensorFleetSummary {
   platform: { total: number; online: number; unhealthy: number }
   customer: { total: number; online: number; unhealthy: number }
   /** SDK versions in the field, newest first, with whether each is below the minimum. */
-  versions: { version: string; count: number; belowMin: boolean }[]
+  versions: { version: string; count: number; advisory: boolean }[]
 }
 
 const UNHEALTHY = new Set(['offline', 'stale', 'error'])
@@ -46,10 +46,10 @@ export function summarizeSensors(o: AdminOperations): SensorFleetSummary {
     .map(([version, count]) => ({
       version,
       count,
-      belowMin:
-        !!o.sdk_min_version &&
+      // An SDK release with a published security advisory.
+      advisory:
         version !== 'unknown' &&
-        compareVersions(version, o.sdk_min_version) < 0,
+        (o.sdk_advisories ?? []).some((a) => compareVersions(version, a) === 0),
     }))
     .sort((a, b) =>
       a.version === 'unknown'

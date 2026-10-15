@@ -33,6 +33,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // Protocols a constraint may name.
@@ -351,22 +352,23 @@ const (
 // a path-limited URL entry is among them. jobPorts is the job's port list
 // setting ("" = none) and topPorts whether it asks for a "top N" list. It
 // returns "" when the job may run, otherwise a refusal reason.
-func ConstrainedJobRefusal(tool string, cs []Constraint, pathLimited bool, jobPorts string, topPorts bool) string {
-	tool = strings.ToLower(strings.TrimSpace(tool))
+func ConstrainedJobRefusal(job JobShape, cs []Constraint, pathLimited bool) string {
+	tool := strings.ToLower(strings.TrimSpace(job.Tool))
+	jobPorts := strings.TrimSpace(job.Ports)
 	if pathLimited && !pathLimitedTools[tool] {
 		return ConstrainedToolRefused
 	}
 	if len(cs) > 0 && !portLimitedTools[tool] {
 		return ConstrainedToolRefused
 	}
-	if topPorts {
+	if job.TopPorts {
 		return ConstrainedPortsOutside
 	}
-	if tool == "naabu" && strings.TrimSpace(jobPorts) == "" {
-		// A port scanner without a port list scans its default set.
+	if jobPorts == "" && job.PortScan() {
+		// A port scan without a port list scans the tool's default set.
 		return ConstrainedPortsOutside
 	}
-	if strings.TrimSpace(jobPorts) != "" && (len(cs) == 0 || !PortsWithin(jobPorts, cs)) {
+	if jobPorts != "" && (len(cs) == 0 || !PortsWithin(jobPorts, cs)) {
 		return ConstrainedPortsOutside
 	}
 	return ""
@@ -382,12 +384,16 @@ func ConstrainedToolAllowed(tool string, portLimited, pathLimited bool) bool {
 	return !portLimited || portLimitedTools[tool]
 }
 
-// JobShape is what the constraint check needs of a job: its tool, its port
-// list setting ("" = none) and whether it asks for a "top N" port list.
+// JobShape is what the constraint check needs of a job: its tool, the
+// capability it runs, its port list setting ("" = none) and whether it asks
+// for a "top N" port list.
 type JobShape struct {
-	Tool     string
-	Ports    string
-	TopPorts bool
+	Tool string
+	// Capability is the capability the job runs ("scan.ports@1"), from its
+	// payload; "" when the job names none (a single-tool job).
+	Capability string
+	Ports      string
+	TopPorts   bool
 	// LimitsEnforced is true when the job goes to a sensor that enforces
 	// scope limits (it advertises jobsign.CapabilityScopeLimits) in a
 	// signed job: the limits travel in the signed statement, so any tool
@@ -402,6 +408,34 @@ type JobShape struct {
 	// for out-of-band callbacks.
 	CustomTemplates bool
 	Interactsh      bool
+}
+
+// PortScan reports whether the job probes ports: its capability is a port
+// scan or host discovery (both reach every port they are given or default
+// to, on every address a name resolves to). Keyed by capability, so every
+// tool that implements it is held to the same caps whatever its name. A job
+// that names no capability is judged by the capabilities its tool
+// implements in the stage catalog, and a tool the catalog does not know
+// counts as a port scan (fail closed: nothing says it stays off ports).
+func (j JobShape) PortScan() bool {
+	if c := strings.TrimSpace(j.Capability); c != "" {
+		key, _, _ := strings.Cut(c, "@")
+		return portScanCapability(stage.Key(strings.ToLower(key)))
+	}
+	stages := stage.ForTool(j.Tool)
+	if len(stages) == 0 {
+		return true
+	}
+	for _, s := range stages {
+		if portScanCapability(s.Key) {
+			return true
+		}
+	}
+	return false
+}
+
+func portScanCapability(k stage.Key) bool {
+	return k == stage.ScanPorts || k == stage.DiscoverHosts
 }
 
 // SettingsUnreadable marks a job whose settings cannot be read (the

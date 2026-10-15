@@ -52,7 +52,11 @@ function sensor(over: Partial<Sensor> = {}): Sensor {
 
 const ctx = {
   now: NOW,
-  channel: { latest: 'v0.4.2', min: 'v0.4.0' },
+  channel: {
+    products: [
+      { id: 'openctemio-sensor', latest_version: 'v0.4.2', min_version: 'v0.4.0', image: '' },
+    ],
+  },
   protocolV2Version: 'v0.5.0',
   protocolV1Sunset: '2027-04-01',
 }
@@ -249,9 +253,9 @@ describe('sensorHealthChecks', () => {
     expect(unreported.tools.text).toContain('has not reported its tools')
   })
 
-  it('SDK: a line only when it is outdated or unsupported', () => {
+  it('SDK: a line only when it is outdated or has an advisory', () => {
     expect(byKey(sensorHealthChecks(sensor({ sdk_status: 'current' }), ctx)).sdk).toBeUndefined()
-    const sdkCtx = { ...ctx, channel: { ...ctx.channel, sdkMin: 'v0.8.0', sdkLatest: 'v0.9.0' } }
+    const sdkCtx = { ...ctx, channel: { ...ctx.channel, sdkLatest: 'v0.9.0' } }
     const outdated = byKey(
       sensorHealthChecks(sensor({ sdk_version: '0.8.5', sdk_status: 'outdated' }), sdkCtx)
     )
@@ -260,19 +264,19 @@ describe('sensorHealthChecks', () => {
       text: 'v0.8.5 is outdated; v0.9.0 is available.',
       action: 'install',
     })
-    const unsupported = byKey(
+    const advisory = byKey(
       sensorHealthChecks(
         sensor({
           sdk_version: 'v0.7.0',
-          sdk_status: 'unsupported',
-          health_reasons: [{ code: 'sdk_unsupported', severity: 'warning', message: 'm' }],
+          sdk_status: 'advisory',
+          health_reasons: [{ code: 'sdk_advisory', severity: 'warning', message: 'm' }],
         }),
         sdkCtx
       )
     )
-    expect(unsupported.sdk).toMatchObject({
+    expect(advisory.sdk).toMatchObject({
       status: 'warning',
-      text: 'v0.7.0 is below the minimum supported v0.8.0. Upgrade the sensor.',
+      text: 'v0.7.0 has a published security advisory. Upgrade the sensor to a build with a fixed SDK.',
     })
   })
 })
