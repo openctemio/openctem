@@ -106,7 +106,10 @@ to it like any other blocking reason.
   marks the run shared by the parallel capability jobs of one pipeline run:
   one per pipeline, external run id and commit, whatever the attempt
   (`evidence_union`, `idx_ci_runs_pipeline_run`, migration
-  `ci_run_evidence_union`). A later attempt re-opens it and carries the
+  `ci_run_evidence_union`). It is the only unique index matching these rows:
+  the older attempt-keyed `idx_ci_runs_aggregate_open` covers only runs from
+  before it (`NOT evidence_union`), so concurrent joins fall back to
+  `ON CONFLICT DO NOTHING` instead of a unique violation. A later attempt re-opens it and carries the
   verdict's failed capabilities (`carried_failed_capabilities`, each cleared
   only by a report of that capability) and its scanner failure count
   (`carried_scan_failures`, cleared by the next upload). A re-opened run
