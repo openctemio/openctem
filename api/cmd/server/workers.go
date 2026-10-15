@@ -819,6 +819,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Remediation tasks: recompute the state, deadline and counters of the
+	// tasks whose member findings changed (a scan closed one, a fix claim).
+	if svc != nil && svc.RemediationTask != nil {
+		w.ControllerManager.Register(controller.NewRemediationTaskController(
+			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
+		))
+	}
+
 	// Control test scheduler — daily sweep to mark stale detection coverage as overdue
 	w.ControllerManager.Register(controller.NewControlTestSchedulerController(
 		repos.ControlTest,
