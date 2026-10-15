@@ -13,6 +13,8 @@ import { SeverityBadge } from '@/features/shared'
 import type { Severity } from '@/features/shared/types'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssetRisk } from '../hooks/use-asset-risk'
+import { SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
+import { cn } from '@/lib/utils'
 
 const LIKELIHOOD_IMPACT = 'likelihood_impact'
 
@@ -137,7 +139,7 @@ export function AssetRiskExplanation({ assetId }: AssetRiskExplanationProps) {
                   {t('riskScore.why.tierRow', '{count} open', { count: tier.count })}
                 </span>
                 {tier.exploitable > 0 && (
-                  <span className="text-xs text-red-600 dark:text-red-400 tabular-nums">
+                  <span className={cn('text-xs tabular-nums', SEVERITY_TEXT_COLORS.critical)}>
                     {t('riskScore.why.exploitable', '{count} exploitable', {
                       count: tier.exploitable,
                     })}
