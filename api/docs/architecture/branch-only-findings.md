@@ -28,7 +28,7 @@ a missing row). Feature, hotfix, develop and other branches do not count.
 ## The mark
 
 A branch type guessed from the name (`main`, `release/*`) is a display label
-and never counts (migration `002139`): anyone who can push can create
+and never counts (migration `002147`): anyone who can push can create
 `release/x`. The CI gate uses the same rule for a pull request's baseline
 (`ci-runner-identity.md`).
 
