@@ -61,6 +61,11 @@ type SuppressionRuleResponse struct {
 	ExpiresAt        *string `json:"expires_at,omitempty"`
 	CreatedAt        string  `json:"created_at"`
 	UpdatedAt        string  `json:"updated_at"`
+	// ReviewFlaggedAt is set when the platform gave the rule an end it did
+	// not have; ReviewReason says why (no_end_date). The flag clears when a
+	// person edits the rule.
+	ReviewFlaggedAt *string `json:"review_flagged_at,omitempty"`
+	ReviewReason    string  `json:"review_reason,omitempty"`
 }
 
 // toSuppressionRuleResponse converts a domain rule to API response.
@@ -108,6 +113,11 @@ func toSuppressionRuleResponse(r *suppression.Rule) SuppressionRuleResponse {
 	if r.ExpiresAt() != nil {
 		s := r.ExpiresAt().Format(time.RFC3339)
 		resp.ExpiresAt = &s
+	}
+	if r.ReviewFlaggedAt() != nil {
+		s := r.ReviewFlaggedAt().Format(time.RFC3339)
+		resp.ReviewFlaggedAt = &s
+		resp.ReviewReason = r.ReviewReason()
 	}
 
 	return resp
