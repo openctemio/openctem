@@ -31,6 +31,7 @@ import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { userTags } from '../../lib/finding-display'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
+import { closureReasonLabel, verificationLabel } from '../../lib/closure'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
 
 const CLOSED = new Set<string>(findingStatusesInCategory('closed'))
@@ -317,6 +318,19 @@ export function FindingProperties({
         {finding.resolvedAt && (
           <Row label={t('findings.properties.resolved', 'Resolved')}>
             <span className="tabular-nums">{formatDate(finding.resolvedAt)}</span>
+          </Row>
+        )}
+        {finding.closureReason && (
+          <Row label={t('findings.properties.closedAs', 'Closed as')}>
+            <span>
+              {closureReasonLabel(t, finding.closureReason)}
+              {finding.verification && (
+                <span className="text-muted-foreground">
+                  {' · '}
+                  {verificationLabel(t, finding.verification)}
+                </span>
+              )}
+            </span>
           </Row>
         )}
         {finding.workItemUris && finding.workItemUris.length > 0 && (

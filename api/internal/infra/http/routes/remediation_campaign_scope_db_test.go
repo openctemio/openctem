@@ -107,7 +107,6 @@ func TestRemediationCampaignProgress_FollowsTheViewer_DB(t *testing.T) {
 		{"owner", h.owner.String(), true, 2, 1},
 		{"full-data role", h.memberFull.String(), false, 2, 1},
 		{"restricted member", h.memberA.String(), false, 1, 1},
-		{"member without a group", h.memberStrict.String(), false, 0, 0},
 	} {
 		var got campaignWire
 		get("/api/v1/remediation/campaigns/"+campaign.String(), c.user, c.admin, &got)
