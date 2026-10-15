@@ -7,13 +7,17 @@
  * Nothing renders when the finding has no concrete fix.
  */
 
-import { ArrowRight, Check, Copy, Wrench } from 'lucide-react'
+import { ArrowRight, Check, ChevronRight, Copy, Layers, TriangleAlert, Wrench } from 'lucide-react'
 import { useState } from 'react'
+import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
-import type { FindingDetail } from '../../types'
+import { SeverityBadge } from '@/features/shared/components/severity-badge'
+import type { Severity } from '@/features/shared/types'
+import type { FindingDetail, FindingFixPlan, FindingFixPlanItem } from '../../types'
 import { fixGuidance, type FixCommand } from '../../lib/fix-guidance'
 
 function CodeBlock({ cmd }: { cmd: FixCommand }) {
@@ -62,6 +66,102 @@ function Version({ children, tone }: { children: React.ReactNode; tone?: 'from' 
   )
 }
 
+function PlanItems({ items }: { items: FindingFixPlanItem[] }) {
+  return (
+    <ul className="mt-1.5 space-y-1">
+      {items.map((i) => (
+        <li key={i.id} className="flex min-w-0 items-center gap-2 text-sm">
+          <SeverityBadge severity={i.severity as Severity} className="shrink-0" />
+          <Link
+            href={`/findings/${encodeURIComponent(i.id)}`}
+            className="min-w-0 truncate underline-offset-2 hover:underline"
+          >
+            {i.cveId ? <span className="font-mono text-xs">{i.cveId}</span> : null}
+            {i.cveId ? ' · ' : null}
+            {i.title}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * "Upgrading Django to 4.2.30 fixes 3 of 4 open findings for this package
+ * here": the package plan from GET /findings/{id} (package_fix). Shown only
+ * when the package has more than one open finding on the asset.
+ */
+export function PackageFixPlan({
+  plan,
+  packageName,
+}: {
+  plan: FindingFixPlan
+  packageName: string
+}) {
+  const { t } = useTranslation()
+  if (!plan.targetVersion || plan.openFindings < 2 || plan.resolvesCount === 0) return null
+  const all = plan.resolvesCount === plan.openFindings && !plan.truncated
+  return (
+    <div data-slot="package-fix-plan" className="mt-3 border-t pt-3">
+      <p className="flex items-start gap-1.5 text-sm">
+        <Layers className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        <span>
+          {all
+            ? t(
+                'findings.fixCard.planResolvesAll',
+                'Upgrading {package} to {version} fixes all {count} open findings of this package on this asset.',
+                { package: packageName, version: plan.targetVersion, count: plan.openFindings }
+              )
+            : t(
+                'findings.fixCard.planResolvesSome',
+                'Upgrading {package} to {version} fixes {resolved} of {count} open findings of this package on this asset.',
+                {
+                  package: packageName,
+                  version: plan.targetVersion,
+                  resolved: plan.resolvesCount,
+                  count: plan.truncated ? `${plan.openFindings}+` : plan.openFindings,
+                }
+              )}
+          {plan.majorUpgrade && (
+            <Badge variant="outline" className="ms-1.5 border-warning/50 text-warning">
+              {t('findings.fixCard.majorUpgrade', 'Major upgrade')}
+            </Badge>
+          )}
+        </span>
+      </p>
+      {plan.completeVersion && (
+        <p className="mt-1 ps-5.5 text-sm text-muted-foreground">
+          {t(
+            'findings.fixCard.planComplete',
+            'Upgrading to {version} fixes {count} of them, every one with a known fix.',
+            { version: plan.completeVersion, count: plan.completeResolves ?? 0 }
+          )}
+          {plan.completeMajor && (
+            <Badge variant="outline" className="ms-1.5 border-warning/50 text-warning">
+              {t('findings.fixCard.majorUpgrade', 'Major upgrade')}
+            </Badge>
+          )}
+        </p>
+      )}
+      <details className="group mt-1 ps-5.5">
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs text-muted-foreground select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" aria-hidden />
+          {t('findings.fixCard.planShow', 'Show the findings')}
+        </summary>
+        <PlanItems items={plan.resolves} />
+        {plan.remaining.length > 0 && (
+          <>
+            <p className="mt-2 text-xs font-medium text-muted-foreground">
+              {t('findings.fixCard.planRemaining', 'Still open after this upgrade')}
+            </p>
+            <PlanItems items={plan.remaining} />
+          </>
+        )}
+      </details>
+    </div>
+  )
+}
+
 export interface FindingFixCardProps {
   finding: FindingDetail
   /** Opens the full remediation plan (the Remediation tab). */
@@ -99,6 +199,19 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
               aria-label={t('findings.fixCard.to', 'to')}
             />
             <Version tone="to">{g.to}</Version>
+            {g.majorUpgrade && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-warning/50 text-warning"
+                title={t(
+                  'findings.fixCard.majorUpgradeHint',
+                  'Crosses a major version: check the release notes for breaking changes.'
+                )}
+              >
+                <TriangleAlert className="h-3 w-3" aria-hidden />
+                {t('findings.fixCard.majorUpgrade', 'Major upgrade')}
+              </Badge>
+            )}
           </p>
           {how.length > 0 && (
             <p className="mt-1 text-sm text-muted-foreground">{how.join(' · ')}</p>
@@ -121,6 +234,9 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
               ))}{' '}
               {t('findings.fixCard.otherLines', '(other release lines).')}
             </p>
+          )}
+          {finding.packageFix && (
+            <PackageFixPlan plan={finding.packageFix} packageName={g.packageName} />
           )}
         </>
       )
