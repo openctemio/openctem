@@ -6,12 +6,6 @@ type User = {
   avatar: string
 }
 
-type Team = {
-  name: string
-  logo: React.ElementType
-  plan: string
-}
-
 /**
  * Release status for sidebar items (synced with backend module status)
  * - released: Normal, clickable
@@ -48,8 +42,8 @@ type BaseNavItem = {
    */
   minRole?: string
   /**
-   * Module required to view this item (licensing-based).
-   * If tenant's plan doesn't include this module, item is hidden.
+   * Module required to view this item.
+   * If the module is not available to the organization, the item is hidden.
    * Example: 'findings', 'scans', 'compliance'
    */
   module?: string
@@ -138,7 +132,6 @@ type NavGroup = {
 
 type SidebarData = {
   user: User
-  teams: Team[]
   navGroups: NavGroup[]
 }
 
@@ -149,7 +142,6 @@ export type {
   NavCollapsible,
   NavLink,
   NavSectionLink,
-  Team,
   User,
   ReleaseStatus,
 }

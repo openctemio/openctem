@@ -490,6 +490,11 @@ func run() int {
 		}
 	}()
 
+	if err := requireSelfServiceStartLimits(ctx, cfg, services); err != nil {
+		log.Error("refusing to start", "error", err)
+		return 1
+	}
+
 	// ==========================================================================
 	// Start Server
 	// ==========================================================================

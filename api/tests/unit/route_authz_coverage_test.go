@@ -48,11 +48,12 @@ var routeAuthzAllowlist = map[string]string{
 	"GET /api/v1/version":        "any signed-in user (authMiddleware): build identity for Help > About; no tenant data, and kept off the public /health",
 	"GET /api/v1/legal":          "public on purpose: the operator's legal links, legal page values and security.txt contact, shown to visitors before sign-in; no secret, no tenant data; written only by the admin console (RFC-079)",
 	// CI runner identity (RFC-051): machine credentials, not permissions.
-	"POST /api/v1/ci/oidc/exchange":           "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
-	"POST /api/v1/ci/runs/{id}/results":       "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
-	"POST /api/v1/ci/runs/{id}/baseline-diff": "CI run token (AuthenticateRun): the run's repository only",
-	"POST /api/v1/ci/runs/{id}/evaluate":      "CI run token (AuthenticateRun): the run's own verdict",
-	"POST /api/v1/hooks/github-app":           "public: the GitHub App webhook secret (HMAC-SHA256 over the raw body) is the credential, verified before anything is read; per-IP limit; only installation status events change anything (RFC-077)",
+	"POST /api/v1/ci/oidc/exchange":                  "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
+	"POST /api/v1/ci/runs/{id}/results":              "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
+	"POST /api/v1/ci/runs/{id}/baseline-diff":        "CI run token (AuthenticateRun): the run's repository only",
+	"POST /api/v1/ci/runs/{id}/evaluate":             "CI run token (AuthenticateRun): the run's own verdict",
+	"POST /hooks/jira-integrations/{integration_id}": "public: the URL names one Jira integration and its own secret (X-Hub-Signature, HMAC-SHA256 over the raw body) is the credential, verified before anything is parsed; replayed and stale deliveries refused; per-IP and per-integration limits",
+	"POST /api/v1/hooks/github-app":                  "public: the GitHub App webhook secret (HMAC-SHA256 over the raw body) is the credential, verified before anything is read; per-IP limit; only installation status events change anything (RFC-077)",
 }
 
 // allowlistPrefixes: groups of routes authenticated by a non-permission gate

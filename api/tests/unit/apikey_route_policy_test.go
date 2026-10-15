@@ -31,19 +31,20 @@ var keyChainExempt = map[string]string{
 	"/api/v1/validation/evidence":             "sensor-key auth only",
 	// CI runner routes (RFC-051): mounted outside every key chain, with
 	// their own authentication (the CI OIDC token, the CI run token).
-	"/api/v1/ci/oidc/exchange":                "own authenticator (CI OIDC token), outside the key chains",
-	"/api/v1/ci/runs/{id}/results":            "CI run token only (AuthenticateRun), outside the key chains",
-	"/api/v1/ci/runs/{id}/baseline-diff":      "CI run token only (AuthenticateRun), outside the key chains",
-	"/api/v1/ci/runs/{id}/evaluate":           "CI run token only (AuthenticateRun), outside the key chains",
-	"/api/v1/hooks/github-app":                "GitHub App webhook (HMAC), mounted outside every key chain",
-	"/health":                                 "public",
-	"/ready":                                  "public",
-	"/metrics":                                "MetricsAuth bearer",
-	"/openapi.yaml":                           "public outside production; user session (no oct_ keys) in production",
-	"/docs":                                   "public, outside production only",
-	"/.well-known/oauth-protected-resource":   "public metadata, no chain",
+	"/api/v1/ci/oidc/exchange":                  "own authenticator (CI OIDC token), outside the key chains",
+	"/api/v1/ci/runs/{id}/results":              "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/baseline-diff":        "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/evaluate":             "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/hooks/github-app":                  "GitHub App webhook (HMAC), mounted outside every key chain",
+	"/hooks/jira-integrations/{integration_id}": "inbound Jira webhook (HMAC per integration), mounted outside every key chain",
+	"/health":                               "public",
+	"/ready":                                "public",
+	"/metrics":                              "MetricsAuth bearer",
+	"/openapi.yaml":                         "public outside production; user session (no oct_ keys) in production",
+	"/docs":                                 "public, outside production only",
+	"/.well-known/oauth-protected-resource": "public metadata, no chain",
 	"/.well-known/oauth-authorization-server": "public metadata, no chain",
-	"/oauth/":                                 "MCP OAuth endpoints, own authentication (PKCE, hashed tokens)",
+	"/oauth/": "MCP OAuth endpoints, own authentication (PKCE, hashed tokens)",
 }
 
 func TestAPIKeyPolicy_EveryUngatedRouteRefusesKeys(t *testing.T) {

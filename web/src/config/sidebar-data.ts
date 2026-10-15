@@ -28,8 +28,6 @@ import {
   Workflow,
   FileWarning,
   FileText,
-  Command,
-  AudioWaveform,
   Crosshair,
   ClipboardList,
   RotateCcw,
@@ -86,18 +84,6 @@ export const sidebarData: SidebarData = {
     email: 'user@openctem.io',
     avatar: '',
   },
-  teams: [
-    {
-      name: 'Security Platform',
-      logo: Command,
-      plan: 'Enterprise',
-    },
-    {
-      name: 'Security Ops',
-      logo: AudioWaveform,
-      plan: 'Team',
-    },
-  ],
   navGroups: [
     // ========================================
     // DASHBOARD - Overview & Quick Access
@@ -297,7 +283,7 @@ export const sidebarData: SidebarData = {
         },
         // ----------------------------------------
         // CREDENTIAL LEAKS
-        // Module: credentials (requires Team+ plan)
+        // Module: credentials
         // ----------------------------------------
         {
           // "Credential leaks", not "Credentials": leaked accounts and tokens
@@ -312,7 +298,7 @@ export const sidebarData: SidebarData = {
         },
         // ----------------------------------------
         // SOFTWARE COMPONENTS (SBOM)
-        // Module: components (requires Team+ plan)
+        // Module: components
         // ----------------------------------------
         {
           title: 'Components',
@@ -327,7 +313,7 @@ export const sidebarData: SidebarData = {
     // ========================================
     // PHASE 3: PRIORITIZATION
     // Rank risks based on exploitability, impact, and threat intelligence
-    // Module: threat_intel (requires Business+ plan)
+    // Module: threat_intel
     // ========================================
     {
       title: 'Prioritization',
@@ -464,7 +450,7 @@ export const sidebarData: SidebarData = {
     // ========================================
     // PHASE 5: MOBILIZATION
     // Execute remediation and track progress
-    // Module: remediation (requires Business+ plan)
+    // Module: remediation
     // ========================================
     {
       title: 'Mobilization',
