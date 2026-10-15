@@ -82,6 +82,7 @@ var findingMergeKeptRefs = map[string]string{
 	"finding_correlations.member_id":      "kept on the tombstone; re-derived for the survivor",
 	// A suspended decision is the history of the finding it was made on.
 	"finding_decision_suspensions.finding_id": "kept on the tombstone; history of that finding",
+	"finding_decision_reviews.finding_id":     "kept on the tombstone; a review flag of that finding's decision",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to
@@ -285,10 +286,13 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 			UPDATE findings s SET
 				status = l.status, resolution = l.resolution, resolution_method = l.resolution_method,
 				resolved_at = l.resolved_at, resolved_by = l.resolved_by,
-				verified_at = l.verified_at, verified_by = l.verified_by
+				verified_at = l.verified_at, verified_by = l.verified_by,
+				-- an inherited acceptance keeps its end (an accepted risk always ends)
+				acceptance_expires_at = CASE WHEN l.status = 'accepted'
+					THEN COALESCE(l.acceptance_expires_at, $4) END
 			FROM findings l
 			WHERE s.id = $1 AND s.tenant_id = $3 AND l.id = $2 AND l.tenant_id = $3`,
-			survivorID, loserID, tenantID); err != nil {
+			survivorID, loserID, tenantID, time.Now().Add(vulnerability.DefaultAcceptanceDuration)); err != nil {
 			return fmt.Errorf("inherit finding status: %w", err)
 		}
 	}

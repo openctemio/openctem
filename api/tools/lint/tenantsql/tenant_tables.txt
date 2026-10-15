@@ -96,6 +96,7 @@ finding_activities
 finding_branch_occurrences
 finding_comments
 finding_correlations
+finding_decision_reviews
 finding_decision_suspensions
 finding_definitions
 finding_evidence
