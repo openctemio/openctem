@@ -1856,6 +1856,12 @@ vars:
     type: string
     default: "127.0.0.1/32"
     description: "Space-separated CIDRs of proxies in front of the gateway whose `X-Forwarded-For` it believes."
+  - name: OPENCTEM_CLIENT_IP_HEADERS
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "X-Forwarded-For"
+    description: "Header(s) a proxy in `OPENCTEM_TRUSTED_PROXIES` carries the client address in, tried in order: `X-Forwarded-For` (read right to left), `Cf-Connecting-Ip` (Cloudflare Tunnel) or `True-Client-Ip`. Ignored from any other peer; the gateway then sends the API only the resolved address."
   - name: GATEWAY_MAX_BODY_SIZE
     component: gateway
     group: "Gateway"

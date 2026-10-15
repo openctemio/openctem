@@ -45,8 +45,8 @@ func (f *fakeCIService) UploadReport(context.Context, *cirun.Run, *ctis.Report) 
 	return &ingest.Output{}, nil
 }
 
-func (f *fakeCIService) KnownFindings(context.Context, *cirun.Run, *ingest.Output) []cirun.KnownFinding {
-	return nil
+func (f *fakeCIService) KnownFindings(context.Context, *cirun.Run, *ingest.Output) ([]cirun.KnownFinding, int) {
+	return nil, 0
 }
 
 func (f *fakeCIService) UploadImported(_ context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error) {

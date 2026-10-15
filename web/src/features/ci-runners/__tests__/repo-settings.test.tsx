@@ -263,6 +263,9 @@ describe('CIRepositorySettingsTab', () => {
     expect(within(sev).getByText('Organization')).toBeInTheDocument()
     expect(within(sev).getByText('Locked by organization')).toBeInTheDocument()
     expect(within(sev).getByText('Ignored (locked)')).toBeInTheDocument()
+    expect(
+      within(sev).getByText(/This repository sets critical and above, looser than the lock allows/i)
+    ).toBeInTheDocument()
     const own = document.querySelector('[data-field="new_findings_only"]') as HTMLElement
     expect(own.dataset.source).toBe('repository')
     expect(within(own).getByText('This repository')).toBeInTheDocument()
@@ -364,6 +367,7 @@ describe('CIRunSheet baseline and code host', () => {
           established: true,
           due_at: '2026-11-14T00:00:00Z',
         },
+        reasons: [{ code: 'baseline_established', message: '7 existing findings recorded' }],
       },
     }
     render(<CIRunSheet id="r1" onClose={() => {}} />)
@@ -373,6 +377,9 @@ describe('CIRunSheet baseline and code host', () => {
     expect(screen.getByTestId('ci-run-baseline-established')).toHaveTextContent(
       'First run: 7 existing findings recorded as the baseline'
     )
+    // An informational reason is a note, never listed as blocking.
+    expect(screen.queryByRole('heading', { name: 'Blocking' })).not.toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Notes' })).toHaveTextContent('Baseline recorded')
     expect(screen.getByTestId('ci-run-connect-host')).toHaveAttribute(
       'href',
       '/ci-cd?tab=setup&section=feedback'

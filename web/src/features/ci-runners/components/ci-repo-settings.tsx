@@ -158,6 +158,7 @@ function lockedByLabel(layer: string, t: TFn): string {
 /** One gate field: value, provenance, lock and the actions the caller may take. */
 export function GateFieldRow({
   field: fr,
+  dropped,
   canEdit,
   onOverride,
   onReset,
@@ -166,6 +167,8 @@ export function GateFieldRow({
   canEdit: boolean
   onOverride: () => void
   onReset: () => void
+  /** The repository's own value of an ignored field (dropped by a lock). */
+  dropped?: unknown
 }) {
   const { t } = useTranslation()
   if (!isGateField(fr.field)) return null
@@ -208,10 +211,16 @@ export function GateFieldRow({
         )}
         {fr.ignored && (
           <p className="text-xs text-muted-foreground">
-            {t(
-              'scans.ci.repoSettings.ignoredHint',
-              'This repository sets a looser value that the lock above drops.'
-            )}
+            {dropped === undefined
+              ? t(
+                  'scans.ci.repoSettings.ignoredHint',
+                  'This repository sets a looser value that the lock above drops.'
+                )
+              : t(
+                  'scans.ci.repoSettings.ignoredValue',
+                  'This repository sets {value}, looser than the lock allows, so it is ignored.',
+                  { value: formatGateValue(f, dropped, t) }
+                )}
           </p>
         )}
       </div>
@@ -815,6 +824,11 @@ export function CIRepositorySettingsTab({ repositoryAssetId }: { repositoryAsset
           {ordered.map((fr) => (
             <GateFieldRow
               key={fr.field}
+              dropped={
+                fr.ignored && repo?.fields?.includes(fr.field)
+                  ? (repo as Record<string, unknown>)[fr.field]
+                  : undefined
+              }
               field={fr}
               canEdit={canEdit}
               onOverride={() => setTarget({ kind: 'override', field: fr })}
