@@ -45,11 +45,14 @@ type PriorityFactors struct {
 	IsInternetAccessible bool     `json:"is_internet_accessible"`
 	IsNetworkAccessible  bool     `json:"is_network_accessible"`
 	OnOpenThreatPath     bool     `json:"on_open_threat_path"`
-	ReachableFromCount   int      `json:"reachable_from_count"`
-	AssetCriticality     string   `json:"asset_criticality,omitempty"`
-	AssetExposure        string   `json:"asset_exposure,omitempty"`
-	AssetIsCrownJewel    bool     `json:"asset_is_crown_jewel"`
-	AssetUnowned         bool     `json:"asset_unowned"`
+	// ReachabilityUnknown: no exposure, attack-path, threat-path or scanner
+	// signal decided reachability, so the classifier treats it as unknown.
+	ReachabilityUnknown bool   `json:"reachability_unknown"`
+	ReachableFromCount  int    `json:"reachable_from_count"`
+	AssetCriticality    string `json:"asset_criticality,omitempty"`
+	AssetExposure       string `json:"asset_exposure,omitempty"`
+	AssetIsCrownJewel   bool   `json:"asset_is_crown_jewel"`
+	AssetUnowned        bool   `json:"asset_unowned"`
 	// AttributionUnconfirmed is the asset's attribution state when it caps
 	// the class at P2 (needs_review, candidate, rejected); empty otherwise.
 	AttributionUnconfirmed string  `json:"attribution_unconfirmed,omitempty"`
@@ -131,6 +134,7 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 			IsInternetAccessible:   pctx.IsInternetAccessible,
 			IsNetworkAccessible:    pctx.IsNetworkAccessible,
 			OnOpenThreatPath:       pctx.OnOpenThreatPath,
+			ReachabilityUnknown:    pctx.ReachabilityUnknown,
 			ReachableFromCount:     pctx.ReachableFromCount,
 			AssetCriticality:       pctx.AssetCriticality,
 			AssetExposure:          pctx.AssetExposure,
