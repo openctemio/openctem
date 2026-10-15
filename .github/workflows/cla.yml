@@ -27,8 +27,15 @@ name: CLA
 # Allowlist (CLA_ALLOWLIST): the maintainer and the bots that open pull
 # requests here. A pull request opened by one of them is checked only when it
 # carries commits linked to another GitHub account. In a pull request opened
-# by anyone else, a commit that names an allowlisted account must have a
-# verified signature, because commit author e-mails can be forged.
+# by anyone else, a commit that names an allowlisted account counts only when
+# its author and its committer are both allowlisted accounts and its signature
+# is verified: author and committer e-mails can be forged, and a signature
+# proves only the committer. The logic is tested by
+# .github/scripts/cla-scope.test.sh.
+#
+# Keep `cla` a required check on pull requests. In the merge queue it always
+# passes (the pull request was already checked), so requiring it does not
+# block the queue.
 
 on:
   pull_request_target: # security-review: allow GHA-PR-TARGET no pull request code is checked out or run; see the safety notes above
@@ -71,27 +78,37 @@ jobs:
         run: |
           set -euo pipefail
           opener_allowed=$(jq -rn --arg al "$CLA_ALLOWLIST" --arg u "$OPENER" '$al | split(",") | index($u) != null')
-          # One line per commit: sha, linked account (author, else committer), verified.
+          # One line per commit: sha, the account the CLA action will judge it by
+          # (author, else committer), and a kind:
+          #   allowlisted  author AND committer allowlisted AND signature verified
+          #   forged       judged as an allowlisted account but not the above
+          #   unlinked     no GitHub account
+          #   other        another account (must sign)
+          # The signature proves only the committer, so both identities count.
           gh api --paginate "repos/$REPO/pulls/$PR/commits" \
-            | jq -r --arg al "$CLA_ALLOWLIST" '.[] |
-                ((.author.login // .committer.login // "") ) as $l |
-                [.sha, $l, (if $l != "" and ($al | split(",") | index($l)) != null then "allowlisted" elif $l == "" then "unlinked" else "other" end),
-                 (.commit.verification.verified | tostring)] | @tsv' > "$RUNNER_TEMP/commits.tsv"
+            | jq -r --arg al "$CLA_ALLOWLIST" '
+                ($al | split(",")) as $list |
+                def ok($u): $u != "" and ($list | index($u)) != null;
+                .[] |
+                (.author.login // "") as $a | (.committer.login // "") as $c |
+                (if $a != "" then $a else $c end) as $id |
+                [.sha, $id,
+                 (if $id == "" then "unlinked"
+                  elif ok($id) | not then "other"
+                  elif ok($a) and ok($c) and (.commit.verification.verified == true) then "allowlisted"
+                  else "forged" end)] | @tsv' > "$RUNNER_TEMP/commits.tsv"
           run=false
           forged=""
-          while IFS=$'\t' read -r sha login kind verified; do
+          while IFS=$'\t' read -r sha login kind; do
             case "$kind" in
               other) run=true ;;
               unlinked) [ "$opener_allowed" = true ] || run=true ;;
-              allowlisted)
-                if [ "$opener_allowed" != true ] && [ "$verified" != true ]; then
-                  forged="$forged $sha($login)"
-                fi ;;
+              forged) [ "$opener_allowed" = true ] || forged="$forged $sha($login)" ;;
             esac
           done < "$RUNNER_TEMP/commits.tsv"
           [ "$opener_allowed" = true ] || run=true
           if [ -n "$forged" ]; then
-            echo "::error::unsigned commits name an allowlisted account:$forged. Sign them, or author them under your own account."
+            echo "::error::commits name an allowlisted account but are not authored, committed and signed by allowlisted accounts:$forged. Author them under your own account."
             exit 1
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
