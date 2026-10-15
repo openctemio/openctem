@@ -1026,6 +1026,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if len(badDeny) > 0 {
 		return nil, fmt.Errorf("SCOPE_DENY_EXTRA has entries that are neither a domain nor an address range: %v", badDeny)
 	}
+	scopeGuardrails = scopeGuardrails.WithPublicCodeHosts(cfg.Scope.PublicCodeHostsExtra)
 	s.Scope.SetGuardrails(scopeGuardrails)
 	s.ScopeGuardrails = scopeGuardrails
 	scopeCoverage := postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB})
