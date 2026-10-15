@@ -53,6 +53,7 @@ type TenantHandler struct {
 	priorityPreview PriorityImpactPreviewer
 	slaDeadlines    SLADeadlineSource
 	scoringVersions ScoringVersionReader
+	previewLimit    *tenantRateLimiter
 	moduleService   *module.ModuleService
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
@@ -116,9 +117,10 @@ func (h *TenantHandler) selfServiceAllowed(r *http.Request) bool {
 // NewTenantHandler creates a new tenant handler.
 func NewTenantHandler(svc *tenantapp.TenantService, v *validator.Validator, log *logger.Logger) *TenantHandler {
 	return &TenantHandler{
-		service:   svc,
-		validator: v,
-		logger:    log,
+		service:      svc,
+		validator:    v,
+		logger:       log,
+		previewLimit: newTenantRateLimiter(scoringPreviewPerMinute, scoringPreviewBurst),
 	}
 }
 
@@ -2877,6 +2879,14 @@ func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http
 	tenantID := middleware.GetTeamID(r.Context())
 	if tenantID.IsZero() {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	// A whole-organization dry run: limited per tenant (scoring_preview_limit.go).
+	if ok, retryAfter := h.previewLimit.allow(tenantID.String(), time.Now()); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+		apierror.TooManyRequests(fmt.Sprintf("The scoring preview is limited to %d per minute. Try again in %d seconds.",
+			scoringPreviewPerMinute, retryAfter)).WriteJSON(w)
 		return
 	}
 
