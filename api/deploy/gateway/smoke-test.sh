@@ -17,7 +17,7 @@ net="$run-net"
 fail=0
 
 cleanup() {
-	docker rm -f "$run-gw" "$run-gwh" "$run-gwl4" "$run-api" "$run-web" "$run-mtls" >/dev/null 2>&1 || true
+	docker rm -f "$run-gw" "$run-gwh" "$run-gwc" "$run-gwu" "$run-gwl4" "$run-api" "$run-web" "$run-mtls" >/dev/null 2>&1 || true
 	docker network rm "$net" >/dev/null 2>&1 || true
 	if [ -z "${GATEWAY_L4_IMAGE:-}" ]; then docker rmi "$run-l4" >/dev/null 2>&1 || true; fi
 	rm -rf "${certs:-}"
@@ -86,7 +86,7 @@ pad="$(printf 'p%.0s' $(seq 1 1024))"
 stub() {
 	docker run -d --name "$run-$1" --network "$net" --network-alias "$1" "$image" \
 		caddy respond --listen :8000 --header "Content-Type: application/json" \
-		--body "$1 xrealip={http.request.header.X-Real-IP} $pad" >/dev/null
+		--body "$1 xrealip={http.request.header.X-Real-IP}| xff={http.request.header.X-Forwarded-For}| cfip={http.request.header.Cf-Connecting-Ip}| $pad" >/dev/null
 }
 stub api
 stub web
@@ -189,8 +189,60 @@ for _ in $(seq 1 30); do
 	sleep 1
 done
 case "$body" in
-*"xrealip=198.51.100.9"*) ok "X-Real-IP is the proxy-appended client ($body)" ;;
-*) bad "X-Real-IP should be 198.51.100.9 (right-most untrusted), got: $body" ;;
+*"xrealip=198.51.100.9|"*) ok "X-Real-IP is the proxy-appended client" ;;
+*) bad "X-Real-IP should be 198.51.100.9 (right-most untrusted), got: ${body%% p*}" ;;
+esac
+# The API reads X-Forwarded-For first and knows only the gateway, not the
+# proxies in front of it: the gateway must hand it the resolved client alone,
+# not the front proxy's list with that proxy's address appended (which made
+# every request look like it came from the proxy).
+case "$body" in
+*"xff=198.51.100.9|"*) ok "X-Forwarded-For to the API is the resolved client alone" ;;
+*) bad "X-Forwarded-For to the API should be 198.51.100.9 alone, got: ${body%% p*}" ;;
+esac
+
+echo "== OPENCTEM_CLIENT_IP_HEADERS=Cf-Connecting-Ip (Cloudflare Tunnel)"
+refuses "an unknown client address header" -e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -e OPENCTEM_CLIENT_IP_HEADERS="X-Client-Ip"
+# gwc trusts the test network (the tunnel connector); gwu trusts nobody, so
+# every peer is untrusted there.
+cfgw() { # cfgw <name> <trusted proxies>
+	docker run -d --name "$run-$1" --network "$net" \
+		-e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -e OPENCTEM_TRUSTED_PROXIES="$2" \
+		-e OPENCTEM_CLIENT_IP_HEADERS=Cf-Connecting-Ip \
+		-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
+		-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
+	docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-$1"
+}
+viacf() { # viacf <gateway ip> <headers...>: what the API stub got
+	local ip="$1" out=""
+	shift
+	for _ in $(seq 1 30); do
+		out="$(docker run --rm --network "$net" curlimages/curl:latest -s -m 2 "$@" "http://$ip/health" 2>/dev/null || true)"
+		[ -n "$out" ] && break
+		sleep 1
+	done
+	printf '%s' "${out%% p*}"
+}
+gwcip="$(cfgw gwc "$subnet")"
+gwuip="$(cfgw gwu 127.0.0.1/32)"
+# What the Cloudflare edge sends through the tunnel when the visitor typed its
+# own X-Forwarded-For: the edge appends the visitor, and sets Cf-Connecting-Ip.
+body="$(viacf "$gwcip" -H 'Cf-Connecting-Ip: 203.0.113.7' -H 'X-Forwarded-For: 6.6.6.6, 203.0.113.7' -H 'Cf-Ray: 0-TEST')"
+case "$body" in
+*"xrealip=203.0.113.7| xff=203.0.113.7| cfip=|"*) ok "tunnel: the visitor address reaches the API, Cf-Connecting-Ip not passed on" ;;
+*) bad "tunnel: want xrealip=xff=203.0.113.7 and no cfip, got: $body" ;;
+esac
+body="$(viacf "$gwcip" -H 'X-Forwarded-For: 6.6.6.6')"
+case "$body" in
+*"xrealip=6.6.6.6"* | *"xff=6.6.6.6"*) bad "tunnel without Cf-Connecting-Ip: X-Forwarded-For was believed: $body" ;;
+*"xrealip="[0-9]*) ok "tunnel without Cf-Connecting-Ip: the peer address, not X-Forwarded-For" ;;
+*) bad "unexpected: $body" ;;
+esac
+body="$(viacf "$gwuip" -H 'Cf-Connecting-Ip: 6.6.6.6' -H 'True-Client-Ip: 6.6.6.6' -H 'X-Forwarded-For: 6.6.6.6' -H 'X-Real-IP: 6.6.6.6')"
+case "$body" in
+*6.6.6.6*) bad "untrusted peer: a spoofed client address reached the API: $body" ;;
+*"xrealip="[0-9]*"| cfip=|"*) ok "untrusted peer: spoofed Cf-Connecting-Ip/X-Forwarded-For ignored and not passed on" ;;
+*) bad "unexpected: $body" ;;
 esac
 
 echo "== Response headers"

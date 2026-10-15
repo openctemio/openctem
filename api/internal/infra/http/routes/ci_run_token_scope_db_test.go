@@ -40,8 +40,8 @@ func (s *stubCIRuns) Authenticate(_ context.Context, token string) (*cirun.Run, 
 func (s *stubCIRuns) UploadReport(context.Context, *cirun.Run, *ctis.Report) (*ingest.Output, error) {
 	return &ingest.Output{}, nil
 }
-func (s *stubCIRuns) KnownFindings(context.Context, *cirun.Run, *ingest.Output) []cirun.KnownFinding {
-	return nil
+func (s *stubCIRuns) KnownFindings(context.Context, *cirun.Run, *ingest.Output) ([]cirun.KnownFinding, int) {
+	return nil, 0
 }
 func (s *stubCIRuns) UploadImported(context.Context, *cirun.Run, *ctis.Report) (*ingest.Output, int, error) {
 	return &ingest.Output{}, 0, nil
