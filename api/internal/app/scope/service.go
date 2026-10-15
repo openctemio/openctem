@@ -488,6 +488,12 @@ func (s *Service) DeleteTarget(ctx context.Context, targetID string, tenantID st
 	if err := s.refuseCITrustManaged(ctx, target); err != nil {
 		return err
 	}
+	if s.ciTrustLinks != nil {
+		// A trust that linked this person's entry does not add it again.
+		if err := s.ciTrustLinks.MarkTargetRemoved(ctx, parsedTenantID, parsedID, time.Now().UTC()); err != nil {
+			return err
+		}
+	}
 	if err := s.commitEntry(ctx, ledgerEntryOf(target, time.Now()), target, true, func() error {
 		return s.targetRepo.Delete(ctx, parsedTenantID, parsedID)
 	}); err != nil {

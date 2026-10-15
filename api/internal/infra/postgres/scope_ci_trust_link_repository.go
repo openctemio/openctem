@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -28,7 +29,7 @@ func NewScopeCITrustLinkRepository(db *DB) *ScopeCITrustLinkRepository {
 var _ scopedom.CITrustLinkRepository = (*ScopeCITrustLinkRepository)(nil)
 
 const ciTrustLinkColumns = `l.tenant_id, l.trust_config_id, c.name, l.pattern, l.target_id, l.created_at,
-	l.seen_at, l.seen_run_id, COALESCE(l.seen_repository, ''), COALESCE(l.seen_owner_id, '')`
+	l.seen_at, l.seen_run_id, COALESCE(l.seen_repository, ''), COALESCE(l.seen_owner_id, ''), l.target_removed_at`
 
 func (r *ScopeCITrustLinkRepository) query(ctx context.Context, q string, args ...any) ([]scopedom.CITrustLink, error) {
 	rows, err := r.db.QueryContext(ctx, q, args...)
@@ -42,11 +43,11 @@ func (r *ScopeCITrustLinkRepository) query(ctx context.Context, q string, args .
 			l                   scopedom.CITrustLink
 			tid, cid            string
 			target, seenRun     sql.NullString
-			seenAt              sql.NullTime
+			seenAt, removedAt   sql.NullTime
 			seenRepo, seenOwner string
 		)
 		if err := rows.Scan(&tid, &cid, &l.TrustName, &l.Pattern, &target, &l.CreatedAt, &seenAt, &seenRun,
-			&seenRepo, &seenOwner); err != nil {
+			&seenRepo, &seenOwner, &removedAt); err != nil {
 			return nil, fmt.Errorf("scan ci trust scope link: %w", err)
 		}
 		l.TenantID, _ = shared.IDFromString(tid)
@@ -55,6 +56,7 @@ func (r *ScopeCITrustLinkRepository) query(ctx context.Context, q string, args .
 		l.SeenAt = optTime(seenAt)
 		l.SeenRunID = parseOptID(seenRun)
 		l.SeenRepository, l.SeenOwnerID = seenRepo, seenOwner
+		l.TargetRemovedAt = optTime(removedAt)
 		out = append(out, l)
 	}
 	return out, rows.Err()
@@ -115,6 +117,17 @@ func (r *ScopeCITrustLinkRepository) CountForTarget(ctx context.Context, tenantI
 		return 0, fmt.Errorf("count ci trust scope links: %w", err)
 	}
 	return n, nil
+}
+
+// MarkTargetRemoved records on every link to the entry that a person
+// deleted it.
+func (r *ScopeCITrustLinkRepository) MarkTargetRemoved(ctx context.Context, tenantID, targetID shared.ID, at time.Time) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE scope_target_ci_trusts SET target_removed_at = $3
+		WHERE tenant_id = $1 AND target_id = $2`, tenantID.String(), targetID.String(), at)
+	if err != nil {
+		return fmt.Errorf("mark ci trust scope links removed: %w", err)
+	}
+	return nil
 }
 
 // MarkSeen records the evidence on a link that has none.
