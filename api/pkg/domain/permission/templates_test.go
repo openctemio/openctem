@@ -218,3 +218,61 @@ func TestRoleTemplates_CIGateOwnedByAppSec(t *testing.T) {
 		}
 	}
 }
+
+// Researchers report and discuss findings; triage owns severity.
+func TestRoleTemplates_ResearcherCommentsButDoesNotRescore(t *testing.T) {
+	r, ok := permission.RoleTemplateByID("researcher")
+	if !ok {
+		t.Fatal("no researcher template")
+	}
+	if !hasPerm(r, permission.FindingsComment) {
+		t.Error("researcher cannot comment on findings")
+	}
+	if hasPerm(r, permission.FindingsSeverity) || hasPerm(r, permission.FindingsApprove) {
+		t.Error("researcher can re-score or approve")
+	}
+}
+
+// templateVersions pins each template's version to its grants. Changing a
+// template's permissions or full data access changes its digest: bump
+// Version and record the new digest here. Roles created from the template
+// keep what they took and show "update available".
+var templateVersions = map[string]struct {
+	version int
+	digest  string
+}{
+	"program-lead":          {1, "04049ff1fdc99496"},
+	"security-analyst":      {1, "8d919973833731a8"},
+	"vulnerability-manager": {1, "20cadb3f924a1193"},
+	"remediation-owner":     {1, "e7a6827cedd735f8"},
+	"appsec-engineer":       {1, "c3b74d6a1883f9ea"},
+	"ci-integrator":         {1, "bbc336f2d9c23728"},
+	"scan-operator":         {1, "1e92419c24534f7d"},
+	"sensor-operator":       {1, "dad7da0b5236b92c"},
+	"validation-engineer":   {1, "9c76467fedf3eac0"},
+	"external-tester":       {1, "8861f6f0f788e217"},
+	"researcher":            {1, "efe5d28a21f69cdc"},
+	"bounty-triager":        {1, "3701f9612e54d123"},
+	"threat-intel-analyst":  {1, "8dc68d55c347021f"},
+	"risk-approver":         {1, "41e9f0ffdc676549"},
+	"auditor":               {1, "b6f9f10b55df98eb"},
+	"executive":             {1, "e76d59c68e5ca7ad"},
+}
+
+func TestRoleTemplates_VersionPinned(t *testing.T) {
+	for _, tpl := range permission.RoleTemplates() {
+		got := permission.TemplateDigest(tpl)
+		want, ok := templateVersions[tpl.ID]
+		if !ok {
+			t.Errorf("%s: pin it: {version: %d, digest: %q}", tpl.ID, tpl.Version, got)
+			continue
+		}
+		if tpl.Version != want.version || got != want.digest {
+			t.Errorf("%s: version %d digest %s, pinned version %d digest %s: a change to the grants needs a new version",
+				tpl.ID, tpl.Version, got, want.version, want.digest)
+		}
+		if tpl.Version < 1 {
+			t.Errorf("%s: version must start at 1", tpl.ID)
+		}
+	}
+}

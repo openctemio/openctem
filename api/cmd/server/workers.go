@@ -544,8 +544,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	registerSignerLedgerSync(w.ControllerManager, svc, log)
 
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(
-		repos.FindingApproval,
-		repos.Finding,
+		repos.FindingAcceptanceExpiry,
+		svc.SLA,
 		&controller.ApprovalExpirationControllerConfig{
 			Interval:  1 * time.Hour,
 			BatchSize: 100,
@@ -802,6 +802,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		slaEscalation.SetWarningPublisher(sla.NewWarningOutboxAdapter(svc.Outbox))
 	}
 	w.ControllerManager.Register(slaEscalation)
+
+	// Asset risk score freshness: drain the rescore queue that database
+	// triggers fill on every change to a score input, and queue the whole
+	// inventory once a day as a safety net (docs/architecture/asset-risk-score.md).
+	if svc != nil && svc.Asset != nil {
+		svc.Asset.SetRiskQueue(postgres.NewAssetRiskQueueRepository(&postgres.DB{DB: deps.DB}), repos.Asset)
+		w.ControllerManager.Register(controller.NewAssetRiskScoreController(svc.Asset, 0))
+		w.ControllerManager.Register(controller.NewAssetRiskReconcileController(svc.Asset, 0))
+	}
 
 	// Risk snapshot — computes daily risk/MTTR/SLA metrics per tenant (RFC-005 Gap 4)
 	w.ControllerManager.Register(controller.NewRiskSnapshotController(
