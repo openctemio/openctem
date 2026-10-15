@@ -74,12 +74,6 @@ const (
 	MaxExpiryHorizon = 5 * 365 * 24 * time.Hour
 )
 
-// Resolution methods a statement records on a finding it closed.
-const (
-	ResolutionNotAffected = "vex_not_affected"
-	ResolutionFixed       = "vex_fixed"
-)
-
 // Errors.
 var (
 	ErrNotFound = fmt.Errorf("%w: vex statement not found", shared.ErrNotFound)

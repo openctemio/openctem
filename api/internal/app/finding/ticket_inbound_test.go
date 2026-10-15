@@ -15,7 +15,7 @@ func TestTicketInboundExemptionIsDedicated(t *testing.T) {
 	s := &VulnerabilityService{}
 	claim := func(ctx context.Context) error {
 		return s.authorizePersonClaimOrClose(ctx, vulnerability.FindingStatusFixApplied,
-			vulnerability.ResolutionMethodAdminDirect, "fixed", "", true, nil)
+			vulnerability.VerificationAttested, "fixed", "", true, nil)
 	}
 	vex := vulnerability.WithStatusTransition(context.Background(), vulnerability.StatusTransition{
 		Source: "vex", ActorType: IntegrationActorType,
