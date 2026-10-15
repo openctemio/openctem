@@ -74,6 +74,18 @@ const CapabilityNetConfined = "net.confined@1"
 // identification is claimable only by a sensor that reported it.
 const CapabilityHTTPIdentity = "http.identity@1"
 
+// sensorWideCapabilities are the capabilities a sensor reports for itself,
+// whatever its tools, that the platform gates jobs on. Sanitize keeps only
+// known capabilities, so one missing here is dropped from every report and
+// the jobs that require it wait forever: every sensor-wide capability that
+// dispatch or the command poll checks must be listed.
+var sensorWideCapabilities = []string{
+	CapabilityValidate,
+	CapabilityScopeLimits,
+	CapabilityNetConfined,
+	CapabilityHTTPIdentity,
+}
+
 // Tool kinds a sensor reports (sdk-go core.ToolKind).
 const (
 	ToolKindScanner   = "scanner"
@@ -404,7 +416,7 @@ func sanitizeToolCapabilities(in []string, knownTools, knownCaps map[string]bool
 }
 
 func knownCapability(c string, knownTools, knownCaps map[string]bool) bool {
-	if knownCaps[c] || knownTools[c] || c == CapabilityValidate || c == CapabilityScopeLimits || c == CapabilityNetConfined {
+	if knownCaps[c] || knownTools[c] || slices.Contains(sensorWideCapabilities, c) {
 		return true
 	}
 	// A capability of the OpenCTEM taxonomy (ctis/capability), as sensors on

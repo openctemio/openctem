@@ -107,6 +107,19 @@ Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
 
+## Automatic signals never reverse a decision
+
+A false positive, an accepted risk or a duplicate is a person's decision
+(approved, for the first two). No automatic signal moves it:
+
+- a changed taint source and an indicator-of-compromise match raise a
+  **review flag** instead (`finding_decision_reviews`, migration `002154`,
+  reasons `taint_source_changed` and `ioc_match`), with a `decision_review`
+  timeline entry in the same transaction and an audit event; one open flag per
+  finding and reason; it clears when the finding's status changes;
+- an IOC match still reopens a finding closed as `resolved` (the match is
+  evidence it is not fixed).
+
 ## Duplicates name their canonical finding
 
 A duplicate is a tombstone of another finding: `duplicate_of` is always set
