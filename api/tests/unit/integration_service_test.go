@@ -2,7 +2,10 @@ package unit
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -2551,125 +2554,61 @@ func TestReconstructNotificationExtension_CustomSeverities(t *testing.T) {
 }
 
 // =============================================================================
-// Per-tenant Jira inbound-webhook secret (EnsureJiraWebhookSecret / Rotate / List)
+// Per-integration Jira inbound-webhook secret
 // =============================================================================
 
-func TestJiraWebhookSecret_NoIntegration_ReturnsNotFound(t *testing.T) {
+func TestJiraWebhookSecret_NotJiraOrOtherTenant_NotFound(t *testing.T) {
 	repo := newMockIntegrationRepo()
 	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), crypto.NewNoOpEncryptor())
+	tenantID := shared.NewID()
+	slack := integration.NewIntegration(shared.NewID(), tenantID, "Slack", integration.CategoryNotification, integration.ProviderSlack, integration.AuthTypeToken)
+	repo.integrations[slack.ID()] = slack
 
-	_, err := svc.EnsureJiraWebhookSecret(context.Background(), shared.NewID())
-	if err == nil {
-		t.Fatal("expected error when tenant has no Jira integration")
+	if _, err := svc.RotateJiraWebhookSecret(context.Background(), tenantID, slack.ID()); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("non-Jira integration: want ErrNotFound, got %v", err)
 	}
-	if !errors.Is(err, shared.ErrNotFound) {
-		t.Errorf("expected ErrNotFound, got %v", err)
+	if _, err := svc.RotateJiraWebhookSecret(context.Background(), shared.NewID(), slack.ID()); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("another tenant: want ErrNotFound, got %v", err)
 	}
 }
 
-func TestJiraWebhookSecret_EnsureGeneratesAndPersists(t *testing.T) {
+func TestJiraWebhookSecret_RotateEncryptsAndVerifies(t *testing.T) {
 	repo := newMockIntegrationRepo()
 	cipher, err := crypto.NewCipher(make([]byte, 32))
 	if err != nil {
-		t.Fatalf("cipher: %v", err)
+		t.Fatal(err)
 	}
 	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), cipher)
-
 	tenantID := shared.NewID()
 	jira := integration.NewIntegration(shared.NewID(), tenantID, "Jira", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
 	repo.integrations[jira.ID()] = jira
 
-	secret, err := svc.EnsureJiraWebhookSecret(context.Background(), tenantID)
-	if err != nil {
-		t.Fatalf("ensure: %v", err)
+	has, err := svc.JiraWebhookHasSecret(context.Background(), tenantID, jira.ID())
+	if err != nil || has {
+		t.Fatalf("fresh integration: has=%v err=%v", has, err)
 	}
-	if secret == "" {
-		t.Fatal("expected a non-empty secret")
+	secret, err := svc.RotateJiraWebhookSecret(context.Background(), tenantID, jira.ID())
+	if err != nil || len(secret) != 64 {
+		t.Fatalf("rotate: %q %v", secret, err)
 	}
-
-	// Persisted encrypted (not stored as plaintext) on the integration metadata.
 	stored, _ := jira.Metadata()["webhook_secret_encrypted"].(string)
-	if stored == "" {
-		t.Fatal("expected encrypted secret persisted in metadata")
+	if stored == "" || stored == secret {
+		t.Fatalf("secret not stored encrypted: %q", stored)
 	}
-	if stored == secret {
-		t.Error("secret must be stored encrypted, not as plaintext")
+	body := []byte(`{"webhookEvent":"jira:issue_updated"}`)
+	m := hmac.New(sha256.New, []byte(secret))
+	_, _ = m.Write(body)
+	sig := "sha256=" + hex.EncodeToString(m.Sum(nil))
+	got, err := svc.VerifyJiraDelivery(context.Background(), jira.ID(), body, sig)
+	if err != nil || got != tenantID {
+		t.Fatalf("verify: tenant=%v err=%v", got, err)
 	}
-
-	// Ensure is idempotent — returns the same secret, does not regenerate.
-	secret2, err := svc.EnsureJiraWebhookSecret(context.Background(), tenantID)
-	if err != nil {
-		t.Fatalf("ensure(2): %v", err)
+	if _, err := svc.VerifyJiraDelivery(context.Background(), jira.ID(), []byte(`{"tampered":true}`), sig); err == nil {
+		t.Fatal("a tampered body verified")
 	}
-	if secret2 != secret {
-		t.Errorf("Ensure should be idempotent: got %q then %q", secret, secret2)
-	}
-}
-
-func TestJiraWebhookSecret_RotateChangesSecret(t *testing.T) {
-	repo := newMockIntegrationRepo()
-	cipher, err := crypto.NewCipher(make([]byte, 32))
-	if err != nil {
-		t.Fatalf("cipher: %v", err)
-	}
-	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), cipher)
-
-	tenantID := shared.NewID()
-	jira := integration.NewIntegration(shared.NewID(), tenantID, "Jira", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
-	repo.integrations[jira.ID()] = jira
-
-	first, err := svc.EnsureJiraWebhookSecret(context.Background(), tenantID)
-	if err != nil {
-		t.Fatalf("ensure: %v", err)
-	}
-	rotated, err := svc.RotateJiraWebhookSecret(context.Background(), tenantID)
-	if err != nil {
-		t.Fatalf("rotate: %v", err)
-	}
-	if rotated == first {
-		t.Error("rotate should produce a different secret")
-	}
-
-	// List returns the current (rotated) secret only.
-	secrets, err := svc.ListJiraWebhookSecrets(context.Background(), tenantID)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(secrets) != 1 || secrets[0] != rotated {
-		t.Errorf("expected [rotated], got %v", secrets)
-	}
-}
-
-func TestJiraWebhookSecret_ListIsTenantScoped(t *testing.T) {
-	repo := newMockIntegrationRepo()
-	cipher, err := crypto.NewCipher(make([]byte, 32))
-	if err != nil {
-		t.Fatalf("cipher: %v", err)
-	}
-	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), cipher)
-
-	tenantA := shared.NewID()
-	tenantB := shared.NewID()
-	jiraA := integration.NewIntegration(shared.NewID(), tenantA, "JiraA", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
-	jiraB := integration.NewIntegration(shared.NewID(), tenantB, "JiraB", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
-	repo.integrations[jiraA.ID()] = jiraA
-	repo.integrations[jiraB.ID()] = jiraB
-
-	secretA, _ := svc.EnsureJiraWebhookSecret(context.Background(), tenantA)
-	_, _ = svc.EnsureJiraWebhookSecret(context.Background(), tenantB)
-
-	listA, err := svc.ListJiraWebhookSecrets(context.Background(), tenantA)
-	if err != nil {
-		t.Fatalf("list A: %v", err)
-	}
-	if len(listA) != 1 || listA[0] != secretA {
-		t.Fatalf("tenant A list should contain only A's secret, got %v", listA)
-	}
-	// Tenant B's secret must never appear in tenant A's candidate set.
-	for _, s := range listA {
-		if s == "" {
-			t.Error("unexpected empty secret")
-		}
+	jira.SetStatus(integration.StatusDisabled)
+	if _, err := svc.VerifyJiraDelivery(context.Background(), jira.ID(), body, sig); err == nil {
+		t.Fatal("a disabled integration verified a delivery")
 	}
 }
 
