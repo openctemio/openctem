@@ -29,6 +29,7 @@ vi.mock('swr', () => ({
 }))
 
 vi.mock('@/features/findings/api/use-findings-api', () => ({
+  useFindingApi: () => ({ data: undefined }),
   useFindingsApi: (filters: Record<string, unknown>) => {
     listCalls.push(filters)
     return {
