@@ -1,10 +1,16 @@
 package handler
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -22,7 +28,7 @@ import (
 // Endpoints:
 //   - POST /api/v1/findings/{id}/link-ticket      — link a Jira ticket to a finding
 //   - DELETE /api/v1/findings/{id}/link-ticket     — unlink a Jira ticket from a finding
-//   - POST /api/v1/webhooks/incoming/jira          — receive Jira status-change webhooks
+//   - POST /hooks/jira-integrations/{integration_id} — receive Jira status-change webhooks
 type JiraWebhookHandler struct {
 	service   *jira.SyncService
 	validator *validator.Validator
@@ -32,6 +38,10 @@ type JiraWebhookHandler struct {
 	// via SetGitHubTicketService — when nil, requests with provider=github are
 	// rejected with 400.
 	github *ticketing.GitHubTicketService
+	// verifier authenticates inbound deliveries; nil refuses them all.
+	verifier JiraDeliveryVerifier
+	// deliveries remembers delivery ids (replay protection).
+	deliveries WebhookDeliveryGuard
 }
 
 // NewJiraWebhookHandler creates a new JiraWebhookHandler.
@@ -176,39 +186,111 @@ func (h *JiraWebhookHandler) ListJiraProjects(w http.ResponseWriter, r *http.Req
 	_ = json.NewEncoder(w).Encode(map[string]any{"projects": projects})
 }
 
-// IncomingJiraWebhook handles POST /api/v1/webhooks/incoming/jira.
-// This is a PUBLIC endpoint (no JWT) intended to receive Jira webhook deliveries.
-// Tenant routing is via the ?tenant= query param — each Jira project configures one endpoint per tenant.
+// JiraDeliveryVerifier authenticates an inbound Jira delivery by the
+// integration named in its URL and returns that integration's tenant
+// (integration.IntegrationService.VerifyJiraDelivery).
+type JiraDeliveryVerifier interface {
+	VerifyJiraDelivery(ctx context.Context, integrationID shared.ID, body []byte, signature string) (shared.ID, error)
+}
+
+// Inbound Jira delivery limits.
+const (
+	jiraWebhookMaxBody = 2 * 1024 * 1024 // 2 MiB
+	// JiraDeliveryMaxAge refuses a delivery whose payload timestamp is older:
+	// Jira retries a failed delivery for a short while, and a replay after
+	// the dedup window falls outside this age as well.
+	JiraDeliveryMaxAge = time.Hour
+	// jiraDeliveryMaxSkew allows a sender clock slightly ahead of ours.
+	jiraDeliveryMaxSkew = 5 * time.Minute
+	// JiraDeliveryWindow is how long a delivery id is remembered (longer
+	// than JiraDeliveryMaxAge, so every replay is caught by one or the other).
+	JiraDeliveryWindow = 24 * time.Hour
+)
+
+// jiraDeliveryID is the shape of Jira's X-Atlassian-Webhook-Identifier.
+var jiraDeliveryID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+// SetDeliveryVerifier wires inbound authentication (required for the route).
+func (h *JiraWebhookHandler) SetDeliveryVerifier(v JiraDeliveryVerifier) { h.verifier = v }
+
+// SetDeliveryGuard wires replay protection by delivery id.
+func (h *JiraWebhookHandler) SetDeliveryGuard(g WebhookDeliveryGuard) { h.deliveries = g }
+
+// IncomingJiraWebhook handles POST /hooks/jira-integrations/{integration_id}.
+// Public (no JWT): the integration id in the URL names one integration and so
+// one tenant, and the delivery must be signed with that integration's own
+// secret in X-Hub-Signature (sha256=<hex HMAC of the raw body>), the header
+// Jira sends for a webhook with a secret. Replays are refused by delivery id
+// (X-Atlassian-Webhook-Identifier, or the body hash when absent) and by the
+// payload timestamp's age.
 func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantIDStr := r.URL.Query().Get("tenant")
-	if tenantIDStr == "" {
-		apierror.BadRequest("tenant query parameter is required").WriteJSON(w)
+	integrationID, err := shared.IDFromString(chi.URLParam(r, "integration_id"))
+	if err != nil || h.verifier == nil {
+		apierror.Unauthorized("invalid webhook signature").WriteJSON(w)
 		return
 	}
-
-	tenantID, err := shared.IDFromString(tenantIDStr)
+	body, err := io.ReadAll(io.LimitReader(r.Body, jiraWebhookMaxBody+1))
+	if err != nil || len(body) > jiraWebhookMaxBody {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	tenantID, err := h.verifier.VerifyJiraDelivery(r.Context(), integrationID, body, r.Header.Get("X-Hub-Signature"))
 	if err != nil {
-		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		h.logger.Warn("jira webhook rejected", "integration_id", integrationID.String(), "remote_ip", middleware.ClientIPKey(r))
+		apierror.Unauthorized("invalid webhook signature").WriteJSON(w)
 		return
 	}
 
 	var payload jira.WebhookPayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		apierror.BadRequest("invalid jira webhook payload").WriteJSON(w)
 		return
+	}
+	if !jiraDeliveryFresh(payload.Timestamp, time.Now()) {
+		h.logger.Warn("SECURITY: jira webhook refused: stale or missing timestamp", "integration_id", integrationID.String())
+		apierror.Unauthorized("webhook delivery is too old").WriteJSON(w)
+		return
+	}
+	if h.deliveries != nil {
+		delivery := r.Header.Get("X-Atlassian-Webhook-Identifier")
+		if !jiraDeliveryID.MatchString(delivery) {
+			sum := sha256.Sum256(body)
+			delivery = "body-" + hex.EncodeToString(sum[:])
+		}
+		first, derr := h.deliveries.FirstDelivery(r.Context(), "jira:"+integrationID.String()+":"+delivery, JiraDeliveryWindow)
+		if derr != nil {
+			h.logger.Error("jira webhook: delivery store unavailable", "integration_id", integrationID.String(), "error", derr)
+			apierror.ServiceUnavailable("webhook temporarily unavailable").WriteJSON(w)
+			return
+		}
+		if !first {
+			h.logger.Warn("SECURITY: jira webhook replay ignored", "integration_id", integrationID.String())
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 	}
 
 	if err := h.service.HandleJiraWebhook(r.Context(), tenantID, payload); err != nil {
 		h.logger.Error("jira webhook processing failed",
-			"tenant_id", tenantIDStr,
+			"tenant_id", tenantID.String(),
+			"integration_id", integrationID.String(),
 			"error", err,
 		)
 		apierror.InternalServerError("webhook processing failed").WriteJSON(w)
 		return
 	}
-
-	// Always return 200 — Jira expects a 2xx or it will retry.
 	w.WriteHeader(http.StatusOK)
+}
+
+// jiraDeliveryFresh reports whether a payload timestamp (milliseconds since
+// the epoch, as Jira sends it) is recent: not older than JiraDeliveryMaxAge
+// and not far in the future. A missing timestamp is not fresh.
+func jiraDeliveryFresh(tsMillis int64, now time.Time) bool {
+	if tsMillis <= 0 {
+		return false
+	}
+	ts := time.UnixMilli(tsMillis)
+	return now.Sub(ts) <= JiraDeliveryMaxAge && ts.Sub(now) <= jiraDeliveryMaxSkew
 }
 
 // handleError maps domain errors to HTTP responses.

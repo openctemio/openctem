@@ -287,6 +287,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// secondary provider on the same create-ticket endpoint.
 	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
+	// Inbound Jira deliveries: the integration in the URL and its own secret
+	// authenticate them; replays are ignored for 24 hours (all replicas).
+	jiraWebhookHandler.SetDeliveryVerifier(svc.Integration)
+	if deps.RedisClient != nil {
+		jiraWebhookHandler.SetDeliveryGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
@@ -455,14 +461,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			}
 			return h
 		}(),
-		FindingEvidenceItems:      handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
-		JiraWebhook:               jiraWebhookHandler,
-		JiraWebhookSecretResolver: svc.Integration,
-		GitHubWebhook:             githubWebhookHandler,
-		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:               handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
-		CTEMID:                    handler.NewCTEMIDHandler(svc.CTEMID, log),
-		CredentialImport:          handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
+		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
+		JiraWebhook:          jiraWebhookHandler,
+		GitHubWebhook:        githubWebhookHandler,
+		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
+		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
+		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
+		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),

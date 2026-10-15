@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1728,69 +1729,106 @@ func (h *IntegrationHandler) GetNotificationEvents(w http.ResponseWriter, r *htt
 	_ = json.NewEncoder(w).Encode(pagination.NewResult(result.Data, result.Total, paging))
 }
 
-// JiraWebhookConfigResponse describes how to configure an inbound Jira webhook
-// so it verifies against this tenant's own secret.
+// JiraWebhookConfigResponse tells an administrator how to configure the
+// inbound webhook of one Jira integration. WebhookSecret is set only in the
+// response of a rotation: a secret is shown once and never returned again.
 type JiraWebhookConfigResponse struct {
-	WebhookSecret   string `json:"webhook_secret"`
 	WebhookURL      string `json:"webhook_url"`
 	SignatureHeader string `json:"signature_header"`
-	TimestampHeader string `json:"timestamp_header"`
+	HasSecret       bool   `json:"has_secret"`
+	WebhookSecret   string `json:"webhook_secret,omitempty"`
 }
 
-func jiraWebhookConfig(tenantID, secret string) JiraWebhookConfigResponse {
+// JiraWebhookPath is the per-integration inbound webhook path.
+func JiraWebhookPath(integrationID string) string {
+	return "/hooks/jira-integrations/" + integrationID
+}
+
+func jiraWebhookConfig(integrationID string, hasSecret bool, secret string) JiraWebhookConfigResponse {
 	return JiraWebhookConfigResponse{
+		WebhookURL:      JiraWebhookPath(integrationID),
+		SignatureHeader: "X-Hub-Signature",
+		HasSecret:       hasSecret,
 		WebhookSecret:   secret,
-		WebhookURL:      "/api/v1/webhooks/incoming/jira?tenant=" + tenantID,
-		SignatureHeader: "X-OpenCTEM-Signature",
-		TimestampHeader: "X-OpenCTEM-Timestamp",
 	}
 }
 
-// GetJiraWebhookSecret handles GET /api/v1/integrations/jira/webhook-secret.
-// Returns (lazily creating if needed) the tenant's per-tenant inbound-webhook
-// HMAC secret so an admin can configure it in Jira. Requires a Jira integration.
-func (h *IntegrationHandler) GetJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	tid, err := shared.IDFromString(tenantID)
+// jiraIntegrationID parses the {id} of a Jira webhook route with the
+// caller's tenant.
+func (h *IntegrationHandler) jiraIntegrationID(w http.ResponseWriter, r *http.Request) (tid, id shared.ID, ok bool) {
+	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
 		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return tid, id, false
+	}
+	id, err = shared.IDFromString(r.PathValue("id"))
+	if err != nil {
+		apierror.NotFound("Integration").WriteJSON(w)
+		return tid, id, false
+	}
+	return tid, id, true
+}
+
+// GetJiraWebhook handles GET /api/v1/integrations/{id}/jira-webhook: the
+// webhook URL and whether a secret is set (never the secret).
+func (h *IntegrationHandler) GetJiraWebhook(w http.ResponseWriter, r *http.Request) {
+	tid, id, ok := h.jiraIntegrationID(w, r)
+	if !ok {
 		return
 	}
-
-	secret, err := h.service.EnsureJiraWebhookSecret(r.Context(), tid)
+	has, err := h.service.JiraWebhookHasSecret(r.Context(), tid, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-	// The response carries the raw secret: every read is audited.
-	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRead, tenantID, "Jira inbound webhook", nil, nil,
-		auditdom.SeverityHigh, "Jira inbound webhook secret viewed", map[string]any{"provider": "jira"})
-
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
+	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(id.String(), has, ""))
 }
 
-// RotateJiraWebhookSecret handles POST /api/v1/integrations/jira/webhook-secret/rotate.
-// Generates a fresh secret (invalidating the previous one immediately) and
-// returns it. Requires a Jira integration.
+// RotateJiraWebhookSecret handles POST /api/v1/integrations/{id}/jira-webhook/secret/rotate:
+// a new random secret, returned in this response only. The previous secret
+// stops verifying immediately.
 func (h *IntegrationHandler) RotateJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+	tid, id, ok := h.jiraIntegrationID(w, r)
+	if !ok {
 		return
 	}
-
-	secret, err := h.service.RotateJiraWebhookSecret(r.Context(), tid)
+	secret, err := h.service.RotateJiraWebhookSecret(r.Context(), tid, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRotated, tenantID, "Jira inbound webhook", nil, nil,
+	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRotated, id.String(), "Jira inbound webhook", nil, nil,
 		auditdom.SeverityHigh, "Jira inbound webhook secret rotated", map[string]any{"provider": "jira"})
-
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
+	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(id.String(), true, secret))
+}
+
+// SetJiraWebhookSecretRequest carries a secret the administrator chose.
+type SetJiraWebhookSecretRequest struct {
+	Secret string `json:"secret"`
+}
+
+// SetJiraWebhookSecret handles PUT /api/v1/integrations/{id}/jira-webhook/secret:
+// stores the secret entered in Jira's webhook form (encrypted; never returned).
+func (h *IntegrationHandler) SetJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	tid, id, ok := h.jiraIntegrationID(w, r)
+	if !ok {
+		return
+	}
+	var req SetJiraWebhookSecretRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.service.ReplaceJiraWebhookSecret(r.Context(), tid, id, req.Secret); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRotated, id.String(), "Jira inbound webhook", nil, nil,
+		auditdom.SeverityHigh, "Jira inbound webhook secret set", map[string]any{"provider": "jira", "source": "entered"})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(id.String(), true, ""))
 }
 
 // GitHubWebhookConfigResponse describes how to configure a GitHub webhook so it
