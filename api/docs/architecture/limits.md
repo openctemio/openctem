@@ -1,7 +1,6 @@
 # Limits and feature denies
 
-The core knows no plans. Every organization is **unlimited and may use every
-feature** unless someone set a limit or a feature deny for that organization:
+Every organization is **unlimited and may use every feature** unless someone set a limit or a feature deny for that organization:
 
 - the **instance operator** (a platform administrator of this installation),
   in the console;
@@ -42,7 +41,7 @@ Limits and denies come from the operator's own rows plus the configured
 |--------|-------|--------|
 | none | every self-hosted install (default) | shipped |
 | control plane | rows of origin `control_plane`, written through the internal API of a hosted service | shipped (enabled only with the internal API) |
-| signed licence file | see "Future: self-hosted licensing" | design only |
+| signed limits file | see "Future: offline signed limits" | design only |
 
 For a key, the **operator's** limit wins over a source's. A deny from any of
 them denies. Rows are stored per organization and origin in `tenant_limits`
@@ -54,7 +53,7 @@ rows.
 `limits.AllowAddition(limit, used, delta)` is the only over-limit rule:
 
 - A limit refuses **new additions** only. Lowering it (by the operator, the
-  control plane or, later, a licence) never deletes, disables or signs out
+  control plane or, later, a license) never deletes, disables or signs out
   anything, and never stops work already running. The organization is flagged
   `over_limit` and additions of that kind are refused until usage is under
   the limit again.
@@ -155,26 +154,26 @@ not a security boundary; that overshoot is accepted.
 The operator can only edit rows of origin `operator`. Rows of origin
 `control_plane` are shown in the console as set by the service operator.
 
-## Future: self-hosted licensing (design only, not built)
+## Future: offline signed limits (design only, not built)
 
-Self-hosted gets every feature today, and the owner wants selling a
-self-hosted edition later to stay easy. The design keeps that a third source,
-with no change to any check:
+A self-hosted install gets every feature, and nothing here changes that.
+Limits that arrive as a signed file instead of through the console or the
+internal API fit as a third source, with no change to any check:
 
-- A **signed offline licence file** (Ed25519; the verifying public key
+- A **signed offline license file** (Ed25519; the verifying public key
   compiled into the core; no activation and no phone-home, so air-gapped
   installs work).
 - Its payload is limits and denies: per instance (applied to every
   organization) and, optionally, per organization id, plus an expiry.
-- A `licenceSource` implements `limits.Source`: it verifies the signature at
+- A `licenseSource` implements `limits.Source`: it verifies the signature at
   start and on reload, and yields rows like any other source. An invalid or
   missing file yields nothing (the default unlimited behaviour), never a
   crash.
-- Expiry reuses the over-limit rule: the licence's limits and denies stay in
+- Expiry reuses the over-limit rule: the license's limits and denies stay in
   force (no new additions over them, denied features in read-only grace),
   nothing is deleted, and running work continues.
 - Every check already goes through the entitlement service with named keys,
-  so a licence needs no new seam. The guard test keeps it that way.
+  so a license needs no new seam. The guard test keeps it that way.
 
 ## Code map
 
@@ -186,8 +185,9 @@ with no change to any check:
   every query scoped by `tenant_id`; `limits_check.go`: the insert seam.
 - `internal/infra/http/handler/limits_handler.go`: console and organization
   endpoints; `WriteLimitError` (403 `LIMIT_REACHED`).
-- Migration `limits_replace_plans` (002291): moved every organization's plan
-  limits and plan-excluded modules to operator rows, then dropped plans.
+- Migration `per_organization_limits` (002291): moved every organization's
+  earlier limits and excluded modules to operator rows, then dropped the old
+  tables.
 
 Modules and their grace are described in [modules.md](modules.md) and
 [RFC-064](../rfcs/RFC-064-modules-entitlements-preferences.md); the idle
