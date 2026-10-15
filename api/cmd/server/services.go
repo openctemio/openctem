@@ -1346,6 +1346,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Reclassifier.SetQueue(s.Scoring, s.Scoring)
 	s.Reclassifier.SetWriter(s.Scoring)
+	s.Tenant.SetScoringVersions(s.Scoring)
 	// Recompute the SLA deadline when a sweep escalates a finding's priority
 	// (e.g. a CVE newly listed in KEV → P0), so the deadline tightens instead
 	// of staying at its laxer pre-escalation value.
