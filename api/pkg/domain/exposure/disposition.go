@@ -32,6 +32,21 @@ const MaxDispositionReasonLength = 1000
 // ErrDispositionSelfApproval: the requester cannot confirm their own request.
 var ErrDispositionSelfApproval = fmt.Errorf("%w: a second approver must confirm this request; you cannot approve your own", shared.ErrForbidden)
 
+// ErrDispositionSelfApprovalNotAllowed: an owner may approve their own
+// request only when no second eligible approver exists.
+var ErrDispositionSelfApprovalNotAllowed = fmt.Errorf("%w: you may approve your own request only as the owner when no other approver exists", shared.ErrForbidden)
+
+// ErrDispositionSelfApprovalNeedsReason: an owner's own approval states why.
+var ErrDispositionSelfApprovalNeedsReason = fmt.Errorf("%w: approving your own request needs a reason", shared.ErrValidation)
+
+// ErrDispositionSelfApprovalNeedsTOTP: the owner has no authenticator app,
+// so their own approval cannot be proven fresh.
+var ErrDispositionSelfApprovalNeedsTOTP = fmt.Errorf("%w: approving your own request needs an authenticator app; set one up first", shared.ErrForbidden)
+
+// ErrDispositionSelfApprovalBadCode: the authenticator code is missing,
+// wrong or already used.
+var ErrDispositionSelfApprovalBadCode = fmt.Errorf("%w: the authenticator code is missing, wrong or already used", shared.ErrForbidden)
+
 // ErrDispositionConflict: another disposition is already pending.
 var ErrDispositionConflict = fmt.Errorf("%w: a different disposition is already pending for this exposure; reject it first", shared.ErrConflict)
 
