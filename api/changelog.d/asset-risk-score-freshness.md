@@ -13,7 +13,7 @@
   unpublished pentest drafts no longer add to `finding_count` or the score.
 - Assets in the API carry `risk_scored_at` (absent = never scored) and
   `risk_score_pending` (a rescore is queued).
-- Migration `002141_asset_risk_queue` adds the queue, the triggers and the
+- Migration `002153_asset_risk_queue` adds the queue, the triggers and the
   column, and queues every asset once.
 - **Upgrade note:** nothing to run. After the migration the worker rescores
   the whole inventory within minutes; watch
