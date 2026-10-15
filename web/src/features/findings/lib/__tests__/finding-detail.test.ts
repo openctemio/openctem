@@ -198,6 +198,42 @@ describe('riskSignals', () => {
     expect(s.find((x) => x.key === 'epss')?.effect).toBe('raises')
   })
 
+  it('says reachability is unknown for a repository with no exposure data', () => {
+    const f = toFindingDetail(
+      crossSpawn({
+        asset: {
+          id: 'dcdc1111-0000-0000-0000-000000000002',
+          name: 'gitlab.com/acme/app',
+          type: 'repository',
+          criticality: 'medium',
+          exposure: 'unknown',
+        },
+        is_reachable: false,
+        reachable_from_count: 0,
+        is_internet_accessible: false,
+      })
+    )
+    const s = riskSignals(f)
+    expect(s.find((x) => x.key === 'reachability-unknown')).toMatchObject({
+      label: 'Reachability unknown',
+      effect: 'neutral',
+    })
+    expect(s.some((x) => x.label.toLowerCase().includes('not reachable'))).toBe(false)
+  })
+
+  it('does not call a reachable finding unknown', () => {
+    expect(
+      riskSignals(toFindingDetail(crossSpawn())).some((x) => x.key === 'reachability-unknown')
+    ).toBe(false)
+  })
+
+  it('translates the labels through the given t', () => {
+    const t = (key: string) => `[${key}]`
+    expect(riskSignals(toFindingDetail(crossSpawn()), t).map((x) => x.label)).toContain(
+      '[findings.signals.internetFacing]'
+    )
+  })
+
   it('says nothing about exploits when there is no advisory', () => {
     const f = toFindingDetail(crossSpawn({ vulnerability: undefined, cve_id: undefined }))
     expect(riskSignals(f).some((x) => x.key === 'exploit')).toBe(false)
