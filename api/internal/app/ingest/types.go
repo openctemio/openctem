@@ -214,11 +214,11 @@ type Output struct {
 	SourceResolveIDs  []shared.ID       `json:"-"`
 	SourceResolveMode SourceResolveMode `json:"-"`
 	// FindingsVEXNotAffected counts the report's findings with a VEX
-	// not_affected statement; FindingsVEXClosed counts the open findings it
-	// closed (enforce), FindingsVEXWouldClose those it would close
-	// (dry_run). VEXIDs and VEXMode feed the audit record.
+	// not_affected statement; FindingsVEXRequested counts the open findings it
+	// requested a false positive for (enforce: a pending four-eyes request),
+	// FindingsVEXWouldClose those it would request (dry_run). VEXIDs and VEXMode feed the audit record.
 	FindingsVEXNotAffected int         `json:"findings_vex_not_affected,omitempty"`
-	FindingsVEXClosed      int         `json:"findings_vex_closed,omitempty"`
+	FindingsVEXRequested   int         `json:"findings_vex_requested,omitempty"`
 	FindingsVEXWouldClose  int         `json:"findings_vex_would_close,omitempty"`
 	VEXIDs                 []shared.ID `json:"-"`
 	VEXMode                VEXMode     `json:"-"`

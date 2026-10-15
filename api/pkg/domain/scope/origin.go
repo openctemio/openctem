@@ -26,7 +26,7 @@ const (
 func (o Origin) Valid() bool {
 	switch o {
 	case OriginManual, OriginRequest, OriginImport, OriginReviewRule, OriginRefusalFix,
-		OriginSeed, OriginSeedMigration, OriginSystem, OriginProgram, OriginConfirmed, OriginConnector:
+		OriginSeed, OriginSeedMigration, OriginSystem, OriginProgram, OriginConfirmed, OriginConnector, OriginCITrust:
 		return true
 	}
 	return false
