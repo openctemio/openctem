@@ -3,6 +3,7 @@ package sensor
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -261,5 +262,32 @@ func TestSensorManifestPolicy(t *testing.T) {
 	p := a.ManifestPolicy()
 	if !reflect.DeepEqual(p.AllowedTools, []string{"nuclei", "semgrep"}) || p.MaxJobs != 3 || len(p.AllowedCapabilities) != 3 {
 		t.Fatalf("policy %+v", p)
+	}
+}
+
+// The sensor-wide capabilities a sensor v0.23 manifest declares are kept
+// when its heartbeat reported them too. http.identity@1 was ignored as
+// "unknown-capability" at capabilities[3], so program jobs carrying an
+// identification were withheld from every sensor.
+func TestManifestKeepsGatedSensorWideCapabilities(t *testing.T) {
+	raw := `{"schema":1,
+	  "sensor":{"name":"openctemio-sensor","version":"v0.23.1"},
+	  "capabilities":["validate","scope.limits@1","net.confined@1","http.identity@1"],
+	  "tools":[{"name":"nuclei","kind":"scanner","installed":true,"capabilities":["dast"]}]}`
+	m, _, _, err := ParseManifest([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := m.CapabilityInput().Sanitize(map[string]bool{"nuclei": true}, map[string]bool{"dast": true})
+	if !slices.Contains(rep.Capabilities, CapabilityHTTPIdentity) {
+		t.Fatalf("heartbeat report dropped %s: %v", CapabilityHTTPIdentity, rep.Capabilities)
+	}
+	clean, ignored := m.Sanitized(rep, time.Now())
+	if len(ignored) != 0 {
+		t.Fatalf("ignored = %+v", ignored)
+	}
+	want := []string{CapabilityValidate, CapabilityScopeLimits, CapabilityNetConfined, CapabilityHTTPIdentity}
+	if !reflect.DeepEqual(clean.Capabilities, want) {
+		t.Fatalf("sensor-wide = %v, want %v", clean.Capabilities, want)
 	}
 }

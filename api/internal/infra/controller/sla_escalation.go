@@ -330,9 +330,10 @@ func breachEvent(br breachRow, now time.Time) (SLABreachEvent, bool) {
 // warningSelectUpdateQuery flags open findings once the governing policy's
 // warning_threshold_percent of their remediation window has elapsed, RETURNING
 // the rows that actually transitioned so each is notified once. The window
-// starts at first_detected_at (created_at when unset); for a regression whose
-// deadline was restarted at reopen this makes the window look longer, so the
-// warning comes earlier, never later. The `sla_status IS NULL OR = 'on_track'`
+// starts at the later of first_detected_at and last_reopened_at (created_at
+// when both are unset): a regression's restarted deadline is measured from the
+// reopen, so it does not flip to warning at once. This is the one warning
+// definition; status changes keep a warning it set (finding_sla_status_for). The `sla_status IS NULL OR = 'on_track'`
 // guard makes the transition happen exactly once.
 var warningSelectUpdateQuery = `
 	WITH due AS (
@@ -343,8 +344,8 @@ var warningSelectUpdateQuery = `
 		  AND (f.sla_status IS NULL OR f.sla_status = 'on_track')
 		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		  AND NOT f.branch_only
-		  AND NOW() >= COALESCE(f.first_detected_at, f.created_at)
-		      + (f.sla_deadline - COALESCE(f.first_detected_at, f.created_at))
+		  AND NOW() >= COALESCE(GREATEST(f.first_detected_at, f.last_reopened_at), f.created_at)
+		      + (f.sla_deadline - COALESCE(GREATEST(f.first_detected_at, f.last_reopened_at), f.created_at))
 		        * (COALESCE(pol.warning_threshold_percent, 80)::float8 / 100.0)
 	)
 	UPDATE findings SET
