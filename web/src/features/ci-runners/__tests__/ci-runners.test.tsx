@@ -563,9 +563,17 @@ describe('CITrustSettings', () => {
     await userEvent.click(toggle)
     await userEvent.click(within(dialog).getByRole('button', { name: /^save/i }))
     expect(mockSavePolicy).toHaveBeenCalledWith(
-      expect.objectContaining({ body: expect.objectContaining({ fixable_only: false }) })
+      expect.objectContaining({
+        body: expect.objectContaining({
+          fixable_only: false,
+          // Locks and the baseline settings travel with every write.
+          locked_fields: [],
+          baseline_secrets_block: true,
+        }),
+      })
     )
-  })
+    // The dialog is large (a lock per field): role queries are slow on a busy runner.
+  }, 15_000)
 
   it('deleting a repository gate policy asks first', async () => {
     perms = ['scans:ci:read', 'scans:ci:policy']

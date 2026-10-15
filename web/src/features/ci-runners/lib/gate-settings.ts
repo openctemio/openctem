@@ -237,6 +237,12 @@ export interface OverrideMeta {
   reason?: string
   /** ISO time or undefined for no end. */
   expiresAt?: string
+  /**
+   * Fields the repository sets but a lock above ignores (looser than the
+   * lock allows). They leave `fields` on any write: the API refuses to store
+   * a looser value under a lock, so keeping them would refuse every change.
+   */
+  dropped?: string[]
 }
 
 /**
@@ -253,7 +259,8 @@ export function overrideWrite(
   meta: OverrideMeta
 ): { id?: string; body: CIGatePolicyRequest } {
   const base = repo?.id ? policyBody(repo) : effectiveBody(effective)
-  const fields = inOrder([...new Set([...(repo?.id ? (repo.fields ?? []) : []), f])])
+  const kept = (repo?.id ? (repo.fields ?? []) : []).filter((x) => !meta.dropped?.includes(x))
+  const fields = inOrder([...new Set([...kept, f])])
   const body: CIGatePolicyRequest = {
     ...base,
     ...valueBody(f, value),
@@ -274,7 +281,7 @@ export function resetWrite(
   f: GateField,
   meta: OverrideMeta
 ): { kind: 'delete'; id: string } | { kind: 'patch'; id: string; body: CIGatePolicyRequest } {
-  const fields = (repo.fields ?? []).filter((x) => x !== f)
+  const fields = (repo.fields ?? []).filter((x) => x !== f && !meta.dropped?.includes(x))
   if (fields.length === 0) return { kind: 'delete', id: repo.id ?? '' }
   return {
     kind: 'patch',
