@@ -11,7 +11,15 @@ package permission
 // permissions are the union. Data scope (which assets they see) never comes
 // from a role, except for HasFullDataAccess: it comes from their teams.
 type RoleTemplate struct {
-	ID          string
+	ID string
+	// Version goes up by one whenever the template's permissions or full
+	// data access change. A role created from a template records the version
+	// and the permissions it took (roles.template_version,
+	// roles.template_permissions), so a later change to the template never
+	// changes that role: its editors see "update available" with the
+	// difference and decide. TestRoleTemplates_VersionPinned fails when the
+	// permissions change without a new version.
+	Version     int
 	Name        string
 	Description string
 	// Personas the template is meant for, in plain words.
@@ -46,8 +54,9 @@ func join(parts ...[]Permission) []Permission {
 // roleTemplates, in display order.
 var roleTemplates = []RoleTemplate{
 	{
-		ID:   "program-lead",
-		Name: "CTEM program lead",
+		ID:      "program-lead",
+		Version: 1,
+		Name:    "CTEM program lead",
 		Description: "Runs the program: scopes cycles, sets priority rules and SLAs, approves risk acceptance " +
 			"and suppressions, approves scope changes and reports to leadership. Does not administer members, " +
 			"sensors or integrations.",
@@ -67,8 +76,9 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "security-analyst",
-		Name: "Security analyst",
+		ID:      "security-analyst",
+		Version: 1,
+		Name:    "Security analyst",
 		Description: "Triages findings and exposures in their scope: severity, status, duplicates, assignment, " +
 			"comments and evidence; verifies fixes and requests retests. May request risk acceptance but " +
 			"never approves it.",
@@ -85,8 +95,9 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "vulnerability-manager",
-		Name: "Vulnerability manager",
+		ID:      "vulnerability-manager",
+		Version: 1,
+		Name:    "Vulnerability manager",
 		Description: "Owns the remediation backlog: routes work to owners with assignment rules, runs " +
 			"remediation campaigns, schedules scans and reports on SLA performance. Does not approve " +
 			"risk acceptance.",
@@ -106,8 +117,9 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "remediation-owner",
-		Name: "Remediation owner",
+		ID:      "remediation-owner",
+		Version: 1,
+		Name:    "Remediation owner",
 		Description: "Fixes what is assigned to their team: comments, remediation steps, tickets and " +
 			"marking a fix applied. Requests risk acceptance with a justification. Cannot re-score " +
 			"severity, verify their own fix, approve, delete or change scans.",
@@ -118,8 +130,9 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "appsec-engineer",
-		Name: "AppSec engineer",
+		ID:      "appsec-engineer",
+		Version: 1,
+		Name:    "AppSec engineer",
 		Description: "Runs code and dependency scanning for their repositories, triages application " +
 			"findings, and runs the CI gate: gate policies, expected scans and break-glass.",
 		Personas: []string{"Application security engineer", "DevSecOps engineer"},
@@ -138,8 +151,24 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "scan-operator",
-		Name: "Scan operator",
+		ID:      "ci-integrator",
+		Version: 1,
+		Name:    "CI integrator",
+		Description: "Keeps pipelines connected to the CI gate: reads CI runs, their gate results, " +
+			"code host connections and scan profiles to troubleshoot an integration. Gate policies and " +
+			"break-glass are AppSec's call; CI trust that issues upload credentials stays with administrators.",
+		Personas: []string{"Platform or DevOps engineer", "Build and release engineer"},
+		Permissions: []Permission{
+			DashboardRead, TeamRead,
+			AssetsRead, ComponentsRead, FindingsRead,
+			ScansRead, ScanProfilesRead, ToolsRead,
+			SCMConnectionsRead, CIRead,
+		},
+	},
+	{
+		ID:      "scan-operator",
+		Version: 1,
+		Name:    "Scan operator",
 		Description: "Schedules and runs scans and scan workflows against approved scope and watches " +
 			"their results. Cannot change scope, sensors, templates or findings.",
 		Personas: []string{"Scanning operations engineer"},
@@ -151,8 +180,23 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "validation-engineer",
-		Name: "Validation engineer",
+		ID:      "sensor-operator",
+		Version: 1,
+		Name:    "Sensor operator",
+		Description: "Watches the sensor fleet and its work: sensor health, scan zones and the commands " +
+			"queued to sensors, and queues commands such as a restart or an update. Pairing, keys and " +
+			"zones stay with administrators.",
+		Personas: []string{"Infrastructure or network engineer who hosts sensors"},
+		Permissions: []Permission{
+			DashboardRead, TeamRead,
+			SensorsRead, CommandsRead, CommandsWrite, ScanZonesRead,
+			ScansRead, ToolsRead, ScopeRead,
+		},
+	},
+	{
+		ID:      "validation-engineer",
+		Version: 1,
+		Name:    "Validation engineer",
 		Description: "Proves exploitability: runs pentest campaigns, attack simulations and control " +
 			"tests, records validated findings and retests fixes. Cannot approve risk or change scope.",
 		Personas: []string{"Red team or internal penetration tester", "Breach and attack simulation engineer", "Purple team"},
@@ -166,8 +210,9 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "external-tester",
-		Name: "External tester",
+		ID:      "external-tester",
+		Version: 1,
+		Name:    "External tester",
 		Description: "A vendor penetration tester on an engagement: reads and writes findings of the " +
 			"campaigns they are a member of and their retests. Pair with an external membership that " +
 			"has an end date and a team that holds only the engagement's assets.",
@@ -180,8 +225,40 @@ var roleTemplates = []RoleTemplate{
 		},
 	},
 	{
-		ID:   "threat-intel-analyst",
-		Name: "Threat intelligence analyst",
+		ID:      "researcher",
+		Version: 1,
+		Name:    "Researcher",
+		Description: "Tests the bug-bounty programs the organization follows: programs, scans and " +
+			"findings of the programs whose team they belong to. Reports and discusses findings; " +
+			"cannot re-score severity, change the organization's own scope or approve anything.",
+		Personas: []string{"Bug-bounty researcher", "Independent security researcher"},
+		// The grants of the former built-in Researcher role (RFC-065 §7).
+		Permissions: []Permission{
+			DashboardRead, AssetsRead,
+			FindingsRead, FindingsWrite, FindingsComment, FindingsStatus, FindingsTriage, FindingsExport,
+			ScansRead, ScansWrite, ScansExecute,
+			ScanProfilesRead, ScannerTemplatesRead, ScanWorkflowsRead,
+			SensorsRead,
+			ProgramsRead, ProgramsWrite,
+		},
+	},
+	{
+		ID:      "bounty-triager",
+		Version: 1,
+		Name:    "Bug-bounty triager",
+		Description: "Triages what researchers report: validates, de-duplicates, sets severity and " +
+			"status, assigns and comments. Never approves risk acceptance or suppressions and never " +
+			"changes program scope.",
+		Personas: []string{"Bug-bounty program triager", "Vulnerability disclosure coordinator"},
+		Permissions: join(readCore, []Permission{
+			FindingsWrite, FindingsComment, FindingsSeverity, FindingsTriage, FindingsStatus, FindingsAssign,
+			ProgramsRead, ScopeRead, SuppressionsRead,
+		}),
+	},
+	{
+		ID:      "threat-intel-analyst",
+		Version: 1,
+		Name:    "Threat intelligence analyst",
 		Description: "Maintains attacker profiles, threat actors and indicators, and records external " +
 			"exposures such as leaked credentials and lookalike domains.",
 		Personas: []string{"Threat intelligence analyst", "Digital risk and brand protection"},
@@ -192,8 +269,9 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "risk-approver",
-		Name: "Risk approver",
+		ID:      "risk-approver",
+		Version: 1,
+		Name:    "Risk approver",
 		Description: "Governance: approves or rejects risk acceptance, false positives and suppression " +
 			"rules, and maintains compliance assessments. Holds no fix or triage permission, so the " +
 			"person who asks is never the person who approves.",
@@ -206,8 +284,9 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "auditor",
-		Name: "Auditor",
+		ID:      "auditor",
+		Version: 1,
+		Name:    "Auditor",
 		Description: "Read-only evidence for an audit: every asset, finding, decision and the audit " +
 			"log, plus exports. Changes nothing. Give it to internal or external auditors with an " +
 			"access end date.",
@@ -223,8 +302,9 @@ var roleTemplates = []RoleTemplate{
 		}),
 	},
 	{
-		ID:   "executive",
-		Name: "Executive viewer",
+		ID:      "executive",
+		Version: 1,
+		Name:    "Executive viewer",
 		Description: "Dashboards, CTEM cycle outcomes and reports for leadership, inside the data " +
 			"scope of their teams. Less than the built-in viewer: no configuration, scans or member lists.",
 		Personas: []string{"Executive or board member", "Business unit leader"},

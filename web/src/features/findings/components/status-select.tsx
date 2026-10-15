@@ -66,9 +66,12 @@ export function StatusSelect({
   // covered scan or a security reviewer closes the finding.
   const { hasPermission } = usePermissions()
   const canResolve = hasPermission(Permission.FindingsVerify)
+  // A duplicate must name the finding it duplicates, so it is never a plain
+  // status change (the API refuses it): Mark duplicate picks the canonical
+  // finding.
   const availableTransitions = (
     validStatuses ? allTransitions.filter((s) => validStatuses.includes(s)) : allTransitions
-  ).filter((s) => canResolve || s !== 'resolved')
+  ).filter((s) => (canResolve || s !== 'resolved') && s !== 'duplicate')
   const isProcessingRef = useRef(false)
   const describe = (s: FindingStatus) => {
     const en = STATUS_DESCRIPTIONS[s]

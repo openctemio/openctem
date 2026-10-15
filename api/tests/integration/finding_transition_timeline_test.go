@@ -134,7 +134,7 @@ func TestTransitionTimeline_AutomaticMovesAreRecorded(t *testing.T) {
 
 	// VEX not_affected in a scan report.
 	vexed, vfp := f.finding(t, "new")
-	if _, err := f.repo.ApplyVEXNotAffected(ctx, f.tenant,
+	if _, err := f.repo.ApplyVEXNotAffected(ctx, f.tenant, "tl-tool",
 		[]vulnerability.VEXNotAffected{{Fingerprint: vfp, AssetID: f.asset.String(), Resolution: "not affected"}}, false); err != nil {
 		t.Fatal(err)
 	}

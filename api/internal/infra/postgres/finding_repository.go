@@ -1092,6 +1092,9 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 			priority_class_override = $36, priority_class_overridden_by = $37, priority_class_overridden_at = $38,
 			is_reachable = $39, reachable_from_count = $40,
 			sla_deadline = $41, sla_status = $42,
+			acceptance_expires_at = CASE WHEN $9::varchar = 'accepted'
+				THEN COALESCE(acceptance_expires_at, NOW() + ` + defaultAcceptanceIntervalSQL + `)
+				ELSE acceptance_expires_at END,
 			` + findingTypeUpdateSQL(43) + `
 		WHERE id = $1 AND tenant_id = $20
 	`
