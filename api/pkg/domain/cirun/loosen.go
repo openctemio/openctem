@@ -40,6 +40,11 @@ func Loosens(before, after GatePolicy) []string {
 	if before.BaselineSecretsBlock && !after.BaselineSecretsBlock {
 		out = append(out, "baseline_secrets_block")
 	}
+	// Letting the repository's .openctem.yml apply is looser: the file can
+	// only tighten, but it is written by anyone who can push.
+	if !before.AllowRepoPolicy && after.AllowRepoPolicy {
+		out = append(out, "allow_repo_policy")
+	}
 	if modesLoosen(before.Modes, after.Modes) {
 		out = append(out, "modes")
 	}

@@ -113,16 +113,16 @@ func TestCIGatePolicy_LooseningNeedsStepUpAndIsAnnounced(t *testing.T) {
 
 	// Deleting the looser repository policy tightens: no step-up needed.
 	r.svc.SetStepUpGate(recentAuth{err: errNeedsStepUp})
-	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, repoPol.ID, admin); err != nil {
+	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, repoPol.ID, "", admin); err != nil {
 		t.Fatalf("tightening delete asked for step-up: %v", err)
 	}
 	// Deleting the strict organization policy loosens.
-	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, org.ID, admin); !errors.Is(err, errNeedsStepUp) {
+	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, org.ID, "", admin); !errors.Is(err, errNeedsStepUp) {
 		t.Fatalf("loosening delete without step-up: %v", err)
 	}
 	// No step-up gate wired: loosening fails closed.
 	r.svc.SetStepUpGate(nil)
-	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, org.ID, admin); !errors.Is(err, cirunapp.ErrStepUpUnavailable) {
+	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, org.ID, "", admin); !errors.Is(err, cirunapp.ErrStepUpUnavailable) {
 		t.Fatalf("no gate: %v", err)
 	}
 }

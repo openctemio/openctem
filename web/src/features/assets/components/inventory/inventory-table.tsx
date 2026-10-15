@@ -46,7 +46,7 @@ import type { TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
 import { rowActionsFor } from '../../lib/type-actions'
 import { AttributeCell } from './attribute-cell'
-import { DataTable, DataTableColumnHeader, RiskScoreBadge } from '@/features/shared'
+import { DataTable, DataTableColumnHeader, RiskScoreBadge, riskScoreState } from '@/features/shared'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
@@ -377,7 +377,13 @@ export function InventoryTable({
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('components.col.risk', 'Risk')} />
         ),
-        cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
+        cell: ({ row }) => (
+          <RiskScoreBadge
+            score={row.original.riskScore}
+            state={riskScoreState(row.original)}
+            size="sm"
+          />
+        ),
       },
       {
         id: 'findings',
@@ -583,7 +589,9 @@ export function InventoryTable({
                         snoozedUntil={a.lifecyclePausedUntil}
                       />
                     )}
-                    {a.riskScore > 0 && <RiskScoreBadge score={a.riskScore} size="sm" />}
+                    {(a.riskScore > 0 || riskScoreState(a) !== 'scored') && (
+                      <RiskScoreBadge score={a.riskScore} state={riskScoreState(a)} size="sm" />
+                    )}
                   </div>
                 </div>
                 <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
