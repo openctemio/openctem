@@ -1428,6 +1428,7 @@
   "scans.ci.reason.override": "Phá kính khẩn cấp",
   "scans.ci.reason.no_baseline": "Chưa có mốc so sánh",
   "scans.ci.reason.secret_pre_existing": "Bí mật đã có trên nhánh mặc định",
+  "scans.ci.reason.too_many_findings": "Quá nhiều phát hiện để đánh giá",
   "scans.ci.feedback.tab": "Phản hồi pull request",
   "scans.ci.feedback.description": "OpenCTEM đăng mỗi kết luận dưới dạng check \"OpenCTEM gate\" (GitHub) hoặc trạng thái commit (GitLab) và giữ một bình luận trên pull request hoặc merge request. Check của một commit lấy kết luận nghiêm ngặt nhất trong mọi pipeline chạy trên commit đó. Hãy đặt check là bắt buộc trong bảo vệ nhánh và chọn nguồn mong đợi là ứng dụng OpenCTEM: bất kỳ nguồn nào khác, chẳng hạn token riêng của một workflow, đều có thể đăng một check trùng tên.",
   "scans.ci.feedback.github": "Ứng dụng GitHub",
