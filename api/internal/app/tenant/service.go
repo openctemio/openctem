@@ -776,19 +776,27 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
 
-	// Someone outside the organization is a viewer or a member (RFC-058),
-	// and a viewer only when the trust with their home organization says so.
+	// Someone outside the organization may hold any role but owner, unless an
+	// active trust with their home organization caps them (RFC-095 §4.2).
 	if membership.IsExternal() {
-		if role == tenantdom.RoleAdmin || role == tenantdom.RoleOwner {
+		if role == tenantdom.RoleOwner {
 			return nil, accesscontrol.ErrExternalRoleCeiling
 		}
-		if role == tenantdom.RoleMember && membership.HomeTenantID() != nil && s.trustPolicy != nil {
+		if membership.HomeTenantID() != nil && s.trustPolicy != nil {
 			ceiling, cerr := s.trustPolicy.MaxRoleFor(ctx, membership.TenantID(), *membership.HomeTenantID())
 			if cerr != nil {
 				return nil, cerr
 			}
-			if ceiling == orgtrust.MaxRoleViewer {
+			if ceiling != "" && role == tenantdom.RoleAdmin {
+				return nil, accesscontrol.ErrExternalRoleCeiling
+			}
+			if ceiling == orgtrust.MaxRoleViewer && role != tenantdom.RoleViewer {
 				return nil, accesscontrol.ErrExternalViewerCeiling
+			}
+		}
+		if role == tenantdom.RoleAdmin {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -1187,12 +1195,14 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	// member role on top of e.g. a viewer-only invitation.
 	role := accesscontrol.MembershipRoleForRoleIDs(input.RoleIDs)
 
-	if err := s.requireAllowedEmailDomain(ctx, parsedID, input.Email); err != nil {
+	// Who may be invited is the organization's policy (RFC-095 §4.1).
+	if err := s.requireInvitable(ctx, parsedID, input.Email); err != nil {
 		return nil, err
 	}
 
-	// Someone outside the organization joins as a viewer, with an expiry
-	// when no organization manages their address.
+	// Someone outside the organization may get any role but owner; a trust
+	// with their home organization may cap it, and a privileged role needs
+	// the inviter's step-up (RFC-095 §4.2).
 	class, access, err := s.classifyInvitee(ctx, parsedID, input.Email,
 		tenantdom.ExternalAccess{ExpiresAt: input.AccessExpiresAt, Reason: input.AccessReason}, time.Now().UTC())
 	if err != nil {
@@ -1201,12 +1211,21 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	if err := s.requirePersonalAllowed(ctx, parsedID, class); err != nil {
 		return nil, err
 	}
+	privileged := false
 	if class.Kind == tenantdom.MemberKindExternal {
-		if err := requireViewerOnly(input.RoleIDs); err != nil {
-			return nil, err
-		}
 		if err := access.Validate(class, time.Now().UTC()); err != nil {
 			return nil, err
+		}
+		if err := s.requireWithinTrustCeiling(ctx, parsedID, class, input.RoleIDs); err != nil {
+			return nil, err
+		}
+		if privileged, err = s.privilegedRoleSet(ctx, parsedID, input.RoleIDs); err != nil {
+			return nil, err
+		}
+		if privileged {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -1268,7 +1287,13 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		WithMessage(fmt.Sprintf("Invitation sent to %s with role %s", input.Email, role)).
 		WithMetadata("email", input.Email).
 		WithMetadata("role", role.String()).
-		WithMetadata("member_kind", string(class.Kind))
+		WithMetadata("member_kind", string(class.Kind)).
+		WithMetadata("privileged", privileged).
+		WithMetadata("mfa_required", privileged)
+	if privileged {
+		// A privileged role for someone outside the organization.
+		event = event.WithSeverity(audit.SeverityHigh)
+	}
 	if access.ExpiresAt != nil {
 		event = event.WithMetadata("access_expires_at", access.ExpiresAt.Format(time.RFC3339))
 	}
@@ -1399,9 +1424,14 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
-	// The organization may have restricted member email domains after the
+	// The organization may have restricted who may be invited after the
 	// invitation was sent.
-	if err := s.requireAllowedEmailDomain(ctx, invitation.TenantID(), invitation.Email()); err != nil {
+	if err := s.requireInvitable(ctx, invitation.TenantID(), invitation.Email()); err != nil {
+		return nil, err
+	}
+	// An invitation is a deferred grant: the inviter must still be able to
+	// grant what it offers (RFC-095 §3.2).
+	if err := s.authorizeInvitationGrant(ctx, invitation); err != nil {
 		return nil, err
 	}
 
@@ -1747,6 +1777,10 @@ type UpdateSecuritySettingsInput struct {
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
 	SSOExceptions    *[]tenantdom.SSOException `json:"sso_exceptions"`
+	// Invitees and ExternalAccessEndRequired: see tenantdom.SecuritySettings
+	// (RFC-095 §4).
+	Invitees                  *string `json:"invitees"`
+	ExternalAccessEndRequired *bool   `json:"external_access_end_required"`
 	// JITRequiresApproval: see tenantdom.SecuritySettings (RFC-058).
 	JITRequiresApproval *bool `json:"jit_requires_approval"`
 	// RequesterIP is the client IP of the tenant user saving the settings, as
@@ -1841,6 +1875,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.PersonalAccounts != nil {
 			security.PersonalAccounts = tenantdom.PersonalAccountsPolicy(*input.PersonalAccounts)
+		}
+		if input.Invitees != nil {
+			security.Invitees = tenantdom.InviteesPolicy(*input.Invitees)
+		}
+		if input.ExternalAccessEndRequired != nil {
+			security.ExternalAccessEndRequired = *input.ExternalAccessEndRequired
 		}
 		if input.SSOExceptions != nil {
 			if err := s.validateSSOExceptions(ctx, t.ID(), *input.SSOExceptions); err != nil {
