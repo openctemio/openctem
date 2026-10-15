@@ -13,7 +13,7 @@ import (
 // findingTransition says who moved findings and why (see
 // vulnerability.StatusTransition). A platform writer sets it on its
 // transaction (setFindingTransition) before it changes findings.status; the
-// trigger trg_findings_record_transition (migration 002153) then writes one
+// trigger trg_findings_record_transition (migration 002180) then writes one
 // timeline entry per finding it moved, in the same transaction, with the old
 // and the new status. A move the platform makes is therefore never missing
 // from a finding's timeline, and the entry never exists without the move.
