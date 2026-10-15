@@ -2,6 +2,7 @@ package sensor
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -292,5 +293,29 @@ func TestEffectiveToolsAreTheReportedInstalledTools(t *testing.T) {
 	got[0] = "x"
 	if a.EffectiveTools()[0] != "trivy" {
 		t.Fatal("EffectiveTools must return a copy")
+	}
+}
+
+// Every sensor-wide capability the platform gates jobs on survives a
+// heartbeat report: one dropped here leaves the jobs that require it
+// withheld forever (http.identity@1 was dropped, so program jobs carrying
+// an identification never dispatched).
+func TestSanitizeKeepsGatedSensorWideCapabilities(t *testing.T) {
+	known := map[string]bool{"nuclei": true}
+	gated := []string{CapabilityValidate, CapabilityScopeLimits, CapabilityNetConfined, CapabilityHTTPIdentity,
+		CapabilityValidate + ":nuclei", CapabilityRetest + ":nuclei"}
+	out := CapabilityReportInput{Capabilities: gated}.Sanitize(known, nil)
+	if !reflect.DeepEqual(out.Capabilities, gated) {
+		t.Fatalf("caps = %v, want %v", out.Capabilities, gated)
+	}
+	// Case and padding are normalised, as for any capability.
+	out = CapabilityReportInput{Capabilities: []string{" HTTP.Identity@1"}}.Sanitize(known, nil)
+	if !slices.Contains(out.Capabilities, CapabilityHTTPIdentity) {
+		t.Fatalf("normalised http.identity@1 dropped: %v", out.Capabilities)
+	}
+	// A look-alike or a retest for an unknown tool is still dropped.
+	out = CapabilityReportInput{Capabilities: []string{"http.identity@2", "http.identity", "retest:evil"}}.Sanitize(known, nil)
+	if len(out.Capabilities) != 0 {
+		t.Fatalf("unknown capabilities kept: %v", out.Capabilities)
 	}
 }
