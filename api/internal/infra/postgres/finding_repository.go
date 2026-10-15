@@ -1150,7 +1150,7 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 		finding.SLAStatus().String(),    // $42
 	}
 	args = append(args, findingTypeArgs(finding)...) // $43…
-	result, err := r.db.ExecContext(ctx, query, args...)
+	result, err := r.db.execStatusWrite(ctx, query, args...)
 
 	if err != nil {
 		return fmt.Errorf("failed to update finding: %w", err)
@@ -2093,7 +2093,7 @@ func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shar
 		WHERE tenant_id = $1 AND source != 'pentest' AND status = ANY($6) AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
-	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+	if _, err := r.db.execStatusWrite(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to update findings status: %w", err)
 	}
 
@@ -3866,48 +3866,59 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.resolution_method, prev.resolved_by, prev.resolved_at
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints))
-	if err != nil {
-		return nil, fmt.Errorf("failed to batch auto-reopen findings: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var (
-			idStr, fp, prevStatus             string
-			resolution, method, resolvedByStr sql.NullString
-			resolvedAt                        sql.NullTime
-		)
-		if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &method, &resolvedByStr, &resolvedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan reopened finding: %w", err)
-		}
-		id, err := shared.IDFromString(idStr)
+	// Each reopen writes its auto_reopened timeline entry in the same
+	// transaction (the scan behind it comes from the context's evidence).
+	err := r.db.withFindingTransition(ctx, findingTransition{
+		ActivityType: "auto_reopened", Source: "auto", Reason: "regression_detected_again", ActorType: "scanner",
+		ActorName: "system: scan detected it again",
+		ReasonByOldStatus: map[string]string{
+			string(vulnerability.FindingStatusValidatedFixed): "validation_downgrade_refuted_by_scan",
+			string(vulnerability.FindingStatusNotObserved):    "observed_again",
+		},
+	}, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints))
 		if err != nil {
-			continue
+			return fmt.Errorf("failed to batch auto-reopen findings: %w", err)
 		}
-		rf := vulnerability.ReopenedFinding{
-			ID:                       id,
-			Fingerprint:              fp,
-			PreviousStatus:           vulnerability.FindingStatus(prevStatus),
-			PreviousResolution:       resolution.String,
-			PreviousResolutionMethod: method.String,
-		}
-		if resolvedByStr.Valid {
-			if by, err := shared.IDFromString(resolvedByStr.String); err == nil {
-				rf.PreviousResolvedBy = &by
+		defer rows.Close()
+
+		for rows.Next() {
+			var (
+				idStr, fp, prevStatus             string
+				resolution, method, resolvedByStr sql.NullString
+				resolvedAt                        sql.NullTime
+			)
+			if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &method, &resolvedByStr, &resolvedAt); err != nil {
+				return fmt.Errorf("failed to scan reopened finding: %w", err)
 			}
+			id, err := shared.IDFromString(idStr)
+			if err != nil {
+				continue
+			}
+			rf := vulnerability.ReopenedFinding{
+				ID:                       id,
+				Fingerprint:              fp,
+				PreviousStatus:           vulnerability.FindingStatus(prevStatus),
+				PreviousResolution:       resolution.String,
+				PreviousResolutionMethod: method.String,
+			}
+			if resolvedByStr.Valid {
+				if by, err := shared.IDFromString(resolvedByStr.String); err == nil {
+					rf.PreviousResolvedBy = &by
+				}
+			}
+			if resolvedAt.Valid {
+				at := resolvedAt.Time
+				rf.PreviousResolvedAt = &at
+			}
+			result[fp] = rf
 		}
-		if resolvedAt.Valid {
-			at := resolvedAt.Time
-			rf.PreviousResolvedAt = &at
-		}
-		result[fp] = rf
-	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating reopened findings: %w", err)
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-
 	return result, nil
 }
 
@@ -3940,14 +3951,12 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 			AND f.last_seen_at < NOW() - make_interval(days => COALESCE(rb.retention_days, $2))
 	`
 
-	result, err := r.db.ExecContext(ctx, query, tenantID.String(), defaultExpiryDays)
+	affected, err := r.db.execWithTransition(ctx, findingTransition{
+		Source: "branch_expiry", Reason: "branch_expired", ActorName: "system: feature branch expiry",
+		Message: "Not seen on its feature branch for the branch's retention period: not observed, not fixed",
+	}, query, tenantID.String(), defaultExpiryDays)
 	if err != nil {
 		return 0, fmt.Errorf("failed to expire feature branch findings: %w", err)
-	}
-
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
 	// Branch-only findings no live branch still shows
