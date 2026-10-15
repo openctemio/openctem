@@ -34,6 +34,7 @@ type scoringFixture struct {
 	findings *postgres.FindingRepository
 	scoring  *postgres.ScoringRepository
 	recl     *reclassify.Reclassifier
+	cls      *finding.PriorityClassificationService
 }
 
 func newScoringFixture(t *testing.T) scoringFixture {
@@ -62,6 +63,7 @@ func newScoringFixture(t *testing.T) scoringFixture {
 		postgres.NewEPSSAdapter(ti.EPSS().(*postgres.EPSSRepository)),
 		postgres.NewKEVAdapter(ti.KEV().(*postgres.KEVRepository)),
 		postgres.NewPriorityRuleRepository(pdb), postgres.NewPriorityAuditRepository(pdb), logger.NewNop())
+	fx.cls = cls
 	fx.recl = reclassify.NewReclassifier(fx.findings, fx.assets, cls, logger.NewNop())
 	fx.recl.SetQueue(fx.scoring, fx.scoring)
 	fx.recl.SetWriter(fx.scoring)
