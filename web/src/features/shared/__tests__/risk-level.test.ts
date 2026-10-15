@@ -38,10 +38,10 @@ describe('getRiskLevel', () => {
       expect(getRiskLevel(30).label).toBe('Low')
     })
 
-    it('returns Info for score < 20', () => {
-      expect(getRiskLevel(0).label).toBe('Info')
-      expect(getRiskLevel(19).label).toBe('Info')
-      expect(getRiskLevel(10).label).toBe('Info')
+    it('returns none at 0 and minimal below 20', () => {
+      expect(getRiskLevel(0).key).toBe('none')
+      expect(getRiskLevel(19).key).toBe('minimal')
+      expect(getRiskLevel(10).key).toBe('minimal')
     })
 
     it('returns correct colors', () => {
@@ -82,12 +82,12 @@ describe('getRiskLevel', () => {
 
     it('uses custom low threshold', () => {
       expect(getRiskLevel(30, customThresholds).label).toBe('Low')
-      expect(getRiskLevel(29, customThresholds).label).toBe('Info')
+      expect(getRiskLevel(29, customThresholds).key).toBe('minimal')
     })
 
-    it('returns Info below low threshold', () => {
-      expect(getRiskLevel(0, customThresholds).label).toBe('Info')
-      expect(getRiskLevel(15, customThresholds).label).toBe('Info')
+    it('returns minimal below the low threshold and none at 0', () => {
+      expect(getRiskLevel(0, customThresholds).key).toBe('none')
+      expect(getRiskLevel(15, customThresholds).key).toBe('minimal')
     })
   })
 

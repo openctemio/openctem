@@ -40,7 +40,7 @@ export const CRITICALITY_DESCRIPTIONS: Record<CriticalityLevel, string> = {
   high: 'Important asset with significant business impact',
   medium: 'Standard asset with moderate business impact',
   low: 'Non-critical asset with minimal business impact',
-  none: 'Not rated yet: adds no criticality weight to risk',
+  none: 'Not rated yet: risk is scored as for a medium asset until it is rated',
 }
 
 /** i18n keys of the labels (en/vi catalogs). */
