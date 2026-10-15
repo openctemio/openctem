@@ -25,6 +25,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
 | Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
 | Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). **Security gate self-test**: the gate's unit tests and the CODEOWNERS mirror | **security-gate** |
+| CLA (`cla.yml`) | PR to any branch (opened, pushed, reopened); a PR comment that signs or says `recheck`; merge queue (passes) | Checks that every commit author has accepted the [Contributor License Agreement](../../../CONTRIBUTING.md#contributor-license-agreement); records new signatures in the private `openctemio/cla-signatures`. Runs in the base context and never checks out pull request code. Not required yet | **cla** |
 | Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`; on `release/vX.Y.Z` and on `main` right after it merges, `--release vX.Y.Z`: `platform.release` must be that version) | — |
 | CI image mirror (`ci-image-mirror.yml`) | Push to `develop` changing the list or the scripts; daily (04:23 UTC); manual | Copies the third-party images CI pulls, and the digest-pinned base images of the sensor's Dockerfiles, to `ghcr.io/openctemio/mirror` (see [CI image mirror](#ci-image-mirror)) | — |
 
@@ -556,6 +557,7 @@ against `develop`: gomod for `/api` (and monthly for the compat harness), npm fo
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | secret (optional) | authenticated base-image pulls; Docker Hub mirror when set |
 | `SNYK_TOKEN` + `vars.ENABLE_SNYK` | secret + variable (optional) | Snyk jobs in API / Web Security |
 | `RELEASE_TOKEN` | secret (recommended) | Release Train / Publish: pushes and PRs that start CI, the tag push that starts Docker Publish, the helm-charts PR. Fine-grained PAT or App token for `openctem`, `helm-charts`, `sdk-go`, `sensor`: Contents, Pull requests and Workflows read/write. Without it the release still works, with one extra click per PR and no helm-charts PR |
+| `CLA_SIGNATURES_TOKEN` | organization secret (required for the `cla` check) | CLA: reads and updates the signature file. Fine-grained PAT, resource owner `openctemio`, repository `cla-signatures` only, Contents read/write |
 | `vars.RELEASE_TRAIN_ANCHOR` | variable (optional) | The first train Monday (`YYYY-MM-DD`, default `2026-10-05`) |
 
 The legacy `ui` GHCR package was created by `openctemio/ui`; this repository needs
