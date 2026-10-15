@@ -125,8 +125,20 @@ automatic recomputes only tighten:
 A deadline that moves later by itself would hide overdue work, so an
 extension is an explicit decision (a regression or an expired acceptance
 starts a new clock with its own `sla_restarted` entry), never a side effect.
-The ingest upsert applies the same rule (`LEAST` of the stored and incoming
-deadline for an open finding).
+The ingest upsert and the recompute writer (`SavePriorities`) apply the same
+rule (`LEAST` of the stored and incoming deadline for an open finding).
+
+The database enforces it for every writer: the BEFORE UPDATE trigger
+`trg_findings_sla_deadline_guard` (migration `sla_deadline_guard`) keeps the stored deadline (and the SLA
+status for it) when an update would move an open finding's deadline later
+or clear it, so a writer holding an older copy of the row (a full-row
+update, a recompute that read the row before a tightening) cannot extend it.
+Only a transaction marked `SET LOCAL openctem.sla_restart = on` may move it
+later: the regression restart (`FindingSLARestartRepository.RestartSLA`) and
+the acceptance expiry, which start a new clock on purpose. The promotion of
+a branch-only finding (its clock starts when a counting branch first sees
+it) is recognised by `branch_only` going from true to false. Closed findings
+and a first deadline are not guarded.
 
 Every tightening of an open finding writes a `sla_deadline_tightened`
 timeline entry (database trigger, whatever wrote the deadline) with both
@@ -149,6 +161,10 @@ after the change, and nothing is written:
   that would move earlier (`min(old, now + SLA)`), findings with a linked
   ticket, and manual overrides that keep their class. Closed findings are not
   counted (they never change).
+
+Because it reads the whole organization, the preview is rate limited per
+tenant: 6 per minute (token bucket per API replica), then `429` with
+`Retry-After` (`internal/infra/http/handler/scoring_preview_limit.go`).
 
 Applying is the existing `PATCH /tenants/{tenant}/settings/risk-scoring`
 (section compare-and-swap with `If-Match`), which now also requires **step-up**
@@ -177,6 +193,69 @@ are never recomputed when a model or settings change.
   "Scoring changed on <date> (<what>): values before and after are not
   directly comparable", so a step is not read as a change in risk.
 
+## No alert storms
+
+A recompute caused by a scoring change (a queue row with a
+`scoring_change_id`: the settings triggers, and the reconcile for findings
+whose version is stale, such as after a new platform model) does not send one
+`finding_priority_escalated` notification per finding. The classification
+and its audit entry are unchanged; only the per-finding event is held back.
+A move **into P0** is the exception: it still sends its own event, so the
+ticket and the workflow a P0 needs start at once (the priority flood guard
+still bounds them); the summary counts it too. A P1 move has no separate
+escalation setting today, so it is in the summary only.
+The worker adds the pass's counts to `scoring_change_impacts` (per tenant and
+change: findings checked, changed, raised, raised to P0, lowered, deadlines
+moved earlier) and, once no asset of that change is left in the tenant's
+queue, sends **one** `scoring_change_applied` notification: "Scoring changed
+(<what>): N findings changed priority", with the counts in the body and the
+metadata. Its severity follows the most urgent movement (critical when a
+finding became P0, high when one rose or a deadline moved earlier), so the
+channel's severity filter still applies; the event is on by default and
+migration `scoring_change_impacts` turns it on for every channel that already
+receives priority escalations. A change that moved nothing sends nothing.
+The summary's outbox row is written in the same transaction that marks the
+summary notified (`ClaimDrainedSummaries`, one savepoint per summary, rows
+locked with `FOR UPDATE SKIP LOCKED`): an enqueue that fails leaves it
+pending and the next pass sends it, so a failure never loses a summary.
+
+Recomputes for other reasons (new findings, intel, asset context, controls)
+keep their per-finding events and the priority flood guard.
+
+Ticket priority: Jira's priority follows the finding's severity, set when the
+ticket is created, so a scoring change updates no ticket and creates none.
+If ticket priority ever follows the priority class, it must be a batched
+field update under the same summary, never new tickets.
+
+## Intel updates
+
+After the daily EPSS and KEV refresh, the threat-intel controller queues
+only the assets of **open** findings whose intel moved in a way a model can
+see, never a whole tenant (`ScoringRepository.EnqueueIntelChanges`):
+
+- EPSS: the catalog score, compared with the score stored on the finding,
+  crossed a threshold the classifier uses (0.01, 0.1, 0.5) or one of the
+  tenant's own active priority rules uses (`epss_score` conditions). Daily
+  decimal drift that crosses nothing queues nothing, and another tenant's
+  rule thresholds never queue this tenant's findings;
+- KEV: the CVE entered or left the catalog (compared with `is_in_kev`).
+
+The worker's pass re-reads both catalogs and stores the new values on the
+finding, so the next refresh with the same feeds queues nothing. The KEV
+escalation that raises severity queues its asset through the severity
+trigger. Closed findings are never queued.
+
+The thresholds only decide what is **recomputed**. After the queueing, the
+controller writes the catalog EPSS score and percentile onto every open
+finding whose CVE's values changed (`ScoringRepository.RefreshFindingEPSS`):
+a plain column update, tenant by tenant, in batches of 2000, rows held by
+another writer skipped until the next run. Readers of the stored score that
+use their own threshold, such as the CI gate's `epss_threshold`, therefore
+judge today's score (0.2 -> 0.4 fails a gate at 0.3 although it crosses no
+model threshold). The refresh runs only after a successful queueing, because
+the crossings are found by comparing the stored score with the catalog.
+Closed findings keep the values they had when closed.
+
 ## Security
 
 - Settings are a security control: they decide what is P0 and when work is
@@ -197,9 +276,13 @@ closed findings frozen; SLA deadlines that only tighten, with a timeline
 entry; the whole-organization preview and the step-up apply; version stamps
 on risk snapshots and markers on trend charts.
 
-Planned in the same series: one summary notification per scoring change instead
-of one per finding; recompute scoped to the CVEs whose EPSS or KEV status
-changed.
+Shipped here: one summary notification per scoring change instead of one
+per finding.
+
+Shipped here: recompute scoped to the CVEs whose EPSS or KEV status changed.
+
+Planned: the "why this priority / score" panels showing the version and
+"changed on <date> because <change>".
 
 ## Key files
 
@@ -214,5 +297,7 @@ changed.
 - `internal/infra/controller/risk_snapshot.go`, `internal/infra/postgres/dashboard_repository.go` (trend markers)
 - `web/src/features/organization/components/scoring-impact-dialog.tsx`
 - `web/src/features/dashboard/components/ctem/scoring-change-note.tsx`
+- `internal/app/finding/scoring_summary.go`, `migrations/*_scoring_change_impacts.up.sql`
 - `tests/integration/scoring_versions_test.go`, `tests/integration/sla_tighten_only_test.go`,
-  `tests/integration/scoring_preview_test.go`, `tests/integration/scoring_trend_test.go`
+  `tests/integration/scoring_preview_test.go`, `tests/integration/scoring_trend_test.go`,
+  `tests/integration/scoring_summary_test.go`, `tests/integration/scoring_intel_test.go`

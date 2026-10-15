@@ -18,8 +18,19 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   into the tenant's **default project** (or an explicit `project_key`); the
   project picker is fed by `GET /api/v1/integrations/jira/projects`.
 - **Link / unlink** an existing ticket to a finding.
-- **Inbound** (`POST /api/v1/webhooks/incoming/jira?tenant=<id>`): a Jira status
-  change updates the finding status (and can trigger a verification scan).
+- **Inbound** (`POST /hooks/jira-integrations/{integration_id}`): a Jira status
+  change updates the finding status (and can trigger a verification scan). The
+  URL names one Jira integration (one tenant); the delivery must carry Jira's
+  `X-Hub-Signature: sha256=<HMAC-SHA256 of the raw body>` under that
+  integration's own secret (stored encrypted in the integration metadata,
+  generated or entered in the settings page, shown once, never returned).
+  Replays are refused by body hash and by delivery id
+  (`X-Atlassian-Webhook-Identifier`), kept 24 h in Redis and released when
+  processing fails (so Jira's retry is processed; no store means 503) and by the payload `timestamp` (at most one
+  hour old). Per-IP and per-integration rate limits sit in front of the
+  secret lookup. Secret routes: `GET /api/v1/integrations/{id}/jira-webhook`
+  (URL, whether a secret is set), `POST .../jira-webhook/secret/rotate` and
+  `PUT .../jira-webhook/secret` (`integrations:manage` plus step-up).
 - **Outbound** (RFC-006 Phase 3): a finding status change in OpenCTEM transitions
   the linked Jira issue to match. **Opt-in per integration** (`sync_enabled`,
   default off).
@@ -103,9 +114,9 @@ token with the email from `config`/`metadata["email"]`; or a legacy packed
 3. Create a ticket from any finding via the finding actions, or the
    `create-ticket` endpoint with `{"project_key": "SEC", "issue_type": "Bug"}`.
    When the request omits `project_key`, the tenant's default project is used.
-4. (Inbound) Configure a Jira webhook to
-   `POST /api/v1/webhooks/incoming/jira?tenant=<tenant-id>` (HMAC via
-   `JiraSecret`, fail-closed).
+4. (Inbound) On the integration, open **Inbound webhook**, copy the URL and
+   generate (or enter) the secret, then create the Jira webhook with both
+   (fail-closed without a valid signature).
 5. (Outbound) **Configure** on the connected integration → toggle **Bidirectional
    status sync** and, for a custom Jira workflow, map your status names.
 

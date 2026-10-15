@@ -181,6 +181,7 @@ scope_snapshots
 scope_target_approvals
 scope_target_ci_trusts
 scope_targets
+scoring_change_impacts
 scoring_changes
 sensor_config_reports
 sensor_content_policies

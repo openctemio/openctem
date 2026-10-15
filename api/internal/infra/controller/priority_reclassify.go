@@ -25,7 +25,6 @@ import (
 type ReclassifyReasonKind string
 
 const (
-	ReasonKEVRefresh    ReclassifyReasonKind = "kev_refresh"
 	ReasonControlChange ReclassifyReasonKind = "control_change"
 	ReasonAssetChange   ReclassifyReasonKind = "asset_change"
 	// ReasonAITriage is queued when an AI triage completes for a finding, so a
@@ -61,7 +60,7 @@ var (
 	})
 	findingPriorityChanged = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "openctem", Subsystem: "finding_priority", Name: "changed_total",
-		Help: "Findings whose stored priority, enrichment or SLA deadline changed",
+		Help: "Findings whose priority class changed",
 	})
 )
 
