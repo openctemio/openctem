@@ -99,7 +99,8 @@ A finding someone has moved since is left alone.
   may approve see it (`authorization-matrix.md`).
 - Separation of duties: the requester cannot approve their own rule while
   someone else can; a lone owner approves their own rule only with a reason
-  and a fresh authenticator code, never as a side effect of a plain approve; the approval pins the reviewed version, so a rule widened
+  and a fresh authenticator code, never as a side effect of a plain approve,
+  and not within 7 days of any member being suspended, offboarded or removed; the approval pins the reviewed version, so a rule widened
   after review cannot be approved by mistake.
 - Abuse: a broad rule (for example rule id `*`) closes at most
   the cap per approval, and every change is attributable (activity per finding,

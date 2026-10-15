@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -115,6 +116,25 @@ func TestSuppressionSelfApproval_Routes_DB(t *testing.T) {
 		t.Fatalf("refusal with a second approver audited %d times, want 1", n)
 	}
 	approve(multiAdmin, id, ts+`"}`, http.StatusOK)
+
+	// Within 7 days of suspending a member, a lone owner may not approve
+	// their own rule; after 7 days they may.
+	recent := h.tenant()
+	t.Cleanup(func() { h.exec(`DELETE FROM suppression_rules WHERE tenant_id = $1`, recent) })
+	recentOwner := h.member(recent, "owner")
+	suspended := h.member(recent, "admin")
+	h.exec(`UPDATE tenant_members SET status = 'suspended', suspended_at = now() - interval '2 days' WHERE user_id = $1`, suspended.id)
+	id, ts = create(recentOwner)
+	code, body := h.do(recentOwner, http.MethodPost, "/api/v1/suppressions/"+id+"/approve",
+		`{"reviewed_updated_at":"`+ts+`","self_approval_reason":"alone now","totp_code":"135790"}`)
+	if code != http.StatusForbidden || !strings.Contains(body, "possible again from") {
+		t.Fatalf("2 days after a suspension: %d %s", code, body)
+	}
+	if n := len(h.auditRows(recent, "suppression_rule.self_approval_refused")); n != 1 {
+		t.Fatalf("refusal audited %d times, want 1", n)
+	}
+	h.exec(`UPDATE tenant_members SET suspended_at = now() - interval '8 days' WHERE user_id = $1`, suspended.id)
+	approve(recentOwner, id, ts+`","self_approval_reason":"alone now","totp_code":"135790"}`, http.StatusOK)
 
 	// A lone administrator who is not an owner may not.
 	id, ts = create(lonelyAdmin)
