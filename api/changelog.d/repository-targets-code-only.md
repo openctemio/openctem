@@ -1,0 +1,6 @@
+### Security: repositories go to code scanning only, never to network tools
+
+- A repository asset, or a target in the form of one (`github.com/acme/app`, `git@github.com:acme/app`, any host and path without a scheme), is no longer handed to a network tool (port scan, HTTP probe, templates, crawling, DNS). Such a tool would have probed the code host itself, which many organizations share.
+- Enforced for single-scanner runs, every workflow step, chained stages, the coverage planner, validation and retest probes, and again when a sensor claims a job. A network tool now loses these targets whatever target types it declares; a tool the platform knows nothing about gets a repository only when it declares repositories or container images.
+- Each repository left out of a run is counted (`incompatible_target_count`) and named in the run's dispatch warnings with the reason; a run or step left with nothing is refused (`NO_COMPATIBLE_TARGETS`, `INCOMPATIBLE_TARGETS`). A coverage pair that would send one to a network capability is blocked with `repository_code_only`.
+- A web path must be written as a URL with its scheme (`https://example.com/login`): a scheme-less `example.com/login` is treated as a path and is not given to network tools.
