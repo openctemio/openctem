@@ -41,3 +41,13 @@ describe('StatusSelect resolve gate', () => {
     expect(screen.getByRole('menuitem', { name: /resolved/i })).toBeTruthy()
   })
 })
+
+describe('StatusSelect duplicate gate', () => {
+  it('never offers Duplicate: a duplicate needs the finding it duplicates', async () => {
+    mockPerms = ['findings:status', 'findings:verify', 'findings:triage']
+    render(<StatusSelect value="confirmed" onChange={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button'))
+    expect(screen.getByRole('menuitem', { name: /in progress/i })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: /duplicate/i })).toBeNull()
+  })
+})

@@ -53,6 +53,19 @@ func TestClientIP(t *testing.T) {
 			name: "malformed entry behind a trusted hop stops the walk", trusted: trusted, remote: "10.0.0.11:40000",
 			xff: []string{"1.2.3.4, garbage, 10.0.0.10"}, want: "10.0.0.10",
 		},
+		{
+			// The built-in gateway behind a tunnel connector (172.30.81.10,
+			// not an API trusted proxy). Passing the front list on with the
+			// connector appended records the connector for every client; the
+			// gateway therefore overwrites X-Forwarded-For with the client it
+			// resolved (deploy/gateway/Caddyfile, `forwarded`).
+			name: "gateway passing the front list on: the connector is recorded", trusted: trusted, remote: "10.0.0.10:40000",
+			xff: []string{"203.0.113.7, 172.30.81.10"}, xrealip: "203.0.113.7", want: "172.30.81.10",
+		},
+		{
+			name: "gateway overwriting with the resolved client", trusted: trusted, remote: "10.0.0.10:40000",
+			xff: []string{"203.0.113.7"}, xrealip: "203.0.113.7", want: "203.0.113.7",
+		},
 		{name: "all entries trusted, left-most returned", trusted: trusted, remote: "10.0.0.11:40000", xff: []string{"10.0.0.10"}, want: "10.0.0.10"},
 		{name: "trusted proxy without headers, peer returned", trusted: trusted, remote: "10.0.0.10:40000", want: "10.0.0.10"},
 		{name: "trusted IPv6 proxy, IPv6 client", trusted: trusted, remote: "[fd00::5]:40000", xff: []string{"2001:db8::9"}, want: "2001:db8::9"},
