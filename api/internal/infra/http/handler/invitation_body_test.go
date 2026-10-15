@@ -68,7 +68,14 @@ func (r *invBodyRepo) DeleteInvitation(_ context.Context, _ shared.ID, id shared
 	return nil
 }
 
-func (r *invBodyRepo) GetMembership(context.Context, shared.ID, shared.ID) (*tenantdom.Membership, error) {
+// GetMembership knows only the inviters, as owners of their organization
+// (acceptance re-authorizes the invitation as the inviter).
+func (r *invBodyRepo) GetMembership(_ context.Context, uid, tid shared.ID) (*tenantdom.Membership, error) {
+	for _, inv := range r.byHash {
+		if inv.InvitedBy() == uid && inv.TenantID() == tid {
+			return tenantdom.NewMembership(uid, tid, tenantdom.RoleOwner, nil)
+		}
+	}
 	return nil, shared.ErrNotFound
 }
 

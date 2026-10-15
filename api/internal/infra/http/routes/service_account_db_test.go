@@ -64,7 +64,7 @@ func TestServiceAccounts(t *testing.T) {
 	if err := h.groups.BindRole(ctx, h.team.String(), h.fullData.String(), h.actx(h.owner)); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.addMember(h.owner, a.ID); !errors.Is(err, accesscontrol.ErrExternalRoleCeiling) {
+	if err := h.addMember(h.owner, a.ID); !errors.Is(err, accesscontrol.ErrExternalTeamFullData) {
 		t.Fatalf("service account joins a full-data team: %v", err)
 	}
 
