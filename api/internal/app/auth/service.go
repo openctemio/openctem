@@ -42,6 +42,9 @@ var (
 	// sign-up policy does not admit (signup.Admit). The caller has written
 	// nothing; the answer is the same whatever the reason.
 	ErrSignupNotAvailable = errors.New("sign-up is not available")
+	// ErrSignupSSORequired: the address is on a domain whose organization
+	// requires its SSO; nothing was written and the person signs in there.
+	ErrSignupSSORequired = errors.New("sign-up for this address goes through the organization's single sign-on")
 	// ErrTenantCreationDisabled: the admin_only sign-up policy is in force, so only the
 	// platform administrator creates organizations (RFC-022).
 	ErrTenantCreationDisabled   = errors.New("organization creation is reserved for the application administrator")
@@ -95,6 +98,9 @@ type AuthService struct {
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
+	// signupDomains answers the sign-up policy of an address's claimed
+	// domain (sso_required, joinable, block new organizations). Nil: none.
+	signupDomains signupdom.DomainPolicySource
 
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
@@ -427,9 +433,18 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// an unknown, expired or mismatched token, gets the same generic refusal so
 	// the response says nothing about the token.
 	invitationTenantID, invited := s.pendingInvitationFor(ctx, input.InvitationToken, email)
-	if !signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{
+	facts, err := signupdom.FactsForEmail(ctx, s.signupDomains, email)
+	if err != nil {
+		// A claimed domain's sso_required cannot be checked: refuse.
+		s.logger.Warn("domain sign-up policy unreadable; sign-up refused", "error", err)
+		return nil, ErrSignupNotAvailable
+	}
+	switch signupdom.Admit(s.signupPolicyNow(ctx), facts.Apply(signupdom.Identity{
 		Intent: signupdom.IntentAccount, InvitedPending: invited, DisposableEmail: disposableEmail(email),
-	}).Admitted() {
+	})) {
+	case signupdom.OutcomeSSORequired:
+		return nil, ErrSignupSSORequired
+	case signupdom.OutcomeNotSetUp:
 		return nil, ErrSignupNotAvailable
 	}
 
@@ -1787,6 +1802,10 @@ type FreePlan interface {
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
+// SetSignupDomainPolicy wires the per-domain sign-up policy of claimed
+// domains.
+func (s *AuthService) SetSignupDomainPolicy(src signupdom.DomainPolicySource) { s.signupDomains = src }
+
 // signupPolicyNow is the sign-up policy in force: the console setting clamped
 // to SIGNUP_MODE when wired, else self_service only under SIGNUP_MODE=open.
 func (s *AuthService) signupPolicyNow(ctx context.Context) signupdom.Policy {
@@ -1802,6 +1821,18 @@ func policyOrConfig(ctx context.Context, src signupdom.PolicySource, cfg config.
 		return signupdom.Policy{Mode: signupdom.ModeSelfService}
 	}
 	return signupdom.Default()
+}
+
+// workspacesBlockedFor reports whether the organization that claims email's
+// domain blocks new organizations for accounts on it. An unreadable policy
+// is an error (the caller refuses).
+func (s *AuthService) workspacesBlockedFor(ctx context.Context, email string) (bool, error) {
+	facts, err := signupdom.FactsForEmail(ctx, s.signupDomains, email)
+	if err != nil {
+		s.logger.Warn("domain sign-up policy unreadable; organization creation refused", "error", err)
+		return false, err
+	}
+	return facts.WorkspacesBlocked, nil
 }
 
 // selfServiceTenantCreation reports whether people may create their own
@@ -1859,6 +1890,10 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	// The account's domain may block new organizations for accounts on it.
+	if blocked, err := s.workspacesBlockedFor(ctx, u.Email()); err != nil || blocked {
+		return nil, ErrTenantCreationDisabled
 	}
 
 	// Check if user already has tenants
