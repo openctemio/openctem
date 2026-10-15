@@ -119,6 +119,7 @@ offboarding without step-up and is removed.
 | `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}` | A new key outlives the session; deleting one hides it. Revoking stays one click. |
 | `POST /api/v1/scim-tokens` | A SCIM token creates, suspends and re-roles every member. |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | MFA requirement, IP allowlist, allowed domains, SSO enforcement. |
+| `PATCH /api/v1/tenants/{tenant}/settings/risk-scoring` | Risk scoring settings: every asset's risk band and, through the ownership floor, finding priorities ([scoring versions](scoring-versions.md)). |
 | `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve` | Installs who can sign in to the organization. |
 | `DELETE /api/v1/tenants/{tenant}` | Deletes the organization. |
 | `DELETE /api/v1/organization/members/{id}/mfa` | Removes a member's second factor. |

@@ -142,7 +142,7 @@ func TestPackageWriter_SnapshotGraphAndReplace(t *testing.T) {
 	}
 
 	// A new snapshot of the same location without util drops it and its edges.
-	if _, err := w.WritePackages(ctx, tenant, software.PackageSnapshot{AssetID: asset, Replace: true,
+	if _, err := w.WritePackages(ctx, tenant, software.PackageSnapshot{AssetID: asset, Channel: software.ChannelSensor, Replace: true,
 		Packages: []software.PackageNode{pkgNode(t, app, "app", "direct", "lib"), pkgNode(t, lib, "lib", "unknown")}}); err != nil {
 		t.Fatal(err)
 	}
@@ -151,6 +151,157 @@ func TestPackageWriter_SnapshotGraphAndReplace(t *testing.T) {
 	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM asset_software_edges WHERE asset_id = $1`, asset.String()).Scan(&edges)
 	if links != 2 || edges != 1 {
 		t.Fatalf("after replace: links=%d edges=%d, want 2 and 1", links, edges)
+	}
+}
+
+// A CI upload lists only the vulnerable packages of a lockfile and the
+// packages on their paths. It must not remove the rest of the lockfile that
+// an SBOM upload stored, nor take those links over; its next upload replaces
+// only what CI itself listed. A later full inventory still prunes its own.
+func TestPackageWriter_PartialListKeepsOtherChannelsInventory(t *testing.T) {
+	db := catalogTestDB(t)
+	ctx := context.Background()
+	w := NewSoftwarePackageWriter(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	sfx := shared.NewID().String()[:8]
+	app, lib, util, left := "pkg:npm/app-"+sfx+"@1.0.0", "pkg:npm/lib-"+sfx+"@2.0.0", "pkg:npm/util-"+sfx+"@3.0.0", "pkg:npm/leftpad-"+sfx+"@1.0.0"
+	vuln, vuln2 := "pkg:npm/vuln-"+sfx+"@0.1.0", "pkg:npm/vuln-"+sfx+"@0.2.0"
+	write := func(ch string, partial bool, nodes ...software.PackageNode) {
+		t.Helper()
+		replace, p := software.SnapshotMode(ch)
+		if p != partial {
+			t.Fatalf("mode of %s: partial=%v", ch, p)
+		}
+		if _, err := w.WritePackages(ctx, tenant, software.PackageSnapshot{AssetID: asset, Channel: ch,
+			Replace: replace, Partial: p, Packages: nodes}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	links := func() map[string]string {
+		t.Helper()
+		rows, err := db.QueryContext(ctx, `SELECT v.purl, COALESCE(s.channel, '') FROM asset_software s
+			JOIN software_versions v ON v.id = s.software_version_id
+			WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.source = 'package'`, tenant.String(), asset.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		out := map[string]string{}
+		for rows.Next() {
+			var p, c string
+			if err := rows.Scan(&p, &c); err != nil {
+				t.Fatal(err)
+			}
+			out[p] = c
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	// The SBOM lists the whole lockfile.
+	write(software.ChannelSBOMUpload, false,
+		pkgNode(t, app, "app", "direct", "lib", "left"), pkgNode(t, lib, "lib", "transitive", "util"),
+		pkgNode(t, util, "util", "transitive"), pkgNode(t, left, "left", "transitive"))
+	// CI uploads the trimmed list of the same lockfile: the vulnerable
+	// package and the packages on its path.
+	write(software.ChannelCI, true, pkgNode(t, app, "app", "direct", "vuln"), pkgNode(t, vuln, "vuln", "transitive"))
+	got := links()
+	if len(got) != 5 {
+		t.Fatalf("after the CI upload: %v, want the SBOM's 4 packages and the vulnerable one", got)
+	}
+	if got[app] != software.ChannelSBOMUpload || got[lib] != software.ChannelSBOMUpload || got[vuln] != software.ChannelCI {
+		t.Fatalf("channels = %v: a partial list must not take the SBOM's links over", got)
+	}
+	var edges int
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM asset_software_edges WHERE asset_id = $1`, asset.String()).Scan(&edges)
+	if edges != 4 {
+		t.Fatalf("edges = %d, want the SBOM's 3 and CI's app->vuln", edges)
+	}
+
+	// The next CI upload replaces CI's own list only: the upgraded
+	// vulnerable version supersedes the old one, the SBOM's links stay.
+	write(software.ChannelCI, true, pkgNode(t, app, "app", "direct", "vuln"), pkgNode(t, vuln2, "vuln", "transitive"))
+	got = links()
+	if _, ok := got[vuln]; ok || got[vuln2] != software.ChannelCI || len(got) != 5 {
+		t.Fatalf("after the second CI upload: %v", got)
+	}
+
+	// A new SBOM without left-pad prunes its own link and takes over the
+	// one CI listed first; CI's own vulnerable package stays.
+	write(software.ChannelSBOMUpload, false,
+		pkgNode(t, app, "app", "direct", "lib", "vuln"), pkgNode(t, lib, "lib", "transitive", "util"),
+		pkgNode(t, util, "util", "transitive"), pkgNode(t, vuln2, "vuln", "transitive"))
+	got = links()
+	if _, ok := got[left]; ok || len(got) != 4 || got[vuln2] != software.ChannelSBOMUpload {
+		t.Fatalf("after the second SBOM: %v", got)
+	}
+
+	// Another tenant's CI upload of the same file name touches nothing here.
+	other := seedTestTenant(ctx, t, db)
+	otherAsset := seedTestAsset(ctx, t, db, other)
+	if _, err := w.WritePackages(ctx, other, software.PackageSnapshot{AssetID: otherAsset, Channel: software.ChannelSBOMUpload,
+		Replace: true, Packages: []software.PackageNode{pkgNode(t, app, "app", "direct")}}); err != nil {
+		t.Fatal(err)
+	}
+	if got = links(); len(got) != 4 {
+		t.Fatalf("another tenant's upload changed this asset: %v", got)
+	}
+}
+
+// Links stored before channels were recorded have no producer. A partial
+// CI list leaves them alone; only a full inventory may prune them.
+func TestPackageWriter_LegacyLinksSurvivePartialLists(t *testing.T) {
+	db := catalogTestDB(t)
+	ctx := context.Background()
+	w := NewSoftwarePackageWriter(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	sfx := shared.NewID().String()[:8]
+	app, old, vuln := "pkg:npm/app-"+sfx+"@1.0.0", "pkg:npm/old-"+sfx+"@1.0.0", "pkg:npm/vuln-"+sfx+"@0.1.0"
+	count := func(purl string) int {
+		t.Helper()
+		var n int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM asset_software s JOIN software_versions v ON v.id = s.software_version_id
+			WHERE s.tenant_id = $1 AND s.asset_id = $2 AND v.purl = $3`, tenant.String(), asset.String(), purl).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	// A legacy list: written, then its channel cleared as the migration left it.
+	if _, err := w.WritePackages(ctx, tenant, software.PackageSnapshot{AssetID: asset, Replace: true,
+		Packages: []software.PackageNode{pkgNode(t, app, "app", "direct", "old"), pkgNode(t, old, "old", "transitive")}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE asset_software SET channel = NULL WHERE tenant_id = $1 AND asset_id = $2`,
+		tenant.String(), asset.String()); err != nil {
+		t.Fatal(err)
+	}
+
+	replace, partial := software.SnapshotMode(software.ChannelCI)
+	if _, err := w.WritePackages(ctx, tenant, software.PackageSnapshot{AssetID: asset, Channel: software.ChannelCI,
+		Replace: replace, Partial: partial,
+		Packages: []software.PackageNode{pkgNode(t, app, "app", "direct", "vuln"), pkgNode(t, vuln, "vuln", "transitive")}}); err != nil {
+		t.Fatal(err)
+	}
+	if count(old) != 1 {
+		t.Fatal("a partial CI list pruned a link stored before channels were recorded")
+	}
+	var edges int
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM asset_software_edges WHERE asset_id = $1`, asset.String()).Scan(&edges)
+	if edges != 2 {
+		t.Fatalf("edges = %d, want the legacy app->old and CI's app->vuln", edges)
+	}
+
+	// A full inventory without it does prune it.
+	if _, err := w.WritePackages(ctx, tenant, software.PackageSnapshot{AssetID: asset, Channel: software.ChannelSBOMUpload,
+		Replace: true, Packages: []software.PackageNode{pkgNode(t, app, "app", "direct")}}); err != nil {
+		t.Fatal(err)
+	}
+	if count(old) != 0 || count(vuln) != 1 {
+		t.Fatalf("after a full SBOM: old=%d vuln=%d, want the legacy link pruned and CI's kept", count(old), count(vuln))
 	}
 }
 
