@@ -244,6 +244,43 @@ reopens each to `confirmed` with a timeline entry instead of failing the delete.
 Migration `002151` repaired existing orphan duplicates the same way (status
 `confirmed`, timeline reason `duplicate_link_missing`).
 
+## Transition engine
+
+Every status change a person or a delegated actor makes is decided by one
+pure function, `vulnerability.EvaluateTransition(facts, actor, to)`
+(`pkg/domain/vulnerability/transition_engine.go`). The caller loads the
+facts: the finding's status, source, severity, priority, KEV, whether the
+actor may claim its fix, and whether its verification checklist is complete.
+The engine decides:
+
+| Target | Rule | Mode | Needs |
+|---|---|---|---|
+| any | an edge of `ValidStatusTransitions`; a pentest finding belongs to the pentest module | | |
+| `false_positive`, `accepted` | `findings:write`; four-eyes approval | `request` | `closure_reason`, note (and the acceptance end) |
+| `duplicate` | `findings:triage`; the canonical picker (`/duplicates`, `CheckMarkDuplicate`) | `duplicate_picker` | `duplicate_of` |
+| `resolved` | `findings:verify`, from every status | `direct` | a note unless the checklist is complete |
+| `fix_applied` | `findings:fix_apply`, a person, whose finding it is (assignee, assigned group, asset owner) | `direct` | a note |
+| others | `findings:status`; a `findings:verify` holder may reject a fix (`fix_applied` → `in_progress`) | `direct` | |
+
+Actors:
+- **person**: a signed-in user.
+- **api_key**: an organization key. The same rules apply, but it is not a person, so it cannot claim a fix.
+- **workflow**: an automation `update_status` and an explicit system move. It holds no permission to verify, triage or request a disposition, and is free of the fix-claim person rules.
+- **ticket_inbound**: Jira or GitHub. It moves work state only (`IsTicketInboundTarget`).
+
+The engine only adds constraints to the lifecycle map. `TestEvaluateTransition_NeverWiderThanTheLifecycle` proves that, for every actor and status pair, no allowed move is off the map. It also proves that no disposition is direct, no resolve lacks `findings:verify`, and no ticket closes a finding.
+
+The paths that use the engine:
+- `PATCH /findings/{id}/status` and `POST /findings/bulk/status`. Bulk refuses on the target first (`EvaluateTransitionRequest`), then refuses finding by finding.
+- `/actions/fix-applied`, `/actions/verify` and `/actions/reject-fix`, plus their by-filter variants.
+- Approval requests and decisions.
+- Remediation group and campaign resolves (through bulk), workflow `update_status`, and the Jira and GitHub webhooks.
+
+The same decisions are served to clients, so no client keeps a copy of the rules:
+- `GET /findings/{id}/transitions` (`findings:read`) returns every move from the finding's status. Each move says whether it is allowed, its mode, the inputs it needs, and the blocked reason codes (`missing_permission` with the permission, `not_a_lifecycle_move`, `not_fix_owner`, `not_a_person`, `ticket_cannot_close`, `pentest_module`). An out-of-scope or other tenant's finding answers 404.
+- `POST /findings/transitions:evaluate` (`findings:read`, at most 100 ids) is a dry run for a bulk change. It returns the decision per finding, and `not_found` for an id the caller cannot see. It changes nothing.
+- The MCP tool `list_finding_transitions` returns the same answer as the GET route.
+
 ## The same claim and close rules on every route
 
 Marking a fix applied and resolving follow the same rules on every route a
