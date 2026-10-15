@@ -168,14 +168,16 @@ func TestRiskScoringHandler_Update_ValidConfig(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var rawResp struct {
-		Config        tenant.RiskScoringSettings `json:"config"`
-		AssetsUpdated int                        `json:"assets_updated"`
+		Config    tenant.RiskScoringSettings `json:"config"`
+		Recompute string                     `json:"recompute"`
 	}
 	err := json.Unmarshal(rr.Body.Bytes(), &rawResp)
 	require.NoError(t, err)
 
 	assert.Equal(t, newSettings.Preset, rawResp.Config.Preset)
 	assert.Equal(t, newSettings.Weights.Exposure, rawResp.Config.Weights.Exposure)
+	// The recompute runs in the background (the settings trigger queued it).
+	assert.Equal(t, "queued", rawResp.Recompute)
 
 	// Verify repo was updated
 	assert.Equal(t, 1, repo.updateCalls)
@@ -593,9 +595,18 @@ func newHandlerWithAssetService(tenantRepo *mockTenantRepo, assetRepo *scoringHa
 	// Wire a scoring config provider so preview can compute new scores
 	legacyCfg := asset.LegacyRiskScoringConfig()
 	assetSvc.SetScoringConfigProvider(&mockScoringConfigProvider{config: &legacyCfg})
+	assetSvc.SetRiskQueue(&countingRiskQueue{n: int64(len(assetRepo.assets))}, nil)
 	h.SetAssetService(assetSvc)
 	return h
 }
+
+// countingRiskQueue answers EnqueueTenant with a fixed count.
+type countingRiskQueue struct {
+	asset.RiskQueueRepository
+	n int64
+}
+
+func (q *countingRiskQueue) EnqueueTenant(context.Context, shared.ID) (int64, error) { return q.n, nil }
 
 func TestRiskScoringHandler_Preview_ReturnsDeltas(t *testing.T) {
 	tenantRepo := newMockTenantRepo()
@@ -632,25 +643,20 @@ func TestRiskScoringHandler_Preview_ReturnsDeltas(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var resp struct {
-		Assets      []assetapp.RiskScorePreviewItem `json:"assets"`
-		SampleCount int                             `json:"sample_count"`
-		TotalAssets int                             `json:"total_assets"`
+		Assets          assetapp.RiskImpact `json:"assets"`
+		AffectsPriority bool                `json:"affects_priority"`
 	}
 	err := json.Unmarshal(rr.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	assert.Equal(t, len(resp.Assets), resp.SampleCount)
-	assert.Greater(t, resp.SampleCount, 0, "should have preview items")
-	assert.GreaterOrEqual(t, resp.TotalAssets, resp.SampleCount, "total should be >= sample")
-
-	for _, item := range resp.Assets {
+	assert.Equal(t, 3, resp.Assets.TotalAssets, "every asset is scored, not a sample")
+	assert.False(t, resp.AffectsPriority, "the ownership floor did not change")
+	assert.Equal(t, resp.Assets.Changed, resp.Assets.Raised+resp.Assets.Lowered)
+	for _, item := range resp.Assets.TopChanges {
 		assert.NotEmpty(t, item.AssetID)
 		assert.NotEmpty(t, item.AssetName)
-		assert.GreaterOrEqual(t, item.CurrentScore, 0)
-		assert.LessOrEqual(t, item.CurrentScore, 100)
-		assert.GreaterOrEqual(t, item.NewScore, 0)
-		assert.LessOrEqual(t, item.NewScore, 100)
-		assert.Equal(t, item.NewScore-item.CurrentScore, item.Delta, "delta should match new-current")
+		assert.NotEqual(t, item.CurrentScore, item.NewScore, "only changed assets are listed")
+		assert.NotEmpty(t, item.NewLevel)
 	}
 }
 
@@ -658,7 +664,7 @@ func TestRiskScoringHandler_Preview_ReturnsDeltas(t *testing.T) {
 // Tests: Recalculate with wired AssetService
 // =============================================================================
 
-func TestRiskScoringHandler_Recalculate_ReturnsUpdatedCount(t *testing.T) {
+func TestRiskScoringHandler_Recalculate_QueuesEveryAsset(t *testing.T) {
 	tenantRepo := newMockTenantRepo()
 	_, tenantID := createTenantWithSettings(tenantRepo)
 
@@ -686,12 +692,12 @@ func TestRiskScoringHandler_Recalculate_ReturnsUpdatedCount(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var resp struct {
-		AssetsUpdated int `json:"assets_updated"`
+		AssetsQueued int `json:"assets_queued"`
 	}
 	err := json.Unmarshal(rr.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	assert.GreaterOrEqual(t, resp.AssetsUpdated, 0)
+	assert.Equal(t, 5, resp.AssetsQueued)
 }
 
 // =============================================================================
@@ -732,4 +738,32 @@ func TestRiskScoringHandler_Update_InvalidatesScoringCache(t *testing.T) {
 
 	h.PreviewRiskScoringChanges(previewRR, previewReq)
 	assert.Equal(t, http.StatusOK, previewRR.Code)
+}
+
+// The preview is a whole-organization dry run: six per minute per tenant,
+// then 429 with Retry-After; another tenant has its own budget.
+func TestRiskScoringHandler_Preview_RateLimitedPerTenant(t *testing.T) {
+	repo := newMockTenantRepo()
+	_, tenantA := createTenantWithSettings(repo)
+	h := newTenantHandlerForScoring(repo)
+
+	call := func(tid shared.ID) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/test-org/settings/risk-scoring/preview",
+			bytes.NewReader(marshalJSON(t, validLegacySettings())))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.PreviewRiskScoringChanges(rr, withTeamContext(req, tid))
+		return rr
+	}
+	for i := range 6 {
+		rr := call(tenantA)
+		require.NotEqual(t, http.StatusTooManyRequests, rr.Code, "call %d was limited", i+1)
+	}
+	rr := call(tenantA)
+	assert.Equal(t, http.StatusTooManyRequests, rr.Code)
+	assert.NotEmpty(t, rr.Header().Get("Retry-After"))
+
+	// Another tenant is not affected by tenant A's use.
+	tenantB := shared.NewID()
+	assert.NotEqual(t, http.StatusTooManyRequests, call(tenantB).Code)
 }
