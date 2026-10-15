@@ -14,9 +14,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// The plan routes register next to the other admin settings (one chi group
+// The limits routes register next to the other admin settings (one chi group
 // per prefix: a second mount of the same prefix panics at start-up).
-func TestPlanAdminRoutesRegister(t *testing.T) {
+func TestLimitsAdminRoutesRegister(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatalf("registering the admin routes panicked: %v", r)
@@ -27,15 +27,15 @@ func TestPlanAdminRoutesRegister(t *testing.T) {
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(nil, logger.NewNop()),
 		AdminSignup:         handler.NewAdminSignupHandler(nil, nil, logger.NewNop()),
 		AdminOrganization:   &handler.AdminOrganizationHandler{},
-		Plan:                handler.NewPlanHandler(entitlement.NewService(nil, nil, nil, nil, nil), nil, logger.NewNop()),
+		Limits:              handler.NewLimitsHandler(entitlement.NewService(nil, nil, nil), nil, logger.NewNop()),
 	}, nil)
 }
 
-// GET /organization/plan (Settings > Plan & usage) is for the organization's
+// GET /organization/limits (Settings > Usage & limits) is for the organization's
 // owners and admins; the organization comes from the credential. Members and
 // viewers are refused before the handler runs.
-func TestOrganizationPlanRouteIsAdminOnly(t *testing.T) {
-	plans := handler.NewPlanHandler(entitlement.NewService(nil, nil, nil, nil, nil), nil, logger.NewNop())
+func TestOrganizationLimitsRouteIsAdminOnly(t *testing.T) {
+	lims := handler.NewLimitsHandler(entitlement.NewService(nil, nil, nil), nil, logger.NewNop())
 	for _, tc := range []struct {
 		role       string
 		admin      bool
@@ -56,7 +56,7 @@ func TestOrganizationPlanRouteIsAdminOnly(t *testing.T) {
 			})
 		}
 		router := infrahttp.NewChiRouter()
-		registerOrganizationPlanRoutes(router, plans, auth, nil)
+		registerOrganizationLimitsRoutes(router, lims, auth, nil)
 		mux := router.(interface{ Handler() http.Handler }).Handler()
 
 		code := func() (code int) {
@@ -66,7 +66,7 @@ func TestOrganizationPlanRouteIsAdminOnly(t *testing.T) {
 				}
 			}()
 			rec := httptest.NewRecorder()
-			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/organization/plan", nil))
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/organization/limits", nil))
 			return rec.Code
 		}()
 		if code == http.StatusNotFound || code == http.StatusMethodNotAllowed {

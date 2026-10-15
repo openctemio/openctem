@@ -509,7 +509,7 @@ add:
 - organizations created before plans are Enterprise (unlimited); a
   self-service organization starts on Free.
 
-Details: `docs/architecture/plans-and-limits.md`.
+Details: `docs/architecture/limits.md`.
 
 ## Revision 12: idle Free workspaces
 

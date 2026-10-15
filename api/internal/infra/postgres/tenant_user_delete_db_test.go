@@ -235,6 +235,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"from_user_id": s.userID, "to_user_id": other, "status": "pending",
 			"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-04T00:00:00Z"}
 	},
+	// A feature key is a lowercase identifier (CHECK on the column).
+	"tenant_feature_denies": func(*schemaSeeder) map[string]any {
+		return map[string]any{"feature": "pentest"}
+	},
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},

@@ -15,9 +15,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
-// The console's organization list filters by owner (none / present) and by
-// plan, and reports each organization's plan (enterprise when none is
-// stored: organizations created before plans). Requires DATABASE_URL.
+// The console's organization list filters by owner (none / present) and
+// reports whether limits apply to each organization (a limit or a feature
+// deny, set for that organization only). Requires DATABASE_URL.
 func TestAdminOrganizationListFilters_DB(t *testing.T) {
 	dbURL := testdb.URL()
 	if dbURL == "" {
@@ -46,7 +46,6 @@ func TestAdminOrganizationListFilters_DB(t *testing.T) {
 		exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, id, marker+"-"+suffix)
 		t.Cleanup(func() {
 			for _, q := range []string{
-				`DELETE FROM tenant_plans WHERE tenant_id = $1`,
 				`DELETE FROM users WHERE id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $1)`,
 				`DELETE FROM tenant_members WHERE tenant_id = $1`,
 				`DELETE FROM tenants WHERE id = $1`,
@@ -65,14 +64,14 @@ func TestAdminOrganizationListFilters_DB(t *testing.T) {
 
 	owned := org("owned")
 	member(owned, "owner", "active")
-	exec(`INSERT INTO tenant_plans (tenant_id, plan) VALUES ($1, 'free')`, owned)
+	exec(`INSERT INTO tenant_limits (tenant_id, limit_key, value, reason) VALUES ($1, 'seats', 5, 'it')`, owned)
 	suspended := org("suspended") // its only owner is suspended: no active owner
 	member(suspended, "owner", "suspended")
-	exec(`INSERT INTO tenant_plans (tenant_id, plan) VALUES ($1, 'pro')`, suspended)
-	empty := org("empty") // no plan row: enterprise
+	exec(`INSERT INTO tenant_feature_denies (tenant_id, feature, reason) VALUES ($1, 'pentest', 'it')`, suspended)
+	empty := org("empty") // nothing set: no limits apply
 	member(empty, "member", "active")
 
-	list := func(f admin.OrganizationFilter) map[string]string {
+	list := func(f admin.OrganizationFilter) map[string]bool {
 		t.Helper()
 		f.Search, f.Limit = marker, 50
 		orgs, total, err := repo.ListOrganizations(ctx, f)
@@ -82,32 +81,24 @@ func TestAdminOrganizationListFilters_DB(t *testing.T) {
 		if total != len(orgs) {
 			t.Fatalf("total %d, page %d", total, len(orgs))
 		}
-		out := map[string]string{}
+		out := map[string]bool{}
 		for _, o := range orgs {
-			out[o.ID.String()] = o.Plan
+			out[o.ID.String()] = o.LimitsApply
 		}
 		return out
 	}
 
 	all := list(admin.OrganizationFilter{})
-	if len(all) != 3 || all[owned] != "free" || all[suspended] != "pro" || all[empty] != "enterprise" {
-		t.Fatalf("plans = %v", all)
+	if len(all) != 3 || !all[owned] || !all[suspended] || all[empty] {
+		t.Fatalf("limits apply = %v", all)
 	}
 	none := list(admin.OrganizationFilter{Owner: admin.OrganizationOwnerNone})
-	if len(none) != 2 || none[owned] != "" {
+	if _, ok := none[owned]; len(none) != 2 || ok {
 		t.Fatalf("owner=none = %v, want the suspended-owner and member-only organizations", none)
 	}
 	present := list(admin.OrganizationFilter{Owner: admin.OrganizationOwnerPresent})
-	if len(present) != 1 || present[owned] == "" {
+	if _, ok := present[owned]; len(present) != 1 || !ok {
 		t.Fatalf("owner=present = %v", present)
-	}
-	ent := list(admin.OrganizationFilter{Plan: "enterprise"})
-	if len(ent) != 1 || ent[empty] == "" {
-		t.Fatalf("plan=enterprise = %v, want only the organization without a stored plan", ent)
-	}
-	both := list(admin.OrganizationFilter{Owner: admin.OrganizationOwnerNone, Plan: "pro"})
-	if len(both) != 1 || both[suspended] == "" {
-		t.Fatalf("owner=none&plan=pro = %v", both)
 	}
 }
 

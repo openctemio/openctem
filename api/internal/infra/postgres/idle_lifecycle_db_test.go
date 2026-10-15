@@ -10,9 +10,9 @@ import (
 )
 
 // The idle policy as the application role: only organizations an
-// administrator turned the policy on for are listed or ever read-only (a
-// Free-plan organization without the policy is neither, owner rule: no
-// organization goes read-only unless an operator chose that), sign-ins come
+// administrator turned the policy on for are listed or ever read-only (an
+// organization with a leftover read-only stage but no policy is neither,
+// owner rule: no organization goes read-only unless an operator chose that), sign-ins come
 // from active members, the read-only check lifts on a sign-in after the stage
 // started, turning the policy off lifts read-only at once, and every read
 // stays inside its organization. Requires DATABASE_URL.
@@ -21,17 +21,16 @@ func TestIdleLifecycleRepository(t *testing.T) {
 	ctx := context.Background()
 	r := NewIdleLifecycleRepository(&DB{DB: sqlDB})
 	suffix := shared.NewID().String()[28:]
-	opted := planTestTenant(t, sqlDB, "idle-opted-"+suffix)
-	free := planTestTenant(t, sqlDB, "idle-free-"+suffix)
-	owner := planTestUser(t, sqlDB, "idle-owner-"+suffix+"@example.test")
-	member := planTestUser(t, sqlDB, "idle-member-"+suffix+"@example.test")
+	opted := limitsTestTenant(t, sqlDB, "idle-opted-"+suffix)
+	free := limitsTestTenant(t, sqlDB, "idle-free-"+suffix)
+	owner := limitsTestUser(t, sqlDB, "idle-owner-"+suffix+"@example.test")
+	member := limitsTestUser(t, sqlDB, "idle-member-"+suffix+"@example.test")
 	for _, q := range []struct {
 		sql  string
 		args []any
 	}{
-		// A Free-plan organization idle for 100 days, with a read-only stage
-		// left from before the policy became opt-in.
-		{`INSERT INTO tenant_plans (tenant_id, plan) VALUES ($1, 'free')`, []any{free.String()}},
+		// An organization idle for 100 days, with a read-only stage left from
+		// before the policy became opt-in.
 		{`INSERT INTO tenant_idle_lifecycle (tenant_id, stage, stage_changed_at) VALUES ($1, 'read_only', now() - interval '1 day')`, []any{free.String()}},
 		{`INSERT INTO tenant_members (tenant_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active'), ($1, $3, 'member', 'active'), ($4, $2, 'owner', 'active')`,
 			[]any{opted.String(), owner.String(), member.String(), free.String()}},
@@ -64,7 +63,7 @@ func TestIdleLifecycleRepository(t *testing.T) {
 		}
 	}
 	if ro, _ := r.ReadOnly(ctx, free); ro {
-		t.Fatal("a Free-plan organization without the policy must never be read-only")
+		t.Fatal("an organization without the policy must never be read-only")
 	}
 	if st, err := r.Status(ctx, free); err != nil || st.PolicyEnabled {
 		t.Fatalf("status: %+v %v", st, err)
@@ -76,7 +75,7 @@ func TestIdleLifecycleRepository(t *testing.T) {
 	}
 	got = listed()
 	if _, ok := got[free]; ok {
-		t.Fatal("a Free-plan organization without the policy must not be swept")
+		t.Fatal("an organization without the policy must not be swept")
 	}
 	w, ok := got[opted]
 	if !ok || w.Stage != lifecycle.StageActive || w.LastSignIn.IsZero() {

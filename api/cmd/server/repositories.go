@@ -219,7 +219,7 @@ type Repositories struct {
 	ScanPolicy      *postgres.ScanPolicyRepository
 	ScanApproval    *postgres.ScanApprovalRepository
 	AccessRequest   *postgres.AccessRequestRepository
-	Plan            *postgres.PlanRepository
+	Limits          *postgres.LimitsRepository
 	IdleLifecycle   *postgres.IdleLifecycleRepository
 	AdminAuditLog   *postgres.AuditLogRepository
 	AdminOrg        *postgres.AdminOrganizationRepository
@@ -512,7 +512,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ScanPolicy:      postgres.NewScanPolicyRepository(db),
 		ScanApproval:    postgres.NewScanApprovalRepository(db),
 		AccessRequest:   postgres.NewAccessRequestRepository(db),
-		Plan:            postgres.NewPlanRepository(db),
+		Limits:          postgres.NewLimitsRepository(db),
 		IdleLifecycle:   postgres.NewIdleLifecycleRepository(db),
 		AdminAuditLog:   postgres.NewAuditLogRepository(db),
 		AdminOrg:        postgres.NewAdminOrganizationRepository(db),

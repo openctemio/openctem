@@ -4,7 +4,7 @@
 |---|---|
 | Status | Proposed (decisions SU1–SU10 recommended; delegated to the platform team, 2026-10-08) |
 | Authors | Platform team |
-| Related | RFC-022 (platform admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-058 (external members), plans and limits (`docs/architecture/plans-and-limits.md`) |
+| Related | RFC-022 (platform admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-058 (external members), plans and limits (`docs/architecture/limits.md`) |
 | Code | none yet |
 
 ## 1. Summary

@@ -1,9 +1,9 @@
 package routes
 
-// Module entitlements end to end on a migrated database (RFC-064): the plan to
-// module map and the platform grants decide what an organization may use; the
-// route gate answers MODULE_NOT_ENABLED for that organization only, and an
-// organization cannot switch on what it is not entitled to. A module the
+// Module entitlements end to end on a migrated database (RFC-064): every
+// module is available unless the operator or the control plane denies it for
+// one organization; the route gate answers MODULE_NOT_ENABLED for that
+// organization only, and an organization cannot switch on what is denied. A module the
 // organization loses enters 30 days of read-only grace: reads pass, writes get
 // reason read_only_grace, jobs see it off; afterwards reason not_entitled.
 
@@ -27,8 +27,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -49,9 +49,9 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 	}
 	db := &postgres.DB{DB: sqldb}
 
-	planRepo := postgres.NewPlanRepository(db)
-	ent := entitlementapp.NewService(planRepo, nil, nil, nil, logger.NewNop())
-	ent.SetModuleRepository(planRepo)
+	limRepo := postgres.NewLimitsRepository(db)
+	ent := entitlementapp.NewService(limRepo, nil, logger.NewNop())
+	ent.SetSources(entitlementapp.NewControlPlaneSource(limRepo))
 	modules := moduleapp.NewModuleService(postgres.NewModuleRepository(db), logger.NewNop())
 	modules.SetTenantModuleRepo(postgres.NewTenantModuleRepository(db))
 	modules.SetEntitlements(ent)
@@ -59,7 +59,7 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 	modules.SetModuleCacheInvalidator(gate)
 	ent.SetModulesChangeNotifier(modules.NotifyEntitlementChange)
 
-	newTenant := func(p plan.Plan) shared.ID {
+	newTenant := func() shared.ID {
 		t.Helper()
 		id := shared.NewID()
 		if _, err := sqldb.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
@@ -67,17 +67,11 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() {
-			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenant_module_grants WHERE tenant_id = $1`, id.String())
+			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenant_feature_denies WHERE tenant_id = $1`, id.String())
 			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenant_module_grace WHERE tenant_id = $1`, id.String())
 			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenant_modules WHERE tenant_id = $1`, id.String())
-			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenant_plans WHERE tenant_id = $1`, id.String())
 			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, id.String())
 		})
-		if p != "" {
-			if err := planRepo.SetTenantPlan(ctx, id, p, nil, time.Now()); err != nil {
-				t.Fatal(err)
-			}
-		}
 		return id
 	}
 	ops, err := admin.NewAdminUser("ops@example.test", "Ops", admin.AdminRoleOpsAdmin, nil)
@@ -85,13 +79,13 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	denied, other := newTenant(plan.Free), newTenant(plan.Free)
+	denied, other := newTenant(), newTenant()
 	// Nothing stored: everything entitled for both.
 	if !gate.IsEnabled(ctx, denied.String(), moduledom.ModulePentest) {
 		t.Fatal("pentest off before any entitlement change")
 	}
-	if err := ent.PutModuleGrant(ctx, ops, denied, entitlementapp.ModuleGrantInput{
-		Module: moduledom.ModulePentest, Kind: plan.GrantDeny, Reason: "contract",
+	if err := ent.PutDeny(ctx, ops, denied, entitlementapp.DenyInput{
+		Feature: moduledom.ModulePentest, Reason: "contract",
 	}, "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +131,7 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 	// The deny applies at once (the grant invalidated the cache), to that
 	// organization only: 30 days of read-only grace start.
 	until, ok := graceUntil(denied)
-	if !ok || until.Before(time.Now().Add(plan.GracePeriod-time.Hour)) {
+	if !ok || until.Before(time.Now().Add(limits.GracePeriod-time.Hour)) {
 		t.Fatalf("grace after the deny: %v %v, want about 30 days", ok, until)
 	}
 	if code, _ := serve(denied); code != http.StatusOK {
@@ -169,7 +163,7 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 	}
 
 	// Removing the deny restores it.
-	if err := ent.DeleteModuleGrant(ctx, ops, denied, moduledom.ModulePentest, "contract ended", "", ""); err != nil {
+	if err := ent.DeleteDeny(ctx, ops, denied, moduledom.ModulePentest, "contract ended", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if code, _ := write(denied); code != http.StatusOK {
@@ -179,49 +173,38 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 		t.Fatal("regaining the module must end its grace")
 	}
 
-	// A plan mapping without pentest for Free, with a trial grant for one
-	// organization. Restore the platform setting afterwards.
-	t.Cleanup(func() {
-		_, _ = sqldb.ExecContext(ctx, `DELETE FROM platform_settings WHERE key = $1`, plan.ModulesSettingKey)
-	})
-	_, _ = sqldb.ExecContext(ctx, `DELETE FROM platform_settings WHERE key = $1`, plan.ModulesSettingKey)
-	super, err := admin.NewAdminUser("root@example.test", "Root", admin.AdminRoleSuperAdmin, nil)
-	if err != nil {
+	// The control plane denies pentest to the other organization (its
+	// source, its own rows): the same grace, then no access; the operator's
+	// own deny list is untouched, and lifting it through the control plane
+	// restores the module.
+	call := entitlementapp.ControlPlaneCall{Subject: "test", TokenID: "jti-1", Reason: "service tier"}
+	if err := ent.ApplyControlPlane(ctx, other, nil, []string{moduledom.ModulePentest}, call); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ent.UpdatePlanModules(ctx, super, plan.PlanModules{
-		plan.Free: {moduledom.ModuleAttackSurface}, plan.Pro: {plan.AllModules}, plan.Enterprise: {plan.AllModules},
-	}, 0, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	trial := time.Now().Add(14 * 24 * time.Hour)
-	if err := ent.PutModuleGrant(ctx, ops, denied, entitlementapp.ModuleGrantInput{
-		Module: moduledom.ModulePentest, Kind: plan.GrantAdd, Reason: "14-day trial", ExpiresAt: &trial,
-	}, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	if code, _ := write(denied); code != http.StatusOK {
-		t.Fatalf("trial organization: %d, want 200", code)
-	}
-	if _, ok := graceUntil(denied); ok {
-		t.Fatal("the trial organization kept the module: no grace")
-	}
-	// The plan change took pentest from the other Free organization: grace.
 	if _, ok := graceUntil(other); !ok {
-		t.Fatal("plan mapping change did not start grace for the Free organization")
+		t.Fatal("a control-plane deny must start grace")
 	}
 	if code, _ := serve(other); code != http.StatusOK {
-		t.Fatalf("free organization, read in grace: %d, want 200", code)
+		t.Fatalf("other organization, read in grace: %d, want 200", code)
 	}
 	if code, d := write(other); code != http.StatusForbidden || d.Reason != middleware.ModuleReasonReadOnlyGrace {
-		t.Fatalf("free organization, write in grace: %d %+v, want 403 read_only_grace", code, d)
+		t.Fatalf("other organization, write in grace: %d %+v, want 403 read_only_grace", code, d)
 	}
 	endGrace(other)
 	if code, d := serve(other); code != http.StatusForbidden || d.Reason != middleware.ModuleReasonNotEntitled {
-		t.Fatalf("free organization after grace: %d %+v, want 403 not_entitled", code, d)
+		t.Fatalf("other organization after grace: %d %+v, want 403 not_entitled", code, d)
 	}
-	enterprise := newTenant("")
-	if code, _ := serve(enterprise); code != http.StatusOK {
-		t.Fatalf("organization without a plan (Enterprise): %d, want 200", code)
+	if code, _ := write(denied); code != http.StatusOK {
+		t.Fatalf("the first organization is unaffected: %d", code)
+	}
+	if err := ent.ApplyControlPlane(ctx, other, nil, nil, call); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := write(other); code != http.StatusOK {
+		t.Fatalf("control plane lifted its deny: %d, want 200", code)
+	}
+	fresh := newTenant()
+	if code, _ := write(fresh); code != http.StatusOK {
+		t.Fatalf("an organization nobody limited: %d, want 200", code)
 	}
 }

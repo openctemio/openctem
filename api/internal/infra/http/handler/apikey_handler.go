@@ -325,7 +325,7 @@ func (h *APIKeyHandler) handleValidationError(w http.ResponseWriter, err error) 
 }
 
 func (h *APIKeyHandler) handleServiceError(w http.ResponseWriter, err error) {
-	if WritePlanLimitError(w, err) {
+	if WriteLimitError(w, err) {
 		return
 	}
 	switch {

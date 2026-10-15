@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -91,6 +92,9 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
+	// selfServiceLimits gives a self-service organization the instance's
+	// self-service default limits (none unless an operator set some).
+	selfServiceLimits SelfServiceLimits
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -1780,6 +1784,17 @@ type CreateFirstTeamResult struct {
 	Tenant       TenantMembershipInfo `json:"tenant"`
 }
 
+// SelfServiceLimits is the slice of the entitlement service the
+// self-service creation paths use: the limits a new organization starts
+// with, and the per-person organization cap.
+type SelfServiceLimits interface {
+	SelfServiceDefaults(ctx context.Context) (limits.Limits, int, error)
+	CheckOrgsPerUser(ctx context.Context, userID shared.ID) error
+}
+
+// SetSelfServiceLimits wires the self-service default limits.
+func (s *AuthService) SetSelfServiceLimits(l SelfServiceLimits) { s.selfServiceLimits = l }
+
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
@@ -1886,8 +1901,16 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
-	// No limits for a self-service organization: limits apply only where an
-	// operator set them for that organization.
+	// The instance's self-service default limits, stored with the
+	// organization (none unless an operator set some). Unreadable defaults
+	// refuse the creation rather than create an organization without them.
+	if s.selfServiceLimits != nil {
+		d, _, derr := s.selfServiceLimits.SelfServiceDefaults(ctx)
+		if derr != nil {
+			return nil, fmt.Errorf("read self-service default limits: %w", derr)
+		}
+		newTenant.SetInitialLimits(limits.SelfServiceRows(newTenant.ID(), d, newTenant.CreatedAt()))
+	}
 
 	// Tenant, owner membership and owner role in one transaction, the same
 	// write the other organization-creation paths use.

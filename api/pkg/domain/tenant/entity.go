@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -21,10 +21,11 @@ type Tenant struct {
 	logoURL     string
 	settings    map[string]any
 	createdBy   string // Keycloak user ID
-	// plan is the stored plan (tenant_plans); empty when none is stored.
-	plan      plan.Plan
-	createdAt time.Time
-	updatedAt time.Time
+	// initialLimits are written with the organization when it is created
+	// (the instance's self-service defaults); never loaded back.
+	initialLimits []limits.Limit
+	createdAt     time.Time
+	updatedAt     time.Time
 }
 
 // NewTenant creates a new Tenant entity.
@@ -110,33 +111,14 @@ func (t *Tenant) LogoURL() string {
 	return t.logoURL
 }
 
-// Plan returns the organization's plan: the stored one, or plan.Unassigned
-// when none is stored. The repository loads it from tenant_plans, the one
-// source of the plan that limits, the console and Settings > Plan & usage read.
-func (t *Tenant) Plan() plan.Plan {
-	if t.plan == "" {
-		return plan.Unassigned
-	}
-	return t.plan
-}
+// InitialLimits returns the limits written with the organization when it is
+// created.
+func (t *Tenant) InitialLimits() []limits.Limit { return t.initialLimits }
 
-// StoredPlan returns the plan stored for the organization; ok=false when none
-// is stored (the organization resolves to plan.Unassigned).
-func (t *Tenant) StoredPlan() (plan.Plan, bool) {
-	return t.plan, t.plan != ""
-}
-
-// SetPlan records the organization's plan: the repository sets the stored
-// plan when it loads the organization, and a self-service creation sets Free
-// before the organization is written, so the plan is stored in the same
-// transaction (never an organization without its Free plan).
-func (t *Tenant) SetPlan(p plan.Plan) error {
-	if !p.IsValid() {
-		return plan.ErrInvalid
-	}
-	t.plan = p
-	return nil
-}
+// SetInitialLimits sets the limits the organization starts with (the
+// instance's self-service defaults), written in the transaction that creates
+// it.
+func (t *Tenant) SetInitialLimits(l []limits.Limit) { t.initialLimits = l }
 
 // Settings returns the tenant settings.
 func (t *Tenant) Settings() map[string]any {

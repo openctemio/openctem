@@ -113,8 +113,8 @@ import (
 	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
@@ -897,15 +897,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
 
-	// Plans and limits: every creation path checks the organization limits
-	// (docs/architecture/plans-and-limits.md). Seats and invitations are
-	// checked where the rows are inserted.
-	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
+	// Limits and feature denies: every creation path checks the
+	// organization's limits (docs/architecture/limits.md). Seats and
+	// invitations are checked where the rows are inserted. No source beyond
+	// the operator's own rows unless the internal API is on.
+	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
-	for _, r := range []interface{ SetPlanLimits(plan.Checker) }{
+	for _, r := range []interface{ SetLimits(limits.Checker) }{
 		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing, repos.Finding,
 	} {
-		r.SetPlanLimits(s.Entitlement)
+		r.SetLimits(s.Entitlement)
 	}
 
 	// Initialize core services
@@ -2499,7 +2500,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// grants decide what an organization may switch on; a change refreshes
 	// the module state everywhere.
 	if s.Entitlement != nil {
-		s.Entitlement.SetModuleRepository(repos.Plan)
 		s.Module.SetEntitlements(s.Entitlement)
 		s.Entitlement.SetModulesChangeNotifier(s.Module.NotifyEntitlementChange)
 	}
@@ -2668,6 +2668,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	if s.Entitlement != nil {
+		s.Auth.SetSelfServiceLimits(s.Entitlement)
+	}
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
