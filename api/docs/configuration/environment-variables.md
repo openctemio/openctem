@@ -276,7 +276,7 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `INGEST_MAX_PENDING_PER_TENANT` | int | `100` |  |  | Queue depth per organization in `async` mode; further submissions get `429` with `Retry-After`. `0` turns the check off. |
 | `INGEST_MODE` | string | `sync` |  |  | `sync`: scan results are processed in the request. `async`: results are stored, answered with `202` and processed by the ingest worker. |
 | `INGEST_SOURCE_RESOLVE` | string | `dry_run` |  |  | Resolve a finding when a connector source reports it mitigated: `off`, `dry_run` or `enforce`. |
-| `INGEST_VEX` | string | `dry_run` |  |  | How a VEX `not_affected` statement acts on the matching open finding: `off`, `dry_run` or `enforce` (the finding becomes a false positive with the justification). |
+| `INGEST_VEX` | string | `dry_run` |  |  | How a VEX `not_affected` statement in a scan report acts on the matching open finding: `off`, `dry_run` or `enforce`. A false positive needs four-eyes, so `enforce` requests one (a pending approval by the actor `vex`, with the justification) that a person with `findings:approve` decides; it never sets the status itself. |
 | `SENSOR_PROTOCOL_V2_RESULTS` | bool | `true` |  |  | Serve sensor protocol v2 results at `/api/v2/sensor`. Sensors need it; keep it on. |
 | `SENSOR_V2_BLINDING_MIN_FINDINGS` | int | `100` |  |  | The guard applies only when more than this many findings would close. |
 | `SENSOR_V2_BLINDING_RATIO` | float | `0.5` |  |  | Blinding guard: an auto-resolve that would close more than this fraction of a tool's open findings on the report's assets is held for review. |
