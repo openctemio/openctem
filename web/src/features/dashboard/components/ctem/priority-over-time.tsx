@@ -7,7 +7,8 @@ import type { PriorityClass } from '@/features/findings/types/finding.types'
 import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
 import { PRIORITY_CHART_COLORS, PRIORITY_ORDER } from '../../lib/ctem-colors'
-import type { RiskTrendPoint } from '../../hooks/use-ctem-dashboard'
+import { scoringChangeDates, type RiskTrendPoint } from '../../hooks/use-ctem-dashboard'
+import { ScoringChangeNote } from './scoring-change-note'
 
 // recharts loads after the card's numbers (see trend-charts.tsx).
 const PriorityAreaChart = dynamic(() => import('./trend-charts').then((m) => m.PriorityAreaChart), {
@@ -43,13 +44,17 @@ export function PriorityOverTime({ trend, isLoading }: PriorityOverTimeProps) {
           <Skeleton className="h-28 w-full" />
         ) : points.length > 1 ? (
           <div className="w-full flex-1 min-h-28">
-            <PriorityAreaChart points={points} />
+            <PriorityAreaChart
+              points={points}
+              markers={scoringChangeDates(points, 'finding_priority')}
+            />
           </div>
         ) : (
           <div className="flex flex-1 min-h-28 items-center justify-center text-xs text-muted-foreground">
             No trend data yet
           </div>
         )}
+        {!isLoading && <ScoringChangeNote points={points} kind="finding_priority" />}
 
         {/* Current distribution */}
         {isLoading ? (

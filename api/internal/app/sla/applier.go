@@ -53,15 +53,22 @@ func NewApplier(calc DeadlineCalculator) *Applier {
 	return &Applier{calc: calc}
 }
 
-// ApplyBatch iterates each finding, computes the deadline using
-// priority class + severity, and writes it with SetSLADeadline.
-// Errors on a per-finding basis are logged via the SLA service's
-// own logger (via returned error from Calculate — this function
-// swallows individual failures and keeps processing the rest, but
-// returns an aggregate error if ALL failed).
+// ApplyBatch computes each finding's SLA deadline from its priority class
+// (severity as fallback) and the tenant's policy
+// (docs/architecture/scoring-versions.md, "SLA on a priority change"):
 //
-// A NULL asset id on a finding is acceptable — the underlying
-// service falls back to the tenant default policy.
+//   - no deadline yet: first_detected_at + SLA;
+//   - a deadline already set (an open finding being recomputed): only
+//     tighten, to min(old deadline, now + SLA). A priority rise late in a
+//     finding's life gets the new SLA from now, never a deadline in the past;
+//     a priority drop or a longer policy never moves the deadline later
+//     (that would hide overdue work). An extension is an explicit decision,
+//     not a side effect;
+//   - a closed finding keeps its deadline.
+//
+// Per-finding failures are skipped; an error is returned only if all fail.
+// A NULL asset id is acceptable (the calculator falls back to the tenant's
+// default policy).
 func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error {
 	if a.calc == nil || len(findings) == 0 {
 		return nil
@@ -78,8 +85,14 @@ func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings [
 			compute = fn
 		}
 	}
+	now := time.Now().UTC()
 	var applied, failed int
 	for _, f := range findings {
+		old := f.SLADeadline()
+		if old != nil && f.IsClosed() {
+			applied++
+			continue
+		}
 		priorityClass := ""
 		if pc := f.PriorityClass(); pc != nil {
 			priorityClass = string(*pc)
@@ -89,14 +102,23 @@ func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings [
 			assetID = f.AssetID().String()
 		}
 
-		deadline, err := compute(assetID, priorityClass, f.Severity(), f.FirstDetectedAt())
+		// A recompute counts the new SLA from now (tighten only).
+		start := f.FirstDetectedAt()
+		if old != nil {
+			start = now
+		}
+		deadline, err := compute(assetID, priorityClass, f.Severity(), start)
 		if err != nil {
 			failed++
 			continue
 		}
 		if deadline.IsZero() {
-			// No SLA for this finding (informational, info days = 0): the
-			// deadline stays NULL and sla_status stays not_applicable.
+			// No SLA for this finding (informational, info days = 0): no new
+			// deadline (an existing one is kept, never extended or removed).
+			applied++
+			continue
+		}
+		if old != nil && !deadline.Before(*old) {
 			applied++
 			continue
 		}
