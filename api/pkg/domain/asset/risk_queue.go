@@ -42,9 +42,14 @@ type RiskQueueRepository interface {
 
 	// EnqueueAllForPlatform queues every live asset of every tenant with a
 	// due time of now+delay, so rows queued by real changes are claimed
-	// first. An asset already queued keeps its earlier due time. Used by the
+	// first; an asset whose score version is missing or older than the
+	// tenant's current one is due now. An asset already queued keeps its earlier due time. Used by the
 	// periodic reconcile. Returns the number of assets newly queued.
 	EnqueueAllForPlatform(ctx context.Context, delay time.Duration) (int64, error)
+
+	// StampRiskVersion records the scoring version the given assets of the
+	// tenant were scored with.
+	StampRiskVersion(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, version int64) error
 
 	// StatsForPlatform returns the queue depth and the age of its oldest
 	// due row.
