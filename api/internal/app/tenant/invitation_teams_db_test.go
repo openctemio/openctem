@@ -313,3 +313,49 @@ func TestInvitationTeams_OutsiderPrivilegeCountsTeams(t *testing.T) {
 		t.Fatalf("preview with another organization's team = %+v, %v", p, err)
 	}
 }
+
+// TestInvitationGrants_ForTheAcceptancePage: the lookup shows the roles with
+// their risk, the teams of this organization only, the outsider status and
+// why two-factor will be required.
+func TestInvitationGrants_ForTheAcceptancePage(t *testing.T) {
+	e := newITEnv(t)
+	org := e.org()
+	owner := e.member(org, "owner")
+	lead := e.team(org, "team")
+	e.bindLeadRole(org, lead)
+	end := time.Now().Add(30 * 24 * time.Hour)
+	token, err := e.invite(org, owner, "ana"+uuid.NewString()[:6]+"@gmail.com", []string{lead}, &end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A team id of another organization planted in the row is never shown.
+	foreign := e.team(e.org(), "team")
+	e.exec(`UPDATE tenant_invitations SET group_ids = group_ids || $2::uuid WHERE tenant_id = $1`, org, foreign)
+
+	inv, err := e.svc.GetInvitationByToken(context.Background(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := e.svc.InvitationGrants(context.Background(), inv)
+	if len(g.Roles) != 1 || g.Roles[0].Slug != "viewer" || g.Roles[0].Summary.Risk == "" {
+		t.Fatalf("roles = %+v", g.Roles)
+	}
+	if len(g.Teams) != 1 || g.Teams[0].ID != lead {
+		t.Fatalf("teams = %+v (another organization's team must not show)", g.Teams)
+	}
+	if g.MemberKind != "external" || !g.MFARequired || g.MFAReason != tenantapp.MFAReasonOutsidePrivileged {
+		t.Fatalf("grants = %+v", g)
+	}
+
+	// An insider with no organization policy: no two-factor notice.
+	plain := e.team(org, "team")
+	token2, err := e.invite(org, owner, "in-"+uuid.NewString()[:8]+"@it.test", []string{plain}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv2, _ := e.svc.GetInvitationByToken(context.Background(), token2)
+	g2 := e.svc.InvitationGrants(context.Background(), inv2)
+	if g2.MemberKind != "internal" || g2.MFARequired || len(g2.Teams) != 1 {
+		t.Fatalf("insider grants = %+v", g2)
+	}
+}

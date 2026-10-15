@@ -1704,6 +1704,15 @@ type InvitationLookupInvitation struct {
 	Pending     bool      `json:"pending"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	InviterName string    `json:"inviter_name"`
+	// What accepting gives (RFC-095 §5): the roles with their risk, the
+	// teams, the end of access, outside-member status and whether two-factor
+	// authentication will be required.
+	Roles           []tenantapp.InvitationGrantRole `json:"roles"`
+	Teams           []tenantapp.InvitationGrantTeam `json:"teams"`
+	MemberKind      string                          `json:"member_kind"`
+	AccessExpiresAt *time.Time                      `json:"access_expires_at,omitempty"`
+	MFARequired     bool                            `json:"mfa_required"`
+	MFAReason       string                          `json:"mfa_reason,omitempty"`
 }
 
 // InvitationLookupTenant is the organization part of InvitationLookupResponse.
@@ -1715,7 +1724,7 @@ type InvitationLookupTenant struct {
 
 // LookupInvitation handles POST /api/v1/invitations/lookup (public).
 // @Summary      Look up an invitation
-// @Description  What an invitation token grants, readable before sign-in: the organization, the invited email and role, and whether it is still pending. The token travels in the body, never in the URL.
+// @Description  What an invitation token grants, readable before sign-in: the organization, the invited email, the roles with their risk, the teams, the end of access, whether the person is outside the organization and whether two-factor authentication will be required, and whether it is still pending. The token travels in the body, never in the URL.
 // @Tags         Invitations
 // @Accept       json
 // @Produce      json
@@ -1755,16 +1764,23 @@ func (h *TenantHandler) writeInvitationLookup(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	grants := h.service.InvitationGrants(r.Context(), invitation)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(InvitationLookupResponse{
 		Invitation: InvitationLookupInvitation{
-			ID:          invitation.ID().String(),
-			Email:       invitation.Email(),
-			Role:        invitation.Role().String(),
-			Pending:     invitation.IsPending(),
-			ExpiresAt:   invitation.ExpiresAt(),
-			InviterName: h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
+			ID:              invitation.ID().String(),
+			Email:           invitation.Email(),
+			Role:            invitation.Role().String(),
+			Pending:         invitation.IsPending(),
+			ExpiresAt:       invitation.ExpiresAt(),
+			InviterName:     h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
+			Roles:           grants.Roles,
+			Teams:           grants.Teams,
+			MemberKind:      grants.MemberKind,
+			AccessExpiresAt: invitation.Access().ExpiresAt,
+			MFARequired:     grants.MFARequired,
+			MFAReason:       grants.MFAReason,
 		},
 		Tenant: InvitationLookupTenant{ID: t.ID().String(), Name: t.Name(), Slug: t.Slug()},
 	})
