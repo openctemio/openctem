@@ -63,6 +63,36 @@ type ToolSettingsStore interface {
 	DeleteToolSettings(ctx context.Context, tenantID, sensorID shared.ID, tool string) (bool, error)
 }
 
+// TenantToolSettings is one tool's organization defaults: the values every
+// one of the organization's own sensors runs the tool with unless the
+// sensor overrides a key. Shared platform sensors never receive them.
+type TenantToolSettings struct {
+	TenantID shared.ID
+	Tool     string
+	// Values are the keys the administrator set (numbers as json.Number).
+	Values map[string]any
+	// SchemaDigest is the digest of the reference schema (the newest
+	// manifest's) the values were saved against; they were checked against
+	// every schema the organization's sensors reported for the tool.
+	SchemaDigest string
+	UpdatedBy    *shared.ID
+	UpdatedAt    time.Time
+}
+
+// TenantToolSettingsStore keeps organization tool defaults. Every method is
+// scoped by tenant.
+type TenantToolSettingsStore interface {
+	// ListTenantToolSettings returns the organization's defaults, by tool.
+	ListTenantToolSettings(ctx context.Context, tenantID shared.ID) ([]TenantToolSettings, error)
+	// GetTenantToolSettings returns one tool's defaults, or shared.ErrNotFound.
+	GetTenantToolSettings(ctx context.Context, tenantID shared.ID, tool string) (*TenantToolSettings, error)
+	// SaveTenantToolSettings inserts or replaces one tool's defaults.
+	SaveTenantToolSettings(ctx context.Context, ts TenantToolSettings) error
+	// DeleteTenantToolSettings removes one tool's defaults; false when there
+	// were none.
+	DeleteTenantToolSettings(ctx context.Context, tenantID shared.ID, tool string) (bool, error)
+}
+
 // ErrToolHasNoSettings: the tool is not in the sensor's current manifest,
 // or its descriptor declares no settings schema.
 var ErrToolHasNoSettings = fmt.Errorf("%w: the tool declares no settings on this sensor", shared.ErrNotFound)
@@ -139,13 +169,48 @@ func DecodeToolSettingsValues(raw []byte) (map[string]any, error) {
 // (the organization's enablement of dangerous options is not available
 // yet). The error is settings.Errors, by JSON pointer.
 func ValidateToolSettings(schema *settings.Schema, values map[string]any) error {
+	return validateAdminLayer(schema, settings.SourceSensor, values)
+}
+
+// ValidateTenantToolSettings is ValidateToolSettings for the organization's
+// defaults (the tenant layer): any key, raising or lowering the tool's
+// default, no non-default dangerous value.
+func ValidateTenantToolSettings(schema *settings.Schema, values map[string]any) error {
+	return validateAdminLayer(schema, settings.SourceTenant, values)
+}
+
+func validateAdminLayer(schema *settings.Schema, src settings.Source, values map[string]any) error {
 	if err := schema.Validate(values); err != nil {
 		return err
 	}
-	if _, err := schema.Resolve(settings.Layer{Source: settings.SourceSensor, Values: values}); err != nil {
+	if _, err := schema.Resolve(settings.Layer{Source: src, Values: values}); err != nil {
 		return err
 	}
 	return refuseDangerous(schema, values)
+}
+
+// TierImpact is the safety class whose changes raise the load or reach of
+// each scan; changing one needs the acting user's recent re-authentication.
+const TierImpact = "T1"
+
+// ImpactChanges returns the Impact (T1) keys whose value after differs from
+// before and is set (a key removed, back to its default or inherited value,
+// is not a raise), flattened and sorted.
+func ImpactChanges(schema *settings.Schema, before, after map[string]any) []string {
+	if schema == nil {
+		return nil
+	}
+	var out []string
+	for _, k := range flatKeys(after) {
+		p := schema.Property(k)
+		if p == nil || p.Tier != TierImpact {
+			continue
+		}
+		if a := lookupFlat(after, k); a != nil && !jsonEqual(lookupFlat(before, k), a) {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // refuseDangerous refuses a non-default value of a dangerous (T2) key: the
@@ -215,15 +280,83 @@ type EffectiveToolSetting struct {
 	Common string
 	Scope  settings.Scope
 	Tier   string
+	// Chain is every layer that sets the key, lowest first (the tool's
+	// default, the organization, the sensor, the scan); the last one is in
+	// force. An organization value the sensor overrides is listed too.
+	Chain []LayerValue
 }
 
-// EffectiveToolSettings resolves values over the schema's defaults and
-// returns every key of the schema (in key order) with its value (nil when
-// it has none), where it came from ("default", "sensor" or "" for none),
-// its native flag, common option, scope and tier. A sensitive key never
-// shows its value.
-func EffectiveToolSettings(schema *settings.Schema, values map[string]any) ([]EffectiveToolSetting, error) {
-	return EffectiveToolSettingsWithScan(schema, values, nil)
+// LayerValue is the value one layer sets for a key.
+type LayerValue struct {
+	Source settings.Source
+	Value  any
+}
+
+// AdminValues are the administrators' values of one tool for one sensor:
+// the organization's defaults (every one of its own sensors) and the
+// sensor's own overrides. The organization layer is a default, not a cap:
+// a key the sensor sets replaces the organization's value, in either
+// direction (InheritedValues).
+type AdminValues struct {
+	Organization map[string]any
+	Sensor       map[string]any
+}
+
+// InheritedValues is the organization layer as one sensor receives it: the
+// organization's values without the keys the sensor overrides (a group's
+// keys one by one), so the two layers never set the same key and the
+// tenant layer never caps the sensor's. nil when nothing is left.
+func InheritedValues(org, sensor map[string]any) map[string]any {
+	if len(org) == 0 {
+		return nil
+	}
+	out := map[string]any{}
+	for k, v := range org {
+		group, isGroup := v.(map[string]any)
+		if !isGroup {
+			if _, overridden := sensor[k]; !overridden {
+				out[k] = v
+			}
+			continue
+		}
+		sg, _ := sensor[k].(map[string]any)
+		kept := map[string]any{}
+		for ck, cv := range group {
+			if _, overridden := sg[ck]; !overridden {
+				kept[ck] = cv
+			}
+		}
+		if len(kept) > 0 {
+			out[k] = kept
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// layers returns the tenant layer (inherited values, when any) then the
+// sensor layer (when any).
+func (a AdminValues) layers() []settings.Layer {
+	var out []settings.Layer
+	if inh := InheritedValues(a.Organization, a.Sensor); len(inh) > 0 {
+		out = append(out, settings.Layer{Source: settings.SourceTenant, Values: inh})
+	}
+	if len(a.Sensor) > 0 {
+		out = append(out, settings.Layer{Source: settings.SourceSensor, Values: a.Sensor})
+	}
+	return out
+}
+
+// EffectiveToolSettings resolves the administrators' values over the
+// schema's defaults and returns every key of the schema (in key order) with
+// its value (nil when it has none), where it came from ("default",
+// "tenant", "sensor" or "" for none), the chain of layers that set it, its
+// native flag, common option, scope and tier. A sensitive key never shows
+// its value.
+func EffectiveToolSettings(schema *settings.Schema, admin AdminValues) ([]EffectiveToolSetting, error) {
+	return EffectiveToolSettingsWithScan(schema, admin, nil)
 }
 
 // scanExecutorKeys are the scan-config keys the sensor's command executor
@@ -257,27 +390,24 @@ func ScanSettingsLayer(schema *settings.Schema, config map[string]any) (layer ma
 	return layer, ignored
 }
 
-// ValidateScanSettings checks a scan layer over the sensor's stored values
+// ValidateScanSettings checks a scan layer over the administrators' values
 // the way the sensor resolves a job: only scan-scope keys, within their
-// constraints, never raising a common option above the value in force
-// (the sensor's, or the default), and no non-default value of a dangerous
-// (T2) key. The error is settings.Errors, by JSON pointer.
-func ValidateScanSettings(schema *settings.Schema, sensorValues, scanLayer map[string]any) error {
+// constraints, never raising a common option above the value in force (the
+// sensor's, the organization's, or the default), and no non-default value
+// of a dangerous (T2) key. The error is settings.Errors, by JSON pointer.
+func ValidateScanSettings(schema *settings.Schema, admin AdminValues, scanLayer map[string]any) error {
 	if schema == nil || len(scanLayer) == 0 {
 		return nil
 	}
-	if _, err := schema.Resolve(scanLayers(sensorValues, scanLayer)...); err != nil {
+	if _, err := schema.Resolve(scanLayers(admin, scanLayer)...); err != nil {
 		return err
 	}
 	return refuseDangerous(schema, scanLayer)
 }
 
-// scanLayers is the sensor layer (when any) then the scan layer.
-func scanLayers(sensorValues, scanLayer map[string]any) []settings.Layer {
-	var layers []settings.Layer
-	if len(sensorValues) > 0 {
-		layers = append(layers, settings.Layer{Source: settings.SourceSensor, Values: sensorValues})
-	}
+// scanLayers is the administrators' layers (when any) then the scan layer.
+func scanLayers(admin AdminValues, scanLayer map[string]any) []settings.Layer {
+	layers := admin.layers()
 	if len(scanLayer) > 0 {
 		layers = append(layers, settings.Layer{Source: settings.SourceScan, Values: scanLayer})
 	}
@@ -285,27 +415,48 @@ func scanLayers(sensorValues, scanLayer map[string]any) []settings.Layer {
 }
 
 // EffectiveToolSettingsWithScan is EffectiveToolSettings with a scan layer
-// (ScanSettingsLayer) over the sensor's values: what a job of that scan
-// runs with on that sensor, before the job's own limits and the sensor's
-// local policy, which only lower values. Sources include "scan".
-func EffectiveToolSettingsWithScan(schema *settings.Schema, values, scanLayer map[string]any) ([]EffectiveToolSetting, error) {
+// (ScanSettingsLayer) over the administrators' values: what a job of that
+// scan runs with on that sensor, before the job's own limits and the
+// sensor's local policy, which only lower values. Sources include "scan".
+func EffectiveToolSettingsWithScan(schema *settings.Schema, admin AdminValues, scanLayer map[string]any) ([]EffectiveToolSetting, error) {
 	if schema == nil {
 		return []EffectiveToolSetting{}, nil
 	}
-	resolved, err := schema.Resolve(scanLayers(values, scanLayer)...)
+	resolved, err := schema.Resolve(scanLayers(admin, scanLayer)...)
 	if err != nil {
 		return nil, err
 	}
 	all := resolved.Values()
+	defaults := flattenValues(schema.Defaults())
 	var out []EffectiveToolSetting
 	add := func(key string, p *settings.Property) {
 		e := EffectiveToolSetting{Key: key, Source: resolved.Source(key), Flag: p.Flag,
-			Common: p.Common, Scope: p.Scope, Tier: p.Tier}
+			Common: p.Common, Scope: p.Scope, Tier: p.Tier, Chain: []LayerValue{}}
+		redact := p.Sensitive || p.WriteOnly
 		if v, ok := all[key]; ok {
 			e.Value = v
-			if p.Sensitive || p.WriteOnly {
+			if redact {
 				e.Value = RedactedSettingValue
 			}
+		}
+		for _, l := range []struct {
+			src    settings.Source
+			values map[string]any
+		}{
+			{settings.SourceDefault, defaults}, {settings.SourceTenant, admin.Organization},
+			{settings.SourceSensor, admin.Sensor}, {settings.SourceScan, scanLayer},
+		} {
+			v := lookupFlat(l.values, key)
+			if l.src == settings.SourceDefault {
+				v = l.values[key]
+			}
+			if v == nil {
+				continue
+			}
+			if redact {
+				v = RedactedSettingValue
+			}
+			e.Chain = append(e.Chain, LayerValue{Source: l.src, Value: v})
 		}
 		out = append(out, e)
 	}
@@ -322,6 +473,15 @@ func EffectiveToolSettingsWithScan(schema *settings.Schema, values, scanLayer ma
 		out = []EffectiveToolSetting{}
 	}
 	return out, nil
+}
+
+// flattenValues flattens a values document: a group's keys as "group.key".
+func flattenValues(values map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, k := range flatKeys(values) {
+		out[k] = lookupFlat(values, k)
+	}
+	return out
 }
 
 // flatKeys returns the keys of a values document, a group's keys as
