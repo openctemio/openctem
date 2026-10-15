@@ -91,7 +91,7 @@
   "confirm.ciPipeline.retire": "Ngừng pipeline",
   "confirm.ciPipeline.retireDesc": "Các phát hiện chỉ do pipeline này báo cáo và không nguồn nào khác thấy kể từ đó được đóng với lý do \"nguồn đã ngừng\". Các phát hiện mà nguồn khác vẫn thấy không bị ảnh hưởng. Mỗi phát hiện đã đóng có thể mở lại, và lần chạy tiếp theo của pipeline sẽ đưa nó trở lại.",
   "confirm.ciPipeline.retireTitle": "Ngừng sử dụng pipeline CI {name}?",
-  "confirm.ciTrust.deleteDesc": "Các pipeline được nó chấp nhận không thể gửi kết quả nữa. Các token đã cấp hết hạn trong vòng 15 phút. Không thể hoàn tác.",
+  "confirm.ciTrust.deleteDesc": "Các pipeline mà nó cho phép không còn gửi được kết quả. Token đã cấp hết hạn trong vòng 15 phút. Các mục phạm vi kho mã mà nó đã thêm sẽ bị gỡ. Không thể hoàn tác.",
   "confirm.ciTrust.deleteTitle": "Xóa tin cậy CI \"{name}\"?",
   "confirm.comment.deleteDesc": "Bình luận bị xóa vĩnh viễn với mọi người. Không thể hoàn tác.",
   "confirm.comment.deleteTitle": "Xóa bình luận này?",
