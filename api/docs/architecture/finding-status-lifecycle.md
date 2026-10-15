@@ -116,7 +116,7 @@ the same transaction as the change.
   `set_config('openctem.transition', <json>, true)` (Go:
   `findingTransition` / `vulnerability.StatusTransition` in
   `internal/infra/postgres/finding_transition.go`). The trigger
-  `trg_findings_record_transition` (migration `002153`) then writes one entry
+  `trg_findings_record_transition` (migration `002180`) then writes one entry
   per finding the transaction moves: the old and new status, what the
   resolution was before (`previous_resolution`, `previous_resolution_method`,
   `previous_resolved_by`, `previous_resolved_at`), a reason code, the source,
