@@ -30,8 +30,18 @@ keeps a runtime switch to pause sign-up during an abuse wave.
 | `domain` | the above, plus public sign-up for an address on a domain an organization verified; the person joins that organization by its join policy | platform administrator |
 | `open` | anyone (not a disposable address), within the console policy | self-service, within the console policy and the limits |
 
-Order: `disabled` < `domain` < `open`. Organization SSO just-in-time membership, SCIM and
-invitations are not affected by the ceiling: the organization chose those people.
+Order: `disabled` < `domain` < `open`.
+
+**Outside the ceiling.** Organization SSO just-in-time membership, SCIM provisioning and
+invitations are not public sign-up and are not limited by the ceiling, under any value: each one
+joins an organization that already exists, and that organization chose the person (its identity
+provider, its directory, or an invitation sent to that exact address). None of them can create an
+organization.
+
+**`domain` today.** Until the policy split and the domain policies (steps 3 and 4) land, `domain`
+admits nothing more than `disabled`: the console cannot choose organization self-service, and no
+domain-based sign-up exists yet. It already requires the platform e-mail at start, so a deployment
+that sets it is ready when those steps arrive.
 
 ## 3. Start-up guards
 

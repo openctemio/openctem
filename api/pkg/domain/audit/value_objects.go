@@ -455,12 +455,17 @@ const (
 	// own rule because nobody else can, owner decision B16) is Critical.
 	ActionSuppressionRuleApproved     Action = "suppression_rule.approved"
 	ActionSuppressionRuleSelfApproved Action = "suppression_rule.self_approved"
+	// A refused own approval (not allowed, no reason, missing or wrong
+	// authenticator code) is recorded too, at High.
+	ActionSuppressionRuleSelfApprovalRefused Action = "suppression_rule.self_approval_refused"
 
 	// Four-eyes dispositions of high and critical exposures.
 	ActionExposureDispositionRequested    Action = "exposure.disposition_requested"
 	ActionExposureDispositionApproved     Action = "exposure.disposition_approved"
 	ActionExposureDispositionSelfApproved Action = "exposure.disposition_self_approved"
 	ActionExposureDispositionRejected     Action = "exposure.disposition_rejected"
+	// A refused own approval of a disposition, at High.
+	ActionExposureDispositionSelfApprovalRefused Action = "exposure.disposition_self_approval_refused"
 
 	// Report schedule actions: a schedule mails organization posture to its
 	// recipients (members or the allowed domains, D12).
@@ -739,7 +744,8 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
-		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved,
+		ActionExposureDispositionSelfApprovalRefused,
+		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -867,9 +873,10 @@ func (a Action) Category() string {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
-	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved:
+	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
 		return "suppression"
-	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected:
+	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
+		ActionExposureDispositionSelfApprovalRefused:
 		return "exposure"
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
 		return "report_schedule"
@@ -1017,7 +1024,8 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
+		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeFindingApproval:
 		return true
 	}
 	return isConfigResourceType(r)
@@ -1110,7 +1118,9 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated, ActionScannerTemplateApproved,
 		// Deleting an asset also deletes its findings.
-		ActionAssetDeleted:
+		ActionAssetDeleted,
+		// A refused own approval: someone tried to skip the second approver.
+		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused:
 		return SeverityHigh
 
 	// Medium - important changes
