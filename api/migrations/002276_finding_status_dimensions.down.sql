@@ -1,7 +1,7 @@
 -- Restores validated_fixed and not_observed as allowed statuses and the
 -- functions that named them. Findings keep their current status (stale ones
--- become plain open findings: observation_state is dropped; the
--- validation_outcome stamps stay).
+-- become plain open findings once finding_status_dimensions_column is
+-- undone; the validation_outcome stamps stay).
 ALTER TABLE findings DROP CONSTRAINT chk_findings_status;
 ALTER TABLE findings ADD CONSTRAINT chk_findings_status CHECK (status IN (
     'new', 'confirmed', 'in_progress', 'fix_applied', 'validated_fixed', 'not_observed',
@@ -33,5 +33,3 @@ BEGIN
 END;
 $$;
 
-ALTER TABLE findings DROP CONSTRAINT IF EXISTS chk_findings_observation_state;
-ALTER TABLE findings DROP COLUMN observation_state;
