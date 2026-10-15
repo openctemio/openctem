@@ -59,7 +59,6 @@ var findingStatusWriters = map[string]int{
 	"ci_coverage_repository.go":            2, // staleFromSQL, sourceRetiredFromSQL
 	"finding_branch_only.go":               1, // branchOnlyExpiryFromSQL
 	"finding_correlation_repository.go":    2, // correlate: open -> duplicate (isOpenStatus checked under lock); release: duplicate -> prior open status
-	"finding_taint_source.go":              1, // false_positive/accepted -> confirmed when the taint source changed (status checked under lock)
 	"finding_coverage_autoresolve.go":      2, // autoResolveFromSQL
 	"finding_group_repository.go":          1, // UserFromStatuses($6)
 	"finding_pentest_duplicate.go":         2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
