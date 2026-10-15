@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -36,6 +37,14 @@ type CIToolLabel struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 }
+
+// The fixed mode, kind and role of every pipeline row: a pipeline runs in
+// CI ("runner" mode), is never a sensor and only scans.
+const (
+	ciPipelineMode = "runner"
+	ciPipelineKind = "ci_pipeline"
+	ciPipelineRole = "scanner"
+)
 
 // CIPipelineResponse is a CI pipeline with its computed status. Status is
 // the one badge (severity order failing > degraded > stale > running/fresh;
@@ -125,7 +134,7 @@ type CIPipelineListResponse struct {
 
 func toCIPipelineResponse(v *cirunapp.PipelineView) CIPipelineResponse {
 	p, a := &v.Pipeline, &v.Assessment
-	out := CIPipelineResponse{ID: p.ID.String(), Mode: FleetModeRunner, Kind: FleetKindCIPipeline, Role: fleetRoleScanner,
+	out := CIPipelineResponse{ID: p.ID.String(), Mode: ciPipelineMode, Kind: ciPipelineKind, Role: ciPipelineRole,
 		Provider: string(p.Provider), RepositoryAssetID: p.RepositoryAssetID.String(), Repository: p.RepositoryName,
 		WorkflowPath: p.WorkflowPath, WorkflowName: p.WorkflowName, TemplateRef: p.TemplateRef, TemplateSHA: p.TemplateSHA,
 		DefaultBranch: p.DefaultBranch, Legacy: p.IsLegacy(),
@@ -303,35 +312,15 @@ func (h *CIAdminHandler) GetPipeline(w http.ResponseWriter, r *http.Request) {
 	ciWriteJSON(w, http.StatusOK, out)
 }
 
-// FleetRunners returns the tenant's pipelines as fleet rows, within the
-// caller's data scope (the fleet read model).
-func (h *CIAdminHandler) FleetRunners(ctx context.Context, tenantID shared.ID) ([]FleetItem, error) {
-	if h.pipelines == nil {
-		return []FleetItem{}, nil
+// truncateQuery trims a free-text query parameter and caps it (rune-safe).
+func truncateQuery(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= max {
+		return s
 	}
-	scope, err := resolveDataScope(ctx, h.dataScope, tenantID)
-	if err != nil {
-		return nil, err
+	s = s[:max]
+	for !utf8.ValidString(s) && s != "" {
+		s = s[:len(s)-1]
 	}
-	views, err := h.pipelines.AssessPipelines(ctx, tenantID, cirun.PipelineFilter{DataScope: scope})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]FleetItem, 0, len(views))
-	for i := range views {
-		v := &views[i]
-		name := v.RepositoryName
-		if v.WorkflowName != "" {
-			name += " · " + v.WorkflowName
-		}
-		st := v.Assessment.Status
-		out = append(out, FleetItem{ID: v.ID.String(), Mode: FleetModeRunner, Kind: FleetKindCIPipeline,
-			Role: fleetRoleScanner, Name: name, Description: v.WorkflowPath, Status: string(st),
-			Attention: st == cirun.PipelineFailing || st == cirun.PipelineDegraded || st == cirun.PipelineStale,
-			Inactive:  st.IsInactive(), LastSeenAt: v.LastRunAt, Version: v.SensorVersion, Provider: string(v.Provider),
-			Repository: v.RepositoryName, RepositoryAssetID: v.RepositoryAssetID.String(), Workflow: v.WorkflowPath,
-			Gate: string(v.Assessment.Gate), Freshness: string(v.Assessment.Freshness), Health: string(v.Assessment.Health),
-			Links: FleetLinks{Self: "/api/v1/ci/pipelines/" + v.ID.String()}})
-	}
-	return out, nil
+	return s
 }
