@@ -12,6 +12,8 @@ const (
 	ActionFindingApprovalApproved  Action = "finding_approval.approved"
 	ActionFindingApprovalRejected  Action = "finding_approval.rejected"
 	ActionFindingApprovalCanceled  Action = "finding_approval.canceled"
+	// ActionFindingApprovalReminded: someone reminded the approvers.
+	ActionFindingApprovalReminded Action = "finding_approval.reminded"
 	// ActionFindingApprovalExpired: nobody decided the request by its
 	// decide-by time (written by the expiration job).
 	ActionFindingApprovalExpired Action = "finding_approval.expired"
@@ -25,6 +27,7 @@ var _ = registerActions("finding_approval", map[Action]Severity{
 	ActionFindingApprovalApproved:    SeverityMedium,
 	ActionFindingApprovalRejected:    SeverityMedium,
 	ActionFindingApprovalCanceled:    SeverityLow,
+	ActionFindingApprovalReminded:    SeverityLow,
 	ActionFindingApprovalExpired:     SeverityLow,
 	ActionFindingApprovalSelfRefused: SeverityMedium,
 })

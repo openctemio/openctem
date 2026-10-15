@@ -367,6 +367,7 @@ func registerVulnerabilityRoutes(
 		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/reject", h.RejectApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/cancel", h.CancelApproval, middleware.Require(permission.FindingsWrite))
+		r.POST("/{id}/remind", h.RemindApprovals, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)
 
 }

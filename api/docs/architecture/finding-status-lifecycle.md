@@ -309,6 +309,17 @@ instead).
   decide-by; never the justification text). A refused attempt to approve one's
   own request is recorded as `finding_approval.self_approval_refused` (denied,
   medium), so the attempts can be reviewed.
+- **Who is told.** A new request (a person's or an AI triage proposal)
+  notifies the members who may decide it, in-app (`finding_approval`) and by
+  email: owners, admins and roles holding `findings:approve`
+  (`ScopeActorRepository.FindingApprovers`), filtered to those whose data scope
+  holds the finding (`datascope.AssertFindingForUser`), never the requester
+  (`internal/app/finding/approval_notify.go`). The email carries the finding
+  title, requested status and dates, never the justification; the link opens
+  the inbox, sign-in required. `POST /api/v1/approvals/{id}/remind`
+  (`findings:write`) repeats it at most once an hour per request
+  (`reminded_at`, atomic), audited `finding_approval.reminded`. VEX requests
+  from a scan report are not notified one by one.
 - **On the finding, on every accept path.** Approving `accepted` stores the
   end in `findings.acceptance_expires_at` in the same statement as the status
   (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix
