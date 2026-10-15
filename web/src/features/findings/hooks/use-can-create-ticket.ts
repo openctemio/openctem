@@ -1,7 +1,7 @@
 'use client'
 
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
-import { usePermissions, Permission } from '@/lib/permissions'
+import { usePermissions } from '@/context/permission-provider'
 
 /**
  * Whether the caller may open a tracker ticket for a finding: the
@@ -11,6 +11,6 @@ import { usePermissions, Permission } from '@/lib/permissions'
  */
 export function useCanCreateTicket(): boolean {
   const integrationsEnabled = useModuleEnabled('integrations')
-  const { can } = usePermissions()
-  return integrationsEnabled && can(Permission.FindingsWrite)
+  const { hasPermission } = usePermissions()
+  return integrationsEnabled && hasPermission('findings:write')
 }
