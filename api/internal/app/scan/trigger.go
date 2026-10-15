@@ -1179,6 +1179,26 @@ func (s *Service) platformTargetRefusal(ctx context.Context, tenantID shared.ID,
 			"shared platform sensors never scan asset groups or internal targets; scan them on your own sensors, or scan only public targets",
 			shared.ErrValidation), nil
 	}
+	// A name that resolves inside is an internal target too. The resolved
+	// addresses are not named: on a multi-tenant install they may come from
+	// the platform's own DNS.
+	resolvesInside, err := s.namesResolvingInternal(ctx, targets)
+	if errors.Is(err, errTooManyNames) {
+		return shared.NewDomainError(codePlatformRefused,
+			fmt.Sprintf("shared platform sensors check every host name first, and this job has more than %d; scan it on your own sensors or split it", maxSharedNameLookups),
+			shared.ErrValidation), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(resolvesInside) > 0 {
+		listed := resolvesInside[:min(len(resolvesInside), maxListedRefusals)]
+		msg := "shared platform sensors never scan internal targets, and these names resolve to internal addresses: " + strings.Join(listed, ", ")
+		if len(resolvesInside) > len(listed) {
+			msg += fmt.Sprintf(" and %d more", len(resolvesInside)-len(listed))
+		}
+		return shared.NewDomainError(codePlatformRefused, msg, shared.ErrValidation), nil
+	}
 	if s.platformNeedsProof(ctx) {
 		unproven, err := s.unverified(ctx, tenantID, targets)
 		if err != nil {
