@@ -71,10 +71,32 @@ type PackageSnapshot struct {
 	AssetID  shared.ID
 	Channel  string
 	Packages []PackageNode
-	// Replace marks a full inventory of the locations it reports (an SBOM):
-	// links at those locations that it does not name are removed. A partial
-	// report (packages named by findings) only adds and refreshes.
+	// Replace prunes, at the locations the snapshot names, the links of its
+	// own channel that it does not list: the channel's earlier report of
+	// those files is superseded. Links another channel owns are never pruned.
 	Replace bool
+	// Partial marks a list that need not name every package of its
+	// locations (a CI upload trimmed to the vulnerable packages and their
+	// paths, packages named by findings). It refreshes the links it names
+	// but does not take them over from the channel that listed them first,
+	// so its own pruning never reaches another producer's inventory.
+	Partial bool
+}
+
+// SnapshotMode is how a report arriving through channel is written. A CI
+// upload carries only the packages its findings need: it replaces its own
+// earlier list but never another producer's. A finding import names the
+// packages of the findings it imports and only adds. Sensors, integrations
+// and SBOM uploads send full inventories.
+func SnapshotMode(channel string) (replace, partial bool) {
+	switch channel {
+	case ChannelCI:
+		return true, true
+	case ChannelFindingImport:
+		return false, true
+	default:
+		return true, false
+	}
 }
 
 // PackageWriteResult counts what a write changed.
