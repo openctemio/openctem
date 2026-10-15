@@ -16,6 +16,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -215,4 +216,34 @@ func wireFindingApprovers(svc *Services, dir *postgres.ScopeActorRepository, web
 		mail = findingApprovalMailer{email: svc.Email, log: log}
 	}
 	svc.Vulnerability.SetApprovalNotifier(dir, inApp, mail, webBaseURL)
+	// The sole member's own approval: the owner check, a fresh authenticator
+	// code, and the backup contact from the organization's settings.
+	var totp finding.ApprovalTOTPVerifier
+	if svc.Auth != nil {
+		totp = findingApprovalTOTP{auth: svc.Auth}
+	}
+	var settings finding.ApprovalSettingsReader
+	if svc.Tenant != nil {
+		settings = svc.Tenant
+	}
+	svc.Vulnerability.SetSoloApproval(dir, totp, settings)
+}
+
+// findingApprovalTOTP is the fresh authenticator check of a sole member's
+// own approval, in the finding service's error terms.
+type findingApprovalTOTP struct{ auth *auth.AuthService }
+
+var _ finding.ApprovalTOTPVerifier = findingApprovalTOTP{}
+
+func (v findingApprovalTOTP) VerifyFreshTOTP(ctx context.Context, userID, code string) error {
+	err := v.auth.VerifyFreshTOTP(ctx, userID, code)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, auth.ErrTOTPNotEnrolled):
+		return vulnerability.ErrSoloApprovalNeedsTOTP
+	case errors.Is(err, auth.ErrStepUpFailed), errors.Is(err, auth.ErrAccountLocked):
+		return vulnerability.ErrSoloApprovalBadCode
+	}
+	return err
 }
