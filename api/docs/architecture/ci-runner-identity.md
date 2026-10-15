@@ -44,8 +44,7 @@ graph TD
 | Repository | `internal/infra/postgres/ci_run_repository.go` |
 | Routes and their chains | `internal/infra/http/routes/ci.go` |
 | Console | `web/src/features/ci-runners`: CI/CD integration page `/ci-cd` (pipelines, runs, coverage; Trust and gate tab, `?tab=setup`; "Connect a pipeline" setup and "Recent refused pipelines" from `GET /api/v1/ci/trust-refusals`); `/ci-runners` and `/runners` redirect to `/ci-cd` |
-| Pipelines: identity, status, fleet rows | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
-| Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
+| Pipelines: identity, status | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
 | Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
 | Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts`, `001144_ci_db_model`, `001145_ci_db_model_validate` |
@@ -57,17 +56,39 @@ graph TD
 
 | Route | Chain |
 |---|---|
-| `POST /api/v1/ci/oidc/exchange` | per-IP token-exchange limit (60/min, shared store) → handler (32 KB body, unknown fields refused) |
+| `POST /api/v1/ci/oidc/exchange` | per-address backstop (600/min) → per pipeline identity limit (60/min per organization + token issuer at one address; claims read unverified, only to pick the bucket) → handler (32 KB body, unknown fields refused). Both in the shared store; see "Exchange rate limit" below |
 | `POST /api/v1/ci/trust-configs/preview` | session tenant chain → `scans` module → `scans:ci:write` → per-person limit (10/min) |
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
 
+### Exchange rate limit
+
+Hosted CI runners put many customers behind one egress address, so one strict
+budget per address let one busy fleet, or an attacker on the same runners,
+throttle every other organization's jobs. The exchange counts instead:
+
+- per address, 600 a minute, before the body is read: the flood backstop;
+- per organization (`tenant_id`) and token issuer (`iss`, read without
+  checking the signature) at that address, 60 a minute. The claims only pick
+  a bucket and grant nothing; invented ids get fresh buckets but stay inside
+  the address backstop. The address is part of the key so that someone who
+  knows an organization's id (it appears in public pipeline files) cannot use
+  up that organization's budget from elsewhere with junk tokens naming it.
+  A request whose body or token cannot be read falls in one bucket per
+  address.
+
+Both need the real client address: behind the built-in gateway and a front
+proxy, set the gateway's `OPENCTEM_TRUSTED_PROXIES` (and
+`OPENCTEM_CLIENT_IP_HEADERS` behind a Cloudflare Tunnel).
+
 Budgets beyond the chains: at most 200 reports per run (`cirun.MaxRunReports`,
 `409`), at most 300 runs per pipeline per hour (`cirun.MaxPipelineRunsPerHour`,
 refused at the exchange and audited `pipeline_rate`), 100,000 recorded
-findings per run.
+findings per run (`cirun.MaxRunFindings`). A run that sights more is marked
+`ci_runs.findings_over_cap` and its gate fails with `too_many_findings`; it is
+never judged on the first 100,000 only. Warn mode and a break-glass still apply
+to it like any other blocking reason.
 | `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
-| `GET /api/v1/fleet` | session tenant chain → `sensors:read` or `scans:ci:read`; the handler lists each mode under its own permission (runner rows also need the `scans` module) |
 
 ## Data model
 
@@ -207,7 +228,12 @@ A decision made on the platform holds on the next run of the same repository:
   its console summary, SARIF and merge request report and says how many it
   hid. It learns nothing about findings it did not report, and nothing about
   another repository or tenant; a lookup failure returns an empty list, so
-  the job shows everything.
+  the job shows everything. The response stays small whatever the report's
+  size: `known` lists at most 10,000 results (`cirun.MaxKnownInResponse`,
+  lowest indexes first, about 1 MB), `known_total` counts them all and
+  `known_truncated` is true when some were left out. A job that reads only
+  `known` shows the rest of its results, which is safe; the gate judges every
+  finding on the platform either way.
 - **Identity.** The finding is the same when its key is (RFC-043 §4.2): a SAST
   key is the rule, the path and the flagged code, so a line shift keeps the
   decision and a material change to the code is a new finding that is judged
@@ -217,16 +243,28 @@ A decision made on the platform holds on the next run of the same repository:
 ## Invariants
 
 - A run never creates a sensor row and has no heartbeat; offline alerts never
-  see it. Its pipeline is listed in the fleet in runner mode and is never
-  offline and never dispatched.
+  see it. Its pipeline is listed on the CI/CD page (never with the sensors)
+  and is never offline and never dispatched.
 - A pipeline is created only at a verified, admitted exchange, keyed by signed
   immutable ids; branch, job and tool labels never create rows.
-- Every fleet source is tenant-scoped and the runner rows follow the data
-  scope; the fleet handler adds no query of its own.
+- Pipeline reads are tenant-scoped and follow the repository data scope.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
+- A pull or merge request run records its findings on its own scope:
+  `pull/<n>` (GitHub, Azure Pipelines, Bitbucket, CircleCI, Jenkins) or
+  `merge-requests/<n>` (GitLab), never on its head branch's name, which the
+  author picks and may equal a real branch (a fork's `main`, `release/1.x`).
+  A fork event records on `fork/pr-<n>`. Runs stored before this rule keep
+  their rows; new uploads to such a run go to the pull request scope.
 - A run's report changes only its repository asset; the baseline branch is
   decided server-side.
+- A pull or merge request is compared with its base branch only when that
+  base is verified and the branch may serve as a baseline; otherwise with the
+  default branch. Verified: GitHub's signed `base_ref`; a GitLab merge
+  request's target branch read from GitLab through the organization's GitLab
+  connection (the token signs none); no other provider. A base branch the job
+  reports (`base_ref` in the exchange) is ignored. A baseline branch is the
+  default branch or a protected one; a name (`release/*`) never qualifies.
 - A finding the run sees only on a non-counting branch is branch-only: left
   out of exposure views until a counting branch sees it
   (`branch-only-findings.md`).
