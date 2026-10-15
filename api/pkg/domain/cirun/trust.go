@@ -130,10 +130,14 @@ type TrustConfig struct {
 	// with. A pipeline cannot set it.
 	DefaultBranch string
 	Enabled       bool
-	CreatedBy     *shared.ID
-	LastUsedAt    *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// ManageScope: the repositories the trust names are repository scope
+	// entries linked to it (ScopePatterns), kept in step and retired with
+	// it. On by default ("Trust and add to scope").
+	ManageScope bool
+	CreatedBy   *shared.ID
+	LastUsedAt  *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 	// LegacyAudience is the audience a GitHub or GitLab configuration had
 	// before audiences had to name the tenant (migration
 	// ci_tenant_bound_audience). Until LegacyAudienceUntil, a pipeline that

@@ -337,7 +337,7 @@ func (s *RoleService) authorizeRoleSetChange(ctx context.Context, a grantActor, 
 		return fmt.Errorf("%w: only an owner can change another administrator's roles", ErrGrantForbidden)
 	}
 	if !keepsOwner && s.isMembershipOwner(ctx, tid, uid) {
-		return fmt.Errorf("%w: the organization's owner keeps the owner role; transfer ownership instead", shared.ErrValidation)
+		return fmt.Errorf("%w: the organization's owner keeps the owner role; to hand it over, use Transfer ownership on the Members page (POST /api/v1/organization/ownership-transfer)", shared.ErrValidation)
 	}
 	return nil
 }

@@ -49,6 +49,7 @@ import {
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { RoleRiskBadge, RoleSummaryLine } from '@/features/access-control/components/role-risk'
 
 type TypeFilter = 'all' | 'system' | 'custom'
 
@@ -170,11 +171,18 @@ export default function RolesPage() {
       ),
     },
     {
-      accessorKey: 'permission_count',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Permissions" />,
-      cell: ({ row }) => (
-        <span className="text-sm tabular-nums">{getFilteredPermissionCount(row.original)}</span>
-      ),
+      id: 'risk',
+      header: t('org.roleRisk.column'),
+      enableSorting: false,
+      cell: ({ row }) =>
+        row.original.summary ? (
+          <div className="min-w-0 space-y-1">
+            <RoleRiskBadge risk={row.original.summary.risk} />
+            <RoleSummaryLine summary={row.original.summary} max={3} className="line-clamp-1" />
+          </div>
+        ) : (
+          <span className="text-sm tabular-nums">{getFilteredPermissionCount(row.original)}</span>
+        ),
     },
     {
       accessorKey: 'has_full_data_access',

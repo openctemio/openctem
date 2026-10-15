@@ -294,6 +294,19 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 			r.POST("/preview", tenantH.PreviewInvitation, middleware.RequireAdmin(), middleware.Require(permission.MembersInvite))
 		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 	}
+	if tenantH != nil {
+		// Ownership transfer (RFC-095): the owner asks with step-up; the
+		// member asked accepts with their own step-up, or declines. Reading,
+		// accepting and declining are member routes; the service answers 404
+		// unless the caller is the owner or the member asked.
+		router.Group("/api/v1/organization/ownership-transfer", func(r Router) {
+			r.GET("/", tenantH.GetOwnershipTransfer, middleware.Require(permission.TeamRead))
+			r.POST("/", tenantH.StartOwnershipTransfer, middleware.RequireOwner(), requireStepUp())
+			r.DELETE("/", tenantH.CancelOwnershipTransfer, middleware.RequireOwner())
+			r.POST("/approve", tenantH.AcceptOwnershipTransfer, middleware.Require(permission.TeamRead), requireStepUp())
+			r.POST("/reject", tenantH.DeclineOwnershipTransfer, middleware.Require(permission.TeamRead))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
 	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {
 		if localAuth != nil {
 			r.DELETE("/mfa", localAuth.ResetMemberMFA, middleware.RequireAdmin(), requireStepUp())

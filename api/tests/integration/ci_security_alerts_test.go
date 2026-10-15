@@ -86,7 +86,10 @@ func TestCISecurityAlerts(t *testing.T) {
 	if _, v := r.post("/api/v1/ci/runs/"+runID+"/evaluate", token, nil); v["verdict"] != "pass" || v["override"] == nil {
 		t.Fatalf("override: %v", v)
 	}
-	if len(inApp.sent) != 4 || ob.count("ci.break_glass") != 2 || !strings.Contains(inApp.sent[3].Title, "used") {
+	// The run is the repository's first on the default branch: it records
+	// the gate baseline, announced too (the secret still blocks).
+	if len(inApp.sent) != 6 || ob.count("ci.break_glass") != 3 || !strings.Contains(inApp.sent[2].Title, "baseline established") ||
+		!strings.Contains(inApp.sent[5].Title, "used") {
 		t.Fatalf("break-glass used: %d in-app, %d channel", len(inApp.sent), ob.count("ci.break_glass"))
 	}
 	for _, p := range ob.sent {
