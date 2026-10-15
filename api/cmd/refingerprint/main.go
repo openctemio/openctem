@@ -24,6 +24,12 @@
 //	                                   (a method the producer stopped sending;
 //	                                   the listed fixed-path templates per
 //	                                   origin); dry run unless -apply
+//	refingerprint -remediation-keys [-tenant <id>] [-apply]
+//	                                   re-derive every finding's remediation
+//	                                   group key (fix version, secret
+//	                                   fingerprint); dry run prints per-kind
+//	                                   counts before/after and added, changed,
+//	                                   removed; idempotent, one tenant at a time
 //	refingerprint -correlate [-apply]  one-time cross-rule correlation of
 //	                                   existing DAST findings (injection points
 //	                                   from stored evidence); dry run reports
@@ -64,6 +70,7 @@ func main() {
 	timeout := flag.Duration("timeout", 2*time.Hour, "overall time limit")
 	dastRepair := flag.Bool("dast-repair", false, "repair forked DAST findings instead of re-keying older versions")
 	correlate := flag.Bool("correlate", false, "correlate existing DAST findings across rules (research/134 section 12)")
+	remediationKeys := flag.Bool("remediation-keys", false, "re-derive remediation group keys instead of re-keying identities")
 	foldRules := flag.String("fold-dast-rules", "", "comma-separated DAST rules whose fixed request paths are one issue per origin (with -dast-repair)")
 	flag.Parse()
 
@@ -91,6 +98,9 @@ func main() {
 	store := postgres.NewFindingRekeyRepository(&postgres.DB{DB: sqlDB})
 	svc := refingerprint.NewService(store)
 
+	if *remediationKeys {
+		os.Exit(runRemediationKeys(ctx, sqlDB, *tenantFlag, *apply, *asJSON, *batch))
+	}
 	if *correlate {
 		os.Exit(runCorrelate(ctx, sqlDB, *tenantFlag, *apply, *asJSON))
 	}
