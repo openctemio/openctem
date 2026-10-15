@@ -80,7 +80,13 @@ import { CIOverrideDialog } from './ci-override-dialog'
 import { CITrustRefusals } from './ci-refusals'
 import { CISetupEntry } from './ci-setup-wizard'
 import type { CIGatePolicy, CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
-import { GATE_FIELDS, GATE_FIELD_LABEL, MAX_REASON, type GateField } from '../lib/gate-settings'
+import {
+  GATE_FIELDS,
+  GATE_FIELD_LABEL,
+  MAX_REASON,
+  validReason,
+  type GateField,
+} from '../lib/gate-settings'
 
 const NO_WRITE = 'Only owners and administrators can change CI trust and the gate'
 
@@ -892,6 +898,7 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
   const [editing, setEditing] = useState<CIGatePolicy | null>(null)
   const [adding, setAdding] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<CIGatePolicy | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
   const { t } = useTranslation()
   const policies = data?.data ?? []
   const tenantPolicy = policies.find((p) => p.scope_type === 'tenant')
@@ -1021,8 +1028,14 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
       )}
       <ConfirmDialog
         open={pendingDelete !== null}
-        onOpenChange={(o) => !o && setPendingDelete(null)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setPendingDelete(null)
+            setDeleteReason('')
+          }
+        }}
         destructive
+        disabled={deleteReason.trim() !== '' && !validReason(deleteReason)}
         title={t('confirm.gatePolicy.deleteTitle', 'Delete the gate policy for {scope}?', {
           scope: pendingDelete ? policyScope(pendingDelete, t) : '',
         })}
@@ -1034,14 +1047,40 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
         handleConfirm={async () => {
           if (!pendingDelete) return
           try {
-            await remove(pendingDelete.id ?? '')
+            await remove({ id: pendingDelete.id ?? '', reason: deleteReason })
             setPendingDelete(null)
+            setDeleteReason('')
             void mutate()
           } catch (e) {
             toast.error(getErrorMessage(e))
           }
         }}
-      />
+      >
+        {pendingDelete && pendingDelete.scope_type !== 'tenant' && (
+          <div className="space-y-1.5">
+            <Label htmlFor="gate-policy-delete-reason">
+              {t(
+                'scans.ci.gatePolicy.deleteReason',
+                'Reason (required when this loosens the gate)'
+              )}
+            </Label>
+            <Textarea
+              id="gate-policy-delete-reason"
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              maxLength={MAX_REASON}
+              rows={2}
+              aria-invalid={deleteReason.trim() !== '' && !validReason(deleteReason)}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'scans.ci.gatePolicy.deleteReasonHelp',
+                '10 to 500 characters. If the policy this scope falls back to lets more findings pass, every administrator is told and you may be asked to confirm your identity.'
+              )}
+            </p>
+          </div>
+        )}
+      </ConfirmDialog>
     </div>
   )
 }

@@ -1941,5 +1941,7 @@
   "scans.ci.reason.baseline_established": "Baseline recorded",
   "scans.ci.reason.no_results": "No results",
   "scans.ci.repoSettings.ignoredValue": "This repository sets {value}, looser than the lock allows, so it is ignored.",
-  "scans.ci.repoSettings.droppedFields": "Saving also removes {fields} from this repository’s override: a lock above ignores its looser value."
+  "scans.ci.repoSettings.droppedFields": "Saving also removes {fields} from this repository’s override: a lock above ignores its looser value.",
+  "scans.ci.gatePolicy.deleteReason": "Reason (required when this loosens the gate)",
+  "scans.ci.gatePolicy.deleteReasonHelp": "10 to 500 characters. If the policy this scope falls back to lets more findings pass, every administrator is told and you may be asked to confirm your identity."
 }

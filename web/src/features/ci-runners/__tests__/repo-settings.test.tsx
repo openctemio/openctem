@@ -325,7 +325,7 @@ describe('CIRepositorySettingsTab', () => {
     expect(within(dialog).getByTestId('dropped-fields')).toHaveTextContent('Fail on severity')
     await user.click(within(dialog).getByRole('button', { name: 'Reset to inherited' }))
     expect(mockSave).not.toHaveBeenCalled()
-    expect(mockDelete).toHaveBeenCalledWith('pol-repo')
+    expect(mockDelete).toHaveBeenCalledWith({ id: 'pol-repo', reason: expect.any(String) })
   })
 
   it('shows the baseline with its due date', () => {

@@ -401,7 +401,7 @@ function FieldEditDialog({
   const loosens = reset
     ? fieldLoosens(f, fr.value as GateValue, fr.inherited as GateValue)
     : fieldLoosens(f, fr.value as GateValue, value)
-  const askReason = !deletes && (loosens || serverAsksReason)
+  const askReason = loosens || serverAsksReason
   const reasonOk = askReason ? validReason(reason) : reason.trim() === '' || validReason(reason)
   const endOk = validEndDate(endDate)
   const lockBreach = !reset && locked && fieldLoosens(f, fr.inherited as GateValue, value)
@@ -415,7 +415,7 @@ function FieldEditDialog({
       if (reset) {
         if (!repo?.id) return
         const w = resetWrite(repo, f, meta)
-        if (w.kind === 'delete') await remove(w.id)
+        if (w.kind === 'delete') await remove({ id: w.id, reason })
         else await save({ id: w.id, body: w.body })
       } else {
         await save(overrideWrite(repositoryAssetId, repo, fields, f, value, meta))
@@ -534,7 +534,7 @@ function FieldEditDialog({
                 </AlertDescription>
               </Alert>
             )}
-            {loosens && !deletes && (
+            {loosens && (
               <Alert>
                 <AlertDescription>
                   {t(
@@ -544,7 +544,7 @@ function FieldEditDialog({
                 </AlertDescription>
               </Alert>
             )}
-            {!deletes && (
+            {(!deletes || askReason) && (
               <>
                 <div className="space-y-1.5">
                   <Label htmlFor={`${ids}-reason`}>
@@ -571,6 +571,10 @@ function FieldEditDialog({
                     )}
                   </p>
                 </div>
+              </>
+            )}
+            {!deletes && (
+              <>
                 <div className="space-y-1.5">
                   <Label htmlFor={`${ids}-end`}>
                     {t('scans.ci.repoSettings.endDate', 'End date (optional)')}
