@@ -12,3 +12,5 @@
 - New: `GET /api/v1/ci/gate-settings/{id}`: every setting with its effective value, inherited value,
   source and lock; `has_policy_override=true` on the pipelines list; `override_counts` per field on the gate policy
   list. Migration `ci_gate_policy_layers`.
+- Deleting a business unit or repository policy that loosens the gate needs a reason too (`?reason=` on the DELETE).
+  Allowing the repository's `.openctem.yml` counts as loosening, so it can be locked off.

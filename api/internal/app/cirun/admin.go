@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -309,8 +310,10 @@ func (s *Service) UpdateGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 	return &next, nil
 }
 
-// DeleteGatePolicy removes a policy (audited).
-func (s *Service) DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, a Actor) error {
+// DeleteGatePolicy removes a policy (audited). A deletion that loosens the
+// gate needs, like any loosening change, a recent sign-in and, for a
+// business unit or repository policy, a reason.
+func (s *Service) DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, reason string, a Actor) error {
 	cur, err := s.repo.GetGatePolicy(ctx, tenantID, id)
 	if err != nil {
 		return err
@@ -322,7 +325,13 @@ func (s *Service) DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 	now := s.now().UTC()
 	loosened := cirun.Loosens(inh.apply(*cur, now), inh.policy)
 	loosened = append(loosened, layerLoosens(inh, *cur, nil, now)...)
-	if err := s.requireStepUpToLoosen(ctx, a, loosened); err != nil {
+	reason = strings.TrimSpace(reason)
+	if len([]rune(reason)) > cirun.MaxPolicyReason || strings.ContainsFunc(reason, unicode.IsControl) {
+		return fmt.Errorf("%w: reason must be at most %d characters of text", shared.ErrValidation, cirun.MaxPolicyReason)
+	}
+	withReason := *cur
+	withReason.Reason = reason
+	if err := s.requireToLoosen(ctx, a, &withReason, loosened); err != nil {
 		return err
 	}
 	if err := s.repo.DeleteGatePolicy(ctx, tenantID, id); err != nil {
@@ -331,8 +340,9 @@ func (s *Service) DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 	s.logAudit(ctx, tenantID, a, auditapp.NewSuccessEvent(auditdom.ActionCIGatePolicyDeleted, auditdom.ResourceTypeCIGatePolicy, id.String()).
 		WithResourceName(policyName(cur)).
 		WithMessage("CI gate policy deleted for "+policyName(cur)).
+		WithMetadata("reason", reason).
 		WithChanges(auditdom.NewChanges().SetBefore("config", policySnapshot(cur))))
-	s.announceLoosened(ctx, tenantID, a, cur, loosened)
+	s.announceLoosened(ctx, tenantID, a, &withReason, loosened)
 	return nil
 }
 
