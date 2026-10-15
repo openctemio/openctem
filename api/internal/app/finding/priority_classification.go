@@ -907,7 +907,8 @@ func (s *PriorityClassificationService) buildPriorityContext(
 			// external-attacker "reachable" gate (see ClassifyPriority).
 			ctx.IsNetworkAccessible = true
 		case asset.ExposureIsolated, asset.ExposureUnknown:
-			// Air-gapped/isolated or unknown -> leave conservative (not reachable).
+			// Air-gapped/isolated: not reachable. Unknown: neither, see
+			// ReachabilityUnknown below.
 		}
 
 		// Attack-path reachability (close-the-loop): an asset sitting on a
@@ -942,6 +943,14 @@ func (s *PriorityClassificationService) buildPriorityContext(
 			ctx.AssetUnowned = true
 		}
 	}
+
+	// Nothing says whether an attacker can reach this finding: the asset's
+	// exposure is unknown (or there is no asset) and no attack path, threat
+	// path or scanner flag decided it. The classifier then reports
+	// reachability as unknown instead of citing unreachability.
+	unknownExposure := a == nil || a.Exposure() == asset.ExposureUnknown || a.Exposure() == ""
+	ctx.ReachabilityUnknown = unknownExposure && !ctx.IsReachable && !ctx.IsInternetAccessible &&
+		!ctx.IsNetworkAccessible && !ctx.OnOpenThreatPath
 
 	// AI-triage de-escalation signal (keyed by finding, not asset): a
 	// high-confidence "likely false positive" verdict lets the classifier lower

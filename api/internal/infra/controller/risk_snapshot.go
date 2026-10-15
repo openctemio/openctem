@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -36,6 +37,11 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 
 	// Pre-aggregate all metrics with GROUP BY tenant_id, then JOIN to tenants.
 	// This executes a fixed number of table scans regardless of tenant count.
+	// Open, fixed and remediated use the one shared definition: a disposition
+	// (false positive, accepted, duplicate) is neither closed today as a fix
+	// nor part of MTTR.
+	openSQL := vulnerability.OpenStatusSQL("status")
+	fixedSQL := vulnerability.FixedStatusSQL("status")
 	query := `
 		WITH asset_metrics AS (
 			SELECT tenant_id,
@@ -48,15 +54,15 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 		),
 		finding_metrics AS (
 			SELECT tenant_id,
-				COUNT(*) FILTER(WHERE status NOT IN ('resolved','false_positive','accepted','duplicate')) AS open_count,
-				COUNT(*) FILTER(WHERE resolved_at >= CURRENT_DATE AND resolved_at < CURRENT_DATE + 1) AS closed_today,
-				COUNT(*) FILTER(WHERE priority_class = 'P0' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p0,
-				COUNT(*) FILTER(WHERE priority_class = 'P1' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p1,
-				COUNT(*) FILTER(WHERE priority_class = 'P2' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p2,
-				COUNT(*) FILTER(WHERE priority_class = 'P3' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p3,
-				CASE WHEN COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate')) = 0 THEN 100
-					ELSE COUNT(*) FILTER(WHERE sla_status NOT IN ('exceeded','overdue') AND sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate'))
-						* 100.0 / NULLIF(COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate')), 0)
+				COUNT(*) FILTER(WHERE ` + openSQL + `) AS open_count,
+				COUNT(*) FILTER(WHERE ` + fixedSQL + ` AND resolved_at >= CURRENT_DATE AND resolved_at < CURRENT_DATE + 1) AS closed_today,
+				COUNT(*) FILTER(WHERE priority_class = 'P0' AND ` + openSQL + `) AS p0,
+				COUNT(*) FILTER(WHERE priority_class = 'P1' AND ` + openSQL + `) AS p1,
+				COUNT(*) FILTER(WHERE priority_class = 'P2' AND ` + openSQL + `) AS p2,
+				COUNT(*) FILTER(WHERE priority_class = 'P3' AND ` + openSQL + `) AS p3,
+				CASE WHEN COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND ` + openSQL + `) = 0 THEN 100
+					ELSE COUNT(*) FILTER(WHERE sla_status NOT IN ('exceeded','overdue') AND sla_deadline IS NOT NULL AND ` + openSQL + `)
+						* 100.0 / NULLIF(COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND ` + openSQL + `), 0)
 				END AS sla_pct
 			FROM findings WHERE NOT branch_only GROUP BY tenant_id
 		),
@@ -67,7 +73,7 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 				AVG(EXTRACT(epoch FROM resolved_at - first_detected_at)/3600) FILTER(WHERE severity = 'medium') AS mttr_m,
 				AVG(EXTRACT(epoch FROM resolved_at - first_detected_at)/3600) FILTER(WHERE severity = 'low') AS mttr_l
 			FROM findings
-			WHERE resolved_at >= CURRENT_DATE - 30 AND NOT branch_only
+			WHERE ` + fixedSQL + ` AND resolved_at >= CURRENT_DATE - 30 AND NOT branch_only
 			GROUP BY tenant_id
 		),
 		exposure_metrics AS (

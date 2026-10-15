@@ -29,9 +29,8 @@ FROM assets a
 3. The `Update()` repository method does NOT persist `findingCount` to the database
 4. When you read an asset, the finding count is always fresh from the database
 
-**Which findings count:** only the active statuses (`new`, `confirmed`,
-`in_progress`, `fix_applied`, `not_observed`) on the default branch
-(`riskBearingFindingStatusClause`). The risk score uses the same counts.
+**Which findings count:** only open findings (`vulnerability.OpenStatusSQL`)
+on the default branch. The risk score uses the same counts.
 
 ### risk_score, risk_scored_at and asset_risk_queue
 

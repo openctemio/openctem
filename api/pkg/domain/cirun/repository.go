@@ -81,7 +81,11 @@ type Repository interface {
 	ReserveRunReport(ctx context.Context, tenantID, runID shared.ID) error
 	// RecordRunReport adds the fingerprints a report sighted (capped at
 	// MaxRunFindings per run); ErrRunEvaluated once the run has its verdict.
+	// A report past the cap marks the run (RunFindingsOverCap).
 	RecordRunReport(ctx context.Context, tenantID, runID shared.ID, fingerprints []string) error
+	// RunFindingsOverCap reports whether the run sighted more findings than
+	// it could record; such a run fails its gate.
+	RunFindingsOverCap(ctx context.Context, tenantID, runID shared.ID) (bool, error)
 	// RunFindings returns the findings on the run's repository asset whose
 	// fingerprints the run recorded.
 	RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]RunFinding, error)
