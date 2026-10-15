@@ -205,6 +205,41 @@ describe('riskSignals', () => {
 })
 
 describe('fixGuidance', () => {
+  it('never uses a list of release-line fixes as the version to upgrade to', () => {
+    const g = fixGuidance(
+      toFindingDetail(
+        crossSpawn({
+          vulnerability: undefined,
+          component: { id: 'c', name: 'Django', version: '4.2.20', ecosystem: 'pypi' },
+          metadata: { fixed_version: '5.2.8, 5.1.14, 4.2.26' },
+        })
+      )
+    )
+    expect(g?.kind).not.toBe('upgrade')
+  })
+
+  it('takes other release lines from the component when there is no CVE record', () => {
+    const g = fixGuidance(
+      toFindingDetail(
+        crossSpawn({
+          vulnerability: undefined,
+          component: {
+            id: 'c',
+            name: 'Django',
+            version: '4.2.20',
+            ecosystem: 'pypi',
+            fixed_in: '4.2.26',
+            fixed_versions: ['5.2.8', '5.1.14', '4.2.26'],
+          },
+        })
+      )
+    )
+    if (g?.kind !== 'upgrade') throw new Error('expected an upgrade')
+    expect(g.to).toBe('4.2.26')
+    expect(g.otherFixedVersions).toEqual(['5.2.8', '5.1.14'])
+    expect(g.majorUpgrade).toBe(false)
+  })
+
   it('turns the reference finding into an upgrade with an npm override', () => {
     const g = fixGuidance(toFindingDetail(crossSpawn()))
     expect(g).toMatchObject({

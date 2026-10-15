@@ -1330,6 +1330,13 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ct
 	if ctisFinding.Vulnerability.ExploitAvailable {
 		f.SetMetadata(vulnerability.FindingMetaScannerExploitAvailable, true)
 	}
+	// The versions that fix this package, as the scanner reported them. Kept
+	// on the finding for the same reason (the catalog is not written from a
+	// report); the detail view picks the nearest one for the installed version.
+	if fixed := vulnerability.NormalizeFixedVersions(ctisFinding.Vulnerability.FixedVersion,
+		ctisFinding.Vulnerability.FixedVersions); len(fixed) > 0 {
+		f.SetMetadata(vulnerability.FindingMetaFixedVersions, fixed)
+	}
 }
 
 // setFindingTypeAndSpecializedFields sets the finding type discriminator and specialized fields.
