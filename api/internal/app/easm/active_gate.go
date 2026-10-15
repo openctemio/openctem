@@ -364,13 +364,13 @@ func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, 
 			portChecked = append(portChecked, t)
 			continue
 		}
-		if reason := scopedom.ConstrainedJobRefusal(job.Tool, ports, path, job.Ports, job.TopPorts); reason != "" {
+		if reason := scopedom.ConstrainedJobRefusal(job, ports, path); reason != "" {
 			out[t] = reason
 			continue
 		}
 		portChecked = append(portChecked, t)
 	}
-	if !isPortScanner(job.Tool) || len(portChecked) == 0 {
+	if !job.PortScan() || len(portChecked) == 0 {
 		return out, nil
 	}
 	if mode == "" {
@@ -387,12 +387,6 @@ func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, 
 		}
 	}
 	return out, nil
-}
-
-// isPortScanner reports whether tool scans ports (a port scan of a name
-// reaches every address it resolves to).
-func isPortScanner(tool string) bool {
-	return strings.EqualFold(strings.TrimSpace(tool), "naabu")
 }
 
 // namePortCaps answers, for each name among targets, the ports a port scan
