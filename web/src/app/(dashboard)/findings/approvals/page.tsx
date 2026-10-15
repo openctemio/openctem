@@ -303,6 +303,18 @@ export default function ApprovalsPage() {
                   {t('findingApprovals.selfApprove.badge', 'Self-approved')}
                 </Badge>
               )}
+              {row.original.single_person && (
+                <Badge
+                  variant="outline"
+                  className="text-xs border-sky-500/40 text-sky-600 dark:text-sky-400"
+                  title={t(
+                    'findingApprovals.single.badgeTitle',
+                    "Decided by one person: the organization's false-positive level did not require a second"
+                  )}
+                >
+                  {t('findingApprovals.single.badge', 'Single person')}
+                </Badge>
+              )}
             </div>
           )
         },
