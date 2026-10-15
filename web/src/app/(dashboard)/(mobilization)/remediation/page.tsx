@@ -99,13 +99,16 @@ import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { sanitizeExternalUrl } from '@/lib/utils'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '@/features/remediation'
+import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS, TASK_PRIORITIES } from '@/features/remediation'
 import {
   useRemediationCampaigns,
   useCreateRemediationCampaign,
   type RemediationCampaign,
 } from '@/features/remediation/api/use-remediation-campaigns'
 import { fetchAllPages } from '@/lib/api/fetch-all-pages'
+import { useGroups } from '@/features/access-control/api/use-groups'
+import { mergeFindingFilter } from '@/features/remediation/lib/finding-filter'
+import { ValidatorGroupSelect } from '@/features/remediation/components/validator-group-select'
 import { CreateJiraEpicDialog } from '@/features/remediation/components/create-jira-epic-dialog'
 import { useConfirmCampaignCompletion } from '@/features/remediation/components/complete-campaign-confirm'
 import {
@@ -176,10 +179,10 @@ function findingFilterFromForm(findingIds: string[]): Record<string, unknown> | 
   return ids.length > 0 ? { finding_ids: ids } : undefined
 }
 
-// Task priority reuses the severity soft-tint scale (urgent reads as critical)
-// rather than a private palette, so it looks like every other severity chip.
+// Task priority reuses the severity soft-tint scale rather than a private
+// palette, so it looks like every other severity chip.
 const priorityColors: Record<TaskPriority, string> = {
-  urgent: SEVERITY_BADGE_SOFT.critical,
+  critical: SEVERITY_BADGE_SOFT.critical,
   high: SEVERITY_BADGE_SOFT.high,
   medium: SEVERITY_BADGE_SOFT.medium,
   low: SEVERITY_BADGE_SOFT.low,
@@ -238,15 +241,10 @@ function daysUntil(dateStr: string | null | undefined): { days: number; overdue:
   return { days: Math.abs(days), overdue: days < 0 }
 }
 
-/** Map a TaskPriority to the API's priority (the API names urgent critical). */
-function toApiPriority(value: TaskPriority): string {
-  return value === 'urgent' ? 'critical' : value
-}
-
-/** Map API priority values to TaskPriority. */
+/** Map API priority values to TaskPriority (a legacy "urgent" reads as critical). */
 function normalizePriority(value: string): TaskPriority {
-  if (value === 'critical') return 'urgent'
-  if (['urgent', 'high', 'medium', 'low'].includes(value)) return value as TaskPriority
+  if (value === 'urgent') return 'critical'
+  if ((TASK_PRIORITIES as string[]).includes(value)) return value as TaskPriority
   return 'medium'
 }
 
@@ -295,9 +293,8 @@ function campaignToTask(c: RemediationCampaign): RemediationTask {
     findingId: linkedFindingIds[0] ?? '',
     findingIds: linkedFindingIds,
     findingTitle: `${c.finding_count} finding${c.finding_count !== 1 ? 's' : ''} linked`,
-    // Campaign priority is urgent|high|medium|low; Severity has no "urgent"
-    // (an unmapped value renders as an "Unknown" badge), so map urgent→critical.
-    severity: (c.priority === 'urgent' ? 'critical' : c.priority) as Severity,
+    // Campaign priorities share the severity scale (critical, high, medium, low).
+    severity: normalizePriority(c.priority) as Severity,
     assigneeId: c.assigned_to || '',
     assigneeName: '', // resolved from the member list in the page (assigned_to is a UUID)
     validatorId: c.assigned_team || '',
@@ -378,6 +375,7 @@ const OPEN_FINDINGS_FOR_TASKS: FindingApiFilters = {
 
 export default function RemediationPage() {
   const { t } = useTranslation()
+  const canWrite = useHasPermission(Permission.RemediationWrite)
   const router = useRouter()
 
   const {
@@ -400,16 +398,20 @@ export default function RemediationPage() {
     }
     return m
   }, [members])
+  // The validator (assigned_team) is a group: name it from the group list.
+  const canListGroups = useHasPermission(Permission.GroupsRead)
+  const { groups } = useGroups(undefined, canListGroups)
+  const groupNameById = useMemo(() => new Map(groups.map((g) => [g.id, g.name])), [groups])
 
   const tasks: RemediationTask[] = useMemo(() => {
     if (!campaignData?.data?.length) return []
     return campaignData.data.map((c) => {
       const t = campaignToTask(c)
       if (t.assigneeId) t.assigneeName = memberNameById.get(t.assigneeId) || t.assigneeId
-      if (t.validatorId) t.validatorName = memberNameById.get(t.validatorId) || t.validatorId
+      if (t.validatorId) t.validatorName = groupNameById.get(t.validatorId) || t.validatorId
       return t
     })
-  }, [campaignData, memberNameById])
+  }, [campaignData, memberNameById, groupNameById])
 
   // Completing a task with findings still open asks first and says how many.
   const { confirmCompletion, completionDialog } = useConfirmCampaignCompletion()
@@ -528,9 +530,6 @@ export default function RemediationPage() {
             finding_filter: { ...original, ...(body.finding_filter as Record<string, unknown>) },
           }
         }
-        if (typeof payload.priority === 'string') {
-          payload = { ...payload, priority: toApiPriority(payload.priority as TaskPriority) }
-        }
         await patch(`/api/v1/remediation/campaigns/${task.id}`, payload)
         await refreshCampaigns()
         toast.success('Task updated')
@@ -562,7 +561,7 @@ export default function RemediationPage() {
   // ─── Handlers ────────────────────────────────────────────────────
 
   // Export covers EVERY campaign (all pages) mapped to tasks and re-filtered by
-  // the current filters — not just the loaded page (per_page=50 in the hook).
+  // the current filters.
   const [isExporting, setIsExporting] = useState(false)
   const fetchAllFilteredTasks = useCallback(async (): Promise<RemediationTask[]> => {
     const campaigns = await fetchAllPages<RemediationCampaign>(
@@ -579,11 +578,11 @@ export default function RemediationPage() {
     const rows = campaigns.map((c) => {
       const t = campaignToTask(c)
       if (t.assigneeId) t.assigneeName = memberNameById.get(t.assigneeId) || t.assigneeId
-      if (t.validatorId) t.validatorName = memberNameById.get(t.validatorId) || t.validatorId
+      if (t.validatorId) t.validatorName = groupNameById.get(t.validatorId) || t.validatorId
       return t
     })
     return applyTaskFilters(rows, quickFilter, filters)
-  }, [quickFilter, filters, memberNameById])
+  }, [quickFilter, filters, memberNameById, groupNameById])
 
   const handleExportCsv = useCallback(async () => {
     if (isExporting) return
@@ -762,7 +761,7 @@ export default function RemediationPage() {
       await createCampaign({
         name: formData.title,
         description: formData.description,
-        priority: toApiPriority(formData.priority),
+        priority: formData.priority,
         status: 'draft',
         due_date: formData.dueDate?.toISOString() || null,
         assigned_to: formData.assignedTo || undefined,
@@ -789,10 +788,13 @@ export default function RemediationPage() {
       await patch(`/api/v1/remediation/campaigns/${editTask.id}`, {
         name: formData.title,
         description: formData.description,
-        priority: toApiPriority(formData.priority),
+        priority: formData.priority,
         due_date: formData.dueDate?.toISOString() || null,
         assigned_to: formData.assignedTo || '',
-        finding_filter: findingFilterFromForm(formData.findingIds),
+        finding_filter: mergeFindingFilter(
+          campaignData?.data?.find((c) => c.id === editTask.id)?.finding_filter,
+          findingFilterFromForm(formData.findingIds)
+        ),
       })
       await refreshCampaigns()
       setFormData(emptyFormData)
@@ -801,7 +803,7 @@ export default function RemediationPage() {
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to update task'))
     }
-  }, [editTask, formData, refreshCampaigns])
+  }, [editTask, formData, refreshCampaigns, campaignData])
 
   const handleCopyId = useCallback((id: string) => {
     copyToClipboard(id)
@@ -879,7 +881,10 @@ export default function RemediationPage() {
         header: ({ column }) => <DataTableColumnHeader column={column} title="Priority" />,
         cell: ({ row }) => (
           <Badge variant="outline" className={`${priorityColors[row.original.priority]} text-xs`}>
-            {TASK_PRIORITY_LABELS[row.original.priority]}
+            {t(
+              `remediationTasks.priority.${row.original.priority}`,
+              TASK_PRIORITY_LABELS[row.original.priority]
+            )}
           </Badge>
         ),
       },
@@ -888,7 +893,10 @@ export default function RemediationPage() {
         header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
         cell: ({ row }) => (
           <Badge variant={statusVariants[row.original.status]} className="text-xs">
-            {TASK_STATUS_LABELS[row.original.status]}
+            {t(
+              `remediationTasks.status.${row.original.status}`,
+              TASK_STATUS_LABELS[row.original.status]
+            )}
           </Badge>
         ),
       },
@@ -979,6 +987,7 @@ export default function RemediationPage() {
               icon,
               onClick: () => handleTaskAction(action, task),
               separatorBefore: idx === 0,
+              permission: Permission.RemediationWrite,
             })
           })
           rowActions.push({
@@ -999,7 +1008,7 @@ export default function RemediationPage() {
         },
       },
     ],
-    [handleTaskAction, handleCopyId]
+    [handleTaskAction, handleCopyId, t]
   )
 
   // ─── Render ────────────────────────────────────────────────────────
@@ -1099,10 +1108,10 @@ export default function RemediationPage() {
   const filterPanel = (
     <FacetPanel activeCount={activeFilterCount} onClearAll={clearFilters} className="h-full">
       <FacetSection title="Priority" selectedCount={filters.priorities.length}>
-        {(['urgent', 'high', 'medium', 'low'] as TaskPriority[]).map((p) => (
+        {TASK_PRIORITIES.map((p) => (
           <FacetOption
             key={p}
-            label={TASK_PRIORITY_LABELS[p]}
+            label={t(`remediationTasks.priority.${p}`, TASK_PRIORITY_LABELS[p])}
             checked={filters.priorities.includes(p)}
             onCheckedChange={() => togglePriorityFilter(p)}
           />
@@ -1112,7 +1121,7 @@ export default function RemediationPage() {
         {(['open', 'in_progress', 'review', 'completed', 'blocked'] as TaskStatus[]).map((st) => (
           <FacetOption
             key={st}
-            label={TASK_STATUS_LABELS[st]}
+            label={t(`remediationTasks.status.${st}`, TASK_STATUS_LABELS[st])}
             checked={filters.statuses.includes(st)}
             onCheckedChange={() => toggleStatusFilter(st)}
           />
@@ -1144,16 +1153,18 @@ export default function RemediationPage() {
           title="Remediation tasks"
           description="Track the work of fixing findings — who owns it, where it stands, and when it is due."
         >
-          <Button
-            size="sm"
-            onClick={() => {
-              setFormData(emptyFormData)
-              setIsCreateOpen(true)
-            }}
-          >
-            <Plus className="me-2 h-4 w-4" />
-            New task
-          </Button>
+          {canWrite && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setFormData(emptyFormData)
+                setIsCreateOpen(true)
+              }}
+            >
+              <Plus className="me-2 h-4 w-4" />
+              {t('remediationTasks.tasks.new', 'New task')}
+            </Button>
+          )}
         </PageHeader>
 
         <SectionTabs tabs={REMEDIATION_SECTION_TABS} className="mt-4 mb-0" />
@@ -1217,7 +1228,7 @@ export default function RemediationPage() {
                         <div key={status} className="min-w-0 space-y-3">
                           <div className="flex items-center justify-between px-1">
                             <span className="text-sm font-medium">
-                              {TASK_STATUS_LABELS[status]}
+                              {t(`remediationTasks.status.${status}`, TASK_STATUS_LABELS[status])}
                             </span>
                             <span className="text-xs tabular-nums text-muted-foreground">
                               {column.length}
@@ -1271,7 +1282,10 @@ export default function RemediationPage() {
                                       variant="outline"
                                       className={`${priorityColors[task.priority]} text-[11px]`}
                                     >
-                                      {TASK_PRIORITY_LABELS[task.priority]}
+                                      {t(
+                                        `remediationTasks.priority.${task.priority}`,
+                                        TASK_PRIORITY_LABELS[task.priority]
+                                      )}
                                     </Badge>
                                     {overdue && (
                                       <Badge variant="destructive" className="text-[11px]">
@@ -1323,25 +1337,27 @@ export default function RemediationPage() {
         )}
 
         <BulkActionBar count={selectedIds.length} onClear={clearSelection} noun="tasks selected">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8">
-                <ArrowRight className="me-1.5 h-3.5 w-3.5" />
-                Move to
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => handleBulkAction('Moved', 'In Progress')}>
-                In progress
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleBulkAction('Moved', 'Review')}>
-                Review
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleBulkAction('Moved', 'Completed')}>
-                Completed
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canWrite && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8">
+                  <ArrowRight className="me-1.5 h-3.5 w-3.5" />
+                  Move to
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => handleBulkAction('Moved', 'In Progress')}>
+                  In progress
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkAction('Moved', 'Review')}>
+                  Review
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkAction('Moved', 'Completed')}>
+                  Completed
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </BulkActionBar>
       </Main>
 
@@ -1468,7 +1484,10 @@ function TaskDetailSheet({
   const [manageOpen, setManageOpen] = useState(false)
   const [pendingUnlink, setPendingUnlink] = useState<{ id: string; title: string } | null>(null)
   const { t } = useTranslation()
-  const canDelete = useHasPermission(Permission.RemediationWrite)
+  // Every edit in the drawer is a campaign write; without the permission the
+  // drawer is read-only (the API refuses the write anyway).
+  const canWrite = useHasPermission(Permission.RemediationWrite)
+  const canDelete = canWrite
 
   if (!task) return null
 
@@ -1545,6 +1564,7 @@ function TaskDetailSheet({
                 className="-mx-1 cursor-text rounded px-1 hover:bg-muted/50"
                 title="Click to rename"
                 onClick={() => {
+                  if (!canWrite) return
                   setTitleDraft(task.title)
                   setEditingTitle(true)
                 }}
@@ -1556,30 +1576,33 @@ function TaskDetailSheet({
           badges={
             <>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+                <DropdownMenuTrigger asChild disabled={!canWrite}>
                   <Badge
                     className={`${priorityColors[task.priority]} h-5 cursor-pointer text-xs`}
                     title="Change priority"
                   >
-                    {TASK_PRIORITY_LABELS[task.priority]}
+                    {t(
+                      `remediationTasks.priority.${task.priority}`,
+                      TASK_PRIORITY_LABELS[task.priority]
+                    )}
                   </Badge>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                  {(['urgent', 'high', 'medium', 'low'] as TaskPriority[]).map((p) => (
+                  {TASK_PRIORITIES.map((p) => (
                     <DropdownMenuItem key={p} onClick={() => onPatch(task, { priority: p })}>
-                      {TASK_PRIORITY_LABELS[p]}
+                      {t(`remediationTasks.priority.${p}`, TASK_PRIORITY_LABELS[p])}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
               <Badge variant={statusVariants[task.status]} className="h-5 text-xs">
-                {TASK_STATUS_LABELS[task.status]}
+                {t(`remediationTasks.status.${task.status}`, TASK_STATUS_LABELS[task.status])}
               </Badge>
             </>
           }
           meta={[task.findingTitle]}
           actions={
-            actions.length > 0 ? (
+            canWrite && actions.length > 0 ? (
               <>
                 {actions.map(({ action, label, icon: Icon }, i) => (
                   <Button
@@ -1665,6 +1688,7 @@ function TaskDetailSheet({
                   <AssigneeSelect
                     variant="ghost"
                     showFullName
+                    disabled={!canWrite}
                     placeholder="Assign"
                     value={
                       task.assigneeId
@@ -1677,23 +1701,17 @@ function TaskDetailSheet({
                 {/* Validator (assigned_team) verifies the fix; shown once the task
                     is in validation so fixer and verifier are different people. */}
                 {task.status === 'review' && (
-                  <DetailField label="Validator">
-                    <AssigneeSelect
-                      variant="ghost"
-                      showFullName
-                      placeholder="Assign validator"
-                      value={
-                        task.validatorId
-                          ? { id: task.validatorId, name: task.validatorName || 'Assigned' }
-                          : null
-                      }
-                      onChange={(user) => onPatch(task, { assigned_team: user?.id ?? '' })}
+                  <DetailField label={t('remediationTasks.validator.label', 'Validator group')}>
+                    <ValidatorGroupSelect
+                      value={task.validatorId ?? ''}
+                      disabled={!canWrite}
+                      onChange={(groupId) => onPatch(task, { assigned_team: groupId })}
                     />
                   </DetailField>
                 )}
                 <DetailField label="Start date">
                   <Popover open={startOpen} onOpenChange={setStartOpen}>
-                    <PopoverTrigger asChild>
+                    <PopoverTrigger asChild disabled={!canWrite}>
                       <button className="-mx-1 rounded px-1 text-start hover:bg-muted/50">
                         <span className="text-sm font-medium">
                           {safeFormatDate(task.startDate, { month: 'short', day: 'numeric' }) ??
@@ -1721,7 +1739,7 @@ function TaskDetailSheet({
                 </DetailField>
                 <DetailField label="Due date">
                   <Popover open={dueOpen} onOpenChange={setDueOpen}>
-                    <PopoverTrigger asChild>
+                    <PopoverTrigger asChild disabled={!canWrite}>
                       <button className="-mx-1 rounded px-1 text-start hover:bg-muted/50">
                         <span
                           className={`text-sm font-medium ${overdue ? 'text-destructive' : ''}`}
@@ -1768,6 +1786,7 @@ function TaskDetailSheet({
                 <p
                   className="cursor-text rounded-lg bg-muted/30 p-3 text-sm leading-relaxed hover:bg-muted/50"
                   onClick={() => {
+                    if (!canWrite) return
                     setDescDraft(task.description || '')
                     setEditingDesc(true)
                   }}
@@ -1783,14 +1802,17 @@ function TaskDetailSheet({
               title="Linked findings"
               count={linked.length}
               actions={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setManageOpen(true)}
-                >
-                  <Plus className="h-3 w-3" /> Manage
-                </Button>
+                canWrite ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setManageOpen(true)}
+                  >
+                    <Plus className="h-3 w-3" />{' '}
+                    {t('remediationTasks.tasks.manageFindings', 'Manage')}
+                  </Button>
+                ) : undefined
               }
             >
               {linked.length === 0 ? (
@@ -1820,6 +1842,7 @@ function TaskDetailSheet({
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 text-muted-foreground"
+                          hidden={!canWrite}
                           aria-label={t('confirm.remediation.unlinkFindingLabel', 'Unlink finding')}
                           onClick={() =>
                             setPendingUnlink({ id, title: f ? f.title || f.message || id : id })
@@ -1902,6 +1925,7 @@ function TaskFormDialog({
   onSubmit,
   onCancel,
 }: TaskFormDialogProps) {
+  const { t } = useTranslation()
   const isEdit = mode === 'edit'
 
   return (
@@ -1956,10 +1980,11 @@ function TaskFormDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
+                    {TASK_PRIORITIES.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {t(`remediationTasks.priority.${p}`, TASK_PRIORITY_LABELS[p])}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

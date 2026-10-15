@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, post, patch, del } from '@/lib/api/client'
+import { fetchAllPages } from '@/lib/api/fetch-all-pages'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
 import type { MarkFixedRequest, MarkFixedResult } from './mark-fixed.types'
 
@@ -47,19 +48,38 @@ interface PaginatedResponse<T> {
   per_page: number
 }
 
+// The task list reads every campaign (its metrics, board, search and the
+// "add to existing task" picker all work on the whole list), one API page at a
+// time through the shared fetchAllPages, bounded so a runaway list cannot
+// stall the page.
+const CAMPAIGN_PAGE_SIZE = 100
+const CAMPAIGN_MAX_PAGES = 20
+
+/** Reads every page of a campaign list URL (the URL carries the filters). */
+export async function fetchAllCampaigns(
+  url: string
+): Promise<PaginatedResponse<RemediationCampaign>> {
+  const sep = url.includes('?') ? '&' : '?'
+  const data = await fetchAllPages<RemediationCampaign>(
+    (page, perPage) => `${url}${sep}page=${page}&per_page=${perPage}`,
+    { perPage: CAMPAIGN_PAGE_SIZE, maxPages: CAMPAIGN_MAX_PAGES }
+  )
+  return { data, total: data.length, page: 1, per_page: data.length }
+}
+
 export function useRemediationCampaigns(filters?: {
   status?: string
   priority?: string
   search?: string
 }) {
   const params = new URLSearchParams()
-  params.set('per_page', '50')
   if (filters?.status) params.set('status', filters.status)
   if (filters?.priority) params.set('priority', filters.priority)
   if (filters?.search) params.set('search', filters.search)
+  const qs = params.toString()
   return useSWR<PaginatedResponse<RemediationCampaign>>(
-    `/api/v1/remediation/campaigns?${params.toString()}`,
-    get,
+    `/api/v1/remediation/campaigns${qs ? `?${qs}` : ''}`,
+    fetchAllCampaigns,
     { revalidateOnFocus: false }
   )
 }
