@@ -736,6 +736,7 @@ type Services struct {
 
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
+	RemediationTask     *remediation.TaskService
 	RemediationGroup    *remediation.GroupService
 
 	// Business Units
@@ -1547,6 +1548,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(remediation.NewCampaignFilterResolver(s.Vulnerability, s.BulkGuard))
+	// Remediation tasks (RFC-098): who fixes an action and by when; state,
+	// deadline and counters derived from the member findings.
+	s.RemediationTask = remediation.NewTaskService(repos.RemediationTask, log)
+	s.RemediationTask.SetDataScope(s.DataScope)
+	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
+	s.RemediationTask.SetAuditLogger(s.Audit)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
