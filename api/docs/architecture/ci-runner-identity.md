@@ -82,9 +82,11 @@ findings per run.
 - `ci_run_findings`: `(run_id, fingerprint)`; the gate joins it to `findings`
   of the run's asset.
 - Aggregate runs (RFC-051 §4.1, migration `001220`): `ci_runs.aggregate`
-  marks the run shared by the parallel capability jobs of one pipeline run
-  (at most one open per pipeline, external run id, attempt and commit:
-  `idx_ci_runs_aggregate_open`). Its upload tokens are in `ci_run_tokens`
+  marks the run shared by the parallel capability jobs of one pipeline run:
+  one per pipeline, external run id and commit, whatever the attempt
+  (`evidence_union`, `idx_ci_runs_pipeline_run`, migration
+  `ci_run_evidence_union`). A later attempt re-opens it and carries the
+  verdict's scanner failures (`carried_scan_failures`) until it uploads. Its upload tokens are in `ci_run_tokens`
   (`token_hash` primary key, composite FK `(tenant_id, run_id)` to the run,
   cascade; the job id; expiry), one per job exchange; it keeps none in
   `ci_runs.token_hash`. Token lookup reads `ci_runs.token_hash` first, then

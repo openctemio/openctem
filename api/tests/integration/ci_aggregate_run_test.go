@@ -118,13 +118,14 @@ func TestCIRunner_AggregateRun(t *testing.T) {
 		t.Fatal("joins not audited")
 	}
 
-	// Evaluated: no job can add results any more, and the next aggregate
-	// exchange of the pipeline run opens a new run.
+	// Evaluated: no job can add results any more until a later attempt of
+	// the pipeline run (a retry or re-run) joins it: that re-opens the same
+	// run, never a new empty one.
 	if c := upload(run, tokA, ciFinding("Late", "late", "high", ctis.FindingTypeVulnerability, "late.go", 1)); c != http.StatusConflict {
 		t.Fatalf("upload after the verdict: %d", c)
 	}
-	if _, o := join(map[string]any{"job_id": "607"}, sha); o["run_id"] == run || o["run_id"] == nil {
-		t.Fatalf("an evaluated run was joined: %v", o)
+	if _, o := join(map[string]any{"job_id": "607"}, sha); o["run_id"] != run {
+		t.Fatalf("a retry of the pipeline run opened another run: %v", o)
 	}
 
 	// A long job renews its token (continuation) without breaking the
