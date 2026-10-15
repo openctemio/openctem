@@ -1395,3 +1395,57 @@ func TestFindingApprovalService_ClosureReason(t *testing.T) {
 	assert.Equal(t, vulnerability.Closure{Reason: vulnerability.ClosureReasonCompensatingControl},
 		findingRepo.statusUpdates[1].Closure)
 }
+
+// An accepted risk is capped by the finding's priority: a request past the
+// cap is refused (never shortened), a request with no end gets the cap when
+// it is shorter than the default, and an approval past the finding's cap now
+// (its priority rose after the request) is refused too.
+func TestFindingApprovalService_AcceptanceCapByPriority(t *testing.T) {
+	tenantID, findingID := shared.NewID(), shared.NewID()
+	findingRepo := newMockFindingRepository()
+	f := newApprovalTestFinding(t)
+	findingRepo.findings[findingID] = f
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+	request := func(end *time.Time) (*vulnerability.Approval, error) {
+		var s *string
+		if end != nil {
+			v := end.Format(time.RFC3339)
+			s = &v
+		}
+		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "accepted",
+			ClosureReason: "risk_accepted", Justification: "why", RequestedBy: shared.NewID().String(), ExpiresAt: s,
+		})
+	}
+	day := 24 * time.Hour
+	at := func(d time.Duration) *time.Time { v := time.Now().Add(d); return &v }
+
+	// P2: 180 days allowed, 200 refused.
+	f.SetPriorityClassification(vulnerability.PriorityP2, "test")
+	_, err := request(at(170 * day))
+	require.NoError(t, err)
+	_, err = request(at(200 * day))
+	require.ErrorIs(t, err, shared.ErrValidation, "an end past the P2 cap is refused")
+
+	// KEV: 30 days; no end means 30 days, not the 90-day default.
+	f.SetIsInKEV(true)
+	kev, err := request(nil)
+	require.NoError(t, err)
+	require.NotNil(t, kev.ExpiresAt)
+	assert.WithinDuration(t, time.Now().Add(30*day), *kev.ExpiresAt, time.Minute)
+	_, err = request(at(60 * day))
+	require.ErrorIs(t, err, shared.ErrValidation, "an end past the KEV cap is refused")
+
+	// A P3 request for 300 days, then the finding becomes P0: approval refused.
+	f.SetIsInKEV(false)
+	f.SetPriorityClassification(vulnerability.PriorityP3, "test")
+	long, err := request(at(300 * day))
+	require.NoError(t, err)
+	f.SetPriorityClassification(vulnerability.PriorityP0, "test")
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: long.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.ErrorIs(t, err, shared.ErrValidation, "approving past the current cap is refused")
+	assert.Empty(t, findingRepo.statusUpdates, "nothing was accepted")
+}
