@@ -144,6 +144,12 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 		m.Register(controller.NewPurgeController("invitation-purge", cfg.Worker.InvitationPurgeInterval,
 			svc.Tenant.CleanupExpiredInvitations, log.With("controller", "invitation-purge")))
 	}
+	if svc.Onboarding != nil {
+		// Decided and expired join requests carry the requester's address:
+		// gone 30 days after (RFC-104).
+		m.Register(controller.NewPurgeController("join-request-purge", cfg.Worker.InvitationPurgeInterval,
+			svc.Onboarding.Purge, log.With("controller", "join-request-purge")))
+	}
 	if repos.AdminConsole != nil {
 		console := repos.AdminConsole
 		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,
