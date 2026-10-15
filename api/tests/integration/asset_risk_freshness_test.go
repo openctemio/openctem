@@ -56,6 +56,7 @@ func newRiskFixture(t *testing.T) riskFixture {
 	}
 	fx.svc = assetapp.NewAssetService(fx.assets, logger.NewNop())
 	fx.svc.SetRiskQueue(fx.queue, fx.assets)
+	fx.svc.SetScoringVersions(postgres.NewScoringRepository(pdb))
 	return fx
 }
 

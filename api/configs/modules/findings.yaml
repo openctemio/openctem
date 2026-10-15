@@ -18,8 +18,8 @@
     - list_remediation_groups
   jobs:
     - ApprovalExpirationController
-    - PriorityReclassifyController
-    - PriorityReclassifySweepController
+    - FindingPriorityController
+    - FindingPriorityReconcileController
     - PriorityAuditRetentionController
     - EvidenceRetentionController
     - AttachmentRetentionController

@@ -222,6 +222,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		}
 		return nil
 	},
+	"finding_priority_queue": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM finding_priority_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear finding_priority_queue: %v", err)
+		}
+		return nil
+	},
 	// The new owner is a second person (a transfer to oneself is refused).
 	"tenant_ownership_transfers": func(s *schemaSeeder) map[string]any {
 		other := shared.NewID().String()
