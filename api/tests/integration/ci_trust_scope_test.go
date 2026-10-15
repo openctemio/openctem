@@ -554,3 +554,49 @@ func TestCITrustScope_ProofNeverBypassesStrict(t *testing.T) {
 		t.Fatalf("evidence: %+v", l)
 	}
 }
+
+// The trust API's read: every trust's links in one read, and the evidence's
+// repository and run only for a reader whose data scope reaches that
+// repository (the time stays: it says a verified run happened).
+func TestCITrustScope_ReadFollowsDataScope(t *testing.T) {
+	r := newCIScopeRig(t)
+	ctx := context.Background()
+	a := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	b := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"beta", "gamma"}})
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, a.Audience, "acme/api", "main", strings.Repeat("7", 40), nil)); code != http.StatusCreated {
+		t.Fatalf("exchange: %d", code)
+	}
+	user, _ := shared.IDFromString(r.admin.UserID)
+	read := func(scope *shared.DataScope) map[string][]scopedom.CITrustLink {
+		t.Helper()
+		m, err := r.svc.TrustScopes(ctx, r.tenant, nil, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	for name, scope := range map[string]*shared.DataScope{
+		"unscoped":     nil,
+		"unrestricted": {TenantID: r.tenant, UserID: user, Unrestricted: true},
+	} {
+		m := read(scope)
+		if len(m[a.ID.String()]) != 1 || len(m[b.ID.String()]) != 2 {
+			t.Fatalf("%s: grouping %v", name, m)
+		}
+		if l := m[a.ID.String()][0]; l.SeenAt == nil || l.SeenRepository != r.host+"/acme/api" || l.SeenRunID == nil {
+			t.Fatalf("%s: evidence hidden: %+v", name, l)
+		}
+	}
+	m := read(&shared.DataScope{TenantID: r.tenant, UserID: user}) // restricted, no access
+	if l := m[a.ID.String()][0]; l.SeenAt == nil || l.SeenRepository != "" || l.SeenRunID != nil || l.SeenOwnerID != "" {
+		t.Fatalf("restricted reader saw the evidence's repository: %+v", l)
+	}
+	// One trust only, and never another tenant's links.
+	one, err := r.svc.TrustScopes(ctx, r.tenant, &b.ID, nil)
+	if err != nil || len(one) != 1 || len(one[b.ID.String()]) != 2 {
+		t.Fatalf("one trust: %v %v", one, err)
+	}
+	if other, err := r.svc.TrustScopes(ctx, r.other, nil, nil); err != nil || len(other) != 0 {
+		t.Fatalf("another tenant read: %v %v", other, err)
+	}
+}
