@@ -543,9 +543,12 @@ func (s *PriorityClassificationService) publishIfChanged(
 	if previousClass != nil && *previousClass == c.Class {
 		return // no transition
 	}
-	if changeEventsCoalesced(ctx) {
+	if changeEventsCoalesced(ctx) && c.Class != vulnerability.PriorityP0 {
 		// A recompute caused by a scoring change: the worker sends one
 		// summary for the whole change instead of one event per finding.
+		// A move INTO P0 still gets its own event (security first: it opens
+		// the ticket and starts the workflow a P0 needs; the flood guard
+		// below still bounds it). Every other move is in the summary.
 		return
 	}
 

@@ -9,6 +9,7 @@ package reclassify
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -91,7 +92,9 @@ func (r *Reclassifier) SetSLARecomputer(s SLARecomputer) {
 
 // SummaryPublisher sends the one notification of a scoring change.
 type SummaryPublisher interface {
-	PublishScoringSummary(ctx context.Context, s scoring.ChangeSummary) error
+	// PublishScoringSummaryInTx writes the summary's notification inside tx,
+	// the transaction that marks the summary notified.
+	PublishScoringSummaryInTx(ctx context.Context, tx *sql.Tx, s scoring.ChangeSummary) error
 }
 
 // SetSummaryPublisher wires the scoring change summary notification.
@@ -189,20 +192,17 @@ func (r *Reclassifier) ProcessQueue(ctx context.Context, limit, perTenant int) (
 }
 
 // publishDrainedSummaries sends one notification per scoring change whose
-// recompute has drained for a tenant.
+// recompute has drained for a tenant. Each is enqueued in the transaction
+// that marks it notified; one that fails to enqueue stays pending and is
+// retried on the next pass (logged, not returned: it must not requeue the
+// pass's assets).
 func (r *Reclassifier) publishDrainedSummaries(ctx context.Context) error {
-	summaries, err := r.queue.ClaimDrainedSummaries(ctx, 50)
-	if err != nil {
-		return err
+	var send scoring.SummarySender
+	if r.summaries != nil {
+		send = r.summaries.PublishScoringSummaryInTx
 	}
-	for _, s := range summaries {
-		if r.summaries == nil {
-			continue
-		}
-		if err := r.summaries.PublishScoringSummary(ctx, s); err != nil {
-			r.logger.Warn("scoring change summary not sent", "tenant_id", s.TenantID.String(),
-				"scoring_change_id", s.ChangeID, "error", err)
-		}
+	if _, err := r.queue.ClaimDrainedSummaries(ctx, 50, send); err != nil {
+		r.logger.Warn("scoring change summaries not sent; retried on the next pass", "error", err)
 	}
 	return nil
 }
