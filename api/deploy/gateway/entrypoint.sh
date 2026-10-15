@@ -58,6 +58,22 @@ http)
 	;;
 esac
 
+# Which header a trusted front proxy carries the client address in. Only
+# headers a proxy sets for the client are accepted: a free-form name would let
+# a typo (or a header the client controls end to end) decide the address.
+# Empty means the default, as Caddy would otherwise read an empty list.
+client_ip_headers="${OPENCTEM_CLIENT_IP_HEADERS:-X-Forwarded-For}"
+for h in $client_ip_headers; do
+	case "$(printf '%s' "$h" | tr '[:upper:]' '[:lower:]')" in
+	x-forwarded-for | cf-connecting-ip | true-client-ip) ;;
+	*) die "OPENCTEM_CLIENT_IP_HEADERS: $h is not one of: X-Forwarded-For, Cf-Connecting-Ip, True-Client-Ip (space-separated, tried in order)" ;;
+	esac
+done
+export OPENCTEM_CLIENT_IP_HEADERS="$client_ip_headers"
+if [ "$client_ip_headers" != X-Forwarded-For ] && [ -z "${OPENCTEM_TRUSTED_PROXIES:-}" ]; then
+	echo "openctem-gateway: WARNING: OPENCTEM_CLIENT_IP_HEADERS=$client_ip_headers has no effect without OPENCTEM_TRUSTED_PROXIES (the proxy that sets it)" >&2
+fi
+
 # Sensor protocol v3 gRPC binding (RFC-059 §5): layer-4 routing on this
 # port to the API's mTLS listener, by the sensor ALPN id (alpn) or by the
 # ALPN id and a dedicated sensor host name (passthrough).

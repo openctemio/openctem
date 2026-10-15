@@ -287,6 +287,13 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 	if localAuth == nil && tenantH == nil {
 		return
 	}
+	if tenantH != nil {
+		// What inviting an address would do, before sending (RFC-095): the
+		// same gate as creating an invitation.
+		router.Group("/api/v1/organization/invitations", func(r Router) {
+			r.POST("/preview", tenantH.PreviewInvitation, middleware.RequireAdmin(), middleware.Require(permission.MembersInvite))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
 	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {
 		if localAuth != nil {
 			r.DELETE("/mfa", localAuth.ResetMemberMFA, middleware.RequireAdmin(), requireStepUp())
