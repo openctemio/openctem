@@ -36,7 +36,7 @@ type CIAdminService interface {
 	ListGatePolicies(ctx context.Context, tenantID shared.ID) ([]cirun.GatePolicy, error)
 	CreateGatePolicy(ctx context.Context, tenantID shared.ID, in cirunapp.GatePolicyInput, a cirunapp.Actor) (*cirun.GatePolicy, error)
 	UpdateGatePolicy(ctx context.Context, tenantID, id shared.ID, in cirunapp.GatePolicyInput, a cirunapp.Actor) (*cirun.GatePolicy, error)
-	DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, a cirunapp.Actor) error
+	DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, reason string, a cirunapp.Actor) error
 	CreateOverride(ctx context.Context, tenantID shared.ID, in cirunapp.OverrideInput, a cirunapp.Actor) (*cirun.GateOverride, error)
 	ListOverrides(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope) ([]cirun.GateOverride, error)
 	GetGatePolicy(ctx context.Context, tenantID, id shared.ID) (*cirun.GatePolicy, error)
@@ -46,15 +46,16 @@ type CIAdminService interface {
 
 // CIAdminHandler serves /api/v1/ci administration.
 type CIAdminHandler struct {
-	svc       CIAdminService
-	pipelines CIPipelineService
-	coverage  CICoverageService
-	settings  CISettingsService
-	codeScan  CICodeScanService
-	baseline  CIGateBaselineService
-	refusals  CIRefusalService
-	dataScope DataScopeEnforcer
-	logger    *logger.Logger
+	svc          CIAdminService
+	pipelines    CIPipelineService
+	coverage     CICoverageService
+	settings     CISettingsService
+	codeScan     CICodeScanService
+	baseline     CIGateBaselineService
+	repoSettings CIRepositorySettingsService
+	refusals     CIRefusalService
+	dataScope    DataScopeEnforcer
+	logger       *logger.Logger
 }
 
 // SetStepUpGate passes the re-authentication gate to the service: a gate
@@ -307,15 +308,35 @@ type CIGatePolicyResponse struct {
 	AllowRepoPolicy bool `json:"allow_repo_policy"`
 	// FixableOnly: a dependency or image vulnerability blocks on severity
 	// or EPSS only when a fixed version exists (KEV still blocks).
-	FixableOnly bool      `json:"fixable_only"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	FixableOnly bool `json:"fixable_only"`
+	// BaselineOnFirstRun records the gate baseline on a repository's first
+	// verified default-branch run.
+	BaselineOnFirstRun bool `json:"baseline_on_first_run"`
+	// BaselineGraceDays: baseline findings block again this many days after
+	// the baseline (absent: no end).
+	BaselineGraceDays *int `json:"baseline_grace_days,omitempty"`
+	// BaselineSecretsBlock: secrets in the baseline still block
+	// default-branch runs.
+	BaselineSecretsBlock bool `json:"baseline_secrets_block"`
+	// Fields are the fields this policy sets; the others are inherited.
+	Fields []string `json:"fields"`
+	// LockedFields are fields no layer below may loosen.
+	LockedFields []string `json:"locked_fields"`
+	// Reason says why a repository policy differs from what it inherits.
+	Reason string `json:"reason,omitempty"`
+	// ExpiresAt ends a repository policy (absent: no end).
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 func toCIPolicyResponse(p *cirun.GatePolicy) CIGatePolicyResponse {
 	out := CIGatePolicyResponse{ID: p.ID.String(), ScopeType: p.ScopeType, Enabled: p.Enabled, Mode: p.Mode,
 		FailOnSeverity: p.FailOnSeverity, NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV,
-		EPSSThreshold: p.EPSSThreshold, Modes: p.Modes, AllowRepoPolicy: p.AllowRepoPolicy, FixableOnly: p.FixableOnly, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
+		EPSSThreshold: p.EPSSThreshold, Modes: p.Modes, AllowRepoPolicy: p.AllowRepoPolicy, FixableOnly: p.FixableOnly,
+		BaselineOnFirstRun: p.BaselineOnFirstRun, BaselineGraceDays: p.BaselineGraceDays, BaselineSecretsBlock: p.BaselineSecretsBlock,
+		Fields: nonNilStrings(p.Fields), LockedFields: nonNilStrings(p.LockedFields), Reason: p.Reason, ExpiresAt: p.ExpiresAt,
+		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
 	if p.ScopeID != nil {
 		out.ScopeID = p.ScopeID.String()
 	}
@@ -326,6 +347,9 @@ func toCIPolicyResponse(p *cirun.GatePolicy) CIGatePolicyResponse {
 type CIGatePolicyListResponse struct {
 	Data    []CIGatePolicyResponse `json:"data"`
 	Default CIGatePolicyResponse   `json:"default"`
+	// OverrideCounts counts, per field, the active repository policies
+	// (among those the caller may see) that set it.
+	OverrideCounts map[string]int `json:"override_counts"`
 }
 
 // CIGatePolicyRequest creates or changes a gate policy. scope_type and
@@ -349,6 +373,30 @@ type CIGatePolicyRequest struct {
 	// FixableOnly: vulnerabilities with no fixed version are listed, not
 	// blocking (KEV still blocks). Turning it on loosens the gate.
 	FixableOnly *bool `json:"fixable_only,omitempty"`
+	// BaselineOnFirstRun records the gate baseline on the first verified
+	// default-branch run (turning it on loosens the gate).
+	BaselineOnFirstRun *bool `json:"baseline_on_first_run,omitempty"`
+	// BaselineGraceDays is replaced on every write (omit it for no end):
+	// baseline findings block again this many days (1 to 730) after the
+	// baseline. Removing or lengthening it loosens the gate.
+	BaselineGraceDays *int `json:"baseline_grace_days,omitempty"`
+	// BaselineSecretsBlock: secrets in the baseline still block
+	// default-branch runs (turning it off loosens the gate).
+	BaselineSecretsBlock *bool `json:"baseline_secrets_block,omitempty"`
+	// Fields, when present, replaces the fields the policy sets; the others
+	// are inherited from the layer above. Absent on create: every field. The
+	// organization policy always sets every field.
+	Fields *[]string `json:"fields,omitempty"`
+	// LockedFields, when present, replaces the fields no layer below may
+	// loosen (organization and business unit policies only). Removing a lock
+	// loosens the gate.
+	LockedFields *[]string `json:"locked_fields,omitempty"`
+	// Reason is replaced on every write; a change that loosens a business
+	// unit or repository policy needs one (10 to 500 characters).
+	Reason string `json:"reason,omitempty"`
+	// ExpiresAt is replaced on every write (omit it for no end): a
+	// repository policy stops applying then, within 365 days.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // CIGateOverrideResponse is a break-glass override.
@@ -744,14 +792,28 @@ func (h *CIAdminHandler) ListGatePolicies(w http.ResponseWriter, r *http.Request
 		return
 	}
 	def := cirun.DefaultGatePolicy()
-	out := CIGatePolicyListResponse{Data: make([]CIGatePolicyResponse, 0, len(list)), Default: toCIPolicyResponse(&def)}
+	out := CIGatePolicyListResponse{Data: make([]CIGatePolicyResponse, 0, len(list)), Default: toCIPolicyResponse(&def),
+		OverrideCounts: map[string]int{}}
+	now := time.Now()
+	// A repository policy names an asset: only callers who may see it. An
+	// unrestricted caller (no data scope) sees every one without a check
+	// per repository.
+	scope, err := resolveDataScope(r.Context(), h.dataScope, tenantID)
+	if err != nil {
+		h.writeErr(w, err, "resolve data scope", "CI gate policy")
+		return
+	}
 	for i := range list {
-		// A repository policy names an asset: only callers who may see it.
-		if list[i].ScopeType == cirun.ScopeRepository && list[i].ScopeID != nil &&
+		if scope != nil && list[i].ScopeType == cirun.ScopeRepository && list[i].ScopeID != nil &&
 			!assetInDataScope(r.Context(), h.dataScope, tenantID, *list[i].ScopeID) {
 			continue
 		}
 		out.Data = append(out.Data, toCIPolicyResponse(&list[i]))
+		if list[i].ScopeType == cirun.ScopeRepository && list[i].ActiveAt(now) {
+			for _, f := range list[i].Fields {
+				out.OverrideCounts[f]++
+			}
+		}
 	}
 	ciWriteJSON(w, http.StatusOK, out)
 }
@@ -795,7 +857,12 @@ func (h *CIAdminHandler) policyOfCaller(w http.ResponseWriter, r *http.Request, 
 func (req CIGatePolicyRequest) input() (cirunapp.GatePolicyInput, error) {
 	in := cirunapp.GatePolicyInput{ScopeType: req.ScopeType, Enabled: req.Enabled, Mode: req.Mode,
 		FailOnSeverity: req.FailOnSeverity, NewFindingsOnly: req.NewFindingsOnly, FailOnKEV: req.FailOnKEV,
-		EPSSThreshold: req.EPSSThreshold, Modes: req.Modes, AllowRepoPolicy: req.AllowRepoPolicy, FixableOnly: req.FixableOnly}
+		EPSSThreshold: req.EPSSThreshold, Modes: req.Modes, AllowRepoPolicy: req.AllowRepoPolicy, FixableOnly: req.FixableOnly,
+		BaselineOnFirstRun: req.BaselineOnFirstRun, BaselineGraceDays: req.BaselineGraceDays, BaselineSecretsBlock: req.BaselineSecretsBlock,
+		Fields: req.Fields, LockedFields: req.LockedFields, Reason: req.Reason, ExpiresAt: req.ExpiresAt}
+	if req.Fields != nil && len(*req.Fields) > len(cirun.PolicyFields) || req.LockedFields != nil && len(*req.LockedFields) > len(cirun.PolicyFields) {
+		return in, errors.New("too many fields")
+	}
 	if req.ScopeID != "" {
 		id, err := shared.IDFromString(req.ScopeID)
 		if err != nil {
@@ -894,8 +961,11 @@ func (h *CIAdminHandler) UpdateGatePolicy(w http.ResponseWriter, r *http.Request
 // @Summary      Delete a CI gate policy
 // @Tags         CI
 // @Security     BearerAuth
+// @Description  A deletion that loosens the gate (what applies afterwards lets findings pass that failed before) needs a recent sign-in and, for a business unit or repository policy, a reason of 10 to 500 characters.
 // @Param        id path string true "Policy ID"
+// @Param        reason query string false "Why (required when the deletion loosens a business unit or repository policy)"
 // @Success      204
+// @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Router       /ci/gate-policies/{id} [delete]
 func (h *CIAdminHandler) DeleteGatePolicy(w http.ResponseWriter, r *http.Request) {
@@ -910,7 +980,7 @@ func (h *CIAdminHandler) DeleteGatePolicy(w http.ResponseWriter, r *http.Request
 	if !h.policyOfCaller(w, r, tenantID, id) {
 		return
 	}
-	if err := h.svc.DeleteGatePolicy(r.Context(), tenantID, id, h.actor(r)); err != nil {
+	if err := h.svc.DeleteGatePolicy(r.Context(), tenantID, id, r.URL.Query().Get("reason"), h.actor(r)); err != nil {
 		h.writeErr(w, err, "delete gate policy", "CI gate policy")
 		return
 	}

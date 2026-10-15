@@ -40,16 +40,6 @@ func (m *MockFindingRepoForLifecycle) ExpireFeatureBranchFindings(ctx context.Co
 	return m.ExpireFeatureBranchFindingsReturn, m.ExpireFeatureBranchFindingsError
 }
 
-func (m *MockFindingRepoForLifecycle) AutoResolveStale(ctx context.Context, tenantID shared.ID, assetID shared.ID, toolName string, currentScanID string, branchID *shared.ID) ([]shared.ID, error) {
-	m.AutoResolveStaleCalled = true
-	return m.AutoResolveStaleReturn, m.AutoResolveStaleError
-}
-
-func (m *MockFindingRepoForLifecycle) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
-	m.AutoResolveStaleCalled = true
-	return m.AutoResolveStaleReturn, m.AutoResolveStaleError
-}
-
 // Minimal implementations for interface compliance
 func (m *MockFindingRepoForLifecycle) Create(ctx context.Context, f *vulnerability.Finding) error {
 	return nil
@@ -159,9 +149,6 @@ func (m *MockFindingRepoForLifecycle) GetStats(ctx context.Context, tenantID sha
 }
 func (m *MockFindingRepoForLifecycle) CountBySeverityForScan(ctx context.Context, tenantID shared.ID, scanID string) (vulnerability.SeverityCounts, error) {
 	return vulnerability.SeverityCounts{}, nil
-}
-func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprint(ctx context.Context, tenantID shared.ID, fingerprint string) (*shared.ID, error) {
-	return nil, nil
 }
 func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]vulnerability.ReopenedFinding, error) {
 	return make(map[string]vulnerability.ReopenedFinding), nil
