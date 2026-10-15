@@ -166,7 +166,10 @@ func TestRemediationCampaignProgress_FollowsTheViewer_DB(t *testing.T) {
 		t.Errorf("campaign findings without findings:read = %d, want 403", got)
 	}
 	// The stored counts stay organization-wide (auto-complete reads them):
-	// a restricted reader never persists their view.
+	// reads never write; the reconciler stores the organization's counts.
+	if _, err := svc.ReconcileProgress(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	var fc, rc int
 	if err := h.db.QueryRowContext(context.Background(), `SELECT finding_count, resolved_count FROM remediation_campaigns WHERE id = $1`, campaign.String()).Scan(&fc, &rc); err != nil {
 		t.Fatal(err)
