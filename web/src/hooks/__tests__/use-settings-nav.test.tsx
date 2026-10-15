@@ -10,6 +10,8 @@ const state = {
   perms: new Set<string>(),
   moduleIds: [] as string[],
   subModules: {} as Record<string, { slug: string; release_status?: string }[]>,
+  limits: undefined as { applies: boolean } | undefined,
+  limitsEnabled: [] as boolean[],
 }
 
 vi.mock('@/lib/permissions/hooks', () => ({
@@ -27,6 +29,12 @@ vi.mock('@/context/bootstrap-provider', () => ({
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useTenantModules: () => ({ subModules: state.subModules }),
 }))
+vi.mock('@/features/limits/api/use-organization-limits', () => ({
+  useOrganizationLimits: (enabled: boolean) => {
+    state.limitsEnabled.push(enabled)
+    return { data: enabled ? state.limits : undefined }
+  },
+}))
 vi.mock('@/context/i18n-provider', () => ({
   useTranslation: () => ({ t: (_k: string, fallback: string) => fallback }),
 }))
@@ -42,6 +50,8 @@ beforeEach(() => {
   state.perms = new Set()
   state.moduleIds = []
   state.subModules = {}
+  state.limits = undefined
+  state.limitsEnabled = []
 })
 
 describe('useSettingsNav', () => {
@@ -75,7 +85,7 @@ describe('useSettingsNav', () => {
     expect(visible.filter((i) => ['all-integrations', 'siem', 'api-keys'].includes(i))).toEqual([])
   })
 
-  it('OSS edition (no module list) shows every permitted item', () => {
+  it('no module list from the API shows every permitted item', () => {
     state.perms = new Set([Permission.IntegrationsRead, Permission.TeamUpdate])
     expect(ids()).toContain('risk-scoring')
     expect(ids()).toContain('siem')
@@ -91,5 +101,20 @@ describe('useSettingsNav', () => {
     expect(visible).toContain('all-integrations') // no sub-module key
     expect(visible).not.toContain('siem') // disabled
     expect(visible).not.toContain('ticketing') // absent
+  })
+
+  it('lists Usage & limits only while a limit applies to the organization', () => {
+    state.perms = new Set([Permission.TeamUpdate])
+    state.limits = { applies: false }
+    expect(ids()).not.toContain('limits')
+    state.limits = { applies: true }
+    expect(ids()).toContain('limits')
+  })
+
+  it('never reads the limits for a user who may not open Usage & limits', () => {
+    state.perms = new Set([Permission.AuditRead])
+    state.limits = { applies: true }
+    expect(ids()).not.toContain('limits')
+    expect(state.limitsEnabled.every((e) => e === false)).toBe(true)
   })
 })

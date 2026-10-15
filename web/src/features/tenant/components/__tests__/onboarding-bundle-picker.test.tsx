@@ -33,7 +33,7 @@ describe('OnboardingBundlePicker', () => {
     expect(screen.getByText('Attack Surface Management')).toBeInTheDocument()
     expect(screen.getByText('Vulnerability Management Essentials')).toBeInTheDocument()
     // Default state: nothing selected = full platform.
-    expect(screen.getByText('Every module your plan includes')).toBeInTheDocument()
+    expect(screen.getByText('Every module')).toBeInTheDocument()
   })
 
   it('toggles a bundle on click', async () => {

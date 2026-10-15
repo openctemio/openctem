@@ -586,3 +586,43 @@ export async function invalidateSCMIntegrationsCache() {
     revalidate: true,
   })
 }
+
+// ============================================
+// INBOUND JIRA WEBHOOK (per integration)
+// ============================================
+
+/** How to configure one Jira integration's inbound webhook. The secret is
+ *  present only in the response of a rotation: it is shown once. */
+export interface JiraWebhookConfig {
+  webhook_url: string
+  signature_header: string
+  has_secret: boolean
+  webhook_secret?: string
+}
+
+/** The webhook URL and whether a secret is set (never the secret). */
+export function useJiraWebhookApi(integrationId: string | null) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && integrationId ? `${BASE_URL}/${integrationId}/jira-webhook` : null
+  return useSWR<JiraWebhookConfig>(key, (url: string) => get<JiraWebhookConfig>(url), defaultConfig)
+}
+
+/** Generate a new secret; the response carries it once. */
+export function useRotateJiraWebhookSecretApi(integrationId: string) {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant && integrationId
+      ? `${BASE_URL}/${integrationId}/jira-webhook/secret/rotate`
+      : null,
+    async (url: string) => post<JiraWebhookConfig>(url, {})
+  )
+}
+
+/** Store a secret the administrator chose (it is never shown again). */
+export function useSetJiraWebhookSecretApi(integrationId: string) {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/jira-webhook/secret` : null,
+    async (url: string, { arg }: { arg: { secret: string } }) => put<JiraWebhookConfig>(url, arg)
+  )
+}

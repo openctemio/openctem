@@ -2,7 +2,7 @@
  * Auth Feature Types
  *
  * Centralized type definitions for the auth feature
- * - Local auth types (OSS edition)
+ * - Local auth types
  * - Form input/output types from schemas
  * - Component prop types
  * - Server action types

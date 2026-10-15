@@ -255,6 +255,11 @@ func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID,
 	return a.keys.CountByKeyInScope(ctx, tenantID, key, closedStrs, scope)
 }
 
+func (a campaignKeyResolver) CountVerifiedByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, error) {
+	_, verified, err := a.keys.CountByKeyInScope(ctx, tenantID, key, []string{string(vulnerability.FindingStatusResolved)}, scope)
+	return verified, err
+}
+
 func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (*exposure.CampaignResolveResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -1070,7 +1075,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Component.SetDataScope(s.DataScope)
 	s.SBOMImport = asset.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.SBOMImport.SetDataScope(s.DataScope)
+	// One remediation-group key applier for every path that creates findings
+	// (scan ingest, CVE matching, manual, license policy).
+	remediationKeys := remediation.NewKeyApplier(repos.FindingRemediationKey, log)
 	s.LicensePolicy = licapp.NewService(repos.LicensePolicy, repos.Finding, repos.Tenant, log)
+	s.LicensePolicy.SetRemediationKeyApplier(remediationKeys)
 	s.SBOMImport.SetLicenseEvaluator(s.LicensePolicy)
 	s.VEX = vexapp.NewService(repos.VEXStatement, s.DataScope, s.Audit, log)
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
@@ -1090,6 +1099,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize vulnerability & exposure services
 	s.Vulnerability = finding.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
+	s.Vulnerability.SetRemediationKeyApplier(remediationKeys)
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
 	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
@@ -1922,6 +1932,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch = vulnmatch.NewService(repos.SoftwareMatch, vulnmatch.TenantPolicy(repos.Tenant), repos.Finding, log.With("component", "vulnmatch"))
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetLinkReader(repos.Software)
+	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
 	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
@@ -2405,7 +2416,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Remediation groups (RFC-015): derive each ingested finding's fix-identity
 	// key so a whole "solution family" can be resolved in one action. The service
 	// reuses the finding bulk-status path + its abuse guard.
-	s.Ingest.SetRemediationKeyApplier(remediation.NewKeyApplier(repos.FindingRemediationKey, log))
+	s.Ingest.SetRemediationKeyApplier(remediationKeys)
 
 	// Continuous leaked-credential discovery: promote secret-scan findings
 	// (betterleaks/trufflehog → FindingSourceSecret) into the exposure store so a
@@ -2665,6 +2676,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// The sign-up policy (Console > System > Sign-up). TENANT_CREATION_MODE
 	// seeds it on the first start only; afterwards the console value wins.
 	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
+	if s.Entitlement != nil {
+		s.Signup.SetStartLimitsCheck(s.Entitlement.StartLimitsConfigured)
+	}
 	if err := s.Signup.Seed(context.Background(), cfg.Auth.TenantCreationMode); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}

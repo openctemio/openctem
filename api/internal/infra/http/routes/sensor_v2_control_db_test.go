@@ -571,8 +571,8 @@ func TestSensorV2Control_SuppressionsOwnTenantOnly(t *testing.T) {
 	})
 	seed := func(tenantID, label string) {
 		for _, rule := range []struct{ ruleID, status, expiry string }{
-			{label + "-approved", "approved", "NULL"},
-			{label + "-pending", "pending", "NULL"},
+			{label + "-approved", "approved", "NOW() + interval '30 days'"},
+			{label + "-pending", "pending", "NOW() + interval '30 days'"},
 			{label + "-expired", "approved", "NOW() - interval '1 day'"},
 		} {
 			if _, err := h.db.ExecContext(context.Background(), `INSERT INTO suppression_rules

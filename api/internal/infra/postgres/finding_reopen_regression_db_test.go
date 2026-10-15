@@ -10,7 +10,7 @@ import (
 )
 
 // RFC-039 §6.5: a scan that re-detects a finding a person resolved reopens it,
-// and the reopen clears resolved_by / resolution / resolution_method on the row.
+// and the reopen clears resolved_by / resolution / the closure on the row.
 // Before this change the regression's activity said only
 // {"reason":"finding_detected_again"}: who had fixed it, and how, was gone. A
 // scan re-detecting a validated_fixed finding left it validated_fixed.
@@ -32,7 +32,7 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 	})
 
 	humanID, humanFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "patched in release 4.2")
-	if _, err := db.ExecContext(ctx, `UPDATE findings SET resolved_by = $2, resolution_method = 'security_reviewed' WHERE id = $1`,
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET resolved_by = $2, closure_reason = 'fixed', verification = 'security_review' WHERE id = $1`,
 		humanID.String(), resolver.String()); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 		t.Fatalf("human-resolved finding not returned as reopened: %+v", reopened)
 	}
 	if rf.PreviousResolvedBy == nil || *rf.PreviousResolvedBy != resolver ||
-		rf.PreviousResolution != "patched in release 4.2" || rf.PreviousResolutionMethod != "security_reviewed" ||
+		rf.PreviousResolution != "patched in release 4.2" || rf.PreviousClosureReason != "fixed" || rf.PreviousVerification != "security_review" ||
 		string(rf.PreviousStatus) != "resolved" || rf.PreviousResolvedAt == nil {
 		t.Errorf("reopen lost what it cleared: %+v", rf)
 	}
@@ -74,8 +74,9 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 	}
 	for k, want := range map[string]string{
 		"reason": "regression_detected_again", "previous_resolved_by": resolver.String(),
-		"previous_resolution": "patched in release 4.2", "previous_resolution_method": "security_reviewed",
-		"scanner": "nuclei", "scan_id": "report-9",
+		"previous_resolution": "patched in release 4.2", "previous_closure_reason": "fixed",
+		"previous_verification": "security_review",
+		"scanner":               "nuclei", "scan_id": "report-9",
 	} {
 		if changes[k] != want {
 			t.Errorf("activity changes[%q] = %v, want %q", k, changes[k], want)

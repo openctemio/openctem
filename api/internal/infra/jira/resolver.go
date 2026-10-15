@@ -119,11 +119,18 @@ var _ appjira.ClientResolver = (*IntegrationClientResolver)(nil)
 // Resolve returns a Jira client for the tenant's first connected Jira
 // integration. Returns appjira.ErrNoTicketingIntegration when none is usable.
 func (r *IntegrationClientResolver) Resolve(ctx context.Context, tenantID shared.ID) (appjira.Client, error) {
+	_, client, err := r.pick(ctx, tenantID)
+	return client, err
+}
+
+// pick selects the tenant's Jira integration for outbound ticketing: the first
+// connected one whose client builds. Resolve and ResolveMapping both use it, so
+// the client and the mapping always come from the same integration.
+func (r *IntegrationClientResolver) pick(ctx context.Context, tenantID shared.ID) (*integration.Integration, appjira.Client, error) {
 	integrations, err := r.integrationRepo.ListByProvider(ctx, tenantID, integration.ProviderJira)
 	if err != nil {
-		return nil, fmt.Errorf("list jira integrations: %w", err)
+		return nil, nil, fmt.Errorf("list jira integrations: %w", err)
 	}
-
 	for _, intg := range integrations {
 		if intg.Status() != integration.StatusConnected {
 			continue
@@ -139,10 +146,9 @@ func (r *IntegrationClientResolver) Resolve(ctx context.Context, tenantID shared
 			)
 			continue
 		}
-		return client, nil
+		return intg, client, nil
 	}
-
-	return nil, appjira.ErrNoTicketingIntegration
+	return nil, nil, appjira.ErrNoTicketingIntegration
 }
 
 // Compile-time check that the resolver also satisfies the mapping resolver.
@@ -152,17 +158,11 @@ var _ appjira.MappingResolver = (*IntegrationClientResolver)(nil)
 // connected Jira integration (overlaying config.ticketing onto the defaults).
 // Returns appjira.ErrNoTicketingIntegration when none is connected.
 func (r *IntegrationClientResolver) ResolveMapping(ctx context.Context, tenantID shared.ID) (appjira.MappingConfig, error) {
-	integrations, err := r.integrationRepo.ListByProvider(ctx, tenantID, integration.ProviderJira)
+	intg, _, err := r.pick(ctx, tenantID)
 	if err != nil {
-		return appjira.MappingConfig{}, fmt.Errorf("list jira integrations: %w", err)
+		return appjira.MappingConfig{}, err
 	}
-	for _, intg := range integrations {
-		if intg.Status() != integration.StatusConnected {
-			continue
-		}
-		return appjira.ParseMappingConfig(intg.Config()), nil
-	}
-	return appjira.MappingConfig{}, appjira.ErrNoTicketingIntegration
+	return appjira.ParseMappingConfig(intg.Config()), nil
 }
 
 // TestTicketingConnection checks that a ticketing integration's own stored

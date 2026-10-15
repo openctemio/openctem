@@ -62,16 +62,17 @@ describe('RouteGuard', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('says the plan does not include it, with no way to turn it on, when it is not entitled', () => {
+  it('says it is not available for the organization, with no way to turn it on, when denied', () => {
     state.permissions = new Set(['sensors:read', 'team:update'])
     state.notEntitled = ['sensors']
     render(<RouteGuard>page</RouteGuard>)
-    expect(screen.getByText('Not in your plan')).toBeInTheDocument()
-    expect(screen.getByText(/platform administrator/i)).toBeInTheDocument()
+    expect(screen.getByText('Not available for this organization')).toBeInTheDocument()
+    expect(screen.getByText(/administrator of this installation/i)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/\bplan\b/i)
     expect(screen.queryByRole('link', { name: /Manage modules/ })).toBeNull()
   })
 
-  it('says access is denied, not "upgrade your plan", when the user lacks the permission', () => {
+  it('says access is denied, not "not available", when the user lacks the permission', () => {
     // The API leaves a module out of the list when the user may not use it, so
     // a member without sensors:read has no "sensors" module either.
     render(<RouteGuard>page</RouteGuard>)

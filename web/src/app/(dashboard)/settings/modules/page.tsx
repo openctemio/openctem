@@ -119,7 +119,7 @@ export default function ModuleManagementPage() {
   const { edges: dependencyEdges } = useModuleDependencyGraph(tenantId)
   // Sidebar, route guard and module checks read the bootstrap set.
   const { refreshModules, data: bootstrapData } = useBootstrapContext()
-  // Modules in read-only grace (lost from the plan recently), with its end.
+  // Modules in read-only grace (made unavailable recently), with its end.
   const readOnlyModules = bootstrapData?.modules?.read_only_modules
   // Subscribe to "module.updated" WS events on the tenant channel so
   // an admin in another tab (or another admin) flipping a module
@@ -644,7 +644,7 @@ export default function ModuleManagementPage() {
         title={t('confirm.modules.resetTitle', 'Remove your module changes?')}
         desc={t(
           'confirm.modules.resetDesc',
-          'Every module you turned on or off by hand goes back to the plan default: every module your plan includes is on again. Your changes cannot be restored.'
+          'Every module you turned on or off by hand goes back to the default: every module available to this organization is on again. Your changes cannot be restored.'
         )}
         confirmText={t('confirm.modules.reset', 'Remove changes')}
         destructive
@@ -680,9 +680,10 @@ function ModuleRow({
   requires?: DependencyEdgeWithKind[]
   requiredBy?: DependencyEdgeWithKind[]
   moduleNames?: Record<string, string>
-  /** End of the module's read-only grace, when the plan dropped it recently. */
+  /** End of the module's read-only grace, when it became unavailable recently. */
   readOnlyUntil?: string
 }) {
+  const { t } = useTranslation()
   const hasSubModules = mod.sub_modules && mod.sub_modules.length > 0
   const categoryLabel = CATEGORY_LABELS[mod.category] || mod.category
 
@@ -695,8 +696,8 @@ function ModuleRow({
   // surfaced as warnings post-save, they're noisy in the row header.
   const hardRequires = requires.filter((e) => e.type === 'hard')
   const hardRequiredBy = requiredBy.filter((e) => e.type === 'hard')
-  // Not in the organization's plan (and no platform grant): it cannot be
-  // switched on here, only by a plan change or a grant.
+  // Not available for this organization: it cannot be switched on here, only
+  // by the administrator of this installation.
   const notEntitled = !mod.is_core && mod.entitled === false
 
   return (
@@ -723,20 +724,28 @@ function ModuleRow({
               <Badge
                 variant="outline"
                 className="gap-1 text-xs text-warning"
-                title="Your plan no longer includes this module. Its data can be viewed and exported until then; changes are turned off."
+                title={t(
+                  'limits.moduleLock.readOnlyHint',
+                  'This module is no longer available for this organization. Its data can be viewed and exported until then; changes are turned off.'
+                )}
               >
                 <Lock className="h-3 w-3" />
-                Read-only until {new Date(readOnlyUntil).toLocaleDateString()}
+                {t('limits.moduleLock.readOnlyUntil', 'Read-only until {date}', {
+                  date: new Date(readOnlyUntil).toLocaleDateString(),
+                })}
               </Badge>
             )}
             {notEntitled && !readOnlyUntil && (
               <Badge
                 variant="outline"
                 className="gap-1 text-xs text-muted-foreground"
-                title="Your plan does not include this module. Contact your platform administrator."
+                title={t(
+                  'limits.moduleLock.unavailableHint',
+                  'This module is not available for this organization. Contact the administrator of this installation.'
+                )}
               >
                 <Lock className="h-3 w-3" />
-                Not in your plan
+                {t('limits.moduleLock.unavailable', 'Not available for this organization')}
               </Badge>
             )}
             {hasPendingChange && (
