@@ -91,8 +91,8 @@ export function OwnershipTransferBanner({
 
   return (
     <>
-      <Alert className="mt-5 border-amber-500/50 bg-amber-500/10" role="region" aria-live="polite">
-        <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden />
+      <Alert className="mt-5 border-warning/50 bg-warning/10" role="region" aria-live="polite">
+        <Crown className="h-4 w-4 text-warning" aria-hidden />
         <AlertTitle>
           {isNewOwner
             ? t('org.ownership.banner.newOwnerTitle', '{name} asked you to become the owner', {

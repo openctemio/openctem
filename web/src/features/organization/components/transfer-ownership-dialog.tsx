@@ -115,7 +115,7 @@ export function TransferOwnershipDialog({
         <DialogForm onSubmit={submit}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Crown className="h-5 w-5 text-amber-500" aria-hidden />
+              <Crown className="h-5 w-5 text-warning" aria-hidden />
               {t('org.ownership.dialog.title', 'Transfer ownership')}
             </DialogTitle>
             <DialogDescription>
@@ -136,10 +136,7 @@ export function TransferOwnershipDialog({
                   {checks.map((c) => (
                     <li key={c.label} className="flex items-center gap-2 text-sm">
                       {c.ok ? (
-                        <Check
-                          className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                          aria-hidden
-                        />
+                        <Check className="h-4 w-4 shrink-0 text-success" aria-hidden />
                       ) : (
                         <X className="h-4 w-4 shrink-0 text-destructive" aria-hidden />
                       )}
@@ -186,12 +183,9 @@ export function TransferOwnershipDialog({
               </div>
 
               {outsider && !blocker && (
-                <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+                <div className="space-y-3 rounded-md border border-warning/40 bg-warning/10 p-3">
                   <p className="flex items-start gap-2 text-sm">
-                    <AlertTriangle
-                      className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
-                      aria-hidden
-                    />
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
                     {t(
                       'org.ownership.outsider.notice',
                       '{name} is outside the organization and no organization manages their address. When they accept, they become an internal member and their end of access is removed.',
