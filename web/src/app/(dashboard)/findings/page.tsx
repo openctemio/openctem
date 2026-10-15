@@ -1061,8 +1061,7 @@ function FindingsContent() {
     // Most severe selected finding sets the priority; informational-only
     // selections get the lowest priority rather than a medium default.
     const top = highestSeverity(selected.map((f) => f.severity))
-    const priority =
-      top === 'critical' ? 'critical' : top === undefined ? 'medium' : top === 'info' ? 'low' : top
+    const priority = top === undefined ? 'medium' : top === 'info' ? 'low' : top
     const name =
       selected.length === 1 ? `Fix: ${selected[0].title}` : `Remediate ${selected.length} findings`
     setRemedContext({ ids: selected.map((f) => f.id), name, priority })
