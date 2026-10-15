@@ -276,6 +276,18 @@ A decision made on the platform holds on the next run of the same repository:
   and is never offline and never dispatched.
 - A pipeline is created only at a verified, admitted exchange, keyed by signed
   immutable ids; branch, job and tool labels never create rows.
+- A repository asset is keyed by its code host and the host's immutable
+  repository id (GitHub `repository_id`, GitLab `project_id`, Bitbucket
+  repository UUID), not its name. The exchange finds it in order: the asset of
+  an existing pipeline of that repository id; the asset whose repository
+  extension carries the id on the same host (`asset_repositories.repo_id`,
+  host from its web address; written by repository import from the code
+  host's API and stamped by CI from the signed token); the asset named
+  `host/path`; else a new one. A renamed or transferred repository therefore
+  keeps its asset (findings, branches, baseline, gate policy, expectation,
+  break-glass, owners) and the asset takes the new name when it is free.
+  Repository import uses the same id first and names new assets `host/path`,
+  so import and CI share one asset. Every lookup is tenant-scoped.
 - Pipeline reads are tenant-scoped and follow the repository data scope.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
@@ -328,3 +340,20 @@ A decision made on the platform holds on the next run of the same repository:
   caller (`CI_TOKEN_NOT_TRUSTED`) and detailed in the audit log only after the
   token verified; refusals after admission tell the pipeline the reason
   (`CI_TOKEN_<reason>`, no other repository's or owner's data).
+
+## Trust and scope
+
+A trust with `manage_scope` adds the repositories it trusts to scope as repository entries (RFC-054 §17).
+
+- **Code.**
+  - `cirun.ScopePatterns` (`pkg/domain/cirun/scope.go`) derives the patterns.
+  - `internal/app/cirun/scope.go` hands them to `scope.Service.SyncCITrust` (`internal/app/scope/ci_trust.go`).
+    It does so on create, change and delete, as the person saving the trust (`Actor.ScopeWrite` and
+    `Actor.ScopeApprove` come from their permissions).
+  - `scope_target_ci_trusts` holds one link per pattern (`internal/infra/postgres/scope_ci_trust_link_repository.go`).
+- **Runs.** A verified, tenant-bound exchange calls `CITrustSeen`, which records the evidence on the link. It may
+  link an existing equal entry and never creates one.
+- **API.** The trust API answers `manage_scope` and `scope_entries[]`, and the scope API answers `managed_by[]`.
+  `manage_scope` needs `attack_surface:scope:write`.
+- **Dry run.** `ci-trust-scope-plan` (in the API image, read-only) counts per tenant what turning it on would do
+  for trusts saved before the option existed. Nothing turns it on automatically.
