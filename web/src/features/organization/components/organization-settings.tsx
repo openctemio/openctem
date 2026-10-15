@@ -40,8 +40,9 @@ import { useTenantLogo } from '../hooks/use-tenant-logo'
 import { planGeneralSave, planHasChanges } from '../lib/general-save-plan'
 import {} from '../types/settings.types'
 import { AccessRestrictionsCard, isIpLockoutError, parseLines } from './access-restrictions-card'
+import { InvitationPolicyCard } from './invitation-policy-card'
 import { PersonalAccountsCard } from './personal-accounts-card'
-import type { PersonalAccountsPolicy, SSOException } from '../types/settings.types'
+import type { InviteesPolicy, PersonalAccountsPolicy, SSOException } from '../types/settings.types'
 import { DeleteOrganization } from './delete-organization'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
 import { SensorOptInSwitches } from '@/features/sensors/components/sensor-opt-in-switches'
@@ -389,6 +390,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
     tool_http_user_agent: '',
     forbid_tool_insecure_tls: false,
     personal_accounts: 'allowed' as PersonalAccountsPolicy,
+    invitees: 'any' as InviteesPolicy,
+    external_access_end_required: false,
     sso_exceptions: [] as SSOException[],
     jit_requires_approval: false,
   })
@@ -435,6 +438,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
         tool_http_user_agent: settings.security?.tool_http_user_agent ?? '',
         forbid_tool_insecure_tls: settings.security?.forbid_tool_insecure_tls ?? false,
         personal_accounts: settings.security?.personal_accounts ?? 'allowed',
+        invitees: settings.security?.invitees ?? 'any',
+        external_access_end_required: settings.security?.external_access_end_required ?? false,
         sso_exceptions: settings.security?.sso_exceptions ?? [],
         jit_requires_approval: settings.security?.jit_requires_approval ?? false,
       })
@@ -555,6 +560,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
         tool_http_user_agent: securityForm.tool_http_user_agent.trim(),
         forbid_tool_insecure_tls: securityForm.forbid_tool_insecure_tls,
         personal_accounts: securityForm.personal_accounts,
+        invitees: securityForm.invitees,
+        external_access_end_required: securityForm.external_access_end_required,
         sso_exceptions: securityForm.sso_exceptions,
         jit_requires_approval: securityForm.jit_requires_approval,
       })
@@ -849,6 +856,16 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
               }
               currentIp={settings?.security?.current_ip}
               ipAllowlistError={ipAllowlistError}
+              disabled={!canManageSecurityAndAPI}
+            />
+            <InvitationPolicyCard
+              invitees={securityForm.invitees}
+              onInviteesChange={(p) => setSecurityForm({ ...securityForm, invitees: p })}
+              endRequired={securityForm.external_access_end_required}
+              onEndRequiredChange={(v) =>
+                setSecurityForm({ ...securityForm, external_access_end_required: v })
+              }
+              hasAllowedDomains={parseLines(securityForm.allowed_domains).length > 0}
               disabled={!canManageSecurityAndAPI}
             />
             <PersonalAccountsCard
