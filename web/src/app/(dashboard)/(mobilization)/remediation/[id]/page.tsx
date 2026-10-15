@@ -81,8 +81,8 @@ const STATUS_CONFIG: Record<
 }
 
 const PRIORITY_CONFIG: Record<string, { label: string; className: string }> = {
-  urgent: {
-    label: 'Urgent',
+  critical: {
+    label: 'Critical',
     className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100',
   },
   high: {
@@ -407,7 +407,7 @@ export default function CampaignDetailPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
                     <SelectItem value="high">High</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>
                     <SelectItem value="low">Low</SelectItem>
