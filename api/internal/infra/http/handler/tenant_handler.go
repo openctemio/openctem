@@ -248,6 +248,14 @@ type InvitationResponse struct {
 	// LookalikeOf lists members whose address reaches the same mailbox once
 	// dots and +tags are ignored: a warning, never a merge (create only).
 	LookalikeOf []string `json:"lookalike_of,omitempty"`
+	// MemberKind is internal or external, as classified at creation;
+	// Privileged: the roles are above member for an outside invitee, so the
+	// member will need two-factor (RFC-095).
+	MemberKind string `json:"member_kind"`
+	Privileged bool   `json:"privileged"`
+	// LastSentAt and ResendCount: resends are limited (RFC-095 §5).
+	LastSentAt  time.Time `json:"last_sent_at"`
+	ResendCount int       `json:"resend_count"`
 }
 
 // =============================================================================
@@ -367,6 +375,13 @@ type InvitationListItem struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
 	Pending   bool      `json:"pending"`
+	// MemberKind, Privileged, AccessExpiresAt, LastSentAt, ResendCount: see
+	// InvitationResponse.
+	MemberKind      string     `json:"member_kind"`
+	Privileged      bool       `json:"privileged"`
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	LastSentAt      time.Time  `json:"last_sent_at"`
+	ResendCount     int        `json:"resend_count"`
 }
 
 // InvitationListResponse is the body of GET /tenants/{tenant}/invitations.
@@ -380,6 +395,8 @@ func toInvitationListItem(inv *tenant.Invitation) InvitationListItem {
 	return InvitationListItem{
 		ID: r.ID, Email: r.Email, Role: r.Role, RoleIDs: r.RoleIDs, InvitedBy: r.InvitedBy,
 		ExpiresAt: r.ExpiresAt, CreatedAt: r.CreatedAt, Pending: r.Pending,
+		MemberKind: r.MemberKind, Privileged: r.Privileged, AccessExpiresAt: r.AccessExpiresAt,
+		LastSentAt: r.LastSentAt, ResendCount: r.ResendCount,
 	}
 }
 
@@ -399,6 +416,10 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 		Pending:   inv.IsPending(),
 
 		AccessExpiresAt: inv.Access().ExpiresAt,
+		MemberKind:      string(inv.InviteeInfo().Kind),
+		Privileged:      inv.InviteeInfo().Privileged,
+		LastSentAt:      inv.LastSentAt(),
+		ResendCount:     inv.ResendCount(),
 	}
 	if includeToken {
 		resp.Token = inv.Token()
@@ -480,6 +501,14 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
 		return
 	}
+	if code, status, ok := invitationErrorCode(err); ok {
+		msg := err.Error()
+		if idx := strings.Index(msg, ": "); idx != -1 {
+			msg = msg[idx+2:]
+		}
+		apierror.New(status, apierror.Code(code), msg).WriteJSON(w)
+		return
+	}
 	if errors.Is(err, tenantapp.ErrStoredFilesNotErased) {
 		// The service logged the cause (it can name storage endpoints).
 		apierror.ServiceUnavailable("The organization was not deleted: its stored files could not be deleted. " +
@@ -510,6 +539,26 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// invitationErrorCode gives the invitation refusals a stable code the console
+// translates (RFC-095 §6).
+func invitationErrorCode(err error) (string, int, bool) {
+	switch {
+	case errors.Is(err, tenantapp.ErrInviteeNotOnVerifiedDomain):
+		return "INVITEE_NOT_ON_VERIFIED_DOMAIN", http.StatusForbidden, true
+	case errors.Is(err, tenantapp.ErrEmailDomainNotAllowed):
+		return "INVITEE_DOMAIN_NOT_ALLOWED", http.StatusBadRequest, true
+	case errors.Is(err, tenantapp.ErrInvitationNoLongerValid):
+		return "INVITATION_NO_LONGER_VALID", http.StatusForbidden, true
+	case errors.Is(err, tenantapp.ErrPersonalAccountsBlocked):
+		return "PERSONAL_ACCOUNTS_BLOCKED", http.StatusForbidden, true
+	case errors.Is(err, tenant.ErrInvitationResendTooSoon):
+		return "INVITATION_RESEND_TOO_SOON", http.StatusTooManyRequests, true
+	case errors.Is(err, tenant.ErrInvitationRateLimited):
+		return "INVITATIONS_RATE_LIMITED", http.StatusTooManyRequests, true
+	}
+	return "", 0, false
 }
 
 // writeToggleErrorJSON serialises a module.ToggleError as the 400
@@ -1177,6 +1226,72 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// PreviewInvitationRequest is the body of POST /organization/invitations/preview.
+type PreviewInvitationRequest struct {
+	Email   string   `json:"email" validate:"required,max=254"`
+	RoleIDs []string `json:"role_ids" validate:"max=10"`
+}
+
+// PreviewInvitationResponse says what inviting the address would do.
+type PreviewInvitationResponse struct {
+	Allowed              bool   `json:"allowed"`
+	Reason               string `json:"reason,omitempty"`
+	Outside              bool   `json:"outside"`
+	Personal             bool   `json:"personal"`
+	Privileged           bool   `json:"privileged"`
+	StepUpRequired       bool   `json:"step_up_required"`
+	MFARequired          bool   `json:"mfa_required"`
+	AccessEndRequired    bool   `json:"access_end_required"`
+	DefaultAccessEndDays int    `json:"default_access_end_days"`
+	MaxAccessEndDays     int    `json:"max_access_end_days"`
+	SSOExceptionNeeded   bool   `json:"sso_exception_needed"`
+	AlreadyMember        bool   `json:"already_member"`
+	AlreadyInvited       bool   `json:"already_invited"`
+}
+
+// PreviewInvitation handles POST /api/v1/organization/invitations/preview.
+//
+// @Summary      Preview an invitation
+// @Description  What inviting this address with these roles would do, before anything is sent: whether the organization's invitation policy allows it (reason code when not), whether the person is outside the organization or uses a personal address, whether the roles are above member for them (the inviter then re-authenticates and the member needs two-factor), whether an end of access is required, and whether they are already a member or invited. Says nothing about other organizations. Owner or administrator with members:invite, the same requirements as creating an invitation; the organization comes from the token (RFC-095).
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        body  body  PreviewInvitationRequest  true  "Address and roles"
+// @Success      200  {object}  PreviewInvitationResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/invitations/preview [post]
+func (h *TenantHandler) PreviewInvitation(w http.ResponseWriter, r *http.Request) {
+	actx := h.tokenTenantAuditContext(r)
+	if actx.ActorID == "" || actx.TenantID == "" {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+	var req PreviewInvitationRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	p, err := h.service.PreviewInvitation(r.Context(), actx.TenantID, req.Email, req.RoleIDs, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(PreviewInvitationResponse{
+		Allowed: p.Allowed, Reason: p.Reason, Outside: p.Outside, Personal: p.Personal,
+		Privileged: p.Privileged, StepUpRequired: p.StepUpRequired, MFARequired: p.MFARequired,
+		AccessEndRequired: p.AccessEndRequired, DefaultAccessEndDays: p.DefaultAccessEndDays,
+		MaxAccessEndDays: p.MaxAccessEndDays, SSOExceptionNeeded: p.SSOExceptionNeeded,
+		AlreadyMember: p.AlreadyMember, AlreadyInvited: p.AlreadyInvited,
+	})
+}
+
 // canGrantRoles enforces anti-escalation for invitations and administrator-
 // created accounts: a caller who is not an organization admin may only grant
 // roles whose permissions they hold. Writes the error response and returns
@@ -1199,6 +1314,12 @@ func (h *TenantHandler) canGrantRoles(w http.ResponseWriter, r *http.Request, ro
 			return false
 		}
 		if e := assertCanGrantPermissions(r.Context(), role.Permissions()); e != nil {
+			apierror.Forbidden(refusal).WriteJSON(w)
+			return false
+		}
+		// Full data access is part of the ceiling too: only owners and
+		// administrators (who skip this check) see all data.
+		if role.HasFullDataAccess() {
 			apierror.Forbidden(refusal).WriteJSON(w)
 			return false
 		}
@@ -1833,6 +1954,11 @@ type SecuritySettingsResponse struct {
 	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
 	PersonalAccounts string `json:"personal_accounts"`
+	// Invitees: who may be invited: any, verified_domains or allow_list (RFC-095).
+	Invitees string `json:"invitees"`
+	// ExternalAccessEndRequired: outside people no organization manages must
+	// have an end of access (RFC-095).
+	ExternalAccessEndRequired bool `json:"external_access_end_required"`
 	// SSOExceptions: members who may sign in without SSO while it is enforced.
 	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
 	// JITRequiresApproval: SSO newcomers wait for an administrator's approval.
@@ -1872,6 +1998,8 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			ToolHTTPUserAgent:                         s.Security.ToolHTTPUserAgent,
 			ForbidToolInsecureTLS:                     s.Security.ForbidToolInsecureTLS,
 			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
+			Invitees:                                  string(s.Security.EffectiveInvitees()),
+			ExternalAccessEndRequired:                 s.Security.ExternalAccessEndRequired,
 			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 			JITRequiresApproval:                       s.Security.JITRequiresApproval,
 		},
@@ -2000,6 +2128,10 @@ type UpdateSecuritySettingsRequest struct {
 	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
 	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
+	// Invitees: any, verified_domains or allow_list (RFC-095 §4.1).
+	Invitees *string `json:"invitees" validate:"omitempty,oneof=any verified_domains allow_list"`
+	// ExternalAccessEndRequired: see SecuritySettingsResponse.
+	ExternalAccessEndRequired *bool `json:"external_access_end_required"`
 	// SSOExceptions replaces the list of members who may sign in without SSO
 	// (with a second factor) while it is enforced.
 	SSOExceptions *[]tenant.SSOException `json:"sso_exceptions" validate:"omitempty,max=100"`
@@ -2044,6 +2176,8 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		ToolHTTPUserAgent:                         req.ToolHTTPUserAgent,
 		ForbidToolInsecureTLS:                     req.ForbidToolInsecureTLS,
 		PersonalAccounts:                          req.PersonalAccounts,
+		Invitees:                                  req.Invitees,
+		ExternalAccessEndRequired:                 req.ExternalAccessEndRequired,
 		SSOExceptions:                             req.SSOExceptions,
 		JITRequiresApproval:                       req.JITRequiresApproval,
 		// Lockout guard: the saved IP allowlist must include this IP.
