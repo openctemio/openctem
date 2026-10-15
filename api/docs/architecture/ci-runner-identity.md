@@ -221,6 +221,12 @@ A decision made on the platform holds on the next run of the same repository:
   scope; the fleet handler adds no query of its own.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
+- A pull or merge request run records its findings on its own scope:
+  `pull/<n>` (GitHub, Azure Pipelines, Bitbucket, CircleCI, Jenkins) or
+  `merge-requests/<n>` (GitLab), never on its head branch's name, which the
+  author picks and may equal a real branch (a fork's `main`, `release/1.x`).
+  A fork event records on `fork/pr-<n>`. Runs stored before this rule keep
+  their rows; new uploads to such a run go to the pull request scope.
 - A run's report changes only its repository asset; the baseline branch is
   decided server-side.
 - A finding the run sees only on a non-counting branch is branch-only: left
