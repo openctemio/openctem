@@ -16,6 +16,7 @@ package entitlement
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +59,53 @@ type Service struct {
 	cachedAt time.Time
 
 	modulesChanged ModulesChangeNotifier
+
+	// envStart are the starting limits of self-service organizations from
+	// the environment (SELF_SERVICE_START_LIMITS); nil when not set.
+	envStart limits.Limits
+}
+
+// ErrStartLimitsRequired refuses self-service sign-up while no starting
+// limits are configured.
+var ErrStartLimitsRequired = errors.New("self-service sign-up needs starting limits: set SELF_SERVICE_START_LIMITS " +
+	"(a JSON object of limits, or \"unlimited\" to choose none), save them in Console > System > Limits, " +
+	"or turn on the internal entitlements API")
+
+// SetStartLimits reads SELF_SERVICE_START_LIMITS: empty (not configured),
+// "unlimited" (configured, no limits) or a JSON object of limit keys.
+func (s *Service) SetStartLimits(raw string) error {
+	raw = strings.TrimSpace(raw)
+	switch {
+	case raw == "":
+		s.envStart = nil
+	case strings.EqualFold(raw, "unlimited"):
+		s.envStart = limits.Limits{}
+	default:
+		l, err := limits.DecodeLimits([]byte(raw))
+		if err != nil {
+			return fmt.Errorf("SELF_SERVICE_START_LIMITS: %w", err)
+		}
+		s.envStart = l
+	}
+	return nil
+}
+
+// StartLimitsConfigured reports whether the starting limits of self-service
+// organizations are configured: a source (the internal API), the
+// environment, or a console setting. Self-service sign-up requires it, so a
+// public sign-up can never hand out unlimited organizations by accident.
+func (s *Service) StartLimitsConfigured(ctx context.Context) (bool, error) {
+	if len(s.sources) > 0 || s.envStart != nil {
+		return true, nil
+	}
+	_, _, err := s.repo.GetSelfServiceDefaults(ctx)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, shared.ErrNotFound) {
+		return false, nil
+	}
+	return false, err
 }
 
 // NewService creates the service with no source beyond the operator's own
@@ -101,6 +149,9 @@ func (s *Service) SelfServiceDefaults(ctx context.Context) (limits.Limits, int, 
 			return nil, 0, err
 		}
 		d, v = limits.Limits{}, 0
+		if s.envStart != nil {
+			d = s.envStart
+		}
 	}
 	s.mu.Lock()
 	s.cached, s.version, s.cachedAt = d, v, s.now()

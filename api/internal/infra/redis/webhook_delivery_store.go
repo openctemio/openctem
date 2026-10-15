@@ -22,3 +22,9 @@ func NewWebhookDeliveryStore(client *Client) *WebhookDeliveryStore {
 func (s *WebhookDeliveryStore) FirstDelivery(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	return s.client.SetNX(ctx, "webhook:delivery:"+key, "1", ttl)
 }
+
+// ReleaseDelivery forgets a delivery key (FirstDelivery is true for it again),
+// so a delivery whose processing failed is processed on the sender's retry.
+func (s *WebhookDeliveryStore) ReleaseDelivery(ctx context.Context, key string) error {
+	return s.client.Del(ctx, "webhook:delivery:"+key)
+}

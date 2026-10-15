@@ -204,7 +204,7 @@ export type {
 
 export { useMyTenants, getMyTenantsKey, invalidateMyTenantsCache } from './user-tenant-hooks'
 
-export type { TenantMembership, TenantPlan, TenantRole } from './user-tenant-types'
+export type { TenantMembership, TenantRole } from './user-tenant-types'
 
 export { RolePermissions, RoleLabels, RoleColors } from './user-tenant-types'
 

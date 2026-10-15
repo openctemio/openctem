@@ -2078,7 +2078,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
 
   // The Branches tab belongs to the `branches` module (Phase-3 gated). When the
   // tenant has it disabled its endpoint 403s, so we must not show the tab nor
-  // fetch it. Fail-open when the platform reports no modules (OSS edition).
+  // fetch it. Fail-open when the API reports no module list.
   const branchesEnabled = useModuleEnabled('branches')
   const isTabEnabled = useCallback(
     // Activity is not a tab any more: `?tab=activity` lands on Overview and

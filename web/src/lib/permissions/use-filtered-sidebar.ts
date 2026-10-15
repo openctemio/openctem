@@ -284,7 +284,7 @@ function filterNavGroup(group: NavGroup, checks: AccessCheckFunctions): NavGroup
 /**
  * The access checks every nav surface shares (main sidebar, settings rail,
  * command palette): permissions, roles, and the tenant's modules (fail-open
- * when the API sent no module list, i.e. the OSS edition).
+ * when the API sent no module list).
  */
 function useAccessChecks(): AccessCheckFunctions {
   const { can, canAny, isRole, isAnyRole, tenantRole } = usePermissions()
@@ -310,14 +310,14 @@ function useAccessChecks(): AccessCheckFunctions {
     }
 
     // Check if tenant has access to module
-    // OSS edition: When no module data from API, all modules are available
+    // No module data from the API: all modules are available
     const hasModule = (moduleId: string): boolean => {
       // If moduleIds has data from API, use it to filter
       if (moduleIds.length > 0) {
         return moduleIds.includes(moduleId)
       }
 
-      // OSS edition: No module restrictions - all features available
+      // No module restrictions: all features available
       // Backend will still enforce authorization via permissions
       return true
     }
