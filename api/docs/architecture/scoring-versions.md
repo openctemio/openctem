@@ -162,6 +162,10 @@ after the change, and nothing is written:
   ticket, and manual overrides that keep their class. Closed findings are not
   counted (they never change).
 
+Because it reads the whole organization, the preview is rate limited per
+tenant: 6 per minute (token bucket per API replica), then `429` with
+`Retry-After` (`internal/infra/http/handler/scoring_preview_limit.go`).
+
 Applying is the existing `PATCH /tenants/{tenant}/settings/risk-scoring`
 (section compare-and-swap with `If-Match`), which now also requires **step-up**
 re-authentication. It is audited with the before/after diff and the new
