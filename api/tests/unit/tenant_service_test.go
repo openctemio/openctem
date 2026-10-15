@@ -474,12 +474,26 @@ func seedMembershipInRepo(repo *mockTenantRepo, userID, tenantID shared.ID, role
 	return ms
 }
 
+func repoHasMember(repo *mockTenantRepo, userID, tenantID shared.ID) bool {
+	for _, m := range repo.memberships {
+		if m.UserID() == userID && m.TenantID() == tenantID {
+			return true
+		}
+	}
+	return false
+}
+
 // seedPendingInvitation creates a pending invitation and stores it in the mock repo.
 func seedPendingInvitation(repo *mockTenantRepo, tenantID shared.ID, email string, role tenant.Role, inviterID shared.ID) *tenant.Invitation {
 	// The invitation's organization exists (accept checks its AllowedDomains).
 	if _, ok := repo.tenants[tenantID.String()]; !ok {
 		now := time.Now().UTC()
 		repo.tenants[tenantID.String()] = tenant.Reconstitute(tenantID, "Team", "team-"+tenantID.String()[:8], "", "", nil, shared.NewID().String(), now, now)
+	}
+	// The inviter is an owner of the organization: acceptance re-authorizes
+	// the invitation as the inviter (RFC-095 §3.2).
+	if !repoHasMember(repo, inviterID, tenantID) {
+		seedMembershipInRepo(repo, inviterID, tenantID, tenant.RoleOwner)
 	}
 	inv := tenant.ReconstituteInvitation(
 		shared.NewID(), tenantID, email, role, []string{"00000000-0000-0000-0000-000000000003"},
@@ -2910,5 +2924,52 @@ func TestTenantSvc_SearchMembers_RejectsUnknownStatusAndRole(t *testing.T) {
 		if _, err := svc.SearchMembersWithUserInfo(context.Background(), existing.ID().String(), f); err != nil {
 			t.Errorf("filters %+v: unexpected error %v", f, err)
 		}
+	}
+}
+
+// An invitation is a deferred grant (RFC-095 §3.2): when the inviter has left,
+// been suspended or demoted below administrator, acceptance is refused and
+// nothing is stored.
+func TestTenantSvc_AcceptInvitation_InviterNoLongerAuthorized(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(repo *mockTenantRepo, tid, inviter shared.ID)
+	}{
+		{"inviter left", func(repo *mockTenantRepo, tid, inviter shared.ID) {
+			for id, m := range repo.memberships {
+				if m.UserID() == inviter {
+					delete(repo.memberships, id)
+				}
+			}
+		}},
+		{"inviter suspended", func(repo *mockTenantRepo, tid, inviter shared.ID) {
+			for _, m := range repo.memberships {
+				if m.UserID() == inviter {
+					_ = m.UpdateRole(tenant.RoleAdmin)
+					_ = m.Suspend(shared.NewID())
+				}
+			}
+		}},
+		{"inviter demoted", func(repo *mockTenantRepo, tid, inviter shared.ID) {
+			for id, m := range repo.memberships {
+				if m.UserID() == inviter {
+					repo.memberships[id] = tenant.ReconstituteMembership(m.ID(), inviter, tid, tenant.RoleMember, nil, time.Now().UTC())
+				}
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, repo := newTestTenantService()
+			tid, inviter := shared.NewID(), shared.NewID()
+			inv := seedPendingInvitation(repo, tid, "late@test.com", tenant.RoleMember, inviter)
+			tc.setup(repo, tid, inviter)
+			_, err := svc.AcceptInvitation(context.Background(), inv.Token(), shared.NewID(), "late@test.com", audit.AuditContext{})
+			if !errors.Is(err, tenantapp.ErrInvitationNoLongerValid) {
+				t.Fatalf("want ErrInvitationNoLongerValid, got %v", err)
+			}
+			if repo.acceptInvTxCalls != 0 {
+				t.Fatal("a membership was stored")
+			}
+		})
 	}
 }
