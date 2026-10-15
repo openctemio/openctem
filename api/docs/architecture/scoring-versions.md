@@ -245,6 +245,17 @@ finding, so the next refresh with the same feeds queues nothing. The KEV
 escalation that raises severity queues its asset through the severity
 trigger. Closed findings are never queued.
 
+The thresholds only decide what is **recomputed**. After the queueing, the
+controller writes the catalog EPSS score and percentile onto every open
+finding whose CVE's values changed (`ScoringRepository.RefreshFindingEPSS`):
+a plain column update, tenant by tenant, in batches of 2000, rows held by
+another writer skipped until the next run. Readers of the stored score that
+use their own threshold, such as the CI gate's `epss_threshold`, therefore
+judge today's score (0.2 -> 0.4 fails a gate at 0.3 although it crosses no
+model threshold). The refresh runs only after a successful queueing, because
+the crossings are found by comparing the stored score with the catalog.
+Closed findings keep the values they had when closed.
+
 ## Security
 
 - Settings are a security control: they decide what is P0 and when work is

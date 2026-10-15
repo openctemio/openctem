@@ -484,6 +484,54 @@ func (r *ScoringRepository) SavePriorities(ctx context.Context, tenantID shared.
 	return saved, nil
 }
 
+// epssRefreshBatch bounds one EPSS refresh statement (rows locked at once).
+const epssRefreshBatch = 2000
+
+// RefreshFindingEPSS writes the catalog EPSS score and percentile onto every
+// open finding whose CVE's catalog values differ from the stored ones: a
+// plain column update, tenant by tenant, in batches of epssRefreshBatch
+// (rows another writer holds are skipped and picked up by the next run).
+// Run it after EnqueueIntelChanges, which compares the stored values with
+// the catalog to find threshold crossings. Closed findings keep the values
+// they had when closed. Returns how many findings were written.
+func (r *ScoringRepository) RefreshFindingEPSS(ctx context.Context) (int64, error) {
+	tenants, err := r.tenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	q := `
+		UPDATE findings f SET epss_score = s.epss_score, epss_percentile = s.percentile
+		FROM (
+			SELECT f2.id, e.epss_score, e.percentile
+			FROM findings f2
+			JOIN epss_scores e ON e.cve_id = f2.cve_id
+			WHERE f2.tenant_id = $1 AND ` + vulnerability.OpenStatusSQL("f2.status") + `
+			  AND (f2.epss_score IS DISTINCT FROM e.epss_score OR f2.epss_percentile IS DISTINCT FROM e.percentile)
+			ORDER BY f2.id
+			LIMIT $2
+			FOR UPDATE OF f2 SKIP LOCKED
+		) s
+		WHERE f.tenant_id = $1 AND f.id = s.id`
+	var total int64
+	for _, tid := range tenants {
+		for {
+			if err := ctx.Err(); err != nil {
+				return total, err
+			}
+			res, err := r.db.ExecContext(ctx, q, tid, epssRefreshBatch)
+			if err != nil {
+				return total, fmt.Errorf("refresh finding epss: %w", err)
+			}
+			n, _ := res.RowsAffected()
+			total += n
+			if n < epssRefreshBatch {
+				break
+			}
+		}
+	}
+	return total, nil
+}
+
 // tenantIDs lists every tenant id.
 func (r *ScoringRepository) tenantIDs(ctx context.Context) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id FROM tenants ORDER BY id`)

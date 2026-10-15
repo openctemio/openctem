@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+
 	"github.com/google/uuid"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -99,5 +102,93 @@ func TestScoringIntel_OnlyChangedCVEsAreQueued(t *testing.T) {
 		if fx.queued(t, aid) {
 			t.Errorf("%s: queued again by an unchanged feed", name)
 		}
+	}
+}
+
+// The stored EPSS follows the catalog for every changed CVE of an open
+// finding, not only threshold crossings: the CI gate judges the stored score
+// against the policy's own epss_threshold. 0.2 -> 0.4 crosses no model
+// threshold, but a gate at 0.3 now blocks. Closed findings and other
+// tenants' findings of other CVEs are not written.
+func TestScoringIntel_StoredEPSSFeedsTheCIGate(t *testing.T) {
+	fx := newScoringFixture(t)
+	ctx := context.Background()
+	ta, tb := fx.newTenant(t), fx.newTenant(t)
+	sfx := strings.ToUpper(strings.ReplaceAll(uuid.NewString()[:8], "-", ""))
+	cve := "CVE-2098-" + sfx
+	t.Cleanup(func() { _, _ = fx.db.Exec(`DELETE FROM epss_scores WHERE cve_id = $1`, cve) })
+
+	aid := fx.newAsset(t, ta, "github.com/acme/intel-gate")
+	open := fx.newFinding(t, ta, aid, vulnerability.SeverityMedium, "intel-gate-open")
+	closed := fx.newFinding(t, ta, aid, vulnerability.SeverityMedium, "intel-gate-closed")
+	baid := fx.newAsset(t, tb, "github.com/acme/intel-gate-b")
+	other := fx.newFinding(t, tb, baid, vulnerability.SeverityMedium, "intel-gate-other")
+	fx.drain(t, aid, baid)
+	set := func(tid, id shared.ID, c string, v float64, status string) {
+		t.Helper()
+		if _, err := fx.db.Exec(`UPDATE findings SET cve_id = $3, epss_score = $4, epss_percentile = 0.5, status = $5
+			WHERE tenant_id = $1 AND id = $2`, tid.String(), id.String(), c, v, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set(ta, open, cve, 0.2, "new")
+	set(ta, closed, cve, 0.2, "resolved")
+	set(tb, other, "CVE-2098-"+sfx+"X", 0.2, "new")
+	if _, err := fx.db.Exec(`INSERT INTO epss_scores (cve_id, epss_score, percentile, score_date) VALUES ($1, 0.4, 0.93, CURRENT_DATE)`, cve); err != nil {
+		t.Fatal(err)
+	}
+
+	ci := postgres.NewCIRunRepository(&postgres.DB{DB: fx.db})
+	thr := 0.3
+	policy := cirun.DefaultGatePolicy()
+	policy.FailOnSeverity = "critical"
+	policy.EPSSThreshold = &thr
+	verdict := func() cirun.GateVerdict {
+		t.Helper()
+		fs, err := ci.FindingsByFingerprints(ctx, ta, aid, []string{"intel-gate-open-" + aid.String()[:8]})
+		if err != nil || len(fs) != 1 {
+			t.Fatalf("gate findings = %v, %v", fs, err)
+		}
+		return cirun.Evaluate(cirun.GateInput{Policy: policy, Findings: fs})
+	}
+	if v := verdict(); v.Verdict == cirun.VerdictFail {
+		t.Fatalf("before the refresh the gate already fails: %+v", v.Reasons)
+	}
+
+	// The daily refresh: no model threshold crossed (nothing queued for this
+	// finding), but the stored score follows the catalog.
+	if _, err := fx.scoring.EnqueueIntelChanges(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fx.queued(t, aid) {
+		t.Fatal("0.2 -> 0.4 crosses no model threshold, yet the asset was queued")
+	}
+	if _, err := fx.scoring.RefreshFindingEPSS(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if v := verdict(); v.Verdict != cirun.VerdictFail || len(v.Reasons) == 0 || v.Reasons[0].Code != cirun.ReasonEPSS {
+		t.Fatalf("after the refresh the gate = %+v, want a failure for EPSS", v)
+	}
+	score := func(tid, id shared.ID) (float64, float64) {
+		t.Helper()
+		var s, p float64
+		if err := fx.db.QueryRow(`SELECT epss_score, epss_percentile FROM findings WHERE tenant_id = $1 AND id = $2`,
+			tid.String(), id.String()).Scan(&s, &p); err != nil {
+			t.Fatal(err)
+		}
+		return s, p
+	}
+	if s, p := score(ta, open); s != 0.4 || p != 0.93 {
+		t.Fatalf("open finding epss = %v / %v, want 0.4 / 0.93", s, p)
+	}
+	if s, _ := score(ta, closed); s != 0.2 {
+		t.Fatalf("closed finding epss = %v, want kept at 0.2", s)
+	}
+	if s, _ := score(tb, other); s != 0.2 {
+		t.Fatalf("other tenant's finding (another CVE) epss = %v, want 0.2", s)
+	}
+	// A second run writes nothing.
+	if n, err := fx.scoring.RefreshFindingEPSS(ctx); err != nil || n != 0 {
+		t.Fatalf("second refresh wrote %d rows (%v), want 0", n, err)
 	}
 }
