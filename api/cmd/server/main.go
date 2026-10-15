@@ -81,6 +81,10 @@ var (
 )
 
 func main() {
+	if tool := toolFor(os.Args[0]); tool != nil {
+		tool()
+		return
+	}
 	flag.Parse()
 	if *healthcheck {
 		os.Exit(runHealthcheck(os.Stderr))
