@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-15). Implemented: per-field layering with locks, reasons and expiry; the gate baseline settings; the effective-settings API; the `has_policy_override` pipelines filter and per-field override counts. Designed: the console Settings tab of a pipeline and bulk apply by name pattern |
+| Status | Proposed (2026-10-15). Implemented: per-field layering with locks, reasons and expiry; the gate baseline settings; the effective-settings API; the `has_policy_override` pipelines filter and per-field override counts; the console (a pipeline's Settings tab with the gate baseline, the Has overrides filter, per-field locks and override counts in the policy dialog, the baseline split in a run's drawer). Designed: expected capabilities in the Settings tab and bulk apply by name pattern |
 | Scope | api, web |
 | Related | RFC-051 (CI runner identity and the gate; §6.2 gate baseline), RFC-077 (enforced gate, `.openctem.yml`), RFC-091 (code scanning baseline) |
 
@@ -52,7 +52,9 @@ findings' due date), and `baseline_secrets_block` (default on).
 
 Existing policies keep their behaviour: the migration gives every row all fields.
 
-## 5. Console (designed)
+## 5. Console
+
+Shipped, except the expected capabilities in the tab and bulk apply (designed).
 
 The pipeline sheet gets a **Settings** tab. Each field shows its effective value. Inherited values are greyed
 with their source; overrides are highlighted with their reason, end and the organization's value. Each field
@@ -61,3 +63,12 @@ baseline (Record now, Remove) and the expected capabilities. The Pipelines list 
 filter. The organization policy dialog gets per-field Lock switches and "N repositories override this field".
 Bulk apply writes ordinary repository policies to the repositories, within the caller's data scope, whose name
 matches a pattern. Each write follows the same rules and is audited.
+
+As shipped (`web/src/features/ci-runners/components/ci-repo-settings.tsx`): the tab is `?pipeline_tab=settings`
+on the pipeline drawer. A locked field's editor offers only values that do not loosen the inherited one, and
+the console asks for a reason when it sees a loosening change or when the API answers that one is needed; one
+reason and end date cover all of a repository's overrides. Resetting the last overridden field deletes the
+repository policy. Every write sends the policy's current reason, end, EPSS threshold and grace days, which
+the API replaces on each write. History links to the audit log searched for the repository. A run's drawer
+shows "N baseline (not blocking) · M new" when a baseline is recorded and announces one recorded on the first
+run.

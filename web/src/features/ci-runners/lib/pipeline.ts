@@ -155,6 +155,8 @@ export interface PipelineListFilters {
   includeInactive?: boolean
   search?: string
   provider?: string
+  /** Only pipelines whose repository has its own gate policy. */
+  hasPolicyOverride?: boolean
   page?: number
   perPage?: number
 }
@@ -166,6 +168,7 @@ export function pipelinesURL(base: string, f: PipelineListFilters = {}): string 
   if (f.includeInactive) q.set('include_inactive', 'true')
   if (f.search) q.set('search', f.search)
   if (f.provider) q.set('provider', f.provider)
+  if (f.hasPolicyOverride) q.set('has_policy_override', 'true')
   q.set('page', String(f.page ?? 1))
   q.set('per_page', String(f.perPage ?? 25))
   return `${base}/pipelines?${q.toString()}`

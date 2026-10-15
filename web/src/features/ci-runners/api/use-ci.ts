@@ -34,6 +34,8 @@ import type {
   SCMGitLabConnection,
   SCMGitLabConnectRequest,
   CITokenRefusal,
+  CIRepositorySettings,
+  CIGateBaseline,
 } from '../types'
 import {
   fleetURL,
@@ -42,6 +44,7 @@ import {
   type PipelineListFilters,
 } from '../lib/pipeline'
 
+import { ApiClientError } from '@/lib/api/error-handler'
 import { coverageExpectationURL, coverageURL, type CoverageFilters } from '../lib/coverage'
 
 export const CI_BASE = '/api/v1/ci'
@@ -206,6 +209,62 @@ export function useDeleteGatePolicy() {
     currentTenant ? POLICIES : null,
     async (_url: string, { arg }: { arg: string }) =>
       del<void>(`${POLICIES}/${encodeURIComponent(arg)}`)
+  )
+}
+
+/** URL of a repository's effective gate settings; exported for tests. */
+export function gateSettingsURL(repositoryAssetId: string): string {
+  return `${CI_BASE}/gate-settings/${encodeURIComponent(repositoryAssetId)}`
+}
+
+/** URL of a repository's gate baseline; exported for tests. */
+export function gateBaselineURL(repositoryAssetId: string): string {
+  return `${CI_BASE}/gate-baselines/${encodeURIComponent(repositoryAssetId)}`
+}
+
+/**
+ * A repository's effective gate settings: every field with its value, the
+ * layer it comes from and any lock above (scans:ci:read, data-scoped).
+ */
+export function useRepositoryGateSettings(repositoryAssetId: string | null | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWR<CIRepositorySettings>(
+    currentTenant && repositoryAssetId ? gateSettingsURL(repositoryAssetId) : null,
+    (url: string) => get<CIRepositorySettings>(url)
+  )
+}
+
+/** A repository's gate baseline; null when none is recorded (the API answers 404). */
+export function useGateBaseline(repositoryAssetId: string | null | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWR<CIGateBaseline | null>(
+    currentTenant && repositoryAssetId ? gateBaselineURL(repositoryAssetId) : null,
+    async (url: string) => {
+      try {
+        return await get<CIGateBaseline>(url)
+      } catch (e) {
+        if (e instanceof ApiClientError && e.statusCode === 404) return null
+        throw e
+      }
+    }
+  )
+}
+
+/** Record the baseline now (scans:ci:policy; the API client asks for step-up). */
+export function useRecordGateBaseline(repositoryAssetId: string | null | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant && repositoryAssetId ? gateBaselineURL(repositoryAssetId) : null,
+    async (url: string) => put<CIGateBaseline>(url, {})
+  )
+}
+
+/** Remove the baseline: every finding counts as new again. */
+export function useDeleteGateBaseline(repositoryAssetId: string | null | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant && repositoryAssetId ? gateBaselineURL(repositoryAssetId) : null,
+    async (url: string) => del<void>(url)
   )
 }
 

@@ -5,10 +5,13 @@
  * (freshness, default-branch gate, execution health), its runs (paged), its
  * branches and its gate trend. A pipeline is created by a verified token
  * exchange and revoked with its trust configuration; an administrator can
- * retire it, which closes the findings only it reported (audited).
+ * retire it, which closes the findings only it reported (audited). The
+ * Settings tab shows the repository's gate settings and baseline
+ * (ci-repo-settings.tsx). The open tab lives in the URL (?pipeline_tab=).
  */
 
 import { useId, useState } from 'react'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import Link from '@/components/link'
 import { Archive, GitBranch, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -45,15 +48,23 @@ import { PROVIDER_LABEL, shortSHA } from '../lib/ci'
 import { FRESHNESS_LABEL, HEALTH_REASON_LABEL, cadenceLabel, workflowFile } from '../lib/pipeline'
 import type { CIPipelineDetail, CIRun } from '../types'
 import { FleetModeBadge, GateLabel, PipelineStatusBadge } from './ci-pipeline-cells'
-import { CIRunSheet, VerdictBadge } from './ci-runs-view'
+import { CIRunSheet, RunAttempt, VerdictBadge } from './ci-runs-view'
+import { CIRepositorySettingsTab } from './ci-repo-settings'
+import { runAttempts } from '../lib/gate-settings'
 import { useTranslation } from '@/context/i18n-provider'
 
-type PipelineTab = 'overview' | 'runs' | 'branches'
-const TABS: { value: PipelineTab; label: string }[] = [
+export type PipelineTab = 'overview' | 'runs' | 'branches' | 'settings'
+export const PIPELINE_TABS: { value: PipelineTab; label: string }[] = [
   { value: 'overview', label: 'Overview' },
   { value: 'runs', label: 'Runs' },
   { value: 'branches', label: 'Branches' },
+  { value: 'settings', label: 'Settings' },
 ]
+
+/** The drawer tab a URL asks for; anything unknown is Overview. */
+export function pipelineTab(raw: string): PipelineTab {
+  return PIPELINE_TABS.some((x) => x.value === raw) ? (raw as PipelineTab) : 'overview'
+}
 
 /** Pipeline status label and description, translated (scans.ci.status.<status>.*). */
 function useStatusText() {
@@ -257,6 +268,7 @@ function Runs({ pipelineId }: { pipelineId: string }) {
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
   })
+  const attempts = runAttempts(data?.data ?? [])
   const columns: ColumnDef<CIRun>[] = [
     {
       id: 'ref',
@@ -277,6 +289,7 @@ function Runs({ pipelineId }: { pipelineId: string }) {
             <span className="font-mono">
               {shortSHA(row.original.commit_sha)}
               {row.original.fork ? ` · ${t('scans.ci.fork', 'fork')}` : ''}
+              <RunAttempt attempt={attempts.get(row.original.id ?? '')} />
             </span>
           }
         />
@@ -453,7 +466,9 @@ export function RetirePipelineDialog({
 export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { t } = useTranslation()
   const { data: p, error, mutate } = useCIPipeline(id)
-  const [tab, setTab] = useState<PipelineTab>('overview')
+  const [tabParam, setTabParam] = useUrlFilter('pipeline_tab', 'overview')
+  const tab = pipelineTab(tabParam)
+  const setTab = (v: PipelineTab) => setTabParam(v)
   const [retireOpen, setRetireOpen] = useState(false)
   const { can } = usePermissions()
   const canRetire = can(Permission.CIWrite) && !!p && p.status !== 'retired'
@@ -501,7 +516,10 @@ export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: (
       }
       tabs={
         <DetailTabs
-          tabs={TABS.map((x) => ({ ...x, label: t(`scans.ci.sheet.tab.${x.value}`, x.label) }))}
+          tabs={PIPELINE_TABS.map((x) => ({
+            ...x,
+            label: t(`scans.ci.sheet.tab.${x.value}`, x.label),
+          }))}
           value={tab}
           onValueChange={setTab}
         />
@@ -518,6 +536,20 @@ export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: (
         <Overview p={p} />
       ) : tab === 'runs' ? (
         <Runs pipelineId={p.id ?? ''} />
+      ) : tab === 'settings' ? (
+        p.repository_asset_id ? (
+          <CIRepositorySettingsTab repositoryAssetId={p.repository_asset_id} />
+        ) : (
+          <EmptyState
+            icon={Settings2}
+            title={t('scans.ci.repoSettings.noRepoTitle', 'No repository yet')}
+            description={t(
+              'scans.ci.repoSettings.noRepo',
+              "Gate settings belong to a repository; this pipeline's next run confirms its repository."
+            )}
+            card={false}
+          />
+        )
       ) : (
         <Branches p={p} />
       )}
