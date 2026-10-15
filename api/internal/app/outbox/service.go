@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	notificationclient "github.com/openctemio/openctem/api/internal/infra/notifier"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
@@ -47,6 +48,10 @@ type Service struct {
 // about an asset only private programs list reaches only the integrations
 // attached to one of them (unless an owner opted the programs in), and the
 // names of private programs are scrubbed for every other destination.
+// SetBrand names the instance brand in the notifications this service
+// delivers (docs/architecture/brand.md).
+func (s *Service) SetBrand(b brand.Brand) { s.clientFactory.SetBrand(b) }
+
 func (s *Service) SetDeliveryResolver(r bountyprogram.DeliveryResolver) { s.delivery = r }
 
 // NewService creates a new Service.
