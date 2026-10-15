@@ -12,10 +12,23 @@
 -- Live impact: a CHECK constraint rewrite on finding_activities (validated
 -- in place, as in 002173) and one AFTER UPDATE trigger on findings.
 
-ALTER TABLE finding_activities DROP CONSTRAINT chk_activity_type;
-ALTER TABLE finding_activities ADD CONSTRAINT chk_activity_type CHECK (activity_type IN (
-    'created', 'status_changed', 'severity_changed', 'resolved', 'reopened', 'assigned', 'unassigned', 'triage_updated', 'false_positive_marked', 'duplicate_marked', 'duplicate_unmarked', 'verified', 'remediation_updated', 'metadata_updated', 'acceptance_expired', 'comment_added', 'comment_updated', 'comment_deleted', 'scan_detected', 'auto_resolved', 'auto_reopened', 'linked', 'unlinked', 'sla_warning', 'sla_breach', 'sla_restarted', 'ai_triage_requested', 'ai_triage', 'ai_triage_failed', 'approval_requested', 'approval_approved', 'approval_rejected', 'approval_canceled', 'retest_requested', 'retest_completed', 'evidence_revealed',
-    'decision_review', 'sla_deadline_tightened'));
+-- Add the activity type to the existing CHECK list, whatever other
+-- migrations added to it before this one ran: the list is read back from
+-- the constraint and written again with the new value.
+DO $$
+DECLARE
+    vals text[];
+BEGIN
+    SELECT array_agg(DISTINCT m[1]) INTO vals
+    FROM pg_constraint c, regexp_matches(pg_get_constraintdef(c.oid), '''([a-z0-9_]+)''', 'g') AS m
+    WHERE c.conname = 'chk_activity_type' AND c.conrelid = 'finding_activities'::regclass;
+    IF vals IS NOT NULL AND NOT 'sla_deadline_tightened' = ANY (vals) THEN
+        ALTER TABLE finding_activities DROP CONSTRAINT chk_activity_type;
+        EXECUTE format('ALTER TABLE finding_activities ADD CONSTRAINT chk_activity_type CHECK (activity_type IN (%s))',
+            (SELECT string_agg(quote_literal(v), ', ' ORDER BY v) FROM unnest(vals || 'sla_deadline_tightened'::text) AS v));
+    END IF;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION record_sla_deadline_tightened() RETURNS trigger
 LANGUAGE plpgsql AS $$

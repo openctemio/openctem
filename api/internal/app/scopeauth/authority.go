@@ -267,6 +267,22 @@ func (a *Authority) Covers(name string) (Via, bool) {
 	return Via{}, false
 }
 
+// CoversRepository reports whether a repository entry covers the repository
+// name (host/path), and which. Entries of other types never count: on a
+// code host many organizations share, a domain entry for the host is not a
+// claim on every repository there.
+func (a *Authority) CoversRepository(name string) (Via, bool) {
+	if a == nil {
+		return Via{}, false
+	}
+	for _, t := range a.targets {
+		if t != nil && t.TargetType() == scopedom.TargetTypeRepository && a.coversForm(t, name) {
+			return Via{Kind: KindScopeTarget, ID: t.ID().String(), Pattern: t.Pattern(), Proof: ProofAsserted}, true
+		}
+	}
+	return Via{}, false
+}
+
 // CoversAt is Covers for a probe of the given tier (RFC-054 §4.2 step 6): an
 // entry covers only when its max_tier is at or above tier. As in Covers, a
 // verified domain never authorizes; it only proves.

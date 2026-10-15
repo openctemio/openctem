@@ -36,6 +36,13 @@ type SLARecomputer interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
 
+// PriorityWriter persists what a pass computed, only on findings that are
+// still open and only the columns the pass owns (no lost update of a
+// concurrent status or assignee change).
+type PriorityWriter interface {
+	SavePriorities(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) (int, error)
+}
+
 // Defaults of one worker pass.
 const (
 	DefaultQueueBatch = 200 // assets claimed per pass
@@ -51,6 +58,7 @@ type Reclassifier struct {
 	queue      scoring.PriorityQueue
 	versions   scoring.VersionRepository
 	summaries  SummaryPublisher
+	writer     PriorityWriter
 	logger     *logger.Logger
 	// Page size for the open findings of one asset.
 	perPage int
@@ -95,6 +103,21 @@ func (r *Reclassifier) SetSummaryPublisher(p SummaryPublisher) {
 func (r *Reclassifier) SetQueue(q scoring.PriorityQueue, v scoring.VersionRepository) {
 	r.queue = q
 	r.versions = v
+}
+
+// SetWriter wires the narrow priority writer. Without one the pass falls
+// back to the finding repository's full update.
+func (r *Reclassifier) SetWriter(w PriorityWriter) {
+	r.writer = w
+}
+
+// save persists one changed finding.
+func (r *Reclassifier) save(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding) error {
+	if r.writer != nil {
+		_, err := r.writer.SavePriorities(ctx, tenantID, []*vulnerability.Finding{f})
+		return err
+	}
+	return r.findings.Update(ctx, f)
 }
 
 // ProcessQueue claims up to limit queued assets (tenant-fair) and
@@ -297,7 +320,7 @@ func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID sh
 				computed = append(computed, f.ID())
 				continue
 			}
-			if err := r.findings.Update(ctx, f); err != nil {
+			if err := r.save(ctx, tenantID, f); err != nil {
 				r.logger.Warn("persist reclassified finding failed", "finding_id", f.ID().String(), "error", err)
 				if failed == nil {
 					failed = fmt.Errorf("persist finding: %w", err)
