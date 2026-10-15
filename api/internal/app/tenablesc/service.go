@@ -278,7 +278,7 @@ func (s *Service) requestSync(ctx context.Context, intg *integration.Integration
 		}
 		return RequestResult{}, err
 	}
-	if sn.IsPlatformSensor || sn.TenantID == nil || *sn.TenantID != tenantID {
+	if sn.IsShared() || sn.TenantID == nil || *sn.TenantID != tenantID {
 		return RequestResult{}, ErrPlatformSensor
 	}
 	if !SensorRunsConnector(sn) {
@@ -418,7 +418,7 @@ func (s *Service) ValidateConnector(ctx context.Context, tenantID shared.ID, cfg
 		}
 		return err
 	}
-	if sn.IsPlatformSensor || sn.TenantID == nil || *sn.TenantID != tenantID {
+	if sn.IsShared() || sn.TenantID == nil || *sn.TenantID != tenantID {
 		return ErrPlatformSensor
 	}
 	return nil

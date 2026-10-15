@@ -371,7 +371,7 @@ counts as its tag. The stats response lists the catalog (`products`: `id`,
 
 **Other fields**: `key_expires_at`, `last_offline_at`, `last_error_at`,
 `started_at` and `uptime_seconds` (from the heartbeat's `uptime_seconds`, stored
-as `sensors.process_started_at`, migration 000249), `is_platform_sensor`.
+as `sensors.process_started_at`, migration 000249), `scope`.
 `ip_address` is the heartbeat's client address under the trusted-proxy rule
 (`SERVER_TRUSTED_PROXIES`): behind the built-in gateway it is the address the
 gateway saw (`X-Real-IP`), so a sensor running in a container on the platform
@@ -379,24 +379,52 @@ host shows the container network's gateway address, which is where it really
 connects from.
 
 **Stats** count the same rows the list returns: the tenant's own sensors.
-Shared platform sensors (`is_platform_sensor`) are in neither. Their queue
+Shared sensors (`scope = 'instance'`) are in neither. Their queue
 (`get_next_platform_job`) is shared fairly across tenants: within a priority
 class, the tenant with the fewest platform jobs in flight goes first
 (migration 000461, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
 
-## Platform sensors on the tenant plane
+## Shared sensors on the tenant plane
 
-A platform sensor's row carries a `tenant_id` (the operator's), but it is
-never that tenant's sensor. Managing platform sensors belongs to the platform
-admin console (RFC-022); on the tenant plane they do not exist:
+A sensor has a **scope** (`sensors.scope`, [RFC-100](../rfcs/RFC-100-shared-sensors.md) §3.1):
+
+| `scope` | `tenant_id` | Meaning |
+|---|---|---|
+| `organization` | the organization | an organization sensor (pairing, RFC-052) |
+| `instance` | `NULL` | a shared sensor: it belongs to the instance and serves the organizations the access policy allows |
+
+The table enforces it (`chk_sensors_scope_tenant`: `(scope = 'instance') =
+(tenant_id IS NULL)`), and the scope is fixed at creation
+(`trigger_sensors_scope_immutable`): an organization sensor never becomes a
+shared one, so no organization's keys, grant or history move to the instance.
+Rows that refer to a sensor through `(tenant_id, sensor_id)`:
+
+- `sensor_grants` and `sensor_keys` may belong to a shared sensor. Their
+  `tenant_id` is `NULL` then, and only then (trigger
+  `sensor_child_tenant_matches_scope`); a plain foreign key on `sensor_id`
+  keeps the cascade on delete.
+- `scan_zone_sensors`, `sensor_tool_settings`, `collector_assets` and
+  `ingest_reports` keep `tenant_id NOT NULL`, so the composite foreign key
+  refuses a shared sensor: it is never a zone member, has no organization's
+  tool settings, collects no assets and pushes no reports.
+
+A shared sensor has no "home" organization. Managing shared sensors belongs to
+the platform admin console (RFC-022); on the tenant plane they do not exist:
 
 - **Lookups.** `GetByTenantAndID`, the list filter, the dispatch finders
   (`FindAvailable*`, `HasSensorFor*`), tool and capability availability, grant
-  summaries and manifests all add `NOT is_platform_sensor`.
+  summaries and manifests all add `scope = 'organization'` (besides
+  `tenant_id = $1`, which a `NULL` never matches).
+- **Authentication.** A shared sensor's key authenticates it as a sensor but
+  never into an organization: the v2 authenticator sets no tenant context,
+  and every tenant-bound sensor route answers 403 `scope-denied`
+  (`sensorForV2`, the results receiver). A signed request resolves the key's
+  sensor within the key's tenant, which a shared sensor's key does not have,
+  so it is refused (`shared_sensor_auth_db_test.go`).
 - **One guard for every route on one sensor.** Every `/api/v1/sensors/{id}...`
   route ends with `SensorHandler.OwnSensor`: a sensor that is not one of the
-  organization's own (another organization's, or a platform sensor) answers
+  organization's own (another organization's, or a shared sensor) answers
   404 before the handler runs, reads and writes alike, today's routes and any
   added later. `platform_sensor_tenant_plane_db_test.go` walks the router and
   checks each one.
@@ -423,15 +451,14 @@ admin console (RFC-022); on the tenant plane they do not exist:
 - **Claims.** A job queued for platform sensors (`is_platform_job`) is never
   offered to, counted for or claimable by an organization's own sensor: the
   poll, the doorbell, the batch claim and the claim by id share
-  `tenantJobPredicate` (`command_repository.go`). A sensor row flagged as
-  platform but carrying the organization's id is no exception.
+  `tenantJobPredicate` (`command_repository.go`).
 - **Grant.** A platform sensor's grant is least privilege whatever writes it:
   no credentials, no push ingest, tier 1 at most, public targets, no remote
-  update, never `legacy-broad`. The insert trigger `sensor_grants_default`
+  update, never `legacy-broad`, job types scan, validate and retest only (no
+  limit becomes exactly these). The insert trigger `sensor_grants_default`
   gives it `easm-external`; the trigger `clamp_shared_sensor_grant` on
-  `sensor_grants` clamps any later edit and the grant of a sensor flagged as
-  platform after it was created (migration
-  `shared_sensor_grant_least_privilege`).
+  `sensor_grants` clamps any later edit (migrations
+  `shared_sensor_grant_least_privilege` and `sensor_scope`).
 - **Workflow steps.** Every workflow step about to be queued for platform
   sensors goes through the scan trigger's own target check
   (`scan.Service.PlatformTargetRefusal`: no asset group, no internal target,
