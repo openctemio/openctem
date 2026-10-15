@@ -126,7 +126,7 @@ func registerTenantRoutes(
 
 		// Risk scoring settings (admin+)
 		r.GET("/settings/risk-scoring", h.GetRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
-		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUp())
 		r.POST("/settings/risk-scoring/preview", h.PreviewRiskScoringChanges, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.POST("/settings/risk-scoring/recalculate", h.RecalculateRiskScores, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.GET("/settings/risk-scoring/presets", h.GetRiskScoringPresets, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
