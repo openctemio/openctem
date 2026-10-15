@@ -331,5 +331,7 @@
   "settings.mcpPolicy.scopes": "Access members may grant",
   "settings.mcpPolicy.title": "Organization policy",
   "settings.item.tool-defaults": "Tool defaults",
-  "settings.desc.tool-defaults": "Default options for each tool on every sensor; a sensor can override them."
+  "settings.desc.tool-defaults": "Default options for each tool on every sensor; a sensor can override them.",
+  "settings.item.ticket-field-mapping": "Ticket field mapping",
+  "settings.desc.ticket-field-mapping": "Which fields and statuses sync with Jira, per project."
 }

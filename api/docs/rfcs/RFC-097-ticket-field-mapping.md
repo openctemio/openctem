@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-15). Implemented: the mapping model (profiles per integration, project, issue type and object kind; versions with draft, publish and rollback), the attribute catalog with fixed inbound capabilities, the template language, validation against the tracker's create fields and workflow, drift detection, transition path planning, inbound intents and decisions, presets, auto-suggest, copy, import and export, outbound and inbound preview, the simulator, the API. Designed: the outbound and inbound engines that use published profiles when issues are created and changed, the visual mapper in the console, a nightly drift check |
+| Status | Proposed (2026-10-15). Implemented: the mapping model (profiles per integration, project, issue type and object kind; versions with draft, publish and rollback), the attribute catalog with fixed inbound capabilities, the template language, validation against the tracker's create fields and workflow, drift detection, transition path planning, inbound intents and decisions, presets, auto-suggest, copy, import and export, outbound and inbound preview, the simulator, the API; the console (Settings → Integrations → Ticket field mapping: two-column field mapper with transforms and a sample render, workflow graph with outbound and inbound status maps and the simulator, previews, history with diff and rollback, import/export, dry run, drift check). Designed: the outbound and inbound engines that use published profiles when issues are created and changed, a nightly drift check |
 | Scope | api, web |
 | Related | RFC-006 (ticketing provider and mapping), RFC-006 phase 3 (bidirectional status sync), RFC-015 (remediation groups), RFC-040 (output encoding of sensor-controlled text) |
 
@@ -131,5 +131,5 @@ previews need `integrations:manage`.
 | 1 | Model, validation, metadata discovery, preview, simulator, presets, import/export, API | implemented |
 | 2 | Outbound engine: create and field updates from the published profile; dry run; field-attributed errors | designed |
 | 3 | Inbound engine: field commands and status intents through the service paths | designed |
-| 4 | Console: two-column mapper, workflow mapper with simulator, preview, history and diff, health | designed |
+| 4 | Console: two-column mapper, workflow mapper with simulator, preview, history and diff, health | implemented |
 | 5 | Nightly drift check with a health banner and notification | designed |
