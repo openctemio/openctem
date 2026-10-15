@@ -81,6 +81,7 @@ import {
   activeFilterCount,
   filterSensors,
   groupSensors,
+  NOT_CONNECTED_STATES,
   summarizeFleet,
   type FleetFilters,
   type FleetGroupBy,
@@ -637,6 +638,11 @@ export function SensorsSection({
   }, [filteredSensors, now, thresholds, channel, t])
 
   const toggleAttention = () => setFilters({ ...filters, attention: !filters.attention })
+  const notConnectedActive =
+    filters.states.length === NOT_CONNECTED_STATES.length &&
+    NOT_CONNECTED_STATES.every((st) => filters.states.includes(st))
+  const toggleNotConnected = () =>
+    setFilters({ ...filters, states: notConnectedActive ? [] : NOT_CONNECTED_STATES })
   const updatesActive =
     filters.versions.length === 2 &&
     filters.versions.includes('update_available') &&
@@ -659,6 +665,7 @@ export function SensorsSection({
       activeCount={filterCount}
       hasChannel={(channel.products?.length ?? 0) > 0}
       hasProtocolInfo={summary.hasProtocolInfo}
+      hasOneShot={scopedSensors.some((s) => s.execution_mode === 'standalone')}
       sdkVersions={tenantSensorStats?.by_sdk_version}
     />
   )
@@ -914,6 +921,8 @@ export function SensorsSection({
               loading={isLoading}
               summary={summary}
               channel={channel}
+              notConnectedActive={notConnectedActive}
+              onToggleNotConnected={toggleNotConnected}
               attentionActive={filters.attention}
               onToggleAttention={toggleAttention}
               updatesActive={updatesActive}
