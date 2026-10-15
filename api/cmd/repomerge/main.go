@@ -21,6 +21,10 @@
 //	                          asset and is not found again), one transaction
 //	                          per repository
 //	repomerge -json           print the reports as JSON (with the asset ids)
+//	repomerge -apply -resolve also merge a repository whose duplicates carry
+//	                          several gate policies, keeping the one at least
+//	                          as strict as every other (never merged when
+//	                          none is; refused without -resolve)
 //
 // The default output is aggregate counts only, no names.
 //
@@ -47,6 +51,7 @@ func main() {
 	apply := flag.Bool("apply", false, "merge (default is a dry run)")
 	tenantFlag := flag.String("tenant", "", "tenant id (default: every tenant with repository assets)")
 	asJSON := flag.Bool("json", false, "print reports as JSON")
+	resolve := flag.Bool("resolve", false, "merge a repository whose duplicates carry several gate policies, keeping the strictest")
 	timeout := flag.Duration("timeout", time.Hour, "overall time limit")
 	flag.Parse()
 
@@ -80,18 +85,18 @@ func main() {
 	} else if tenants, err = repo.TenantsWithRepositories(ctx); err != nil {
 		fail(2, err.Error())
 	}
-	os.Exit(run(ctx, repo, tenants, *apply, *asJSON))
+	os.Exit(run(ctx, repo, tenants, *apply, *resolve, *asJSON))
 }
 
 // run merges (or counts) per tenant and prints the reports; it returns the
 // exit status.
-func run(ctx context.Context, repo *postgres.RepositoryMergeRepository, tenants []shared.ID, apply, asJSON bool) int {
+func run(ctx context.Context, repo *postgres.RepositoryMergeRepository, tenants []shared.ID, apply, resolve, asJSON bool) int {
 	status := 0
 	total := postgres.RepositoryMergeReport{Applied: apply}
 	reports := make([]*postgres.RepositoryMergeReport, 0, len(tenants))
 	affected := 0
 	for _, t := range tenants {
-		rep, err := repo.MergeDuplicateRepositories(ctx, t, apply)
+		rep, err := repo.MergeDuplicateRepositories(ctx, t, apply, resolve)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "repomerge: tenant %s: %v\n", t, err)
 			status = 1
@@ -103,7 +108,7 @@ func run(ctx context.Context, repo *postgres.RepositoryMergeRepository, tenants 
 				fmt.Fprintf(os.Stderr, "repomerge: tenant %s: %s\n", t, f)
 			}
 		}
-		if rep.Groups > 0 || rep.FailedGroups > 0 {
+		if rep.Groups > 0 || rep.FailedGroups > 0 || rep.RefusedGroups > 0 {
 			affected++
 			reports = append(reports, rep)
 		}
@@ -116,6 +121,7 @@ func run(ctx context.Context, repo *postgres.RepositoryMergeRepository, tenants 
 		total.GatePolicies += rep.GatePolicies
 		total.Expectations += rep.Expectations
 		total.FailedGroups += rep.FailedGroups
+		total.RefusedGroups += rep.RefusedGroups
 	}
 	if asJSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -128,9 +134,9 @@ func run(ctx context.Context, repo *postgres.RepositoryMergeRepository, tenants 
 		mode = "applied"
 	}
 	fmt.Printf("repomerge (%s): %d tenants checked, %d with duplicates; %d repositories, %d duplicate assets merged into them; "+
-		"moved: %d findings, %d branches, %d pipelines, %d runs, %d gate policies, %d coverage expectations; %d failed\n",
+		"moved: %d findings, %d branches, %d pipelines, %d runs, %d gate policies, %d coverage expectations; %d failed; %d refused (several gate policies: -resolve keeps the strictest)\n",
 		mode, len(tenants), affected, total.Groups, total.AssetsMerged, total.Findings, total.Branches, total.Pipelines,
-		total.Runs, total.GatePolicies, total.Expectations, total.FailedGroups)
+		total.Runs, total.GatePolicies, total.Expectations, total.FailedGroups, total.RefusedGroups)
 	return status
 }
 

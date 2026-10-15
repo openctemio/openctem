@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -199,9 +200,9 @@ func (r *FindingRepository) GetInterop(ctx context.Context, tenantID, findingID 
 // (pentest, manual, bug bounty, red team). It becomes false_positive with
 // resolution_method 'vex_not_affected' and the statement's reason as its
 // resolution. Returns the ids closed (or that would be).
-func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID shared.ID,
+func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID shared.ID, tool string,
 	items []vulnerability.VEXNotAffected, dryRun bool) ([]shared.ID, error) {
-	if len(items) == 0 {
+	if len(items) == 0 || tool == "" {
 		return nil, nil
 	}
 	fps := make([]string, len(items))
@@ -221,7 +222,8 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 		JOIN m ON m.fingerprint = f.fingerprint AND m.asset_id = f.asset_id
 		WHERE f.tenant_id = $1
 			AND f.status IN ` + vexFalsePositiveFromSQL + `
-			AND f.source NOT IN ` + coverageProtectedSources
+			AND f.source NOT IN ` + coverageProtectedSources + `
+			AND lower(COALESCE(f.last_seen_tool, f.tool_name)) = $5`
 	query := `SELECT id::text FROM (` + match + `) x`
 	if !dryRun {
 		query = `
@@ -236,23 +238,12 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 			AND f.status IN ` + vexFalsePositiveFromSQL + `
 		RETURNING f.id::text`
 	}
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(fps), pq.Array(assets), pq.Array(reasons))
+	out, err := r.db.queryIDsWithTransition(ctx, findingTransition{
+		Source: "vex", Reason: "vex_not_affected", ActorType: "scanner", ActorName: "system: VEX in a scan report",
+		Message: "A VEX statement in a scan report says the component is not affected",
+	}, query, tenantID.String(), pq.Array(fps), pq.Array(assets), pq.Array(reasons), strings.ToLower(tool))
 	if err != nil {
 		return nil, fmt.Errorf("apply vex not_affected: %w", err)
-	}
-	defer rows.Close()
-	var out []shared.ID
-	for rows.Next() {
-		var idStr string
-		if err := rows.Scan(&idStr); err != nil {
-			return nil, fmt.Errorf("scan vex finding id: %w", err)
-		}
-		if id, err := shared.IDFromString(idStr); err == nil {
-			out = append(out, id)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate vex findings: %w", err)
 	}
 	return out, nil
 }

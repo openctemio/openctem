@@ -1425,6 +1425,9 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		}
 		ciSvc.SetSuppressionRules(svc.Suppression, mg)
 	}
+	if repos.RepoIdentity != nil {
+		ciSvc.SetRepositoryIdentity(repos.RepoIdentity)
+	}
 	// A GitLab merge request run's baseline is its target branch as GitLab
 	// reports it through the organization's connection.
 	if repos.SCMApp != nil && svc.Encryptor != nil {
@@ -1443,6 +1446,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
 	admin.SetSettingsService(ciSvc)
+	admin.SetGateBaselineService(ciSvc)
 	if repos.CodeScan != nil {
 		var csAudit codescanapp.Auditor
 		if svc.Audit != nil {

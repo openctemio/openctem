@@ -360,14 +360,23 @@ func scanIDs(rows *sql.Rows) ([]shared.ID, error) {
 // archived) pipeline reported to not_observed with the reason
 // "source_stale": not fixed, not current. A sighting reopens them.
 func (r *CIRunRepository) MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *cirun.Pipeline) ([]shared.ID, error) {
-	rows, err := r.db.QueryContext(ctx, `UPDATE findings f SET status = 'not_observed', resolution = 'source_stale',
-		resolution_method = NULL, resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
-		WHERE `+soleSourceFindings+` AND f.status IN `+staleFromSQL+`
-		RETURNING f.id::text`, tenantID.String(), p.ID.String(), p.RepositoryAssetID.String(), p.LastRunAt)
-	if err != nil {
-		return nil, fmt.Errorf("mark stale-source findings: %w", err)
-	}
-	return scanIDs(rows)
+	var ids []shared.ID
+	err := r.db.withFindingTransition(ctx, findingTransition{
+		Source: "ci_stale", Reason: "source_stale", ActorName: "system: CI pipeline stale",
+		Message: "Not reported lately by its only CI pipeline, which went stale", Changes: map[string]any{"pipeline_id": p.ID.String()},
+	}, func(tx *sql.Tx) error {
+		//nolint:gosec // G202: fixed SQL fragments (lifecycle lists) and numbered placeholders only
+		rows, err := tx.QueryContext(ctx, `UPDATE findings f SET status = 'not_observed', resolution = 'source_stale',
+			resolution_method = NULL, resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
+			WHERE `+soleSourceFindings+` AND f.status IN `+staleFromSQL+`
+			RETURNING f.id::text`, tenantID.String(), p.ID.String(), p.RepositoryAssetID.String(), p.LastRunAt)
+		if err != nil {
+			return fmt.Errorf("mark stale-source findings: %w", err)
+		}
+		ids, err = scanIDs(rows)
+		return err
+	})
+	return ids, err
 }
 
 // RetirePipeline retires a pipeline and closes the open findings only it
@@ -393,6 +402,16 @@ func (r *CIRunRepository) RetirePipeline(ctx context.Context, tenantID, pipeline
 	if _, err := tx.ExecContext(ctx, `UPDATE ci_pipelines SET retired_at = $3, retired_by = $4, retire_reason = $5,
 		updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
 		tenantID.String(), pipelineID.String(), at, nullID(by), reason); err != nil {
+		return nil, nil, err
+	}
+	actor := ""
+	if by != nil {
+		actor = by.String()
+	}
+	if err := setFindingTransition(ctx, tx, findingTransition{
+		Source: "ci_retire", Reason: "source_retired", ActorType: "user", ActorID: actor,
+		Message: "Its only CI pipeline was retired", Changes: map[string]any{"pipeline_id": pipelineID.String()},
+	}); err != nil {
 		return nil, nil, err
 	}
 	rows, err := tx.QueryContext(ctx, `UPDATE findings f SET status = 'resolved', resolution = 'source_retired',

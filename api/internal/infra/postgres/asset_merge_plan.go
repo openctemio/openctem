@@ -111,6 +111,10 @@ var assetMergeRefs = []mergeRef{
 	// One enrichment request per asset (RFC-075): the kept asset's request wins.
 	{table: "asset_enrichment_requests", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// One rescore-queue row per asset: the kept asset's row wins (its score
+	// is recomputed once the merged findings move to it).
+	{table: "asset_risk_queue", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	{table: "business_unit_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
 	{table: "asset_group_members", column: "asset_id", idCol: "ctid",
@@ -138,6 +142,12 @@ var assetMergeRefs = []mergeRef{
 	// One gate policy per repository: the kept repository keeps its own,
 	// else it takes a merged one's.
 	{table: "ci_gate_policies", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{}}},
+	// One gate baseline per repository: the kept repository keeps its own
+	// (the merged one's findings, now on the kept repository, count as new
+	// until a baseline is recorded again), else it takes a merged one's
+	// (its fingerprints follow by ON UPDATE CASCADE).
+	{table: "ci_gate_baselines", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
 	// One expectation per repository: the kept repository keeps its own.
 	{table: "ci_coverage_expectations", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "ctid",
