@@ -9,6 +9,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
+// MaxBaselineGraceDays bounds the grace of baseline findings.
+const MaxBaselineGraceDays = 730
+
 // Where a gate baseline came from.
 const (
 	BaselineSourceManual   = "manual"
