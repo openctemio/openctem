@@ -213,7 +213,13 @@ var jiraDeliveryID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 // SetDeliveryVerifier wires inbound authentication (required for the route).
 func (h *JiraWebhookHandler) SetDeliveryVerifier(v JiraDeliveryVerifier) { h.verifier = v }
 
-// SetDeliveryGuard wires replay protection by delivery id.
+// WebhookDeliveryReleaser forgets a delivery key, so a delivery that failed
+// to process can be retried by its sender.
+type WebhookDeliveryReleaser interface {
+	ReleaseDelivery(ctx context.Context, key string) error
+}
+
+// SetDeliveryGuard wires replay protection by delivery id and body.
 func (h *JiraWebhookHandler) SetDeliveryGuard(g WebhookDeliveryGuard) { h.deliveries = g }
 
 // IncomingJiraWebhook handles POST /hooks/jira-integrations/{integration_id}.
@@ -251,26 +257,52 @@ func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.
 		apierror.Unauthorized("webhook delivery is too old").WriteJSON(w)
 		return
 	}
-	if h.deliveries != nil {
-		delivery := r.Header.Get("X-Atlassian-Webhook-Identifier")
-		if !jiraDeliveryID.MatchString(delivery) {
-			sum := sha256.Sum256(body)
-			delivery = "body-" + hex.EncodeToString(sum[:])
+	// Replay protection is mandatory: without a delivery store nothing is
+	// processed (production always has one; Redis is required at startup).
+	if h.deliveries == nil {
+		h.logger.Error("jira webhook: no delivery store; refusing", "integration_id", integrationID.String())
+		apierror.ServiceUnavailable("webhook temporarily unavailable").WriteJSON(w)
+		return
+	}
+	// Two keys, both must be new: the body hash (the identifier header is
+	// not covered by the signature, so a captured body with a fresh
+	// identifier is still a replay) and Jira's delivery identifier.
+	sum := sha256.Sum256(body)
+	prefix := "jira:" + integrationID.String() + ":"
+	keys := []string{prefix + "body-" + hex.EncodeToString(sum[:])}
+	if id := r.Header.Get("X-Atlassian-Webhook-Identifier"); jiraDeliveryID.MatchString(id) {
+		keys = append(keys, prefix+"id-"+id)
+	}
+	claimed := make([]string, 0, len(keys))
+	release := func() {
+		if rel, ok := h.deliveries.(WebhookDeliveryReleaser); ok {
+			for _, k := range claimed {
+				if err := rel.ReleaseDelivery(r.Context(), k); err != nil {
+					h.logger.Warn("jira webhook: could not release delivery key", "error", err)
+				}
+			}
 		}
-		first, derr := h.deliveries.FirstDelivery(r.Context(), "jira:"+integrationID.String()+":"+delivery, JiraDeliveryWindow)
+	}
+	for _, k := range keys {
+		first, derr := h.deliveries.FirstDelivery(r.Context(), k, JiraDeliveryWindow)
 		if derr != nil {
+			release()
 			h.logger.Error("jira webhook: delivery store unavailable", "integration_id", integrationID.String(), "error", derr)
 			apierror.ServiceUnavailable("webhook temporarily unavailable").WriteJSON(w)
 			return
 		}
 		if !first {
+			release()
 			h.logger.Warn("SECURITY: jira webhook replay ignored", "integration_id", integrationID.String())
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		claimed = append(claimed, k)
 	}
 
 	if err := h.service.HandleJiraWebhook(r.Context(), tenantID, payload); err != nil {
+		// Released, so Jira's retry of this delivery is processed.
+		release()
 		h.logger.Error("jira webhook processing failed",
 			"tenant_id", tenantID.String(),
 			"integration_id", integrationID.String(),

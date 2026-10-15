@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +29,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 
 	_ "github.com/lib/pq"
@@ -51,10 +53,32 @@ func (m *memDeliveries) FirstDelivery(_ context.Context, key string, _ time.Dura
 	return true, nil
 }
 
+// flakyFindings fails the first lookups (a transient database error), then
+// finds nothing.
+type flakyFindings struct {
+	vulnerability.FindingRepository
+	mu    sync.Mutex
+	fails int
+	calls int
+}
+
+func (f *flakyFindings) GetByWorkItemURI(context.Context, shared.ID, string) (*vulnerability.Finding, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.fails > 0 {
+		f.fails--
+		return nil, errors.New("transient")
+	}
+	return nil, shared.ErrNotFound
+}
+
 type jiraInbound struct {
 	mux     http.Handler
 	svc     *integrationapp.IntegrationService
 	guard   *memDeliveries
+	repo    *flakyFindings
+	handler *handler.JiraWebhookHandler
 	tenantA shared.ID
 	tenantB shared.ID
 	jiraA   shared.ID
@@ -103,7 +127,9 @@ func newJiraInbound(t *testing.T) *jiraInbound {
 	}
 	j.jiraA, j.jiraB = mk(j.tenantA), mk(j.tenantB)
 
-	h := handler.NewJiraWebhookHandler(jira.NewSyncService(nil, nil, logger.NewNop()), nil, logger.NewNop())
+	j.repo = &flakyFindings{}
+	h := handler.NewJiraWebhookHandler(jira.NewSyncService(j.repo, nil, logger.NewNop()), nil, logger.NewNop())
+	j.handler = h
 	h.SetDeliveryVerifier(svc)
 	j.guard = &memDeliveries{seen: map[string]bool{}}
 	h.SetDeliveryGuard(j.guard)
@@ -121,6 +147,13 @@ func hubSign(secret, body string) string {
 	m := hmac.New(sha256.New, []byte(secret))
 	_, _ = m.Write([]byte(body))
 	return "sha256=" + hex.EncodeToString(m.Sum(nil))
+}
+
+func (m *memDeliveries) ReleaseDelivery(_ context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.seen, key)
+	return nil
 }
 
 func (j *jiraInbound) send(integrationID string, sig, delivery, body string) int {
@@ -215,6 +248,29 @@ func TestIncomingJiraWebhook_HubSignaturePerIntegration(t *testing.T) {
 		if j.guard.replays != 2 {
 			t.Fatalf("replay without identifier not detected: %d", j.guard.replays)
 		}
+		// The identifier is not signed: the same body under a new identifier
+		// is still a replay.
+		if code := j.send(j.jiraA.String(), hubSign(secretA, body), id(), body); code != http.StatusOK {
+			t.Fatalf("same body, new identifier: got %d", code)
+		}
+		if j.guard.replays != 3 {
+			t.Fatalf("same body under a new identifier was processed again: %d", j.guard.replays)
+		}
+	})
+	t.Run("a delivery that failed to process is processed on Jira's retry", func(t *testing.T) {
+		body := fmt.Sprintf(`{"webhookEvent":"jira:issue_updated","timestamp":%d,"issue":{"key":"OPS-9","self":"https://x.atlassian.net/rest/api/2/issue/9"},"changelog":{"items":[{"field":"status","toString":"Done"}]}}`, now.Add(5*time.Second).UnixMilli())
+		d := id()
+		j.repo.fails = 1
+		if code := j.send(j.jiraA.String(), hubSign(secretA, body), d, body); code != http.StatusInternalServerError {
+			t.Fatalf("failing delivery: got %d, want 500", code)
+		}
+		before := j.repo.calls
+		if code := j.send(j.jiraA.String(), hubSign(secretA, body), d, body); code != http.StatusOK {
+			t.Fatalf("retry: got %d, want 200", code)
+		}
+		if j.repo.calls != before+1 {
+			t.Fatalf("the retry was dropped as a replay (lookups %d -> %d)", before, j.repo.calls)
+		}
 	})
 	t.Run("a stale or undated delivery is refused", func(t *testing.T) {
 		body := jiraBody(now.Add(-2 * time.Hour))
@@ -248,6 +304,14 @@ func TestIncomingJiraWebhook_HubSignaturePerIntegration(t *testing.T) {
 		}
 		if _, err := j.svc.JiraWebhookHasSecret(ctx, j.tenantB, j.jiraA); err == nil {
 			t.Error("B read A's webhook state")
+		}
+	})
+	t.Run("without a delivery store nothing is processed", func(t *testing.T) {
+		j.handler.SetDeliveryGuard(nil)
+		defer j.handler.SetDeliveryGuard(j.guard)
+		body := jiraBody(now.Add(6 * time.Second))
+		if code := j.send(j.jiraB.String(), hubSign(secretB, body), id(), body); code != http.StatusServiceUnavailable {
+			t.Fatalf("no delivery store: got %d, want 503", code)
 		}
 	})
 	t.Run("a weak entered secret is refused", func(t *testing.T) {
