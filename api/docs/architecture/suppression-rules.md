@@ -3,8 +3,8 @@
 A suppression rule is an organization's decision that a class of findings is a
 false positive or an accepted risk: a tool rule id (exact, or a prefix ending
 in `*`), optionally narrowed to a tool, a file path glob (`*`, `**`) and one
-asset. It is requested by one person and approved by another, and it can
-expire. Tables: `suppression_rules`, `finding_suppressions` (which rule
+asset. It is requested by one person and approved by another, and it always
+expires. Tables: `suppression_rules`, `finding_suppressions` (which rule
 suppressed which finding), `suppression_rule_audit` (the rule's own trail).
 
 Code: `pkg/domain/suppression` (entity, matcher `Rule.Matches` /
@@ -16,11 +16,27 @@ routes in `registerSuppressionRoutes` (`internal/infra/http/routes/scanning.go`)
 
 | Step | Who | What happens |
 |---|---|---|
-| Request | `findings:suppressions:write` | A pending rule. An asset-bound rule must name an asset the requester may see. |
+| Request | `findings:suppressions:write` | A pending rule. An asset-bound rule must name an asset the requester may see. The rule has an end (`expires_at`): 90 days when none is given, at most 365 days ahead; the end cannot be removed. Renewal is a new rule, reviewed and approved again. |
 | Preview | `findings:suppressions:approve` | `GET /api/v1/suppressions/{id}/preview` returns `{matching_open_findings, capped, limit}`: the open findings an approval would close now. |
 | Approve | `findings:suppressions:approve` | Four-eyes: the approver is not the requester, unless the owner is the only eligible approver (audited Critical). The request names the `reviewed_updated_at` it approves; a rule edited since is refused (409). The approval closes the open findings the rule matches (below). |
 | Reject | `findings:suppressions:approve` | The rule never applies. |
 | Expire / delete | data-expiration controller / `findings:suppressions:delete` | The rule's suppressions are lifted (below). |
+
+## Every rule ends
+
+A rule hides findings from the backlog and the CI gate, so a rule that never
+ends hides them for good. The domain gives every rule an end
+(`suppression.RuleEnd`: default `DefaultRuleDuration` = 90 days, at most
+`MaxRuleDuration` = 365 days), the database refuses a row without one
+(`chk_suppression_rules_expires_at_set`, with a 90-day column default for
+writers that name none, such as CI inline-ignore requests), and the expiry job
+lifts the rule's suppressions when it passes.
+
+Rules made before the end was required were given 90 days from the upgrade by
+migration `suppression_rule_end_backfill`; the pending and approved ones carry
+a review flag (`review_flagged_at`, `review_reason = no_end_date`), shown as a
+"Review" badge in the list and a callout in the rule's detail, so an approver
+looks at them again. An edit of the rule clears the flag.
 
 ## Where an active rule applies
 
