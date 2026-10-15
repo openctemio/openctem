@@ -158,6 +158,7 @@ const (
 	ActionMemberOwnershipTransferred       Action = "member.ownership_transferred"
 	ActionMemberOwnershipTransferCanceled  Action = "member.ownership_transfer_canceled"
 	ActionMemberOwnershipTransferDeclined  Action = "member.ownership_transfer_declined"
+	ActionMemberOwnershipTransferExpired   Action = "member.ownership_transfer_expired"
 
 	// Invitation actions
 	ActionInvitationCreated  Action = "invitation.created"
@@ -685,6 +686,7 @@ func (a Action) IsValid() bool {
 		ActionMemberAccessChanged,
 		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
 		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined,
+		ActionMemberOwnershipTransferExpired,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
 		ActionComponentCreated, ActionComponentUpdated, ActionComponentDeleted,
@@ -800,7 +802,8 @@ func (a Action) Category() string {
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
 		ActionMemberAccessChanged,
 		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
-		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined:
+		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined,
+		ActionMemberOwnershipTransferExpired:
 		return "member"
 	case ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired:
 		return "invitation"
