@@ -1701,7 +1701,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			objects.members = s.RemediationCampaign
 		}
 		s.TicketMapping = appticketmap.NewService(repos.TicketMapping, infrajira.NewMappingTrackerResolver(jiraResolver),
-			s.DataScope, objects, cfg.SMTP.BaseURL, log)
+			ticketMappingScope{e: s.DataScope}, objects, cfg.SMTP.BaseURL, log)
 		// Published profiles drive issue creation and status moves for their
 		// destinations; without one the built-in behavior is unchanged.
 		s.JiraSync.SetProfileSource(s.TicketMapping)

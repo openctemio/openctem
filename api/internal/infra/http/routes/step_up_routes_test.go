@@ -98,6 +98,8 @@ var stepUpRoutes = []string{
 	// A published ticket mapping decides what leaves for the tracker.
 	"POST /api/v1/integrations/ticket-mappings/{id}/publish",
 	"POST /api/v1/integrations/ticket-mappings/{id}/dry-run",
+	// Deleting a profile sends the destination back to the built-in fields.
+	"DELETE /api/v1/integrations/ticket-mappings/{id}",
 	"PATCH /api/v1/attachments/storage-config",
 	// Widening scope (RFC-054 §6): approving an entry, the settings, and
 	// taking an exclusion out of effect.

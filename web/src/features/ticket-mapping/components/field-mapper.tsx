@@ -707,7 +707,7 @@ function MappingRowCard({
               'rounded px-1.5 py-0.5',
               i.severity === 'error'
                 ? 'bg-destructive/10 text-destructive'
-                : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                : 'bg-warning/10 text-warning'
             )}
           >
             {i.message}

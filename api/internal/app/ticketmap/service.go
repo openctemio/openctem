@@ -58,6 +58,9 @@ type TrackerResolver interface {
 // ScopeChecker enforces the caller's data scope on a finding (404 outside).
 type ScopeChecker interface {
 	AssertFinding(ctx context.Context, tenantID, findingID shared.ID) error
+	// FilterFindings reports which of the findings the caller can see, and
+	// whether the caller is restricted to a data scope at all.
+	FilterFindings(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) (keep func(shared.ID) bool, restricted bool, err error)
 }
 
 // ObjectSource loads the objects a preview renders. Task members are listed
@@ -624,11 +627,44 @@ func (s *Service) values(ctx context.Context, kind ticketmapdom.ObjectKind, tena
 	if err != nil {
 		return nil, "", err
 	}
+	// The task's members go through the caller's data scope again here, so
+	// the preview never depends on the lister alone: a restricted member sees
+	// only the findings in scope, and a task with none of them is not found.
+	ids := make([]shared.ID, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.ID())
+	}
+	keep, restricted, err := s.scope.FilterFindings(ctx, tenantID, ids)
+	if err != nil {
+		return nil, "", err
+	}
+	visible := members[:0:0]
+	for _, m := range members {
+		if keep(m.ID()) {
+			visible = append(visible, m)
+		}
+	}
+	if restricted {
+		if len(visible) == 0 {
+			return nil, "", fmt.Errorf("%w: task not found", shared.ErrNotFound)
+		}
+		if len(visible) < len(members) || total <= int64(len(members)) {
+			total = int64(len(visible))
+		}
+	}
 	var user *UserInfo
 	if a := c.AssignedTo(); a != nil {
 		user, _ = s.objects.User(ctx, tenantID, *a)
 	}
-	return TaskValues(c, members, total, user, s.webBase), TaskStateOf(c), nil
+	v := TaskValues(c, visible, total, user, s.webBase)
+	if restricted {
+		// The stored counts are organization-wide: a restricted caller gets
+		// the count of what they can see and no organization progress.
+		v["task.finding_count"] = ticketmapdom.Number(float64(total))
+		delete(v, "task.resolved_count")
+		delete(v, "task.progress")
+	}
+	return v, TaskStateOf(c), nil
 }
 
 func findingState(f *vulnerability.Finding) string {

@@ -155,9 +155,7 @@ export function MappingHistory({
                     <p className="mt-1 break-all text-destructive">− {short(c.from)}</p>
                   )}
                   {c.kind !== 'removed' && (
-                    <p className="mt-1 break-all text-emerald-700 dark:text-emerald-400">
-                      + {short(c.to)}
-                    </p>
+                    <p className="mt-1 break-all text-success">+ {short(c.to)}</p>
                   )}
                 </li>
               ))}

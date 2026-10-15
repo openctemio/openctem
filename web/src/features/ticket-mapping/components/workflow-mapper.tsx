@@ -63,8 +63,8 @@ const NODE_H = 34
 
 const CATEGORY_TONE: Record<string, string> = {
   new: 'fill-muted stroke-border',
-  indeterminate: 'fill-blue-500/15 stroke-blue-500/60',
-  done: 'fill-emerald-500/15 stroke-emerald-500/60',
+  indeterminate: 'fill-info/15 stroke-info/60',
+  done: 'fill-success/15 stroke-success/60',
 }
 
 /** The workflow as a graph: three category columns, transitions as edges.
@@ -568,7 +568,7 @@ export function WorkflowMapper({
 
         <TabsContent value="simulate" className="mt-4 grid gap-4">
           {dirty && (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
+            <p className="text-xs text-warning">
               {t(
                 'ticketMapping.status.simUnsaved',
                 'The simulator uses the saved draft: save your changes first.'
@@ -765,7 +765,7 @@ export function WorkflowMapper({
                         })}
                   </span>
                   {!simIn.mapped && (
-                    <span className="text-xs text-amber-700 dark:text-amber-400">
+                    <span className="text-xs text-warning">
                       {t('ticketMapping.status.unmapped', 'This status has no rule.')}
                     </span>
                   )}

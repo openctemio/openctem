@@ -31,8 +31,9 @@ CREATE TABLE IF NOT EXISTS ticket_mapping_profiles (
     CONSTRAINT pk_ticket_mapping_profiles PRIMARY KEY (id),
     CONSTRAINT fk_ticket_mapping_profiles_tenant FOREIGN KEY (tenant_id)
         REFERENCES tenants (id) ON DELETE CASCADE,
-    CONSTRAINT fk_ticket_mapping_profiles_integration FOREIGN KEY (integration_id)
-        REFERENCES integrations (id) ON DELETE CASCADE,
+    -- The integration must belong to the profile's own organization.
+    CONSTRAINT fk_ticket_mapping_profiles_integration_tenant FOREIGN KEY (tenant_id, integration_id)
+        REFERENCES integrations (tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_ticket_mapping_profiles_created_by FOREIGN KEY (created_by)
         REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT chk_ticket_mapping_profiles_kind CHECK (object_kind IN ('finding', 'task')),
@@ -44,8 +45,6 @@ COMMENT ON TABLE ticket_mapping_profiles IS
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_mapping_profiles_destination
     ON ticket_mapping_profiles (tenant_id, integration_id, object_kind, project_key, issue_type_id);
-CREATE INDEX IF NOT EXISTS idx_ticket_mapping_profiles_integration
-    ON ticket_mapping_profiles (integration_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_mapping_profiles_created_by
     ON ticket_mapping_profiles (created_by) WHERE created_by IS NOT NULL;
 

@@ -57,7 +57,7 @@ The stored spec cannot widen a capability: validation refuses it and the engine 
 `{{ path | filter:arg }}` only. Paths come from the catalog of the profile's object kind; filters are `join`,
 `truncate`, `date`, `default`, `upper`, `lower`, `first`, `count`. No loops, conditionals, calls, includes or
 variables. Values above the profile's data level are removed before rendering, so a template cannot reach them.
-Rendering is followed by **redaction** (the shared secret redactor) and encoding for the tracker's markup; neither
+Rendering is followed by **redaction** (on every text, label and option value) (the shared secret redactor) and encoding for the tracker's markup; neither
 can be turned off by a profile.
 
 ### 2.4 Status map
@@ -112,14 +112,17 @@ previews need `integrations:manage`.
 
 ## 5. Security
 
-- **Tenant isolation:** every query carries `tenant_id`; an integration of another organization is "not found";
+- **Tenant isolation:** every query carries `tenant_id`; an integration of another organization is "not found",
+  and the database refuses one (`(tenant_id, integration_id)` foreign key to `integrations (tenant_id, id)`);
   profiles are unique per destination inside the organization.
-- **Data scope:** a preview renders only an object the caller can see (404 otherwise); task members are listed
-  through the caller's scope.
+- **Data scope:** a preview renders only an object the caller can see (404 otherwise). A task preview filters
+  its members by the caller's scope again in the mapping service; a restricted caller with no member in scope
+  gets 404, and sees the count of visible members instead of the organization's counts and progress.
 - **No escalation inbound:** capabilities are code, re-checked at apply; requests go through the approval path.
 - **Leakage:** data tiers per profile, redaction after rendering, encoding, secret findings never expose more
   than the masked value.
-- **Change control:** edits need `integrations:manage`, publish and dry-run switches a recent step-up; every change
+- **Change control:** edits need `integrations:manage`; publish, the dry-run switch and deleting a profile (the
+  destination falls back to the built-in mapping) also need a recent step-up; every change
   is audited with a before/after diff (`ticket_mapping.*`).
 - **Bounded input:** documents ≤ 256 KiB, unknown keys refused, ≤ 60 rows, value maps ≤ 100 entries, templates
   ≤ 4,000 characters; tracker metadata reads are paginated and bounded.
