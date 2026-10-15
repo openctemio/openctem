@@ -101,10 +101,9 @@ services:
       - go-mod-cache:/go/pkg/mod
       # Preserve build cache
       - go-build-cache:/root/.cache/go-build
-      # No SDK mount and no go.work: the API requires only the
-      # github.com/openctemio/sdk-go/pkg/transfer module, resolved from its
-      # go.mod pin, and dev-entrypoint.sh builds with GOWORK=off, exactly
-      # like CI and the release image.
+      # No SDK mount and no go.work: the API requires no sensor SDK module
+      # (contracts only, from their go.mod pins), and dev-entrypoint.sh
+      # builds with GOWORK=off, exactly like CI and the release image.
     depends_on:
       postgres:
         condition: service_healthy
