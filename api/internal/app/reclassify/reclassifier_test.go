@@ -2,6 +2,7 @@ package reclassify
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -112,11 +113,22 @@ func (q *fakeQueue) RecordImpact(_ context.Context, tid shared.ID, change int64,
 	return nil
 }
 
-// ClaimDrainedSummaries hands back every recorded impact once.
-func (q *fakeQueue) ClaimDrainedSummaries(context.Context, int) ([]scoring.ChangeSummary, error) {
-	out := q.impacts
-	q.impacts = nil
-	return out, nil
+// ClaimDrainedSummaries sends every recorded impact; one whose send fails
+// stays pending, like the repository's savepoint.
+func (q *fakeQueue) ClaimDrainedSummaries(ctx context.Context, _ int, send scoring.SummarySender) (int, error) {
+	var pending []scoring.ChangeSummary
+	var errs []error
+	for _, s := range q.impacts {
+		if send != nil {
+			if err := send(ctx, nil, s); err != nil {
+				pending = append(pending, s)
+				errs = append(errs, err)
+			}
+		}
+	}
+	n := len(q.impacts) - len(pending)
+	q.impacts = pending
+	return n, errors.Join(errs...)
 }
 
 type fakeVersions struct{ v int64 }
@@ -279,7 +291,7 @@ func TestReclassify_MissingAssetIsASoftMiss(t *testing.T) {
 
 type captureSummaries struct{ got []scoring.ChangeSummary }
 
-func (c *captureSummaries) PublishScoringSummary(_ context.Context, s scoring.ChangeSummary) error {
+func (c *captureSummaries) PublishScoringSummaryInTx(_ context.Context, _ *sql.Tx, s scoring.ChangeSummary) error {
 	c.got = append(c.got, s)
 	return nil
 }
