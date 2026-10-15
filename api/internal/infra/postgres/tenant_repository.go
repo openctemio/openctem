@@ -1304,50 +1304,56 @@ func (r *TenantRepository) GetUserMemberships(ctx context.Context, userID shared
 // they were sent), and an invitation the seats could not take: members plus
 // pending invitations must stay within the plan's seats.
 func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Invitation) error {
-	var sentLastHour, pending int
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT
-		  (SELECT count(*) FROM tenant_invitations WHERE invited_by = $1 AND created_at > now() - interval '1 hour'),
-		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $2 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now())`,
-		inv.InvitedBy().String(), inv.TenantID().String()).Scan(&sentLastHour, &pending); err != nil {
-		return fmt.Errorf("count invitations: %w", err)
-	}
-	if sentLastHour >= tenant.InvitationsPerInviterPerHour {
-		return tenant.ErrInvitationRateLimited
-	}
-	if err := r.checkLimit(ctx, inv.TenantID(), plan.InvitesPerDay, 1); err != nil {
-		return err
-	}
-	if err := r.checkLimit(ctx, inv.TenantID(), plan.Seats, pending+1); err != nil {
-		return err
-	}
 	info := inv.InviteeInfo()
-	query := `
-		INSERT INTO tenant_invitations (id, tenant_id, email, role, role_ids, token, invited_by, expires_at, created_at,
-		                                access_expires_at, access_expiry_reason, last_sent_at, invitee_kind, privileged)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $9, $12, $13)
-	`
-
-	_, err := r.db.ExecContext(ctx, query,
-		inv.ID().String(),
-		inv.TenantID().String(),
-		inv.Email(),
-		inv.Role().String(),
-		pq.Array(inv.RoleIDs()),
-		inv.Token(),
-		inv.InvitedBy().String(),
-		inv.ExpiresAt(),
-		inv.CreatedAt(),
-		nullTime(inv.Access().ExpiresAt),
-		nullString(inv.Access().Reason),
-		string(info.Kind),
-		info.Privileged,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create invitation: %w", err)
-	}
-
-	return nil
+	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		// One invitation at a time per organization: the counts below and the
+		// insert are atomic, so concurrent requests cannot all pass at the
+		// limit. The plan check reads usage on another connection after this
+		// lock is held, so it sees every invitation committed before.
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('tenant_invitations:' || $1, 0))`,
+			inv.TenantID().String()); err != nil {
+			return fmt.Errorf("lock invitations: %w", err)
+		}
+		var sentLastHour, pending int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT
+			  (SELECT count(*) FROM tenant_invitations WHERE invited_by = $1 AND created_at > now() - interval '1 hour'),
+			  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $2 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now())`,
+			inv.InvitedBy().String(), inv.TenantID().String()).Scan(&sentLastHour, &pending); err != nil {
+			return fmt.Errorf("count invitations: %w", err)
+		}
+		if sentLastHour >= tenant.InvitationsPerInviterPerHour {
+			return tenant.ErrInvitationRateLimited
+		}
+		if err := r.checkLimit(ctx, inv.TenantID(), plan.InvitesPerDay, 1); err != nil {
+			return err
+		}
+		if err := r.checkLimit(ctx, inv.TenantID(), plan.Seats, pending+1); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO tenant_invitations (id, tenant_id, email, role, role_ids, token, invited_by, expires_at, created_at,
+			                                access_expires_at, access_expiry_reason, last_sent_at, invitee_kind, privileged)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $9, $12, $13)`,
+			inv.ID().String(),
+			inv.TenantID().String(),
+			inv.Email(),
+			inv.Role().String(),
+			pq.Array(inv.RoleIDs()),
+			inv.Token(),
+			inv.InvitedBy().String(),
+			inv.ExpiresAt(),
+			inv.CreatedAt(),
+			nullTime(inv.Access().ExpiresAt),
+			nullString(inv.Access().Reason),
+			string(info.Kind),
+			info.Privileged,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create invitation: %w", err)
+		}
+		return nil
+	})
 }
 
 // GetInvitationByToken retrieves an invitation by token.
@@ -1381,11 +1387,13 @@ func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Inv
 	query := `
 		UPDATE tenant_invitations
 		SET accepted_at = $2, token = $3, last_sent_at = $5, resend_count = $6
-		WHERE id = $1 AND tenant_id = $4 AND revoked_at IS NULL
+		WHERE id = $1 AND tenant_id = $4 AND revoked_at IS NULL AND resend_count = $7
 	`
 
+	// resend_count = the count as read: of two concurrent resends, one
+	// rotates the token and mails it; the other updates nothing.
 	result, err := r.db.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt(), inv.Token(), inv.TenantID().String(),
-		inv.LastSentAt(), inv.ResendCount())
+		inv.LastSentAt(), inv.ResendCount(), inv.LoadedResendCount())
 	if err != nil {
 		return fmt.Errorf("failed to update invitation: %w", err)
 	}
@@ -1395,6 +1403,9 @@ func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Inv
 		return fmt.Errorf("rows affected: %w", rowErr)
 	}
 	if rows == 0 {
+		if inv.ResendCount() != inv.LoadedResendCount() {
+			return tenant.ErrInvitationResendTooSoon // another resend won the race
+		}
 		return shared.ErrNotFound
 	}
 

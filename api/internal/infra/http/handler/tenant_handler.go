@@ -1252,7 +1252,7 @@ type PreviewInvitationResponse struct {
 // PreviewInvitation handles POST /api/v1/organization/invitations/preview.
 //
 // @Summary      Preview an invitation
-// @Description  What inviting this address with these roles would do, before anything is sent: whether the organization's invitation policy allows it (reason code when not), whether the person is outside the organization or uses a personal address, whether the roles are above member for them (the inviter then re-authenticates and the member needs two-factor), whether an end of access is required, and whether they are already a member or invited. Says nothing about other organizations. Same gate as creating an invitation (RFC-095).
+// @Description  What inviting this address with these roles would do, before anything is sent: whether the organization's invitation policy allows it (reason code when not), whether the person is outside the organization or uses a personal address, whether the roles are above member for them (the inviter then re-authenticates and the member needs two-factor), whether an end of access is required, and whether they are already a member or invited. Says nothing about other organizations. Owner or administrator with members:invite, the same requirements as creating an invitation; the organization comes from the token (RFC-095).
 // @Tags         Tenants
 // @Accept       json
 // @Produce      json

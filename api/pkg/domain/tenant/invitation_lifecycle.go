@@ -75,7 +75,13 @@ func (i *Invitation) ResendCount() int { return i.resendCount }
 func (i *Invitation) SetSendHistory(lastSentAt *time.Time, resendCount int) {
 	i.lastSentAt = lastSentAt
 	i.resendCount = resendCount
+	i.loadedResendCount = resendCount
 }
+
+// LoadedResendCount is the resend count as it was read: the repository
+// updates the row only while it is still that value, so of two resends at
+// the same time one sends mail and the other is refused.
+func (i *Invitation) LoadedResendCount() int { return i.loadedResendCount }
 
 // MarkResent records a resend at now, refusing one within ResendCooldown of
 // the last send or beyond MaxInvitationResends.
