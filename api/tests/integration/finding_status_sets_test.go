@@ -57,6 +57,12 @@ func TestFindingStatusSets_ConsumersAgree(t *testing.T) {
 	}
 	assetID := newAsset(tenant)
 	otherAsset := newAsset(other)
+	// The canonical finding the duplicate names: resolved long ago, so it is
+	// in none of the counts below.
+	canonical := shared.NewID()
+	exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
+		VALUES ($1, $2, $3, 'sast', 'ss-tool', 'm', 'high', $4, 'resolved')`,
+		canonical.String(), tenant.String(), assetID.String(), "ss-canonical-"+canonical.String())
 	// Every status on the tenant's asset; the closed ones closed today.
 	for _, st := range vulnerability.AllFindingStatuses() {
 		source := "sast"
@@ -64,12 +70,16 @@ func TestFindingStatusSets_ConsumersAgree(t *testing.T) {
 			source = "pentest"
 		}
 		closedToday := !vulnerability.IsOpenStatus(st) && st != vulnerability.FindingStatusDraft && st != vulnerability.FindingStatusInReview
+		var dupOf any
+		if st == vulnerability.FindingStatusDuplicate {
+			dupOf = canonical.String()
+		}
 		id := shared.NewID()
 		exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status,
 				priority_class, first_detected_at, resolved_at, duplicate_of)
 			VALUES ($1, $2, $3, $4, 'ss-tool', 'm', 'high', $5, $6, 'P1', NOW() - INTERVAL '10 hours',
-				CASE WHEN $7 THEN NOW() END, NULL)`,
-			id.String(), tenant.String(), assetID.String(), source, "ss-"+id.String(), string(st), closedToday)
+				CASE WHEN $7 THEN NOW() END, $8)`,
+			id.String(), tenant.String(), assetID.String(), source, "ss-"+id.String(), string(st), closedToday, dupOf)
 	}
 	// Another tenant's open finding never counts for this one.
 	exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)

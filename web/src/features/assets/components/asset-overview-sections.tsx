@@ -21,6 +21,7 @@ import {
   DetailFieldGrid,
   RelativeTime,
   RiskScoreBadge,
+  riskScoreState,
   SeverityStrip,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
@@ -33,6 +34,7 @@ import {
 import { PropertyValue, hasPropertyValue, isWideValue } from './property-value'
 import type { Asset } from '../types/asset.types'
 import { ProgramTargetBadge } from './program-target-badge'
+import { AssetRiskExplanation } from './asset-risk-explanation'
 
 // The property list gets a search box from this many values.
 const SEARCH_FROM = 8
@@ -78,6 +80,8 @@ export function RiskSummarySection({ asset, onViewFindings }: RiskSummarySection
   const { t } = useTranslation()
   const counts = asset.findingSeverityCounts ?? {}
   const hasFindings = asset.findingCount > 0
+  const state = riskScoreState(asset)
+  const [showWhy, setShowWhy] = React.useState(false)
 
   return (
     <DetailSection
@@ -96,7 +100,13 @@ export function RiskSummarySection({ asset, onViewFindings }: RiskSummarySection
           <p className="text-xs text-muted-foreground">
             {t('assets.overview2.riskScore', 'Risk score')}
           </p>
-          <RiskScoreBadge score={asset.riskScore} size="md" />
+          <RiskScoreBadge score={asset.riskScore} state={state} size="md" />
+          {asset.riskScoredAt && (
+            <p className="flex items-baseline gap-1 text-xs text-muted-foreground">
+              {t('riskScore.updated', 'Score updated')}
+              <RelativeTime date={asset.riskScoredAt} className="text-xs" />
+            </p>
+          )}
         </div>
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
@@ -111,6 +121,26 @@ export function RiskSummarySection({ asset, onViewFindings }: RiskSummarySection
         <p className="mt-3 text-sm text-muted-foreground">
           {t('assets.overview2.noOpen', 'No open findings on this asset.')}
         </p>
+      )}
+      {state !== 'unscored' && state !== 'calculating' && (
+        <div className="mt-3">
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            aria-expanded={showWhy}
+            onClick={() => setShowWhy((v) => !v)}
+          >
+            {showWhy
+              ? t('riskScore.why.hide', 'Hide explanation')
+              : t('riskScore.why.show', 'Why this score?')}
+          </Button>
+          {showWhy && (
+            <div className="mt-2 rounded-md border p-3">
+              <AssetRiskExplanation assetId={asset.id} />
+            </div>
+          )}
+        </div>
       )}
     </DetailSection>
   )

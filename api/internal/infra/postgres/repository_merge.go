@@ -8,6 +8,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -28,23 +29,40 @@ type RepositoryMergeGroup struct {
 	MergeAssetIDs []string `json:"merge_asset_ids"`
 	// Name is the name the kept asset ends with ("" keeps its own).
 	Name string `json:"name,omitempty"`
+	// GatePolicies counts the repository gate policies on the group's
+	// assets. More than one is a conflict: a repository has one policy, and
+	// keeping the wrong one would loosen its gate. The group is merged only
+	// with resolve, keeping a policy at least as strict as every other
+	// (cirun.StrictestPolicy); without one, it is never merged.
+	GatePolicies int `json:"gate_policies,omitempty"`
+	// Refused says why the group was not merged ("" when it was, or would be).
+	Refused string `json:"refused,omitempty"`
 }
+
+// Reasons a duplicate group is not merged.
+const (
+	RefusedPolicyConflict     = "gate_policy_conflict"
+	RefusedPolicyIncomparable = "gate_policies_incomparable"
+)
 
 // RepositoryMergeReport counts what a merge moved (or a dry run would).
 type RepositoryMergeReport struct {
-	TenantID      string                 `json:"tenant_id"`
-	Applied       bool                   `json:"applied"`
-	Groups        int                    `json:"groups"`
-	AssetsMerged  int                    `json:"assets_merged"`
-	Findings      int                    `json:"findings"`
-	Branches      int                    `json:"branches"`
-	Pipelines     int                    `json:"pipelines"`
-	Runs          int                    `json:"runs"`
-	GatePolicies  int                    `json:"gate_policies"`
-	Expectations  int                    `json:"coverage_expectations"`
-	MergeDetails  []RepositoryMergeGroup `json:"merges,omitempty"`
-	FailedGroups  int                    `json:"failed_groups,omitempty"`
-	FailureDetail []string               `json:"failures,omitempty"`
+	TenantID     string                 `json:"tenant_id"`
+	Applied      bool                   `json:"applied"`
+	Groups       int                    `json:"groups"`
+	AssetsMerged int                    `json:"assets_merged"`
+	Findings     int                    `json:"findings"`
+	Branches     int                    `json:"branches"`
+	Pipelines    int                    `json:"pipelines"`
+	Runs         int                    `json:"runs"`
+	GatePolicies int                    `json:"gate_policies"`
+	Expectations int                    `json:"coverage_expectations"`
+	MergeDetails []RepositoryMergeGroup `json:"merges,omitempty"`
+	FailedGroups int                    `json:"failed_groups,omitempty"`
+	// RefusedGroups were left alone: their assets carry several gate
+	// policies (see RepositoryMergeGroup.GatePolicies).
+	RefusedGroups int      `json:"refused_groups,omitempty"`
+	FailureDetail []string `json:"failures,omitempty"`
 }
 
 // RepositoryMergeRepository finds and merges duplicate repository assets.
@@ -225,19 +243,38 @@ const noReview = "00000000-0000-0000-0000-000000000000"
 
 // MergeDuplicateRepositories finds the tenant's duplicate repository assets
 // and, with apply, merges each group in its own transaction. Without apply
-// it changes nothing and reports what it would move.
-func (r *RepositoryMergeRepository) MergeDuplicateRepositories(ctx context.Context, tenantID shared.ID, apply bool) (*RepositoryMergeReport, error) {
+// it changes nothing and reports what it would move. A group whose assets
+// carry several gate policies is merged only with resolve, keeping the
+// strictest one; otherwise (or when none is the strictest) it is refused.
+func (r *RepositoryMergeRepository) MergeDuplicateRepositories(ctx context.Context, tenantID shared.ID, apply, resolve bool) (*RepositoryMergeReport, error) {
 	groups, err := r.FindDuplicateRepositories(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	rep := &RepositoryMergeReport{TenantID: tenantID.String(), Applied: apply, MergeDetails: groups}
-	for _, g := range groups {
+	rep := &RepositoryMergeReport{TenantID: tenantID.String(), Applied: apply}
+	for i := range groups {
+		g := &groups[i]
+		policies, err := r.groupPolicies(ctx, r.db, tenantID, g.ids())
+		if err != nil {
+			return nil, err
+		}
+		g.GatePolicies = len(policies)
+		if len(policies) > 1 {
+			if _, ok := cirun.StrictestPolicy(policies); !ok {
+				g.Refused = RefusedPolicyIncomparable
+			} else if !resolve {
+				g.Refused = RefusedPolicyConflict
+			}
+		}
+		if g.Refused != "" {
+			rep.RefusedGroups++
+			continue
+		}
 		if err := r.countMoved(ctx, tenantID, g.MergeAssetIDs, rep); err != nil {
 			return nil, err
 		}
 		if apply {
-			if err := r.mergeGroup(ctx, tenantID, g); err != nil {
+			if err := r.mergeGroup(ctx, tenantID, *g); err != nil {
 				rep.FailedGroups++
 				rep.FailureDetail = append(rep.FailureDetail, fmt.Sprintf("keep %s: %v", g.KeepAssetID, err))
 				continue
@@ -246,7 +283,62 @@ func (r *RepositoryMergeRepository) MergeDuplicateRepositories(ctx context.Conte
 		rep.Groups++
 		rep.AssetsMerged += len(g.MergeAssetIDs)
 	}
+	rep.MergeDetails = groups
 	return rep, nil
+}
+
+// ids is every asset of the group, the kept one first.
+func (g RepositoryMergeGroup) ids() []string {
+	return append([]string{g.KeepAssetID}, g.MergeAssetIDs...)
+}
+
+type policyQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// groupPolicies reads the repository gate policies on the given assets.
+func (r *RepositoryMergeRepository) groupPolicies(ctx context.Context, q policyQueryer, tenantID shared.ID, ids []string) ([]cirun.GatePolicy, error) {
+	rows, err := q.QueryContext(ctx, `SELECT `+ciPolicyColumns+` FROM ci_gate_policies
+		WHERE tenant_id = $1 AND scope_type = 'repository' AND repository_asset_id = ANY($2::uuid[])
+		ORDER BY created_at, id`, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("read gate policies: %w", err)
+	}
+	defer rows.Close()
+	var out []cirun.GatePolicy
+	for rows.Next() {
+		p, err := scanCIPolicy(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// keepStrictestPolicy leaves, among the group's gate policies, only the
+// strictest; the asset merge then moves it to the kept asset. It refuses when
+// none is at least as strict as every other.
+func (r *RepositoryMergeRepository) keepStrictestPolicy(ctx context.Context, tx *sql.Tx, tenantID shared.ID, g RepositoryMergeGroup) error {
+	policies, err := r.groupPolicies(ctx, tx, tenantID, g.ids())
+	if err != nil || len(policies) < 2 {
+		return err
+	}
+	keep, ok := cirun.StrictestPolicy(policies)
+	if !ok {
+		return fmt.Errorf("the group's gate policies are stricter on different settings")
+	}
+	drop := make([]string, 0, len(policies)-1)
+	for i, p := range policies {
+		if i != keep {
+			drop = append(drop, p.ID.String())
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ci_gate_policies WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+		tenantID.String(), pq.Array(drop)); err != nil {
+		return fmt.Errorf("drop looser gate policies: %w", err)
+	}
+	return nil
 }
 
 func (r *RepositoryMergeRepository) mergeGroup(ctx context.Context, tenantID shared.ID, g RepositoryMergeGroup) error {
@@ -256,6 +348,23 @@ func (r *RepositoryMergeRepository) mergeGroup(ctx context.Context, tenantID sha
 	}
 	defer func() { _ = tx.Rollback() }()
 	tid := tenantID.String()
+	// Lock every asset of the group first. A CI run, finding or branch
+	// written meanwhile holds a key-share lock on the asset it references,
+	// so it either commits before the merge reads (and moves with the rest)
+	// or waits and then fails its foreign key; it is never written onto a
+	// merged asset after the move and lost to the delete's cascade.
+	var locked int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT id FROM assets
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND asset_type = 'repository' ORDER BY id FOR UPDATE) l`,
+		tid, pq.Array(g.ids())).Scan(&locked); err != nil {
+		return fmt.Errorf("lock assets: %w", err)
+	}
+	if locked != len(g.ids()) {
+		return fmt.Errorf("the group changed since it was found")
+	}
+	if err := r.keepStrictestPolicy(ctx, tx, tenantID, g); err != nil {
+		return err
+	}
 	if err := mergeAssetReferences(ctx, tx, tid, noReview, g.KeepAssetID, g.MergeAssetIDs); err != nil {
 		return err
 	}
