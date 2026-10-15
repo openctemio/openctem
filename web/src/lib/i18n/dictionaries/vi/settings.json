@@ -329,5 +329,7 @@
   "settings.mcpPolicy.saveFailed": "Không lưu được chính sách",
   "settings.mcpPolicy.saved": "Đã lưu chính sách. Chính sách áp dụng ngay cho các kết nối hiện có.",
   "settings.mcpPolicy.scopes": "Quyền thành viên được cấp",
-  "settings.mcpPolicy.title": "Chính sách của tổ chức"
+  "settings.mcpPolicy.title": "Chính sách của tổ chức",
+  "settings.item.tool-defaults": "Mặc định công cụ",
+  "settings.desc.tool-defaults": "Tùy chọn mặc định của từng công cụ trên mọi sensor; mỗi sensor có thể ghi đè."
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -20,8 +21,10 @@ type Tenant struct {
 	logoURL     string
 	settings    map[string]any
 	createdBy   string // Keycloak user ID
-	createdAt   time.Time
-	updatedAt   time.Time
+	// plan is the stored plan (tenant_plans); empty when none is stored.
+	plan      plan.Plan
+	createdAt time.Time
+	updatedAt time.Time
 }
 
 // NewTenant creates a new Tenant entity.
@@ -107,10 +110,32 @@ func (t *Tenant) LogoURL() string {
 	return t.logoURL
 }
 
-// Plan returns the tenant's module configuration.
-// In OSS edition, all tenants have the free plan with unlimited access.
-func (t *Tenant) Plan() Plan {
-	return PlanFree
+// Plan returns the organization's plan: the stored one, or plan.Unassigned
+// when none is stored. The repository loads it from tenant_plans, the one
+// source of the plan that limits, the console and Settings > Plan & usage read.
+func (t *Tenant) Plan() plan.Plan {
+	if t.plan == "" {
+		return plan.Unassigned
+	}
+	return t.plan
+}
+
+// StoredPlan returns the plan stored for the organization; ok=false when none
+// is stored (the organization resolves to plan.Unassigned).
+func (t *Tenant) StoredPlan() (plan.Plan, bool) {
+	return t.plan, t.plan != ""
+}
+
+// SetPlan records the organization's plan: the repository sets the stored
+// plan when it loads the organization, and a self-service creation sets Free
+// before the organization is written, so the plan is stored in the same
+// transaction (never an organization without its Free plan).
+func (t *Tenant) SetPlan(p plan.Plan) error {
+	if !p.IsValid() {
+		return plan.ErrInvalid
+	}
+	t.plan = p
+	return nil
 }
 
 // Settings returns the tenant settings.
@@ -167,12 +192,6 @@ func (t *Tenant) UpdateSlug(slug string) error {
 	}
 	t.slug = slug
 	t.updatedAt = time.Now().UTC()
-	return nil
-}
-
-// UpdatePlan updates the tenant's module configuration.
-// In OSS edition, this is a no-op as all tenants have unlimited access.
-func (t *Tenant) UpdatePlan(_ Plan) error {
 	return nil
 }
 
