@@ -81,6 +81,24 @@ Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
 
+## Duplicates name their canonical finding
+
+A duplicate is a tombstone of another finding: `duplicate_of` is always set
+(CHECK `chk_findings_duplicate_has_target`, migration `002151`). It is made only
+by `POST /api/v1/findings/{id}/duplicates` (`findings:triage`, plus
+`findings:approve` when either side carries a decision), by correlation and by
+merges. `PATCH /findings/{id}/status`, the bulk status change and the workflow
+`update_status` action refuse `duplicate` with a 400 naming that route
+(`vulnerability.ErrDuplicateNeedsCanonical`, enforced in
+`Finding.TransitionStatus` and `ApplyPlatformTransition` too); the drawer's
+status control does not offer it (Mark duplicate picks the canonical finding).
+
+When a canonical finding is deleted its duplicates lose `duplicate_of`
+(`ON DELETE SET NULL`); the trigger `trg_findings_reopen_orphaned_duplicate`
+reopens each to `confirmed` with a timeline entry instead of failing the delete.
+Migration `002151` repaired existing orphan duplicates the same way (status
+`confirmed`, timeline reason `duplicate_link_missing`).
+
 ## Risk acceptance end
 
 An accepted risk always ends; a false positive does not (it is re-reviewed
