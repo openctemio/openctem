@@ -10,7 +10,7 @@ import (
 
 // execFindingStatusWrite runs a statement that may change findings.status.
 // For a person's move (vulnerability.WithPersonMove) it runs in a transaction
-// marked openctem.person_move, so the regression trigger (migration 002155)
+// marked openctem.person_move, so the regression trigger (migration 002176)
 // does not count a person moving a finding back from resolved (Undo, a
 // correction) as a regression.
 func (db *DB) execFindingStatusWrite(ctx context.Context, query string, args ...any) (sql.Result, error) {
