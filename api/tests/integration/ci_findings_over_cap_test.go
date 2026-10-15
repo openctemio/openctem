@@ -93,12 +93,12 @@ func TestCIRunOverFindingsCapFailsClosed(t *testing.T) {
 	fill(run, cirun.MaxRunFindings+1, "fp")
 	got.FindingsCount = cirun.MaxRunFindings // the count read with the stale verdict
 	if err := r.repo.SaveVerdict(ctx, r.tenant, id, cirun.VerdictPass, []byte(`{"verdict":"pass","reasons":[]}`),
-		time.Now(), got.FindingsCount); !errors.Is(err, cirun.ErrRunChanged) {
+		time.Now(), got.FindingsCount, nil); !errors.Is(err, cirun.ErrRunChanged) {
 		t.Fatalf("stale pass stored on a run over the cap: %v", err)
 	}
 	if err := r.repo.SaveVerdict(ctx, r.tenant, id, cirun.VerdictPass,
 		[]byte(`{"verdict":"pass","would_fail":true,"reasons":[{"code":"`+cirun.ReasonTooManyFindings+`"}]}`),
-		time.Now(), got.FindingsCount); err != nil {
+		time.Now(), got.FindingsCount, nil); err != nil {
 		t.Fatalf("verdict naming the cap refused: %v", err)
 	}
 }

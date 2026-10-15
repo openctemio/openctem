@@ -20,7 +20,7 @@ type lateReportRepo struct {
 	saves int
 }
 
-func (l *lateReportRepo) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error {
+func (l *lateReportRepo) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int, failedCapabilities []string) error {
 	l.saves++
 	if l.saves == 1 {
 		if err := l.ReserveRunReport(ctx, tenantID, runID); err != nil {
@@ -30,7 +30,7 @@ func (l *lateReportRepo) SaveVerdict(ctx context.Context, tenantID, runID shared
 			return err
 		}
 	}
-	return l.CIRunRepository.SaveVerdict(ctx, tenantID, runID, verdict, detail, at, expectFindings)
+	return l.CIRunRepository.SaveVerdict(ctx, tenantID, runID, verdict, detail, at, expectFindings, failedCapabilities)
 }
 
 // A verdict computed before a concurrent report was recorded is not stored:
