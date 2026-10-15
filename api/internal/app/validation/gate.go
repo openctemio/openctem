@@ -10,8 +10,10 @@ import (
 	"strings"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // TargetGate is the one fail-closed gate every path that sends traffic at a
@@ -46,6 +48,11 @@ func CheckTarget(ctx context.Context, gate TargetGate, tenantID shared.ID, t Tar
 	address := strings.TrimSpace(t.Address)
 	if address == "" {
 		return nil, fmt.Errorf("%w: the target has no address", ErrTargetRefused)
+	}
+	// A probe is network traffic: a repository, by its type or its form,
+	// would send it to the code host (stage.ReasonPathTarget).
+	if stage.IsRepositoryType(asset.TypeRef{Type: asset.AssetType(t.Type)}) || stage.ClassifyTarget(address) == stage.KindPath {
+		return nil, fmt.Errorf("%w: %s", ErrTargetRefused, stage.ReasonPathTarget)
 	}
 	in := scanapp.DispatchTargetsInput{TenantID: tenantID, Targets: []string{address}}
 	if !t.AssetID.IsZero() {

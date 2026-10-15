@@ -31,7 +31,7 @@ function finding(over: Partial<FindingDetail> = {}): FindingDetail {
     source: 'sca',
     assets: [
       {
-        id: 'a1',
+        id: 'dcdc1111-0000-0000-0000-000000000001',
         type: 'website',
         name: 'demo-web-storefront',
         criticality: 'critical',
@@ -79,7 +79,7 @@ describe('FindingWhyItMatters', () => {
     expect(within(panel).getByText('P1')).toBeInTheDocument()
     // The P1 window of the finding's asset, as the API reports it.
     expect(within(panel).getByText('fix within 9 days')).toBeInTheDocument()
-    expect(slaPolicy).toHaveBeenCalledWith('a1')
+    expect(slaPolicy).toHaveBeenCalledWith('dcdc1111-0000-0000-0000-000000000001')
     expect(
       within(panel).getByText('High severity, reachable, no compensating controls.')
     ).toBeInTheDocument()
@@ -128,6 +128,31 @@ describe('FindingWhyItMatters', () => {
     render(<FindingWhyItMatters finding={finding()} />)
     expect(explain).not.toHaveBeenCalled()
     expect(screen.getByText('How this was scored')).toBeInTheDocument()
+  })
+
+  it('never asks the SLA policy of a nil or free-text asset id', () => {
+    slaPolicy.mockClear()
+    render(
+      <FindingWhyItMatters
+        finding={finding({
+          assets: [{ id: '00000000-0000-0000-0000-000000000000', type: 'website', name: 'x' }],
+        })}
+      />
+    )
+    expect(slaPolicy).not.toHaveBeenCalledWith('00000000-0000-0000-0000-000000000000')
+  })
+
+  it('says the deadline follows the priority when the severity window differs', () => {
+    slaPolicy.mockReturnValueOnce({
+      data: { p0_days: 3, p1_days: 9, p2_days: 15, p3_days: 40, critical_days: 2, high_days: 15 },
+    } as never)
+    slaPolicy.mockReturnValueOnce({
+      data: { p0_days: 3, p1_days: 9, p2_days: 15, p3_days: 40, critical_days: 2, high_days: 15 },
+    } as never)
+    render(<FindingWhyItMatters finding={finding({ priorityClass: 'P2', severity: 'critical' })} />)
+    expect(document.querySelector('[data-slot="sla-basis"]')).toHaveTextContent(
+      'The deadline follows the priority (P2: 15 days), not the severity (critical: 2 days).'
+    )
   })
 
   it('renders nothing without a priority or any signal', () => {
