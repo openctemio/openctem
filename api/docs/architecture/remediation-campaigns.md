@@ -55,9 +55,11 @@ finding of the organization).
 | `remediation_key`      | a solution family (alone, no other key) | `"sol:…"`    |
 
 The tenant is always pinned, so counts are tenant-isolated regardless of the
-filter contents. A campaign has **scope** only when a condition other than a
-status narrows it: an empty filter, or a status alone ("every new finding" is
-the whole organization), tracks nothing and cannot resolve. A filter stored
+filter contents. A campaign has **scope** only when it names what is fixed:
+an asset, CVEs, linked findings, a tool, or a fix key (`remediation_key`).
+Severity, source, status and search only narrow that scope; on their own
+("every critical finding", "every new finding") they are the whole
+organization, so such a campaign tracks nothing and cannot resolve. A filter stored
 before the strict check that no longer parses is treated the same way, and a
 resolve answers 400 until its scope is edited.
 

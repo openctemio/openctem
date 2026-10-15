@@ -250,7 +250,14 @@ export default function ExceptionsPage() {
         ),
         cell: ({ row }) => (
           <div className="max-w-[240px]">
-            <p className="font-medium text-sm truncate">{row.original.name}</p>
+            <p className="font-medium text-sm truncate">
+              {row.original.name}
+              {row.original.review_flagged_at && (
+                <Badge variant="outline" className="ms-2 align-middle text-[10px]">
+                  {t('exceptions.page.reviewBadge', 'Review')}
+                </Badge>
+              )}
+            </p>
             <p className="text-xs text-muted-foreground font-mono truncate">
               {suppressionScopeSummary(row.original, t)}
             </p>
