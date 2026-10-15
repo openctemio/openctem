@@ -75,7 +75,8 @@ export function ApprovalDialog({
   const othersMayDecideAlone =
     isFalsePositive && fpPolicy?.single_person === true && !fpPolicy.can_decide_alone
 
-  const statusLabel = FINDING_STATUS_CONFIG[targetStatus]?.label || targetStatus
+  const statusConfig = FINDING_STATUS_CONFIG[targetStatus]
+  const statusLabel = statusConfig ? t(statusConfig.labelKey, statusConfig.label) : targetStatus
   const showExpiryPicker = targetStatus === 'accepted'
   const minDate = acceptanceDate(1)
   const maxDate = acceptanceDate(0, 1)
