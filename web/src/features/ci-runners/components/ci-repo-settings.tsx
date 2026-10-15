@@ -2,7 +2,7 @@
 
 /**
  * A repository's CI gate settings, the Settings tab of a CI pipeline's drawer
- * (api docs/rfcs/RFC-095-ci-per-repository-settings.md): every gate field
+ * (api docs/rfcs/RFC-096-ci-per-repository-settings.md): every gate field
  * with its effective value and the layer it comes from, the repository's own
  * overrides (reason, end date) and the locks set above it, plus the gate
  * baseline. Changes need scans:ci:policy; a change that loosens the gate
