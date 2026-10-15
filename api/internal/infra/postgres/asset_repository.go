@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -508,7 +509,7 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
 				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info
 			FROM findings f
-			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND NOT f.branch_only
 		) fc ON true
 	`
 }
@@ -1213,9 +1214,9 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// row (a data-integrity bug) can never flip this filter for someone else.
 	if filter.HasFindings != nil {
 		if *filter.HasFindings {
-			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only)")
+			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND "+vulnerability.OpenStatusSQL("f.status")+" AND NOT f.branch_only)")
 		} else {
-			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only)")
+			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND "+vulnerability.OpenStatusSQL("f.status")+" AND NOT f.branch_only)")
 		}
 	}
 

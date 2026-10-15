@@ -911,7 +911,6 @@ func Register(
 
 	// The fleet: sensors (daemon mode) and CI pipelines (runner mode) in one
 	// read model (RFC-051).
-	registerFleetRoutes(router, h.Sensor, h.CIAdmin, h.ModuleGate, authMiddleware, userSync, log)
 
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {

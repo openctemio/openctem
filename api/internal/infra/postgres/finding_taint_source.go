@@ -105,7 +105,7 @@ func (r *DataFlowRepository) changedTaintSources(ctx context.Context, tenantID s
 			WHERE df.finding_id = f.id
 			ORDER BY df.flow_index, (fl.location_type = 'source') DESC, fl.step_index
 			LIMIT 1) l ON TRUE
-		WHERE f.tenant_id = $1 AND f.fingerprint = ANY($2) AND f.status IN ('false_positive', 'accepted')`,
+		WHERE f.tenant_id = $1 AND f.fingerprint = ANY($2) AND f.status IN `+vulnerability.StatusListSQL(vulnerability.SuppressedStatuses()),
 		tenantID.String(), pq.Array(fps))
 	if err != nil {
 		return nil, fmt.Errorf("load decided taint findings: %w", err)
