@@ -360,6 +360,14 @@ func (s *Service) firstRunBaseline(ctx context.Context, run *cirun.Run) (*cirun.
 			WithMetadata("source", b.Source).
 			WithMetadata("run_id", run.ID.String()).
 			WithMetadata("findings", b.FindingsCount))
+	aid := run.RepositoryAssetID
+	s.alertAdmins(ctx, run.TenantID, breakGlassAlert(AdminAlert{
+		Title: "CI gate baseline established: " + run.Repository,
+		Body: fmt.Sprintf("The first default-branch run of %s recorded its %d open findings as the CI gate baseline: they no longer fail default-branch runs.",
+			run.Repository, b.FindingsCount),
+		URL: RunPath(run.ID), Aggregate: "ci_gate_baseline", AggregateID: &aid,
+		Metadata: map[string]any{"action": "baseline_established", "repository": run.Repository, "findings": b.FindingsCount},
+	}))
 	return b, nil
 }
 
