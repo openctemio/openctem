@@ -32,6 +32,13 @@ const ciTrustLinkColumns = `l.tenant_id, l.trust_config_id, c.name, l.pattern, l
 	l.seen_at, l.seen_run_id, COALESCE(l.seen_repository, ''), COALESCE(l.seen_owner_id, ''), l.target_removed_at`
 
 func (r *ScopeCITrustLinkRepository) query(ctx context.Context, q string, args ...any) ([]scopedom.CITrustLink, error) {
+	return r.scan(ctx, false, q, args...)
+}
+
+// scan reads links; withVisible: the query ends with a boolean column that
+// says whether the caller may see the evidence's repository, and the
+// evidence's repository, run and owner are left out when they may not.
+func (r *ScopeCITrustLinkRepository) scan(ctx context.Context, withVisible bool, q string, args ...any) ([]scopedom.CITrustLink, error) {
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list ci trust scope links: %w", err)
@@ -46,8 +53,13 @@ func (r *ScopeCITrustLinkRepository) query(ctx context.Context, q string, args .
 			seenAt, removedAt   sql.NullTime
 			seenRepo, seenOwner string
 		)
-		if err := rows.Scan(&tid, &cid, &l.TrustName, &l.Pattern, &target, &l.CreatedAt, &seenAt, &seenRun,
-			&seenRepo, &seenOwner, &removedAt); err != nil {
+		visible := true
+		dest := []any{&tid, &cid, &l.TrustName, &l.Pattern, &target, &l.CreatedAt, &seenAt, &seenRun,
+			&seenRepo, &seenOwner, &removedAt}
+		if withVisible {
+			dest = append(dest, &visible)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("scan ci trust scope link: %w", err)
 		}
 		l.TenantID, _ = shared.IDFromString(tid)
@@ -57,6 +69,9 @@ func (r *ScopeCITrustLinkRepository) query(ctx context.Context, q string, args .
 		l.SeenRunID = parseOptID(seenRun)
 		l.SeenRepository, l.SeenOwnerID = seenRepo, seenOwner
 		l.TargetRemovedAt = optTime(removedAt)
+		if !visible {
+			l.SeenRunID, l.SeenRepository, l.SeenOwnerID = nil, "", ""
+		}
 		out = append(out, l)
 	}
 	return out, rows.Err()
@@ -69,6 +84,31 @@ func (r *ScopeCITrustLinkRepository) ListByTrust(ctx context.Context, tenantID, 
 		JOIN ci_trust_configs c ON c.tenant_id = l.tenant_id AND c.id = l.trust_config_id
 		WHERE l.tenant_id = $1 AND l.trust_config_id = $2
 		ORDER BY l.pattern`, tenantID.String(), trustID.String())
+}
+
+// ListVisible lists the links of one trust, or of every trust of the tenant
+// (trustID nil), in one query, for a reader with this data scope: the
+// evidence's repository, run and owner are kept only when the reader may
+// see the run's repository asset (nil scope: everything). A restricted
+// reader sees none of it once the run is gone (fail closed).
+func (r *ScopeCITrustLinkRepository) ListVisible(ctx context.Context, tenantID shared.ID, trustID *shared.ID, scope *shared.DataScope) ([]scopedom.CITrustLink, error) {
+	args := []any{tenantID.String()}
+	where := `l.tenant_id = $1`
+	if trustID != nil {
+		args = append(args, trustID.String())
+		where += ` AND l.trust_config_id = $2`
+	}
+	visible := sqlTrue
+	if scope != nil {
+		var cond string
+		cond, args = dataScopeCond("cr.repository_asset_id", scope, args)
+		visible = `EXISTS (SELECT 1 FROM ci_runs cr WHERE cr.tenant_id = l.tenant_id AND cr.id = l.seen_run_id AND ` + cond + `)`
+	}
+	return r.scan(ctx, true, `SELECT `+ciTrustLinkColumns+`, `+visible+`
+		FROM scope_target_ci_trusts l
+		JOIN ci_trust_configs c ON c.tenant_id = l.tenant_id AND c.id = l.trust_config_id
+		WHERE `+where+`
+		ORDER BY l.trust_config_id, l.pattern`, args...)
 }
 
 // ListByTargets lists the links of these entries, with the trust names.
