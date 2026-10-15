@@ -10,11 +10,18 @@ import { useRouter } from 'next/navigation'
 import {
   DEFAULT_FINDING_LENS,
   FINDING_LENSES,
+  lensLabelKey,
+  lensDescriptionKey,
   parseFindingLens,
   type FindingLens,
 } from '@/features/findings/lib/state-lens'
 import { findingsOverview } from '@/features/findings/lib/findings-overview'
 import { mapDataFlow } from '@/features/findings/lib/finding-detail'
+import {
+  readFindingHash,
+  useDrawerKeyboardNav,
+  writeFindingHash,
+} from '@/features/findings/hooks/use-drawer-navigation'
 import {
   useUrlParams,
   useUrlParam,
@@ -139,6 +146,7 @@ import { VerifyGroupActions } from '@/features/findings/components/verify-group-
 import { type FindingGroup } from '@/features/findings/api/use-finding-groups'
 import {
   useFindingsApi,
+  useFindingApi,
   useFindingStatsApi,
   buildFindingsExportUrl,
   invalidateFindingsCache,
@@ -981,6 +989,26 @@ function FindingsContent() {
     setDrawerOpen(true)
   }, [])
 
+  // j / k move through the list while the drawer is open; the open finding
+  // is in the URL hash so the address can be shared and reopens it.
+  useDrawerKeyboardNav({
+    open: drawerOpen,
+    items: findings,
+    currentId: selectedFinding?.id,
+    onSelect: setSelectedFinding,
+  })
+  const [deepLinkId] = useState(() => readFindingHash())
+  const { data: deepLinked } = useFindingApi(deepLinkId && !selectedFinding ? deepLinkId : null)
+  useEffect(() => {
+    if (deepLinked && !selectedFinding) {
+      setSelectedFinding(transformApiToUiFinding(deepLinked))
+      setDrawerOpen(true)
+    }
+  }, [deepLinked, selectedFinding])
+  useEffect(() => {
+    writeFindingHash(drawerOpen && selectedFinding ? selectedFinding.id : null)
+  }, [drawerOpen, selectedFinding])
+
   // The drawer writes status, severity and assignee itself (with its own toast
   // and Undo); the page only refreshes the list. Writing again here sent every
   // change twice and showed two toasts.
@@ -1792,11 +1820,16 @@ function FindingsContent() {
 
   const lensControl = (
     <SegmentedLens<FindingLens>
-      label="Finding state"
-      countNoun="findings"
+      label={t('findings.lens.label', 'Finding state')}
+      countNoun={t('findings.lens.countNoun', 'findings')}
       value={lens}
       onChange={(next) => setLensParam(next)}
-      options={FINDING_LENSES.map((l) => ({ ...l, count: lensStats?.by_state?.[l.value] }))}
+      options={FINDING_LENSES.map((l) => ({
+        ...l,
+        label: t(lensLabelKey(l.value), l.label),
+        description: t(lensDescriptionKey(l.value), l.description),
+        count: lensStats?.by_state?.[l.value],
+      }))}
     />
   )
 

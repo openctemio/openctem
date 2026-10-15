@@ -28,6 +28,7 @@ vi.mock('swr', () => ({
 }))
 
 vi.mock('@/features/findings/api/use-findings-api', () => ({
+  useFindingApi: () => ({ data: undefined }),
   useFindingsApi: () => ({
     data: { data: [], total: 0, page: 1, per_page: 20 },
     error: undefined,
