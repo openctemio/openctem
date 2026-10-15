@@ -112,6 +112,8 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-094](RFC-094-platform-contracts-only.md) | The platform depends on contracts only | Proposed (2026-10-14). |
 | [RFC-095](RFC-095-role-templates-and-invitations.md) | Role templates and invitations | Accepted (owner feedback on the invite dialog, 2026-10-15). |
 | [RFC-096](RFC-096-ci-per-repository-settings.md) | CI gate settings per repository | Proposed (2026-10-15). |
+| [RFC-099](RFC-099-content-packages.md) | Content packages, signatures, revocation and the content catalog | Proposed (2026-10-15). |
+| [RFC-100](RFC-100-shared-sensors.md) | Shared sensors | Accepted (2026-10-15); S0 in review (#2308), the rest designed |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

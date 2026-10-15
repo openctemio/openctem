@@ -1,0 +1,32 @@
+apiVersion: openctem.io/package/v1
+id: openctem/sast-rules
+version: 0.1.0
+type: rules
+title: Official SAST rules
+summary: |
+  Opengrep rules maintained by the OpenCTEM team.
+  Free to use, MIT licensed.
+content_kind: semgrep-rules
+artifact:
+  media_type: application/gzip
+  digest: sha256:4c7a2bd3e1c5f8a1c1d7a4f4a1b0e3e0d5c2b1a09f8e7d6c5b4a3928170615f4
+  size: 173226
+compatibility:
+  platform: ">=0.9.0, <2.0.0"
+permissions:
+  tier: T0
+  side_effects: none
+  network: none
+license:
+  spdx: MIT
+  service_use: true
+  redistribution: true
+dependencies:
+  - id: openctem/wordlists-common
+    version: ">=2.0.0, <3.0.0"
+provenance:
+  source_repository: https://github.com/openctemio/sast-rules
+  source_revision: 0123456789abcdef0123456789abcdef01234567
+  build_identity: https://github.com/openctemio/sast-rules/.github/workflows/release.yml@refs/tags/v0.1.0
+  build_issuer: https://token.actions.githubusercontent.com
+security_contact: security@openctem.io
