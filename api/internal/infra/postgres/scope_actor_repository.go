@@ -92,8 +92,17 @@ func (r *ScopeActorRepository) FindingApprovers(ctx context.Context, tenantID sh
 	if err != nil {
 		return nil, err
 	}
+	persons, err := r.personIDs(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]finding.FindingApprover, 0, len(all))
 	for _, a := range all {
+		// A service account never signs in: it is never told, and four-eyes
+		// is a second person.
+		if !persons[a.UserID] {
+			continue
+		}
 		out = append(out, finding.FindingApprover{UserID: a.UserID, Name: a.Name, Email: a.Email, Owner: a.Owner})
 	}
 	return out, nil
@@ -133,6 +142,27 @@ func (r *ScopeActorRepository) approversWith(ctx context.Context, tenantID share
 			a.Name = "Member"
 		}
 		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// personIDs are the tenant's members that are people (users.kind =
+// 'person'), not service accounts.
+func (r *ScopeActorRepository) personIDs(ctx context.Context, tenantID shared.ID) (map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT u.id::text FROM tenant_members m JOIN users u ON u.id = m.user_id
+		WHERE m.tenant_id = $1 AND u.kind = 'person'`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list member persons: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
 	}
 	return out, rows.Err()
 }
