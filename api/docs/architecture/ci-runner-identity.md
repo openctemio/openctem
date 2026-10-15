@@ -184,6 +184,35 @@ touches a finding it cannot attribute to a run).
   `ci_runs`). A CI run is not a scan run: it is never dispatched, has its own
   credential and its own verdict, and lives in `ci_runs`, not `scan_runs`.
 
+### Duplicate repository assets (`repomerge`)
+
+One repository could be two assets of a tenant: repository import named it
+`org/repo` and CI `github.com/org/repo`, or a rename or transfer made CI create
+a second asset while the first kept the findings, branches, gate policy and
+coverage expectation. `repomerge` (`cmd/repomerge`, in the API image as
+`/app/repomerge`; `internal/infra/postgres/repository_merge.go`) finds, per
+tenant, assets that are one repository:
+
+- the same repository id on the same host (`asset_repositories.repo_id`, host
+  from the web or clone address);
+- `host/path` and `path` whose extension's address is on that host;
+- a CI pipeline keyed by the code host's repository id (GitHub, GitLab,
+  Bitbucket) whose runs sit on another asset than the pipeline does now.
+
+Each group is merged into its oldest asset by the asset merge
+(`mergeAssetReferences`: every reference moves, findings are re-keyed and
+folded, same-named branches are joined, one gate policy and one expectation
+per repository, the kept one first), logged in `asset_merge_log`
+(`repository_identity`), and the kept asset takes the current `host/path`
+name. One transaction per repository; idempotent.
+
+```
+repomerge                  # dry run, every tenant (read-only connection), aggregate counts only
+repomerge -tenant <id>     # one tenant
+repomerge -apply           # merge
+repomerge -json            # report with asset ids
+```
+
 ### Exchange and pipeline flow
 
 ```mermaid

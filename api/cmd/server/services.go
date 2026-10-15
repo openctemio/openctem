@@ -2798,7 +2798,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
 	s.SSO.SetJITApprovalNotifier(s.Tenant)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
-	s.Auth.SetInviteeClassifier(s.Tenant)
+	s.Auth.SetInvitationAcceptor(s.Tenant)
 
 	// Trusted organizations (RFC-058): home-realm sign-in for external
 	// members, the role ceiling, proposed end of access and API keys.

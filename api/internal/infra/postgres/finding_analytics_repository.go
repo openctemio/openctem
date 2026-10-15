@@ -15,13 +15,13 @@ import (
 // Pentest findings are excluded (they are a manual workflow, not a scanner
 // source) to match ListFindingGroups.
 func (r *FindingRepository) SourceBreakdown(ctx context.Context, tenantID shared.ID) ([]vulnerability.SourceStat, error) {
-	const q = `
+	q := `
 		SELECT
 			COALESCE(NULLIF(source, ''), 'unknown')     AS source,
 			COALESCE(NULLIF(tool_name, ''), 'unknown')  AS tool_name,
 			COUNT(*)                                     AS total,
 			COUNT(*) FILTER (
-				WHERE status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
+				WHERE ` + vulnerability.OpenStatusSQL("status") + `
 			)                                            AS open
 		FROM findings
 		WHERE tenant_id = $1 AND source != 'pentest' AND NOT branch_only
