@@ -71,7 +71,11 @@ func (h *findingApprovalHarness) newFinding(tenantID, severity string) string {
 
 func (h *findingApprovalHarness) requestStatus(u policyUser, findingID, status string) string {
 	h.t.Helper()
-	body := `{"requested_status":"` + status + `","justification":"the input is a constant"}`
+	reason := "detection_error"
+	if status == "accepted" {
+		reason = "risk_accepted"
+	}
+	body := `{"requested_status":"` + status + `","closure_reason":"` + reason + `","justification":"the input is a constant"}`
 	return decodeID(h.t, h.expect(u, http.MethodPost, "/api/v1/findings/"+findingID+"/approvals/", body, http.StatusCreated))
 }
 
@@ -93,7 +97,7 @@ func TestFindingApprovals_ConflictsAre409_DB(t *testing.T) {
 	fid := h.newFinding(org, "medium")
 	a := h.requestStatus(admin, fid, "false_positive")
 	h.expect(admin, http.MethodPost, "/api/v1/findings/"+fid+"/approvals/",
-		`{"requested_status":"accepted","justification":"again"}`, http.StatusConflict)
+		`{"requested_status":"accepted","closure_reason":"risk_accepted","justification":"again"}`, http.StatusConflict)
 	h.expect(owner, http.MethodPost, "/api/v1/approvals/"+a+"/approve", "", http.StatusOK)
 	if n := h.countRows(`SELECT COUNT(*) FROM finding_status_approvals WHERE finding_id = $1`, fid); n != 1 {
 		t.Fatalf("requests: %d", n)

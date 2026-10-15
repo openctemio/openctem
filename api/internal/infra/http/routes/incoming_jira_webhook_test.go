@@ -40,6 +40,8 @@ type memDeliveries struct {
 	mu      sync.Mutex
 	seen    map[string]bool
 	replays int
+	// releaseErrs records the context state at each release.
+	releaseErrs []error
 }
 
 func (m *memDeliveries) FirstDelivery(_ context.Context, key string, _ time.Duration) (bool, error) {
@@ -60,6 +62,8 @@ type flakyFindings struct {
 	mu    sync.Mutex
 	fails int
 	calls int
+	// onFail runs when a lookup fails (a client disconnecting mid-request).
+	onFail func()
 }
 
 func (f *flakyFindings) GetByWorkItemURI(context.Context, shared.ID, string) (*vulnerability.Finding, error) {
@@ -68,6 +72,9 @@ func (f *flakyFindings) GetByWorkItemURI(context.Context, shared.ID, string) (*v
 	f.calls++
 	if f.fails > 0 {
 		f.fails--
+		if f.onFail != nil {
+			f.onFail()
+		}
 		return nil, errors.New("transient")
 	}
 	return nil, shared.ErrNotFound
@@ -149,9 +156,13 @@ func hubSign(secret, body string) string {
 	return "sha256=" + hex.EncodeToString(m.Sum(nil))
 }
 
-func (m *memDeliveries) ReleaseDelivery(_ context.Context, key string) error {
+func (m *memDeliveries) ReleaseDelivery(ctx context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.releaseErrs = append(m.releaseErrs, ctx.Err())
+	if ctx.Err() != nil {
+		return ctx.Err() // a canceled release leaves the key held, as Redis would
+	}
 	delete(m.seen, key)
 	return nil
 }
@@ -270,6 +281,26 @@ func TestIncomingJiraWebhook_HubSignaturePerIntegration(t *testing.T) {
 		}
 		if j.repo.calls != before+1 {
 			t.Fatalf("the retry was dropped as a replay (lookups %d -> %d)", before, j.repo.calls)
+		}
+	})
+	t.Run("a client that disconnects during a failed delivery does not keep its keys held", func(t *testing.T) {
+		body := fmt.Sprintf(`{"webhookEvent":"jira:issue_updated","timestamp":%d,"issue":{"key":"OPS-10","self":"https://x.atlassian.net/rest/api/2/issue/10"},"changelog":{"items":[{"field":"status","toString":"Done"}]}}`, now.Add(6*time.Second).UnixMilli())
+		d := id()
+		reqCtx, cancel := context.WithCancel(context.Background())
+		j.repo.fails, j.repo.onFail = 1, cancel
+		defer func() { j.repo.onFail = nil }()
+		req := httptest.NewRequestWithContext(reqCtx, http.MethodPost, "/hooks/jira-integrations/"+j.jiraA.String(), strings.NewReader(body))
+		req.Header.Set("X-Hub-Signature", hubSign(secretA, body))
+		req.Header.Set("X-Atlassian-Webhook-Identifier", d)
+		j.mux.ServeHTTP(httptest.NewRecorder(), req)
+		for _, e := range j.guard.releaseErrs {
+			if e != nil {
+				t.Fatalf("a delivery key was released with a canceled context: %v", e)
+			}
+		}
+		before := j.repo.calls
+		if code := j.send(j.jiraA.String(), hubSign(secretA, body), d, body); code != http.StatusOK || j.repo.calls != before+1 {
+			t.Fatalf("Jira's retry after a disconnect: %d, lookups %d -> %d; want processed", code, before, j.repo.calls)
 		}
 	})
 	t.Run("a stale or undated delivery is refused", func(t *testing.T) {

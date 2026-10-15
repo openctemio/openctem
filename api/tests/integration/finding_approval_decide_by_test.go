@@ -69,7 +69,7 @@ func (f *approvalFixture) request(t *testing.T, tenant, findingID shared.ID, sta
 	t.Helper()
 	return f.svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID: tenant.String(), FindingID: findingID.String(), RequestedStatus: status,
-		Justification: "the input is a constant", RequestedBy: f.requester.String(),
+		Justification: "the input is a constant", RequestedBy: f.requester.String(), ClosureReason: closureFor(status),
 	})
 }
 
@@ -397,4 +397,12 @@ func TestFindingApproval_DecideByEnforcedInTheDatabase(t *testing.T) {
 		AND decide_by BETWEEN now() + interval '13 days' AND now() + interval '15 days'`, other.String()); n != 1 {
 		t.Fatal("a row without decide_by did not get the default window")
 	}
+}
+
+// closureFor is a valid closure reason for a requested status.
+func closureFor(status string) string {
+	if status == "accepted" {
+		return "risk_accepted"
+	}
+	return "detection_error"
 }
