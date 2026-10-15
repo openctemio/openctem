@@ -219,17 +219,19 @@ func TestParseExtraProducts_Refusals(t *testing.T) {
 		t.Fatalf("empty file: %v %v", ps, err)
 	}
 	cases := map[string]string{
-		"built-in product id": strings.Replace(ok, "acme-x\n  latest", DefaultProductID+"\n  latest", 1),
-		"built-in section":    strings.Replace(ok, "acme:", "sensor:", 1),
-		"fixed section":       "sdk:\n  latest: v9.9.9\n  advisories: \"\"\n",
-		"tag in the image":    strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x:latest", 1),
-		"shell in the image":  strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x;curl", 1),
-		"install path":        strings.Replace(ok, "install: acme-x", "install: ../etc", 1),
-		"identity not GitHub": strings.Replace(ok, "release_identity: \"\"", "release_identity: https://example.com/x.yml", 1),
-		"unknown key":         ok + "  extra: x\n",
-		"listed twice":        ok + strings.Replace(ok, "acme:", "acme2:", 1),
-		"version not semver":  strings.Replace(ok, "v1.0.0", "1.0", 1),
-		"not a mapping":       "- a\n- b\n",
+		"built-in product id":   strings.Replace(ok, "acme-x\n  latest", DefaultProductID+"\n  latest", 1),
+		"built-in section":      strings.Replace(ok, "acme:", "sensor:", 1),
+		"fixed section":         "sdk:\n  latest: v9.9.9\n  advisories: \"\"\n",
+		"tag in the image":      strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x:latest", 1),
+		"shell in the image":    strings.Replace(ok, "ghcr.io/acme/x", "ghcr.io/acme/x;curl", 1),
+		"install path":          strings.Replace(ok, "install: acme-x", "install: ../etc", 1),
+		"identity not GitHub":   strings.Replace(ok, "release_identity: \"\"", "release_identity: https://example.com/x.yml", 1),
+		"identity with a quote": strings.Replace(ok, `release_identity: ""`, `release_identity: "https://github.com/acme/x/.github/workflows/a.yml'; curl x"`, 1),
+		"product id with shell": strings.Replace(ok, "product: acme-x", `product: "acme;rm"`, 1),
+		"unknown key":           ok + "  extra: x\n",
+		"listed twice":          ok + strings.Replace(ok, "acme:", "acme2:", 1),
+		"version not semver":    strings.Replace(ok, "v1.0.0", "1.0", 1),
+		"not a mapping":         "- a\n- b\n",
 	}
 	for name, body := range cases {
 		if _, err := ParseExtraProducts([]byte(body), Embedded()); err == nil {
