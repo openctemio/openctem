@@ -54,9 +54,12 @@ func TestAdminPlatformSensorProof_Routes_DB(t *testing.T) {
 	if code, _ := root.do(http.MethodPut, path, map[string]any{"required": true, "totp_code": root.freshCode(true)}, true); code != http.StatusBadRequest {
 		t.Fatalf("no reason: %d", code)
 	}
+	root.closeStepUpWindow()
 	if code, _ := root.do(http.MethodPut, path, map[string]any{"required": true, "reason": "public cloud"}, true); code != http.StatusUnauthorized {
 		t.Fatalf("no code: %d", code)
 	}
+	// The route spent the code of the request refused for its reason.
+	root.resetReplayGuard()
 	code, body := root.do(http.MethodPut, path,
 		map[string]any{"required": true, "version": 0, "reason": "public cloud", "totp_code": root.freshCode(true)}, true)
 	if v, ok := required(body); code != http.StatusOK || !ok || !v {

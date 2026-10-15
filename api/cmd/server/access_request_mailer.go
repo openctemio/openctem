@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accessrequest"
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -67,4 +68,4 @@ func (m accessRequestMailer) SendDecision(_ context.Context, to string, approved
 }
 
 // defaultAppName names the product in emails when APP_NAME is unset.
-const defaultAppName = "OpenCTEM"
+const defaultAppName = brand.DefaultName
