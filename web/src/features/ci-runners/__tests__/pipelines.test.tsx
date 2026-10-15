@@ -178,9 +178,26 @@ describe('CIPipelinesPanel', () => {
     pipelines = [failing]
     counts = { failing: 1 }
     render(<CIPipelinesPanel />)
-    await userEvent.click(screen.getByRole('switch'))
+    await userEvent.click(screen.getByRole('switch', { name: 'Show inactive' }))
     expect(lastPipelineFilters?.includeInactive).toBe(true)
     await userEvent.click(screen.getByRole('button', { name: /failing gate/i }))
     expect(lastPipelineFilters?.status).toEqual(['failing'])
+  })
+
+  it('lists only repositories with their own gate settings under Has overrides', async () => {
+    pipelines = [failing]
+    counts = { failing: 1 }
+    render(<CIPipelinesPanel />)
+    expect(lastPipelineFilters?.hasPolicyOverride).toBe(false)
+    await userEvent.click(screen.getByRole('switch', { name: 'Has overrides' }))
+    expect(lastPipelineFilters?.hasPolicyOverride).toBe(true)
+    expect(window.location.search).toContain('overrides=1')
+  })
+
+  it('keeps the filter when no repository overrides the gate', () => {
+    window.history.replaceState(null, '', '/ci-cd?overrides=1')
+    render(<CIPipelinesPanel />)
+    expect(lastPipelineFilters?.hasPolicyOverride).toBe(true)
+    expect(screen.getByRole('switch', { name: 'Has overrides' })).toBeChecked()
   })
 })
