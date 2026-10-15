@@ -12,6 +12,7 @@ package scoring
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -149,7 +150,13 @@ type PriorityQueue interface {
 	StampVersion(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID, version int64) error
 	// RecordImpact adds a pass's counts to a scoring change's summary row.
 	RecordImpact(ctx context.Context, tenantID shared.ID, changeID int64, impact ChangeImpact) error
-	// ClaimDrainedSummaries marks as notified, and returns, up to limit
-	// summaries whose change has no asset left in the queue.
-	ClaimDrainedSummaries(ctx context.Context, limit int) ([]ChangeSummary, error)
+	// ClaimDrainedSummaries hands up to limit summaries whose change has no
+	// asset left in the queue to send, each in the transaction that marks it
+	// notified: a summary whose send fails stays unmarked and is retried by
+	// a later pass. Returns how many were marked.
+	ClaimDrainedSummaries(ctx context.Context, limit int, send SummarySender) (int, error)
 }
+
+// SummarySender sends one scoring change summary inside tx (the transaction
+// that marks it notified), typically by writing a notification outbox row.
+type SummarySender func(ctx context.Context, tx *sql.Tx, s ChangeSummary) error

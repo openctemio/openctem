@@ -125,8 +125,20 @@ automatic recomputes only tighten:
 A deadline that moves later by itself would hide overdue work, so an
 extension is an explicit decision (a regression or an expired acceptance
 starts a new clock with its own `sla_restarted` entry), never a side effect.
-The ingest upsert applies the same rule (`LEAST` of the stored and incoming
-deadline for an open finding).
+The ingest upsert and the recompute writer (`SavePriorities`) apply the same
+rule (`LEAST` of the stored and incoming deadline for an open finding).
+
+The database enforces it for every writer: the BEFORE UPDATE trigger
+`trg_findings_sla_deadline_guard` keeps the stored deadline (and the SLA
+status for it) when an update would move an open finding's deadline later
+or clear it, so a writer holding an older copy of the row (a full-row
+update, a recompute that read the row before a tightening) cannot extend it.
+Only a transaction marked `SET LOCAL openctem.sla_restart = on` may move it
+later: the regression restart (`FindingSLARestartRepository.RestartSLA`) and
+the acceptance expiry, which start a new clock on purpose. The promotion of
+a branch-only finding (its clock starts when a counting branch first sees
+it) is recognised by `branch_only` going from true to false. Closed findings
+and a first deadline are not guarded.
 
 Every tightening of an open finding writes a `sla_deadline_tightened`
 timeline entry (database trigger, whatever wrote the deadline) with both
@@ -149,6 +161,10 @@ after the change, and nothing is written:
   that would move earlier (`min(old, now + SLA)`), findings with a linked
   ticket, and manual overrides that keep their class. Closed findings are not
   counted (they never change).
+
+Because it reads the whole organization, the preview is rate limited per
+tenant: 6 per minute (token bucket per API replica), then `429` with
+`Retry-After` (`internal/infra/http/handler/scoring_preview_limit.go`).
 
 Applying is the existing `PATCH /tenants/{tenant}/settings/risk-scoring`
 (section compare-and-swap with `If-Match`), which now also requires **step-up**
@@ -184,6 +200,10 @@ A recompute caused by a scoring change (a queue row with a
 whose version is stale, such as after a new platform model) does not send one
 `finding_priority_escalated` notification per finding. The classification
 and its audit entry are unchanged; only the per-finding event is held back.
+A move **into P0** is the exception: it still sends its own event, so the
+ticket and the workflow a P0 needs start at once (the priority flood guard
+still bounds them); the summary counts it too. A P1 move has no separate
+escalation setting today, so it is in the summary only.
 The worker adds the pass's counts to `scoring_change_impacts` (per tenant and
 change: findings checked, changed, raised, raised to P0, lowered, deadlines
 moved earlier) and, once no asset of that change is left in the tenant's
@@ -194,6 +214,10 @@ finding became P0, high when one rose or a deadline moved earlier), so the
 channel's severity filter still applies; the event is on by default and
 migration `scoring_change_impacts` turns it on for every channel that already
 receives priority escalations. A change that moved nothing sends nothing.
+The summary's outbox row is written in the same transaction that marks the
+summary notified (`ClaimDrainedSummaries`, one savepoint per summary, rows
+locked with `FOR UPDATE SKIP LOCKED`): an enqueue that fails leaves it
+pending and the next pass sends it, so a failure never loses a summary.
 
 Recomputes for other reasons (new findings, intel, asset context, controls)
 keep their per-finding events and the priority flood guard.
