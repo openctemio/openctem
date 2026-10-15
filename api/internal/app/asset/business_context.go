@@ -64,8 +64,8 @@ func (s *AssetService) effectiveCriticality(ctx context.Context, tenantID shared
 // applied consistently. Nil-safe (see effectiveCriticality): with no lookup
 // wired, the score is byte-identical to the prior own-criticality behavior.
 func (s *AssetService) scoreAsset(ctx context.Context, tenantID shared.ID, a *assetdom.Asset) {
-	eff := s.effectiveCriticality(ctx, tenantID, a)
-	a.CalculateRiskScoreWithConfigAndCriticality(s.getScoringConfig(ctx, tenantID), eff)
+	in := s.riskInputsMap(ctx, tenantID, []*assetdom.Asset{a})[a.ID()]
+	a.CalculateRiskScoreWithInputs(s.getScoringConfig(ctx, tenantID), in)
 }
 
 // effectiveCriticalityMap batch-resolves effective criticality for a slice of

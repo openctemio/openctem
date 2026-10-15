@@ -1,9 +1,11 @@
 package postgres
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -18,5 +20,13 @@ func TestRiskBearingFindingStatusClauseMatchesActiveStatuses(t *testing.T) {
 	got := strings.TrimSuffix(strings.TrimPrefix(riskBearingFindingStatusClause, "f.status IN ("), ")")
 	if got != strings.Join(want, ",") {
 		t.Fatalf("riskBearingFindingStatusClause = %s, want IN (%s)", riskBearingFindingStatusClause, strings.Join(want, ","))
+	}
+}
+
+// The SQL exploitation signal uses the domain EPSS threshold.
+func TestExploitSignalClauseUsesDomainThreshold(t *testing.T) {
+	want := fmt.Sprintf(">= %g", asset.ExploitEPSSThreshold)
+	if !strings.Contains(exploitSignalClause, want) {
+		t.Fatalf("exploitSignalClause = %s, want it to contain %q", exploitSignalClause, want)
 	}
 }

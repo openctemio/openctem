@@ -15,6 +15,14 @@ type FindingSeverityCounts struct {
 	Medium   int
 	Low      int
 	Info     int
+
+	// Of the counts above, the findings with an exploitation signal: listed
+	// in CISA KEV, EPSS at or above ExploitEPSSThreshold, or a known public
+	// exploit. The likelihood-impact model counts them one severity up.
+	CriticalExploitable int
+	HighExploitable     int
+	MediumExploitable   int
+	LowExploitable      int
 }
 
 // Asset represents an asset entity in the domain.

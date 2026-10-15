@@ -479,6 +479,10 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 // (vulnerability.ActiveFindingStatuses). Resolved, accepted, false-positive
 // and duplicate findings, validated fixes awaiting close and unpublished
 // pentest drafts carry no risk.
+// exploitSignalClause marks a finding with an exploitation signal: in CISA
+// KEV, EPSS at or above asset.ExploitEPSSThreshold, or a known exploit.
+const exploitSignalClause = `(f.is_in_kev OR f.exploit_available OR COALESCE(f.epss_score, 0) >= 0.5)`
+
 const riskBearingFindingStatusClause = `f.status IN ('new','confirmed','in_progress','fix_applied','not_observed')`
 
 func (r *AssetRepository) selectQuery() string {
@@ -491,6 +495,10 @@ func (r *AssetRepository) selectQuery() string {
 			   COALESCE(fc.finding_medium, 0) as finding_medium,
 			   COALESCE(fc.finding_low, 0) as finding_low,
 			   COALESCE(fc.finding_info, 0) as finding_info,
+			   COALESCE(fc.finding_critical_x, 0) as finding_critical_x,
+			   COALESCE(fc.finding_high_x, 0) as finding_high_x,
+			   COALESCE(fc.finding_medium_x, 0) as finding_medium_x,
+			   COALESCE(fc.finding_low_x, 0) as finding_low_x,
 			   a.description, a.tags, a.properties,
 			   a.provider, a.external_id, a.classification, a.sync_status, a.last_synced_at, a.sync_error,
 			   a.discovery_source, a.discovery_tool, a.discovered_at,
@@ -515,7 +523,11 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'high') as finding_high,
 				COUNT(*) FILTER (WHERE f.severity = 'medium') as finding_medium,
 				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
-				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info
+				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info,
+				COUNT(*) FILTER (WHERE f.severity = 'critical' AND ` + exploitSignalClause + `) as finding_critical_x,
+				COUNT(*) FILTER (WHERE f.severity = 'high' AND ` + exploitSignalClause + `) as finding_high_x,
+				COUNT(*) FILTER (WHERE f.severity = 'medium' AND ` + exploitSignalClause + `) as finding_medium_x,
+				COUNT(*) FILTER (WHERE f.severity = 'low' AND ` + exploitSignalClause + `) as finding_low_x
 			FROM findings f
 			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + riskBearingFindingStatusClause + ` AND NOT f.branch_only
 		) fc ON true
@@ -831,6 +843,10 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		findingMedium   int
 		findingLow      int
 		findingInfo     int
+		findingCritX    int
+		findingHighX    int
+		findingMediumX  int
+		findingLowX     int
 		description     sql.NullString
 		tags            pq.StringArray
 		properties      []byte
@@ -875,6 +891,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		&idStr, &tenantIDStr, &parentIDStr, &ownerRef, &name, &assetType, &subType, &criticality, &status,
 		&scope, &exposure, &riskScore, &findingCount,
 		&findingCritical, &findingHigh, &findingMedium, &findingLow, &findingInfo,
+		&findingCritX, &findingHighX, &findingMediumX, &findingLowX,
 		&description, &tags, &properties,
 		&provider, &externalID, &classification, &syncStatus, &lastSyncedAt, &syncError,
 		&discoverySource, &discoveryTool, &discoveredAt,
@@ -919,6 +936,11 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		Medium:   findingMedium,
 		Low:      findingLow,
 		Info:     findingInfo,
+
+		CriticalExploitable: findingCritX,
+		HighExploitable:     findingHighX,
+		MediumExploitable:   findingMediumX,
+		LowExploitable:      findingLowX,
 	})
 
 	return a, nil
