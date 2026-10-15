@@ -1,71 +1,57 @@
+// Package reclassify recomputes the priority class and SLA deadline of open
+// findings from the durable finding-priority queue
+// (docs/architecture/scoring-versions.md).
+//
+// Forward only: a pass reads the open findings of a queued asset, never a
+// closed one, so a closed finding keeps the class, reason and deadline it had
+// when it was closed and closed-period metrics never change after the fact.
 package reclassify
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// PriorityClassifier is the narrow surface the reclassifier needs
-// from PriorityClassificationService. Narrow to keep tests cheap.
+// PriorityClassifier is the narrow surface the reclassifier needs from
+// PriorityClassificationService. The batch path re-reads EPSS and KEV from
+// the trusted catalogs, so a pass also applies intel that changed since the
+// finding was ingested.
 type PriorityClassifier interface {
-	ClassifyFinding(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding, a *asset.Asset) error
+	EnrichAndClassifyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, assets map[shared.ID]*asset.Asset) error
 }
 
 // SLARecomputer recomputes a finding's SLA deadline from its (possibly just
-// escalated) priority class. Implemented by *sla.Applier. When a sweep moves a
-// finding to a higher priority — e.g. a CVE newly listed in KEV → P0 — the SLA
-// deadline must tighten to match; without this the deadline stays at the
-// laxer, pre-escalation value and escalation never fires on time.
+// changed) priority class. Implemented by *sla.Applier.
 type SLARecomputer interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
 
-// openFindingAssetLister is optionally implemented by the finding repository:
-// the distinct assets of the tenant's open findings in one query. Without it
-// the whole-tenant sweep pages every open finding (COUNT + OFFSET per page,
-// quadratic in the tenant's size).
-type openFindingAssetLister interface {
-	ListOpenFindingAssetIDs(ctx context.Context, tenantID shared.ID) ([]shared.ID, error)
-}
+// Defaults of one worker pass.
+const (
+	DefaultQueueBatch = 200 // assets claimed per pass
+	DefaultPerTenant  = 50  // at most this many of one tenant per pass
+)
 
-// Reclassifier implements controller.Reclassifier. It turns a scope
-// (AssetIDs, CVEIDs) into concrete Finding+Asset pairs and delegates
-// to the classifier. The classifier already handles priority_changed
-// event emission via its attached publisher — so a sweep that
-// re-confirms the same class is silent, and a sweep that moves a
-// class fans out correctly.
-//
-// Two scopes are handled:
-//   - AssetIDs non-empty → reclassify exactly those assets (control-change
-//     and asset-change publishers).
-//   - AssetIDs empty → whole-tenant sweep: list the tenant's open findings,
-//     collect their distinct assets, and reclassify each. This is what the
-//     KEV/EPSS-refresh producers (which enqueue per-tenant with no AssetIDs)
-//     and the periodic sweep producer rely on.
+// Reclassifier drains the finding-priority queue.
 type Reclassifier struct {
 	findings   vulnerability.FindingRepository
 	assets     asset.Repository
 	classifier PriorityClassifier
-	sla        SLARecomputer // optional: recompute sla_deadline on escalation
+	sla        SLARecomputer
+	queue      scoring.PriorityQueue
+	versions   scoring.VersionRepository
 	logger     *logger.Logger
-	// Page size for ListByAssetID. 500 is enough for ~99% of assets
-	// while keeping memory bounded.
+	// Page size for the open findings of one asset.
 	perPage int
-}
-
-// SetSLARecomputer wires the SLA-deadline recomputer used after a finding is
-// reclassified, so an escalation (e.g. new KEV listing → P0) tightens the
-// deadline. Optional: nil → deadlines are left unchanged by the sweep.
-func (r *Reclassifier) SetSLARecomputer(s SLARecomputer) {
-	r.sla = s
 }
 
 // NewReclassifier wires deps.
@@ -87,226 +73,198 @@ func NewReclassifier(
 	}
 }
 
-// ReclassifyForRequest satisfies controller.Reclassifier.
-//
-// Strategy:
-//  1. If req.AssetIDs is non-empty → iterate each asset, page findings,
-//     classify. This is the control-change / asset-change path.
-//  2. Otherwise → treat as a whole-tenant sweep: page the tenant's open
-//     findings, collect their distinct asset IDs, and reclassify each.
-//     This is the KEV/EPSS-refresh and periodic-sweep path.
-func (r *Reclassifier) ReclassifyForRequest(
-	ctx context.Context,
-	req controller.ReclassifyRequest,
-) (int, error) {
-	if r.findings == nil || r.assets == nil || r.classifier == nil {
+// SetSLARecomputer wires the SLA-deadline recomputer run after a finding is
+// reclassified. Optional: nil leaves deadlines unchanged.
+func (r *Reclassifier) SetSLARecomputer(s SLARecomputer) {
+	r.sla = s
+}
+
+// SetQueue wires the durable queue and the version source.
+func (r *Reclassifier) SetQueue(q scoring.PriorityQueue, v scoring.VersionRepository) {
+	r.queue = q
+	r.versions = v
+}
+
+// ProcessQueue claims up to limit queued assets (tenant-fair) and
+// recomputes their open findings, tenant by tenant. A tenant whose pass
+// fails is queued again.
+func (r *Reclassifier) ProcessQueue(ctx context.Context, limit, perTenant int) (scoring.QueueResult, error) {
+	var res scoring.QueueResult
+	if r.queue == nil || r.findings == nil || r.assets == nil || r.classifier == nil {
+		return res, nil
+	}
+	items, err := r.queue.Claim(ctx, limit, perTenant)
+	if err != nil {
+		return res, err
+	}
+	res.Claimed = len(items)
+
+	byTenant := make(map[shared.ID][]shared.ID)
+	order := make([]shared.ID, 0)
+	for _, it := range items {
+		if _, ok := byTenant[it.TenantID]; !ok {
+			order = append(order, it.TenantID)
+		}
+		byTenant[it.TenantID] = append(byTenant[it.TenantID], it.AssetID)
+	}
+
+	var errs []error
+	for _, tid := range order {
+		ids := byTenant[tid]
+		checked, changed, err := r.ReclassifyAssets(ctx, tid, ids)
+		res.Checked += checked
+		res.Changed += changed
+		if err != nil {
+			errs = append(errs, fmt.Errorf("tenant %s: %w", tid, err))
+			requeueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			if qerr := r.queue.EnqueueAssets(requeueCtx, tid, ids, scoring.ReasonFindingChange); qerr != nil {
+				errs = append(errs, fmt.Errorf("tenant %s requeue: %w", tid, qerr))
+			}
+			cancel()
+		}
+	}
+	return res, errors.Join(errs...)
+}
+
+// QueueStats returns the queue depth and the oldest due row's age.
+func (r *Reclassifier) QueueStats(ctx context.Context) (scoring.QueueStats, error) {
+	if r.queue == nil {
+		return scoring.QueueStats{}, nil
+	}
+	return r.queue.Stats(ctx)
+}
+
+// EnqueueReconcile queues stale findings now and every other open finding
+// after delay.
+func (r *Reclassifier) EnqueueReconcile(ctx context.Context, delay time.Duration) (int64, error) {
+	if r.queue == nil {
 		return 0, nil
 	}
-
-	if len(req.AssetIDs) == 0 {
-		// Whole-tenant sweep: no explicit asset scope, so derive it from the
-		// tenant's currently-open findings. Producers that can't cheaply name
-		// the affected assets (KEV/EPSS refresh, periodic backfill) enqueue
-		// this shape.
-		return r.reclassifyTenant(ctx, req.TenantID)
-	}
-
-	reexamined := 0
-	var firstErr error
-	for _, assetID := range req.AssetIDs {
-		if ctx.Err() != nil {
-			return reexamined, ctx.Err()
-		}
-		n, err := r.reclassifyAsset(ctx, req.TenantID, assetID)
-		reexamined += n
-		if err != nil {
-			// Don't abort the batch — a missing asset shouldn't block
-			// the other slots. Surface the first error so the
-			// controller can log it at Warn.
-			if firstErr == nil {
-				firstErr = fmt.Errorf("asset %s: %w", assetID.String(), err)
-			}
-			continue
-		}
-	}
-	return reexamined, firstErr
+	return r.queue.EnqueueReconcile(ctx, delay)
 }
 
-// reclassifyTenant handles a whole-tenant request (empty AssetIDs). It pages
-// the tenant's open findings, accumulates their distinct asset IDs into a set,
-// then reclassifies each asset via the same reclassifyAsset path the scoped
-// branch uses. Findings with no asset (NULL asset_id — a known separate gap)
-// cannot be reclassified through the asset-enrichment path and are counted +
-// logged, not classified.
-func (r *Reclassifier) reclassifyTenant(
-	ctx context.Context,
-	tenantID shared.ID,
-) (int, error) {
-	if lister, ok := r.findings.(openFindingAssetLister); ok {
-		ids, err := lister.ListOpenFindingAssetIDs(ctx, tenantID)
+// ReclassifyAssets recomputes the open findings of the given assets of the
+// tenant and stamps them with the version read before computing: a change
+// that lands during the pass leaves an older stamp, so the findings are
+// computed again (a stamp is never newer than the inputs it was computed
+// with). Returns the findings checked and those whose stored values changed.
+func (r *Reclassifier) ReclassifyAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (checked, changed int, err error) {
+	var version int64
+	if r.versions != nil {
+		version, err = r.versions.CurrentVersion(ctx, tenantID, scoring.KindFindingPriority)
 		if err != nil {
-			return 0, fmt.Errorf("list open finding assets: %w", err)
+			return 0, 0, err
 		}
-		return r.reclassifyAssets(ctx, tenantID, ids)
 	}
-
-	filter := vulnerability.FindingFilter{
-		TenantID: &tenantID,
-		// Non-terminal only: mirror FindingStatus.IsClosed so resolved /
-		// false_positive / accepted / duplicate
-		// rows are not re-classified.
-		ExcludeStatuses: vulnerability.ClosedFindingStatuses(),
-	}
-	opts := vulnerability.FindingListOptions{}
-	page := pagination.Pagination{Page: 1, PerPage: r.perPage}
-
-	seen := make(map[shared.ID]struct{})
-	assetIDs := make([]shared.ID, 0)
-	skippedNoAsset := 0
-
-	// Phase 1: page findings, collect distinct asset IDs. Bounded memory —
-	// only the distinct asset-ID set is retained, not the findings.
-	for {
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		res, err := r.findings.List(ctx, filter, opts, page)
-		if err != nil {
-			return 0, fmt.Errorf("list tenant findings: %w", err)
-		}
-		if len(res.Data) == 0 {
-			break
-		}
-		for _, f := range res.Data {
-			aid := f.AssetID()
-			if aid.IsZero() {
-				skippedNoAsset++
-				continue
-			}
-			if _, ok := seen[aid]; ok {
-				continue
-			}
-			seen[aid] = struct{}{}
-			assetIDs = append(assetIDs, aid)
-		}
-		if int64(len(res.Data)) < int64(page.PerPage) {
-			break
-		}
-		page.Page++
-	}
-
-	if skippedNoAsset > 0 {
-		r.logger.Debug("whole-tenant sweep skipped findings with no asset",
-			"tenant_id", tenantID.String(),
-			"skipped", skippedNoAsset,
-		)
-	}
-
-	return r.reclassifyAssets(ctx, tenantID, assetIDs)
-}
-
-// reclassifyAssets reclassifies each asset's findings. Cancellation is checked
-// between assets so a tick deadline stops the sweep cleanly.
-func (r *Reclassifier) reclassifyAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (int, error) {
-	reexamined := 0
 	var firstErr error
 	for _, assetID := range assetIDs {
 		if ctx.Err() != nil {
-			return reexamined, ctx.Err()
+			return checked, changed, ctx.Err()
 		}
-		n, err := r.reclassifyAsset(ctx, tenantID, assetID)
-		reexamined += n
-		if err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("asset %s: %w", assetID.String(), err)
+		ids, n, err := r.reclassifyAsset(ctx, tenantID, assetID)
+		checked += len(ids)
+		changed += n
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("asset %s: %w", assetID, err)
+			}
+			continue
+		}
+		if r.queue != nil && version > 0 {
+			if err := r.queue.StampVersion(ctx, tenantID, ids, version); err != nil && firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
-	return reexamined, firstErr
+	return checked, changed, firstErr
 }
 
-func (r *Reclassifier) reclassifyAsset(
-	ctx context.Context,
-	tenantID, assetID shared.ID,
-) (int, error) {
-	// Load asset once per request; enrichment context is the same for
-	// every finding on that asset.
+// reclassifyAsset recomputes the open findings of one asset. It returns the
+// ids of the findings it computed (persisted or confirmed unchanged) and how
+// many changed.
+func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID shared.ID) ([]shared.ID, int, error) {
 	a, err := r.assets.GetByID(ctx, tenantID, assetID)
 	if err != nil {
-		// Asset gone → treat as soft-miss. Findings on a deleted asset
-		// will be cleaned by lifecycle jobs; nothing to reclassify.
+		// Asset gone: its findings are cleaned by lifecycle jobs.
 		if errors.Is(err, shared.ErrNotFound) {
-			return 0, nil
+			return nil, 0, nil
 		}
-		return 0, fmt.Errorf("load asset: %w", err)
+		return nil, 0, fmt.Errorf("load asset: %w", err)
 	}
+	assets := map[shared.ID]*asset.Asset{a.ID(): a}
 
+	filter := vulnerability.NewFindingFilter().WithTenantID(tenantID).WithAssetID(assetID)
+	filter.Statuses = vulnerability.OpenStatuses()
 	page := pagination.Pagination{Page: 1, PerPage: r.perPage}
 	opts := vulnerability.FindingListOptions{}
-	reexamined := 0
 
+	var (
+		computed []shared.ID
+		changed  int
+		failed   error
+	)
 	for {
-		res, err := r.findings.ListByAssetID(ctx, tenantID, assetID, opts, page)
+		res, err := r.findings.List(ctx, filter, opts, page)
 		if err != nil {
-			return reexamined, fmt.Errorf("list findings: %w", err)
+			return computed, changed, fmt.Errorf("list findings: %w", err)
 		}
 		if len(res.Data) == 0 {
 			break
 		}
+		open := make([]*vulnerability.Finding, 0, len(res.Data))
 		for _, f := range res.Data {
-			if ctx.Err() != nil {
-				return reexamined, ctx.Err()
+			// Defensive: the filter already keeps closed findings out.
+			if vulnerability.IsOpenStatus(f.Status()) {
+				open = append(open, f)
 			}
-			before := snapshotOf(f)
-			if err := r.classifier.ClassifyFinding(ctx, tenantID, f, a); err != nil {
-				r.logger.Warn("classify finding failed in sweep",
-					"finding_id", f.ID().String(),
-					"error", err,
-				)
-				continue
+		}
+		before := make(map[shared.ID]classSnapshot, len(open))
+		for _, f := range open {
+			before[f.ID()] = snapshotOf(f)
+		}
+		if err := r.classifier.EnrichAndClassifyBatch(ctx, tenantID, open, assets); err != nil {
+			return computed, changed, fmt.Errorf("classify: %w", err)
+		}
+		if r.sla != nil {
+			if err := r.sla.ApplyBatch(ctx, tenantID, open); err != nil {
+				r.logger.Warn("sla recompute failed", "asset_id", assetID.String(), "error", err)
 			}
-			// Recompute the SLA deadline from the (possibly escalated) priority
-			// class before persisting, so a KEV/EPSS-driven bump tightens the
-			// deadline. Best-effort: a failure keeps the reclassification.
-			if r.sla != nil {
-				if err := r.sla.ApplyBatch(ctx, tenantID, []*vulnerability.Finding{f}); err != nil {
-					r.logger.Warn("sla recompute failed in sweep",
-						"finding_id", f.ID().String(),
-						"error", err,
-					)
-				}
-			}
-			// A sweep re-confirms the stored classification for nearly every
-			// finding. Rewriting an unchanged row costs a new tuple in every
-			// findings index (and WAL) for nothing, so only a change is
-			// persisted.
-			if snapshotOf(f) == before {
-				reexamined++
+		}
+		for _, f := range open {
+			// Rewriting an unchanged row costs a tuple in every findings index
+			// for nothing: only a change is persisted.
+			if snapshotOf(f) == before[f.ID()] {
+				computed = append(computed, f.ID())
 				continue
 			}
 			if err := r.findings.Update(ctx, f); err != nil {
-				r.logger.Warn("persist reclassified finding failed",
-					"finding_id", f.ID().String(),
-					"error", err,
-				)
+				r.logger.Warn("persist reclassified finding failed", "finding_id", f.ID().String(), "error", err)
+				if failed == nil {
+					failed = fmt.Errorf("persist finding: %w", err)
+				}
 				continue
 			}
-			reexamined++
+			computed = append(computed, f.ID())
+			changed++
 		}
-		// End-of-page when returned count is less than requested.
-		if int64(len(res.Data)) < int64(page.PerPage) {
+		if len(res.Data) < page.PerPage {
 			break
 		}
 		page.Page++
 	}
-	return reexamined, nil
+	return computed, changed, failed
 }
 
-// classSnapshot is what a reclassification can change on a finding: the
-// priority class and its reason, the derived reachability, and the SLA
-// deadline and status recomputed from them.
+// classSnapshot is what a pass can change on a finding: the priority class
+// and its reason, the derived reachability, the EPSS / KEV enrichment and the
+// SLA deadline and status recomputed from them.
 type classSnapshot struct {
 	class, reason string
 	reachable     bool
 	reachFrom     int
+	epss          float64
+	hasEPSS       bool
+	kev           bool
 	slaDeadline   int64 // UnixNano; 0 = none
 	slaStatus     vulnerability.SLAStatus
 }
@@ -316,10 +274,14 @@ func snapshotOf(f *vulnerability.Finding) classSnapshot {
 		reason:    f.PriorityClassReason(),
 		reachable: f.IsReachable(),
 		reachFrom: f.ReachableFromCount(),
+		kev:       f.IsInKEV(),
 		slaStatus: f.SLAStatus(),
 	}
 	if pc := f.PriorityClass(); pc != nil {
 		s.class = string(*pc)
+	}
+	if e := f.EPSSScore(); e != nil {
+		s.epss, s.hasEPSS = *e, true
 	}
 	if d := f.SLADeadline(); d != nil {
 		s.slaDeadline = d.UnixNano()

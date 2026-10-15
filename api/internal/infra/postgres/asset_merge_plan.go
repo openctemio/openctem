@@ -115,6 +115,10 @@ var assetMergeRefs = []mergeRef{
 	// is recomputed once the merged findings move to it).
 	{table: "asset_risk_queue", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// Same for the finding-priority queue: the moved findings queue the kept
+	// asset themselves (asset_id trigger).
+	{table: "finding_priority_queue", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	{table: "business_unit_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
 	{table: "asset_group_members", column: "asset_id", idCol: "ctid",
