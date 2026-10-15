@@ -44,8 +44,7 @@ graph TD
 | Repository | `internal/infra/postgres/ci_run_repository.go` |
 | Routes and their chains | `internal/infra/http/routes/ci.go` |
 | Console | `web/src/features/ci-runners`: CI/CD integration page `/ci-cd` (pipelines, runs, coverage; Trust and gate tab, `?tab=setup`; "Connect a pipeline" setup and "Recent refused pipelines" from `GET /api/v1/ci/trust-refusals`); `/ci-runners` and `/runners` redirect to `/ci-cd` |
-| Pipelines: identity, status, fleet rows | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
-| Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
+| Pipelines: identity, status | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
 | Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
 | Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts`, `001144_ci_db_model`, `001145_ci_db_model_validate` |
@@ -90,7 +89,6 @@ findings per run (`cirun.MaxRunFindings`). A run that sights more is marked
 never judged on the first 100,000 only. Warn mode and a break-glass still apply
 to it like any other blocking reason.
 | `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
-| `GET /api/v1/fleet` | session tenant chain → `sensors:read` or `scans:ci:read`; the handler lists each mode under its own permission (runner rows also need the `scans` module) |
 
 ## Data model
 
@@ -178,6 +176,35 @@ touches a finding it cannot attribute to a run).
   `ci_runs`). A CI run is not a scan run: it is never dispatched, has its own
   credential and its own verdict, and lives in `ci_runs`, not `scan_runs`.
 
+### Duplicate repository assets (`repomerge`)
+
+One repository could be two assets of a tenant: repository import named it
+`org/repo` and CI `github.com/org/repo`, or a rename or transfer made CI create
+a second asset while the first kept the findings, branches, gate policy and
+coverage expectation. `repomerge` (`cmd/repomerge`, in the API image as
+`/app/repomerge`; `internal/infra/postgres/repository_merge.go`) finds, per
+tenant, assets that are one repository:
+
+- the same repository id on the same host (`asset_repositories.repo_id`, host
+  from the web or clone address);
+- `host/path` and `path` whose extension's address is on that host;
+- a CI pipeline keyed by the code host's repository id (GitHub, GitLab,
+  Bitbucket) whose runs sit on another asset than the pipeline does now.
+
+Each group is merged into its oldest asset by the asset merge
+(`mergeAssetReferences`: every reference moves, findings are re-keyed and
+folded, same-named branches are joined, one gate policy and one expectation
+per repository, the kept one first), logged in `asset_merge_log`
+(`repository_identity`), and the kept asset takes the current `host/path`
+name. One transaction per repository; idempotent.
+
+```
+repomerge                  # dry run, every tenant (read-only connection), aggregate counts only
+repomerge -tenant <id>     # one tenant
+repomerge -apply           # merge
+repomerge -json            # report with asset ids
+```
+
 ### Exchange and pipeline flow
 
 ```mermaid
@@ -230,7 +257,12 @@ A decision made on the platform holds on the next run of the same repository:
   its console summary, SARIF and merge request report and says how many it
   hid. It learns nothing about findings it did not report, and nothing about
   another repository or tenant; a lookup failure returns an empty list, so
-  the job shows everything.
+  the job shows everything. The response stays small whatever the report's
+  size: `known` lists at most 10,000 results (`cirun.MaxKnownInResponse`,
+  lowest indexes first, about 1 MB), `known_total` counts them all and
+  `known_truncated` is true when some were left out. A job that reads only
+  `known` shows the rest of its results, which is safe; the gate judges every
+  finding on the platform either way.
 - **Identity.** The finding is the same when its key is (RFC-043 §4.2): a SAST
   key is the rule, the path and the flagged code, so a line shift keeps the
   decision and a material change to the code is a new finding that is judged
@@ -240,12 +272,11 @@ A decision made on the platform holds on the next run of the same repository:
 ## Invariants
 
 - A run never creates a sensor row and has no heartbeat; offline alerts never
-  see it. Its pipeline is listed in the fleet in runner mode and is never
-  offline and never dispatched.
+  see it. Its pipeline is listed on the CI/CD page (never with the sensors)
+  and is never offline and never dispatched.
 - A pipeline is created only at a verified, admitted exchange, keyed by signed
   immutable ids; branch, job and tool labels never create rows.
-- Every fleet source is tenant-scoped and the runner rows follow the data
-  scope; the fleet handler adds no query of its own.
+- Pipeline reads are tenant-scoped and follow the repository data scope.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
 - A pull or merge request run records its findings on its own scope:
@@ -256,6 +287,13 @@ A decision made on the platform holds on the next run of the same repository:
   their rows; new uploads to such a run go to the pull request scope.
 - A run's report changes only its repository asset; the baseline branch is
   decided server-side.
+- A pull or merge request is compared with its base branch only when that
+  base is verified and the branch may serve as a baseline; otherwise with the
+  default branch. Verified: GitHub's signed `base_ref`; a GitLab merge
+  request's target branch read from GitLab through the organization's GitLab
+  connection (the token signs none); no other provider. A base branch the job
+  reports (`base_ref` in the exchange) is ignored. A baseline branch is the
+  default branch or a protected one; a name (`release/*`) never qualifies.
 - A finding the run sees only on a non-counting branch is branch-only: left
   out of exposure views until a counting branch sees it
   (`branch-only-findings.md`).
