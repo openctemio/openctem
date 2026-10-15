@@ -273,6 +273,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
 	vulnHandler.SetAuditService(svc.Audit)
+	if svc.Tenant != nil {
+		vulnHandler.SetFindingApprovalSettings(svc.Tenant)
+	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
 	if svc.BulkGuard != nil {

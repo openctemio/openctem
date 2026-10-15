@@ -255,3 +255,37 @@ func oneLineTitle(s string) string {
 	}
 	return s
 }
+
+// NotifyApprovalSettingsChanged tells the organization's approvers (owners,
+// administrators and holders of findings:approve), except the actor, that the
+// approval settings changed. Best effort.
+func (s *VulnerabilityService) NotifyApprovalSettingsChanged(ctx context.Context, tenantID, actorID, title, body string) {
+	if s.approverDir == nil || s.approvalInApp == nil {
+		return
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return
+	}
+	all, err := s.approverDir.FindingApprovers(ctx, tid)
+	if err != nil {
+		s.logger.Warn("approval settings notice: list approvers", "error", logger.SanitizeError(err))
+		return
+	}
+	for _, ap := range all {
+		if ap.UserID == actorID {
+			continue
+		}
+		uid, err := shared.IDFromString(ap.UserID)
+		if err != nil {
+			continue
+		}
+		if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
+			TenantID: tid, Audience: notificationdom.AudienceUser, AudienceID: &uid,
+			NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+			Severity: notificationdom.SeverityHigh, ResourceType: "settings", URL: "/settings/finding-approvals",
+		}); err != nil {
+			s.logger.Warn("approval settings notice: in-app", "error", logger.SanitizeError(err))
+		}
+	}
+}
