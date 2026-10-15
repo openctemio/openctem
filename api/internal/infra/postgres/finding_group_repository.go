@@ -797,13 +797,13 @@ func (r *FindingRepository) groupByField(
 func (r *FindingRepository) BulkUpdateStatusByFilter(
 	ctx context.Context, tenantID shared.ID,
 	filter vulnerability.FindingFilter, status vulnerability.FindingStatus,
-	resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod,
+	resolution string, resolvedBy *shared.ID, closure vulnerability.Closure,
 ) (int64, error) {
-	methodArg, err := resolutionMethodArg(status, method)
+	reasonArg, verificationArg, err := closureArgs(status, closure)
 	if err != nil {
 		return 0, err
 	}
-	filterWhere, filterArgs := buildFilterWhere(filter, 7)
+	filterWhere, filterArgs := buildFilterWhere(filter, 8)
 	extraWhere := ""
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
@@ -819,13 +819,13 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 
 	query := fmt.Sprintf(`
 		UPDATE findings f
-		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5, resolved_at = %s, updated_at = NOW()
-		WHERE f.tenant_id = $1 AND f.source != 'pentest' AND f.status = ANY($6) %s
+		SET status = $2, resolution = $3, resolved_by = $4, closure_reason = $5, verification = $6, resolved_at = %s, updated_at = NOW()
+		WHERE f.tenant_id = $1 AND f.source != 'pentest' AND f.status = ANY($7) %s
 	`, resolvedAt, extraWhere)
 
-	// $6: the statuses a person may move a finding from to status (the
+	// $7: the statuses a person may move a finding from to status (the
 	// lifecycle); a matching finding in any other status is left alone.
-	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg,
+	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), reasonArg, verificationArg,
 		pq.Array(statusStrings(vulnerability.UserFromStatuses(status)))}, filterArgs...)
 
 	result, err := r.db.execStatusWrite(ctx, query, args...)
