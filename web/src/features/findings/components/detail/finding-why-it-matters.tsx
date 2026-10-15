@@ -144,7 +144,7 @@ export interface FindingWhyItMattersProps {
 export function FindingWhyItMatters({ finding, compact, className }: FindingWhyItMattersProps) {
   const { t } = useTranslation()
   const [scoreOpen, setScoreOpen] = useState(false)
-  const signals = riskSignals(finding)
+  const signals = riskSignals(finding, t)
   const pc = finding.priorityClass
   if (!pc && signals.length === 0) return null
 
