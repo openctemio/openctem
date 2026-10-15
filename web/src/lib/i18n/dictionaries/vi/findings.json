@@ -840,5 +840,20 @@
   "findings.tenableRescan.title": "Quét lại bằng Tenable.sc",
   "findings.tenableRescan.now": "Quét lại",
   "findings.tenableRescan.nowTitle": "Quét ngay tài sản của phát hiện này qua bộ kết nối Tenable.sc",
-  "findings.tenableRescan.help": "Sau khi khắc phục, hãy quét lại tài sản bằng Tenable.sc. Khi tổ chức bật tự động đóng theo phạm vi quét, phát hiện sẽ tự đóng khi một lần quét lại đầy đủ không còn báo cáo nó."
+  "findings.tenableRescan.help": "Sau khi khắc phục, hãy quét lại tài sản bằng Tenable.sc. Khi tổ chức bật tự động đóng theo phạm vi quét, phát hiện sẽ tự đóng khi một lần quét lại đầy đủ không còn báo cáo nó.",
+  "findings.typePanel.dataFlow": "Luồng dữ liệu",
+  "findings.typePanel.openCode": "Mở mã nguồn",
+  "findings.typePanel.moreSteps": "Còn {count} bước trên trang đầy đủ",
+  "findings.typePanel.secret": "Bí mật",
+  "findings.typePanel.masked": "Giá trị đã che",
+  "findings.typePanel.kind": "Loại",
+  "findings.typePanel.validity": "Hiệu lực",
+  "findings.typePanel.revoked": "Đã thu hồi",
+  "findings.typePanel.valid": "Còn hiệu lực: vẫn dùng được",
+  "findings.typePanel.invalid": "Không còn hiệu lực",
+  "findings.typePanel.notVerified": "Công cụ quét chưa kiểm tra",
+  "findings.typePanel.location": "Vị trí",
+  "findings.typePanel.history": "Lịch sử",
+  "findings.typePanel.historyOnly": "Chỉ có trong lịch sử kho mã, không có trong các tệp hiện tại",
+  "findings.typePanel.httpEvidence": "Bằng chứng HTTP"
 }
