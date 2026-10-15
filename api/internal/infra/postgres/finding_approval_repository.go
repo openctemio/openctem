@@ -247,7 +247,8 @@ func (r *FindingApprovalRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, finding_id, requested_status, requested_by,
 			justification, approved_by, approved_at, rejected_by, rejected_at,
-			rejection_reason, status, expires_at, created_at, version, requested_by_actor, decide_by
+			rejection_reason, status, expires_at, created_at, version, requested_by_actor, decide_by,
+			self_approved, COALESCE(self_approval_reason, '')
 		FROM finding_status_approvals
 	`
 }
@@ -278,6 +279,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		&id, &tenantID, &findingID, &a.RequestedStatus, &requestedBy,
 		&a.Justification, &approvedBy, &approvedAt, &rejectedBy, &rejectedAt,
 		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor, &decideBy,
+		&a.SelfApproved, &a.SelfApprovalReason,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -347,10 +349,11 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
 			UPDATE finding_status_approvals SET
-				status = 'approved', approved_by = $3, approved_at = $4, expires_at = $5, version = $6
+				status = 'approved', approved_by = $3, approved_at = $4, expires_at = $5, version = $6,
+				self_approved = $8, self_approval_reason = $9
 			WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND version = $7`,
 			a.ID.String(), a.TenantID.String(), a.ApprovedBy.String(), a.ApprovedAt, a.ExpiresAt,
-			a.Version, a.Version-1)
+			a.Version, a.Version-1, a.SelfApproved, nullString(a.SelfApprovalReason))
 		if err != nil {
 			return fmt.Errorf("failed to approve request: %w", err)
 		}

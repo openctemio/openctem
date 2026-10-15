@@ -166,3 +166,26 @@ func (r *ScopeActorRepository) personIDs(ctx context.Context, tenantID shared.ID
 	}
 	return out, rows.Err()
 }
+
+// IsSoleActiveOwner reports whether userID is the only active person in the
+// tenant and an owner of it: exactly one active membership of a person (an
+// active, unexpired membership of an active account; service accounts do
+// not count) and that membership is userID's with the owner role. Read at
+// decision time, never cached.
+func (r *ScopeActorRepository) IsSoleActiveOwner(ctx context.Context, tenantID shared.ID, userID string) (bool, error) {
+	var members int
+	var soleIsOwner bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),
+		       COALESCE(BOOL_AND(m.user_id = $2::uuid AND ver.role = 'owner'), false)
+		FROM tenant_members m
+		JOIN users u ON u.id = m.user_id AND u.status = 'active' AND u.kind = 'person'
+		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.tenant_id = $1 AND m.status = 'active'
+		  AND (m.expires_at IS NULL OR m.expires_at > now())`,
+		tenantID.String(), userID).Scan(&members, &soleIsOwner)
+	if err != nil {
+		return false, fmt.Errorf("count active members: %w", err)
+	}
+	return members == 1 && soleIsOwner, nil
+}

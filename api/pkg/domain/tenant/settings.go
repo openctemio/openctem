@@ -50,6 +50,9 @@ type Settings struct {
 	// FindingCorrelation switches cross-rule finding correlation
 	// (research/134 section 12). Both tiers are on unless turned off.
 	FindingCorrelation FindingCorrelationSettings `json:"finding_correlation,omitempty"`
+	// FindingApprovals governs finding false-positive and accepted-risk
+	// decisions.
+	FindingApprovals FindingApprovalSettings `json:"finding_approvals,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of

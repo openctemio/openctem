@@ -20,14 +20,22 @@ const (
 	// ActionFindingApprovalSelfRefused: a requester tried to approve their
 	// own request and was refused (a signal for abuse or a misunderstanding).
 	ActionFindingApprovalSelfRefused Action = "finding_approval.self_approval_refused"
+	// ActionFindingApprovalSelfApproved: the sole member of the organization
+	// approved their own request (fresh authenticator code and a reason).
+	ActionFindingApprovalSelfApproved Action = "finding_approval.self_approved"
+	// ActionFindingApprovalSettingsChanged: the organization's finding
+	// approval settings changed (step-up; old and new values).
+	ActionFindingApprovalSettingsChanged Action = "finding_approval.settings_changed"
 )
 
 var _ = registerActions("finding_approval", map[Action]Severity{
-	ActionFindingApprovalRequested:   SeverityMedium,
-	ActionFindingApprovalApproved:    SeverityMedium,
-	ActionFindingApprovalRejected:    SeverityMedium,
-	ActionFindingApprovalCanceled:    SeverityLow,
-	ActionFindingApprovalReminded:    SeverityLow,
-	ActionFindingApprovalExpired:     SeverityLow,
-	ActionFindingApprovalSelfRefused: SeverityMedium,
+	ActionFindingApprovalRequested:       SeverityMedium,
+	ActionFindingApprovalApproved:        SeverityMedium,
+	ActionFindingApprovalRejected:        SeverityMedium,
+	ActionFindingApprovalCanceled:        SeverityLow,
+	ActionFindingApprovalReminded:        SeverityLow,
+	ActionFindingApprovalExpired:         SeverityLow,
+	ActionFindingApprovalSelfRefused:     SeverityMedium,
+	ActionFindingApprovalSelfApproved:    SeverityHigh,
+	ActionFindingApprovalSettingsChanged: SeverityHigh,
 })

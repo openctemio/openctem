@@ -368,6 +368,17 @@ func registerVulnerabilityRoutes(
 		r.POST("/{id}/reject", h.RejectApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/cancel", h.CancelApproval, middleware.Require(permission.FindingsWrite))
 		r.POST("/{id}/remind", h.RemindApprovals, middleware.Require(permission.FindingsWrite))
+		// The sole member's own approval: findings:approve, and the service
+		// checks owner, sole active person, fresh authenticator code, reason.
+		r.POST("/{id}/self-approve", h.SelfApproveApproval, middleware.Require(permission.FindingsApprove))
+	}, tenantMiddlewares...)
+
+	// The organization's finding approval settings: read with findings:read;
+	// change with settings:write and a recent re-authentication (audited,
+	// approvers told).
+	router.Group("/api/v1/organization/settings/finding-approvals", func(r Router) {
+		r.GET("/", h.GetFindingApprovalSettings, middleware.Require(permission.FindingsRead))
+		r.PUT("/", h.UpdateFindingApprovalSettings, middleware.Require(permission.SettingsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 
 }
