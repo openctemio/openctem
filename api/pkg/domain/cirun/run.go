@@ -112,8 +112,12 @@ type Run struct {
 	// CarriedScanFailures are the scanner failures of the verdict before a
 	// later attempt re-opened the run; they count until a report arrives.
 	CarriedScanFailures int
-	Tools               []ToolLabel
-	TemplateRef         string
+	// CarriedFailedCapabilities failed in an earlier attempt of the pipeline
+	// run; each keeps failing the run until a report of that capability
+	// arrives.
+	CarriedFailedCapabilities []string
+	Tools                     []ToolLabel
+	TemplateRef               string
 	// DecorationState is where posting the verdict to the code host stands
 	// (Decoration* constants, "" when nothing was queued); DecorationDetail
 	// a short fixed explanation (never raw code-host text).

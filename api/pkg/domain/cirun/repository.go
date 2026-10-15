@@ -126,6 +126,13 @@ type Repository interface {
 	// a record that it had one, so no first run records another.
 	DeleteGateBaseline(ctx context.Context, tenantID, assetID shared.ID) error
 
+	// RecordFailedCapabilities stores the capabilities a verdict found
+	// failed; a later attempt that re-opens the run carries them.
+	RecordFailedCapabilities(ctx context.Context, tenantID, runID shared.ID, names []string) error
+	// ClearCarriedCapabilities drops from a run's carried failed
+	// capabilities those the named tool provides (a report of it arrived).
+	ClearCarriedCapabilities(ctx context.Context, tenantID, runID shared.ID, tool string) error
+
 	CreateOverride(ctx context.Context, o *GateOverride) error
 	ListOverrides(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope) ([]GateOverride, error)
 	GetOverride(ctx context.Context, tenantID, id shared.ID) (*GateOverride, error)

@@ -317,7 +317,8 @@ const ciRunColumns = `id, tenant_id, trust_config_id, repository_asset_id, provi
 	commit_sha, pull_request, default_branch, is_default_branch, event, environment, actor, external_run_id,
 	run_attempt, workflow, pipeline_url, fork, token_expires_at, status, verdict, verdict_detail, evaluated_at,
 	reports_count, findings_count, pipeline_id, sensor_version, scan_failures, tools, template_ref, created_at, updated_at,
-	external_job_id, aggregate, commit_verified, base_ref, decoration_state, decoration_detail, carried_scan_failures`
+	external_job_id, aggregate, commit_verified, base_ref, decoration_state, decoration_detail, carried_scan_failures,
+	carried_failed_capabilities`
 
 func scanCIRun(row ciScanner) (cirun.Run, error) {
 	var (
@@ -334,7 +335,8 @@ func scanCIRun(row ciScanner) (cirun.Run, error) {
 		&run.Actor, &run.ExternalRunID, &run.RunAttempt, &run.Workflow, &run.PipelineURL, &run.Fork, &tokenExp,
 		&run.Status, &verdict, &detail, &evaluated, &run.ReportsCount, &run.FindingsCount, &pipeline,
 		&run.SensorVersion, &failures, &tools, &run.TemplateRef, &run.CreatedAt, &run.UpdatedAt,
-		&run.ExternalJobID, &run.Aggregate, &run.CommitVerified, &run.BaseRef, &run.DecorationState, &run.DecorationDetail, &run.CarriedScanFailures); err != nil {
+		&run.ExternalJobID, &run.Aggregate, &run.CommitVerified, &run.BaseRef, &run.DecorationState, &run.DecorationDetail, &run.CarriedScanFailures,
+		pq.Array(&run.CarriedFailedCapabilities)); err != nil {
 		return run, err
 	}
 	run.ID, _ = shared.IDFromString(id)
@@ -413,7 +415,9 @@ func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) 
 	// A later attempt re-opens an evaluated run for its reports; the
 	// verdict's scanner failures keep failing it until a report arrives.
 	if _, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'running', run_attempt = $5,
-			carried_scan_failures = GREATEST(carried_scan_failures, COALESCE(scan_failures, 0)), updated_at = NOW()
+			carried_scan_failures = GREATEST(carried_scan_failures, COALESCE(scan_failures, 0)),
+			carried_failed_capabilities = ARRAY(SELECT DISTINCT c FROM unnest(carried_failed_capabilities || failed_capabilities) AS c),
+			updated_at = NOW()
 		WHERE tenant_id = $1 AND pipeline_id = $2 AND external_run_id = $3 AND commit_sha = $4
 		  AND aggregate AND evidence_union AND status = 'evaluated'`,
 		run.TenantID.String(), run.PipelineID.String(), run.ExternalRunID, run.CommitSHA, run.RunAttempt); err != nil {
@@ -430,6 +434,29 @@ func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) 
 		return nil, false, err
 	}
 	return &open, n == 1, nil
+}
+
+// RecordFailedCapabilities stores the capabilities a verdict found failed.
+func (r *CIRunRepository) RecordFailedCapabilities(ctx context.Context, tenantID, runID shared.ID, names []string) error {
+	if names == nil {
+		names = []string{}
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET failed_capabilities = $3 WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), runID.String(), pq.Array(names))
+	return err
+}
+
+// ClearCarriedCapabilities drops the carried failed capabilities that the
+// named tool provides, by the tool registry (the platform's tools and the
+// tenant's own), never by what the report claims.
+func (r *CIRunRepository) ClearCarriedCapabilities(ctx context.Context, tenantID, runID shared.ID, tool string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs r SET carried_failed_capabilities = ARRAY(
+			SELECT c FROM unnest(r.carried_failed_capabilities) AS c
+			WHERE NOT EXISTS (SELECT 1 FROM tools tt WHERE lower(tt.name) = lower($3)
+				AND (tt.tenant_id IS NULL OR tt.tenant_id = r.tenant_id) AND c = ANY(tt.capabilities)))
+		WHERE r.tenant_id = $1 AND r.id = $2 AND cardinality(r.carried_failed_capabilities) > 0`,
+		tenantID.String(), runID.String(), tool)
+	return err
 }
 
 // AddRunToken adds an upload token to a running run (a job of an aggregate
@@ -1190,13 +1217,14 @@ func (r *CIRunRepository) FinishDecoration(ctx context.Context, tenantID, runID 
 	return err
 }
 
-// PullRequestPassed reports whether the last evaluated non-fork run of a
-// pull request on the repository passed the gate (tenant-scoped).
+// PullRequestPassed reports whether the last judged non-fork run of a pull
+// request on the repository passed the gate (tenant-scoped). A run a later
+// attempt re-opened keeps its last verdict until it is judged again.
 func (r *CIRunRepository) PullRequestPassed(ctx context.Context, tenantID, assetID shared.ID, pullRequest string) (bool, error) {
 	var verdict sql.NullString
 	err := r.db.QueryRowContext(ctx, `SELECT verdict FROM ci_runs
-		WHERE tenant_id = $1 AND repository_asset_id = $2 AND pull_request = $3 AND status = 'evaluated' AND NOT fork
-		ORDER BY evaluated_at DESC LIMIT 1`, tenantID.String(), assetID.String(), pullRequest).Scan(&verdict)
+		WHERE tenant_id = $1 AND repository_asset_id = $2 AND pull_request = $3 AND verdict IS NOT NULL AND NOT fork
+		ORDER BY evaluated_at DESC NULLS LAST LIMIT 1`, tenantID.String(), assetID.String(), pullRequest).Scan(&verdict)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -1206,9 +1234,10 @@ func (r *CIRunRepository) PullRequestPassed(ctx context.Context, tenantID, asset
 	return verdict.String == cirun.VerdictPass, nil
 }
 
-// CommitVerdicts returns the latest evaluated verdict of each pipeline on
-// any of the commits of the repository (tenant-scoped). A run without a
-// pipeline counts on its own.
+// CommitVerdicts returns the latest verdict of each pipeline on any of the
+// commits of the repository (tenant-scoped). A run without a pipeline counts
+// on its own. A run a later attempt re-opened keeps its last verdict until it
+// is judged again, so re-opening a failed run never hides its failure.
 func (r *CIRunRepository) CommitVerdicts(ctx context.Context, tenantID, assetID shared.ID, shas []string) ([]cirun.CommitVerdict, error) {
 	clean := make([]string, 0, len(shas))
 	for _, s := range shas {
@@ -1223,8 +1252,8 @@ func (r *CIRunRepository) CommitVerdicts(ctx context.Context, tenantID, assetID 
 			id, verdict, COALESCE((verdict_detail->>'would_fail')::boolean, false)
 		FROM ci_runs
 		WHERE tenant_id = $1 AND repository_asset_id = $2 AND lower(commit_sha) = ANY($3)
-		  AND status = 'evaluated' AND verdict IS NOT NULL
-		ORDER BY COALESCE(pipeline_id::text, id::text), evaluated_at DESC`,
+		  AND verdict IS NOT NULL
+		ORDER BY COALESCE(pipeline_id::text, id::text), evaluated_at DESC NULLS LAST`,
 		tenantID.String(), assetID.String(), pq.Array(clean))
 	if err != nil {
 		return nil, err

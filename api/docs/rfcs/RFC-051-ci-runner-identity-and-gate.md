@@ -261,10 +261,21 @@ into ONE run and is judged once. Each job sends `aggregate: true`:
   passed, and the commit check took that latest verdict). An exception
   approved since, or a flaky scan that succeeds on re-run, can turn it green
   without a new commit.
-- The scanner failures of the verdict before a re-open are carried
-  (`carried_scan_failures`) and keep failing the run until a later attempt
-  uploads a report; a gate-only retry that reports no failure cannot drop
-  them.
+- A re-opened run **keeps its last verdict** until it is judged again: the
+  commit check (`CommitVerdicts`) and the merged-without-a-passing-gate check
+  (`PullRequestPassed`) read any run with a verdict, whatever its status. So
+  retrying one scan job of a failed pipeline cannot make its failure drop out
+  while another pipeline's pass decides the check.
+- Capabilities the last verdict found failed (`failed_capabilities`: the
+  job's capability states and those already carried) are carried on re-open
+  (`carried_failed_capabilities`). Each keeps failing the run
+  (`capability_failed`, state `failed_earlier`) until a report of **that**
+  capability arrives. The capability comes from the tool registry by the
+  report's tool name, so a report of another capability does not clear it.
+  The evaluating job cannot clear it by claiming it uploaded. A runner that
+  sends only a count of failed scanners (`scan_failures`, no capability
+  states) has the count carried (`carried_scan_failures`) until the next
+  upload.
 - A run, aggregate or not, that no report was uploaded to fails
   (`no_results`): there is nothing to judge.
 - The response says `aggregate: true`; a client that asked for an aggregate

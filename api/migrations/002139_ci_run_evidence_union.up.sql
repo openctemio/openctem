@@ -6,14 +6,20 @@
 --
 --   evidence_union         the run is keyed without the attempt (rows from before this migration
 --                          keep the old key and are left as they are);
---   carried_scan_failures  scanner failures of the verdict before a re-open; they keep failing the
---                          run until a later attempt uploads a report.
+--   failed_capabilities          capabilities the last verdict found failed (the job's capability
+--                                states, and those carried from earlier attempts);
+--   carried_failed_capabilities  set when a later attempt re-opens the run: each keeps failing it
+--                                until a report of THAT capability arrives;
+--   carried_scan_failures        a runner that reports only a count of failed scanners (no capability
+--                                states): the count keeps failing the run until a later upload.
 --
 -- New columns have constant defaults (no table rewrite); the unique index covers new rows only.
 
 ALTER TABLE ci_runs
     ADD COLUMN IF NOT EXISTS evidence_union BOOLEAN NOT NULL DEFAULT false,
-    ADD COLUMN IF NOT EXISTS carried_scan_failures INTEGER NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS carried_scan_failures INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS failed_capabilities TEXT[] NOT NULL DEFAULT '{}'::text[],
+    ADD COLUMN IF NOT EXISTS carried_failed_capabilities TEXT[] NOT NULL DEFAULT '{}'::text[];
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ci_runs_pipeline_run
     ON ci_runs (tenant_id, pipeline_id, external_run_id, commit_sha)
