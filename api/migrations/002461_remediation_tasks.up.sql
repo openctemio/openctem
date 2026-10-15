@@ -11,8 +11,17 @@
 -- Rows are only ever created by a person (by hand or by accepting a
 -- suggestion); no algorithm creates an action or a task.
 --
--- Live impact: four new, empty tables. The foreign keys to findings and
--- remediation_campaigns are checked against the new (empty) tables only.
+-- Every link to a tenant row is a composite (tenant_id, ...) foreign key, so
+-- no row can ever point at another tenant's finding, campaign, group or
+-- task. Links to users stay plain (accounts are not tenant rows).
+--
+-- Live impact: four new, empty tables, and a unique (tenant_id, id)
+-- constraint on the small remediation_campaigns table (its primary key makes
+-- it hold no duplicate). The foreign keys are checked against the new
+-- (empty) tables only.
+
+ALTER TABLE remediation_campaigns
+    ADD CONSTRAINT uq_remediation_campaigns_tenant_id_id UNIQUE (tenant_id, id);
 
 CREATE TABLE IF NOT EXISTS remediation_actions (
     id          uuid         NOT NULL DEFAULT uuid_generate_v7(),
@@ -32,7 +41,8 @@ CREATE TABLE IF NOT EXISTS remediation_actions (
         REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT chk_remediation_actions_kind CHECK (kind IN ('upgrade', 'rotate', 'sol', 'manual')),
     CONSTRAINT chk_remediation_actions_origin CHECK (origin IN ('manual', 'suggestion')),
-    CONSTRAINT chk_remediation_actions_fix_spec_size CHECK (pg_column_size(fix_spec) <= 65536)
+    CONSTRAINT chk_remediation_actions_fix_spec_size CHECK (pg_column_size(fix_spec) <= 65536),
+    CONSTRAINT uq_remediation_actions_tenant_id_id UNIQUE (tenant_id, id)
 );
 
 COMMENT ON TABLE remediation_actions IS
@@ -78,16 +88,17 @@ CREATE TABLE IF NOT EXISTS remediation_tasks (
     CONSTRAINT pk_remediation_tasks PRIMARY KEY (id),
     CONSTRAINT fk_remediation_tasks_tenant FOREIGN KEY (tenant_id)
         REFERENCES tenants (id) ON DELETE CASCADE,
-    CONSTRAINT fk_remediation_tasks_action FOREIGN KEY (action_id)
-        REFERENCES remediation_actions (id) ON DELETE RESTRICT,
-    CONSTRAINT fk_remediation_tasks_campaign FOREIGN KEY (campaign_id)
-        REFERENCES remediation_campaigns (id) ON DELETE SET NULL,
+    CONSTRAINT uq_remediation_tasks_tenant_id_id UNIQUE (tenant_id, id),
+    CONSTRAINT fk_remediation_tasks_action FOREIGN KEY (tenant_id, action_id)
+        REFERENCES remediation_actions (tenant_id, id) ON DELETE RESTRICT,
+    CONSTRAINT fk_remediation_tasks_campaign FOREIGN KEY (tenant_id, campaign_id)
+        REFERENCES remediation_campaigns (tenant_id, id) ON DELETE SET NULL (campaign_id),
     CONSTRAINT fk_remediation_tasks_assignee_user FOREIGN KEY (assignee_user_id)
         REFERENCES users (id) ON DELETE SET NULL,
-    CONSTRAINT fk_remediation_tasks_assignee_group FOREIGN KEY (assignee_group_id)
-        REFERENCES groups (id) ON DELETE SET NULL,
-    CONSTRAINT fk_remediation_tasks_regression_of FOREIGN KEY (regression_of)
-        REFERENCES remediation_tasks (id) ON DELETE SET NULL,
+    CONSTRAINT fk_remediation_tasks_assignee_group FOREIGN KEY (tenant_id, assignee_group_id)
+        REFERENCES groups (tenant_id, id) ON DELETE SET NULL (assignee_group_id),
+    CONSTRAINT fk_remediation_tasks_regression_of FOREIGN KEY (tenant_id, regression_of)
+        REFERENCES remediation_tasks (tenant_id, id) ON DELETE SET NULL (regression_of),
     CONSTRAINT fk_remediation_tasks_created_by FOREIGN KEY (created_by)
         REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT chk_remediation_tasks_manual_state CHECK (manual_state IS NULL OR manual_state IN ('on_hold', 'canceled')),
@@ -138,10 +149,10 @@ CREATE TABLE IF NOT EXISTS remediation_task_members (
     CONSTRAINT pk_remediation_task_members PRIMARY KEY (id),
     CONSTRAINT fk_remediation_task_members_tenant FOREIGN KEY (tenant_id)
         REFERENCES tenants (id) ON DELETE CASCADE,
-    CONSTRAINT fk_remediation_task_members_task FOREIGN KEY (task_id)
-        REFERENCES remediation_tasks (id) ON DELETE CASCADE,
-    CONSTRAINT fk_remediation_task_members_finding FOREIGN KEY (finding_id)
-        REFERENCES findings (id) ON DELETE CASCADE,
+    CONSTRAINT fk_remediation_task_members_task FOREIGN KEY (tenant_id, task_id)
+        REFERENCES remediation_tasks (tenant_id, id) ON DELETE CASCADE,
+    CONSTRAINT fk_remediation_task_members_finding FOREIGN KEY (tenant_id, finding_id)
+        REFERENCES findings (tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_remediation_task_members_joined_by FOREIGN KEY (joined_by)
         REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT fk_remediation_task_members_left_by FOREIGN KEY (left_by)
@@ -184,8 +195,8 @@ CREATE TABLE IF NOT EXISTS remediation_task_events (
     CONSTRAINT pk_remediation_task_events PRIMARY KEY (id),
     CONSTRAINT fk_remediation_task_events_tenant FOREIGN KEY (tenant_id)
         REFERENCES tenants (id) ON DELETE CASCADE,
-    CONSTRAINT fk_remediation_task_events_task FOREIGN KEY (task_id)
-        REFERENCES remediation_tasks (id) ON DELETE CASCADE,
+    CONSTRAINT fk_remediation_task_events_task FOREIGN KEY (tenant_id, task_id)
+        REFERENCES remediation_tasks (tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_remediation_task_events_actor FOREIGN KEY (actor_id)
         REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT chk_remediation_task_events_actor_type CHECK (actor_type IN ('user', 'system')),
