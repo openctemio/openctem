@@ -8,6 +8,7 @@ import type {
   ApiDataFlow,
   ApiDataFlowLocation,
   ApiFinding,
+  ApiFindingRun,
   ApiFindingFixPlan,
   ApiFindingFixPlanItem,
   ApiFindingSourceData,
@@ -22,6 +23,8 @@ import type {
   DataFlowLocation,
   DataFlowLocationType,
   FindingDetail,
+  FindingProvenance,
+  FindingRunSighting,
   FindingFixPlan,
   FindingFixPlanItem,
   FindingSourceData,
@@ -147,6 +150,43 @@ export function mapDataFlow(df: ApiDataFlow | undefined): DataFlow | undefined {
       .map(({ loc, type }, i) => mapDataFlowLocation(loc, type, i))
   }
   return steps.length > 0 ? { steps, commitSha: trace?.commit_sha || undefined } : undefined
+}
+
+function mapRun(r: ApiFindingRun): FindingRunSighting {
+  return {
+    id: r.id,
+    provider: r.provider,
+    externalRunId: r.external_run_id,
+    pipelineUrl: r.pipeline_url,
+    branch: r.branch,
+    commitSha: r.commit_sha,
+    pullRequest: r.pull_request,
+    isDefaultBranch: r.is_default_branch,
+    createdAt: r.created_at,
+  }
+}
+
+function mapProvenance(api: ApiFinding): FindingProvenance | undefined {
+  const p = api.provenance
+  if (!p && !api.first_detected_branch && !api.last_seen_branch) return undefined
+  return {
+    firstDetectedBranch: api.first_detected_branch,
+    firstDetectedCommit: api.first_detected_commit,
+    lastSeenBranch: api.last_seen_branch,
+    lastSeenCommit: api.last_seen_commit,
+    lastSeenTool: api.last_seen_tool,
+    branches: (p?.branches ?? []).map((b) => ({
+      name: b.name,
+      isDefault: b.is_default,
+      status: b.status,
+      firstSeenAt: b.first_seen_at,
+      lastSeenAt: b.last_seen_at,
+      firstCommit: b.first_commit,
+      lastCommit: b.last_commit,
+    })),
+    runs: (p?.runs ?? []).map(mapRun),
+    firstRun: p?.first_run ? mapRun(p.first_run) : undefined,
+  }
 }
 
 function mapFixPlanItems(items: ApiFindingFixPlanItem[] | undefined): FindingFixPlanItem[] {
@@ -315,7 +355,19 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
           manifestFile: c.manifest_file,
         }
       : undefined,
+    provenance: mapProvenance(api),
     packageFix: api.package_fix ? mapFixPlan(api.package_fix) : undefined,
+    intel: api.intel
+      ? {
+          cvssSource: api.intel.cvss_source,
+          publishedAt: api.intel.published_at,
+          modifiedAt: api.intel.modified_at,
+          references: api.intel.references ?? [],
+          epssDate: api.intel.epss_date,
+          kevDateAdded: api.intel.kev_date_added,
+          kevRansomware: api.intel.kev_ransomware,
+        }
+      : undefined,
     advisory: v
       ? {
           cveId: v.cve_id,
