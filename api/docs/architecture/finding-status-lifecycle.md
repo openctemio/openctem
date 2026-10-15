@@ -413,10 +413,35 @@ instead).
   of the decision the request asks for. A request for `accepted` gets 90 days
   when it names no end and is refused with an end in the past or more than a
   year ahead; a request for `false_positive` is refused when it names an end.
-  A pending request has no separate approve-by deadline: once the requested
-  end has passed it can no longer be approved (it would accept nothing) and is
-  submitted again with a new end. Approving an older `accepted` request that
-  has no end gives it the 90-day default from the approval.
+  Once the requested end has passed the request can no longer be approved (it
+  would accept nothing). Approving an older `accepted` request that has no end
+  gives it the 90-day default from the approval.
+- **Decide-by, separate from the end.** Every request also has
+  `finding_status_approvals.decide_by` (14 days after it was made,
+  `vulnerability.DefaultDecisionWindow`). A pending request past it cannot be
+  approved or rejected, and the hourly `approval-expiration` controller marks
+  it `expired` with a timeline entry (`reason: decision_overdue`) and an audit
+  row (`finding_approval.expired`) in its tenant
+  (`FindingApprovalRepository.ExpireOverdueRequests`). A new request can then
+  be made.
+- **One pending request per finding.** The unique partial index
+  `ux_finding_status_approvals_pending` allows one pending request per
+  finding, from a person or a platform actor; a second one answers 409. An
+  identity merge whose two findings both wait for a decision keeps the
+  survivor's request and cancels the other (`settleLoserPendingApproval`).
+- **Approve is one transaction.** The request row (claimed with its version
+  while still pending), the finding's status and acceptance end, and the
+  `approval_approved` timeline entry commit together
+  (`FindingApprovalRepository.ApproveAndApply`). Of two approvers deciding at
+  once only one applies it (the other gets 409); a finding that moved in
+  between rolls everything back and the request stays pending. A request is
+  for a finding inside the requester's data scope (404 otherwise).
+- **Audit.** Every request, approval, rejection and cancellation writes an
+  audit row (`finding_approval.requested|approved|rejected|canceled`, resource
+  type `finding_approval`, metadata: finding, requested status, acceptance end,
+  decide-by; never the justification text). A refused attempt to approve one's
+  own request is recorded as `finding_approval.self_approval_refused` (denied,
+  medium), so the attempts can be reviewed.
 - **On the finding, on every accept path.** Approving `accepted` stores the
   end in `findings.acceptance_expires_at` in the same statement as the status
   (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix
@@ -514,8 +539,16 @@ approval. For a **high or critical** item it takes two people:
 The requester never confirms their own request. The organization owner may,
 only when nobody else in the organization holds every permission the route
 requires (counted as active owners, admins and members whose roles grant
-them); that approval applies at once and is audited Critical
-(`exposure.disposition_self_approved`). Every request, approval and rejection
+them), and never automatically: the owner's request stays pending like any
+other, and the owner approves it in a separate call to the same route with
+`self_approve: true`, a reason and a fresh `totp_code` from their
+authenticator app (a stolen session or password alone is not enough). The
+approval is audited Critical (`exposure.disposition_self_approved`); every
+refused attempt (not allowed, no reason, no code, a wrong or reused code) is
+audited High (`exposure.disposition_self_approval_refused`) and changes
+nothing. Without the authenticator check wired, an own approval is refused.
+The pending view carries `self_approval_available` for the requester so the
+web offers the call only when it can succeed. Every request, approval and rejection
 is in the audit log (`exposure.disposition_*`) and the state change keeps both
 reasons in the exposure's state history. Low and medium items keep the
 one-step path. A request is created only for an exposure of the caller's
