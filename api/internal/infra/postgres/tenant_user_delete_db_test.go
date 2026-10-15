@@ -214,6 +214,14 @@ type schemaSeeder struct {
 // CHECK constraints and formats. Keep it small; everything else is derived
 // from the catalog so new tables are covered without touching this test.
 var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
+	// Inserting the asset already queued it (trigger); clear that row so the
+	// seeder's own insert is the one row of the table.
+	"asset_risk_queue": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM asset_risk_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear asset_risk_queue: %v", err)
+		}
+		return nil
+	},
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},

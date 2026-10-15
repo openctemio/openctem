@@ -11,12 +11,18 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// FindingRepo is the narrow surface the adapter needs — load +
-// persist. *postgres.FindingRepository satisfies it structurally.
+// FindingRepo is the narrow surface the adapter needs — load, persist,
+// and flag a decision for review. *postgres.FindingRepository satisfies it
+// structurally.
 type FindingRepo interface {
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error)
 	Update(ctx context.Context, f *vulnerability.Finding) error
+	RaiseDecisionReview(ctx context.Context, tenantID, findingID shared.ID, reason string, evidence map[string]any) (bool, error)
 }
+
+// decisionReviewIOCMatch is the review reason an IOC match raises on a
+// decided finding (postgres.DecisionReviewIOCMatch).
+const decisionReviewIOCMatch = "ioc_match"
 
 // AuditLogger is the narrow surface the adapter uses to record the
 // reopen. *app.AuditService satisfies it structurally.
@@ -61,6 +67,27 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 	}
 	prev := f.Status()
 	if !prev.IsClosed() {
+		return false, nil
+	}
+	// A person's decision (false positive, accepted risk, duplicate) is never
+	// reversed by a correlator: the match raises a review flag, with a
+	// timeline entry, for a person with the approve permission to decide.
+	// Only a finding closed as fixed reopens (the match is evidence it is
+	// not fixed).
+	if vulnerability.IsDispositionedStatus(prev) {
+		raised, err := a.findings.RaiseDecisionReview(ctx, tenantID, findingID, decisionReviewIOCMatch,
+			map[string]any{"match": reason})
+		if err != nil {
+			return false, fmt.Errorf("flag decision for review: %w", err)
+		}
+		if raised && a.auditor != nil {
+			ev := auditsvc.NewSuccessEvent(audit.ActionFindingStatusChanged, audit.ResourceTypeFinding, findingID.String()).
+				WithMessage("decision flagged for review: "+reason).
+				WithMetadata("decision_status", string(prev)).
+				WithMetadata("source", "ioc_correlator").
+				WithSeverity(audit.SeverityHigh)
+			_ = a.auditor.LogEvent(ctx, auditsvc.AuditContext{TenantID: tenantID.String()}, ev)
+		}
 		return false, nil
 	}
 	// Domain workflow only allows closed → confirmed (back to triage).
