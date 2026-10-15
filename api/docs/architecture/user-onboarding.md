@@ -236,6 +236,11 @@ another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 `any` (the default), `verified_domains` (the organization's verified
 domains), or `allow_list` (verified domains plus `security.allowed_domains`).
 It applies when an invitation is sent and again when it is accepted.
+`allow_list` admits the organization's verified domains too: before this
+setting, a non-empty `allowed_domains` admitted only the listed domains for
+invitations. Verified domains are the organization's own, so this widens
+nothing beyond its people; list them in `allowed_domains` as well to keep the
+old behaviour obvious.
 
 ### Allowed email domains (`security.allowed_domains`)
 
@@ -252,7 +257,7 @@ removed when the list changes.
 | Rule | |
 |---|---|
 | Token | 32 random bytes, stored hashed, in the URL fragment and request bodies only, bound to the invited address, 7 days, single use (acceptance updates only a row with `accepted_at IS NULL`) |
-| Preview | `POST /api/v1/organization/invitations/preview {email, role_ids}` (same gate as creating one) says, before sending, whether the policy allows it (reason code), whether the person is outside or personal, whether the roles need the inviter's step-up and the member's two-factor, whether an end of access is required, and whether they are already a member or invited. Nothing about other organizations |
+| Preview | `POST /api/v1/organization/invitations/preview {email, role_ids}` (owner or administrator with `members:invite`, the same requirements as creating one; the route takes the organization from the token) says, before sending, whether the policy allows it (reason code), whether the person is outside or personal, whether the roles need the inviter's step-up and the member's two-factor, whether an end of access is required, and whether they are already a member or invited. Nothing about other organizations |
 | Resend | rotates the token; at most once every 10 minutes and 5 times per invitation (429 `INVITATION_RESEND_TOO_SOON`) |
 | Cancel and decline | the row is kept as revoked (`revoked_at`): the token, the pending list and resend stop working; purged after 30 days. Removing a member revokes their pending invitations the same way |
 | Daily plan limit | counts every invitation created in the last 24 hours, revoked ones included |

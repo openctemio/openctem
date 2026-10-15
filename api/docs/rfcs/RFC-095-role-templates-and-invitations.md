@@ -131,7 +131,9 @@ email domain.
 | `allow_list` | addresses on the organization's verified domains or on `Security.allowed_domains` |
 
 An organization with a non-empty `allowed_domains` from before reads as
-`allow_list`. The setting is changed with the other security settings (owner,
+`allow_list`, which now also admits its verified domains (before, only the
+listed domains): a slight widening, limited to domains the organization
+proved it owns. The setting is changed with the other security settings (owner,
 step-up, audited). The default is `any` for self-hosted and hosted
 deployments alike: a team that signs up with personal addresses must be able
 to invite its colleagues, and restriction is the organization's choice.
@@ -143,9 +145,11 @@ to invite its colleagues, and restriction is the organization's choice.
   (the admin role, full data access, or a privileged permission: members,
   teams, roles, API keys, secret store, settings), or giving an existing outside
   member such a role, needs a recent re-authentication.
-- **Invitee two-factor:** an outside member who holds a privileged role must
-  prove a second factor every time a token is minted, including the token the
-  acceptance itself mints.
+- **Invitee two-factor:** an outside member whose effective grants (direct
+  roles and team role bindings) are above member must prove a second factor
+  every time a token is minted, including the token the acceptance itself
+  mints. Joining a team that carries such a role already needs the owner
+  with a recent sign-in, for anyone.
 - **End of access is optional.** The inviter may set one. `Security.
   external_access_end_required` (off by default) restores the RFC-058 rule:
   an end within 365 days, 90 by default, for outside people no organization
@@ -164,8 +168,9 @@ to invite its colleagues, and restriction is the organization's choice.
 
 ### 4.3 Pre-check
 
-`POST /api/v1/tenants/{tenant}/invitations/check {email, role_ids}` (same gate
-as creating an invitation) answers whether the address may be invited and what
+`POST /api/v1/organization/invitations/preview {email, role_ids}` (owner or
+administrator with `members:invite`, the same requirements as creating an
+invitation) answers whether the address may be invited and what
 will happen: inside or outside the organization, personal, privileged,
 step-up needed, two-factor needed, end of access required, already a member,
 already invited, and whether SSO enforcement will need an exception. It says
