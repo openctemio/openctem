@@ -420,6 +420,26 @@ admin console (RFC-022); on the tenant plane they do not exist:
   "platform sensor".
 - **Events.** The health controller writes no tenant audit row or
   notification for a platform sensor going offline.
+- **Claims.** A job queued for platform sensors (`is_platform_job`) is never
+  offered to, counted for or claimable by an organization's own sensor: the
+  poll, the doorbell, the batch claim and the claim by id share
+  `tenantJobPredicate` (`command_repository.go`). A sensor row flagged as
+  platform but carrying the organization's id is no exception.
+- **Grant.** A platform sensor's grant is least privilege whatever writes it:
+  no credentials, no push ingest, tier 1 at most, public targets, no remote
+  update, never `legacy-broad`. The insert trigger `sensor_grants_default`
+  gives it `easm-external`; the trigger `clamp_shared_sensor_grant` on
+  `sensor_grants` clamps any later edit and the grant of a sensor flagged as
+  platform after it was created (migration
+  `shared_sensor_grant_least_privilege`).
+- **Workflow steps.** Every workflow step about to be queued for platform
+  sensors goes through the scan trigger's own target check
+  (`scan.Service.PlatformTargetRefusal`: no asset group, no internal target,
+  proof where the operator requires it, no bug-bounty program target), on the
+  step's own targets. A run started from a workflow directly has no trigger
+  decision, and a later step may carry targets found after the trigger
+  checked the seeds. A refusal or a failed lookup keeps the step on the
+  organization's own sensors.
 
 ## Build information
 
