@@ -32,22 +32,40 @@ bookkeeping, no drift.
 
 ### Supported `finding_filter` keys
 
-All keys are optional; unknown keys are ignored. Each accepts a single string
-or an array of strings.
+The filter decides which findings a resolve changes, so it is parsed strictly
+(`internal/app/exposure/campaign_filter.go`): an unknown key, a key given in
+both its singular and plural form, a value that is not a string or a list of
+strings, or a value that does not parse is refused with 400 on create and
+update. A condition is never dropped, because dropping one widens the set
+(`{"asset_id":"bad","severity":"critical"}` used to mean every critical
+finding of the organization).
 
 | Key                    | Maps to              | Example                         |
 |------------------------|----------------------|---------------------------------|
 | `severities` / `severity` | severity filter   | `["critical","high"]`           |
-| `cve_ids` / `cve_id`   | CVE filter           | `"CVE-2021-44228"`              |
-| `sources` / `source`   | scanner source       | `["trivy","nuclei"]`            |
+| `cve_ids` / `cve_id`   | CVE filter (`CVE-YYYY-NNNN…`) | `"CVE-2021-44228"`     |
+| `sources` / `source`   | finding source       | `["sca","dast"]`                |
 | `statuses` / `status`  | scope narrowing      | `["confirmed"]`                 |
-| `asset_id`             | single asset         | `"<uuid>"`                      |
+| `finding_ids` / `finding_id` | linked findings (UUIDs) | `["<uuid>"]`           |
+| `asset_id`             | single asset (UUID)  | `"<uuid>"`                      |
 | `tool_name`            | tool name            | `"trivy"`                       |
 | `search`               | title/description/path | `"log4j"`                     |
+| `remediation_key`      | a solution family (alone, no other key) | `"sol:…"`    |
 
 The tenant is always pinned, so counts are tenant-isolated regardless of the
-filter contents. An empty filter scopes the campaign to *all* of the tenant's
-findings (a misconfiguration, not an error).
+filter contents. A campaign has **scope** only when a condition other than a
+status narrows it: an empty filter, or a status alone ("every new finding" is
+the whole organization), tracks nothing and cannot resolve. A filter stored
+before the strict check that no longer parses is treated the same way, and a
+resolve answers 400 until its scope is edited.
+
+### Resolve
+
+`POST /remediation/campaigns/{id}/resolve` needs `findings:remediation:write`
+and `findings:fix_apply` (a fix claim on each finding), works only on an
+`active` or `validating` campaign, and marks fixed only the open findings in
+the caller's data scope (`ListFindingIDs`), behind the bulk abuse guard
+(`remediation.CampaignFilterResolver`).
 
 ## Progress accounting
 
