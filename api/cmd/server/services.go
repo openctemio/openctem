@@ -2104,6 +2104,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
+		// Shared-sensor scans per day (RFC-100 §10): generic limits by key;
+		// unset means unlimited.
+		scan.WithSharedScanLimits(s.Entitlement),
 		// The scope check names the private address a refused hostname
 		// resolves to, unless that answer may come from the platform's own
 		// DNS in a self-service (multi-tenant) install.
