@@ -11,5 +11,5 @@
 - Every accept path records when the acceptance ends: an approved suppression
   rule (its expiry, else 90 days), ingest suppression and re-link to another
   rule, merges that inherit an acceptance, and pentest acceptances.
-- Migration `002152` gives accepted findings that still had no end the 90-day
+- Migration `002166` gives accepted findings that still had no end the 90-day
   default from the day it runs, with a timeline note.

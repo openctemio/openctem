@@ -182,7 +182,7 @@ only marked `expired`.
 
 Migration `002119` filled the column for findings already accepted, from their
 latest approved acceptance request or their suppression rule. Migration
-`002152` gives the accepted findings that still had no end the 90-day default
+`002166` gives the accepted findings that still had no end the 90-day default
 from the day it runs, with a timeline note (reason `acceptance_end_default`).
 
 ## AI false-positive proposals
