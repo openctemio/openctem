@@ -515,7 +515,8 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	zoneID := scanrun.ScanZoneFromContext(run.Context)
 	usePlatform := false
 	if zoneID == nil {
-		usePlatform = s.stepUsesPlatform(ctx, run, step, settings.SensorPreference)
+		usePlatform = s.stepUsesPlatform(ctx, run, step, settings.SensorPreference) &&
+			s.stepTargetsMayGoShared(ctx, run, step, chunkTargets(stepTargets, run.Context))
 	}
 
 	// A large step is cut into chunks of the capability's size, so every
@@ -784,6 +785,47 @@ func (s *Service) stepUsesPlatform(ctx context.Context, run *scanrun.Run, step *
 		pref = scanworkflow.SensorPreferenceTenant
 	}
 	return s.routeToPlatform(ctx, run.TenantID, step.Tool, pref)
+}
+
+// PlatformTargetChecker is the shared-sensor target check of the scan
+// trigger (*scan.Service): nil only when every target may go to shared
+// platform sensors (no asset group, nothing internal, proven where the
+// operator requires proof, no bug-bounty program target).
+type PlatformTargetChecker interface {
+	PlatformTargetRefusal(ctx context.Context, tenantID shared.ID, targets []string, assetGroup bool) error
+}
+
+// stepTargetsMayGoShared applies the trigger's shared-sensor target check
+// to the targets a step is about to be queued with. It runs for every step
+// that would go to shared sensors, whatever decided that: a run started
+// from a workflow directly never had a trigger decision, and a step of any
+// run may carry targets its predecessors found after the trigger checked
+// the seeds. A refusal, a failed lookup or a target gate without the check
+// keeps the step on the tenant's own sensors (fail closed).
+func (s *Service) stepTargetsMayGoShared(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, targets []string) bool {
+	checker, ok := s.targetGate.(PlatformTargetChecker)
+	if !ok || checker == nil {
+		s.logger.Warn("no shared-sensor target check; step kept on tenant sensors",
+			"run_id", run.ID.String(), "step_key", step.StepKey)
+		return false
+	}
+	if err := checker.PlatformTargetRefusal(ctx, run.TenantID, targets, runHasAssetGroup(run.Context)); err != nil {
+		s.logger.Info("step targets may not go to shared sensors; step kept on tenant sensors",
+			"run_id", run.ID.String(), "step_key", step.StepKey, "reason", err.Error())
+		return false
+	}
+	return true
+}
+
+// runHasAssetGroup reports whether a run was started on an asset group (the
+// trigger records the scan's group, the zero id when there is none).
+func runHasAssetGroup(runContext map[string]any) bool {
+	raw, _ := runContext["asset_group_id"].(string)
+	if raw == "" {
+		return false
+	}
+	id, err := shared.IDFromString(raw)
+	return err != nil || !id.IsZero()
 }
 
 // calculateScanRunInitialPriority calculates the initial queue priority for platform jobs.
