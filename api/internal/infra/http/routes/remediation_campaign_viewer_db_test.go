@@ -9,6 +9,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -316,6 +317,54 @@ func TestRemediationCampaign_RestrictedMemberCannotTouchOtherTeamsCampaign_DB(t 
 	}
 	if code, _ := call(http.MethodGet, "/api/v1/remediation/campaigns/"+created["id"].(string), nil); code != http.StatusOK {
 		t.Errorf("GET the campaign the member created = %d, want 200", code)
+	}
+
+	// A shared campaign (one finding in the member's scope, one outside):
+	// they see it, but changing it needs every finding in scope (owner
+	// decision), so one shared finding never gives them control of it.
+	shared2 := insert("rcw-shared", map[string]any{"finding_ids": []string{h.findingA.String(), h.findingB.String()}})
+	sbase := "/api/v1/remediation/campaigns/" + shared2.String()
+	if code, _ := call(http.MethodGet, sbase, nil); code != http.StatusOK {
+		t.Errorf("GET a shared campaign = %d, want 200", code)
+	}
+	for _, c := range []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodPatch, sbase, map[string]any{"name": "taken over"}},
+		{http.MethodPatch, sbase + "/status", map[string]any{"status": "paused"}},
+		{http.MethodPost, sbase + "/refresh", nil},
+		{http.MethodPost, sbase + "/create-ticket", map[string]any{"project_key": "SEC"}},
+		{http.MethodDelete, sbase, nil},
+	} {
+		if code, _ := call(c.method, c.path, c.body); code != http.StatusForbidden {
+			t.Errorf("%s %s on a shared campaign = %d, want 403", c.method, c.path, code)
+		}
+	}
+	var sname, sstatus string
+	if err := h.db.QueryRowContext(context.Background(), `SELECT name, status FROM remediation_campaigns WHERE tenant_id = $1 AND id = $2`,
+		h.tenant.String(), shared2.String()).Scan(&sname, &sstatus); err != nil || sname != "rcw-shared" || sstatus != "active" {
+		t.Errorf("shared campaign changed by refused writes: %s/%s %v", sname, sstatus, err)
+	}
+
+	// The list examines every campaign, not only the first thousand: the
+	// member's oldest campaign behind 1,050 of another team's still lists.
+	h.exec(`UPDATE remediation_campaigns SET priority = 'low', created_at = now() - interval '10 days' WHERE id = $1`, mine.String())
+	h.exec(`INSERT INTO remediation_campaigns (id, tenant_id, name, status, finding_filter)
+		SELECT gen_random_uuid(), $1, 'rcw-bulk-' || g, 'active', $2::jsonb FROM generate_series(1, 1050) g`,
+		h.tenant.String(), `{"finding_ids": ["`+h.findingB.String()+`"]}`)
+	found := false
+	for p := 1; p <= 3 && !found; p++ {
+		_, pg := call(http.MethodGet, fmt.Sprintf("/api/v1/remediation/campaigns/?page=%d&per_page=100", p), nil)
+		rows, _ := pg["data"].([]any)
+		for _, d := range rows {
+			if d.(map[string]any)["id"] == mine.String() {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("the member's campaign behind 1,050 others is missing from their list")
 	}
 }
 
