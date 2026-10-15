@@ -184,12 +184,12 @@ func registerAdminRoutes(
 		requireSuperPlans := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/plans", func(r Router) {
 			r.GET("/", h.Plan.GetDefaults)
-			r.PUT("/", h.Plan.UpdateDefaults, requireSuperPlans)
+			r.PUT("/", h.Plan.UpdateDefaults, requireSuperPlans, stepUp("settings.plans"))
 		}, adminMiddlewares...)
 		// The modules of each plan (RFC-064): same rule as the plan limits.
 		router.Group("/api/v1/admin/settings/plan-modules", func(r Router) {
 			r.GET("/", h.Plan.GetPlanModules)
-			r.PUT("/", h.Plan.UpdatePlanModules, requireSuperPlans)
+			r.PUT("/", h.Plan.UpdatePlanModules, requireSuperPlans, stepUp("settings.plan_modules"))
 		}, adminMiddlewares...)
 	}
 
@@ -203,7 +203,7 @@ func registerAdminRoutes(
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
-			r.PUT("/", h.AdminSignup.Update, requireSuper)
+			r.PUT("/", h.AdminSignup.Update, requireSuper, stepUp("settings.signup"))
 		}, adminMiddlewares...)
 	}
 
@@ -214,7 +214,7 @@ func registerAdminRoutes(
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/email", func(r Router) {
 			r.GET("/", h.AdminEmail.Get)
-			r.PUT("/", h.AdminEmail.Update, requireSuper)
+			r.PUT("/", h.AdminEmail.Update, requireSuper, stepUp("settings.email"))
 			r.POST("/test", h.AdminEmail.SendTest, requireSuper)
 		}, adminMiddlewares...)
 	}
@@ -225,7 +225,7 @@ func registerAdminRoutes(
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/legal", func(r Router) {
 			r.GET("/", h.AdminLegal.Get)
-			r.PUT("/", h.AdminLegal.Update, requireSuper)
+			r.PUT("/", h.AdminLegal.Update, requireSuper, stepUp("settings.legal"))
 		}, adminMiddlewares...)
 	}
 
@@ -236,13 +236,13 @@ func registerAdminRoutes(
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/scan-approval-policy", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetDefault)
-			r.PUT("/", h.AdminScanPolicy.UpdateDefault, requireSuper)
+			r.PUT("/", h.AdminScanPolicy.UpdateDefault, requireSuper, stepUp("settings.scan_approval"))
 		}, adminMiddlewares...)
 		// Verified domain before platform sensors scan (RFC-054 §8.1):
 		// same gate, step-up and audit.
 		router.Group("/api/v1/admin/settings/platform-sensor-proof", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetProof)
-			r.PUT("/", h.AdminScanPolicy.UpdateProof, requireSuper)
+			r.PUT("/", h.AdminScanPolicy.UpdateProof, requireSuper, stepUp("settings.platform_sensor_proof"))
 		}, adminMiddlewares...)
 	}
 
@@ -278,7 +278,7 @@ func registerAdminRoutes(
 		f := h.AdminProgramFeed
 		router.Group("/api/v1/admin/program-feed", func(r Router) {
 			r.GET("/", f.Status)
-			r.PUT("/local-bundle", f.SetLocalBundle, requireSuper)
+			r.PUT("/local-bundle", f.SetLocalBundle, requireSuper, stepUp("program_feed.local_bundle"))
 		}, adminMiddlewares...)
 	}
 
@@ -294,10 +294,10 @@ func registerAdminRoutes(
 			r.GET("/signing-key", p.SigningKey)
 			r.GET("/{id}", p.Get)
 			r.GET("/{id}/download", p.Download)
-			r.POST("/", p.Upload, requireSuper)
-			r.POST("/import", p.Import, requireSuper)
-			r.POST("/{id}/revoke", p.Revoke, requireSuper)
-			r.PUT("/channels/{channel}", p.SetChannel, requireSuper)
+			r.POST("/", p.Upload, requireSuper, stepUp("content_pack.change"))
+			r.POST("/import", p.Import, requireSuper, stepUp("content_pack.change"))
+			r.POST("/{id}/revoke", p.Revoke, requireSuper, stepUp("content_pack.change"))
+			r.PUT("/channels/{channel}", p.SetChannel, requireSuper, stepUp("content_pack.change"))
 		}, adminMiddlewares...)
 	}
 
@@ -394,7 +394,7 @@ func registerAdminRoutes(
 			// take the generic audit middleware.
 			if h.AdminAuditChain != nil {
 				r.GET("/{tenantId}/audit-chain", h.AdminAuditChain.Classify, read...)
-				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, superWrite, scope)
+				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, superWrite, stepUp("organization.audit_chain_rebaseline"), scope)
 			}
 
 			// Plan and limits of one organization: any admin reads (with
@@ -416,8 +416,8 @@ func registerAdminRoutes(
 				// reads; ops_admin+ grants a module beyond the plan (a trial, an
 				// add-on) or denies one (audited by the service).
 				r.GET("/{tenantId}/modules", h.Plan.GetTenantModules, read...)
-				r.PUT("/{tenantId}/modules/{module_id}/grant", h.Plan.SetModuleGrant, with([]Middleware{opsWrite, scope})...)
-				r.DELETE("/{tenantId}/modules/{module_id}/grant", h.Plan.DeleteModuleGrant, with([]Middleware{opsWrite, scope})...)
+				r.PUT("/{tenantId}/modules/{module_id}/grant", h.Plan.SetModuleGrant, with([]Middleware{opsWrite, stepUp("organization.module_grant"), scope})...)
+				r.DELETE("/{tenantId}/modules/{module_id}/grant", h.Plan.DeleteModuleGrant, with([]Middleware{opsWrite, stepUp("organization.module_grant"), scope})...)
 			}
 
 			// The organization's scope approval policy (RFC-054 §12.6): any
@@ -425,7 +425,7 @@ func registerAdminRoutes(
 			// reason (the service writes the critical audit row).
 			if h.AdminScanPolicy != nil {
 				r.GET("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.GetOrganization, read...)
-				r.PUT("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.UpdateOrganization, superWrite, scope)
+				r.PUT("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.UpdateOrganization, superWrite, stepUp("organization.scan_approval"), scope)
 			}
 
 			if h.VerifiedDomain != nil {
@@ -449,6 +449,11 @@ func registerAdminRoutes(
 		}
 		audited := func(action string, base []Middleware) []Middleware {
 			out := cloneMW(base)
+			if base != nil {
+				// Account support actions change a person's sign-in state:
+				// step-up on each.
+				out = append(out, stepUp(action))
+			}
 			if h.AdminAuditMiddleware != nil {
 				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "user", "user_id"))
 			}
@@ -470,7 +475,7 @@ func registerAdminRoutes(
 	if h.AdminSession != nil {
 		router.Group("/api/v1/admin/console-sessions", func(r Router) {
 			r.GET("/", h.AdminSession.List)
-			end := []Middleware{}
+			end := []Middleware{stepUp("console.session_end")}
 			if h.AdminAuditMiddleware != nil {
 				end = append(end, h.AdminAuditMiddleware.AuditLog("console.session_ended", "admin_session", "console_session_id"))
 			}

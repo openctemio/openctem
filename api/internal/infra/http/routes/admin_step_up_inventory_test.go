@@ -23,9 +23,6 @@ type adminWriteClass string
 const (
 	// stepUpRoute: the route-level step-up (RequireAdminStepUp).
 	stepUpRoute adminWriteClass = "step-up"
-	// stepUpInHandler: the handler checks a fresh code from the request body
-	// on every call (the older pattern).
-	stepUpInHandler adminWriteClass = "step-up in handler"
 	// routine: an operational write that changes no identity, privilege or
 	// platform trust. Role-gated and audited; the reason says why no step-up.
 	routine adminWriteClass = "routine"
@@ -36,7 +33,7 @@ const (
 // adminWriteInventory classifies every state-changing console route. A new
 // admin write route fails TestAdminWriteRoutesClassified until it is listed
 // here; every identity, privilege or platform-trust change must be
-// stepUpRoute (or stepUpInHandler).
+// stepUpRoute.
 var adminWriteInventory = map[string]struct {
 	class adminWriteClass
 	why   string
@@ -58,7 +55,7 @@ var adminWriteInventory = map[string]struct {
 	"DELETE /api/v1/admin/users/{id}/idp-binding":                {stepUpRoute, "unbinds an administrator from the identity provider"},
 	"PUT /api/v1/admin/platform-idp/":                            {stepUpRoute, "who may sign in to the console"},
 	"DELETE /api/v1/admin/platform-idp/":                         {stepUpRoute, "who may sign in to the console"},
-	"DELETE /api/v1/admin/console-sessions/{console_session_id}": {stepUpInHandler, "ends an administrator's session"},
+	"DELETE /api/v1/admin/console-sessions/{console_session_id}": {stepUpRoute, "ends an administrator's session"},
 
 	// Organizations: creation, owners, sign-in trust.
 	"POST /api/v1/admin/tenants/":                                            {stepUpRoute, "creates an organization"},
@@ -74,10 +71,10 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}/verify": {stepUpRoute, "organization sign-in trust"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}":      {stepUpRoute, "organization sign-in trust"},
 	"PATCH /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}":       {stepUpRoute, "organization sign-in trust (JIT)"},
-	"POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline":           {stepUpInHandler, "re-signs an organization's audit chain"},
-	"PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy":              {stepUpInHandler, "scan governance of an organization"},
-	"PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":         {stepUpInHandler, "module entitlement"},
-	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":      {stepUpInHandler, "module entitlement"},
+	"POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline":           {stepUpRoute, "re-signs an organization's audit chain"},
+	"PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy":              {stepUpRoute, "scan governance of an organization"},
+	"PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":         {stepUpRoute, "module entitlement"},
+	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":      {stepUpRoute, "module entitlement"},
 	"PUT /api/v1/admin/tenants/{tenantId}/plan":                              {routine, "limits only; audited by the service"},
 	"PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}":              {routine, "limits only; audited by the service"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}":           {routine, "limits only; audited by the service"},
@@ -85,19 +82,19 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/access-requests/{id}/reject":                         {routine, "refuses a request; nothing is created"},
 
 	// Platform settings and trust.
-	"PUT /api/v1/admin/settings/signup/":                        {stepUpInHandler, "sign-up mode"},
-	"PUT /api/v1/admin/settings/email/":                         {stepUpInHandler, "platform mail relay"},
+	"PUT /api/v1/admin/settings/signup/":                        {stepUpRoute, "sign-up mode"},
+	"PUT /api/v1/admin/settings/email/":                         {stepUpRoute, "platform mail relay"},
 	"POST /api/v1/admin/settings/email/test":                    {routine, "sends a test to the caller's own address"},
-	"PUT /api/v1/admin/settings/legal/":                         {stepUpInHandler, "legal pages"},
-	"PUT /api/v1/admin/settings/plans/":                         {stepUpInHandler, "default limits"},
-	"PUT /api/v1/admin/settings/plan-modules/":                  {stepUpInHandler, "default modules"},
-	"PUT /api/v1/admin/settings/scan-approval-policy/":          {stepUpInHandler, "scan governance default"},
-	"PUT /api/v1/admin/settings/platform-sensor-proof/":         {stepUpInHandler, "platform sensor domain proof"},
-	"PUT /api/v1/admin/program-feed/local-bundle":               {stepUpInHandler, "program feed source"},
-	"POST /api/v1/admin/content-packs/":                         {stepUpInHandler, "platform content pack"},
-	"POST /api/v1/admin/content-packs/import":                   {stepUpInHandler, "platform content pack"},
-	"POST /api/v1/admin/content-packs/{id}/revoke":              {stepUpInHandler, "platform content pack"},
-	"PUT /api/v1/admin/content-packs/channels/{channel}":        {stepUpInHandler, "platform content pack"},
+	"PUT /api/v1/admin/settings/legal/":                         {stepUpRoute, "legal pages"},
+	"PUT /api/v1/admin/settings/plans/":                         {stepUpRoute, "default limits"},
+	"PUT /api/v1/admin/settings/plan-modules/":                  {stepUpRoute, "default modules"},
+	"PUT /api/v1/admin/settings/scan-approval-policy/":          {stepUpRoute, "scan governance default"},
+	"PUT /api/v1/admin/settings/platform-sensor-proof/":         {stepUpRoute, "platform sensor domain proof"},
+	"PUT /api/v1/admin/program-feed/local-bundle":               {stepUpRoute, "program feed source"},
+	"POST /api/v1/admin/content-packs/":                         {stepUpRoute, "platform content pack"},
+	"POST /api/v1/admin/content-packs/import":                   {stepUpRoute, "platform content pack"},
+	"POST /api/v1/admin/content-packs/{id}/revoke":              {stepUpRoute, "platform content pack"},
+	"PUT /api/v1/admin/content-packs/channels/{channel}":        {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/announcements/":                         {routine, "banner text; reason required, audited"},
 	"POST /api/v1/admin/announcements/{announcement_id}/cancel": {routine, "ends a banner; reason required, audited"},
 	"POST /api/v1/admin/threat-intel/sync":                      {routine, "runs a public feed sync; audited"},
@@ -108,12 +105,12 @@ var adminWriteInventory = map[string]struct {
 	"PATCH /api/v1/admin/target-mappings/{id}":                  {routine, "scanner target mapping; rate-limited, audited"},
 	"DELETE /api/v1/admin/target-mappings/{id}":                 {routine, "scanner target mapping; rate-limited, audited"},
 
-	// Account support actions: reason required, rate-limited, audited; they
-	// help a user regain access and never grant anything.
-	"POST /api/v1/admin/platform-users/{user_id}/revoke-sessions":     {routine, "ends a user's sessions; reason, audited"},
-	"POST /api/v1/admin/platform-users/{user_id}/unlock":              {routine, "clears a lockout; reason, audited"},
-	"POST /api/v1/admin/platform-users/{user_id}/password-reset":      {routine, "emails the user a reset link; reason, audited"},
-	"POST /api/v1/admin/platform-users/{user_id}/verification-emails": {routine, "re-sends verification; reason, audited"},
+	// Account support actions: they change a person's sign-in state, so
+	// step-up as well as reason, rate limit and audit.
+	"POST /api/v1/admin/platform-users/{user_id}/revoke-sessions":     {stepUpRoute, "ends a user's sessions; reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/unlock":              {stepUpRoute, "clears a lockout; reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/password-reset":      {stepUpRoute, "emails the user a reset link; reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/verification-emails": {stepUpRoute, "re-sends verification; reason, audited"},
 }
 
 // inventorySessions authenticates every request as one verified super admin.
