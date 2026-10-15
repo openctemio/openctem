@@ -18,16 +18,20 @@ import (
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	slaapp "github.com/openctemio/openctem/api/internal/app/sla"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	moduleTypes "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -46,6 +50,9 @@ type TenantHandler struct {
 	service         *tenantapp.TenantService
 	roleService     *accesscontrol.RoleService
 	assetService    *assetapp.AssetService
+	priorityPreview PriorityImpactPreviewer
+	slaDeadlines    SLADeadlineSource
+	scoringVersions ScoringVersionReader
 	moduleService   *module.ModuleService
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
@@ -123,6 +130,30 @@ func (h *TenantHandler) SetRoleService(svc *accesscontrol.RoleService) {
 // SetAssetService sets the asset service for risk scoring operations.
 func (h *TenantHandler) SetAssetService(svc *assetapp.AssetService) {
 	h.assetService = svc
+}
+
+// PriorityImpactPreviewer previews a change of the settings that feed finding
+// priority over the tenant's open findings (read-only).
+type PriorityImpactPreviewer interface {
+	PreviewOwnershipFloor(ctx context.Context, tenantID shared.ID, enabled bool, deadline findingapp.DeadlineFor) (*findingapp.PriorityImpact, error)
+}
+
+// SLADeadlineSource resolves a tenant's SLA deadlines from its policies.
+type SLADeadlineSource interface {
+	SLADeadlineFunc(ctx context.Context, tenantID string) (slaapp.DeadlineFunc, error)
+}
+
+// ScoringVersionReader reads a tenant's current scoring version.
+type ScoringVersionReader interface {
+	CurrentVersion(ctx context.Context, tenantID shared.ID, kind scoring.Kind) (int64, error)
+}
+
+// SetScoringPreview wires the finding-priority preview, the SLA deadlines it
+// counts and the version source of the risk scoring settings routes.
+func (h *TenantHandler) SetScoringPreview(p PriorityImpactPreviewer, sla SLADeadlineSource, v ScoringVersionReader) {
+	h.priorityPreview = p
+	h.slaDeadlines = sla
+	h.scoringVersions = v
 }
 
 // SetModuleService sets the module service for module management.
@@ -2434,30 +2465,21 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 	}
 	h.writeSectionETag(w, r, tenantID, tenant.SectionRiskScoring)
 
-	// Invalidate scoring config cache so new formula takes effect immediately
+	// The new settings take effect at once on this replica; the database
+	// trigger recorded the change (scoring_changes) and queued every asset
+	// (and, for the ownership floor, every open finding) for the workers.
 	if h.assetService != nil {
 		h.assetService.InvalidateScoringConfigCache(tenantID)
 	}
-
-	// Auto-recalculate all asset risk scores after saving new config
-	var assetsUpdated int
-	if h.assetService != nil {
-		updated, recalcErr := h.assetService.RecalculateAllRiskScores(r.Context(), tenantID)
-		if recalcErr != nil {
-			h.logger.Warn("auto-recalculate after config save failed",
-				"tenant_id", tenantID.String(), "error", recalcErr)
-		} else {
-			assetsUpdated = updated
-			// Record recalculation time for rate limiting on the dedicated endpoint
-			recalculateLastRun.Store(tenantID.String(), time.Now())
+	resp := map[string]any{"config": settings.RiskScoring, "recompute": "queued"}
+	if h.scoringVersions != nil {
+		if v, verr := h.scoringVersions.CurrentVersion(r.Context(), tenantID, scoring.KindAssetRisk); verr == nil {
+			resp["scoring_version"] = v
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"config":         settings.RiskScoring,
-		"assets_updated": assetsUpdated,
-	})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // GetRetestSettings handles GET /api/v1/organization/settings/retest.
@@ -2838,18 +2860,56 @@ func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http
 	}
 
 	config := assetapp.MapTenantToAssetScoringConfig(&req)
-	items, totalAssets, err := h.assetService.PreviewRiskScoreChanges(r.Context(), tenantID, config)
+	assets, err := h.assetService.PreviewRiskImpact(r.Context(), tenantID, config)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	resp := map[string]any{"assets": assets, "affects_priority": false}
+
+	// Of the risk scoring settings only the ownership floor feeds finding
+	// priority: preview the open findings when it would change.
+	current, err := h.service.GetRiskScoringSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if current.FloorUnownedAtP2 != req.FloorUnownedAtP2 && h.priorityPreview != nil {
+		findings, perr := h.priorityPreview.PreviewOwnershipFloor(r.Context(), tenantID, req.FloorUnownedAtP2, h.previewDeadlines(r.Context(), tenantID))
+		if perr != nil {
+			h.handleServiceError(w, perr)
+			return
+		}
+		resp["affects_priority"] = true
+		resp["findings"] = findings
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"assets":       items,
-		"sample_count": len(items),
-		"total_assets": totalAssets,
-	})
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// previewDeadlines adapts the tenant's SLA policies to the preview: the
+// deadline a finding would get with a class, counted from now. Nil when no
+// SLA source is wired (deadlines are then not counted).
+func (h *TenantHandler) previewDeadlines(ctx context.Context, tenantID shared.ID) findingapp.DeadlineFor {
+	if h.slaDeadlines == nil {
+		return nil
+	}
+	fn, err := h.slaDeadlines.SLADeadlineFunc(ctx, tenantID.String())
+	if err != nil {
+		return nil
+	}
+	return func(f *vulnerability.Finding, class vulnerability.PriorityClass, now time.Time) time.Time {
+		aid := ""
+		if !f.AssetID().IsZero() {
+			aid = f.AssetID().String()
+		}
+		d, derr := fn(aid, string(class), f.Severity(), now)
+		if derr != nil {
+			return time.Time{}
+		}
+		return d
+	}
 }
 
 // RecalculateRiskScores handles POST /api/v1/tenants/{tenant}/settings/risk-scoring/recalculate
@@ -2888,7 +2948,8 @@ func (h *TenantHandler) RecalculateRiskScores(w http.ResponseWriter, r *http.Req
 
 	actx := h.buildAuditContext(r)
 
-	updated, err := h.assetService.RecalculateAllRiskScores(r.Context(), tenantID)
+	// Queue every live asset; the asset-risk-score worker rescores them.
+	queued, err := h.assetService.EnqueueRiskRescore(r.Context(), tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -2899,14 +2960,14 @@ func (h *TenantHandler) RecalculateRiskScores(w http.ResponseWriter, r *http.Req
 
 	// Audit log the recalculation
 	event := auditsvc.NewSuccessEvent(audit.ActionTenantRiskScoresRecalculated, audit.ResourceTypeTenant, tenantKey).
-		WithMessage(fmt.Sprintf("Risk scores recalculated for %d assets", updated)).
-		WithMetadata("assets_updated", updated).
+		WithMessage(fmt.Sprintf("Risk scores queued for recalculation (%d assets)", queued)).
+		WithMetadata("assets_queued", queued).
 		WithSeverity(audit.SeverityMedium)
 	h.service.LogAuditEvent(r.Context(), actx, event)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"assets_updated": updated,
+		"assets_queued": queued,
 	})
 }
 
