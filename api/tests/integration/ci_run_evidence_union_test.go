@@ -2,8 +2,10 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/openctemio/ctis"
@@ -254,5 +256,57 @@ func TestCIRunEvidenceUnion_FailedCapabilityCarriedUntilItReports(t *testing.T) 
 	upload(run, tok3, "betterleaks")
 	if v := gate(run, tok3, "uploaded"); v["verdict"] != "pass" {
 		t.Fatalf("after the secrets report: %v", v)
+	}
+}
+
+// Many jobs released at once by a barrier, round after round, each opening
+// the same new pipeline run: every one gets the one run, none an error.
+// Two inserts that both pass the ON CONFLICT pre-check race to insert their
+// index entries; a second unique index that matches the row (not the
+// ON CONFLICT arbiter) then raises a unique violation for the loser instead
+// of letting it fall back to DO NOTHING.
+func TestCIRunEvidenceUnion_ConcurrentJoinsGetOneRun(t *testing.T) {
+	r := newCIRig(t)
+	ctx := context.Background()
+	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	const sha = "9999999999999999999999999999999999999991"
+	resp, out := r.post("/api/v1/ci/oidc/exchange", "", map[string]any{"tenant_id": r.tenant.String(),
+		"id_token":  r.idp.token(t, cfg.Audience, "acme/racing", "main", sha, map[string]any{"job_id": "1", "pipeline_id": "6000"}),
+		"aggregate": true})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("seed: %d %v", resp.StatusCode, out)
+	}
+	seed, err := r.svc.GetRun(ctx, r.tenant, shared.MustIDFromString(out["run_id"].(string)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const rounds, jobs = 150, 12
+	for round := range rounds {
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		ids := make([]shared.ID, jobs)
+		errs := make([]error, jobs)
+		for j := range jobs {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				join := *seed
+				join.ID, join.ExternalRunID, join.RunAttempt, join.TokenHash, join.TokenExpiresAt =
+					shared.NewID(), fmt.Sprintf("6%04d", round+1), "1", nil, nil
+				<-start
+				got, _, err := r.repo.OpenAggregateRun(ctx, &join)
+				errs[j] = err
+				if got != nil {
+					ids[j] = got.ID
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		for j := range jobs {
+			if errs[j] != nil || ids[j] != ids[0] {
+				t.Fatalf("round %d job %d: %v (runs %v)", round, j, errs[j], ids)
+			}
+		}
 	}
 }
