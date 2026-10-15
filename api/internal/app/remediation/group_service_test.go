@@ -20,7 +20,26 @@ type mockKeyRepo struct {
 }
 
 func (m *mockKeyRepo) Upsert(_ context.Context, _, _ shared.ID, _, _ string) error { return nil }
-func (m *mockKeyRepo) Delete(_ context.Context, _ shared.ID) error                 { return nil }
+func (m *mockKeyRepo) Delete(_ context.Context, _, _ shared.ID) error              { return nil }
+func (m *mockKeyRepo) KeySources(_ context.Context, _ shared.ID, _ []shared.ID) ([]remediationdom.KeySource, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) KeySourcesByFingerprints(_ context.Context, _ shared.ID, _ []string) ([]remediationdom.KeySource, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) FindingIDsAfter(_ context.Context, _, _ shared.ID, _ int) ([]shared.ID, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) TenantsWithFindings(_ context.Context) ([]shared.ID, error) { return nil, nil }
+func (m *mockKeyRepo) CampaignsTrackingKeys(_ context.Context, _ shared.ID, _ []string) ([]remediationdom.CampaignKeyRef, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) CampaignsWithStaleKey(_ context.Context, _ shared.ID) ([]remediationdom.CampaignKeyRef, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) RetargetCampaignKey(_ context.Context, _, _ shared.ID, _, _ string) (bool, error) {
+	return false, nil
+}
 func (m *mockKeyRepo) ListGroups(_ context.Context, _ shared.ID, excl []string, _ *shared.DataScope) ([]remediationdom.Group, error) {
 	m.lastExcl = excl
 	return m.groups, nil

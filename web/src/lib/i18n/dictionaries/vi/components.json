@@ -241,5 +241,12 @@
   "components.vexImport.updated": "Cập nhật",
   "components.vulns.empty": "Không có lỗ hổng nào được ghi nhận cho gói này trên các tài sản bạn xem được.",
   "components.vulns.includeResolved": "Gồm cả phát hiện đã đóng",
-  "components.vulns.none": "Không có"
+  "components.vulns.none": "Không có",
+  "components.selfApprove.title": "Tự phê duyệt yêu cầu của bạn",
+  "components.selfApprove.description": "Không ai khác trong tổ chức có thể phê duyệt \"{subject}\". Là chủ sở hữu, bạn có thể tự phê duyệt kèm lý do và mã từ ứng dụng xác thực. Việc này được ghi vào nhật ký kiểm toán.",
+  "components.selfApprove.reason": "Vì sao yêu cầu này được áp dụng mà không cần người thứ hai?",
+  "components.selfApprove.code": "Mã từ ứng dụng xác thực",
+  "components.selfApprove.cancel": "Hủy",
+  "components.selfApprove.submit": "Phê duyệt",
+  "components.selfApprove.failed": "Không thể phê duyệt yêu cầu."
 }
