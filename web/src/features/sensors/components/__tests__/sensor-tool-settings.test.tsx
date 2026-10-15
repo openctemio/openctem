@@ -46,7 +46,18 @@ vi.mock('@/lib/api/sensor-tool-settings-hooks', async (orig) => {
         tool: 'nuclei',
         schema_digest: 'sha256:1',
         items: [
-          { key: 'rate_limit', value: 300, source: 'sensor', flag: '-rate-limit', scope: 'scan' },
+          {
+            key: 'rate_limit',
+            value: 300,
+            source: 'sensor',
+            flag: '-rate-limit',
+            scope: 'scan',
+            chain: [
+              { source: 'default', value: 150 },
+              { source: 'tenant', value: 200 },
+              { source: 'sensor', value: 300 },
+            ],
+          },
         ],
       },
       error: undefined,
@@ -165,7 +176,7 @@ describe('SensorToolSettingsSection', () => {
       en['sensors.toolSettings.allDefaults']
     )
     expect(screen.getByTestId('tool-settings-summary-nuclei')).toHaveTextContent(
-      '1 changed: rate-limit 300'
+      '1 overridden: rate-limit 300'
     )
   })
 
@@ -173,7 +184,7 @@ describe('SensorToolSettingsSection', () => {
     api.items = [{ ...item, values: { rate_limit: 300, timeout: 20, retries: 3, concurrency: 50 } }]
     render(<SensorToolSettingsSection sensorId="s1" />)
     expect(screen.getByTestId('tool-settings-summary-nuclei')).toHaveTextContent(
-      '4 changed: timeout 20, rate-limit 300, c 50, …'
+      '4 overridden: timeout 20, rate-limit 300, c 50, …'
     )
   })
 
@@ -190,7 +201,7 @@ describe('SensorToolSettingsSection', () => {
     expect(screen.getByTestId('tool-setting-rate_limit')).toBeInTheDocument()
     expect(screen.queryByTestId('tool-setting-scan_strategy')).not.toBeInTheDocument()
     expect(screen.getByTestId('tool-settings-group-group:Performance')).toHaveTextContent(
-      en['sensors.toolSettings.groupChanged'].replace('{count}', '1')
+      en['sensors.toolSettings.groupOverridden'].replace('{count}', '1')
     )
   })
 
@@ -210,7 +221,9 @@ describe('SensorToolSettingsSection', () => {
       within(screen.getByTestId('tool-settings-group-group:Advanced')).getByRole('button')
     )
     expect(within(form).getByLabelText('headless')).toBeDisabled()
-    expect(within(form).getByText(en['sensors.toolSettings.impactWarning'])).toBeInTheDocument()
+    expect(
+      within(form).getByText(en['sensors.toolSettings.impactWarning'], { exact: false })
+    ).toHaveTextContent(en['sensors.toolSettings.impactStepUp'])
     expect(within(form).getByText(en['sensors.toolSettings.t2Locked'])).toBeInTheDocument()
   })
 
@@ -235,6 +248,41 @@ describe('SensorToolSettingsSection', () => {
     } finally {
       get.mockRestore()
       set.mockRestore()
+    }
+  })
+
+  it('on a phone, opening a tool scrolls the drawer body only, never the frame around it', async () => {
+    const mm = window.matchMedia
+    window.matchMedia = ((q: string) => ({
+      matches: q.includes('max-width'),
+      media: q,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+    const intoView = vi.fn()
+    const orig = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = intoView
+    try {
+      api.items = [plain('katana'), item]
+      // frame (overflow hidden, like the drawer) > body (scrolls) > section
+      const frame = document.createElement('div')
+      frame.style.overflowY = 'hidden'
+      const body = document.createElement('div')
+      body.style.overflowY = 'auto'
+      frame.appendChild(body)
+      document.body.appendChild(frame)
+      render(<SensorToolSettingsSection sensorId="s1" />, { container: body })
+      body.getBoundingClientRect = () => ({ top: 200, height: 500 }) as DOMRect
+      const katana = screen.getByTestId('tool-settings-katana')
+      katana.getBoundingClientRect = () => ({ top: 650, height: 600 }) as DOMRect
+      fireEvent.click(within(katana).getAllByRole('button')[0])
+      await waitFor(() => expect(body.scrollTop).toBe(450))
+      expect(frame.scrollTop).toBe(0)
+      expect(intoView).not.toHaveBeenCalled()
+      frame.remove()
+    } finally {
+      window.matchMedia = mm
+      Element.prototype.scrollIntoView = orig
     }
   })
 
@@ -269,7 +317,7 @@ describe('SensorToolSettingsSection', () => {
     expect(screen.getByTestId('tool-settings-savebar-nuclei')).toBeInTheDocument()
     fireEvent.click(
       screen.getByRole('button', {
-        name: en['sensors.toolSettings.resetOptionLabel'].replace(
+        name: en['sensors.toolSettings.resetToToolLabel'].replace(
           '{option}',
           en['sensors.toolOptions.common.timeout']
         ),
@@ -278,7 +326,7 @@ describe('SensorToolSettingsSection', () => {
     expect(screen.queryByTestId('tool-settings-savebar-nuclei')).not.toBeInTheDocument()
     fireEvent.click(
       screen.getByRole('button', {
-        name: en['sensors.toolSettings.resetOptionLabel'].replace(
+        name: en['sensors.toolSettings.resetToToolLabel'].replace(
           '{option}',
           en['sensors.toolOptions.common.rate']
         ),
@@ -314,7 +362,9 @@ describe('SensorToolSettingsSection', () => {
     api.reset.mockResolvedValueOnce(undefined)
     render(<SensorToolSettingsSection sensorId="s1" />)
     openTool('nuclei')
-    fireEvent.click(screen.getByRole('button', { name: en['sensors.toolSettings.resetTool'] }))
+    fireEvent.click(
+      screen.getByRole('button', { name: en['sensors.toolSettings.resetAllOverrides'] })
+    )
     expect(screen.getByTestId('tool-settings-summary-nuclei')).toHaveTextContent(
       en['sensors.toolSettings.allDefaults']
     )
@@ -325,6 +375,101 @@ describe('SensorToolSettingsSection', () => {
     expect(api.mutate).toHaveBeenCalled()
   })
 
+  it('inherits the organization defaults: source, placeholder, override and reset', () => {
+    api.items = [
+      {
+        ...item,
+        values: { rate_limit: 300 },
+        organization_values: { rate_limit: 150, timeout: 20 },
+      },
+    ]
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    expect(screen.getByTestId('tool-settings-summary-nuclei')).toHaveTextContent(
+      '1 overridden: rate-limit 300'
+    )
+    openTool('nuclei')
+    const timeout = screen.getByLabelText(en['sensors.toolOptions.common.timeout'])
+    // Inherited: empty input, the organization's value as placeholder.
+    expect(timeout).toHaveValue(null)
+    expect(timeout).toHaveAttribute('placeholder', '20')
+    expect(screen.getByTestId('tool-setting-source-timeout')).toHaveAttribute(
+      'data-source',
+      'tenant'
+    )
+    expect(screen.getByTestId('tool-setting-source-timeout')).toHaveTextContent(
+      `20 · ${en['sensors.toolSettings.source.tenant']}`
+    )
+    // Overridden here: the sensor is the source; reset goes back to the organization's.
+    expect(screen.getByTestId('tool-setting-source-rate_limit')).toHaveAttribute(
+      'data-source',
+      'sensor'
+    )
+    expect(screen.getByTestId('tool-setting-source-rate_limit')).toHaveTextContent(
+      `300 · ${en['sensors.toolSettings.source.sensor']}`
+    )
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: en['sensors.toolSettings.resetToOrgLabel'].replace(
+          '{option}',
+          en['sensors.toolOptions.common.rate']
+        ),
+      })
+    )
+    expect(screen.getByTestId('tool-setting-source-rate_limit')).toHaveAttribute(
+      'data-source',
+      'tenant'
+    )
+    // Not set anywhere: the tool default.
+    expect(screen.getByTestId('tool-setting-source-retries')).toHaveAttribute(
+      'data-source',
+      'default'
+    )
+    // Override copies the inherited value into the field.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: en['sensors.toolSettings.overrideLabel'].replace(
+          '{option}',
+          en['sensors.toolOptions.common.timeout']
+        ),
+      })
+    )
+    expect(timeout).toHaveValue(20)
+    expect(screen.getByTestId('tool-setting-source-timeout')).toHaveAttribute(
+      'data-source',
+      'sensor'
+    )
+  })
+
+  it('a sensor without overrides shows how many organization defaults it inherits', () => {
+    api.items = [{ ...item, values: {}, stored: false, organization_values: { rate_limit: 150 } }]
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    expect(screen.getByTestId('tool-settings-summary-nuclei')).toHaveTextContent(
+      en['sensors.toolSettings.inheritsOrg'].replace('{count}', '1')
+    )
+  })
+
+  it('warns when the organization defaults do not fit this sensor', () => {
+    api.items = [
+      {
+        ...item,
+        organization_values: { rate_limit: 9000 },
+        organization_problems: [{ path: '/rate_limit', message: 'above the maximum' }],
+      },
+    ]
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    openTool('nuclei')
+    const notice = screen.getByTestId('tool-settings-notice-nuclei')
+    expect(notice).toHaveTextContent(en['sensors.toolSettings.orgProblems'])
+    expect(notice).toHaveTextContent('rate_limit: above the maximum')
+  })
+
+  it('links to the organization tool defaults', () => {
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    expect(
+      screen.getByRole('link', { name: en['sensors.toolSettings.manageDefaults'] })
+    ).toHaveAttribute('href', '/settings/scanning/tool-defaults')
+  })
+
   it('shows the effective values with their source and native flag', () => {
     render(<SensorToolSettingsSection sensorId="s1" />)
     openTool('nuclei')
@@ -332,6 +477,10 @@ describe('SensorToolSettingsSection', () => {
     const table = screen.getByTestId('tool-settings-effective-nuclei')
     expect(within(table).getByText('-rate-limit')).toBeInTheDocument()
     expect(within(table).getByText(en['sensors.toolSettings.source.sensor'])).toBeInTheDocument()
+    // The layers it overrides, lowest first.
+    expect(screen.getByTestId('tool-settings-chain-rate_limit')).toHaveTextContent(
+      `over 150 (${en['sensors.toolSettings.source.default']}), 200 (${en['sensors.toolSettings.source.tenant']})`
+    )
   })
 
   it('has every tool settings key in English and Vietnamese', () => {
