@@ -28,6 +28,7 @@ import { useCanMutate } from '@/lib/permissions'
 import { AssigneeSelect } from '../assignee-select'
 import { PriorityClassBadge } from '../priority-class-badge'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
+import { userTags } from '../../lib/finding-display'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
@@ -105,8 +106,9 @@ export interface FindingPropertiesProps {
   /** Hide the edit controls (e.g. pentest findings are managed in the campaign). */
   readOnly?: boolean
   /**
-   * Leave out status, severity and assignee: the drawer edits those in its
-   * header row and lists only the rest here.
+   * The drawer: leave out status, severity and assignee (edited in its header
+   * row), the priority (the "Why it matters" card leads with it) and the ID
+   * (in its menu).
    */
   hideTriage?: boolean
   className?: string
@@ -148,6 +150,8 @@ export function FindingProperties({
         .join(' · ')
     : ''
   const closed = CLOSED.has(triage.status)
+  // People's labels only; scanner artefacts (tool, file, type) are noise here.
+  const tags = userTags(finding)
   // A version-based match has no scanning tool behind it (RFC-066).
   const tool =
     finding.toolName === VERSION_MATCH_TOOL
@@ -182,22 +186,24 @@ export function FindingProperties({
           </Row>
         </>
       )}
-      <Row label={t('findings.properties.priority', 'Priority')}>
-        {finding.priorityClass ? (
-          <span className="inline-flex items-center gap-1.5">
-            <PriorityClassBadge priorityClass={finding.priorityClass} />
-            {finding.priorityClassOverride && (
-              <span className="text-xs text-muted-foreground">
-                {t('findings.properties.setManually', 'set manually')}
-              </span>
-            )}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">
-            {t('findings.properties.notClassified', 'Not classified')}
-          </span>
-        )}
-      </Row>
+      {!hideTriage && (
+        <Row label={t('findings.properties.priority', 'Priority')}>
+          {finding.priorityClass ? (
+            <span className="inline-flex items-center gap-1.5">
+              <PriorityClassBadge priorityClass={finding.priorityClass} />
+              {finding.priorityClassOverride && (
+                <span className="text-xs text-muted-foreground">
+                  {t('findings.properties.setManually', 'set manually')}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              {t('findings.properties.notClassified', 'Not classified')}
+            </span>
+          )}
+        </Row>
+      )}
       {!hideTriage && (
         <Row label={t('findings.properties.assignee', 'Assignee')}>
           <AssigneeSelect
@@ -300,8 +306,12 @@ export function FindingProperties({
             </Row>
           )}
         {(finding.occurrenceCount ?? 0) > 1 && (
-          <Row label={t('findings.properties.occurrences', 'Occurrences')}>
-            <span className="tabular-nums">{finding.occurrenceCount}</span>
+          <Row label={t('findings.properties.seenIn', 'Seen in')}>
+            <span className="tabular-nums">
+              {t('findings.properties.scansCount', '{count} scans', {
+                count: finding.occurrenceCount ?? 0,
+              })}
+            </span>
           </Row>
         )}
         {finding.resolvedAt && (
@@ -327,10 +337,10 @@ export function FindingProperties({
             </span>
           </Row>
         )}
-        {finding.tags && finding.tags.length > 0 && (
+        {tags.length > 0 && (
           <Row label={t('findings.properties.tags', 'Tags')}>
             <span className="flex flex-wrap gap-1 py-1">
-              {finding.tags.map((tag) => (
+              {tags.map((tag) => (
                 <Badge key={tag} variant="secondary" className="text-xs font-normal">
                   {tag}
                 </Badge>
@@ -338,9 +348,14 @@ export function FindingProperties({
             </span>
           </Row>
         )}
-        <Row label={t('findings.properties.id', 'ID')}>
-          <DetailCopyId id={finding.id} label={t('findings.properties.findingId', 'Finding ID')} />
-        </Row>
+        {!hideTriage && (
+          <Row label={t('findings.properties.id', 'ID')}>
+            <DetailCopyId
+              id={finding.id}
+              label={t('findings.properties.findingId', 'Finding ID')}
+            />
+          </Row>
+        )}
       </div>
     </dl>
   )

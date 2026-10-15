@@ -383,9 +383,47 @@ export interface FindingComponent {
   license?: string
   /** The version to upgrade to, picked by the API. */
   fixedIn?: string
+  /** fixedIn is on a newer major line: a likely breaking upgrade. */
+  fixedInMajor?: boolean
+  /** Every version that fixes it, one per release line. */
+  fixedVersions?: string[]
   /** direct | transitive | …; undefined when unknown. */
   dependencyType?: string
   manifestFile?: string
+}
+
+/** Vulnerability intelligence with sources and freshness (detail only). */
+export interface FindingIntel {
+  cvssSource?: string
+  publishedAt?: string
+  modifiedAt?: string
+  references: string[]
+  epssDate?: string
+  kevDateAdded?: string
+  kevRansomware?: boolean
+}
+
+/** One open finding of a package fix plan. */
+export interface FindingFixPlanItem {
+  id: string
+  title: string
+  severity: string
+  cveId?: string
+}
+
+/** Which upgrade of the package fixes what on this asset (detail only). */
+export interface FindingFixPlan {
+  targetVersion?: string
+  majorUpgrade: boolean
+  openFindings: number
+  resolvesCount: number
+  truncated: boolean
+  resolves: FindingFixPlanItem[]
+  remaining: FindingFixPlanItem[]
+  /** Fixes every finding with a known fix, when targetVersion does not. */
+  completeVersion?: string
+  completeMajor?: boolean
+  completeResolves?: number
 }
 
 /** The CVE record the finding is an instance of (detail page only). */
@@ -1172,6 +1210,10 @@ export interface FindingDetail extends Finding {
   sourceData?: FindingSourceData
   /** The affected package, for SCA / container findings. */
   component?: FindingComponent
+  /** The package's upgrade plan on this asset. */
+  packageFix?: FindingFixPlan
+  /** Advisory facts and feed dates. */
+  intel?: FindingIntel
   /** The CVE record, when the finding is an instance of one. */
   advisory?: FindingAdvisory
   /** The raw finding message (the title falls back to it). */
