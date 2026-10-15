@@ -59,6 +59,8 @@ type AssetService struct {
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
 	dataScope         *datascope.Enforcer      // Layer 2 enforcement on bulk-by-id paths (nil = unrestricted)
 	scoringProvider   assetdom.ScoringConfigProvider
+	riskQueue         assetdom.RiskQueueRepository // rescore queue (risk_freshness.go)
+	riskReader        AssetBatchReader
 	redisClient       *redis.Client
 	logger            *logger.Logger
 
@@ -2717,7 +2719,7 @@ func (s *AssetService) RecalculateAllRiskScores(ctx context.Context, tenantID sh
 			eff := effByID[a.ID()]
 			oldScore := a.RiskScore()
 			newScore := engine.CalculateScoreWithCriticality(a, eff)
-			if oldScore != newScore {
+			if oldScore != newScore || a.RiskScoredAt() == nil {
 				a.CalculateRiskScoreWithConfigAndCriticality(config, eff)
 				changed = append(changed, a)
 			}
