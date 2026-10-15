@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ticketmap"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Published mapping profiles in the ticket paths
@@ -113,8 +114,8 @@ func (s *SyncService) createFromProfile(ctx context.Context, c Client, tenantID,
 	}
 	if pr.DryRun {
 		s.logger.Info("ticket mapping dry run: would create the issue from the profile",
-			"profile_id", pr.ProfileID.String(), "version", pr.Version, "project", projectKey,
-			"fields", fieldNames(pr.Fields), "dropped", pr.Dropped)
+			"profile_id", pr.ProfileID.String(), "version", pr.Version, "project", logger.SanitizeValue(projectKey),
+			"fields", logger.SanitizeValue(strings.Join(fieldNames(pr.Fields), ",")), "dropped", logger.SanitizeValue(strings.Join(pr.Dropped, ",")))
 		return nil, false, nil
 	}
 	fields := pr.Fields
@@ -153,13 +154,15 @@ func (s *SyncService) syncStatusFromProfile(ctx context.Context, c Client, tenan
 	}
 	if ps.DryRun {
 		s.logger.Info("ticket mapping dry run: would move the issue",
-			"profile_id", ps.ProfileID.String(), "issue_key", issueKey, "state", ps.State, "target", ps.Target.StatusID)
+			"profile_id", ps.ProfileID.String(), "issue_key", logger.SanitizeValue(issueKey), "state", ps.State,
+			"target", logger.SanitizeValue(ps.Target.StatusID))
 		return true, nil
 	}
 	if err := runStatusPath(ctx, pc, issueKey, *ps.Target, ps.Workflow, ps.State); err != nil {
 		if errors.Is(err, ErrNoPath) {
 			s.logger.Warn("ticket mapping: the issue cannot reach the mapped status",
-				"profile_id", ps.ProfileID.String(), "issue_key", issueKey, "state", ps.State, "error", err)
+				"profile_id", ps.ProfileID.String(), "issue_key", logger.SanitizeValue(issueKey), "state", ps.State,
+				"error", logger.SanitizeValue(err.Error()))
 			return true, &pathError{err: err}
 		}
 		return true, err

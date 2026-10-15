@@ -59,34 +59,44 @@ func (s *GroupService) ListGroups(ctx context.Context, tenantID shared.ID) ([]re
 // ResolveGroupInput parameterizes a group resolve.
 type ResolveGroupInput struct {
 	Key        string
-	Status     string // fix_applied (default) or resolved
-	Resolution string
+	Status     string // fix_applied (the default and the only target)
+	Resolution string // the note of the fix claim (required)
 	ActorID    string
-	// HasVerifyPermission: a resolved target needs findings:verify.
+	// HasVerifyPermission is kept for the bulk path's resolve gate; a group
+	// resolve never closes findings.
 	HasVerifyPermission bool
-	// HasFixApplyPermission: a fix_applied target needs findings:fix_apply.
+	// HasFixApplyPermission: a fix claim needs findings:fix_apply.
 	HasFixApplyPermission bool
 	// OperatorApproved lets an over-ceiling bulk through the abuse guard.
 	OperatorApproved bool
 }
 
-// ResolveGroup transitions every open, non-pentest finding in a group to the
-// requested status, reusing the finding bulk path (and its Jira sync + activity)
-// behind the bulk abuse-guard. Defaults to fix_applied ("patched, pending
-// verification") so the next rescan can confirm and flip to resolved.
+// ErrGroupResolveClosesNothing refuses a group or campaign resolve that asks
+// to close findings: a group shares a fix, not the proof that each finding
+// is gone. Each member is verified on its own (covered scan, retest, or a
+// reviewer on the finding).
+var ErrGroupResolveClosesNothing = fmt.Errorf("%w: a group resolve marks its findings fixed (fix_applied); each finding is then verified on its own (covered scan, retest or a reviewer), never closed for the group", shared.ErrValidation)
+
+// ResolveGroup marks every open, in-scope, non-pentest finding of a group
+// fixed: the "mark fixed" of the finding bulk path (legal steps to
+// fix_applied, findings:fix_apply, a note, the person's own findings only,
+// a proof-of-fix re-check queued per finding), behind the bulk abuse guard.
+// The result names every finding that was not updated and why.
 func (s *GroupService) ResolveGroup(ctx context.Context, tenantID shared.ID, in ResolveGroupInput) (*finding.BulkUpdateResult, error) {
 	status := in.Status
 	if status == "" {
 		status = string(vulnerability.FindingStatusFixApplied)
 	}
-	if status != string(vulnerability.FindingStatusFixApplied) && status != string(vulnerability.FindingStatusResolved) {
-		return nil, fmt.Errorf("%w: group resolve status must be fix_applied or resolved", shared.ErrValidation)
+	if status != string(vulnerability.FindingStatusFixApplied) {
+		return nil, ErrGroupResolveClosesNothing
 	}
-	// Closing a whole group as resolved is a findings:verify decision, the
-	// same gate as every other resolve; refuse before counting or reading
-	// the group. The bulk path below checks it again.
-	if status == string(vulnerability.FindingStatusResolved) && !in.HasVerifyPermission {
-		return nil, finding.ErrResolveRequiresVerify
+	// Refuse before counting the group (and spending the bulk budget); the
+	// bulk path checks the same rules again.
+	if !in.HasFixApplyPermission {
+		return nil, finding.ErrFixApplyRequiresPermission
+	}
+	if strings.TrimSpace(in.Resolution) == "" {
+		return nil, finding.ErrNoteRequired
 	}
 
 	// Only the caller's in-scope findings are counted against the abuse guard
@@ -124,6 +134,7 @@ func (s *GroupService) ResolveGroup(ctx context.Context, tenantID shared.ID, in 
 		ActorID:               in.ActorID,
 		HasVerifyPermission:   in.HasVerifyPermission,
 		HasFixApplyPermission: in.HasFixApplyPermission,
+		WalkToFixApplied:      true,
 	})
 }
 

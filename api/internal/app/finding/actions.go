@@ -738,10 +738,16 @@ type AutoAssignToOwnersResult struct {
 	Assigned   int            `json:"assigned"`
 	ByOwner    map[string]int `json:"by_owner"`
 	Unassigned int            `json:"unassigned"`
+	// Started counts the assigned findings that were confirmed and moved to
+	// in_progress (work started). A new finding stays new: assignment is not
+	// triage.
+	Started int `json:"started"`
 }
 
-// AutoAssignToOwners assigns findings to their asset owners.
-// Only assigns findings that don't already have an assignee.
+// AutoAssignToOwners assigns open findings to their asset owners.
+// Only assigns findings that don't already have an assignee; closed findings
+// are never touched. A confirmed finding moves to in_progress (a lifecycle
+// edge); any other status is left as it is.
 func (s *FindingActionsService) AutoAssignToOwners(
 	ctx context.Context, tenantID string, assignerID string, filter vulnerability.FindingFilter,
 ) (*AutoAssignToOwnersResult, error) {
@@ -761,6 +767,9 @@ func (s *FindingActionsService) AutoAssignToOwners(
 	if err != nil {
 		return nil, err
 	}
+	// Closed findings (resolved, false positive, accepted, duplicate) are
+	// done: assigning them would put finished work back on someone's plate.
+	filter.ExcludeStatuses = vulnerability.ClosedFindingStatuses()
 	result := &AutoAssignToOwnersResult{ByOwner: make(map[string]int)}
 
 	// Cache asset lookups by ID across all pages so repeated findings on the same
@@ -788,8 +797,9 @@ func (s *FindingActionsService) AutoAssignToOwners(
 		}
 
 		for _, f := range findings.Data {
-			// Skip already assigned
-			if f.AssignedTo() != nil {
+			// Skip already assigned, and closed findings (the filter
+			// excludes them; a row that closed meanwhile is skipped too).
+			if f.AssignedTo() != nil || f.Status().IsClosed() {
 				continue
 			}
 
@@ -826,16 +836,27 @@ func (s *FindingActionsService) AutoAssignToOwners(
 				continue
 			}
 
-			// Auto-transition to in_progress if still new/confirmed
-			if f.Status() == vulnerability.FindingStatusNew || f.Status() == vulnerability.FindingStatusConfirmed {
-				_ = f.TransitionStatus(vulnerability.FindingStatusInProgress, "", nil)
+			// Work starts on a confirmed finding (confirmed → in_progress is
+			// a lifecycle edge). A new finding is not triaged by assigning it,
+			// so it stays new; no other status is changed.
+			started := false
+			if f.Status() == vulnerability.FindingStatusConfirmed {
+				if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, "", nil); err != nil {
+					s.logger.Warn("failed to start work on an assigned finding", "finding_id", f.ID(), "error", err)
+				} else {
+					started = true
+				}
 			}
 
 			// The automatic move to in_progress writes its timeline entry in
 			// the same transaction as the assignment.
+			msg := "Assigned to the asset owner"
+			if started {
+				msg += ": work started"
+			}
 			moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
 				Source: "auto_assign", Reason: "assigned_to_owner", ActorType: "user", ActorID: aid.String(),
-				Message: "Assigned to the asset owner: work started",
+				Message: msg,
 				Changes: map[string]any{"assigned_to": info.ownerID.String()},
 			})
 			if err := s.findingRepo.Update(moveCtx, f); err != nil {
@@ -844,6 +865,9 @@ func (s *FindingActionsService) AutoAssignToOwners(
 			}
 
 			result.Assigned++
+			if started {
+				result.Started++
+			}
 			result.ByOwner[info.name]++
 		}
 	}
@@ -901,4 +925,11 @@ func (s *FindingActionsService) FixAppliers(ctx context.Context, tenantID, userI
 		out[f.ID()] = s.canMarkFixApplied(userID, groupIDSet, findingGroupMap, owned, f)
 	}
 	return out
+}
+
+// QueueProofOfFix queues a proof-of-fix re-check for each finding just marked
+// fix_applied (the same bounded, best-effort dispatch as BulkFixApplied) and
+// returns how many were queued. The bulk status path calls it for a fix claim.
+func (s *FindingActionsService) QueueProofOfFix(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) int {
+	return s.autoQueueValidations(ctx, tenantID, findingIDs)
 }

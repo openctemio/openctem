@@ -1,6 +1,6 @@
 # RFC-015 — Remediation groups (fix a whole "solution family" in one action)
 
-> Status: **Phase 1–2 shipped, Phase 3 partial** (checked 2026-10-04): derivation + side-table + group list/resolve API (#288); the Remediations page with Resolve all (openctemio/ui#231); campaign resolve (#291, openctemio/ui#232) and a campaign from a group (#297, openctemio/ui#233). Not built: richer keys (Tenable solution id, OS advisory id); a group resolve to `fix_applied` does not queue the proof-of-fix retest.
+> Status: **Phase 1–2 shipped, Phase 3 partial** (checked 2026-10-04): derivation + side-table + group list/resolve API (#288); the Remediations page with Resolve all (openctemio/ui#231); campaign resolve (#291, openctemio/ui#232) and a campaign from a group (#297, openctemio/ui#233). Not built: richer keys (Tenable solution id, OS advisory id). Group and campaign resolves are a "mark fixed" (legal steps to `fix_applied`, the claim rules, a proof-of-fix re-check per finding, a reason for every finding not updated) and never close findings: `docs/architecture/finding-status-lifecycle.md`.
 > Problem: one patch fixes a whole family of CVEs, but in OpenCTEM each finding
 > had to be closed one by one.
 
@@ -41,18 +41,31 @@ Add a derived **`remediation_key`** to each finding: a stable fingerprint of the
 group**. Expose a group view and a group-level resolve that reuses the bulk
 machinery.
 
-### Key derivation (source-aware, at ingest)
+### Key derivation (source-aware, on every path that creates or sees a finding)
 
-Computed in `processor_findings.go` right where remediation/component are set:
+`pkg/domain/remediation/group.go` `DeriveKey`, applied by
+`internal/app/remediation/key_applier.go` from what is stored (the finding, its
+package version in the software catalog and its CVE catalog entry). It runs for
+findings a scan creates **and** re-sights, for CVE-matching (version-based)
+findings, for findings a person creates and for license-policy findings. A
+finding that no longer gets a key loses its row.
 
-| Finding kind | Signal | `remediation_key` |
+| Finding kind | Signal | `remediation_key` and title |
 |---|---|---|
-| SCA / container / OS package | component identity (purl/name+ecosystem) + a fix is available | `sca:<component-identity>` — all findings on that component group; the upgrade fixes them together |
-| Nessus / Tenable / infra | `Remediation.Recommendation` (the solution text) | `sol:<sha256(normalized(solution))>` |
-| otherwise | — | `NULL` (ungrouped) |
+| Leaked secret | the keyed fingerprint of the secret value | `rotate:secret:<fingerprint>`, "Rotate the leaked <type> secret <fp8>". Only the same secret groups; a secret without a fingerprint gets no key (secret advice text is the same for every secret, so it is never a grouping signal) |
+| Package (SCA, container, OS, version-based match) | ecosystem + package name + installed version + fixed versions (the scanner's list on the finding, then the CVE catalog's) | `upgrade:<ecosystem>:<name>:<target>`, "Upgrade <name> to <target>", where target is the nearest fixed version for the installed one (`RecommendedFixVersion`). Two installed versions that the same upgrade fixes share one group; a version-based match uses ecosystem `cpe` and the fix its matching range names |
+| Infra / other | the solution text, only when specific (at least 16 characters, names a version or an id, not generic advice) | `sol:<source>:<sha256(normalized(solution))>` |
+| pentest, or nothing specific | — | no key (ungrouped) |
 
-Normalization: trim, lowercase, collapse whitespace, drop volatile tokens. NULL
-key = not groupable (never grouped, never bulk-touched by this feature).
+Precedence: `rotate` > `upgrade` > `sol`. No key contains `/`, so a key is one
+URL path segment (`/remediation-groups/{key}/resolve`); a package name with a
+slash (an npm scope, a Go module path) uses `~` in the key.
+
+Backfill: `refingerprint -remediation-keys [-tenant <id>] [-apply]` re-derives
+every finding's key, one tenant at a time, in id batches. Without `-apply` it
+is a dry run on a read-only connection that prints, per tenant, the findings
+scanned, keys added, changed and removed, and the key kinds before and after.
+It is idempotent (a second `-apply` changes nothing).
 
 **Scope of a group:** the key is fix-identity only; the group query is always
 tenant-scoped and may be further filtered by asset/branch so "resolve group"
@@ -89,16 +102,18 @@ change until populated.
 - `GET /api/v1/findings/remediation-groups` — `GROUP BY remediation_key` over
   **open** findings; returns `{key, title (the fix action), finding_count,
   asset_count, severity_rollup, fix_available}`.
-- `POST /api/v1/findings/remediation-groups/{key}/resolve` — resolves all open
-  findings in the group. Body: `{status: "fix_applied"|"resolved", note}`.
+- `POST /api/v1/findings/remediation-groups/{key}/resolve` — marks all open
+  findings in the group fixed. Body: `{status: "fix_applied", resolution}`
+  (the note is required; `resolved` is refused: each finding is verified on
+  its own).
   Internally: resolve the group's open finding IDs → `BulkGuard.CheckBulk` →
   `BulkUpdateFindingsStatus`. Tenant from the authenticated context; pentest
   findings excluded (they own their lifecycle).
 
 Default recommended status = **`fix_applied`** (patched, pending verification),
 so the next full rescan confirms via the existing auto-resolve and flips to
-`resolved` — accurate to reality (a patch may not have landed everywhere). An
-operator can choose `resolved` for immediate close.
+`resolved` — accurate to reality (a patch may not have landed everywhere).
+There is no immediate close for a group.
 
 ## Phases
 
