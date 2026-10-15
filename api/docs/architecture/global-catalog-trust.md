@@ -101,6 +101,19 @@ so they must not decide what another tenant's view shows:
 - **Dashboard average CVSS** uses `COALESCE(f.cvss_score, v.cvss_score)`.
 - **License reports** (`GetLicenseStats`, the license-risk breakdown) read
   `asset_components.license`.
+- **Fixed versions of a finding's package**: a CI or sensor report does not
+  write the catalog, so each finding keeps the scanner's fixed versions in
+  `findings.metadata.fixed_versions` (de-duplicated, at most 20, each at most
+  64 characters; trivy's comma-separated list is split). The single-finding
+  response merges them with the catalog's, picks the nearest fix for the
+  installed version (`component.fixed_in`, same major line first,
+  `fixed_in_major` when it is not) and builds `package_fix`: the version that
+  fixes the most open findings of the same package version on the same asset,
+  which of them it fixes, and, when the installed line no longer receives
+  fixes, the lowest version that fixes all of them
+  (`vulnerability.PlanPackageFix`). The plan reads only that tenant's open
+  findings on that asset (`FindingRepository.ListPackageFixSiblings`), which the
+  caller can already see through the finding.
 
 Display-only fields (a CVE's title in a list, a component's description) still
 come from the catalog. The first reporter can choose them for a CVE or
