@@ -480,6 +480,14 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
 		return
 	}
+	if code, status, ok := invitationErrorCode(err); ok {
+		msg := err.Error()
+		if idx := strings.Index(msg, ": "); idx != -1 {
+			msg = msg[idx+2:]
+		}
+		apierror.New(status, apierror.Code(code), msg).WriteJSON(w)
+		return
+	}
 	if errors.Is(err, tenantapp.ErrStoredFilesNotErased) {
 		// The service logged the cause (it can name storage endpoints).
 		apierror.ServiceUnavailable("The organization was not deleted: its stored files could not be deleted. " +
@@ -510,6 +518,22 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// invitationErrorCode gives the invitation refusals a stable code the console
+// translates (RFC-095 §6).
+func invitationErrorCode(err error) (string, int, bool) {
+	switch {
+	case errors.Is(err, tenantapp.ErrInviteeNotOnVerifiedDomain):
+		return "INVITEE_NOT_ON_VERIFIED_DOMAIN", http.StatusForbidden, true
+	case errors.Is(err, tenantapp.ErrEmailDomainNotAllowed):
+		return "INVITEE_DOMAIN_NOT_ALLOWED", http.StatusBadRequest, true
+	case errors.Is(err, tenantapp.ErrInvitationNoLongerValid):
+		return "INVITATION_NO_LONGER_VALID", http.StatusForbidden, true
+	case errors.Is(err, tenantapp.ErrPersonalAccountsBlocked):
+		return "PERSONAL_ACCOUNTS_BLOCKED", http.StatusForbidden, true
+	}
+	return "", 0, false
 }
 
 // writeToggleErrorJSON serialises a module.ToggleError as the 400
@@ -1202,6 +1226,12 @@ func (h *TenantHandler) canGrantRoles(w http.ResponseWriter, r *http.Request, ro
 			apierror.Forbidden(refusal).WriteJSON(w)
 			return false
 		}
+		// Full data access is part of the ceiling too: only owners and
+		// administrators (who skip this check) see all data.
+		if role.HasFullDataAccess() {
+			apierror.Forbidden(refusal).WriteJSON(w)
+			return false
+		}
 	}
 	return true
 }
@@ -1833,6 +1863,11 @@ type SecuritySettingsResponse struct {
 	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
 	PersonalAccounts string `json:"personal_accounts"`
+	// Invitees: who may be invited: any, verified_domains or allow_list (RFC-095).
+	Invitees string `json:"invitees"`
+	// ExternalAccessEndRequired: outside people no organization manages must
+	// have an end of access (RFC-095).
+	ExternalAccessEndRequired bool `json:"external_access_end_required"`
 	// SSOExceptions: members who may sign in without SSO while it is enforced.
 	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
 	// JITRequiresApproval: SSO newcomers wait for an administrator's approval.
@@ -1872,6 +1907,8 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			ToolHTTPUserAgent:                         s.Security.ToolHTTPUserAgent,
 			ForbidToolInsecureTLS:                     s.Security.ForbidToolInsecureTLS,
 			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
+			Invitees:                                  string(s.Security.EffectiveInvitees()),
+			ExternalAccessEndRequired:                 s.Security.ExternalAccessEndRequired,
 			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 			JITRequiresApproval:                       s.Security.JITRequiresApproval,
 		},
@@ -2000,6 +2037,10 @@ type UpdateSecuritySettingsRequest struct {
 	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
 	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
+	// Invitees: any, verified_domains or allow_list (RFC-095 §4.1).
+	Invitees *string `json:"invitees" validate:"omitempty,oneof=any verified_domains allow_list"`
+	// ExternalAccessEndRequired: see SecuritySettingsResponse.
+	ExternalAccessEndRequired *bool `json:"external_access_end_required"`
 	// SSOExceptions replaces the list of members who may sign in without SSO
 	// (with a second factor) while it is enforced.
 	SSOExceptions *[]tenant.SSOException `json:"sso_exceptions" validate:"omitempty,max=100"`
@@ -2044,6 +2085,8 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		ToolHTTPUserAgent:                         req.ToolHTTPUserAgent,
 		ForbidToolInsecureTLS:                     req.ForbidToolInsecureTLS,
 		PersonalAccounts:                          req.PersonalAccounts,
+		Invitees:                                  req.Invitees,
+		ExternalAccessEndRequired:                 req.ExternalAccessEndRequired,
 		SSOExceptions:                             req.SSOExceptions,
 		JITRequiresApproval:                       req.JITRequiresApproval,
 		// Lockout guard: the saved IP allowlist must include this IP.

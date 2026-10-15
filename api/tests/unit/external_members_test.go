@@ -12,9 +12,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
-// External members (RFC-058): someone outside the organization is invited as
-// a viewer, with an expiry when no organization manages the address, and
-// cannot be added directly.
+// External members (RFC-058, amended by RFC-095 §4): someone outside the
+// organization may be invited to any role but owner, with an optional end of
+// access (mandatory only by policy), and cannot be added directly.
 
 const viewerRoleID = "00000000-0000-0000-0000-000000000004"
 const memberRoleID = "00000000-0000-0000-0000-000000000003"
@@ -37,20 +37,40 @@ func newExternalTenantService(t *testing.T) (*tenantapp.TenantService, *mockTena
 	return svc, repo, host, partner
 }
 
-func TestExternalInvitation_MoreThanViewerRefused(t *testing.T) {
+func TestExternalInvitation_AnyRoleAllowed(t *testing.T) {
 	svc, _, host, _ := newExternalTenantService(t)
-	_, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
+	inv, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
 		Email: "nam@example.com.au", Role: "member", RoleIDs: []string{memberRoleID},
 	}, shared.NewID(), audit.AuditContext{})
-	if !errors.Is(err, tenantapp.ErrExternalViewerOnly) {
-		t.Fatalf("want ErrExternalViewerOnly, got %v", err)
+	if err != nil {
+		t.Fatalf("an outside person invited as member: %v", err)
+	}
+	if inv.Access().ExpiresAt != nil {
+		t.Fatalf("an end of access was imposed: %v", inv.Access().ExpiresAt)
 	}
 }
 
-func TestExternalInvitation_PersonalGetsDefaultExpiry(t *testing.T) {
-	svc, _, host, _ := newExternalTenantService(t)
+func TestExternalInvitation_PersonalEndOptionalByDefault(t *testing.T) {
+	svc, repo, host, _ := newExternalTenantService(t)
 	inv, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
 		Email: "j.doe@gmail.com", Role: "member", RoleIDs: []string{viewerRoleID},
+	}, shared.NewID(), audit.AuditContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.Access().ExpiresAt != nil {
+		t.Fatalf("personal invitee got an end of access %v without the policy", inv.Access().ExpiresAt)
+	}
+
+	// The organization requires an end of access for unmanaged outsiders.
+	settings := host.TypedSettings()
+	settings.Security.ExternalAccessEndRequired = true
+	if err := host.UpdateSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	repo.tenants[host.ID().String()] = host
+	inv, err = svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
+		Email: "k.doe@gmail.com", Role: "member", RoleIDs: []string{viewerRoleID},
 	}, shared.NewID(), audit.AuditContext{})
 	if err != nil {
 		t.Fatal(err)
@@ -86,11 +106,13 @@ func TestInternalInvitation_Unchanged(t *testing.T) {
 	}
 }
 
-func TestExternalInvitation_AcceptedAsExternalViewer(t *testing.T) {
+func TestExternalInvitation_AcceptedWithInvitedRole(t *testing.T) {
 	svc, repo, host, partner := newExternalTenantService(t)
+	inviter := shared.NewID()
+	seedMembershipInRepo(repo, inviter, host.ID(), tenant.RoleOwner)
 	inv, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
-		Email: "nam@example.com.au", Role: "member", RoleIDs: []string{viewerRoleID},
-	}, shared.NewID(), audit.AuditContext{})
+		Email: "nam@example.com.au", Role: "member", RoleIDs: []string{memberRoleID},
+	}, inviter, audit.AuditContext{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +120,7 @@ func TestExternalInvitation_AcceptedAsExternalViewer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !m.IsExternal() || m.HomeTenantID() == nil || *m.HomeTenantID() != partner || m.Role() != tenant.RoleViewer {
+	if !m.IsExternal() || m.HomeTenantID() == nil || *m.HomeTenantID() != partner || m.Role() != tenant.RoleMember {
 		t.Fatalf("external=%v home=%v role=%s", m.IsExternal(), m.HomeTenantID(), m.Role())
 	}
 	if repo.acceptInvTxCalls != 1 {

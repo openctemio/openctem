@@ -592,8 +592,18 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 	if status != string(cirun.StatusRunning) {
 		return cirun.ErrRunEvaluated
 	}
-	if room := cirun.MaxRunFindings - current; len(fingerprints) > room {
-		fingerprints = fingerprints[:max(room, 0)]
+	overCap := false
+	if room := max(cirun.MaxRunFindings-current, 0); len(fingerprints) > room {
+		// Keep only what the run has not recorded yet: a report that repeats
+		// sightings already recorded does not overflow the cap.
+		fresh, err := unrecordedFingerprints(ctx, tx, tenantID, runID, fingerprints)
+		if err != nil {
+			return err
+		}
+		if len(fresh) > room {
+			fresh, overCap = fresh[:room], true
+		}
+		fingerprints = fresh
 	}
 	added := int64(0)
 	if len(fingerprints) > 0 {
@@ -605,12 +615,52 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 		}
 		added, _ = res.RowsAffected()
 	}
+	// A run past the cap is marked: the gate cannot judge what it did not
+	// record, so the verdict fails (ReasonTooManyFindings) instead of
+	// judging a prefix.
 	if _, err := tx.ExecContext(ctx, `UPDATE ci_runs SET
-		findings_count = findings_count + $3, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
-		tenantID.String(), runID.String(), added); err != nil {
+		findings_count = findings_count + $3, findings_over_cap = findings_over_cap OR $4, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), runID.String(), added, overCap); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// unrecordedFingerprints returns the distinct fingerprints the run has not
+// recorded yet, in their first-seen order.
+func unrecordedFingerprints(ctx context.Context, tx *sql.Tx, tenantID, runID shared.ID, fingerprints []string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT fp FROM (
+			SELECT fp, MIN(ord) AS ord FROM unnest($3::text[]) WITH ORDINALITY AS u(fp, ord) GROUP BY fp
+		) d
+		WHERE NOT EXISTS (SELECT 1 FROM ci_run_findings f
+			WHERE f.tenant_id = $1 AND f.run_id = $2 AND f.fingerprint = d.fp)
+		ORDER BY d.ord`, tenantID.String(), runID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, err
+		}
+		out = append(out, fp)
+	}
+	return out, rows.Err()
+}
+
+// RunFindingsOverCap reports whether the run reported more findings than
+// it could record (MaxRunFindings).
+func (r *CIRunRepository) RunFindingsOverCap(ctx context.Context, tenantID, runID shared.ID) (bool, error) {
+	var over bool
+	err := r.db.QueryRowContext(ctx, `SELECT findings_over_cap FROM ci_runs WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), runID.String()).Scan(&over)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, cirun.ErrRunNotFound
+	}
+	return over, err
 }
 
 // runFindingColumns are the columns scanRunFindings reads, from findings f.
@@ -692,10 +742,14 @@ func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 
 // SaveVerdict stores the run's verdict. The first verdict is final: a run
 // that is no longer running keeps the verdict it has (cirun.ErrRunEvaluated).
+// A run marked over the findings cap stores only a verdict that names the
+// cap (ReasonTooManyFindings): one computed before the mark is refused as
+// changed and judged again.
 func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
 		evaluated_at = $5, updated_at = NOW(),`+decorationQueued+`
-		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6`,
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6
+		  AND (NOT findings_over_cap OR $4::jsonb @> '{"reasons":[{"code":"`+cirun.ReasonTooManyFindings+`"}]}')`,
 		tenantID.String(), runID.String(), verdict, detail, at, expectFindings)
 	if err != nil {
 		return err
