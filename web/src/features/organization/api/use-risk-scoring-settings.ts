@@ -10,7 +10,8 @@ import { tenantEndpoints } from '@/lib/api/endpoints'
 import { fetcher, fetcherWithOptions } from '@/lib/api/client'
 import type {
   RiskScoringSettings,
-  RiskScorePreviewItem,
+  RiskScoringPreviewResponse,
+  UpdateRiskScoringResponse,
   RecalculateResponse,
   PresetInfo,
 } from '../types/settings.types'
@@ -39,11 +40,6 @@ export function useRiskScoringSettings(tenantIdOrSlug: string | undefined) {
 // UPDATE RISK SCORING SETTINGS
 // ============================================
 
-interface UpdateRiskScoringResponse {
-  config: RiskScoringSettings
-  assets_updated: number
-}
-
 async function updateRiskScoring(url: string, { arg }: { arg: RiskScoringSettings }) {
   return fetcherWithOptions<UpdateRiskScoringResponse>(url, {
     method: 'PATCH',
@@ -69,11 +65,7 @@ export function useUpdateRiskScoring(tenantIdOrSlug: string | undefined) {
 // ============================================
 
 async function previewRiskScoring(url: string, { arg }: { arg: RiskScoringSettings }) {
-  return fetcherWithOptions<{
-    assets: RiskScorePreviewItem[]
-    sample_count: number
-    total_assets: number
-  }>(url, {
+  return fetcherWithOptions<RiskScoringPreviewResponse>(url, {
     method: 'POST',
     body: JSON.stringify(arg),
   })

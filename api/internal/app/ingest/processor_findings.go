@@ -1321,6 +1321,11 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ct
 		ctisFinding.Vulnerability.FixedVersions); len(fixed) > 0 {
 		f.SetMetadata(vulnerability.FindingMetaFixedVersions, fixed)
 	}
+	// Direct dependency or the chain that brings the package in (bounded).
+	if d := vulnerability.NewDependencyInfo(ctisFinding.Vulnerability.IsDirect,
+		ctisFinding.Vulnerability.DependencyPath); d != nil {
+		f.SetMetadata(vulnerability.FindingMetaDependency, d.Meta())
+	}
 	setAdvisoryMetadata(f, ctisFinding)
 }
 
