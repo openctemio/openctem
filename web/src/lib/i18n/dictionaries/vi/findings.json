@@ -840,5 +840,18 @@
   "findings.tenableRescan.title": "Quét lại bằng Tenable.sc",
   "findings.tenableRescan.now": "Quét lại",
   "findings.tenableRescan.nowTitle": "Quét ngay tài sản của phát hiện này qua bộ kết nối Tenable.sc",
-  "findings.tenableRescan.help": "Sau khi khắc phục, hãy quét lại tài sản bằng Tenable.sc. Khi tổ chức bật tự động đóng theo phạm vi quét, phát hiện sẽ tự đóng khi một lần quét lại đầy đủ không còn báo cáo nó."
+  "findings.tenableRescan.help": "Sau khi khắc phục, hãy quét lại tài sản bằng Tenable.sc. Khi tổ chức bật tự động đóng theo phạm vi quét, phát hiện sẽ tự đóng khi một lần quét lại đầy đủ không còn báo cáo nó.",
+  "findings.sla.dayOne": "1 ngày",
+  "findings.sla.dayOther": "{count} ngày",
+  "findings.sla.fixWithin": "khắc phục trong {window}",
+  "findings.sla.label": "SLA: {window}",
+  "findings.sla.basis": "Hạn xử lý theo mức ưu tiên ({priority}: {window}), không theo mức độ nghiêm trọng ({severity}: {severityWindow}).",
+  "findings.display.secretIn": "{secret} trong {file}",
+  "findings.display.inPackage": "{issue} trong {package}",
+  "findings.properties.seenIn": "Đã thấy trong",
+  "findings.properties.scansCount": "{count} lần quét",
+  "findings.drawer.copyId": "Sao chép ID phát hiện",
+  "findings.drawer.idCopied": "Đã sao chép ID phát hiện",
+  "findings.drawer.showMore": "Xem thêm",
+  "findings.drawer.showLess": "Thu gọn"
 }
