@@ -40,12 +40,12 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { safeHref } from '@/lib/safe-href'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions } from '@/context/permission-provider'
-import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { AITriageButton } from '@/features/ai-triage/components'
 import { isNoValidationSensorError, useRequestValidationApi } from '../../api/use-findings-api'
 import type { FindingDetail, FindingStatus } from '../../types'
 import { FINDING_TYPE_CONFIG } from '../../types'
 import { CreateTicketDialog } from '../create-ticket-dialog'
+import { useCanCreateTicket } from '../../hooks/use-can-create-ticket'
 import { MarkDuplicateDialog } from '../mark-duplicate-dialog'
 import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
 
@@ -62,7 +62,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   const { hasPermission } = usePermissions()
   const router = useRouter()
   const canWrite = hasPermission('findings:write')
-  const integrationsEnabled = useModuleEnabled('integrations')
+  const canCreateTicket = useCanCreateTicket()
   const [ticketOpen, setTicketOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
   // An inventory asset (not a free-text pentest target) the duplicate must share.
@@ -210,7 +210,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
               <Link2 className="h-4 w-4" />
               {t('findings.header.copyLink', 'Copy link')}
             </DropdownMenuItem>
-            {integrationsEnabled && canWrite && (
+            {canCreateTicket && (
               <DropdownMenuItem onClick={() => setTicketOpen(true)}>
                 <Ticket className="h-4 w-4" />
                 {t('findings.header.createTicket', 'Create ticket')}
@@ -236,7 +236,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
         />
       )}
 
-      {integrationsEnabled && (
+      {canCreateTicket && (
         <CreateTicketDialog
           findingId={finding.id}
           findingTitle={finding.title}
