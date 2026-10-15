@@ -347,6 +347,37 @@ func TestRemediationCampaign_RestrictedMemberCannotTouchOtherTeamsCampaign_DB(t 
 		t.Errorf("shared campaign changed by refused writes: %s/%s %v", sname, sstatus, err)
 	}
 
+	// A new scope must be the caller's too: re-scoping their own campaign
+	// onto another team's finding or asset, or creating one over them, is
+	// refused and writes nothing.
+	mineBase := "/api/v1/remediation/campaigns/" + mine.String()
+	for _, f := range []map[string]any{
+		{"finding_ids": []string{h.findingB.String()}},
+		{"finding_ids": []string{h.findingA.String(), h.findingB.String()}},
+		{"asset_id": h.assetB.String(), "severities": []string{"high"}},
+	} {
+		if code, _ := call(http.MethodPatch, mineBase, map[string]any{"finding_filter": f}); code != http.StatusForbidden {
+			t.Errorf("re-scope own campaign to %v = %d, want 403", f, code)
+		}
+		if code, _ := call(http.MethodPost, "/api/v1/remediation/campaigns/", map[string]any{"name": "rcw-grab", "finding_filter": f}); code != http.StatusForbidden {
+			t.Errorf("create over %v = %d, want 403", f, code)
+		}
+	}
+	var mineFilter string
+	var grabs int
+	if err := h.db.QueryRowContext(context.Background(), `SELECT finding_filter::text FROM remediation_campaigns WHERE id = $1`, mine.String()).Scan(&mineFilter); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(mineFilter, h.findingB.String()) || strings.Contains(mineFilter, h.assetB.String()) {
+		t.Errorf("refused re-scope was saved: %s", mineFilter)
+	}
+	if err := h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM remediation_campaigns WHERE tenant_id = $1 AND name = 'rcw-grab'`, h.tenant.String()).Scan(&grabs); err != nil || grabs != 0 {
+		t.Errorf("refused creates saved %d campaigns (%v)", grabs, err)
+	}
+	if code, _ := call(http.MethodPost, "/api/v1/remediation/campaigns/", map[string]any{"name": "rcw-own-scope", "finding_filter": map[string]any{"finding_ids": []string{h.findingA.String()}}}); code != http.StatusCreated {
+		t.Errorf("create over the member's own finding = %d, want 201", code)
+	}
+
 	// The list examines every campaign, not only the first thousand: the
 	// member's oldest campaign behind 1,050 of another team's still lists.
 	h.exec(`UPDATE remediation_campaigns SET priority = 'low', created_at = now() - interval '10 days' WHERE id = $1`, mine.String())
