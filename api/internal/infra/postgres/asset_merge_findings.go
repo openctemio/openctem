@@ -284,7 +284,7 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 	if findingStatusRank(loserStatus) > findingStatusRank(survivorStatus) {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE findings s SET
-				status = l.status, resolution = l.resolution, resolution_method = l.resolution_method,
+				status = l.status, resolution = l.resolution, closure_reason = l.closure_reason, verification = l.verification,
 				resolved_at = l.resolved_at, resolved_by = l.resolved_by,
 				verified_at = l.verified_at, verified_by = l.verified_by,
 				-- an inherited acceptance keeps its end (an accepted risk always ends)
