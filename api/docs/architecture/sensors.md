@@ -1864,13 +1864,65 @@ inside it. Use one zone per segment (scan-zones.md).
 ## Tool settings (RFC-038)
 
 > Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
-> **per-sensor tool settings, per-scan settings, the scan-layer preview and
-> the save-time check of scan and step options shipped** (below); tenant
-> policy and dangerous-option enablement are planned.
+> **organization tool defaults, per-sensor overrides, per-scan settings, the
+> scan-layer preview and the save-time check of scan and step options
+> shipped** (below); dangerous-option enablement is planned.
 
-**Per-sensor tool settings (shipped).** An owner or administrator configures
-each tool of one of the organization's own sensors from the sensor drawer's
-"Tool settings" tab.
+**Layers.** A tool's value comes from the first of these that sets it,
+reading upward:
+
+```
+tool default (the manifest's settings schema)
+  → organization default   (Settings → Scanning → Tool defaults; may raise or lower)
+  → sensor override        (sensor drawer → Tool settings; may raise or lower)
+  → scan profile / workflow step / scan   (scope "scan" keys; lower-only for rate, concurrency, retries)
+  → job decision           (the platform's budget, fitted under the value in force)
+  → sensor local policy    (on the sensor, last; only narrows)
+```
+
+The organization layer is a default, not a cap: a sensor overrides a key in
+either direction. Only the two administrators' layers may raise rate,
+concurrency or retries above the tool's default.
+
+**Organization tool defaults (shipped).** An owner or administrator sets,
+per tool, the values every one of the organization's own sensors runs the
+tool with, from Settings → Scanning → Tool defaults.
+
+- *Schema.* The tools listed are those that a current manifest of the
+  organization's own sensors declares settings for (never a platform
+  sensor). The form uses the reference schema, which is the one from the most
+  recently reported manifest.
+- *Validation.* A save is validated against **every** distinct schema the
+  organization's sensors report for the tool (at most 200 sensors, one per
+  schema digest), as a tenant layer (`ValidateTenantToolSettings`). A
+  value one sensor's tool version refuses is a 422 whose message names that
+  sensor. A non-default dangerous (T2) value is refused.
+- *Storage.* Table `tenant_tool_settings` (migration `002136`): `tenant_id`,
+  `tool`, `values`, `schema_digest` (of the reference schema), `updated_by`,
+  `updated_at`; primary key (`tenant_id`, `tool`); foreign key to `tenants`
+  with `ON DELETE CASCADE`.
+- *Audit.* Saving and resetting log `settings.updated` on the organization
+  (`resource_type` `tenant`, resource name `tool defaults: <tool>`) with one
+  change per key (`tool_settings.<tool>.<key>`), redacted like the
+  sensor's. A change that sets an Impact option is high severity.
+- *Problems.* Defaults that a sensor's schema refuses (a sensor joined or was
+  upgraded with an older or narrower tool) are listed per sensor on the page
+  and in that sensor's Tool settings tab. That sensor's jobs of the tool fail
+  with `TOOL_SETTINGS_INVALID` until the defaults change. They are never
+  silently dropped.
+
+**Impact options need step-up.** Setting an `x-octm-tier: T1` (Impact) key
+to a new value, in either the organization or the sensor layer, needs the
+acting user's recent re-authentication (403 `STEP_UP_REQUIRED`;
+docs/architecture/step-up-reauth.md). Removing such a value does not.
+`sensors:write` is reserved for the owner and admin roles, which hold every
+permission, so a separate permission would add no control. Step-up is the
+control.
+
+**Per-sensor overrides (shipped).** An owner or administrator overrides the
+organization's defaults for one of the organization's own sensors from the
+sensor drawer's "Tool settings" tab. Each option shows its effective value
+and its source (tool default, organization or this sensor).
 
 - *Schema.* The settings schema is the `config` object of the tool's
   descriptor (Tool Contract v1), which the sensor already reports in its
@@ -1899,10 +1951,18 @@ each tool of one of the organization's own sensors from the sensor drawer's
   sensitive or write-only key, or of a key the schema no longer knows, is
   written as `[redacted]`.
 - *Delivery.* When a sensor claims a scan job (claim-N, poll, claim by id;
-  `internal/app/command/tool_settings.go`), the platform looks up that
-  sensor's stored values for the job's tool and puts them into the payload
-  as `settings_layers: {"sensor": {...}}` before the job is signed, so the
-  job signature (payload SHA-256) covers them. The stored command is never
+  `internal/app/command/tool_settings.go`), the platform looks up the
+  organization's defaults and that sensor's stored values for the job's
+  tool and puts them into the payload as `settings_layers: {"tenant": {...},
+  "sensor": {...}}` before the job is signed, so the job signature (payload
+  SHA-256) covers them. `tenant` is the organization's defaults *without
+  the keys the sensor overrides* (`InheritedValues`), so the two layers
+  never share a key. The sensor resolves them with the unchanged settings
+  contract (whose tenant layer would otherwise cap the sensor's), and its
+  report names each key's source. `tenant` is added only when the claiming
+  sensor is one of the command's organization's own sensors, never for a
+  shared platform sensor. The organization's values are validated against
+  the claiming sensor's schema on every claim. The stored command is never
   changed, and a `settings_layers` that a command's creator put in the
   payload is replaced or removed. If the sensor's current schema digest
   differs from the stored one (a sensor upgrade), the values are validated
@@ -1916,16 +1976,22 @@ each tool of one of the organization's own sensors from the sensor drawer's
 
 | Route | Gate | |
 |---|---|---|
-| `GET /api/v1/sensors/{id}/tool-settings` | `sensors:read` | per tool with a schema: `schema`, `schema_digest`, `values`, `stored`, `problems` |
+| `GET /api/v1/sensors/tool-defaults` | `sensors:read` | per tool the organization's own sensors declare settings for: reference `schema`, `values`, `stored`, `sensors` (count), `problems` per sensor |
+| `PUT /api/v1/sensors/tool-defaults/{tool}` | `sensors:write` (+ step-up for an Impact change) | body `{"values": {...}}`; 422 by path, naming the sensor that refuses a value |
+| `DELETE /api/v1/sensors/tool-defaults/{tool}` | `sensors:write` | back to the tool's defaults; works for a tool no sensor reports any more |
+| `GET /api/v1/sensors/{id}/tool-settings` | `sensors:read` | per tool with a schema: `schema`, `schema_digest`, `values`, `stored`, `problems`, `organization_values`, `organization_problems` |
 | `PUT /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | body `{"values": {...}}`; 422 with `details: [{path, message}]` |
 | `DELETE /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | back to defaults; works for a tool the manifest no longer lists |
-| `GET /api/v1/sensors/{id}/tool-settings/{tool}/effective` | `sensors:read` | every key with `value`, `source` (`default`/`sensor`), `flag`, `common`, `scope`, `tier` |
-| `POST /api/v1/sensors/{id}/tool-settings/{tool}/preview` | `sensors:read` | read-only; body `{"config": {...}}` (a scan's or step's options); every key with its `source` (`default`/`sensor`/`scan`) and the `ignored` config keys; 422 by path when the sensor would refuse the config |
+| `GET /api/v1/sensors/{id}/tool-settings/{tool}/effective` | `sensors:read` | every key with `value`, `source` (`default`/`tenant`/`sensor`), `chain` (every layer that sets it, lowest first), `flag`, `common`, `scope`, `tier` |
+| `POST /api/v1/sensors/{id}/tool-settings/{tool}/preview` | `sensors:read` | read-only; body `{"config": {...}}` (a scan's or step's options); every key with its `source` (`default`/`tenant`/`sensor`/`scan`), `chain`, and the `ignored` config keys; 422 by path when the sensor would refuse the config |
 
-Every route ends with the own-sensor check: another organization's sensor
-and a platform sensor answer 404. Key files:
+Every route on one sensor ends with the own-sensor check: another
+organization's sensor and a platform sensor answer 404; the tool-defaults
+routes take the organization from the authenticated context. Key files:
 `pkg/domain/sensor/tool_settings.go`, `internal/app/sensor/tool_settings.go`,
+`internal/app/sensor/tool_defaults.go`,
 `internal/infra/postgres/sensor_tool_settings.go`,
+`internal/infra/postgres/tenant_tool_settings.go`,
 `internal/infra/http/handler/sensor_tool_settings_handler.go`,
 `internal/app/command/tool_settings.go`; web
 `web/src/features/sensors/components/sensor-tool-settings.tsx` and
@@ -1938,10 +2004,10 @@ workflow step's options are checked the way the sensor will resolve them
 schema declares, minus the keys the sensor's executor reads itself
 (`rate_limit`, `concurrency`, `bulk_size` are the job's limits, which only
 ever lower the value in force; `allow_interactsh`, `exclude`); other keys
-are ignored, as on the sensor. Over the sensor's stored values, the scan
-layer may only set `scan`-scope keys within their bounds, may not raise
-rate, concurrency or retries above the value in force (the sensor's raise,
-or the default), and may not give a dangerous (T2) key a non-default value.
+are ignored, as on the sensor. Over the organization's defaults and the
+sensor's stored values, the scan layer may only set `scan`-scope keys within
+their bounds, may not raise rate, concurrency or retries above the value in
+force (the sensor's, the organization's, or the default), and may not give a dangerous (T2) key a non-default value.
 
 - *Preview.* `POST .../tool-settings/{tool}/preview` answers what a job of
   that config runs with on that sensor, before the job's own limits and the

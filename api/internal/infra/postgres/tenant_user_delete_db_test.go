@@ -321,6 +321,11 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"tool": "nuclei", "values": `{}`,
 			"schema_digest": "sha256:" + strings.Repeat("0", 64)}
 	},
+	// Organization tool defaults: the same CHECKs as sensor_tool_settings.
+	"tenant_tool_settings": func(*schemaSeeder) map[string]any {
+		return map[string]any{"tool": "nuclei", "values": `{}`,
+			"schema_digest": "sha256:" + strings.Repeat("0", 64)}
+	},
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
 	// Definitions (RFC-044): namespace has a format CHECK; a tenant
