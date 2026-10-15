@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, render, act } from '@testing-library/react'
+import { renderHook, render, act, fireEvent } from '@testing-library/react'
 
 import { useFindingTriage, type FindingTriageTarget } from '../use-finding-triage'
 import type { FindingUser } from '../../types'
@@ -113,6 +113,17 @@ describe('useFindingTriage — no render loop', () => {
   })
 })
 
+describe('useFindingTriage — notes', () => {
+  it('asks for a note before a fix claim, sending nothing until then', async () => {
+    const { result } = renderHook(() => useFindingTriage(target({ status: 'in_progress' })))
+    act(() => result.current.changeStatus('fix_applied'))
+    // The note dialog is shown; nothing is sent and the status is unchanged.
+    expect(result.current.status).toBe('in_progress')
+    render(<>{result.current.dialogs}</>)
+    expect(document.querySelector('#status-note')).not.toBeNull()
+  })
+})
+
 describe('useFindingTriage — Undo', () => {
   it('offers Undo on a non-closing move, never on a resolve', async () => {
     const { toast } = await import('sonner')
@@ -123,8 +134,12 @@ describe('useFindingTriage — Undo', () => {
     const opened = vi.mocked(toast.success).mock.calls.at(-1)?.[1] as { action?: unknown }
     expect(opened?.action).toBeTruthy()
 
+    // A resolve asks for its note first; confirm it.
+    act(() => result.current.changeStatus('resolved'))
+    const { getByLabelText, getByRole } = render(<>{result.current.dialogs}</>)
+    fireEvent.change(getByLabelText('Note (required)'), { target: { value: 'patched' } })
     await act(async () => {
-      await result.current.changeStatus('resolved')
+      fireEvent.click(getByRole('button', { name: 'Save' }))
     })
     const resolved = vi.mocked(toast.success).mock.calls.at(-1)?.[1] as { action?: unknown }
     expect(resolved?.action).toBeUndefined()
