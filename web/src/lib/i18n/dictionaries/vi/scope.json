@@ -305,5 +305,12 @@
   "scope.refusal.label.low_impact": "Chỉ kiểm tra tác động thấp",
   "scope.refusal.message.low_impact": "Không có mục phạm vi bao phủ tài sản này nên nó chỉ được kiểm tra tác động thấp, và tác vụ này vượt quá mức đó. Thêm vào phạm vi để quét đầy đủ.",
   "scope.refusal.label.web_ports_only": "Chỉ cổng web",
-  "scope.refusal.message.web_ports_only": "Một địa chỉ mà tên miền này trỏ tới không nằm trong phạm vi, nên quét cổng tên miền chỉ tới các cổng web. Thêm địa chỉ vào phạm vi để quét toàn bộ cổng."
+  "scope.refusal.message.web_ports_only": "Một địa chỉ mà tên miền này trỏ tới không nằm trong phạm vi, nên quét cổng tên miền chỉ tới các cổng web. Thêm địa chỉ vào phạm vi để quét toàn bộ cổng.",
+  "scope.ciTrust.openTrust": "Mở cấu hình tin cậy CI",
+  "scope.ciTrust.setUp": "Thiết lập CI cho các kho mã này",
+  "scope.ciTrust.managedBy": "Do cấu hình tin cậy CI {name} quản lý",
+  "scope.ciTrust.seen": "đã thấy trong pipeline đã xác minh",
+  "scope.ciTrust.notSeen": "chưa có pipeline đã xác minh",
+  "scope.settings.ciScopeRequiresProof": "Yêu cầu bằng chứng cho phạm vi CI",
+  "scope.settings.ciScopeRequiresProofHint": "Tắt (mặc định): các kho mã mà một cấu hình tin cậy CI nêu tên vào phạm vi ngay khi lưu cấu hình, và lần chạy pipeline đã xác minh được hiển thị làm bằng chứng. Bật: các mục kho mã mới của cấu hình tin cậy CI chờ đến khi có một lần chạy pipeline đã xác minh."
 }
