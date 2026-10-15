@@ -166,6 +166,7 @@ type Service struct {
 	rules     SuppressionRules
 	modules   ModuleGuard
 	gitlab    GitLabClients
+	identity  RepositoryIdentity
 }
 
 // SetGitLab lets the gate read a GitLab merge request's target branch through
@@ -562,7 +563,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		return nil, errAggregateNoRunID
 	}
 	repoName := c.CanonicalRepository()
-	repoAsset, err := s.repositoryAsset(ctx, tenantID, repoName)
+	repoAsset, err := s.resolveRepositoryAsset(ctx, tenantID, c, key, repoName)
 	if err != nil {
 		return nil, err
 	}
@@ -778,6 +779,83 @@ func (s *Service) continueRun(ctx context.Context, tenantID shared.ID, cfg *ciru
 // repositoryAsset finds the tenant's repository asset by its canonical name
 // or creates it. The trust configuration admitted the repository, which is
 // what entitles the run to add it to the inventory.
+// RepositoryIdentity finds a repository asset by the code host's immutable
+// repository id (postgres.RepositoryIdentityRepository).
+type RepositoryIdentity interface {
+	FindRepositoryByProviderID(ctx context.Context, tenantID shared.ID, host, repoID string) (shared.ID, bool, error)
+	StampRepositoryIdentity(ctx context.Context, tenantID, assetID shared.ID, host, path, repoID string) error
+	RenameRepositoryAsset(ctx context.Context, tenantID, assetID shared.ID, name string) (bool, error)
+	RepositoryAssetOfPipelineRepo(ctx context.Context, tenantID shared.ID, provider, issuer, externalRepoID string) (shared.ID, bool, error)
+}
+
+// SetRepositoryIdentity makes the exchange find a repository asset by the
+// code host's repository id before its name, so a renamed or transferred
+// repository keeps its asset (findings, branches, policy, expectations) and
+// repository import and CI share one asset. Without it the asset is found by
+// name only.
+func (s *Service) SetRepositoryIdentity(r RepositoryIdentity) { s.identity = r }
+
+// providerRepositoryID is the code host's immutable id of the job's
+// repository, for the providers whose token signs one: the GitHub
+// repository id, the GitLab project id, the Bitbucket repository UUID.
+func providerRepositoryID(c cirun.Claims) string {
+	switch c.Provider {
+	case cirun.ProviderGitHub, cirun.ProviderGitLab, cirun.ProviderBitbucket:
+		return c.RepositoryID
+	}
+	return ""
+}
+
+// resolveRepositoryAsset finds the job's repository asset by identity, in
+// order: the asset of an existing pipeline of the same provider repository
+// id (a renamed repository keeps its asset); the asset whose repository
+// extension carries that id on the same host (repository import); the asset
+// named host/path; else a new one. An asset found by id whose name is not the
+// current host/path is renamed when the name is free. The id is recorded on
+// the asset so repository import finds it too.
+func (s *Service) resolveRepositoryAsset(ctx context.Context, tenantID shared.ID, c cirun.Claims, key cirun.PipelineKey, name string) (*asset.Asset, error) {
+	repoID := providerRepositoryID(c)
+	norm := asset.NormalizeName(name, asset.AssetTypeRepository, "")
+	host, path, _ := strings.Cut(norm, "/")
+	if s.identity == nil || repoID == "" || host == "" || path == "" {
+		return s.repositoryAsset(ctx, tenantID, name)
+	}
+	id, found, err := s.identity.RepositoryAssetOfPipelineRepo(ctx, tenantID, string(key.Provider), key.Issuer, key.ExternalRepoID)
+	if err == nil && !found {
+		id, found, err = s.identity.FindRepositoryByProviderID(ctx, tenantID, host, repoID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var a *asset.Asset
+	if found {
+		if a, err = s.assets.GetByID(ctx, tenantID, id); err != nil && !errors.Is(err, shared.ErrNotFound) {
+			return nil, fmt.Errorf("load repository asset: %w", err)
+		}
+	}
+	if a == nil || a.Type() != asset.AssetTypeRepository {
+		if a, err = s.repositoryAsset(ctx, tenantID, name); err != nil {
+			return nil, err
+		}
+	} else if a.Name() != norm {
+		renamed, err := s.identity.RenameRepositoryAsset(ctx, tenantID, a.ID(), norm)
+		if err != nil {
+			return nil, err
+		}
+		if renamed {
+			if fresh, err := s.assets.GetByID(ctx, tenantID, a.ID()); err == nil && fresh != nil {
+				a = fresh
+			}
+		} else {
+			s.log.Info("ci exchange: repository asset keeps its name (the new name is taken)", "asset_id", a.ID().String())
+		}
+	}
+	if err := s.identity.StampRepositoryIdentity(ctx, tenantID, a.ID(), host, path, repoID); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
 func (s *Service) repositoryAsset(ctx context.Context, tenantID shared.ID, name string) (*asset.Asset, error) {
 	norm := asset.NormalizeName(name, asset.AssetTypeRepository, "")
 	a, err := s.assets.GetByName(ctx, tenantID, norm)
