@@ -71,7 +71,7 @@ func (h *TicketMappingHandler) fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrValidation):
 		apierror.SafeBadRequest(err).WriteJSON(w)
 	default:
-		h.logger.Error("ticket mapping request failed", "error", err)
+		h.logger.Error("ticket mapping request failed", "error", logger.SanitizeValue(err.Error()))
 		apierror.BadGateway("the tracker request failed").WriteJSON(w)
 	}
 }
