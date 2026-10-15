@@ -358,3 +358,20 @@ A decision made on the platform holds on the next run of the same repository:
   caller (`CI_TOKEN_NOT_TRUSTED`) and detailed in the audit log only after the
   token verified; refusals after admission tell the pipeline the reason
   (`CI_TOKEN_<reason>`, no other repository's or owner's data).
+
+## Trust and scope
+
+A trust with `manage_scope` adds the repositories it trusts to scope as repository entries (RFC-054 §17).
+
+- **Code.**
+  - `cirun.ScopePatterns` (`pkg/domain/cirun/scope.go`) derives the patterns.
+  - `internal/app/cirun/scope.go` hands them to `scope.Service.SyncCITrust` (`internal/app/scope/ci_trust.go`).
+    It does so on create, change and delete, as the person saving the trust (`Actor.ScopeWrite` and
+    `Actor.ScopeApprove` come from their permissions).
+  - `scope_target_ci_trusts` holds one link per pattern (`internal/infra/postgres/scope_ci_trust_link_repository.go`).
+- **Runs.** A verified, tenant-bound exchange calls `CITrustSeen`, which records the evidence on the link. It may
+  link an existing equal entry and never creates one.
+- **API.** The trust API answers `manage_scope` and `scope_entries[]`, and the scope API answers `managed_by[]`.
+  `manage_scope` needs `attack_surface:scope:write`.
+- **Dry run.** `ci-trust-scope-plan` (in the API image, read-only) counts per tenant what turning it on would do
+  for trusts saved before the option existed. Nothing turns it on automatically.
