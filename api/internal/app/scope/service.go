@@ -131,6 +131,10 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	if err != nil {
 		return nil, err // wraps shared.ErrValidation
 	}
+	if targetType == scopedom.TargetTypeRepository {
+		// One spelling per repository pattern, so duplicates are found.
+		input.Pattern = scopedom.NormalizeRepositoryPattern(input.Pattern)
+	}
 	source, err := scopedom.ParseGeneralSource(input.AuthorizationSource)
 	if err != nil {
 		return nil, err
@@ -702,6 +706,9 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 	pattern := input.Pattern
 	if web != nil {
 		pattern = scopedom.PathRulePattern(pattern, web.PathPrefix)
+	}
+	if exclusionType == scopedom.ExclusionTypeRepository {
+		pattern = scopedom.NormalizeRepositoryPattern(pattern)
 	}
 	exclusion, err := scopedom.NewExclusion(tenantID, exclusionType, pattern, input.Reason, input.ExpiresAt, input.CreatedBy)
 	if err != nil {

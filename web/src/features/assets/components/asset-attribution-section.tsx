@@ -197,7 +197,10 @@ export function AssetAttributionSection({
                   onClick={() =>
                     setDraft({
                       pattern: assetName,
-                      target_type: assetType === 'ip_address' ? 'ip_address' : undefined,
+                      target_type:
+                        assetType === 'ip_address' || assetType === 'repository'
+                          ? assetType
+                          : undefined,
                     })
                   }
                 >

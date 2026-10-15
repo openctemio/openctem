@@ -599,7 +599,7 @@ func TestActiveGate_ScopeOfAsset(t *testing.T) {
 	repo := f.add(t, "github.com/org/r", asset.AssetTypeRepository)
 	cases := map[string]string{
 		in.ID().String(): ScopeStatusInScope, out.ID().String(): ScopeStatusOutOfScope,
-		priv.ID().String(): ScopeStatusInternal, repo.ID().String(): ScopeStatusNotApplicable,
+		priv.ID().String(): ScopeStatusInternal, repo.ID().String(): ScopeStatusOutOfScope,
 		shared.NewID().String(): ScopeStatusOutOfScope,
 	}
 	for id, want := range cases {
@@ -613,6 +613,32 @@ func TestActiveGate_ScopeOfAsset(t *testing.T) {
 	}
 	// Another tenant: tenant A's asset id is unknown there.
 	if got, _, _ := g.ScopeOfAsset(context.Background(), shared.NewID(), in.ID().String()); got != ScopeStatusOutOfScope {
+		t.Errorf("another tenant saw %s", got)
+	}
+}
+
+// A repository is judged by repository entries (never "not applicable"):
+// a namespace entry covers its repositories at any depth, and only those.
+func TestActiveGate_ScopeOfAsset_Repository(t *testing.T) {
+	f := newGateFixture(t)
+	ns, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeRepository, "gitlab.example.com/acme/*", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.targets = append(f.targets, ns)
+	g := NewActiveGate(f, f, f, f)
+	ctx := context.Background()
+	in := f.add(t, "gitlab.example.com/acme/sub/app", asset.AssetTypeRepository)
+	lookalike := f.add(t, "gitlab.example.com/acme-evil/app", asset.AssetTypeRepository)
+	got, via, err := g.ScopeOfAsset(ctx, f.tenant, in.ID().String())
+	if err != nil || got != ScopeStatusInScope || via == nil || via.Pattern != "gitlab.example.com/acme/*" {
+		t.Fatalf("namespace repository: %s %+v %v", got, via, err)
+	}
+	if got, _, _ := g.ScopeOfAsset(ctx, f.tenant, lookalike.ID().String()); got != ScopeStatusOutOfScope {
+		t.Errorf("a look-alike namespace is %s, want out_of_scope", got)
+	}
+	// Another tenant's entry covers nothing here.
+	if got, _, _ := g.ScopeOfAsset(ctx, shared.NewID(), in.ID().String()); got != ScopeStatusOutOfScope {
 		t.Errorf("another tenant saw %s", got)
 	}
 }

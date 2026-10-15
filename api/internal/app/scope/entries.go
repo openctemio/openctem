@@ -344,6 +344,9 @@ func (s *Service) PreviewTarget(ctx context.Context, input CreateTargetInput) (*
 	if err != nil {
 		return nil, err // wraps shared.ErrValidation
 	}
+	if targetType == scopedom.TargetTypeRepository {
+		input.Pattern = scopedom.NormalizeRepositoryPattern(input.Pattern)
+	}
 	if err := scopedom.ValidatePattern(targetType, input.Pattern); err != nil {
 		return nil, err // wraps shared.ErrValidation
 	}

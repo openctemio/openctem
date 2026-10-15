@@ -218,7 +218,9 @@ const (
 // ScopeOfAsset answers whether the tenant's scope covers one asset and what
 // covers it: in_scope (with the authority), out_of_scope, internal (a
 // private or internal name, gated by scan zones) or not_applicable (a type
-// the scope authority does not judge). An unknown asset is out_of_scope.
+// the scope authority does not judge). A repository is always judged: by a
+// repository entry or an entry for its code host. An unknown asset is
+// out_of_scope.
 func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, assetID string) (string, *scopeauth.Via, error) {
 	if err := g.ready(); err != nil {
 		return "", nil, err
@@ -233,6 +235,18 @@ func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, asset
 	}
 	a := assets[assetID]
 	if a == nil {
+		return ScopeStatusOutOfScope, nil, nil
+	}
+	if a.Type() == asset.AssetTypeRepository {
+		// A repository is judged by repository entries ("host/namespace/*")
+		// and by entries for its code host, whatever network its host is on.
+		cover, err := g.CoverOf(ctx, tenantID, []string{a.Name()})
+		if err != nil {
+			return "", nil, err
+		}
+		if v, ok := cover[a.Name()]; ok {
+			return ScopeStatusInScope, &v, nil
+		}
 		return ScopeStatusOutOfScope, nil, nil
 	}
 	if isInternalName(a.Name()) {
