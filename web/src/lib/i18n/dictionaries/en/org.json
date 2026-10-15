@@ -5,7 +5,6 @@
   "org.role.admin": "Admin",
   "org.role.member": "Member",
   "org.role.viewer": "Viewer",
-  "org.planLabel": "Plan",
   "org.members": "Members",
   "org.memberCount.one": "1 member",
   "org.memberCount.other": "{count} members",
@@ -105,7 +104,6 @@
   "org.invite.code.ROLE_NOT_GRANTABLE": "One of these roles cannot be given.",
   "org.invite.code.ADMIN_NEEDS_OWNER": "Only the owner can make someone an administrator.",
   "org.invite.code.INVITATIONS_RATE_LIMITED": "You sent many invitations in the last hour. Try again later.",
-  "org.invite.code.PLAN_LIMIT": "Your plan's limit is reached (seats or invitations a day).",
   "org.invite.code.STEP_UP_FAILED": "Identity confirmation failed. Try again.",
   "org.invite.code.generic": "The invitation could not be created. Try again.",
   "org.invitations.external": "Outside",
@@ -233,5 +231,6 @@
   "org.ownership.error.confirmInternal": "Confirm that this person becomes an internal member.",
   "org.ownership.error.previousRole": "Choose administrator, member or viewer for yourself.",
   "org.ownership.action": "Transfer ownership...",
-  "org.ownership.error.action": "Could not complete this action"
+  "org.ownership.error.action": "Could not complete this action",
+  "org.invite.code.LIMIT_REACHED": "The organization's limit is reached (seats or invitations a day)."
 }

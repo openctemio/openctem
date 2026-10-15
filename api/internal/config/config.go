@@ -57,6 +57,13 @@ type Config struct {
 	// off unless INTERNAL_API_ADDR is set.
 	InternalAPI InternalAPIConfig
 
+	// SelfServiceStartLimits (SELF_SERVICE_START_LIMITS) are the limits an
+	// organization a person creates starts with when no console setting is
+	// stored: a JSON object of limit keys, or "unlimited" for an explicit
+	// choice of none. Empty: not configured; self-service sign-up then needs a
+	// console setting or the internal API.
+	SelfServiceStartLimits string
+
 	// AdminAuditRetention controls pruning of the platform-level
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
@@ -1521,6 +1528,7 @@ func Load() (*Config, error) {
 			JWTPublicKeysFile: getEnv("INTERNAL_API_JWT_PUBLIC_KEYS", ""),
 			JWTIssuer:         getEnv("INTERNAL_API_JWT_ISSUER", "openctem-cloud"),
 		},
+		SelfServiceStartLimits: getEnv("SELF_SERVICE_START_LIMITS", ""),
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.
 			Public: getEnvBool("METRICS_PUBLIC", false),
@@ -2328,7 +2336,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	// A platform-wide Jira webhook secret verified a delivery for any
 	// ?tenant=: whoever held it could forge Jira events for every
 	// organization. Each organization's Jira integration has its own secret.
-	{"JIRA_WEBHOOK_SECRET", "unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate"},
+	{"JIRA_WEBHOOK_SECRET", "unset it; each Jira integration has its own webhook secret (Settings > Integrations > Ticketing, or POST /api/v1/integrations/{id}/jira-webhook/secret/rotate)"},
 	// Each sensor product has its own release line, built into the API
 	// from versions.yaml (api/docs/rfcs/RFC-037): one sensor-wide channel compared
 	// every product with the scanning sensor's.

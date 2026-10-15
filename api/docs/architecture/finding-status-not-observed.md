@@ -13,7 +13,7 @@ stale, **not fixed**.
 | Property | Value |
 |---|---|
 | Category | `in_progress` (open). Listed in `ActiveFindingStatuses`; never in `ClosedFindingStatuses`. |
-| Counted as fixed | Never. It has no `resolved_at` and no `resolution_method`, so fix-rate and MTTR exclude it. |
+| Counted as fixed | Never. It has no `resolved_at` and no closure reason, so fix-rate and MTTR exclude it. |
 | SLA | Keeps running: it is an open status. |
 | Who sets it | Only the platform. No status transition leads to it, so `PATCH /findings/{id}/status`, bulk status and every other person-facing path refuse it. |
 | Writers today | Feature-branch expiry (`ExpireFeatureBranchFindings`): a finding not seen on a non-default branch for the branch's retention period. `resolution = 'branch_expired'` records why. Branch-only expiry (same job): a branch-only finding no branch still shows (`branch-only-findings.md`). Coverage auto-resolve in enforce mode, for template drift: a covered nuclei run that did not report the finding but ran another template release (`templates_digest`) than the finding's last sighting (`MarkCoverageNotObserved`). |
@@ -25,7 +25,7 @@ stale, **not fixed**.
 |---|---|
 | `confirmed` | A scan reports it again (`AutoReopenByFingerprintsBatch`; activity reason `observed_again`, **not** a regression), a retest still matches, or a person reopens it. |
 | `in_progress` | A person picks it up. |
-| `resolved` | A retest proves the fix (`retest_verified`), or a `findings:verify` holder closes it. Later also the closure evaluator with coverage proof. |
+| `resolved` | A retest proves the fix (`fixed` / `retest`), or a `findings:verify` holder closes it. Later also the closure evaluator with coverage proof. |
 | `false_positive` / `accepted` | Through the approval workflow. |
 | `duplicate` | Triage. |
 
