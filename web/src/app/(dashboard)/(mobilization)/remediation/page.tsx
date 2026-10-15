@@ -238,6 +238,11 @@ function daysUntil(dateStr: string | null | undefined): { days: number; overdue:
   return { days: Math.abs(days), overdue: days < 0 }
 }
 
+/** Map a TaskPriority to the API's priority (the API names urgent critical). */
+function toApiPriority(value: TaskPriority): string {
+  return value === 'urgent' ? 'critical' : value
+}
+
 /** Map API priority values to TaskPriority. */
 function normalizePriority(value: string): TaskPriority {
   if (value === 'critical') return 'urgent'
@@ -523,6 +528,9 @@ export default function RemediationPage() {
             finding_filter: { ...original, ...(body.finding_filter as Record<string, unknown>) },
           }
         }
+        if (typeof payload.priority === 'string') {
+          payload = { ...payload, priority: toApiPriority(payload.priority as TaskPriority) }
+        }
         await patch(`/api/v1/remediation/campaigns/${task.id}`, payload)
         await refreshCampaigns()
         toast.success('Task updated')
@@ -754,7 +762,7 @@ export default function RemediationPage() {
       await createCampaign({
         name: formData.title,
         description: formData.description,
-        priority: formData.priority,
+        priority: toApiPriority(formData.priority),
         status: 'draft',
         due_date: formData.dueDate?.toISOString() || null,
         assigned_to: formData.assignedTo || undefined,
@@ -781,7 +789,7 @@ export default function RemediationPage() {
       await patch(`/api/v1/remediation/campaigns/${editTask.id}`, {
         name: formData.title,
         description: formData.description,
-        priority: formData.priority,
+        priority: toApiPriority(formData.priority),
         due_date: formData.dueDate?.toISOString() || null,
         assigned_to: formData.assignedTo || '',
         finding_filter: findingFilterFromForm(formData.findingIds),

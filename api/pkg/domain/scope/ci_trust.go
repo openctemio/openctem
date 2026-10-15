@@ -59,6 +59,10 @@ type CITrustEvidence struct {
 type CITrustLinkRepository interface {
 	// ListByTrust lists a trust's links.
 	ListByTrust(ctx context.Context, tenantID, trustID shared.ID) ([]CITrustLink, error)
+	// ListVisible lists one trust's links (or every trust's, trustID nil)
+	// for a reader with this data scope: the evidence's repository, run and
+	// owner only where the reader may see that repository.
+	ListVisible(ctx context.Context, tenantID shared.ID, trustID *shared.ID, scope *shared.DataScope) ([]CITrustLink, error)
 	// ListByTargets lists the links of these entries, with the trust names.
 	ListByTargets(ctx context.Context, tenantID shared.ID, targetIDs []shared.ID) ([]CITrustLink, error)
 	// Put inserts a link or points an existing one at targetID.
