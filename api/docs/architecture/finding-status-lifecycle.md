@@ -117,7 +117,7 @@ indicator matches it. A person moving a finding back from `resolved` (the
 drawer's Undo, a correction, a bulk change) is not a regression: the status
 endpoint and the bulk change mark their transaction
 `openctem.person_move` (`vulnerability.WithPersonMove`), and the trigger skips
-it (migration `002155`). The drawer offers Undo only for moves that do not
+it (migration `002176`). The drawer offers Undo only for moves that do not
 close the finding; reopening a resolved finding is a deliberate move from the
 status control.
 
