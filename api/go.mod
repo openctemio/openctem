@@ -106,7 +106,7 @@ require (
 	github.com/crewjam/saml v0.5.1
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/openctemio/ctis v1.6.1-0.20261014160351-372f01b81bcd
-	github.com/openctemio/ctis/transfer v0.0.0-20261014200336-77f926cb8cfa
+	github.com/openctemio/ctis/transfer v0.0.0-20261015010154-bec927219ecf
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/teambition/rrule-go v1.8.2
