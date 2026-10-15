@@ -56,6 +56,9 @@ type Campaign struct {
 	createdBy     *shared.ID
 	createdAt     time.Time
 	updatedAt     time.Time
+	// version is the optimistic-concurrency token: every full save checks it
+	// and bumps it (CampaignRepository.Update).
+	version int
 }
 
 // NewCampaign creates a new remediation campaign.
@@ -74,6 +77,7 @@ func NewCampaign(tenantID shared.ID, name string, priority CampaignPriority) (*C
 		tags:          []string{},
 		createdAt:     now,
 		updatedAt:     now,
+		version:       1,
 	}, nil
 }
 
@@ -89,6 +93,7 @@ func ReconstituteCampaign(
 	startDate, dueDate, completedAt *time.Time,
 	tags []string, createdBy *shared.ID,
 	createdAt, updatedAt time.Time,
+	version int,
 ) *Campaign {
 	return &Campaign{
 		id: id, tenantID: tenantID,
@@ -101,6 +106,7 @@ func ReconstituteCampaign(
 		startDate: startDate, dueDate: dueDate, completedAt: completedAt,
 		tags: tags, createdBy: createdBy,
 		createdAt: createdAt, updatedAt: updatedAt,
+		version: version,
 	}
 }
 
@@ -127,6 +133,19 @@ func (c *Campaign) Tags() []string                { return c.tags }
 func (c *Campaign) CreatedBy() *shared.ID         { return c.createdBy }
 func (c *Campaign) CreatedAt() time.Time          { return c.createdAt }
 func (c *Campaign) UpdatedAt() time.Time          { return c.updatedAt }
+func (c *Campaign) Version() int                  { return c.version }
+
+// SetVersion records the version the repository stored (after a save).
+func (c *Campaign) SetVersion(v int) { c.version = v }
+
+// ParseCampaignPriority accepts only the defined priorities.
+func ParseCampaignPriority(s string) (CampaignPriority, error) {
+	switch p := CampaignPriority(s); p {
+	case CampaignPriorityCritical, CampaignPriorityHigh, CampaignPriorityMedium, CampaignPriorityLow:
+		return p, nil
+	}
+	return "", fmt.Errorf("%w: priority must be one of critical, high, medium, low", shared.ErrValidation)
+}
 
 // Update sets mutable fields.
 func (c *Campaign) Update(name, description string, priority CampaignPriority) {
@@ -244,15 +263,6 @@ func (c *Campaign) TryAutoComplete() (bool, error) {
 	return true, nil
 }
 
-// RecordRiskReduction records risk before/after for this campaign.
-func (c *Campaign) RecordRiskReduction(before, after float64) {
-	c.riskBefore = &before
-	c.riskAfter = &after
-	reduction := before - after
-	c.riskReduction = &reduction
-	c.updatedAt = time.Now()
-}
-
 // Activate transitions to active status.
 func (c *Campaign) Activate() error {
 	if c.status != CampaignStatusDraft && c.status != CampaignStatusPaused {
@@ -310,17 +320,33 @@ func (c *Campaign) Cancel() error {
 	return nil
 }
 
-// IsOverdue returns true if past due date and not completed.
+// IsOverdue reports a campaign past the END of its due day (UTC) that is
+// not completed or canceled. The due date is stored as a date, so it reads
+// back as the start of that day; a campaign due today is not overdue today.
 func (c *Campaign) IsOverdue() bool {
+	return c.isOverdueAt(time.Now())
+}
+
+func (c *Campaign) isOverdueAt(now time.Time) bool {
 	if c.dueDate == nil || c.status == CampaignStatusCompleted || c.status == CampaignStatusCanceled {
 		return false
 	}
-	return time.Now().After(*c.dueDate)
+	return !now.Before(DueDayEnd(*c.dueDate))
+}
+
+// DueDayEnd is the first instant after the due day (UTC): a campaign is
+// overdue from then on.
+func DueDayEnd(due time.Time) time.Time {
+	d := due.UTC()
+	return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
 }
 
 // Errors
 var (
 	ErrCampaignNotFound = fmt.Errorf("%w: remediation campaign not found", shared.ErrNotFound)
+	// ErrCampaignVersionConflict: the campaign changed since the caller read
+	// it (another person, or the platform); reload and retry.
+	ErrCampaignVersionConflict = fmt.Errorf("%w: the remediation campaign was changed by someone else; reload it and try again", shared.ErrConflict)
 )
 
 // CampaignFilter defines criteria for listing campaigns.
@@ -335,13 +361,20 @@ type CampaignFilter struct {
 type CampaignRepository interface {
 	Create(ctx context.Context, campaign *Campaign) error
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*Campaign, error)
+	// Update saves every field when the stored version equals the
+	// campaign's, bumps the version, and returns ErrCampaignVersionConflict
+	// otherwise.
 	Update(ctx context.Context, campaign *Campaign) error
+	// UpdateCounts writes only the finding counters and progress and stamps
+	// last_reconciled_at. It never touches status, dates or the version, so a
+	// counter refresh cannot undo a person's change.
+	UpdateCounts(ctx context.Context, campaign *Campaign) error
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	List(ctx context.Context, filter CampaignFilter, page pagination.Pagination) (pagination.Result[*Campaign], error)
 
 	// ListNonTerminal returns campaigns that are not in a terminal state
-	// (completed/canceled) across all tenants, ordered by least-recently
-	// updated first, up to limit. Used by the progress-reconcile controller
+	// (completed/canceled) across all tenants, least recently reconciled
+	// first (never reconciled first), up to limit. Used by the progress-reconcile controller
 	// to refresh finding counts and auto-complete. limit <= 0 means a
 	// repository-chosen default.
 	ListNonTerminal(ctx context.Context, limit int) ([]*Campaign, error)
