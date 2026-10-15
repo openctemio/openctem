@@ -105,10 +105,55 @@ export interface ApiFindingComponent {
   license?: string
   /** The version to upgrade to: the smallest fix above the installed one, same major line first. */
   fixed_in?: string
+  /** True when fixed_in is on a newer major line (a likely breaking upgrade). */
+  fixed_in_major?: boolean
+  /** Every version that fixes it, one per release line (scanner and CVE catalog). */
+  fixed_versions?: string[]
   /** How the asset uses it; absent when unknown. */
   dependency_type?: string
   manifest_file?: string
   depth?: number
+}
+
+/** Vulnerability intelligence with sources and freshness (GET /findings/{id}). */
+export interface ApiFindingIntel {
+  cvss_source?: string
+  published_at?: string
+  modified_at?: string
+  /** http(s) only, at most 25. */
+  references?: string[]
+  /** YYYY-MM-DD of the EPSS score the finding carries. */
+  epss_date?: string
+  /** YYYY-MM-DD the CVE was added to CISA KEV. */
+  kev_date_added?: string
+  kev_ransomware?: boolean
+}
+
+/** One open finding in a package fix plan. */
+export interface ApiFindingFixPlanItem {
+  id: string
+  title: string
+  severity: string
+  cve_id?: string
+}
+
+/**
+ * The upgrade plan for the finding's package on its asset (GET /findings/{id}):
+ * the version to upgrade to and which open findings of that package version it
+ * resolves.
+ */
+export interface ApiFindingFixPlan {
+  target_version?: string
+  major_upgrade: boolean
+  open_findings: number
+  resolves_count: number
+  truncated: boolean
+  resolves?: ApiFindingFixPlanItem[]
+  remaining?: ApiFindingFixPlanItem[]
+  /** Fixes every open finding of the package with a known fix, when target_version does not. */
+  complete_version?: string
+  complete_major?: boolean
+  complete_resolves?: number
 }
 
 /** The CVE record embedded in GET /findings/{id}. */
@@ -161,6 +206,10 @@ export interface ApiFinding {
   component_id?: string
   /** The affected package (single-finding response only). */
   component?: ApiFindingComponent
+  /** The package's upgrade plan on this asset (single-finding response only). */
+  package_fix?: ApiFindingFixPlan
+  /** Advisory facts kept on the finding and the dates of its feed values (single-finding response only). */
+  intel?: ApiFindingIntel
   /** The CVE record the finding is an instance of (single-finding response only). */
   vulnerability?: ApiFindingVulnerability
   source: FindingSource
