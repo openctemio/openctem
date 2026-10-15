@@ -232,6 +232,7 @@ export default function CampaignDetailPage() {
           ...(campaign?.finding_filter ?? {}),
           finding_ids: linkedFindingIds.filter((x) => x !== findingId),
         },
+        version: campaign?.version,
       })
       await mutateCampaign()
       setPendingUnlink(null)
@@ -272,6 +273,8 @@ export default function CampaignDetailPage() {
         name: editForm.name,
         description: editForm.description,
         priority: editForm.priority,
+        // A save made on a stale copy answers 409 instead of overwriting.
+        version: campaign?.version,
       })
       await mutateCampaign()
       globalMutate(
@@ -287,7 +290,7 @@ export default function CampaignDetailPage() {
   const handleStatusChange = async (newStatus: string) => {
     const apply = async () => {
       try {
-        await updateStatus({ status: newStatus })
+        await updateStatus({ status: newStatus, version: campaign?.version })
         await mutateCampaign()
         globalMutate(
           (key: unknown) => typeof key === 'string' && key.includes('/remediation/campaigns')

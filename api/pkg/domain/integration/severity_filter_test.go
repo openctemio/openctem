@@ -127,10 +127,12 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		EventTypeFindingFixed:             true,
 		EventTypeFindingReopened:          true,
 		EventTypeFindingPriorityEscalated: true,
-		EventTypeFindingAssigned:          true,
-		EventTypeSLABreach:                true,
-		EventTypeWorkflowNotification:     true,
-		EventTypeNewExposure:              true,
+		// Its severity is the most urgent class movement it summarizes.
+		EventTypeScoringChangeApplied: true,
+		EventTypeFindingAssigned:      true,
+		EventTypeSLABreach:            true,
+		EventTypeWorkflowNotification: true,
+		EventTypeNewExposure:          true,
 	}
 
 	for _, info := range AllEventTypes() {

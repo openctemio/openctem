@@ -99,7 +99,7 @@ import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { sanitizeExternalUrl } from '@/lib/utils'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '@/features/remediation'
+import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS, TASK_PRIORITIES } from '@/features/remediation'
 import {
   useRemediationCampaigns,
   useCreateRemediationCampaign,
@@ -240,9 +240,6 @@ function daysUntil(dateStr: string | null | undefined): { days: number; overdue:
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
   return { days: Math.abs(days), overdue: days < 0 }
 }
-
-/** The API's campaign priorities, highest first. */
-const TASK_PRIORITIES: TaskPriority[] = ['critical', 'high', 'medium', 'low']
 
 /** Map API priority values to TaskPriority (a legacy "urgent" reads as critical). */
 function normalizePriority(value: string): TaskPriority {

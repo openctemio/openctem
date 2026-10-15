@@ -99,7 +99,7 @@ type CITrustConfigResponse struct {
 	// ManageScope: the trusted repositories are repository scope entries
 	// linked to the configuration ("Trust and add to scope").
 	ManageScope bool `json:"manage_scope"`
-	// ScopeEntries (on GET by id, create and change) are the repository
+	// ScopeEntries are the repository
 	// patterns the configuration claims, the scope entry of each and the
 	// evidence of the first verified pipeline run under it.
 	ScopeEntries []CITrustScopeEntry `json:"scope_entries,omitempty"`
@@ -116,44 +116,62 @@ type CITrustScopeEntry struct {
 	RemovedAt *time.Time `json:"removed_at,omitempty"`
 	// SeenAt and the other seen_* fields: the first verified pipeline run
 	// under the pattern (evidence, never required unless the organization
-	// turned on ci_scope_requires_proof).
+	// turned on ci_scope_requires_proof). SeenRunID and SeenRepository are
+	// left out when the caller's data scope does not reach that repository.
 	SeenAt         *time.Time `json:"seen_at,omitempty"`
 	SeenRunID      string     `json:"seen_run_id,omitempty"`
 	SeenRepository string     `json:"seen_repository,omitempty"`
 }
 
-// ciTrustScopeLister is the optional part of the service that lists a
-// trust's scope entries.
+// ciTrustScopeLister is the optional part of the service that lists the
+// trusts' scope entries for a reader.
 type ciTrustScopeLister interface {
-	TrustScope(ctx context.Context, tenantID, id shared.ID) ([]scopedom.CITrustLink, error)
+	TrustScopes(ctx context.Context, tenantID shared.ID, trustID *shared.ID, scope *shared.DataScope) (map[string][]scopedom.CITrustLink, error)
 }
 
-// withScope adds the trust's scope entries to the response (best effort:
-// the configuration is answered without them on a read error).
-func (h *CIAdminHandler) withScope(ctx context.Context, tenantID shared.ID, resp *CITrustConfigResponse) {
+// withScopes adds each trust's scope entries to the responses, read once for
+// all of them (trustID nil) or for the one trust. The evidence's repository
+// and run appear only where the caller's data scope reaches that repository.
+// Best effort: the configurations are answered without entries on a read
+// error.
+func (h *CIAdminHandler) withScopes(ctx context.Context, tenantID shared.ID, trustID *shared.ID, resps []CITrustConfigResponse) {
 	lister, ok := h.svc.(ciTrustScopeLister)
-	if !ok {
+	if !ok || len(resps) == 0 {
 		return
 	}
-	id, err := shared.IDFromString(resp.ID)
-	if err != nil {
-		return
-	}
-	links, err := lister.TrustScope(ctx, tenantID, id)
+	scope, err := resolveDataScope(ctx, h.dataScope, tenantID)
 	if err != nil {
 		h.logger.Warn("ci trust scope entries not listed", "error", logger.SanitizeError(err))
 		return
 	}
-	for _, l := range links {
-		e := CITrustScopeEntry{Pattern: l.Pattern, SeenAt: l.SeenAt, SeenRepository: l.SeenRepository, RemovedAt: l.TargetRemovedAt}
-		if l.TargetID != nil {
-			e.ScopeTargetID = l.TargetID.String()
-		}
-		if l.SeenRunID != nil {
-			e.SeenRunID = l.SeenRunID.String()
-		}
-		resp.ScopeEntries = append(resp.ScopeEntries, e)
+	links, err := lister.TrustScopes(ctx, tenantID, trustID, scope)
+	if err != nil {
+		h.logger.Warn("ci trust scope entries not listed", "error", logger.SanitizeError(err))
+		return
 	}
+	for i := range resps {
+		for _, l := range links[resps[i].ID] {
+			e := CITrustScopeEntry{Pattern: l.Pattern, SeenAt: l.SeenAt, SeenRepository: l.SeenRepository, RemovedAt: l.TargetRemovedAt}
+			if l.TargetID != nil {
+				e.ScopeTargetID = l.TargetID.String()
+			}
+			if l.SeenRunID != nil {
+				e.SeenRunID = l.SeenRunID.String()
+			}
+			resps[i].ScopeEntries = append(resps[i].ScopeEntries, e)
+		}
+	}
+}
+
+// withScope is withScopes for one configuration.
+func (h *CIAdminHandler) withScope(ctx context.Context, tenantID shared.ID, resp *CITrustConfigResponse) {
+	id, err := shared.IDFromString(resp.ID)
+	if err != nil {
+		return
+	}
+	one := []CITrustConfigResponse{*resp}
+	h.withScopes(ctx, tenantID, &id, one)
+	*resp = one[0]
 }
 
 // ciOwnerPinLister is the optional part of the service that lists pins.
@@ -529,6 +547,7 @@ func (h *CIAdminHandler) ListTrustConfigs(w http.ResponseWriter, r *http.Request
 	for i := range list {
 		out.Data = append(out.Data, toCITrustResponse(&list[i]))
 	}
+	h.withScopes(r.Context(), tenantID, nil, out.Data) // one read for every trust
 	ciWriteJSON(w, http.StatusOK, out)
 }
 

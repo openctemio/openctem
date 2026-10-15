@@ -29,7 +29,7 @@ const rcSelectCols = `id, tenant_id, name, description, status, priority,
 	finding_filter, finding_count, resolved_count, progress,
 	risk_score_before, risk_score_after, risk_reduction,
 	assigned_to, assigned_team, start_date, due_date, completed_at,
-	tags, created_by, created_at, updated_at`
+	tags, created_by, created_at, updated_at, version`
 
 func (r *RemediationCampaignRepository) scanCampaign(scan func(dest ...any) error) (*remediation.Campaign, error) {
 	var (
@@ -44,6 +44,7 @@ func (r *RemediationCampaignRepository) scanCampaign(scan func(dest ...any) erro
 		tags                            pq.StringArray
 		createdByStr                    sql.NullString
 		createdAt, updatedAt            time.Time
+		version                         int
 	)
 
 	err := scan(
@@ -52,7 +53,7 @@ func (r *RemediationCampaignRepository) scanCampaign(scan func(dest ...any) erro
 		&riskBefore, &riskAfter, &riskRed,
 		&assignedTo, &assignedTeam,
 		&startDate, &dueDate, &completedAt,
-		&tags, &createdByStr, &createdAt, &updatedAt,
+		&tags, &createdByStr, &createdAt, &updatedAt, &version,
 	)
 	if err != nil {
 		return nil, err
@@ -102,7 +103,7 @@ func (r *RemediationCampaignRepository) scanCampaign(scan func(dest ...any) erro
 		parseOptionalID(assignedTo), parseOptionalID(assignedTeam),
 		parseOptionalTime(startDate), parseOptionalTime(dueDate), parseOptionalTime(completedAt),
 		[]string(tags), parseOptionalID(createdByStr),
-		createdAt, updatedAt,
+		createdAt, updatedAt, version,
 	), nil
 }
 
@@ -138,7 +139,7 @@ func (r *RemediationCampaignRepository) Create(ctx context.Context, c *remediati
 		c.RiskBefore(), c.RiskAfter(), c.RiskReduction(),
 		assignedTo, assignedTeam, c.StartDate(), c.DueDate(),
 		pq.StringArray(c.Tags()), createdBy,
-		c.CreatedAt(), c.UpdatedAt(),
+		c.CreatedAt(), c.UpdatedAt(), c.Version(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create remediation campaign: %w", err)
@@ -171,24 +172,57 @@ func (r *RemediationCampaignRepository) Update(ctx context.Context, c *remediati
 		assignedTeam = &s
 	}
 
+	// Optimistic save: only when the stored version is the one the campaign
+	// was read at. A stale save (a second tab, the reconciler after a person's
+	// Cancel) changes nothing and reports a conflict.
 	query := `UPDATE remediation_campaigns SET
 		name=$3, description=$4, status=$5, priority=$6,
 		finding_filter=$7, finding_count=$8, resolved_count=$9, progress=$10,
 		risk_score_before=$11, risk_score_after=$12, risk_reduction=$13,
 		assigned_to=$14, assigned_team=$15, start_date=$16, due_date=$17, completed_at=$18,
-		tags=$19, updated_at=$20
-		WHERE tenant_id=$1 AND id=$2`
+		tags=$19, updated_at=$20, version = version + 1
+		WHERE tenant_id=$1 AND id=$2 AND version=$21
+		RETURNING version`
 
-	_, err := r.db.ExecContext(ctx, query,
+	var newVersion int
+	err := r.db.QueryRowContext(ctx, query,
 		c.TenantID().String(), c.ID().String(),
 		c.Name(), c.Description(), string(c.Status()), string(c.Priority()),
 		filterJSON, c.FindingCount(), c.ResolvedCount(), c.Progress(),
 		c.RiskBefore(), c.RiskAfter(), c.RiskReduction(),
 		assignedTo, assignedTeam, c.StartDate(), c.DueDate(), c.CompletedAt(),
-		pq.StringArray(c.Tags()), c.UpdatedAt(),
-	)
+		pq.StringArray(c.Tags()), c.UpdatedAt(), c.Version(),
+	).Scan(&newVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Gone (another tenant's id, or deleted) or changed since read.
+		var exists bool
+		if qerr := r.db.QueryRowContext(ctx,
+			"SELECT EXISTS (SELECT 1 FROM remediation_campaigns WHERE tenant_id = $1 AND id = $2)",
+			c.TenantID().String(), c.ID().String()).Scan(&exists); qerr != nil {
+			return fmt.Errorf("failed to update remediation campaign: %w", qerr)
+		}
+		if !exists {
+			return remediation.ErrCampaignNotFound
+		}
+		return remediation.ErrCampaignVersionConflict
+	}
 	if err != nil {
 		return fmt.Errorf("failed to update remediation campaign: %w", err)
+	}
+	c.SetVersion(newVersion)
+	return nil
+}
+
+// UpdateCounts writes the finding counters and progress only, and stamps
+// last_reconciled_at. Status, dates, the filter and the version are never
+// written here, so a counter refresh cannot revert anyone's change.
+func (r *RemediationCampaignRepository) UpdateCounts(ctx context.Context, c *remediation.Campaign) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE remediation_campaigns
+		SET finding_count = $3, resolved_count = $4, progress = $5, last_reconciled_at = now()
+		WHERE tenant_id = $1 AND id = $2`,
+		c.TenantID().String(), c.ID().String(), c.FindingCount(), c.ResolvedCount(), c.Progress())
+	if err != nil {
+		return fmt.Errorf("failed to update remediation campaign counts: %w", err)
 	}
 	return nil
 }
@@ -260,9 +294,10 @@ func (r *RemediationCampaignRepository) List(ctx context.Context, filter remedia
 	return pagination.NewResult(items, int64(total), page), nil
 }
 
-// ListNonTerminal returns non-terminal campaigns across all tenants, oldest
-// update first, so the progress-reconcile controller refreshes the most stale
-// campaigns first. limit <= 0 falls back to a default of 500.
+// ListNonTerminal returns non-terminal campaigns across all tenants, least
+// recently reconciled first (never reconciled first). The reconciler stamps
+// every campaign it visits (UpdateCounts), so a large backlog rotates instead
+// of the same first page being picked every run. limit <= 0 falls back to a default of 500.
 func (r *RemediationCampaignRepository) ListNonTerminal(ctx context.Context, limit int) ([]*remediation.Campaign, error) {
 	if limit <= 0 {
 		limit = 500
@@ -270,7 +305,7 @@ func (r *RemediationCampaignRepository) ListNonTerminal(ctx context.Context, lim
 
 	query := "SELECT " + rcSelectCols + ` FROM remediation_campaigns
 		WHERE status NOT IN ('completed', 'canceled')
-		ORDER BY updated_at ASC
+		ORDER BY last_reconciled_at ASC NULLS FIRST, id
 		LIMIT $1`
 
 	rows, err := r.db.QueryContext(ctx, query, limit)

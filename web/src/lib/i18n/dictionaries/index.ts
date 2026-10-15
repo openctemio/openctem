@@ -40,6 +40,7 @@ import en_pentestChecklists from './en/pentestChecklists.json'
 import en_plan from './en/plan.json'
 import en_prioritization from './en/prioritization.json'
 import en_programs from './en/programs.json'
+import en_remediation from './en/remediation.json'
 import en_reports from './en/reports.json'
 import en_scanWindows from './en/scanWindows.json'
 import en_tenableSc from './en/tenableSc.json'
@@ -87,6 +88,7 @@ import vi_pentestChecklists from './vi/pentestChecklists.json'
 import vi_plan from './vi/plan.json'
 import vi_prioritization from './vi/prioritization.json'
 import vi_programs from './vi/programs.json'
+import vi_remediation from './vi/remediation.json'
 import vi_reports from './vi/reports.json'
 import vi_scanWindows from './vi/scanWindows.json'
 import vi_tenableSc from './vi/tenableSc.json'
@@ -139,6 +141,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   plan: en_plan,
   prioritization: en_prioritization,
   programs: en_programs,
+  remediation: en_remediation,
   reports: en_reports,
   riskScore: en_riskScore,
   scanWindows: en_scanWindows,
@@ -189,6 +192,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   plan: vi_plan,
   prioritization: vi_prioritization,
   programs: vi_programs,
+  remediation: vi_remediation,
   reports: vi_reports,
   riskScore: vi_riskScore,
   scanWindows: vi_scanWindows,
