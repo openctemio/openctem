@@ -68,6 +68,8 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/oauth/requests/{id}/deny":    {classSeparate, "the caller's own MCP consent decision (RFC-062)"},
 	"/api/v1/version":                     {classSystem, "build identity"},
 	"/api/v1/announcements":               {classSystem, "platform operator notices (plain text); no tenant data"},
+	"/api/v1/brand$":                      {classSystem, "instance brand shown before sign-in; server configuration, no tenant data"},
+	"/api/v1/brand/images/":               {classSystem, "instance brand images; server configuration, no tenant data"},
 	"/api/v1/legal":                       {classSystem, "operator legal information shown before sign-in; no tenant data"},
 	"/api/v1/client-errors":               {classSystem, "web error kind for operator metrics; reads and stores nothing"},
 	"/api/v1/auth":                        {classSystem, "authentication flows"},
@@ -191,7 +193,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/business-units":    {classPartial, "asset links scoped (L-10); the unit list and counts are tenant-wide"},
 	"/api/v1/ctem-cycles":       {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
 	"/api/v1/approvals":         {classScoped, "approvals by id and the list: SQL data-scope condition on the finding asset; total and status counts scoped too"},
-	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign progress counts follow the reader (L-18, research 24); tasks are seen through in-scope findings and changed only with every finding in scope (RFC-098)"},
+	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156); tasks are seen through in-scope findings and changed only with every finding in scope (RFC-098)"},
 	"/api/v1/dashboard":         {classPartial, "activity and top risks scoped; counts and trends tenant-wide until P1-4 (D6)"},
 
 	// --- separate ------------------------------------------------------------------

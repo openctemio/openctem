@@ -40,9 +40,11 @@ const FindingRiskPointsSQL = `(CASE f.priority_class
 	ELSE CASE f.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 2 WHEN 'medium' THEN 1 WHEN 'low' THEN 1 ELSE 0 END
 	END)`
 
-// verifiedFixedSQL: a resolved finding with proof of the fix (a covered
-// scan, a retest, or a reviewer holding findings:verify).
-const verifiedFixedSQL = `(f.status = 'resolved' AND f.resolution_method IN ('scan_verified', 'retest_verified', 'security_reviewed'))`
+// verifiedFixedSQL: a finding resolved as fixed with proof of the fix (a
+// covered scan, a retest, or a reviewer holding findings:verify). Gone
+// without a fix (obsolete), mitigated, or closed on a claim alone is not
+// verified fixed.
+const verifiedFixedSQL = `(f.status = 'resolved' AND f.closure_reason = 'fixed' AND f.verification IN ('covered_scan', 'retest', 'security_review'))`
 
 func closedStatusArray() pq.StringArray {
 	return pq.StringArray(statusStrings(vulnerability.ClosedFindingStatuses()))

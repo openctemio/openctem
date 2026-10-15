@@ -103,7 +103,7 @@ func (r *FindingRepository) expireBranchOnlyFindings(ctx context.Context, tenant
 			UPDATE findings f
 			SET status = 'not_observed',
 				resolution = 'branch_expired',
-				resolution_method = NULL,
+				closure_reason = NULL, verification = NULL,
 				resolved_at = NULL,
 				resolved_by = NULL,
 				updated_at = NOW()

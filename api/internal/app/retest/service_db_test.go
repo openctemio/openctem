@@ -206,7 +206,7 @@ func (fx *fixture) autoResolve(on bool) {
 func (fx *fixture) findingState(id shared.ID) (status, method, resolvedBy string) {
 	fx.t.Helper()
 	var m, by sql.NullString
-	if err := fx.db.QueryRow(`SELECT status, resolution_method, resolved_by::text FROM findings WHERE id = $1`, id.String()).
+	if err := fx.db.QueryRow(`SELECT status, NULLIF(COALESCE(closure_reason, '') || '/' || COALESCE(verification, ''), '/'), resolved_by::text FROM findings WHERE id = $1`, id.String()).
 		Scan(&status, &m, &by); err != nil {
 		fx.t.Fatal(err)
 	}
@@ -379,8 +379,8 @@ func TestRetestDB_ConfirmedFixAwaitsAPersonUnlessAutoResolve(t *testing.T) {
 	if got = settle(h, "https://auto.example.com/admin", 200); got.ResultStatus != "resolved" {
 		t.Fatalf("auto-resolve retest = %+v", got)
 	}
-	if status, method, by := fx.findingState(h); status != "resolved" || method != "retest_verified" || by != fx.user.String() {
-		t.Errorf("finding = %s/%s/%s, want resolved/retest_verified/<requester>", status, method, by)
+	if status, method, by := fx.findingState(h); status != "resolved" || method != "fixed/retest" || by != fx.user.String() {
+		t.Errorf("finding = %s/%s/%s, want resolved/fixed/retest/<requester>", status, method, by)
 	}
 }
 

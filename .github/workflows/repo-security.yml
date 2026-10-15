@@ -60,6 +60,21 @@ jobs:
           CUSTOMER_DENYLIST: ${{ secrets.CUSTOMER_DENYLIST }}
         run: bash .github/scripts/check-customer-identifiers.sh
 
+      # Fails when a commit this pull request (or merge-queue group) adds has
+      # an address from the COMMIT_EMAIL_DENYLIST secret as its author, its
+      # committer or in a Co-authored-by trailer, so the list is never
+      # committed. Prints only the commit and the field. Passes with a notice
+      # when the secret is empty (forks) and on pushes and schedules.
+      - name: Commit emails (self-test)
+        run: bash .github/scripts/check-commit-emails.test.sh >/dev/null
+
+      - name: Commit emails
+        env:
+          COMMIT_EMAIL_DENYLIST: ${{ secrets.COMMIT_EMAIL_DENYLIST }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: bash .github/scripts/check-commit-emails.sh "${BASE_SHA:+$BASE_SHA..$HEAD_SHA}"
+
       - name: Install Betterleaks (pinned, checksum-verified)
         run: |
           curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o betterleaks.tgz \

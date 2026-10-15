@@ -34,7 +34,7 @@ func TestFindingStatusGuard_UpdateStatusBatch_DB(t *testing.T) {
 	// Resolve: only fix_applied may be resolved by a person; in_progress and
 	// new may not, a false positive may not.
 	if err := repo.UpdateStatusBatch(ctx, f.tenant, []shared.ID{fixApplied, inProgress, newOne, falsePositive},
-		vulnerability.FindingStatusResolved, "fixed", nil, vulnerability.ResolutionMethodSecurityReviewed); err != nil {
+		vulnerability.FindingStatusResolved, "fixed", nil, vulnerability.Fixed(vulnerability.VerificationSecurityReview)); err != nil {
 		t.Fatal(err)
 	}
 	want := map[shared.ID]string{fixApplied: "resolved", inProgress: "in_progress", newOne: "new", falsePositive: "false_positive"}
@@ -47,7 +47,7 @@ func TestFindingStatusGuard_UpdateStatusBatch_DB(t *testing.T) {
 	// The same call under another tenant changes nothing.
 	other := f.findingIn(t, "fix_applied")
 	if err := repo.UpdateStatusBatch(ctx, shared.NewID(), []shared.ID{other},
-		vulnerability.FindingStatusResolved, "x", nil, vulnerability.ResolutionMethodSecurityReviewed); err != nil {
+		vulnerability.FindingStatusResolved, "x", nil, vulnerability.Fixed(vulnerability.VerificationSecurityReview)); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.status(t, other); got != "fix_applied" {
@@ -67,7 +67,7 @@ func TestFindingStatusGuard_BulkUpdateStatusByFilter_DB(t *testing.T) {
 		vulnerability.FindingStatusFixApplied, vulnerability.FindingStatusInProgress,
 	}}
 	n, err := repo.BulkUpdateStatusByFilter(ctx, f.tenant, filter, vulnerability.FindingStatusResolved,
-		"verified", nil, vulnerability.ResolutionMethodSecurityReviewed)
+		"verified", nil, vulnerability.Fixed(vulnerability.VerificationSecurityReview))
 	if err != nil {
 		t.Fatal(err)
 	}

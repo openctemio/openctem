@@ -10,6 +10,7 @@ import {
   Check,
   X,
   Ban,
+  BellRing,
   Loader2,
   ArrowLeft,
   RefreshCw,
@@ -46,7 +47,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { getErrorMessage } from '@/lib/api/error-handler'
+import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
 
 import { useDisplayUser } from '@/hooks/use-display-user'
@@ -55,18 +56,22 @@ import {
   useApproveStatus,
   useRejectApproval,
   useCancelApproval,
+  remindApprovers,
 } from '@/features/findings/api/use-findings-api'
 import type { ApiApproval, ApprovalStatus } from '@/features/findings/types'
 import { APPROVAL_STATUSES, FINDING_STATUS_CONFIG } from '@/features/findings/types'
 import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
 import { useListParams } from '@/hooks/use-list-params'
 import {
+  approvalRequester,
   approvalTabCounts,
   canCancelApproval,
+  isOwnApproval,
   type ApprovalTab,
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
+import { closureReasonLabel } from '@/features/findings/lib/closure'
 
 // ============================================
 // CONSTANTS
@@ -80,12 +85,19 @@ const APPROVAL_BADGE_STYLES: Record<ApprovalStatus, string> = {
   expired: 'bg-muted text-muted-foreground border-border',
 }
 
+/** English fallbacks; the localised label is findings.approvals.status.<status>. */
 const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
   pending: 'Pending',
   approved: 'Approved',
   rejected: 'Rejected',
   canceled: 'Canceled',
   expired: 'Expired',
+}
+
+/** English fallbacks for the platform actors that request changes. */
+const APPROVAL_ACTOR_LABELS: Record<string, string> = {
+  ai_triage: 'AI triage',
+  vex: 'VEX statement',
 }
 
 const APPROVAL_TABS: readonly string[] = ['all', ...APPROVAL_STATUSES]
@@ -98,9 +110,45 @@ function formatDate(dateString: string): string {
   return formatDistanceToNow(new Date(dateString), { addSuffix: true })
 }
 
-function getRequestedStatusLabel(status: string): string {
+type Translate = ReturnType<typeof useTranslation>['t']
+
+function getRequestedStatusLabel(t: Translate, status: string): string {
   const config = FINDING_STATUS_CONFIG[status as keyof typeof FINDING_STATUS_CONFIG]
-  return config?.label ?? status
+  return config ? t(config.labelKey, config.label) : status
+}
+
+function RequesterCell({
+  approval,
+  currentUserId,
+}: {
+  approval: ApiApproval
+  currentUserId: string | undefined
+}) {
+  const { t } = useTranslation()
+  const who = approvalRequester(approval, currentUserId)
+  switch (who.kind) {
+    case 'actor':
+      return (
+        <span className="text-sm text-muted-foreground">
+          {t(
+            `findings.approvals.actor.${who.actor}`,
+            APPROVAL_ACTOR_LABELS[who.actor] ?? who.actor
+          )}
+        </span>
+      )
+    case 'you':
+      return (
+        <span className="text-sm font-medium">{t('findings.approvals.requesterYou', 'You')}</span>
+      )
+    case 'member':
+      return <span className="text-sm">{who.name}</span>
+    default:
+      return (
+        <span className="text-sm text-muted-foreground">
+          {t('findings.approvals.requesterFormer', 'Former member')}
+        </span>
+      )
+  }
 }
 
 // ============================================
@@ -218,12 +266,21 @@ export default function ApprovalsPage() {
     setActionInProgress(selectedApproval.id)
     try {
       await triggerApprove()
-      toast.success('Approval request approved', {
-        description: `Finding status will be changed to ${getRequestedStatusLabel(selectedApproval.requested_status)}`,
+      toast.success(t('findings.approvals.toast.approved', 'Approval request approved'), {
+        description: t(
+          'findings.approvals.toast.approvedDesc',
+          'Finding status will be changed to {status}',
+          { status: getRequestedStatusLabel(t, selectedApproval.requested_status) }
+        ),
       })
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to approve request'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('findings.approvals.toast.approveFailed', 'Failed to approve request')
+        )
+      )
     } finally {
       setActionInProgress(null)
       setSelectedApproval(null)
@@ -236,11 +293,13 @@ export default function ApprovalsPage() {
     setActionInProgress(selectedApproval.id)
     try {
       await triggerReject({ reason: rejectionReason.trim() })
-      toast.success('Approval request rejected')
+      toast.success(t('findings.approvals.toast.rejected', 'Approval request rejected'))
       setRejectionReason('')
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to reject request'))
+      toast.error(
+        getErrorMessage(err, t('findings.approvals.toast.rejectFailed', 'Failed to reject request'))
+      )
     } finally {
       setActionInProgress(null)
       setSelectedApproval(null)
@@ -253,10 +312,12 @@ export default function ApprovalsPage() {
     setActionInProgress(selectedApproval.id)
     try {
       await triggerCancel()
-      toast.success('Approval request canceled')
+      toast.success(t('findings.approvals.toast.canceled', 'Approval request canceled'))
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to cancel request'))
+      toast.error(
+        getErrorMessage(err, t('findings.approvals.toast.cancelFailed', 'Failed to cancel request'))
+      )
     } finally {
       setActionInProgress(null)
       setSelectedApproval(null)
@@ -264,9 +325,45 @@ export default function ApprovalsPage() {
     }
   }
 
+  // Nudge the approvers of your own pending request (rate-limited per hour
+  // by the API).
+  const handleRemind = useCallback(
+    async (approval: ApiApproval) => {
+      if (actionInProgress) return
+      setActionInProgress(approval.id)
+      try {
+        const res = await remindApprovers(approval.id)
+        toast.success(
+          t('findings.approvals.toast.reminded', 'Reminded {count} approver(s)', {
+            count: res?.reminded ?? 0,
+          })
+        )
+      } catch (err) {
+        if (err instanceof ApiClientError && err.statusCode === 409) {
+          toast.error(
+            t(
+              'findings.approvals.toast.remindTooSoon',
+              'The approvers were already reminded in the last hour.'
+            )
+          )
+        } else {
+          toast.error(
+            getErrorMessage(
+              err,
+              t('findings.approvals.toast.remindFailed', 'Failed to send the reminder')
+            )
+          )
+        }
+      } finally {
+        setActionInProgress(null)
+      }
+    },
+    [actionInProgress, t]
+  )
+
   const handleRefresh = async () => {
     await mutate()
-    toast.success('Approvals refreshed')
+    toast.success(t('findings.approvals.toast.refreshed', 'Approvals refreshed'))
   }
 
   // ============================================
@@ -277,12 +374,17 @@ export default function ApprovalsPage() {
     () => [
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.approvals.col.status', 'Status')}
+          />
+        ),
         cell: ({ row }) => {
           const status = row.getValue('status') as ApprovalStatus
           return (
             <Badge variant="outline" className={cn('text-xs', APPROVAL_BADGE_STYLES[status])}>
-              {APPROVAL_STATUS_LABELS[status] ?? status}
+              {t(`findings.approvals.status.${status}`, APPROVAL_STATUS_LABELS[status] ?? status)}
             </Badge>
           )
         },
@@ -290,7 +392,12 @@ export default function ApprovalsPage() {
       },
       {
         accessorKey: 'finding_id',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Finding" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.approvals.col.finding', 'Finding')}
+          />
+        ),
         cell: ({ row }) => (
           <ApprovalFindingLink
             findingId={row.original.finding_id}
@@ -301,7 +408,12 @@ export default function ApprovalsPage() {
       },
       {
         accessorKey: 'requested_status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Requested Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.approvals.col.requestedStatus', 'Requested status')}
+          />
+        ),
         cell: ({ row }) => {
           const status = row.getValue('requested_status') as string
           const config = FINDING_STATUS_CONFIG[status as keyof typeof FINDING_STATUS_CONFIG]
@@ -310,15 +422,21 @@ export default function ApprovalsPage() {
               variant="outline"
               className={cn('text-xs', config?.bgColor, config?.textColor, config?.color)}
             >
-              {getRequestedStatusLabel(status)}
+              {getRequestedStatusLabel(t, status)}
             </Badge>
           )
         },
         enableSorting: true,
       },
       {
+        id: 'requester',
+        header: t('findings.approvals.col.requester', 'Requester'),
+        cell: ({ row }) => <RequesterCell approval={row.original} currentUserId={currentUserId} />,
+        enableSorting: false,
+      },
+      {
         accessorKey: 'justification',
-        header: 'Justification',
+        header: t('findings.approvals.col.justification', 'Justification'),
         cell: ({ row }) => {
           const text = row.getValue('justification') as string
           return (
@@ -334,7 +452,12 @@ export default function ApprovalsPage() {
       },
       {
         accessorKey: 'created_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.approvals.col.created', 'Created')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-sm whitespace-nowrap">
             {formatDate(row.getValue('created_at'))}
@@ -343,8 +466,31 @@ export default function ApprovalsPage() {
         enableSorting: true,
       },
       {
+        accessorKey: 'decide_by',
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.approvals.col.decideBy', 'Decide by')}
+          />
+        ),
+        cell: ({ row }) => {
+          const by = row.original.decide_by
+          return (
+            <span className="text-muted-foreground text-sm whitespace-nowrap">
+              {by && row.original.status === 'pending' ? formatDate(by) : '-'}
+            </span>
+          )
+        },
+        enableSorting: false,
+      },
+      {
         accessorKey: 'expires_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Expires" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.approvals.col.expires', 'Acceptance ends')}
+          />
+        ),
         cell: ({ row }) => {
           const expires = row.getValue('expires_at') as string | undefined
           return (
@@ -362,6 +508,12 @@ export default function ApprovalsPage() {
           const approval = row.original
           if (approval.status !== 'pending') return null
           const mayCancel = canCancelApproval(approval, currentUserId)
+          // The four-eyes rule: someone else decides your own request.
+          const own = isOwnApproval(approval, currentUserId)
+          const ownReason = t(
+            'findings.approvals.ownRequestHint',
+            'Another approver must decide your own request.'
+          )
           return (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -379,20 +531,37 @@ export default function ApprovalsPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <Can permission={Permission.FindingsApprove}>
-                  <DropdownMenuItem onClick={() => handleApproveClick(approval)}>
+                  <DropdownMenuItem
+                    disabled={own}
+                    title={own ? ownReason : undefined}
+                    onClick={() => handleApproveClick(approval)}
+                  >
                     <Check className="me-2 h-4 w-4 text-emerald-500" />
-                    Approve
+                    {t('findings.approvals.action.approve', 'Approve')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRejectClick(approval)}>
+                  <DropdownMenuItem
+                    disabled={own}
+                    title={own ? ownReason : undefined}
+                    onClick={() => handleRejectClick(approval)}
+                  >
                     <X className="me-2 h-4 w-4 text-red-500" />
-                    Reject
+                    {t('findings.approvals.action.reject', 'Reject')}
                   </DropdownMenuItem>
+                  {own && (
+                    <p className="max-w-[220px] px-2 py-1.5 text-xs text-muted-foreground">
+                      {ownReason}
+                    </p>
+                  )}
                 </Can>
                 {mayCancel && (
                   <Can permission={Permission.FindingsWrite}>
+                    <DropdownMenuItem onClick={() => handleRemind(approval)}>
+                      <BellRing className="me-2 h-4 w-4" />
+                      {t('findings.approvals.action.remind', 'Remind approvers')}
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleCancelClick(approval)}>
                       <Ban className="me-2 h-4 w-4" />
-                      Cancel request
+                      {t('findings.approvals.action.cancel', 'Cancel request')}
                     </DropdownMenuItem>
                   </Can>
                 )}
@@ -402,7 +571,15 @@ export default function ApprovalsPage() {
         },
       },
     ],
-    [actionInProgress, handleApproveClick, handleRejectClick, handleCancelClick, currentUserId]
+    [
+      actionInProgress,
+      handleApproveClick,
+      handleRejectClick,
+      handleCancelClick,
+      handleRemind,
+      currentUserId,
+      t,
+    ]
   )
 
   // ============================================
@@ -414,13 +591,16 @@ export default function ApprovalsPage() {
       <Main>
         <div className="flex flex-col items-center justify-center py-20">
           <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-          <h2 className="text-lg font-semibold mb-2">Failed to load approvals</h2>
+          <h2 className="text-lg font-semibold mb-2">
+            {t('findings.approvals.loadFailed', 'Failed to load approvals')}
+          </h2>
           <p className="text-muted-foreground mb-4">
-            {error?.message || 'An unexpected error occurred'}
+            {error?.message ||
+              t('findings.approvals.unexpectedError', 'An unexpected error occurred')}
           </p>
           <Button onClick={() => mutate()}>
             <RefreshCw className="me-2 h-4 w-4" />
-            Retry
+            {t('findings.approvals.retry', 'Retry')}
           </Button>
         </div>
       </Main>
@@ -441,16 +621,23 @@ export default function ApprovalsPage() {
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Findings
+            {t('findings.approvals.backToFindings', 'Back to Findings')}
           </Link>
         </div>
 
         <PageHeader
-          title="Approval Requests"
+          title={t('findings.approvals.title', 'Approval requests')}
           description={
             isInitialLoading
-              ? 'Loading approvals...'
-              : `${counts.all} total requests - ${counts.pending} pending review`
+              ? t('findings.approvals.loading', 'Loading approvals…')
+              : t(
+                  'findings.approvals.summary',
+                  '{total} requests, {pending} waiting for a decision',
+                  {
+                    total: counts.all,
+                    pending: counts.pending,
+                  }
+                )
           }
         >
           <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading}>
@@ -459,7 +646,9 @@ export default function ApprovalsPage() {
             ) : (
               <RefreshCw className="h-4 w-4 sm:me-2" />
             )}
-            <span className="sr-only sm:not-sr-only">Refresh</span>
+            <span className="sr-only sm:not-sr-only">
+              {t('findings.approvals.refresh', 'Refresh')}
+            </span>
           </Button>
         </PageHeader>
 
@@ -475,7 +664,7 @@ export default function ApprovalsPage() {
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5" />
-                    Pending
+                    {t('findings.approvals.status.pending', 'Pending')}
                   </CardDescription>
                   <CardTitle className="text-2xl sm:text-3xl text-yellow-500">
                     {counts.pending}
@@ -486,7 +675,7 @@ export default function ApprovalsPage() {
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-1.5">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Approved
+                    {t('findings.approvals.status.approved', 'Approved')}
                   </CardDescription>
                   <CardTitle className="text-2xl sm:text-3xl text-emerald-500">
                     {counts.approved}
@@ -497,7 +686,7 @@ export default function ApprovalsPage() {
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-1.5">
                     <XCircle className="h-3.5 w-3.5" />
-                    Rejected
+                    {t('findings.approvals.status.rejected', 'Rejected')}
                   </CardDescription>
                   <CardTitle className="text-2xl sm:text-3xl text-red-500">
                     {counts.rejected}
@@ -506,7 +695,7 @@ export default function ApprovalsPage() {
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardDescription>Total</CardDescription>
+                  <CardDescription>{t('findings.approvals.total', 'Total')}</CardDescription>
                   <CardTitle className="text-2xl sm:text-3xl">{counts.all}</CardTitle>
                 </CardHeader>
               </Card>
@@ -519,22 +708,27 @@ export default function ApprovalsPage() {
                 <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
                   <TabsList>
                     <TabsTrigger value="all" className="text-xs sm:text-sm shrink-0">
-                      All <TabsCount value={counts.all} />
+                      {t('findings.approvals.tabAll', 'All')} <TabsCount value={counts.all} />
                     </TabsTrigger>
                     <TabsTrigger value="pending" className="text-xs sm:text-sm shrink-0">
-                      Pending <TabsCount value={counts.pending} />
+                      {t('findings.approvals.status.pending', 'Pending')}{' '}
+                      <TabsCount value={counts.pending} />
                     </TabsTrigger>
                     <TabsTrigger value="approved" className="text-xs sm:text-sm shrink-0">
-                      Approved <TabsCount value={counts.approved} />
+                      {t('findings.approvals.status.approved', 'Approved')}{' '}
+                      <TabsCount value={counts.approved} />
                     </TabsTrigger>
                     <TabsTrigger value="rejected" className="text-xs sm:text-sm shrink-0">
-                      Rejected <TabsCount value={counts.rejected} />
+                      {t('findings.approvals.status.rejected', 'Rejected')}{' '}
+                      <TabsCount value={counts.rejected} />
                     </TabsTrigger>
                     <TabsTrigger value="canceled" className="text-xs sm:text-sm shrink-0">
-                      Canceled <TabsCount value={counts.canceled} />
+                      {t('findings.approvals.status.canceled', 'Canceled')}{' '}
+                      <TabsCount value={counts.canceled} />
                     </TabsTrigger>
                     <TabsTrigger value="expired" className="text-xs sm:text-sm shrink-0">
-                      Expired <TabsCount value={counts.expired} />
+                      {t('findings.approvals.status.expired', 'Expired')}{' '}
+                      <TabsCount value={counts.expired} />
                     </TabsTrigger>
                   </TabsList>
                 </div>
@@ -554,11 +748,23 @@ export default function ApprovalsPage() {
                     onPaginationChange={list.setPagination}
                     getRowId={(row) => row.id}
                     showColumnToggle={false}
-                    emptyMessage="No approval requests"
+                    emptyMessage={t('findings.approvals.empty', 'No approval requests')}
                     emptyDescription={
                       activeTab === 'all'
-                        ? 'There are no approval requests to review at this time.'
-                        : `No ${activeTab} approval requests found.`
+                        ? t(
+                            'findings.approvals.emptyAll',
+                            'There are no approval requests to review at this time.'
+                          )
+                        : t(
+                            'findings.approvals.emptyStatus',
+                            'No requests with the status {status}.',
+                            {
+                              status: t(
+                                `findings.approvals.status.${activeTab}`,
+                                APPROVAL_STATUS_LABELS[activeTab]
+                              ),
+                            }
+                          )
                     }
                   />
                 </div>
@@ -593,7 +799,7 @@ export default function ApprovalsPage() {
         {selectedApproval && (
           <div className="rounded-lg border bg-muted/50 p-3 my-2">
             <p className="font-medium">
-              Change to{' '}
+              {t('findings.approvals.changeTo', 'Change to')}{' '}
               <Badge
                 variant="outline"
                 className={cn(
@@ -606,9 +812,15 @@ export default function ApprovalsPage() {
                   ]?.textColor
                 )}
               >
-                {getRequestedStatusLabel(selectedApproval.requested_status)}
+                {getRequestedStatusLabel(t, selectedApproval.requested_status)}
               </Badge>
             </p>
+            {selectedApproval.closure_reason && (
+              <p className="text-sm mt-1">
+                {t('findings.approvalDialog.reasonLabel', 'Reason:')}{' '}
+                {closureReasonLabel(t, selectedApproval.closure_reason)}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
               {selectedApproval.justification}
             </p>
@@ -623,14 +835,16 @@ export default function ApprovalsPage() {
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent size="sm">
           <DialogHeader>
-            <DialogTitle>Reject Request</DialogTitle>
-            <DialogDescription>Provide a reason for rejecting this request.</DialogDescription>
+            <DialogTitle>{t('findings.approvals.rejectTitle', 'Reject request')}</DialogTitle>
+            <DialogDescription>
+              {t('findings.approvals.rejectDesc', 'Give a reason for rejecting this request.')}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody className="grid gap-4">
             {selectedApproval && (
               <div className="rounded-lg border bg-muted/50 p-3">
                 <p className="text-sm font-medium">
-                  {getRequestedStatusLabel(selectedApproval.requested_status)}
+                  {getRequestedStatusLabel(t, selectedApproval.requested_status)}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                   {selectedApproval.justification}
@@ -639,7 +853,7 @@ export default function ApprovalsPage() {
             )}
             <div className="grid gap-2">
               <Textarea
-                placeholder="Reason for rejection..."
+                placeholder={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
                 rows={3}
@@ -656,7 +870,7 @@ export default function ApprovalsPage() {
               onClick={() => setRejectDialogOpen(false)}
               disabled={isRejecting}
             >
-              Cancel
+              {t('findings.approvals.cancel', 'Cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -666,10 +880,10 @@ export default function ApprovalsPage() {
               {isRejecting ? (
                 <>
                   <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  Rejecting...
+                  {t('findings.approvals.rejecting', 'Rejecting…')}
                 </>
               ) : (
-                'Reject'
+                t('findings.approvals.action.reject', 'Reject')
               )}
             </Button>
           </DialogFooter>

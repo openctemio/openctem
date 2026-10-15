@@ -150,11 +150,11 @@ func (m *wfActionMockFindingRepo) BatchCountByAssetIDs(_ context.Context, _ shar
 }
 
 // AcceptUntil records an accept like UpdateStatusBatch does.
-func (m *wfActionMockFindingRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
-	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+func (m *wfActionMockFindingRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID, _ vulnerability.ClosureReason) error {
+	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, vulnerability.Closure{})
 }
 
-func (m *wfActionMockFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
+func (m *wfActionMockFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) error {
 	return nil
 }
 
@@ -1256,7 +1256,7 @@ func (m *wfActionMockFindingRepo) ListFindingGroups(_ context.Context, _ shared.
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *wfActionMockFindingRepo) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
+func (m *wfActionMockFindingRepo) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) (int64, error) {
 	return 0, nil
 }
 

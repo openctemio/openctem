@@ -544,7 +544,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
 	registerSignerLedgerSync(w.ControllerManager, svc, log)
 
-	w.ControllerManager.Register(controller.NewApprovalExpirationController(
+	approvalExpiry := controller.NewApprovalExpirationController(
 		repos.FindingAcceptanceExpiry,
 		svc.SLA,
 		&controller.ApprovalExpirationControllerConfig{
@@ -552,7 +552,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			BatchSize: 100,
 			Logger:    log.With("controller", "approval-expiration"),
 		},
-	))
+	)
+	// Pending finding requests nobody decided by their decide-by time expire.
+	if repos.FindingApproval != nil {
+		approvalExpiry.SetOverdueRequests(repos.FindingApproval)
+	}
+	w.ControllerManager.Register(approvalExpiry)
 
 	// Asset identity model: derive identifiers for assets that predate it and
 	// queue suspected duplicates for review (never merges).

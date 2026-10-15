@@ -13,6 +13,8 @@
 -- remediation_suggestion_runs holds one row per tenant: the last generator
 -- run (refresh throttle) and the last digest notification.
 --
+-- Links to tenant rows are composite (tenant_id, ...) foreign keys.
+--
 -- Live impact: three new, empty tables.
 
 CREATE TABLE IF NOT EXISTS remediation_suggestions (
@@ -50,10 +52,10 @@ CREATE TABLE IF NOT EXISTS remediation_suggestions (
     CONSTRAINT pk_remediation_suggestions PRIMARY KEY (id),
     CONSTRAINT fk_remediation_suggestions_tenant FOREIGN KEY (tenant_id)
         REFERENCES tenants (id) ON DELETE CASCADE,
-    CONSTRAINT fk_remediation_suggestions_action FOREIGN KEY (target_action_id)
-        REFERENCES remediation_actions (id) ON DELETE CASCADE,
-    CONSTRAINT fk_remediation_suggestions_task FOREIGN KEY (target_task_id)
-        REFERENCES remediation_tasks (id) ON DELETE CASCADE,
+    CONSTRAINT fk_remediation_suggestions_action FOREIGN KEY (tenant_id, target_action_id)
+        REFERENCES remediation_actions (tenant_id, id) ON DELETE CASCADE,
+    CONSTRAINT fk_remediation_suggestions_task FOREIGN KEY (tenant_id, target_task_id)
+        REFERENCES remediation_tasks (tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_remediation_suggestions_decided_by FOREIGN KEY (decided_by)
         REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT chk_remediation_suggestions_kind CHECK (kind IN ('new_group', 'join', 'task_route')),
@@ -93,8 +95,8 @@ CREATE TABLE IF NOT EXISTS remediation_key_exclusions (
     CONSTRAINT pk_remediation_key_exclusions PRIMARY KEY (tenant_id, action_key, finding_id),
     CONSTRAINT fk_remediation_key_exclusions_tenant FOREIGN KEY (tenant_id)
         REFERENCES tenants (id) ON DELETE CASCADE,
-    CONSTRAINT fk_remediation_key_exclusions_finding FOREIGN KEY (finding_id)
-        REFERENCES findings (id) ON DELETE CASCADE,
+    CONSTRAINT fk_remediation_key_exclusions_finding FOREIGN KEY (tenant_id, finding_id)
+        REFERENCES findings (tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_remediation_key_exclusions_created_by FOREIGN KEY (created_by)
         REFERENCES users (id) ON DELETE SET NULL,
     CONSTRAINT chk_remediation_key_exclusions_reason CHECK (reason IN ('removed', 'detached', 'moved'))
