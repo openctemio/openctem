@@ -16,7 +16,7 @@ admin console and the organization settings.
 
 Read by the API server at start-up (`server`). The server refuses to start when a variable under one of its prefixes is a likely misspelling of a listed name, or when a typed value does not parse; `server -check-config` runs the same checks without starting.
 
-Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `INTERNAL_API_`, `ACCOUNT_PORTAL_`.
+Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `INTERNAL_API_`, `ACCOUNT_PORTAL_`, `SELF_SERVICE_`.
 
 ### Application
 
@@ -341,6 +341,12 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `INTERNAL_API_JWT_PUBLIC_KEYS` | path | empty |  |  | PEM file with one or more Ed25519 public keys. Every request carries a token signed by one of the matching private keys (`EdDSA`), audience `openctem-core`, at most 5 minutes long, single use (`jti`), with scopes `limits:write`, `orgs:provision` or `usage:read`. List two keys while rotating. |
 | `INTERNAL_API_JWT_ISSUER` | string | `openctem-cloud` |  |  | The `iss` claim the internal API accepts. |
 
+### Organizations
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `SELF_SERVICE_START_LIMITS` | string | empty |  |  | Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > System > Limits: a JSON object of limit keys, for example `{"seats":5,"assets":500,"orgs_per_user":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`TENANT_CREATION_MODE=self_service`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API. |
+
 ### Metrics
 
 | Variable | Type | Default | Required | Secret | Description |
@@ -556,7 +562,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `AUTH_ACCESS_TOKEN_COOKIE_NAME` | unset it; the session cookie is always auth_token |
 | `AUTH_REFRESH_TOKEN_COOKIE_NAME` | unset it; the refresh cookie is always refresh_token |
 | `AUTH_TENANT_COOKIE_NAME` | unset it; the organization cookie is always app_tenant |
-| `JIRA_WEBHOOK_SECRET` | unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate |
+| `JIRA_WEBHOOK_SECRET` | unset it; each Jira integration has its own webhook secret (Settings > Integrations > Ticketing, or POST /api/v1/integrations/{id}/jira-webhook/secret/rotate) |
 | `SENSOR_LATEST_VERSION` | unset it; each sensor product's release line is built into the API from versions.yaml and changes with an API upgrade |
 | `SENSOR_MIN_VERSION` | unset it; each sensor product's release line is built into the API from versions.yaml and changes with an API upgrade |
 | `SENSOR_SDK_LATEST_VERSION` | unset it; each sensor product's release line is built into the API from versions.yaml and changes with an API upgrade |

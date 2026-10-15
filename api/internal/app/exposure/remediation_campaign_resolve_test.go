@@ -48,7 +48,7 @@ func TestResolveCampaignFindings_NoResolver(t *testing.T) {
 	c, err := s.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
 		TenantID:      tid.String(),
 		Name:          "No resolver",
-		FindingFilter: map[string]any{"severity": "high"},
+		FindingFilter: map[string]any{"severity": "high", "tool_name": "trivy"},
 	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("create campaign: %v", err)
@@ -71,7 +71,7 @@ func TestResolveCampaignFindings_DelegatesWithFilter(t *testing.T) {
 	c, err := s.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
 		TenantID:      tid.String(),
 		Name:          "Fix all high",
-		FindingFilter: map[string]any{"severity": "high"},
+		FindingFilter: map[string]any{"severity": "high", "tool_name": "trivy"},
 	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("create campaign: %v", err)
@@ -108,7 +108,7 @@ func TestResolveCampaignFindings_RefusesCloseAndClaimWithoutRules(t *testing.T) 
 	s.SetFindingResolver(res)
 	tid := shared.NewID()
 	c, err := s.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
-		TenantID: tid.String(), Name: "Fix all high", FindingFilter: map[string]any{"severity": "high"},
+		TenantID: tid.String(), Name: "Fix all high", FindingFilter: map[string]any{"severity": "high", "tool_name": "trivy"},
 	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("create campaign: %v", err)
@@ -139,7 +139,7 @@ func TestResolveCampaignFindings_OnlyActiveOrValidating(t *testing.T) {
 	s.SetFindingResolver(res)
 	tid := shared.NewID()
 	c, err := s.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
-		TenantID: tid.String(), Name: "Draft", FindingFilter: map[string]any{"severity": "high"},
+		TenantID: tid.String(), Name: "Draft", FindingFilter: map[string]any{"severity": "high", "tool_name": "trivy"},
 	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("create campaign: %v", err)

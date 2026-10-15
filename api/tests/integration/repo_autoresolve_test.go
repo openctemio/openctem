@@ -107,9 +107,9 @@ func TestRepoAutoResolve_WaitsForTheCommandToComplete(t *testing.T) {
 		t.Fatalf("status %q, want resolved", got)
 	}
 	var method string
-	_ = rr.r.db.QueryRow(`SELECT resolution_method FROM findings WHERE tenant_id = $1 AND rule_id = 'gone'`, rr.tn.tenant.String()).Scan(&method)
-	if method != "scan_verified" {
-		t.Fatalf("resolution_method %q, want scan_verified", method)
+	_ = rr.r.db.QueryRow(`SELECT COALESCE(closure_reason, '') || '/' || COALESCE(verification, '') FROM findings WHERE tenant_id = $1 AND rule_id = 'gone'`, rr.tn.tenant.String()).Scan(&method)
+	if method != "fixed/covered_scan" {
+		t.Fatalf("closure %q, want fixed/covered_scan", method)
 	}
 }
 

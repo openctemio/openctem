@@ -17,16 +17,14 @@ export interface OrganizationQuery {
   search?: string
   /** none: no active owner; present: has one. */
   owner?: '' | 'none' | 'present'
-  plan?: string
   page?: number
   perPage?: number
 }
 
-function listPath({ search, owner, plan, page = 1, perPage = 25 }: OrganizationQuery): string {
+function listPath({ search, owner, page = 1, perPage = 25 }: OrganizationQuery): string {
   const q = new URLSearchParams({ page: String(page), per_page: String(perPage) })
   if (search?.trim()) q.set('search', search.trim())
   if (owner) q.set('owner', owner)
-  if (plan) q.set('plan', plan)
   return `/tenants?${q.toString()}`
 }
 

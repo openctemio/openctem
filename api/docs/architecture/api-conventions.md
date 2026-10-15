@@ -21,7 +21,7 @@ path prefix, and each plane has one authenticator. **(lint)**
 | auth | `/api/v1/auth/` | none, rate-limited | login, SSO, OAuth, SAML |
 | admin | `/api/v1/admin/` | platform admin console session (cookie) only; no API key or bearer header | platform admin; may be served on its own host |
 | sensor | `/api/v2/sensor/` | sensor key (`octs_`), enrollment token (`octe_`) | new sensor calls are protocol v2 features advertised by `GET /api/v2/sensor/hello` |
-| inbound | `/api/v1/webhooks/incoming/{jira,github}` | HMAC per tenant | a dedicated `/hooks/{provider}` prefix is **Planned** (RFC-041) |
+| inbound | `/hooks/` (Jira: `/hooks/jira-integrations/{integration_id}`), `/api/v1/webhooks/incoming/github` | HMAC per integration or tenant | new receivers go under `/hooks/` |
 | scim | `/scim/v2/` | SCIM bearer | casing mandated by RFC 7644 |
 | mcp | `/api/v1/mcp` | `oct_` key | |
 | ops | `/health`, `/ready`, `/metrics` | none / metrics bearer | `/metrics` and `/ready` are never exposed publicly |
@@ -49,7 +49,7 @@ Rules:
   - `/api/v1/agents/` (the old management path, retired 2026-10-05)
   - `/api/v1/tenants/{tenant}/`
   - `/api/v1/users/me/`
-  - `/api/v1/webhooks/incoming/` (existing Jira and GitHub receivers stay)
+  - `/api/v1/webhooks/incoming/` (the existing GitHub receiver stays)
 
 ## 2. Tenancy
 
