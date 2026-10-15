@@ -225,7 +225,7 @@ func TestFindingFPPolicy_LoweringWaits24Hours_DB(t *testing.T) {
 	got.Pending, got.PendingAt = "", nil
 	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPut, url, `{"fp_approval":"all"}`, http.StatusOK)), &got)
 	if got.Pending != "" {
-		t.Fatalf("a cancelled lowering is still pending: %+v", got)
+		t.Fatalf("a canceled lowering is still pending: %+v", got)
 	}
 	if n := h.countRows(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'finding_approval.settings_changed'
 		AND changes IS NOT NULL`, org); n < 3 {
