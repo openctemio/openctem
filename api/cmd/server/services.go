@@ -2877,6 +2877,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Tenant.SetLifecycleNotifier(s.Notification)
 	// Teams on invitations: checked for the inviter, applied at acceptance.
 	s.Tenant.SetInvitationTeams(s.Group)
+	// Ownership transfer: owner asks, the member accepts with step-up.
+	s.Tenant.SetOwnershipTransferRepository(repos.OwnershipTransfer)
 
 	// Sensor pairing approvals need step-up re-authentication and notify
 	// every administrator (RFC-052 D-2, D-6).
