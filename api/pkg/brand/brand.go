@@ -232,7 +232,7 @@ func validateEmail(v string) error {
 }
 
 // AssetPath is where the API serves a brand image.
-const AssetPath = "/api/v1/brand/assets/"
+const AssetPath = "/api/v1/brand/images/"
 
 // Public is the brand as the public GET /api/v1/brand returns it: nothing
 // secret, nothing tenant-specific. An image URL is "" when the built-in
