@@ -70,7 +70,11 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 	if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, reason, nil); err != nil {
 		return false, fmt.Errorf("transition: %w", err)
 	}
-	if err := a.findings.Update(ctx, f); err != nil {
+	// The reopen and its timeline entry commit together.
+	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+		Source: "ioc_correlator", Reason: "ioc_match", ActorName: "system: IOC correlator", Message: reason,
+	})
+	if err := a.findings.Update(moveCtx, f); err != nil {
 		return false, fmt.Errorf("persist reopen: %w", err)
 	}
 

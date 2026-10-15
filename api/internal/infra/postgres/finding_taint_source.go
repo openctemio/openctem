@@ -78,6 +78,12 @@ func (r *DataFlowRepository) suspendDecision(ctx context.Context, tenant, id, st
 		VALUES ($1, $2, $3, $4, 'taint_source_changed', $5, $6)`, tenant, id, status, resolution, oldHash, newHash); err != nil {
 		return false, fmt.Errorf("record suspension: %w", err)
 	}
+	if err := setFindingTransition(ctx, tx, findingTransition{
+		Source: "taint_source", Reason: "decision_suspended", ActorName: "system: taint source changed",
+		Message: "The " + status + " decision is suspended for review: the finding's taint source changed",
+	}); err != nil {
+		return false, err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE findings SET status = 'confirmed', resolution = $3, acceptance_expires_at = NULL, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2`, tenant, id, ResolutionDecisionSuspended); err != nil {
 		return false, err
