@@ -164,7 +164,7 @@ request is audited as `organization.owner_recovery` in `admin_audit_logs` (high
 severity, refusals included) and as `user.created` with `owner_recovery: true`
 at critical severity in the organization's audit log.
 
-### Ownership transfer (RFC-095 §3.1)
+### Ownership transfer (RFC-095 §3.5)
 
 The owner hands the organization to an existing member from Settings >
 Members (Transfer ownership). The member must be an active person with
@@ -279,6 +279,13 @@ removed when the list changes.
 | Seats | checked when the invitation is created (members plus pending invitations) and again at acceptance |
 | Pending list | shows `member_kind` (internal or external at creation), `privileged` (two-factor will be required), the end of access, the last send and the resend count |
 | Acceptance | re-classifies the invitee and re-authorizes the invitation as the inviter (RFC-095 §3.2); both acceptance paths run the same code |
+
+
+Teams: an invitation can add the person to up to 20 teams (data access), so
+they do not join with no data. The inviter can add only teams they may add a
+member to (a team carrying a privileged role needs the owner, with step-up),
+and the check runs again at acceptance; a team carrying a role above member
+counts toward the outside-member two-factor rule.
 
 ### IP allowlist (`security.ip_whitelist`)
 
