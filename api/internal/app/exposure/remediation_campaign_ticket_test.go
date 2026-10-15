@@ -8,6 +8,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -249,7 +250,7 @@ func TestHandleEpicStatusChange_DoneClaimsFixNeverCompletes(t *testing.T) {
 	res := &fakeResolver{n: 3}
 	svc.SetFindingResolver(res)
 
-	refusals, handled, err := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-7", "Done")
+	refusals, handled, err := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-7", "Done", "acct-1")
 	if err != nil || !handled || len(refusals) != 0 {
 		t.Fatalf("Done: refusals=%v handled=%v err=%v", refusals, handled, err)
 	}
@@ -261,11 +262,33 @@ func TestHandleEpicStatusChange_DoneClaimsFixNeverCompletes(t *testing.T) {
 	}
 
 	res.called = false
-	if _, handled, _ := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-7", "In Progress"); !handled || res.called {
+	if _, handled, _ := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-7", "In Progress", ""); !handled || res.called {
 		t.Fatalf("In Progress on the epic: handled=%v resolver called=%v", handled, res.called)
 	}
 	other := newTicketSvc(c, &fakeTicketRepo{}, nil)
-	if _, handled, _ := other.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-8", "Done"); handled {
+	if _, handled, _ := other.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-8", "Done", ""); handled {
 		t.Fatal("an issue that is no campaign's epic was handled")
+	}
+}
+
+type failingResolver struct{}
+
+func (failingResolver) ResolveOpenByFilter(context.Context, string, vulnerability.FindingFilter, CampaignResolveInput) (*CampaignResolveResult, error) {
+	return nil, errors.New("pq: relation internal_secret_table does not exist")
+}
+
+// The epic comment never carries internal error text.
+func TestHandleEpicStatusChange_FailureCommentIsFixed(t *testing.T) {
+	c := newCampaign(t)
+	c.SetFindingFilter(map[string]any{"severity": "high"})
+	link, err := remediation.NewCampaignTicket(c.TenantID(), c.ID(), "jira", "SEC-9", "https://x.atlassian.net/browse/SEC-9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := newTicketSvc(c, &fakeTicketRepo{existing: link}, nil)
+	svc.SetFindingResolver(failingResolver{})
+	refusals, handled, err := svc.HandleEpicStatusChange(context.Background(), c.TenantID(), "SEC-9", "Done", "")
+	if !handled || err == nil || len(refusals) != 1 || refusals[0] != campaignEpicClaimFailed {
+		t.Fatalf("refusals=%q handled=%v err=%v, want the fixed message", refusals, handled, err)
 	}
 }

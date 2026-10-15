@@ -132,7 +132,7 @@ type applierStub struct {
 	ref    string
 }
 
-func (a *applierStub) ApplyTicketStatus(_ context.Context, _ shared.ID, ids []shared.ID, target vulnerability.FindingStatus, _, ref string) ([]shared.ID, []InboundRefusal, error) {
+func (a *applierStub) ApplyTicketStatus(_ context.Context, _ shared.ID, ids []shared.ID, target vulnerability.FindingStatus, _, ref, _ string) ([]shared.ID, []InboundRefusal, error) {
 	a.ids, a.target, a.ref = ids, target, ref
 	return ids, nil, nil
 }

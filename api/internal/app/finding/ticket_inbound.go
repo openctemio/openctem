@@ -81,9 +81,15 @@ func TicketPath(from, to vulnerability.FindingStatus) ([]vulnerability.FindingSt
 // ref the ticket ("OPS-12"). A fix_applied target is a "mark fixed" (legal
 // steps, proof-of-fix queued); in_progress and confirmed walk the legal
 // open steps. A closing target is refused for every finding.
+//
+// externalActor is the tracker account that moved the ticket (a Jira
+// accountId); it is recorded in each step's timeline entry and the note.
 func (s *VulnerabilityService) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
-	target vulnerability.FindingStatus, integration, ref string,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
 ) (*TicketStatusOutcome, error) {
+	if !vulnerability.TicketInboundSources[integration] {
+		return nil, fmt.Errorf("%w: unknown ticket integration", shared.ErrValidation)
+	}
 	out := &TicketStatusOutcome{}
 	if len(findingIDs) == 0 {
 		return out, nil
@@ -95,12 +101,12 @@ func (s *VulnerabilityService) ApplyTicketStatus(ctx context.Context, tenantID s
 		}
 		return out, nil
 	}
-	ctx = vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
-		Source:    integration,
-		Reason:    "ticket_status",
-		ActorType: IntegrationActorType,
-	})
+	ctx = vulnerability.WithTicketInbound(ctx, integration)
+	ctx = vulnerability.WithStatusTransition(ctx, TicketTransition(integration, ref, externalActor))
 	note := fmt.Sprintf("%s %s moved to a status mapped to %s", integration, ref, target)
+	if externalActor != "" {
+		note += " by " + integration + " account " + externalActor
+	}
 
 	findings, err := s.findingRepo.GetByIDs(ctx, tenantID, findingIDs)
 	if err != nil {
@@ -187,6 +193,23 @@ func (s *VulnerabilityService) ApplyTicketStatus(ctx context.Context, tenantID s
 		pending = next
 	}
 	return out, nil
+}
+
+// TicketTransition is the timeline record of an inbound ticket move: the
+// integration as the actor, the ticket and the tracker account that moved it.
+func TicketTransition(integration, ref, externalActor string) vulnerability.StatusTransition {
+	t := vulnerability.StatusTransition{
+		Source:    integration,
+		Reason:    "ticket_status",
+		ActorType: IntegrationActorType,
+		ActorName: integration,
+		Changes:   map[string]any{"ticket": ref},
+	}
+	if externalActor != "" {
+		t.ActorName = integration + ":" + externalActor
+		t.Changes[integration+"_account_id"] = externalActor
+	}
+	return t
 }
 
 // collect sorts a bulk result into applied, unchanged and refused findings.

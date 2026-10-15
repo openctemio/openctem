@@ -54,9 +54,9 @@ func (g *onceGuard) FirstDelivery(_ context.Context, key string, _ time.Duration
 type testTicketApplier struct{ vuln *finding.VulnerabilityService }
 
 func (a testTicketApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
-	target vulnerability.FindingStatus, integration, ref string,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
 ) ([]shared.ID, []jira.InboundRefusal, error) {
-	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref)
+	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,6 +106,7 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 	payload := func(status string) jira.WebhookPayload {
 		return jira.WebhookPayload{
 			WebhookEvent: "jira:issue_updated",
+			User:         jira.WebhookUser{AccountID: "5b10ac8d82e05b22cc7d4ef5"},
 			Issue:        jira.WebhookIssue{Key: issue, Self: "https://acme.atlassian.net/rest/api/2/issue/10001"},
 			Changelog:    &jira.Changelog{Items: []jira.ChangeItem{{Field: "status", ToString: status}}},
 		}
@@ -141,6 +142,19 @@ func TestJiraInbound_ServicePathForEveryLinkedFinding(t *testing.T) {
 	}
 	if steps < 3 {
 		t.Errorf("the new finding's legal steps recorded %d status changes, want 3", steps)
+	}
+
+	// The Jira account that moved the issue is in the note and the timeline.
+	if _, res, _ := h.findingRow(fConfirmed); !strings.Contains(res, "5b10ac8d82e05b22cc7d4ef5") {
+		t.Errorf("note %q does not name the Jira account", res)
+	}
+	var withAccount int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM finding_activities WHERE finding_id = $1 AND changes::text LIKE '%5b10ac8d82e05b22cc7d4ef5%'`,
+		fNew.String()).Scan(&withAccount); err != nil {
+		t.Fatal(err)
+	}
+	if withAccount == 0 {
+		t.Error("no timeline entry records the Jira account")
 	}
 
 	// The resolved finding's refusal is commented back, with its reason.
