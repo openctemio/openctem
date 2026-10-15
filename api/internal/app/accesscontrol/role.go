@@ -223,6 +223,11 @@ type CreateRoleInput struct {
 	HierarchyLevel    int      `json:"hierarchy_level" validate:"min=0,max=79"`
 	HasFullDataAccess bool     `json:"has_full_data_access"`
 	Permissions       []string `json:"permissions"`
+	// TemplateID names the role template the role starts from. The role
+	// records the template's version and permissions so a later template
+	// change can be offered as an update; the permissions above still decide
+	// what the role carries (the creator may trim them) and pass the ceiling.
+	TemplateID string `json:"template_id"`
 }
 
 // validateCustomRoleShape refuses a custom role that would look like a system
@@ -289,6 +294,15 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 		}
 	}
 
+	var origin *roledom.TemplateOrigin
+	if input.TemplateID != "" {
+		tpl, ok := permission.RoleTemplateByID(input.TemplateID)
+		if !ok {
+			return nil, fmt.Errorf("%w: unknown role template %q", shared.ErrValidation, input.TemplateID)
+		}
+		origin = &roledom.TemplateOrigin{ID: tpl.ID, Version: tpl.Version, Permissions: permission.ToStrings(tpl.Permissions)}
+	}
+
 	// Create the role
 	r := roledom.New(
 		tenantID,
@@ -300,6 +314,7 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 		input.Permissions,
 		createdByID,
 	)
+	r.SetTemplate(origin)
 
 	if err := s.roleRepo.Create(ctx, r); err != nil {
 		if errors.Is(err, roledom.ErrRoleSlugExists) {
@@ -319,6 +334,9 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 		WithMetadata("hierarchy_level", r.HierarchyLevel()).
 		WithMetadata("has_full_data_access", r.HasFullDataAccess()).
 		WithMetadata("permission_count", r.PermissionCount())
+	if origin != nil {
+		event = event.WithMetadata("template_id", origin.ID).WithMetadata("template_version", origin.Version)
+	}
 	s.logAudit(ctx, actx, event)
 
 	return r, nil
@@ -408,6 +426,10 @@ type UpdateRoleInput struct {
 	HierarchyLevel    *int     `json:"hierarchy_level" validate:"omitempty,min=0,max=79"`
 	HasFullDataAccess *bool    `json:"has_full_data_access"`
 	Permissions       []string `json:"permissions,omitempty"`
+
+	// templateOrigin, when set, records the template version the role now
+	// follows (ApplyTemplateUpdate).
+	templateOrigin *roledom.TemplateOrigin
 }
 
 // UpdateRole updates a role.
@@ -502,6 +524,14 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 		if err := r.SetPermissions(input.Permissions); err != nil {
 			return nil, err
 		}
+	}
+	if input.templateOrigin != nil {
+		old := 0
+		if t := r.Template(); t != nil {
+			old = t.Version
+		}
+		changes.Set("template_version", old, input.templateOrigin.Version)
+		r.SetTemplate(input.templateOrigin)
 	}
 
 	// A permission change must reach every holder of the role. Load the
