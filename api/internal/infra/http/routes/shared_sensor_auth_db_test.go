@@ -38,7 +38,9 @@ func TestSharedSensor_AuthenticatesWithoutTenant_DB(t *testing.T) {
 	if err := postgres.NewSensorRepository(&postgres.DB{DB: h.db}).Create(ctx, s); err != nil {
 		t.Fatalf("create shared sensor: %v", err)
 	}
-	t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, s.ID.String()) })
+	t.Cleanup(func() {
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, s.ID.String())
+	})
 
 	// The row has no tenant, and neither has its default grant.
 	var grantTenant *string
