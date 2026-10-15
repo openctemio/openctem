@@ -170,8 +170,8 @@ func TestUpdateCampaignStatus_CompletionTransitionsEpic(t *testing.T) {
 	epic := &fakeEpicCreator{}
 	svc := newTicketSvc(c, tr, epic)
 
-	if _, err := svc.UpdateCampaignStatus(context.Background(), c.TenantID().String(), c.ID().String(),
-		string(remediation.CampaignStatusCompleted), auditapp.AuditContext{}); err != nil {
+	if _, err := svc.UpdateCampaignStatusAt(context.Background(), c.TenantID().String(), c.ID().String(),
+		string(remediation.CampaignStatusCompleted), CampaignStatusOptions{CloseWithOpenMembers: true}, auditapp.AuditContext{}); err != nil {
 		t.Fatalf("UpdateCampaignStatus: %v", err)
 	}
 	if epic.transitionCalls != 1 || epic.lastTransition != "Done" {
@@ -187,8 +187,8 @@ func TestUpdateCampaignStatus_NoEpicLink_NoTransition(t *testing.T) {
 	epic := &fakeEpicCreator{}
 	svc := newTicketSvc(c, &fakeTicketRepo{}, epic) // no existing link
 
-	if _, err := svc.UpdateCampaignStatus(context.Background(), c.TenantID().String(), c.ID().String(),
-		string(remediation.CampaignStatusCompleted), auditapp.AuditContext{}); err != nil {
+	if _, err := svc.UpdateCampaignStatusAt(context.Background(), c.TenantID().String(), c.ID().String(),
+		string(remediation.CampaignStatusCompleted), CampaignStatusOptions{CloseWithOpenMembers: true}, auditapp.AuditContext{}); err != nil {
 		t.Fatalf("UpdateCampaignStatus: %v", err)
 	}
 	if epic.transitionCalls != 0 {
