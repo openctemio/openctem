@@ -9,6 +9,6 @@
   change is on the task's timeline and the finding's activity.
 - API: `/api/v1/remediation/tasks` (list, create, get, change, members, timeline) in the remediation module.
   A restricted member sees and changes tasks through their data scope only. Design: RFC-098.
-- Migrations `002290_remediation_tasks` (four new tables), `002291_remediation_task_activity_type` and
-  `002292_remediation_task_activity_type_validate` (the finding activity CHECK re-added `NOT VALID`, then
+- Migrations `remediation_tasks` (four new tables), `remediation_task_activity_type` and
+  `remediation_task_activity_type_validate` (the finding activity CHECK re-added `NOT VALID`, then
   validated without blocking writes).
