@@ -255,6 +255,11 @@ func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID,
 	return a.keys.CountByKeyInScope(ctx, tenantID, key, closedStrs, scope)
 }
 
+func (a campaignKeyResolver) CountVerifiedByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, error) {
+	_, verified, err := a.keys.CountByKeyInScope(ctx, tenantID, key, []string{string(vulnerability.FindingStatusResolved)}, scope)
+	return verified, err
+}
+
 func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (*exposure.CampaignResolveResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {

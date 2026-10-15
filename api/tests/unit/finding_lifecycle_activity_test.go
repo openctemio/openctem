@@ -140,11 +140,11 @@ func (s *stubFindingRepo) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _
 }
 
 // AcceptUntil records an accept like UpdateStatusBatch does.
-func (s *stubFindingRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
-	return s.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+func (s *stubFindingRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID, _ vulnerability.ClosureReason) error {
+	return s.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, vulnerability.Closure{})
 }
 
-func (s *stubFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
+func (s *stubFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) error {
 	return nil
 }
 func (s *stubFindingRepo) DeleteByAssetID(_ context.Context, _, _ shared.ID) error { return nil }
