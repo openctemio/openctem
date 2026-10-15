@@ -995,5 +995,18 @@
   "findings.properties.validation": "Validation",
   "findings.observation.stale": "Stale: not reported lately, not fixed",
   "findings.validation.not_reproducible": "Not reproducible",
-  "findings.validation.reproducible": "Reproducible"
+  "findings.validation.reproducible": "Reproducible",
+  "findings.transitionReason.missing_permission": "Needs the {permission} permission",
+  "findings.transitionReason.not_a_lifecycle_move": "Not a step of the finding lifecycle from here",
+  "findings.transitionReason.not_fix_owner": "Only the assignee, an assigned group member or the asset owner can claim a fix",
+  "findings.transitionReason.not_a_person": "A fix is claimed by a person",
+  "findings.transitionReason.ticket_cannot_close": "A ticket can only report work state",
+  "findings.transitionReason.pentest_module": "Managed in the pentest campaign",
+  "findings.transitionReason.evidence_required": "Needs a retest pass, or the verification checklist completed by another person",
+  "findings.transitionReason.checklist_required": "Needs the verification checklist",
+  "findings.transitionReason.not_found": "Not found",
+  "findings.statusSelect.loading": "Loading moves…",
+  "findings.statusSelect.none": "No status change available",
+  "findings.bulk.noneCanMove": "None of the selected findings can move",
+  "findings.bulk.someCannotMove": "{count} of the selected findings cannot move"
 }

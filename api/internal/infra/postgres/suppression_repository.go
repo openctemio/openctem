@@ -68,9 +68,9 @@ func (r *SuppressionRepository) saveInTx(ctx context.Context, exec executor, rul
 			name, description, suppression_type, status,
 			requested_by, requested_at, approved_by, approved_at,
 			rejected_by, rejected_at, rejection_reason, expires_at,
-			created_at, updated_at
+			created_at, updated_at, review_flagged_at, review_reason
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 		ON CONFLICT (id) DO UPDATE SET
 			rule_id = EXCLUDED.rule_id,
 			tool_name = EXCLUDED.tool_name,
@@ -86,7 +86,9 @@ func (r *SuppressionRepository) saveInTx(ctx context.Context, exec executor, rul
 			rejected_at = EXCLUDED.rejected_at,
 			rejection_reason = EXCLUDED.rejection_reason,
 			expires_at = EXCLUDED.expires_at,
-			updated_at = EXCLUDED.updated_at
+			updated_at = EXCLUDED.updated_at,
+			review_flagged_at = EXCLUDED.review_flagged_at,
+			review_reason = EXCLUDED.review_reason
 	`
 
 	_, err := exec.ExecContext(ctx, query,
@@ -110,6 +112,8 @@ func (r *SuppressionRepository) saveInTx(ctx context.Context, exec executor, rul
 		nullTime(rule.ExpiresAt()),
 		rule.CreatedAt(),
 		rule.UpdatedAt(),
+		nullTime(rule.ReviewFlaggedAt()),
+		rule.ReviewReason(),
 	)
 
 	if err != nil {
@@ -668,7 +672,8 @@ func (r *SuppressionRepository) selectQuery() string {
 			sr.name, sr.description, sr.suppression_type, sr.status,
 			sr.requested_by, sr.requested_at, sr.approved_by, sr.approved_at,
 			sr.rejected_by, sr.rejected_at, sr.rejection_reason, sr.expires_at,
-			sr.created_at, sr.updated_at, sr.requested_by_actor
+			sr.created_at, sr.updated_at, sr.requested_by_actor,
+			sr.review_flagged_at, sr.review_reason
 		FROM suppression_rules sr
 	`
 }
@@ -697,6 +702,8 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 		createdAt        time.Time
 		updatedAt        time.Time
 		requestedByActor sql.NullString
+		reviewFlaggedAt  sql.NullTime
+		reviewReason     string
 	)
 
 	err := row.Scan(
@@ -705,6 +712,7 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 		&requestedBy, &requestedAt, &approvedBy, &approvedAt,
 		&rejectedBy, &rejectedAt, &rejectionReason, &expiresAt,
 		&createdAt, &updatedAt, &requestedByActor,
+		&reviewFlaggedAt, &reviewReason,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -720,6 +728,7 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 		requestedBy.String, requestedAt, approvedBy, approvedAt,
 		rejectedBy, rejectedAt, rejectionReason, expiresAt,
 		createdAt, updatedAt, requestedByActor.String,
+		reviewFlaggedAt, reviewReason,
 	), nil
 }
 
@@ -750,6 +759,8 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 			createdAt        time.Time
 			updatedAt        time.Time
 			requestedByActor sql.NullString
+			reviewFlaggedAt  sql.NullTime
+			reviewReason     string
 		)
 
 		err := rows.Scan(
@@ -758,6 +769,7 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 			&requestedBy, &requestedAt, &approvedBy, &approvedAt,
 			&rejectedBy, &rejectedAt, &rejectionReason, &expiresAt,
 			&createdAt, &updatedAt, &requestedByActor,
+			&reviewFlaggedAt, &reviewReason,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan suppression rule: %w", err)
@@ -769,6 +781,7 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 			requestedBy.String, requestedAt, approvedBy, approvedAt,
 			rejectedBy, rejectedAt, rejectionReason, expiresAt,
 			createdAt, updatedAt, requestedByActor.String,
+			reviewFlaggedAt, reviewReason,
 		))
 	}
 
@@ -787,6 +800,7 @@ func (r *SuppressionRepository) buildRule(
 	rejectionReason sql.NullString, expiresAt sql.NullTime,
 	createdAt, updatedAt time.Time,
 	requestedByActor string,
+	reviewFlaggedAt sql.NullTime, reviewReason string,
 ) *suppression.Rule {
 	idParsed, _ := shared.IDFromString(id)
 	tenantIDParsed, _ := shared.IDFromString(tenantID)
@@ -808,6 +822,10 @@ func (r *SuppressionRepository) buildRule(
 		CreatedAt:        createdAt,
 		UpdatedAt:        updatedAt,
 		RequestedByActor: requestedByActor,
+		ReviewReason:     reviewReason,
+	}
+	if reviewFlaggedAt.Valid {
+		data.ReviewFlaggedAt = &reviewFlaggedAt.Time
 	}
 
 	if assetID.Valid {

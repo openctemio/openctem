@@ -995,5 +995,18 @@
   "findings.properties.validation": "Xác thực",
   "findings.observation.stale": "Cũ: gần đây không còn được báo cáo, chưa khắc phục",
   "findings.validation.not_reproducible": "Không tái hiện được",
-  "findings.validation.reproducible": "Tái hiện được"
+  "findings.validation.reproducible": "Tái hiện được",
+  "findings.transitionReason.missing_permission": "Cần quyền {permission}",
+  "findings.transitionReason.not_a_lifecycle_move": "Không phải một bước của vòng đời phát hiện từ trạng thái này",
+  "findings.transitionReason.not_fix_owner": "Chỉ người được giao, thành viên nhóm được giao hoặc chủ sở hữu tài sản mới được báo đã sửa",
+  "findings.transitionReason.not_a_person": "Việc báo đã sửa phải do một người thực hiện",
+  "findings.transitionReason.ticket_cannot_close": "Phiếu chỉ có thể báo trạng thái công việc",
+  "findings.transitionReason.pentest_module": "Được quản lý trong chiến dịch kiểm thử xâm nhập",
+  "findings.transitionReason.evidence_required": "Cần một lần kiểm tra lại đạt, hoặc danh sách xác minh do người khác hoàn thành",
+  "findings.transitionReason.checklist_required": "Cần hoàn thành danh sách xác minh",
+  "findings.transitionReason.not_found": "Không tìm thấy",
+  "findings.statusSelect.loading": "Đang tải các bước…",
+  "findings.statusSelect.none": "Không có thay đổi trạng thái nào",
+  "findings.bulk.noneCanMove": "Không phát hiện nào đã chọn có thể chuyển trạng thái",
+  "findings.bulk.someCannotMove": "{count} phát hiện đã chọn không thể chuyển trạng thái"
 }
