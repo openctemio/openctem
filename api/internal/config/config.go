@@ -2276,7 +2276,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	// A platform-wide Jira webhook secret verified a delivery for any
 	// ?tenant=: whoever held it could forge Jira events for every
 	// organization. Each organization's Jira integration has its own secret.
-	{"JIRA_WEBHOOK_SECRET", "unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate"},
+	{"JIRA_WEBHOOK_SECRET", "unset it; each Jira integration has its own webhook secret (Settings > Integrations > Ticketing, or POST /api/v1/integrations/{id}/jira-webhook/secret/rotate)"},
 	// Each sensor product has its own release line, built into the API
 	// from versions.yaml (api/docs/rfcs/RFC-037): one sensor-wide channel compared
 	// every product with the scanning sensor's.
