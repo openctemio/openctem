@@ -288,9 +288,13 @@ export default function CampaignDetailPage() {
   }
 
   const handleStatusChange = async (newStatus: string) => {
-    const apply = async () => {
+    const apply = async (closeWithOpenMembers = false) => {
       try {
-        await updateStatus({ status: newStatus, version: campaign?.version })
+        await updateStatus({
+          status: newStatus,
+          version: campaign?.version,
+          ...(closeWithOpenMembers ? { close_with_open_members: true } : {}),
+        })
         await mutateCampaign()
         globalMutate(
           (key: unknown) => typeof key === 'string' && key.includes('/remediation/campaigns')
@@ -519,9 +523,9 @@ export default function CampaignDetailPage() {
                     )}
                     {/* Inline status change (reuses the finding status endpoint). */}
                     <StatusSelect
+                      findingId={f.id}
                       value={f.status as FindingStatus}
                       onChange={(s) => handleFindingStatus(f.id, s)}
-                      source={f.source}
                     />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

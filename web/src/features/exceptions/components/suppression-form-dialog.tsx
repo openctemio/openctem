@@ -40,6 +40,27 @@ interface SuppressionFormDialogProps {
 
 const TYPE_OPTIONS: SuppressionType[] = ['false_positive', 'accepted_risk', 'wont_fix']
 
+/** Every rule ends: 90 days by default, at most 365 days ahead (API rule). */
+export const DEFAULT_RULE_DAYS = 90
+export const MAX_RULE_DAYS = 365
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Why an end date cannot be used (`missing`, `past`, `tooLate`), or null
+ * when it is fine. `local` is a datetime-local value.
+ */
+export function ruleEndProblem(
+  local: string,
+  now: Date = new Date()
+): 'missing' | 'past' | 'tooLate' | null {
+  const iso = toRfc3339(local)
+  if (!iso) return 'missing'
+  const at = new Date(iso).getTime()
+  if (at <= now.getTime()) return 'past'
+  if (at > now.getTime() + MAX_RULE_DAYS * DAY_MS) return 'tooLate'
+  return null
+}
+
 /** Convert an <input type="datetime-local"> value to RFC3339, or null if blank. */
 function toRfc3339(local: string): string | null {
   if (!local) return null
@@ -87,13 +108,18 @@ export function SuppressionFormDialog({
     setToolName(rule?.tool_name ?? '')
     setRuleId(rule?.rule_id ?? '')
     setPathPattern(rule?.path_pattern ?? '')
-    setExpiresAt(toLocalInput(rule?.expires_at))
+    setExpiresAt(
+      toLocalInput(
+        rule?.expires_at ?? new Date(Date.now() + DEFAULT_RULE_DAYS * DAY_MS).toISOString()
+      )
+    )
   }, [open, rule])
 
   // Backend requires at least one of rule_id / path_pattern / asset_id.
   // The console exposes rule_id and path_pattern; require one of them.
   const hasCriteria = ruleId.trim() !== '' || pathPattern.trim() !== ''
-  const canSubmit = name.trim() !== '' && hasCriteria && !isSubmitting
+  const endProblem = ruleEndProblem(expiresAt)
+  const canSubmit = name.trim() !== '' && hasCriteria && endProblem === null && !isSubmitting
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -106,7 +132,7 @@ export function SuppressionFormDialog({
           rule_id: ruleId.trim(),
           tool_name: toolName.trim(),
           path_pattern: pathPattern.trim(),
-          expires_at: expires ?? '',
+          expires_at: expires ?? undefined,
         })
         toast.success(t('exceptions.form.updated', 'Suppression rule updated'))
       } else {
@@ -117,7 +143,7 @@ export function SuppressionFormDialog({
           rule_id: ruleId.trim() || undefined,
           tool_name: toolName.trim() || undefined,
           path_pattern: pathPattern.trim() || undefined,
-          expires_at: expires,
+          expires_at: expires ?? undefined,
         })
         toast.success(t('exceptions.form.submitted', 'Suppression rule submitted for approval'))
       }
@@ -271,18 +297,31 @@ export function SuppressionFormDialog({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="suppression-expires">
-                {t('exceptions.form.expires', 'Expires (optional)')}
-              </Label>
+              <Label htmlFor="suppression-expires">{t('exceptions.form.endsAt', 'Ends')}</Label>
               <Input
                 id="suppression-expires"
                 type="datetime-local"
+                required
                 value={expiresAt}
+                aria-invalid={endProblem !== null}
                 onChange={(e) => setExpiresAt(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
-                {t('exceptions.form.expiresHint', 'Leave blank for a rule that never expires.')}
-              </p>
+              {endProblem ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {endProblem === 'missing'
+                    ? t('exceptions.form.endMissing', 'Choose when the rule ends.')
+                    : endProblem === 'past'
+                      ? t('exceptions.form.endPast', 'The end must be in the future.')
+                      : t('exceptions.form.endTooLate', 'A rule ends within 365 days.')}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'exceptions.form.endsHint',
+                    'Every rule ends: 90 days by default, at most 365 days. To keep suppressing after that, submit a new rule for approval.'
+                  )}
+                </p>
+              )}
             </div>
           </div>
         </DialogBody>

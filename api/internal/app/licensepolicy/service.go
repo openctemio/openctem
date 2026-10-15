@@ -92,7 +92,17 @@ type Service struct {
 	findings FindingCreator
 	tenants  TenantReader
 	logger   *logger.Logger
+	keys     RemediationKeyApplier
 }
+
+// RemediationKeyApplier keys persisted findings into remediation groups
+// (*remediation.KeyApplier). Best-effort: a failure is logged, never fatal.
+type RemediationKeyApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
+}
+
+// SetRemediationKeyApplier wires remediation-group keys for license findings.
+func (s *Service) SetRemediationKeyApplier(k RemediationKeyApplier) { s.keys = k }
 
 // NewService creates the service.
 func NewService(store Store, findings FindingCreator, tenants TenantReader, log *logger.Logger) *Service {
@@ -287,6 +297,11 @@ func (s *Service) reconcileFindings(ctx context.Context, tenantID shared.ID, ass
 		return err
 	}
 	res.Created = out.Created
+	if s.keys != nil {
+		if err := s.keys.ApplyBatch(ctx, tenantID, create); err != nil {
+			s.logger.Warn("license findings: remediation keys not derived", "tenant_id", tenantID.String(), "error", err)
+		}
+	}
 	return nil
 }
 
