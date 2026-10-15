@@ -1825,5 +1825,19 @@
   "scans.ci.trust.legacyAudience": "Các pipeline có từ trước vẫn có thể dùng audience cũ {value} đến {until}, cho đến khi chúng dùng audience mới một lần. Hãy cập nhật pipeline theo đoạn mã hiện tại.",
   "scans.ci.hint.pipelines.one": "1 pipeline CI gửi kết quả qua CI/CD",
   "scans.ci.hint.pipelines.other": "{count} pipeline CI gửi kết quả qua CI/CD",
-  "scans.ci.hint.failing": "{count} không đạt gate"
+  "scans.ci.hint.failing": "{count} không đạt gate",
+  "scans.ci.trust.manageScope": "Tin cậy và thêm vào phạm vi",
+  "scans.ci.trust.manageScopeHint": "Mỗi chủ sở hữu hoặc kho mã trở thành một mục phạm vi kho mã (ví dụ gitlab.com/nhom-cua-ban/*), luôn khớp với cấu hình tin cậy này và bị gỡ cùng nó. Các mục tuân theo quy tắc phê duyệt phạm vi của tổ chức bạn.",
+  "scans.ci.trust.manageScopeNoPermission": "Cần quyền ghi phạm vi để thêm kho mã vào phạm vi.",
+  "scans.ci.trust.scope.title": "Trong phạm vi",
+  "scans.ci.trust.scope.seen": "Đã thấy trong pipeline đã xác minh",
+  "scans.ci.trust.scope.seenHint": "Một pipeline đã xác minh của {repository} đã chạy theo cấu hình tin cậy này lúc {at}.",
+  "scans.ci.trust.scope.notSeen": "Chưa có pipeline đã xác minh",
+  "scans.ci.trust.scope.missing": "Chưa trong phạm vi: không thể thêm mục (xem nhật ký kiểm toán) hoặc đang chờ phê duyệt.",
+  "scans.ci.trust.scope.removed": "Đã bị một người gỡ khỏi phạm vi lúc {at}; cấu hình tin cậy này sẽ không thêm lại.",
+  "scans.ci.trust.scope.off": "Phạm vi: không thêm (tùy chọn Tin cậy và thêm vào phạm vi đang tắt).",
+  "scans.ci.trust.scope.disabled": "Phạm vi: không có khi cấu hình tin cậy bị tắt.",
+  "scans.ci.trust.scope.adopt": "Thêm các kho mã này vào phạm vi",
+  "scans.ci.trust.scope.adopted": "Đã thêm kho mã vào phạm vi",
+  "scans.ci.trust.scope.seenHintNoRepo": "Một pipeline đã xác minh đã chạy theo cấu hình tin cậy này lúc {at}."
 }
