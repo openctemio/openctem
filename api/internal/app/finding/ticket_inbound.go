@@ -87,7 +87,7 @@ func TicketPath(from, to vulnerability.FindingStatus) ([]vulnerability.FindingSt
 func (s *VulnerabilityService) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
 	target vulnerability.FindingStatus, integration, ref, externalActor string,
 ) (*TicketStatusOutcome, error) {
-	if !vulnerability.TicketInboundSources[integration] {
+	if !vulnerability.IsTicketInboundSource(integration) {
 		return nil, fmt.Errorf("%w: unknown ticket integration", shared.ErrValidation)
 	}
 	out := &TicketStatusOutcome{}
