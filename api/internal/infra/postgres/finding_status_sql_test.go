@@ -60,7 +60,6 @@ var findingStatusWriters = map[string]int{
 	"finding_acceptance_expiry.go":         1, // accepted -> confirmed when the acceptance ended (guarded by status under lock)
 	"finding_branch_only.go":               1, // branchOnlyExpiryFromSQL
 	"finding_correlation_repository.go":    2, // correlate: open -> duplicate (isOpenStatus checked under lock); release: duplicate -> prior open status
-	"finding_taint_source.go":              1, // false_positive/accepted -> confirmed when the taint source changed (status checked under lock)
 	"finding_coverage_autoresolve.go":      2, // autoResolveFromSQL
 	"finding_group_repository.go":          1, // UserFromStatuses($6)
 	"finding_pentest_duplicate.go":         2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
@@ -124,6 +123,36 @@ func TestFindingStatusSQL_EveryStatusWriteIsKnown(t *testing.T) {
 		if got[f] != findingStatusWriters[f] {
 			t.Errorf("%s: %d statements write findings.status, %d known; check the new one follows the lifecycle and update findingStatusWriters",
 				f, got[f], findingStatusWriters[f])
+		}
+	}
+}
+
+// statusWritersRecordedElsewhere are the status writers whose timeline entry
+// is written by their caller, each with the reason. Every other writer names
+// its transition (findingTransition / execStatusWrite: the trigger writes the
+// entry in the same transaction) or inserts its own entries in its statement.
+var statusWritersRecordedElsewhere = map[string]string{
+	"finding_pentest_duplicate.go": "a pentester marking a duplicate: the pentest service records the entry",
+}
+
+// Every file that writes findings.status puts the move on the finding's
+// timeline in the same transaction (research: automatic moves had none).
+func TestFindingStatusSQL_EveryStatusWriteIsOnTheTimeline(t *testing.T) {
+	markers := []string{"findingTransition{", "setFindingTransition(", "execStatusWrite(", "INSERT INTO finding_activities"}
+	for f := range findingStatusWriters {
+		if _, ok := statusWritersRecordedElsewhere[f]; ok {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recorded := false
+		for _, m := range markers {
+			recorded = recorded || strings.Contains(string(src), m)
+		}
+		if !recorded {
+			t.Errorf("%s writes findings.status but records no timeline entry: set a findingTransition on the transaction", f)
 		}
 	}
 }
