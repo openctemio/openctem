@@ -3,7 +3,7 @@
  * count; one click on the menu item changes nothing.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const csrfFetch = vi.hoisted(() => vi.fn())
@@ -167,11 +167,17 @@ describe('Findings bulk resolve', () => {
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Resolve 2 findings?')
 
+    // A bulk resolve is attested: the confirm waits for a note.
+    expect(within(dialog).getByRole('button', { name: 'Resolve' })).toBeDisabled()
+    fireEvent.change(within(dialog).getByLabelText('Note (required)'), {
+      target: { value: 'patched in 4.2' },
+    })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }))
     await waitFor(() => expect(bulkCalls()).toHaveLength(1))
     expect(JSON.parse(String(bulkCalls()[0][1]?.body))).toMatchObject({
       finding_ids: ['f1', 'f2'],
       status: 'resolved',
+      resolution: 'patched in 4.2',
     })
   })
 })
