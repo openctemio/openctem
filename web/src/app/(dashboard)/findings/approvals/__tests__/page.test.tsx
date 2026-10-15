@@ -19,6 +19,9 @@ import { render, screen, fireEvent } from '@testing-library/react'
 // MOCKS
 // ============================================
 
+// The columns the page passes to the table, so a test can render one cell.
+const captured = vi.hoisted(() => ({ columns: [] as unknown[] }))
+
 const mockMutate = vi.fn()
 const mockTriggerApprove = vi.fn()
 const mockTriggerReject = vi.fn()
@@ -43,6 +46,7 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
     trigger: mockTriggerCancel,
     isMutating: false,
   })),
+  remindApprovers: vi.fn(),
 }))
 
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'user-1' }) }))
@@ -96,6 +100,9 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/lib/api/error-handler', () => ({
   getErrorMessage: vi.fn((_error, fallback) => fallback || 'Error'),
+  ApiClientError: class ApiClientError extends Error {
+    statusCode = 500
+  },
 }))
 
 vi.mock('@/lib/utils', () => ({
@@ -123,6 +130,7 @@ vi.mock('@/features/shared/components/page-header', () => ({
 vi.mock('@/features/shared/components/data-table/data-table', () => ({
   DataTable: ({
     data,
+    columns,
     emptyMessage,
     emptyDescription,
   }: {
@@ -134,24 +142,27 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
     searchKey?: string
     showColumnToggle?: boolean
     pageSize?: number
-  }) => (
-    <div data-testid="data-table">
-      {data.length === 0 ? (
-        <div>
-          <p>{emptyMessage}</p>
-          <p>{emptyDescription}</p>
-        </div>
-      ) : (
-        <div data-testid="table-rows">
-          {data.map((item: unknown, i: number) => (
-            <div key={i} data-testid="table-row">
-              {JSON.stringify(item)}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  ),
+  }) => {
+    captured.columns = columns
+    return (
+      <div data-testid="data-table">
+        {data.length === 0 ? (
+          <div>
+            <p>{emptyMessage}</p>
+            <p>{emptyDescription}</p>
+          </div>
+        ) : (
+          <div data-testid="table-rows">
+            {data.map((item: unknown, i: number) => (
+              <div key={i} data-testid="table-row">
+                {JSON.stringify(item)}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  },
 }))
 
 vi.mock('@/features/shared/components/data-table/data-table-column-header', () => ({
@@ -247,7 +258,7 @@ describe('ApprovalsPage', () => {
     it('renders the page title', () => {
       mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
-      expect(screen.getByText('Approval Requests')).toBeInTheDocument()
+      expect(screen.getByText('Approval requests')).toBeInTheDocument()
     })
 
     it('renders description with counts', () => {
@@ -255,13 +266,13 @@ describe('ApprovalsPage', () => {
         data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
       })
       render(<ApprovalsPage />)
-      expect(screen.getByText('3 total requests - 1 pending review')).toBeInTheDocument()
+      expect(screen.getByText('3 requests, 1 waiting for a decision')).toBeInTheDocument()
     })
 
     it('shows loading description while fetching', () => {
       mockHook({ isLoading: true })
       render(<ApprovalsPage />)
-      expect(screen.getByText('Loading approvals...')).toBeInTheDocument()
+      expect(screen.getByText('Loading approvals…')).toBeInTheDocument()
     })
 
     it('renders back link to findings page', () => {
@@ -432,6 +443,39 @@ describe('ApprovalsPage', () => {
       expect(screen.getByTestId('data-table')).toBeInTheDocument()
       const rows = screen.getAllByTestId('table-row')
       expect(rows).toHaveLength(3)
+    })
+
+    it('names the requester: you, a member, a former member or the AI actor', () => {
+      const rowsData = [
+        mockApprovals[0],
+        { ...mockApprovals[1], requested_by_name: 'Lan Requester' },
+        { ...mockApprovals[2], requested_by: 'user-9' },
+        {
+          ...mockApprovals[2],
+          id: 'approval-4',
+          requested_by: '',
+          requested_by_actor: 'ai_triage',
+        },
+      ]
+      mockHook({
+        data: { data: rowsData, total: 4, page: 1, per_page: 20, status_counts: COUNTS },
+      })
+      render(<ApprovalsPage />)
+      const col = (
+        captured.columns as { id?: string; cell?: (c: unknown) => React.ReactNode }[]
+      ).find((c) => c.id === 'requester')
+      expect(col?.cell).toBeDefined()
+      const { container } = render(
+        <div>
+          {rowsData.map((r) => (
+            <div key={r.id}>{col?.cell?.({ row: { original: r } })}</div>
+          ))}
+        </div>
+      )
+      expect(container.textContent).toContain('You')
+      expect(container.textContent).toContain('Lan Requester')
+      expect(container.textContent).toContain('Former member')
+      expect(container.textContent).toContain('AI triage')
     })
   })
 
