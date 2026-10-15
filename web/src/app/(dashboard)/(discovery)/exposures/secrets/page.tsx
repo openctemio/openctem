@@ -85,7 +85,7 @@ export default function SecretsExposurePage() {
               <StatsCard
                 title="Risk score"
                 value={formatRiskScore(typeStats.riskScore)}
-                description={`${getRiskLevel(typeStats.riskScore).label} risk`}
+                description={getRiskLevel(typeStats.riskScore).label}
                 icon={Shield}
               />
             </div>
