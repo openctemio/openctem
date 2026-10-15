@@ -143,7 +143,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	// An approved rule covers findings that existed before it was approved
 	// (an exception a repository asked for), not only new ones.
 	s.applyActiveRules(ctx, run.TenantID, findings, run.RepositoryAssetID)
-	newSet, baselineBranch, known, err := s.newFindings(ctx, run, findings)
+	cmp, err := s.newFindings(ctx, run, findings)
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +164,8 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 		return nil, fmt.Errorf("load expected capabilities: %w", err)
 	}
 	gv := cirun.Evaluate(cirun.GateInput{
-		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: newSet,
-		BaselineBranch: baselineBranch, BaselineKnown: known, ScanFailures: in.ScanFailures,
+		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
+		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, ScanFailures: in.ScanFailures,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
 		Override:            override, Now: now, FindingURL: s.findingURL,
@@ -225,46 +225,97 @@ func gateFindingsPath(run *cirun.Run) string {
 	return p
 }
 
-// newFindings returns the fingerprints the run introduced, the branch it was
-// compared with and whether that branch had been scanned. A run on the
-// default branch introduced what it detected (or reopened) first; any other
-// run introduced what is not open on the default branch.
-func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []cirun.RunFinding) (map[string]bool, string, bool, error) {
-	set := map[string]bool{}
-	if run.IsDefaultBranch {
-		since := run.CreatedAt.Add(-time.Minute)
-		for _, f := range findings {
-			if (f.FirstDetectedAt != nil && !f.FirstDetectedAt.Before(since)) ||
-				(f.LastReopenedAt != nil && !f.LastReopenedAt.Before(since)) {
-				set[f.Fingerprint] = true
-			}
-		}
-		return set, run.Branch, true, nil
-	}
-	brID, base, ok := s.baselineBranch(ctx, run)
-	if !ok {
-		// The baseline branch was never scanned: no baseline, everything is
-		// new (fail closed).
-		return nil, base, false, nil
+// comparison is what a run's findings are compared with to tell new from
+// pre-existing ones.
+type comparison struct {
+	// newSet holds the new fingerprints; nil means every finding is new.
+	newSet map[string]bool
+	branch string
+	known  bool
+	// baselineAt is when the repository's gate baseline was recorded (nil:
+	// none).
+	baselineAt *time.Time
+}
+
+// newFindings tells which findings the run introduced.
+//
+// A default-branch run is judged against the repository's gate baseline
+// only: the findings open on the default branch when a person recorded it.
+// What earlier runs saw never counts, so running a failed default-branch run
+// again (or pushing again) cannot turn its findings into pre-existing ones.
+// With no baseline every finding is new (fail closed).
+//
+// A pull request run is compared with its target branch: a finding already
+// open there is not the change's doing. When the repository has a gate
+// baseline, a finding counts as pre-existing only if it is also in the
+// baseline, so a finding that reached the default branch after the baseline
+// (for example through a merge that ignored a failed gate) blocks pull
+// requests too until it is fixed, accepted or recorded in a new baseline.
+func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []cirun.RunFinding) (comparison, error) {
+	baseline, err := s.repo.GateBaseline(ctx, run.TenantID, run.RepositoryAssetID)
+	if err != nil {
+		return comparison{}, err
 	}
 	fps := make([]string, 0, len(findings))
 	for _, f := range findings {
 		fps = append(fps, f.Fingerprint)
 	}
+	var inBaseline map[string]bool
+	cmp := comparison{}
+	if baseline != nil {
+		at := baseline.SetAt
+		cmp.baselineAt = &at
+		got, err := s.repo.GateBaselineFingerprints(ctx, run.TenantID, run.RepositoryAssetID, fps)
+		if err != nil {
+			return comparison{}, fmt.Errorf("read gate baseline: %w", err)
+		}
+		inBaseline = make(map[string]bool, len(got))
+		for _, fp := range got {
+			inBaseline[fp] = true
+		}
+		for _, f := range findings {
+			if !baseline.Covers(f) {
+				delete(inBaseline, f.Fingerprint)
+			}
+		}
+	}
+	if run.IsDefaultBranch {
+		cmp.branch = run.Branch
+		if baseline == nil {
+			return cmp, nil
+		}
+		cmp.known = true
+		cmp.newSet = map[string]bool{}
+		for _, fp := range fps {
+			if !inBaseline[fp] {
+				cmp.newSet[fp] = true
+			}
+		}
+		return cmp, nil
+	}
+	brID, base, ok := s.baselineBranch(ctx, run)
+	cmp.branch = base
+	if !ok {
+		// The baseline branch was never scanned: no baseline, everything is
+		// new (fail closed).
+		return cmp, nil
+	}
 	open, err := s.baseline.FingerprintsOpenOnBranch(ctx, run.TenantID, brID, fps)
 	if err != nil {
-		return nil, base, false, fmt.Errorf("read baseline: %w", err)
+		return comparison{}, fmt.Errorf("read baseline: %w", err)
 	}
 	onBase := make(map[string]bool, len(open))
 	for _, fp := range open {
-		onBase[fp] = true
+		onBase[fp] = baseline == nil || inBaseline[fp]
 	}
+	cmp.known = true
+	cmp.newSet = map[string]bool{}
 	for _, fp := range fps {
 		if !onBase[fp] {
-			set[fp] = true
+			cmp.newSet[fp] = true
 		}
 	}
-	return set, base, true, nil
+	return cmp, nil
 }
 
 // baselineBranch picks the branch a run is compared with: the pull
