@@ -212,6 +212,35 @@ and remediation group and campaign resolves (which use the bulk path).
 - The web asks for the note in the drawer's status control, the bulk resolve
   dialog and the group and campaign resolve dialogs.
 
+## Mark fixed: remediation group and campaign resolves
+
+A remediation group or campaign "resolve" is a **mark fixed**, never a close
+(`BulkUpdateStatusInput.WalkToFixApplied`):
+
+- Every open, in-scope, non-pentest member takes the legal person steps to
+  `fix_applied` (`vulnerability.FixClaimPath`: `new → confirmed → in_progress
+  → fix_applied`, `confirmed`/`not_observed → in_progress → fix_applied`).
+  Each step is a separate status write through the lifecycle guard, so the
+  status history records it. The findings are read back afterwards: one that
+  changed in between is reported with its current status.
+- A member already `fix_applied` is skipped, never rewritten (its earlier
+  note and actor stay). A `validated_fixed` member is refused: a reviewer
+  verifies it.
+- The fix claim rules above apply (`findings:fix_apply`, a note, only the
+  person's own findings). The group and campaign services refuse a missing
+  permission or note before reading the group or spending the bulk budget.
+- A target of `resolved` is refused with 400 (`ErrGroupResolveClosesNothing`,
+  `ErrCampaignResolveClosesNothing`), even for a `findings:verify` holder: a
+  group shares a fix, not the proof that each finding is gone.
+- A proof-of-fix re-check is queued per finding that reached `fix_applied`
+  (`VulnerabilityService.SetProofOfFixQueuer` →
+  `FindingActionsService.QueueProofOfFix`, the same bounded dispatch as
+  `/actions/fix-applied`); this holds for every bulk fix claim. A finding it
+  cannot re-check waits for a covered scan, a retest or a reviewer.
+- The response lists every finding not updated with the reason
+  (`{updated, skipped, failed, validations_queued, rows: [{finding_id,
+  outcome, reason}]}`); the web shows them in the shared mark-fixed dialog.
+
 ## SLA status follows the status
 
 `findings.sla_status` is recomputed on every status or deadline change, by the

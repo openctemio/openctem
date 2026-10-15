@@ -4,6 +4,7 @@ import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, post, patch, del } from '@/lib/api/client'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
+import type { MarkFixedRequest, MarkFixedResult } from './mark-fixed.types'
 
 export interface RemediationCampaign {
   id: string
@@ -103,17 +104,10 @@ export function useDeleteRemediationCampaign(id: string) {
   return useSWRMutation(`/api/v1/remediation/campaigns/${id}`, (url: string) => del(url))
 }
 
-export interface ResolveCampaignRequest {
-  status?: 'fix_applied' | 'resolved'
-  resolution?: string
-  approved?: boolean
-}
+export type ResolveCampaignRequest = MarkFixedRequest
+export type ResolveCampaignResult = MarkFixedResult
 
-export interface ResolveCampaignResult {
-  resolved: number
-}
-
-/** Actively resolves the campaign's open findings in one action (RFC-015 Phase 3). */
+/** Marks the campaign's open findings fixed in one action; never closes them. */
 export function useResolveRemediationCampaign(id: string) {
   return useSWRMutation<ResolveCampaignResult, Error, string, ResolveCampaignRequest>(
     `/api/v1/remediation/campaigns/${id}/resolve`,
