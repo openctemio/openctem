@@ -294,7 +294,7 @@ export default function ApprovalsPage() {
               {row.original.self_approved && (
                 <Badge
                   variant="outline"
-                  className="text-xs border-amber-500/40 text-amber-600 dark:text-amber-400"
+                  className="text-xs border-warning/40 text-warning"
                   title={t(
                     'findingApprovals.selfApprove.badgeTitle',
                     "Approved by its own requester, the organization's only member"
@@ -413,7 +413,7 @@ export default function ApprovalsPage() {
                 {selfApprovalAvailable && approval.requested_by === currentUserId && (
                   <Can permission={Permission.FindingsApprove}>
                     <DropdownMenuItem onClick={() => setSelfApproveTarget(approval)}>
-                      <ShieldCheck className="me-2 h-4 w-4 text-amber-500" />
+                      <ShieldCheck className="me-2 h-4 w-4 text-warning" />
                       {t('findingApprovals.selfApprove.action', 'Approve myself (sole member)')}
                     </DropdownMenuItem>
                   </Can>
