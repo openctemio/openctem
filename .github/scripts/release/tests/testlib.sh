@@ -75,7 +75,7 @@ scenario() {
   new_repo "$w"
   git -C "$w" remote add origin "$d/origin.git"
   version_fixture "$w"
-  sed -i 's/v0.8.0/v0.1.0/g' "$w/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml"
+  sed -i 's/v0.8.0/v0.1.0/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml"
   commit "$w" "chore: init" a.txt
   git -C "$w" tag -a v0.1.0 -m v0.1.0
   git -C "$w" switch -q -c develop
@@ -94,45 +94,46 @@ scenario() {
   git -C "$w" push -q origin main develop --tags
 }
 
-# version_fixture DIR: versions.yaml plus every consumer, all in agreement.
+# version_fixture DIR: versions.yaml plus every consumer (the API's embedded
+# copy included), all in agreement. No Go file holds a version.
 version_fixture() {
   local d="$1"
-  mkdir -p "$d/api/deploy" "$d/api/internal/config" "$d/api/internal/infra/http/handler" "$d/web/src/features/ci-runners/lib"
+  mkdir -p "$d/api/deploy" "$d/api/internal/versions" "$d/web/src/features/ci-runners/lib"
   cat >"$d/versions.yaml" <<'YAML'
+# A manifest.
 platform:
   release: v0.8.0
 sensor:
+  product: openctemio-sensor
   latest: v0.6.4
   min: ""
+  image: ghcr.io/openctemio/sensor
+  install: sensor
+  release_identity: https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml
+connector-tenable:
+  product: openctemio-connector-tenable
+  latest: v0.1.0
+  min: ""
+  image: ghcr.io/openctemio/connector-tenable
+  install: connector-tenable
+  release_identity: https://github.com/openctemio/connector-tenable/.github/workflows/images.yml
 sdk:
   latest: v0.14.0
-  min: ""
+  advisories: ""
 ci:
   latest: v0.2.0
   min: ""
 chart:
   version: 0.4.1
 YAML
+  cp "$d/versions.yaml" "$d/api/internal/versions/versions.yaml"
   printf 'OPENCTEM_VERSION=v0.8.0\nOTHER=1\n' >"$d/api/deploy/.env.example"
   cat >"$d/api/deploy/docker-compose.yml" <<'YAML'
     image: x:${UI_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
-      SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.6.4}
-      SENSOR_MIN_VERSION: ${SENSOR_MIN_VERSION:-}
-      SENSOR_SDK_MIN_VERSION: ${SENSOR_SDK_MIN_VERSION:-}
-      SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-v0.14.0}
 YAML
   cat >"$d/api/deploy/docker-compose.job-signer.yml" <<'YAML'
     image: x:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
 YAML
-  cat >"$d/api/internal/config/config.go" <<'GO'
-const DefaultSensorLatestVersion = "v0.6.4"
-const DefaultSensorMinVersion = ""
-const DefaultSensorSDKLatestVersion = "v0.14.0"
-const DefaultSensorSDKMinVersion = ""
-const DefaultCIRunnerLatestVersion = "v0.2.0"
-const DefaultCIRunnerMinVersion = ""
-GO
   echo "export const CI_RELEASE = 'v0.2.0'" >"$d/web/src/features/ci-runners/lib/ci.ts"
-  echo 'const DefaultSensorImage = "ghcr.io/openctemio/sensor:v0.6.4"' >"$d/api/internal/infra/http/handler/sensor_handler.go"
   printf '{\n  "name": "w",\n  "version": "0.0.0",\n  "private": true\n}\n' >"$d/web/package.json"
 }

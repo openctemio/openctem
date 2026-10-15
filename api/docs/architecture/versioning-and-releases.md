@@ -40,11 +40,14 @@ own version.
 
 | Consumer | Field |
 |---|---|
-| `api/internal/config/config.go` `DefaultSensorLatestVersion`, `DefaultSensorMinVersion`, `DefaultSensorSDKLatestVersion`, `DefaultSensorSDKMinVersion` | sensor.*, sdk.* |
-| `api/internal/infra/http/handler/sensor_handler.go` `DefaultSensorImage` | sensor.latest |
-| `api/deploy/docker-compose.yml` `SENSOR_*` defaults, the `OPENCTEM_VERSION` example | sensor.*, sdk.*, platform.release |
+| `api/internal/versions/versions.yaml`: the API's embedded copy, byte for byte (`go:embed` cannot reach outside the `api/` module); every Go default reads it | all |
+| `api/deploy/docker-compose.yml`, `docker-compose.job-signer.yml` `OPENCTEM_VERSION` default | platform.release |
 | `api/deploy/.env.example` `OPENCTEM_VERSION` | platform.release |
-| `api/.env.example` `SENSOR_LATEST_VERSION`, `SENSOR_SDK_LATEST_VERSION` examples | sensor.latest, sdk.latest |
+| `web/src/features/ci-runners/lib/ci.ts` `CI_RELEASE` | ci.latest |
+
+No Go file holds a version, so bumping a sensor product, the SDK or the CI
+runner changes `versions.yaml` and its embedded copy only (a shell test runs
+the bump on a fixture and checks the changed files).
 
 ## Proposed version
 
