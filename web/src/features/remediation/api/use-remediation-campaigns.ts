@@ -28,6 +28,8 @@ export interface RemediationCampaign {
   tags: string[]
   created_at: string
   updated_at: string
+  /** Changes on every save; sent back on edits so a stale save answers 409. */
+  version: number
   /** Linked external tracker epic (e.g. Jira), or null when not linked. */
   ticket: CampaignTicketLink | null
 }
@@ -96,7 +98,7 @@ export function useUpdateRemediationCampaign(id: string) {
 export function useUpdateCampaignStatus(id: string) {
   return useSWRMutation(
     `/api/v1/remediation/campaigns/${id}/status`,
-    (url: string, { arg }: { arg: { status: string } }) => patch(url, arg)
+    (url: string, { arg }: { arg: { status: string; version?: number } }) => patch(url, arg)
   )
 }
 

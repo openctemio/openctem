@@ -16,8 +16,11 @@ A `remediation_campaign` (table created in migration `000125`) ties together:
   percentage;
 - **ownership & timeline** — `assigned_to` / `assigned_team`, `start_date`,
   `due_date`;
-- **outcome** — `risk_score_before` / `risk_score_after` / `risk_reduction`,
-  stamped on completion.
+- **outcome** — `risk_score_before` / `risk_score_after` / `risk_reduction`:
+  reserved for a measured risk value and left unset until one exists (they
+  once held finding counts, which overflowed at 1,000 findings; migration
+  `remediation_campaign_version` cleared them);
+- **version** — the optimistic-concurrency token (see "Saves" below).
 
 ## Finding membership is filter-based
 
@@ -29,22 +32,40 @@ bookkeeping, no drift.
 
 ### Supported `finding_filter` keys
 
-All keys are optional; unknown keys are ignored. Each accepts a single string
-or an array of strings.
+The filter decides which findings a resolve changes, so it is parsed strictly
+(`internal/app/exposure/campaign_filter.go`): an unknown key, a key given in
+both its singular and plural form, a value that is not a string or a list of
+strings, or a value that does not parse is refused with 400 on create and
+update. A condition is never dropped, because dropping one widens the set
+(`{"asset_id":"bad","severity":"critical"}` used to mean every critical
+finding of the organization).
 
 | Key                    | Maps to              | Example                         |
 |------------------------|----------------------|---------------------------------|
 | `severities` / `severity` | severity filter   | `["critical","high"]`           |
-| `cve_ids` / `cve_id`   | CVE filter           | `"CVE-2021-44228"`              |
-| `sources` / `source`   | scanner source       | `["trivy","nuclei"]`            |
+| `cve_ids` / `cve_id`   | CVE filter (`CVE-YYYY-NNNN…`) | `"CVE-2021-44228"`     |
+| `sources` / `source`   | finding source       | `["sca","dast"]`                |
 | `statuses` / `status`  | scope narrowing      | `["confirmed"]`                 |
-| `asset_id`             | single asset         | `"<uuid>"`                      |
+| `finding_ids` / `finding_id` | linked findings (UUIDs) | `["<uuid>"]`           |
+| `asset_id`             | single asset (UUID)  | `"<uuid>"`                      |
 | `tool_name`            | tool name            | `"trivy"`                       |
 | `search`               | title/description/path | `"log4j"`                     |
+| `remediation_key`      | a solution family (alone, no other key) | `"sol:…"`    |
 
 The tenant is always pinned, so counts are tenant-isolated regardless of the
-filter contents. An empty filter scopes the campaign to *all* of the tenant's
-findings (a misconfiguration, not an error).
+filter contents. A campaign has **scope** only when a condition other than a
+status narrows it: an empty filter, or a status alone ("every new finding" is
+the whole organization), tracks nothing and cannot resolve. A filter stored
+before the strict check that no longer parses is treated the same way, and a
+resolve answers 400 until its scope is edited.
+
+### Resolve
+
+`POST /remediation/campaigns/{id}/resolve` needs `findings:remediation:write`
+and `findings:fix_apply` (a fix claim on each finding), works only on an
+`active` or `validating` campaign, and marks fixed only the open findings in
+the caller's data scope (`ListFindingIDs`), behind the bulk abuse guard
+(`remediation.CampaignFilterResolver`).
 
 ## Progress accounting
 
@@ -63,13 +84,16 @@ as risk or marked a false positive is no longer outstanding remediation work.
 | Trigger                              | Path                                                |
 |--------------------------------------|-----------------------------------------------------|
 | Campaign created                     | seeded once so it never reads 0/0 (best-effort)     |
-| Campaign fetched (`GET /{id}`)       | recomputed live, persisted if changed (best-effort) |
+| Campaign read (`GET /`, `GET /{id}`) | computed live for the response, never persisted     |
 | Manual refresh (`POST /{id}/refresh`)| recomputed + auto-complete + persisted              |
 | Background reconcile                 | `RemediationProgressController`, every 30 min       |
 
 The controller (`internal/infra/controller/remediation_progress.go`) walks
-every non-terminal campaign across all tenants (oldest-updated first), refreshes
-its counts, and persists only the ones that changed. It is registered in
+non-terminal campaigns across all tenants, least recently reconciled first
+(`last_reconciled_at`, never-reconciled first), and writes their counters with
+a narrow update that also stamps `last_reconciled_at`, changed or not, so a
+backlog larger than one batch rotates instead of starving. The counter update
+never touches status, dates or the version. It is registered in
 `cmd/server/workers.go` whenever the campaign service is available.
 
 ### Auto-complete
@@ -77,7 +101,8 @@ its counts, and persists only the ones that changed. It is registered in
 When **all** of a campaign's findings are resolved
 (`finding_count > 0 && resolved_count >= finding_count`) and the campaign is
 `active` or `validating`, the reconcile (and the manual refresh) transitions it
-to `completed` and stamps the risk-reduction metric. An empty campaign
+to `completed` through a versioned save: a Pause or Cancel made since the
+reconciler read the campaign wins, and the completion is skipped. An empty campaign
 (`finding_count == 0`) is never auto-completed — an empty campaign is a
 misconfiguration, not an accomplishment (`Campaign.TryAutoComplete`).
 
@@ -90,11 +115,22 @@ Base path `/api/v1/remediation/campaigns` (permissions: `remediation:read` /
 |--------|------------------|------------------------------------------|
 | GET    | `/`              | list (status / priority / search filters)|
 | POST   | `/`              | create                                   |
-| GET    | `/{id}`          | get (refreshes progress live)            |
-| PATCH  | `/{id}`          | update name/description/priority/tags/due|
-| PATCH  | `/{id}/status`   | transition lifecycle                     |
+| GET    | `/{id}`          | get (progress computed live, not stored) |
+| PATCH  | `/{id}`          | update name/description/priority/tags/due (optional `version`)|
+| PATCH  | `/{id}/status`   | transition lifecycle (optional `version`)|
 | POST   | `/{id}/refresh`  | recompute progress + auto-complete now   |
 | DELETE | `/{id}`          | delete                                   |
+
+## Saves
+
+Every full save is optimistic: `UPDATE … WHERE version = <read version>`,
+bumping `version`. A save on a stale copy changes nothing and answers
+`409 Conflict`; a `PATCH` may also send the `version` the person edited, so a
+second tab cannot overwrite the first. Reads never write. Priority is one of
+`critical`, `high`, `medium`, `low` (validated by the API and a database
+CHECK); an empty name is refused. A campaign is overdue only after the end of
+its due day (UTC): the due date is a day, so a campaign due today is not yet
+late.
 
 ## Audit trail
 
@@ -116,8 +152,8 @@ says how many are open) and is logged at medium severity. Automatic moves are
 attributed to the actor `system`. The audit row is always filed under the
 campaign's tenant; an audit write failure is logged and never fails the change.
 
-A manual completion recomputes the counts first, so `progress`,
-`risk_reduction` and `open_findings` reflect the findings at that moment, not
+A manual completion recomputes the counts first, so `progress` and
+`open_findings` reflect the findings at that moment, not
 the last reconcile. Completing does not change progress: a campaign completed
 with 0 of 4 findings closed reads "Completed, 0%", because that is what
 happened.
@@ -179,5 +215,5 @@ path a keyed campaign can take.
   not.
 - **Explicit membership override** — pinning/excluding individual findings on
   top of the filter.
-- **Per-severity risk weighting** — `risk_reduction` is currently a simple
-  resolved/total count, not a severity- or EPSS-weighted score.
+- **Measured risk reduction** — the risk fields stay unset until campaign
+  risk is measured (a severity- or score-weighted value, not a count).
