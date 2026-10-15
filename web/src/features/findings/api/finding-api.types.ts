@@ -112,6 +112,10 @@ export interface ApiFindingComponent {
   /** How the asset uses it; absent when unknown. */
   dependency_type?: string
   manifest_file?: string
+  /** The package's first line in manifest_file. */
+  manifest_line?: number
+  /** Transitive: package ids from the direct dependency to this package (at most 32). */
+  dependency_path?: string[]
   depth?: number
 }
 
