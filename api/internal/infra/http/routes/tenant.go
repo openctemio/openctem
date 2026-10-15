@@ -100,12 +100,6 @@ func registerTenantRoutes(
 		r.POST("/members/{userId}/suspend", h.SuspendMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/members/{userId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
-
-		// Requests to join by a verified email domain (RFC-104): the
-		// organization's own inbox.
-		r.GET("/join-requests", h.ListJoinRequests, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersRead))
-		r.POST("/join-requests/{requestId}/approve", h.ApproveJoinRequest, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
-		r.POST("/join-requests/{requestId}/reject", h.RejectJoinRequest, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		// Administrator-created accounts: create a user with roles and a
 		// one-time set-password link; reissue the link while the account is unused.
 		r.POST("/users", h.CreateUser, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
@@ -159,12 +153,6 @@ func registerTenantRoutes(
 
 		// Security settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite), requireStepUp())
-
-		// Domains: what the organization's verified SSO domains do to accounts
-		// on them (RFC-104). Changing it decides who may join and who must use
-		// SSO: owner only, with step-up.
-		r.GET("/settings/domains", h.ListDomainSignupPolicies, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
-		r.PUT("/settings/domains/{domainId}/signup-policy", h.UpdateDomainSignupPolicy, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite), requireStepUp())
 
 		// SSO changes a platform administrator proposed for this organization
 		// (RFC-022). Owner only: approving one installs who can sign in.
@@ -317,6 +305,24 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 			r.DELETE("/", tenantH.CancelOwnershipTransfer, middleware.RequireOwner())
 			r.POST("/approve", tenantH.AcceptOwnershipTransfer, middleware.Require(permission.TeamRead), requireStepUp())
 			r.POST("/reject", tenantH.DeclineOwnershipTransfer, middleware.Require(permission.TeamRead))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
+	if tenantH != nil {
+		// Domains: what the organization's verified SSO domains do to
+		// accounts on them (RFC-104). Changing it decides who may join and
+		// who must use SSO: owner only, with step-up.
+		router.Group("/api/v1/organization/settings/domains", func(r Router) {
+			r.GET("/", tenantH.ListDomainSignupPolicies, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+			r.PUT("/{domain_id}/signup-policy", tenantH.UpdateDomainSignupPolicy, middleware.RequireOwner(), middleware.Require(permission.SettingsWrite), requireStepUp())
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
+	if tenantH != nil {
+		// Requests to join by a verified email domain (RFC-104): the
+		// organization's own inbox.
+		router.Group("/api/v1/organization/join-requests", func(r Router) {
+			r.GET("/", tenantH.ListJoinRequests, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
+			r.POST("/{request_id}/approve", tenantH.ApproveJoinRequest, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
+			r.POST("/{request_id}/reject", tenantH.RejectJoinRequest, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
 		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 	}
 	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {

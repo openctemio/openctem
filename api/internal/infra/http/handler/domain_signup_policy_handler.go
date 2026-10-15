@@ -20,7 +20,7 @@ import (
 
 // Settings > Domains: what the organization's verified SSO domains do to
 // accounts on them (docs/rfcs/RFC-104). The tenant comes from the
-// authenticated membership; a domain id of another organization is not found.
+// credential; a domain id of another organization is not found.
 
 // SetDomainSignupPolicy wires the verified-domain service and the audit log
 // for Settings > Domains.
@@ -81,13 +81,12 @@ func toDomainSignupPolicyResponse(vd *verifieddomain.VerifiedDomain) DomainSignu
 // @Description  Owner or admin. What each verified SSO domain does to accounts on it (join, discovery, SSO required, new organizations).
 // @Tags         Tenants
 // @Produce      json
-// @Param        tenant  path  string  true  "Tenant ID or slug"
 // @Success      200  {array}  DomainSignupPolicyResponse
-// @Router       /tenants/{tenant}/settings/domains [get]
+// @Router       /organization/settings/domains [get]
 func (h *TenantHandler) ListDomainSignupPolicies(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
 		return
 	}
 	if h.domains == nil {
@@ -115,22 +114,21 @@ func (h *TenantHandler) ListDomainSignupPolicies(w http.ResponseWriter, r *http.
 // @Tags         Tenants
 // @Accept       json
 // @Produce      json
-// @Param        tenant    path  string  true  "Tenant ID or slug"
-// @Param        domainId  path  string  true  "Domain ID"
+// @Param        domain_id  path  string  true  "Domain ID"
 // @Param        request   body  UpdateDomainSignupPolicyRequest  true  "Policy"
 // @Success      200  {object}  DomainSignupPolicyResponse
-// @Router       /tenants/{tenant}/settings/domains/{domainId}/signup-policy [put]
+// @Router       /organization/settings/domains/{domain_id}/signup-policy [put]
 func (h *TenantHandler) UpdateDomainSignupPolicy(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
 		return
 	}
 	if h.domains == nil {
 		apierror.ServiceUnavailable("Domain settings are not available").WriteJSON(w)
 		return
 	}
-	id, err := shared.IDFromString(chi.URLParam(r, "domainId"))
+	id, err := shared.IDFromString(chi.URLParam(r, "domain_id"))
 	if err != nil {
 		apierror.NotFound("Domain not found").WriteJSON(w)
 		return
