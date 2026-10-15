@@ -206,9 +206,16 @@ export function NavClusterLabel({ label }: { label?: string }) {
  */
 function NavGroupComponent({ title, icon, url, items }: NavGroupProps) {
   const dynamicBadges = useDynamicBadges()
+  const pathname = usePathname()
 
   // Ungrouped rows (Dashboard) — plain top-level links, no group heading.
   if (!title) {
+    // One row lights up: the deepest match (Approvals at /findings/approvals,
+    // not Findings as well).
+    const activeUrl = activeSubItemUrl(
+      pathname,
+      items.filter((i): i is NavLink => !('items' in i))
+    )
     return (
       <SidebarMenu>
         {items.map((item) =>
@@ -217,6 +224,7 @@ function NavGroupComponent({ title, icon, url, items }: NavGroupProps) {
               key={`${item.title}-${String(item.url)}`}
               item={item}
               dynamicBadges={dynamicBadges}
+              active={item.url === activeUrl}
             />
           )
         )}
@@ -312,9 +320,12 @@ function useFilteredSubItems(
 const SidebarMenuLink = memo(function SidebarMenuLink({
   item,
   dynamicBadges,
+  active,
 }: {
   item: NavLink
   dynamicBadges: DynamicBadges
+  /** Set by a parent that picks one active row among siblings. */
+  active?: boolean
 }) {
   const pathname = usePathname()
   const { setOpenMobile } = useSidebarActions()
@@ -346,7 +357,7 @@ const SidebarMenuLink = memo(function SidebarMenuLink({
     <SidebarMenuItem>
       <SidebarMenuButton
         asChild
-        isActive={checkIsActive(pathname, item)}
+        isActive={active ?? checkIsActive(pathname, item)}
         tooltip={item.title}
         className={NAV_BUTTON_CLASS}
       >
