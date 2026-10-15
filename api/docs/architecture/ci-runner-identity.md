@@ -109,7 +109,7 @@ findings per run.
   settings (`baseline_on_first_run`, `baseline_grace_days`,
   `baseline_secrets_block`) are policy fields too. `cirun.Resolve` builds a
   repository's effective policy with the source of every field; the gate
-  and `GET /api/v1/ci/repositories/{id}/settings` both use it.
+  and `GET /api/v1/ci/gate-settings/{id}` both use it.
 - `ci_gate_baselines` and `ci_gate_baseline_findings`: one gate baseline per repository (tenant, repository
   asset), and the fingerprints it holds. Written only by `POST /api/v1/ci/repositories/{id}/gate-baseline`
   (`scans:ci:policy`, step-up, audited high); a default-branch run is judged against it only (RFC-051 §6.2).
