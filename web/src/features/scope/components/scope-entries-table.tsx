@@ -17,7 +17,9 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
 import {
   CalendarClock,
+  GitBranch,
   Inbox,
+  KeyRound,
   Pencil,
   Power,
   PowerOff,
@@ -162,9 +164,22 @@ export function ScopeEntriesTable({
     }
   }
 
+  const ciTrustPage = '/ci-cd?tab=setup&section=trust'
+
   const actionsFor = (e: ApiScopeTarget): RowAction[] => {
     const id = e.id ?? ''
     const st = entryStatus(e)
+    if (ciTrustManaged(e)) {
+      // A CI trust keeps this entry: it changes through the trust, and an
+      // exclusion keeps one repository out.
+      return [
+        {
+          label: t('scope.ciTrust.openTrust', 'Open the CI trust'),
+          icon: KeyRound,
+          onClick: () => router.push(ciTrustPage),
+        },
+      ]
+    }
     const out: RowAction[] = [
       {
         label: 'Edit',
@@ -226,6 +241,14 @@ export function ScopeEntriesTable({
         disabledReason: 'A later expiry widens scope: only a scope approver can do it.',
       })
     }
+    if (e.target_type === 'repository') {
+      out.push({
+        label: t('scope.ciTrust.setUp', 'Set up CI for these repositories'),
+        icon: GitBranch,
+        onClick: () => router.push(ciTrustPage),
+        permission: Permission.CIWrite,
+      })
+    }
     out.push({
       label: 'Remove',
       icon: Trash2,
@@ -248,6 +271,7 @@ export function ScopeEntriesTable({
             {row.original.pattern}
           </code>
           <p className="text-xs text-muted-foreground">Covers {coversText(row.original)}</p>
+          <ManagedByCITrust entry={row.original} />
         </div>
       ),
     },
@@ -437,5 +461,32 @@ export function ScopeEntriesTable({
         }}
       />
     </>
+  )
+}
+
+/** A CI trust still manages the entry (it changes through the trust). */
+export function ciTrustManaged(e: ApiScopeTarget): boolean {
+  return e.origin === 'ci_trust' && (e.managed_by?.length ?? 0) > 0
+}
+
+/** The CI trusts that claim the entry, with the verified-run evidence. */
+function ManagedByCITrust({ entry }: { entry: ApiScopeTarget }) {
+  const { t } = useTranslation()
+  const trusts = entry.managed_by ?? []
+  if (trusts.length === 0) return null
+  return (
+    <p className="text-xs text-muted-foreground" data-testid="scope-managed-by">
+      {trusts.map((m, i) => (
+        <span key={m.trust_config_id ?? i}>
+          {i > 0 && ' · '}
+          {t('scope.ciTrust.managedBy', 'Managed by the CI trust {name}', {
+            name: m.trust_name ?? '',
+          })}
+          {m.seen_at
+            ? ` (${t('scope.ciTrust.seen', 'seen in a verified pipeline')})`
+            : ` (${t('scope.ciTrust.notSeen', 'no verified pipeline yet')})`}
+        </span>
+      ))}
+    </p>
   )
 }

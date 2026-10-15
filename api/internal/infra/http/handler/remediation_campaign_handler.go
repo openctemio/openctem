@@ -202,11 +202,12 @@ func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Requ
 	}
 
 	resolved, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, exposure.CampaignResolveInput{
-		Status:              req.Status,
-		Resolution:          req.Resolution,
-		ActorID:             middleware.GetUserID(r.Context()),
-		HasVerifyPermission: middleware.HasPermission(r.Context(), string(permission.FindingsVerify)),
-		Approved:            req.Approved,
+		Status:                req.Status,
+		Resolution:            req.Resolution,
+		ActorID:               middleware.GetUserID(r.Context()),
+		HasVerifyPermission:   middleware.HasPermission(r.Context(), string(permission.FindingsVerify)),
+		HasFixApplyPermission: middleware.HasPermission(r.Context(), string(permission.FindingsFixApply)),
+		Approved:              req.Approved,
 	})
 	if err != nil {
 		h.handleError(w, err)
