@@ -123,22 +123,9 @@ func (r *AssetRiskQueueRepository) EnqueueAllForPlatform(ctx context.Context, de
 	if delay < 0 {
 		delay = 0
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT id FROM tenants ORDER BY id`)
+	tenants, err := r.tenantIDs(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("list tenants for risk reconcile: %w", err)
-	}
-	var tenants []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return 0, fmt.Errorf("scan tenant: %w", err)
-		}
-		tenants = append(tenants, id)
-	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate tenants: %w", err)
+		return 0, err
 	}
 
 	const q = `
@@ -183,6 +170,27 @@ func (r *AssetRiskQueueRepository) EnqueueAllForPlatform(ctx context.Context, de
 		}
 	}
 	return total, nil
+}
+
+// tenantIDs lists every tenant id.
+func (r *AssetRiskQueueRepository) tenantIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM tenants ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list tenants for risk reconcile: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var tenants []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan tenant: %w", err)
+		}
+		tenants = append(tenants, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tenants: %w", err)
+	}
+	return tenants, nil
 }
 
 // StatsForPlatform returns the queue depth and the age of the oldest due row.
