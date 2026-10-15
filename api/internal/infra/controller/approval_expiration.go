@@ -31,6 +31,12 @@ type AcceptanceExpiryStore interface {
 	ExpireStaleRequests(ctx context.Context) (int64, error)
 }
 
+// OverdueRequestStore expires pending requests nobody decided by their
+// decide-by time (*postgres.FindingApprovalRepository).
+type OverdueRequestStore interface {
+	ExpireOverdueRequests(ctx context.Context) (int64, error)
+}
+
 // SLADeadlineCalculator computes a finding's SLA deadline from a start time
 // with the tenant's policy. Implemented by *sla.Service.
 type SLADeadlineCalculator interface {
@@ -48,11 +54,12 @@ type SLADeadlineCalculator interface {
 // end passed while the finding had already moved on (or holds a newer
 // acceptance) are only marked expired.
 type ApprovalExpirationController struct {
-	store  AcceptanceExpiryStore
-	sla    SLADeadlineCalculator
-	now    func() time.Time
-	config *ApprovalExpirationControllerConfig
-	logger *logger.Logger
+	store   AcceptanceExpiryStore
+	overdue OverdueRequestStore
+	sla     SLADeadlineCalculator
+	now     func() time.Time
+	config  *ApprovalExpirationControllerConfig
+	logger  *logger.Logger
 }
 
 // NewApprovalExpirationController creates a new ApprovalExpirationController.
@@ -121,7 +128,23 @@ func (c *ApprovalExpirationController) Reconcile(ctx context.Context) (int, erro
 	if err := c.expireStaleApprovals(ctx); err != nil {
 		return reopened, err
 	}
+	if c.overdue != nil {
+		n, err := c.overdue.ExpireOverdueRequests(ctx)
+		if err != nil {
+			c.logger.Error("failed to expire overdue approval requests", "error", err)
+			return reopened, err
+		}
+		if n > 0 {
+			c.logger.Info("expired approval requests past their decide-by time", "count", n)
+		}
+	}
 	return reopened, nil
+}
+
+// SetOverdueRequests wires the expiry of pending requests past their
+// decide-by time. Nil leaves pending requests alone.
+func (c *ApprovalExpirationController) SetOverdueRequests(s OverdueRequestStore) {
+	c.overdue = s
 }
 
 // newDeadline is the SLA deadline of a new clock started at now (owner

@@ -272,6 +272,8 @@ type Handlers struct {
 	AdminEmail *handler.AdminEmailHandler
 	// AdminLegal: Console > System > Legal and the public GET /api/v1/legal (RFC-079).
 	AdminLegal *handler.AdminLegalHandler
+	// Brand: the public instance brand (GET /api/v1/brand).
+	Brand *handler.BrandHandler
 	// AdminScanPolicy: the platform policy for scan approval
 	// (RFC-073), platform default and per organization.
 	AdminScanPolicy *handler.AdminScanPolicyHandler
@@ -509,6 +511,7 @@ func Register(
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
 	registerLegalRoute(router, h.AdminLegal)
+	registerBrandRoutes(router, h.Brand)
 	// API documentation: public outside production; in production the spec
 	// needs a signed-in user and the reference page a platform administrator.
 	if h.Docs != nil {

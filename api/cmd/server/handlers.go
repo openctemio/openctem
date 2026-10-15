@@ -177,9 +177,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Administrators' platform identity provider (RFC-022 revision 4): every
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
-	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	if svc.Signup != nil {
-		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
 
 	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
@@ -285,6 +285,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetProvenanceLister(repos.Finding)
 	vulnHandler.SetPackageFixLister(repos.Finding)
 	vulnHandler.SetIntelFeeds(repos.ThreatIntel.EPSS(), repos.ThreatIntel.KEV())
+	// The approvals inbox names each requester from this tenant's members.
+	vulnHandler.SetApprovalMemberNamer(postgres.NewScopeActorRepository(deps.DB))
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
@@ -398,6 +400,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	handlers := routes.Handlers{
 		ModuleGate:     moduleGate,
+		Brand:          handler.NewBrandHandler(cfg.Brand),
 		DataScope:      byIDGuardAsserter(svc),
 		MCP:            mcpHandler,
 		MCPAuth:        mcpAuth,
@@ -792,12 +795,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	if svc.Entitlement != nil {
 		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
-		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
 	if svc.IdleWorkspaces != nil {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
 		handlers.IdleReadOnly = svc.IdleWorkspaces
-		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
+		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), baseURL: cfg.SMTP.BaseURL, log: log})
 	}
 	// The platform policy for scan approval (RFC-073).
 	if svc.ScanPolicy != nil {
@@ -818,7 +821,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
 		}
 		if svc.PlatformEmail != nil {
-			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.App.Name, log)
+			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log)
 		}
 		handlers.SignupPolicy = svc.Signup
 	}
