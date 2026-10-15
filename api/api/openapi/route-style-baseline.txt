@@ -102,6 +102,7 @@ R3 POST /api/v1/groups/{groupId}/scope-rules/{ruleId}/preview
 R3 POST /api/v1/pentest/findings/{findingId}/retests
 R3 POST /api/v1/repositories/{repositoryId}/branches
 R3 POST /api/v1/roles/{roleId}/members/bulk
+R3 POST /api/v1/roles/{roleId}/template/apply
 R3 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend
 R3 POST /api/v1/tenants/{tenant}/members/{userId}/reactivate
 R3 POST /api/v1/tenants/{tenant}/members/{userId}/suspend

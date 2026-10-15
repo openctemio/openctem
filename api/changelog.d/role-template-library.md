@@ -7,5 +7,5 @@
 ### Added: versioned role templates with updates you review, and role summaries
 
 - New templates: CI integrator, sensor operator, researcher and bug-bounty triager (16 in all). Each template has a version.
-- `POST /api/v1/roles` takes `template_id`; the role records the template, its version and its permissions at that version. A later template change never changes the role: `GET /api/v1/roles/{id}/template` shows the difference, and `POST /api/v1/roles/{id}/template/apply` applies it within your own grants, keeping the role's own edits.
+- `POST /api/v1/roles` takes `template_id`; the role records the template, its version and its permissions at that version. A later template change never changes the role: role responses show the difference (`template`), and `POST /api/v1/roles/{id}/template/apply` applies it within your own grants, keeping the role's own edits.
 - Role and template responses carry `summary`: a risk tier (low, medium, high, critical), the reasons and what the role views or changes per area, so the console no longer shows a bare permission count.

@@ -1989,7 +1989,7 @@ records the template id, the version and the template's permissions at that
 version (`roles.template_id`, `template_version`, `template_permissions`).
 A later change to the template never changes the role. When the catalog has a
 newer version, the role's responses carry `template.update_available` and the
-difference (`GET /api/v1/roles/{id}/template`); an editor applies it with
+difference (in `GET /api/v1/roles/{id}` and the role list); an editor applies it with
 `POST /api/v1/roles/{id}/template/apply {version}` (`team:roles:write`). The
 update adds what the template added and removes what it removed, keeps the
 role's own edits, never changes full data access, and goes through
