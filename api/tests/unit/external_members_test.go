@@ -193,3 +193,54 @@ func TestAddMember_VerifiedDomainAllowed(t *testing.T) {
 		t.Fatalf("membership must be created once, got %d", repo.createMembershipCalls)
 	}
 }
+
+// The invitation preview explains the rules before anything is sent, and says
+// nothing about other organizations (RFC-095 §4.3).
+func TestInvitationPreview(t *testing.T) {
+	svc, repo, host, _ := newExternalTenantService(t)
+	ctx := context.Background()
+	owner := shared.NewID()
+	seedMembershipInRepo(repo, owner, host.ID(), tenant.RoleOwner)
+	actx := audit.AuditContext{TenantID: host.ID().String(), ActorID: owner.String()}
+
+	p, err := svc.PreviewInvitation(ctx, host.ID().String(), "j.doe@gmail.com", []string{memberRoleID}, actx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Allowed || !p.Outside || !p.Personal || p.Privileged || p.StepUpRequired || p.AccessEndRequired {
+		t.Fatalf("personal member preview = %+v", p)
+	}
+	// Another organization's domain reads as outside, with no detail.
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "nam@example.com.au", []string{viewerRoleID}, actx)
+	if !p.Allowed || !p.Outside || p.Personal {
+		t.Fatalf("partner preview = %+v", p)
+	}
+	// The organization's own domain.
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "an@example.com", []string{memberRoleID}, actx)
+	if !p.Allowed || p.Outside {
+		t.Fatalf("insider preview = %+v", p)
+	}
+	// The admin role needs the owner and a re-authentication.
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "boss@gmail.com", []string{"00000000-0000-0000-0000-000000000002"}, actx)
+	if !p.Allowed || !p.StepUpRequired {
+		t.Fatalf("admin preview = %+v", p)
+	}
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "boss@gmail.com", []string{"00000000-0000-0000-0000-000000000002"},
+		audit.AuditContext{TenantID: host.ID().String(), ActorID: shared.NewID().String()})
+	if p.Allowed || p.Reason != tenantapp.PreviewAdminNeedsTheOwner {
+		t.Fatalf("admin by a non-owner = %+v", p)
+	}
+	// Policy: verified domains only.
+	st := host.TypedSettings()
+	st.Security.Invitees = tenant.InviteesVerifiedDomains
+	_ = host.UpdateSettings(st)
+	repo.tenants[host.ID().String()] = host
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "j.doe@gmail.com", []string{memberRoleID}, actx)
+	if p.Allowed || p.Reason != tenantapp.PreviewNotOnVerified {
+		t.Fatalf("verified-domains preview = %+v", p)
+	}
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "not-an-email", nil, actx)
+	if p.Allowed || p.Reason != tenantapp.PreviewInvalidEmail {
+		t.Fatalf("invalid email preview = %+v", p)
+	}
+}
