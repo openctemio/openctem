@@ -324,3 +324,9 @@ func Sign(priv ed25519.PrivateKey, payloadType string, v any) ([]byte, error) {
 	}
 	return feedsign.Sign(priv, payloadType, payload)
 }
+
+// PinnedRoots are the key ids of the offline catalog roots this release
+// trusts. Empty until the first root is generated: until then only roots
+// an operator adds (CONTENT_TRUST_ROOT_KEY_IDS) verify, and without one
+// every import is refused.
+var PinnedRoots = []string{}

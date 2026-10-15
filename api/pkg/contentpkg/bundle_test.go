@@ -501,3 +501,20 @@ func FuzzReadBundle(f *testing.F) {
 		}
 	})
 }
+
+func TestVerify_RevocationListSameSequenceOtherContents(t *testing.T) {
+	f := newFixture(t)
+	v, err := f.verify(f.write())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.options.LastRevocationsSequence, f.options.LastRevocationsDigest = v.Revocations.Sequence, v.RevocationsDigest
+	if _, err := f.verify(f.write()); err != nil {
+		t.Fatalf("the same list again: %v", err)
+	}
+	// Same sequence, an entry dropped or added: refused.
+	f.in.Revocations.Entries = []RevocationEntry{{ID: "acme/x", Reason: "bad", Severity: "low", RevokedAt: f.now}}
+	if _, err := f.verify(f.write()); !errors.Is(err, ErrRollback) {
+		t.Fatalf("same sequence, other contents: %v", err)
+	}
+}

@@ -61,6 +61,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -646,6 +647,8 @@ type Services struct {
 	ContentPacks *contentpackapp.Service
 	// PlatformContentPacks are the platform's packs and channels (RFC-061).
 	PlatformContentPacks *contentpackapp.PlatformService
+	// ContentCatalog is the content catalog (RFC-099).
+	ContentCatalog *catalogapp.Service
 
 	// Workflows
 	Workflow           *automation.WorkflowService
@@ -1805,6 +1808,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Platform packs: their own storage namespace (not a tenant id, so an
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
+	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets

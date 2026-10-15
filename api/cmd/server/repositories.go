@@ -158,6 +158,8 @@ type Repositories struct {
 	ContentPack *postgres.ContentPackRepository
 	// Platform content packs and channels (RFC-061)
 	PlatformContentPack *postgres.PlatformContentPackRepository
+	// Content catalog (RFC-099)
+	ContentCatalog *postgres.ContentCatalogRepository
 
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
@@ -458,6 +460,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ScanWindowAsset:     postgres.NewScanWindowAssetRepository(db),
 		ContentPack:         postgres.NewContentPackRepository(db),
 		PlatformContentPack: postgres.NewPlatformContentPackRepository(db),
+		ContentCatalog:      postgres.NewContentCatalogRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),
