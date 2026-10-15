@@ -179,12 +179,11 @@ func (r *PlanRepository) EndModuleGrace(ctx context.Context, tenantID shared.ID,
 	return nil
 }
 
-// planTenantsSQL selects the organizations on a plan; Enterprise includes
-// organizations with no plan stored (created before plans).
+// planTenantsSQL selects the organizations on a plan; plan.Unassigned
+// includes organizations with no plan stored.
 const planTenantsSQL = `
 	SELECT t.id FROM tenants t
-	  LEFT JOIN tenant_plans tp ON tp.tenant_id = t.id
-	 WHERE COALESCE(tp.plan, 'enterprise') = $1`
+	 WHERE ` + tenantPlanExpr + ` = $1`
 
 // StartPlanModuleGrace starts grace for every organization on the plan that
 // has no active grant of the module.

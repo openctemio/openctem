@@ -319,12 +319,14 @@ deferred to the next opening (no longer skipped), a target whose windows
 never open refuses the run (`SCAN_WINDOW_NEVER_OPENS`), and no override ever
 lifts them.
 
-Headers and User-Agent need sdk-go `core.OrgHTTPPolicy.Headers` (sdk-go
-#227, #228); a sensor without it ignores the field, so a command that carries
-a program's headers or User-Agent goes only to a sensor that reported SDK
-v0.19.0 or later (`command.MinSDKForProgramHTTPRules`). Any other sensor,
-including a development build or one that reported no version, does not get
-it: the command waits, and a claim by id answers `PROGRAM_RULES_UNSUPPORTED`.
+Headers and User-Agent are sent by a sensor whose tools run through the
+tool host, which applies `core.OrgHTTPPolicy`; such a sensor reports the
+capability `http.identity@1` (`sensor.CapabilityHTTPIdentity`). A command
+that carries a program's headers or User-Agent goes only to a sensor that
+reported it. Any other sensor, whatever its SDK version, does not get it: the
+command waits, and a claim by id answers `PROGRAM_RULES_UNSUPPORTED`.
+(Amended 2026-10-14 by RFC-094 decision O2: the gate was SDK v0.19.0 or
+later; the platform no longer judges a sensor by its SDK version.)
 A rule lookup that fails withholds the command (fail closed). A program can
 never require a credential or connection header (`Authorization`, `Cookie`,
 `Host`, `Proxy-*`, `Connection`, …): the import refuses it.

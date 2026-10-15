@@ -40,11 +40,21 @@ func (p *programRuleSource) JobRules(_ context.Context, tenantID shared.ID, targ
 const programPayload = `{"scanner":"nuclei","step_key":"probe","targets":["app.bounty.test"],` +
 	`"config":{"rate_limit":50,"templates":["x"]},"http_policy":{"headers":{"X-Org":"1"},"user_agent":"org-ua"}}`
 
-func newProgramFixture(src *programRuleSource, sdkVersion string) *recheckFixture {
+// identitySensor is a sensor that reports it sends the job's identification
+// (http.identity@1) when honors, else one that does not; its SDK version is
+// deliberately new, so the decision can only come from the capability.
+func identitySensor(id, tenant shared.ID, honors bool) *sensor.Sensor {
+	s := &sensor.Sensor{ID: id, TenantID: &tenant, Build: sensor.BuildInfo{SDKVersion: "v9.0.0"}}
+	if honors {
+		s.Reported.Capabilities = []string{sensor.CapabilityHTTPIdentity}
+	}
+	return s
+}
+
+func newProgramFixture(src *programRuleSource, honors bool) *recheckFixture {
 	f := newRecheckFixture()
-	tenant := f.tenant
 	lookup := policySensorLookup{sensors: map[shared.ID]*sensor.Sensor{
-		f.sensor: {ID: f.sensor, TenantID: &tenant, Build: sensor.BuildInfo{SDKVersion: sdkVersion}},
+		f.sensor: identitySensor(f.sensor, f.tenant, honors),
 	}}
 	f.svc = command.NewService(f.repo, newCmdTestLogger(), command.WithSensorLookup(lookup), command.WithProgramRules(src))
 	f.svc.SetFailureObserver(f.steps)
@@ -67,7 +77,7 @@ func TestProgramRules_DeliveredWithTheJob(t *testing.T) {
 		t.Run(path.name, func(t *testing.T) {
 			src := &programRuleSource{rules: &bp.JobRules{Headers: map[string]string{"X-Bug-Bounty": "jdoe"},
 				UserAgent: "jdoe-research", RateLimit: 5, Programs: []string{"Acme"}}}
-			f := newProgramFixture(src, "v0.19.0")
+			f := newProgramFixture(src, true)
 			c := f.repo.add(f.tenant, commanddom.CommandTypeScan, programPayload, nil)
 			got, err := path.run(f, c)
 			if err != nil || got == nil {
@@ -97,7 +107,7 @@ func TestProgramRules_DeliveredWithTheJob(t *testing.T) {
 // on targets no program covers is untouched.
 func TestProgramRules_RateCapAndUncoveredJobs(t *testing.T) {
 	src := &programRuleSource{rules: &bp.JobRules{RateLimit: 20}}
-	f := newProgramFixture(src, "v0.18.0") // no header rule: any SDK
+	f := newProgramFixture(src, false) // no header rule: any sensor
 	low := f.repo.add(f.tenant, commanddom.CommandTypeScan, `{"targets":["a.bounty.test"],"config":{"rate_limit":2}}`, nil)
 	none := f.repo.add(f.tenant, commanddom.CommandTypeScan, `{"targets":["a.bounty.test"],"scanner_config":{"rate_limit":0}}`, nil)
 	other := f.repo.add(f.tenant, commanddom.CommandTypeScan, `{"targets":["owned.example.com"],"config":{"rate_limit":500}}`, nil)
@@ -124,7 +134,7 @@ func TestProgramRules_RateCapAndUncoveredJobs(t *testing.T) {
 func TestProgramRules_ConflictFailsTheJob(t *testing.T) {
 	for _, path := range handOutPaths {
 		t.Run(path.name, func(t *testing.T) {
-			f := newProgramFixture(&programRuleSource{err: bp.ErrRulesConflict}, "v0.19.0")
+			f := newProgramFixture(&programRuleSource{err: bp.ErrRulesConflict}, true)
 			c := f.repo.add(f.tenant, commanddom.CommandTypeScan, programPayload, nil)
 			got, err := path.run(f, c)
 			if got != nil {
@@ -149,7 +159,7 @@ func TestProgramRules_ConflictFailsTheJob(t *testing.T) {
 func TestProgramRules_LookupErrorWithholds(t *testing.T) {
 	for _, path := range handOutPaths {
 		t.Run(path.name, func(t *testing.T) {
-			f := newProgramFixture(&programRuleSource{err: errors.New("db down")}, "v0.19.0")
+			f := newProgramFixture(&programRuleSource{err: errors.New("db down")}, true)
 			c := f.repo.add(f.tenant, commanddom.CommandTypeScan, programPayload, nil)
 			if got, _ := path.run(f, c); got != nil {
 				t.Fatal("handed out without its program's rules")
@@ -161,31 +171,30 @@ func TestProgramRules_LookupErrorWithholds(t *testing.T) {
 	}
 }
 
-// Headers or a User-Agent go only to a sensor whose SDK applies them; an
-// older, dev or unknown sensor does not get the job.
+// SECURITY: headers or a User-Agent go only to a sensor that reports it sends
+// them (http.identity@1); one that does not, whatever its SDK version, does
+// not get the job, and the job waits.
 func TestProgramRules_SensorMustHonorHeaders(t *testing.T) {
-	for _, v := range []string{"v0.18.0", "", "dev", "v0.18.1-0.20261008120000-abcdef123456"} {
-		for _, path := range handOutPaths {
-			t.Run(v+"/"+path.name, func(t *testing.T) {
-				f := newProgramFixture(&programRuleSource{rules: &bp.JobRules{Headers: map[string]string{"X-Bug-Bounty": "jdoe"}}}, v)
-				c := f.repo.add(f.tenant, commanddom.CommandTypeScan, programPayload, nil)
-				got, err := path.run(f, c)
-				if got != nil {
-					t.Fatalf("SDK %q got a job needing headers", v)
-				}
-				if path.name == "claim by id" && !errors.Is(err, command.ErrSensorCannotHonorProgram) {
-					t.Fatalf("claim by id: %v", err)
-				}
-				if f.repo.commands[c.ID.String()].Status != commanddom.CommandStatusPending {
-					t.Fatal("the job must wait for a sensor that can honor it")
-				}
-			})
-		}
+	for _, path := range handOutPaths {
+		t.Run(path.name, func(t *testing.T) {
+			f := newProgramFixture(&programRuleSource{rules: &bp.JobRules{Headers: map[string]string{"X-Bug-Bounty": "jdoe"}}}, false)
+			c := f.repo.add(f.tenant, commanddom.CommandTypeScan, programPayload, nil)
+			got, err := path.run(f, c)
+			if got != nil {
+				t.Fatal("a sensor without http.identity@1 got a job needing headers")
+			}
+			if path.name == "claim by id" && !errors.Is(err, command.ErrSensorCannotHonorProgram) {
+				t.Fatalf("claim by id: %v", err)
+			}
+			if f.repo.commands[c.ID.String()].Status != commanddom.CommandStatusPending {
+				t.Fatal("the job must wait for a sensor that can honor it")
+			}
+		})
 	}
-	f := newProgramFixture(&programRuleSource{rules: &bp.JobRules{UserAgent: "jdoe"}}, "v0.20.1")
+	f := newProgramFixture(&programRuleSource{rules: &bp.JobRules{UserAgent: "jdoe"}}, true)
 	c := f.repo.add(f.tenant, commanddom.CommandTypeScan, programPayload, nil)
 	if got, err := handOutPaths[0].run(f, c); err != nil || got == nil {
-		t.Fatalf("a newer SDK must get the job: %v", err)
+		t.Fatalf("a sensor reporting http.identity@1 must get the job: %v", err)
 	}
 }
 
@@ -217,7 +226,7 @@ func TestProgramRules_OverTheOrganizationLayer(t *testing.T) {
 			f := newRecheckFixture()
 			tenant := f.tenant
 			lookup := policySensorLookup{sensors: map[shared.ID]*sensor.Sensor{
-				f.sensor: {ID: f.sensor, TenantID: &tenant, Build: sensor.BuildInfo{SDKVersion: "v0.19.0"}},
+				f.sensor: identitySensor(f.sensor, tenant, true),
 			}}
 			f.svc = command.NewService(f.repo, newCmdTestLogger(), command.WithSensorLookup(lookup),
 				command.WithHTTPPolicy(orgHTTPPolicy{sensor.ToolHTTPPolicy{UserAgent: "org-ua", AllowInsecureTLS: &insecure}}),
