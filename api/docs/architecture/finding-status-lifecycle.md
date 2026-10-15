@@ -404,10 +404,10 @@ instead).
   carries `max_acceptance_days`, and the approval dialog limits its date
   picker to it.
 - **Existing acceptances over the cap are flagged, not cut.** Migration
-  `002461_acceptance_cap_review` opens a decision review
+  `002531_acceptance_cap_review` opens a decision review
   (`acceptance_exceeds_cap`) with a timeline entry for every accepted finding
   whose end is past its cap, and reports the count (`NOTICE`). The end is not
-  changed; a person decides. `002462_acceptance_cap_review_validate`
+  changed; a person decides. `002532_acceptance_cap_review_validate`
   validates the widened review-reason constraint.
 - **One value, one meaning.** `finding_status_approvals.expires_at` is the end
   of the decision the request asks for. A request for `accepted` gets 90 days
