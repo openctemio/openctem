@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -78,6 +79,12 @@ func (h *JiraSyncTaskHandler) HandleSyncFindingStatus(ctx context.Context, t *as
 	if err := h.syncer.SyncFindingStatus(ctx, tenantID, findingID); err != nil {
 		h.log.Error("jira sync: push failed",
 			"tenant_id", payload.TenantID, "finding_id", payload.FindingID, "error", err)
+		// A refusal (4xx) or a mapping the workflow cannot follow fails the
+		// same way every time: no retry.
+		var perm interface{ Permanent() bool }
+		if errors.As(err, &perm) && perm.Permanent() {
+			return fmt.Errorf("%w: %w", err, asynq.SkipRetry)
+		}
 		return err // retry transient Jira/API errors
 	}
 	return nil
