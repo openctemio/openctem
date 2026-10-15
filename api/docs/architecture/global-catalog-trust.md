@@ -114,6 +114,13 @@ so they must not decide what another tenant's view shows:
   (`vulnerability.PlanPackageFix`). The plan reads only that tenant's open
   findings on that asset (`FindingRepository.ListPackageFixSiblings`), which the
   caller can already see through the finding.
+- **Advisory facts of a finding**: the scanner's references (http(s) URLs with
+  a host, at most 25 of at most 512 characters), the advisory's published and
+  modified dates and the primary CVSS source stay on the finding
+  (`metadata.references`, `advisory_published_at`, `advisory_modified_at`,
+  `cvss_source`). The single-finding response returns them as `intel`, with
+  the date of the EPSS score and the CISA KEV date added (and ransomware use)
+  read from the feeds (`epss_scores`, `kev_catalog`) for the finding's CVE.
 
 Display-only fields (a CVE's title in a list, a component's description) still
 come from the catalog. The first reporter can choose them for a CVE or

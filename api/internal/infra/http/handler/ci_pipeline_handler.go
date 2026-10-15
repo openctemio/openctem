@@ -189,6 +189,7 @@ func parsePipelineStatuses(raw string) ([]cirun.PipelineStatus, bool) {
 // @Param        include_inactive query bool false "Also list archived, revoked and never-run pipelines"
 // @Param        provider query string false "github, gitlab, azure_devops, bitbucket, circleci or jenkins"
 // @Param        repository_asset_id query string false "Repository asset"
+// @Param        has_policy_override query bool false "Only pipelines whose repository has its own gate policy"
 // @Param        search query string false "Repository, workflow path or name"
 // @Param        page query int false "Page (default 1)"
 // @Param        per_page query int false "Per page (default 25, max 200)"
@@ -217,6 +218,7 @@ func (h *CIAdminHandler) ListPipelines(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("provider must be github, gitlab, azure_devops, bitbucket, circleci or jenkins").WriteJSON(w)
 		return
 	}
+	in.Filter.HasPolicyOverride = q.Get("has_policy_override") == queryParamTrue
 	if v := q.Get("repository_asset_id"); v != "" {
 		id, err := shared.IDFromString(v)
 		if err != nil {

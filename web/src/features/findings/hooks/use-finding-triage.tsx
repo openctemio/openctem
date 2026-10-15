@@ -34,6 +34,7 @@ import {
   type FindingStatus,
   type FindingUser,
 } from '../types'
+import { useTranslation } from '@/context/i18n-provider'
 import { FINDINGS_CLOSED_STATUSES } from '@/features/findings/lib/list-defaults'
 
 export interface FindingTriageTarget {
@@ -50,6 +51,7 @@ export interface UseFindingTriageOptions {
 }
 
 export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingTriageOptions = {}) {
+  const { t } = useTranslation()
   const [status, setStatus] = useState<FindingStatus>(finding.status)
   const [severity, setSeverity] = useState<Severity>(finding.severity)
   const [assignee, setAssignee] = useState<FindingUser | undefined>(finding.assignee)
@@ -106,17 +108,24 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       // a person makes deliberately from the status control.
       const closing = (FINDINGS_CLOSED_STATUSES as readonly string[]).includes(next)
       toast.success(
-        `Status updated to ${FINDING_STATUS_CONFIG[next].label}`,
+        t('findings.triage.statusUpdated', 'Status updated to {status}', {
+          status: t(FINDING_STATUS_CONFIG[next].labelKey, FINDING_STATUS_CONFIG[next].label),
+        }),
         isUndo || closing
           ? { duration: 3000 }
           : {
-              action: { label: 'Undo', onClick: () => void changeStatus(previous, true) },
+              action: {
+                label: t('findings.triage.undo', 'Undo'),
+                onClick: () => void changeStatus(previous, true),
+              },
               duration: 5000,
             }
       )
     } catch (error) {
       setStatus(previous)
-      toast.error(getErrorMessage(error, 'Failed to update status'))
+      toast.error(
+        getErrorMessage(error, t('findings.triage.statusFailed', 'Failed to update status'))
+      )
     }
   }
 
@@ -129,17 +138,24 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       opts.onSeverityChange?.(next)
       await invalidateFindingsCache()
       toast.success(
-        `Severity updated to ${SEVERITY_CONFIG[next].label}`,
+        t('findings.triage.severityUpdated', 'Severity updated to {severity}', {
+          severity: t(`severity.${next}`, SEVERITY_CONFIG[next].label),
+        }),
         isUndo
           ? { duration: 3000 }
           : {
-              action: { label: 'Undo', onClick: () => void changeSeverity(previous, true) },
+              action: {
+                label: t('findings.triage.undo', 'Undo'),
+                onClick: () => void changeSeverity(previous, true),
+              },
               duration: 5000,
             }
       )
     } catch (error) {
       setSeverity(previous)
-      toast.error(getErrorMessage(error, 'Failed to update severity'))
+      toast.error(
+        getErrorMessage(error, t('findings.triage.severityFailed', 'Failed to update severity'))
+      )
     }
   }
 
@@ -153,17 +169,29 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       opts.onAssigneeChange?.(next)
       await invalidateFindingsCache()
       toast.success(
-        next ? `Assigned to ${next.name}` : 'Unassigned',
+        next
+          ? t('findings.triage.assignedTo', 'Assigned to {name}', { name: next.name })
+          : t('findings.triage.unassigned', 'Unassigned'),
         isUndo
           ? { duration: 3000 }
           : {
-              action: { label: 'Undo', onClick: () => void changeAssignee(previous, true) },
+              action: {
+                label: t('findings.triage.undo', 'Undo'),
+                onClick: () => void changeAssignee(previous, true),
+              },
               duration: 5000,
             }
       )
     } catch (error) {
       setAssignee(previous ?? undefined)
-      toast.error(getErrorMessage(error, next ? 'Failed to assign' : 'Failed to unassign'))
+      toast.error(
+        getErrorMessage(
+          error,
+          next
+            ? t('findings.triage.assignFailed', 'Failed to assign')
+            : t('findings.triage.unassignFailed', 'Failed to unassign')
+        )
+      )
     }
   }
 
