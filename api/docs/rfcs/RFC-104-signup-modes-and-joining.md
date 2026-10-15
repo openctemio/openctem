@@ -38,9 +38,9 @@ joins an organization that already exists, and that organization chose the perso
 provider, its directory, or an invitation sent to that exact address). None of them can create an
 organization.
 
-**`domain` today.** Until the policy split and the domain policies (steps 3 and 4) land, `domain`
-admits nothing more than `disabled`: the console cannot choose organization self-service, and no
-domain-based sign-up exists yet. It already requires the platform e-mail at start, so a deployment
+**`domain` today.** Until the domain policies (step 4) land, `domain` admits nothing more than
+`disabled`: the console can choose `accounts: domain`, but no organization can open a domain to
+joining yet, so no address is joinable and organization self-service stays locked. It already requires the platform e-mail at start, so a deployment
 that sets it is ready when those steps arrive.
 
 ## 3. Start-up guards
