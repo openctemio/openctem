@@ -234,7 +234,7 @@ func applyOutcomeToFinding(
 			if err := f.TransitionStatus(vulnerability.FindingStatusValidatedFixed, "validation: exposure condition no longer observable", nil); err != nil {
 				return reconcileResult{}, fmt.Errorf("transition to validated_fixed: %w", err)
 			}
-			if err := finding.Update(ctx, f); err != nil {
+			if err := finding.Update(validationTransition(ctx, "not_reproducible", ev), f); err != nil {
 				return reconcileResult{}, err
 			}
 			now := time.Now().UTC()
@@ -251,7 +251,7 @@ func applyOutcomeToFinding(
 			if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, "proof-of-fix: fix did not hold", nil); err != nil {
 				return reconcileResult{}, fmt.Errorf("transition to in_progress: %w", err)
 			}
-			if err := finding.Update(ctx, f); err != nil {
+			if err := finding.Update(validationTransition(ctx, "fix_did_not_hold", ev), f); err != nil {
 				return reconcileResult{}, err
 			}
 			if notifier != nil {
@@ -263,7 +263,7 @@ func applyOutcomeToFinding(
 			if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, "validation: exposure reproduced after downgrade", nil); err != nil {
 				return reconcileResult{}, fmt.Errorf("reopen validated_fixed: %w", err)
 			}
-			if err := finding.Update(ctx, f); err != nil {
+			if err := finding.Update(validationTransition(ctx, "reproduced_after_downgrade", ev), f); err != nil {
 				return reconcileResult{}, err
 			}
 		default:
@@ -289,4 +289,14 @@ func contains(s []ExecutorKind, k ExecutorKind) bool {
 		}
 	}
 	return false
+}
+
+// validationTransition attaches the validation run behind a status move to
+// ctx, so the move and its timeline entry commit together.
+func validationTransition(ctx context.Context, reason string, ev Evidence) context.Context {
+	return vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+		Source: "validation", Reason: reason, ActorType: "scanner", ActorName: "system: validation (" + ev.ExecutorKind + ")",
+		Message: ev.Summary,
+		Changes: map[string]any{"technique": string(ev.Technique), "outcome": string(ev.Outcome), "executor": ev.ExecutorKind},
+	})
 }

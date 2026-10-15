@@ -334,6 +334,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		s.refuseInternalOutsideZones,
 		s.refuseOverTier,
 		s.refuseConstrained,
+		s.refusePathTargets,
 	} {
 		var err error
 		if kept, err = check(ctx, in, kept, out); err != nil {
