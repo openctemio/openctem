@@ -2492,7 +2492,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// inverse: legitimate roles never granted).
 	s.Tenant.SetRoleService(s.Role)
 
-	// Initialize licensing service (OSS edition - modules from database)
+	// Modules: the registry from the database, the organization's
+	// preferences and the entitlement service's denies.
 	s.Module = module.NewModuleService(repos.Module, log)
 	s.Module.SetTenantModuleRepo(repos.TenantModule)
 	s.Module.SetAuditService(s.Audit)

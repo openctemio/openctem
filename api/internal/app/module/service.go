@@ -60,8 +60,8 @@ type ModuleService struct {
 	toggleLocksMu sync.Mutex
 }
 
-// EntitlementReader reports the modules an organization may not use under
-// its plan and its administrator grants (*entitlement.Service). An error means
+// EntitlementReader reports the modules an organization may not use (denied
+// by the instance operator or a source; *entitlement.Service). An error means
 // the entitlement could not be read: every non-core module is then
 // unavailable (fail-closed).
 type EntitlementReader interface {
@@ -221,8 +221,8 @@ type GetTenantEnabledModulesOutput struct {
 	ModuleIDs  []string
 	Modules    []*moduledom.Module
 	SubModules map[string][]*moduledom.Module
-	// NotEntitledModuleIDs are top-level modules the organization's plan does
-	// not include (and no grant adds): the console says "not in your plan"
+	// NotEntitledModuleIDs are top-level modules not available for the
+	// organization: the console says "not available for this organization"
 	// rather than "turned off".
 	NotEntitledModuleIDs []string
 	// ReadOnlyModules are modules in read-only grace, with its end.
@@ -323,8 +323,8 @@ type TenantModuleConfigOutput struct {
 type TenantModuleInfo struct {
 	Module    *moduledom.Module
 	IsEnabled bool
-	// Entitled: the organization's plan or an administrator's grant includes
-	// it. A module that is not entitled cannot be switched on.
+	// Entitled: the module is available for the organization. One that is
+	// not cannot be switched on.
 	Entitled   bool
 	SubModules []*SubModuleInfo
 }
@@ -500,11 +500,11 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 		if !u.IsEnabled && m.IsCore() {
 			return nil, fmt.Errorf("%w: '%s' is a core module and cannot be disabled", moduledom.ErrCoreModuleCannotBeDisabled, m.Name())
 		}
-		// Within the entitlement only: a module the plan does not include
-		// (and no grant adds) cannot be switched on by the organization.
+		// Within the entitlement only: a module that is not available for the
+		// organization cannot be switched on by it.
 		if u.IsEnabled && !m.IsCore() {
 			if r := states[u.ModuleID]; r == ReasonNotEntitled || r == ReasonUnavailable || r == ReasonReadOnlyGrace {
-				return nil, fmt.Errorf("%w: '%s' is not included in this organization's plan", moduledom.ErrModuleNotEntitled, m.Name())
+				return nil, fmt.Errorf("%w: '%s' is not available for this organization", moduledom.ErrModuleNotEntitled, m.Name())
 			}
 		}
 
@@ -804,8 +804,8 @@ func (s *ModuleService) getTenantDisabledModules(ctx context.Context, tenantID s
 }
 
 // TenantModuleStates returns, for every module that is off for the
-// organization, why: not_entitled (its plan does not include it, or an
-// administrator denied it), unavailable (the entitlement could not be read:
+// organization, why: not_entitled (denied by the instance operator or a
+// source), unavailable (the entitlement could not be read:
 // fail-closed) or disabled_by_admin (the organization switched it off). An
 // entitlement reason wins over a preference. Core modules are never off.
 func (s *ModuleService) TenantModuleStates(ctx context.Context, tenantID string) map[string]string {

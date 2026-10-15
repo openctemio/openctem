@@ -38,10 +38,9 @@ type ListRolesFilter struct {
 }
 
 // RoleService defines the interface for role operations.
-// OSS includes predefined roles; Enterprise adds custom role creation.
+// Predefined roles and custom roles.
 type RoleService interface {
-	// Create creates a new role (Enterprise only).
-	// OSS edition returns ErrNotSupported.
+	// Create creates a new custom role.
 	Create(ctx context.Context, input CreateRoleInput) (*role.Role, error)
 
 	// Get retrieves a role by ID.
@@ -53,11 +52,11 @@ type RoleService interface {
 	// List returns roles matching the filter.
 	List(ctx context.Context, filter ListRolesFilter) (*ListResult[*role.Role], error)
 
-	// Update updates an existing role (Enterprise only for custom roles).
+	// Update updates an existing custom role.
 	// System roles cannot be modified.
 	Update(ctx context.Context, input UpdateRoleInput) (*role.Role, error)
 
-	// Delete deletes a role (Enterprise only for custom roles).
+	// Delete deletes a custom role.
 	// System roles cannot be deleted.
 	Delete(ctx context.Context, tenantID *shared.ID, roleID shared.ID) error
 

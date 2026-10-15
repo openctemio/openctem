@@ -823,7 +823,7 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && !m.IsOffboarded() {
 			return nil
 		}
-		// No free seat on the organization's plan: say so.
+		// No free seat under the organization's limit: say so.
 		if lim := (*limits.ErrLimitReached)(nil); errors.As(err, &lim) {
 			return err
 		}

@@ -436,7 +436,7 @@ func (h *AITriageHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// Token limit exceeded - return 429 with helpful message
 		apierror.TooManyRequests("Monthly AI token limit exceeded").
 			WithDetails(map[string]string{
-				"action":     "Wait until next month or upgrade your plan for more tokens",
+				"action":     "Wait until next month, or ask your administrator to raise the monthly token budget",
 				"suggestion": "Review your token usage in tenant settings",
 			}).WriteJSON(w)
 

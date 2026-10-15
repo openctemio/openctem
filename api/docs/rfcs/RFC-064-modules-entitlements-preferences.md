@@ -4,7 +4,7 @@
 |---|---|
 | Status | Accepted (decisions MD1–MD12 delegated to the platform team, 2026-10-09) |
 | Authors | Platform team |
-| Related | Plans and limits ([architecture](../architecture/limits.md)), RFC-022 (platform admin console), RFC-062 (MCP authorization), module system ([architecture](../architecture/modules.md)) |
+| Related | Limits and feature denies ([architecture](../architecture/limits.md)), RFC-022 (platform admin console), RFC-062 (MCP authorization), module system ([architecture](../architecture/modules.md)) |
 | Code | #1583 (SLA core), #1590 (every surface and replica), #1594 (catalog cleanup, permissions), #1596 (console consistency); M1–M5 below |
 
 ## 1. Summary
@@ -13,7 +13,7 @@ A module is a feature an organization can have or not have, such as pentest,
 compliance or EASM. Today one switch per module (`tenant_modules`) does three
 different jobs:
 
-- **packaging**: what the organization paid for;
+- **entitlement**: what the organization may use;
 - **release**: whether the feature is ready, through beta and coming soon;
 - **simplification**: what the team does not want to see.
 
@@ -28,8 +28,8 @@ rule:
 | | Entitlement | Preference | Release |
 |---|---|---|---|
 | Question | May this organization use it? | Does this organization want it? | Is it ready? |
-| Set by | Platform (plan, grant, licence) | Organization owner or admin | Engineering (registry) |
-| Storage | `platform_settings['plan_modules']`, `tenant_module_grants` | `tenant_modules` (exists) | registry `release` |
+| Set by | Platform (operator deny, or a source such as a hosted service's control plane) | Organization owner or admin | Engineering (registry) |
+| Storage | `tenant_feature_denies` (by origin) | `tenant_modules` (exists) | registry `release` |
 | Lookup failure | Deny with 503, never grant | Allow (cosmetic) | n/a |
 | Audit | Platform audit, step-up | Organization audit (exists) | git |
 
@@ -62,11 +62,11 @@ One function computes it, with one cache, and every surface reads it.
 
 | Threat | Control |
 |---|---|
-| A Free organization uses a paid module through the API, MCP or a background job | Entitlement is checked at the same seam as preference, on every surface (R2); entitlement lookups fail closed |
-| An organization admin grants itself a paid bundle | Bundles become platform-side entitlements; the organization endpoint keeps only presets of preferences (MD6) |
+| An organization uses a denied module through the API, MCP or a background job | Entitlement is checked at the same seam as preference, on every surface (R2); entitlement lookups fail closed |
+| An organization admin enables a denied module through a bundle | Bundles are retired; the organization endpoint keeps only presets of preferences (MD6) |
 | A stale replica serves a module after it was revoked | The module change bus drops the cache on every replica (#1590); entitlement entries also carry a version |
 | One organization's cache entry is served to another | Cache keyed by organization id; a cross-organization test covers the gate, MCP and jobs |
-| Entitlement changes without trace | Platform audit record with administrator, reason and expiry; step-up for grant, revoke and plan mapping |
+| Entitlement changes without trace | Platform audit record with administrator, reason and expiry; step-up for deny and lifting a deny |
 | The `MODULE_NOT_ENABLED` error leaks data | It names the module and the reason only; module ids are public product facts |
 | Client-only gating | The console reflects the API decision; every check is repeated server side |
 
@@ -85,7 +85,6 @@ is for asset types:
   core: false
   depends: [{id: findings, kind: hard}]
   permission: pentest:campaigns:read
-  plans: [pro, enterprise]   # default entitlement
   surfaces:
     routes: [/api/v1/pentest/]
     mcp: [get_campaign, list_campaign_findings, exec_summary]
@@ -109,15 +108,15 @@ Tests require that:
 
 ### 4.2 Entitlements (M3)
 
-- **Plan mapping.** `platform_settings['plan_modules']` holds
-  `{free: [...], pro: [...], enterprise: ["*"]}`, defaulting from the registry
-  `plans`. An organization without a plan row is Enterprise, as for limits, so
-  self-hosted deployments are entitled to everything.
-- **Grants.** `tenant_module_grants(tenant_id, module_id, kind, expires_at,
-  reason, set_by, set_at)`, where `kind` is `grant` or `deny`. A grant covers
-  trials and add-ons beyond the plan. A deny covers regional or compliance
-  restrictions.
-- **Entitled set.** plan modules ∪ active grants − active denies.
+Revised 2026-10-15: every module is available unless denied for one
+organization ([limits.md](../architecture/limits.md)).
+
+- **Denies.** `tenant_feature_denies(tenant_id, feature, origin, reason,
+  expires_at, set_by, set_at)`. The origin is `operator` (an administrator of
+  the installation) or `control_plane` (a hosted service's control plane,
+  through the internal API). A deny covers regional or contractual
+  restrictions, and the capacity choices of a hosted service.
+- **Entitled set.** every non-core module − active denies (of any origin).
 - **Fail closed.** The entitlement lookup never answers "entitled" on error.
   A cached value is used for up to 5 minutes; past that, the request gets 503.
 
@@ -148,8 +147,8 @@ The `reason` is one of `not_entitled`, `disabled_by_admin`,
 The console shows one state for a module that is off, used by the route
 guard and by every embedded panel:
 
-- not entitled: "Available on Pro", with contact (or upgrade, once billing
-  exists);
+- not entitled: "Not available for this organization", with "contact your
+  administrator";
 - switched off: "Turned off for your organization", with **Manage modules**
   for administrators (#1596);
 - an embedded panel hides silently.
@@ -158,29 +157,27 @@ guard and by every embedded panel:
 
 Platform console (`/api/v1/admin`, platform administrators):
 
-- `GET /admin/settings/plan-modules` and `PUT /admin/settings/plan-modules`
-  (step-up): the plan to module mapping.
-- `GET /admin/tenants/{id}/modules`: for each module, `entitled`,
-  `entitlement_source` (`core | plan | grant | deny`), `grant_expires_at`,
-  `preferred`, `effective` and `reason`.
-- `PUT /admin/tenants/{id}/modules/{module}/grant`, body
-  `{"kind":"grant"|"deny","expires_at"?,"reason"}`, step-up and audited.
-- `DELETE /admin/tenants/{id}/modules/{module}/grant` (step-up, audited):
-  removes the grant; losing an entitlement starts the read-only grace.
+- `GET /admin/tenants/{id}/modules`: for each module, `entitled`, `state`
+  (`core | available | denied | grace`), the deny's `origin`, `reason` and
+  `expires_at`, and `read_only_until`.
+- `PUT /admin/tenants/{id}/modules/{module}/deny`, body
+  `{"reason","expires_at"?,"totp_code"}`, step-up and audited; the read-only
+  grace starts.
+- `DELETE /admin/tenants/{id}/modules/{module}/deny` (reason, step-up,
+  audited): the module is available again and its grace ends.
 
 Organization:
 
 - `GET /tenants/{t}/settings/modules` gains `entitled` and
   `entitlement_source` per module. A module that is not entitled shows locked.
-- `POST /tenants/{t}/settings/modules/bundles` is removed. Bundles become
-  platform-side packaging; presets remain for preferences.
+- `POST /tenants/{t}/settings/modules/bundles` is removed. Presets remain for
+  preferences.
 
 ## 5. Use cases covered
 
-- Free, Pro and Enterprise packaging.
-- 14-day trial of one module.
-- Paid add-on.
-- On-premise customer with everything entitled.
+- A hosted service restricting modules per organization (control-plane
+  denies).
+- A self-hosted install with everything entitled (no deny anywhere).
 - An administrator hides modules the team does not use.
 - Persona presets at onboarding.
 - Beta access for chosen organizations.
@@ -204,8 +201,8 @@ organization, so this can be layered on later.
 | MD2 | R1: modules never switch off attributes of core objects; SLA is core |
 | MD3 | R2: every surface classified by the registry, enforced by tests |
 | MD4 | Entitlements fail closed (503); preferences fail open |
-| MD5 | No plan row means Enterprise: self-hosted is entitled to everything |
-| MD6 | Bundles are platform-side packaging; organization admins apply presets only |
+| MD5 | No deny means entitled: self-hosted is entitled to everything (revised 2026-10-15) |
+| MD6 | Bundles are retired; organization admins apply presets only |
 | MD7 | 30-day read-only grace after an entitlement is lost; jobs stop at once |
 | MD8 | Mandatory tier removed; always-on modules are core (#1594) |
 | MD9 | Module changes reach every replica through Redis at once (#1590) |
@@ -220,6 +217,6 @@ organization, so this can be layered on later.
 | M0 | SLA core; every surface (MCP, AI triage, automations, remediation progress); cross-replica invalidation; console refresh; catalog cleanup; permissions under live modules; console consistency | #1583, #1590, #1594, #1596 |
 | M1 | `details.reason` on `MODULE_NOT_ENABLED` | #1605 |
 | M2 | Registry, generators and coverage tests | #1619 |
-| M3 | Entitlements: plan mapping, grants, admin console pages, organization view, reasons in the console | #1635 |
+| M3 | Entitlements: grants and denies, admin console pages, organization view, reasons in the console (revised 2026-10-15: denies only, per origin) | #1635 |
 | M4 | Downgrade grace: 30 days read-only (reads and GET exports pass, writes 403 `read_only_grace`, jobs stop); schedules are skipped while off and resume on the next tick | #1643 |
-| M5 | Organization bundles retired (packaging is the plan's; presets remain for preferences) | with M3 |
+| M5 | Organization bundles retired (presets remain for preferences) | with M3 |

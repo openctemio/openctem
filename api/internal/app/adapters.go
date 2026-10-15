@@ -129,7 +129,7 @@ func (a *scanSensorSelectorAdapter) CheckSensorAvailability(ctx context.Context,
 // platform sensors: the one rule the scan trigger, the pipeline and the
 // tenant's platform scanning view all use. In this build no tenant may.
 func PlatformSensorsAllowed(_ context.Context, _ shared.ID) (bool, string) {
-	return false, "Platform sensors not available in OSS edition"
+	return false, "Platform scanning is not available on this installation"
 }
 
 // CanUsePlatformSensors implements scan.SensorSelector.

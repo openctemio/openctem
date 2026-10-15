@@ -2,7 +2,7 @@
 
 - The core no longer has plans. An organization is unlimited and may use every module unless the instance operator (or, on a hosted service, its control plane) set a limit or a module deny for that organization. A self-hosted install with default settings has no limits anywhere.
 - New organizations created by a person themselves start with the instance's **self-service default limits** (Console > System > Limits, `GET/PUT /api/v1/admin/settings/limits`, super admin with a fresh authenticator code). Empty by default. The same setting holds `orgs_per_user`, the per-person cap on self-service organizations (unlimited by default). The limits are written in the transaction that creates the organization.
-- Migration 002291 (`limits_replace_plans`) keeps every organization's caps: the limits of its plan become operator limits with the reason "migrated from plan", and modules its plan left out become module denies. Plans, plan defaults and the plan to module map are dropped.
+- Migration 002291 (`per_organization_limits`) keeps every organization's caps: the limits of its plan become operator limits with the reason "migrated from plan", and modules its plan left out become module denies. Plans, plan defaults and the plan to module map are dropped.
 - Over a limit only new additions are refused; nothing is deleted. A denied module keeps read access for 30 days.
 
 ### Removed: plan endpoints and fields

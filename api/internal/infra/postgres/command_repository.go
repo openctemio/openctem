@@ -836,9 +836,6 @@ func (r *CommandRepository) buildWhereClause(filter command.Filter) (string, []a
 		conditions = append(conditions, fmt.Sprintf("is_platform_job = $%d", len(args)))
 	}
 
-	// OSS Edition: PlatformSensorID filter not supported
-	// if filter.PlatformSensorID != nil { ... }
-
 	if len(conditions) == 0 {
 		return "", nil
 	}

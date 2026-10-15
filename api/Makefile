@@ -537,36 +537,7 @@ secrets:
 # TENANT MANAGEMENT
 # =============================================================================
 
-## assign-plan: Assign a plan to tenant (usage: make assign-plan tenant=<uuid> plan=enterprise)
-assign-plan:
-	@if [ -z "$(tenant)" ]; then \
-		echo "Usage: make assign-plan tenant=<uuid> plan=<plan_slug>"; \
-		echo ""; \
-		echo "Available plans: free, team, business, enterprise"; \
-		echo ""; \
-		echo "Example:"; \
-		echo "  make assign-plan tenant=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa plan=enterprise"; \
-		exit 1; \
-	fi
-	@if [ -z "$(plan)" ]; then \
-		echo "Error: plan is required"; \
-		echo "Available plans: free, team, business, enterprise"; \
-		exit 1; \
-	fi
-	@echo "Assigning $(plan) plan to tenant $(tenant)..."
-	@docker compose -f $(COMPOSE_BASE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c \
-		"UPDATE tenants SET plan_id = (SELECT id FROM plans WHERE slug = '$(plan)'), updated_at = NOW() WHERE id = '$(tenant)';"
-	@echo ""
-	@echo "Verifying assignment..."
-	@docker compose -f $(COMPOSE_BASE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c \
-		"SELECT t.id, t.name, t.slug, p.name as plan_name, p.slug as plan_slug FROM tenants t JOIN plans p ON t.plan_id = p.id WHERE t.id = '$(tenant)';"
-
-## list-tenants: List all tenants with their plans
+## list-tenants: List all organizations
 list-tenants:
 	@docker compose -f $(COMPOSE_BASE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c \
-		"SELECT t.id, t.name, t.slug, p.name as plan_name, p.slug as plan_slug FROM tenants t JOIN plans p ON t.plan_id = p.id ORDER BY t.name;"
-
-## list-plans: List all available plans
-list-plans:
-	@docker compose -f $(COMPOSE_BASE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c \
-		"SELECT id, name, slug, price_monthly FROM plans ORDER BY price_monthly;"
+		"SELECT t.id, t.name, t.slug, t.created_at FROM tenants t ORDER BY t.name;"

@@ -3056,8 +3056,8 @@ type TenantModuleResponse struct {
 	DisplayOrder int    `json:"display_order"`
 	IsCore       bool   `json:"is_core"`
 	IsEnabled    bool   `json:"is_enabled"`
-	// Entitled: the organization's plan or a platform grant includes the
-	// module; one that is not cannot be switched on here.
+	// Entitled: the module is available for the organization; one that is
+	// not cannot be switched on here.
 	Entitled      bool                      `json:"entitled"`
 	ReleaseStatus string                    `json:"release_status"`
 	SubModules    []TenantSubModuleResponse `json:"sub_modules,omitempty"`

@@ -18,7 +18,7 @@ var (
 	ErrInvalidSubModuleID         = fmt.Errorf("%w: invalid sub-module ID format", shared.ErrValidation)
 	ErrCoreModuleCannotBeDisabled = fmt.Errorf("%w: core module cannot be disabled", shared.ErrValidation)
 	ErrModuleNotAvailable         = fmt.Errorf("%w: module is not available", shared.ErrValidation)
-	// ErrModuleNotEntitled: the organization's plan does not include the
-	// module and no administrator grant adds it.
-	ErrModuleNotEntitled = fmt.Errorf("%w: module is not included in the plan", shared.ErrValidation)
+	// ErrModuleNotEntitled: the module is not available for the organization
+	// (denied by the instance operator or a source).
+	ErrModuleNotEntitled = fmt.Errorf("%w: module is not available for this organization", shared.ErrValidation)
 )
