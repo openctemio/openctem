@@ -1440,6 +1440,10 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	if repos.RelationshipSuggestion != nil {
 		ciSvc.SetImageLinker(ciImageLinker{repos.CIRun, repos.RelationshipSuggestion})
 	}
+	if svc.Scope != nil {
+		// A trust's repositories are repository scope entries linked to it.
+		ciSvc.SetScopeLinker(svc.Scope)
+	}
 	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
