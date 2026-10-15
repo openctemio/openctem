@@ -122,6 +122,16 @@ type Config struct {
 	// (openctemio/ci) are versioned apart from sensors, so the sensor's
 	// release settings never apply to them.
 	Versions cirun.StatusPolicy
+	// KnownLimit bounds the decided results one upload response lists
+	// (zero takes cirun.MaxKnownInResponse).
+	KnownLimit int
+}
+
+func (c Config) knownLimit() int {
+	if c.KnownLimit <= 0 {
+		return cirun.MaxKnownInResponse
+	}
+	return c.KnownLimit
 }
 
 func (c Config) caps() cirun.PipelineCaps {
