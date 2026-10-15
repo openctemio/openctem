@@ -82,7 +82,7 @@ func AllEventCategories() []EventCategoryInfo {
 		{Category: EventCategoryApproval, Label: "Approval Events"},
 		{Category: EventCategoryWorkflow, Label: "Workflow Events"},
 		{Category: EventCategoryExposure, Label: "Exposure Events"},
-		{Category: EventCategorySensor, Label: "Sensor Events"},
+		{Category: EventCategorySensor, Label: "Sensors and CI pipelines"},
 	}
 }
 
