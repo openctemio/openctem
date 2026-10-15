@@ -126,3 +126,33 @@ func TestFindingStatusSQL_EveryStatusWriteIsKnown(t *testing.T) {
 		}
 	}
 }
+
+// statusWritersRecordedElsewhere are the status writers whose timeline entry
+// is written by their caller, each with the reason. Every other writer names
+// its transition (findingTransition / execStatusWrite: the trigger writes the
+// entry in the same transaction) or inserts its own entries in its statement.
+var statusWritersRecordedElsewhere = map[string]string{
+	"finding_pentest_duplicate.go": "a pentester marking a duplicate: the pentest service records the entry",
+}
+
+// Every file that writes findings.status puts the move on the finding's
+// timeline in the same transaction (research: automatic moves had none).
+func TestFindingStatusSQL_EveryStatusWriteIsOnTheTimeline(t *testing.T) {
+	markers := []string{"findingTransition{", "setFindingTransition(", "execStatusWrite(", "INSERT INTO finding_activities"}
+	for f := range findingStatusWriters {
+		if _, ok := statusWritersRecordedElsewhere[f]; ok {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recorded := false
+		for _, m := range markers {
+			recorded = recorded || strings.Contains(string(src), m)
+		}
+		if !recorded {
+			t.Errorf("%s writes findings.status but records no timeline entry: set a findingTransition on the transaction", f)
+		}
+	}
+}
