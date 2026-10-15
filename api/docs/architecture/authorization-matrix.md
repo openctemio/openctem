@@ -515,11 +515,6 @@ the billing page in the UI.
 > scope). Every change, every token exchange (issued or refused after
 > verification) and every verdict is audited; no token is ever written.
 > Pipelines follow the repository data scope like runs.
->
-> `GET /api/v1/fleet` (the Sensors page) admits `sensors:read` **or**
-> `scans:ci:read`; the handler lists daemon rows only with `sensors:read` and
-> runner rows (CI pipelines) only with `scans:ci:read` and the `scans` module,
-> under the data scope. Asking for a mode without its permission is 403.
 
 #### Template sources and the secret store (`/api/v1/template-sources`, `/api/v1/secret-store`)
 
