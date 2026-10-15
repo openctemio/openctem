@@ -15,12 +15,11 @@ The default model (`score_composition_mode: likelihood_impact`, preset
 risk = findings score × exposure factor × criticality factor × (1 − control reduction)
 ```
 
-**Findings score (0-100).** Only open findings count: the active statuses
-(`new`, `confirmed`, `in_progress`, `fix_applied`, `not_observed`; see
-`vulnerability.ActiveFindingStatuses`) on the default branch. Resolved,
-accepted, false-positive and duplicate findings, validated fixes awaiting
-close and unpublished pentest drafts carry no risk; informational findings
-add nothing. The asset's `finding_count` and severity counts in the API are
+**Findings score (0-100).** Only open findings count
+(`vulnerability.OpenStatuses`: new, confirmed, in_progress, fix_applied,
+validated_fixed, not_observed) on the default branch. Resolved, accepted,
+false-positive and duplicate findings and unpublished pentest drafts carry no
+risk; informational findings add nothing. The asset's `finding_count` and severity counts in the API are
 the same population. The worst
 severity tier sets the score. The first finding of a tier scores the tier's
 base; each further finding of the same tier closes 35% of the gap to the

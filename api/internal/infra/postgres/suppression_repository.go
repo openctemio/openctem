@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // SuppressionRepository handles suppression rule persistence.
@@ -260,7 +261,7 @@ func loadSuppressedCandidates(ctx context.Context, tx *sql.Tx, tenantID, ruleID 
 		JOIN findings f ON f.id = fs.finding_id AND f.tenant_id = $1
 		WHERE fs.suppression_rule_id = $2
 		  AND f.resolution = 'suppressed'
-		  AND f.status IN ('false_positive', 'accepted')
+		  AND f.status IN `+vulnerability.StatusListSQL(vulnerability.SuppressedStatuses())+`
 		FOR UPDATE OF f`, tenantID.String(), ruleID.String())
 	if err != nil {
 		return nil, fmt.Errorf("load suppressed findings: %w", err)

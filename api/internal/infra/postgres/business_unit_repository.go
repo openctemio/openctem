@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/businessunit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -186,13 +187,13 @@ func (r *BusinessUnitRepository) RecalculateCounts(ctx context.Context, tenantID
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
 				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only
-				  AND ` + riskBearingFindingStatusClause + `
+				  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			), 0),
 			critical_finding_count = COALESCE((
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
 				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only AND f.severity = 'critical'
-				  AND ` + riskBearingFindingStatusClause + `
+				  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			), 0),
 			avg_risk_score = COALESCE((
 				SELECT AVG(a.risk_score) FROM business_unit_assets bua
