@@ -176,6 +176,17 @@ type MergeRequest struct {
 	IID   int    `json:"iid"`
 	SHA   string `json:"sha"`
 	State string `json:"state"`
+	// TargetBranch is the branch the merge request merges into.
+	TargetBranch string `json:"target_branch"`
+	// HeadPipeline is the merge request's latest pipeline. For a merged
+	// results pipeline its SHA is the merge result's commit, not SHA.
+	HeadPipeline *Pipeline `json:"head_pipeline"`
+}
+
+// Pipeline is a pipeline as a merge request names it.
+type Pipeline struct {
+	ID  int64  `json:"id"`
+	SHA string `json:"sha"`
 }
 
 // MergeRequest reads a merge request of a project.
@@ -188,11 +199,16 @@ func (c *Client) MergeRequest(ctx context.Context, projectPath string, iid int) 
 }
 
 // SetCommitStatus sets an external commit status (state: success, failed).
-func (c *Client) SetCommitStatus(ctx context.Context, projectPath, sha, state, name, targetURL, description string) error {
+// A pipelineID above zero attaches it to that pipeline of the commit (a
+// merged results pipeline, which the merge request shows).
+func (c *Client) SetCommitStatus(ctx context.Context, projectPath, sha, state, name, targetURL, description string, pipelineID int64) error {
 	if len(description) > 255 {
 		description = description[:255]
 	}
-	body := map[string]string{"state": state, "name": name, "target_url": targetURL, "description": description}
+	body := map[string]any{"state": state, "name": name, "target_url": targetURL, "description": description}
+	if pipelineID > 0 {
+		body["pipeline_id"] = pipelineID
+	}
 	return c.do(ctx, http.MethodPost, "/projects/"+url.PathEscape(projectPath)+"/statuses/"+url.PathEscape(sha), body, nil)
 }
 
