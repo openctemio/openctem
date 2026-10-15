@@ -73,6 +73,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
+	onboardingapp "github.com/openctemio/openctem/api/internal/app/onboarding"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
@@ -798,6 +799,9 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// Onboarding: the fork of an account without an organization and the
+	// join-request inbox (RFC-104).
+	Onboarding *onboardingapp.Service
 	// PlatformEmail is the platform's SMTP settings, set in the admin console
 	// (RFC-079); its Sender backs Email.
 	PlatformEmail *platformemail.Service
@@ -2781,6 +2785,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Per-domain sign-up policy (RFC-104): sso_required, join by domain and
 	// blocking new organizations for accounts on a claimed domain.
 	s.Auth.SetSignupDomainPolicy(s.DomainVerify)
+	s.Onboarding = onboardingapp.NewService(repos.Tenant, repos.Tenant, onboardingTenants{s.Tenant}, s.DomainVerify,
+		s.Signup, repos.JoinRequest, s.Audit, deriveKey(cfg.Auth.JWTSecret, "openctem/onboarding-offer/v1"), log)
 	sso := s.SSO
 	s.DomainVerify.SetSSOReadiness(func(ctx context.Context, tenantID shared.ID) (bool, error) {
 		t, err := repos.Tenant.GetByID(ctx, tenantID)

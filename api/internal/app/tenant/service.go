@@ -1436,7 +1436,28 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	if err != nil {
 		return nil, err
 	}
+	return s.acceptInvitation(ctx, invitation, userID, userEmail, actx)
+}
 
+// AcceptInvitationByID accepts an invitation the onboarding offered to a
+// signed-in account whose email address is verified (docs/rfcs/RFC-104). The
+// verified address stands in for the emailed token: it proves the same
+// mailbox. The invitation is looked up in its organization only; every check
+// of AcceptInvitation applies.
+func (s *TenantService) AcceptInvitationByID(ctx context.Context, tenantID, invitationID, userID shared.ID, userEmail string, emailVerified bool, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	if !emailVerified {
+		return nil, fmt.Errorf("%w: verify your email address first", shared.ErrValidation)
+	}
+	invitation, err := s.repo.GetInvitationByID(ctx, tenantID, invitationID)
+	if err != nil {
+		return nil, err
+	}
+	return s.acceptInvitation(ctx, invitation, userID, userEmail, actx)
+}
+
+// acceptInvitation is the acceptance shared by the token and the onboarding
+// paths.
+func (s *TenantService) acceptInvitation(ctx context.Context, invitation *tenantdom.Invitation, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
 	// Verify the invitation is for this user's email (case-insensitive)
 	if !strings.EqualFold(invitation.Email(), userEmail) {
 		return nil, fmt.Errorf("%w: this invitation was sent to a different email address", shared.ErrValidation)

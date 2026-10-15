@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/internal/app/onboarding"
 	slaapp "github.com/openctemio/openctem/api/internal/app/sla"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -77,6 +78,8 @@ type TenantHandler struct {
 	// organization now manages it (first time sso_required or
 	// block_new_workspaces turns on). Nil: not sent.
 	domainCapture func(ctx context.Context, vd *verifieddomain.VerifiedDomain)
+	// joinRequests: the organization's inbox of requests to join.
+	joinRequests *onboarding.Service
 	// licenseEvaluator re-evaluates the inventory after a license policy
 	// change (nil: not evaluated until the next package write).
 	licenseEvaluator LicensePolicyEvaluator

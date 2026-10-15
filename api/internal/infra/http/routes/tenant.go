@@ -100,6 +100,12 @@ func registerTenantRoutes(
 		r.POST("/members/{userId}/suspend", h.SuspendMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/members/{userId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+
+		// Requests to join by a verified email domain (RFC-104): the
+		// organization's own inbox.
+		r.GET("/join-requests", h.ListJoinRequests, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersRead))
+		r.POST("/join-requests/{requestId}/approve", h.ApproveJoinRequest, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
+		r.POST("/join-requests/{requestId}/reject", h.RejectJoinRequest, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		// Administrator-created accounts: create a user with roles and a
 		// one-time set-password link; reissue the link while the account is unused.
 		r.POST("/users", h.CreateUser, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
