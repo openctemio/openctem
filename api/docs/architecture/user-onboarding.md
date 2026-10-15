@@ -168,9 +168,9 @@ and applies only while the claim is verified and unambiguous: a lapsed claim
 | `block_new_workspaces` | Accounts on the domain cannot create organizations (create-first-team, `POST /tenants`) |
 | `include_subdomains` | The effects also cover `*.domain` addresses; the exact claim of a subdomain wins |
 
-- `GET /api/v1/tenants/{tenant}/settings/domains` (owner or admin) lists the
+- `GET /api/v1/organization/settings/domains` (owner or admin) lists the
   organization's domains with their policy and `effective`.
-- `PUT /api/v1/tenants/{tenant}/settings/domains/{domainId}/signup-policy`
+- `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
   (owner, step-up) changes it; audited as
   `sso.verified_domain_signup_policy_changed` (high). A domain id of another
   organization answers 404.
