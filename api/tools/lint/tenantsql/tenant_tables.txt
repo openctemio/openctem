@@ -19,6 +19,7 @@ asset_identity_backfill
 asset_merge_log
 asset_program_links
 asset_relationships
+asset_risk_queue
 asset_services
 asset_software
 asset_software_edges
@@ -95,6 +96,7 @@ finding_activities
 finding_branch_occurrences
 finding_comments
 finding_correlations
+finding_decision_reviews
 finding_decision_suspensions
 finding_definitions
 finding_evidence

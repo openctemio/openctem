@@ -107,6 +107,19 @@ Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
 
+## Automatic signals never reverse a decision
+
+A false positive, an accepted risk or a duplicate is a person's decision
+(approved, for the first two). No automatic signal moves it:
+
+- a changed taint source and an indicator-of-compromise match raise a
+  **review flag** instead (`finding_decision_reviews`, migration `002154`,
+  reasons `taint_source_changed` and `ioc_match`), with a `decision_review`
+  timeline entry in the same transaction and an audit event; one open flag per
+  finding and reason; it clears when the finding's status changes;
+- an IOC match still reopens a finding closed as `resolved` (the match is
+  evidence it is not fixed).
+
 ## Duplicates name their canonical finding
 
 A duplicate is a tombstone of another finding: `duplicate_of` is always set
@@ -138,24 +151,52 @@ instead).
   end has passed it can no longer be approved (it would accept nothing) and is
   submitted again with a new end. Approving an older `accepted` request that
   has no end gives it the 90-day default from the approval.
-- **On the finding.** Approving `accepted` stores the end in
-  `findings.acceptance_expires_at` in the same statement as the status
-  (`FindingRepository.AcceptUntil`). A finding that an approved accepted-risk
-  or won't-fix suppression rule closes takes the rule's `expires_at` when the
-  finding-rule link is recorded (`SuppressionRepository.RecordSuppression`,
-  same tenant only); a rule without an expiry leaves it empty, and the rule's
-  own expiry lifts the suppression.
+- **On the finding, on every accept path.** Approving `accepted` stores the
+  end in `findings.acceptance_expires_at` in the same statement as the status
+  (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix
+  suppression rule writes its `expires_at` on the findings it closes, both
+  when it is approved (`applySuppressionChunk`) and when ingest links a new
+  finding to it (`RecordSuppression`, same tenant only); a re-link to another
+  rule takes that rule's end; an identity merge whose survivor inherits an
+  acceptance inherits its end; a full-row write of an accepted finding (the
+  pentest path) keeps its end. Wherever no end is given (a rule without an
+  expiry, a pentest acceptance), the 90-day default
+  (`vulnerability.DefaultAcceptanceDuration`) applies: an accepted risk always
+  ends.
 - **Cleared on leaving accepted.** The trigger
   `trg_findings_clear_acceptance_expiry` empties the column on any row that is
   not `accepted`, whatever path wrote the status, so a later accept starts
   clean.
 - **Who reads it.** The CI gate honors an accepted finding only until its end
-  (`cirun.honored`), even before the hourly approval-expiration controller
-  reopens it. Threat models read it as the acceptance horizon.
+  (`cirun.honored`), even before the hourly expiry job reopens it. Threat
+  models read it as the acceptance horizon.
 
-Migration `002119` adds the trigger and fills the column for findings already
-accepted, from their latest approved acceptance request or their suppression
-rule. Findings accepted with no end anywhere stay empty.
+### When an acceptance ends
+
+The hourly `approval-expiration` controller ends every accepted finding whose
+`acceptance_expires_at` has passed, whatever made it accepted (an approval, a
+rule, the repair below). Each end is **one transaction**
+(`FindingAcceptanceExpiryRepository.Expire`), taken only while the finding is
+still accepted and its end has passed:
+
+1. the finding returns to `confirmed` (the reopen target) and its resolution
+   fields are cleared;
+2. a **new SLA clock** starts at the reopen (owner decision D3): the tenant's
+   policy deadline for the finding's priority from now, `sla_status`
+   `on_track`; `first_detected_at` keeps the finding's true age;
+3. its approved acceptance requests are marked `expired`;
+4. the timeline gets an `acceptance_expired` entry (with the requests) and an
+   `sla_restarted` entry (with the previous deadline).
+
+A failure rolls all of it back and the next run retries; nothing is left with
+the request expired and the finding still accepted. Approved requests whose
+end passed while their finding had moved on (or holds a newer acceptance) are
+only marked `expired`.
+
+Migration `002119` filled the column for findings already accepted, from their
+latest approved acceptance request or their suppression rule. Migration
+`002166` gives the accepted findings that still had no end the 90-day default
+from the day it runs, with a timeline note (reason `acceptance_end_default`).
 
 ## AI false-positive proposals
 

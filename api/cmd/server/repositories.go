@@ -14,6 +14,7 @@ type Repositories struct {
 	// Assets & Components
 	Asset                   *postgres.AssetRepository
 	RepoExt                 *postgres.RepositoryExtensionRepository
+	RepoIdentity            *postgres.RepositoryIdentityRepository
 	Component               *postgres.ComponentRepository
 	VEXStatement            *postgres.VEXStatementRepository
 	LicensePolicy           *postgres.LicensePolicyRepository
@@ -289,10 +290,11 @@ type Repositories struct {
 	IOC *postgres.IOCRepository
 
 	// Validation evidence (CTEM Stage-4, migration 000178)
-	ValidationEvidence *postgres.ValidationEvidenceRepository
-	FindingRetest      *postgres.FindingRetestRepository
-	FindingEvidence    *postgres.FindingEvidenceRepository
-	FindingSLARestart  *postgres.FindingSLARestartRepository
+	ValidationEvidence      *postgres.ValidationEvidenceRepository
+	FindingRetest           *postgres.FindingRetestRepository
+	FindingEvidence         *postgres.FindingEvidenceRepository
+	FindingSLARestart       *postgres.FindingSLARestartRepository
+	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
 
 	// Runtime-telemetry reads for Stage-4 detection correlation
 	// (migration 000203)
@@ -329,6 +331,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Assets & Components
 		Asset:                   postgres.NewAssetRepository(db),
 		RepoExt:                 postgres.NewRepositoryExtensionRepository(db),
+		RepoIdentity:            postgres.NewRepositoryIdentityRepository(db),
 		Component:               postgres.NewComponentRepository(db),
 		VEXStatement:            postgres.NewVEXStatementRepository(db),
 		LicensePolicy:           postgres.NewLicensePolicyRepository(db),
@@ -563,10 +566,11 @@ func newRepositories(db *postgres.DB) *Repositories {
 		IOC: postgres.NewIOCRepository(db),
 
 		// Validation evidence (CTEM Stage-4, migration 000178).
-		ValidationEvidence: postgres.NewValidationEvidenceRepository(db),
-		FindingRetest:      postgres.NewFindingRetestRepository(db),
-		FindingEvidence:    postgres.NewFindingEvidenceRepository(db),
-		FindingSLARestart:  postgres.NewFindingSLARestartRepository(db),
+		ValidationEvidence:      postgres.NewValidationEvidenceRepository(db),
+		FindingRetest:           postgres.NewFindingRetestRepository(db),
+		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
+		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
+		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),
 
 		// Runtime-telemetry reads for detection correlation (migration 000203).
 		TelemetryProbe: postgres.NewTelemetryProbeRepository(db),
