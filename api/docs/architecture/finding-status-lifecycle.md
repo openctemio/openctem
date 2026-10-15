@@ -320,6 +320,23 @@ instead).
   (`findings:write`) repeats it at most once an hour per request
   (`reminded_at`, atomic), audited `finding_approval.reminded`. VEX requests
   from a scan report are not notified one by one.
+- **Sole member.** An organization with one person has nobody to ask. Its
+  owner may approve their own pending request
+  (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while
+  the organization has exactly one active person (an active, unexpired
+  membership of an active `person` account; checked in the database at
+  decision time, `ScopeActorRepository.IsSoleActiveOwner`), with a fresh
+  authenticator code (`VerifyFreshTOTP`, single use) and a reason. An accepted
+  risk then ends within `vulnerability.SoloAcceptanceLimit` (7 days for P0 or
+  KEV, 45 for P1, 90 otherwise). The request carries `self_approved` and the
+  reason; the audit row is `finding_approval.self_approved` (high); every
+  refusal is `finding_approval.self_approval_refused`; the organization's
+  channels get a security alert and the backup contact
+  (`settings.finding_approvals.backup_contact_email`) is emailed
+  (`internal/app/finding/approval_solo.go`). The settings route
+  (`/api/v1/organization/settings/finding-approvals`) needs `settings:write`
+  and a recent re-authentication; changes are audited with before/after and
+  the approvers are told.
 - **On the finding, on every accept path.** Approving `accepted` stores the
   end in `findings.acceptance_expires_at` in the same statement as the status
   (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix
