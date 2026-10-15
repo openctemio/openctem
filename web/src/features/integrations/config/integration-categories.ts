@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   GitBranch,
   MessageSquare,
   Shield,
@@ -49,6 +50,13 @@ export const INTEGRATION_CATEGORIES: IntegrationCategoryCard[] = [
     description: 'Connect Jira',
     icon: TicketCheck,
     href: '/settings/integrations/ticketing',
+  },
+  {
+    id: 'ticket-mapping',
+    title: 'Ticket field mapping',
+    description: 'Which fields and statuses sync with Jira',
+    icon: ArrowLeftRight,
+    href: '/settings/integrations/ticketing/mappings',
   },
   {
     id: 'notifications',
