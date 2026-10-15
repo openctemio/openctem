@@ -586,11 +586,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
-	// Threat intel — daily EPSS + KEV refresh + auto-escalate KEV findings
+	// Threat intel — daily EPSS + KEV refresh, a priority recompute for only
+	// the findings whose CVE intel moved, and KEV auto-escalation.
+	var intelQueue controller.IntelChangeQueue
+	if svc.Scoring != nil {
+		intelQueue = svc.Scoring
+	}
 	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
 		svc.ThreatIntel,
 		repos.KEVEscalator,
-		svc.ReclassifyQueue,
+		intelQueue,
 		log.With("controller", "threat-intel-refresh"),
 	))
 

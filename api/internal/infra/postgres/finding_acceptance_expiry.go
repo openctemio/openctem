@@ -107,6 +107,11 @@ func (r *FindingAcceptanceExpiryRepository) Expire(ctx context.Context, due vuln
 			return fmt.Errorf("lock ended acceptance: %w", err)
 		}
 
+		if newDeadline != nil {
+			if err := markSLARestart(ctx, tx); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE findings SET
 				status = 'confirmed', resolution = NULL, closure_reason = NULL, verification = NULL,
