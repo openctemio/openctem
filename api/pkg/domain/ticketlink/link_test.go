@@ -40,20 +40,37 @@ func TestKeyFromURL_OnlyTheIntegrationsSite(t *testing.T) {
 
 func TestNew_Rules(t *testing.T) {
 	f, c := shared.NewID(), shared.NewID()
-	if _, err := New(shared.NewID(), shared.NewID(), &f, &c, "SEC-1", "", "https://x/browse/SEC-1", RoleOwn, SourcePerson, nil); err == nil {
+	if _, err := New(shared.NewID(), shared.NewID(), &f, &c, "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePerson, nil); err == nil {
 		t.Fatal("both objects accepted")
 	}
-	if _, err := New(shared.NewID(), shared.NewID(), nil, nil, "SEC-1", "", "https://x/browse/SEC-1", RoleOwn, SourcePerson, nil); err == nil {
+	if _, err := New(shared.NewID(), shared.NewID(), nil, nil, "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePerson, nil); err == nil {
 		t.Fatal("no object accepted")
 	}
-	if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "sec 1", "", "https://x", RoleOwn, SourcePerson, nil); err == nil {
+	if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "sec 1", "", "https://x", "https://x", RoleOwn, SourcePerson, nil); err == nil {
 		t.Fatal("bad key accepted")
 	}
-	if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "SEC-1", "", "https://x", RoleOwn, SourceMigration, nil); err == nil {
+	if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourceMigration, nil); err == nil {
 		t.Fatal("migration source accepted from code")
 	}
-	l, err := New(shared.NewID(), shared.NewID(), &f, nil, "sec-1", "10001", "https://x/browse/SEC-1", RoleOwn, SourcePlatform, nil)
+	l, err := New(shared.NewID(), shared.NewID(), &f, nil, "sec-1", "10001", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePlatform, nil)
 	if err != nil || l.ExternalKey != "SEC-1" || l.ProjectKey != "SEC" || l.State != StateActive {
 		t.Fatalf("%+v %v", l, err)
+	}
+}
+
+func TestNew_URLMustBeHTTPSOnTheSite(t *testing.T) {
+	f := shared.NewID()
+	for _, u := range []string{
+		"http://acme.atlassian.net/browse/SEC-1",
+		"https://evil.example/browse/SEC-1",
+		"https://user@acme.atlassian.net/browse/SEC-1",
+		"javascript:alert(1)",
+	} {
+		if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "SEC-1", "", "https://acme.atlassian.net", u, RoleOwn, SourcePerson, nil); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("%s accepted", u)
+		}
+	}
+	if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "SEC-1", "", "https://acme.atlassian.net/", "https://ACME.atlassian.net/browse/SEC-1", RoleOwn, SourcePerson, nil); err != nil {
+		t.Fatal(err)
 	}
 }
