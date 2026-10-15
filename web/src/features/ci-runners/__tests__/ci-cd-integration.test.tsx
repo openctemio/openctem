@@ -2,8 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CICDIntegration, cicdTab } from '../components/ci-cd-integration'
-import { CICDLinkCard } from '../components/ci-cd-link-card'
+import { CIPipelinesHint, pipelineHintCounts } from '../components/ci-pipelines-hint'
 import { DOCS } from '@/lib/docs-links'
+
+let pipelineCounts: Record<string, number> | undefined
+let lastHintCall: { filters: unknown; enabled?: boolean } | undefined
+vi.mock('../api/use-ci', () => ({
+  useCIPipelines: (filters: unknown, opts?: { enabled?: boolean }) => {
+    lastHintCall = { filters, enabled: opts?.enabled }
+    return { data: pipelineCounts === undefined ? undefined : { data: [], counts: pipelineCounts } }
+  },
+}))
 
 vi.mock('../components/ci-pipelines-panel', () => ({
   CIPipelinesPanel: () => <div data-testid="pipelines-panel" />,
@@ -51,10 +60,56 @@ describe('CI/CD integration page', () => {
   })
 })
 
-describe('CICDLinkCard', () => {
-  it('links to CI/CD integration with the pipeline count', () => {
-    render(<CICDLinkCard count={3} />)
-    const link = screen.getByRole('link', { name: /ci\/cd pipelines \(3\)/i })
-    expect(link).toHaveAttribute('href', '/ci-cd')
+describe('CIPipelinesHint (the Sensors page line to CI/CD)', () => {
+  beforeEach(() => {
+    pipelineCounts = undefined
+    lastHintCall = undefined
+  })
+
+  it('counts active pipelines (not archived, retired or revoked) and failing gates', () => {
+    expect(
+      pipelineHintCounts({ fresh: 10, stale: 2, failing: 1, archived: 4, revoked: 1 })
+    ).toEqual({
+      active: 13,
+      failing: 1,
+    })
+    expect(pipelineHintCounts(undefined)).toEqual({ active: 0, failing: 0 })
+  })
+
+  it('is one line linking to CI/CD, with the failing gates linking to that filter', () => {
+    pipelineCounts = { fresh: 11, stale: 2, failing: 1, archived: 3 }
+    render(<CIPipelinesHint enabled />)
+    expect(
+      screen.getByRole('link', { name: /14 ci pipelines report through ci\/cd/i })
+    ).toHaveAttribute('href', '/ci-cd')
+    expect(screen.getByRole('link', { name: /1 failing gate/i })).toHaveAttribute(
+      'href',
+      '/ci-cd?pipeline_status=failing'
+    )
+    // A single row is enough for the counts; never the pipeline list.
+    expect(lastHintCall?.filters).toEqual({ perPage: 1 })
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('says nothing about failing when every gate passes', () => {
+    pipelineCounts = { fresh: 1 }
+    render(<CIPipelinesHint enabled />)
+    expect(
+      screen.getByRole('link', { name: /1 ci pipeline reports through ci\/cd/i })
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/failing/i)).not.toBeInTheDocument()
+  })
+
+  it('renders nothing without an active pipeline', () => {
+    pipelineCounts = { archived: 2 }
+    const { container } = render(<CIPipelinesHint enabled />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('does not ask the API for a caller who may not read CI', () => {
+    pipelineCounts = { fresh: 5 }
+    const { container } = render(<CIPipelinesHint enabled={false} />)
+    expect(lastHintCall?.enabled).toBe(false)
+    expect(container).toBeEmptyDOMElement()
   })
 })
