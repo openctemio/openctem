@@ -935,5 +935,20 @@
   "findings.triage.statusFailed": "Failed to update status",
   "findings.triage.severityFailed": "Failed to update severity",
   "findings.triage.assignFailed": "Failed to assign",
-  "findings.triage.unassignFailed": "Failed to unassign"
+  "findings.triage.unassignFailed": "Failed to unassign",
+  "findings.typePanel.dataFlow": "Data flow",
+  "findings.typePanel.openCode": "Open the code",
+  "findings.typePanel.moreSteps": "{count} more steps on the full page",
+  "findings.typePanel.secret": "Secret",
+  "findings.typePanel.masked": "Masked value",
+  "findings.typePanel.kind": "Kind",
+  "findings.typePanel.validity": "Validity",
+  "findings.typePanel.revoked": "Revoked",
+  "findings.typePanel.valid": "Valid: still works",
+  "findings.typePanel.invalid": "Not valid",
+  "findings.typePanel.notVerified": "Not verified by the scanner",
+  "findings.typePanel.location": "Location",
+  "findings.typePanel.history": "History",
+  "findings.typePanel.historyOnly": "Only in the repository history, not in the current files",
+  "findings.typePanel.httpEvidence": "HTTP evidence"
 }
