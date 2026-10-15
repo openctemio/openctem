@@ -64,6 +64,7 @@ func newScoringFixture(t *testing.T) scoringFixture {
 		postgres.NewPriorityRuleRepository(pdb), postgres.NewPriorityAuditRepository(pdb), logger.NewNop())
 	fx.recl = reclassify.NewReclassifier(fx.findings, fx.assets, cls, logger.NewNop())
 	fx.recl.SetQueue(fx.scoring, fx.scoring)
+	fx.recl.SetWriter(fx.scoring)
 	return fx
 }
 
@@ -408,4 +409,39 @@ func TestScoringVersions_TenantSettingsAndRiskVersion(t *testing.T) {
 	}
 	_, _ = fx.db.Exec(`DELETE FROM finding_priority_queue WHERE tenant_id = $1`, tid.String())
 	_, _ = fx.db.Exec(`DELETE FROM asset_risk_queue WHERE tenant_id = $1`, tid.String())
+}
+
+// The pass writes only its own columns and only while the finding is open:
+// a finding closed while the pass ran stays closed and frozen.
+func TestScoringVersions_PassNeverRevertsAConcurrentClose(t *testing.T) {
+	fx := newScoringFixture(t)
+	ctx := context.Background()
+	tid := fx.newTenant(t)
+	aid := fx.newAsset(t, tid, "github.com/acme/scoring-race")
+	fid := fx.newFinding(t, tid, aid, vulnerability.SeverityHigh, "race-high")
+	fx.drain(t, aid)
+
+	f, err := fx.findings.GetByID(ctx, tid, fid) // the pass loaded it open
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.db.Exec(`UPDATE findings SET status = 'resolved', resolved_at = now(), priority_class = 'P3'
+		WHERE tenant_id = $1 AND id = $2`, tid.String(), fid.String()); err != nil {
+		t.Fatal(err)
+	}
+	f.SetPriorityClassification(vulnerability.PriorityP0, "computed while open")
+	n, err := fx.scoring.SavePriorities(ctx, tid, []*vulnerability.Finding{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fx.row(t, tid, fid)
+	if n != 0 || got.status != "resolved" || got.class != "P3" {
+		t.Fatalf("saved=%d status=%s class=%s, want nothing written to the closed finding", n, got.status, got.class)
+	}
+
+	// Another tenant's id is never written.
+	other := fx.newTenant(t)
+	if n, err := fx.scoring.SavePriorities(ctx, other, []*vulnerability.Finding{f}); err != nil || n != 0 {
+		t.Fatalf("cross-tenant save wrote %d rows (err %v)", n, err)
+	}
 }
