@@ -291,9 +291,9 @@ func campaignFindingFilter(campaign *remediation.Campaign) (vulnerability.Findin
 // memory only, with the ones over the caller's in-scope findings when the
 // caller is restricted (research 24 §5.1, gap L-18). The stored counts stay
 // organization-wide: auto-complete and the controller read those, and a
-// restricted read never persists its view. Unrestricted callers are left
-// unchanged. Errors fail closed (zero counts) rather than show the
-// organization's numbers.
+// restricted read never persists its view. Unrestricted callers get the
+// organization's live counts (reads never persist them either). Errors fail
+// closed (zero counts) rather than show the organization's numbers.
 func (s *RemediationCampaignService) ApplyViewerScope(ctx context.Context, campaign *remediation.Campaign) {
 	if s.dataScope == nil || campaign == nil {
 		return
@@ -305,6 +305,9 @@ func (s *RemediationCampaignService) ApplyViewerScope(ctx context.Context, campa
 		return
 	}
 	if scope == nil {
+		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
+			s.logger.Warn("campaign live progress failed", "id", campaign.ID().String(), "error", rerr)
+		}
 		return
 	}
 	total, resolved, err := s.scopedProgress(ctx, campaign, scope)
@@ -485,9 +488,13 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	priority := remediation.CampaignPriority(input.Priority)
-	if priority == "" {
-		priority = remediation.CampaignPriorityMedium
+	priority := remediation.CampaignPriorityMedium
+	if input.Priority != "" {
+		p, perr := remediation.ParseCampaignPriority(input.Priority)
+		if perr != nil {
+			return nil, perr
+		}
+		priority = p
 	}
 
 	campaign, err := remediation.NewCampaign(tid, input.Name, priority)
@@ -561,7 +568,7 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 	if changed, err := s.recomputeProgress(ctx, campaign); err != nil {
 		s.logger.Warn("initial campaign progress compute failed", "id", campaign.ID().String(), "error", err)
 	} else if changed {
-		if err := s.repo.Update(ctx, campaign); err != nil {
+		if err := s.repo.UpdateCounts(ctx, campaign); err != nil {
 			s.logger.Warn("failed to persist initial campaign progress", "id", campaign.ID().String(), "error", err)
 		}
 	}
@@ -578,8 +585,10 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 	return campaign, nil
 }
 
-// GetCampaign retrieves a campaign, refreshing its finding counts live so the
-// detail view always reflects current finding statuses. The recompute is
+// GetCampaign retrieves a campaign with its finding counts computed live, so
+// the detail view reflects current finding statuses. A read never writes: the
+// live counts are not persisted here (the reconciler and the refresh endpoint
+// do that), so a GET can never overwrite a concurrent change. The recompute is
 // best-effort: on any error the last-persisted counts are returned unchanged.
 func (s *RemediationCampaignService) GetCampaign(ctx context.Context, tenantID, campaignID string) (*remediation.Campaign, error) {
 	tid, _ := shared.IDFromString(tenantID)
@@ -589,12 +598,8 @@ func (s *RemediationCampaignService) GetCampaign(ctx context.Context, tenantID, 
 		return nil, err
 	}
 
-	if changed, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
-		s.logger.Warn("campaign progress refresh failed", "id", campaignID, "error", rerr)
-	} else if changed {
-		if uerr := s.repo.Update(ctx, campaign); uerr != nil {
-			s.logger.Warn("failed to persist refreshed campaign progress", "id", campaignID, "error", uerr)
-		}
+	if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
+		s.logger.Warn("campaign progress refresh failed", "id", sanitizeLogValue(campaignID), "error", logger.SanitizeError(rerr))
 	}
 	return campaign, nil
 }
@@ -652,6 +657,17 @@ type UpdateRemediationCampaignInput struct {
 	// AssignedTeam sets the validator (the "who verifies" — segregation from the
 	// fixer). Same nil/""/uuid semantics as AssignedTo.
 	AssignedTeam *string
+	// Version is the campaign version the caller edited (optimistic check).
+	// nil = check only against the version read here.
+	Version *int
+}
+
+// checkVersion refuses a change made on a stale copy of the campaign.
+func checkVersion(campaign *remediation.Campaign, expected *int) error {
+	if expected != nil && *expected != campaign.Version() {
+		return remediation.ErrCampaignVersionConflict
+	}
+	return nil
 }
 
 // UpdateCampaign updates campaign fields (name, description, priority, tags, due_date).
@@ -663,16 +679,27 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 	if err != nil {
 		return nil, err
 	}
+	if err := checkVersion(campaign, input.Version); err != nil {
+		return nil, err
+	}
 	before := snapshotCampaign(campaign)
 
 	if input.Name != nil {
-		campaign.SetName(*input.Name)
+		name := strings.TrimSpace(*input.Name)
+		if name == "" {
+			return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
+		}
+		campaign.SetName(name)
 	}
 	if input.Description != nil {
 		campaign.SetDescription(*input.Description)
 	}
 	if input.Priority != nil {
-		campaign.SetPriority(remediation.CampaignPriority(*input.Priority))
+		p, perr := remediation.ParseCampaignPriority(*input.Priority)
+		if perr != nil {
+			return nil, perr
+		}
+		campaign.SetPriority(p)
 	}
 	if input.Tags != nil {
 		campaign.SetTags(input.Tags)
@@ -729,6 +756,9 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 	}
 
 	if err := s.repo.Update(ctx, campaign); err != nil {
+		if errors.Is(err, shared.ErrConflict) || errors.Is(err, shared.ErrNotFound) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("failed to update campaign: %w", err)
 	}
 
@@ -747,11 +777,20 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 
 // UpdateCampaignStatus transitions campaign status.
 func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, tenantID, campaignID, newStatus string, actx auditapp.AuditContext) (*remediation.Campaign, error) {
+	return s.UpdateCampaignStatusAt(ctx, tenantID, campaignID, newStatus, nil, actx)
+}
+
+// UpdateCampaignStatusAt transitions campaign status when the campaign is
+// still at expectedVersion (nil = the version read here).
+func (s *RemediationCampaignService) UpdateCampaignStatusAt(ctx context.Context, tenantID, campaignID, newStatus string, expectedVersion *int, actx auditapp.AuditContext) (*remediation.Campaign, error) {
 	tid, _ := shared.IDFromString(tenantID)
 	cid, _ := shared.IDFromString(campaignID)
 
 	campaign, err := s.repo.GetByID(ctx, tid, cid)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkVersion(campaign, expectedVersion); err != nil {
 		return nil, err
 	}
 	fromStatus := campaign.Status()
@@ -775,9 +814,6 @@ func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, t
 		err = campaign.StartValidation()
 	case remediation.CampaignStatusCompleted:
 		err = campaign.Complete()
-		if err == nil {
-			s.recordRiskReduction(campaign)
-		}
 	case remediation.CampaignStatusCanceled:
 		err = campaign.Cancel()
 	default:
@@ -788,6 +824,9 @@ func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, t
 	}
 
 	if err := s.repo.Update(ctx, campaign); err != nil {
+		if errors.Is(err, shared.ErrConflict) || errors.Is(err, shared.ErrNotFound) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("failed to update campaign status: %w", err)
 	}
 
@@ -858,7 +897,6 @@ func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context,
 			"campaign_id", campaign.ID().String(), "status", campaign.Status(), "error", cerr)
 		return nil
 	}
-	s.recordRiskReduction(campaign)
 	if uerr := s.repo.Update(ctx, campaign); uerr != nil {
 		return fmt.Errorf("persist campaign completion from epic: %w", uerr)
 	}
@@ -911,24 +949,22 @@ func (s *RemediationCampaignService) RefreshCampaignProgress(ctx context.Context
 		return nil, err
 	}
 
-	changed, err := s.recomputeProgress(ctx, campaign)
-	if err != nil {
+	if _, err := s.recomputeProgress(ctx, campaign); err != nil {
 		return nil, fmt.Errorf("failed to compute campaign progress: %w", err)
+	}
+	if err := s.repo.UpdateCounts(ctx, campaign); err != nil {
+		return nil, fmt.Errorf("failed to persist campaign progress: %w", err)
 	}
 	fromStatus := campaign.Status()
 	autoCompleted := false
 	if completed, cerr := campaign.TryAutoComplete(); cerr != nil {
-		s.logger.Warn("campaign auto-complete failed", "id", campaignID, "error", cerr)
+		s.logger.Warn("campaign auto-complete failed", "id", sanitizeLogValue(campaignID), "error", logger.SanitizeError(cerr))
 	} else if completed {
-		changed = true
-		autoCompleted = true
-		s.recordRiskReduction(campaign)
-	}
-
-	if changed {
+		// A versioned save: a Cancel or Pause made since the read wins.
 		if err := s.repo.Update(ctx, campaign); err != nil {
-			return nil, fmt.Errorf("failed to persist campaign progress: %w", err)
+			return nil, err
 		}
+		autoCompleted = true
 	}
 	if autoCompleted {
 		s.auditStatusChange(ctx, campaign, fromStatus, actx, "auto_complete")
@@ -972,30 +1008,31 @@ func (s *RemediationCampaignService) ReconcileProgress(ctx context.Context) (int
 			s.logger.Warn("campaign progress reconcile failed", "id", campaign.ID().String(), "error", rerr)
 			continue
 		}
+		// Counters only, stamped even when unchanged so the next sweep moves
+		// on to other campaigns (no starvation past the batch size).
+		if uerr := s.repo.UpdateCounts(ctx, campaign); uerr != nil {
+			s.logger.Warn("failed to persist reconciled campaign counts", "id", campaign.ID().String(), "error", uerr)
+			continue
+		}
 		fromStatus := campaign.Status()
-		autoCompleted := false
-		if completed, cerr := campaign.TryAutoComplete(); cerr != nil {
+		completed, cerr := campaign.TryAutoComplete()
+		if cerr != nil {
 			s.logger.Warn("campaign auto-complete failed", "id", campaign.ID().String(), "error", cerr)
-		} else if completed {
-			changed = true
-			autoCompleted = true
-			s.recordRiskReduction(campaign)
+		}
+		if completed {
+			// A versioned save: if a person paused or canceled the campaign
+			// since it was listed, the save conflicts and their change stands.
+			if uerr := s.repo.Update(ctx, campaign); uerr != nil {
+				s.logger.Info("campaign auto-complete skipped: changed since read", "id", campaign.ID().String(), "error", uerr)
+				continue
+			}
 			s.logger.Info("remediation campaign auto-completed", "id", campaign.ID().String())
-		}
-		if !changed {
-			continue
-		}
-		if uerr := s.repo.Update(ctx, campaign); uerr != nil {
-			s.logger.Warn("failed to persist reconciled campaign", "id", campaign.ID().String(), "error", uerr)
-			continue
-		}
-		if campaign.Status() == remediation.CampaignStatusCompleted {
 			s.syncEpicOnCompletion(ctx, campaign.TenantID(), campaign.ID(), campaign.Name())
-		}
-		if autoCompleted {
 			s.auditStatusChange(ctx, campaign, fromStatus, auditapp.AuditContext{ActorEmail: campaignAuditSystemActor}, "auto_complete")
 		}
-		updated++
+		if changed || completed {
+			updated++
+		}
 	}
 	return updated, nil
 }
@@ -1060,17 +1097,6 @@ func (s *RemediationCampaignService) recomputeProgress(ctx context.Context, camp
 	campaign.UpdateProgress(int(total), int(resolved))
 	changed := prevFindings != campaign.FindingCount() || prevResolved != campaign.ResolvedCount()
 	return changed, nil
-}
-
-// recordRiskReduction stamps a simple resolved/total risk-reduction metric on a
-// completed campaign, matching the manual Complete path.
-func (s *RemediationCampaignService) recordRiskReduction(campaign *remediation.Campaign) {
-	if campaign.FindingCount() <= 0 {
-		return
-	}
-	before := float64(campaign.FindingCount())
-	after := float64(campaign.FindingCount() - campaign.ResolvedCount())
-	campaign.RecordRiskReduction(before, after)
 }
 
 // campaignRemediationKey returns the remediation-group key a campaign is scoped
