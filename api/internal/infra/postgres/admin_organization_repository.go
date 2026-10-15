@@ -43,12 +43,8 @@ const adminOrganizationSelect = `
 	       (SELECT COUNT(*) FROM verified_domains d
 	         WHERE d.tenant_id = t.id AND d.verified_at IS NOT NULL),
 	       COALESCE((t.settings -> 'security' ->> 'sso_enforced')::boolean, FALSE),
-	       ` + adminOrganizationPlanExpr + `
+	       ` + tenantPlanExpr + `
 	FROM tenants t`
-
-// adminOrganizationPlanExpr is the organization's plan: the stored one, or
-// enterprise for an organization created before plans (plan.go).
-const adminOrganizationPlanExpr = `COALESCE((SELECT tp.plan FROM tenant_plans tp WHERE tp.tenant_id = t.id), 'enterprise')`
 
 // adminOrganizationActiveOwner holds when the organization has an active owner.
 const adminOrganizationActiveOwner = `EXISTS (SELECT 1 FROM tenant_members m
@@ -91,7 +87,7 @@ func (r *AdminOrganizationRepository) ListOrganizations(ctx context.Context, f a
 	}
 	if f.Plan != "" {
 		args = append(args, f.Plan)
-		conds = append(conds, fmt.Sprintf("%s = $%d", adminOrganizationPlanExpr, len(args)))
+		conds = append(conds, fmt.Sprintf("%s = $%d", tenantPlanExpr, len(args)))
 	}
 	if !f.IncludeSystem {
 		args = append(args, tenant.SystemTenantID)
