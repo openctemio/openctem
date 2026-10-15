@@ -387,6 +387,11 @@ class, the tenant with the fewest platform jobs in flight goes first
 
 ## Platform sensors on the tenant plane
 
+Platform sensors become **shared sensors** (instance scope) in every edition;
+the design, access layers, deployment defaults and rollout are in
+[RFC-100](../rfcs/RFC-100-shared-sensors.md). Until its gate (§11) is met,
+no organization may use them.
+
 A platform sensor's row carries a `tenant_id` (the operator's), but it is
 never that tenant's sensor. Managing platform sensors belongs to the platform
 admin console (RFC-022); on the tenant plane they do not exist:
