@@ -840,5 +840,17 @@
   "findings.tenableRescan.title": "Quét lại bằng Tenable.sc",
   "findings.tenableRescan.now": "Quét lại",
   "findings.tenableRescan.nowTitle": "Quét ngay tài sản của phát hiện này qua bộ kết nối Tenable.sc",
-  "findings.tenableRescan.help": "Sau khi khắc phục, hãy quét lại tài sản bằng Tenable.sc. Khi tổ chức bật tự động đóng theo phạm vi quét, phát hiện sẽ tự đóng khi một lần quét lại đầy đủ không còn báo cáo nó."
+  "findings.tenableRescan.help": "Sau khi khắc phục, hãy quét lại tài sản bằng Tenable.sc. Khi tổ chức bật tự động đóng theo phạm vi quét, phát hiện sẽ tự đóng khi một lần quét lại đầy đủ không còn báo cáo nó.",
+  "findings.provenance.heading": "Nguồn gốc",
+  "findings.provenance.pipeline": "Pipeline #{id}",
+  "findings.provenance.run": "Lần chạy CI",
+  "findings.provenance.mergeRequest": "MR !{id}",
+  "findings.provenance.firstSeen": "Phát hiện lần đầu",
+  "findings.provenance.lastSeen": "Thấy gần nhất",
+  "findings.provenance.byTool": "bởi {tool}",
+  "findings.provenance.branches": "Trên {count} nhánh",
+  "findings.provenance.default": "mặc định",
+  "findings.provenance.fixedHere": "đã sửa ở đây",
+  "findings.provenance.resolvedHere": "đã xử lý ở đây",
+  "findings.provenance.recentRuns": "Pipeline gần đây"
 }
