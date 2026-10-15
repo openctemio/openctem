@@ -17,7 +17,12 @@ import (
 // clientAdapter adapts the concrete infra *Client to the app-layer
 // appjira.Client interface (the two packages declare distinct
 // CreateIssueInput/Result types, so the conversion happens here).
-type clientAdapter struct{ c *Client }
+type clientAdapter struct {
+	c *Client
+	// integrationID names the integration the client was built from, so a
+	// mapping profile of that integration can be found.
+	integrationID shared.ID
+}
 
 func (a clientAdapter) CreateIssue(ctx context.Context, in appjira.CreateIssueInput) (*appjira.CreateIssueResult, error) {
 	res, err := a.c.CreateIssue(ctx, CreateIssueInput{
@@ -205,7 +210,7 @@ func (r *IntegrationClientResolver) buildClient(intg *integration.Integration) (
 	if err != nil {
 		return nil, err
 	}
-	return clientAdapter{c: c}, nil
+	return clientAdapter{c: c, integrationID: intg.ID()}, nil
 }
 
 // resolveCredentials extracts the Jira account email + API token from an
