@@ -682,7 +682,7 @@ A console session alone no longer changes who may sign in or what they may
 do. Every protected action takes a route-level step-up
 (`middleware.RequireAdminStepUp`): a fresh authenticator code in the
 `X-Admin-Step-Up` header. One confirmation opens a five-minute window on the
-same console session (`admin_sessions.step_up_at`, migration 002427); another
+same console session (`admin_sessions.step_up_at`, migration 002472); another
 session, another administrator or a pending session never rides it. Without
 a code or window the API answers `401 ADMIN_STEP_UP_REQUIRED`; the console's
 one step-up dialog asks for the code and retries the same request. A wrong
