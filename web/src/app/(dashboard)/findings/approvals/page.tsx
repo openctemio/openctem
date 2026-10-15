@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  ShieldCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -67,6 +68,7 @@ import {
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
+import { FindingSelfApproveDialog } from '@/features/findings/components/finding-self-approve-dialog'
 
 // ============================================
 // CONSTANTS
@@ -162,6 +164,8 @@ export default function ApprovalsPage() {
   const [selectedApproval, setSelectedApproval] = useState<ApiApproval | null>(null)
   const [rejectionReason, setRejectionReason] = useState('')
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
+  // The sole member's own approval (shown only when the API offers it).
+  const [selfApproveTarget, setSelfApproveTarget] = useState<ApiApproval | null>(null)
 
   // One server page of the active tab; the counts cover every status.
   const { data, isLoading, error, mutate } = useApprovals(
@@ -182,6 +186,7 @@ export default function ApprovalsPage() {
   )
 
   const approvals = useMemo(() => data?.data ?? [], [data?.data])
+  const selfApprovalAvailable = data?.self_approval_available === true
   const counts = useMemo(() => approvalTabCounts(data?.status_counts), [data?.status_counts])
   const pageCount = data ? Math.max(1, Math.ceil(data.total / list.perPage)) : 1
 
@@ -281,9 +286,23 @@ export default function ApprovalsPage() {
         cell: ({ row }) => {
           const status = row.getValue('status') as ApprovalStatus
           return (
-            <Badge variant="outline" className={cn('text-xs', APPROVAL_BADGE_STYLES[status])}>
-              {APPROVAL_STATUS_LABELS[status] ?? status}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-1">
+              <Badge variant="outline" className={cn('text-xs', APPROVAL_BADGE_STYLES[status])}>
+                {APPROVAL_STATUS_LABELS[status] ?? status}
+              </Badge>
+              {row.original.self_approved && (
+                <Badge
+                  variant="outline"
+                  className="text-xs border-amber-500/40 text-amber-600 dark:text-amber-400"
+                  title={t(
+                    'findingApprovals.selfApprove.badgeTitle',
+                    "Approved by its own requester, the organization's only member"
+                  )}
+                >
+                  {t('findingApprovals.selfApprove.badge', 'Self-approved')}
+                </Badge>
+              )}
+            </div>
           )
         },
         enableSorting: true,
@@ -378,6 +397,14 @@ export default function ApprovalsPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {selfApprovalAvailable && approval.requested_by === currentUserId && (
+                  <Can permission={Permission.FindingsApprove}>
+                    <DropdownMenuItem onClick={() => setSelfApproveTarget(approval)}>
+                      <ShieldCheck className="me-2 h-4 w-4 text-amber-500" />
+                      {t('findingApprovals.selfApprove.action', 'Approve myself (sole member)')}
+                    </DropdownMenuItem>
+                  </Can>
+                )}
                 <Can permission={Permission.FindingsApprove}>
                   <DropdownMenuItem onClick={() => handleApproveClick(approval)}>
                     <Check className="me-2 h-4 w-4 text-emerald-500" />
@@ -402,7 +429,15 @@ export default function ApprovalsPage() {
         },
       },
     ],
-    [actionInProgress, handleApproveClick, handleRejectClick, handleCancelClick, currentUserId]
+    [
+      actionInProgress,
+      handleApproveClick,
+      handleRejectClick,
+      handleCancelClick,
+      currentUserId,
+      selfApprovalAvailable,
+      t,
+    ]
   )
 
   // ============================================
@@ -699,6 +734,12 @@ export default function ApprovalsPage() {
         destructive
         isLoading={isCancelling}
         handleConfirm={handleCancelConfirm}
+      />
+
+      <FindingSelfApproveDialog
+        approval={selfApproveTarget}
+        onOpenChange={(open) => !open && setSelfApproveTarget(null)}
+        onApproved={() => void mutate()}
       />
     </>
   )
