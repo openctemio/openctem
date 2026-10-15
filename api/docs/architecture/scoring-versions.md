@@ -108,6 +108,23 @@ Metrics: `openctem_finding_priority_queue_depth`,
 - A reopened finding is queued by the reopen trigger and recomputed with the
   current version.
 
+## History
+
+Snapshots, trends, MTTR and SLA compliance of past periods are history: they
+are never recomputed when a model or settings change.
+
+- `risk_snapshots.risk_version` / `priority_version` record the oldest
+  version among the asset scores and open-finding priorities the day's numbers
+  came from (NULL = before versions).
+- `GET /dashboard/risk-trend` returns, on each point, its versions and the
+  scoring changes that took effect there (`scoring_changes`: date, kind,
+  source, summary; a day without a snapshot moves the marker to the next
+  point). The tenant's own changes and platform model versions are listed,
+  never another tenant's.
+- The dashboard's priority charts draw a dashed line at each change and say
+  "Scoring changed on <date> (<what>): values before and after are not
+  directly comparable", so a step is not read as a change in risk.
+
 ## Security
 
 - Settings are a security control: they decide what is P0 and when work is
@@ -141,4 +158,6 @@ changed.
 - `internal/app/reclassify/reclassifier.go`, `queue.go`
 - `internal/infra/controller/priority_reclassify.go`
 - `internal/app/asset/risk_freshness.go` (risk version stamp)
-- `tests/integration/scoring_versions_test.go`
+- `internal/infra/controller/risk_snapshot.go`, `internal/infra/postgres/dashboard_repository.go` (trend markers)
+- `web/src/features/dashboard/components/ctem/scoring-change-note.tsx`
+- `tests/integration/scoring_versions_test.go`, `tests/integration/scoring_trend_test.go`
