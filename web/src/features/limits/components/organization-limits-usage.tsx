@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertTriangle, Gauge } from 'lucide-react'
+import { AlertTriangle, ExternalLink, Gauge } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -64,9 +64,23 @@ export function OrganizationLimitsUsage() {
       : []
   )
   const denied = data.denied_features ?? []
+  // The service operator's account page (ACCOUNT_PORTAL_URL), sent only when
+  // configured and a limit applies; only an https link is rendered.
+  const portalURL = data.account_portal_url?.startsWith('https://') ? data.account_portal_url : ''
 
   return (
     <div className="space-y-5">
+      {portalURL && (
+        <a
+          href={portalURL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+        >
+          {t('limits.accountPortal', 'Manage your service account')}
+          <ExternalLink className="size-3.5" aria-hidden="true" />
+        </a>
+      )}
       {data.over_limit && (
         <Alert variant="destructive">
           <AlertTriangle className="size-4" />
