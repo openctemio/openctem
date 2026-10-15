@@ -32,9 +32,10 @@ type Invitation struct {
 	access ExternalAccess
 
 	// invitee, lastSentAt and resendCount: invitation_lifecycle.go.
-	invitee     InviteeInfo
-	lastSentAt  *time.Time
-	resendCount int
+	invitee           InviteeInfo
+	lastSentAt        *time.Time
+	resendCount       int
+	loadedResendCount int
 }
 
 // Access returns the access the inviter set for an external invitee.
