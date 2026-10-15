@@ -38,6 +38,38 @@ type FindingApprovalSettings struct {
 	// SecondLookPercent is the share (0-10) of single-person false
 	// positives flagged for a second person to look at.
 	SecondLookPercent int `json:"second_look_percent,omitempty"`
+	// PendingSecondLookPercent is a lower share chosen less than
+	// FPApprovalLoweringDelay ago; it takes effect at PendingSecondLookAt.
+	// Raising the share is immediate and clears it.
+	PendingSecondLookPercent *int       `json:"pending_second_look_percent,omitempty"`
+	PendingSecondLookAt      *time.Time `json:"pending_second_look_at,omitempty"`
+}
+
+// EffectiveSecondLookPercent is the share in force at now: a pending lower
+// share once its time has come, else the stored share.
+func (s FindingApprovalSettings) EffectiveSecondLookPercent(now time.Time) int {
+	if s.PendingSecondLookPercent != nil && s.PendingSecondLookAt != nil && !now.Before(*s.PendingSecondLookAt) {
+		return *s.PendingSecondLookPercent
+	}
+	return s.SecondLookPercent
+}
+
+// SetSecondLookPercent chooses a new share at now: a higher or equal share
+// applies at once and cancels a pending lowering; a lower one waits
+// FPApprovalLoweringDelay, like a lower false-positive level (fewer second
+// looks is a relaxation).
+func (s *FindingApprovalSettings) SetSecondLookPercent(p int, now time.Time) error {
+	if p < 0 || p > MaxSecondLookPercent {
+		return fmt.Errorf("%w: second_look_percent must be 0 to %d", shared.ErrValidation, MaxSecondLookPercent)
+	}
+	current := s.EffectiveSecondLookPercent(now)
+	if p >= current {
+		s.SecondLookPercent, s.PendingSecondLookPercent, s.PendingSecondLookAt = p, nil, nil
+		return nil
+	}
+	at := now.Add(FPApprovalLoweringDelay).UTC()
+	s.SecondLookPercent, s.PendingSecondLookPercent, s.PendingSecondLookAt = current, &p, &at
+	return nil
 }
 
 // EffectiveFPApproval is the level in force at now: a pending lower level

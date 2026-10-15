@@ -15,10 +15,15 @@
   added to KEV, or new evidence is attached (database triggers on every write
   path). `second_look_percent` (0-10, default 0) flags a random share for a
   second look (`second_look_sample`).
-- Changing the level needs `settings:write` and a recent re-authentication,
+- Changing the level needs an owner or administrator with `settings:write`
+  and a recent re-authentication,
   is audited with before/after and the approvers are told. **Lowering takes
   effect 24 hours later** (`pending_fp_approval`, `pending_fp_approval_at`);
-  raising is immediate and cancels a pending lowering.
+  raising is immediate and cancels a pending lowering. Lowering the
+  second-look share waits 24 hours the same way.
+- The single-person write re-reads the level and the finding's facts inside
+  its transaction (the finding locked); a level raised or a finding made
+  material in between turns it into a normal request for a second person.
 - `GET /api/v1/findings/{id}/approvals/policy` says how a false positive on
   that finding is decided now (for the request dialog).
 - Migrations `002306`-`002308` (`finding_approval_single_person`,

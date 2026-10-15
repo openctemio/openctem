@@ -101,6 +101,10 @@ type FindingApprovalSettingsResponse struct {
 	PendingFPApproval   string  `json:"pending_fp_approval,omitempty"`
 	PendingFPApprovalAt *string `json:"pending_fp_approval_at,omitempty"`
 	SecondLookPercent   int     `json:"second_look_percent"`
+	// PendingSecondLookPercent is a lower share that takes effect at
+	// PendingSecondLookAt (a lowering waits 24 hours).
+	PendingSecondLookPercent *int    `json:"pending_second_look_percent,omitempty"`
+	PendingSecondLookAt      *string `json:"pending_second_look_at,omitempty"`
 }
 
 func toFindingApprovalSettingsResponse(s *tenantdom.FindingApprovalSettings) FindingApprovalSettingsResponse {
@@ -108,7 +112,11 @@ func toFindingApprovalSettingsResponse(s *tenantdom.FindingApprovalSettings) Fin
 	out := FindingApprovalSettingsResponse{
 		BackupContactEmail: s.BackupContactEmail,
 		FPApproval:         s.EffectiveFPApproval(now),
-		SecondLookPercent:  s.SecondLookPercent,
+		SecondLookPercent:  s.EffectiveSecondLookPercent(now),
+	}
+	if s.PendingSecondLookPercent != nil && s.PendingSecondLookAt != nil && now.Before(*s.PendingSecondLookAt) {
+		at := s.PendingSecondLookAt.UTC().Format(time.RFC3339)
+		out.PendingSecondLookPercent, out.PendingSecondLookAt = s.PendingSecondLookPercent, &at
 	}
 	if s.PendingFPApproval != "" && s.PendingFPApprovalAt != nil && now.Before(*s.PendingFPApprovalAt) {
 		at := s.PendingFPApprovalAt.UTC().Format(time.RFC3339)
@@ -171,7 +179,9 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 			}
 		}
 		if req.SecondLookPercent != nil {
-			s.SecondLookPercent = *req.SecondLookPercent
+			if err := s.SetSecondLookPercent(*req.SecondLookPercent, time.Now()); err != nil {
+				return err
+			}
 		}
 		return nil
 	}, configAuditContext(r))

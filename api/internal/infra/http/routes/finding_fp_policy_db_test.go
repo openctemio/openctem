@@ -3,6 +3,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -13,6 +14,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -296,5 +299,56 @@ func TestFindingFPPolicy_MaterialChangeReviewFlag_DB(t *testing.T) {
 	requestFP(h, admin, sl)
 	if n := h.countRows(`SELECT COUNT(*) FROM finding_decision_reviews WHERE finding_id = $1 AND reason = 'second_look_sample'`, sl); n != 1 {
 		t.Fatalf("second-look flags: %d", n)
+	}
+}
+
+// Should-fixes of the security review: only an owner or administrator may
+// change the settings (a custom role with settings:write may not); lowering
+// the second-look share waits 24 hours like the level; and the single-person
+// write re-checks the level and the finding inside its transaction, so a
+// level raised (or a finding made material) after the caller's check makes
+// it refuse and write nothing.
+func TestFindingFPPolicy_ReviewShouldFixes_DB(t *testing.T) {
+	h := newFPPolicyHarness(t)
+	org := h.tenantWithFindings()
+	owner := h.member(org, "owner")
+	settingsWriter := h.member(org, "member")
+	h.customRoleMember(settingsWriter, org, permission.SettingsWrite, permission.SettingsRead, permission.FindingsRead)
+	h.mintToken(&settingsWriter, org)
+	const url = "/api/v1/organization/settings/finding-approvals/"
+	h.expect(settingsWriter, http.MethodPut, url, `{"fp_approval":"all"}`, http.StatusForbidden)
+
+	h.expect(owner, http.MethodPut, url, `{"second_look_percent":10}`, http.StatusOK)
+	var got struct {
+		Share   int    `json:"second_look_percent"`
+		Pending *int   `json:"pending_second_look_percent"`
+		At      string `json:"pending_second_look_at"`
+	}
+	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPut, url, `{"second_look_percent":0}`, http.StatusOK)), &got)
+	if got.Share != 10 || got.Pending == nil || *got.Pending != 0 || got.At == "" {
+		t.Fatalf("lowering the second-look share: %+v", got)
+	}
+
+	// The write re-checks inside its transaction.
+	setFPLevel(h, org, `{"fp_approval":"all"}`)
+	f := h.newFinding(org, "low")
+	ownerID := shared.MustIDFromString(owner.id)
+	a := vulnerability.NewApproval(shared.MustIDFromString(org), shared.MustIDFromString(f), ownerID,
+		"false_positive", "fixture", nil)
+	a.ClosureReason = vulnerability.ClosureReasonTestOrExampleCode
+	if err := a.ApproveSinglePerson(ownerID); err != nil {
+		t.Fatal(err)
+	}
+	repo := postgres.NewFindingApprovalRepository(&postgres.DB{DB: h.db})
+	if err := repo.CreateApplied(context.Background(), a, nil); !errors.Is(err, vulnerability.ErrSinglePersonNotAllowed) {
+		t.Fatalf("single-person write under level all: %v", err)
+	}
+	if n := h.countRows(`SELECT COUNT(*) FROM finding_status_approvals WHERE finding_id = $1`, f); n != 0 || findingStatusOf(h, f) != "confirmed" {
+		t.Fatal("a refused single-person write left a trace")
+	}
+	setFPLevel(h, org, `{"fp_approval":"high_and_above"}`)
+	h.exec(`UPDATE findings SET severity = 'critical' WHERE id = $1`, f)
+	if err := repo.CreateApplied(context.Background(), a, nil); !errors.Is(err, vulnerability.ErrSinglePersonNotAllowed) {
+		t.Fatalf("single-person write on a material finding: %v", err)
 	}
 }
