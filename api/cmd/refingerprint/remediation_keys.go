@@ -27,6 +27,7 @@ type remediationKeysReport struct {
 // only reads and prints what would change, per key kind.
 func runRemediationKeys(ctx context.Context, db *sql.DB, tenantFlag string, apply, asJSON bool, batch int) int {
 	applier := remediation.NewKeyApplier(postgres.NewFindingRemediationKeyRepository(&postgres.DB{DB: db}), logger.NewNop())
+	applier.SetAuditWriter(postgres.NewAuditRepository(&postgres.DB{DB: db}))
 	var tenants []shared.ID
 	if tenantFlag != "" {
 		id, err := shared.IDFromString(tenantFlag)
@@ -62,7 +63,7 @@ func runRemediationKeys(ctx context.Context, db *sql.DB, tenantFlag string, appl
 			for _, c := range ch.Campaigns {
 				switch c.Action {
 				case remediation.CampaignAmbiguous:
-					fmt.Printf("  WARNING campaign %s %q tracks %s: its %d findings split over several keys or lost their key; re-create it from the new groups\n",
+					fmt.Printf("  WARNING campaign %s %q tracks %s: its %d findings split over several keys, lost their key, or share the new key with other findings; re-create it from the new groups\n",
 						c.CampaignID, c.Name, c.OldKey, c.Findings)
 				case remediation.CampaignStale:
 					fmt.Printf("  WARNING campaign %s %q tracks %s, which no finding has\n", c.CampaignID, c.Name, c.OldKey)
