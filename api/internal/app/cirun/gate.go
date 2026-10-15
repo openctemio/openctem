@@ -163,9 +163,14 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, fmt.Errorf("load expected capabilities: %w", err)
 	}
+	overCap, err := s.repo.RunFindingsOverCap(ctx, run.TenantID, run.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load run findings cap: %w", err)
+	}
 	gv := cirun.Evaluate(cirun.GateInput{
 		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: newSet,
 		BaselineBranch: baselineBranch, BaselineKnown: known, ScanFailures: in.ScanFailures,
+		FindingsOverCap:     overCap,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
 		Override:            override, Now: now, FindingURL: s.findingURL,
