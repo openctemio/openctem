@@ -21,10 +21,10 @@ const dimMigUser = "99999999-9999-4999-8999-999999999999"
 func TestMigrationFindingStatusDimensions(t *testing.T) {
 	const dir = "../../migrations"
 	db := testdb.PrivateDatabase(t, "migdims", dir)
-	mig := testdb.MigrationVersion(t, dir, "finding_status_dimensions")
+	// Three steps: the column, the row moves and filter rewrite, VALIDATE.
+	mig := testdb.MigrationVersion(t, dir, "finding_status_dimensions_column")
 	validate := testdb.MigrationVersion(t, dir, "finding_status_dimensions_validate")
-	testdb.Migrate(t, db, dir, validate, validate, true)
-	testdb.Migrate(t, db, dir, mig, mig, true)
+	testdb.Migrate(t, db, dir, mig, validate, true)
 
 	exec := func(q string, args ...any) {
 		t.Helper()
