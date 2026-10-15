@@ -123,21 +123,3 @@ func TestBulkFixApplied_WithoutVerify_StillAllowed(t *testing.T) {
 		t.Errorf("closure passed = %+v", repo.method)
 	}
 }
-
-func TestAuthorizeHumanResolve(t *testing.T) {
-	for _, st := range vulnerability.AllFindingStatuses() {
-		err := authorizeHumanResolve(st, false)
-		if st == vulnerability.FindingStatusResolved {
-			if !errors.Is(err, shared.ErrForbidden) {
-				t.Errorf("resolved without verify: %v, want ErrForbidden", err)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("%s without verify: %v, want allowed", st, err)
-		}
-	}
-	if err := authorizeHumanResolve(vulnerability.FindingStatusResolved, true); err != nil {
-		t.Errorf("resolved with verify: %v", err)
-	}
-}

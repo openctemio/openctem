@@ -405,9 +405,14 @@ func (s *FindingActionsService) BulkFixApplied(
 	// asset owner" for this check.
 	ownedAssets := s.assetsOwnedBy(ctx, tid, uid, allFindings)
 
-	// Process findings with preloaded data (all auth checks in-memory)
+	// Process findings with preloaded data (all auth checks in-memory). The
+	// transition engine decides each claim, with whose finding it is as a
+	// fact (the route requires findings:fix_apply).
+	actor := personActor(uid, TransitionPermissions{FixApply: true})
 	for _, f := range allFindings {
-		if !s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, ownedAssets, f) {
+		facts := transitionFactsOf(f)
+		facts.CanClaimFix = s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, ownedAssets, f)
+		if transitionError(vulnerability.EvaluateTransition(facts, actor, vulnerability.FindingStatusFixApplied), input.Note) != nil {
 			result.Skipped++
 			continue
 		}
@@ -555,6 +560,15 @@ func (s *FindingActionsService) BulkVerify(
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue
 		}
+		// The transition engine (the route requires findings:verify).
+		facts := transitionFactsOf(f)
+		facts.ChecklistComplete = checklist != nil && checklist.FindingID() == f.ID() && checklist.IsComplete()
+		if err := transitionError(vulnerability.EvaluateTransition(facts, personActor(uid, TransitionPermissions{Verify: true}),
+			vulnerability.FindingStatusResolved), resolution); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			continue
+		}
 		if err := f.TransitionStatusWithChecklist(vulnerability.FindingStatusResolved, resolution, &uid, checklist); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
@@ -625,6 +639,14 @@ func (s *FindingActionsService) BulkRejectFix(
 			continue
 		}
 
+		// The transition engine: a verifier may reject a fix (the route
+		// requires findings:verify).
+		if err := transitionError(vulnerability.EvaluateTransition(transitionFactsOf(f),
+			personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusInProgress), reason); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			continue
+		}
 		if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, reason, &uid); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
@@ -676,6 +698,14 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 	if input.Note != "" {
 		resolution = input.Note
 	}
+	// The transition engine for the filtered set: every finding it touches
+	// is fix_applied and not a pentest finding (the statement's own
+	// predicates), so one decision covers them all.
+	if err := transitionError(vulnerability.EvaluateTransition(
+		vulnerability.TransitionFacts{Status: vulnerability.FindingStatusFixApplied},
+		personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusResolved), resolution); err != nil {
+		return 0, err
+	}
 
 	// Each verified finding gets its timeline entry in the same transaction.
 	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
@@ -716,6 +746,14 @@ func (s *FindingActionsService) BulkRejectByFilter(
 
 	if input.Reason == "" {
 		return 0, fmt.Errorf("%w: reason is required when rejecting fix", shared.ErrValidation)
+	}
+
+	// The transition engine for the filtered set (all fix_applied): a
+	// verifier rejecting the claims.
+	if err := transitionError(vulnerability.EvaluateTransition(
+		vulnerability.TransitionFacts{Status: vulnerability.FindingStatusFixApplied},
+		personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusInProgress), input.Reason); err != nil {
+		return 0, err
 	}
 
 	input.Filter.Statuses = []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied}
