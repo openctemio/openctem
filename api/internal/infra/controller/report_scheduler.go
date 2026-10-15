@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/reportschedule"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -220,7 +221,7 @@ func (c *ReportScheduler) runOne(ctx context.Context, s *reportschedule.ReportSc
 			c.logger.Warn("email not configured; cannot deliver report", "schedule_id", s.ID().String())
 			return "failed"
 		}
-		subject := fmt.Sprintf("OpenCTEM Security Report — %s", s.Name())
+		subject := fmt.Sprintf("%s Security Report — %s", brand.Name(), s.Name())
 		if err := c.emailer.SendReport(ctx, s.TenantID().String(), to, subject, html); err != nil {
 			c.logger.Error("failed to email report", "schedule_id", s.ID().String(), "error", err)
 			return "failed"
