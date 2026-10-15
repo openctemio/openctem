@@ -67,6 +67,14 @@ is a dry run on a read-only connection that prints, per tenant, the findings
 scanned, keys added, changed and removed, and the key kinds before and after.
 It is idempotent (a second `-apply` changes nothing).
 
+Campaigns that track a key (`finding_filter.remediation_key`) follow the
+backfill, per tenant: when every finding of the old key moves to one new key,
+the campaign is retargeted to it (`would_retarget` in a dry run); when they
+split over several keys or lose their key, the campaign is reported as
+`ambiguous` and left alone; a campaign tracking a key no finding has is
+reported as `stale`. The dry run prints these as warnings with the finding
+counts. A retarget only applies while the campaign still tracks the old key.
+
 **Scope of a group:** the key is fix-identity only; the group query is always
 tenant-scoped and may be further filtered by asset/branch so "resolve group"
 never crosses tenant boundaries.

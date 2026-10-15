@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -38,10 +39,50 @@ type KeyChanges struct {
 	Failed    int            `json:"failed"`
 	Before    map[string]int `json:"before"`
 	After     map[string]int `json:"after"`
+	// Campaigns are the backfill's changes to campaigns that track a key.
+	Campaigns []CampaignKeyChange `json:"campaigns,omitempty"`
+
+	// moves counts, per stored key, the keys its findings get now ("" when
+	// they get none). A key whose findings all keep it maps to itself.
+	moves map[string]map[string]int
+}
+
+// Campaign key actions in a backfill report.
+const (
+	// CampaignRetargeted: the campaign now tracks the new key.
+	CampaignRetargeted = "retargeted"
+	// CampaignWouldRetarget: a dry run; the campaign would be retargeted.
+	CampaignWouldRetarget = "would_retarget"
+	// CampaignAmbiguous: the old key's findings split over several new keys
+	// (or lost their key); a person must re-create the campaign.
+	CampaignAmbiguous = "ambiguous"
+	// CampaignStale: the campaign tracks a key no finding has.
+	CampaignStale = "stale"
+)
+
+// CampaignKeyChange is one campaign that tracks a remediation key the
+// backfill changed, or a key that no finding has.
+type CampaignKeyChange struct {
+	CampaignID string `json:"campaign_id"`
+	Name       string `json:"name"`
+	OldKey     string `json:"old_key"`
+	NewKey     string `json:"new_key,omitempty"`
+	Findings   int    `json:"findings"`
+	Action     string `json:"action"`
 }
 
 func newKeyChanges() *KeyChanges {
-	return &KeyChanges{Before: map[string]int{}, After: map[string]int{}}
+	return &KeyChanges{Before: map[string]int{}, After: map[string]int{}, moves: map[string]map[string]int{}}
+}
+
+func (c *KeyChanges) move(from, to string) {
+	if from == "" {
+		return
+	}
+	if c.moves[from] == nil {
+		c.moves[from] = map[string]int{}
+	}
+	c.moves[from][to]++
 }
 
 func (c *KeyChanges) add(o *KeyChanges) {
@@ -56,6 +97,14 @@ func (c *KeyChanges) add(o *KeyChanges) {
 	}
 	for k, v := range o.After {
 		c.After[k] += v
+	}
+	for from, tos := range o.moves {
+		for to, n := range tos {
+			if c.moves[from] == nil {
+				c.moves[from] = map[string]int{}
+			}
+			c.moves[from][to] += n
+		}
 	}
 }
 
@@ -111,6 +160,7 @@ func (a *KeyApplier) apply(ctx context.Context, tenantID shared.ID, sources []re
 		if ok {
 			ch.After[remediationdom.KeyKind(key)]++
 		}
+		ch.move(src.CurrentKey, key)
 		var werr error
 		switch {
 		case !ok && src.CurrentKey == "":
@@ -153,8 +203,10 @@ func (a *KeyApplier) apply(ctx context.Context, tenantID shared.ID, sources []re
 const DefaultBackfillBatch = 500
 
 // Backfill re-derives the key of every finding of one tenant, in id order and
-// in batches. It is idempotent (a second run changes nothing) and touches only
-// that tenant's rows. With write false it is a dry run that only reads.
+// in batches, then follows the changes in the tenant's campaigns that track a
+// key (retargetCampaigns). It is idempotent (a second run changes nothing) and
+// touches only that tenant's rows. With write false it is a dry run that only
+// reads.
 func (a *KeyApplier) Backfill(ctx context.Context, tenantID shared.ID, write bool, batch int) (*KeyChanges, error) {
 	if tenantID.IsZero() {
 		return nil, errors.New("backfill needs a tenant")
@@ -170,7 +222,7 @@ func (a *KeyApplier) Backfill(ctx context.Context, tenantID shared.ID, write boo
 			return total, err
 		}
 		if len(ids) == 0 {
-			return total, nil
+			break
 		}
 		ch, err := a.ApplyIDs(ctx, tenantID, ids, write)
 		if ch != nil {
@@ -180,7 +232,71 @@ func (a *KeyApplier) Backfill(ctx context.Context, tenantID shared.ID, write boo
 			return total, err
 		}
 		after = ids[len(ids)-1]
+		if len(ids) < batch {
+			break
+		}
 	}
+	campaigns, err := a.retargetCampaigns(ctx, tenantID, total.moves, write)
+	total.Campaigns = campaigns
+	return total, err
+}
+
+// retargetCampaigns follows the key changes in the campaigns of one tenant
+// that track a key in their finding filter. A campaign moves to the new key
+// when every finding of its old key moved to that one key; when they split
+// over several keys (or lost their key) it is reported as ambiguous and left
+// alone. Campaigns tracking a key that no finding has are reported as stale.
+// With write false nothing is written.
+func (a *KeyApplier) retargetCampaigns(ctx context.Context, tenantID shared.ID, moves map[string]map[string]int, write bool) ([]CampaignKeyChange, error) {
+	changed := make([]string, 0, len(moves))
+	for from, tos := range moves {
+		if _, kept := tos[from]; !kept || len(tos) > 1 {
+			changed = append(changed, from)
+		}
+	}
+	sort.Strings(changed)
+	refs, err := a.repo.CampaignsTrackingKeys(ctx, tenantID, changed)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CampaignKeyChange, 0, len(refs))
+	seen := make(map[shared.ID]bool, len(refs))
+	for _, ref := range refs {
+		seen[ref.ID] = true
+		tos := moves[ref.Key]
+		c := CampaignKeyChange{CampaignID: ref.ID.String(), Name: ref.Name, OldKey: ref.Key, Action: CampaignAmbiguous}
+		for to, n := range tos {
+			c.Findings += n
+			c.NewKey = to
+		}
+		if len(tos) != 1 || c.NewKey == "" {
+			c.NewKey = ""
+			out = append(out, c)
+			continue
+		}
+		c.Action = CampaignWouldRetarget
+		if write {
+			ok, err := a.repo.RetargetCampaignKey(ctx, tenantID, ref.ID, ref.Key, c.NewKey)
+			if err != nil {
+				return out, err
+			}
+			if ok {
+				c.Action = CampaignRetargeted
+			}
+		}
+		out = append(out, c)
+	}
+	stale, err := a.repo.CampaignsWithStaleKey(ctx, tenantID)
+	if err != nil {
+		return out, err
+	}
+	for _, ref := range stale {
+		if seen[ref.ID] {
+			continue
+		}
+		out = append(out, CampaignKeyChange{CampaignID: ref.ID.String(), Name: ref.Name, OldKey: ref.Key, Action: CampaignStale})
+	}
+	return out, nil
 }
 
 // Tenants lists the tenants a backfill of every tenant visits.
