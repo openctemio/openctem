@@ -222,6 +222,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		}
 		return nil
 	},
+	"finding_priority_queue": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM finding_priority_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear finding_priority_queue: %v", err)
+		}
+		return nil
+	},
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},
