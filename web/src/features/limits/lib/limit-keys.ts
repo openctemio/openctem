@@ -1,12 +1,9 @@
 /**
- * Plans and limits (api docs/architecture/plans-and-limits.md): the limit keys
- * in display order, their English names, and how a limit reads.
+ * Limits (api docs/architecture/limits.md): the limit keys in display order,
+ * their English names, and how a limit reads. -1 is unlimited.
  */
 
-export const PLAN_NAMES = ['free', 'pro', 'enterprise'] as const
-export type PlanName = (typeof PLAN_NAMES)[number]
-
-export const PLAN_KEYS = [
+export const LIMIT_KEYS = [
   'seats',
   'assets',
   'sensors',
@@ -15,21 +12,21 @@ export const PLAN_KEYS = [
   'invites_per_day',
   'platform_scans_per_day',
   'platform_scans_concurrent',
-  'free_teams_per_user',
   'findings',
+  'orgs_per_user',
 ] as const
-export type PlanKey = (typeof PLAN_KEYS)[number]
+export type LimitKey = (typeof LIMIT_KEYS)[number]
+
+/** Keys that can be set for one organization (orgs_per_user is per person). */
+export const ORGANIZATION_LIMIT_KEYS: readonly LimitKey[] = LIMIT_KEYS.filter(
+  (k) => k !== 'orgs_per_user'
+)
 
 /** -1: the limit does not apply. */
 export const UNLIMITED = -1
 
-export const PLAN_LABEL: Record<PlanName, string> = {
-  free: 'Free',
-  pro: 'Pro',
-  enterprise: 'Enterprise',
-}
-
-export const PLAN_KEY_LABEL: Record<PlanKey, string> = {
+/** English names; the translated ones are limits.key.<key>. */
+export const LIMIT_KEY_LABEL: Record<LimitKey, string> = {
   seats: 'Seats',
   assets: 'Assets',
   sensors: 'Sensors',
@@ -38,21 +35,12 @@ export const PLAN_KEY_LABEL: Record<PlanKey, string> = {
   invites_per_day: 'Invitations a day',
   platform_scans_per_day: 'Platform scans a day',
   platform_scans_concurrent: 'Concurrent platform scans',
-  free_teams_per_user: 'Free organizations per person',
   findings: 'Findings',
+  orgs_per_user: 'Organizations per person',
 }
 
-/** Keys that describe a person or the platform rather than this organization's usage. */
-export const ORGANIZATION_KEYS: readonly PlanKey[] = PLAN_KEYS.filter(
-  (k) => k !== 'free_teams_per_user'
-)
-
-export function isPlanKey(k: string): k is PlanKey {
-  return (PLAN_KEYS as readonly string[]).includes(k)
-}
-
-export function isPlanName(p: string): p is PlanName {
-  return (PLAN_NAMES as readonly string[]).includes(p)
+export function isLimitKey(k: string | undefined): k is LimitKey {
+  return !!k && (LIMIT_KEYS as readonly string[]).includes(k)
 }
 
 /** "500", or `unlimited` for -1 (or a missing limit). */
@@ -64,4 +52,13 @@ export function formatLimit(limit: number | undefined, unlimited: string): strin
 export function usagePercent(used: number, limit: number | undefined): number | null {
   if (limit === undefined || limit === UNLIMITED || limit <= 0) return null
   return Math.min(100, Math.round((used / limit) * 100))
+}
+
+/** Empty = unlimited (-1); otherwise a whole number of 0 or more; null when invalid. */
+export function parseLimit(v: string): number | null {
+  const s = v.trim()
+  if (s === '') return UNLIMITED
+  if (!/^\d+$/.test(s)) return null
+  const n = Number(s)
+  return Number.isSafeInteger(n) ? n : null
 }

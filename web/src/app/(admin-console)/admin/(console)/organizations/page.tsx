@@ -23,7 +23,6 @@ import { useAdmin } from '@/features/admin-console/components/admin-console-shel
 import { CreateOrganizationDialog } from '@/features/admin-console/components/create-organization-dialog'
 import { SSOPostureBadges } from '@/features/admin-console/components/sso-posture-badges'
 import { adminCan, type AdminOrganization } from '@/features/admin-console/types'
-import { PLAN_LABEL, PLAN_NAMES, isPlanName } from '@/features/plans/lib/plan-keys'
 
 const ANY = 'any'
 
@@ -33,16 +32,14 @@ export default function AdminOrganizationsPage() {
   const { t } = useTranslation()
   // The list lives in the URL (one list convention): page, per_page, q and
   // the filters, so the overview can link to "organizations without an owner".
-  const list = useListParams({ defaultPageSize: 20, filters: { owner: '', plan: '' } })
+  const list = useListParams({ defaultPageSize: 20, filters: { owner: '' } })
   const debounced = useDebounce(list.q, 300)
   const owner =
     list.filters.owner === 'none' || list.filters.owner === 'present' ? list.filters.owner : ''
-  const plan = isPlanName(list.filters.plan) ? list.filters.plan : ''
-  const filtered = Boolean(debounced || owner || plan)
+  const filtered = Boolean(debounced || owner)
   const { data, error, isLoading, mutate } = useOrganizations({
     search: debounced.trim(),
     owner,
-    plan,
     page: list.page,
     perPage: list.perPage,
   })
@@ -78,13 +75,16 @@ export default function AdminOrganizationsPage() {
         },
       },
       {
-        accessorKey: 'plan',
-        header: t('admin.org.col.plan', 'Plan'),
-        cell: ({ row }) => (
-          <Badge variant="secondary">
-            {isPlanName(row.original.plan) ? PLAN_LABEL[row.original.plan] : row.original.plan}
-          </Badge>
-        ),
+        accessorKey: 'limits_apply',
+        header: t('admin.org.col.limits', 'Limits'),
+        cell: ({ row }) =>
+          row.original.limits_apply ? (
+            <Badge variant="secondary" data-testid="org-limits-apply">
+              {t('admin.org.limitsSet', 'Limited')}
+            </Badge>
+          ) : (
+            <span className="text-sm text-muted-foreground">{t('admin.org.noLimits', 'None')}</span>
+          ),
       },
       {
         accessorKey: 'active_members',
@@ -111,7 +111,7 @@ export default function AdminOrganizationsPage() {
         title={t('admin.nav.organizations', 'Organizations')}
         description={t(
           'admin.org.listDescription',
-          'Every organization on this installation, with its owner, plan and single sign-on setup.'
+          'Every organization on this installation, with its owner, limits and single sign-on setup.'
         )}
       >
         {adminCan(admin.role, 'ops_admin') && (
@@ -174,25 +174,6 @@ export default function AdminOrganizationsPage() {
                     <SelectItem value="present">
                       {t('admin.org.ownerPresent', 'With an owner')}
                     </SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={plan || ANY}
-                  onValueChange={(v) => list.setFilter('plan', v === ANY ? '' : v)}
-                >
-                  <SelectTrigger
-                    className="sm:w-40"
-                    aria-label={t('admin.org.planFilter', 'Filter by plan')}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ANY}>{t('admin.org.planAny', 'Any plan')}</SelectItem>
-                    {PLAN_NAMES.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {PLAN_LABEL[p]}
-                      </SelectItem>
-                    ))}
                   </SelectContent>
                 </Select>
               </div>
