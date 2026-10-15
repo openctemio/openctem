@@ -696,6 +696,18 @@ it.
 
 - The admin session cookie is scoped to `/api/v1/admin`, so it is never sent to
   tenant routes, and the tenant JWT never authenticates admin routes.
+- The CSRF token is HttpOnly on `/api/v1/admin` as well (`admin_csrf`); the
+  console's pages read a copy scoped to `/admin` (`admin_csrf_page`) to echo it
+  in the `X-CSRF-Token` header, and the older readable copy at `/` is cleared
+  on every sign-in. A script on a tenant page no longer finds the token in
+  `document.cookie`. **Residual risk until the console has its own origin:**
+  paths are not a security boundary inside one origin. A script running on the
+  tenant origin (an XSS past the nonce CSP, or a compromised dependency of the
+  shared bundle) can still send console reads with the session cookie, and can
+  open a console page in a same-origin frame to read the token and send
+  writes, while an administrator has a live console session in that browser
+  (30 minutes idle). Protected writes still need a fresh authenticator code.
+  The admin listener and the console's own origin remove this.
 - Server-side sessions: deactivating an admin or resetting credentials deletes
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes
