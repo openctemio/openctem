@@ -109,7 +109,7 @@ func (r *FindingAcceptanceExpiryRepository) Expire(ctx context.Context, due vuln
 
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE findings SET
-				status = 'confirmed', resolution = NULL, resolution_method = NULL,
+				status = 'confirmed', resolution = NULL, closure_reason = NULL, verification = NULL,
 				resolved_at = NULL, resolved_by = NULL,
 				sla_deadline = COALESCE($3, sla_deadline),
 				sla_status = CASE WHEN $3::timestamptz IS NULL THEN sla_status ELSE 'on_track' END,
