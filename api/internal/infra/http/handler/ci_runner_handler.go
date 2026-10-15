@@ -149,6 +149,7 @@ func (h *CIRunnerHandler) SetSecretKeys(k SecretKeys) { h.secretKeys = k }
 // @Failure      401  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error "RUNNER_OUTDATED: the runner reports a version below the minimum supported one"
 // @Failure      429  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error "CI_ISSUER_UNAVAILABLE: the provider's keys cannot be fetched now; retry (Retry-After)"
 // @Router       /ci/oidc/exchange [post]
 // runnerOutdatedMessage tells the job exactly which line to change: the
 // openctemio/ci release to pin, in each form a pipeline uses it.
@@ -183,6 +184,13 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, cirunapp.ErrExchangeRefused) {
 			apierror.Unauthorized("The CI token was not accepted").WriteJSON(w)
+			return
+		}
+		if errors.Is(err, cirunapp.ErrIssuerUnavailable) {
+			// Nothing was claimed: the same token may be retried.
+			w.Header().Set("Retry-After", "30")
+			apierror.New(http.StatusServiceUnavailable, "CI_ISSUER_UNAVAILABLE",
+				"The CI provider's signing keys cannot be fetched right now (the provider is unreachable or has just rotated its keys); retry in 30 seconds").WriteJSON(w)
 			return
 		}
 		if errors.Is(err, cirunapp.ErrRunnerOutdated) {

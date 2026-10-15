@@ -140,7 +140,15 @@ id is not recorded; an invalid draft fetches nothing.
    discovery document must name that exact issuer and a JWKS on the issuer's
    own host; discovery and JWKS are fetched through the SSRF-guarded client
    (`httpsec.SafeHTTPClient` + `ValidateURL`) and cached for an hour, with an
-   unknown `kid` refetching at most every 30 seconds; algorithms RS256, RS384,
+   unknown `kid` refetching at most every 30 seconds. Concurrent refreshes of
+   one document wait for a single fetch; when the issuer cannot be reached
+   the last discovery document and keys keep verifying for six hours, and a
+   failed fetch is not repeated within 30 seconds. A token whose keys cannot
+   be had (issuer unreachable past that bound, or a `kid` not yet fetched)
+   answers `503 CI_ISSUER_UNAVAILABLE` with `Retry-After: 30`, before
+   anything is claimed, so the job retries the same token. This tells the
+   caller that the organization trusts the token's issuer and nothing more;
+   algorithms RS256, RS384,
    RS512, ES256 only (never HMAC or `none`), key type must match the
    algorithm; `iss`, `aud`, `exp` (required), `nbf`, `iat` (required, not in
    the future) with one minute of leeway; lifetime at most 24 hours; `sub` and
@@ -414,7 +422,8 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | A job naming a commit it did not build (CircleCI) | Marked unverified; never matches a break-glass |
 | A person driving a CI job interactively (CircleCI SSH re-run) | Refused |
 | Pull request builds of fork code where the token cannot say so | Refused unless fork pull requests are admitted |
-| JWKS fetch amplification | One-hour cache, at most one refetch per 30 seconds for an unknown `kid` |
+| JWKS fetch amplification | One-hour cache, at most one refetch per 30 seconds for an unknown `kid` or a failed fetch, concurrent refreshes collapsed into one |
+| Issuer outage or key rotation breaking scans | Discovery and keys served stale up to six hours; a missing key is a retryable 503 with nothing claimed |
 | Audit flooding | Nothing is audited before the token verifies |
 | Brute force | Per-IP limit on the exchange (shared across replicas) and on run routes before the token lookup; per-run limit after |
 | Token in logs | Neither token is logged or audited; tests assert the audit log carries none |
