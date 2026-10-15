@@ -354,5 +354,7 @@
   "settings.jiraWebhook.rotateFailed": "Không tạo được khóa bí mật",
   "settings.jiraWebhook.copied": "Đã sao chép",
   "settings.jiraWebhook.copyFailed": "Không sao chép được",
-  "settings.jiraWebhook.close": "Đóng"
+  "settings.jiraWebhook.close": "Đóng",
+  "settings.item.finding-approvals": "Phê duyệt phát hiện",
+  "settings.desc.finding-approvals": "Ai quyết định dương tính giả và rủi ro được chấp nhận, và ai được thông báo."
 }

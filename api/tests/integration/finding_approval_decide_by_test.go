@@ -367,3 +367,42 @@ func closureFor(status string) string {
 	}
 	return "detection_error"
 }
+
+// The database enforces the decide-by time too: an approve or a reject of a
+// request past it claims nothing even when the caller's check was skipped,
+// and a row written without a decide-by time gets the default window.
+func TestFindingApproval_DecideByEnforcedInTheDatabase(t *testing.T) {
+	f := newApprovalFixture(t, "decide-by-db")
+	ctx := context.Background()
+	fid := f.finding(t, f.tenant, "low")
+	a, err := f.request(t, f.tenant, fid, "false_positive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, _ := f.repo.GetByTenantAndID(ctx, f.tenant, a.ID)
+	f.exec(t, `UPDATE finding_status_approvals SET decide_by = now() - interval '1 minute' WHERE id = $1`, a.ID.String())
+	if err := read.Approve(f.approver); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.repo.ApproveAndApply(ctx, read, nil); !errors.Is(err, vulnerability.ErrDecisionOverdue) {
+		t.Fatalf("approve past decide_by in the database: %v", err)
+	}
+	if s := f.findingStatus(t, fid); s != "confirmed" {
+		t.Fatalf("finding changed: %s", s)
+	}
+	read2, _ := f.repo.GetByTenantAndID(ctx, f.tenant, a.ID)
+	if err := read2.Reject(f.approver, "no"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.repo.Update(ctx, read2); err == nil {
+		t.Fatal("a reject past decide_by was written")
+	}
+	// An actor-style insert without decide_by gets the default window.
+	other := f.finding(t, f.tenant, "low")
+	f.exec(t, `INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status)
+		VALUES ($1, $2, 'false_positive', 'vex', 'not affected', 'pending')`, f.tenant.String(), other.String())
+	if n := f.count(t, `SELECT COUNT(*) FROM finding_status_approvals WHERE finding_id = $1
+		AND decide_by BETWEEN now() + interval '13 days' AND now() + interval '15 days'`, other.String()); n != 1 {
+		t.Fatal("a row without decide_by did not get the default window")
+	}
+}
