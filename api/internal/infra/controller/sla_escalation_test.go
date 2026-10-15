@@ -32,19 +32,19 @@ func TestBreachQuery_WritesValidEnumStatus(t *testing.T) {
 	}
 }
 
-// An accepted-risk (or accepted / duplicate) finding must never be marked
-// overdue — the risk was consciously accepted. The escalation query must
-// exclude the whole closed-category status set, matching the dashboard breach
-// counter.
+// An accepted-risk (or false positive / duplicate) finding must never be
+// marked overdue — the risk was consciously accepted. Both escalation queries
+// select open findings only, with the one shared open set.
 func TestBreachQuery_ExcludesAcceptedRisk(t *testing.T) {
-	for _, closed := range []vulnerability.FindingStatus{
-		vulnerability.FindingStatusAccepted,
-		vulnerability.FindingStatusAccepted,
-		vulnerability.FindingStatusDuplicate,
-	} {
-		token := "'" + string(closed) + "'"
-		if !strings.Contains(breachSelectUpdateQuery, token) {
-			t.Errorf("breach query should exclude status %s so it is never marked overdue", closed)
+	open := vulnerability.OpenStatusSQL("f.status")
+	for name, q := range map[string]string{"breach": breachSelectUpdateQuery, "warning": warningSelectUpdateQuery} {
+		if !strings.Contains(q, open) {
+			t.Errorf("%s query must select open findings with %q", name, open)
+		}
+		for _, closed := range vulnerability.DispositionedStatuses() {
+			if strings.Contains(q, "'"+string(closed)+"'") {
+				t.Errorf("%s query names %s: it must use the open set, not a closed list", name, closed)
+			}
 		}
 	}
 }

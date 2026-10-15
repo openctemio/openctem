@@ -231,14 +231,40 @@ another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 
+### Who may be invited (`security.invitees`, RFC-095)
+
+`any` (the default), `verified_domains` (the organization's verified
+domains), or `allow_list` (verified domains plus `security.allowed_domains`).
+It applies when an invitation is sent and again when it is accepted.
+`allow_list` admits the organization's verified domains too: before this
+setting, a non-empty `allowed_domains` admitted only the listed domains for
+invitations. Verified domains are the organization's own, so this widens
+nothing beyond its people; list them in `allowed_domains` as well to keep the
+old behaviour obvious.
+
 ### Allowed email domains (`security.allowed_domains`)
 
 Empty = no restriction. Otherwise the email's domain (after the last `@`,
 case-insensitive, exact — `corp.com` does not admit `eu.corp.com`) must be in
-the list for: sending and accepting invitations, registering with an
-invitation, administrator-created users, adding an existing user, SCIM
-provisioning, and SSO just-in-time provisioning. Existing members are not
+the list for: administrator-created users, adding an existing user, SCIM
+provisioning, and SSO just-in-time provisioning, and for invitations when
+`security.invitees` is `allow_list` (an organization that set allowed domains
+before `invitees` existed reads as `allow_list`). Existing members are not
 removed when the list changes.
+
+### Invitation lifecycle (RFC-095)
+
+| Rule | |
+|---|---|
+| Token | 32 random bytes, stored hashed, in the URL fragment and request bodies only, bound to the invited address, 7 days, single use (acceptance updates only a row with `accepted_at IS NULL`) |
+| Preview | `POST /api/v1/organization/invitations/preview {email, role_ids}` (owner or administrator with `members:invite`, the same requirements as creating one; the route takes the organization from the token) says, before sending, whether the policy allows it (reason code), whether the person is outside or personal, whether the roles need the inviter's step-up and the member's two-factor, whether an end of access is required, and whether they are already a member or invited. Nothing about other organizations |
+| Resend | rotates the token; at most once every 10 minutes and 5 times per invitation (429 `INVITATION_RESEND_TOO_SOON`) |
+| Cancel and decline | the row is kept as revoked (`revoked_at`): the token, the pending list and resend stop working; purged after 30 days. Removing a member revokes their pending invitations the same way |
+| Daily plan limit | counts every invitation created in the last 24 hours, revoked ones included |
+| Per inviter | at most 50 invitations an hour (429 `INVITATIONS_RATE_LIMITED`) |
+| Seats | checked when the invitation is created (members plus pending invitations) and again at acceptance |
+| Pending list | shows `member_kind` (internal or external at creation), `privileged` (two-factor will be required), the end of access, the last send and the resend count |
+| Acceptance | re-classifies the invitee and re-authorizes the invitation as the inviter (RFC-095 §3.2); both acceptance paths run the same code |
 
 ### IP allowlist (`security.ip_whitelist`)
 
@@ -282,6 +308,18 @@ Next.js proxy, the peer is the UI container, so:
 2. set `TRUST_PROXY_HEADERS=true` on the UI so its proxy forwards them;
 3. set `SERVER_TRUSTED_PROXIES` on the API to the UI's (and the gateway's)
    own addresses.
+
+**Behind the built-in gateway** the API needs only the gateway (and the UI) in
+`SERVER_TRUSTED_PROXIES`. The gateway resolves the client itself, believing a
+front proxy's header only when that proxy's address is in
+`OPENCTEM_TRUSTED_PROXIES`: `X-Forwarded-For` read right to left by default, or
+the header named in `OPENCTEM_CLIENT_IP_HEADERS` (`Cf-Connecting-Ip` behind a
+Cloudflare Tunnel connector, whose edge sets it to the one visitor address).
+It then overwrites both `X-Forwarded-For` and `X-Real-IP` with that one address
+and drops `Cf-Connecting-Ip` / `True-Client-Ip`, so the API never sees the front
+proxy's list. Passing that list on (with the front proxy's own address
+appended, as a reverse proxy does by default) made the API, which does not
+know the front proxy, record the proxy as the client of every request.
 
 List addresses, not a whole container network: every host in a trusted range
 can set the client address the API believes (login rate limits, audit

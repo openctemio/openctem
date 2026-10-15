@@ -12,9 +12,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
-// External members (RFC-058): someone outside the organization is invited as
-// a viewer, with an expiry when no organization manages the address, and
-// cannot be added directly.
+// External members (RFC-058, amended by RFC-095 §4): someone outside the
+// organization may be invited to any role but owner, with an optional end of
+// access (mandatory only by policy), and cannot be added directly.
 
 const viewerRoleID = "00000000-0000-0000-0000-000000000004"
 const memberRoleID = "00000000-0000-0000-0000-000000000003"
@@ -37,20 +37,40 @@ func newExternalTenantService(t *testing.T) (*tenantapp.TenantService, *mockTena
 	return svc, repo, host, partner
 }
 
-func TestExternalInvitation_MoreThanViewerRefused(t *testing.T) {
+func TestExternalInvitation_AnyRoleAllowed(t *testing.T) {
 	svc, _, host, _ := newExternalTenantService(t)
-	_, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
+	inv, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
 		Email: "nam@example.com.au", Role: "member", RoleIDs: []string{memberRoleID},
 	}, shared.NewID(), audit.AuditContext{})
-	if !errors.Is(err, tenantapp.ErrExternalViewerOnly) {
-		t.Fatalf("want ErrExternalViewerOnly, got %v", err)
+	if err != nil {
+		t.Fatalf("an outside person invited as member: %v", err)
+	}
+	if inv.Access().ExpiresAt != nil {
+		t.Fatalf("an end of access was imposed: %v", inv.Access().ExpiresAt)
 	}
 }
 
-func TestExternalInvitation_PersonalGetsDefaultExpiry(t *testing.T) {
-	svc, _, host, _ := newExternalTenantService(t)
+func TestExternalInvitation_PersonalEndOptionalByDefault(t *testing.T) {
+	svc, repo, host, _ := newExternalTenantService(t)
 	inv, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
 		Email: "j.doe@gmail.com", Role: "member", RoleIDs: []string{viewerRoleID},
+	}, shared.NewID(), audit.AuditContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.Access().ExpiresAt != nil {
+		t.Fatalf("personal invitee got an end of access %v without the policy", inv.Access().ExpiresAt)
+	}
+
+	// The organization requires an end of access for unmanaged outsiders.
+	settings := host.TypedSettings()
+	settings.Security.ExternalAccessEndRequired = true
+	if err := host.UpdateSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	repo.tenants[host.ID().String()] = host
+	inv, err = svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
+		Email: "k.doe@gmail.com", Role: "member", RoleIDs: []string{viewerRoleID},
 	}, shared.NewID(), audit.AuditContext{})
 	if err != nil {
 		t.Fatal(err)
@@ -86,11 +106,13 @@ func TestInternalInvitation_Unchanged(t *testing.T) {
 	}
 }
 
-func TestExternalInvitation_AcceptedAsExternalViewer(t *testing.T) {
+func TestExternalInvitation_AcceptedWithInvitedRole(t *testing.T) {
 	svc, repo, host, partner := newExternalTenantService(t)
+	inviter := shared.NewID()
+	seedMembershipInRepo(repo, inviter, host.ID(), tenant.RoleOwner)
 	inv, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
-		Email: "nam@example.com.au", Role: "member", RoleIDs: []string{viewerRoleID},
-	}, shared.NewID(), audit.AuditContext{})
+		Email: "nam@example.com.au", Role: "member", RoleIDs: []string{memberRoleID},
+	}, inviter, audit.AuditContext{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +120,7 @@ func TestExternalInvitation_AcceptedAsExternalViewer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !m.IsExternal() || m.HomeTenantID() == nil || *m.HomeTenantID() != partner || m.Role() != tenant.RoleViewer {
+	if !m.IsExternal() || m.HomeTenantID() == nil || *m.HomeTenantID() != partner || m.Role() != tenant.RoleMember {
 		t.Fatalf("external=%v home=%v role=%s", m.IsExternal(), m.HomeTenantID(), m.Role())
 	}
 	if repo.acceptInvTxCalls != 1 {
@@ -169,5 +191,56 @@ func TestAddMember_VerifiedDomainAllowed(t *testing.T) {
 	}
 	if repo.createMembershipCalls != 1 {
 		t.Fatalf("membership must be created once, got %d", repo.createMembershipCalls)
+	}
+}
+
+// The invitation preview explains the rules before anything is sent, and says
+// nothing about other organizations (RFC-095 §4.3).
+func TestInvitationPreview(t *testing.T) {
+	svc, repo, host, _ := newExternalTenantService(t)
+	ctx := context.Background()
+	owner := shared.NewID()
+	seedMembershipInRepo(repo, owner, host.ID(), tenant.RoleOwner)
+	actx := audit.AuditContext{TenantID: host.ID().String(), ActorID: owner.String()}
+
+	p, err := svc.PreviewInvitation(ctx, host.ID().String(), "j.doe@gmail.com", []string{memberRoleID}, actx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Allowed || !p.Outside || !p.Personal || p.Privileged || p.StepUpRequired || p.AccessEndRequired {
+		t.Fatalf("personal member preview = %+v", p)
+	}
+	// Another organization's domain reads as outside, with no detail.
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "nam@example.com.au", []string{viewerRoleID}, actx)
+	if !p.Allowed || !p.Outside || p.Personal {
+		t.Fatalf("partner preview = %+v", p)
+	}
+	// The organization's own domain.
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "an@example.com", []string{memberRoleID}, actx)
+	if !p.Allowed || p.Outside {
+		t.Fatalf("insider preview = %+v", p)
+	}
+	// The admin role needs the owner and a re-authentication.
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "boss@gmail.com", []string{"00000000-0000-0000-0000-000000000002"}, actx)
+	if !p.Allowed || !p.StepUpRequired {
+		t.Fatalf("admin preview = %+v", p)
+	}
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "boss@gmail.com", []string{"00000000-0000-0000-0000-000000000002"},
+		audit.AuditContext{TenantID: host.ID().String(), ActorID: shared.NewID().String()})
+	if p.Allowed || p.Reason != tenantapp.PreviewAdminNeedsTheOwner {
+		t.Fatalf("admin by a non-owner = %+v", p)
+	}
+	// Policy: verified domains only.
+	st := host.TypedSettings()
+	st.Security.Invitees = tenant.InviteesVerifiedDomains
+	_ = host.UpdateSettings(st)
+	repo.tenants[host.ID().String()] = host
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "j.doe@gmail.com", []string{memberRoleID}, actx)
+	if p.Allowed || p.Reason != tenantapp.PreviewNotOnVerified {
+		t.Fatalf("verified-domains preview = %+v", p)
+	}
+	p, _ = svc.PreviewInvitation(ctx, host.ID().String(), "not-an-email", nil, actx)
+	if p.Allowed || p.Reason != tenantapp.PreviewInvalidEmail {
+		t.Fatalf("invalid email preview = %+v", p)
 	}
 }
