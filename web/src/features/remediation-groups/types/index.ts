@@ -20,17 +20,8 @@ export interface RemediationGroupsResponse {
   groups: RemediationGroup[]
 }
 
-/** Status a group resolve moves its findings to. */
-export type ResolveGroupStatus = 'fix_applied' | 'resolved'
-
-export interface ResolveGroupRequest {
-  status?: ResolveGroupStatus
-  resolution?: string
-  /** Approve an over-ceiling bulk (bypasses the abuse guard's size warning). */
-  approved?: boolean
-}
-
-export interface ResolveGroupResult {
-  updated: number
-  failed: number
-}
+/** A group resolve is a "mark fixed" (shared with campaigns). */
+export type {
+  MarkFixedRequest as ResolveGroupRequest,
+  MarkFixedResult as ResolveGroupResult,
+} from '@/features/remediation/api/mark-fixed.types'
