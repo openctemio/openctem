@@ -51,6 +51,18 @@ type SelfApproveResponse struct {
 // SelfApproveApproval handles POST /approvals/{id}/self-approve: the sole
 // active member of the organization, an owner, approves their own request
 // with a fresh authenticator code and a reason. Every refusal is audited.
+// @Summary      Approve your own request as the sole member
+// @Description  The owner of an organization with exactly one active person approves their own pending finding request with a fresh authenticator code and a reason. Refused when another member is active or one was suspended or removed in the last 7 days. An accepted risk is shortened to the self-approval limit. Requires findings:approve.
+// @Tags         Findings
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      string              true  "Approval ID"
+// @Param        body  body      SelfApproveRequest  true  "Reason and authenticator code"
+// @Success      200   {object}  SelfApproveResponse
+// @Failure      403   {object}  map[string]string
+// @Failure      404   {object}  map[string]string
+// @Router       /approvals/{id}/self-approve [post]
 func (h *VulnerabilityHandler) SelfApproveApproval(w http.ResponseWriter, r *http.Request) {
 	approvalID := r.PathValue("id")
 	var req SelfApproveRequest
@@ -126,6 +138,13 @@ func toFindingApprovalSettingsResponse(s *tenantdom.FindingApprovalSettings) Fin
 }
 
 // GetFindingApprovalSettings handles GET /organization/settings/finding-approvals.
+// @Summary      Finding approval settings
+// @Description  The organization's finding approval settings. Requires findings:read.
+// @Tags         Findings
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  FindingApprovalSettingsResponse
+// @Router       /organization/settings/finding-approvals [get]
 func (h *VulnerabilityHandler) GetFindingApprovalSettings(w http.ResponseWriter, r *http.Request) {
 	if h.approvalSettings == nil {
 		apierror.NotFound("finding approval settings").WriteJSON(w)
@@ -154,6 +173,16 @@ type UpdateFindingApprovalSettingsRequest struct {
 // (settings:write and a recent re-authentication). The change is audited
 // with the values before and after, and the organization's approvers are
 // told.
+// @Summary      Change the finding approval settings
+// @Description  Partial update of the organization's finding approval settings. Requires settings:write and a recent re-authentication; audited, approvers told.
+// @Tags         Findings
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      UpdateFindingApprovalSettingsRequest  true  "Fields to change"
+// @Success      200   {object}  FindingApprovalSettingsResponse
+// @Failure      403   {object}  map[string]string
+// @Router       /organization/settings/finding-approvals [put]
 func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWriter, r *http.Request) {
 	if h.approvalSettings == nil {
 		apierror.NotFound("finding approval settings").WriteJSON(w)
