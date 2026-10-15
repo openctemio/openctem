@@ -4,6 +4,7 @@
 - New organizations created by a person themselves start with the instance's **self-service default limits** (Console > System > Limits, `GET/PUT /api/v1/admin/settings/limits`, super admin with a fresh authenticator code). Empty by default. The same setting holds `orgs_per_user`, the per-person cap on self-service organizations (unlimited by default). The limits are written in the transaction that creates the organization.
 - Migration 002441 (`limits_replace_plans`) keeps every organization's caps: the limits of its plan become operator limits with the reason "migrated from plan", and modules its plan left out become module denies. Plans, plan defaults and the plan to module map are dropped.
 - Over a limit only new additions are refused; nothing is deleted. A denied module keeps read access for 30 days.
+- **Self-service sign-up requires starting limits.** With sign-up in `self_service` (`TENANT_CREATION_MODE` or the console policy), the API refuses to start and the console refuses to switch to self-service until starting limits are configured: a saved console setting, `SELF_SERVICE_START_LIMITS` (a JSON object of limits, or `unlimited`), or the internal entitlements API.
 
 ### Removed: plan endpoints and fields
 
@@ -11,4 +12,4 @@
 - The `plan` field of `GET /api/v1/users/me/tenants` (and the session bootstrap) and of `GET /api/v1/tenants/{id}`, and the `plan` column and filter of `GET /api/v1/admin/tenants` (each row now has `limits_apply`).
 - Replaced by `GET /api/v1/organization/limits` (owners and admins: the limits that apply, usage and unavailable modules; `applies: false` when nothing applies), `GET/PUT/DELETE /api/v1/admin/tenants/{tenantId}/limits[/{key}]` and `PUT/DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny`.
 - The error code of an addition over a limit is now `LIMIT_REACHED` (was `PLAN_LIMIT`), and the metric `openctem_plan_limit_refusals_total` is now `openctem_limit_refusals_total`.
-- **Upgrade note:** stop the API while migration 002441 runs (it renames and drops tables). API clients that read `plan` or call the plan endpoints must move to the limits endpoints.
+- **Upgrade note:** an installation running self-service sign-up must set `SELF_SERVICE_START_LIMITS` (for example `unlimited`) or save limits in the console before upgrading, or the API will not start. Stop the API while migration 002441 runs (it renames and drops tables). API clients that read `plan` or call the plan endpoints must move to the limits endpoints.
