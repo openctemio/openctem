@@ -69,10 +69,13 @@ can close the matching finding. `INGEST_VEX` sets the mode:
 | `off` | statements are stored, nothing else |
 
 Guards, the same as source-asserted resolve (RFC-047 §7.6): the report is bound
-to a command assigned to the submitting sensor; the finding is the tenant's, on
-the stated asset, under the stated key, open (`new`, `open`, `confirmed`,
-`in_progress`, `fix_applied`) and not from a human source (pentest, manual, bug
-bounty, red team). `accepted`, `false_positive` and `resolved` findings are
+to a command assigned to the submitting sensor; **the report's tool is the
+command's tool and the statement's asset is one the command covers** (a
+connector sync covers what its source owns), so a report never speaks for an
+asset its command did not scan; the finding is the tenant's, on the stated
+asset, under the stated key, **last reported by that same tool**, open (`new`,
+`confirmed`, `in_progress`, `fix_applied`) and not from a human source
+(pentest, manual, bug bounty, red team). `accepted`, `false_positive` and `resolved` findings are
 never touched. Other VEX statuses are stored for the detail view only. Applying
 VEX documents uploaded by a user (CSAF, OpenVEX, CycloneDX VEX) is the importer
 phase and reuses this path.
