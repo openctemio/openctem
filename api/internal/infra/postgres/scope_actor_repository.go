@@ -8,8 +8,10 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -188,4 +190,35 @@ func (r *ScopeActorRepository) IsSoleActiveOwner(ctx context.Context, tenantID s
 		return false, fmt.Errorf("count active members: %w", err)
 	}
 	return members == 1 && soleIsOwner, nil
+}
+
+// RecentMemberRemoval answers when the latest suspension or removal of a
+// member of the tenant within window happened (nil: none). It looks at the
+// memberships (suspended_at, offboarded_at, an expiry that passed) and at
+// the audit log for members deleted outright. A sole-member self-approval is
+// refused while one is recent, so suspending or removing the other approver
+// cannot be used to open the path.
+func (r *ScopeActorRepository) RecentMemberRemoval(ctx context.Context, tenantID shared.ID, window time.Duration) (*time.Time, error) {
+	var latest sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		SELECT MAX(t) FROM (
+			SELECT suspended_at AS t FROM tenant_members WHERE tenant_id = $1 AND suspended_at > now() - $2::interval
+			UNION ALL
+			SELECT offboarded_at FROM tenant_members WHERE tenant_id = $1 AND offboarded_at > now() - $2::interval
+			UNION ALL
+			SELECT expires_at FROM tenant_members WHERE tenant_id = $1
+			  AND expires_at > now() - $2::interval AND expires_at <= now()
+			UNION ALL
+			SELECT logged_at FROM audit_logs WHERE tenant_id = $1 AND logged_at > now() - $2::interval
+			  AND action IN ('member.removed', 'member.suspended', 'member.offboarded')
+		) recent`,
+		tenantID.String(), fmt.Sprintf("%d seconds", int64(window.Seconds()))).Scan(&latest)
+	if err != nil {
+		return nil, fmt.Errorf("recent member removals: %w", err)
+	}
+	if !latest.Valid {
+		return nil, nil
+	}
+	t := latest.Time
+	return &t, nil
 }
