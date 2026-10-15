@@ -8,6 +8,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -282,34 +283,75 @@ func (r *ScoringRepository) RecordImpact(ctx context.Context, tenantID shared.ID
 	return nil
 }
 
-// ClaimDrainedSummaries marks as notified, and returns, the summaries whose
-// change has no asset of the tenant left in the queue. Each is claimed once
-// (the UPDATE is the claim); a later pass of the same change (a requeue)
-// re-opens it with its new counts.
-func (r *ScoringRepository) ClaimDrainedSummaries(ctx context.Context, limit int) ([]scoring.ChangeSummary, error) {
+// ClaimDrainedSummaries sends the summaries whose change has no asset of the
+// tenant left in the queue, and marks each notified in the same transaction
+// as its send (the outbox insert): a send that fails rolls back to its
+// savepoint, leaving the summary unmarked for a later pass, so a failure
+// never loses a summary. FOR UPDATE SKIP LOCKED keeps two workers from
+// sending the same one. A later pass of the same change (a requeue)
+// re-opens it with its new counts (RecordImpact clears notified_at).
+func (r *ScoringRepository) ClaimDrainedSummaries(ctx context.Context, limit int, send scoring.SummarySender) (int, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	const q = `
-		WITH due AS (
-			SELECT i.tenant_id, i.scoring_change_id FROM scoring_change_impacts i
-			WHERE i.notified_at IS NULL
-			  AND NOT EXISTS (
-				SELECT 1 FROM finding_priority_queue q
-				WHERE q.tenant_id = i.tenant_id AND q.scoring_change_id = i.scoring_change_id)
-			ORDER BY i.updated_at
-			LIMIT $1
-			FOR UPDATE SKIP LOCKED
-		)
-		UPDATE scoring_change_impacts i SET notified_at = now()
-		FROM due, scoring_changes c
-		WHERE i.tenant_id = due.tenant_id AND i.scoring_change_id = due.scoring_change_id
-		  AND c.id = i.scoring_change_id
-		RETURNING i.tenant_id, i.scoring_change_id, c.source, c.summary, i.findings_checked, i.findings_changed,
-			i.findings_raised, i.raised_to_p0, i.findings_lowered, i.deadlines_tightened`
-	rows, err := r.db.QueryContext(ctx, q, limit)
+		SELECT i.tenant_id, i.scoring_change_id, c.source, c.summary, i.findings_checked, i.findings_changed,
+			i.findings_raised, i.raised_to_p0, i.findings_lowered, i.deadlines_tightened
+		FROM scoring_change_impacts i
+		JOIN scoring_changes c ON c.id = i.scoring_change_id
+		WHERE i.notified_at IS NULL
+		  AND NOT EXISTS (
+			SELECT 1 FROM finding_priority_queue q
+			WHERE q.tenant_id = i.tenant_id AND q.scoring_change_id = i.scoring_change_id)
+		ORDER BY i.updated_at
+		LIMIT $1
+		FOR UPDATE OF i SKIP LOCKED`
+	marked := 0
+	var sendErrs []error
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		due, err := scanDueSummaries(ctx, tx, q, limit)
+		if err != nil {
+			return err
+		}
+		for _, s := range due {
+			if _, err := tx.ExecContext(ctx, `SAVEPOINT scoring_summary`); err != nil {
+				return fmt.Errorf("savepoint scoring change summary: %w", err)
+			}
+			if send != nil {
+				if serr := send(ctx, tx, s); serr != nil {
+					if _, err := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT scoring_summary`); err != nil {
+						return fmt.Errorf("roll back scoring change summary: %w", err)
+					}
+					sendErrs = append(sendErrs, fmt.Errorf("tenant %s change %d: %w", s.TenantID, s.ChangeID, serr))
+					continue
+				}
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE scoring_change_impacts SET notified_at = now()
+				WHERE tenant_id = $1 AND scoring_change_id = $2`, s.TenantID.String(), s.ChangeID); err != nil {
+				return fmt.Errorf("mark scoring change summary notified: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `RELEASE SAVEPOINT scoring_summary`); err != nil {
+				return fmt.Errorf("release scoring change summary: %w", err)
+			}
+			marked++
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("claim scoring change summaries: %w", err)
+		return 0, fmt.Errorf("claim scoring change summaries: %w", err)
+	}
+	if len(sendErrs) > 0 {
+		return marked, fmt.Errorf("send scoring change summaries: %w", errors.Join(sendErrs...))
+	}
+	return marked, nil
+}
+
+// scanDueSummaries reads the locked, drained summaries.
+func scanDueSummaries(ctx context.Context, tx *sql.Tx, q string, limit int) ([]scoring.ChangeSummary, error) {
+	rows, err := tx.QueryContext(ctx, q, limit)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	var out []scoring.ChangeSummary
@@ -329,10 +371,7 @@ func (r *ScoringRepository) ClaimDrainedSummaries(ctx context.Context, limit int
 		s.TenantID = id
 		out = append(out, s)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate scoring change summaries: %w", err)
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // EnqueueIntelChanges queues, after a threat-intel refresh, only the assets
@@ -400,6 +439,10 @@ func (r *ScoringRepository) EnqueueIntelChanges(ctx context.Context) (int64, err
 // SavePriorities writes what a finding-priority pass computed, and only
 // that: class and reason (unless a person overrode the class), derived
 // reachability, the EPSS / KEV enrichment and the SLA deadline and status.
+// The deadline only tightens (min of the stored and the computed one, a
+// missing computation keeps the stored one), so a pass that read the row
+// before a concurrent tightening cannot undo it; the findings trigger
+// trg_findings_sla_deadline_guard enforces the same rule for every writer.
 // Only a finding that is still open is written, so a finding closed while
 // the pass ran stays frozen, and no other column (status, assignee, ...) a
 // concurrent edit may have changed is overwritten. Returns how many rows
@@ -411,7 +454,14 @@ func (r *ScoringRepository) SavePriorities(ctx context.Context, tenantID shared.
 			priority_class_reason = CASE WHEN priority_class_override THEN priority_class_reason ELSE $4 END,
 			is_reachable = $5, reachable_from_count = $6,
 			epss_score = $7, epss_percentile = $8, is_in_kev = $9, kev_due_date = $10,
-			sla_deadline = $11, sla_status = $12,
+			sla_deadline = CASE
+				WHEN $11::timestamptz IS NULL THEN sla_deadline
+				WHEN sla_deadline IS NULL THEN $11
+				ELSE LEAST(sla_deadline, $11) END,
+			sla_status = CASE
+				WHEN $11::timestamptz IS NULL THEN sla_status
+				WHEN sla_deadline IS NULL OR $11 < sla_deadline THEN $12
+				ELSE sla_status END,
 			updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND ` + vulnerability.OpenStatusSQL("status")
 	saved := 0
@@ -432,6 +482,54 @@ func (r *ScoringRepository) SavePriorities(ctx context.Context, tenantID shared.
 		}
 	}
 	return saved, nil
+}
+
+// epssRefreshBatch bounds one EPSS refresh statement (rows locked at once).
+const epssRefreshBatch = 2000
+
+// RefreshFindingEPSS writes the catalog EPSS score and percentile onto every
+// open finding whose CVE's catalog values differ from the stored ones: a
+// plain column update, tenant by tenant, in batches of epssRefreshBatch
+// (rows another writer holds are skipped and picked up by the next run).
+// Run it after EnqueueIntelChanges, which compares the stored values with
+// the catalog to find threshold crossings. Closed findings keep the values
+// they had when closed. Returns how many findings were written.
+func (r *ScoringRepository) RefreshFindingEPSS(ctx context.Context) (int64, error) {
+	tenants, err := r.tenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	q := `
+		UPDATE findings f SET epss_score = s.epss_score, epss_percentile = s.percentile
+		FROM (
+			SELECT f2.id, e.epss_score, e.percentile
+			FROM findings f2
+			JOIN epss_scores e ON e.cve_id = f2.cve_id
+			WHERE f2.tenant_id = $1 AND ` + vulnerability.OpenStatusSQL("f2.status") + `
+			  AND (f2.epss_score IS DISTINCT FROM e.epss_score OR f2.epss_percentile IS DISTINCT FROM e.percentile)
+			ORDER BY f2.id
+			LIMIT $2
+			FOR UPDATE OF f2 SKIP LOCKED
+		) s
+		WHERE f.tenant_id = $1 AND f.id = s.id`
+	var total int64
+	for _, tid := range tenants {
+		for {
+			if err := ctx.Err(); err != nil {
+				return total, err
+			}
+			res, err := r.db.ExecContext(ctx, q, tid, epssRefreshBatch)
+			if err != nil {
+				return total, fmt.Errorf("refresh finding epss: %w", err)
+			}
+			n, _ := res.RowsAffected()
+			total += n
+			if n < epssRefreshBatch {
+				break
+			}
+		}
+	}
+	return total, nil
 }
 
 // tenantIDs lists every tenant id.

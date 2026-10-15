@@ -13,6 +13,11 @@ import (
 // "Intel updates"). Implemented by postgres.ScoringRepository.
 type IntelChangeQueue interface {
 	EnqueueIntelChanges(ctx context.Context) (int64, error)
+	// RefreshFindingEPSS writes the catalog EPSS score and percentile onto
+	// every open finding whose CVE's values changed (tenant by tenant, in
+	// batches), so readers of the stored value (the CI gate's
+	// epss_threshold) see today's score.
+	RefreshFindingEPSS(ctx context.Context) (int64, error)
 }
 
 // ThreatIntelRefreshController periodically refreshes EPSS scores and the KEV
@@ -60,9 +65,21 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 	if c.intelQueue != nil {
 		n, err := c.intelQueue.EnqueueIntelChanges(ctx)
 		if err != nil {
-			c.logger.Warn("queue findings with changed intel failed", "error", err)
-		} else if n > 0 {
-			c.logger.Info("findings with changed intel queued for a priority recompute", "assets", n)
+			// The crossings are found by comparing the stored EPSS with the
+			// catalog: refreshing the stored values now would lose them, so
+			// the refresh waits for the next run.
+			c.logger.Warn("queue findings with changed intel failed; stored EPSS not refreshed", "error", err)
+		} else {
+			if n > 0 {
+				c.logger.Info("findings with changed intel queued for a priority recompute", "assets", n)
+			}
+			// Every changed CVE, not only threshold crossings: the CI gate
+			// judges the stored score against any threshold a policy sets.
+			if m, rerr := c.intelQueue.RefreshFindingEPSS(ctx); rerr != nil {
+				c.logger.Warn("refresh stored EPSS on open findings failed", "error", rerr)
+			} else if m > 0 {
+				c.logger.Info("stored EPSS refreshed on open findings", "findings", m)
+			}
 		}
 	}
 
