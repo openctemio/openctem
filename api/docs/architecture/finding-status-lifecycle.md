@@ -107,6 +107,20 @@ Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
 
+## What counts as a regression
+
+`is_regression`, `reopen_count` and `last_reopened_at` are set by the trigger
+`trg_findings_mark_regression` when a `resolved` finding reopens on
+**evidence**: a scan reports it again, a retest fails, a fixed VEX statement is
+withdrawn, the software matcher or a license policy flags it again, an
+indicator matches it. A person moving a finding back from `resolved` (the
+drawer's Undo, a correction, a bulk change) is not a regression: the status
+endpoint and the bulk change mark their transaction
+`openctem.person_move` (`vulnerability.WithPersonMove`), and the trigger skips
+it (migration `002186`). The drawer offers Undo only for moves that do not
+close the finding; reopening a resolved finding is a deliberate move from the
+status control.
+
 ## Every move is on the timeline
 
 A finding's timeline (`finding_activities`) explains every status change, in
