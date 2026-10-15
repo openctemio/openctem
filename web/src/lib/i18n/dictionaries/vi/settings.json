@@ -192,7 +192,6 @@
   "settings.desc.notification-channels": "Cảnh báo Slack, Teams, Telegram và webhook cho tổ chức.",
   "settings.desc.org-general": "Tên tổ chức, nhận diện thương hiệu, bản địa hóa và lưu trữ tệp.",
   "settings.desc.pentest-methodology": "Loại chiến dịch, phương pháp kiểm thử, danh mục kiểm thử, thư viện phát hiện và mẫu báo cáo.",
-  "settings.desc.plan": "Gói của bạn, các giới hạn và mức tổ chức đang sử dụng.",
   "settings.desc.preferences": "Giao diện, ngôn ngữ, múi giờ và định dạng ngày.",
   "settings.desc.profile": "Tên, email và ảnh đại diện của bạn.",
   "settings.desc.risk-scoring": "Cách tính trọng số điểm rủi ro của tài sản.",
@@ -243,7 +242,6 @@
   "settings.item.notification-channels": "Kênh thông báo",
   "settings.item.org-general": "Chung",
   "settings.item.pentest-methodology": "Phương pháp pentest",
-  "settings.item.plan": "Gói và mức sử dụng",
   "settings.item.preferences": "Tùy chọn",
   "settings.item.profile": "Hồ sơ",
   "settings.item.risk-scoring": "Chấm điểm rủi ro",
@@ -331,5 +329,7 @@
   "settings.mcpPolicy.scopes": "Quyền thành viên được cấp",
   "settings.mcpPolicy.title": "Chính sách của tổ chức",
   "settings.item.tool-defaults": "Mặc định công cụ",
-  "settings.desc.tool-defaults": "Tùy chọn mặc định của từng công cụ trên mọi sensor; mỗi sensor có thể ghi đè."
+  "settings.desc.tool-defaults": "Tùy chọn mặc định của từng công cụ trên mọi sensor; mỗi sensor có thể ghi đè.",
+  "settings.item.limits": "Mức dùng và giới hạn",
+  "settings.desc.limits": "Các giới hạn áp dụng cho tổ chức này và mức tổ chức đang dùng."
 }
