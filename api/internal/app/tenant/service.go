@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
 	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -55,6 +56,9 @@ type TeamInvitationJobPayload struct {
 // Note: Tenants are displayed as "Teams" in the UI.
 type TenantService struct {
 	repo tenantdom.Repository
+	// scoringVersions stamps the scoring version a risk scoring settings
+	// change created on its audit entry (SetScoringVersions; optional).
+	scoringVersions scoring.VersionRepository
 	// stepUp requires the acting owner's recent re-authentication (SetStepUpGate).
 	stepUp shared.RecentAuthGate
 	// assetPolicy re-resolves assets after a source precedence change.
@@ -2216,10 +2220,23 @@ func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID 
 		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().RiskScoring)).
 		WithMessage("Risk scoring settings updated").
 		WithMetadata("preset", rs.Preset)
+	// The scoring version the change created (scoring_changes, written by
+	// the settings trigger in the same transaction as the save).
+	if s.scoringVersions != nil {
+		if v, verr := s.scoringVersions.CurrentVersion(ctx, t.ID(), scoring.KindAssetRisk); verr == nil {
+			event = event.WithMetadata("scoring_version", v)
+		}
+	}
 	s.logAudit(ctx, actx, event)
 
 	result := t.TypedSettings()
 	return &result, nil
+}
+
+// SetScoringVersions wires the scoring version source recorded on risk
+// scoring settings audit entries.
+func (s *TenantService) SetScoringVersions(v scoring.VersionRepository) {
+	s.scoringVersions = v
 }
 
 // UpdateAssetLifecycleSettings updates only the asset-lifecycle
