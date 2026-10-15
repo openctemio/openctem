@@ -165,7 +165,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	}
 	gv := cirun.Evaluate(cirun.GateInput{
 		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
-		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, ScanFailures: in.ScanFailures,
+		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, BaselineEstablished: cmp.established, ScanFailures: in.ScanFailures,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
 		Override:            override, Now: now, FindingURL: s.findingURL,
@@ -235,6 +235,8 @@ type comparison struct {
 	// baselineAt is when the repository's gate baseline was recorded (nil:
 	// none).
 	baselineAt *time.Time
+	// established: this run recorded the repository's first baseline.
+	established bool
 }
 
 // newFindings tells which findings the run introduced.
@@ -250,18 +252,27 @@ type comparison struct {
 // baseline, a finding counts as pre-existing only if it is also in the
 // baseline, so a finding that reached the default branch after the baseline
 // (for example through a merge that ignored a failed gate) blocks pull
-// requests too until it is fixed, accepted or recorded in a new baseline.
+// requests into the default branch too until it is fixed, accepted or
+// recorded in a new baseline. A pull request into another protected branch
+// (a release branch) is compared with that branch only.
 func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []cirun.RunFinding) (comparison, error) {
 	baseline, err := s.repo.GateBaseline(ctx, run.TenantID, run.RepositoryAssetID)
 	if err != nil {
 		return comparison{}, err
+	}
+	established := false
+	if baseline == nil {
+		if baseline, err = s.firstRunBaseline(ctx, run); err != nil {
+			return comparison{}, err
+		}
+		established = baseline != nil
 	}
 	fps := make([]string, 0, len(findings))
 	for _, f := range findings {
 		fps = append(fps, f.Fingerprint)
 	}
 	var inBaseline map[string]bool
-	cmp := comparison{}
+	cmp := comparison{established: established}
 	if baseline != nil {
 		at := baseline.SetAt
 		cmp.baselineAt = &at
@@ -305,8 +316,11 @@ func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []ci
 		return comparison{}, fmt.Errorf("read baseline: %w", err)
 	}
 	onBase := make(map[string]bool, len(open))
+	// The baseline is of the default branch: it narrows a comparison with
+	// the default branch only, not with a release branch.
+	narrow := baseline != nil && base == run.DefaultBranch
 	for _, fp := range open {
-		onBase[fp] = baseline == nil || inBaseline[fp]
+		onBase[fp] = !narrow || inBaseline[fp]
 	}
 	cmp.known = true
 	cmp.newSet = map[string]bool{}
@@ -316,6 +330,36 @@ func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []ci
 		}
 	}
 	return cmp, nil
+}
+
+// firstRunBaseline records the repository's gate baseline from its first
+// default-branch run: the findings open on the default branch now, this
+// run's included, stop blocking, and the verdict says the baseline was
+// established. Only once per repository (a baseline it has or had wins),
+// only for a run whose branch and commit the provider signed, never for a
+// fork. nil when no baseline was recorded.
+func (s *Service) firstRunBaseline(ctx context.Context, run *cirun.Run) (*cirun.GateBaseline, error) {
+	if !run.IsDefaultBranch || !run.CommitVerified || run.Fork {
+		return nil, nil //nolint:nilnil // no baseline recorded
+	}
+	b := &cirun.GateBaseline{TenantID: run.TenantID, RepositoryAssetID: run.RepositoryAssetID,
+		Source: cirun.BaselineSourceFirstRun, SetAt: s.now().UTC()}
+	if err := s.repo.SetGateBaseline(ctx, b); err != nil {
+		if errors.Is(err, cirun.ErrBaselineExists) {
+			return nil, nil //nolint:nilnil // the repository has or had one
+		}
+		return nil, fmt.Errorf("record first-run gate baseline: %w", err)
+	}
+	s.logAudit(ctx, run.TenantID, Actor{Email: "ci:" + string(run.Provider)},
+		auditapp.NewSuccessEvent(auditdom.ActionCIGateBaselineSet, auditdom.ResourceTypeCIGateBaseline, run.RepositoryAssetID.String()).
+			WithResourceName(run.Repository).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage(fmt.Sprintf("CI gate baseline established by the first default-branch run of %s: %d open findings on %s",
+				run.Repository, b.FindingsCount, nonEmpty(b.Branch, run.Branch))).
+			WithMetadata("source", b.Source).
+			WithMetadata("run_id", run.ID.String()).
+			WithMetadata("findings", b.FindingsCount))
+	return b, nil
 }
 
 // baselineBranch picks the branch a run is compared with: the pull

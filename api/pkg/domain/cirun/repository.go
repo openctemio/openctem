@@ -15,6 +15,7 @@ var (
 	ErrPolicyNotFound      = fmt.Errorf("%w: CI gate policy not found", shared.ErrNotFound)
 	ErrOverrideNotFound    = fmt.Errorf("%w: CI gate override not found", shared.ErrNotFound)
 	ErrBaselineNotFound    = fmt.Errorf("%w: CI gate baseline not found", shared.ErrNotFound)
+	ErrBaselineExists      = fmt.Errorf("%w: the repository has or had a CI gate baseline", shared.ErrConflict)
 	ErrPolicyExists        = fmt.Errorf("%w: a gate policy for this scope already exists", shared.ErrConflict)
 	ErrTrustConfigExists   = fmt.Errorf("%w: a CI trust configuration with this name already exists", shared.ErrConflict)
 )
@@ -103,10 +104,12 @@ type Repository interface {
 	GateBaselineFingerprints(ctx context.Context, tenantID, assetID shared.ID, fingerprints []string) ([]string, error)
 	// SetGateBaseline records the findings open now on the repository's
 	// default branch as its gate baseline, replacing any earlier one, and
-	// fills b.FindingsCount and b.Branch.
+	// fills b.FindingsCount and b.Branch. A first-run baseline is recorded
+	// only when the repository never had one (ErrBaselineExists otherwise).
 	SetGateBaseline(ctx context.Context, b *GateBaseline) error
-	// DeleteGateBaseline removes a repository's gate baseline
-	// (ErrBaselineNotFound when it has none).
+	// DeleteGateBaseline removes a repository's gate baseline and its
+	// findings (ErrBaselineNotFound when it has none); the repository keeps
+	// a record that it had one, so no first run records another.
 	DeleteGateBaseline(ctx context.Context, tenantID, assetID shared.ID) error
 
 	CreateOverride(ctx context.Context, o *GateOverride) error

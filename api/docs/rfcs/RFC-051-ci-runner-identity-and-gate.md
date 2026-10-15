@@ -351,7 +351,8 @@ administrator in-app and the `ci.break_glass` channel event.
 ### 6.2 Gate baseline
 
 A repository's **gate baseline** (`ci_gate_baselines`, `ci_gate_baseline_findings`) is the set of findings
-open on its default branch when a person recorded it. It is the only comparison base of a default-branch run.
+open on its default branch when it was recorded: by the repository's **first verified default-branch run**
+(once per repository), or by a person. It is the only comparison base of a default-branch run.
 
 Why: comparing a default-branch run with "what earlier runs saw" let a failed run become its own baseline.
 The first run on the default branch failed with every finding new; running the same commit again (or pushing
@@ -361,8 +362,9 @@ establish a baseline, so nothing a run reports changes it.
 | Rule | Where |
 |---|---|
 | A default-branch run: a finding is pre-existing only if its fingerprint is in the baseline and it was not reopened after the baseline was recorded | `cirun.Service.newFindings` |
-| No baseline: every finding of a default-branch run is new (`no_baseline` note) | same |
-| A pull request run: a finding is pre-existing if it is open on the target branch and, once the repository has a baseline, also in the baseline. A finding that reached the default branch after the baseline (for example through a merge that ignored a failed gate) blocks pull requests until it is fixed, accepted or baselined | same |
+| The first default-branch run of a repository that never had a baseline records one and passes on the findings it holds; the verdict says so (`baseline.established`, `baseline_established` note) and it is audited at high severity (`ci_gate_baseline.set`, source `first_run`). Only a run whose branch and commit the provider signed, never a fork; only the default branch. Once per repository: a removed baseline keeps its row (`cleared_at`), so no later run records one again | `cirun.Service.firstRunBaseline` |
+| No baseline (removed): every finding of a default-branch run is new (`no_baseline` note) | same |
+| A pull request run: a finding is pre-existing if it is open on the target branch and, when the target is the default branch and the repository has a baseline, also in the baseline. A finding that reached the default branch after the baseline (for example through a merge that ignored a failed gate) blocks pull requests until it is fixed, accepted or baselined | same |
 | Recording a baseline (`POST /api/v1/ci/repositories/{id}/gate-baseline`): `scans:ci:policy`, step-up, repository in the caller's data scope (404 otherwise); audited `ci_gate_baseline.set` at high severity and announced to every administrator on the break-glass channel; it replaces an earlier baseline | handler, service |
 | Removing it (`DELETE`): `scans:ci:policy`; stricter, so no step-up; audited | handler, service |
 | Reading it (`GET`): `scans:ci:read`, data scope | handler |

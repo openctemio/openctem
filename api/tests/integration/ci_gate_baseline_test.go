@@ -58,53 +58,33 @@ func TestCIGateBaseline_DefaultBranchRerunCannotWhitewash(t *testing.T) {
 		return n("new"), n("pre_existing"), n("blocking")
 	}
 
-	// First default-branch run: the legacy finding is new and blocks.
-	if v := run("main", legacy); v["verdict"] != "fail" {
+	// First default-branch run: it records the repository's gate baseline
+	// (once per repository) and passes, saying so.
+	v := run("main", legacy)
+	if nw, pre, _ := summary(v); v["verdict"] != "pass" || nw != 0 || pre != 1 || !hasReason(v, cirun.ReasonBaselineEstablished) {
 		t.Fatalf("first run: %v", v)
 	}
-	// The rerun of the same commit (and any later push) still fails: the
-	// failed run did not become the comparison base.
-	v := run("main", legacy)
-	if nw, pre, _ := summary(v); v["verdict"] != "fail" || nw != 1 || pre != 0 {
-		t.Fatalf("rerun whitewashed the gate: %v", v)
+	if bl, _ := v["baseline"].(map[string]any); bl["established"] != true || bl["set_at"] == nil {
+		t.Fatalf("verdict does not name the new baseline: %v", v)
 	}
-	if !hasReason(v, cirun.ReasonNoBaseline) {
-		t.Fatalf("no-baseline note missing: %v", v)
-	}
-	run2, err := r.svc.GetRun(ctx, r.tenant, shared.MustIDFromString(lastRun))
+	run1, err := r.svc.GetRun(ctx, r.tenant, shared.MustIDFromString(lastRun))
 	if err != nil {
 		t.Fatal(err)
 	}
-	repoID := run2.RepositoryAssetID
-
-	// Recording the baseline needs step-up; with it, the legacy finding is
-	// pre-existing and the default branch passes, audited and announced.
-	r.svc.SetStepUpGate(recentAuth{err: errNeedsStepUp})
-	if _, err := r.svc.SetGateBaseline(ctx, r.tenant, repoID, admin); !errors.Is(err, errNeedsStepUp) {
-		t.Fatalf("baseline without step-up: %v", err)
+	repoID := run1.RepositoryAssetID
+	b, err := r.svc.GetGateBaseline(ctx, r.tenant, repoID)
+	if err != nil || b.Source != cirun.BaselineSourceFirstRun || b.FindingsCount != 1 || b.Branch != "main" {
+		t.Fatalf("first-run baseline %+v %v", b, err)
 	}
-	r.svc.SetStepUpGate(recentAuth{})
-	alertsBefore := alerts.count()
-	b, err := r.svc.SetGateBaseline(ctx, r.tenant, repoID, admin)
-	if err != nil {
-		t.Fatal(err)
+	if r.auditCount(r.tenant, "ci_gate_baseline.set", "first_run") != 1 {
+		t.Fatal("first-run baseline not audited")
 	}
-	if b.FindingsCount != 1 || b.Branch != "main" {
-		t.Fatalf("baseline %+v", b)
-	}
-	if n := r.auditCount(r.tenant, "ci_gate_baseline.set", ""); n != 1 {
-		t.Fatalf("baseline audited %d times", n)
-	}
-	if alerts.count() != alertsBefore+1 || alerts.got[len(alerts.got)-1].Metadata["action"] != "baseline_set" {
-		t.Fatalf("baseline not announced: %+v", alerts.got)
-	}
+	// The rerun is judged against the same baseline, not established again.
 	v = run("main", legacy)
-	if nw, pre, _ := summary(v); v["verdict"] != "pass" || nw != 0 || pre != 1 {
-		t.Fatalf("baseline not applied: %v", v)
+	if _, pre, _ := summary(v); v["verdict"] != "pass" || pre != 1 || hasReason(v, cirun.ReasonBaselineEstablished) {
+		t.Fatalf("rerun: %v", v)
 	}
-	if bl, _ := v["baseline"].(map[string]any); bl["set_at"] == nil {
-		t.Fatalf("verdict does not name the baseline: %v", v)
-	}
+
 	// A finding added after the baseline blocks, on every rerun.
 	for i := 0; i < 2; i++ {
 		v = run("main", legacy, fresh)
@@ -120,6 +100,27 @@ func TestCIGateBaseline_DefaultBranchRerunCannotWhitewash(t *testing.T) {
 		t.Fatalf("pull request compared with failed default-branch runs: %v", v)
 	}
 
+	// Recording a new baseline by hand needs step-up; it takes in the
+	// post-baseline finding, audited high and announced.
+	r.svc.SetStepUpGate(recentAuth{err: errNeedsStepUp})
+	if _, err := r.svc.SetGateBaseline(ctx, r.tenant, repoID, admin); !errors.Is(err, errNeedsStepUp) {
+		t.Fatalf("baseline without step-up: %v", err)
+	}
+	r.svc.SetStepUpGate(recentAuth{})
+	alertsBefore := alerts.count()
+	if b, err = r.svc.SetGateBaseline(ctx, r.tenant, repoID, admin); err != nil || b.FindingsCount != 2 || b.Source != cirun.BaselineSourceManual {
+		t.Fatalf("manual baseline %+v %v", b, err)
+	}
+	if n := r.auditCount(r.tenant, "ci_gate_baseline.set", ""); n != 2 {
+		t.Fatalf("baseline audited %d times", n)
+	}
+	if alerts.count() != alertsBefore+1 || alerts.got[len(alerts.got)-1].Metadata["action"] != "baseline_set" {
+		t.Fatalf("baseline not announced: %+v", alerts.got)
+	}
+	if v := run("main", legacy, fresh); v["verdict"] != "pass" {
+		t.Fatalf("after the manual baseline: %v", v)
+	}
+
 	// Tenant isolation: another tenant cannot record or read this
 	// repository's baseline.
 	if _, err := r.svc.SetGateBaseline(ctx, r.other, repoID, admin); err == nil {
@@ -133,12 +134,29 @@ func TestCIGateBaseline_DefaultBranchRerunCannotWhitewash(t *testing.T) {
 	}
 
 	// Removing the baseline (no step-up needed: stricter) makes the legacy
-	// finding block the default branch again.
+	// finding block the default branch again, and no later run records a
+	// first-run baseline again.
 	r.svc.SetStepUpGate(recentAuth{err: errNeedsStepUp})
 	if err := r.svc.DeleteGateBaseline(ctx, r.tenant, repoID, admin); err != nil {
 		t.Fatal(err)
 	}
-	if v := run("main", legacy); v["verdict"] != "fail" {
-		t.Fatalf("after removing the baseline: %v", v)
+	for i := 0; i < 2; i++ {
+		if v := run("main", legacy); v["verdict"] != "fail" || !hasReason(v, cirun.ReasonNoBaseline) {
+			t.Fatalf("after removing the baseline, run %d: %v", i, v)
+		}
+	}
+}
+
+// emptyBaseline gives a repository an empty gate baseline, so that its
+// default-branch runs judge every finding as new (no first-run baseline).
+func (r *ciRig) emptyBaseline(tenant shared.ID, repoName string) {
+	r.t.Helper()
+	res, err := r.db.ExecContext(context.Background(), `INSERT INTO ci_gate_baselines (tenant_id, repository_asset_id, source)
+		SELECT tenant_id, id, 'manual' FROM assets WHERE tenant_id = $1 AND name = $2`, tenant.String(), repoName)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		r.t.Fatalf("no repository asset %q", repoName)
 	}
 }
