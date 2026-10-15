@@ -1297,6 +1297,11 @@ export interface ApiApproval {
   /** Empty when a platform actor made the request (see requested_by_actor). */
   requested_by: string
   /**
+   * The requester's display name (approval lists); absent for an actor
+   * request and for a requester who is no longer a member.
+   */
+  requested_by_name?: string
+  /**
    * Set (`ai_triage`) when AI triage proposed the change instead of a person.
    * Its justification is model output: show it as plain text only.
    */
