@@ -843,6 +843,7 @@ func (s *Service) resolveRepositoryAsset(ctx context.Context, tenantID shared.ID
 			return nil, err
 		}
 		if renamed {
+			s.logAudit(ctx, tenantID, Actor{Email: ciActor(c)}, repositoryRenamedEvent(a.ID(), a.Name(), norm, c, key))
 			if fresh, err := s.assets.GetByID(ctx, tenantID, a.ID()); err == nil && fresh != nil {
 				a = fresh
 			}
@@ -854,6 +855,20 @@ func (s *Service) resolveRepositoryAsset(ctx context.Context, tenantID shared.ID
 		return nil, err
 	}
 	return a, nil
+}
+
+// repositoryRenamedEvent records that a CI run renamed the repository asset
+// it found by the code host's repository id.
+func repositoryRenamedEvent(assetID shared.ID, oldName, newName string, c cirun.Claims, key cirun.PipelineKey) auditapp.AuditEvent {
+	return auditapp.NewSuccessEvent(auditdom.ActionAssetRenamed, auditdom.ResourceTypeAsset, assetID.String()).
+		WithResourceName(newName).
+		WithMessage(fmt.Sprintf("Repository asset renamed from %s to %s (same %s repository id)", oldName, newName, c.Provider)).
+		WithMetadata("old_name", oldName).
+		WithMetadata("new_name", newName).
+		WithMetadata("provider", string(c.Provider)).
+		WithMetadata("issuer", key.Issuer).
+		WithMetadata("repository_id", key.ExternalRepoID).
+		WithMetadata("source", "ci")
 }
 
 func (s *Service) repositoryAsset(ctx context.Context, tenantID shared.ID, name string) (*asset.Asset, error) {
