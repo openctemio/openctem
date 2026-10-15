@@ -1,15 +1,12 @@
 /**
  * Finding status registry tests: one status set for every source, labels in
- * en and vi with no duplicates, categories for the filter, transitions.
+ * en and vi with no duplicates, categories for the filter.
  */
 
 import { describe, it, expect } from 'vitest'
+import * as types from '../finding.types'
 import {
-  getStatusesForSource,
-  PENTEST_STATUSES,
-  AUTOMATED_STATUSES,
   ALL_FINDING_STATUSES,
-  STATUS_TRANSITIONS,
   FINDING_STATUS_CONFIG,
   findingStatusesInCategory,
   isFindingStatus,
@@ -67,45 +64,16 @@ describe('the finding status registry', () => {
   })
 })
 
-describe('statuses per source', () => {
-  it('pentest findings use the shared statuses plus draft and in_review', () => {
-    expect(getStatusesForSource('pentest')).toEqual(PENTEST_STATUSES)
-    expect([...PENTEST_STATUSES].sort()).toEqual(
-      [
-        'draft',
-        'in_review',
-        'confirmed',
-        'in_progress',
-        'fix_applied',
-        'resolved',
-        'false_positive',
-        'accepted',
-      ].sort()
-    )
-  })
-
-  it('other sources use the automated statuses', () => {
-    for (const source of ['sast', 'dast', 'sca', 'unknown_scanner']) {
-      expect(getStatusesForSource(source)).toEqual(AUTOMATED_STATUSES)
+describe('the lifecycle rules live on the server', () => {
+  it('the console keeps no copy of the transition map', () => {
+    for (const name of [
+      'STATUS_TRANSITIONS',
+      'AUTOMATED_STATUSES',
+      'PENTEST_STATUSES',
+      'getStatusesForSource',
+    ]) {
+      expect(name in types, name).toBe(false)
     }
-    expect(AUTOMATED_STATUSES).not.toContain('draft')
-    expect(AUTOMATED_STATUSES).not.toContain('in_review')
-  })
-})
-
-describe('STATUS_TRANSITIONS', () => {
-  it('has an entry for every status and only valid targets', () => {
-    for (const status of ALL_FINDING_STATUSES) {
-      expect(STATUS_TRANSITIONS[status], status).toBeDefined()
-      for (const target of STATUS_TRANSITIONS[status]) {
-        expect(isFindingStatus(target), `${status} -> ${target}`).toBe(true)
-      }
-    }
-  })
-
-  it('pentest pre-publication moves', () => {
-    expect(STATUS_TRANSITIONS.draft).toContain('in_review')
-    expect(STATUS_TRANSITIONS.in_review).toContain('confirmed')
   })
 })
 
