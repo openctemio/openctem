@@ -25,6 +25,13 @@ const (
 	Enterprise Plan = "enterprise"
 )
 
+// Unassigned is the plan of an organization with no stored plan: one created
+// before plans existed, or by the platform (bootstrap-admin, the console, an
+// approved access request) until an administrator picks a plan. Every reader
+// of an organization's plan resolves a missing row to this one value
+// (docs/architecture/plans-and-limits.md).
+const Unassigned = Enterprise
+
 // All lists the plans in display order.
 var All = []Plan{Free, Pro, Enterprise}
 

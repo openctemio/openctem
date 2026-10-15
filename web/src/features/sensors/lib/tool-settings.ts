@@ -266,6 +266,12 @@ export function isChangedValue(f: ToolSettingField, v: DraftValue): boolean {
   return String(v) !== String(d)
 }
 
+/** Whether a draft value is set at all (an override in the sensor layer). */
+export function isSetValue(v: DraftValue): boolean {
+  if (v === undefined || v === '') return false
+  return !(Array.isArray(v) && v.length === 0)
+}
+
 /** The fields whose draft value differs from their default, in field order. */
 export function changedFields(fields: ToolSettingField[], draft: Draft): ToolSettingField[] {
   return fields.filter((f) => isChangedValue(f, draft[f.key]))
