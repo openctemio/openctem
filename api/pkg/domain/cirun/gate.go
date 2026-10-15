@@ -3,6 +3,7 @@ package cirun
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,7 +41,10 @@ const (
 	// with it, for example because the pipeline was edited to skip it.
 	ReasonMissingCapability = "missing_capability"
 	ReasonOverride          = "override"
-	ReasonNoBaseline        = "no_baseline"
+	// ReasonNoResults: no scan results were uploaded to the run, so it
+	// cannot be judged (fail closed).
+	ReasonNoResults  = "no_results"
+	ReasonNoBaseline = "no_baseline"
 	// ReasonBaselineEstablished notes that this run recorded the
 	// repository's first gate baseline: its open findings stopped blocking.
 	ReasonBaselineEstablished = "baseline_established"
@@ -143,17 +147,39 @@ type GatePolicy struct {
 	// or EPSS score only when a fixed version exists; one with no fix is
 	// listed, not blocking. KEV still fails, fixable or not.
 	FixableOnly bool
-	CreatedBy   *shared.ID
-	UpdatedBy   *shared.ID
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// BaselineOnFirstRun records the repository's gate baseline on its first
+	// verified default-branch run (default on; off: an administrator records
+	// it).
+	BaselineOnFirstRun bool
+	// BaselineGraceDays: baseline findings stop counting as pre-existing
+	// this many days after the baseline was recorded (nil: no end). Their
+	// due date is the end of the grace.
+	BaselineGraceDays *int
+	// BaselineSecretsBlock: a secret in the baseline still blocks
+	// default-branch runs (default true).
+	BaselineSecretsBlock bool
+	// Fields are the fields this policy sets; the others are inherited from
+	// the layer above (the organization policy sets every field).
+	Fields []string
+	// LockedFields are fields no layer below may loosen (organization and
+	// business unit policies only).
+	LockedFields []string
+	// Reason says why a repository policy differs from what it inherits.
+	Reason string
+	// ExpiresAt ends a repository policy: after it the repository inherits
+	// again (nil: no end).
+	ExpiresAt *time.Time
+	CreatedBy *shared.ID
+	UpdatedBy *shared.ID
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // DefaultGatePolicy is the built-in policy: new findings of high severity
 // or above, or on the KEV list, fail; secrets always fail.
 func DefaultGatePolicy() GatePolicy {
 	return GatePolicy{ScopeType: ScopeDefault, Enabled: true, Mode: ModeEnforce, FailOnSeverity: "high",
-		NewFindingsOnly: true, FailOnKEV: true, AllowRepoPolicy: true}
+		NewFindingsOnly: true, FailOnKEV: true, AllowRepoPolicy: true, BaselineOnFirstRun: true, BaselineSecretsBlock: true, Fields: slices.Clone(PolicyFields)}
 }
 
 // Validate checks a policy. Every error wraps shared.ErrValidation.
@@ -181,6 +207,9 @@ func (p *GatePolicy) Validate() error {
 	}
 	if p.EPSSThreshold != nil && (*p.EPSSThreshold < 0 || *p.EPSSThreshold > 1) {
 		return invalid("epss_threshold must be between 0 and 1")
+	}
+	if p.BaselineGraceDays != nil && (*p.BaselineGraceDays < 1 || *p.BaselineGraceDays > MaxBaselineGraceDays) {
+		return invalid("baseline_grace_days must be between 1 and %d", MaxBaselineGraceDays)
 	}
 	return p.Modes.Validate()
 }
@@ -214,6 +243,12 @@ func Strictest(ps []GatePolicy) GatePolicy {
 		}
 		out.Modes = strictestModes(out.Modes, p.Modes)
 		out.AllowRepoPolicy = out.AllowRepoPolicy && p.AllowRepoPolicy
+		out.BaselineOnFirstRun = out.BaselineOnFirstRun && p.BaselineOnFirstRun
+		out.BaselineSecretsBlock = out.BaselineSecretsBlock || p.BaselineSecretsBlock
+		if p.BaselineGraceDays != nil && (out.BaselineGraceDays == nil || *p.BaselineGraceDays < *out.BaselineGraceDays) {
+			v := *p.BaselineGraceDays
+			out.BaselineGraceDays = &v
+		}
 	}
 	return out
 }
@@ -297,10 +332,14 @@ type GateInput struct {
 	// BaselineEstablished: this run recorded the repository's first gate
 	// baseline.
 	BaselineEstablished bool
+	// BaselineDueAt ends the baseline's grace (nil: no end).
+	BaselineDueAt *time.Time
 	// DefaultBranch: the run is on the repository's default branch, where
 	// every open secret blocks.
 	DefaultBranch bool
 	ScanFailures  int
+	// NoResults: nothing was uploaded to the run.
+	NoResults bool
 	// FailedCapabilities are the capabilities the job reported as not clean
 	// (FailedCapabilities).
 	FailedCapabilities []CapabilityState
@@ -364,6 +403,9 @@ type GateBaselineView struct {
 	// SetAt is when the repository's gate baseline was recorded; absent
 	// when it has none. A default-branch run is compared with it only.
 	SetAt *time.Time `json:"set_at,omitempty"`
+	// DueAt ends the baseline's grace (its findings' due date): after it they
+	// block again. Absent: no end.
+	DueAt *time.Time `json:"due_at,omitempty"`
 	// Established: this run recorded the repository's first gate baseline
 	// (its open findings stopped blocking).
 	Established bool `json:"established,omitempty"`
@@ -445,7 +487,7 @@ func Evaluate(in GateInput) GateVerdict {
 		Policy: GatePolicyView{Source: in.PolicySource, Mode: p.Mode, FailOnSeverity: p.FailOnSeverity, Modes: modesView(p.Modes),
 			NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV, EPSSThreshold: p.EPSSThreshold, FixableOnly: p.FixableOnly},
 		Baseline: GateBaselineView{Branch: in.BaselineBranch, Known: in.BaselineKnown, SetAt: in.BaselineSetAt,
-			Established: in.BaselineEstablished},
+			Established: in.BaselineEstablished, DueAt: in.BaselineDueAt},
 	}
 	blocking := 0
 	listed := 0
@@ -466,6 +508,10 @@ func Evaluate(in GateInput) GateVerdict {
 	if in.ScanFailures > 0 {
 		add(GateReason{Code: ReasonScanFailure,
 			Message: fmt.Sprintf("%d scanner(s) failed to run or to report: the run cannot be judged", in.ScanFailures)})
+	}
+	if in.NoResults {
+		add(GateReason{Code: ReasonNoResults,
+			Message: "no scan results were uploaded to this run: it cannot be judged"})
 	}
 	for _, c := range in.FailedCapabilities {
 		what := c.Name
@@ -511,7 +557,7 @@ func Evaluate(in GateInput) GateVerdict {
 			// branch blocks the default branch, and is a note on any other
 			// branch: a pull request did not add it and cannot remove it from
 			// history, so it must not block every pull request.
-			if isNew || in.DefaultBranch {
+			if isNew || (in.DefaultBranch && p.BaselineSecretsBlock) {
 				r := base
 				r.Code, r.Message = ReasonSecret, "a secret is committed to the repository"
 				add(r)
