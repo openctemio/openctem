@@ -303,6 +303,12 @@ instead).
   once only one applies it (the other gets 409); a finding that moved in
   between rolls everything back and the request stays pending. A request is
   for a finding inside the requester's data scope (404 otherwise).
+- **Audit.** Every request, approval, rejection and cancellation writes an
+  audit row (`finding_approval.requested|approved|rejected|canceled`, resource
+  type `finding_approval`, metadata: finding, requested status, acceptance end,
+  decide-by; never the justification text). A refused attempt to approve one's
+  own request is recorded as `finding_approval.self_approval_refused` (denied,
+  medium), so the attempts can be reviewed.
 - **On the finding, on every accept path.** Approving `accepted` stores the
   end in `findings.acceptance_expires_at` in the same statement as the status
   (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix
