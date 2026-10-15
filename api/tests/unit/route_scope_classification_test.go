@@ -124,6 +124,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/ci/coverage":                         {classScoped, "CI coverage: repositories listed and marked only within the caller's data scope, 404 otherwise (RFC-051)"},
 	"/api/v1/ci/pipelines":                        {classScoped, "CI pipelines: SQL data-scope condition on the repository asset; by id out of scope is 404 (RFC-051)"},
 	"/api/v1/ci/oidc/exchange":                    {classSystem, "CI token exchange: the CI provider's OIDC token is the credential (RFC-051)"},
+	"/hooks/jira-integrations":                    {classSystem, "inbound Jira webhook: the integration named in the URL and its own HMAC secret decide the one tenant"},
 	"/api/v1/hooks/github-app":                    {classSystem, "GitHub App webhook: HMAC-verified installation status events (RFC-077)"},
 	"POST /api/v1/ci/runs/{id}/results":           {classSystem, "CI run token: write to the run's repository only (RFC-051)"},
 	"POST /api/v1/ci/runs/{id}/baseline-diff":     {classSystem, "CI run token: the run's repository only (RFC-051)"},
@@ -190,7 +191,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/business-units":    {classPartial, "asset links scoped (L-10); the unit list and counts are tenant-wide"},
 	"/api/v1/ctem-cycles":       {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
 	"/api/v1/approvals":         {classScoped, "approvals by id and the list: SQL data-scope condition on the finding asset; total and status counts scoped too"},
-	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign progress counts follow the reader (L-18, research 24)"},
+	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156)"},
 	"/api/v1/dashboard":         {classPartial, "activity and top risks scoped; counts and trends tenant-wide until P1-4 (D6)"},
 
 	// --- separate ------------------------------------------------------------------
