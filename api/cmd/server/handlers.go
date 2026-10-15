@@ -285,6 +285,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	vulnHandler.SetFindingCorrelations(repos.FindingCorrelation)
 	vulnHandler.SetProvenanceLister(repos.Finding)
+	vulnHandler.SetPackageFixLister(repos.Finding)
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.

@@ -9,6 +9,8 @@ import type {
   ApiDataFlowLocation,
   ApiFinding,
   ApiFindingRun,
+  ApiFindingFixPlan,
+  ApiFindingFixPlanItem,
   ApiFindingSourceData,
 } from '../api/finding-api.types'
 import type {
@@ -23,6 +25,8 @@ import type {
   FindingDetail,
   FindingProvenance,
   FindingRunSighting,
+  FindingFixPlan,
+  FindingFixPlanItem,
   FindingSourceData,
   FindingStatus,
   FindingType,
@@ -185,6 +189,30 @@ function mapProvenance(api: ApiFinding): FindingProvenance | undefined {
   }
 }
 
+function mapFixPlanItems(items: ApiFindingFixPlanItem[] | undefined): FindingFixPlanItem[] {
+  return (items ?? []).map((i) => ({
+    id: i.id,
+    title: i.title,
+    severity: i.severity,
+    cveId: i.cve_id,
+  }))
+}
+
+function mapFixPlan(p: ApiFindingFixPlan): FindingFixPlan {
+  return {
+    targetVersion: p.target_version,
+    majorUpgrade: p.major_upgrade,
+    openFindings: p.open_findings,
+    resolvesCount: p.resolves_count,
+    truncated: p.truncated,
+    resolves: mapFixPlanItems(p.resolves),
+    remaining: mapFixPlanItems(p.remaining),
+    completeVersion: p.complete_version,
+    completeMajor: p.complete_major,
+    completeResolves: p.complete_resolves,
+  }
+}
+
 export function toFindingDetail(api: ApiFinding): FindingDetail {
   const v = api.vulnerability
   const c = api.component
@@ -321,11 +349,14 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
           purl: c.purl,
           license: c.license,
           fixedIn: c.fixed_in,
+          fixedInMajor: c.fixed_in_major,
+          fixedVersions: c.fixed_versions,
           dependencyType: c.dependency_type,
           manifestFile: c.manifest_file,
         }
       : undefined,
     provenance: mapProvenance(api),
+    packageFix: api.package_fix ? mapFixPlan(api.package_fix) : undefined,
     advisory: v
       ? {
           cveId: v.cve_id,
