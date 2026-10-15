@@ -474,6 +474,13 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 	return r.scanAsset(row, shared.ID{})
 }
 
+// riskBearingFindingStatusClause selects the findings that count toward an
+// asset's finding counts and risk score: the active statuses
+// (vulnerability.ActiveFindingStatuses). Resolved, accepted, false-positive
+// and duplicate findings, validated fixes awaiting close and unpublished
+// pentest drafts carry no risk.
+const riskBearingFindingStatusClause = `f.status IN ('new','confirmed','in_progress','fix_applied','not_observed')`
+
 func (r *AssetRepository) selectQuery() string {
 	return `
 		SELECT a.id, a.tenant_id, a.parent_id, a.owner_ref, a.name, a.asset_type, a.sub_type, a.criticality, a.status,
@@ -492,7 +499,9 @@ func (r *AssetRepository) selectQuery() string {
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at,
 			   a.lifecycle_paused_until, a.manual_status_override,
 			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
-			   a.is_crown_jewel
+			   a.is_crown_jewel,
+			   a.risk_scored_at,
+			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id) AS risk_score_pending
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -508,7 +517,7 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
 				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info
 			FROM findings f
-			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + riskBearingFindingStatusClause + ` AND NOT f.branch_only
 		) fc ON true
 	`
 }
@@ -858,6 +867,8 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		impactIntegrity       sql.NullString
 		impactAvailability    sql.NullString
 		isCrownJewel          bool
+		riskScoredAt          sql.NullTime
+		riskScorePending      bool
 	)
 
 	err := scan(
@@ -873,6 +884,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		&lifecyclePausedUntil, &manualStatusOverride,
 		&impactConfidentiality, &impactIntegrity, &impactAvailability,
 		&isCrownJewel,
+		&riskScoredAt, &riskScorePending,
 	)
 	if err != nil {
 		return nil, err
@@ -895,6 +907,12 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 	}
 
 	a.SetCrownJewel(isCrownJewel)
+	var scoredAt *time.Time
+	if riskScoredAt.Valid {
+		t := riskScoredAt.Time
+		scoredAt = &t
+	}
+	a.SetRiskFreshness(scoredAt, riskScorePending)
 	a.SetFindingSeverityCounts(&asset.FindingSeverityCounts{
 		Critical: findingCritical,
 		High:     findingHigh,
@@ -1213,9 +1231,9 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// row (a data-integrity bug) can never flip this filter for someone else.
 	if filter.HasFindings != nil {
 		if *filter.HasFindings {
-			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only)")
+			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND "+riskBearingFindingStatusClause+" AND NOT f.branch_only)")
 		} else {
-			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only)")
+			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND "+riskBearingFindingStatusClause+" AND NOT f.branch_only)")
 		}
 	}
 
@@ -2229,16 +2247,20 @@ func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shar
 	return nil
 }
 
-// BatchUpdateRiskScores updates risk_score for multiple assets in a single query.
+// BatchUpdateRiskScores stores the risk_score of several assets of one tenant
+// in a single query and stamps risk_scored_at. A row whose score did not
+// change and that was scored before is left alone, so a periodic rescore does
+// not touch every asset's updated_at.
 func (r *AssetRepository) BatchUpdateRiskScores(ctx context.Context, tenantID shared.ID, assets []*asset.Asset) error {
 	if len(assets) == 0 {
 		return nil
 	}
 
 	query := `
-		UPDATE assets SET risk_score = data.score, updated_at = NOW()
+		UPDATE assets SET risk_score = data.score, risk_scored_at = NOW()
 		FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS score) AS data
 		WHERE assets.id = data.id AND assets.tenant_id = $3
+		  AND (assets.risk_score IS DISTINCT FROM data.score OR assets.risk_scored_at IS NULL)
 	`
 
 	ids := make([]string, 0, len(assets))

@@ -29,6 +29,24 @@ FROM assets a
 3. The `Update()` repository method does NOT persist `findingCount` to the database
 4. When you read an asset, the finding count is always fresh from the database
 
+**Which findings count:** only the active statuses (`new`, `confirmed`,
+`in_progress`, `fix_applied`, `not_observed`) on the default branch
+(`riskBearingFindingStatusClause`). The risk score uses the same counts.
+
+### risk_score, risk_scored_at and asset_risk_queue
+
+`risk_score` is stored, and kept fresh by AFTER triggers on `findings`,
+`assets`, `business_unit_assets`, `business_service_assets`,
+`business_units` and `business_services` that queue the asset in
+`asset_risk_queue` (functions `asset_risk_enqueue_from_rows`,
+`asset_risk_enqueue_new_assets`, `asset_risk_enqueue_finding_update`,
+`asset_risk_enqueue_asset_row`, `asset_risk_enqueue_business_unit`,
+`asset_risk_enqueue_business_service`). The `asset-risk-score` worker
+rescores queued assets; `risk_scored_at` is when the stored score was last
+computed (NULL = never scored). Never write `risk_score` from a new code path
+expecting it to stick: the next rescore replaces it. See
+[asset-risk-score.md](asset-risk-score.md).
+
 **Related code:**
 - `pkg/domain/asset/entity.go` - `UpdateFindingCount()` method (in-memory only)
 - `pkg/domain/asset/entity.go` - `CalculateRiskScore()` uses findingCount for risk calculation
