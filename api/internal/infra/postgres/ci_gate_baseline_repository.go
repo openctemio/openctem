@@ -15,12 +15,22 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
+const (
+	ciBaselineUpsert = `INSERT INTO ci_gate_baselines (tenant_id, repository_asset_id, source, branch, findings_count,
+		set_by, set_at) VALUES ($1, $2, $3, $4, 0, $5, $6)
+		ON CONFLICT (tenant_id, repository_asset_id) DO UPDATE SET source = EXCLUDED.source, branch = EXCLUDED.branch,
+			findings_count = 0, set_by = EXCLUDED.set_by, set_at = EXCLUDED.set_at, cleared_at = NULL`
+	ciBaselineInsertOnce = `INSERT INTO ci_gate_baselines (tenant_id, repository_asset_id, source, branch, findings_count,
+		set_by, set_at) VALUES ($1, $2, $3, $4, 0, $5, $6)
+		ON CONFLICT (tenant_id, repository_asset_id) DO NOTHING`
+)
+
 // GateBaseline returns a repository's gate baseline, or nil when it has none.
 func (r *CIRunRepository) GateBaseline(ctx context.Context, tenantID, assetID shared.ID) (*cirun.GateBaseline, error) {
 	b := cirun.GateBaseline{TenantID: tenantID, RepositoryAssetID: assetID}
 	var setBy sql.NullString
 	err := r.db.QueryRowContext(ctx, `SELECT source, branch, findings_count, set_by, set_at FROM ci_gate_baselines
-		WHERE tenant_id = $1 AND repository_asset_id = $2`, tenantID.String(), assetID.String()).
+		WHERE tenant_id = $1 AND repository_asset_id = $2 AND cleared_at IS NULL`, tenantID.String(), assetID.String()).
 		Scan(&b.Source, &b.Branch, &b.FindingsCount, &setBy, &b.SetAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // no baseline is not an error
@@ -70,18 +80,24 @@ func (r *CIRunRepository) SetGateBaseline(ctx context.Context, b *cirun.GateBase
 		return fmt.Errorf("read default branch: %w", err)
 	}
 	b.Branch = branch.String
-	if _, err := tx.ExecContext(ctx, `INSERT INTO ci_gate_baselines (tenant_id, repository_asset_id, source, branch,
-		findings_count, set_by, set_at) VALUES ($1, $2, $3, $4, 0, $5, $6)
-		ON CONFLICT (tenant_id, repository_asset_id) DO UPDATE SET source = EXCLUDED.source, branch = EXCLUDED.branch,
-			findings_count = 0, set_by = EXCLUDED.set_by, set_at = EXCLUDED.set_at`,
-		b.TenantID.String(), b.RepositoryAssetID.String(), b.Source, b.Branch, nullID(b.SetBy), b.SetAt); err != nil {
+	q := ciBaselineUpsert
+	if b.Source == cirun.BaselineSourceFirstRun {
+		// Once per repository: a baseline it has, or had and lost, wins.
+		q = ciBaselineInsertOnce
+	}
+	res, err := tx.ExecContext(ctx, q, b.TenantID.String(), b.RepositoryAssetID.String(), b.Source, b.Branch,
+		nullID(b.SetBy), b.SetAt)
+	if err != nil {
 		return fmt.Errorf("save gate baseline: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return cirun.ErrBaselineExists
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM ci_gate_baseline_findings WHERE tenant_id = $1 AND repository_asset_id = $2`,
 		b.TenantID.String(), b.RepositoryAssetID.String()); err != nil {
 		return fmt.Errorf("clear gate baseline findings: %w", err)
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO ci_gate_baseline_findings (tenant_id, repository_asset_id, fingerprint)
+	res, err = tx.ExecContext(ctx, `INSERT INTO ci_gate_baseline_findings (tenant_id, repository_asset_id, fingerprint)
 		SELECT DISTINCT $1::uuid, $2::uuid, f.fingerprint
 		FROM finding_branch_occurrences o
 		JOIN findings f ON f.id = o.finding_id AND f.tenant_id = o.tenant_id
@@ -101,12 +117,25 @@ func (r *CIRunRepository) SetGateBaseline(ctx context.Context, b *cirun.GateBase
 	return tx.Commit()
 }
 
-// DeleteGateBaseline removes a repository's gate baseline and its findings.
+// DeleteGateBaseline removes a repository's gate baseline and its findings,
+// keeping the row (cleared_at) as the record that it had one.
 func (r *CIRunRepository) DeleteGateBaseline(ctx context.Context, tenantID, assetID shared.ID) error {
-	res, err := r.db.ExecContext(ctx, `DELETE FROM ci_gate_baselines WHERE tenant_id = $1 AND repository_asset_id = $2`,
-		tenantID.String(), assetID.String())
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	return requireOneRow(res, cirun.ErrBaselineNotFound)
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE ci_gate_baselines SET cleared_at = now(), findings_count = 0
+		WHERE tenant_id = $1 AND repository_asset_id = $2 AND cleared_at IS NULL`, tenantID.String(), assetID.String())
+	if err != nil {
+		return err
+	}
+	if err := requireOneRow(res, cirun.ErrBaselineNotFound); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ci_gate_baseline_findings WHERE tenant_id = $1 AND repository_asset_id = $2`,
+		tenantID.String(), assetID.String()); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
