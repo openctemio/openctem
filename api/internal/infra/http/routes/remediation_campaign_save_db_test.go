@@ -104,6 +104,11 @@ func TestRemediationCampaign_StaleSaveIsRefused_DB(t *testing.T) {
 	id := e.campaign("active")
 	path := "/api/v1/remediation/campaigns/" + id.String()
 
+	// Creating through the API stores version 1.
+	if code, created := e.call(t, http.MethodPost, "/api/v1/remediation/campaigns/", map[string]any{"name": "rc-created", "priority": "high"}); code != http.StatusCreated || created["version"] != float64(1) {
+		t.Fatalf("create = %d %v, want 201 at version 1", code, created)
+	}
+
 	code, got := e.call(t, http.MethodPatch, path, map[string]any{"name": "first", "version": 1})
 	if code != http.StatusOK {
 		t.Fatalf("PATCH at the current version = %d %v", code, got)
