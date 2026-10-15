@@ -129,8 +129,8 @@ func (r *RemediationCampaignRepository) Create(ctx context.Context, c *remediati
 		finding_filter, finding_count, resolved_count, progress,
 		risk_score_before, risk_score_after, risk_reduction,
 		assigned_to, assigned_team, start_date, due_date,
-		tags, created_by, created_at, updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`
+		tags, created_by, created_at, updated_at, version
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		c.ID().String(), c.TenantID().String(),

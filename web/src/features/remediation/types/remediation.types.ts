@@ -8,7 +8,11 @@ import type { Severity } from '@/features/shared/types'
 
 export type TaskStatus = 'open' | 'in_progress' | 'review' | 'completed' | 'blocked'
 
-export type TaskPriority = 'urgent' | 'high' | 'medium' | 'low'
+/** The API's campaign priorities (critical, high, medium, low). */
+export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
+
+/** The API's campaign priorities, highest first. */
+export const TASK_PRIORITIES: TaskPriority[] = ['critical', 'high', 'medium', 'low']
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   open: 'Open',
@@ -19,7 +23,7 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
 }
 
 export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
-  urgent: 'Urgent',
+  critical: 'Critical',
   high: 'High',
   medium: 'Medium',
   low: 'Low',
