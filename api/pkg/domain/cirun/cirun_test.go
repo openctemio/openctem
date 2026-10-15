@@ -49,7 +49,7 @@ func TestParseGitHubClaims(t *testing.T) {
 		t.Fatalf("push claims = %+v", c)
 	}
 	pr := githubClaims(map[string]any{"ref": "refs/pull/17/merge", "head_ref": "feature/x", "base_ref": "main", "event_name": "pull_request"})
-	if pr.PullRequest != "17" || pr.Branch != "feature/x" || pr.RefName() != "feature/x" {
+	if pr.PullRequest != "17" || pr.Branch != "pull/17" || pr.RefName() != "pull/17" {
 		t.Fatalf("pull request claims = %+v", pr)
 	}
 	tag := githubClaims(map[string]any{"ref": "refs/tags/v1.2.0", "ref_type": "tag"})
@@ -432,6 +432,16 @@ func TestForkEventsAreNeverDefaultBranchRuns(t *testing.T) {
 	}
 	if got := ReportBranchName("main", "pull_request", "12", true); got != "fork/pr-12" {
 		t.Errorf("fork pull request branch = %q", got)
+	}
+	// A pull request run never records on a real branch, whatever branch a
+	// stored run carries (a head branch named like a protected one).
+	for _, branch := range []string{"main", "release/1.x", ""} {
+		if got := ReportBranchName(branch, "pull_request", "12", false); got != "pull/12" {
+			t.Fatalf("pull request on %q recorded on %q", branch, got)
+		}
+	}
+	if got := ReportBranchName("merge-requests/12", "merge_request_event", "12", false); got != "merge-requests/12" {
+		t.Fatalf("merge request branch = %q", got)
 	}
 	if got := ReportBranchName("main", "push", "", false); got != "main" {
 		t.Errorf("own branch = %q", got)
