@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS asset_risk_queue (
     -- so event-driven rows go ahead of it.
     enqueued_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT pk_asset_risk_queue PRIMARY KEY (asset_id),
-    CONSTRAINT fk_asset_risk_queue_asset FOREIGN KEY (asset_id)
-        REFERENCES assets (id) ON DELETE CASCADE,
+    CONSTRAINT fk_asset_risk_queue_asset FOREIGN KEY (tenant_id, asset_id)
+        REFERENCES assets (tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT fk_asset_risk_queue_tenant FOREIGN KEY (tenant_id)
         REFERENCES tenants (id) ON DELETE CASCADE
 );
