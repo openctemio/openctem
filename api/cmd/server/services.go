@@ -1693,6 +1693,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.PriorityClassification.SetChangePublisher(
 		finding.NewOutboxPriorityChangePublisher(s.Outbox, log),
 	)
+	// A recompute caused by a scoring change sends one summary per change
+	// instead of one escalation per finding (docs/architecture/scoring-versions.md).
+	if s.Reclassifier != nil {
+		s.Reclassifier.SetSummaryPublisher(finding.NewOutboxScoringSummaryPublisher(s.Outbox, log))
+	}
 
 	// Note: UserNotificationService is wired later after NotificationService is initialized
 
