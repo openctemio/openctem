@@ -1006,6 +1006,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// risk_score and finding priority stop disagreeing. Batch-first; nil-safe
 	// (falls back to own criticality). Raises scores for BU-critical assets only.
 	s.Asset.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
+	// Compensating controls lower an asset's risk score (likelihood-impact model).
+	s.Asset.SetControlReductionLookup(postgres.NewCompensatingControlLookupRepo(deps.DB))
+	s.Asset.SetRiskContributorReader(postgres.NewAssetRiskQueueRepository(&postgres.DB{DB: deps.DB}))
 
 	s.AssetGroup = asset.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetGroup.SetDataScope(s.DataScope)
