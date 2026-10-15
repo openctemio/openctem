@@ -18,7 +18,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
 | Self-registration (email, or the first Google/GitHub/Microsoft sign-in) | `POST /api/v1/auth/register`, `/api/v1/auth/oauth/*` | the sign-up policy is `self_service`, or a pending invitation for the email ([Admission](#admission-one-rule-for-every-path)) |
 
-## Sign-up ceiling (`SIGNUP_MODE`)
+## Sign-up ceiling
 
 The deployment's server configuration sets a **ceiling** that no API can
 change ([RFC-104](../rfcs/RFC-104-signup-modes-and-joining.md)):
@@ -95,7 +95,7 @@ organization (the request queue follows in its own change).
   cached 15 s per replica).
 - **Fail-closed.** Nothing stored or a read error means `admin_only`.
 - **Ceiling.** The value in force is clamped to `SIGNUP_MODE` (see
-  [Sign-up ceiling](#sign-up-ceiling-signup_mode)). `GET` reports the stored
+  [Sign-up ceiling](#sign-up-ceiling)). `GET` reports the stored
   `mode`, the `deployment_mode`, `self_service_locked` and the
   `effective_mode`; the console shows the self-service choice locked with the
   reason.
@@ -429,7 +429,7 @@ UPDATE tenants
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `SIGNUP_MODE` | `disabled` | The sign-up **ceiling** (see [Sign-up ceiling](#sign-up-ceiling-signup_mode)): `disabled`, `domain` or `open`. Seeds the console policy on the first start; the policy in force never exceeds it. Anything else fails startup. |
+| `SIGNUP_MODE` | `disabled` | The sign-up **ceiling** (see [Sign-up ceiling](#sign-up-ceiling)): `disabled`, `domain` or `open`. Seeds the console policy on the first start; the policy in force never exceeds it. Anything else fails startup. |
 | `SIGNUP_CAPTCHA` | — | `off-i-understand` accepts `SIGNUP_MODE=open` in production without Turnstile keys. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password#token=`). |
