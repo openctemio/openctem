@@ -405,6 +405,15 @@ export const tenantEndpoints = {
    */
   eraseMember: (memberId: string) => `/api/v1/organization/members/${memberId}/erase`,
 
+  /**
+   * Ownership transfer — RFC-095: GET (owner who asked or member asked),
+   * POST (owner + step-up), DELETE (owner); approve (member asked + step-up)
+   * and reject (member asked).
+   */
+  ownershipTransfer: () => '/api/v1/organization/ownership-transfer',
+  approveOwnershipTransfer: () => '/api/v1/organization/ownership-transfer/approve',
+  rejectOwnershipTransfer: () => '/api/v1/organization/ownership-transfer/reject',
+
   // ============================================
   // SETTINGS MANAGEMENT
   // ============================================
