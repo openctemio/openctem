@@ -14,6 +14,12 @@ import {
   PIPELINE_STATUSES,
   cadenceLabel,
 } from '../lib/pipeline'
+import {
+  FINDING_MODES,
+  GATE_FIELD_LABEL,
+  GATE_SOURCE_LABEL,
+  MODE_CAPABILITIES,
+} from '../lib/gate-settings'
 
 /**
  * Every literal `scans.ci.*` key the CI/CD components ask for exists in both
@@ -56,7 +62,11 @@ describe('CI/CD i18n keys', () => {
       ]),
       ...CAPABILITIES.map((c) => `scans.ci.coverage.capability.${c}`),
       ...Object.keys(SOURCE_KIND_LABEL).map((k) => `scans.ci.coverage.source.${k}`),
-      ...['overview', 'runs', 'branches'].map((k) => `scans.ci.sheet.tab.${k}`),
+      ...['overview', 'runs', 'branches', 'settings'].map((k) => `scans.ci.sheet.tab.${k}`),
+      ...Object.keys(GATE_FIELD_LABEL).map((k) => `scans.ci.gateField.${k}`),
+      ...Object.keys(GATE_SOURCE_LABEL).map((k) => `scans.ci.gateSource.${k}`),
+      ...FINDING_MODES.map((k) => `scans.ci.findingMode.${k}`),
+      ...MODE_CAPABILITIES.map((c) => `scans.ci.coverage.capability.${c}`),
     ]
     for (const key of built) {
       expect((en as Record<string, string>)[key], `en ${key}`).toBeTruthy()
