@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -474,13 +475,6 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 	return r.scanAsset(row, shared.ID{})
 }
 
-// riskBearingFindingStatusClause selects the findings that count toward an
-// asset's finding counts and risk score: the active statuses
-// (vulnerability.ActiveFindingStatuses). Resolved, accepted, false-positive
-// and duplicate findings, validated fixes awaiting close and unpublished
-// pentest drafts carry no risk.
-const riskBearingFindingStatusClause = `f.status IN ('new','confirmed','in_progress','fix_applied','not_observed')`
-
 func (r *AssetRepository) selectQuery() string {
 	return `
 		SELECT a.id, a.tenant_id, a.parent_id, a.owner_ref, a.name, a.asset_type, a.sub_type, a.criticality, a.status,
@@ -517,7 +511,7 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
 				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info
 			FROM findings f
-			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + riskBearingFindingStatusClause + ` AND NOT f.branch_only
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND NOT f.branch_only
 		) fc ON true
 	`
 }
@@ -1231,9 +1225,9 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// row (a data-integrity bug) can never flip this filter for someone else.
 	if filter.HasFindings != nil {
 		if *filter.HasFindings {
-			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND "+riskBearingFindingStatusClause+" AND NOT f.branch_only)")
+			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND "+vulnerability.OpenStatusSQL("f.status")+" AND NOT f.branch_only)")
 		} else {
-			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND "+riskBearingFindingStatusClause+" AND NOT f.branch_only)")
+			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND "+vulnerability.OpenStatusSQL("f.status")+" AND NOT f.branch_only)")
 		}
 	}
 
