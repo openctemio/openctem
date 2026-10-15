@@ -130,7 +130,8 @@ func TestRemediationGroups_ResolveOnlyInScope(t *testing.T) {
 		t.Errorf("out-of-scope FB2 changed to %s", st)
 	}
 
-	// The owner resolves the rest.
+	// The owner resolves the rest (a fix claim is the assignee's).
+	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id = $1`, h.findingB.String(), h.owner.String())
 	if status, body := resolve(h.owner, true, rgKeyB); status != http.StatusOK || !strings.Contains(body, `"updated":1`) {
 		t.Errorf("owner resolve group B = %d %.200s, want updated 1", status, body)
 	}
