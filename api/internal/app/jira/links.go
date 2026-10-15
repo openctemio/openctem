@@ -71,7 +71,7 @@ func (s *SyncService) LinkExistingIssue(ctx context.Context, tenantID, findingID
 		key = current // a moved issue answers with its new key
 	}
 	l, err := ticketlink.New(tenantID, ii.IntegrationID(), &findingID, nil, key, id,
-		ticketlink.BrowseURL(ii.SiteURL(), key), ticketlink.RoleOwn, ticketlink.SourcePerson, by)
+		ii.SiteURL(), ticketlink.BrowseURL(ii.SiteURL(), key), ticketlink.RoleOwn, ticketlink.SourcePerson, by)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (s *SyncService) recordCreatedLink(ctx context.Context, client Client, tena
 		role = ticketlink.RoleSubtask
 	}
 	l, err := ticketlink.New(tenantID, ii.IntegrationID(), &findingID, nil, res.Key, res.ID,
-		ticketlink.BrowseURL(ii.SiteURL(), res.Key), role, ticketlink.SourcePlatform, nil)
+		ii.SiteURL(), ticketlink.BrowseURL(ii.SiteURL(), res.Key), role, ticketlink.SourcePlatform, nil)
 	if err == nil {
 		err = s.links.Create(ctx, l)
 	}

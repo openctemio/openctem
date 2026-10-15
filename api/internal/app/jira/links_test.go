@@ -123,7 +123,7 @@ func TestUnlinkIssue_OnlyTheFindingsOwnLink(t *testing.T) {
 	s := newSync(repo, c)
 	s.SetLinkStore(links)
 	tid, fid := shared.NewID(), shared.NewID()
-	l, err := ticketlink.New(tid, c.intg, &fid, nil, "SEC-12", "1", "https://acme.atlassian.net/browse/SEC-12", ticketlink.RoleOwn, ticketlink.SourcePerson, nil)
+	l, err := ticketlink.New(tid, c.intg, &fid, nil, "SEC-12", "1", "https://acme.atlassian.net", "https://acme.atlassian.net/browse/SEC-12", ticketlink.RoleOwn, ticketlink.SourcePerson, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
