@@ -72,7 +72,7 @@ invalid brand instead of showing it half-applied:
   entity declaration, `script`, `foreignObject`, `image`, `a`, animation
   elements, event-handler attributes, references outside the image
   (`href` not starting with `#`) and style text with `@import`, external
-  `url()` or script are refused; editor metadata and comments are dropped.
+  `url()`, script or any backslash escape are refused; editor metadata and comments are dropped.
 - **Serving.** Images are served with their sniffed type,
   `X-Content-Type-Options: nosniff` and
   `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox`,
