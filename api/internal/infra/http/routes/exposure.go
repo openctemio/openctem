@@ -267,7 +267,7 @@ func registerVulnerabilityRoutes(
 		// and a bulk dry run. Reading them needs only findings:read; each
 		// decision states what the move itself would need.
 		r.GET("/{id}/transitions", h.GetFindingTransitions, middleware.Require(permission.FindingsRead))
-		r.POST("/transitions:evaluate", h.EvaluateFindingTransitions, middleware.Require(permission.FindingsRead))
+		r.POST("/transitions/preview", h.EvaluateFindingTransitions, middleware.Require(permission.FindingsRead))
 
 		// Assignment operations
 		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsAssign))

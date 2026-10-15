@@ -104,7 +104,7 @@ func TestFindingTransitions_DB(t *testing.T) {
 
 	// The dry run: per finding, out of scope and another tenant's are not_found,
 	// and nothing moves.
-	status, body = h.doPerms(h.memberA, rgMemberPerms, http.MethodPost, "/api/v1/findings/transitions:evaluate",
+	status, body = h.doPerms(h.memberA, rgMemberPerms, http.MethodPost, "/api/v1/findings/transitions/preview",
 		map[string]any{"finding_ids": []string{fa, h.findingB.String(), otherFinding.String()}, "to": "resolved"})
 	var ev evaluateBody
 	if status != http.StatusOK || json.Unmarshal([]byte(body), &ev) != nil || len(ev.Results) != 3 {
@@ -124,7 +124,7 @@ func TestFindingTransitions_DB(t *testing.T) {
 	}
 	// Bad input is refused.
 	for _, b := range []map[string]any{{"finding_ids": []string{fa}, "to": "validated_fixed"}, {"finding_ids": []string{}, "to": "resolved"}} {
-		if status, body := h.doPerms(h.memberA, rgMemberPerms, http.MethodPost, "/api/v1/findings/transitions:evaluate", b); status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+		if status, body := h.doPerms(h.memberA, rgMemberPerms, http.MethodPost, "/api/v1/findings/transitions/preview", b); status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
 			t.Errorf("evaluate %v = %d %.200s, want 400 or 422", b, status, body)
 		}
 	}
