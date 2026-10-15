@@ -14,6 +14,7 @@
 
 import { ExternalLink, KeyRound, Network, Route } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
+import { safeHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
 import {
   DetailField,
@@ -57,7 +58,7 @@ function TracePanel({
       actions={
         codeUrl ? (
           <a
-            href={codeUrl}
+            href={safeHref(codeUrl)}
             target="_blank"
             rel="noopener noreferrer nofollow"
             className="inline-flex items-center gap-1 text-xs underline-offset-2 hover:underline"
