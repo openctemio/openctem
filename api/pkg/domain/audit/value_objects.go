@@ -198,6 +198,10 @@ const (
 	// ActionFindingEvidenceDeleted records the removal of a manually-attached
 	// evidence note from a generic (non-pentest) finding.
 	ActionFindingEvidenceDeleted Action = "finding.evidence_deleted"
+	// ActionFindingTicketLinked records a person linking an existing tracker
+	// issue to a finding; ActionFindingTicketUnlinked removing a link.
+	ActionFindingTicketLinked   Action = "finding.ticket_linked"
+	ActionFindingTicketUnlinked Action = "finding.ticket_unlinked"
 	// ActionFindingEvidenceRevealed records a reveal of masked secret values
 	// in a finding's evidence: the item, the placeholders and the purpose
 	// (view, copy, copy_curl). Never the values.
