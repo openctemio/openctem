@@ -1508,6 +1508,9 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.Announcement != nil {
 		s.Announcements = h.Announcement.ActiveResponses
 	}
+	if svc.Entitlement != nil {
+		s.LimitsApply = svc.Entitlement.Applies
+	}
 	mode := cfg.Auth.TenantCreationMode
 	signup := svc.Signup
 	s.TenantCreationMode = func(ctx context.Context) string {
