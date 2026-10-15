@@ -56,7 +56,7 @@ func optTime(nt sql.NullTime) *time.Time {
 // ---------------------------------------------------------------- trust ---
 
 const ciTrustColumns = `id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled,
-	created_by, last_used_at, created_at, updated_at, COALESCE(legacy_audience, ''), legacy_audience_until`
+	created_by, last_used_at, created_at, updated_at, COALESCE(legacy_audience, ''), legacy_audience_until, manage_scope`
 
 func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 	var (
@@ -69,7 +69,7 @@ func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 		legacyUntil    sql.NullTime
 	)
 	if err := row.Scan(&id, &tid, &c.Name, &prov, &c.Issuer, &c.Audience, &rules, &c.DefaultBranch, &c.Enabled,
-		&createdBy, &lastUsed, &createdAt, &upd, &c.LegacyAudience, &legacyUntil); err != nil {
+		&createdBy, &lastUsed, &createdAt, &upd, &c.LegacyAudience, &legacyUntil, &c.ManageScope); err != nil {
 		return c, err
 	}
 	c.LegacyAudienceUntil = optTime(legacyUntil)
@@ -97,10 +97,10 @@ func (r *CIRunRepository) CreateTrustConfig(ctx context.Context, c *cirun.TrustC
 		return err
 	}
 	_, err = r.db.ExecContext(ctx, `INSERT INTO ci_trust_configs
-		(id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)`,
+		(id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled, created_by, created_at, updated_at, manage_scope)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12)`,
 		c.ID.String(), c.TenantID.String(), c.Name, string(c.Provider), c.Issuer, c.Audience, rules,
-		c.DefaultBranch, c.Enabled, nullID(c.CreatedBy), c.CreatedAt)
+		c.DefaultBranch, c.Enabled, nullID(c.CreatedBy), c.CreatedAt, c.ManageScope)
 	if isUniqueViolation(err) {
 		return cirun.ErrTrustConfigExists
 	}
@@ -114,12 +114,12 @@ func (r *CIRunRepository) UpdateTrustConfig(ctx context.Context, c *cirun.TrustC
 		return err
 	}
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_trust_configs
-		SET name = $3, issuer = $4, audience = $5::text, rules = $6, default_branch = $7, enabled = $8, updated_at = NOW(),
+		SET name = $3, issuer = $4, audience = $5::text, rules = $6, default_branch = $7, enabled = $8, manage_scope = $9, updated_at = NOW(),
 			-- A changed audience withdraws the trust: no legacy audience survives it.
 			legacy_audience = CASE WHEN audience = $5::text THEN legacy_audience END,
 			legacy_audience_until = CASE WHEN audience = $5::text THEN legacy_audience_until END
 		WHERE tenant_id = $1 AND id = $2`,
-		c.TenantID.String(), c.ID.String(), c.Name, c.Issuer, c.Audience, rules, c.DefaultBranch, c.Enabled)
+		c.TenantID.String(), c.ID.String(), c.Name, c.Issuer, c.Audience, rules, c.DefaultBranch, c.Enabled, c.ManageScope)
 	if isUniqueViolation(err) {
 		return cirun.ErrTrustConfigExists
 	}
