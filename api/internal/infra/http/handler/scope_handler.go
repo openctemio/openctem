@@ -138,7 +138,49 @@ func (h *ScopeHandler) targetOut(r *http.Request, t *scopedom.Target) ScopeTarge
 	resolveActors(r.Context(), h.actors, h.logger, middleware.MustGetTenantID(r.Context()), targetActorRefs(&out))
 	h.addApprovalStatus(r, []*ScopeTargetResponse{&out}, []*scopedom.Target{t})
 	h.addAttestationStatus(r, []*ScopeTargetResponse{&out}, []*scopedom.Target{t})
+	h.addCITrustLinks(r, []*ScopeTargetResponse{&out}, []*scopedom.Target{t})
 	return out
+}
+
+// ScopeManagedByResponse is a CI trust configuration that claims an entry,
+// with the evidence of the first verified pipeline run under it.
+type ScopeManagedByResponse struct {
+	TrustConfigID  string     `json:"trust_config_id"`
+	TrustName      string     `json:"trust_name"`
+	SeenAt         *time.Time `json:"seen_at,omitempty"`
+	SeenRepository string     `json:"seen_repository,omitempty"`
+}
+
+// addCITrustLinks names the CI trusts that claim each entry (best effort:
+// the entries are answered without them on a read error).
+func (h *ScopeHandler) addCITrustLinks(r *http.Request, outs []*ScopeTargetResponse, targets []*scopedom.Target) {
+	ids := make([]shared.ID, 0, len(targets))
+	for _, t := range targets {
+		if t.TargetType() == scopedom.TargetTypeRepository {
+			ids = append(ids, t.ID())
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		return
+	}
+	links, err := h.service.CITrustLinksFor(r.Context(), tenantID, ids)
+	if err != nil {
+		h.logger.Warn("scope: ci trust links", "error", logger.SanitizeError(err))
+		return
+	}
+	for i, t := range targets {
+		if i >= len(outs) {
+			break
+		}
+		for _, l := range links[t.ID().String()] {
+			outs[i].ManagedBy = append(outs[i].ManagedBy, ScopeManagedByResponse{TrustConfigID: l.TrustConfigID.String(),
+				TrustName: l.TrustName, SeenAt: l.SeenAt, SeenRepository: l.SeenRepository})
+		}
+	}
 }
 
 // exclusionOut is the response for one exclusion, with people named.
@@ -334,8 +376,13 @@ type ScopeTargetResponse struct {
 	// They cannot approve it.
 	CreatedBy *ActorRef `json:"created_by,omitempty"`
 	// Origin is how the entry came to exist: manual, request, import,
-	// review_rule, refusal_fix, seed, seed_migration or system.
+	// review_rule, refusal_fix, seed, seed_migration, system, program,
+	// confirmed_asset, connector or ci_trust.
 	Origin string `json:"origin"`
+	// ManagedBy lists the CI trust configurations that claim this entry. An
+	// entry with origin ci_trust and at least one of them is changed through
+	// the trust (409 CI_TRUST_MANAGED here).
+	ManagedBy []ScopeManagedByResponse `json:"managed_by,omitempty"`
 	// AuthorizationSource: ownership, program, authorization_letter or
 	// self_attestation (RFC-065). ProgramID is set for a program entry.
 	AuthorizationSource string  `json:"authorization_source"`
@@ -774,6 +821,7 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 	}
 	h.addApprovalStatus(r, outs, result.Data)
 	h.addAttestationStatus(r, outs, result.Data)
+	h.addCITrustLinks(r, outs, result.Data)
 
 	response := ListResponse[ScopeTargetResponse]{
 		Data:       responses,

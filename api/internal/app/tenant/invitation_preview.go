@@ -63,11 +63,18 @@ const (
 	PreviewAlreadyInvited     = "ALREADY_INVITED"
 	PreviewRoleNotGrantable   = "ROLE_NOT_GRANTABLE"
 	PreviewAdminNeedsTheOwner = "ADMIN_NEEDS_OWNER"
+	PreviewTeamNotGrantable   = "TEAM_NOT_GRANTABLE"
 )
 
 // PreviewInvitation reports what inviting email with roleIDs would do. The
 // caller passed the same route gate as creating an invitation.
 func (s *TenantService) PreviewInvitation(ctx context.Context, tenantID, email string, roleIDs []string, actx auditapp.AuditContext) (*InvitationPreview, error) {
+	return s.PreviewInvitationWithTeams(ctx, tenantID, email, roleIDs, nil, actx)
+}
+
+// PreviewInvitationWithTeams is PreviewInvitation with the teams the invitee
+// would join (groupIDs).
+func (s *TenantService) PreviewInvitationWithTeams(ctx context.Context, tenantID, email string, roleIDs, groupIDs []string, actx auditapp.AuditContext) (*InvitationPreview, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -93,6 +100,9 @@ func (s *TenantService) PreviewInvitation(ctx context.Context, tenantID, email s
 		return nil, err
 	}
 	if err := s.previewInvitee(ctx, tid, email, roleIDs, out); err != nil {
+		return nil, err
+	}
+	if err := s.previewTeams(ctx, tid, groupIDs, actx.ActorID, out); err != nil {
 		return nil, err
 	}
 	if err := s.previewExisting(ctx, tid, email, out); err != nil {
