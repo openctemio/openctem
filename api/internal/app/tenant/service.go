@@ -1272,6 +1272,9 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		return nil, err
 	}
 	invitation.SetAccess(access)
+	if err := invitation.SetInviteeInfo(tenantdom.InviteeInfo{Kind: class.Kind, Privileged: privileged}); err != nil {
+		return nil, err
+	}
 
 	// Hash-at-rest: persist only the SHA-256 hash of the token, never the raw
 	// value. The raw token is what the invitee receives (email link + the
@@ -1589,6 +1592,10 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 
 	if s.emailEnqueuer == nil {
 		return fmt.Errorf("%w: email service is not configured", shared.ErrValidation)
+	}
+	// At most one send every 10 minutes and five resends per invitation.
+	if err := inv.MarkResent(time.Now()); err != nil {
+		return err
 	}
 
 	// Rotate the token: only the hash is stored, so the raw token cannot be
