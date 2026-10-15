@@ -19,8 +19,7 @@ type ThreatIntelRefreshController struct {
 	escalator threat.KEVEscalator
 	// reclassifyQueue receives one ReasonKEVRefresh request per tenant touched
 	// by KEV escalation so their priority_class is recomputed. Optional — a nil
-	// queue disables enqueue (no panic). Same instance services.go hands the
-	// PriorityReclassifyController.
+	// queue disables enqueue (no panic). The durable finding-priority queue.
 	reclassifyQueue ReclassifyQueue
 	logger          *logger.Logger
 }
@@ -86,9 +85,8 @@ func (c *ThreatIntelRefreshController) enqueueReclassify(ctx context.Context, te
 	}
 	for _, tid := range tenants {
 		req := ReclassifyRequest{
-			TenantID:  tid,
-			Reason:    ReasonKEVRefresh,
-			EnqueueAt: time.Now().UTC(),
+			TenantID: tid,
+			Reason:   ReasonKEVRefresh,
 		}
 		if err := c.reclassifyQueue.Enqueue(ctx, req); err != nil {
 			c.logger.Warn("enqueue reclassify after KEV refresh failed",

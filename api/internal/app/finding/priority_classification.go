@@ -626,7 +626,7 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		previousClass := f.PriorityClass()
 		f.SetPriorityClassification(classification.Class, classification.Reason)
 		// Record the priority change in the audit trail. The batch path is the
-		// MAIN classification path (ingest + the 12h reclassify sweep), yet it
+		// MAIN classification path (ingest + the finding-priority worker), yet it
 		// logged nothing — priority_class_audit_log was empty despite classified
 		// findings, so "why/when did this become P0" had no answer. Gated on an
 		// actual class change so a re-confirming sweep does not flood the log,
