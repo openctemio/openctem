@@ -1,10 +1,16 @@
-// Package entitlement answers what an organization may add under its plan:
-// the effective limits (plan default, or an administrator's override), the
-// usage behind them, and the one check every creation path calls
-// (docs/architecture/plans-and-limits.md).
+// Package entitlement is the one place that answers what an organization may
+// add and use (docs/architecture/limits.md): its effective limits and their
+// usage, the check every creation path calls, the feature denies every
+// module gate and named-feature seam reads, and the grace a lost feature
+// keeps.
 //
-// Check is fail-closed: when the plan, overrides or usage cannot be read, the
-// addition is refused. A limit never removes anything that exists.
+// Limits and denies come from the instance operator's own rows plus the
+// configured sources (limits.Source): none on a self-hosted install, the
+// control plane on a hosted service. No row anywhere means unlimited and
+// allowed.
+//
+// Check is fail-closed: when a limit or usage cannot be read, the addition is
+// refused. A limit never removes anything that exists.
 package entitlement
 
 import (
@@ -15,75 +21,73 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Admin audit actions.
 const (
-	ActionDefaultsChanged  = "platform.plan_defaults_changed"
-	ActionTenantPlanSet    = "organization.plan_set"
-	ActionOverrideSet      = "organization.plan_override_set"
-	ActionOverrideRemoved  = "organization.plan_override_removed"
-	AlertDefaultsChanged   = "plan_defaults_changed"
-	defaultsCacheTTL       = 15 * time.Second
-	maxOverrideReasonRunes = 500
+	ActionSelfServiceDefaultsChanged = "platform.self_service_limits_changed"
+	ActionLimitSet                   = "organization.limit_set"
+	ActionLimitRemoved               = "organization.limit_removed"
+	ActionControlPlaneApplied        = "organization.control_plane_entitlements_applied"
+	defaultsCacheTTL                 = 15 * time.Second
+	maxReasonRunes                   = 500
 )
 
-// ChangeNotifier tells the other administrators about a change to the plan
-// defaults (asynchronous).
-type ChangeNotifier interface {
-	NotifyPlanDefaultsChanged(ctx context.Context, adminEmail string, recipients []string) error
-}
+// ControlPlaneActor is the audit actor of writes made by the control plane.
+const ControlPlaneActor = "control-plane"
 
 // AuditWriter writes one admin audit row.
 type AuditWriter interface {
 	Create(ctx context.Context, log *admin.AuditLog) error
 }
 
-// AdminLister lists the active administrators.
-type AdminLister interface {
-	ListActive(ctx context.Context) ([]*admin.AdminUser, error)
-}
-
-// Service serves limits and checks.
+// Service serves limits, feature denies and checks.
 type Service struct {
-	repo     plan.Repository
-	audit    AuditWriter
-	admins   AdminLister
-	notifier ChangeNotifier
-	log      *logger.Logger
-	now      func() time.Time
+	repo    limits.Repository
+	sources []limits.Source
+	audit   AuditWriter
+	log     *logger.Logger
+	now     func() time.Time
 
 	mu       sync.Mutex
-	cached   plan.Defaults
+	cached   limits.Limits
 	version  int
 	cachedAt time.Time
 
-	// Module entitlements (modules.go).
-	modules         plan.ModuleRepository
-	modulesChanged  ModulesChangeNotifier
-	cachedModules   plan.PlanModules
-	modulesVersion  int
-	modulesCachedAt time.Time
+	modulesChanged ModulesChangeNotifier
 }
 
-// NewService creates the service. audit, admins and notifier may be nil.
-func NewService(repo plan.Repository, audit AuditWriter, admins AdminLister, notifier ChangeNotifier, log *logger.Logger) *Service {
+// NewService creates the service with no source beyond the operator's own
+// rows (the self-hosted default). audit may be nil.
+func NewService(repo limits.Repository, audit AuditWriter, log *logger.Logger) *Service {
 	if log == nil {
 		log = logger.NewNop()
 	}
-	return &Service{repo: repo, audit: audit, admins: admins, notifier: notifier,
-		log: log.With("service", "entitlement"), now: time.Now}
+	return &Service{repo: repo, audit: audit, log: log.With("service", "entitlement"), now: time.Now}
 }
 
-// SetNotifier wires the administrator notification.
-func (s *Service) SetNotifier(n ChangeNotifier) { s.notifier = n }
+// SetSources replaces the configured sources (limits.NoneSource when none).
+func (s *Service) SetSources(src ...limits.Source) { s.sources = src }
 
-// Defaults returns the plan defaults (built-in until an administrator saves
-// them) and their version (0: not stored yet).
-func (s *Service) Defaults(ctx context.Context) (plan.Defaults, int, error) {
+// SourceNames lists the configured sources (the system page shows them).
+func (s *Service) SourceNames() []string {
+	if len(s.sources) == 0 {
+		return []string{limits.NoneSource{}.Name()}
+	}
+	out := make([]string, 0, len(s.sources))
+	for _, src := range s.sources {
+		out = append(out, src.Name())
+	}
+	return out
+}
+
+// SelfServiceDefaults returns the limits a new self-service organization
+// starts with (empty until an administrator saves some) and their version
+// (0: not stored).
+func (s *Service) SelfServiceDefaults(ctx context.Context) (limits.Limits, int, error) {
 	s.mu.Lock()
 	if s.cached != nil && s.now().Sub(s.cachedAt) < defaultsCacheTTL {
 		d, v := s.cached, s.version
@@ -91,12 +95,12 @@ func (s *Service) Defaults(ctx context.Context) (plan.Defaults, int, error) {
 		return d, v, nil
 	}
 	s.mu.Unlock()
-	d, v, err := s.repo.GetDefaults(ctx)
+	d, v, err := s.repo.GetSelfServiceDefaults(ctx)
 	if err != nil {
 		if !errors.Is(err, shared.ErrNotFound) {
 			return nil, 0, err
 		}
-		d, v = plan.BuiltinDefaults(), 0
+		d, v = limits.Limits{}, 0
 	}
 	s.mu.Lock()
 	s.cached, s.version, s.cachedAt = d, v, s.now()
@@ -104,106 +108,121 @@ func (s *Service) Defaults(ctx context.Context) (plan.Defaults, int, error) {
 	return d, v, nil
 }
 
-// PlanOf returns the organization's plan: plan.Unassigned when none is
-// stored. Limits, Settings > Plan & usage and modules read it; the membership
-// list and the console read the same row (postgres tenantPlanExpr).
-func (s *Service) PlanOf(ctx context.Context, tenantID shared.ID) (plan.Plan, error) {
-	p, ok, err := s.repo.TenantPlan(ctx, tenantID)
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		return plan.Unassigned, nil
-	}
-	return p, nil
-}
-
-// Summary is an organization's plan, limits and usage.
+// Summary is an organization's effective limits, denied features and usage.
 type Summary struct {
-	Plan      plan.Plan        `json:"plan"`
-	Limits    []plan.Effective `json:"limits"`
-	OverLimit bool             `json:"over_limit"`
+	Limits    []limits.Effective `json:"limits"`
+	Denied    []DeniedFeature    `json:"denied_features"`
+	OverLimit bool               `json:"over_limit"`
+	// Applies: at least one limit or deny applies. "Usage & limits" is shown
+	// only then.
+	Applies bool `json:"applies"`
 }
 
-// limits returns the organization's plan and effective limits, without usage.
-func (s *Service) limits(ctx context.Context, tenantID shared.ID) (plan.Plan, []plan.Effective, error) {
-	p, err := s.PlanOf(ctx, tenantID)
-	if err != nil {
-		return "", nil, err
-	}
-	defaults, _, err := s.Defaults(ctx)
-	if err != nil {
-		return "", nil, err
-	}
-	overrides, err := s.repo.ListOverrides(ctx, tenantID)
-	if err != nil {
-		return "", nil, err
-	}
+// DeniedFeature is one feature the organization may not use.
+type DeniedFeature struct {
+	Feature string        `json:"feature"`
+	Origin  limits.Origin `json:"origin"`
+	// ReadOnlyUntil: the organization keeps read access until then.
+	ReadOnlyUntil *time.Time `json:"read_only_until,omitempty"`
+}
+
+// stored returns every active limit of the organization: the operator's
+// rows and the configured sources'. For a key the operator's row wins.
+func (s *Service) stored(ctx context.Context, tenantID shared.ID) (map[limits.Key]limits.Limit, error) {
 	now := s.now()
-	byKey := map[plan.Key]plan.Override{}
-	for _, o := range overrides {
-		if o.Active(now) {
-			byKey[o.Key] = o
+	out := map[limits.Key]limits.Limit{}
+	for _, src := range s.sources {
+		list, err := src.Limits(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range list {
+			if l.TenantID == tenantID && l.Key.PerOrganization() && l.Active(now) {
+				out[l.Key] = l
+			}
 		}
 	}
-	out := make([]plan.Effective, 0, len(plan.Keys))
-	base := defaults.For(p)
-	for _, k := range plan.Keys {
-		e := plan.Effective{Key: k, Limit: base.Get(k), Source: plan.SourcePlan}
-		if o, ok := byKey[k]; ok {
-			e.Limit, e.Source, e.ExpiresAt, e.Reason = o.Value, plan.SourceOverride, o.ExpiresAt, o.Reason
+	ops, err := s.repo.ListLimits(ctx, tenantID, limits.OriginOperator)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range ops {
+		if l.Key.PerOrganization() && l.Active(now) {
+			out[l.Key] = l
+		}
+	}
+	return out, nil
+}
+
+// limitsOf returns the organization's effective limits, without usage.
+func (s *Service) limitsOf(ctx context.Context, tenantID shared.ID) ([]limits.Effective, error) {
+	byKey, err := s.stored(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]limits.Effective, 0, len(limits.Keys))
+	for _, k := range limits.Keys {
+		if !k.PerOrganization() {
+			continue
+		}
+		e := limits.Effective{Key: k, Limit: limits.Unlimited}
+		if l, ok := byKey[k]; ok {
+			e.Limit, e.Origin, e.ExpiresAt, e.Reason = l.Value, l.Origin, l.ExpiresAt, l.Reason
 		}
 		out = append(out, e)
 	}
-	return p, out, nil
+	return out, nil
 }
 
-// Effective returns the organization's limits with their usage. Findings
-// are counted (a count over the largest table) only while a findings limit
-// applies; otherwise that row is Uncounted.
+// Effective returns the organization's limits with their usage and its
+// denied features. Findings are counted (a count over the largest table)
+// only while a findings limit applies; otherwise that row is Uncounted.
 func (s *Service) Effective(ctx context.Context, tenantID shared.ID) (*Summary, error) {
-	p, limits, err := s.limits(ctx, tenantID)
+	lims, err := s.limitsOf(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	countFindings := false
-	for _, e := range limits {
-		if e.Key == plan.Findings {
-			countFindings = e.Limit != plan.Unlimited
+	for _, e := range lims {
+		if e.Key == limits.Findings {
+			countFindings = e.Limit != limits.Unlimited
 		}
 	}
 	usage, err := s.repo.Usage(ctx, tenantID, countFindings)
 	if err != nil {
 		return nil, err
 	}
-	sum := &Summary{Plan: p, Limits: limits}
+	denied, err := s.DeniedFeatures(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	sum := &Summary{Limits: lims, Denied: denied, Applies: len(denied) > 0}
 	for i := range sum.Limits {
 		e := &sum.Limits[i]
 		e.Used = usage[e.Key]
-		e.Uncounted = e.Key == plan.Findings && !countFindings
-		e.OverLimit = e.Limit != plan.Unlimited && e.Used > e.Limit
+		e.Uncounted = e.Key == limits.Findings && !countFindings
+		e.OverLimit = e.Limit != limits.Unlimited && e.Used > e.Limit
 		sum.OverLimit = sum.OverLimit || e.OverLimit
+		sum.Applies = sum.Applies || e.Limit != limits.Unlimited
 	}
 	return sum, nil
 }
 
 // limitAndUsage returns the organization's limit of key and, when it is not
 // Unlimited, its usage. An unlimited key costs no usage query.
-func (s *Service) limitAndUsage(ctx context.Context, tenantID shared.ID, key plan.Key) (limit, used int, err error) {
-	_, limits, err := s.limits(ctx, tenantID)
+func (s *Service) limitAndUsage(ctx context.Context, tenantID shared.ID, key limits.Key) (limit, used int, err error) {
+	byKey, err := s.stored(ctx, tenantID)
 	if err != nil {
 		return 0, 0, err
 	}
-	limit = plan.Unlimited
-	for _, e := range limits {
-		if e.Key == key {
-			limit = e.Limit
-		}
+	limit = limits.Unlimited
+	if l, ok := byKey[key]; ok {
+		limit = l.Value
 	}
-	if limit == plan.Unlimited {
+	if limit == limits.Unlimited {
 		return limit, 0, nil
 	}
-	usage, err := s.repo.Usage(ctx, tenantID, key == plan.Findings)
+	usage, err := s.repo.Usage(ctx, tenantID, key == limits.Findings)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -211,84 +230,85 @@ func (s *Service) limitAndUsage(ctx context.Context, tenantID shared.ID, key pla
 }
 
 // Check refuses an addition of delta to key when it would exceed the
-// organization's limit: *plan.ErrLimitReached. Any read error refuses too
+// organization's limit: *limits.ErrLimitReached. Any read error refuses too
 // (fail-closed). Unlimited never refuses and counts no usage.
-func (s *Service) Check(ctx context.Context, tenantID shared.ID, key plan.Key, delta int) error {
-	if !key.IsValid() {
-		return plan.ErrInvalid
+func (s *Service) Check(ctx context.Context, tenantID shared.ID, key limits.Key, delta int) error {
+	if !key.PerOrganization() {
+		return limits.ErrInvalid
 	}
 	limit, used, err := s.limitAndUsage(ctx, tenantID, key)
 	if err != nil {
-		s.log.Warn("plan limit check failed; refusing (fail-closed)", "key", string(key), "error", err)
-		return &plan.ErrLimitReached{Key: key, Unavailable: true}
+		s.log.Warn("limit check failed; refusing (fail-closed)", "key", string(key), "error", err)
+		return &limits.ErrLimitReached{Key: key, Unavailable: true}
 	}
-	if limit == plan.Unlimited || used+delta <= limit {
+	if limits.AllowAddition(limit, used, delta) {
 		return nil
 	}
 	refusals.WithLabelValues(string(key)).Inc()
-	return &plan.ErrLimitReached{Key: key, Limit: limit, Used: used}
+	return &limits.ErrLimitReached{Key: key, Limit: limit, Used: used}
 }
 
 // Headroom returns how many more of key the organization may add: Unlimited
 // when no limit applies (no usage is counted), 0 at or over the limit. When
-// the limit or usage cannot be read it returns *plan.ErrLimitReached with
+// the limit or usage cannot be read it returns *limits.ErrLimitReached with
 // Unavailable (callers refuse: fail-closed).
-func (s *Service) Headroom(ctx context.Context, tenantID shared.ID, key plan.Key) (int, error) {
-	if !key.IsValid() {
-		return 0, plan.ErrInvalid
+func (s *Service) Headroom(ctx context.Context, tenantID shared.ID, key limits.Key) (int, error) {
+	if !key.PerOrganization() {
+		return 0, limits.ErrInvalid
 	}
 	limit, used, err := s.limitAndUsage(ctx, tenantID, key)
 	if err != nil {
-		s.log.Warn("plan limit headroom failed; refusing (fail-closed)", "key", string(key), "error", err)
-		return 0, &plan.ErrLimitReached{Key: key, Unavailable: true}
+		s.log.Warn("limit headroom failed; refusing (fail-closed)", "key", string(key), "error", err)
+		return 0, &limits.ErrLimitReached{Key: key, Unavailable: true}
 	}
-	if limit == plan.Unlimited {
-		return plan.Unlimited, nil
+	if limit == limits.Unlimited {
+		return limits.Unlimited, nil
 	}
 	return max(0, limit-used), nil
 }
 
 // RecordRefusals counts n additions of key refused by its limit (a caller
 // that refused part of a batch after Headroom).
-func (s *Service) RecordRefusals(key plan.Key, n int) {
+func (s *Service) RecordRefusals(key limits.Key, n int) {
 	if n > 0 {
 		refusals.WithLabelValues(string(key)).Add(float64(n))
 	}
 }
 
-// CheckFreeTeam refuses a new Free organization for a user who already owns
-// the Free plan's free_teams_per_user.
-func (s *Service) CheckFreeTeam(ctx context.Context, userID shared.ID) error {
-	defaults, _, err := s.Defaults(ctx)
+// CheckOrgsPerUser refuses a self-service organization for a person who
+// already owns the instance's orgs_per_user (unlimited unless an
+// administrator set it in the self-service defaults).
+func (s *Service) CheckOrgsPerUser(ctx context.Context, userID shared.ID) error {
+	d, _, err := s.SelfServiceDefaults(ctx)
 	if err != nil {
-		return &plan.ErrLimitReached{Key: plan.FreeTeamsPerUser, Unavailable: true}
+		return &limits.ErrLimitReached{Key: limits.OrgsPerUser, Unavailable: true}
 	}
-	limit := defaults.For(plan.Free).Get(plan.FreeTeamsPerUser)
-	if limit == plan.Unlimited {
+	limit := d.Get(limits.OrgsPerUser)
+	if limit == limits.Unlimited {
 		return nil
 	}
-	n, err := s.repo.CountOwnedFreeTenants(ctx, userID)
+	n, err := s.repo.CountOwnedTenants(ctx, userID)
 	if err != nil {
-		return &plan.ErrLimitReached{Key: plan.FreeTeamsPerUser, Limit: limit, Unavailable: true}
+		return &limits.ErrLimitReached{Key: limits.OrgsPerUser, Limit: limit, Unavailable: true}
 	}
-	if n+1 > limit {
-		refusals.WithLabelValues(string(plan.FreeTeamsPerUser)).Inc()
-		return &plan.ErrLimitReached{Key: plan.FreeTeamsPerUser, Limit: limit, Used: n}
+	if !limits.AllowAddition(limit, n, 1) {
+		refusals.WithLabelValues(string(limits.OrgsPerUser)).Inc()
+		return &limits.ErrLimitReached{Key: limits.OrgsPerUser, Limit: limit, Used: n}
 	}
 	return nil
 }
 
-// UpdateDefaults saves the plan defaults (the caller checked super admin and
-// a fresh authenticator code). Audited at critical severity; the other
-// administrators are told.
-func (s *Service) UpdateDefaults(ctx context.Context, actor *admin.AdminUser, d plan.Defaults, expectedVersion int, ip, ua string) (int, error) {
+// UpdateSelfServiceDefaults saves the self-service defaults (the caller
+// checked super admin and a fresh authenticator code). Audited at critical
+// severity. Existing organizations are not changed.
+func (s *Service) UpdateSelfServiceDefaults(ctx context.Context, actor *admin.AdminUser, d limits.Limits, expectedVersion int, ip, ua string) (int, error) {
 	if actor == nil {
-		return 0, errors.New("plan defaults change needs an administrator")
+		return 0, errors.New("changing the self-service defaults needs an administrator")
 	}
 	if err := d.Validate(); err != nil {
 		return 0, err
 	}
-	v, err := s.repo.SaveDefaults(ctx, d, expectedVersion, actor.ID(), s.now().UTC())
+	v, err := s.repo.SaveSelfServiceDefaults(ctx, d, expectedVersion, actor.ID(), s.now().UTC())
 	if err != nil {
 		return 0, err
 	}
@@ -296,93 +316,60 @@ func (s *Service) UpdateDefaults(ctx context.Context, actor *admin.AdminUser, d 
 	s.cached, s.version, s.cachedAt = d, v, s.now()
 	s.mu.Unlock()
 	body := map[string]any{"version": v}
-	for p, l := range d {
-		body[string(p)] = l
+	for k, val := range d {
+		body[string(k)] = val
 	}
-	s.writeAudit(ctx, actor, ActionDefaultsChanged, nil, "plan_limits", body, ip, ua)
-	recipients := []string{}
-	if s.admins != nil {
-		if others, lerr := s.admins.ListActive(ctx); lerr == nil {
-			for _, o := range others {
-				if o.ID() != actor.ID() {
-					recipients = append(recipients, o.Email())
-				}
-			}
-		}
-	}
-	s.log.Warn("plan defaults changed", "alert", AlertDefaultsChanged, "admin_id", actor.ID().String(), "notified", len(recipients))
-	if s.notifier != nil && len(recipients) > 0 {
-		if nerr := s.notifier.NotifyPlanDefaultsChanged(ctx, actor.Email(), recipients); nerr != nil {
-			s.log.Warn("notify administrators of plan defaults change", "error", nerr)
-		}
-	}
+	s.writeAudit(ctx, actor, ActionSelfServiceDefaultsChanged, nil, "self_service_default_limits", body, ip, ua)
+	s.log.Warn("self-service default limits changed", "alert", ActionSelfServiceDefaultsChanged, "admin_id", actor.ID().String())
 	return v, nil
 }
 
-// ChangeTenantPlan changes an organization's plan (audited).
-func (s *Service) ChangeTenantPlan(ctx context.Context, actor *admin.AdminUser, tenantID shared.ID, p plan.Plan, ip, ua string) error {
-	if !p.IsValid() {
-		return plan.ErrInvalid
-	}
-	from, err := s.PlanOf(ctx, tenantID)
-	if err != nil {
-		return err
-	}
-	id := actor.ID()
-	lost, regained, err := s.lostAndRegained(ctx, tenantID, func() error {
-		return s.repo.SetTenantPlan(ctx, tenantID, p, &id, s.now().UTC())
-	})
-	if err != nil {
-		return err
-	}
-	s.applyGrace(ctx, tenantID, lost, regained)
-	s.writeAudit(ctx, actor, ActionTenantPlanSet, &tenantID, "tenant", map[string]any{"plan": string(p), "from": string(from)}, ip, ua)
-	// The plan decides the organization's modules: refresh them.
-	if s.modulesChanged != nil {
-		s.modulesChanged(tenantID.String())
-	}
-	return nil
-}
-
-// OverrideInput is one per-organization limit.
-type OverrideInput struct {
-	Key       plan.Key
+// LimitInput is one operator limit for one organization.
+type LimitInput struct {
+	Key       limits.Key
 	Value     int
 	Reason    string
 	ExpiresAt *time.Time
 }
 
-// PutOverride sets one per-organization limit (audited). A reason is required;
-// an expiry, when given, must be in the future.
-func (s *Service) PutOverride(ctx context.Context, actor *admin.AdminUser, tenantID shared.ID, in OverrideInput, ip, ua string) error {
-	reason := strings.TrimSpace(in.Reason)
+// ValidReason reports a non-blank reason of at most 500 characters.
+func ValidReason(reason string) bool {
+	r := strings.TrimSpace(reason)
+	return r != "" && len([]rune(r)) <= maxReasonRunes
+}
+
+// PutLimit sets one operator limit for one organization (audited). A reason
+// is required; an expiry, when given, must be in the future.
+func (s *Service) PutLimit(ctx context.Context, actor *admin.AdminUser, tenantID shared.ID, in LimitInput, ip, ua string) error {
 	now := s.now().UTC()
-	if !in.Key.IsValid() || in.Value < plan.Unlimited || reason == "" || len([]rune(reason)) > maxOverrideReasonRunes ||
+	if actor == nil || !in.Key.PerOrganization() || in.Value < limits.Unlimited || !ValidReason(in.Reason) ||
 		(in.ExpiresAt != nil && !in.ExpiresAt.After(now)) {
-		return plan.ErrInvalid
+		return limits.ErrInvalid
 	}
+	reason := strings.TrimSpace(in.Reason)
 	id := actor.ID()
-	o := plan.Override{TenantID: tenantID, Key: in.Key, Value: in.Value, Reason: reason, ExpiresAt: in.ExpiresAt, SetBy: &id, SetAt: now}
-	if err := s.repo.SetOverride(ctx, o); err != nil {
+	l := limits.Limit{TenantID: tenantID, Key: in.Key, Value: in.Value, Origin: limits.OriginOperator,
+		Reason: reason, ExpiresAt: in.ExpiresAt, SetBy: &id, SetAt: now}
+	if err := s.repo.SetLimit(ctx, l); err != nil {
 		return err
 	}
 	body := map[string]any{"key": string(in.Key), "value": in.Value, "reason": reason}
 	if in.ExpiresAt != nil {
 		body["expires_at"] = in.ExpiresAt.UTC().Format(time.RFC3339)
 	}
-	s.writeAudit(ctx, actor, ActionOverrideSet, &tenantID, "tenant", body, ip, ua)
+	s.writeAudit(ctx, actor, ActionLimitSet, &tenantID, "tenant", body, ip, ua)
 	return nil
 }
 
-// DeleteOverride removes one per-organization limit (audited).
-func (s *Service) DeleteOverride(ctx context.Context, actor *admin.AdminUser, tenantID shared.ID, key plan.Key, ip, ua string) error {
-	if !key.IsValid() {
-		return plan.ErrInvalid
+// DeleteLimit removes one operator limit (audited).
+func (s *Service) DeleteLimit(ctx context.Context, actor *admin.AdminUser, tenantID shared.ID, key limits.Key, ip, ua string) error {
+	if actor == nil || !key.PerOrganization() {
+		return limits.ErrInvalid
 	}
-	if err := s.repo.DeleteOverride(ctx, tenantID, key); err != nil {
+	if err := s.repo.DeleteLimit(ctx, tenantID, key, limits.OriginOperator); err != nil {
 		return err
 	}
-	s.writeAudit(ctx, actor, ActionOverrideRemoved, &tenantID, "tenant", map[string]any{"key": string(key)}, ip, ua)
+	s.writeAudit(ctx, actor, ActionLimitRemoved, &tenantID, "tenant", map[string]any{"key": string(key)}, ip, ua)
 	return nil
 }
 
@@ -394,14 +381,20 @@ func (s *Service) writeAudit(ctx context.Context, actor *admin.AdminUser, action
 		Resource(resource, id, "").
 		Context(ip, ua).
 		Request("PUT", "", body)
-	// A change to every organization's limits is critical; one
-	// organization's plan or override is high.
-	if action == ActionDefaultsChanged || action == ActionPlanModulesChanged {
+	// A change for every new organization is critical; one organization's
+	// limit or deny is high.
+	if action == ActionSelfServiceDefaultsChanged {
 		b = b.Critical()
 	} else {
 		b = b.High()
 	}
-	entry := b.Build()
+	s.createAudit(ctx, action, b.Build())
+}
+
+func (s *Service) createAudit(ctx context.Context, action string, entry *admin.AuditLog) {
+	if s.audit == nil {
+		return
+	}
 	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := s.audit.Create(actx, entry); err != nil {

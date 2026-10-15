@@ -482,7 +482,7 @@ func pathID(w http.ResponseWriter, r *http.Request, what string) (shared.ID, boo
 }
 
 func (h *CIAdminHandler) writeErr(w http.ResponseWriter, err error, what, notFound string) {
-	if WritePlanLimitError(w, err) {
+	if WriteLimitError(w, err) {
 		return
 	}
 	if errors.Is(err, cirunapp.ErrStepUpUnavailable) {
