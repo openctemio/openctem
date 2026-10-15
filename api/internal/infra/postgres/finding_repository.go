@@ -1094,7 +1094,7 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	query := `
 		UPDATE findings SET
 			vulnerability_id = $2, component_id = $3, tool_id = $4, tool_version = $5, snippet = $6,
-			message = $7, severity = $8, status = $9, resolution = $10, resolution_method = $11,
+			message = $7, severity = $8, status = $9, resolution = $10, closure_reason = $11, verification = $43,
 			resolved_at = $12, resolved_by = $13, scan_id = $14, metadata = $15, updated_at = $16,
 			assigned_to = $17, assigned_at = $18, assigned_by = $19,
 			title = $21, description = $22, tags = $23,
@@ -1108,40 +1108,40 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 			acceptance_expires_at = CASE WHEN $9::varchar = 'accepted'
 				THEN COALESCE(acceptance_expires_at, NOW() + ` + defaultAcceptanceIntervalSQL + `)
 				ELSE acceptance_expires_at END,
-			` + findingTypeUpdateSQL(43) + `
+			` + findingTypeUpdateSQL(44) + `
 		WHERE id = $1 AND tenant_id = $20
 	`
 
 	args := []any{
-		finding.ID().String(),                  // $1
-		nullID(finding.VulnerabilityID()),      // $2
-		nullID(finding.ComponentID()),          // $3
-		nullID(finding.ToolID()),               // $4
-		nullString(finding.ToolVersion()),      // $5
-		nullString(finding.Snippet()),          // $6
-		finding.Message(),                      // $7
-		finding.Severity().String(),            // $8
-		finding.Status().String(),              // $9
-		nullString(finding.Resolution()),       // $10
-		nullString(finding.ResolutionMethod()), // $11
-		nullTime(finding.ResolvedAt()),         // $12
-		nullID(finding.ResolvedBy()),           // $13
-		nullString(finding.ScanID()),           // $14
-		metadata,                               // $15
-		finding.UpdatedAt(),                    // $16
-		nullID(finding.AssignedTo()),           // $17
-		nullTime(finding.AssignedAt()),         // $18
-		nullID(finding.AssignedBy()),           // $19
-		finding.TenantID().String(),            // $20 (WHERE)
-		nullString(finding.Title()),            // $21
-		nullString(finding.Description()),      // $22
-		pq.Array(finding.Tags()),               // $23
-		nullFloat64(finding.CVSSScore()),       // $24
-		nullString(finding.CVSSVector()),       // $25
-		nullString(finding.CVEID()),            // $26
-		pq.Array(finding.CWEIDs()),             // $27
-		pq.Array(finding.OWASPIDs()),           // $28
-		remediationJSON,                        // $29
+		finding.ID().String(),                        // $1
+		nullID(finding.VulnerabilityID()),            // $2
+		nullID(finding.ComponentID()),                // $3
+		nullID(finding.ToolID()),                     // $4
+		nullString(finding.ToolVersion()),            // $5
+		nullString(finding.Snippet()),                // $6
+		finding.Message(),                            // $7
+		finding.Severity().String(),                  // $8
+		finding.Status().String(),                    // $9
+		nullString(finding.Resolution()),             // $10
+		nullString(finding.ClosureReason().String()), // $11
+		nullTime(finding.ResolvedAt()),               // $12
+		nullID(finding.ResolvedBy()),                 // $13
+		nullString(finding.ScanID()),                 // $14
+		metadata,                                     // $15
+		finding.UpdatedAt(),                          // $16
+		nullID(finding.AssignedTo()),                 // $17
+		nullTime(finding.AssignedAt()),               // $18
+		nullID(finding.AssignedBy()),                 // $19
+		finding.TenantID().String(),                  // $20 (WHERE)
+		nullString(finding.Title()),                  // $21
+		nullString(finding.Description()),            // $22
+		pq.Array(finding.Tags()),                     // $23
+		nullFloat64(finding.CVSSScore()),             // $24
+		nullString(finding.CVSSVector()),             // $25
+		nullString(finding.CVEID()),                  // $26
+		pq.Array(finding.CWEIDs()),                   // $27
+		pq.Array(finding.OWASPIDs()),                 // $28
+		remediationJSON,                              // $29
 		// Priority classification (RFC-004)
 		nullFloat64(finding.EPSSScore()),              // $30
 		nullFloat64(finding.EPSSPercentile()),         // $31
@@ -1156,10 +1156,11 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 		finding.ReachableFromCount(),                  // $40
 		// SLA — recomputed by the reclassifier on priority escalation and
 		// persisted here so the tightened deadline actually takes effect.
-		nullTime(finding.SLADeadline()), // $41
-		finding.SLAStatus().String(),    // $42
+		nullTime(finding.SLADeadline()),             // $41
+		finding.SLAStatus().String(),                // $42
+		nullString(finding.Verification().String()), // $43
 	}
-	args = append(args, findingTypeArgs(finding)...) // $43…
+	args = append(args, findingTypeArgs(finding)...) // $44…
 	result, err := r.db.execStatusWrite(ctx, query, args...)
 
 	if err != nil {
@@ -2048,12 +2049,12 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 // UpdateStatusBatch updates the status of multiple findings.
 // Security: Requires tenantID to prevent cross-tenant status modification.
 //
-// A move to resolved must name how the finding was resolved (method), so every
-// closure carries its evidence class; any other status clears
-// resolution_method, so a reopened or dispositioned finding never keeps a
-// stale "fixed" claim.
-func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
-	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, method, nil, nil)
+// A move to resolved must name how the finding was verified (closure), so
+// every closure carries its evidence class; a closed status stores the
+// closure reason (its default when empty), and an open status clears both,
+// so a reopened or dispositioned finding never keeps a stale "fixed" claim.
+func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) error {
+	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, nil)
 }
 
 var _ vulnerability.FixClaimBatchWriter = (*FindingRepository)(nil)
@@ -2062,7 +2063,7 @@ var _ vulnerability.FixClaimBatchWriter = (*FindingRepository)(nil)
 // status is one of from (a subset of the lifecycle's predecessors of status):
 // a finding that moved to another status since the caller read it, for
 // example to an approved false positive, is left alone.
-func (r *FindingRepository) UpdateStatusBatchFrom(ctx context.Context, tenantID shared.ID, ids []shared.ID, from []vulnerability.FindingStatus, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
+func (r *FindingRepository) UpdateStatusBatchFrom(ctx context.Context, tenantID shared.ID, ids []shared.ID, from []vulnerability.FindingStatus, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) error {
 	allowed := vulnerability.UserFromStatuses(status)
 	for _, f := range from {
 		if !slices.Contains(allowed, f) {
@@ -2072,21 +2073,22 @@ func (r *FindingRepository) UpdateStatusBatchFrom(ctx context.Context, tenantID 
 	if len(from) == 0 {
 		return fmt.Errorf("%w: no source status given", shared.ErrValidation)
 	}
-	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, method, nil, from)
+	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, from)
 }
 
-// AcceptUntil moves one finding to accepted with the end of its acceptance in
-// the same statement. Leaving accepted later clears the end (database trigger
-// trg_findings_clear_acceptance_expiry).
-func (r *FindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, until time.Time, acceptedBy *shared.ID) error {
-	return r.updateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", acceptedBy, "", &until, nil)
+// AcceptUntil moves one finding to accepted, for reason, with the end of its
+// acceptance in the same statement. Leaving accepted later clears the end
+// (database trigger trg_findings_clear_acceptance_expiry).
+func (r *FindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, until time.Time, acceptedBy *shared.ID, reason vulnerability.ClosureReason) error {
+	return r.updateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", acceptedBy,
+		vulnerability.Closure{Reason: reason}, &until, nil)
 }
 
-func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) error {
+func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	query, args, err := statusWriteSQL(tenantID, ids, status, resolution, resolvedBy, method, acceptanceEnd, from)
+	query, args, err := statusWriteSQL(tenantID, ids, status, resolution, resolvedBy, closure, acceptanceEnd, from)
 	if err != nil {
 		return err
 	}
@@ -2100,20 +2102,21 @@ func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shar
 // statusWriteSQL builds the status write of updateStatusBatch, so a caller
 // that writes the status inside its own transaction (an approved request)
 // runs the same statement.
-func statusWriteSQL(tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) (string, []any, error) {
-	methodArg, err := resolutionMethodArg(status, method)
+func statusWriteSQL(tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) (string, []any, error) {
+	reasonArg, verificationArg, err := closureArgs(status, closure)
 	if err != nil {
 		return "", nil, err
 	}
-	// Security: tenant_id is first parameter for isolation. $6 holds the
+
+	// Security: tenant_id is first parameter for isolation. $7 holds the
 	// statuses a person may move a finding from to status (the lifecycle), so
 	// a finding that changed since the caller checked it is left alone.
 	placeholders := make([]string, len(ids))
-	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg,
+	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), reasonArg, verificationArg,
 		pq.Array(statusStrings(fromOrLifecycle(status, from)))}
 
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+7)
+		placeholders[i] = fmt.Sprintf("$%d", i+8)
 		args = append(args, id.String())
 	}
 
@@ -2132,8 +2135,8 @@ func statusWriteSQL(tenantID shared.ID, ids []shared.ID, status vulnerability.Fi
 	// Security: Exclude pentest findings — they must be managed via the pentest module
 	query := fmt.Sprintf(`
 		UPDATE findings
-		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5%s, updated_at = NOW()
-		WHERE tenant_id = $1 AND source != 'pentest' AND status = ANY($6) AND id IN (%s)
+		SET status = $2, resolution = $3, resolved_by = $4, closure_reason = $5, verification = $6%s, updated_at = NOW()
+		WHERE tenant_id = $1 AND source != 'pentest' AND status = ANY($7) AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
 	return query, args, nil
@@ -2148,16 +2151,21 @@ func fromOrLifecycle(status vulnerability.FindingStatus, from []vulnerability.Fi
 	return vulnerability.UserFromStatuses(status)
 }
 
-// resolutionMethodArg is the resolution_method value a status write stores:
-// the (required, valid) method for resolved, NULL for everything else.
-func resolutionMethodArg(status vulnerability.FindingStatus, method vulnerability.ResolutionMethod) (any, error) {
-	if status != vulnerability.FindingStatusResolved {
-		return nil, nil
+// closureArgs are the closure_reason and verification values a status write
+// stores: NULL for an open status; for a closed one the reason (its default
+// when empty) and the verification, which a resolve must name.
+func closureArgs(status vulnerability.FindingStatus, c vulnerability.Closure) (reason, verification any, err error) {
+	if !status.IsClosed() {
+		return nil, nil, nil
 	}
-	if !method.IsValid() {
-		return nil, fmt.Errorf("%w: resolving a finding needs a valid resolution method, got %q", shared.ErrValidation, method)
+	if status == vulnerability.FindingStatusResolved && c.Verification == "" {
+		return nil, nil, fmt.Errorf("%w: resolving a finding needs a verification", shared.ErrValidation)
 	}
-	return method.String(), nil
+	n, err := vulnerability.NormalizeClosure(status, c)
+	if err != nil {
+		return nil, nil, err
+	}
+	return n.Reason.String(), nullString(n.Verification.String()), nil
 }
 
 // DeleteByScanID removes all findings for a scan.
@@ -2334,7 +2342,7 @@ func (r *FindingRepository) selectQuery() string {
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
-			status, resolution, resolution_method, resolved_at, resolved_by,
+			status, resolution, closure_reason, verification, resolved_at, resolved_by,
 			assigned_to, assigned_at, assigned_by,
 			verified_at, verified_by,
 			sla_deadline, sla_status,
@@ -2411,7 +2419,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		tags                []string
 		status              string
 		resolution          sql.NullString
-		resolutionMethod    sql.NullString
+		closureReason       sql.NullString
+		verification        sql.NullString
 		resolvedAt          sql.NullTime
 		resolvedBy          sql.NullString
 		assignedTo          sql.NullString
@@ -2502,7 +2511,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&startColumn, &endColumn, &snippet, &contextSnippet, &contextStartLine,
 		&title, &description, &message,
 		&severity, &cvssScore, &cvssVector, &cveID, pq.Array(&cweIDs), pq.Array(&owaspIDs), pq.Array(&tags),
-		&status, &resolution, &resolutionMethod, &resolvedAt, &resolvedBy,
+		&status, &resolution, &closureReason, &verification, &resolvedAt, &resolvedBy,
 		&assignedTo, &assignedAt, &assignedBy,
 		&verifiedAt, &verifiedBy,
 		&slaDeadline, &slaStatus,
@@ -2537,7 +2546,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		snippet, contextSnippet, int(contextStartLine.Int64),
 		title, description, message,
 		severity, cvssScore, cvssVector, cveID, cweIDs, owaspIDs, tags,
-		status, resolution, resolutionMethod, resolvedAt, resolvedBy,
+		status, resolution, closureReason, verification, resolvedAt, resolvedBy,
 		assignedTo, assignedAt, assignedBy,
 		verifiedAt, verifiedBy,
 		slaDeadline, slaStatus,
@@ -2610,7 +2619,8 @@ type findingRow struct {
 	tags                []string
 	status              string
 	resolution          sql.NullString
-	resolutionMethod    sql.NullString
+	closureReason       sql.NullString
+	verification        sql.NullString
 	resolvedAt          sql.NullTime
 	resolvedBy          sql.NullString
 	assignedTo          sql.NullString
@@ -2882,7 +2892,8 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		Tags:                row.tags,
 		Status:              status,
 		Resolution:          nullStringValue(row.resolution),
-		ResolutionMethod:    nullStringValue(row.resolutionMethod),
+		ClosureReason:       nullStringValue(row.closureReason),
+		Verification:        nullStringValue(row.verification),
 		ResolvedAt:          nullTimeValue(row.resolvedAt),
 		ResolvedBy:          parseNullID(row.resolvedBy),
 		AssignedTo:          parseNullID(row.assignedTo),
@@ -3625,7 +3636,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 // Deliberate dispositions (false_positive, accepted_risk, duplicate, suppressed)
 // are NEVER reopened.
 //
-// The reopen clears resolution, resolution_method and resolved_by on the row, so
+// The reopen clears resolution, the closure and resolved_by on the row, so
 // it returns what they were (read under the row lock, in the same statement):
 // the regression's activity entry keeps who resolved the finding and how
 // (RFC-039 §6.5). Returns fingerprint -> reopened finding.
@@ -3639,7 +3650,7 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	// resolution is a free-text note and may be NULL, so NULL must survive NOT IN.
 	query := `
 		WITH prev AS (
-			SELECT id, status, resolution, resolution_method, resolved_by, resolved_at
+			SELECT id, status, resolution, closure_reason, verification, resolved_by, resolved_at
 			FROM findings
 			WHERE tenant_id = $1
 				AND fingerprint = ANY($2)
@@ -3651,19 +3662,20 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 				-- A finding the organization's VEX statement marks fixed stays
 				-- resolved while the statement stands (it is withdrawn on edit,
 				-- delete or expiry, which reopens it).
-				AND NOT (status = 'resolved' AND resolution_method = 'vex_fixed' AND vex_statement_id IS NOT NULL)
+				AND NOT (status = 'resolved' AND verification = 'vex_statement' AND vex_statement_id IS NOT NULL)
 			FOR UPDATE
 		)
 		UPDATE findings f
 		SET status = 'confirmed',
 			resolution = NULL,
-			resolution_method = NULL,
+			closure_reason = NULL,
+			verification = NULL,
 			resolved_at = NULL,
 			resolved_by = NULL,
 			updated_at = NOW()
 		FROM prev
 		WHERE f.id = prev.id
-		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.resolution_method, prev.resolved_by, prev.resolved_at
+		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.closure_reason, prev.verification, prev.resolved_by, prev.resolved_at
 	`
 
 	// Each reopen writes its auto_reopened timeline entry in the same
@@ -3684,11 +3696,11 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 
 		for rows.Next() {
 			var (
-				idStr, fp, prevStatus             string
-				resolution, method, resolvedByStr sql.NullString
-				resolvedAt                        sql.NullTime
+				idStr, fp, prevStatus                       string
+				resolution, reason, verified, resolvedByStr sql.NullString
+				resolvedAt                                  sql.NullTime
 			)
-			if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &method, &resolvedByStr, &resolvedAt); err != nil {
+			if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &reason, &verified, &resolvedByStr, &resolvedAt); err != nil {
 				return fmt.Errorf("failed to scan reopened finding: %w", err)
 			}
 			id, err := shared.IDFromString(idStr)
@@ -3696,11 +3708,12 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 				continue
 			}
 			rf := vulnerability.ReopenedFinding{
-				ID:                       id,
-				Fingerprint:              fp,
-				PreviousStatus:           vulnerability.FindingStatus(prevStatus),
-				PreviousResolution:       resolution.String,
-				PreviousResolutionMethod: method.String,
+				ID:                    id,
+				Fingerprint:           fp,
+				PreviousStatus:        vulnerability.FindingStatus(prevStatus),
+				PreviousResolution:    resolution.String,
+				PreviousClosureReason: reason.String,
+				PreviousVerification:  verified.String,
 			}
 			if resolvedByStr.Valid {
 				if by, err := shared.IDFromString(resolvedByStr.String); err == nil {
@@ -3738,7 +3751,8 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 		UPDATE findings f
 		SET status = 'not_observed',
 			resolution = 'branch_expired',
-			resolution_method = NULL,
+			closure_reason = NULL,
+			verification = NULL,
 			resolved_at = NULL,
 			resolved_by = NULL,
 			updated_at = NOW()
@@ -3896,7 +3910,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
-			status, resolution, resolution_method, resolved_at, resolved_by,
+			status, resolution, closure_reason, verification, resolved_at, resolved_by,
 			assigned_to, assigned_at, assigned_by,
 			verified_at, verified_by,
 			sla_deadline, sla_status,

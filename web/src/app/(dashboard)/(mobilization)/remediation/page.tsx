@@ -419,7 +419,11 @@ export default function RemediationPage() {
   const listCounts = useMemo(() => {
     const m: Record<string, CampaignCounts> = {}
     for (const c of campaignData?.data ?? []) {
-      m[c.id] = { finding_count: c.finding_count, resolved_count: c.resolved_count }
+      m[c.id] = {
+        finding_count: c.finding_count,
+        resolved_count: c.resolved_count,
+        verified_count: c.verified_count,
+      }
     }
     return m
   }, [campaignData])
@@ -667,9 +671,12 @@ export default function RemediationPage() {
       }
       const apiStatus = statusMap[action]
       if (apiStatus) {
-        const apply = async () => {
+        const apply = async (closeWithOpenMembers = false) => {
           try {
-            await patch(`/api/v1/remediation/campaigns/${task.id}/status`, { status: apiStatus })
+            await patch(`/api/v1/remediation/campaigns/${task.id}/status`, {
+              status: apiStatus,
+              ...(closeWithOpenMembers ? { close_with_open_members: true } : {}),
+            })
             // The open drawer follows the refreshed list (the effect that syncs
             // viewTask with tasks). It used to be overwritten here from
             // campaignData captured before the refresh, which put the old status
@@ -704,11 +711,14 @@ export default function RemediationPage() {
         // Some selected tasks may be in a state where this transition is illegal
         // (e.g. an already-active task → "In Progress"). Don't let one rejection
         // abort the batch or skip the refresh — settle all, then report the split.
-        const apply = async () => {
+        const apply = async (closeWithOpenMembers = false) => {
           try {
             const results = await Promise.allSettled(
               ids.map((id) =>
-                patch(`/api/v1/remediation/campaigns/${id}/status`, { status: apiStatus })
+                patch(`/api/v1/remediation/campaigns/${id}/status`, {
+                  status: apiStatus,
+                  ...(closeWithOpenMembers ? { close_with_open_members: true } : {}),
+                })
               )
             )
             const ok = results.filter((r) => r.status === 'fulfilled').length
