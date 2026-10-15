@@ -5,4 +5,4 @@
 - The first verified pipeline run under a pattern is recorded as evidence (`scope_entries[].seen_*` on the trust, `managed_by[]` on the scope entry). A legacy-audience run never counts.
 - Opt-in governance: the scope setting `ci_scope_requires_proof` (default off) keeps a trust's new entries inactive until a verified run under them.
 - Security: an entry a trust manages answers 409 `CI_TRUST_MANAGED` to scope edits of its tier, expiry, reason or discovery, to activate, deactivate and delete; change the trust or add an exclusion. Links are tenant-scoped with composite foreign keys.
-- Migration `002140_ci_trust_managed_scope`: `ci_trust_configs.manage_scope` (default true), origin `ci_trust`, table `scope_target_ci_trusts`. Existing trusts get their entries at their next pipeline run, or at once with the backfill command.
+- Migration `002145_ci_trust_managed_scope`: `ci_trust_configs.manage_scope` (default true), origin `ci_trust`, table `scope_target_ci_trusts`. Existing trusts get their entries at their next pipeline run, or at once with the backfill command.
