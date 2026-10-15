@@ -244,6 +244,7 @@ func registerIntegrationRoutes(
 	moduleGate Middleware,
 	scanNow *handler.ScanHandler,
 	scansModule Middleware,
+	ticketMapping *handler.TicketMappingHandler,
 ) {
 	// Build tenant middleware chain from JWT token.
 	// Append the module gate after tenant extraction so it can read the tenant.
@@ -282,6 +283,37 @@ func registerIntegrationRoutes(
 		// must be before /{id} routes). nil handler = no DB → skip.
 		if jiraHandler != nil {
 			r.GET("/jira/projects", jiraHandler.ListJiraProjects, middleware.Require(permission.IntegrationsRead))
+		}
+
+		// Ticket field and status mapping profiles (static paths; must be
+		// before /{id} routes). Reading is integrations:read; every change is
+		// integrations:manage, and publishing also needs a fresh step-up. A
+		// preview renders a finding or task: the service enforces the
+		// caller's data scope on that object.
+		if ticketMapping != nil {
+			read := middleware.Require(permission.IntegrationsRead)
+			manage := middleware.Require(permission.IntegrationsManage)
+			r.GET("/ticket-mappings/catalog", ticketMapping.Catalog, read)
+			r.GET("/ticket-mappings", ticketMapping.List, read)
+			r.POST("/ticket-mappings", ticketMapping.Create, manage)
+			r.GET("/ticket-mappings/{mapping_id}", ticketMapping.Get, read)
+			r.DELETE("/ticket-mappings/{mapping_id}", ticketMapping.Delete, manage)
+			r.PUT("/ticket-mappings/{mapping_id}/draft", ticketMapping.SaveDraft, manage)
+			r.DELETE("/ticket-mappings/{mapping_id}/draft", ticketMapping.DiscardDraft, manage)
+			r.POST("/ticket-mappings/{mapping_id}/publish", ticketMapping.Publish, manage, requireStepUp())
+			r.POST("/ticket-mappings/{mapping_id}/rollback", ticketMapping.Rollback, manage)
+			r.POST("/ticket-mappings/{mapping_id}/dry-run", ticketMapping.SetDryRun, manage, requireStepUp())
+			r.GET("/ticket-mappings/{mapping_id}/versions", ticketMapping.Versions, read)
+			r.GET("/ticket-mappings/{mapping_id}/diff", ticketMapping.Diff, read)
+			r.POST("/ticket-mappings/{mapping_id}/verify", ticketMapping.Validate, read)
+			r.POST("/ticket-mappings/{mapping_id}/drift", ticketMapping.Drift, manage)
+			r.GET("/ticket-mappings/{mapping_id}/export", ticketMapping.Export, read)
+			r.POST("/ticket-mappings/{mapping_id}/import", ticketMapping.Import, manage)
+			r.POST("/ticket-mappings/{mapping_id}/copy", ticketMapping.Copy, manage)
+			r.POST("/ticket-mappings/{mapping_id}/suggest", ticketMapping.Suggest, read)
+			r.POST("/ticket-mappings/{mapping_id}/simulate", ticketMapping.Simulate, read)
+			r.POST("/ticket-mappings/{mapping_id}/preview", ticketMapping.Preview, manage)
+			r.POST("/ticket-mappings/{mapping_id}/inbound-preview", ticketMapping.PreviewInbound, manage)
 		}
 
 		// DefectDojo co-existence sync (RFC-013): pull the tenant's DefectDojo
@@ -324,6 +356,12 @@ func registerIntegrationRoutes(
 
 		// List repositories from SCM integration
 		r.GET("/{id}/repositories", h.ListRepositories, middleware.Require(permission.IntegrationsRead))
+
+		// Jira field and workflow metadata for the mapping editor.
+		if ticketMapping != nil {
+			r.GET("/{id}/jira/issue-types", ticketMapping.IssueTypes, middleware.Require(permission.IntegrationsRead))
+			r.GET("/{id}/jira/metadata", ticketMapping.Metadata, middleware.Require(permission.IntegrationsRead))
+		}
 	}, tenantMiddlewares...)
 }
 
