@@ -145,10 +145,11 @@ func TestDecide(t *testing.T) {
 
 	open := ref(product, asset, "1", "CVE-1")
 	e := Decide(open, na)
-	if e == nil || e.NewStatus != "false_positive" || e.ResolutionMethod != ResolutionNotAffected || e.Statement != na {
+	if e == nil || e.NewStatus != "false_positive" || e.ClosureReason != "component_not_present" ||
+		e.Verification != "vex_statement" || e.Statement != na {
 		t.Fatalf("not_affected closes an open finding: %+v", e)
 	}
-	if e := Decide(open, fixed); e == nil || e.NewStatus != "resolved" || e.ResolutionMethod != ResolutionFixed {
+	if e := Decide(open, fixed); e == nil || e.NewStatus != "resolved" || e.ClosureReason != "fixed" || e.Verification != "vex_statement" {
 		t.Fatalf("fixed resolves: %+v", e)
 	}
 	if e := Decide(open, affected); e == nil || e.Changes() || e.Statement != affected {
@@ -167,20 +168,28 @@ func TestDecide(t *testing.T) {
 	}
 
 	closed := ref(product, asset, "1", "CVE-1")
-	closed.Status, closed.ResolutionMethod, closed.StatementID = "false_positive", ResolutionNotAffected, &na.ID
+	closed.Status, closed.ClosureReason, closed.Verification, closed.StatementID = "false_positive", "component_not_present", "vex_statement", &na.ID
 	if e := Decide(closed, nil); e == nil || e.NewStatus != "new" || e.Statement != nil {
 		t.Fatalf("withdrawn: false positive reopens to new: %+v", e)
 	}
 	if e := Decide(closed, affected); e == nil || e.NewStatus != "new" {
 		t.Fatalf("now affected: reopens: %+v", e)
 	}
-	if e := Decide(closed, fixed); e == nil || e.NewStatus != "resolved" || e.ResolutionMethod != ResolutionFixed {
+	if e := Decide(closed, fixed); e == nil || e.NewStatus != "resolved" || e.ClosureReason != "fixed" {
 		t.Fatalf("not_affected -> fixed switches the closure: %+v", e)
 	}
 	resolved := ref(product, asset, "1", "CVE-1")
-	resolved.Status, resolved.ResolutionMethod, resolved.StatementID = "resolved", ResolutionFixed, &fixed.ID
+	resolved.Status, resolved.ClosureReason, resolved.Verification, resolved.StatementID = "resolved", "fixed", "vex_statement", &fixed.ID
 	if e := Decide(resolved, nil); e == nil || e.NewStatus != "confirmed" {
 		t.Fatalf("withdrawn: resolved reopens to confirmed: %+v", e)
+	}
+
+	// A false positive a person closed (security review) that only carries
+	// the statement is not the statement's closure: withdrawing it keeps it.
+	byPerson := ref(product, asset, "1", "CVE-1")
+	byPerson.Status, byPerson.ClosureReason, byPerson.Verification, byPerson.StatementID = "false_positive", "detection_error", "security_review", &na.ID
+	if e := Decide(byPerson, nil); e == nil || e.Changes() {
+		t.Fatalf("a person's false positive must not reopen when the statement goes: %+v", e)
 	}
 
 	// Unchanged: same statement at the same version -> nothing to write.

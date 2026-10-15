@@ -30,11 +30,11 @@ func (r *bulkStubRepo) GetByIDs(_ context.Context, _ shared.ID, ids []shared.ID)
 }
 
 // AcceptUntil records an accept like UpdateStatusBatch does.
-func (r *bulkStubRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
-	return r.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+func (r *bulkStubRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID, _ vulnerability.ClosureReason) error {
+	return r.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, vulnerability.Closure{})
 }
 
-func (r *bulkStubRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, ids []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
+func (r *bulkStubRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, ids []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) error {
 	r.written = append(r.written, ids...)
 	return nil
 }

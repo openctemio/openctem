@@ -151,7 +151,7 @@ func TestTenableSCConnector_Flow(t *testing.T) {
 		t.Fatalf("mitigated ingest: resolved %d, err %v, errors %v", out.FindingsSourceResolved, err, out.Errors)
 	}
 	if n := count(`SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND rule_id = '51192' AND status = 'resolved'
-		AND resolution_method = 'source_mitigated'`, tenant.String()); n != 1 {
+		AND closure_reason = 'fixed' AND verification = 'source_reported'`, tenant.String()); n != 1 {
 		t.Fatal("the mitigated finding was not resolved")
 	}
 	if n := count(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'ingest.source_resolved'

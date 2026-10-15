@@ -28,7 +28,7 @@ and update open findings. It never changes an existing asset: no exposure,
 owner reference, identifiers, name, tags or properties, and no reactivation
 (an active asset only gets its last-seen time; an inactive, stale or archived
 one is not touched). It never reopens a finding a person resolved (status
-`resolved`/`verified` with any `resolution_method` but `scan_verified`); a
+`resolved`/`verified` with any verification but `covered_scan`); a
 finding the scanner auto-resolved still reopens when it is seen again. In a
 tenant whose mode is **quarantine** it never auto-resolves anything; in
 **warn** mode it auto-resolves as before. The response counts what was held
