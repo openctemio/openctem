@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -86,6 +87,7 @@ func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
 		FROM asset_group_members agm
 		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
 		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
+			AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		GROUP BY agm.asset_group_id
 	) fc ON fc.asset_group_id = ag.id`, args
 	}
@@ -124,6 +126,7 @@ func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
 		FROM asset_group_members agm
 		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
 		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
+			AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		WHERE ` + findingCond + `
 		GROUP BY agm.asset_group_id
 	) fc ON fc.asset_group_id = ag.id`

@@ -41,6 +41,10 @@ import { cn } from '@/lib/utils'
 import { actionableTotal, severityCounts } from '@/lib/severity'
 import { useTenant } from '@/context/tenant-provider'
 import { INFORMATIONAL_LABEL, SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
+import {
+  FINDINGS_FIXED_STATUSES,
+  FINDINGS_OPEN_STATUSES,
+} from '@/features/findings/lib/list-defaults'
 
 // Inline skeleton for stats cards section
 function StatsCardsSkeleton() {
@@ -148,7 +152,7 @@ export function ClassicDashboard() {
 
   // Calculate active findings count
   const activeFindings = Object.entries(findingsByStatus)
-    .filter(([status]) => !['resolved', 'closed', 'false_positive'].includes(status))
+    .filter(([status]) => (FINDINGS_OPEN_STATUSES as readonly string[]).includes(status))
     .reduce((sum, [, count]) => sum + count, 0)
 
   // Prepare severity distribution for pie chart
@@ -169,8 +173,8 @@ export function ClassicDashboard() {
   // 2: Prioritization (has findings with severity)
   // 3: Validation (has findings in triaged/confirmed/accepted status)
   // 4: Mobilization (has findings in resolved/closed status)
-  const resolvedStatuses = ['resolved', 'closed', 'remediated']
-  const triagedStatuses = ['confirmed', 'accepted', 'in_progress', 'triaged']
+  const resolvedStatuses: readonly string[] = FINDINGS_FIXED_STATUSES
+  const triagedStatuses = ['confirmed', 'accepted', 'in_progress', 'fix_applied']
   const hasAssets = stats.assets.total > 0
   const hasFindings = stats.findings.total > 0
   const hasTriagedFindings = Object.entries(findingsByStatus).some(

@@ -26,6 +26,10 @@ import {
 import { buildFindingsEndpoint, fetchFindings } from '../api/use-findings-api'
 import type { ApiFinding, FindingApiFilters } from '../api/finding-api.types'
 import { withoutPaging } from '../lib/list-query'
+import {
+  FINDINGS_FIXED_STATUSES,
+  FINDINGS_OPEN_STATUSES,
+} from '@/features/findings/lib/list-defaults'
 
 /** The dimensions the Findings page groups by (the groups API's group_by). */
 export const GROUP_BY_DIMENSIONS: GroupByDimension[] = [
@@ -40,9 +44,11 @@ export const GROUP_BY_DIMENSIONS: GroupByDimension[] = [
   'family',
 ]
 
-/** Statuses the grouped view counts when no status filter is set. */
-export const GROUPED_DEFAULT_STATUSES =
-  'new,confirmed,in_progress,fix_applied,not_observed,resolved'
+/** Statuses the grouped view counts when no status filter is set: open and fixed. */
+export const GROUPED_DEFAULT_STATUSES = [
+  ...FINDINGS_OPEN_STATUSES,
+  ...FINDINGS_FIXED_STATUSES,
+].join(',')
 /** Rows a group shows when it opens, and how many "Show more" adds. */
 const FIRST_ROWS = 5
 const MORE_ROWS = 20

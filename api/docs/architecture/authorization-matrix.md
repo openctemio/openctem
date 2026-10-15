@@ -1321,28 +1321,53 @@ provisioning or SSO JIT re-activates a tombstone from zero (only the new
 role). Tombstones yield no token, no tenant-switcher entry, are left out of
 the default member list (`?status=offboarded|all` shows them) and out of SCIM.
 
-### External members (RFC-058)
+### External members (RFC-058, amended by RFC-095)
 
 A member whose email domain the organization does not hold is **external**.
 The domain may belong to another organization (their home organization), be
 a personal address, or be a work domain nobody has verified.
 
+- **Who may be invited** is the organization's policy, `Security.invitees`:
+  `any` (default), `verified_domains`, or `allow_list` (verified domains plus
+  `allowed_domains`). An organization with `allowed_domains` from before reads
+  as `allow_list`. Refusals carry the codes `INVITEE_NOT_ON_VERIFIED_DOMAIN`
+  (403) and `INVITEE_DOMAIN_NOT_ALLOWED` (400).
 - They join only by accepting an invitation addressed to them. Adding an
   existing account or creating an account for them is refused
   (`ErrExternalNeedsInvitation`).
-- They join as a **viewer** with no data scope until added to a team.
-  An invitation offering more is refused.
-- They never hold the owner role (DB CHECK and triggers on `tenant_members`
-  and `user_roles`). They are never granted the admin role or a role with full
-  data access (`RoleService.capExternalTarget`, every grant path, system paths
-  included; `ErrExternalRoleCeiling`, 403).
-- Without a home organization, their access must end:
+- They may be invited to, or given, **any role but owner**. They never hold
+  the owner role (DB CHECK and triggers on `tenant_members` and `user_roles`).
+  A role "above member" (the admin role, full data access, or a privileged
+  permission the built-in member role does not carry: members, teams, roles,
+  API keys, settings; `permission.IsAboveMember`):
+  - needs the inviter's or assigner's **step-up** (`CreateInvitation`,
+    `RoleService.capExternalTarget` on every assignment path,
+    `UpdateMemberRole`); a grant carried out for someone else, such as an
+    invitation being accepted, is not asked again;
+  - makes every token mint for that member require a **second factor**
+    (`AuthService.enforceOutsidePrivilegePolicy`), including the token the
+    refresh-token acceptance mints;
+  - is refused when an active trust with their home organization caps them
+    (`max_role` viewer or member, `ErrExternalRoleCeiling`);
+  - never comes through a team: full data access reaches an outside person
+    only through a role given to them directly (`ErrExternalTeamFullData`).
+- **End of access** is optional for everyone. With
+  `Security.external_access_end_required` on, an outside person no
+  organization manages must have one:
   - 90 days by default, 365 at most;
   - `MemberAccessExpiryController` suspends the membership within a minute
     (`suspended_reason = expired`), in that organization only;
   - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
     `members:write`) sets a new end date and re-enables them;
   - a plain reactivation is refused.
+- **API keys** follow the member: allowed unless an active trust with their
+  home forbids keys, and never beyond the end of access.
+- **Acceptance re-authorizes the invitation** as the inviter: an inviter who
+  left, was suspended, or no longer holds the owner or admin role (or, for the
+  admin role, is no longer the owner), or can no longer grant one of the
+  roles, voids the invitation (`INVITATION_NO_LONGER_VALID`, 403) and nothing
+  is granted. Both acceptance paths (`/invitations/accept` and
+  `/invitations/accept-with-refresh`) run the same `TenantService.AcceptInvitation`.
 - The host sees the home organization's name only.
 - **Trusted organizations** (`/api/v1/organization/trusts`):
   - reading needs owner/admin plus `members:read`; every change needs an owner with step-up;
@@ -2066,7 +2091,7 @@ report all read it.
 | Binding is a grant | `POST/DELETE /api/v1/groups/{groupId}/roles` need `team:roles:assign` and `team:groups:write`; the actor must hold every permission of the role (and full data if it has it) and, without full data access, every asset of the team (D13) |
 | Membership of a team that carries roles is a grant | adding, extending or removing someone needs the same ceiling for each bound role; nobody but the owner adds themselves |
 | Privileged roles are the owner's | a role with full data access or a permission in `permission.PrivilegedPermissions` (member, team, role, API key, secret store or settings administration) is bound, unbound, its team's membership changed, or an existing bound role made privileged, by the owner only, with a recent sign-in |
-| External members | never hold a full-data role through a team (refused on add and on bind) |
+| External members | never hold a full-data role through a team (refused on add and on bind, `ErrExternalTeamFullData`) |
 | Limits | at most 10 roles per team; a bound role cannot be deleted (409 `ROLE_IN_USE`) |
 | Freshness | every bind, unbind, add, remove, end-date change, expiry and role edit invalidates the affected members' cached permissions (role edits fan out to direct and team holders) |
 | Audit | `role.assigned` / `role.unassigned` on the team (metadata `binding=team`, the role, `privileged`, member count), High, Critical when privileged |
