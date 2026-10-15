@@ -30,6 +30,11 @@ type Invitation struct {
 	// access is what an external invitee gets (expiry and its reason); it
 	// becomes the membership's on acceptance.
 	access ExternalAccess
+
+	// invitee, lastSentAt and resendCount: invitation_lifecycle.go.
+	invitee     InviteeInfo
+	lastSentAt  *time.Time
+	resendCount int
 }
 
 // Access returns the access the inviter set for an external invitee.

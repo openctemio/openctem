@@ -1281,14 +1281,34 @@ func (r *TenantRepository) GetUserMemberships(ctx context.Context, userID shared
 // =============================================================================
 
 // CreateInvitation creates a new invitation.
+//
+// It refuses an inviter who sent tenant.InvitationsPerInviterPerHour in the
+// last hour, the plan's daily invitation limit (revoked invitations count:
+// they were sent), and an invitation the seats could not take: members plus
+// pending invitations must stay within the plan's seats.
 func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Invitation) error {
+	var sentLastHour, pending int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT
+		  (SELECT count(*) FROM tenant_invitations WHERE invited_by = $1 AND created_at > now() - interval '1 hour'),
+		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $2 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now())`,
+		inv.InvitedBy().String(), inv.TenantID().String()).Scan(&sentLastHour, &pending); err != nil {
+		return fmt.Errorf("count invitations: %w", err)
+	}
+	if sentLastHour >= tenant.InvitationsPerInviterPerHour {
+		return tenant.ErrInvitationRateLimited
+	}
 	if err := r.checkLimit(ctx, inv.TenantID(), plan.InvitesPerDay, 1); err != nil {
 		return err
 	}
+	if err := r.checkLimit(ctx, inv.TenantID(), plan.Seats, pending+1); err != nil {
+		return err
+	}
+	info := inv.InviteeInfo()
 	query := `
 		INSERT INTO tenant_invitations (id, tenant_id, email, role, role_ids, token, invited_by, expires_at, created_at,
-		                                access_expires_at, access_expiry_reason)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		                                access_expires_at, access_expiry_reason, last_sent_at, invitee_kind, privileged)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $9, $12, $13)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -1303,6 +1323,8 @@ func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Inv
 		inv.CreatedAt(),
 		nullTime(inv.Access().ExpiresAt),
 		nullString(inv.Access().Reason),
+		string(info.Kind),
+		info.Privileged,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create invitation: %w", err)
@@ -1315,9 +1337,9 @@ func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Inv
 func (r *TenantRepository) GetInvitationByToken(ctx context.Context, token string) (*tenant.Invitation, error) {
 	query := `
 		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
-		       access_expires_at, access_expiry_reason
+		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged
 		FROM tenant_invitations
-		WHERE token = $1
+		WHERE token = $1 AND revoked_at IS NULL
 	`
 
 	return r.scanInvitation(r.db.QueryRowContext(ctx, query, token))
@@ -1327,9 +1349,9 @@ func (r *TenantRepository) GetInvitationByToken(ctx context.Context, token strin
 func (r *TenantRepository) GetInvitationByID(ctx context.Context, tenantID, id shared.ID) (*tenant.Invitation, error) {
 	query := `
 		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
-		       access_expires_at, access_expiry_reason
+		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged
 		FROM tenant_invitations
-		WHERE id = $1 AND tenant_id = $2
+		WHERE id = $1 AND tenant_id = $2 AND revoked_at IS NULL
 	`
 
 	return r.scanInvitation(r.db.QueryRowContext(ctx, query, id.String(), tenantID.String()))
@@ -1341,11 +1363,12 @@ func (r *TenantRepository) GetInvitationByID(ctx context.Context, tenantID, id s
 func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Invitation) error {
 	query := `
 		UPDATE tenant_invitations
-		SET accepted_at = $2, token = $3
-		WHERE id = $1 AND tenant_id = $4
+		SET accepted_at = $2, token = $3, last_sent_at = $5, resend_count = $6
+		WHERE id = $1 AND tenant_id = $4 AND revoked_at IS NULL
 	`
 
-	result, err := r.db.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt(), inv.Token(), inv.TenantID().String())
+	result, err := r.db.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt(), inv.Token(), inv.TenantID().String(),
+		inv.LastSentAt(), inv.ResendCount())
 	if err != nil {
 		return fmt.Errorf("failed to update invitation: %w", err)
 	}
@@ -1361,9 +1384,13 @@ func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Inv
 	return nil
 }
 
-// DeleteInvitation removes an invitation.
+// DeleteInvitation revokes a pending invitation (canceled or declined): the
+// token stops working and the row stays, so the daily plan limit still counts
+// it and the history is kept. DeleteExpiredInvitations purges it after 30
+// days.
 func (r *TenantRepository) DeleteInvitation(ctx context.Context, tenantID, id shared.ID) error {
-	query := `DELETE FROM tenant_invitations WHERE tenant_id = $1 AND id = $2`
+	query := `UPDATE tenant_invitations SET revoked_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND revoked_at IS NULL AND accepted_at IS NULL`
 
 	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
@@ -1385,9 +1412,9 @@ func (r *TenantRepository) DeleteInvitation(ctx context.Context, tenantID, id sh
 func (r *TenantRepository) ListPendingInvitationsByTenant(ctx context.Context, tenantID shared.ID) ([]*tenant.Invitation, error) {
 	query := `
 		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
-		       access_expires_at, access_expiry_reason
+		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged
 		FROM tenant_invitations
-		WHERE tenant_id = $1 AND accepted_at IS NULL AND expires_at > NOW()
+		WHERE tenant_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()
 		ORDER BY created_at DESC
 	`
 
@@ -1413,9 +1440,9 @@ func (r *TenantRepository) ListPendingInvitationsByTenant(ctx context.Context, t
 func (r *TenantRepository) GetPendingInvitationByEmail(ctx context.Context, tenantID shared.ID, email string) (*tenant.Invitation, error) {
 	query := `
 		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
-		       access_expires_at, access_expiry_reason
+		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged
 		FROM tenant_invitations
-		WHERE tenant_id = $1 AND email = $2 AND accepted_at IS NULL AND expires_at > NOW()
+		WHERE tenant_id = $1 AND email = $2 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()
 	`
 
 	return r.scanInvitation(r.db.QueryRowContext(ctx, query, tenantID.String(), email))
@@ -1430,7 +1457,7 @@ func (r *TenantRepository) HasPendingInvitationForEmail(ctx context.Context, ema
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM tenant_invitations
-			 WHERE lower(email) = lower($1) AND accepted_at IS NULL AND expires_at > NOW()
+			 WHERE lower(email) = lower($1) AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()
 		)`, email).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check pending invitation: %w", err)
@@ -1438,9 +1465,12 @@ func (r *TenantRepository) HasPendingInvitationForEmail(ctx context.Context, ema
 	return ok, nil
 }
 
-// DeleteExpiredInvitations removes all expired invitations.
+// DeleteExpiredInvitations removes expired invitations, and revoked ones
+// after 30 days.
 func (r *TenantRepository) DeleteExpiredInvitations(ctx context.Context) (int64, error) {
-	query := `DELETE FROM tenant_invitations WHERE expires_at < NOW() AND accepted_at IS NULL`
+	query := `DELETE FROM tenant_invitations
+		WHERE (expires_at < NOW() AND accepted_at IS NULL)
+		   OR (revoked_at IS NOT NULL AND revoked_at < NOW() - interval '30 days')`
 
 	result, err := r.db.ExecContext(ctx, query)
 	if err != nil {
@@ -1471,12 +1501,14 @@ func (r *TenantRepository) DeletePendingInvitationsByUserID(
 	tenantID, userID shared.ID,
 ) (int64, error) {
 	query := `
-		DELETE FROM tenant_invitations ti
-		USING users u
+		UPDATE tenant_invitations ti
+		SET revoked_at = now()
+		FROM users u
 		WHERE ti.tenant_id = $1
 		  AND u.id = $2
 		  AND LOWER(ti.email) = LOWER(u.email)
 		  AND ti.accepted_at IS NULL
+		  AND ti.revoked_at IS NULL
 	`
 	result, err := r.db.ExecContext(ctx, query, tenantID.String(), userID.String())
 	if err != nil {
@@ -1496,7 +1528,7 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 		updateQuery := `
 			UPDATE tenant_invitations
 			SET accepted_at = $2
-			WHERE id = $1 AND tenant_id = $3
+			WHERE id = $1 AND tenant_id = $3 AND accepted_at IS NULL AND revoked_at IS NULL
 		`
 		// The membership is created in the invitation's own tenant.
 		if m.TenantID() != inv.TenantID() {
@@ -1753,10 +1785,12 @@ func (r *TenantRepository) scanInvitation(row *sql.Row) (*tenant.Invitation, err
 		acceptedAt                                              sql.NullTime
 	)
 
-	var accessAt sql.NullTime
-	var accessReason sql.NullString
+	var accessAt, lastSentAt sql.NullTime
+	var accessReason, inviteeKind sql.NullString
+	var resendCount int
+	var privileged bool
 	err := row.Scan(&idStr, &tenantIDStr, &email, &roleStr, &roleIDs, &token, &invitedByStr, &expiresAt, &acceptedAt, &createdAt,
-		&accessAt, &accessReason)
+		&accessAt, &accessReason, &lastSentAt, &resendCount, &inviteeKind, &privileged)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -1778,6 +1812,8 @@ func (r *TenantRepository) scanInvitation(row *sql.Row) (*tenant.Invitation, err
 		id, tenantID, email, role, []string(roleIDs), token, invitedBy, expiresAt, acceptedAtPtr, createdAt,
 	)
 	inv.SetAccess(tenant.ExternalAccess{ExpiresAt: nullTimeValue(accessAt), Reason: accessReason.String})
+	inv.SetSendHistory(nullTimeValue(lastSentAt), resendCount)
+	_ = inv.SetInviteeInfo(tenant.InviteeInfo{Kind: tenant.MemberKind(inviteeKind.String), Privileged: privileged})
 	return inv, nil
 }
 
@@ -1789,10 +1825,12 @@ func (r *TenantRepository) scanInvitationRow(rows *sql.Rows) (*tenant.Invitation
 		acceptedAt                                              sql.NullTime
 	)
 
-	var accessAt sql.NullTime
-	var accessReason sql.NullString
+	var accessAt, lastSentAt sql.NullTime
+	var accessReason, inviteeKind sql.NullString
+	var resendCount int
+	var privileged bool
 	err := rows.Scan(&idStr, &tenantIDStr, &email, &roleStr, &roleIDs, &token, &invitedByStr, &expiresAt, &acceptedAt, &createdAt,
-		&accessAt, &accessReason)
+		&accessAt, &accessReason, &lastSentAt, &resendCount, &inviteeKind, &privileged)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan invitation: %w", err)
 	}
@@ -1811,6 +1849,8 @@ func (r *TenantRepository) scanInvitationRow(rows *sql.Rows) (*tenant.Invitation
 		id, tenantID, email, role, []string(roleIDs), token, invitedBy, expiresAt, acceptedAtPtr, createdAt,
 	)
 	inv.SetAccess(tenant.ExternalAccess{ExpiresAt: nullTimeValue(accessAt), Reason: accessReason.String})
+	inv.SetSendHistory(nullTimeValue(lastSentAt), resendCount)
+	_ = inv.SetInviteeInfo(tenant.InviteeInfo{Kind: tenant.MemberKind(inviteeKind.String), Privileged: privileged})
 	return inv, nil
 }
 

@@ -61,6 +61,17 @@ var ErrOwnerRequiredForAdminPromotion = fmt.Errorf(
 // the organization's active owner who re-authenticated recently (step-up).
 // An empty actor is a system path (SCIM, SSO), bounded by its own rules.
 func (s *TenantService) authorizeAdminPromotion(ctx context.Context, tenantID shared.ID, actx auditapp.AuditContext) error {
+	if err := s.authorizeAdminPromotionNoStepUp(ctx, tenantID, actx); err != nil {
+		return err
+	}
+	if actx.ActorID == "" {
+		return nil
+	}
+	return s.requireStepUp(ctx, actx.ActorID)
+}
+
+// authorizeAdminPromotionNoStepUp is the owner check of authorizeAdminPromotion.
+func (s *TenantService) authorizeAdminPromotionNoStepUp(ctx context.Context, tenantID shared.ID, actx auditapp.AuditContext) error {
 	if actx.ActorID == "" {
 		return nil
 	}
@@ -72,7 +83,7 @@ func (s *TenantService) authorizeAdminPromotion(ctx context.Context, tenantID sh
 	if err != nil || actor == nil || !actor.IsOwner() || actor.IsSuspended() {
 		return ErrOwnerRequiredForAdminPromotion
 	}
-	return s.requireStepUp(ctx, actx.ActorID)
+	return nil
 }
 
 // requireStepUp asks the step-up gate, when one is wired, for the acting

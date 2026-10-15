@@ -247,6 +247,14 @@ type InvitationResponse struct {
 	// LookalikeOf lists members whose address reaches the same mailbox once
 	// dots and +tags are ignored: a warning, never a merge (create only).
 	LookalikeOf []string `json:"lookalike_of,omitempty"`
+	// MemberKind is internal or external, as classified at creation;
+	// Privileged: the roles are above member for an outside invitee, so the
+	// member will need two-factor (RFC-095).
+	MemberKind string `json:"member_kind"`
+	Privileged bool   `json:"privileged"`
+	// LastSentAt and ResendCount: resends are limited (RFC-095 §5).
+	LastSentAt  time.Time `json:"last_sent_at"`
+	ResendCount int       `json:"resend_count"`
 }
 
 // =============================================================================
@@ -366,6 +374,13 @@ type InvitationListItem struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
 	Pending   bool      `json:"pending"`
+	// MemberKind, Privileged, AccessExpiresAt, LastSentAt, ResendCount: see
+	// InvitationResponse.
+	MemberKind      string     `json:"member_kind"`
+	Privileged      bool       `json:"privileged"`
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	LastSentAt      time.Time  `json:"last_sent_at"`
+	ResendCount     int        `json:"resend_count"`
 }
 
 // InvitationListResponse is the body of GET /tenants/{tenant}/invitations.
@@ -379,6 +394,8 @@ func toInvitationListItem(inv *tenant.Invitation) InvitationListItem {
 	return InvitationListItem{
 		ID: r.ID, Email: r.Email, Role: r.Role, RoleIDs: r.RoleIDs, InvitedBy: r.InvitedBy,
 		ExpiresAt: r.ExpiresAt, CreatedAt: r.CreatedAt, Pending: r.Pending,
+		MemberKind: r.MemberKind, Privileged: r.Privileged, AccessExpiresAt: r.AccessExpiresAt,
+		LastSentAt: r.LastSentAt, ResendCount: r.ResendCount,
 	}
 }
 
@@ -398,6 +415,10 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 		Pending:   inv.IsPending(),
 
 		AccessExpiresAt: inv.Access().ExpiresAt,
+		MemberKind:      string(inv.InviteeInfo().Kind),
+		Privileged:      inv.InviteeInfo().Privileged,
+		LastSentAt:      inv.LastSentAt(),
+		ResendCount:     inv.ResendCount(),
 	}
 	if includeToken {
 		resp.Token = inv.Token()
@@ -531,6 +552,10 @@ func invitationErrorCode(err error) (string, int, bool) {
 		return "INVITATION_NO_LONGER_VALID", http.StatusForbidden, true
 	case errors.Is(err, tenantapp.ErrPersonalAccountsBlocked):
 		return "PERSONAL_ACCOUNTS_BLOCKED", http.StatusForbidden, true
+	case errors.Is(err, tenant.ErrInvitationResendTooSoon):
+		return "INVITATION_RESEND_TOO_SOON", http.StatusTooManyRequests, true
+	case errors.Is(err, tenant.ErrInvitationRateLimited):
+		return "INVITATIONS_RATE_LIMITED", http.StatusTooManyRequests, true
 	}
 	return "", 0, false
 }
@@ -1202,6 +1227,72 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// PreviewInvitationRequest is the body of POST /organization/invitations/preview.
+type PreviewInvitationRequest struct {
+	Email   string   `json:"email" validate:"required,max=254"`
+	RoleIDs []string `json:"role_ids" validate:"max=10"`
+}
+
+// PreviewInvitationResponse says what inviting the address would do.
+type PreviewInvitationResponse struct {
+	Allowed              bool   `json:"allowed"`
+	Reason               string `json:"reason,omitempty"`
+	Outside              bool   `json:"outside"`
+	Personal             bool   `json:"personal"`
+	Privileged           bool   `json:"privileged"`
+	StepUpRequired       bool   `json:"step_up_required"`
+	MFARequired          bool   `json:"mfa_required"`
+	AccessEndRequired    bool   `json:"access_end_required"`
+	DefaultAccessEndDays int    `json:"default_access_end_days"`
+	MaxAccessEndDays     int    `json:"max_access_end_days"`
+	SSOExceptionNeeded   bool   `json:"sso_exception_needed"`
+	AlreadyMember        bool   `json:"already_member"`
+	AlreadyInvited       bool   `json:"already_invited"`
+}
+
+// PreviewInvitation handles POST /api/v1/organization/invitations/preview.
+//
+// @Summary      Preview an invitation
+// @Description  What inviting this address with these roles would do, before anything is sent: whether the organization's invitation policy allows it (reason code when not), whether the person is outside the organization or uses a personal address, whether the roles are above member for them (the inviter then re-authenticates and the member needs two-factor), whether an end of access is required, and whether they are already a member or invited. Says nothing about other organizations. Same gate as creating an invitation (RFC-095).
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        body  body  PreviewInvitationRequest  true  "Address and roles"
+// @Success      200  {object}  PreviewInvitationResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/invitations/preview [post]
+func (h *TenantHandler) PreviewInvitation(w http.ResponseWriter, r *http.Request) {
+	actx := h.tokenTenantAuditContext(r)
+	if actx.ActorID == "" || actx.TenantID == "" {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+	var req PreviewInvitationRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	p, err := h.service.PreviewInvitation(r.Context(), actx.TenantID, req.Email, req.RoleIDs, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(PreviewInvitationResponse{
+		Allowed: p.Allowed, Reason: p.Reason, Outside: p.Outside, Personal: p.Personal,
+		Privileged: p.Privileged, StepUpRequired: p.StepUpRequired, MFARequired: p.MFARequired,
+		AccessEndRequired: p.AccessEndRequired, DefaultAccessEndDays: p.DefaultAccessEndDays,
+		MaxAccessEndDays: p.MaxAccessEndDays, SSOExceptionNeeded: p.SSOExceptionNeeded,
+		AlreadyMember: p.AlreadyMember, AlreadyInvited: p.AlreadyInvited,
+	})
 }
 
 // canGrantRoles enforces anti-escalation for invitations and administrator-

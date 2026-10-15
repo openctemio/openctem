@@ -231,14 +231,35 @@ another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 
+### Who may be invited (`security.invitees`, RFC-095)
+
+`any` (the default), `verified_domains` (the organization's verified
+domains), or `allow_list` (verified domains plus `security.allowed_domains`).
+It applies when an invitation is sent and again when it is accepted.
+
 ### Allowed email domains (`security.allowed_domains`)
 
 Empty = no restriction. Otherwise the email's domain (after the last `@`,
 case-insensitive, exact — `corp.com` does not admit `eu.corp.com`) must be in
-the list for: sending and accepting invitations, registering with an
-invitation, administrator-created users, adding an existing user, SCIM
-provisioning, and SSO just-in-time provisioning. Existing members are not
+the list for: administrator-created users, adding an existing user, SCIM
+provisioning, and SSO just-in-time provisioning, and for invitations when
+`security.invitees` is `allow_list` (an organization that set allowed domains
+before `invitees` existed reads as `allow_list`). Existing members are not
 removed when the list changes.
+
+### Invitation lifecycle (RFC-095)
+
+| Rule | |
+|---|---|
+| Token | 32 random bytes, stored hashed, in the URL fragment and request bodies only, bound to the invited address, 7 days, single use (acceptance updates only a row with `accepted_at IS NULL`) |
+| Preview | `POST /api/v1/organization/invitations/preview {email, role_ids}` (same gate as creating one) says, before sending, whether the policy allows it (reason code), whether the person is outside or personal, whether the roles need the inviter's step-up and the member's two-factor, whether an end of access is required, and whether they are already a member or invited. Nothing about other organizations |
+| Resend | rotates the token; at most once every 10 minutes and 5 times per invitation (429 `INVITATION_RESEND_TOO_SOON`) |
+| Cancel and decline | the row is kept as revoked (`revoked_at`): the token, the pending list and resend stop working; purged after 30 days. Removing a member revokes their pending invitations the same way |
+| Daily plan limit | counts every invitation created in the last 24 hours, revoked ones included |
+| Per inviter | at most 50 invitations an hour (429 `INVITATIONS_RATE_LIMITED`) |
+| Seats | checked when the invitation is created (members plus pending invitations) and again at acceptance |
+| Pending list | shows `member_kind` (internal or external at creation), `privileged` (two-factor will be required), the end of access, the last send and the resend count |
+| Acceptance | re-classifies the invitee and re-authorizes the invitation as the inviter (RFC-095 §3.2); both acceptance paths run the same code |
 
 ### IP allowlist (`security.ip_whitelist`)
 
