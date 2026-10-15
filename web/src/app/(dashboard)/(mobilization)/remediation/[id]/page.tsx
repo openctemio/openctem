@@ -81,8 +81,8 @@ const STATUS_CONFIG: Record<
 }
 
 const PRIORITY_CONFIG: Record<string, { label: string; className: string }> = {
-  urgent: {
-    label: 'Urgent',
+  critical: {
+    label: 'Critical',
     className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100',
   },
   high: {
@@ -232,6 +232,7 @@ export default function CampaignDetailPage() {
           ...(campaign?.finding_filter ?? {}),
           finding_ids: linkedFindingIds.filter((x) => x !== findingId),
         },
+        version: campaign?.version,
       })
       await mutateCampaign()
       setPendingUnlink(null)
@@ -272,6 +273,8 @@ export default function CampaignDetailPage() {
         name: editForm.name,
         description: editForm.description,
         priority: editForm.priority,
+        // A save made on a stale copy answers 409 instead of overwriting.
+        version: campaign?.version,
       })
       await mutateCampaign()
       globalMutate(
@@ -287,7 +290,7 @@ export default function CampaignDetailPage() {
   const handleStatusChange = async (newStatus: string) => {
     const apply = async () => {
       try {
-        await updateStatus({ status: newStatus })
+        await updateStatus({ status: newStatus, version: campaign?.version })
         await mutateCampaign()
         globalMutate(
           (key: unknown) => typeof key === 'string' && key.includes('/remediation/campaigns')
@@ -407,7 +410,7 @@ export default function CampaignDetailPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
                     <SelectItem value="high">High</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>
                     <SelectItem value="low">Low</SelectItem>

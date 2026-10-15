@@ -9,8 +9,10 @@
 -- wrote it, as a sla_deadline_tightened activity with the old and new
 -- deadline and, when the priority moved, the old and new class.
 --
--- Live impact: a CHECK constraint rewrite on finding_activities (validated
--- in place, as in 002173) and one AFTER UPDATE trigger on findings.
+-- Live impact: the CHECK constraint on the large finding_activities table is
+-- re-added NOT VALID (no full-table scan under the ACCESS EXCLUSIVE lock);
+-- the migration sla_activity_type_validate validates it. One AFTER UPDATE
+-- trigger on findings.
 
 -- Add the activity type to the existing CHECK list, whatever other
 -- migrations added to it before this one ran: the list is read back from
@@ -24,7 +26,7 @@ BEGIN
     WHERE c.conname = 'chk_activity_type' AND c.conrelid = 'finding_activities'::regclass;
     IF vals IS NOT NULL AND NOT 'sla_deadline_tightened' = ANY (vals) THEN
         ALTER TABLE finding_activities DROP CONSTRAINT chk_activity_type;
-        EXECUTE format('ALTER TABLE finding_activities ADD CONSTRAINT chk_activity_type CHECK (activity_type IN (%s))',
+        EXECUTE format('ALTER TABLE finding_activities ADD CONSTRAINT chk_activity_type CHECK (activity_type IN (%s)) NOT VALID',
             (SELECT string_agg(quote_literal(v), ', ' ORDER BY v) FROM unnest(vals || 'sla_deadline_tightened'::text) AS v));
     END IF;
 END;
