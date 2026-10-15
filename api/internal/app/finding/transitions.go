@@ -2,6 +2,7 @@ package finding
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -60,13 +61,10 @@ func (s *VulnerabilityService) transitionFacts(ctx context.Context, tenantID sha
 	for _, f := range findings {
 		facts := transitionFactsOf(f)
 		facts.CanClaimFix = s.fixAppliers == nil || claimable[f.ID()]
-		if (target == "" || target == vulnerability.FindingStatusResolved) &&
-			f.NeedsVerificationChecklist(vulnerability.FindingStatusResolved) && s.db != nil {
-			checklist, err := loadVerificationChecklist(ctx, s.db, tenantID, f.ID())
-			if err != nil {
+		if (target == "" || target == vulnerability.FindingStatusResolved) && s.db != nil {
+			if err := loadResolveEvidence(ctx, s.db, tenantID, f.ID(), &facts); err != nil {
 				return nil, err
 			}
-			facts.ChecklistComplete = checklist != nil && checklist.FindingID() == f.ID() && checklist.IsComplete()
 		}
 		out[f.ID()] = facts
 	}
@@ -276,4 +274,31 @@ func bulkRefusalReason(err error) string {
 		msg = strings.TrimPrefix(msg, kind.Error()+": ")
 	}
 	return msg
+}
+
+// loadResolveEvidence adds to facts the proof a resolve may rest on: the
+// finding's verification checklist (complete, and by whom) and whether its
+// latest completed retest confirmed the fix. Tenant-scoped reads.
+func loadResolveEvidence(ctx context.Context, db *sql.DB, tenantID, findingID shared.ID, facts *vulnerability.TransitionFacts) error {
+	checklist, err := loadVerificationChecklist(ctx, db, tenantID, findingID)
+	if err != nil {
+		return err
+	}
+	if checklist != nil && checklist.FindingID() == findingID && checklist.IsComplete() {
+		facts.ChecklistComplete = true
+		if by := checklist.CompletedBy(); by != nil {
+			facts.ChecklistCompletedBy = *by
+		}
+	}
+	var outcome sql.NullString
+	err = db.QueryRowContext(ctx, `
+		SELECT outcome FROM finding_retests
+		WHERE tenant_id = $1 AND finding_id = $2 AND status = 'completed'
+		ORDER BY completed_at DESC NULLS LAST
+		LIMIT 1`, tenantID.String(), findingID.String()).Scan(&outcome)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read latest retest: %w", err)
+	}
+	facts.RetestConfirmedFixed = outcome.String == "confirmed_fixed"
+	return nil
 }

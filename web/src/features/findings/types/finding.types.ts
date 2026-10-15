@@ -792,6 +792,8 @@ export interface Finding {
   resolvedAt?: string
   /** Why it is closed (lib/closure.ts); absent while open. */
   closureReason?: string
+  /** Longest risk acceptance for this finding's priority, in days (server rule). */
+  maxAcceptanceDays?: number
   /** How a resolve was proven. */
   verification?: string
   /** present or stale (no longer reported, not fixed). */

@@ -301,6 +301,8 @@ export interface ApiFinding {
   resolution?: string
   /** Why a closed finding is closed (lib/closure.ts); absent while open. */
   closure_reason?: string
+  /** Longest risk acceptance for this finding's priority, in days (server rule). */
+  max_acceptance_days?: number
   /** How a resolve (or a platform false positive) was proven. */
   verification?: string
   /** present, or stale: no longer reported and no coverage proof (never fixed). */
