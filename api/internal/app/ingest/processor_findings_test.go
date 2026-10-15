@@ -1784,3 +1784,29 @@ func TestBuildFinding_KeepsScannerFixedVersions(t *testing.T) {
 	assert.Equal(t, []string{"5.2.8", "5.1.14", "4.2.26"},
 		vulnerability.MetaStrings(f.Metadata(), vulnerability.FindingMetaFixedVersions))
 }
+
+// A dependency finding keeps the advisory's references (http(s) only),
+// dates and CVSS source on the finding, since a report never writes the
+// shared catalog.
+func TestBuildFinding_KeepsAdvisoryFacts(t *testing.T) {
+	p := NewFindingProcessor(&stubFindingRepository{}, nil, stubAssetRepoGetByID{}, logger.NewNop())
+	assetID := shared.NewID()
+	pub := time.Date(2025, 11, 5, 15, 15, 41, 0, time.UTC)
+	cf := &ctis.Finding{
+		ID: "f1", Type: ctis.FindingTypeVulnerability, Title: "django: Django SQL injection",
+		Severity: ctis.SeverityCritical, RuleID: "CVE-2025-64459",
+		References: []string{"https://github.com/advisories/GHSA-frmv-pr5f-9mcr", "javascript:alert(1)"},
+		Vulnerability: &ctis.VulnerabilityDetails{
+			CVEID: "CVE-2025-64459", PublishedAt: &pub, CVSSSource: "ghsa",
+		},
+	}
+	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "scan-1"}, Tool: &ctis.Tool{Name: "trivy"}}
+	fp, base := generateFindingFingerprint(assetID, cf, report.Tool)
+	f, err := p.buildFinding(context.Background(), shared.NewID(), assetID, nil, shared.NewID(), report, cf, fp, base, nil)
+	require.NoError(t, err)
+	m := f.Metadata()
+	assert.Equal(t, []string{"https://github.com/advisories/GHSA-frmv-pr5f-9mcr"}, vulnerability.MetaStrings(m, vulnerability.FindingMetaReferences))
+	assert.Equal(t, "2025-11-05T15:15:41Z", m[vulnerability.FindingMetaPublishedAt])
+	assert.Equal(t, "ghsa", m[vulnerability.FindingMetaCVSSSource])
+	assert.Nil(t, m[vulnerability.FindingMetaModifiedAt])
+}
