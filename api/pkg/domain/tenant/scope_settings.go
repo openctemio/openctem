@@ -74,6 +74,10 @@ type ScopeSettings struct {
 	// the default: on, except while the Strict scan approval mode is in force
 	// (owner decision D1).
 	AutoCoverage *bool `json:"auto_coverage,omitempty"`
+	// CIScopeRequiresProof keeps a CI trust's new repository scope entries
+	// inactive until a verified pipeline run under them (opt-in governance,
+	// default off: a trust's entries are in effect at once).
+	CIScopeRequiresProof bool `json:"ci_scope_requires_proof,omitempty"`
 	// OneOffTargets: admins, admins_and_requests (default) or disabled.
 	OneOffTargets string `json:"one_off_targets,omitempty"`
 	// OneOffMaxDays bounds an expiring entry, 1..30 (0: 7).
