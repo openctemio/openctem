@@ -61,10 +61,15 @@ const findingSeverityRank = `CASE f.severity
 				WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5
 			END`
 
+// statusCountCols counts a group's findings per bucket. Every open status
+// lands in exactly one of open, in_progress and fix_applied: open is the open
+// set (OpenStatuses) less the two work buckets, so validated_fixed and
+// not_observed findings are counted as open instead of vanishing.
 func statusCountCols() string {
 	return `
 		COUNT(*) as total,
-		COUNT(*) FILTER (WHERE f.status IN ('new','confirmed')) as open,
+		COUNT(*) FILTER (WHERE ` + vulnerability.OpenStatusSQL("f.status") + `
+			AND f.status <> 'in_progress' AND f.status <> 'fix_applied') as open,
 		COUNT(*) FILTER (WHERE f.status = 'in_progress') as in_progress,
 		COUNT(*) FILTER (WHERE f.status = 'fix_applied') as fix_applied,
 		COUNT(*) FILTER (WHERE f.status = 'resolved') as resolved,
@@ -865,7 +870,7 @@ func (r *FindingRepository) FindRelatedCVEs(
 		WHERE f.tenant_id = $1
 			AND f.cve_id != $2
 			AND f.cve_id IS NOT NULL
-			AND f.status IN ('new', 'confirmed', 'in_progress')
+			AND `+vulnerability.OpenStatusSQL("f.status")+`
 			AND f.source != 'pentest'
 			%s
 		GROUP BY f.cve_id
