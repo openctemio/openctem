@@ -276,11 +276,12 @@ func (a campaignFindingResolver) ResolveOpenByFilter(ctx context.Context, tenant
 		status = string(vulnerability.FindingStatusFixApplied)
 	}
 	res, err := a.vuln.BulkUpdateFindingsStatus(ctx, tenantID, finding.BulkUpdateStatusInput{
-		FindingIDs:          idStrs,
-		Status:              status,
-		Resolution:          in.Resolution,
-		ActorID:             in.ActorID,
-		HasVerifyPermission: in.HasVerifyPermission,
+		FindingIDs:            idStrs,
+		Status:                status,
+		Resolution:            in.Resolution,
+		ActorID:               in.ActorID,
+		HasVerifyPermission:   in.HasVerifyPermission,
+		HasFixApplyPermission: in.HasFixApplyPermission,
 	})
 	if err != nil {
 		return 0, err
@@ -318,12 +319,13 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 		return 0, err
 	}
 	res, err := a.group.ResolveGroup(ctx, tid, remediation.ResolveGroupInput{
-		Key:                 key,
-		Status:              in.Status,
-		Resolution:          in.Resolution,
-		ActorID:             in.ActorID,
-		HasVerifyPermission: in.HasVerifyPermission,
-		OperatorApproved:    in.Approved,
+		Key:                   key,
+		Status:                in.Status,
+		Resolution:            in.Resolution,
+		ActorID:               in.ActorID,
+		HasVerifyPermission:   in.HasVerifyPermission,
+		HasFixApplyPermission: in.HasFixApplyPermission,
+		OperatorApproved:      in.Approved,
 	})
 	if err != nil {
 		return 0, err
@@ -1171,6 +1173,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.FindingActivity, deps.DB, log,
 	)
 	s.FindingActions.SetDataScope(s.DataScope)
+	// Every route that marks a fix applied uses the same ownership rule.
+	s.Vulnerability.SetFixApplierCheck(s.FindingActions.FixAppliers)
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
