@@ -1252,6 +1252,35 @@ func (r *FindingRepository) GetByWorkItemURI(ctx context.Context, tenantID share
 	return finding, nil
 }
 
+// ListIDsByWorkItemURI returns the ids of every finding of the tenant linked
+// to the work item URI (a ticket may track several findings), oldest first,
+// at most limit. Served by the partial GIN index on work_item_uris.
+func (r *FindingRepository) ListIDsByWorkItemURI(ctx context.Context, tenantID shared.ID, uri string, limit int) ([]shared.ID, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id FROM findings WHERE tenant_id = $1 AND work_item_uris IS NOT NULL AND work_item_uris @> ARRAY[$2]::text[]
+		 ORDER BY created_at, id LIMIT $3`, tenantID.String(), uri, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list findings by work item URI: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	ids := make([]shared.ID, 0, 4)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan finding id: %w", err)
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse finding id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // List retrieves findings matching the filter with pagination.
 func (r *FindingRepository) List(ctx context.Context, filter vulnerability.FindingFilter, opts vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
 	countQuery := `SELECT COUNT(*) FROM findings`

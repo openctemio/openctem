@@ -240,6 +240,24 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 // exposure.CampaignFindingResolver, so completing/resolving a remediation
 // campaign actively closes its open findings (RFC-015 Phase 3). Kept here (not
 // in exposure) so exposure needn't import the finding service or the guard.
+// ticketStatusApplier adapts the finding service's inbound ticket path to
+// the Jira sync service.
+type ticketStatusApplier struct{ vuln *finding.VulnerabilityService }
+
+func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref string,
+) ([]shared.ID, []jira.InboundRefusal, error) {
+	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
+	for _, r := range out.Refused {
+		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
+	}
+	return out.Applied, refused, nil
+}
+
 type campaignFindingResolver struct {
 	vuln  *finding.VulnerabilityService
 	guard *finding.BulkGuard
@@ -1706,14 +1724,22 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound status changes are recorded with the integration as the actor.
 	s.JiraSync.SetActivityRecorder(s.FindingActivity)
+	// Inbound status changes go through the finding service rules (transition
+	// map, gates, "mark fixed" with proof of fix) for every finding linked to
+	// the issue; refusals are commented back once per window (all replicas).
+	s.JiraSync.SetInboundApplier(ticketStatusApplier{vuln: s.Vulnerability})
+	s.JiraSync.SetWorkItemFindingLister(repos.Finding)
+	if deps.RedisClient != nil {
+		s.JiraSync.SetRefusalCommentGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
 	// here (JiraSync is created after the campaign service above).
 	if s.RemediationCampaign != nil {
 		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
-		// Inbound: a Jira webhook moving the campaign's epic to Done completes
-		// the campaign (the reverse of the outbound transition above).
+		// Inbound: a Jira webhook moving the campaign's epic to Done marks the
+		// campaign's findings fixed (a fix claim; verification closes them).
 		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
 	}
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
