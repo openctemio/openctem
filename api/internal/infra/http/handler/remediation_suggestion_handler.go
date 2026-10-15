@@ -434,3 +434,248 @@ func (h *RemediationSuggestionHandler) handleError(w http.ResponseWriter, err er
 		h.tasks.handleError(w, err)
 	}
 }
+
+// ApproveRemediationSuggestionRequest accepts a suggestion, with optional
+// edits.
+type ApproveRemediationSuggestionRequest struct {
+	Version           int                               `json:"version"`
+	Title             *string                           `json:"title,omitempty"`
+	ExcludeFindingIDs []string                          `json:"exclude_finding_ids,omitempty"`
+	Owners            []RemediationSuggestionOwnerInput `json:"owners,omitempty"`
+	Deadline          string                            `json:"deadline,omitempty"`
+	AutoJoin          bool                              `json:"auto_join,omitempty"`
+}
+
+// RemediationSuggestionOwnerInput names another owner for one partition.
+type RemediationSuggestionOwnerInput struct {
+	Index           int    `json:"index"`
+	AssigneeUserID  string `json:"assignee_user_id,omitempty"`
+	AssigneeGroupID string `json:"assignee_group_id,omitempty"`
+}
+
+// RemediationAcceptResponse is what an accept created.
+type RemediationAcceptResponse struct {
+	SuggestionID string   `json:"suggestion_id"`
+	ActionID     string   `json:"action_id"`
+	TaskIDs      []string `json:"task_ids"`
+	Joined       int      `json:"joined"`
+	Dropped      []string `json:"dropped"`
+}
+
+func toAcceptResp(r *remediation.AcceptResult) RemediationAcceptResponse {
+	out := RemediationAcceptResponse{SuggestionID: r.SuggestionID.String(), ActionID: r.ActionID.String(),
+		TaskIDs: make([]string, 0, len(r.TaskIDs)), Joined: r.Joined, Dropped: make([]string, 0, len(r.Dropped))}
+	for _, id := range r.TaskIDs {
+		out.TaskIDs = append(out.TaskIDs, id.String())
+	}
+	for _, id := range r.Dropped {
+		out.Dropped = append(out.Dropped, id.String())
+	}
+	return out
+}
+
+// Approve accepts a suggestion.
+// @Summary      Accept (approve) a remediation suggestion
+// @Description  Creates what the suggestion proposes: a new group creates the action and one task per owner; a join adds the findings to the owner's task; a task route creates a task under the existing action. Optional edits: title, findings to remove (remembered for this fix), other owners per partition, a deadline (it only tightens), and the auto-join rule (exact keys only, needs access to every asset). Findings that closed or joined another task since are left out and listed in dropped.
+// @Tags         Remediation
+// @Accept       json
+// @Produce      json
+// @Param        id       path  string                               true  "Suggestion ID"
+// @Param        request  body  ApproveRemediationSuggestionRequest  true  "Version and edits"
+// @Success      200  {object}  RemediationAcceptResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /remediation/suggestions/{id}/approve [post]
+func (h *RemediationSuggestionHandler) Approve(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tasks.tenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := pathSuggestionID(w, r)
+	if !ok {
+		return
+	}
+	var req ApproveRemediationSuggestionRequest
+	if err := decodeTaskBody(w, r, &req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	in := remediationapp.AcceptInput{TenantID: tid, ID: id, Version: req.Version, ActorID: callerID(r), Title: req.Title, AutoJoin: req.AutoJoin}
+	var err error
+	if in.Exclude, err = parseIDList("exclude_finding_ids", req.ExcludeFindingIDs); err != nil {
+		h.handleError(w, err)
+		return
+	}
+	for _, o := range req.Owners {
+		po := remediationapp.PartitionOwner{Index: o.Index}
+		if po.UserID, err = parseOptID("assignee_user_id", o.AssigneeUserID); err != nil {
+			h.handleError(w, err)
+			return
+		}
+		if po.GroupID, err = parseOptID("assignee_group_id", o.AssigneeGroupID); err != nil {
+			h.handleError(w, err)
+			return
+		}
+		in.Owners = append(in.Owners, po)
+	}
+	if strings.TrimSpace(req.Deadline) != "" {
+		if in.Deadline, err = parseTaskDeadline(req.Deadline); err != nil {
+			h.handleError(w, err)
+			return
+		}
+	}
+	res, err := h.service.Accept(r.Context(), in, h.tasks.auditContext(r))
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toAcceptResp(res))
+}
+
+// BulkApproveRemediationSuggestionsRequest accepts several suggestions as they are.
+type BulkApproveRemediationSuggestionsRequest struct {
+	IDs []string `json:"ids"`
+}
+
+// RemediationBulkAcceptItem is the outcome of one suggestion.
+type RemediationBulkAcceptItem struct {
+	ID     string                     `json:"id"`
+	Result *RemediationAcceptResponse `json:"result,omitempty"`
+	Error  string                     `json:"error,omitempty"`
+}
+
+// BulkApprove accepts several suggestions as they are.
+// @Summary      Accept several remediation suggestions
+// @Description  Accepts up to 50 suggestions (at most 5000 findings) as they are, each on its own; the response gives each one's result or error.
+// @Tags         Remediation
+// @Accept       json
+// @Produce      json
+// @Param        request  body  BulkApproveRemediationSuggestionsRequest  true  "Suggestion IDs"
+// @Success      200  {array}   RemediationBulkAcceptItem
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /remediation/suggestions/approve [post]
+func (h *RemediationSuggestionHandler) BulkApprove(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tasks.tenant(w, r)
+	if !ok {
+		return
+	}
+	var req BulkApproveRemediationSuggestionsRequest
+	if err := decodeTaskBody(w, r, &req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	ids, err := parseIDList("ids", req.IDs)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	items, err := h.service.AcceptMany(r.Context(), tid, ids, callerID(r), h.tasks.auditContext(r))
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	out := make([]RemediationBulkAcceptItem, 0, len(items))
+	for _, it := range items {
+		o := RemediationBulkAcceptItem{ID: it.ID.String(), Error: it.Error}
+		if it.Result != nil {
+			res := toAcceptResp(it.Result)
+			o.Result = &res
+		}
+		out = append(out, o)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// RemediationActionResponse is a remediation action.
+type RemediationActionResponse struct {
+	ID        string         `json:"id"`
+	Key       string         `json:"key"`
+	Kind      string         `json:"kind"`
+	Title     string         `json:"title"`
+	FixSpec   map[string]any `json:"fix_spec"`
+	Origin    string         `json:"origin"`
+	AutoJoin  bool           `json:"auto_join"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+func toActionResp(a *remediation.Action) RemediationActionResponse {
+	spec := a.FixSpec
+	if spec == nil {
+		spec = map[string]any{}
+	}
+	return RemediationActionResponse{ID: a.ID.String(), Key: a.Key, Kind: a.Kind, Title: a.Title, FixSpec: spec,
+		Origin: string(a.Origin), AutoJoin: a.AutoJoin, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt}
+}
+
+// GetAction returns a remediation action.
+// @Summary      Get a remediation action
+// @Tags         Remediation
+// @Produce      json
+// @Param        id  path  string  true  "Action ID"
+// @Success      200  {object}  RemediationActionResponse
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /remediation/actions/{id} [get]
+func (h *RemediationSuggestionHandler) GetAction(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tasks.tenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := pathSuggestionID(w, r)
+	if !ok {
+		return
+	}
+	a, err := h.service.GetAction(r.Context(), tid, id)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toActionResp(a))
+}
+
+// UpdateRemediationActionRequest changes an action's auto-join rule.
+type UpdateRemediationActionRequest struct {
+	AutoJoin *bool `json:"auto_join"`
+}
+
+// UpdateAction turns an action's auto-join rule on or off.
+// @Summary      Turn a remediation action's auto-join rule on or off
+// @Description  With auto-join on, new findings with the action's exact key (package upgrade or secret rotation only) join their owner's open or in-progress task without a suggestion, at most 200 a day; it never changes a finding's status. Needs access to every asset of the organization.
+// @Tags         Remediation
+// @Accept       json
+// @Produce      json
+// @Param        id       path  string                          true  "Action ID"
+// @Param        request  body  UpdateRemediationActionRequest  true  "auto_join"
+// @Success      200  {object}  RemediationActionResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /remediation/actions/{id} [patch]
+func (h *RemediationSuggestionHandler) UpdateAction(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tasks.tenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := pathSuggestionID(w, r)
+	if !ok {
+		return
+	}
+	var req UpdateRemediationActionRequest
+	if err := decodeTaskBody(w, r, &req); err != nil || req.AutoJoin == nil {
+		apierror.BadRequest("auto_join is required").WriteJSON(w)
+		return
+	}
+	a, err := h.service.SetActionAutoJoin(r.Context(), tid, id, *req.AutoJoin, callerID(r), h.tasks.auditContext(r))
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toActionResp(a))
+}

@@ -26,7 +26,15 @@ const (
 	ActionRemediationSuggestionDismissed  Action = "remediation_suggestion.dismissed"
 	ActionRemediationSuggestionSnoozed    Action = "remediation_suggestion.snoozed"
 	ActionRemediationSuggestionReopened   Action = "remediation_suggestion.reopened"
+	ActionRemediationSuggestionAccepted   Action = "remediation_suggestion.accepted"
+	// ActionRemediationActionAutoJoinChanged: a person turned an action's
+	// auto-join rule on or off.
+	ActionRemediationActionAutoJoinChanged Action = "remediation_action.auto_join_changed"
 )
+
+// ResourceTypeRemediationAction is a remediation action (what fixes a set of
+// findings).
+const ResourceTypeRemediationAction ResourceType = "remediation_action"
 
 // ResourceTypeRemediationSuggestion is a remediation suggestion.
 const ResourceTypeRemediationSuggestion ResourceType = "remediation_suggestion"
@@ -36,4 +44,10 @@ var _ = registerActions("remediation_suggestion", map[Action]Severity{
 	ActionRemediationSuggestionDismissed:  SeverityLow,
 	ActionRemediationSuggestionSnoozed:    SeverityLow,
 	ActionRemediationSuggestionReopened:   SeverityLow,
+	ActionRemediationSuggestionAccepted:   SeverityLow,
+})
+
+// Auto-join makes the platform add findings to tasks without a person.
+var _ = registerActions("remediation_action", map[Action]Severity{
+	ActionRemediationActionAutoJoinChanged: SeverityMedium,
 })

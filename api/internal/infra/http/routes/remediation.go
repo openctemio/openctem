@@ -78,5 +78,13 @@ func registerRemediationSuggestionRoutes(
 		r.GET("/{id}/members", h.Members, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))
 		r.POST("/{id}/reject", h.Dismiss, middleware.Require(permission.RemediationWrite))
 		r.POST("/{id}/reopen", h.Reopen, middleware.Require(permission.RemediationWrite))
+		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.RemediationWrite))
+		r.POST("/approve", h.BulkApprove, middleware.Require(permission.RemediationWrite))
+	}, tenantMiddlewares...)
+
+	// Actions: what fixes a set of findings; their auto-join rule.
+	router.Group("/api/v1/remediation/actions", func(r Router) {
+		r.GET("/{id}", h.GetAction, middleware.Require(permission.RemediationRead))
+		r.PATCH("/{id}", h.UpdateAction, middleware.Require(permission.RemediationWrite))
 	}, tenantMiddlewares...)
 }

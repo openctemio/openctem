@@ -157,6 +157,7 @@ type Action struct {
 	Title     string
 	FixSpec   map[string]any
 	Origin    ActionOrigin
+	AutoJoin  bool
 	CreatedBy *shared.ID
 	CreatedAt time.Time
 	UpdatedAt time.Time
