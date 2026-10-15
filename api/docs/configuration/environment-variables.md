@@ -449,6 +449,7 @@ Read by the bundled Caddy gateway (`api/deploy/gateway`).
 | `OPENCTEM_CERT_DIR` | string | `/certs` |  |  | Directory holding the certificate in mode `files`. |
 | `OPENCTEM_ALLOW_PLAIN_HTTP` | string | `false` |  |  | Must be `true` for mode `http`, which serves plain HTTP behind your own TLS proxy. |
 | `OPENCTEM_TRUSTED_PROXIES` | string | `127.0.0.1/32` |  |  | Space-separated CIDRs of proxies in front of the gateway whose `X-Forwarded-For` it believes. |
+| `OPENCTEM_CLIENT_IP_HEADERS` | string | `X-Forwarded-For` |  |  | Header(s) a proxy in `OPENCTEM_TRUSTED_PROXIES` carries the client address in, tried in order: `X-Forwarded-For` (read right to left), `Cf-Connecting-Ip` (Cloudflare Tunnel) or `True-Client-Ip`. Ignored from any other peer; the gateway then sends the API only the resolved address. |
 | `GATEWAY_MAX_BODY_SIZE` | string | `256MB` |  |  | Largest request body the gateway accepts. The API enforces the per-route limits. |
 | `AUTH_COOKIE_NAME` | string | `auth_token` |  |  | Session cookie name used by the routing rule that sends token clients to the API. |
 | `OPENCTEM_GATEWAY_DIR` | string | `/etc/caddy` |  |  | Directory with `Caddyfile`, `planes.caddy` and `modes/`. |

@@ -218,15 +218,69 @@ func (r *CIRunRepository) TouchTrustConfig(ctx context.Context, tenantID, id sha
 
 // --------------------------------------------------------------- replay ---
 
-// ClaimJTI records a token id; false when it was exchanged before.
-func (r *CIRunRepository) ClaimJTI(ctx context.Context, issuer, jti string, expiresAt time.Time) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_oidc_replay (issuer, jti, expires_at) VALUES ($1, $2, $3)
-		ON CONFLICT (issuer, jti) DO NOTHING`, issuer, jti, expiresAt)
+// ClaimReplay records a token's first exchange; when the token id was
+// claimed before it returns the earlier record.
+func (r *CIRunRepository) ClaimReplay(ctx context.Context, rp cirun.Replay) (bool, *cirun.Replay, error) {
+	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_oidc_replay (issuer, jti, expires_at, tenant_id, token_sha256, run_id)
+		VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (issuer, jti) DO NOTHING`,
+		rp.Issuer, rp.JTI, rp.ExpiresAt, nullID(rp.TenantID), rp.TokenSHA256, nullID(rp.RunID))
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	n, err := res.RowsAffected()
-	return n == 1, err
+	if err != nil {
+		return false, nil, err
+	}
+	if n == 1 {
+		return true, nil, nil
+	}
+	prior, err := scanReplay(r.db.QueryRowContext(ctx, `SELECT `+replayColumns+` FROM ci_oidc_replay
+		WHERE issuer = $1 AND jti = $2`, rp.Issuer, rp.JTI))
+	if errors.Is(err, sql.ErrNoRows) {
+		// Purged between the insert and the read: a replay all the same.
+		return false, &cirun.Replay{Issuer: rp.Issuer, JTI: rp.JTI}, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+	return false, prior, nil
+}
+
+// ReuseReplay counts one more exchange of the same token, atomically, while
+// it is under max.
+func (r *CIRunRepository) ReuseReplay(ctx context.Context, issuer, jti string, tenantID shared.ID, digest []byte, max int) (*cirun.Replay, error) {
+	rp, err := scanReplay(r.db.QueryRowContext(ctx, `UPDATE ci_oidc_replay SET exchanges = exchanges + 1
+		WHERE issuer = $1 AND jti = $2 AND tenant_id = $3 AND token_sha256 = $4 AND exchanges < $5
+		RETURNING `+replayColumns, issuer, jti, tenantID.String(), digest, max))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return rp, err
+}
+
+// BindReplayRun records the run a token's exchange produced.
+func (r *CIRunRepository) BindReplayRun(ctx context.Context, issuer, jti string, tenantID, runID shared.ID) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_oidc_replay SET run_id = $4
+		WHERE issuer = $1 AND jti = $2 AND tenant_id = $3 AND (run_id IS NULL OR run_id = $4)`,
+		issuer, jti, tenantID.String(), runID.String())
+	return err
+}
+
+const replayColumns = `issuer, jti, tenant_id, token_sha256, run_id, exchanges, first_at, expires_at`
+
+func scanReplay(row *sql.Row) (*cirun.Replay, error) {
+	var rp cirun.Replay
+	var tenant, run sql.NullString
+	if err := row.Scan(&rp.Issuer, &rp.JTI, &tenant, &rp.TokenSHA256, &run, &rp.Exchanges, &rp.FirstAt, &rp.ExpiresAt); err != nil {
+		return nil, err
+	}
+	if id, err := shared.IDFromString(tenant.String); tenant.Valid && err == nil {
+		rp.TenantID = &id
+	}
+	if id, err := shared.IDFromString(run.String); run.Valid && err == nil {
+		rp.RunID = &id
+	}
+	return &rp, nil
 }
 
 // PurgeExpiredJTIs drops token ids that expired before the given time.
@@ -366,11 +420,12 @@ func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) 
 	return &open, n == 1, nil
 }
 
-// AddRunToken adds a job's upload token to a running aggregate run.
+// AddRunToken adds an upload token to a running run (a job of an aggregate
+// run, or a re-exchange of the token that opened a run).
 func (r *CIRunRepository) AddRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, jobID string, expiresAt time.Time) error {
 	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_run_tokens (token_hash, tenant_id, run_id, external_job_id, expires_at)
 		SELECT $3, tenant_id, id, $4, $5 FROM ci_runs
-		WHERE tenant_id = $1 AND id = $2 AND aggregate AND status = 'running'`,
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
 		tenantID.String(), runID.String(), hash, jobID, expiresAt)
 	if err != nil {
 		return err
@@ -537,8 +592,18 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 	if status != string(cirun.StatusRunning) {
 		return cirun.ErrRunEvaluated
 	}
-	if room := cirun.MaxRunFindings - current; len(fingerprints) > room {
-		fingerprints = fingerprints[:max(room, 0)]
+	overCap := false
+	if room := max(cirun.MaxRunFindings-current, 0); len(fingerprints) > room {
+		// Keep only what the run has not recorded yet: a report that repeats
+		// sightings already recorded does not overflow the cap.
+		fresh, err := unrecordedFingerprints(ctx, tx, tenantID, runID, fingerprints)
+		if err != nil {
+			return err
+		}
+		if len(fresh) > room {
+			fresh, overCap = fresh[:room], true
+		}
+		fingerprints = fresh
 	}
 	added := int64(0)
 	if len(fingerprints) > 0 {
@@ -550,12 +615,52 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 		}
 		added, _ = res.RowsAffected()
 	}
+	// A run past the cap is marked: the gate cannot judge what it did not
+	// record, so the verdict fails (ReasonTooManyFindings) instead of
+	// judging a prefix.
 	if _, err := tx.ExecContext(ctx, `UPDATE ci_runs SET
-		findings_count = findings_count + $3, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
-		tenantID.String(), runID.String(), added); err != nil {
+		findings_count = findings_count + $3, findings_over_cap = findings_over_cap OR $4, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), runID.String(), added, overCap); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// unrecordedFingerprints returns the distinct fingerprints the run has not
+// recorded yet, in their first-seen order.
+func unrecordedFingerprints(ctx context.Context, tx *sql.Tx, tenantID, runID shared.ID, fingerprints []string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT fp FROM (
+			SELECT fp, MIN(ord) AS ord FROM unnest($3::text[]) WITH ORDINALITY AS u(fp, ord) GROUP BY fp
+		) d
+		WHERE NOT EXISTS (SELECT 1 FROM ci_run_findings f
+			WHERE f.tenant_id = $1 AND f.run_id = $2 AND f.fingerprint = d.fp)
+		ORDER BY d.ord`, tenantID.String(), runID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, err
+		}
+		out = append(out, fp)
+	}
+	return out, rows.Err()
+}
+
+// RunFindingsOverCap reports whether the run reported more findings than
+// it could record (MaxRunFindings).
+func (r *CIRunRepository) RunFindingsOverCap(ctx context.Context, tenantID, runID shared.ID) (bool, error) {
+	var over bool
+	err := r.db.QueryRowContext(ctx, `SELECT findings_over_cap FROM ci_runs WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), runID.String()).Scan(&over)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, cirun.ErrRunNotFound
+	}
+	return over, err
 }
 
 // runFindingColumns are the columns scanRunFindings reads, from findings f.
@@ -637,10 +742,14 @@ func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 
 // SaveVerdict stores the run's verdict. The first verdict is final: a run
 // that is no longer running keeps the verdict it has (cirun.ErrRunEvaluated).
+// A run marked over the findings cap stores only a verdict that names the
+// cap (ReasonTooManyFindings): one computed before the mark is refused as
+// changed and judged again.
 func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
 		evaluated_at = $5, updated_at = NOW(),`+decorationQueued+`
-		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6`,
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6
+		  AND (NOT findings_over_cap OR $4::jsonb @> '{"reasons":[{"code":"`+cirun.ReasonTooManyFindings+`"}]}')`,
 		tenantID.String(), runID.String(), verdict, detail, at, expectFindings)
 	if err != nil {
 		return err
