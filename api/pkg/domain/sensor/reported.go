@@ -68,6 +68,12 @@ const CapabilityScopeLimits = "scope.limits@1"
 // declares never counts.
 const CapabilityNetConfined = "net.confined@1"
 
+// CapabilityHTTPIdentity is the capability of a sensor whose tools send the
+// job's http_policy User-Agent and headers on every request (sdk-go
+// toolhost.CapabilityHTTPIdentity). A job carrying a program's
+// identification is claimable only by a sensor that reported it.
+const CapabilityHTTPIdentity = "http.identity@1"
+
 // Tool kinds a sensor reports (sdk-go core.ToolKind).
 const (
 	ToolKindScanner   = "scanner"

@@ -22,7 +22,7 @@
 # The newest released vX.Y.Z tag of this repository (API + web share it); on
 # release/vX.Y.Z, that vX.Y.Z.
 platform:
-  release: v0.9.6
+  release: v0.9.7
 
 # Sensor products: every top-level section other than platform, sdk, ci and
 # chart is one sensor product (api/docs/rfcs/RFC-037 §11). A sensor reports its
@@ -37,9 +37,9 @@ platform:
 #   min               a sensor of this product below it is degraded ("version
 #                     unsupported"); "" = no minimum
 #   image             the published image repository, without a tag
-#   install           the install snippet set: "sensor" is
-#                     configs/sensor-templates/<format>.tmpl, anything else
-#                     names its own files, <install>-<format>.tmpl
+#   install           the install snippet set: the directory
+#                     api/configs/sensor-products/<install>/ of
+#                     <format>.tmpl files (docker required)
 #   release_identity  the workflow that signs the image (keyless cosign); the
 #                     certificate identity is it + "@refs/tags/<tag>"
 

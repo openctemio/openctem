@@ -1,6 +1,7 @@
 package sensor
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -91,13 +92,79 @@ func TestTemplates_UnknownInstallSetIsAnError(t *testing.T) {
 
 // Every shipped template is built in (the generator globs the directory).
 func TestTemplates_EveryShippedFileIsBuiltIn(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join(shippedTemplatesDir, "*.tmpl"))
+	files, err := filepath.Glob(filepath.Join(shippedTemplatesDir, "*", "*.tmpl"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("glob: %v", err)
 	}
 	for _, f := range files {
-		if _, ok := builtinTemplates[strings.TrimSuffix(filepath.Base(f), ".tmpl")]; !ok {
+		key := templateKey(filepath.Base(filepath.Dir(f)), strings.TrimSuffix(filepath.Base(f), ".tmpl"))
+		if _, ok := builtinTemplates[key]; !ok {
 			t.Errorf("%s is not built in: run go generate ./internal/app/sensor/", f)
 		}
+	}
+}
+
+// toyProductsDir holds the install snippets of a product the platform has
+// never heard of (acme-toy): a directory of templates, nothing in Go.
+const toyProductsDir = "testdata/sensor-products"
+
+// A new sensor product needs no platform change: a directory of templates
+// in the templates dir is loaded next to the shipped sets and rendered with
+// the product's image from the catalog; the shipped sets keep working from
+// their built-in copies.
+func TestTemplates_ProductSetAddedOnDisk(t *testing.T) {
+	t.Cleanup(func() { _ = versions.LoadExtraProducts("") })
+	if err := versions.LoadExtraProducts("../../versions/testdata/toy-products.yaml"); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := versions.LookupProduct("acme-toy-sensor")
+	if !ok {
+		t.Fatal("toy product not in the catalog")
+	}
+	svc := NewSensorConfigTemplateService(toyProductsDir, logger.NewNop())
+	if !svc.HasInstallSet(p.Install) {
+		t.Fatalf("the %s snippet set on disk was not loaded", p.Install)
+	}
+	data := fullData(t)
+	data.Image, data.Install = p.ImageRef(), p.Install
+	out, err := svc.Render(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.Docker, "ghcr.io/acme/toy-sensor:v1.2.3") || !strings.Contains(out.Docker, "TOY_PLATFORM_URL='https://192.0.2.204'") {
+		t.Fatalf("toy docker snippet:\n%s", out.Docker)
+	}
+	bashSyntaxOK(t, "toy docker", out.Docker)
+	if out.Kubernetes != "" || out.Helm != "" {
+		t.Error("formats the toy product does not ship must be empty")
+	}
+	// The shipped scanning sensor still renders (built-in fallback).
+	data = fullData(t)
+	if out, err := svc.Render(data); err != nil || !strings.Contains(out.Docker, data.Image) {
+		t.Fatalf("scanning sensor with a toy-only directory: %v", err)
+	}
+}
+
+// SECURITY: only <set>/<format>.tmpl files with a plain set name and a known
+// format are loaded from the directory; anything else is ignored.
+func TestTemplates_OnlyWellFormedSetsLoad(t *testing.T) {
+	dir := t.TempDir()
+	for _, p := range []string{"Bad Set/docker.tmpl", "okset/notaformat.tmpl", "okset/docker.tmpl"} {
+		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, p), []byte("echo {{.Image}}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewSensorConfigTemplateService(dir, logger.NewNop())
+	if !svc.HasInstallSet("okset") || svc.HasInstallSet("Bad Set") {
+		t.Fatal("set loading")
+	}
+	svc.mu.RLock()
+	_, odd := svc.templates["okset/notaformat"]
+	svc.mu.RUnlock()
+	if odd {
+		t.Fatal("an unknown format was loaded")
 	}
 }

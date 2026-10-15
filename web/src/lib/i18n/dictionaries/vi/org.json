@@ -5,8 +5,6 @@
   "org.role.admin": "Quản trị viên",
   "org.role.member": "Thành viên",
   "org.role.viewer": "Người xem",
-  "org.plan.free": "Miễn phí",
-  "org.plan.paid": "Trả phí",
   "org.planLabel": "Gói",
   "org.members": "Thành viên",
   "org.memberCount.one": "1 thành viên",

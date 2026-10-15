@@ -152,3 +152,20 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: never
+
+  # The platform depends on contracts only (ctis, the sensor protocol, signed
+  # manifests): api/ and web/ must never require, import or vendor the sensor
+  # SDK or a sensor (api/docs/rfcs/RFC-094-platform-contracts-only.md).
+  platform-deps:
+    name: Platform depends on contracts only
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-test
+        run: bash .github/scripts/check-platform-deps.test.sh
+      - name: No sensor module or SDK in api/ or web/
+        run: bash .github/scripts/check-platform-deps.sh
