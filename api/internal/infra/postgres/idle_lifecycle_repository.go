@@ -11,8 +11,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// IdleLifecycleRepository stores the idle lifecycle of Free organizations
-// (migration 001347). Every per-organization query is scoped by tenant_id.
+// IdleLifecycleRepository stores the idle lifecycle of the organizations the
+// idle policy is on for (migrations 001347 and idle_policy_opt_in). Every per-organization query is scoped by tenant_id.
 type IdleLifecycleRepository struct {
 	db *DB
 }
@@ -24,20 +24,20 @@ func NewIdleLifecycleRepository(db *DB) *IdleLifecycleRepository {
 
 var _ lifecycle.Repository = (*IdleLifecycleRepository)(nil)
 
-// FreeWorkspaces lists the Free organizations with their stage, exemption
-// and the latest sign-in of an active member.
-func (r *IdleLifecycleRepository) FreeWorkspaces(ctx context.Context) ([]lifecycle.Workspace, error) {
+// Workspaces lists the organizations the idle policy is on for, with their
+// stage and the latest sign-in of an active member. An organization without
+// a row, or with the policy off, is never listed.
+func (r *IdleLifecycleRepository) Workspaces(ctx context.Context) ([]lifecycle.Workspace, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT t.id, t.name, t.slug, t.created_at,
-		       COALESCE(l.stage, 'active'), COALESCE(l.stage_changed_at, t.created_at), COALESCE(l.exempt, false),
+		SELECT t.id, t.name, t.slug, t.created_at, l.stage, l.stage_changed_at,
 		       (SELECT max(u.last_login_at) FROM tenant_members m JOIN users u ON u.id = m.user_id
 		         WHERE m.tenant_id = t.id AND m.status = 'active')
-		  FROM tenants t
-		  JOIN tenant_plans p ON p.tenant_id = t.id AND p.plan = 'free'
-		  LEFT JOIN tenant_idle_lifecycle l ON l.tenant_id = t.id
+		  FROM tenant_idle_lifecycle l
+		  JOIN tenants t ON t.id = l.tenant_id
+		 WHERE l.policy_enabled
 		 ORDER BY t.created_at`)
 	if err != nil {
-		return nil, fmt.Errorf("list free workspaces: %w", err)
+		return nil, fmt.Errorf("list idle-policy organizations: %w", err)
 	}
 	defer rows.Close()
 	out := []lifecycle.Workspace{}
@@ -48,8 +48,8 @@ func (r *IdleLifecycleRepository) FreeWorkspaces(ctx context.Context) ([]lifecyc
 			stage  string
 			signIn sql.NullTime
 		)
-		if err := rows.Scan(&id, &w.Name, &w.Slug, &w.CreatedAt, &stage, &w.StageChangedAt, &w.Exempt, &signIn); err != nil {
-			return nil, fmt.Errorf("scan free workspace: %w", err)
+		if err := rows.Scan(&id, &w.Name, &w.Slug, &w.CreatedAt, &stage, &w.StageChangedAt, &signIn); err != nil {
+			return nil, fmt.Errorf("scan idle-policy organization: %w", err)
 		}
 		tid, perr := shared.IDFromString(id)
 		if perr != nil {
@@ -83,48 +83,43 @@ func (r *IdleLifecycleRepository) SetStage(ctx context.Context, tenantID shared.
 func (r *IdleLifecycleRepository) Status(ctx context.Context, tenantID shared.ID) (*lifecycle.Status, error) {
 	var (
 		stage                       sql.NullString
-		changed, exemptAt, lastSign sql.NullTime
-		exempt                      sql.NullBool
-		reason                      sql.NullString
+		changed, setAt, lastSign sql.NullTime
+		enabled                  sql.NullBool
+		reason                   sql.NullString
 	)
 	err := r.db.QueryRowContext(ctx, `
-		SELECT l.stage, l.stage_changed_at, l.exempt, l.exempt_reason, l.exempt_at,
+		SELECT l.stage, l.stage_changed_at, l.policy_enabled, l.policy_reason, l.policy_set_at,
 		       (SELECT max(u.last_login_at) FROM tenant_members m JOIN users u ON u.id = m.user_id
 		         WHERE m.tenant_id = t.id AND m.status = 'active')
 		  FROM tenants t LEFT JOIN tenant_idle_lifecycle l ON l.tenant_id = t.id
-		 WHERE t.id = $1`, tenantID.String()).Scan(&stage, &changed, &exempt, &reason, &exemptAt, &lastSign)
+		 WHERE t.id = $1`, tenantID.String()).Scan(&stage, &changed, &enabled, &reason, &setAt, &lastSign)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
 		}
 		return nil, fmt.Errorf("get idle status: %w", err)
 	}
-	st := &lifecycle.Status{Stage: lifecycle.StageActive, Exempt: exempt.Bool, ExemptReason: reason.String}
+	st := &lifecycle.Status{Stage: lifecycle.StageActive, PolicyEnabled: enabled.Bool, PolicyReason: reason.String}
 	if stage.Valid {
 		st.Stage = lifecycle.Stage(stage.String)
 	}
-	st.StageChangedAt, st.ExemptAt, st.LastSignIn = nullTimeValue(changed), nullTimeValue(exemptAt), nullTimeValue(lastSign)
+	st.StageChangedAt, st.PolicySetAt, st.LastSignIn = nullTimeValue(changed), nullTimeValue(setAt), nullTimeValue(lastSign)
 	return st, nil
 }
 
-// SetExemption exempts the organization (or lifts the exemption). Exempting
-// also returns it to active.
-func (r *IdleLifecycleRepository) SetExemption(ctx context.Context, tenantID shared.ID, e lifecycle.Exemption) error {
-	var err error
-	if e.Exempt {
-		_, err = r.db.ExecContext(ctx, `
-			INSERT INTO tenant_idle_lifecycle (tenant_id, stage, stage_changed_at, exempt, exempt_reason, exempt_by, exempt_at)
-			VALUES ($1, 'active', $4, true, $2, $3, $4)
-			ON CONFLICT (tenant_id) DO UPDATE SET stage = 'active', stage_changed_at = EXCLUDED.stage_changed_at,
-			  exempt = true, exempt_reason = EXCLUDED.exempt_reason, exempt_by = EXCLUDED.exempt_by, exempt_at = EXCLUDED.exempt_at`,
-			tenantID.String(), e.Reason, nullID(e.By), e.At)
-	} else {
-		_, err = r.db.ExecContext(ctx, `
-			UPDATE tenant_idle_lifecycle SET exempt = false, exempt_reason = NULL, exempt_by = NULL, exempt_at = NULL
-			 WHERE tenant_id = $1`, tenantID.String())
-	}
+// SetPolicy turns the idle policy on or off for the organization. Both
+// directions return it to active: turning it on starts the count from the
+// latest sign-in, and turning it off lifts any read-only stage at once.
+func (r *IdleLifecycleRepository) SetPolicy(ctx context.Context, tenantID shared.ID, p lifecycle.Policy) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO tenant_idle_lifecycle (tenant_id, stage, stage_changed_at, policy_enabled, policy_reason, policy_set_by, policy_set_at)
+		VALUES ($1, 'active', $5, $2, $3, $4, $5)
+		ON CONFLICT (tenant_id) DO UPDATE SET stage = 'active', stage_changed_at = EXCLUDED.stage_changed_at,
+		  policy_enabled = EXCLUDED.policy_enabled, policy_reason = EXCLUDED.policy_reason,
+		  policy_set_by = EXCLUDED.policy_set_by, policy_set_at = EXCLUDED.policy_set_at`,
+		tenantID.String(), p.Enabled, p.Reason, nullID(p.By), p.At)
 	if err != nil {
-		return fmt.Errorf("set idle exemption: %w", err)
+		return fmt.Errorf("set idle policy: %w", err)
 	}
 	return nil
 }
@@ -135,7 +130,7 @@ func (r *IdleLifecycleRepository) ReadOnly(ctx context.Context, tenantID shared.
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 		  SELECT 1 FROM tenant_idle_lifecycle l
-		   WHERE l.tenant_id = $1 AND NOT l.exempt
+		   WHERE l.tenant_id = $1 AND l.policy_enabled
 		     AND l.stage IN ('read_only', 'final_warning', 'deletion_due')
 		     AND NOT EXISTS (
 		       SELECT 1 FROM tenant_members m JOIN users u ON u.id = m.user_id
