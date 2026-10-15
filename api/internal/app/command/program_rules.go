@@ -17,12 +17,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
-
-	"golang.org/x/mod/semver"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -38,12 +38,6 @@ func WithProgramRules(src ProgramRuleSource) Option {
 	return func(s *Service) { s.programRules = src }
 }
 
-// MinSDKForProgramHTTPRules is the first SDK release whose tool host applies
-// http_policy headers and User-Agent (sdk-go #227, #228). A job carrying
-// them goes only to a sensor built with it: an older sensor would ignore
-// the fields and probe without the program's identification.
-const MinSDKForProgramHTTPRules = "v0.19.0"
-
 // FailureProgramRules is the failure code of a job whose programs' rules
 // conflict.
 const FailureProgramRules = "PROGRAM_RULES_CONFLICT"
@@ -52,7 +46,8 @@ const FailureProgramRules = "PROGRAM_RULES_CONFLICT"
 const jsonNull = "null"
 
 // ErrSensorCannotHonorProgram: the job carries a program's headers or
-// User-Agent and the sensor's SDK predates them; it waits for one that can.
+// User-Agent and the sensor does not report that it sends them
+// (sensor.CapabilityHTTPIdentity); it waits for one that does.
 var ErrSensorCannotHonorProgram = shared.NewDomainError("PROGRAM_RULES_UNSUPPORTED",
 	"this sensor cannot send the program's identification headers (update the sensor)", shared.ErrValidation)
 
@@ -104,7 +99,7 @@ func (s *Service) programDecide(ctx context.Context, c *commanddom.Command, now 
 		return nil, ErrScopeRecheckUnavailable
 	}
 	if r != nil && (len(r.Headers) > 0 || r.UserAgent != "") && !honors() {
-		s.logger.Warn("the sensor cannot send the program's headers (SDK older than "+MinSDKForProgramHTTPRules+"); withholding the job",
+		s.logger.Warn("the sensor does not report "+sensordom.CapabilityHTTPIdentity+" (it cannot send the program's headers); withholding the job",
 			"command_id", c.ID.String(), "programs", r.Programs)
 		return nil, ErrSensorCannotHonorProgram
 	}
@@ -120,9 +115,10 @@ func (s *Service) programHoldOne(ctx context.Context, sensorID shared.ID, cmd *c
 	return s.programDecide(ctx, cmd, s.clock(), s.honorsHTTPRules(ctx, cmd.TenantID, &sensorID))
 }
 
-// honorsHTTPRules answers (once, when first asked) whether the sensor's SDK
-// applies http_policy headers and User-Agent. Unknown sensor, no lookup or a
-// build without a release version: no.
+// honorsHTTPRules answers (once, when first asked) whether the sensor reports
+// that its tools send the job's http_policy headers and User-Agent
+// (sensor.CapabilityHTTPIdentity). It is decided by what the sensor reports,
+// never by its SDK name or version. Unknown sensor or no lookup: no.
 func (s *Service) honorsHTTPRules(ctx context.Context, tenantID shared.ID, sensorID *shared.ID) func() bool {
 	var done, ok bool
 	return func() bool {
@@ -137,8 +133,7 @@ func (s *Service) honorsHTTPRules(ctx context.Context, tenantID shared.ID, senso
 		if err != nil || sen == nil {
 			return false
 		}
-		v := sen.Build.SDKVersion
-		ok = semver.IsValid(v) && semver.Compare(v, MinSDKForProgramHTTPRules) >= 0
+		ok = slices.Contains(sen.Reported.Capabilities, sensordom.CapabilityHTTPIdentity)
 		return ok
 	}
 }

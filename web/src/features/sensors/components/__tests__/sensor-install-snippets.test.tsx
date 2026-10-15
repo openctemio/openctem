@@ -181,6 +181,49 @@ describe('SensorInstallSnippets', () => {
     expect(screen.queryByRole('tab')).toBeNull()
   })
 
+  it('lists a product the console has never heard of by its id and renders its snippets', async () => {
+    // A customer's own sensor product, added as data on the API
+    // (SENSOR_PRODUCTS_FILE + its template set): no console code names it.
+    stats.data = {
+      products: [
+        { id: 'openctemio-sensor', latest_version: 'v0.4.2', min_version: '', image: 'i' },
+        {
+          id: 'acme-toy-sensor',
+          latest_version: 'v1.2.3',
+          min_version: 'v1.0.0',
+          image: 'ghcr.io/acme/toy-sensor:v1.2.3',
+        },
+      ],
+    }
+    const toy = {
+      docker: 'docker run -d --name acme-toy-sensor ghcr.io/acme/toy-sensor:v1.2.3\n',
+      env: 'TOY_PLATFORM_URL=https://192.0.2.204\n',
+      yaml: '',
+      cli: '',
+      compose: '',
+      image: 'ghcr.io/acme/toy-sensor:v1.2.3',
+      product: 'acme-toy-sensor',
+    }
+    const fetchFn = vi.fn(async (url: string) => ({
+      ok: true,
+      status: 200,
+      json: async () => (url.includes('product=acme-toy-sensor') ? toy : templates),
+    }))
+    vi.stubGlobal('fetch', fetchFn)
+    const user = userEvent.setup()
+    render(<SensorInstallSnippets sensorId="11111111-1111-4111-8111-111111111111" />)
+    await screen.findByText(/ghcr.io\/openctemio\/sensor:v0.4.2/, { selector: 'pre' })
+
+    await user.click(screen.getByRole('combobox', { name: 'Product' }))
+    await user.click(await screen.findByRole('option', { name: 'acme-toy-sensor' }))
+    await screen.findByText(/ghcr.io\/acme\/toy-sensor:v1.2.3/, { selector: 'pre' })
+    const last = fetchFn.mock.calls.at(-1) as unknown as [string]
+    expect(last[0]).toBe(
+      '/api/v1/sensors/11111111-1111-4111-8111-111111111111/config-templates?product=acme-toy-sensor'
+    )
+    expect(screen.queryByRole('tab', { name: 'Kubernetes' })).toBeNull()
+  })
+
   it('shows no product picker for a collector (its snippets name no product)', async () => {
     stats.data = {
       products: [

@@ -28,7 +28,7 @@ import (
 )
 
 // shippedTemplatesDir is the directory the API image ships the templates in.
-const shippedTemplatesDir = "../../../configs/sensor-templates"
+const shippedTemplatesDir = "../../../configs/sensor-products"
 
 // templateSources renders from the shipped files and from the built-in
 // fallbacks; both must produce working snippets.
@@ -415,7 +415,7 @@ func TestTemplates_HostileValuesStayInert(t *testing.T) {
 	}
 }
 
-// The files shipped in configs/sensor-templates and the built-in fallbacks are
+// The files shipped in configs/sensor-products and the built-in fallbacks are
 // the same templates; an edit to one must be made to the other.
 func TestTemplates_ShippedFilesMatchBuiltins(t *testing.T) {
 	for _, f := range templateNames() {
@@ -424,7 +424,7 @@ func TestTemplates_ShippedFilesMatchBuiltins(t *testing.T) {
 			t.Fatalf("read %s: %v", f, err)
 		}
 		if string(b) != builtinTemplates[f] {
-			t.Errorf("configs/sensor-templates/%s.tmpl differs from the built-in %q template", f, f)
+			t.Errorf("configs/sensor-products/%s.tmpl differs from the built-in %q template", f, f)
 		}
 	}
 }
