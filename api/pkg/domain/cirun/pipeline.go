@@ -581,7 +581,7 @@ type PipelineFilter struct {
 	TrustConfigID     *shared.ID
 	Provider          string
 	// HasPolicyOverride keeps only pipelines whose repository has its own
-	// enabled gate policy (RFC-095).
+	// enabled gate policy (RFC-096).
 	HasPolicyOverride bool
 	// DataScope limits the listing to pipelines on repositories the user may
 	// see (RFC-050).

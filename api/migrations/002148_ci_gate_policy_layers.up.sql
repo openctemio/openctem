@@ -1,4 +1,4 @@
--- Per-field layering of CI gate policies (docs/rfcs/RFC-095-ci-per-repository-settings.md):
+-- Per-field layering of CI gate policies (docs/rfcs/RFC-096-ci-per-repository-settings.md):
 -- a business unit or repository policy sets only the fields it lists and inherits the rest;
 -- organization and business unit policies can lock fields; a repository policy carries a
 -- reason and can expire. The gate baseline settings join the policy. Existing rows set every field, which keeps their behaviour.
