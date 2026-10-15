@@ -254,11 +254,11 @@ since it exists) also refuses the key of any one-shot (standalone) sensor
 
 | Symptom | Cause |
 |---|---|
-| `The CI token was not accepted` | No trust configuration admits the job, a wrong audience, or a token used twice. **Recent refused pipelines** on the **Trust and gate** tab lists each refused pipeline with the rule that refused it and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
+| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the job, a wrong audience or tenant id, or an expired token. **Recent refused pipelines** on the **Trust and gate** tab lists each refused pipeline with the rule that refused it and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than the job's repository |
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
-| `The CI token was not accepted` and `pipeline_identity` in the audit log | The token carries no repository/project id or no usable workflow path |
-| `The CI token was not accepted` and `pipeline_cap` in the audit log | The organization has the most CI pipelines it may have; existing pipelines keep running |
+| `CI_TOKEN_PIPELINE_IDENTITY` | The token carries no repository/project id or no usable workflow path |
+| `CI_TOKEN_PIPELINE_CAP` | The organization has the most CI pipelines it may have; existing pipelines keep running |
 | `organization_mismatch` in the audit log | The token's organization (Azure `org_id`, CircleCI `org-id`, Bitbucket `workspaceUuid`) is not the one the trust names |
 | `repository_binding` in the audit log | Bitbucket: another repository of the workspace already reports under that name |
 | `ssh_rerun` in the audit log | CircleCI: a re-run with SSH access, never admitted |
