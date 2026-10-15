@@ -106,10 +106,7 @@ export function InvitationGrantsNotice({
         </li>
         {grants.mfa_required && (
           <li className="flex gap-2">
-            <ShieldCheck
-              className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
-              aria-hidden
-            />
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
             <span>
               {grants.mfa_reason === 'outside_privileged'
                 ? t('org.acceptInvite.mfaOutside', undefined, { org: organization })
