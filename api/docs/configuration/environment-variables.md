@@ -16,15 +16,35 @@ admin console and the organization settings.
 
 Read by the API server at start-up (`server`). The server refuses to start when a variable under one of its prefixes is a likely misspelling of a listed name, or when a typed value does not parse; `server -check-config` runs the same checks without starting.
 
-Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `SELF_SERVICE_`.
+Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `SELF_SERVICE_`.
 
 ### Application
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
-| `APP_NAME` | string | `openctem` |  |  | Application name used in logs and in email templates. |
+| `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
+
+### Brand
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `BRAND_FILE` | path | empty |  |  | Optional YAML file with the brand settings (`name`, `short_name`, `primary_color`, `docs_url`, `website_url`, `support_url`, `support_email`, `terms_url`, `privacy_url`, `email_footer`, `powered_by`, `logo_light_file`, `logo_dark_file`, `favicon_file`; image paths relative to the file). A `BRAND_*` variable wins over the file. See `docs/architecture/brand.md`. |
+| `BRAND_NAME` | string | empty |  |  | Default `OpenCTEM`. Product name shown in the console, emails, reports and notifications (at most 64 characters; no markup characters). |
+| `BRAND_SHORT_NAME` | string | empty |  |  | Short product name for narrow places (the sidebar, the browser tab). Defaults to `BRAND_NAME`. |
+| `BRAND_PRIMARY_COLOR` | string | empty |  |  | Primary color as `#rrggbb`. Unset keeps the theme color. |
+| `BRAND_DOCS_URL` | string | empty |  |  | Default `https://docs.openctem.io`. Documentation site (https). Documentation links in the console and API messages keep their path on this origin. |
+| `BRAND_WEBSITE_URL` | string | empty |  |  | Default `https://openctem.io`. Product website (https). |
+| `BRAND_SUPPORT_URL` | string | empty |  |  | Support page (https). Unset hides the support link. |
+| `BRAND_SUPPORT_EMAIL` | string | empty |  |  | Default `info@openctem.io`. Support email address. |
+| `BRAND_TERMS_URL` | string | empty |  |  | Terms of service (https). The admin console legal settings win when set there. |
+| `BRAND_PRIVACY_URL` | string | empty |  |  | Privacy policy (https). The admin console legal settings win when set there. |
+| `BRAND_EMAIL_FOOTER` | string | empty |  |  | Plain-text line added to the footer of every email (at most 500 characters). |
+| `BRAND_POWERED_BY` | bool | `true` |  |  | Show a "Powered by OpenCTEM" credit next to a brand other than OpenCTEM. |
+| `BRAND_LOGO_LIGHT_FILE` | path | empty |  |  | Logo for light backgrounds: PNG, JPEG, WebP or SVG, at most 512 KiB. SVG is reduced to drawing elements; a file with script, external references or event handlers is refused at startup. Unset keeps the built-in logo. |
+| `BRAND_LOGO_DARK_FILE` | path | empty |  |  | Logo for dark backgrounds (same rules as `BRAND_LOGO_LIGHT_FILE`). Unset uses the light logo. |
+| `BRAND_FAVICON_FILE` | path | empty |  |  | Browser tab icon: PNG, ICO or SVG, at most 512 KiB. Unset keeps the built-in icon. |
 
 ### HTTP server
 
@@ -393,7 +413,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `BOOTSTRAP_SMTP_USER` | string | empty |  |  | `bootstrap-admin`: SMTP user name. |
 | `BOOTSTRAP_SMTP_PASSWORD` | string | empty |  | yes | `bootstrap-admin`: SMTP password, stored encrypted with `APP_ENCRYPTION_KEY`. |
 | `BOOTSTRAP_SMTP_FROM` | string | empty |  |  | `bootstrap-admin`: sender address. |
-| `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default OpenCTEM). |
+| `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM). |
 | `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
