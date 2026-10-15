@@ -28,6 +28,9 @@ const TECHNICAL = [
   // The CI check-run name the API posts to GitHub; branch protection rules
   // match it, so it never follows the brand.
   /OpenCTEM gate/g,
+  // A decision reason the API returns verbatim (pkg/domain/ticketmap), matched
+  // as a key to pick its translation.
+  /finding is closed; reopen it in OpenCTEM/g,
 ]
 
 function strip(text: string): string {
@@ -78,7 +81,10 @@ describe('no hard-coded product name in user-visible text', () => {
     for (const file of sourceFiles(SRC_ROOT)) {
       const rel = path.relative(SRC_ROOT, file).split(path.sep).join('/')
       if (ALLOWED_FILES[rel]) continue
-      for (const { line, text } of literalTexts(file, fs.readFileSync(file, 'utf8'))) {
+      const code = fs.readFileSync(file, 'utf8')
+      // Parse only files that mention the name at all (most do not).
+      if (!NAME.test(code)) continue
+      for (const { line, text } of literalTexts(file, code)) {
         if (NAME.test(strip(text))) offenders.push(`${rel}:${line}: ${text.trim().slice(0, 80)}`)
       }
     }
@@ -86,7 +92,7 @@ describe('no hard-coded product name in user-visible text', () => {
       offenders,
       'Name the product with {product} in the catalog or useBrand(), or allow-list a technical identifier with its reason'
     ).toEqual([])
-  })
+  }, 60_000)
 
   it('catalog values use {product}', () => {
     const dir = path.join(SRC_ROOT, 'lib/i18n/dictionaries')
