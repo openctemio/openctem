@@ -30,9 +30,14 @@ func (h *gsHarness) seedLensFindings(t *testing.T) map[string]string {
 		case "resolved", "false_positive", "accepted", "duplicate":
 			resolvedAt = "now() - interval '3 days'"
 		}
-		h.exec(fmt.Sprintf(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, finding_type, resolved_at)
-			VALUES ($1::uuid, $2, $3, 'sast', 'ds-tool', 'lens finding', 'medium', $1::text, $4, 'vulnerability', %s)`, resolvedAt),
-			id.String(), h.tenant.String(), h.assetA.String(), st)
+		// A duplicate names its canonical finding (FA, on the same asset).
+		var dupOf any
+		if st == "duplicate" {
+			dupOf = h.findingA.String()
+		}
+		h.exec(fmt.Sprintf(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, finding_type, resolved_at, duplicate_of)
+			VALUES ($1::uuid, $2, $3, 'sast', 'ds-tool', 'lens finding', 'medium', $1::text, $4, 'vulnerability', %s, $5)`, resolvedAt),
+			id.String(), h.tenant.String(), h.assetA.String(), st, dupOf)
 		ids[st] = id.String()
 	}
 	// An out-of-scope resolved finding: it must never count for memberA.
