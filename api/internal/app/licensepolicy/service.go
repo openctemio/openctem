@@ -54,11 +54,12 @@ type Violation struct {
 
 // ExistingFinding is a license finding already stored.
 type ExistingFinding struct {
-	ID               shared.ID
-	Fingerprint      string
-	Status           string
-	Severity         string
-	ResolutionMethod string
+	ID          shared.ID
+	Fingerprint string
+	Status      string
+	Severity    string
+	// ClosureReason is why a closed license finding is closed ("" while open).
+	ClosureReason string
 }
 
 // Store reads and writes the evaluation's rows, always within one tenant
@@ -246,7 +247,7 @@ func (s *Service) reconcileFindings(ctx context.Context, tenantID shared.ID, ass
 			if isOpen(e.Status) {
 				resolve = append(resolve, e.ID)
 			}
-		case e.Status == string(vulnerability.FindingStatusResolved) && e.ResolutionMethod == ResolutionMethod:
+		case e.Status == string(vulnerability.FindingStatusResolved) && e.ClosureReason == ClosureReason:
 			reopen = append(reopen, e.ID)
 			fallthrough
 		default:
@@ -289,8 +290,9 @@ func (s *Service) reconcileFindings(ctx context.Context, tenantID shared.ID, ass
 	return nil
 }
 
-// ResolutionMethod marks a license finding the policy closed.
-const ResolutionMethod = "license_policy"
+// ClosureReason marks a license finding the policy closed: the policy no
+// longer flags the package, which is a rule outcome, not a remediation.
+const ClosureReason = string(vulnerability.ClosureReasonObsoleteRule)
 
 func isOpen(status string) bool {
 	for _, s := range vulnerability.AutoCloseFromStatuses() {

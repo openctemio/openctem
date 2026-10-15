@@ -69,7 +69,7 @@ func (h *soloHarness) selfApprove(u policyUser, approvalID, code string, want in
 
 func (h *soloHarness) requestAccept(u policyUser, findingID string, end time.Time) string {
 	h.t.Helper()
-	body := `{"requested_status":"accepted","justification":"vendor patch next quarter","expires_at":"` + end.UTC().Format(time.RFC3339) + `"}`
+	body := `{"requested_status":"accepted","closure_reason":"no_fix_available","justification":"vendor patch next quarter","expires_at":"` + end.UTC().Format(time.RFC3339) + `"}`
 	return decodeID(h.t, h.expect(u, http.MethodPost, "/api/v1/findings/"+findingID+"/approvals/", body, http.StatusCreated))
 }
 
