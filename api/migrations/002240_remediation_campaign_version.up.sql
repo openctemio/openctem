@@ -12,6 +12,7 @@ ALTER TABLE remediation_campaigns
     ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1,
     ADD COLUMN IF NOT EXISTS last_reconciled_at timestamptz;
 
+-- expand-contract-ok: widening numeric(5,2) to numeric(12,2) keeps every stored value and old pods read it unchanged
 ALTER TABLE remediation_campaigns
     ALTER COLUMN risk_score_before TYPE numeric(12,2),
     ALTER COLUMN risk_score_after TYPE numeric(12,2),
