@@ -184,8 +184,13 @@ export function useDeleteGatePolicy() {
   const { currentTenant } = useTenant()
   return useSWRMutation(
     currentTenant ? POLICIES : null,
-    async (_url: string, { arg }: { arg: string }) =>
-      del<void>(`${POLICIES}/${encodeURIComponent(arg)}`)
+    async (_url: string, { arg }: { arg: { id: string; reason?: string } }) => {
+      // A deletion that loosens a business unit or repository policy needs a
+      // reason (the API refuses it otherwise).
+      const reason = arg.reason?.trim()
+      const q = reason ? `?reason=${encodeURIComponent(reason)}` : ''
+      return del<void>(`${POLICIES}/${encodeURIComponent(arg.id)}${q}`)
+    }
   )
 }
 

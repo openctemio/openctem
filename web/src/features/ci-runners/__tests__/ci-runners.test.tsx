@@ -588,7 +588,7 @@ describe('CITrustSettings', () => {
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete the gate policy for Repository repo-9?')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
-    expect(mockDeletePolicy).toHaveBeenCalledWith('gp1')
+    expect(mockDeletePolicy).toHaveBeenCalledWith({ id: 'gp1', reason: '' })
   })
 
   it('revoking a break-glass override asks first', async () => {
