@@ -28,6 +28,13 @@ const (
 	KindURL TargetKind = "url"
 	// KindService is a host and a port ("host:port", "host:port/proto").
 	KindService TargetKind = "service"
+	// KindPath is a host and a path without a scheme: the form of a
+	// repository ("github.com/acme/app", "git@github.com:acme/app") or an
+	// image reference. It names no network endpoint of the organization:
+	// a network tool given it would probe the host, which for a repository
+	// is a code host many organizations share. No network stage takes it;
+	// a web path is written as a URL with its scheme.
+	KindPath TargetKind = "path"
 	// KindOther is anything else (a repository, an image, a cloud
 	// account): not gated by kind.
 	KindOther TargetKind = "other"
@@ -53,6 +60,9 @@ func ClassifyTarget(target string) TargetKind {
 			return KindRange
 		}
 	}
+	if isPathForm(t) {
+		return KindPath
+	}
 	if lo, hi, ok := strings.Cut(t, "-"); ok {
 		a, errA := netip.ParseAddr(strings.TrimSpace(lo))
 		b, errB := netip.ParseAddr(strings.TrimSpace(hi))
@@ -73,6 +83,22 @@ func ClassifyTarget(target string) TargetKind {
 		return KindName
 	}
 	return KindOther
+}
+
+// isPathForm reports whether t is a host name with a dot followed by a
+// non-empty path and no scheme ("github.com/acme/app"), or the SSH form of
+// a repository ("git@github.com:acme/app"). A range ("a.b.c.d/n") was
+// classified before.
+func isPathForm(t string) bool {
+	if strings.ContainsAny(t, " \t") {
+		return false
+	}
+	if rest, ok := strings.CutPrefix(strings.ToLower(t), "git@"); ok {
+		host, path, ok := strings.Cut(rest, ":")
+		return ok && strings.Contains(host, ".") && looksLikeHostName(host) && strings.Trim(path, "/") != ""
+	}
+	host, path, ok := strings.Cut(t, "/")
+	return ok && strings.Contains(host, ".") && looksLikeHostName(host) && strings.Trim(path, "/") != ""
 }
 
 // looksLikeHostName: letters, digits, dots, hyphens, underscores and a
@@ -112,6 +138,11 @@ func takesAny(s Stage, refs []asset.TypeRef) bool {
 	return false
 }
 
+// TakesNetworkKinds reports whether the stage takes any network kind (a
+// name, an address, a range, a URL, a service): every stage whose tools
+// send traffic to, or look up, the hosts they are given.
+func (s Stage) TakesNetworkKinds() bool { return takesAny(s, networkInputs) }
+
 // AcceptsKind reports whether the stage may be handed a target of kind k.
 // A stage that takes no network kind (code, containers, cloud) accepts
 // every kind: other gates decide for it. KindOther is always accepted.
@@ -119,11 +150,16 @@ func takesAny(s Stage, refs []asset.TypeRef) bool {
 // A range goes only to stages that take networks, and to the port scan,
 // which expands it itself; never to HTTP probing, crawling or templates.
 // A service goes to stages that take open ports, and to the port scan.
+// A path (a repository) never goes to a stage that takes network kinds.
 func (s Stage) AcceptsKind(k TargetKind) bool {
-	if k == KindOther || !takesAny(s, networkInputs) {
+	if !s.TakesNetworkKinds() {
 		return true
 	}
 	switch k {
+	case KindOther:
+		return true
+	case KindPath:
+		return false
 	case KindName:
 		return takesAny(s, nameInputs)
 	case KindAddr:
@@ -139,15 +175,23 @@ func (s Stage) AcceptsKind(k TargetKind) bool {
 }
 
 // FilterKinds keeps the targets the stage accepts, in order, and counts the
-// rest by kind. A target with a stored inventory type (typed reports it) is
-// left to the scanner type gate, which decides by that type; only a range
-// is refused here whatever its type. Every other target is decided by its
+// rest by kind. A target with a stored inventory type (typeOf reports it)
+// is left to the scanner type gate, which decides by that type; only a
+// range and a path are refused here whatever their type. A repository asset
+// counts as a path whatever its name. Every other target is decided by its
 // kind.
-func (s Stage) FilterKinds(targets []string, typed func(string) bool) (kept []string, refused map[TargetKind]int) {
+func (s Stage) FilterKinds(targets []string, typeOf func(string) (asset.TypeRef, bool)) (kept []string, refused map[TargetKind]int) {
 	kept = make([]string, 0, len(targets))
 	for _, t := range targets {
 		k := ClassifyTarget(t)
-		if s.AcceptsKind(k) || (k != KindRange && typed != nil && typed(t)) {
+		typed := false
+		if typeOf != nil {
+			var ref asset.TypeRef
+			if ref, typed = typeOf(t); typed && IsRepositoryType(ref) {
+				k = KindPath
+			}
+		}
+		if s.AcceptsKind(k) || (typed && k != KindRange && k != KindPath) {
 			kept = append(kept, t)
 			continue
 		}
@@ -166,7 +210,7 @@ func (s Stage) DescribeRefusedKinds(refused map[TargetKind]int) string {
 		return ""
 	}
 	parts := make([]string, 0, len(refused))
-	for _, k := range []TargetKind{KindRange, KindAddr, KindName, KindURL, KindService} {
+	for _, k := range []TargetKind{KindPath, KindRange, KindAddr, KindName, KindURL, KindService} {
 		if n := refused[k]; n > 0 {
 			parts = append(parts, strconv.Itoa(n)+" "+string(k))
 		}
@@ -175,5 +219,51 @@ func (s Stage) DescribeRefusedKinds(refused map[TargetKind]int) string {
 	if refused[KindRange] > 0 {
 		msg += " (a network range goes to port scans and network lookups only)"
 	}
+	if refused[KindPath] > 0 {
+		msg += " (" + ReasonPathTarget + ")"
+	}
 	return msg
+}
+
+// ReasonPathTarget explains why a network tool is never given a repository
+// or a path without a scheme.
+const ReasonPathTarget = "a repository, or a host with a path but no scheme, goes to code scanning only: " +
+	"a network tool would probe the code host itself; write a web path as a URL with its scheme"
+
+// IsRepositoryType reports whether a stored pair is a repository.
+func IsRepositoryType(ref asset.TypeRef) bool {
+	return asset.CanonicalPair(ref.Type, ref.SubType).Type == asset.AssetTypeRepository
+}
+
+// TakesPathTargets reports whether a job of the tool, asking for caps, may
+// be handed a path target or a repository: only when the stage it runs
+// takes no network kind (code and image scanning). A capability may carry a
+// version ("scan.ports@1"). known is false when neither the tool nor the
+// capabilities place the job in the catalog: the caller decides from what
+// it knows of the tool, and refuses when it knows nothing.
+func TakesPathTargets(tool string, caps []string) (ok, known bool) {
+	bare := make([]string, 0, len(caps))
+	for _, c := range caps {
+		c, _, _ = strings.Cut(strings.TrimSpace(c), "@")
+		if c != "" {
+			bare = append(bare, c)
+		}
+	}
+	if st, found := ForStep(tool, bare); found {
+		return !st.TakesNetworkKinds(), true
+	}
+	if stages := ForTool(tool); len(stages) > 0 {
+		// A tool of several stages the capabilities do not pick: a path
+		// only when none of them takes network kinds.
+		for _, st := range stages {
+			if st.TakesNetworkKinds() {
+				return false, true
+			}
+		}
+		return true, true
+	}
+	if st, err := ForCapabilities(bare); err == nil {
+		return !st.TakesNetworkKinds(), true
+	}
+	return false, false
 }

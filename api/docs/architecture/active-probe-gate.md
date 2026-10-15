@@ -383,6 +383,26 @@ retest. A refused retest therefore stops and is reported; it does not fall
 back to another probe of the same target. The
 auto-retest scheduler logs the refusal and moves on.
 
+## Repositories and path targets
+
+A repository asset, and any target in the form of one (a host and a path
+without a scheme: `github.com/acme/app`, `git@github.com:acme/app`, an image
+reference), is handed only to code and image scanning (secrets, static
+analysis, dependency, infrastructure-as-code and image stages). A network tool
+(port scan, HTTP probe, templates, crawling, DNS and passive lookups) never
+receives one: it would send its traffic to the host part, which for a
+repository is a code host many organizations share, not an asset of the
+organization. A scope entry covering the repository does not change this.
+
+| Path | Where | What happens |
+|---|---|---|
+| Single-scanner run | `scan/targets.go` (`gateScannerKinds`, `gateScannerPaths`) | The scanner's catalog stage decides; a tenant tool decides by the target types it declares (a repository or a container image among them); a tool that declares nothing, or does not exist, gets none. Each repository left out is counted in `incompatible_target_count` and named in `dispatch_warnings` with the reason; a run left with nothing is refused with `NO_COMPATIBLE_TARGETS`. |
+| Workflow step | `scan/type_gate.go` `FilterStepTargets`, `scanrun/run.go` `gateStepKinds` | The same rule per step, by its tool and by its catalog stage (`stage.FilterKinds`: the `path` kind, and a repository asset whatever its name). A step left with nothing fails with `INCOMPATIBLE_TARGETS`. |
+| Chained stage | `scanrun/hop_router.go` | An output stored as a repository is never an input of a network stage, and a repository name is not a host key (`hopTargetKey`), so nothing is derived from it. |
+| Coverage planner | `coverage/planner.go` `blockRepositories` | The policy gives repositories no network capability; a ledger row that pairs one with a network capability anyway is never started and is blocked with `repository_code_only`. |
+| Validation and retest | `validation/gate.go` `CheckTarget` | A probe of a repository (by asset type or by form) is refused before the gate is asked; the retest service also refuses assets that are not network addressable. |
+| Re-check at claim | `scan/path_target_gate.go` `refusePathTargets` | A job whose tool or capability the catalog places on a network stage loses every path target (`invalid_target`). A job the catalog cannot place was decided when it was built. |
+
 ## Re-check at claim
 
 A probing job (scan, validate, retest, connector scan) can wait in the
