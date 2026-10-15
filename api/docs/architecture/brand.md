@@ -107,20 +107,37 @@ User-visible (takes the brand):
   dialog, every catalog string that names the product (the `{product}`
   variable, filled by the translator), documentation and support links, the
   legal and security contacts' defaults;
-- emails: subject and body name, footer, support address;
-- reports: the HTML executive summary, scheduled report emails;
-- notifications: test messages and footers on Slack, Teams, Telegram, email
-  and webhooks;
-- MCP and OAuth consent texts, the API reference page title;
-- links to the documentation in API messages (sensor configuration checks),
-  which keep their path on `BRAND_DOCS_URL`.
+- emails: the product name in subjects and bodies, the footer line and the
+  "Powered by OpenCTEM" credit (account emails, access requests, scheduled
+  reports and every other email sent through the email service), the
+  documentation link in the welcome email;
+- reports: the HTML executive summary footer, the summary and full report
+  footers, scheduled report subjects;
+- notifications: test messages on every channel, the "Sent via" footer, the
+  email channel's "Sent by" line (linked to `BRAND_WEBSITE_URL`);
+- text written into other systems: Jira and GitHub ticket comments,
+  remediation campaign tickets, retest announcements, CI pull request
+  comments;
+- the MCP server instructions, tool descriptions and restriction messages,
+  the OAuth error page and protected-resource name, the API reference page;
+- generated sensor and collector configuration (header comments) and the
+  documentation links of sensor configuration checks, which keep their path
+  on `BRAND_DOCS_URL`;
+- the two-factor issuer label (users and the admin console).
+
+Server code that names the product deep in a call path reads the instance
+brand with `brand.Name()` (set once at startup, `brand.SetInstance`);
+services that send messages take it explicitly (`SetBrand`, `SetBranding`).
 
 Technical (never changes): Go module paths, container images
 (`ghcr.io/openctemio/*`), `OPENCTEM_*` variables, database, table and API
 names, header names (`X-OpenCTEM-*`, `OpenCTEM-Protocol`), cookie names, the
-sensor protocol and its policy `apiVersion`, the sensor CA subject, the
-notification `User-Agent`, the `openctem_*` metric names, and the
-`OpenCTEM` name in a "Powered by" credit.
+sensor protocol, its problem type URIs and the policy and tool contract
+`apiVersion` (`openctem.io/...`), the sensor CA subject, the notification and
+OIDC `User-Agent`, the webhook and Splunk event `source`, the `openctem_*`
+metric names, the CI check name (`OpenCTEM gate`, which branch protection
+rules name), the SBOM and CTIS tool identity, and the `OpenCTEM` name in a
+"Powered by" credit.
 
 A web test fails when a new hard-coded `OpenCTEM` appears in user-visible
 text outside its allow list (`web/src/lib/__tests__/brand-hardcode.test.ts`).

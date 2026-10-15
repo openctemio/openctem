@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/pkg/brand"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -1150,7 +1151,7 @@ func (s *RemediationCampaignService) syncEpicOnCompletion(ctx context.Context, t
 	if err != nil {
 		return // not linked (or lookup failed) — nothing to sync
 	}
-	comment := fmt.Sprintf("OpenCTEM marked remediation campaign %q complete.", campaignName)
+	comment := fmt.Sprintf("%s marked remediation campaign %q complete.", brand.Name(), campaignName)
 	if terr := s.epicCreator.TransitionEpic(ctx, tenantID, link.IssueKey(), epicDoneStatus, comment); terr != nil {
 		s.logger.Warn("failed to sync campaign completion to epic",
 			"campaign_id", campaignID.String(), "issue_key", link.IssueKey(), "error", terr)
@@ -1565,7 +1566,7 @@ func buildEpicDescription(c *remediation.Campaign) string {
 	if desc == "" {
 		desc = "(no description)"
 	}
-	body := fmt.Sprintf("Remediation campaign tracked by OpenCTEM.\n\n%s\n\nProgress: %d/%d findings resolved (%.0f%%).",
+	body := fmt.Sprintf("Remediation campaign tracked by %s.\n\n%s\n\nProgress: %d/%d findings resolved (%.0f%%).", brand.Name(),
 		desc, c.ResolvedCount(), c.FindingCount(), c.Progress())
 	if due := c.DueDate(); due != nil {
 		body += fmt.Sprintf("\nDue: %s", due.Format("2006-01-02"))

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -47,7 +48,7 @@ const (
 const StatusSignedIn LoginStatus = "signed_in"
 
 // Issuer is the account label shown in authenticator apps.
-const Issuer = "OpenCTEM Admin"
+var Issuer = brand.DefaultName + " Admin"
 
 // touchInterval throttles last_seen_at writes to one per minute per session.
 const touchInterval = time.Minute
