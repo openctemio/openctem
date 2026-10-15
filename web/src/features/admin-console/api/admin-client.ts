@@ -62,8 +62,25 @@ export interface AdminFetchInit {
   stepUpCode?: string
 }
 
+/**
+ * A form that already asked for a fresh code sends it in `totp_code`; it goes
+ * in the step-up header too, so the route confirms it once and no second
+ * prompt appears.
+ */
+function bodyStepUpCode(body: unknown): string | undefined {
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    const v = body.get('totp_code')
+    return typeof v === 'string' && v ? v : undefined
+  }
+  if (body && typeof body === 'object' && 'totp_code' in body) {
+    const v = (body as { totp_code?: unknown }).totp_code
+    return typeof v === 'string' && v ? v : undefined
+  }
+  return undefined
+}
+
 export async function adminFetch<T>(path: string, init: AdminFetchInit = {}): Promise<T> {
-  let code = init.stepUpCode
+  let code = init.stepUpCode ?? bodyStepUpCode(init.body)
   for (let attempt = 1; ; attempt++) {
     try {
       return await adminRequest<T>(path, init, code)
