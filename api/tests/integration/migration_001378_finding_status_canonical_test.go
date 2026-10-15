@@ -20,6 +20,10 @@ func TestMigration001378FoldsStatusAliases(t *testing.T) {
 	// the table 001378 works on. Looked up by name: the queue renumbers it.
 	single := testdb.MigrationVersion(t, dir, "pentest_findings_single_store")
 	testdb.Migrate(t, db, dir, single, single, true)
+	// The finding_closure_* migrations replaced resolution_method, which
+	// 001378 writes: their downs bring the column back for this replay.
+	testdb.Migrate(t, db, dir, testdb.MigrationVersion(t, dir, "finding_closure_columns"),
+		testdb.MigrationVersion(t, dir, "finding_closure_drop_resolution_method"), true)
 	testdb.Migrate(t, db, dir, 1378, 1378, true)
 
 	exec := func(q string, args ...any) {
