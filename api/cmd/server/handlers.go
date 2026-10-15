@@ -284,6 +284,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
 	}
 	vulnHandler.SetFindingCorrelations(repos.FindingCorrelation)
+	vulnHandler.SetPackageFixLister(repos.Finding)
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
@@ -1442,6 +1443,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
 	admin.SetSettingsService(ciSvc)
+	admin.SetGateBaselineService(ciSvc)
 	if repos.CodeScan != nil {
 		var csAudit codescanapp.Auditor
 		if svc.Audit != nil {
