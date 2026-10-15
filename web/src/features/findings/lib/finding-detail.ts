@@ -353,6 +353,8 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
           fixedVersions: c.fixed_versions,
           dependencyType: c.dependency_type,
           manifestFile: c.manifest_file,
+          manifestLine: c.manifest_line,
+          dependencyPath: c.dependency_path,
         }
       : undefined,
     provenance: mapProvenance(api),
