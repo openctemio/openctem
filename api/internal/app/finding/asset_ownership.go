@@ -28,11 +28,18 @@ func (s *PriorityClassificationService) SetOwnershipFloorPolicy(p OwnershipFloor
 	s.ownershipFloor = p
 }
 
+// floorOverrideKey carries a would-be ownership floor setting through a
+// read-only preview.
+type floorOverrideKey struct{}
+
 // ownershipFloorEnabled reports whether the tenant turned the ownership floor on.
 // A nil policy (not wired) is off — so the floor is strictly opt-in and, when
 // off, the classifier skips the owner-presence lookup entirely (no floor, no
 // query, no explanation reason).
 func (s *PriorityClassificationService) ownershipFloorEnabled(ctx context.Context, tenantID shared.ID) bool {
+	if v, ok := ctx.Value(floorOverrideKey{}).(bool); ok {
+		return v // a preview of a settings change (never persisted)
+	}
 	if s.ownershipFloor == nil {
 		return false
 	}
