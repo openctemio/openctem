@@ -668,7 +668,7 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 // with a foreign key (migration 001144).
 const ciPolicyColumns = `id, tenant_id, scope_type, COALESCE(repository_asset_id, business_unit_id), enabled, mode,
 	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at, modes, allow_repo_policy,
-	fixable_only`
+	fixable_only, fields, locked_fields, reason, expires_at, baseline_on_first_run, baseline_grace_days, baseline_secrets_block`
 
 func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 	var (
@@ -678,10 +678,21 @@ func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 		epss                 sql.NullFloat64
 		createdAt, updatedAt time.Time
 		modes                []byte
+		expires              sql.NullTime
+		grace                sql.NullInt64
 	)
 	if err := row.Scan(&id, &tid, &p.ScopeType, &scopeID, &p.Enabled, &p.Mode, &p.FailOnSeverity,
-		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes, &p.AllowRepoPolicy, &p.FixableOnly); err != nil {
+		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes, &p.AllowRepoPolicy, &p.FixableOnly,
+		pq.Array(&p.Fields), pq.Array(&p.LockedFields), &p.Reason, &expires, &p.BaselineOnFirstRun, &grace, &p.BaselineSecretsBlock); err != nil {
 		return p, err
+	}
+	if expires.Valid {
+		t := expires.Time
+		p.ExpiresAt = &t
+	}
+	if grace.Valid {
+		g := int(grace.Int64)
+		p.BaselineGraceDays = &g
 	}
 	if len(modes) > 0 {
 		_ = json.Unmarshal(modes, &p.Modes)
@@ -707,6 +718,30 @@ func modesJSON(m cirun.PolicyModes) []byte {
 	return b
 }
 
+// nonNilFields stores an empty array, never NULL.
+func nonNilFields(f []string) []string {
+	if f == nil {
+		return []string{}
+	}
+	return f
+}
+
+// nullGraceDays stores the baseline grace (NULL: no end).
+func nullGraceDays(v *int) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(*v), Valid: true}
+}
+
+// policyExpiry stores a policy's end (NULL: none).
+func policyExpiry(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: *t, Valid: true}
+}
+
 func nullFloat(v *float64) sql.NullFloat64 {
 	if v == nil {
 		return sql.NullFloat64{}
@@ -721,10 +756,11 @@ func (r *CIRunRepository) ListGatePolicies(ctx context.Context, tenantID shared.
 		tenantID.String())
 }
 
-// GatePoliciesFor returns the enabled policies that may apply to an asset.
+// GatePoliciesFor returns the policies, enabled or not, that may apply to an
+// asset: the tenant's, its business units' and its own.
 func (r *CIRunRepository) GatePoliciesFor(ctx context.Context, tenantID, assetID shared.ID) ([]cirun.GatePolicy, error) {
 	return r.queryPolicies(ctx, `SELECT `+ciPolicyColumns+` FROM ci_gate_policies p
-		WHERE p.tenant_id = $1 AND p.enabled AND (
+		WHERE p.tenant_id = $1 AND (
 			p.scope_type = 'tenant'
 			OR (p.scope_type = 'repository' AND p.repository_asset_id = $2)
 			OR (p.scope_type = 'business_unit' AND p.business_unit_id IN (
@@ -774,11 +810,14 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_gate_policies (id, tenant_id, scope_type, repository_asset_id,
 		business_unit_id, enabled, mode, fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by,
-		updated_by, created_at, updated_at, modes, allow_repo_policy, fixable_only)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14, $15, $16)`,
+		updated_by, created_at, updated_at, modes, allow_repo_policy, fixable_only, fields, locked_fields, reason, expires_at,
+		baseline_on_first_run, baseline_grace_days, baseline_secrets_block)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
 		p.ID.String(), p.TenantID.String(), p.ScopeType, nullID(repoID), nullID(unitID), p.Enabled, p.Mode,
 		p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt,
-		modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly)
+		modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly, pq.Array(nonNilFields(p.Fields)),
+		pq.Array(nonNilFields(p.LockedFields)), p.Reason, policyExpiry(p.ExpiresAt), p.BaselineOnFirstRun,
+		nullGraceDays(p.BaselineGraceDays), p.BaselineSecretsBlock)
 	if isUniqueViolation(err) {
 		return cirun.ErrPolicyExists
 	}
@@ -789,10 +828,13 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 func (r *CIRunRepository) UpdateGatePolicy(ctx context.Context, p *cirun.GatePolicy) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_gate_policies SET enabled = $3, mode = $4, fail_on_severity = $5,
 		new_findings_only = $6, fail_on_kev = $7, epss_threshold = $8, updated_by = $9, modes = $10,
-		allow_repo_policy = $11, fixable_only = $12, updated_at = NOW()
+		allow_repo_policy = $11, fixable_only = $12, fields = $13, locked_fields = $14, reason = $15, expires_at = $16,
+		baseline_on_first_run = $17, baseline_grace_days = $18, baseline_secrets_block = $19, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2`,
 		p.TenantID.String(), p.ID.String(), p.Enabled, p.Mode, p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV,
-		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly)
+		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly,
+		pq.Array(nonNilFields(p.Fields)), pq.Array(nonNilFields(p.LockedFields)), p.Reason, policyExpiry(p.ExpiresAt),
+		p.BaselineOnFirstRun, nullGraceDays(p.BaselineGraceDays), p.BaselineSecretsBlock)
 	if err != nil {
 		return err
 	}

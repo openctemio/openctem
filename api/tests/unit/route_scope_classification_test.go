@@ -116,7 +116,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/ci/trust-configs":                    {classConfig, "CI trust configurations: tenant configuration (RFC-051)"},
 	"/api/v1/ci/gate-policies":                    {classScoped, "CI gate policies: a repository policy is listed and managed only for a repository in the caller's data scope (404 otherwise); organization and business unit policies are changed only with an unrestricted scope (RFC-051)"},
 	"/api/v1/ci/gate-overrides":                   {classScoped, "break-glass overrides: listed and created only on repositories in the caller's data scope, 404 otherwise (RFC-051)"},
-	"/api/v1/ci/repositories":                     {classScoped, "a repository's CI gate baseline: read, recorded and removed only for a repository in the caller's data scope, 404 otherwise (RFC-051)"},
+	"/api/v1/ci/repositories":                     {classScoped, "a repository's CI gate baseline and effective gate settings: read, recorded and removed only for a repository in the caller's data scope, 404 otherwise (RFC-051, RFC-095)"},
 	"/api/v1/ci/runs":                             {classScoped, "CI runs: SQL data-scope condition on the repository asset; by id out of scope is 404 (RFC-051)"},
 	"/api/v1/ci/code-scanning/settings":           {classConfig, "code scanning template: tenant configuration (RFC-091)"},
 	"/api/v1/ci/code-scanning/repositories":       {classScoped, "code scanning: repositories listed with an SQL data-scope condition; by id out of scope is 404 (RFC-091)"},
