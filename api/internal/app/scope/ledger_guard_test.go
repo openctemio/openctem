@@ -297,8 +297,12 @@ func TestLedgerGuard_RepositoriesHandedOutOnlyAtKnownSites(t *testing.T) {
 		"cmd/server/repositories.go NewScopeTargetRepository":    true,
 		"cmd/server/repositories.go NewScopeExclusionRepository": true,
 		// Read-only export of the scope in effect (ledger bootstrap).
-		"cmd/server/signer_ledger_export.go NewScopeTargetRepository":                   true,
-		"cmd/server/signer_ledger_export.go NewScopeExclusionRepository":                true,
+		"cmd/server/signer_ledger_export.go NewScopeTargetRepository":    true,
+		"cmd/server/signer_ledger_export.go NewScopeExclusionRepository": true,
+		// Read-only dry run of CI trusts' repositories against scope; the
+		// repositories go straight into scope.NewService and nothing is written.
+		"cmd/ci-trust-scope-plan/main.go NewScopeTargetRepository":                      true,
+		"cmd/ci-trust-scope-plan/main.go NewScopeExclusionRepository":                   true,
 		"cmd/server/services.go NewBountyProgramRepository":                             true,
 		"internal/infra/postgres/bounty_program_repository.go NewScopeTargetRepository": true,
 		// scope.NewService, CertMonitor.SetDomainSources (reads verified

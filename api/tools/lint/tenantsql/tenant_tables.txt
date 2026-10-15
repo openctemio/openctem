@@ -107,6 +107,7 @@ finding_fingerprints
 finding_group_assignments
 finding_imports
 finding_injection_points
+finding_priority_queue
 finding_rekey_runs
 finding_remediation_keys
 finding_retest_cursors
@@ -180,6 +181,7 @@ scope_snapshots
 scope_target_approvals
 scope_target_ci_trusts
 scope_targets
+scoring_changes
 sensor_config_reports
 sensor_content_policies
 sensor_events
@@ -208,6 +210,7 @@ tenant_members
 tenant_module_grace
 tenant_module_grants
 tenant_modules
+tenant_ownership_transfers
 tenant_plan_overrides
 tenant_plans
 tenant_tool_configs

@@ -49,7 +49,7 @@ func reportFindingSource(report *ctis.Report) vulnerability.FindingSource {
 	if report == nil {
 		return detectFindingSource("", nil)
 	}
-	if id, _, ok := capability.ParseRef(report.Metadata.Capability); ok {
+	if id, _, ok := capability.ParseRef(reportCapability(report)); ok {
 		if src, ok := capabilitySource[id]; ok {
 			return src
 		}
@@ -58,4 +58,38 @@ func reportFindingSource(report *ctis.Report) vulnerability.FindingSource {
 		return detectFindingSource("", nil)
 	}
 	return detectFindingSource(report.Tool.Name, report.Tool.Capabilities)
+}
+
+// reportCapability is the capability a report answers: metadata.capability,
+// or the "capability" property, where openctem-ci reports put it.
+func reportCapability(report *ctis.Report) string {
+	if report.Metadata.Capability != "" {
+		return report.Metadata.Capability
+	}
+	if c, ok := report.Metadata.Properties["capability"].(string); ok {
+		return c
+	}
+	return ""
+}
+
+// findingTechnique is the technique of one finding of a report. A report
+// bound to a capability takes its technique; without one, a scanner with
+// several capabilities (trivy: dependencies, misconfigurations, secrets in
+// one run) names its first, so the finding's own type decides between them.
+func findingTechnique(report *ctis.Report, f *ctis.Finding) vulnerability.FindingSource {
+	src := reportFindingSource(report)
+	if report == nil || f == nil || src != vulnerability.FindingSourceSCA {
+		return src
+	}
+	if _, _, bound := capability.ParseRef(reportCapability(report)); bound {
+		return src
+	}
+	switch f.Type {
+	case ctis.FindingTypeMisconfiguration:
+		return vulnerability.FindingSourceIaC
+	case ctis.FindingTypeSecret:
+		return vulnerability.FindingSourceSecret
+	default:
+		return src
+	}
 }

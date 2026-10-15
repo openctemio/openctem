@@ -82,3 +82,21 @@ func raiseDecisionReview(ctx context.Context, db *DB, tenantID, findingID, reaso
 func (r *FindingRepository) RaiseDecisionReview(ctx context.Context, tenantID, findingID shared.ID, reason string, evidence map[string]any) (bool, error) {
 	return raiseDecisionReview(ctx, r.db, tenantID.String(), findingID.String(), reason, evidence)
 }
+
+// ReopenResolved moves a resolved finding back to confirmed, only while it is
+// still resolved (the status is re-checked in the UPDATE itself, so a finding
+// someone changed since it was read is left alone). The resolution fields are
+// cleared. With a vulnerability.StatusTransition in ctx the move and its
+// timeline entry commit together. Returns whether it moved the finding.
+func (r *FindingRepository) ReopenResolved(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
+	res, err := r.db.execStatusWrite(ctx, `
+		UPDATE findings SET status = 'confirmed', resolution = NULL, resolution_method = NULL,
+			resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND status IN `+fixedReopenFromSQL,
+		tenantID.String(), findingID.String())
+	if err != nil {
+		return false, fmt.Errorf("reopen resolved finding: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}

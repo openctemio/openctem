@@ -2,10 +2,12 @@ package reclassify
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -18,38 +20,46 @@ type fakeFindingRepo struct {
 	vulnerability.FindingRepository // embed; only List/Update used
 	findings                        []*vulnerability.Finding
 	updated                         []shared.ID
-	served                          bool
+	lastFilter                      vulnerability.FindingFilter
+	updateErr                       error
 }
 
-func (r *fakeFindingRepo) ListByAssetID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	if r.served {
+func (r *fakeFindingRepo) List(_ context.Context, f vulnerability.FindingFilter, _ vulnerability.FindingListOptions, p pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+	r.lastFilter = f
+	if p.Page > 1 {
 		return pagination.Result[*vulnerability.Finding]{}, nil
 	}
-	r.served = true
 	return pagination.Result[*vulnerability.Finding]{Data: r.findings}, nil
 }
 
 func (r *fakeFindingRepo) Update(_ context.Context, f *vulnerability.Finding) error {
+	if r.updateErr != nil {
+		return r.updateErr
+	}
 	r.updated = append(r.updated, f.ID())
 	return nil
 }
 
 type fakeAssetRepo struct {
 	asset.Repository
-	a *asset.Asset
+	a   *asset.Asset
+	err error
 }
 
 func (r *fakeAssetRepo) GetByID(_ context.Context, _, _ shared.ID) (*asset.Asset, error) {
-	return r.a, nil
+	return r.a, r.err
 }
 
-// fakeClassifier classifies every finding as P1 with a fixed reason, so a
-// finding stored with another class changes and one already P1 does not.
-type fakeClassifier struct{ called int }
+// fakeClassifier classifies every finding it is given as P1 with a fixed
+// reason, so a finding stored with another class changes and one already P1
+// does not.
+type fakeClassifier struct{ seen []shared.ID }
 
-func (c *fakeClassifier) ClassifyFinding(_ context.Context, _ shared.ID, f *vulnerability.Finding, _ *asset.Asset) error {
-	c.called++
-	f.SetPriorityClassification(vulnerability.PriorityP1, "fake")
+func (c *fakeClassifier) EnrichAndClassifyBatch(_ context.Context, _ shared.ID, fs []*vulnerability.Finding, _ map[shared.ID]*asset.Asset) error {
+	for _, f := range fs {
+		c.seen = append(c.seen, f.ID())
+		f.SetPriorityClassification(vulnerability.PriorityP1, "fake")
+	}
 	return nil
 }
 
@@ -62,6 +72,47 @@ func (s *fakeSLA) ApplyBatch(_ context.Context, _ shared.ID, findings []*vulnera
 	return nil
 }
 
+type fakeQueue struct {
+	scoring.PriorityQueue
+	items    []scoring.QueueItem
+	stamped  map[shared.ID]int64
+	requeued []shared.ID
+}
+
+func (q *fakeQueue) Claim(_ context.Context, _, _ int) ([]scoring.QueueItem, error) {
+	it := q.items
+	q.items = nil
+	return it, nil
+}
+
+func (q *fakeQueue) StampVersion(_ context.Context, _ shared.ID, ids []shared.ID, v int64) error {
+	if q.stamped == nil {
+		q.stamped = map[shared.ID]int64{}
+	}
+	for _, id := range ids {
+		q.stamped[id] = v
+	}
+	return nil
+}
+
+func (q *fakeQueue) EnqueueAssets(_ context.Context, _ shared.ID, ids []shared.ID, _ string) error {
+	q.requeued = append(q.requeued, ids...)
+	return nil
+}
+
+func (q *fakeQueue) Stats(context.Context) (scoring.QueueStats, error) {
+	return scoring.QueueStats{}, nil
+}
+
+func (q *fakeQueue) EnqueueReconcile(context.Context, time.Duration) (int64, error) { return 0, nil }
+
+type fakeVersions struct{ v int64 }
+
+func (f fakeVersions) CurrentVersion(context.Context, shared.ID, scoring.Kind) (int64, error) {
+	return f.v, nil
+}
+func (fakeVersions) RegisterModels(context.Context) error { return nil }
+
 func newFinding(t *testing.T, assetID shared.ID) *vulnerability.Finding {
 	t.Helper()
 	f, err := vulnerability.NewFinding(shared.NewID(), assetID, vulnerability.FindingSourceManual, "tool", vulnerability.SeverityHigh, "f")
@@ -71,224 +122,140 @@ func newFinding(t *testing.T, assetID shared.ID) *vulnerability.Finding {
 	return f
 }
 
-func TestReclassify_RecomputesSLAAfterClassify(t *testing.T) {
-	assetID := shared.NewID()
+func newAsset(t *testing.T) *asset.Asset {
+	t.Helper()
 	a, err := asset.NewAsset("example.com", asset.AssetTypeDomain, asset.CriticalityHigh)
 	if err != nil {
 		t.Fatalf("new asset: %v", err)
 	}
-	f1, f2 := newFinding(t, assetID), newFinding(t, assetID)
+	return a
+}
 
+func TestReclassify_ListsOnlyOpenFindings(t *testing.T) {
+	assetID := shared.NewID()
+	repo := &fakeFindingRepo{}
+	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, &fakeClassifier{}, logger.NewNop())
+	if _, _, err := r.reclassifyAsset(context.Background(), shared.NewID(), assetID); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.lastFilter.Statuses) == 0 {
+		t.Fatal("the list must be limited to open statuses")
+	}
+	for _, st := range repo.lastFilter.Statuses {
+		if !vulnerability.IsOpenStatus(st) {
+			t.Fatalf("closed status %q in the filter", st)
+		}
+	}
+}
+
+// A closed finding that reaches the pass anyway is left exactly as it was:
+// not classified, not given a new deadline, not written, not stamped.
+func TestReclassify_ClosedFindingStaysFrozen(t *testing.T) {
+	assetID := shared.NewID()
+	open := newFinding(t, assetID)
+	closed := newFinding(t, assetID)
+	if err := closed.TransitionStatus(vulnerability.FindingStatusFalsePositive, "fp", nil); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	closed.SetPriorityClassification(vulnerability.PriorityP3, "at close")
+
+	repo := &fakeFindingRepo{findings: []*vulnerability.Finding{open, closed}}
+	cls := &fakeClassifier{}
+	sla := &fakeSLA{}
+	q := &fakeQueue{}
+	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, cls, logger.NewNop())
+	r.SetSLARecomputer(sla)
+	r.SetQueue(q, fakeVersions{v: 7})
+
+	if _, _, err := r.ReclassifyAssets(context.Background(), shared.NewID(), []shared.ID{assetID}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range append(append(cls.seen, sla.applied...), repo.updated...) {
+		if id == closed.ID() {
+			t.Fatal("the closed finding was recomputed")
+		}
+	}
+	if _, ok := q.stamped[closed.ID()]; ok {
+		t.Fatal("the closed finding was stamped")
+	}
+	if pc := closed.PriorityClass(); pc == nil || *pc != vulnerability.PriorityP3 {
+		t.Fatalf("closed finding class = %v, want P3", pc)
+	}
+	if q.stamped[open.ID()] != 7 {
+		t.Fatalf("open finding stamp = %d, want 7", q.stamped[open.ID()])
+	}
+}
+
+func TestReclassify_RecomputesSLAAndPersistsChanges(t *testing.T) {
+	assetID := shared.NewID()
+	f1, f2 := newFinding(t, assetID), newFinding(t, assetID)
 	repo := &fakeFindingRepo{findings: []*vulnerability.Finding{f1, f2}}
 	sla := &fakeSLA{}
-	r := NewReclassifier(repo, &fakeAssetRepo{a: a}, &fakeClassifier{}, logger.NewNop())
+	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, &fakeClassifier{}, logger.NewNop())
 	r.SetSLARecomputer(sla)
 
-	n, err := r.reclassifyAsset(context.Background(), shared.NewID(), assetID)
+	ids, changed, err := r.reclassifyAsset(context.Background(), shared.NewID(), assetID)
 	if err != nil {
-		t.Fatalf("reclassifyAsset: %v", err)
+		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("reexamined = %d, want 2", n)
-	}
-	// SLA recompute must run for every reclassified finding, before persistence.
-	if len(sla.applied) != 2 {
-		t.Fatalf("sla applied to %d findings, want 2", len(sla.applied))
-	}
-	if len(repo.updated) != 2 {
-		t.Fatalf("updated %d findings, want 2", len(repo.updated))
+	if len(ids) != 2 || changed != 2 || len(sla.applied) != 2 || len(repo.updated) != 2 {
+		t.Fatalf("ids=%d changed=%d sla=%d updated=%d, want 2 each", len(ids), changed, len(sla.applied), len(repo.updated))
 	}
 }
 
-func TestReclassify_NilSLARecomputer_StillReclassifies(t *testing.T) {
+// A pass that re-confirms the stored values writes nothing but still
+// stamps the version (the finding is no longer stale).
+func TestReclassify_UnchangedIsNotRewrittenButStamped(t *testing.T) {
 	assetID := shared.NewID()
-	a, _ := asset.NewAsset("example.com", asset.AssetTypeDomain, asset.CriticalityHigh)
-	repo := &fakeFindingRepo{findings: []*vulnerability.Finding{newFinding(t, assetID)}}
-	r := NewReclassifier(repo, &fakeAssetRepo{a: a}, &fakeClassifier{}, logger.NewNop())
-	// no SLA recomputer wired
-
-	n, err := r.reclassifyAsset(context.Background(), shared.NewID(), assetID)
-	if err != nil {
-		t.Fatalf("reclassifyAsset: %v", err)
-	}
-	if n != 1 || len(repo.updated) != 1 {
-		t.Fatalf("expected 1 reclassified+updated, got n=%d updated=%d", n, len(repo.updated))
-	}
-}
-
-// tenantFindingRepo maps assets → findings so a whole-tenant sweep resolves
-// the distinct asset set from List() then pages each asset via ListByAssetID.
-type tenantFindingRepo struct {
-	vulnerability.FindingRepository
-	all     []*vulnerability.Finding               // returned by List() (open findings)
-	byAsset map[shared.ID][]*vulnerability.Finding // returned by ListByAssetID()
-	updated []shared.ID
-}
-
-func (r *tenantFindingRepo) List(_ context.Context, _ vulnerability.FindingFilter, _ vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	if page.Page > 1 {
-		return pagination.Result[*vulnerability.Finding]{}, nil
-	}
-	return pagination.Result[*vulnerability.Finding]{Data: r.all}, nil
-}
-
-func (r *tenantFindingRepo) ListByAssetID(_ context.Context, _, assetID shared.ID, _ vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	if page.Page > 1 {
-		return pagination.Result[*vulnerability.Finding]{}, nil
-	}
-	return pagination.Result[*vulnerability.Finding]{Data: r.byAsset[assetID]}, nil
-}
-
-func (r *tenantFindingRepo) Update(_ context.Context, f *vulnerability.Finding) error {
-	r.updated = append(r.updated, f.ID())
-	return nil
-}
-
-// TestReclassify_WholeTenantRequest_ReclassifiesDistinctAssets proves the
-// empty-AssetIDs (whole-tenant) request path — used by the KEV/EPSS refresh
-// and periodic-sweep producers — actually reclassifies. Before the fix this
-// branch was a no-op returning 0.
-func TestReclassify_WholeTenantRequest_ReclassifiesDistinctAssets(t *testing.T) {
-	tenantID := shared.NewID()
-	a1, a2, a3 := shared.NewID(), shared.NewID(), shared.NewID()
-
-	// 5 open findings across 3 distinct assets (a1×2, a2×1, a3×2).
-	f1, f2 := newFinding(t, a1), newFinding(t, a1)
-	f3 := newFinding(t, a2)
-	f4, f5 := newFinding(t, a3), newFinding(t, a3)
-
-	repo := &tenantFindingRepo{
-		all: []*vulnerability.Finding{f1, f2, f3, f4, f5},
-		byAsset: map[shared.ID][]*vulnerability.Finding{
-			a1: {f1, f2},
-			a2: {f3},
-			a3: {f4, f5},
-		},
-	}
-	a, err := asset.NewAsset("example.com", asset.AssetTypeDomain, asset.CriticalityHigh)
-	if err != nil {
-		t.Fatalf("new asset: %v", err)
-	}
-	classifier := &fakeClassifier{}
-	r := NewReclassifier(repo, &fakeAssetRepo{a: a}, classifier, logger.NewNop())
-
-	// Whole-tenant request: empty AssetIDs.
-	n, err := r.ReclassifyForRequest(context.Background(), controller.ReclassifyRequest{
-		TenantID: tenantID,
-		Reason:   controller.ReasonPeriodicSweep,
-	})
-	if err != nil {
-		t.Fatalf("ReclassifyForRequest: %v", err)
-	}
-	if n != 5 {
-		t.Fatalf("reexamined = %d, want 5 (all open findings across 3 assets)", n)
-	}
-	if classifier.called != 5 {
-		t.Fatalf("classifier called %d times, want 5", classifier.called)
-	}
-	if len(repo.updated) != 5 {
-		t.Fatalf("updated %d findings, want 5", len(repo.updated))
-	}
-}
-
-// TestReclassify_WholeTenantRequest_SkipsNullAssetFindings verifies findings
-// with no asset (NULL asset_id — a known separate gap) are skipped rather than
-// crashing the sweep.
-func TestReclassify_WholeTenantRequest_SkipsNullAssetFindings(t *testing.T) {
-	tenantID := shared.NewID()
-	a1 := shared.NewID()
-	realFinding := newFinding(t, a1)
-	// A pentest finding may have a zero asset_id.
-	orphan, err := vulnerability.NewFinding(shared.NewID(), shared.ID{}, vulnerability.FindingSourcePentest, "tool", vulnerability.SeverityHigh, "orphan")
-	if err != nil {
-		t.Fatalf("new orphan finding: %v", err)
-	}
-
-	repo := &tenantFindingRepo{
-		all:     []*vulnerability.Finding{realFinding, orphan},
-		byAsset: map[shared.ID][]*vulnerability.Finding{a1: {realFinding}},
-	}
-	a, _ := asset.NewAsset("example.com", asset.AssetTypeDomain, asset.CriticalityHigh)
-	classifier := &fakeClassifier{}
-	r := NewReclassifier(repo, &fakeAssetRepo{a: a}, classifier, logger.NewNop())
-
-	n, err := r.ReclassifyForRequest(context.Background(), controller.ReclassifyRequest{
-		TenantID: tenantID,
-		Reason:   controller.ReasonPeriodicSweep,
-	})
-	if err != nil {
-		t.Fatalf("ReclassifyForRequest: %v", err)
-	}
-	// Only the asset-bearing finding is reclassified; the orphan is skipped.
-	if n != 1 {
-		t.Fatalf("reexamined = %d, want 1 (orphan skipped)", n)
-	}
-	if classifier.called != 1 {
-		t.Fatalf("classifier called %d times, want 1", classifier.called)
-	}
-}
-
-// A sweep that re-confirms the stored classification writes nothing; a
-// finding whose class moves is persisted.
-func TestReclassify_UnchangedClassificationIsNotRewritten(t *testing.T) {
-	assetID := shared.NewID()
-	same, moved := newFinding(t, assetID), newFinding(t, assetID)
+	same := newFinding(t, assetID)
 	same.SetPriorityClassification(vulnerability.PriorityP1, "fake")
-	moved.SetPriorityClassification(vulnerability.PriorityP3, "older")
-	repo := &fakeFindingRepo{findings: []*vulnerability.Finding{same, moved}}
-	a, err := asset.NewAsset("example.com", asset.AssetTypeDomain, asset.CriticalityHigh)
+	repo := &fakeFindingRepo{findings: []*vulnerability.Finding{same}}
+	q := &fakeQueue{}
+	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, &fakeClassifier{}, logger.NewNop())
+	r.SetQueue(q, fakeVersions{v: 3})
+
+	checked, changed, err := r.ReclassifyAssets(context.Background(), shared.NewID(), []shared.ID{assetID})
 	if err != nil {
-		t.Fatalf("new asset: %v", err)
+		t.Fatal(err)
 	}
-	r := NewReclassifier(repo, &fakeAssetRepo{a: a}, &fakeClassifier{}, logger.NewNop())
-	n, err := r.ReclassifyForRequest(context.Background(), controller.ReclassifyRequest{
-		TenantID: shared.NewID(), AssetIDs: []shared.ID{assetID},
-	})
-	if err != nil {
-		t.Fatalf("ReclassifyForRequest: %v", err)
+	if checked != 1 || changed != 0 || len(repo.updated) != 0 {
+		t.Fatalf("checked=%d changed=%d updated=%d", checked, changed, len(repo.updated))
 	}
-	if n != 2 {
-		t.Fatalf("reexamined = %d, want 2", n)
-	}
-	if len(repo.updated) != 1 || repo.updated[0] != moved.ID() {
-		t.Fatalf("updated = %v, want only the finding whose class moved", repo.updated)
+	if q.stamped[same.ID()] != 3 {
+		t.Fatalf("stamp = %d, want 3", q.stamped[same.ID()])
 	}
 }
 
-// listerRepo answers the distinct open-finding assets in one call; List must
-// not be used (it pages every open finding).
-type listerRepo struct {
-	tenantFindingRepo
-	assetIDs  []shared.ID
-	listCalls int
+// A failed write is not stamped and the tenant's assets go back in the
+// queue.
+func TestProcessQueue_FailedPassIsRequeuedAndNotStamped(t *testing.T) {
+	assetID := shared.NewID()
+	tid := shared.NewID()
+	f := newFinding(t, assetID)
+	repo := &fakeFindingRepo{findings: []*vulnerability.Finding{f}, updateErr: errors.New("db down")}
+	q := &fakeQueue{items: []scoring.QueueItem{{TenantID: tid, AssetID: assetID, Reason: scoring.ReasonNewFinding}}}
+	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, &fakeClassifier{}, logger.NewNop())
+	r.SetQueue(q, fakeVersions{v: 5})
+
+	res, err := r.ProcessQueue(context.Background(), 10, 5)
+	if err == nil {
+		t.Fatal("want the persist error")
+	}
+	if res.Claimed != 1 {
+		t.Fatalf("claimed = %d", res.Claimed)
+	}
+	if len(q.requeued) != 1 || q.requeued[0] != assetID {
+		t.Fatalf("requeued = %v", q.requeued)
+	}
+	if _, ok := q.stamped[f.ID()]; ok {
+		t.Fatal("a finding whose write failed was stamped")
+	}
 }
 
-func (r *listerRepo) ListOpenFindingAssetIDs(_ context.Context, _ shared.ID) ([]shared.ID, error) {
-	return r.assetIDs, nil
-}
-
-func (r *listerRepo) List(_ context.Context, _ vulnerability.FindingFilter, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	r.listCalls++
-	return pagination.Result[*vulnerability.Finding]{}, nil
-}
-
-func TestReclassify_WholeTenant_UsesOpenAssetLister(t *testing.T) {
-	a1, a2 := shared.NewID(), shared.NewID()
-	f1, f2, f3 := newFinding(t, a1), newFinding(t, a2), newFinding(t, a2)
-	repo := &listerRepo{
-		tenantFindingRepo: tenantFindingRepo{byAsset: map[shared.ID][]*vulnerability.Finding{a1: {f1}, a2: {f2, f3}}},
-		assetIDs:          []shared.ID{a1, a2},
-	}
-	a, err := asset.NewAsset("example.com", asset.AssetTypeDomain, asset.CriticalityHigh)
-	if err != nil {
-		t.Fatalf("new asset: %v", err)
-	}
-	r := NewReclassifier(repo, &fakeAssetRepo{a: a}, &fakeClassifier{}, logger.NewNop())
-	n, err := r.ReclassifyForRequest(context.Background(), controller.ReclassifyRequest{TenantID: shared.NewID()})
-	if err != nil {
-		t.Fatalf("ReclassifyForRequest: %v", err)
-	}
-	if n != 3 || repo.listCalls != 0 {
-		t.Fatalf("reexamined = %d, List calls = %d; want 3 and 0", n, repo.listCalls)
+func TestReclassify_MissingAssetIsASoftMiss(t *testing.T) {
+	r := NewReclassifier(&fakeFindingRepo{}, &fakeAssetRepo{err: shared.ErrNotFound}, &fakeClassifier{}, logger.NewNop())
+	ids, n, err := r.reclassifyAsset(context.Background(), shared.NewID(), shared.NewID())
+	if err != nil || n != 0 || len(ids) != 0 {
+		t.Fatalf("ids=%v n=%d err=%v", ids, n, err)
 	}
 }

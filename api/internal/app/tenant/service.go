@@ -104,6 +104,9 @@ type TenantService struct {
 	// invitationTeams checks and applies the teams of an invitation
 	// (invitation_teams.go).
 	invitationTeams InvitationTeams
+	// Ownership transfer store and its emails (ownership_transfer.go).
+	ownershipTransfers tenantdom.OwnershipTransferRepository
+	ownershipNotifier  OwnershipTransferNotifier
 	// classifier decides whether an invitee is internal or external
 	// (external_members.go).
 	classifier *AddressClassifier
@@ -778,7 +781,7 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 
 	// Prevent changing owner role
 	if membership.IsOwner() {
-		return nil, fmt.Errorf("%w: cannot change owner role", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: the owner's role changes only by a transfer: use Transfer ownership on the Members page", shared.ErrValidation)
 	}
 	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
 		return nil, err
@@ -817,7 +820,7 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 
 	// Prevent promoting to owner
 	if role == tenantdom.RoleOwner {
-		return nil, fmt.Errorf("%w: cannot promote to owner", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: nobody is made the owner by a role change: the owner uses Transfer ownership on the Members page", shared.ErrValidation)
 	}
 	if role == tenantdom.RoleAdmin && membership.Role() != tenantdom.RoleAdmin {
 		if err := s.authorizeAdminPromotion(ctx, membership.TenantID(), actx); err != nil {
@@ -1487,6 +1490,12 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	if err := s.ClassifyAcceptedInvitation(ctx, invitation, membership, time.Now().UTC()); err != nil {
 		return nil, err
 	}
+	// The teams are checked for the inviter with the classification just
+	// made: someone who became an outsider since the invitation was sent
+	// never gets full data access through a team.
+	if err := s.reauthorizeInvitationTeams(ctx, invitation, membership.IsExternal()); err != nil {
+		return nil, err
+	}
 
 	// Use transaction to ensure atomicity - both invitation update and membership creation succeed or fail together
 	if err := s.repo.AcceptInvitationTx(ctx, invitation, membership); err != nil {
@@ -1508,7 +1517,8 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		WithResourceName(userEmail).
 		WithMessage(fmt.Sprintf("Invitation accepted by %s", userEmail)).
 		WithMetadata("role", invitation.Role().String()).
-		WithMetadata("role_ids_count", len(invitation.RoleIDs()))
+		WithMetadata("role_ids_count", len(invitation.RoleIDs())).
+		WithMetadata("group_ids", invitation.GroupIDs())
 	s.logAudit(ctx, actx, event)
 
 	return membership, nil
