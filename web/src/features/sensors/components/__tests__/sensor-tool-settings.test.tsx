@@ -238,6 +238,41 @@ describe('SensorToolSettingsSection', () => {
     }
   })
 
+  it('on a phone, opening a tool scrolls the drawer body only, never the frame around it', async () => {
+    const mm = window.matchMedia
+    window.matchMedia = ((q: string) => ({
+      matches: q.includes('max-width'),
+      media: q,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+    const intoView = vi.fn()
+    const orig = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = intoView
+    try {
+      api.items = [plain('katana'), item]
+      // frame (overflow hidden, like the drawer) > body (scrolls) > section
+      const frame = document.createElement('div')
+      frame.style.overflowY = 'hidden'
+      const body = document.createElement('div')
+      body.style.overflowY = 'auto'
+      frame.appendChild(body)
+      document.body.appendChild(frame)
+      render(<SensorToolSettingsSection sensorId="s1" />, { container: body })
+      body.getBoundingClientRect = () => ({ top: 200, height: 500 }) as DOMRect
+      const katana = screen.getByTestId('tool-settings-katana')
+      katana.getBoundingClientRect = () => ({ top: 650, height: 600 }) as DOMRect
+      fireEvent.click(within(katana).getAllByRole('button')[0])
+      await waitFor(() => expect(body.scrollTop).toBe(450))
+      expect(frame.scrollTop).toBe(0)
+      expect(intoView).not.toHaveBeenCalled()
+      frame.remove()
+    } finally {
+      window.matchMedia = mm
+      Element.prototype.scrollIntoView = orig
+    }
+  })
+
   it('search filters by tool or option name and opens the matching tool', () => {
     api.items = [plain('katana'), item]
     render(<SensorToolSettingsSection sensorId="s1" />)
