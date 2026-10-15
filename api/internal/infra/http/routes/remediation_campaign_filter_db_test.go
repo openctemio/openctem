@@ -176,15 +176,18 @@ func TestCampaignFilter_InvalidConditionNeverWidens(t *testing.T) {
 	}
 }
 
-// A status alone is the whole organization: not scope.
+// A status, a severity or a source alone is the whole organization: not
+// scope. Scope names what is fixed (asset, CVEs, findings, tool, fix key).
 func TestCampaignFilter_StatusOnlyIsNotScope(t *testing.T) {
 	h := newCampaignFilterHarness(t)
 	h.exec(`UPDATE findings SET assigned_to = $2 WHERE tenant_id = $1`, h.tenant.String(), h.owner.String())
-	id := h.storedCampaign(`{"statuses": ["confirmed"]}`)
-	st, body := h.call(h.owner, true, campaignWritePerms(true), http.MethodPost, "/api/v1/remediation/campaigns/"+id+"/resolve",
-		map[string]any{"resolution": "patched"})
-	if st != http.StatusBadRequest {
-		t.Errorf("resolve of a status-only campaign = %d %.300s, want 400", st, body)
+	for _, filter := range []string{`{"statuses": ["confirmed"]}`, `{"severities": ["high", "critical"]}`, `{"source": "sast", "search": "a"}`} {
+		id := h.storedCampaign(filter)
+		st, body := h.call(h.owner, true, campaignWritePerms(true), http.MethodPost, "/api/v1/remediation/campaigns/"+id+"/resolve",
+			map[string]any{"resolution": "patched"})
+		if st != http.StatusBadRequest {
+			t.Errorf("resolve of %s = %d %.300s, want 400", filter, st, body)
+		}
 	}
 	for _, f := range []shared.ID{h.findingA, h.findingB, h.critical} {
 		if got := h.status(f); got != "confirmed" {
@@ -198,7 +201,7 @@ func TestCampaignFilter_StatusOnlyIsNotScope(t *testing.T) {
 func TestCampaignResolve_NeedsFixApplyAndStaysInScope(t *testing.T) {
 	h := newCampaignFilterHarness(t)
 	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id IN ($1, $3)`, h.findingA.String(), h.memberA.String(), h.findingB.String())
-	id := h.storedCampaign(`{"severity": "high"}`)
+	id := h.storedCampaign(`{"severity": "high", "tool_name": "ds-tool"}`)
 	path := "/api/v1/remediation/campaigns/" + id + "/resolve"
 
 	if st, body := h.call(h.memberA, false, campaignWritePerms(false), http.MethodPost, path,

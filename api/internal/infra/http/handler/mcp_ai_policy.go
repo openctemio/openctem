@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -71,7 +72,7 @@ func (h *MCPHandler) aiAllowedTLPs(ctx context.Context, tenantID string) ([]stri
 func (h *MCPHandler) checkCampaignAI(ctx context.Context, tenantID string, c *pentestdom.Campaign) error {
 	if c.AIAssistantsDisabled() {
 		return mcpRestrictedError{"the campaign lead turned AI assistants off for this campaign, so its content " +
-			"is not sent to AI applications. Work on it in OpenCTEM."}
+			"is not sent to AI applications. Work on it in " + brand.Name() + "."}
 	}
 	maxTLP, err := h.aiMaxTLP(ctx, tenantID)
 	if err != nil {
@@ -79,8 +80,8 @@ func (h *MCPHandler) checkCampaignAI(ctx context.Context, tenantID string, c *pe
 	}
 	if c.TLP().Above(maxTLP) {
 		return mcpRestrictedError{fmt.Sprintf("this campaign is %s and your organization sends pentest campaigns "+
-			"to AI applications up to %s only, so its content is not sent here. Work on it in OpenCTEM.",
-			c.TLP().Label(), maxTLP.Label())}
+			"to AI applications up to %s only, so its content is not sent here. Work on it in %s.",
+			c.TLP().Label(), maxTLP.Label(), brand.Name())}
 	}
 	return nil
 }
@@ -105,5 +106,5 @@ func (h *MCPHandler) checkFindingAI(ctx context.Context, tenantID string, f *vul
 // mcpRestrictedHiddenNotice explains campaigns a list left out.
 func mcpRestrictedHiddenNotice(n int64, maxTLP pentestdom.TLP) string {
 	return fmt.Sprintf("%d of your campaigns are not listed: their TLP is above %s, the limit your organization "+
-		"set for AI applications, or their lead turned AI assistants off. Open them in OpenCTEM.", n, maxTLP.Label())
+		"set for AI applications, or their lead turned AI assistants off. Open them in %s.", n, maxTLP.Label(), brand.Name())
 }

@@ -91,6 +91,7 @@ import (
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
+	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
@@ -127,6 +128,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -754,6 +756,8 @@ type Services struct {
 
 	// Jira Bidirectional Sync
 	JiraSync *jira.SyncService
+	// TicketMapping manages ticket field and status mapping profiles.
+	TicketMapping *appticketmap.Service
 
 	// GitHub Issues ticket provider (create-from-finding + link only)
 	GitHubTicket *ticketing.GitHubTicketService
@@ -1653,6 +1657,20 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Inbound status changes are recorded with the integration as the actor.
 	s.JiraSync.SetActivityRecorder(s.FindingActivity)
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
+	// Ticket field and status mapping profiles: the editor reads the
+	// integration's own Jira site; previews load objects through the caller's
+	// data scope.
+	if repos.TicketMapping != nil {
+		objects := ticketMappingObjects{findings: repos.Finding, assets: repos.Asset, users: repos.User, campaigns: repos.RemediationCampaign}
+		if s.RemediationCampaign != nil {
+			objects.members = s.RemediationCampaign
+		}
+		s.TicketMapping = appticketmap.NewService(repos.TicketMapping, infrajira.NewMappingTrackerResolver(jiraResolver),
+			ticketMappingScope{e: s.DataScope}, objects, cfg.SMTP.BaseURL, log)
+		// Published profiles drive issue creation and status moves for their
+		// destinations; without one the built-in behavior is unchanged.
+		s.JiraSync.SetProfileSource(s.TicketMapping)
+	}
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
 	// here (JiraSync is created after the campaign service above).
@@ -1669,6 +1687,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize integration & notification services
 	s.Integration = integration.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
+	s.Integration.SetBrand(cfg.Brand)
 	s.Integration.SetTransactionDB(deps.DB)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
@@ -1689,6 +1708,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Events about private program assets reach only the programs' own
 	// channels (RFC-065 §15.4): one rule for every integration provider.
 	s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
+	s.Outbox.SetBrand(cfg.Brand)
 
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
@@ -2690,7 +2710,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 
 	// Two-factor authentication (TOTP). Secrets are encrypted with the same
 	// AES-GCM key as integration credentials.
-	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.App.Name)
+	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.Brand.DisplayName())
 	s.Session.SetMFAChallengeCleanup(repos.UserMFA)
 
 	// Immediate session revocation: signing a session out (logout, "sign out
@@ -2898,7 +2918,8 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 		log.Warn("platform e-mail settings unavailable - email features will be disabled")
 		return nil
 	}
-	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.App.Name, log)
+	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.Brand.DisplayName(), log)
+	s.Email.SetBranding(email.Branding{FooterText: cfg.Brand.EmailFooter, PoweredBy: cfg.Brand.ShowPoweredBy()})
 	if !s.Email.IsConfigured() {
 		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
 	}
