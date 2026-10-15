@@ -187,6 +187,64 @@ reopens each to `confirmed` with a timeline entry instead of failing the delete.
 Migration `002151` repaired existing orphan duplicates the same way (status
 `confirmed`, timeline reason `duplicate_link_missing`).
 
+## The same claim and close rules on every route
+
+Marking a fix applied and resolving follow the same rules on every route a
+person can use: the dedicated actions (`/actions/fix-applied`,
+`/actions/verify`), `PATCH /findings/{id}/status`, the bulk status change,
+and remediation group and campaign resolves (which use the bulk path).
+
+- **Fix applied:** `findings:fix_apply`, a note, and the finding must be the
+  person's: the assignee, a member of an assigned group, or an owner of the
+  asset (`FindingActionsService.FixAppliers`, wired into the status service
+  with `SetFixApplierCheck`). The bulk paths skip, and report, each finding
+  that is not theirs.
+- **Resolved:** `findings:verify` (unchanged). A resolve backed by a complete
+  verification checklist is `security_reviewed`; any other person's resolve is
+  attested (`admin_direct`) and needs a note. A bulk resolve reads no
+  checklist, so it always needs one.
+- **Callers without a user** (an organization API key) get the same rules,
+  never an exemption: they need the permission and the note, and cannot claim
+  a fix at all (`ErrFixApplyNotAPerson`). Only an explicit system move, a
+  workflow's `update_status` (a transition with source `workflow`), is exempt.
+- Errors: `ErrFixApplyRequiresPermission`, `ErrFixApplyNotYours` and
+  `ErrFixApplyNotAPerson` (403), `ErrNoteRequired` (400).
+- The web asks for the note in the drawer's status control, the bulk resolve
+  dialog and the group and campaign resolve dialogs.
+
+## Mark fixed: remediation group and campaign resolves
+
+A remediation group or campaign "resolve" is a **mark fixed**, never a close
+(`BulkUpdateStatusInput.WalkToFixApplied`):
+
+- Every open, in-scope, non-pentest member takes the legal person steps to
+  `fix_applied` (`vulnerability.FixClaimPath`: `new → confirmed → in_progress
+  → fix_applied`, `confirmed`/`not_observed → in_progress → fix_applied`).
+  Each step is a separate status write that accepts only that step's exact
+  predecessors (`vulnerability.FixClaimStepFrom`, through
+  `UpdateStatusBatchFrom`): a finding closed while the claim runs (for example
+  an approved false positive) is never walked back open, although the
+  lifecycle allows `confirmed` from closed statuses. The status history
+  records every step. The findings are read back afterwards: one that
+  changed in between is reported with its current status.
+- A member already `fix_applied` is skipped, never rewritten (its earlier
+  note and actor stay). A `validated_fixed` member is refused: a reviewer
+  verifies it.
+- The fix claim rules above apply (`findings:fix_apply`, a note, only the
+  person's own findings). The group and campaign services refuse a missing
+  permission or note before reading the group or spending the bulk budget.
+- A target of `resolved` is refused with 400 (`ErrGroupResolveClosesNothing`,
+  `ErrCampaignResolveClosesNothing`), even for a `findings:verify` holder: a
+  group shares a fix, not the proof that each finding is gone.
+- A proof-of-fix re-check is queued per finding that reached `fix_applied`
+  (`VulnerabilityService.SetProofOfFixQueuer` →
+  `FindingActionsService.QueueProofOfFix`, the same bounded dispatch as
+  `/actions/fix-applied`); this holds for every bulk fix claim. A finding it
+  cannot re-check waits for a covered scan, a retest or a reviewer.
+- The response lists every finding not updated with the reason
+  (`{updated, skipped, failed, validations_queued, rows: [{finding_id,
+  outcome, reason}]}`); the web shows them in the shared mark-fixed dialog.
+
 ## SLA status follows the status
 
 `findings.sla_status` is recomputed on every status or deadline change, by the
@@ -208,6 +266,10 @@ The warning has **one definition**: the SLA escalation job's policy
 restarted deadline is measured from the reopen). The domain no longer warns 24
 hours before a deadline on its own. Migration `002181` also recomputed stale
 values (closed findings left `overdue`, dispositions `exceeded`).
+
+When the priority or the SLA policy changes, an open finding's deadline only
+tightens (`min(old, now + new SLA)`) and never moves later; see
+[scoring versions](scoring-versions.md#sla-on-a-priority-change).
 
 ## Risk acceptance end
 

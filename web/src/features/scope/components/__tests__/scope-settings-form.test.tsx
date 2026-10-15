@@ -67,15 +67,18 @@ describe('ScopeSettingsForm', () => {
     wrap(<ScopeSettingsForm settings={settings} />)
     expect(screen.getByText('Platform sensors need proof')).toBeInTheDocument()
     expect(screen.getByText('Always on')).toBeInTheDocument()
-    // The switches are auto-join, confirm-adds-to-scope and the review gate
-    // (none of them changes what may be scanned); nothing else toggles.
+    // The switches are auto-join, confirm-adds-to-scope, the review gate and
+    // the opt-in proof for CI scopes (none of them changes what may be
+    // scanned); nothing else toggles.
     const switches = screen.getAllByRole('switch')
-    expect(switches).toHaveLength(3)
+    expect(switches).toHaveLength(4)
     expect(switches[0]).toHaveAccessibleName('Add discovered names automatically')
     expect(switches[1]).toHaveAccessibleName('Confirming an asset adds it to scope')
     expect(switches[1]).toBeChecked()
     expect(switches[2]).toHaveAccessibleName('Review discovered assets first')
     expect(switches[2]).not.toBeChecked()
+    expect(switches[3]).toHaveAccessibleName('Require proof for CI scopes')
+    expect(switches[3]).not.toBeChecked()
     expect(screen.queryByText(/disable scope|turn scope off/i)).not.toBeInTheDocument()
   })
 
@@ -96,6 +99,7 @@ describe('ScopeSettingsForm', () => {
         one_off_max_days: 7,
         widening_approvals: null,
         default_max_tier: 't1',
+        ci_scope_requires_proof: false,
       })
     )
   })

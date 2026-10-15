@@ -1,0 +1,18 @@
+{
+  "remediation.markFixed.confirmRequired": "Confirm this large change to proceed",
+  "remediation.markFixed.done": "{count} findings marked fixed",
+  "remediation.markFixed.error": "Could not mark the findings fixed",
+  "remediation.markFixed.summary": "{updated} marked fixed, {skipped} skipped, {failed} not changed, {queued} re-checks queued.",
+  "remediation.markFixed.outcomeSkipped": "skipped",
+  "remediation.markFixed.outcomeFailed": "not changed",
+  "remediation.markFixed.explain": "Each finding moves to fix applied. A retest, a covered scan or a reviewer then verifies it and closes it; nothing is closed for the whole group.",
+  "remediation.markFixed.notePlaceholder": "e.g. Patched via change CR-1234",
+  "remediation.markFixed.confirmLarge": "I confirm marking {count} findings fixed at once.",
+  "remediation.markFixed.noPermission": "You need the permission to mark findings fixed.",
+  "remediation.markFixed.submit": "Mark fixed",
+  "remediation.markFixed.campaignTitle": "Mark the campaign findings fixed",
+  "remediation.markFixed.campaignDescription": "{count} open findings in {name}.",
+  "remediation.markFixed.groupTitle": "Mark the group fixed",
+  "remediation.markFixed.groupDescription": "{count} open findings on {assets} assets: {title}",
+  "remediation.markFixed.close": "Close"
+}
