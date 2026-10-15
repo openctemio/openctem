@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/openctemio/ctis"
 
@@ -104,7 +105,7 @@ func TestMergeDuplicateRepositories(t *testing.T) {
 
 	m := postgres.NewRepositoryMergeRepository(r.db)
 	// Dry run: counts, no change.
-	dry, err := m.MergeDuplicateRepositories(ctx, r.tenant, false)
+	dry, err := m.MergeDuplicateRepositories(ctx, r.tenant, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestMergeDuplicateRepositories(t *testing.T) {
 		t.Fatalf("dry run: %+v, %d repositories", dry, repos(r.tenant))
 	}
 
-	rep, err := m.MergeDuplicateRepositories(ctx, r.tenant, true)
+	rep, err := m.MergeDuplicateRepositories(ctx, r.tenant, true, false)
 	if err != nil || rep.Groups != 2 || rep.FailedGroups != 0 {
 		t.Fatalf("merge: %+v %v", rep, err)
 	}
@@ -139,11 +140,127 @@ func TestMergeDuplicateRepositories(t *testing.T) {
 		t.Fatal("imported and CI repository not merged")
 	}
 	// Idempotent; the other tenant is untouched.
-	again, err := m.MergeDuplicateRepositories(ctx, r.tenant, true)
+	again, err := m.MergeDuplicateRepositories(ctx, r.tenant, true, false)
 	if err != nil || again.Groups != 0 {
 		t.Fatalf("second merge: %+v %v", again, err)
 	}
 	if repos(r.other) != 2 {
 		t.Fatalf("another tenant changed: %d repositories", repos(r.other))
+	}
+}
+
+// A repository whose duplicate assets carry several gate policies is not
+// merged unless asked to resolve it, and then keeps the strictest policy; when
+// the policies are stricter on different settings it is never merged. A row
+// written onto a duplicate while the merge runs waits for it and is moved,
+// never lost to the merged asset's delete.
+func TestMergeDuplicateRepositoriesPoliciesAndConcurrentWrites(t *testing.T) {
+	r := newCIRig(t)
+	ctx := context.Background()
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+			t.Fatalf("%s: %v", query, err)
+		}
+	}
+	// pair creates "acme/<n>" imported with id <id> (older) and the CI
+	// duplicate "github.com/acme/<n>".
+	pair := func(name, id string) (shared.ID, shared.ID) {
+		imported, ci := shared.NewID(), shared.NewID()
+		exec(`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status, created_at)
+			VALUES ($1, $2, $3, 'repository', 'medium', 'active', NOW() - interval '1 day')`, imported.String(), r.tenant.String(), "acme/"+name)
+		exec(`INSERT INTO asset_repositories (asset_id, repo_id, full_name, web_url, visibility)
+			VALUES ($1, $2, $3, $4, 'private')
+			ON CONFLICT (asset_id) DO UPDATE SET repo_id = EXCLUDED.repo_id, web_url = EXCLUDED.web_url`,
+			imported.String(), id, "acme/"+name, "https://github.com/acme/"+name)
+		exec(`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status)
+			VALUES ($1, $2, $3, 'repository', 'medium', 'active')`, ci.String(), r.tenant.String(), "github.com/acme/"+name)
+		return imported, ci
+	}
+	policy := func(asset shared.ID, severity string, newOnly bool) {
+		exec(`INSERT INTO ci_gate_policies (id, tenant_id, scope_type, repository_asset_id, enabled, mode, fail_on_severity,
+				new_findings_only, fail_on_kev, modes, allow_repo_policy, fixable_only, created_at, updated_at)
+			VALUES ($1, $2, 'repository', $3, TRUE, 'enforce', $4, $5, TRUE, '{}', TRUE, FALSE, NOW(), NOW())`,
+			shared.NewID().String(), r.tenant.String(), asset.String(), severity, newOnly)
+	}
+	count := func(query string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := r.db.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	exists := func(id shared.ID) bool { return count(`SELECT count(*) FROM assets WHERE id = $1`, id.String()) == 1 }
+
+	// svc: the CI duplicate's policy (medium) is stricter than the imported
+	// one's (high). lib: high + every finding vs low + new only (neither is
+	// stricter on everything).
+	svcImported, svcCI := pair("svc", "71")
+	policy(svcImported, "high", true)
+	policy(svcCI, "medium", true)
+	libImported, libCI := pair("lib", "72")
+	policy(libImported, "high", false)
+	policy(libCI, "low", true)
+
+	m := postgres.NewRepositoryMergeRepository(r.db)
+	rep, err := m.MergeDuplicateRepositories(ctx, r.tenant, true, false)
+	if err != nil || rep.Groups != 0 || rep.RefusedGroups != 2 || !exists(svcCI) || !exists(libCI) {
+		t.Fatalf("without resolve: %+v %v", rep, err)
+	}
+	refused := map[string]string{}
+	for _, g := range rep.MergeDetails {
+		refused[g.KeepAssetID] = g.Refused
+		if g.GatePolicies != 2 {
+			t.Fatalf("group policies = %d", g.GatePolicies)
+		}
+	}
+	if refused[svcImported.String()] != postgres.RefusedPolicyConflict || refused[libImported.String()] != postgres.RefusedPolicyIncomparable {
+		t.Fatalf("refusals = %v", refused)
+	}
+
+	// A finding written onto the svc duplicate while the merge runs: the
+	// merge waits for it and moves it.
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := shared.NewID()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
+		VALUES ($1, $2, $3, 'sast', 'opengrep', 'late', 'high', $4, 'new')`, late.String(), r.tenant.String(), svcCI.String(), "fp-"+late.String()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan *postgres.RepositoryMergeReport, 1)
+	go func() {
+		rep, err := m.MergeDuplicateRepositories(ctx, r.tenant, true, true)
+		if err != nil {
+			t.Error(err)
+		}
+		done <- rep
+	}()
+	time.Sleep(500 * time.Millisecond)
+	select {
+	case <-done:
+		t.Fatal("the merge did not wait for a concurrent write to a duplicate asset")
+	default:
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	rep = <-done
+	if rep == nil || rep.Groups != 1 || rep.RefusedGroups != 1 || rep.FailedGroups != 0 {
+		t.Fatalf("with resolve: %+v", rep)
+	}
+	if exists(svcCI) || !exists(libCI) {
+		t.Fatal("resolve merged the wrong groups")
+	}
+	if count(`SELECT count(*) FROM findings WHERE id = $1 AND asset_id = $2`, late.String(), svcImported.String()) != 1 {
+		t.Fatal("a finding written during the merge was lost")
+	}
+	// The strictest policy (medium) is the repository's only one.
+	if count(`SELECT count(*) FROM ci_gate_policies WHERE tenant_id = $1 AND repository_asset_id = $2 AND fail_on_severity = 'medium'`,
+		r.tenant.String(), svcImported.String()) != 1 ||
+		count(`SELECT count(*) FROM ci_gate_policies WHERE tenant_id = $1 AND repository_asset_id = $2`, r.tenant.String(), svcImported.String()) != 1 {
+		t.Fatal("the merged repository did not keep the strictest gate policy")
 	}
 }

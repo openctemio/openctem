@@ -106,7 +106,8 @@ func (r *FindingRepository) ResolveRepoCoverageStale(ctx context.Context, tenant
 	for i, id := range ids {
 		idStrs[i] = id.String()
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	resolved, err := r.db.queryIDsWithTransition(ctx, findingTransition{ActivityType: "auto_resolved", Source: "auto", Reason: "not_found_in_full_scan", ActorType: "scanner",
+		ActorName: "system: default-branch scan", Message: "A full scan of the default branch no longer reported it"}, `
 		UPDATE findings f
 		SET status = 'resolved',
 			resolution = 'auto_fixed',
@@ -123,20 +124,6 @@ func (r *FindingRepository) ResolveRepoCoverageStale(ctx context.Context, tenant
 		RETURNING f.id::text`, tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("resolve repository coverage-stale findings: %w", err)
-	}
-	defer rows.Close()
-	var resolved []shared.ID
-	for rows.Next() {
-		var idStr string
-		if err := rows.Scan(&idStr); err != nil {
-			return nil, fmt.Errorf("scan resolved finding id: %w", err)
-		}
-		if id, err := shared.IDFromString(idStr); err == nil {
-			resolved = append(resolved, id)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate resolved findings: %w", err)
 	}
 	return resolved, nil
 }

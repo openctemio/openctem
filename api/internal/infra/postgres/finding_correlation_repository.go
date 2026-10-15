@@ -242,6 +242,13 @@ func (r *FindingCorrelationRepository) link(ctx context.Context, tenant string, 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := setFindingTransition(ctx, tx, findingTransition{
+		Source: "correlation", Reason: "correlated", ActorName: "system: finding correlation",
+		Message: "Linked as another detection of the same issue",
+		Changes: map[string]any{"duplicate_of": l.PrimaryID, "correlation_reason": reason},
+	}); err != nil {
+		return err
+	}
 	var mStatus, mSev, pStatus, pSev string
 	var mRes sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT status, severity, resolution FROM findings WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
@@ -333,6 +340,14 @@ func (r *FindingCorrelationRepository) release(ctx context.Context, tenant, memb
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	t := findingTransition{Source: "correlation", Reason: why, ActorName: "system: finding correlation",
+		Message: "Released from its correlation: a detection of its own again"}
+	if by != nil {
+		t.ActorType, t.ActorID, t.ActorName = "user", *by, ""
+	}
+	if err := setFindingTransition(ctx, tx, t); err != nil {
+		return false, err
+	}
 	var id, primary string
 	var prior, priorRes, priorSev sql.NullString
 	err = tx.QueryRowContext(ctx, `SELECT id, primary_id, member_prior_status, member_prior_resolution, primary_prior_severity

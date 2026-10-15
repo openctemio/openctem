@@ -143,6 +143,12 @@ var assetMergeRefs = []mergeRef{
 	// else it takes a merged one's.
 	{table: "ci_gate_policies", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{}}},
+	// One gate baseline per repository: the kept repository keeps its own
+	// (the merged one's findings, now on the kept repository, count as new
+	// until a baseline is recorded again), else it takes a merged one's
+	// (its fingerprints follow by ON UPDATE CASCADE).
+	{table: "ci_gate_baselines", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	// One expectation per repository: the kept repository keeps its own.
 	{table: "ci_coverage_expectations", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
