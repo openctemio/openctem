@@ -162,6 +162,8 @@ import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/
 import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
 import { savedViewId, type SavedView } from '@/features/saved-views/api/use-saved-views'
 import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 
 // ============================================
 // Transform API Finding to UI Finding
@@ -439,6 +441,7 @@ function FindingsContent() {
   const [severityParam, setSeverityParam] = useUrlFilterList('severity')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
+  const [bulkResolveNote, setBulkResolveNote] = useState('')
   const [findingToDelete, setFindingToDelete] = useState<Finding | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -949,7 +952,7 @@ function FindingsContent() {
     }
   }
 
-  const handleBulkStatusChange = async (status: string) => {
+  const handleBulkStatusChange = async (status: string, resolution?: string) => {
     const findingIds = selectedFindingIds
     if (findingIds.length === 0) return
 
@@ -958,7 +961,7 @@ function FindingsContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ finding_ids: findingIds, status }),
+        body: JSON.stringify({ finding_ids: findingIds, status, resolution }),
       })
       if (!response.ok) throw new Error('Failed to update findings')
       showBulkResult(
@@ -2259,11 +2262,31 @@ function FindingsContent() {
           'The selected findings are closed as resolved and leave the open work queues and SLA tracking.'
         )}
         confirmText={t('confirm.finding.resolve', 'Resolve')}
+        disabled={!bulkResolveNote.trim()}
         handleConfirm={async () => {
-          await handleBulkStatusChange('resolved')
+          await handleBulkStatusChange('resolved', bulkResolveNote.trim())
+          setBulkResolveNote('')
           setBulkResolveOpen(false)
         }}
-      />
+      >
+        {/* A bulk resolve reads no verification checklist: it is attested and needs a note. */}
+        <div className="space-y-2">
+          <Label htmlFor="bulk-resolve-note">
+            {t('findings.statusNote.label', 'Note (required)')}
+          </Label>
+          <Textarea
+            id="bulk-resolve-note"
+            value={bulkResolveNote}
+            maxLength={1000}
+            rows={3}
+            placeholder={t(
+              'findings.statusNote.placeholder',
+              'e.g. Upgraded the library to 4.2 in release 2026.10'
+            )}
+            onChange={(e) => setBulkResolveNote(e.target.value)}
+          />
+        </div>
+      </ConfirmDialog>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
