@@ -93,3 +93,22 @@ describe('isValidRepositoryUrl', () => {
     expect(isValidRepositoryUrl('not a url')).toBe(false)
   })
 })
+
+describe('buildRepositoryCommitUrl', () => {
+  it('links a commit on each platform and refuses bad input', async () => {
+    const { buildRepositoryCommitUrl, repositoryUrlFromName } = await import('./repository-url')
+    expect(buildRepositoryCommitUrl('https://gitlab.com/acme/app', '67da69d5')).toBe(
+      'https://gitlab.com/acme/app/-/commit/67da69d5'
+    )
+    expect(buildRepositoryCommitUrl('git@github.com:acme/app.git', 'abcdef1')).toBe(
+      'https://github.com/acme/app/commit/abcdef1'
+    )
+    expect(buildRepositoryCommitUrl('javascript:alert(1)', 'abcdef1')).toBeNull()
+    expect(buildRepositoryCommitUrl('https://github.com/acme/app', 'main"><x')).toBeNull()
+    expect(repositoryUrlFromName('gitlab.com/manhnv-devsecops/django-nv')).toBe(
+      'https://gitlab.com/manhnv-devsecops/django-nv'
+    )
+    expect(repositoryUrlFromName('my repo')).toBeUndefined()
+    expect(repositoryUrlFromName('javascript:alert(1)//a/b')).toBeUndefined()
+  })
+})
