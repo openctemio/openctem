@@ -160,6 +160,23 @@ too (`assets_queued`) instead of rescoring in the request.
 
 Priority rules keep their own dry run (`POST /priority-rules/dry-run`).
 
+## History
+
+Snapshots, trends, MTTR and SLA compliance of past periods are history: they
+are never recomputed when a model or settings change.
+
+- `risk_snapshots.risk_version` / `priority_version` record the oldest
+  version among the asset scores and open-finding priorities the day's numbers
+  came from (NULL = before versions).
+- `GET /dashboard/risk-trend` returns, on each point, its versions and the
+  scoring changes that took effect there (`scoring_changes`: date, kind,
+  source, summary; a day without a snapshot moves the marker to the next
+  point). The tenant's own changes and platform model versions are listed,
+  never another tenant's.
+- The dashboard's priority charts draw a dashed line at each change and say
+  "Scoring changed on <date> (<what>): values before and after are not
+  directly comparable", so a step is not read as a change in risk.
+
 ## Security
 
 - Settings are a security control: they decide what is P0 and when work is
@@ -177,10 +194,10 @@ Priority rules keep their own dry run (`POST /priority-rules/dry-run`).
 
 Shipped: versions, the durable queue, triggers, the worker and reconcile,
 closed findings frozen; SLA deadlines that only tighten, with a timeline
-entry; the whole-organization preview and the step-up apply.
+entry; the whole-organization preview and the step-up apply; version stamps
+on risk snapshots and markers on trend charts.
 
-Planned in the same series: version stamps on risk snapshots and
-markers on trend charts; one summary notification per scoring change instead
+Planned in the same series: one summary notification per scoring change instead
 of one per finding; recompute scoped to the CVEs whose EPSS or KEV status
 changed.
 
@@ -194,6 +211,8 @@ changed.
 - `internal/app/asset/risk_freshness.go` (risk version stamp)
 - `internal/app/sla/applier.go`, `migrations/*_sla_deadline_tighten_only.up.sql`
 - `internal/app/asset/risk_preview.go`, `internal/app/finding/priority_preview.go`
+- `internal/infra/controller/risk_snapshot.go`, `internal/infra/postgres/dashboard_repository.go` (trend markers)
 - `web/src/features/organization/components/scoring-impact-dialog.tsx`
+- `web/src/features/dashboard/components/ctem/scoring-change-note.tsx`
 - `tests/integration/scoring_versions_test.go`, `tests/integration/sla_tighten_only_test.go`,
-  `tests/integration/scoring_preview_test.go`
+  `tests/integration/scoring_preview_test.go`, `tests/integration/scoring_trend_test.go`

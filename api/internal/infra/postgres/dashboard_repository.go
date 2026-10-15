@@ -521,7 +521,7 @@ func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.
 	}
 	query := `
 		SELECT snapshot_date, risk_score_avg, findings_open, sla_compliance_pct,
-			p0_open, p1_open, p2_open, p3_open
+			p0_open, p1_open, p2_open, p3_open, risk_version, priority_version
 		FROM risk_snapshots
 		WHERE tenant_id = $1 AND snapshot_date >= CURRENT_DATE - MAKE_INTERVAL(days => $2)
 		ORDER BY snapshot_date ASC
@@ -536,14 +536,75 @@ func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.
 	for rows.Next() {
 		var p module.RiskTrendPoint
 		var d time.Time
+		var rv, pv sql.NullInt64
 		if err := rows.Scan(&d, &p.RiskScoreAvg, &p.FindingsOpen, &p.SLACompliancePct,
-			&p.P0Open, &p.P1Open, &p.P2Open, &p.P3Open); err != nil {
+			&p.P0Open, &p.P1Open, &p.P2Open, &p.P3Open, &rv, &pv); err != nil {
 			return nil, fmt.Errorf("scan risk trend: %w", err)
 		}
 		p.Date = d.Format("2006-01-02")
+		if rv.Valid {
+			v := rv.Int64
+			p.RiskVersion = &v
+		}
+		if pv.Valid {
+			v := pv.Int64
+			p.PriorityVersion = &v
+		}
 		points = append(points, p)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate risk trend: %w", err)
+	}
+	if len(points) == 0 {
+		return points, nil
+	}
+	changes, err := r.scoringChangesSince(ctx, tenantID, days)
+	if err != nil {
+		return nil, err
+	}
+	attachScoringChanges(points, changes)
 	return points, nil
+}
+
+// scoringChangesSince lists the tenant's and the platform's scoring changes
+// of the trend window, oldest first.
+func (r *DashboardRepository) scoringChangesSince(ctx context.Context, tenantID shared.ID, days int) ([]module.ScoringChangeMarker, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT created_at, kind, source, summary FROM scoring_changes
+		WHERE (tenant_id = $1 OR tenant_id IS NULL)
+		  AND created_at >= CURRENT_DATE - MAKE_INTERVAL(days => $2)
+		ORDER BY created_at, id`, tenantID.String(), days)
+	if err != nil {
+		return nil, fmt.Errorf("scoring changes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []module.ScoringChangeMarker
+	for rows.Next() {
+		var m module.ScoringChangeMarker
+		var at time.Time
+		if err := rows.Scan(&at, &m.Kind, &m.Source, &m.Summary); err != nil {
+			return nil, fmt.Errorf("scan scoring change: %w", err)
+		}
+		m.Date = at.UTC().Format("2006-01-02")
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate scoring changes: %w", err)
+	}
+	return out, nil
+}
+
+// attachScoringChanges puts each change on the first point dated on or after
+// it (a day without a snapshot moves the marker to the next one); a change
+// after the last point stays on the last point.
+func attachScoringChanges(points []module.RiskTrendPoint, changes []module.ScoringChangeMarker) {
+	i := 0
+	for _, c := range changes {
+		for i < len(points)-1 && points[i].Date < c.Date {
+			i++
+		}
+		points[i].ScoringChanges = append(points[i].ScoringChanges, c)
+	}
 }
 
 // GetDataQualityScorecard computes data quality metrics for a tenant.
