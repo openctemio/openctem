@@ -50,6 +50,7 @@ import { StatusSelect } from './status-select'
 import { FindingWhyItMatters } from './detail/finding-why-it-matters'
 import { FindingFixCard } from './detail/finding-fix-card'
 import { FindingProperties } from './detail/finding-properties'
+import { FindingProvenanceSection } from './detail/finding-provenance-section'
 import { FindingRetestSection } from './detail/finding-retest'
 import { FindingTenableRescanSection } from './detail/finding-tenable-rescan'
 import { FindingActivity } from './finding-activity'
@@ -241,6 +242,7 @@ export function FindingDetailDrawer({
             <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />
             <DetailSections>
               <FindingProperties finding={detail} triage={triage} hideTriage />
+              <FindingProvenanceSection finding={detail} />
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
               <FindingTenableRescanSection finding={detail} />
 
