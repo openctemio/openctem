@@ -107,6 +107,41 @@ Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
 
+## Every move is on the timeline
+
+A finding's timeline (`finding_activities`) explains every status change, in
+the same transaction as the change.
+
+- **Platform writers** name themselves for their transaction with
+  `set_config('openctem.transition', <json>, true)` (Go:
+  `findingTransition` / `vulnerability.StatusTransition` in
+  `internal/infra/postgres/finding_transition.go`). The trigger
+  `trg_findings_record_transition` (migration `002180`) then writes one entry
+  per finding the transaction moves: the old and new status, what the
+  resolution was before (`previous_resolution`, `previous_resolution_method`,
+  `previous_resolved_by`, `previous_resolved_at`), a reason code, the source,
+  the actor and evidence references (scanner, scan or command, pipeline, rule,
+  statement). The move and its entry commit or roll back together.
+- Covered by it: coverage and default-branch auto-resolve and the source's own
+  "mitigated" state (`auto_resolved`), scan re-detection (`auto_reopened`;
+  `observed_again` for a stale finding), template drift, feature-branch
+  expiry, CI pipeline stale and retired, VEX in scan reports and VEX
+  documents, the software vulnerability matcher, correlation link and release,
+  taint-source suspension, suppression re-link, and the bulk verify / reject by
+  filter.
+- **Application paths acting for the platform** (validation verdicts, the IOC
+  correlator, workflow `update_status`, auto-assign to owners) attach the
+  transition to the request context (`vulnerability.WithStatusTransition`);
+  `FindingRepository.Update` and `UpdateStatusBatch` then write the move and its
+  entry in one transaction. A workflow is recorded as `workflow:<id>` (before,
+  its entry failed on an invalid actor id).
+- Evidence such as the scan behind an auto-resolve travels in the context
+  (`vulnerability.WithTransitionEvidence`).
+- Without a named transition the trigger writes nothing: a person's change is
+  recorded by its service with the person as the actor.
+- `TestFindingStatusSQL_EveryStatusWriteIsOnTheTimeline` fails when a file that
+  writes `findings.status` records no timeline entry.
+
 ## Automatic signals never reverse a decision
 
 A false positive, an accepted risk or a duplicate is a person's decision
@@ -158,6 +193,28 @@ and remediation group and campaign resolves (which use the bulk path).
   `ErrNoteRequired` (400).
 - The web asks for the note in the drawer's status control, the bulk resolve
   dialog and the group and campaign resolve dialogs.
+
+## SLA status follows the status
+
+`findings.sla_status` is recomputed on every status or deadline change, by the
+trigger `trg_findings_recompute_sla_status` (migration `002181`) for every
+writer, and by `Finding.UpdateSLAStatus` with the same rules
+(`finding_sla_status_for`):
+
+| Finding | `sla_status` |
+|---|---|
+| no deadline | `not_applicable` |
+| `false_positive`, `accepted`, `duplicate` | `not_applicable` (a decision not to fix leaves the SLA) |
+| `resolved` | `on_track` when closed by the deadline (met), else `exceeded` (missed): the clock stops at the verified fix; `fix_applied` keeps it running |
+| open, past the deadline | `overdue` |
+| open, otherwise | `on_track`, or `warning` when the escalation job set it and the deadline did not change |
+
+The warning has **one definition**: the SLA escalation job's policy
+`warning_threshold_percent` of the window from the later of
+`first_detected_at` and `last_reopened_at` to the deadline (a regression's
+restarted deadline is measured from the reopen). The domain no longer warns 24
+hours before a deadline on its own. Migration `002181` also recomputed stale
+values (closed findings left `overdue`, dispositions `exceeded`).
 
 ## Risk acceptance end
 
