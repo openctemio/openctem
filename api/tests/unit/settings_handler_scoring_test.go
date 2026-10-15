@@ -112,8 +112,9 @@ func TestRiskScoringHandler_Get_ReturnsCurrentConfig(t *testing.T) {
 	err := json.Unmarshal(rr.Body.Bytes(), &resp)
 	require.NoError(t, err, "response should be valid JSON")
 
-	// Legacy preset should be returned
-	assert.Equal(t, "legacy", resp.Preset)
+	// The default likelihood-impact preset should be returned
+	assert.Equal(t, "default", resp.Preset)
+	assert.Equal(t, tenant.ScoreCompositionLikelihoodImpact, resp.ScoreCompositionMode)
 	assert.Equal(t, 100, resp.Weights.Exposure+resp.Weights.Criticality+resp.Weights.Findings+resp.Weights.CTEM)
 }
 
@@ -544,7 +545,7 @@ func TestRiskScoringHandler_Get_ReturnsFreshDataAfterUpdate(t *testing.T) {
 	_, tenantID := createTenantWithSettings(repo)
 	h := newTenantHandlerForScoring(repo)
 
-	// First read — should be legacy
+	// First read — the default preset
 	getReq := httptest.NewRequest(http.MethodGet, "/settings/risk-scoring", nil)
 	getReq = withTeamContext(getReq, tenantID)
 	getRR := httptest.NewRecorder()
@@ -553,7 +554,7 @@ func TestRiskScoringHandler_Get_ReturnsFreshDataAfterUpdate(t *testing.T) {
 
 	var initial tenant.RiskScoringSettings
 	_ = json.Unmarshal(getRR.Body.Bytes(), &initial)
-	assert.Equal(t, "legacy", initial.Preset)
+	assert.Equal(t, "default", initial.Preset)
 
 	// Update to healthcare
 	healthcare := tenant.AllRiskScoringPresets["healthcare"]

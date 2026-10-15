@@ -59,6 +59,10 @@ type AssetService struct {
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
 	dataScope         *datascope.Enforcer      // Layer 2 enforcement on bulk-by-id paths (nil = unrestricted)
 	scoringProvider   assetdom.ScoringConfigProvider
+	riskQueue         assetdom.RiskQueueRepository // rescore queue (risk_freshness.go)
+	riskReader        AssetBatchReader
+	controlLookup     ControlReductionLookup // compensating controls (nil = no reduction)
+	riskContributors  assetdom.RiskContributorReader
 	redisClient       *redis.Client
 	logger            *logger.Logger
 
@@ -268,7 +272,7 @@ func (s *AssetService) HasRepositoryExtensionRepository() bool {
 // Falls back to legacy config if no provider is configured.
 func (s *AssetService) getScoringConfig(ctx context.Context, tenantID shared.ID) *assetdom.RiskScoringConfig {
 	if s.scoringProvider == nil {
-		legacy := assetdom.LegacyRiskScoringConfig()
+		legacy := assetdom.LikelihoodImpactRiskScoringConfig()
 		return &legacy
 	}
 
@@ -286,7 +290,7 @@ func (s *AssetService) getScoringConfig(ctx context.Context, tenantID shared.ID)
 	config, err := s.scoringProvider.GetScoringConfig(ctx, tenantID)
 	if err != nil {
 		s.logger.Warn("failed to get scoring config, using legacy", "tenant_id", key, "error", err)
-		legacy := assetdom.LegacyRiskScoringConfig()
+		legacy := assetdom.LikelihoodImpactRiskScoringConfig()
 		return &legacy
 	}
 
@@ -2711,14 +2715,14 @@ func (s *AssetService) RecalculateAllRiskScores(ctx context.Context, tenantID sh
 		// that heals stale scores after a BU/service criticality change (see
 		// RecalculateAllRiskScores doc). Nil-safe: with no lookup wired every asset
 		// maps to its own criticality and scores are unchanged.
-		effByID := s.effectiveCriticalityMap(ctx, tenantID, result.Data)
+		inputs := s.riskInputsMap(ctx, tenantID, result.Data)
 		changed := make([]*assetdom.Asset, 0, len(result.Data))
 		for _, a := range result.Data {
-			eff := effByID[a.ID()]
+			in := inputs[a.ID()]
 			oldScore := a.RiskScore()
-			newScore := engine.CalculateScoreWithCriticality(a, eff)
-			if oldScore != newScore {
-				a.CalculateRiskScoreWithConfigAndCriticality(config, eff)
+			newScore := engine.CalculateScoreWithInputs(a, in)
+			if oldScore != newScore || a.RiskScoredAt() == nil {
+				a.CalculateRiskScoreWithInputs(config, in)
 				changed = append(changed, a)
 			}
 		}
@@ -2782,6 +2786,11 @@ func (s *AssetService) PreviewRiskScoreChanges(ctx context.Context, tenantID sha
 	// Deduplicate
 	seen := make(map[string]bool)
 	items := make([]RiskScorePreviewItem, 0, 100)
+	sample := make([]*assetdom.Asset, 0, len(topResult.Data)+len(bottomResult.Data)+len(middleResult.Data))
+	sample = append(sample, topResult.Data...)
+	sample = append(sample, bottomResult.Data...)
+	sample = append(sample, middleResult.Data...)
+	inputs := s.riskInputsMap(ctx, tenantID, sample)
 
 	addItems := func(assets []*assetdom.Asset) {
 		for _, a := range assets {
@@ -2790,7 +2799,7 @@ func (s *AssetService) PreviewRiskScoreChanges(ctx context.Context, tenantID sha
 				continue
 			}
 			seen[id] = true
-			newScore := engine.CalculateScore(a)
+			newScore := engine.CalculateScoreWithInputs(a, inputs[a.ID()])
 			items = append(items, RiskScorePreviewItem{
 				AssetID:      id,
 				AssetName:    a.Name(),
