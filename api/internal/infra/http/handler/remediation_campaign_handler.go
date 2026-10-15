@@ -233,13 +233,19 @@ func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http
 		// Version: the campaign version the caller saw (optional); a stale
 		// one answers 409.
 		Version *int `json:"version,omitempty"`
+		// CloseWithOpenMembers completes a campaign that is not done
+		// (findings still open, or none verified fixed); audited.
+		CloseWithOpenMembers bool `json:"close_with_open_members,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
 
-	campaign, err := h.service.UpdateCampaignStatusAt(r.Context(), tenantID, id, req.Status, req.Version, h.buildAuditContext(r))
+	campaign, err := h.service.UpdateCampaignStatusAt(r.Context(), tenantID, id, req.Status, exposure.CampaignStatusOptions{
+		ExpectedVersion:      req.Version,
+		CloseWithOpenMembers: req.CloseWithOpenMembers,
+	}, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -428,17 +434,20 @@ type RemediationCampaignResponse struct {
 	AssignedTeam  string         `json:"assigned_team,omitempty"`
 	FindingCount  int            `json:"finding_count"`
 	ResolvedCount int            `json:"resolved_count"`
-	Progress      float64        `json:"progress"`
-	RiskBefore    *float64       `json:"risk_before,omitempty"`
-	RiskAfter     *float64       `json:"risk_after,omitempty"`
-	RiskReduction *float64       `json:"risk_reduction,omitempty"`
-	IsOverdue     bool           `json:"is_overdue"`
-	StartDate     *time.Time     `json:"start_date,omitempty"`
-	DueDate       *time.Time     `json:"due_date,omitempty"`
-	CompletedAt   *time.Time     `json:"completed_at,omitempty"`
-	Tags          []string       `json:"tags"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
+	// VerifiedCount: findings closed as resolved (a verified fix), live.
+	// Done = every finding closed and verified_count >= 1.
+	VerifiedCount int        `json:"verified_count"`
+	Progress      float64    `json:"progress"`
+	RiskBefore    *float64   `json:"risk_before,omitempty"`
+	RiskAfter     *float64   `json:"risk_after,omitempty"`
+	RiskReduction *float64   `json:"risk_reduction,omitempty"`
+	IsOverdue     bool       `json:"is_overdue"`
+	StartDate     *time.Time `json:"start_date,omitempty"`
+	DueDate       *time.Time `json:"due_date,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	Tags          []string   `json:"tags"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 	// Version changes on every save; send it back on PATCH to detect a
 	// concurrent change (409).
 	Version int `json:"version"`
@@ -460,6 +469,7 @@ func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignRespo
 		AssignedTeam:  idPtrToString(c.AssignedTeam()),
 		FindingCount:  c.FindingCount(),
 		ResolvedCount: c.ResolvedCount(),
+		VerifiedCount: c.VerifiedCount(),
 		Progress:      c.Progress(),
 		RiskBefore:    c.RiskBefore(),
 		RiskAfter:     c.RiskAfter(),

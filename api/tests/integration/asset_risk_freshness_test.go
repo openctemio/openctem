@@ -184,7 +184,7 @@ func TestAssetRisk_IngestedAssetIsScoredAndFindingsMoveTheScore(t *testing.T) {
 	}
 
 	// Marking them false positive (bulk triage) removes their weight.
-	if err := fx.findings.UpdateStatusBatch(context.Background(), tid, ids, vulnerability.FindingStatusFalsePositive, "not real", nil, ""); err != nil {
+	if err := fx.findings.UpdateStatusBatch(context.Background(), tid, ids, vulnerability.FindingStatusFalsePositive, "not real", nil, vulnerability.Closure{}); err != nil {
 		t.Fatal(err)
 	}
 	if !fx.queued(t, aid) {
@@ -461,7 +461,7 @@ func TestAssetRisk_BusinessUnitRollupFollowsRescore(t *testing.T) {
 	}
 
 	// Resolving one finding updates the unit's open counts.
-	if err := fx.findings.UpdateStatusBatch(context.Background(), tid, ids[:1], vulnerability.FindingStatusFalsePositive, "no", nil, ""); err != nil {
+	if err := fx.findings.UpdateStatusBatch(context.Background(), tid, ids[:1], vulnerability.FindingStatusFalsePositive, "no", nil, vulnerability.Closure{}); err != nil {
 		t.Fatal(err)
 	}
 	fx.drain(t, aid)

@@ -19,6 +19,14 @@ var (
 	// ErrSelfApproval: the requester tried to approve their own rule while
 	// another person could approve it (owner decision B16).
 	ErrSelfApproval = fmt.Errorf("%w: a suppression rule must be approved by someone other than its requester", shared.ErrForbidden)
+	// ErrSelfApprovalNeedsReason: an owner approving their own rule states why.
+	ErrSelfApprovalNeedsReason = fmt.Errorf("%w: approving your own rule needs a reason", shared.ErrValidation)
+	// ErrSelfApprovalNeedsTOTP: the owner has no authenticator app, so their
+	// own approval cannot be proven fresh.
+	ErrSelfApprovalNeedsTOTP = fmt.Errorf("%w: approving your own rule needs an authenticator app; set one up first", shared.ErrForbidden)
+	// ErrSelfApprovalBadCode: the authenticator code is missing, wrong or
+	// already used.
+	ErrSelfApprovalBadCode = fmt.Errorf("%w: the authenticator code is missing, wrong or already used", shared.ErrForbidden)
 	// ErrRuleChangedSinceReview: the rule was edited after the approver
 	// loaded it; the approver must review the current version.
 	ErrRuleChangedSinceReview = fmt.Errorf("%w: the rule changed since you reviewed it; review it again", shared.ErrConflict)

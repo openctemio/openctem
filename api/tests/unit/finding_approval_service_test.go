@@ -129,6 +129,7 @@ type statusBatchCall struct {
 	Status     vulnerability.FindingStatus
 	Resolution string
 	ResolvedBy *shared.ID
+	Closure    vulnerability.Closure
 }
 
 func newMockFindingRepository() *mockFindingRepository {
@@ -227,11 +228,11 @@ func (m *mockFindingRepository) BatchCountByAssetIDs(_ context.Context, _ shared
 }
 
 // AcceptUntil records an accept like UpdateStatusBatch does.
-func (m *mockFindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
-	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+func (m *mockFindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID, reason vulnerability.ClosureReason) error {
+	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, vulnerability.Closure{Reason: reason})
 }
 
-func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.ResolutionMethod) error {
+func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) error {
 	if m.statusBatchErr != nil {
 		return m.statusBatchErr
 	}
@@ -241,6 +242,7 @@ func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID sh
 		Status:     status,
 		Resolution: resolution,
 		ResolvedBy: resolvedBy,
+		Closure:    closure,
 	})
 	return nil
 }
@@ -351,6 +353,7 @@ func TestFindingApprovalService_RequestApproval_Success(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "This is a known test pattern and not a real vulnerability",
 		RequestedBy:     requestedBy.String(),
 	}
@@ -388,6 +391,7 @@ func TestFindingApprovalService_RequestApproval_RejectsNonApprovalStatus(t *test
 				TenantID:        tenantID.String(),
 				FindingID:       findingID.String(),
 				RequestedStatus: status,
+				ClosureReason:   testClosureReason(status),
 				Justification:   "trying to launder status via approval",
 				RequestedBy:     shared.NewID().String(),
 			})
@@ -412,6 +416,7 @@ func TestFindingApprovalService_RequestApproval_FindingNotFound(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "Test justification",
 		RequestedBy:     requestedBy.String(),
 	}
@@ -438,6 +443,7 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 				TenantID:        "not-a-uuid",
 				FindingID:       shared.NewID().String(),
 				RequestedStatus: "false_positive",
+				ClosureReason:   "detection_error",
 				Justification:   "Test",
 				RequestedBy:     shared.NewID().String(),
 			},
@@ -448,6 +454,7 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 				TenantID:        shared.NewID().String(),
 				FindingID:       "not-a-uuid",
 				RequestedStatus: "false_positive",
+				ClosureReason:   "detection_error",
 				Justification:   "Test",
 				RequestedBy:     shared.NewID().String(),
 			},
@@ -458,6 +465,7 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 				TenantID:        shared.NewID().String(),
 				FindingID:       shared.NewID().String(),
 				RequestedStatus: "false_positive",
+				ClosureReason:   "detection_error",
 				Justification:   "Test",
 				RequestedBy:     "not-a-uuid",
 			},
@@ -495,6 +503,7 @@ func TestFindingApprovalService_ApproveStatus_Success(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "Known test pattern",
 		RequestedBy:     requestedBy.String(),
 	}
@@ -561,6 +570,7 @@ func TestFindingApprovalService_ApproveStatus_AlreadyApproved(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -601,6 +611,7 @@ func TestFindingApprovalService_ApproveStatus_Expired(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "accepted",
+		ClosureReason:   "risk_accepted",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -634,6 +645,7 @@ func TestFindingApprovalService_ApproveStatus_SelfApproval(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -671,6 +683,7 @@ func TestFindingApprovalService_RejectApproval_Expired(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "accepted",
+		ClosureReason:   "risk_accepted",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -707,6 +720,7 @@ func TestFindingApprovalService_RejectApproval_Success(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -825,6 +839,7 @@ func TestFindingApprovalService_ListApprovals_Success(t *testing.T) {
 			TenantID:        tenantID.String(),
 			FindingID:       findingID.String(),
 			RequestedStatus: "false_positive",
+			ClosureReason:   "detection_error",
 			Justification:   "Test justification",
 			RequestedBy:     requestedBy.String(),
 		})
@@ -839,6 +854,7 @@ func TestFindingApprovalService_ListApprovals_Success(t *testing.T) {
 		TenantID:        otherTenantID.String(),
 		FindingID:       otherFindingID.String(),
 		RequestedStatus: "accepted",
+		ClosureReason:   "risk_accepted",
 		Justification:   "Other tenant",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -892,7 +908,8 @@ func TestFindingApprovalService_ListApprovals_StatusFilterAndCounts(t *testing.T
 	for i := 0; i < 3; i++ {
 		a, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 			TenantID: tenantID.String(), FindingID: findingID.String(),
-			RequestedStatus: "false_positive", Justification: "j", RequestedBy: requester.String(),
+			RequestedStatus: "false_positive",
+			ClosureReason:   "detection_error", Justification: "j", RequestedBy: requester.String(),
 		})
 		require.NoError(t, err)
 		ids = append(ids, a.ID)
@@ -936,6 +953,7 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 			TenantID:        shared.NewID().String(),
 			FindingID:       shared.NewID().String(),
 			RequestedStatus: "false_positive",
+			ClosureReason:   "detection_error",
 			Justification:   "Test",
 			RequestedBy:     shared.NewID().String(),
 		})
@@ -1000,6 +1018,7 @@ func TestFindingApprovalService_CancelApproval_Success(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -1036,6 +1055,7 @@ func TestFindingApprovalService_CancelApproval_NotRequester(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -1069,6 +1089,7 @@ func TestFindingApprovalService_CancelApproval_NotPending(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -1111,6 +1132,7 @@ func TestFindingApprovalService_RequestApproval_InvalidStatus(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "invalid_garbage_status",
+		ClosureReason:   testClosureReason("invalid_garbage_status"),
 		Justification:   "Test justification",
 		RequestedBy:     requestedBy.String(),
 	}
@@ -1143,6 +1165,7 @@ func TestFindingApprovalService_ApproveStatus_ConcurrentModification(t *testing.
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
 	})
@@ -1168,7 +1191,7 @@ func (m *mockFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *mockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
+func (m *mockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) (int64, error) {
 	return 0, nil
 }
 
@@ -1262,7 +1285,7 @@ func TestFindingApprovalService_RequestApproval_DecisionEnd(t *testing.T) {
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 	req := func(status string, end *string) (*vulnerability.Approval, error) {
 		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
-			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: status,
+			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: status, ClosureReason: testClosureReason(status),
 			Justification: "Test", RequestedBy: requestedBy.String(), ExpiresAt: end,
 		})
 	}
@@ -1294,7 +1317,7 @@ func TestFindingApprovalService_ApproveAccepted_StoresAcceptanceEnd(t *testing.T
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
-		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "accepted",
+		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "accepted", ClosureReason: "risk_accepted",
 		Justification: "Test", RequestedBy: shared.NewID().String(),
 	})
 	require.NoError(t, err)
@@ -1307,4 +1330,68 @@ func TestFindingApprovalService_ApproveAccepted_StoresAcceptanceEnd(t *testing.T
 	require.NoError(t, err)
 	require.NotNil(t, approved.ExpiresAt, "approving gives an endless acceptance the default end")
 	assert.WithinDuration(t, time.Now().Add(vulnerability.DefaultAcceptanceDuration), *approved.ExpiresAt, time.Minute)
+}
+
+// testClosureReason is a reason the requested status accepts ("" when it
+// accepts none), so a request fails, or passes, for the reason under test.
+func testClosureReason(status string) string {
+	if rs := vulnerability.PersonClosureReasons(vulnerability.FindingStatus(status)); len(rs) > 0 {
+		return string(rs[0])
+	}
+	return ""
+}
+
+// A false-positive or accepted-risk request names a VEX-aligned reason of
+// its own status, and the approval applies exactly that reason: a false
+// positive as security-reviewed (a second person decided), an accepted risk
+// with its reason and no verification.
+func TestFindingApprovalService_ClosureReason(t *testing.T) {
+	tenantID, findingID := shared.NewID(), shared.NewID()
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+	request := func(status, reason string) (*vulnerability.Approval, error) {
+		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: status,
+			ClosureReason: reason, Justification: "why", RequestedBy: shared.NewID().String(),
+		})
+	}
+
+	for name, c := range map[string][2]string{
+		"no reason":                   {"false_positive", ""},
+		"reason of another status":    {"false_positive", "risk_accepted"},
+		"platform-only reason":        {"accepted", "unknown"},
+		"made-up reason":              {"accepted", "because"},
+		"resolved reason on accepted": {"accepted", "fixed"},
+	} {
+		_, err := request(c[0], c[1])
+		require.ErrorIs(t, err, shared.ErrValidation, name)
+	}
+
+	fp, err := request("false_positive", "vulnerable_code_not_in_execute_path")
+	require.NoError(t, err)
+	assert.Equal(t, vulnerability.ClosureReasonVulnerableCodeNotInExecutePath, fp.ClosureReason)
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: fp.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+	require.Len(t, findingRepo.statusUpdates, 1)
+	assert.Equal(t, vulnerability.Closure{
+		Reason:       vulnerability.ClosureReasonVulnerableCodeNotInExecutePath,
+		Verification: vulnerability.VerificationSecurityReview,
+	}, findingRepo.statusUpdates[0].Closure)
+
+	// The finding is a false positive now (the mock does not move it):
+	// reset it to confirmed for the accepted-risk request.
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
+	acc, err := request("accepted", "compensating_control")
+	require.NoError(t, err)
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: acc.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+	require.Len(t, findingRepo.statusUpdates, 2)
+	assert.Equal(t, vulnerability.Closure{Reason: vulnerability.ClosureReasonCompensatingControl},
+		findingRepo.statusUpdates[1].Closure)
 }
