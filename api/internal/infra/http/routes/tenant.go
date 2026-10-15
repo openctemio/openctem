@@ -154,6 +154,12 @@ func registerTenantRoutes(
 		// Security settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite), requireStepUp())
 
+		// Domains: what the organization's verified SSO domains do to accounts
+		// on them (RFC-104). Changing it decides who may join and who must use
+		// SSO: owner only, with step-up.
+		r.GET("/settings/domains", h.ListDomainSignupPolicies, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		r.PUT("/settings/domains/{domainId}/signup-policy", h.UpdateDomainSignupPolicy, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite), requireStepUp())
+
 		// SSO changes a platform administrator proposed for this organization
 		// (RFC-022). Owner only: approving one installs who can sign in.
 		// The service re-checks ownership in the database.

@@ -399,6 +399,10 @@ const (
 	// ActionSSOVerifiedDomainJITChanged: a domain's just-in-time provisioning
 	// (on/off, role) changed (RFC-058).
 	ActionSSOVerifiedDomainJITChanged Action = "sso.verified_domain_jit_changed"
+	// ActionSSOVerifiedDomainSignupPolicyChanged: an owner changed what the
+	// domain claim does to accounts on it (join, discovery, SSO required,
+	// new organizations; RFC-104).
+	ActionSSOVerifiedDomainSignupPolicyChanged Action = "sso.verified_domain_signup_policy_changed"
 	// A platform administrator's SAML / identity-provider change waits for an
 	// owner of the organization, who approves (applies) or rejects it.
 	ActionSSOChangeRequested Action = "sso.change_requested"
@@ -731,7 +735,7 @@ func (a Action) IsValid() bool {
 		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
-		ActionSSOVerifiedDomainJITChanged,
+		ActionSSOVerifiedDomainJITChanged, ActionSSOVerifiedDomainSignupPolicyChanged,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
 		ActionSCIMGroupMappingsUpdated,
