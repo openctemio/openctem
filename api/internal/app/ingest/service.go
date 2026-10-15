@@ -10,7 +10,6 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app/activity"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
@@ -87,8 +86,6 @@ type Service struct {
 	// uses — its chainMu is what serializes chain extension, and a second
 	// instance would have its own mutex and could interleave appends.
 	auditSvc *auditapp.AuditService
-
-	activityService *activity.FindingActivityService
 
 	// assetExposureProjector promotes recon-discovered assets (open ports,
 	// exposed services, TLS certificates) into the Exposure Register. Runs
@@ -242,12 +239,6 @@ func (s *Service) SetDedupEnqueuer(e DedupReviewEnqueuer) {
 // model); conflicts are raised as duplicate reviews through reviewer.
 func (s *Service) SetIdentityStore(store IdentityStore, reviewer IdentityReviewer) {
 	s.assetProcessor.SetIdentityStore(store, reviewer)
-}
-
-// SetActivityService sets the finding activity service for audit trail during ingestion.
-func (s *Service) SetActivityService(activityService *activity.FindingActivityService) {
-	s.activityService = activityService
-	s.findingProcessor.SetActivityService(activityService)
 }
 
 // SetFindingCreatedCallback sets the callback for when findings are created.

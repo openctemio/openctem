@@ -158,7 +158,10 @@ export default function CrownJewelsPage() {
   const { t } = useTranslation()
   // Same bands as RiskScoreBadge, so the sheet's label matches the table's badge.
   const riskThresholds = useRiskThresholds()
-  const riskLabel = (score: number) => getRiskLevel(score, riskThresholds).label
+  const riskLabel = (score: number) => {
+    const level = getRiskLevel(score, riskThresholds)
+    return t(`riskScore.level.${level.key}`, level.label)
+  }
   // Fetch from API, fallback to mock if no API data
   const { data: apiCrownJewels } = useCrownJewels()
   const { trigger: designate, isMutating: isDesignating } = useDesignateCrownJewel()

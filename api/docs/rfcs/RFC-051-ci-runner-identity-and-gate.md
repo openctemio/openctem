@@ -357,10 +357,13 @@ For each finding the run reported:
 - **secret**: a new committed secret always blocks, whatever its severity; a
   secret already open on the baseline branch blocks default-branch runs and is
   a non-blocking `secret_pre_existing` note on other branches (RFC-077 G-9);
-- with new-findings-only, a finding already open on the default branch does
-  not block; on the default branch itself, "new" means first detected or
-  reopened by this run. Without a scan of the default branch every finding
-  counts as new (fail closed, with a `no_baseline` note);
+- with new-findings-only, a finding already open on the target branch does
+  not block a pull request run. A **default-branch run is judged against the
+  repository's gate baseline only** (section 6.2): a finding in it is
+  pre-existing, every other finding is new. Without a baseline every finding
+  of a default-branch run counts as new (fail closed, with a `no_baseline`
+  note); without a scan of the target branch every finding of a pull request
+  run counts as new;
 - otherwise KEV, then the EPSS threshold, then the severity threshold.
 
 Any scanner failure the runner reports fails the run. `warn` mode passes and
@@ -376,6 +379,33 @@ override expires (default 24 hours, at most 7 days) or is revoked. A reason of
 (`ci_gate_override.used`, with the run and the blocking count) are audited at
 high severity. Creating and every use also notify every active owner and
 administrator in-app and the `ci.break_glass` channel event.
+
+### 6.2 Gate baseline
+
+A repository's **gate baseline** (`ci_gate_baselines`, `ci_gate_baseline_findings`) is the set of findings
+open on its default branch when it was recorded: by the repository's **first verified default-branch run**
+(once per repository), or by a person. It is the only comparison base of a default-branch run.
+
+Why: comparing a default-branch run with "what earlier runs saw" let a failed run become its own baseline.
+The first run on the default branch failed with every finding new; running the same commit again (or pushing
+anything) then found every finding "already on the default branch" and passed. A failing run must never
+establish a baseline, so nothing a run reports changes it.
+
+| Rule | Where |
+|---|---|
+| A default-branch run: a finding is pre-existing only if its fingerprint is in the baseline and it was not reopened after the baseline was recorded | `cirun.Service.newFindings` |
+| The first default-branch run of a repository that never had a baseline records one and passes on the findings it holds; the verdict says so (`baseline.established`, `baseline_established` note) and it is audited at high severity (`ci_gate_baseline.set`, source `first_run`). Only a run whose branch and commit the provider signed, never a fork; only the default branch. Once per repository: a removed baseline keeps its row (`cleared_at`), so no later run records one again | `cirun.Service.firstRunBaseline` |
+| No baseline (removed): every finding of a default-branch run is new (`no_baseline` note) | same |
+| A pull request run: a finding is pre-existing if it is open on the target branch and, when the target is the default branch and the repository has a baseline, also in the baseline. A finding that reached the default branch after the baseline (for example through a merge that ignored a failed gate) blocks pull requests until it is fixed, accepted or baselined | same |
+| Recording a baseline (`PUT /api/v1/ci/gate-baselines/{id}`): `scans:ci:policy`, step-up, repository in the caller's data scope (404 otherwise); audited `ci_gate_baseline.set` at high severity and announced to every administrator on the break-glass channel; it replaces an earlier baseline | handler, service |
+| Removing it (`DELETE`): `scans:ci:policy`; stricter, so no step-up; audited | handler, service |
+| Reading it (`GET`): `scans:ci:read`, data scope | handler |
+| The repository file `.openctem.yml` has no baseline setting; a CI job cannot record, change or reset a baseline | the file's schema, `RepoPolicy` |
+| Secrets in the baseline still block default-branch runs (section 6) | `cirun.Evaluate` |
+| The verdict names the baseline (`baseline.set_at`) and counts `new` and `pre_existing` separately | `GateBaselineView` |
+
+The same code path judges every provider (GitHub, GitLab, Azure, Bitbucket, Jenkins); only the branch,
+commit and target branch come from the provider's signed token.
 
 ### 6.1 Who sees a run
 
@@ -437,6 +467,7 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | Cross-tenant pipeline reads | The pipeline list and detail are tenant-scoped and follow the repository data scope; tests assert another tenant reads and lists none of the pipelines |
 | A report on another asset | `REPORT_OUT_OF_SCOPE`; the `ci_run` binding can change only the repository asset |
 | Baseline poisoning | The baseline branch is server-side (known default branch, else the configuration's); a run's branch comes from the token |
+| A failed default-branch run becoming its own baseline (rerun whitewash) | Default-branch runs compare only with the recorded gate baseline (section 6.2); runs never write it |
 | SSRF through a self-managed GitLab issuer or a Jenkins issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host; the preview validates the draft before any fetch |
 | A token valid for other services (Azure's fixed audience, a CI organization's default audience) | Azure: `org_id` pinned to the issuer, one exchange per `jti`, five-minute tokens; elsewhere a tenant-bound audience is required |
 | A renamed Bitbucket workspace's slug taken by someone else | `workspaceUuid` pinned in the configuration |
