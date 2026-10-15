@@ -220,8 +220,12 @@ A remediation group or campaign "resolve" is a **mark fixed**, never a close
 - Every open, in-scope, non-pentest member takes the legal person steps to
   `fix_applied` (`vulnerability.FixClaimPath`: `new → confirmed → in_progress
   → fix_applied`, `confirmed`/`not_observed → in_progress → fix_applied`).
-  Each step is a separate status write through the lifecycle guard, so the
-  status history records it. The findings are read back afterwards: one that
+  Each step is a separate status write that accepts only that step's exact
+  predecessors (`vulnerability.FixClaimStepFrom`, through
+  `UpdateStatusBatchFrom`): a finding closed while the claim runs (for example
+  an approved false positive) is never walked back open, although the
+  lifecycle allows `confirmed` from closed statuses. The status history
+  records every step. The findings are read back afterwards: one that
   changed in between is reported with its current status.
 - A member already `fix_applied` is skipped, never rewritten (its earlier
   note and actor stay). A `validated_fixed` member is refused: a reviewer
