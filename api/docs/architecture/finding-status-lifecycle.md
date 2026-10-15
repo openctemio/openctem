@@ -439,7 +439,11 @@ authenticator app (a stolen session or password alone is not enough). The
 approval is audited Critical (`exposure.disposition_self_approved`); every
 refused attempt (not allowed, no reason, no code, a wrong or reused code) is
 audited High (`exposure.disposition_self_approval_refused`) and changes
-nothing. Without the authenticator check wired, an own approval is refused.
+nothing. Own approval is also refused for 7 days after any member of the
+organization was suspended, offboarded or removed, or a membership expired
+(read from `tenant_members` and the tenant's audit log): removing the only
+other approver must not open the path at once. The refusal says from when it
+is possible again. Without the authenticator check wired, an own approval is refused.
 The pending view carries `self_approval_available` for the requester so the
 web offers the call only when it can succeed. Every request, approval and rejection
 is in the audit log (`exposure.disposition_*`) and the state change keeps both
