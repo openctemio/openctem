@@ -6,6 +6,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // terminalStatusFilter excludes every closed/terminal status (matches
@@ -13,7 +14,7 @@ import (
 // list also missed accepted/duplicate, so a
 // risk-accepted CVE got force-escalated to critical on every KEV sync,
 // overriding a deliberate human decision.
-const terminalStatusFilter = `status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')`
+var terminalStatusFilter = vulnerability.OpenStatusSQL("status")
 
 // KEVEscalator auto-escalates findings whose CVEs are in the CISA KEV catalog.
 type KEVEscalator struct {
