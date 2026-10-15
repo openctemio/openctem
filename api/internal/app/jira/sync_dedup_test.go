@@ -136,7 +136,6 @@ func TestCreateTicketFromFinding_DifferentProjectStillCreates(t *testing.T) {
 	}
 }
 
-
 func TestTicketDescription_SecretFinding_SuppressesRawSecret(t *testing.T) {
 	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(),
 		vulnerability.FindingSourceSecret, "betterleaks", vulnerability.SeverityHigh, "AWS key in config")
