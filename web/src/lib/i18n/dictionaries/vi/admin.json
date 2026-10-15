@@ -589,5 +589,15 @@
   "admin.signup.confirmBody": "Các tổ chức, người dùng và phiên hiện có không bị ảnh hưởng. Thay đổi được ghi vào nhật ký kiểm toán quản trị và các quản trị viên khác nhận email.",
   "admin.signup.saving": "Đang lưu",
   "admin.signup.confirm": "Xác nhận",
-  "admin.signup.code": "Mã từ ứng dụng xác thực"
+  "admin.signup.code": "Mã từ ứng dụng xác thực",
+  "admin.signup.accounts.title": "Ai được tạo tài khoản?",
+  "admin.signup.accounts.closed": "Không ai qua đăng ký công khai",
+  "admin.signup.accounts.closedHint": "Tài khoản do bạn tạo, qua lời mời hoặc qua đăng nhập một lần của tổ chức.",
+  "admin.signup.accounts.domain": "Người thuộc tên miền đã xác minh của một tổ chức",
+  "admin.signup.accounts.domainHint": "Người có địa chỉ thuộc tên miền mà một tổ chức đã xác minh và mở cho tham gia có thể đăng ký; họ tham gia tổ chức đó và không bao giờ tạo tổ chức.",
+  "admin.signup.accounts.open": "Bất kỳ ai",
+  "admin.signup.accounts.openHint": "Bất kỳ ai cũng có thể đăng ký (địa chỉ dùng một lần bị từ chối). Mọi địa chỉ đều được xác minh qua email.",
+  "admin.signup.accounts.locked": "Bị khóa bởi cấu hình máy chủ (SIGNUP_MODE).",
+  "admin.signup.mode.selfServiceNeedsOpen": "Cần chọn \"Bất kỳ ai\" ở trên: mọi người phải đăng ký được thì mới tạo được tổ chức.",
+  "admin.signup.confirmAccounts": "Tài khoản mới: {accounts}."
 }

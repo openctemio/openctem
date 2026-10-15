@@ -37,6 +37,13 @@ type SignupPolicyResponse struct {
 	// Mode: admin_only (only platform administrators create organizations)
 	// or self_service (anyone may sign up and create one). The stored value.
 	Mode string `json:"mode"`
+	// Accounts: who may create an account by public sign-up: closed, domain
+	// (an organization's verified, joinable domain) or open. The stored value.
+	Accounts string `json:"accounts"`
+	// MaxAccounts is the widest Accounts value the deployment allows.
+	MaxAccounts string `json:"max_accounts"`
+	// EffectiveAccounts is the account sign-up in force.
+	EffectiveAccounts string `json:"effective_accounts"`
 	// RequestAccess: people who cannot sign up may ask for an organization.
 	RequestAccess bool `json:"request_access"`
 	// Version to send back on PUT (optimistic concurrency).
@@ -67,7 +74,10 @@ func signupLockedError() *apierror.Error {
 
 // UpdateSignupPolicyRequest changes the policy.
 type UpdateSignupPolicyRequest struct {
-	Mode          string `json:"mode"`
+	Mode string `json:"mode"`
+	// Accounts: closed, domain or open. Empty follows Mode (open with
+	// self_service, closed otherwise).
+	Accounts      string `json:"accounts"`
 	RequestAccess bool   `json:"request_access"`
 	// Version is the version the administrator read.
 	Version int `json:"version"`
@@ -77,14 +87,18 @@ type UpdateSignupPolicyRequest struct {
 
 func (h *AdminSignupHandler) toSignupPolicyResponse(st signupdom.State) SignupPolicyResponse {
 	ceiling := h.svc.Ceiling()
+	effective := h.svc.Effective(st.Policy)
 	resp := SignupPolicyResponse{
 		Mode:              string(st.Policy.Mode),
+		Accounts:          string(st.Policy.AccountSignup()),
+		MaxAccounts:       string(ceiling.MaxAccounts()),
+		EffectiveAccounts: string(effective.AccountSignup()),
 		RequestAccess:     st.Policy.RequestAccess,
 		Version:           st.Version,
 		Source:            string(st.Source),
 		DeploymentMode:    ceiling.String(),
 		SelfServiceLocked: !ceiling.Permits(signupdom.Policy{Mode: signupdom.ModeSelfService}),
-		EffectiveMode:     string(h.svc.Effective(st.Policy).Mode),
+		EffectiveMode:     string(effective.Mode),
 	}
 	if !st.UpdatedAt.IsZero() {
 		resp.UpdatedAt = st.UpdatedAt.UTC().Format(time.RFC3339)
@@ -132,9 +146,10 @@ func (h *AdminSignupHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	policy := signupdom.Policy{Mode: signupdom.Mode(strings.TrimSpace(req.Mode)), RequestAccess: req.RequestAccess}
+	policy := signupdom.Policy{Mode: signupdom.Mode(strings.TrimSpace(req.Mode)),
+		Accounts: signupdom.Accounts(strings.TrimSpace(req.Accounts)), RequestAccess: req.RequestAccess}
 	if err := policy.Validate(); err != nil {
-		apierror.BadRequest("mode must be admin_only or self_service").WriteJSON(w)
+		apierror.BadRequest("mode must be admin_only or self_service, accounts closed, domain or open, and self_service needs open accounts").WriteJSON(w)
 		return
 	}
 	// Above the ceiling: refused before the authenticator code is spent.
