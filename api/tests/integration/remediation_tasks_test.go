@@ -373,6 +373,18 @@ func TestRemediationTasks_TenantIsolationAndDataScope(t *testing.T) {
 		Version: mine.Version, FindingIDs: []shared.ID{inB}, Role: remediation.MemberRoleRelated}, auditapp.AuditContext{})
 	assert.ErrorIs(t, err, remediationapp.ErrTaskFindingNotFound)
 
+	// The schema itself refuses a link to another tenant's finding or group
+	// (composite tenant foreign keys), whatever the code does.
+	_, err = r.db.Exec(`INSERT INTO remediation_task_members (tenant_id, task_id, finding_id, join_source)
+		VALUES ($1, $2, $3, 'manual')`, r.tenant.String(), mixed.ID.String(), r.otherF.String())
+	assert.Error(t, err, "a member row cannot name another tenant's finding")
+	otherGroup := shared.NewID()
+	r.exec(`INSERT INTO groups (id, tenant_id, name, slug) VALUES ($1, $2, 'rt other', $3)`,
+		otherGroup.String(), r.other.String(), "rt-"+otherGroup.String())
+	_, err = r.db.Exec(`UPDATE remediation_tasks SET assignee_group_id = $3 WHERE tenant_id = $1 AND id = $2`,
+		r.tenant.String(), mixed.ID.String(), otherGroup.String())
+	assert.Error(t, err, "a task cannot be assigned another tenant's group")
+
 	// "My tasks" lists tasks assigned to the caller's groups.
 	r.exec(`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)`, r.group.String(), r.member.String())
 	list, err = r.svc.ListTasks(member, remediationapp.ListTasksInput{TenantID: r.tenant, CallerID: &r.member, Mine: true}, pagination.New(1, 50))
