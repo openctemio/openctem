@@ -12,9 +12,11 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -220,7 +222,8 @@ func wireFindingApprovers(svc *Services, dir *postgres.ScopeActorRepository, web
 	// code, and the backup contact from the organization's settings.
 	var totp finding.ApprovalTOTPVerifier
 	if svc.Auth != nil {
-		totp = findingApprovalTOTP{auth: svc.Auth}
+		totp = freshTOTP{auth: svc.Auth,
+			notEnrolled: vulnerability.ErrSoloApprovalNeedsTOTP, badCode: vulnerability.ErrSoloApprovalBadCode}
 	}
 	var settings finding.ApprovalSettingsReader
 	if svc.Tenant != nil {
@@ -229,21 +232,41 @@ func wireFindingApprovers(svc *Services, dir *postgres.ScopeActorRepository, web
 	svc.Vulnerability.SetSoloApproval(dir, totp, settings)
 }
 
-// findingApprovalTOTP is the fresh authenticator check of a sole member's
-// own approval, in the finding service's error terms.
-type findingApprovalTOTP struct{ auth *auth.AuthService }
+// freshTOTP is the fresh authenticator check of an owner's own approval of
+// an exposure disposition or a suppression rule, answering the caller's own
+// errors for "no authenticator" and "bad code".
+type freshTOTP struct {
+	auth        *auth.AuthService
+	notEnrolled error
+	badCode     error
+}
 
-var _ finding.ApprovalTOTPVerifier = findingApprovalTOTP{}
-
-func (v findingApprovalTOTP) VerifyFreshTOTP(ctx context.Context, userID, code string) error {
+func (v freshTOTP) VerifyFreshTOTP(ctx context.Context, userID, code string) error {
 	err := v.auth.VerifyFreshTOTP(ctx, userID, code)
 	switch {
 	case err == nil:
 		return nil
 	case errors.Is(err, auth.ErrTOTPNotEnrolled):
-		return vulnerability.ErrSoloApprovalNeedsTOTP
+		return v.notEnrolled
 	case errors.Is(err, auth.ErrStepUpFailed), errors.Is(err, auth.ErrAccountLocked):
-		return vulnerability.ErrSoloApprovalBadCode
+		return v.badCode
 	}
 	return err
+}
+
+// wireSelfApprovalTOTP gives the exposure disposition gate and the
+// suppression service the authenticator check an owner's own approval needs.
+// Without it every own approval is refused (fail closed).
+func wireSelfApprovalTOTP(svc *Services) {
+	if svc.Auth == nil {
+		return
+	}
+	if svc.Exposure != nil {
+		svc.Exposure.SetDispositionTOTP(freshTOTP{auth: svc.Auth,
+			notEnrolled: exposuredom.ErrDispositionSelfApprovalNeedsTOTP, badCode: exposuredom.ErrDispositionSelfApprovalBadCode})
+	}
+	if svc.Suppression != nil {
+		svc.Suppression.SetTOTPVerifier(freshTOTP{auth: svc.Auth,
+			notEnrolled: suppression.ErrSelfApprovalNeedsTOTP, badCode: suppression.ErrSelfApprovalBadCode})
+	}
 }
