@@ -1,0 +1,5 @@
+# Maps the maintainer's earlier commit identities to one canonical identity
+# for git log, shortlog and blame. Format: git help gitmailmap.
+Manh Nguyen Van <manhnv@openctem.io>
+Manh Nguyen Van <manhnv@openctem.io> <manhnv@openctem.io>
+Manh Nguyen Van <manhnv@openctem.io> <manhnv@openctem.io>
