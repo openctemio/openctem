@@ -243,7 +243,7 @@ func (p *FindingProcessor) applyVEX(ctx context.Context, tenantID shared.ID, rep
 	output.VEXIDs = append(output.VEXIDs, ids...)
 	output.VEXMode = mode
 	if mode == SourceResolveEnforce {
-		output.FindingsVEXClosed += len(ids)
+		output.FindingsVEXRequested += len(ids)
 	} else {
 		output.FindingsVEXWouldClose += len(ids)
 	}
@@ -255,20 +255,28 @@ func (p *FindingProcessor) applyVEX(ctx context.Context, tenantID shared.ID, rep
 
 // vexScoped keeps the not_affected statements a command-bound report may act
 // on: the report's tool must be its command's tool, and each statement's asset
-// one the command covers (a connector sync covers what its source owns). A VEX
-// statement in a report is untrusted input; it may never close a finding on an
-// asset the command did not scan or that another tool reported.
+// one the command covers. A connector sync has no target list: its statements
+// count only for assets this same report carries (persisted by this ingest),
+// and the repository then matches only findings the connector's own tool last
+// reported. A VEX statement in a report is untrusted input; it may never act
+// on an asset the command did not scan or a finding another tool reported.
 func vexScoped(scope *alterScope, tool string, items []vulnerability.VEXNotAffected) []vulnerability.VEXNotAffected {
 	if scope.commandTool == "" || !tooldom.SameTool(scope.commandTool, tool) {
 		return nil
 	}
-	if scope.commandType == command.CommandTypeConnectorSync {
-		return items
-	}
 	kept := items[:0:0]
 	for _, it := range items {
 		id, err := shared.IDFromString(it.AssetID)
-		if err == nil && scope.allowedAsset(id) {
+		if err != nil {
+			continue
+		}
+		if scope.commandType == command.CommandTypeConnectorSync {
+			if _, inReport := scope.seen[id]; inReport && !scope.actorDenies(id) {
+				kept = append(kept, it)
+			}
+			continue
+		}
+		if scope.allowedAsset(id) {
 			kept = append(kept, it)
 		}
 	}

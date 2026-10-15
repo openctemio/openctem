@@ -463,6 +463,12 @@ func (s *EmailService) NotifySSOChangePending(ctx context.Context, ownerEmail, o
 		summary+" Review it under Settings > SSO approvals. If you did not expect this change, reject it.")
 }
 
+// NotifyOwnershipTransfer tells one of the two people in an ownership
+// transfer what happened (requested, canceled, declined, accepted).
+func (s *EmailService) NotifyOwnershipTransfer(ctx context.Context, email, name, subject, message string) {
+	s.sendSecurityNotice(ctx, email, name, "", subject, message)
+}
+
 func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userName, ipAddress, subject, message string) {
 	if !s.IsConfigured() {
 		return

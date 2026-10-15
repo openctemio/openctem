@@ -302,6 +302,7 @@ func run() int {
 	// Suspend/reactivate emails need the email service, built above.
 	if services.Email != nil {
 		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
+		services.Tenant.SetOwnershipTransferNotifier(services.Email)
 	}
 	// Administrator-created accounts. The set-password link is emailed
 	// when SMTP is configured, otherwise returned once to the administrator.
