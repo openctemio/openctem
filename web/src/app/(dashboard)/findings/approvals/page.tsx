@@ -71,6 +71,7 @@ import {
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
+import { closureReasonLabel } from '@/features/findings/lib/closure'
 
 // ============================================
 // CONSTANTS
@@ -814,6 +815,12 @@ export default function ApprovalsPage() {
                 {getRequestedStatusLabel(t, selectedApproval.requested_status)}
               </Badge>
             </p>
+            {selectedApproval.closure_reason && (
+              <p className="text-sm mt-1">
+                {t('findings.approvalDialog.reasonLabel', 'Reason:')}{' '}
+                {closureReasonLabel(t, selectedApproval.closure_reason)}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
               {selectedApproval.justification}
             </p>

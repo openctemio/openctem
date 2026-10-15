@@ -871,7 +871,7 @@ Each segment runs through the v1 pipeline with the v2 options:
   guard applies. `INGEST_COVERAGE_AUTO_RESOLVE` = `dry_run` (default: log,
   `findings_coverage_auto_resolve_total{mode,result}` and an
   `ingest.coverage_auto_resolve_dry_run` audit entry listing the findings, no
-  state change), `enforce` (closes them as `auto_fixed`/`scan_verified`,
+  state change), `enforce` (closes them as `auto_fixed`, `fixed` / `covered_scan`,
   audited as `ingest.coverage_auto_resolved`) or `off`.
 - An uncommitted report expires 60 minutes after its last segment; its
   upserts stay and it never resolves anything. A segment's outcome is stored
