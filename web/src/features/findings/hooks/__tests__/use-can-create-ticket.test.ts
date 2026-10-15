@@ -6,9 +6,8 @@ const state = { module: true, perms: new Set<string>() }
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useModuleEnabled: () => state.module,
 }))
-vi.mock('@/lib/permissions', () => ({
-  Permission: { FindingsWrite: 'findings:write' },
-  usePermissions: () => ({ can: (p: string) => state.perms.has(p) }),
+vi.mock('@/context/permission-provider', () => ({
+  usePermissions: () => ({ hasPermission: (p: string) => state.perms.has(p) }),
 }))
 
 import { useCanCreateTicket } from '../use-can-create-ticket'
