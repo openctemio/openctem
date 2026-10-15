@@ -6,9 +6,8 @@ import { useHasPermission, Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
-import { PageHeader, DataTable, DataTableColumnHeader } from '@/features/shared'
+import { PageHeader } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -37,7 +36,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
-import { Save, RotateCcw, Info, Eye, ArrowUpDown, Loader2, AlertCircle } from 'lucide-react'
+import { Save, RotateCcw, Info, ArrowUpDown, Loader2, AlertCircle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   useRiskScoringSettings,
@@ -48,8 +47,10 @@ import {
 } from '@/features/organization/api/use-risk-scoring-settings'
 import type {
   RiskScoringSettings,
-  RiskScorePreviewItem,
+  RiskScoringPreviewResponse,
 } from '@/features/organization/types/settings.types'
+import { ScoringImpactDialog } from '@/features/organization/components/scoring-impact-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
@@ -211,48 +212,6 @@ function NumberInput({
   )
 }
 
-/** Sampled assets of the scoring preview, sortable on the client. */
-const PREVIEW_COLUMNS: ColumnDef<RiskScorePreviewItem>[] = [
-  {
-    accessorKey: 'asset_name',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Asset" />,
-    cell: ({ row }) => (
-      <span className="block max-w-[300px] truncate font-medium" title={row.original.asset_name}>
-        {row.original.asset_name}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'asset_type',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
-    cell: ({ row }) => (
-      <span className="text-xs text-muted-foreground">{row.original.asset_type}</span>
-    ),
-  },
-  {
-    accessorKey: 'current_score',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Current" />,
-    cell: ({ row }) => <span className="tabular-nums">{row.original.current_score}</span>,
-  },
-  {
-    accessorKey: 'new_score',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="New" />,
-    cell: ({ row }) => <span className="tabular-nums">{row.original.new_score}</span>,
-  },
-  {
-    accessorKey: 'delta',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Delta" />,
-    cell: ({ row }) => (
-      <span
-        className={`font-medium tabular-nums ${row.original.delta > 0 ? 'text-destructive' : ''}`}
-      >
-        {row.original.delta > 0 ? '+' : ''}
-        {row.original.delta}
-      </span>
-    ),
-  },
-]
-
 export default function ScoringConfigurationPage() {
   const mayPriorityRules = useHasPermission(Permission.PriorityRulesRead)
   const priorityRulesOn = useModuleEnabled('priority_rules')
@@ -267,8 +226,11 @@ export default function ScoringConfigurationPage() {
 
   const [config, setConfig] = useState<RiskScoringSettings | null>(null)
   const [isDirty, setIsDirty] = useState(false)
-  const [previewItems, setPreviewItems] = useState<RiskScorePreviewItem[] | null>(null)
-  const [previewTotalAssets, setPreviewTotalAssets] = useState<number>(0)
+  const { t } = useTranslation()
+  // The impact review: a whole-organization dry run shown before applying.
+  const [impactOpen, setImpactOpen] = useState(false)
+  const [impact, setImpact] = useState<RiskScoringPreviewResponse | null>(null)
+  const [impactError, setImpactError] = useState<string | null>(null)
 
   // Initialize form from API data
   useEffect(() => {
@@ -286,8 +248,7 @@ export default function ScoringConfigurationPage() {
         return updated
       })
       setIsDirty(true)
-      setPreviewItems(null)
-      setPreviewTotalAssets(0)
+      setImpact(null)
     },
     []
   )
@@ -338,17 +299,35 @@ export default function ScoringConfigurationPage() {
     [updateConfig]
   )
 
+  // Save opens the impact review: the whole-organization dry run runs first
+  // and the settings are applied only from the review (with step-up).
   const handleSave = async () => {
     if (!config) return
+    setImpact(null)
+    setImpactError(null)
+    setImpactOpen(true)
     try {
-      const result = await updateRiskScoring(config)
+      const result = await previewChanges(config)
+      setImpact(result ?? null)
+    } catch (err) {
+      setImpactError(getErrorMessage(err))
+    }
+  }
+
+  const handleApply = async () => {
+    if (!config) return
+    try {
+      await updateRiskScoring(config)
       await mutate()
       setIsDirty(false)
-      if (result && result.assets_updated > 0) {
-        toast.success(`Configuration saved and ${result.assets_updated} asset scores recalculated`)
-      } else {
-        toast.success('Scoring configuration saved')
-      }
+      setImpactOpen(false)
+      setImpact(null)
+      toast.success(
+        t(
+          'riskScore.impact.applied',
+          'Settings applied. Scores are being recomputed in the background.'
+        )
+      )
     } catch (err) {
       toast.error(getErrorMessage(err))
     }
@@ -358,8 +337,7 @@ export default function ScoringConfigurationPage() {
     if (settings) {
       setConfig(settings)
       setIsDirty(false)
-      setPreviewItems(null)
-      setPreviewTotalAssets(0)
+      setImpact(null)
     }
   }
 
@@ -368,21 +346,7 @@ export default function ScoringConfigurationPage() {
     if (preset) {
       setConfig(preset.config)
       setIsDirty(true)
-      setPreviewItems(null)
-      setPreviewTotalAssets(0)
-    }
-  }
-
-  const handlePreview = async () => {
-    if (!config) return
-    try {
-      const result = await previewChanges(config)
-      if (result) {
-        setPreviewItems(result.assets)
-        setPreviewTotalAssets(result.total_assets)
-      }
-    } catch (err) {
-      toast.error(getErrorMessage(err))
+      setImpact(null)
     }
   }
 
@@ -390,7 +354,11 @@ export default function ScoringConfigurationPage() {
     try {
       const result = await recalculate()
       if (result) {
-        toast.success(`Recalculated risk scores for ${result.assets_updated} assets`)
+        toast.success(
+          t('riskScore.impact.recalculateQueued', '{count} assets queued for a new risk score.', {
+            count: result.assets_queued,
+          })
+        )
         await mutate()
       }
     } catch (err) {
@@ -461,7 +429,7 @@ export default function ScoringConfigurationPage() {
         </Button>
         <Button size="sm" onClick={handleSave} disabled={!canSave}>
           {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save changes
+          {t('riskScore.impact.reviewAndSave', 'Review and save')}
         </Button>
       </PageHeader>
 
@@ -1132,52 +1100,6 @@ export default function ScoringConfigurationPage() {
         </CardContent>
       </Card>
 
-      {/* Preview Changes — full width for table readability. A section rather
-          than a card: the table draws its own frame. */}
-      <section className="mt-5 space-y-3">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-base font-semibold">Preview changes</h2>
-            <p className="text-sm text-muted-foreground">
-              See how score changes affect a sample of assets
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handlePreview}
-            disabled={isPreviewing || !isDirty}
-          >
-            {isPreviewing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Eye className="h-4 w-4" />
-            )}
-            Preview impact
-          </Button>
-        </div>
-        {previewItems && (
-          <>
-            {previewItems.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Showing {previewItems.length} sampled assets out of{' '}
-                {previewTotalAssets.toLocaleString()} total (top risk, bottom risk, and random
-                sample).
-              </p>
-            )}
-            <DataTable
-              columns={PREVIEW_COLUMNS}
-              data={previewItems}
-              getRowId={(item) => item.asset_id}
-              searchKey="asset_name"
-              searchPlaceholder="Search assets…"
-              emptyMessage="No assets to preview"
-              emptyDescription="There are no assets for the new weights to score yet"
-            />
-          </>
-        )}
-      </section>
-
       {/* Recalculate & How Scoring Works — side by side */}
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <Card>
@@ -1244,6 +1166,15 @@ export default function ScoringConfigurationPage() {
           </CardContent>
         </Card>
       </div>
+      <ScoringImpactDialog
+        open={impactOpen}
+        onOpenChange={setImpactOpen}
+        preview={impact}
+        loading={isPreviewing}
+        error={impactError}
+        applying={isUpdating}
+        onApply={handleApply}
+      />
     </Main>
   )
 }

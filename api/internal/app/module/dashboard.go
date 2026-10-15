@@ -322,6 +322,23 @@ type RiskTrendPoint struct {
 	P1Open           int     `json:"p1_open"`
 	P2Open           int     `json:"p2_open"`
 	P3Open           int     `json:"p3_open"`
+	// Scoring versions the day's numbers were computed with (the oldest
+	// among the scores counted); nil = before versions.
+	RiskVersion     *int64 `json:"risk_version,omitempty"`
+	PriorityVersion *int64 `json:"priority_version,omitempty"`
+	// Scoring changes that took effect on this point (or since the previous
+	// point): a step in the trend at this date may come from the change,
+	// not from a change in risk.
+	ScoringChanges []ScoringChangeMarker `json:"scoring_changes,omitempty"`
+}
+
+// ScoringChangeMarker is a scoring model or settings change shown on a trend
+// (docs/architecture/scoring-versions.md).
+type ScoringChangeMarker struct {
+	Date    string `json:"date"`
+	Kind    string `json:"kind"`   // asset_risk | finding_priority
+	Source  string `json:"source"` // platform_model | risk_settings | priority_rules | sla_policy
+	Summary string `json:"summary"`
 }
 
 // ExecutiveSummary holds executive-level metrics for a time period.
