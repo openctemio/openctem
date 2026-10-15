@@ -79,7 +79,9 @@ type CampaignResolveInput struct {
 	Resolution          string
 	ActorID             string
 	HasVerifyPermission bool
-	Approved            bool
+	// HasFixApplyPermission: a fix_applied target needs findings:fix_apply.
+	HasFixApplyPermission bool
+	Approved              bool
 }
 
 // RemediationCampaignService manages remediation campaigns.
