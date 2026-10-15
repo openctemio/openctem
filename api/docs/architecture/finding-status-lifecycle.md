@@ -141,7 +141,7 @@ Migration `002151` repaired existing orphan duplicates the same way (status
 ## SLA status follows the status
 
 `findings.sla_status` is recomputed on every status or deadline change, by the
-trigger `trg_findings_recompute_sla_status` (migration `002181`) for every
+trigger `trg_findings_recompute_sla_status` (migration `002186`) for every
 writer, and by `Finding.UpdateSLAStatus` with the same rules
 (`finding_sla_status_for`):
 
@@ -157,7 +157,7 @@ The warning has **one definition**: the SLA escalation job's policy
 `warning_threshold_percent` of the window from the later of
 `first_detected_at` and `last_reopened_at` to the deadline (a regression's
 restarted deadline is measured from the reopen). The domain no longer warns 24
-hours before a deadline on its own. Migration `002181` also recomputed stale
+hours before a deadline on its own. Migration `002186` also recomputed stale
 values (closed findings left `overdue`, dispositions `exceeded`).
 
 ## Risk acceptance end
