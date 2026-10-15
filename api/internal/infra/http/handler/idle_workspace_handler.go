@@ -31,15 +31,15 @@ type IdleWorkspaceResponse struct {
 	StageChangedAt *time.Time `json:"stage_changed_at,omitempty"`
 	LastSignIn     *time.Time `json:"last_sign_in,omitempty"`
 	ReadOnly       bool       `json:"read_only"`
-	Exempt         bool       `json:"exempt"`
-	ExemptReason   string     `json:"exempt_reason,omitempty"`
-	ExemptAt       *time.Time `json:"exempt_at,omitempty"`
+	PolicyEnabled  bool       `json:"policy_enabled"`
+	PolicyReason   string     `json:"policy_reason,omitempty"`
+	PolicySetAt    *time.Time `json:"policy_set_at,omitempty"`
 }
 
-// SetIdleExemptionRequest exempts an organization (or lifts it).
-type SetIdleExemptionRequest struct {
-	Exempt bool   `json:"exempt"`
-	Reason string `json:"reason"`
+// SetIdlePolicyRequest turns the idle policy on or off for an organization.
+type SetIdlePolicyRequest struct {
+	Enabled bool   `json:"enabled"`
+	Reason  string `json:"reason"`
 }
 
 func (h *IdleWorkspaceHandler) write(w http.ResponseWriter, r *http.Request, id shared.ID) {
@@ -55,13 +55,13 @@ func (h *IdleWorkspaceHandler) write(w http.ResponseWriter, r *http.Request, id 
 	}
 	writeJSON(w, http.StatusOK, IdleWorkspaceResponse{
 		Stage: string(st.Stage), StageChangedAt: st.StageChangedAt, LastSignIn: st.LastSignIn,
-		ReadOnly: h.svc.ReadOnly(r.Context(), id), Exempt: st.Exempt, ExemptReason: st.ExemptReason, ExemptAt: st.ExemptAt,
+		ReadOnly: h.svc.ReadOnly(r.Context(), id), PolicyEnabled: st.PolicyEnabled, PolicyReason: st.PolicyReason, PolicySetAt: st.PolicySetAt,
 	})
 }
 
 // Get returns an organization's idle lifecycle (any admin).
 // @Summary      Get an organization's idle lifecycle (platform admin)
-// @Description  Free organizations nobody signs in to are reminded at 60 days, read-only at 90, warned at 113 and due for deletion at 120.
+// @Description  Only for organizations the idle policy is on for (off by default): nobody signs in, reminded at 60 days, read-only at 90, warned at 113 and due for deletion at 120.
 // @Tags         Admin Organizations
 // @Produce      json
 // @Param        tenantId  path  string  true  "Organization ID"
@@ -73,17 +73,18 @@ func (h *IdleWorkspaceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// SetExemption exempts an organization from the idle lifecycle or lifts the
-// exemption (ops_admin+, audited; a reason is required to exempt).
-// @Summary      Exempt an organization from the idle lifecycle (platform admin)
+// SetPolicy turns the idle policy on or off for an organization (ops_admin+,
+// audited; a reason is required both ways).
+// @Summary      Turn the idle policy on or off for an organization (platform admin)
+// @Description  Off by default. When on, an organization nobody signs in to is reminded, then made read-only, then marked for deletion; a sign-in resets it.
 // @Tags         Admin Organizations
 // @Accept       json
 // @Produce      json
-// @Param        tenantId  path  string                   true  "Organization ID"
-// @Param        request   body  SetIdleExemptionRequest  true  "Exemption"
+// @Param        tenantId  path  string                true  "Organization ID"
+// @Param        request   body  SetIdlePolicyRequest  true  "Policy"
 // @Success      200  {object}  IdleWorkspaceResponse
-// @Router       /admin/tenants/{tenantId}/idle/exemption [put]
-func (h *IdleWorkspaceHandler) SetExemption(w http.ResponseWriter, r *http.Request) {
+// @Router       /admin/tenants/{tenantId}/idle/policy [put]
+func (h *IdleWorkspaceHandler) SetPolicy(w http.ResponseWriter, r *http.Request) {
 	actor := middleware.GetAdminUser(r.Context())
 	id, ok := adminTenantID(w, r)
 	if !ok {
@@ -93,18 +94,18 @@ func (h *IdleWorkspaceHandler) SetExemption(w http.ResponseWriter, r *http.Reque
 		apierror.Unauthorized("administrator session required").WriteJSON(w)
 		return
 	}
-	var req SetIdleExemptionRequest
+	var req SetIdlePolicyRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	if err := h.svc.ChangeExemption(r.Context(), actor, id, req.Exempt, req.Reason, middleware.ClientIP(r), r.UserAgent()); err != nil {
-		if errors.Is(err, lifecycle.ErrInvalidExemption) {
+	if err := h.svc.ChangePolicy(r.Context(), actor, id, req.Enabled, req.Reason, middleware.ClientIP(r), r.UserAgent()); err != nil {
+		if errors.Is(err, lifecycle.ErrInvalidPolicyReason) {
 			apierror.BadRequest(err.Error()).WriteJSON(w)
 			return
 		}
-		h.logger.Error("set idle exemption", "error", err)
-		apierror.InternalServerError("could not change the exemption").WriteJSON(w)
+		h.logger.Error("set idle policy", "error", err)
+		apierror.InternalServerError("could not change the idle policy").WriteJSON(w)
 		return
 	}
 	h.write(w, r, id)
