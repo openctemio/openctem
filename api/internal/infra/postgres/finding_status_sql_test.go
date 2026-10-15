@@ -59,11 +59,11 @@ var findingStatusWriters = map[string]int{
 	"ci_coverage_repository.go":            2, // staleFromSQL, sourceRetiredFromSQL
 	"finding_acceptance_expiry.go":         1, // accepted -> confirmed when the acceptance ended (guarded by status under lock)
 	"finding_branch_only.go":               1, // branchOnlyExpiryFromSQL
+	"finding_decision_review.go":           1, // ReopenResolved: resolved -> confirmed, guarded by fixedReopenFromSQL
 	"finding_correlation_repository.go":    2, // correlate: open -> duplicate (isOpenStatus checked under lock); release: duplicate -> prior open status
 	"finding_coverage_autoresolve.go":      2, // autoResolveFromSQL
 	"finding_group_repository.go":          1, // UserFromStatuses($6)
 	"finding_pentest_duplicate.go":         2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
-	"finding_interop.go":                   1, // vexFalsePositiveFromSQL
 	"finding_repo_coverage_autoresolve.go": 1, // autoResolveFromSQL
 	"finding_repository.go":                4, // entity Update; UpdateStatusBatch ($6); scan reopen batch; branch expiry
 	"finding_retest_repository.go":         2, // moveFindingInTx checks the lifecycle

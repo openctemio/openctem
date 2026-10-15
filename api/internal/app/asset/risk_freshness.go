@@ -14,6 +14,7 @@ import (
 	"time"
 
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -71,6 +72,12 @@ func (s *AssetService) riskInputsMap(ctx context.Context, tenantID shared.ID, as
 func (s *AssetService) SetRiskQueue(q assetdom.RiskQueueRepository, reader AssetBatchReader) {
 	s.riskQueue = q
 	s.riskReader = reader
+}
+
+// SetScoringVersions wires the scoring version source; each rescored asset
+// stores the version it was computed with (docs/architecture/scoring-versions.md).
+func (s *AssetService) SetScoringVersions(v scoring.VersionRepository) {
+	s.scoringVersions = v
 }
 
 // RiskQueueResult reports one ProcessRiskQueue call.
@@ -173,7 +180,16 @@ func (s *AssetService) rescoreAssets(ctx context.Context, tenantID shared.ID, as
 	for _, a := range byID {
 		assets = append(assets, a)
 	}
-	config := s.getScoringConfig(ctx, tenantID)
+	// The version is read before the settings, so the stamp is never newer
+	// than the settings the scores were computed with.
+	var version int64
+	if s.scoringVersions != nil {
+		version, err = s.scoringVersions.CurrentVersion(ctx, tenantID, scoring.KindAssetRisk)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	config := s.getScoringConfigAt(ctx, tenantID, version)
 	engine := assetdom.NewRiskScoringEngine(*config)
 	inputs := s.riskInputsMap(ctx, tenantID, assets)
 
@@ -199,6 +215,11 @@ func (s *AssetService) rescoreAssets(ctx context.Context, tenantID shared.ID, as
 		ids := make([]shared.ID, 0, len(assets))
 		for _, a := range assets {
 			ids = append(ids, a.ID())
+		}
+		if version > 0 {
+			if err := s.riskQueue.StampRiskVersion(ctx, tenantID, ids, version); err != nil {
+				return scored, len(write), fmt.Errorf("stamp risk version: %w", err)
+			}
 		}
 		if err := s.riskQueue.RefreshRollups(ctx, tenantID, ids); err != nil {
 			s.logger.Warn("risk roll-up refresh failed", "tenant_id", tenantID.String(), "error", err.Error())

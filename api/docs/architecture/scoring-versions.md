@@ -1,0 +1,144 @@
+# Scoring versions and forward-only recompute
+
+When a scoring model or the settings that feed it change, open findings and
+their assets are recomputed **from that moment on**. Closed findings keep the
+values they had when they were closed, and history is never rewritten.
+
+Related: [asset risk score](asset-risk-score.md) (the asset model and its
+queue), the finding priority classifier
+(`internal/app/finding/priority_classification.go`) and the SLA applier
+(`internal/app/sla/applier.go`).
+
+## What is computed from a model or settings
+
+| Value | Inputs from settings | Stored version |
+|---|---|---|
+| Asset `risk_score` | tenant risk scoring settings (preset, factors, bands) | `assets.risk_version` |
+| Finding `priority_class` (P0 to P3) | priority rules, ownership floor (`risk_scoring.floor_unowned_at_p2`) | `findings.priority_version` |
+| Finding `sla_deadline` | SLA policies (computed in the same pass as the priority) | `findings.priority_version` |
+
+Business unit and asset group roll-ups follow the asset scores. Dashboard
+KPIs are live queries over these columns. The CI gate uses severity, KEV and
+EPSS only, so it does not depend on a scoring version.
+
+## Versions
+
+`scoring_changes` records every change:
+
+- one **platform** row per model version (`tenant_id` NULL, `source =
+  platform_model`), registered at start-up from the constants in
+  `pkg/domain/scoring` (`RiskModelVersion`, `PriorityModelVersion`);
+- one **tenant** row per change of the risk scoring settings, priority rules
+  or SLA policies (`source = risk_settings | priority_rules | sla_policy`).
+
+The row id is the version. The current version of a tenant for a kind is the
+newest platform or tenant row (`scoring_version(tenant, kind, model)`). A value
+whose stored version is missing or older is **stale**.
+
+- A value is stamped with the version read **before** it is computed, so a
+  change that lands during a pass leaves an older stamp and the value is
+  computed again. A stamp is never newer than the inputs it was computed with.
+- During a rolling deploy, a process running an older model never stamps a
+  version at or past a newer platform model row: `scoring_version` stops
+  below it. The new model then recomputes the value.
+- The asset worker reloads the tenant's risk scoring settings when the
+  version is newer than its cached copy, so another replica's change does not
+  wait for the cache TTL.
+
+Bumping a model is a code change to the constant: the new row is registered
+at start-up, every open finding (or live asset) becomes stale, and the
+reconcile queues it. No migration is needed.
+
+## Recording a change
+
+Database triggers (migration `scoring_versions`) record a tenant change and
+queue its scope in the same transaction, so no write path can forget it:
+
+| Table | Change that counts | Kind | Queued |
+|---|---|---|---|
+| `priority_override_rules` | add or delete an active rule; change of class, conditions, active flag or (active) order. A rename does not count | `finding_priority` | assets of the tenant's open findings |
+| `sla_policies` | add, delete, any day count, warning percent, default/active flag, asset | `finding_priority` | assets of the tenant's open findings |
+| `tenants.settings.risk_scoring` | anything but `floor_unowned_at_p2` | `asset_risk` | every live asset of the tenant (`asset_risk_queue`) |
+| `tenants.settings.risk_scoring` | `floor_unowned_at_p2` | `finding_priority` | assets of the tenant's open findings |
+
+Rows of the system tenant (the shared default rules) change only with a
+platform model.
+
+## The finding-priority queue
+
+`finding_priority_queue` holds one row per asset whose open findings need a
+new priority and SLA deadline. It replaces an in-memory queue that lost its
+work on restart and was per replica.
+
+Rows are written by:
+
+- triggers: a new open finding, a reopen, a severity or asset change, an
+  asset's criticality, exposure or crown-jewel flag (or restore), business
+  unit and business service membership and criticality, and the settings
+  triggers above;
+- producers: compensating control changes, attribution decisions, AI triage
+  verdicts and the threat-intel refresh (`ControlChangePublisher`).
+
+The **finding-priority** worker (`internal/app/reclassify`, every 10 s) claims
+up to 200 assets per pass, at most 50 of one tenant, so one tenant's large
+backlog cannot starve the others. For each asset it lists the **open**
+findings only, re-reads EPSS and KEV from the trusted catalogs, classifies
+them, recomputes the SLA deadline, writes the findings that changed and stamps
+every computed finding with the version. A failed tenant pass is queued again.
+
+The **finding-priority-reconcile** controller (start-up, then daily, one
+replica) queues every asset with a stale finding at once and every other asset
+with an open finding ten minutes later, behind event-driven rows. It is the
+safety net for inputs no trigger watches (attack-path reachability, the threat
+model) and heals a pass that crashed after its claim.
+
+Metrics: `openctem_finding_priority_queue_depth`,
+`openctem_finding_priority_queue_oldest_seconds`,
+`openctem_finding_priority_checked_total`,
+`openctem_finding_priority_changed_total`.
+
+## Forward only
+
+- Open (and reopened) findings are recomputed from the change time.
+- Closed findings (`resolved`, `false_positive`, `accepted`, `duplicate`) are
+  never listed, classified, given a new deadline or stamped: their class,
+  reason, deadline and SLA status stay as they were when they were closed, so
+  closed-period metrics (P0 resolved in a period, MTTR per class, SLA met or
+  missed) never change after the fact.
+- A reopened finding is queued by the reopen trigger and recomputed with the
+  current version.
+
+## Security
+
+- Settings are a security control: they decide what is P0 and when work is
+  overdue. Changes are made through the settings routes (team admin with
+  `settings:write`) and every one leaves a `scoring_changes` row.
+- Tenant isolation: queue rows carry `tenant_id` with a composite foreign key
+  to the asset; `EnqueueAssets` joins on the tenant's assets, so another
+  tenant's asset id is ignored; the worker loads and writes per tenant with
+  tenant-scoped queries. Tenant `scoring_changes` rows cascade with the
+  tenant; platform rows hold no tenant data.
+- Abuse: repeated settings changes coalesce per asset (primary key) and the
+  claim is tenant-fair.
+
+## Shipped and planned
+
+Shipped: versions, the durable queue, triggers, the worker and reconcile,
+closed findings frozen.
+
+Planned in the same series: SLA deadlines that only tighten on a priority
+rise or policy change (with a timeline entry); a whole-tenant preview before
+applying risk settings, with step-up; version stamps on risk snapshots and
+markers on trend charts; one summary notification per scoring change instead
+of one per finding; recompute scoped to the CVEs whose EPSS or KEV status
+changed.
+
+## Key files
+
+- `migrations/*_scoring_versions.up.sql`
+- `pkg/domain/scoring/scoring.go`
+- `internal/infra/postgres/scoring_repository.go`
+- `internal/app/reclassify/reclassifier.go`, `queue.go`
+- `internal/infra/controller/priority_reclassify.go`
+- `internal/app/asset/risk_freshness.go` (risk version stamp)
+- `tests/integration/scoring_versions_test.go`

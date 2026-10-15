@@ -51,6 +51,7 @@ import { StatusSelect } from './status-select'
 import { FindingWhyItMatters } from './detail/finding-why-it-matters'
 import { FindingFixCard } from './detail/finding-fix-card'
 import { FindingProperties } from './detail/finding-properties'
+import { FindingProvenanceSection } from './detail/finding-provenance-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
 import { FindingIntelSection } from './detail/finding-intel-section'
 import { FindingRetestSection } from './detail/finding-retest'
@@ -263,6 +264,7 @@ export function FindingDetailDrawer({
               <FindingTypePanel finding={detail} onOpenTrace={() => openPage('attack-path')} />
               <FindingProperties finding={detail} triage={triage} hideTriage />
               <FindingIntelSection finding={detail} />
+              <FindingProvenanceSection finding={detail} />
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
               <FindingTenableRescanSection finding={detail} />
 
