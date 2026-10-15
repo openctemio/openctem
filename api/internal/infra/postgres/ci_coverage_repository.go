@@ -367,7 +367,7 @@ func (r *CIRunRepository) MarkStaleSourceFindings(ctx context.Context, tenantID 
 	}, func(tx *sql.Tx) error {
 		//nolint:gosec // G202: fixed SQL fragments (lifecycle lists) and numbered placeholders only
 		rows, err := tx.QueryContext(ctx, `UPDATE findings f SET status = 'not_observed', resolution = 'source_stale',
-			resolution_method = NULL, resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
+			closure_reason = NULL, verification = NULL, resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
 			WHERE `+soleSourceFindings+` AND f.status IN `+staleFromSQL+`
 			RETURNING f.id::text`, tenantID.String(), p.ID.String(), p.RepositoryAssetID.String(), p.LastRunAt)
 		if err != nil {
@@ -415,7 +415,7 @@ func (r *CIRunRepository) RetirePipeline(ctx context.Context, tenantID, pipeline
 		return nil, nil, err
 	}
 	rows, err := tx.QueryContext(ctx, `UPDATE findings f SET status = 'resolved', resolution = 'source_retired',
-		resolution_method = 'source_retired', resolved_at = $5, resolved_by = $6, updated_at = NOW()
+		closure_reason = 'obsolete_source', verification = 'none', resolved_at = $5, resolved_by = $6, updated_at = NOW()
 		WHERE `+soleSourceFindings+` AND f.status IN `+sourceRetiredFromSQL+`
 		RETURNING f.id::text`, tenantID.String(), pipelineID.String(), p.RepositoryAssetID.String(), p.LastRunAt, at, nullID(by))
 	if err != nil {

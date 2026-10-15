@@ -34,7 +34,7 @@ func TestLifecycle_RequestApprovalRefusesIllegalMove(t *testing.T) {
 	svc := newApprovalTestService(repo, newMockApprovalRepository())
 
 	_, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
-		TenantID: shared.NewID().String(), FindingID: id.String(), RequestedStatus: "false_positive",
+		TenantID: shared.NewID().String(), FindingID: id.String(), RequestedStatus: "false_positive", ClosureReason: "detection_error",
 		Justification: "not real", RequestedBy: shared.NewID().String(),
 	})
 	require.ErrorIs(t, err, shared.ErrValidation)
@@ -52,7 +52,7 @@ func TestLifecycle_ApproveStatusRefusesWhenFindingMoved(t *testing.T) {
 	tenant := shared.NewID()
 
 	a, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
-		TenantID: tenant.String(), FindingID: id.String(), RequestedStatus: "false_positive",
+		TenantID: tenant.String(), FindingID: id.String(), RequestedStatus: "false_positive", ClosureReason: "detection_error",
 		Justification: "not real", RequestedBy: shared.NewID().String(),
 	})
 	require.NoError(t, err)

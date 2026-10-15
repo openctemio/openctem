@@ -27,25 +27,38 @@ describe('openFindingCount', () => {
 describe('completionWarning', () => {
   it('warns about a campaign completed with 0 of 4 findings closed (the reported case)', () => {
     const w = completionWarning([{ finding_count: 4, resolved_count: 0 }])
-    expect(w).toEqual({ open: 4, total: 4, campaigns: 1 })
+    expect(w).toEqual({ open: 4, total: 4, campaigns: 1, unverified: 0 })
     expect(completionWarningText(w!)).toBe('4 of 4 findings are still open.')
   })
 
-  it('does not ask when every finding is closed', () => {
-    expect(completionWarning([{ finding_count: 4, resolved_count: 4 }])).toBeNull()
+  it('does not ask when every finding is closed and one is verified fixed', () => {
+    expect(
+      completionWarning([{ finding_count: 4, resolved_count: 4, verified_count: 1 }])
+    ).toBeNull()
   })
 
-  it('does not ask for a campaign with no findings', () => {
-    expect(completionWarning([{ finding_count: 0, resolved_count: 0 }])).toBeNull()
+  it('asks when every finding is closed but none was verified fixed', () => {
+    expect(completionWarning([{ finding_count: 4, resolved_count: 4, verified_count: 0 }])).toEqual(
+      { open: 0, total: 4, campaigns: 0, unverified: 1 }
+    )
+  })
+
+  it('asks for a campaign with no findings (nothing was fixed)', () => {
+    expect(completionWarning([{ finding_count: 0, resolved_count: 0 }])).toEqual({
+      open: 0,
+      total: 0,
+      campaigns: 0,
+      unverified: 1,
+    })
   })
 
   it('adds up several campaigns and says how many still have work', () => {
     const w = completionWarning([
       { finding_count: 4, resolved_count: 1 },
-      { finding_count: 2, resolved_count: 2 },
+      { finding_count: 2, resolved_count: 2, verified_count: 2 },
       { finding_count: 1, resolved_count: 0 },
     ])
-    expect(w).toEqual({ open: 4, total: 7, campaigns: 2 })
+    expect(w).toEqual({ open: 4, total: 7, campaigns: 2, unverified: 0 })
     expect(completionWarningText(w!, 3)).toBe('4 of 7 findings in 2 tasks are still open.')
   })
 
@@ -85,6 +98,6 @@ describe('fetchLiveCampaignCounts', () => {
     const counts = await fetchLiveCampaignCounts(['c1'], {
       c1: { finding_count: 4, resolved_count: 0 },
     })
-    expect(completionWarning(counts)).toEqual({ open: 4, total: 4, campaigns: 1 })
+    expect(completionWarning(counts)).toEqual({ open: 4, total: 4, campaigns: 1, unverified: 0 })
   })
 })
