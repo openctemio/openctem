@@ -1,6 +1,6 @@
 package integration
 
-// Migration finding_closure_reason: every closed finding gets a closure
+// Migrations finding_closure_*: every closed finding gets a closure
 // reason and (when resolved) a verification, mapped only from what
 // resolution_method recorded and 'unknown' for everything else; the trigger
 // keeps the pair consistent for every writer; the SQL rule function agrees with
@@ -20,10 +20,11 @@ const closureMigAsset = "55555555-5555-4555-8555-555555555555"
 func TestMigrationFindingClosureReason_Backfill(t *testing.T) {
 	const dir = "../../migrations"
 	db := testdb.PrivateDatabase(t, "migclosure", dir)
-	closure := testdb.MigrationVersion(t, dir, "finding_closure_reason")
-	validate := testdb.MigrationVersion(t, dir, "finding_closure_reason_validate")
-	testdb.Migrate(t, db, dir, validate, validate, true)
-	testdb.Migrate(t, db, dir, closure, closure, true)
+	// The five steps: columns, batched backfill, trigger + CHECK, VALIDATE,
+	// drop resolution_method.
+	closure := testdb.MigrationVersion(t, dir, "finding_closure_columns")
+	validate := testdb.MigrationVersion(t, dir, "finding_closure_drop_resolution_method")
+	testdb.Migrate(t, db, dir, closure, validate, true)
 
 	exec := func(q string, args ...any) {
 		t.Helper()

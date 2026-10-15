@@ -75,7 +75,7 @@ Who writes what:
 | Duplicate, correlation | `duplicate`, `correlated` |
 
 The database keeps the pair consistent for every writer
-(`trg_findings_settle_closure`, migration `finding_closure_reason`, run after every trigger that changes the status): it
+(`trg_findings_settle_closure`, migrations `finding_closure_*`, run after every trigger that changes the status): it
 clears both on an open status, drops a value left over from the previous
 status that does not fit the new one, and fills the status default when a
 writer names none. `chk_findings_closure` (via `finding_closure_valid`, pinned
