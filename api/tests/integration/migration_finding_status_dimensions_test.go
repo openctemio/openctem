@@ -21,10 +21,10 @@ const dimMigUser = "99999999-9999-4999-8999-999999999999"
 func TestMigrationFindingStatusDimensions(t *testing.T) {
 	const dir = "../../migrations"
 	db := testdb.PrivateDatabase(t, "migdims", dir)
-	mig := testdb.MigrationVersion(t, dir, "finding_status_dimensions")
+	// Three steps: the column, the row moves and filter rewrite, VALIDATE.
+	mig := testdb.MigrationVersion(t, dir, "finding_status_dimensions_column")
 	validate := testdb.MigrationVersion(t, dir, "finding_status_dimensions_validate")
-	testdb.Migrate(t, db, dir, validate, validate, true)
-	testdb.Migrate(t, db, dir, mig, mig, true)
+	testdb.Migrate(t, db, dir, mig, validate, true)
 
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -103,19 +103,7 @@ func TestMigrationFindingStatusDimensions(t *testing.T) {
 		t.Error("not_observed is still accepted as a status")
 	}
 
-	views := map[string]string{}
-	rows, err := db.Query(`SELECT name, filter::text FROM saved_views WHERE tenant_id = $1`, dimMigTenant)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for rows.Next() {
-		var n, f string
-		if err := rows.Scan(&n, &f); err != nil {
-			t.Fatal(err)
-		}
-		views[n] = f
-	}
-	_ = rows.Close()
+	views := savedViewFilters(t, db, dimMigTenant)
 	wantViews := map[string]string{
 		"node":  `{"v": 1, "filter": {"any": [{"op": "in", "field": "status", "value": ["new"]}, {"op": "eq", "field": "observation", "value": "stale"}]}}`,
 		"only":  `{"v": 1, "filter": {"validation": "not_reproducible"}}`,
@@ -151,4 +139,25 @@ func sameJSON(t *testing.T, a, b string) bool {
 	xa, _ := json.Marshal(x)
 	ya, _ := json.Marshal(y)
 	return string(xa) == string(ya)
+}
+
+func savedViewFilters(t *testing.T, db *sql.DB, tenant string) map[string]string {
+	t.Helper()
+	rows, err := db.Query(`SELECT name, filter::text FROM saved_views WHERE tenant_id = $1`, tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	views := map[string]string{}
+	for rows.Next() {
+		var n, f string
+		if err := rows.Scan(&n, &f); err != nil {
+			t.Fatal(err)
+		}
+		views[n] = f
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return views
 }
