@@ -8,14 +8,11 @@
 -- latest timeline entry that moved it there), else confirmed, keeps the
 -- meaning in its dimension, and gets a timeline entry. Stored filter
 -- documents (saved views, remediation campaigns) that name a retired status
--- are rewritten to the dimension. The status CHECK is added NOT VALID here
--- and validated in the next migration.
+-- are rewritten to the dimension. The rows move first (row locks only); the
+-- status CHECK is replaced last, NOT VALID, so the table lock it takes is
+-- brief, and it is validated in finding_status_dimensions_validate. The
+-- observation_state column comes from finding_status_dimensions_column.
 
-ALTER TABLE findings ADD COLUMN observation_state varchar(16) NOT NULL DEFAULT 'present';
-ALTER TABLE findings ADD CONSTRAINT chk_findings_observation_state
-    CHECK (observation_state IN ('present', 'stale')) NOT VALID;
-COMMENT ON COLUMN findings.observation_state IS
-    'present, or stale: no longer reported and no coverage proof (observation.go); never a status';
 
 -- Every finding this transaction moves gets its timeline entry
 -- (record_finding_transition reads this setting).
@@ -46,10 +43,6 @@ WHERE f.id = m.id;
 
 SELECT set_config('openctem.transition', '', true);
 
-ALTER TABLE findings DROP CONSTRAINT chk_findings_status;
-ALTER TABLE findings ADD CONSTRAINT chk_findings_status CHECK (status IN (
-    'new', 'confirmed', 'in_progress', 'fix_applied', 'resolved', 'false_positive', 'accepted', 'duplicate',
-    'draft', 'in_review')) NOT VALID;
 
 CREATE OR REPLACE FUNCTION is_open_finding_status(p_status text)
 RETURNS boolean
@@ -168,3 +161,9 @@ UPDATE remediation_campaigns SET finding_filter = retire_finding_status_filter(f
 WHERE finding_filter::text ~ '"(not_observed|validated_fixed)"';
 
 DROP FUNCTION retire_finding_status_filter(jsonb);
+
+-- Last, briefly: the status CHECK without the retired values.
+ALTER TABLE findings DROP CONSTRAINT chk_findings_status;
+ALTER TABLE findings ADD CONSTRAINT chk_findings_status CHECK (status IN (
+    'new', 'confirmed', 'in_progress', 'fix_applied', 'resolved', 'false_positive', 'accepted', 'duplicate',
+    'draft', 'in_review')) NOT VALID;
