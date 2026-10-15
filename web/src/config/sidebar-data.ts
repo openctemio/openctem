@@ -63,6 +63,7 @@ import {
   Database,
   Fence,
   ListChecks,
+  Stamp,
 } from 'lucide-react'
 import { type SidebarData } from '@/components/types'
 import { Permission, Role } from '@/lib/permissions'
@@ -124,7 +125,17 @@ export const sidebarData: SidebarData = {
           url: '/findings',
           icon: FileWarning,
           // Badge is dynamically fetched from dashboard stats - see useDynamicBadges hook
-          // Approvals accessible via button in findings page (not sidebar - keeps sidebar lean)
+          permission: Permission.FindingsRead,
+          module: 'findings',
+        },
+        {
+          // The four-eyes inbox: false-positive and risk-acceptance requests
+          // waiting for a second person. Same gate as the page (findings:read):
+          // requesters follow their own requests here too. The pending-count
+          // badge is fetched only for approvers (useDynamicBadges).
+          title: 'Approvals',
+          url: '/findings/approvals',
+          icon: Stamp,
           permission: Permission.FindingsRead,
           module: 'findings',
         },
