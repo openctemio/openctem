@@ -387,6 +387,11 @@ class, the tenant with the fewest platform jobs in flight goes first
 
 ## Shared sensors on the tenant plane
 
+Platform sensors become **shared sensors** (instance scope) in every edition;
+the design, access layers, deployment defaults and rollout are in
+[RFC-100](../rfcs/RFC-100-shared-sensors.md). Until its gate (§11) is met,
+no organization may use them.
+
 A sensor has a **scope** (`sensors.scope`, [RFC-100](../rfcs/RFC-100-shared-sensors.md) §3.1):
 
 | `scope` | `tenant_id` | Meaning |
