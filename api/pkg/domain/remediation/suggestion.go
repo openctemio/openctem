@@ -512,7 +512,7 @@ type SuggestionFilter struct {
 	Scope         *shared.DataScope
 }
 
-// SuggestionCounts summarises a tenant's open suggestions.
+// SuggestionCounts summarizes a tenant's open suggestions.
 type SuggestionCounts struct {
 	Proposed int            `json:"proposed"`
 	Queued   int            `json:"queued"`
