@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -108,6 +109,9 @@ type CITrustScopeEntry struct {
 	// ScopeTargetID is the scope entry carrying it (empty until the next
 	// sync when a person deleted an existing entry the trust had linked).
 	ScopeTargetID string `json:"scope_target_id,omitempty"`
+	// RemovedAt: a person deleted the scope entry the trust had linked; the
+	// trust does not add it again until the pattern is dropped and re-added.
+	RemovedAt *time.Time `json:"removed_at,omitempty"`
 	// SeenAt and the other seen_* fields: the first verified pipeline run
 	// under the pattern (evidence, never required unless the organization
 	// turned on ci_scope_requires_proof).
@@ -139,7 +143,7 @@ func (h *CIAdminHandler) withScope(ctx context.Context, tenantID shared.ID, resp
 		return
 	}
 	for _, l := range links {
-		e := CITrustScopeEntry{Pattern: l.Pattern, SeenAt: l.SeenAt, SeenRepository: l.SeenRepository}
+		e := CITrustScopeEntry{Pattern: l.Pattern, SeenAt: l.SeenAt, SeenRepository: l.SeenRepository, RemovedAt: l.TargetRemovedAt}
 		if l.TargetID != nil {
 			e.ScopeTargetID = l.TargetID.String()
 		}
@@ -181,8 +185,10 @@ type CITrustConfigRequest struct {
 	DefaultBranch string      `json:"default_branch,omitempty"`
 	Rules         cirun.Rules `json:"rules"`
 	Enabled       *bool       `json:"enabled,omitempty"`
-	// ManageScope adds the trusted repositories to scope (default true on
-	// create; unchanged when omitted on a change).
+	// ManageScope adds the trusted repositories to scope. It needs
+	// attack_surface:scope:write (403 otherwise); omitted on create it is
+	// on when the caller holds that permission, omitted on a change it stays.
+	// The entries follow the organization's scope approval rules.
 	ManageScope *bool `json:"manage_scope,omitempty"`
 }
 
@@ -394,7 +400,9 @@ func (h *CIAdminHandler) tenant(w http.ResponseWriter, r *http.Request) (shared.
 func (h *CIAdminHandler) actor(r *http.Request) cirunapp.Actor {
 	ctx := r.Context()
 	return cirunapp.Actor{UserID: middleware.GetUserID(ctx), Email: auditActorEmail(ctx), IP: getClientIP(r),
-		UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID")}
+		UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ScopeWrite:   middleware.HasPermission(ctx, permission.ScopeWrite.String()),
+		ScopeApprove: middleware.HasPermission(ctx, permission.ScopeApprove.String())}
 }
 
 func pathID(w http.ResponseWriter, r *http.Request, what string) (shared.ID, bool) {
@@ -423,6 +431,8 @@ func (h *CIAdminHandler) writeErr(w http.ResponseWriter, err error, what, notFou
 		apierror.Conflict(ciErrMessage(err)).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound(notFound).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden(ciErrMessage(err)).WriteJSON(w)
 	default:
 		h.logger.Error("ci admin: "+what, "error", logger.SanitizeError(err))
 		apierror.InternalServerError("failed to " + what).WriteJSON(w)

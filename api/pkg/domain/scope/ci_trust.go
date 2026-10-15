@@ -16,6 +16,11 @@ import (
 // OriginCITrust: the entry was created by a CI trust configuration.
 const OriginCITrust Origin = "ci_trust"
 
+// ErrCITrustNoScopeWrite: a trust pattern was not added to scope because the
+// person (or path) changing the trust may not change scope.
+var ErrCITrustNoScopeWrite = shared.NewDomainError("CI_TRUST_NO_SCOPE_WRITE",
+	"not added to scope: only someone who may change scope adds a trust's repositories", shared.ErrForbidden)
+
 // ErrCITrustManaged refuses a scope change to an entry a CI trust manages.
 var ErrCITrustManaged = shared.NewDomainError("CI_TRUST_MANAGED",
 	"a CI trust manages this entry; change the trust's owners or repositories, or add an exclusion to keep a repository out",
@@ -36,6 +41,9 @@ type CITrustLink struct {
 	SeenRunID      *shared.ID
 	SeenRepository string
 	SeenOwnerID    string
+	// TargetRemovedAt: a person deleted the entry the link pointed at; the
+	// trust does not create it again.
+	TargetRemovedAt *time.Time
 }
 
 // CITrustEvidence is a verified pipeline run under a trust: the run, the
@@ -59,6 +67,9 @@ type CITrustLinkRepository interface {
 	Delete(ctx context.Context, tenantID, trustID shared.ID, pattern string) error
 	// CountForTarget counts the links that point at an entry.
 	CountForTarget(ctx context.Context, tenantID, targetID shared.ID) (int, error)
+	// MarkTargetRemoved records on every link to the entry that a person
+	// deleted it (before the entry row goes).
+	MarkTargetRemoved(ctx context.Context, tenantID, targetID shared.ID, at time.Time) error
 	// MarkSeen records the evidence on a link that has none; it reports
 	// whether it did.
 	MarkSeen(ctx context.Context, tenantID, trustID shared.ID, pattern string, ev CITrustEvidence) (bool, error)
@@ -80,4 +91,7 @@ const (
 	CITrustKept    = "kept"
 	CITrustRetired = "retired"
 	CITrustRefused = "refused"
+	// CITrustRemoved: a person deleted the linked entry; it is not created
+	// again.
+	CITrustRemoved = "removed"
 )

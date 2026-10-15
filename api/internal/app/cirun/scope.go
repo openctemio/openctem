@@ -47,7 +47,12 @@ func (s *Service) syncScope(ctx context.Context, tenantID shared.ID, c *cirun.Tr
 	if s.scope == nil || c == nil {
 		return
 	}
-	in := scopeapp.CITrustScope{TrustID: c.ID, TrustName: c.Name, By: a.UserID}
+	// Entries are created as the caller, through the scope service's own
+	// decision (step-up, the organization's approval rules), and only for a
+	// caller who may change scope; anyone else can narrow, never widen.
+	in := scopeapp.CITrustScope{TrustID: c.ID, TrustName: c.Name, By: a.UserID,
+		Actor:     scopeapp.Actor{UserID: a.UserID, CanApprove: a.ScopeApprove},
+		MayCreate: a.ScopeWrite && a.UserID != ""}
 	if !wantNone {
 		in.Patterns = cirun.ScopePatterns(c)
 	}
