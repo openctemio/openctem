@@ -165,6 +165,7 @@ type Service struct {
 	stepUp    shared.RecentAuthGate
 	rules     SuppressionRules
 	modules   ModuleGuard
+	scope     ScopeLinker
 	gitlab    GitLabClients
 	identity  RepositoryIdentity
 }
@@ -208,6 +209,12 @@ type Actor struct {
 	IP        string
 	UserAgent string
 	RequestID string
+	// ScopeWrite and ScopeApprove: the caller holds
+	// attack_surface:scope:write and attack_surface:scope:approve. A trust
+	// adds repositories to scope only for a caller who may change scope, and
+	// its entries follow the organization's approval rules as that caller.
+	ScopeWrite   bool
+	ScopeApprove bool
 }
 
 func (s *Service) logAudit(ctx context.Context, tenantID shared.ID, a Actor, ev auditapp.AuditEvent) {
@@ -413,6 +420,12 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		}
 	}
 	s.auditIssued(ctx, tenantID, in, cfg, out, legacy)
+	if !legacy {
+		// A token whose audience names this organization is evidence that
+		// one of its pipelines runs under the trust's scope; a legacy
+		// audience proves nothing about this organization.
+		s.scopeSeen(ctx, tenantID, cfg, claims, out)
+	}
 	return out, nil
 }
 
