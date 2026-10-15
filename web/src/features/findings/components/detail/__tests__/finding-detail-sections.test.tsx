@@ -174,6 +174,91 @@ describe('FindingWhyItMatters', () => {
 })
 
 describe('FindingFixCard', () => {
+  it('names the nearest fix of a CI dependency and what the upgrade fixes on the asset', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          advisory: undefined,
+          component: {
+            name: 'Django',
+            version: '4.2.20',
+            ecosystem: 'pypi',
+            fixedIn: '4.2.26',
+            fixedVersions: ['5.2.8', '5.1.14', '4.2.26'],
+            manifestFile: 'app/requirements.txt',
+          },
+          packageFix: {
+            targetVersion: '4.2.30',
+            majorUpgrade: false,
+            openFindings: 3,
+            resolvesCount: 2,
+            truncated: false,
+            resolves: [
+              { id: 'a', title: 'SQL injection', severity: 'critical', cveId: 'CVE-2025-64459' },
+              { id: 'b', title: 'DoS', severity: 'high', cveId: 'CVE-B' },
+            ],
+            remaining: [{ id: 'c', title: 'Needs 5.x', severity: 'medium', cveId: 'CVE-C' }],
+            completeVersion: '5.1.14',
+            completeMajor: true,
+            completeResolves: 3,
+          },
+        })}
+      />
+    )
+    const card = screen.getByRole('region', { name: 'Fix' })
+    expect(card).toHaveTextContent('Upgrade Django4.2.204.2.26')
+    expect(card).toHaveTextContent('Also fixed in 5.2.8, 5.1.14')
+    expect(card).toHaveTextContent(
+      'Upgrading Django to 4.2.30 fixes 2 of 3 open findings of this package on this asset.'
+    )
+    expect(within(card).getByRole('link', { name: /CVE-2025-64459/ })).toHaveAttribute(
+      'href',
+      '/findings/a'
+    )
+    expect(card).toHaveTextContent(
+      'Upgrading to 5.1.14 fixes 3 of them, every one with a known fix.Major upgrade'
+    )
+  })
+
+  it('flags a major upgrade', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          component: {
+            name: 'body-parser',
+            version: '1.19.0',
+            ecosystem: 'npm',
+            fixedIn: '2.2.1',
+            fixedInMajor: true,
+          },
+        })}
+      />
+    )
+    expect(screen.getByRole('region', { name: 'Fix' })).toHaveTextContent('Major upgrade')
+  })
+
+  it('hides the plan when the finding is the only open one of its package', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          packageFix: {
+            targetVersion: '7.0.5',
+            majorUpgrade: false,
+            openFindings: 1,
+            resolvesCount: 1,
+            truncated: false,
+            resolves: [],
+            remaining: [],
+          },
+        })}
+      />
+    )
+    expect(document.querySelector('[data-slot="package-fix-plan"]')).toBeNull()
+  })
+
   it('names the upgrade and gives the npm override for a transitive package', () => {
     render(<FindingFixCard finding={finding()} />)
     const card = screen.getByRole('region', { name: 'Fix' })
