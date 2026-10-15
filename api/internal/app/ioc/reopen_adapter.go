@@ -18,6 +18,9 @@ type FindingRepo interface {
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error)
 	Update(ctx context.Context, f *vulnerability.Finding) error
 	RaiseDecisionReview(ctx context.Context, tenantID, findingID shared.ID, reason string, evidence map[string]any) (bool, error)
+	// ReopenResolved moves a resolved finding to confirmed only while it is
+	// still resolved (no lost update against a concurrent change).
+	ReopenResolved(ctx context.Context, tenantID, findingID shared.ID) (bool, error)
 }
 
 // decisionReviewIOCMatch is the review reason an IOC match raises on a
@@ -90,19 +93,22 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 		}
 		return false, nil
 	}
-	// Domain workflow only allows closed → confirmed (back to triage).
-	// The operator triages again and re-drives through in_progress /
-	// fix_applied. Forcing all closed states through this one edge
-	// keeps the transition graph simple and auditable.
-	if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, reason, nil); err != nil {
-		return false, fmt.Errorf("transition: %w", err)
+	// Only a finding closed as fixed reopens, back to triage (confirmed). The
+	// repository re-checks the status in the UPDATE, so a finding someone
+	// changed since it was read is never overwritten; the reopen and its
+	// timeline entry commit together.
+	if prev != vulnerability.FindingStatusResolved {
+		return false, nil
 	}
-	// The reopen and its timeline entry commit together.
 	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
 		Source: "ioc_correlator", Reason: "ioc_match", ActorName: "system: IOC correlator", Message: reason,
 	})
-	if err := a.findings.Update(moveCtx, f); err != nil {
+	moved, err := a.findings.ReopenResolved(moveCtx, tenantID, findingID)
+	if err != nil {
 		return false, fmt.Errorf("persist reopen: %w", err)
+	}
+	if !moved {
+		return false, nil
 	}
 
 	if a.auditor != nil {
