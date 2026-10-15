@@ -369,3 +369,44 @@ func TestTicketMapping_InboundNeverEscalatesAndSimulates(t *testing.T) {
 		t.Fatalf("simulate inbound: %v %+v", err, sim.Decision)
 	}
 }
+
+func TestTicketMapping_EngineUsesOnlyThePublishedProfileOfTheTenant(t *testing.T) {
+	f := newTMFixture(t)
+	ctx := context.Background()
+	a := f.create(t, f.tenantA, f.intgA, "security_bug")
+	fd, err := vulnerability.NewFinding(f.tenantA, shared.NewID(), vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh, "SQL injection")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.objects.findings[fd.ID()] = fd
+
+	// Nothing published yet: the built-in path applies.
+	if pc, err := f.svc.RenderFindingCreate(ctx, f.tenantA, f.intgA, "SEC", "Bug", fd.ID()); err != nil || pc != nil {
+		t.Fatalf("draft only: %v %v", pc, err)
+	}
+	if _, _, err := f.svc.Publish(ctx, f.tenantA, a.Profile.ID, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	pc, err := f.svc.RenderFindingCreate(ctx, f.tenantA, f.intgA, "sec", "bug", fd.ID())
+	if err != nil || pc == nil || pc.IssueTypeID != "10001" || pc.Fields["summary"] == nil {
+		t.Fatalf("published: %+v %v", pc, err)
+	}
+	// Another tenant (or another integration) never gets this profile.
+	if pc, err := f.svc.RenderFindingCreate(ctx, f.tenantB, f.intgA, "SEC", "Bug", fd.ID()); err != nil || pc != nil {
+		t.Fatalf("cross-tenant: %+v %v", pc, err)
+	}
+	if pc, err := f.svc.RenderFindingCreate(ctx, f.tenantA, f.intgB, "SEC", "Bug", fd.ID()); err != nil || pc != nil {
+		t.Fatalf("other integration: %+v %v", pc, err)
+	}
+	// Status: a new finding is not mapped by the preset (no move); dry run is carried.
+	st, err := f.svc.FindingStatusTarget(ctx, f.tenantA, f.intgA, "SEC", fd.ID())
+	if err != nil || st == nil || st.State != "new" || st.Target != nil || len(st.Workflow.Statuses) == 0 {
+		t.Fatalf("status: %+v %v", st, err)
+	}
+	if err := f.svc.UpdateDryRun(ctx, f.tenantA, a.Profile.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if pc, _ := f.svc.RenderFindingCreate(ctx, f.tenantA, f.intgA, "SEC", "Bug", fd.ID()); pc == nil || !pc.DryRun {
+		t.Fatalf("dry run not carried: %+v", pc)
+	}
+}
