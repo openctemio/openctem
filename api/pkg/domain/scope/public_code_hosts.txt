@@ -1,0 +1,21 @@
+# Code hosts shared by many organizations. A repository scope entry on one of
+# them must name at least a namespace (host/namespace/*): a whole-host entry
+# would claim every other organization's repositories. One host per line;
+# operators add their own with SCOPE_PUBLIC_CODE_HOSTS_EXTRA.
+github.com
+gitlab.com
+bitbucket.org
+dev.azure.com
+ssh.dev.azure.com
+codeberg.org
+gitea.com
+git.sr.ht
+sourceforge.net
+launchpad.net
+gitee.com
+framagit.org
+salsa.debian.org
+gitlab.gnome.org
+invent.kde.org
+pagure.io
+huggingface.co

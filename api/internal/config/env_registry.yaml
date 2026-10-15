@@ -492,6 +492,11 @@ vars:
     group: "Organizations and scope guardrails"
     type: list
     description: "Comma-separated domains and CIDRs that no organization may target, in addition to the built-in deny list (for example the platform's own names and ranges)."
+  - name: SCOPE_PUBLIC_CODE_HOSTS_EXTRA
+    component: api
+    group: "Organizations and scope guardrails"
+    type: list
+    description: "Comma-separated code hosts shared by many organizations, in addition to the built-in list (github.com, gitlab.com, bitbucket.org and others). A repository scope entry on such a host must name a namespace (host/namespace/*), never the whole host."
   - name: SCOPE_MAX_PUBLIC_CIDR_V4
     component: api
     group: "Organizations and scope guardrails"
