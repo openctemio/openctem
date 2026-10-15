@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
@@ -100,53 +101,106 @@ func UnverifiedClaims(raw string) (map[string]any, error) {
 
 // discoveredJWKS is the jwks_uri an issuer's discovery document named.
 type discoveredJWKS struct {
-	uri       string
-	fetchedAt time.Time
+	// fetchMu serializes fetches of this document: concurrent exchanges wait
+	// for the one in flight instead of all fetching it.
+	fetchMu sync.Mutex
+
+	// Guarded by Client.mu.
+	uri         string
+	fetchedAt   time.Time // last successful fetch
+	attemptedAt time.Time // last fetch attempt
+	lastErr     error
 }
 
 // workloadJWKSURI returns the issuer's JWKS URI from its discovery document,
 // cached for jwksTTL. The document's issuer must equal the issuer exactly and
 // the JWKS must be served over https by the issuer's own host: a discovery
 // document cannot point key retrieval somewhere else.
+//
+// When the issuer cannot be reached, the last document is used for up to
+// jwksMaxStale (as the keys are), and a failed fetch is not repeated within
+// jwksMinRefresh: an issuer outage neither stops every exchange once the
+// hour is up nor makes each exchange wait on the issuer.
 func (c *Client) workloadJWKSURI(ctx context.Context, issuer string) (string, error) {
 	c.mu.Lock()
 	if c.discovery == nil {
-		c.discovery = map[string]discoveredJWKS{}
+		c.discovery = map[string]*discoveredJWKS{}
 	}
-	if d, ok := c.discovery[issuer]; ok && c.now().Sub(d.fetchedAt) < jwksTTL {
+	d, ok := c.discovery[issuer]
+	if !ok {
+		d = &discoveredJWKS{}
+		c.discovery[issuer] = d
+	}
+	if d.uri != "" && c.now().Sub(d.fetchedAt) < jwksTTL {
+		uri := d.uri
 		c.mu.Unlock()
-		return d.uri, nil
+		return uri, nil
 	}
 	c.mu.Unlock()
 
 	if err := ValidateIssuer(issuer); err != nil {
 		return "", fmt.Errorf("issuer %w", err)
 	}
+	d.fetchMu.Lock()
+	defer d.fetchMu.Unlock()
+	c.mu.Lock()
+	switch {
+	case d.uri != "" && c.now().Sub(d.fetchedAt) < jwksTTL:
+		// Fetched by the call this one waited for.
+		uri := d.uri
+		c.mu.Unlock()
+		return uri, nil
+	case !d.attemptedAt.IsZero() && c.now().Sub(d.attemptedAt) < jwksMinRefresh && d.lastErr != nil:
+		uri, err := c.staleDiscovery(d, d.lastErr)
+		c.mu.Unlock()
+		return uri, err
+	}
+	d.attemptedAt = c.now()
+	c.mu.Unlock()
+
+	uri, err := c.fetchDiscovery(ctx, issuer)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	d.lastErr = err
+	if err != nil {
+		return c.staleDiscovery(d, err)
+	}
+	d.uri, d.fetchedAt = uri, c.now()
+	return uri, nil
+}
+
+// staleDiscovery returns the last discovered JWKS URI while it is within
+// jwksMaxStale, else ErrJWKSUnavailable. c.mu is held.
+func (c *Client) staleDiscovery(d *discoveredJWKS, err error) (string, error) {
+	if d.uri != "" && c.now().Sub(d.fetchedAt) < jwksMaxStale {
+		return d.uri, nil
+	}
+	return "", fmt.Errorf("%w: discovery: %v", ErrJWKSUnavailable, err)
+}
+
+func (c *Client) fetchDiscovery(ctx context.Context, issuer string) (string, error) {
 	body, err := c.get(ctx, strings.TrimSuffix(issuer, "/")+"/.well-known/openid-configuration")
 	if err != nil {
-		return "", fmt.Errorf("discovery: %w", err)
+		return "", err
 	}
 	var doc struct {
 		Issuer  string `json:"issuer"`
 		JWKSURI string `json:"jwks_uri"`
 	}
 	if err := json.Unmarshal(body, &doc); err != nil {
-		return "", errors.New("discovery: invalid document")
+		return "", errors.New("invalid document")
 	}
 	if doc.Issuer != issuer {
-		return "", fmt.Errorf("discovery: issuer %q does not match %q", doc.Issuer, issuer)
+		return "", fmt.Errorf("issuer %q does not match %q", doc.Issuer, issuer)
 	}
 	if err := requireHTTPS(doc.JWKSURI, true); err != nil {
-		return "", fmt.Errorf("discovery: jwks_uri %w", err)
+		return "", fmt.Errorf("jwks_uri %w", err)
 	}
 	iu, _ := url.Parse(issuer)
 	ju, _ := url.Parse(doc.JWKSURI)
 	if iu == nil || ju == nil || !strings.EqualFold(iu.Host, ju.Host) {
-		return "", errors.New("discovery: jwks_uri is not on the issuer's host")
+		return "", errors.New("jwks_uri is not on the issuer's host")
 	}
-	c.mu.Lock()
-	c.discovery[issuer] = discoveredJWKS{uri: doc.JWKSURI, fetchedAt: c.now()}
-	c.mu.Unlock()
 	return doc.JWKSURI, nil
 }
 
