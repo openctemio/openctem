@@ -14,6 +14,8 @@ export interface RemediationCampaign {
   finding_filter: Record<string, unknown>
   finding_count: number
   resolved_count: number
+  /** Findings closed as resolved (a verified fix). Done = all closed and >= 1 verified. */
+  verified_count: number
   progress: number
   risk_before: number | null
   risk_after: number | null
@@ -97,7 +99,10 @@ export function useUpdateRemediationCampaign(id: string) {
 export function useUpdateCampaignStatus(id: string) {
   return useSWRMutation(
     `/api/v1/remediation/campaigns/${id}/status`,
-    (url: string, { arg }: { arg: { status: string; version?: number } }) => patch(url, arg)
+    (
+      url: string,
+      { arg }: { arg: { status: string; version?: number; close_with_open_members?: boolean } }
+    ) => patch(url, arg)
   )
 }
 
