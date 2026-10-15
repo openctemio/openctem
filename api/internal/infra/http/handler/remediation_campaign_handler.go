@@ -179,8 +179,11 @@ func (h *RemediationCampaignHandler) ListFindings(w http.ResponseWriter, r *http
 }
 
 // UpdateStatus transitions campaign status.
-// Resolve handles POST /api/v1/remediation/campaigns/{id}/resolve — actively
-// resolves the campaign's open findings in one action (RFC-015 Phase 3).
+// Resolve handles POST /api/v1/remediation/campaigns/{id}/resolve: marks the
+// campaign's open, in-scope findings fixed in one action (fix_applied through
+// the legal steps, a note, the caller's own findings, a proof-of-fix re-check
+// per finding). It never closes a finding; every finding not updated is
+// listed with the reason.
 func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -196,12 +199,12 @@ func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
-	if req.Status != "" && req.Status != "fix_applied" && req.Status != "resolved" {
-		apierror.BadRequest("status must be fix_applied or resolved").WriteJSON(w)
+	if req.Status != "" && req.Status != "fix_applied" {
+		apierror.BadRequest("status must be fix_applied: a campaign resolve marks its findings fixed and each one is verified on its own").WriteJSON(w)
 		return
 	}
 
-	resolved, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, exposure.CampaignResolveInput{
+	res, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, exposure.CampaignResolveInput{
 		Status:                req.Status,
 		Resolution:            req.Resolution,
 		ActorID:               middleware.GetUserID(r.Context()),
@@ -213,7 +216,12 @@ func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Requ
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"resolved": resolved})
+	rows := make([]MarkFixedRow, 0, len(res.Rows))
+	for _, r := range res.Rows {
+		rows = append(rows, MarkFixedRow(r))
+	}
+	writeJSON(w, http.StatusOK, MarkFixedResponse{Updated: res.Updated, Skipped: res.Skipped, Failed: res.Failed,
+		ValidationsQueued: res.ValidationsQueued, Rows: rows})
 }
 
 func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
@@ -222,13 +230,16 @@ func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http
 
 	var req struct {
 		Status string `json:"status"`
+		// Version: the campaign version the caller saw (optional); a stale
+		// one answers 409.
+		Version *int `json:"version,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
 
-	campaign, err := h.service.UpdateCampaignStatus(r.Context(), tenantID, id, req.Status, h.buildAuditContext(r))
+	campaign, err := h.service.UpdateCampaignStatusAt(r.Context(), tenantID, id, req.Status, req.Version, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -266,6 +277,7 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		FindingFilter: req.FindingFilter,
 		AssignedTo:    req.AssignedTo,
 		AssignedTeam:  req.AssignedTeam,
+		Version:       req.Version,
 	}, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
@@ -342,6 +354,8 @@ func (h *RemediationCampaignHandler) handleError(w http.ResponseWriter, err erro
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("campaign not found").WriteJSON(w)
+	case errors.Is(err, remediation.ErrCampaignVersionConflict):
+		apierror.Conflict("the campaign was changed by someone else; reload it and try again").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
@@ -398,6 +412,9 @@ type UpdateRemCampaignRequest struct {
 	FindingFilter map[string]any  `json:"finding_filter,omitempty"`
 	AssignedTo    *string         `json:"assigned_to,omitempty"`
 	AssignedTeam  *string         `json:"assigned_team,omitempty"`
+	// Version: the campaign version the edit was made on (optional); a stale
+	// one answers 409 and nothing is saved.
+	Version *int `json:"version,omitempty"`
 }
 
 type RemediationCampaignResponse struct {
@@ -422,6 +439,9 @@ type RemediationCampaignResponse struct {
 	Tags          []string       `json:"tags"`
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
+	// Version changes on every save; send it back on PATCH to detect a
+	// concurrent change (409).
+	Version int `json:"version"`
 
 	// Ticket is the linked external tracker epic (e.g. Jira), or null when the
 	// campaign has no linked ticket. Lets the UI show/relink the epic.
@@ -451,6 +471,7 @@ func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignRespo
 		Tags:          c.Tags(),
 		CreatedAt:     c.CreatedAt(),
 		UpdatedAt:     c.UpdatedAt(),
+		Version:       c.Version(),
 	}
 }
 

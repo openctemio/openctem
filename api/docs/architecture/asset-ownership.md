@@ -39,6 +39,10 @@ counts only while the user is a member of the tenant.
 | **Responsible owner** | A user named directly by a `primary` or `secondary` row | "Assigned to me" (`assigned_to_me=true` on findings and finding groups, the My Work page), who may mark a finding `fix_applied` |
 | **Owned asset** | An asset with at least one row (user or group) | Inventory `has_owner`, Scoping `crown_jewels.with_owner`, data-quality "with owner", the risk snapshot ownership % |
 
+Finding auto-assign assigns only open, unassigned findings in the caller's
+data scope. A `confirmed` finding moves to `in_progress`; a `new` finding stays
+`new` (assignment is not triage); closed findings are never touched.
+
 The new-finding in-app notice goes to the earliest-assigned primary owner when
 that owner is a user, and to the whole tenant otherwise. A group primary owner
 is never a finding assignee: a finding is assigned to a user. Members of a group owner do not count as responsible owners for
