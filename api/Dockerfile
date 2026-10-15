@@ -107,6 +107,7 @@ ARG BUILD_TIME=""
 #   refingerprint    re-keys findings to the current identity recipe (a dry run
 #                    by default, RFC-043 §6)
 #   repomerge        merges duplicate repository assets (a dry run by default)
+#   ci-trust-scope-plan  dry run for adding existing CI trusts' repositories to scope (read-only)
 #   openctem-signer  the job signer (RFC-040 §5.6); runs as its own container
 #                    from this image, see deploy/docker-compose.job-signer.yml
 RUN --mount=type=cache,target=/root/.cache/go-build \
@@ -117,7 +118,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION} \
       -X github.com/openctemio/openctem/api/pkg/version.Commit=${COMMIT} \
       -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}" \
-    -o /app/bin/ ./cmd/server ./cmd/bootstrap-admin ./cmd/refingerprint ./cmd/repomerge ./cmd/signer \
+    -o /app/bin/ ./cmd/server ./cmd/bootstrap-admin ./cmd/refingerprint ./cmd/repomerge ./cmd/ci-trust-scope-plan ./cmd/signer \
  && mv /app/bin/signer /app/bin/openctem-signer
 
 
@@ -154,7 +155,7 @@ COPY --from=runtime-fs /out/etc/passwd /out/etc/group /etc/
 
 # Everything below is owned by root and read-only to the runtime users: the API
 # cannot rewrite its own binaries, spec, migrations or configs.
-COPY --from=builder /app/bin/server /app/bin/bootstrap-admin /app/bin/refingerprint /app/bin/repomerge /app/bin/openctem-signer ./
+COPY --from=builder /app/bin/server /app/bin/bootstrap-admin /app/bin/refingerprint /app/bin/repomerge /app/bin/ci-trust-scope-plan /app/bin/openctem-signer ./
 
 # The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
 # cmd/server/handlers.go NewDocsHandler).
