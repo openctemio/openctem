@@ -30,6 +30,7 @@ import (
 type InvitationTeams interface {
 	CheckInvitationTeams(ctx context.Context, in accesscontrol.InvitationTeamCheck) ([]accesscontrol.InvitationTeam, error)
 	ApplyInvitationTeams(ctx context.Context, tenantID string, userID shared.ID, groupIDs []string)
+	InvitationTeamNames(ctx context.Context, tenantID string, groupIDs []string) []accesscontrol.InvitationTeam
 }
 
 // SetInvitationTeams wires teams on invitations. Without it an invitation

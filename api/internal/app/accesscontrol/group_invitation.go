@@ -140,3 +140,22 @@ func (s *GroupService) ApplyInvitationTeams(ctx context.Context, tenantID string
 	}
 	s.invalidateMembers(ctx, tid, []shared.ID{userID})
 }
+
+// InvitationTeamNames returns the active teams among groupIDs that belong to
+// tenantID, with their names, for the acceptance page. Unknown ids and other
+// organizations' teams are left out.
+func (s *GroupService) InvitationTeamNames(ctx context.Context, tenantID string, groupIDs []string) []InvitationTeam {
+	out := make([]InvitationTeam, 0, len(groupIDs))
+	for _, raw := range groupIDs {
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			continue
+		}
+		g, err := s.groupForTenant(ctx, id, tenantID)
+		if err != nil || !g.IsActive() {
+			continue
+		}
+		out = append(out, InvitationTeam{ID: g.ID().String(), Name: g.Name()})
+	}
+	return out
+}
