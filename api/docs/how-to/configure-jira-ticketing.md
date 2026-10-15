@@ -52,19 +52,28 @@ ticketed in the target project is not re-created.
 
 ## 4. (Optional) Inbound webhook for status sync
 
-To have Jira transitions flow back, point a Jira webhook at:
+Each Jira integration has its own inbound webhook. In **Settings > Integrations >
+Ticketing**, open the integration's menu and choose **Inbound webhook**:
 
-```
-POST /api/v1/webhooks/incoming/jira?tenant=<tenant-id>
-```
+1. Copy the **webhook URL** (`https://<your-console>/hooks/jira-integrations/<integration-id>`).
+   The URL names this one integration, so it can only ever change findings of
+   your organization.
+2. Click **Generate a secret** and copy it. It is shown once: the platform stores
+   it encrypted and never shows it again. Alternatively, paste the secret Jira
+   generated into **Or enter the secret from Jira** (16 to 256 characters, no
+   spaces).
+3. In Jira (**System > WebHooks > Create a WebHook**), paste the URL and the
+   secret, and select the **Issue updated** event. Jira then signs every delivery
+   with `X-Hub-Signature: sha256=<HMAC-SHA256 of the body>`.
 
-> **Gotcha — inbound HMAC.** The endpoint verifies an HMAC signature in the
-> **`X-OpenCTEM-Signature`** header over the raw body and **fails closed** if no
-> secret resolves. Stock Jira Cloud webhooks cannot produce that header, and there
-> is currently **no UI field to set a per-tenant webhook secret**. In practice you
-> must set the platform-wide `WEBHOOKS_JIRA_SECRET` and sign requests via a proxy
-> in front of the endpoint, otherwise inbound sync rejects everything. Outbound
-> (OpenCTEM → Jira) needs no webhook and works once **status sync** is on.
+The platform refuses a delivery that is not signed with this integration's
+secret, a replay of a delivery it already processed
+(`X-Atlassian-Webhook-Identifier`, or the body when the header is absent), and a
+delivery whose payload `timestamp` is more than an hour old. Generating or
+entering a new secret stops the old one at once. Both need the
+`integrations:manage` permission and a recent sign-in (step-up).
+
+Outbound (OpenCTEM to Jira) needs no webhook and works once **status sync** is on.
 
 ## Troubleshooting
 
@@ -73,7 +82,7 @@ POST /api/v1/webhooks/incoming/jira?tenant=<tenant-id>
 | Integration "connected" but nothing pushes | **Bidirectional status sync** is off (default) — turn it on in Configure. |
 | Project picker is empty / shows a text box | Credentials can't list projects (non-Cloud or wrong token) — enter the key manually, or fix the token. |
 | Findings never get a ticket automatically | Ticket creation is on-demand (Create Jira Epic/Ticket) or via routing rules — there's no blanket auto-create. |
-| Inbound transitions don't reflect | The HMAC gotcha above — inbound rejects unsigned/unknown-secret requests (fails closed). |
+| Inbound transitions don't reflect | The Jira webhook has no secret, another integration's secret, or the old secret after a rotation: deliveries are refused (fails closed). Set the secret again in **Inbound webhook** and in Jira. |
 | Nothing happens and no error | A misconfigured integration (e.g. missing email) is skipped and logged, not surfaced — check the connection fields. |
 
 > **GitHub Issues** is available as an alternate ticket target (`provider=github`)
