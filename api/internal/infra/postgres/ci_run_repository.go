@@ -129,6 +129,27 @@ func (r *CIRunRepository) UpdateTrustConfig(ctx context.Context, c *cirun.TrustC
 	return requireOneRow(res, cirun.ErrTrustConfigNotFound)
 }
 
+// TrustConfigTenants lists the tenants that have trust configurations
+// (the CI trust scope backfill walks them one by one).
+func (r *CIRunRepository) TrustConfigTenants(ctx context.Context) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT tenant_id FROM ci_trust_configs ORDER BY tenant_id`)
+	if err != nil {
+		return nil, fmt.Errorf("list trust configuration tenants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if tid, err := shared.IDFromString(id); err == nil {
+			out = append(out, tid)
+		}
+	}
+	return out, rows.Err()
+}
+
 // DeleteTrustConfig removes a configuration of the tenant. Its runs stay.
 func (r *CIRunRepository) DeleteTrustConfig(ctx context.Context, tenantID, id shared.ID) error {
 	res, err := r.db.ExecContext(ctx, `DELETE FROM ci_trust_configs WHERE tenant_id = $1 AND id = $2`,
