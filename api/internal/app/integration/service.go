@@ -73,7 +73,9 @@ type IntegrationService struct {
 	// SetRepoImportRepos). nil when import is not configured.
 	assetRepo   assetdom.Repository
 	repoExtRepo assetdom.RepositoryExtensionRepository
-	branchRepo  branchdom.Repository
+	// repoIdentity finds repositories by their code host id (optional).
+	repoIdentity RepositoryIdentity
+	branchRepo   branchdom.Repository
 
 	// ticketingTester verifies a ticketing integration's credentials against
 	// the provider (Jira today). Without it a ticketing integration can never
