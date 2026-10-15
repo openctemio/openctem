@@ -282,15 +282,45 @@ func (s *Service) activateProvenEntry(ctx context.Context, tenantID, targetID sh
 	}
 	now := time.Now().UTC()
 	before := ledgerEntryOf(t, now)
-	if err := s.widenEntry(ctx, t, Actor{}, now); err != nil {
+	// The run is not a person: it puts the entry into effect only while the
+	// organization needs no approvals for it, read now (scan approval may
+	// have turned Strict since the trust was saved). Otherwise the entry
+	// waits for its approvals like any other widening.
+	approvals, err := s.provenEntryApprovals(ctx, t)
+	if err != nil {
 		return err
 	}
+	t.Widen("", approvals, now)
 	if err := s.commitEntry(ctx, before, t, false, func() error { return s.targetRepo.Update(ctx, t) }); err != nil {
 		return fmt.Errorf("activate proven scope entry: %w", err)
+	}
+	if approvals > 0 {
+		s.NotifyAdmins(ctx, tenantID, "A CI scope entry waits for approval",
+			fmt.Sprintf("A verified pipeline ran under %s; it waits for %d approval(s) before it is in scope.", t.Pattern(), approvals))
+		s.logger.Info("proven ci scope entry waits for approval", "id", targetID.String(), "approvals", approvals)
+		return nil
 	}
 	s.scheduleJoin(tenantID)
 	s.logger.Info("scope entry proven by a verified ci run", "id", targetID.String())
 	return nil
+}
+
+// provenEntryApprovals is how many approvals the organization requires, now,
+// for the entry to take effect (0 only when it needs none). It fails closed:
+// an unreadable policy is an error, never zero.
+func (s *Service) provenEntryApprovals(ctx context.Context, t *scopedom.Target) (int, error) {
+	p, err := s.loadPolicy(ctx, t.TenantID())
+	if err != nil {
+		return 0, fmt.Errorf("read scope approval policy: %w", err)
+	}
+	if !p.twoPerson() {
+		return 0, nil
+	}
+	n := p.approvals(t.MaxTier(), false)
+	if n < 1 {
+		n = 1
+	}
+	return n, nil
 }
 
 // ciScopeRequiresProof reads the organization's opt-in setting (off when
