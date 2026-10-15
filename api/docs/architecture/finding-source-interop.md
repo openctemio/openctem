@@ -65,13 +65,14 @@ can close the matching finding. `INGEST_VEX` sets the mode:
 | Mode | Effect |
 |---|---|
 | `dry_run` (default) | count, log and audit (`ingest.vex_dry_run`) what would close; no state change |
-| `enforce` | the finding becomes `false_positive`, `resolution_method = 'vex_not_affected'`, `resolution` = the justification and the source of the statement; audited as `ingest.vex_applied` with the finding ids |
+| `enforce` | a false positive needs four-eyes, so the statement **requests** it: a pending approval (`requested_by_actor = 'vex'`, justification = the justification and the source of the statement) with an `approval_requested` timeline entry; a person with `findings:approve` decides. A finding with a pending request, or whose earlier VEX request was rejected or canceled, gets none. Audited as `ingest.vex_applied` with the finding ids |
 | `off` | statements are stored, nothing else |
 
 Guards, the same as source-asserted resolve (RFC-047 §7.6): the report is bound
 to a command assigned to the submitting sensor; **the report's tool is the
 command's tool and the statement's asset is one the command covers** (a
-connector sync covers what its source owns), so a report never speaks for an
+connector sync, which has no target list, only for assets the same report
+carries), so a report never speaks for an
 asset its command did not scan; the finding is the tenant's, on the stated
 asset, under the stated key, **last reported by that same tool**, open (`new`,
 `confirmed`, `in_progress`, `fix_applied`) and not from a human source
