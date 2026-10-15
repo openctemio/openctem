@@ -30,6 +30,7 @@ import {
   type SensorToolSettings,
 } from '@/lib/api/sensor-tool-settings-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { scrollIntoContainer } from '@/lib/scroll-into-container'
 import { cn } from '@/lib/utils'
 
 import {
@@ -752,7 +753,7 @@ export function ToolSettingsList({
         const el = Array.from(
           listRef.current?.querySelectorAll<HTMLElement>('[data-tool]') ?? []
         ).find((n) => n.dataset.tool === opened[0])
-        el?.scrollIntoView?.({ block: 'start' })
+        scrollIntoContainer(el, 'start')
       })
     }
   }
@@ -777,7 +778,7 @@ export function ToolSettingsList({
   useEffect(() => {
     if (q === '') return
     const el = listRef.current?.querySelector<HTMLElement>('[data-search-match="true"]')
-    el?.scrollIntoView?.({ block: 'center' })
+    scrollIntoContainer(el, 'center')
   }, [q])
 
   const empty = useMemo(() => new Set<string>(), [])
