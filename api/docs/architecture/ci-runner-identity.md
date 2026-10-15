@@ -57,10 +57,30 @@ graph TD
 
 | Route | Chain |
 |---|---|
-| `POST /api/v1/ci/oidc/exchange` | per-IP token-exchange limit (60/min, shared store) → handler (32 KB body, unknown fields refused) |
+| `POST /api/v1/ci/oidc/exchange` | per-address backstop (600/min) → per pipeline identity limit (60/min per organization + token issuer at one address; claims read unverified, only to pick the bucket) → handler (32 KB body, unknown fields refused). Both in the shared store; see "Exchange rate limit" below |
 | `POST /api/v1/ci/trust-configs/preview` | session tenant chain → `scans` module → `scans:ci:write` → per-person limit (10/min) |
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
+
+### Exchange rate limit
+
+Hosted CI runners put many customers behind one egress address, so one strict
+budget per address let one busy fleet, or an attacker on the same runners,
+throttle every other organization's jobs. The exchange counts instead:
+
+- per address, 600 a minute, before the body is read: the flood backstop;
+- per organization (`tenant_id`) and token issuer (`iss`, read without
+  checking the signature) at that address, 60 a minute. The claims only pick
+  a bucket and grant nothing; invented ids get fresh buckets but stay inside
+  the address backstop. The address is part of the key so that someone who
+  knows an organization's id (it appears in public pipeline files) cannot use
+  up that organization's budget from elsewhere with junk tokens naming it.
+  A request whose body or token cannot be read falls in one bucket per
+  address.
+
+Both need the real client address: behind the built-in gateway and a front
+proxy, set the gateway's `OPENCTEM_TRUSTED_PROXIES` (and
+`OPENCTEM_CLIENT_IP_HEADERS` behind a Cloudflare Tunnel).
 
 Budgets beyond the chains: at most 200 reports per run (`cirun.MaxRunReports`,
 `409`), at most 300 runs per pipeline per hour (`cirun.MaxPipelineRunsPerHour`,
