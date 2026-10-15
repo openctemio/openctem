@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner feedback on the invite dialog, 2026-10-15). Implemented: §2 role templates (minimal built-in roles, versioned library, summaries), §3.1 ownership transfer (API). In implementation: §3 escalation safety at acceptance, §4 invitations for people outside the organization, §5 invitation lifecycle, §6 console |
+| Status | Accepted (owner feedback on the invite dialog, 2026-10-15). Implemented: §2 role templates (minimal built-in roles, versioned library, summaries), §3.1–§3.5 escalation safety and ownership transfer, §4 invitations for people outside the organization, §5 invitation lifecycle with teams on an invitation and the acceptance page, §6 console |
 | Scope | api (roles, invitations, token mint), web (invite dialog, roles, accept page, authentication settings) |
 | Related | RFC-050 (asset access model), RFC-058 (external members, amended by §4), RFC-065 (bug-bounty programs: the Researcher role), RFC-022 (platform admin console) |
 
@@ -104,9 +104,9 @@ template response carries it as `summary`.
 3. **Owner-only powers are not permissions** (§2.2).
 4. **Last owner.** The membership owner cannot be demoted, suspended,
    offboarded or lose the owner role; ownership changes only by transfer.
-5. **Ownership transfer**: see §3.1.
+5. **Ownership transfer**: see below.
 
-### 3.1 Ownership transfer
+### Ownership transfer (§3.5)
 
 Ownership is the one power no role carries, so it moves only by an explicit
 transfer with an accept step.
@@ -207,6 +207,7 @@ domain, nor which.
 | Existing account | the invitee signs in as the invited address; other memberships are untouched and the host learns only a home organization's name |
 | SSO and SCIM | invitations stay possible; SSO enforcement then needs an exception or a trust for an outside person, which the pre-check reports |
 | After removal | an offboarded person may be invited again and starts from nothing; a suspended one is reactivated instead |
+| Teams | the inviter may add the invitee to up to 20 teams (`group_ids` on create and preview), so a newcomer does not join with no data. Each team follows the rules for adding a member to it, for the inviter: same organization, active, every role it carries grantable by the inviter, a team carrying a privileged role only by the owner (with step-up), an external team only with an end of access (which the team membership takes), never full data access through a team for an outside person. A team carrying a role above member makes an outside invitee privileged (inviter step-up, invitee two-factor), like the role itself. At acceptance the teams are checked again for the inviter; a team they can no longer add to, or one deleted since, voids the invitation and nothing is granted. Migration `002186`. |
 | Acceptance page | organization, inviter, the roles with their risk, outside-member notice, end of access, and the two-factor step when required |
 
 ## 6. Console
@@ -235,6 +236,6 @@ domain, nor which.
 | An organization learns about other organizations through the invite form | the pre-check reports only inside/outside/personal (§4.3) |
 | Invitation flooding or quota evasion | rate limits, resend cooldown, revocations still count (§5) |
 | A trusted organization's people exceed the agreed ceiling | the trust's `max_role` still applies (§4.2) |
-| A hijacked owner session hands the organization away, or a member takes it | transfer needs the owner's step-up, and acceptance the member's own step-up and two-factor authentication (§3.1) |
-| Ownership goes to someone another organization controls | a managed member cannot be asked; an unmanaged outsider becomes internal only with the owner's explicit confirmation (§3.1) |
-| Two transfers, or a transfer and a cancellation, race | one pending request per organization; acceptance locks the request and memberships and verifies exactly one owner before committing (§3.1) |
+| A hijacked owner session hands the organization away, or a member takes it | transfer needs the owner's step-up, and acceptance the member's own step-up and two-factor authentication (§3.5) |
+| Ownership goes to someone another organization controls | a managed member cannot be asked; an unmanaged outsider becomes internal only with the owner's explicit confirmation (§3.5) |
+| Two transfers, or a transfer and a cancellation, race | one pending request per organization; acceptance locks the request and memberships and verifies exactly one owner before committing (§3.5) |
