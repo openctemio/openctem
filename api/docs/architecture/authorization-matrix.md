@@ -635,6 +635,9 @@ These routes require the tenant ID in the URL path and use database-based member
 | `GET /api/v1/tenants/{tenant}/members/{id}/access-report` | Team admin+ (`members:read`): what the member holds and owns |
 | `POST /api/v1/tenants/{tenant}/members/{id}/offboard` | Team admin+ (`members:write`); **owner only when the target is an administrator**; reassignment targets must be active members of the same organization |
 | `POST /api/v1/tenants/{tenant}/members/{id}/erase` | **Team owner only**; only after offboarding and when the person belongs to no other organization |
+| `POST /api/v1/organization/ownership-transfer` | **owner only** (`RequireOwner` + service check) + **step-up**; the new owner is an active person of the same organization with two-factor on, not managed by another organization (RFC-095 §3.1) |
+| `DELETE /api/v1/organization/ownership-transfer` | **owner only** |
+| `GET /api/v1/organization/ownership-transfer` · `POST .../approve` · `POST .../reject` | any member at the route (`team:read`); the service answers 404 unless the caller is the owner who asked (read) or the member asked (read, approve, reject); approve needs **step-up** and re-checks everything in one transaction |
 | `POST /api/v1/tenants/{tenant}/members/{id}/reset-2fa` | Team admin+; **owner only when the target is an owner or administrator**; never the caller themself; the caller needs the same authority in **every other organization** the target belongs to (the factor is account-wide). See `user-two-factor-authentication.md` › Recovery |
 | `POST /api/v1/tenants/{tenant}/invitations` | Team admin+ |
 | `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |

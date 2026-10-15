@@ -204,6 +204,7 @@ tenant_members
 tenant_module_grace
 tenant_module_grants
 tenant_modules
+tenant_ownership_transfers
 tenant_plan_overrides
 tenant_plans
 tenant_tool_configs

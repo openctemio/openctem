@@ -147,6 +147,13 @@ const (
 	// ActionMemberAccessChanged: the end date of an external member's access
 	// was changed (RFC-058).
 	ActionMemberAccessChanged Action = "member.access_changed"
+	// Ownership transfer (RFC-095): the owner asked a member to take the
+	// organization; the member accepted (the owner changed), declined, or
+	// the owner canceled.
+	ActionMemberOwnershipTransferRequested Action = "member.ownership_transfer_requested"
+	ActionMemberOwnershipTransferred       Action = "member.ownership_transferred"
+	ActionMemberOwnershipTransferCanceled  Action = "member.ownership_transfer_canceled"
+	ActionMemberOwnershipTransferDeclined  Action = "member.ownership_transfer_declined"
 
 	// Invitation actions
 	ActionInvitationCreated  Action = "invitation.created"
@@ -672,6 +679,8 @@ func (a Action) IsValid() bool {
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
 		ActionMemberAccessChanged,
+		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
+		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
 		ActionComponentCreated, ActionComponentUpdated, ActionComponentDeleted,
@@ -785,7 +794,9 @@ func (a Action) Category() string {
 		return "tenant"
 	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
-		ActionMemberAccessChanged:
+		ActionMemberAccessChanged,
+		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
+		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined:
 		return "member"
 	case ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired:
 		return "invitation"
@@ -1061,6 +1072,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSensorRevoked, ActionSensorDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionAuditChainRebaselined, ActionMemberDataErased, ActionSuppressionRuleSelfApproved,
+		ActionMemberOwnershipTransferred,
 		ActionExposureDispositionSelfApproved:
 		return SeverityCritical
 
@@ -1075,6 +1087,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthStepUpFailed,
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
+		ActionMemberOwnershipTransferRequested,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
