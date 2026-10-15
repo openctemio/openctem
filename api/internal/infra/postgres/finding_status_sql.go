@@ -1,8 +1,6 @@
 package postgres
 
 import (
-	"strings"
-
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -79,11 +77,7 @@ func platformFromSQLEach(targets []vulnerability.FindingStatus, from ...vulnerab
 
 // sqlStatusList renders statuses as a SQL list: ('a', 'b').
 func sqlStatusList(statuses []vulnerability.FindingStatus) string {
-	quoted := make([]string, len(statuses))
-	for i, s := range statuses {
-		quoted[i] = "'" + strings.ReplaceAll(string(s), "'", "''") + "'"
-	}
-	return "(" + strings.Join(quoted, ", ") + ")"
+	return vulnerability.StatusListSQL(statuses)
 }
 
 // statusStrings is statuses as strings, for a pq.Array parameter.

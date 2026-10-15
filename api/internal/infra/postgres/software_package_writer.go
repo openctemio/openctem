@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // SoftwarePackageWriter writes package observations: products and versions
@@ -418,7 +419,7 @@ func refreshRepositoryComponentCounts(ctx context.Context, q pkgQueryer, tenantI
 			vulnerable_component_count = (SELECT count(DISTINCT s.software_version_id) FROM asset_software s
 				JOIN findings f ON f.tenant_id = s.tenant_id AND f.asset_id = s.asset_id
 				 AND f.component_id = s.software_version_id
-				 AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
+				 AND `+vulnerability.OpenStatusSQL("f.status")+`
 				WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.source = 'package' AND s.superseded_at IS NULL)
 		WHERE ar.asset_id = $2
 		  AND EXISTS (SELECT 1 FROM assets a WHERE a.id = $2 AND a.tenant_id = $1)`,
