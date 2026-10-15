@@ -98,6 +98,36 @@ type QueueResult struct {
 	Changed int // findings whose stored priority or SLA deadline changed
 }
 
+// ChangeImpact is what a recompute did to open findings.
+type ChangeImpact struct {
+	Checked            int // open findings recomputed
+	Changed            int // findings whose class moved
+	Raised             int // moved to a higher priority
+	RaisedToP0         int // of those, now P0
+	Lowered            int // moved to a lower priority
+	DeadlinesTightened int // SLA deadlines that moved earlier
+}
+
+// Add sums o into c.
+func (c *ChangeImpact) Add(o ChangeImpact) {
+	c.Checked += o.Checked
+	c.Changed += o.Changed
+	c.Raised += o.Raised
+	c.RaisedToP0 += o.RaisedToP0
+	c.Lowered += o.Lowered
+	c.DeadlinesTightened += o.DeadlinesTightened
+}
+
+// ChangeSummary is the one notification a scoring change sends a tenant
+// once its recompute has drained.
+type ChangeSummary struct {
+	TenantID shared.ID
+	ChangeID int64
+	Source   string
+	Summary  string
+	ChangeImpact
+}
+
 // PriorityQueue is the durable finding-priority queue: one row per asset,
 // claimed fairly across tenants.
 type PriorityQueue interface {
@@ -117,4 +147,9 @@ type PriorityQueue interface {
 	// StampVersion records the version the given open findings were computed
 	// with. Closed findings are never stamped (they stay frozen).
 	StampVersion(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID, version int64) error
+	// RecordImpact adds a pass's counts to a scoring change's summary row.
+	RecordImpact(ctx context.Context, tenantID shared.ID, changeID int64, impact ChangeImpact) error
+	// ClaimDrainedSummaries marks as notified, and returns, up to limit
+	// summaries whose change has no asset left in the queue.
+	ClaimDrainedSummaries(ctx context.Context, limit int) ([]ChangeSummary, error)
 }

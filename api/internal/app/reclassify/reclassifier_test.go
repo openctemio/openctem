@@ -77,6 +77,7 @@ type fakeQueue struct {
 	items    []scoring.QueueItem
 	stamped  map[shared.ID]int64
 	requeued []shared.ID
+	impacts  []scoring.ChangeSummary
 }
 
 func (q *fakeQueue) Claim(_ context.Context, _, _ int) ([]scoring.QueueItem, error) {
@@ -105,6 +106,18 @@ func (q *fakeQueue) Stats(context.Context) (scoring.QueueStats, error) {
 }
 
 func (q *fakeQueue) EnqueueReconcile(context.Context, time.Duration) (int64, error) { return 0, nil }
+
+func (q *fakeQueue) RecordImpact(_ context.Context, tid shared.ID, change int64, im scoring.ChangeImpact) error {
+	q.impacts = append(q.impacts, scoring.ChangeSummary{TenantID: tid, ChangeID: change, ChangeImpact: im})
+	return nil
+}
+
+// ClaimDrainedSummaries hands back every recorded impact once.
+func (q *fakeQueue) ClaimDrainedSummaries(context.Context, int) ([]scoring.ChangeSummary, error) {
+	out := q.impacts
+	q.impacts = nil
+	return out, nil
+}
 
 type fakeVersions struct{ v int64 }
 
@@ -167,7 +180,7 @@ func TestReclassify_ClosedFindingStaysFrozen(t *testing.T) {
 	r.SetSLARecomputer(sla)
 	r.SetQueue(q, fakeVersions{v: 7})
 
-	if _, _, err := r.ReclassifyAssets(context.Background(), shared.NewID(), []shared.ID{assetID}); err != nil {
+	if _, err := r.ReclassifyAssets(context.Background(), shared.NewID(), []shared.ID{assetID}); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range append(append(cls.seen, sla.applied...), repo.updated...) {
@@ -194,12 +207,16 @@ func TestReclassify_RecomputesSLAAndPersistsChanges(t *testing.T) {
 	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, &fakeClassifier{}, logger.NewNop())
 	r.SetSLARecomputer(sla)
 
-	ids, changed, err := r.reclassifyAsset(context.Background(), shared.NewID(), assetID)
+	ids, im, err := r.reclassifyAsset(context.Background(), shared.NewID(), assetID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ids) != 2 || changed != 2 || len(sla.applied) != 2 || len(repo.updated) != 2 {
-		t.Fatalf("ids=%d changed=%d sla=%d updated=%d, want 2 each", len(ids), changed, len(sla.applied), len(repo.updated))
+	if len(ids) != 2 || im.Checked != 2 || len(sla.applied) != 2 || len(repo.updated) != 2 {
+		t.Fatalf("ids=%d checked=%d sla=%d updated=%d, want 2 each", len(ids), im.Checked, len(sla.applied), len(repo.updated))
+	}
+	// A first classification is not a priority change.
+	if im.Changed != 0 {
+		t.Fatalf("changed = %d, want 0 for first classifications", im.Changed)
 	}
 }
 
@@ -214,12 +231,12 @@ func TestReclassify_UnchangedIsNotRewrittenButStamped(t *testing.T) {
 	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, &fakeClassifier{}, logger.NewNop())
 	r.SetQueue(q, fakeVersions{v: 3})
 
-	checked, changed, err := r.ReclassifyAssets(context.Background(), shared.NewID(), []shared.ID{assetID})
+	im, err := r.ReclassifyAssets(context.Background(), shared.NewID(), []shared.ID{assetID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checked != 1 || changed != 0 || len(repo.updated) != 0 {
-		t.Fatalf("checked=%d changed=%d updated=%d", checked, changed, len(repo.updated))
+	if im.Checked != 1 || im.Changed != 0 || len(repo.updated) != 0 {
+		t.Fatalf("checked=%d changed=%d updated=%d", im.Checked, im.Changed, len(repo.updated))
 	}
 	if q.stamped[same.ID()] != 3 {
 		t.Fatalf("stamp = %d, want 3", q.stamped[same.ID()])
@@ -254,8 +271,60 @@ func TestProcessQueue_FailedPassIsRequeuedAndNotStamped(t *testing.T) {
 
 func TestReclassify_MissingAssetIsASoftMiss(t *testing.T) {
 	r := NewReclassifier(&fakeFindingRepo{}, &fakeAssetRepo{err: shared.ErrNotFound}, &fakeClassifier{}, logger.NewNop())
-	ids, n, err := r.reclassifyAsset(context.Background(), shared.NewID(), shared.NewID())
-	if err != nil || n != 0 || len(ids) != 0 {
-		t.Fatalf("ids=%v n=%d err=%v", ids, n, err)
+	ids, im, err := r.reclassifyAsset(context.Background(), shared.NewID(), shared.NewID())
+	if err != nil || im.Checked != 0 || len(ids) != 0 {
+		t.Fatalf("ids=%v im=%+v err=%v", ids, im, err)
 	}
+}
+
+type captureSummaries struct{ got []scoring.ChangeSummary }
+
+func (c *captureSummaries) PublishScoringSummary(_ context.Context, s scoring.ChangeSummary) error {
+	c.got = append(c.got, s)
+	return nil
+}
+
+// A pass queued by a scoring change records its counts on the change and
+// sends one summary; a pass queued by anything else records nothing.
+func TestProcessQueue_ScoringChangeSendsOneSummary(t *testing.T) {
+	tid := shared.NewID()
+	a1, a2, a3 := shared.NewID(), shared.NewID(), shared.NewID()
+	f1, f2 := newFinding(t, a1), newFinding(t, a2)
+	f1.SetPriorityClassification(vulnerability.PriorityP3, "before")
+	f2.SetPriorityClassification(vulnerability.PriorityP3, "before")
+	change := int64(42)
+	q := &fakeQueue{items: []scoring.QueueItem{
+		{TenantID: tid, AssetID: a1, Reason: scoring.ReasonScoringChange, ScoringChangeID: &change},
+		{TenantID: tid, AssetID: a2, Reason: scoring.ReasonScoringChange, ScoringChangeID: &change},
+		{TenantID: tid, AssetID: a3, Reason: scoring.ReasonNewFinding},
+	}}
+	repo := &perAssetRepo{byAsset: map[shared.ID][]*vulnerability.Finding{a1: {f1}, a2: {f2}}}
+	sum := &captureSummaries{}
+	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, &fakeClassifier{}, logger.NewNop())
+	r.SetQueue(q, fakeVersions{v: 9})
+	r.SetSummaryPublisher(sum)
+
+	if _, err := r.ProcessQueue(context.Background(), 10, 10); err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.got) != 1 {
+		t.Fatalf("summaries = %d, want exactly 1", len(sum.got))
+	}
+	got := sum.got[0]
+	if got.ChangeID != change || got.TenantID != tid || got.Changed != 2 || got.Raised != 2 || got.RaisedToP0 != 0 {
+		t.Fatalf("summary = %+v, want 2 raised for change 42", got)
+	}
+}
+
+// perAssetRepo serves each asset its own findings.
+type perAssetRepo struct {
+	fakeFindingRepo
+	byAsset map[shared.ID][]*vulnerability.Finding
+}
+
+func (r *perAssetRepo) List(_ context.Context, f vulnerability.FindingFilter, _ vulnerability.FindingListOptions, p pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+	if p.Page > 1 || f.AssetID == nil {
+		return pagination.Result[*vulnerability.Finding]{}, nil
+	}
+	return pagination.Result[*vulnerability.Finding]{Data: r.byAsset[*f.AssetID]}, nil
 }
