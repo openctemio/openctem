@@ -816,6 +816,10 @@ export interface Finding {
   // Timestamps
   discoveredAt: string
   resolvedAt?: string
+  /** Why it is closed (lib/closure.ts); absent while open. */
+  closureReason?: string
+  /** How a resolve was proven. */
+  verification?: string
   verifiedAt?: string
   createdAt: string
   updatedAt: string
@@ -1297,18 +1301,28 @@ export interface ApiApproval {
   /** Empty when a platform actor made the request (see requested_by_actor). */
   requested_by: string
   /**
+   * The requester's display name (approval lists); absent for an actor
+   * request and for a requester who is no longer a member.
+   */
+  requested_by_name?: string
+  /**
    * Set (`ai_triage`) when AI triage proposed the change instead of a person.
    * Its justification is model output: show it as plain text only.
    */
   requested_by_actor?: string
   justification: string
+  /** The closure reason the request applies (absent on older requests). */
+  closure_reason?: string
   approved_by?: string
   approved_at?: string
   rejected_by?: string
   rejected_at?: string
   rejection_reason?: string
   status: ApprovalStatus
+  /** End of an accepted risk (accepted-risk requests only). */
   expires_at?: string
+  /** The latest moment a pending request can be decided; it expires after. */
+  decide_by?: string
   created_at: string
 }
 

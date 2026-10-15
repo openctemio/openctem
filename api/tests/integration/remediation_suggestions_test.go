@@ -138,7 +138,7 @@ func TestRemediationSuggestions_ProposeNeverCreate(t *testing.T) {
 	assert.Greater(t, got.Version, s.Version)
 
 	// The findings close: the suggestion expires.
-	r.exec(`UPDATE findings SET status = 'resolved' WHERE tenant_id = $1`, r.tenant.String())
+	r.exec(`UPDATE findings SET status = 'resolved', closure_reason = 'fixed', verification = 'none' WHERE tenant_id = $1`, r.tenant.String())
 	st = r.run()
 	assert.Equal(t, 1, st.Expired)
 	assert.Empty(t, r.list(ctx))
