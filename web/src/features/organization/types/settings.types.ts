@@ -206,23 +206,70 @@ export interface RiskScoringSettings {
   floor_unowned_at_p2?: boolean
 }
 
-export interface RiskScorePreviewItem {
+/** Assets that move from one risk band to another. */
+export interface RiskBandChange {
+  from: string
+  to: string
+  count: number
+}
+
+/** One listed asset of a scoring preview (the largest changes you may see). */
+export interface RiskImpactAsset {
   asset_id: string
   asset_name: string
   asset_type: string
   current_score: number
   new_score: number
-  delta: number
+  current_level: string
+  new_level: string
 }
 
-export interface PreviewResponse {
-  assets: RiskScorePreviewItem[]
-  sample_count: number
+/** What applying new risk scoring settings would do to every asset. */
+export interface RiskImpact {
   total_assets: number
+  changed: number
+  raised: number
+  lowered: number
+  changed_bands: number
+  band_changes: RiskBandChange[]
+  top_changes: RiskImpactAsset[]
+}
+
+/** Open findings that move from one priority class to another. */
+export interface PriorityClassChange {
+  from: string
+  to: string
+  count: number
+}
+
+/** What a change of the ownership floor would do to the open findings. */
+export interface PriorityImpact {
+  open_findings: number
+  changed: number
+  raised: number
+  lowered: number
+  class_changes: PriorityClassChange[]
+  deadlines_tightened: number
+  tickets_affected: number
+  manual_overrides_kept: number
+}
+
+/** POST /settings/risk-scoring/preview: a whole-organization dry run. */
+export interface RiskScoringPreviewResponse {
+  assets: RiskImpact
+  affects_priority: boolean
+  findings?: PriorityImpact
+}
+
+/** PATCH /settings/risk-scoring: the recompute runs in the background. */
+export interface UpdateRiskScoringResponse {
+  config: RiskScoringSettings
+  recompute: 'queued'
+  scoring_version?: number
 }
 
 export interface RecalculateResponse {
-  assets_updated: number
+  assets_queued: number
 }
 
 export interface PresetInfo {

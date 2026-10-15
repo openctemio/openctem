@@ -133,6 +133,33 @@ timeline entry (database trigger, whatever wrote the deadline) with both
 deadlines, both classes and the reason (`priority_raised` or
 `sla_policy_changed`).
 
+## Preview before apply
+
+Saving risk scoring settings in the console opens a review first:
+`POST /tenants/{tenant}/settings/risk-scoring/preview` (team admin,
+`settings:write`) runs a dry run over **every** live asset of the
+organization with the same engine and inputs the asset-risk-score worker uses
+after the change, and nothing is written:
+
+- assets: total, how many scores change (up, down), band moves (from, to,
+  count) and the 50 largest changes. Counts cover the whole organization; an
+  asset outside the caller's data scope (a private program's asset) is
+  counted but never named;
+- when `floor_unowned_at_p2` changes, open findings: class moves, deadlines
+  that would move earlier (`min(old, now + SLA)`), findings with a linked
+  ticket, and manual overrides that keep their class. Closed findings are not
+  counted (they never change).
+
+Applying is the existing `PATCH /tenants/{tenant}/settings/risk-scoring`
+(section compare-and-swap with `If-Match`), which now also requires **step-up**
+re-authentication. It is audited with the before/after diff and the new
+`scoring_version`. It does not recompute in the request: the settings trigger
+records the change and queues the work, and the response says
+`"recompute": "queued"`. The manual "Recalculate" action queues every asset
+too (`assets_queued`) instead of rescoring in the request.
+
+Priority rules keep their own dry run (`POST /priority-rules/dry-run`).
+
 ## Security
 
 - Settings are a security control: they decide what is P0 and when work is
@@ -150,10 +177,9 @@ deadlines, both classes and the reason (`priority_raised` or
 
 Shipped: versions, the durable queue, triggers, the worker and reconcile,
 closed findings frozen; SLA deadlines that only tighten, with a timeline
-entry.
+entry; the whole-organization preview and the step-up apply.
 
-Planned in the same series: a whole-tenant preview before
-applying risk settings, with step-up; version stamps on risk snapshots and
+Planned in the same series: version stamps on risk snapshots and
 markers on trend charts; one summary notification per scoring change instead
 of one per finding; recompute scoped to the CVEs whose EPSS or KEV status
 changed.
@@ -167,4 +193,7 @@ changed.
 - `internal/infra/controller/priority_reclassify.go`
 - `internal/app/asset/risk_freshness.go` (risk version stamp)
 - `internal/app/sla/applier.go`, `migrations/*_sla_deadline_tighten_only.up.sql`
-- `tests/integration/scoring_versions_test.go`, `tests/integration/sla_tighten_only_test.go`
+- `internal/app/asset/risk_preview.go`, `internal/app/finding/priority_preview.go`
+- `web/src/features/organization/components/scoring-impact-dialog.tsx`
+- `tests/integration/scoring_versions_test.go`, `tests/integration/sla_tighten_only_test.go`,
+  `tests/integration/scoring_preview_test.go`
