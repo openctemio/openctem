@@ -164,7 +164,7 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 
 	reason := vulnerability.VEXResolutionText(&vulnerability.InteropVEX{Status: "not_affected", Justification: "component_not_present", Source: "vex-doc"})
 	items := []vulnerability.VEXNotAffected{
-		{Fingerprint: openFP, AssetID: f.host.String(), Resolution: reason},
+		{Fingerprint: openFP, AssetID: f.host.String(), Resolution: reason, ClosureReason: vulnerability.ClosureReasonComponentNotPresent},
 		{Fingerprint: accFP, AssetID: f.host.String(), Resolution: reason},
 		{Fingerprint: resFP, AssetID: f.host.String(), Resolution: reason},
 		{Fingerprint: penFP, AssetID: f.host.String(), Resolution: reason},
@@ -194,11 +194,16 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 		t.Fatalf("enforce requested %v, want only %s", ids, open)
 	}
 	// A false positive needs four-eyes: the statement only requests it.
-	var justification, actor, reqStatus string
-	if err := f.db.QueryRowContext(ctx, `SELECT justification, requested_by_actor, status FROM finding_status_approvals
+	// The request carries the statement's justification as its closure
+	// reason, so approving it records why (not "unknown").
+	var justification, actor, reqStatus, closureReason string
+	if err := f.db.QueryRowContext(ctx, `SELECT justification, requested_by_actor, status, COALESCE(closure_reason, '') FROM finding_status_approvals
 		WHERE tenant_id = $1 AND finding_id = $2 AND requested_status = 'false_positive'`, f.tenant.String(), open.String()).
-		Scan(&justification, &actor, &reqStatus); err != nil {
+		Scan(&justification, &actor, &reqStatus, &closureReason); err != nil {
 		t.Fatalf("pending request: %v", err)
+	}
+	if closureReason != string(vulnerability.ClosureReasonComponentNotPresent) {
+		t.Errorf("request closure_reason = %q, want component_not_present", closureReason)
 	}
 	if actor != vulnerability.ApprovalActorVEX || reqStatus != "pending" || !strings.Contains(justification, "component_not_present") {
 		t.Errorf("request: actor=%s status=%s justification=%q", actor, reqStatus, justification)
