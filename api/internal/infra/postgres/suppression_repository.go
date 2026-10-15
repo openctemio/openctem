@@ -219,6 +219,14 @@ func (r *SuppressionRepository) liftSuppressionsInTx(
 				tenantID.String(), c.id, cover.SuppressionType().Disposition()); err != nil {
 				return 0, fmt.Errorf("re-apply suppression disposition: %w", err)
 			}
+			// An accepted risk now held by the covering rule ends when that
+			// rule's acceptance ends.
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE findings SET acceptance_expires_at = $3
+				WHERE tenant_id = $1 AND id = $2 AND status = 'accepted'`,
+				tenantID.String(), c.id, ruleAcceptanceEnd(cover.ExpiresAt(), time.Now())); err != nil {
+				return 0, fmt.Errorf("re-apply acceptance end: %w", err)
+			}
 			continue
 		}
 
@@ -536,8 +544,9 @@ func (r *SuppressionRepository) IsTenantOwner(ctx context.Context, tenantID, use
 
 // RecordSuppression records that a finding was suppressed by a rule. A
 // finding the rule made accepted takes the rule's expiry as the end of its
-// acceptance (findings.acceptance_expires_at, read by the CI gate); the rule
-// and the finding must belong to the same tenant.
+// acceptance (findings.acceptance_expires_at, read by the CI gate), or the
+// default acceptance length when the rule has none: an accepted risk always
+// ends. The rule and the finding must belong to the same tenant.
 func (r *SuppressionRepository) RecordSuppression(ctx context.Context, findingID, ruleID shared.ID, appliedBy string) error {
 	query := `
 		WITH rec AS (
@@ -546,13 +555,14 @@ func (r *SuppressionRepository) RecordSuppression(ctx context.Context, findingID
 			ON CONFLICT (finding_id, suppression_rule_id) DO NOTHING
 		)
 		UPDATE findings f
-		SET acceptance_expires_at = sr.expires_at
+		SET acceptance_expires_at = COALESCE(sr.expires_at, $4)
 		FROM suppression_rules sr
 		WHERE f.id = $1 AND sr.id = $2 AND sr.tenant_id = f.tenant_id
-		  AND f.status = 'accepted' AND sr.expires_at IS NOT NULL
+		  AND f.status = 'accepted'
 	`
 
-	_, err := r.db.ExecContext(ctx, query, findingID.String(), ruleID.String(), appliedBy)
+	_, err := r.db.ExecContext(ctx, query, findingID.String(), ruleID.String(), appliedBy,
+		ruleAcceptanceEnd(nil, time.Now()))
 	if err != nil {
 		return fmt.Errorf("failed to record finding suppression: %w", err)
 	}
@@ -815,4 +825,14 @@ func (r *SuppressionRepository) buildRule(
 	}
 
 	return suppression.ReconstituteRule(data)
+}
+
+// ruleAcceptanceEnd is when an acceptance given by a suppression rule ends:
+// the rule's expiry, or the default acceptance length from now when the rule
+// has none (an accepted risk always ends; vulnerability.DefaultAcceptanceDuration).
+func ruleAcceptanceEnd(ruleExpiry *time.Time, now time.Time) time.Time {
+	if ruleExpiry != nil {
+		return *ruleExpiry
+	}
+	return now.Add(vulnerability.DefaultAcceptanceDuration)
 }
