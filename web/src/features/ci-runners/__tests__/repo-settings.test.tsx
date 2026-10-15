@@ -196,6 +196,18 @@ describe('gate settings rules', () => {
     })
   })
 
+  it('drops fields a lock ignores, so the write is not refused', () => {
+    const w = overrideWrite(REPO, repoPolicy, [], 'fail_on_kev', false, {
+      reason: repoPolicy.reason,
+      dropped: ['fail_on_severity'],
+    })
+    expect(w.body.fields).toEqual(['new_findings_only', 'fail_on_kev'])
+    expect(resetWrite(repoPolicy, 'new_findings_only', { dropped: ['fail_on_severity'] })).toEqual({
+      kind: 'delete',
+      id: 'pol-repo',
+    })
+  })
+
   it('validates reason and end date bounds', () => {
     expect(validReason('too short')).toBe(false)
     expect(validReason('long enough reason')).toBe(true)
@@ -283,8 +295,15 @@ describe('CIRepositorySettingsTab', () => {
     expect(screen.getByText(/Read only/)).toBeInTheDocument()
   })
 
-  it('resets a field: it leaves fields and a loosening reset needs a reason', async () => {
+  it('resets a field: it leaves fields, with the current reason kept', async () => {
     const user = userEvent.setup()
+    settings = {
+      ...(settings as object),
+      fields: fieldsFixture().map((f) =>
+        f.field === 'fail_on_severity' ? { ...f, ignored: false } : f
+      ),
+      repository: { ...repoPolicy, fields: ['fail_on_kev', 'new_findings_only'] },
+    }
     render(<CIRepositorySettingsTab repositoryAssetId={REPO} />)
     await user.click(screen.getByRole('button', { name: 'Reset New findings only to inherited' }))
     const dialog = screen.getByRole('dialog')
@@ -294,8 +313,19 @@ describe('CIRepositorySettingsTab', () => {
     expect(mockSave).toHaveBeenCalledTimes(1)
     const arg = mockSave.mock.calls[0][0]
     expect(arg.id).toBe('pol-repo')
-    expect(arg.body.fields).toEqual(['fail_on_severity'])
+    expect(arg.body.fields).toEqual(['fail_on_kev'])
     expect(arg.body.reason).toBe(repoPolicy.reason)
+  })
+
+  it('removes a field a lock ignores on the next write, and deletes an emptied policy', async () => {
+    const user = userEvent.setup()
+    render(<CIRepositorySettingsTab repositoryAssetId={REPO} />)
+    await user.click(screen.getByRole('button', { name: 'Reset New findings only to inherited' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByTestId('dropped-fields')).toHaveTextContent('Fail on severity')
+    await user.click(within(dialog).getByRole('button', { name: 'Reset to inherited' }))
+    expect(mockSave).not.toHaveBeenCalled()
+    expect(mockDelete).toHaveBeenCalledWith('pol-repo')
   })
 
   it('shows the baseline with its due date', () => {

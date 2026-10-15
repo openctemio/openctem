@@ -388,8 +388,13 @@ function FieldEditDialog({
   const [serverError, setServerError] = useState<string | null>(null)
 
   const reset = target.kind === 'reset'
+  // Fields a lock above ignores leave the policy on this write (the API
+  // refuses to store them again).
+  const dropped = fields
+    .filter((x) => x.ignored && x.field !== f && repo?.fields?.includes(x.field ?? ''))
+    .map((x) => x.field ?? '')
   // Resetting the last overridden field deletes the repository policy.
-  const deletes = reset && !!repo?.id && resetWrite(repo, f, {}).kind === 'delete'
+  const deletes = reset && !!repo?.id && resetWrite(repo, f, { dropped }).kind === 'delete'
   // Loosening compared with what applies now: an override that is looser
   // than the effective value, or a reset to a looser inherited value.
   const loosens = reset
@@ -404,7 +409,7 @@ function FieldEditDialog({
 
   const submit = async () => {
     setServerError(null)
-    const meta = { reason, expiresAt: endDateISO(endDate) }
+    const meta = { reason, expiresAt: endDateISO(endDate), dropped }
     try {
       if (reset) {
         if (!repo?.id) return
@@ -511,6 +516,22 @@ function FieldEditDialog({
                   </p>
                 )}
               </div>
+            )}
+            {dropped.length > 0 && (
+              <Alert data-testid="dropped-fields">
+                <AlertDescription>
+                  {t(
+                    'scans.ci.repoSettings.droppedFields',
+                    'Saving also removes {fields} from this repository’s override: a lock above ignores its looser value.',
+                    {
+                      fields: dropped
+                        .filter(isGateField)
+                        .map((x) => fieldLabel(x, t))
+                        .join(', '),
+                    }
+                  )}
+                </AlertDescription>
+              </Alert>
             )}
             {loosens && !deletes && (
               <Alert>

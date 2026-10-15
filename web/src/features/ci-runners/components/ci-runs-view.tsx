@@ -116,7 +116,7 @@ export function RunAttempt({ attempt }: { attempt?: { attempt: number; of: numbe
   const { t } = useTranslation()
   if (!attempt) return null
   return (
-    <span className="ms-1 font-sans text-muted-foreground" data-testid="ci-run-attempt">
+    <span className="font-sans text-muted-foreground" data-testid="ci-run-attempt">
       {' · '}
       {t('scans.ci.runAttempt', 'Attempt {attempt} of {of}', {
         attempt: attempt.attempt,
