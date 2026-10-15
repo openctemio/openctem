@@ -289,10 +289,11 @@ type Repositories struct {
 	IOC *postgres.IOCRepository
 
 	// Validation evidence (CTEM Stage-4, migration 000178)
-	ValidationEvidence *postgres.ValidationEvidenceRepository
-	FindingRetest      *postgres.FindingRetestRepository
-	FindingEvidence    *postgres.FindingEvidenceRepository
-	FindingSLARestart  *postgres.FindingSLARestartRepository
+	ValidationEvidence      *postgres.ValidationEvidenceRepository
+	FindingRetest           *postgres.FindingRetestRepository
+	FindingEvidence         *postgres.FindingEvidenceRepository
+	FindingSLARestart       *postgres.FindingSLARestartRepository
+	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
 
 	// Runtime-telemetry reads for Stage-4 detection correlation
 	// (migration 000203)
@@ -563,10 +564,11 @@ func newRepositories(db *postgres.DB) *Repositories {
 		IOC: postgres.NewIOCRepository(db),
 
 		// Validation evidence (CTEM Stage-4, migration 000178).
-		ValidationEvidence: postgres.NewValidationEvidenceRepository(db),
-		FindingRetest:      postgres.NewFindingRetestRepository(db),
-		FindingEvidence:    postgres.NewFindingEvidenceRepository(db),
-		FindingSLARestart:  postgres.NewFindingSLARestartRepository(db),
+		ValidationEvidence:      postgres.NewValidationEvidenceRepository(db),
+		FindingRetest:           postgres.NewFindingRetestRepository(db),
+		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
+		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
+		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),
 
 		// Runtime-telemetry reads for detection correlation (migration 000203).
 		TelemetryProbe: postgres.NewTelemetryProbeRepository(db),
