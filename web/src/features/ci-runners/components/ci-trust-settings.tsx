@@ -14,7 +14,8 @@
 
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, Copy, KeyRound, Plus, ShieldAlert, Trash2 } from 'lucide-react'
+import { Check, Copy, KeyRound, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
+import Link from '@/components/link'
 import { PageHeader, EmptyState, ErrorState, GatedButton } from '@/features/shared'
 import { CIRequireOIDC } from './ci-require-oidc'
 import { CIPRFeedback } from './ci-pr-feedback'
@@ -43,6 +44,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
@@ -78,6 +80,7 @@ import { CIOverrideDialog } from './ci-override-dialog'
 import { CITrustRefusals } from './ci-refusals'
 import { CISetupEntry } from './ci-setup-wizard'
 import type { CIGatePolicy, CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
+import { GATE_FIELDS, GATE_FIELD_LABEL, MAX_REASON, type GateField } from '../lib/gate-settings'
 
 const NO_WRITE = 'Only owners and administrators can change CI trust and the gate'
 
@@ -1004,6 +1007,7 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
       {(editing || adding) && (
         <PolicyDialog
           policy={editing}
+          overrideCounts={data?.override_counts ?? {}}
           onClose={() => {
             setEditing(null)
             setAdding(false)
@@ -1083,17 +1087,48 @@ function PolicySummary({ p }: { p: CIGatePolicy }) {
           })}
         </li>
       )}
+      {p.baseline_on_first_run && (
+        <li>
+          {typeof p.baseline_grace_days === 'number'
+            ? t(
+                'scans.ci.gatePolicy.baselineFirstRunGrace',
+                'Baseline on first run; it blocks again after {count} days',
+                { count: p.baseline_grace_days }
+              )
+            : t('scans.ci.gatePolicy.baselineFirstRun', 'Baseline on first run')}
+        </li>
+      )}
+      {(p.locked_fields ?? []).length > 0 && (
+        <li className="inline-flex items-start gap-1 sm:col-span-2">
+          <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          {t('scans.ci.gatePolicy.lockedList', 'Locked: {fields}', {
+            fields: (p.locked_fields ?? [])
+              .map((f) =>
+                f in GATE_FIELD_LABEL
+                  ? t(`scans.ci.gateField.${f}`, GATE_FIELD_LABEL[f as GateField])
+                  : f
+              )
+              .join(', '),
+          })}
+        </li>
+      )}
       {p.enabled === false && <li>{t('scans.ci.disabled', 'Disabled')}</li>}
     </ul>
   )
 }
 
+/** The pipelines list filtered to repositories with their own gate settings. */
+export const OVERRIDES_LIST_HREF = '/ci-cd?overrides=1'
+
 function PolicyDialog({
   policy,
+  overrideCounts,
   onClose,
   onSaved,
 }: {
   policy: CIGatePolicy | null
+  /** Per field, how many repository policies set it. */
+  overrideCounts: Record<string, number>
   onClose: () => void
   onSaved: () => void
 }) {
@@ -1112,6 +1147,19 @@ function PolicyDialog({
       ? String(policy.epss_threshold)
       : ''
   )
+  const [baselineFirstRun, setBaselineFirstRun] = useState(policy?.baseline_on_first_run ?? false)
+  const [graceDays, setGraceDays] = useState(
+    typeof policy?.baseline_grace_days === 'number' ? String(policy.baseline_grace_days) : ''
+  )
+  const [secretsBlock, setSecretsBlock] = useState(policy?.baseline_secrets_block ?? true)
+  const [locked, setLocked] = useState<string[]>(policy?.locked_fields ?? [])
+  const [reason, setReason] = useState(policy?.reason ?? '')
+  // Locks apply to the layers below: the organization and business units.
+  const canLock = scopeType === 'tenant' || scopeType === 'business_unit'
+  const graceValue = graceDays.trim() === '' ? undefined : Number(graceDays)
+  const graceInvalid =
+    graceValue !== undefined &&
+    (!Number.isInteger(graceValue) || graceValue < 1 || graceValue > 730)
   const epssValue = epss.trim() === '' ? undefined : Number(epss)
   const epssInvalid =
     epssValue !== undefined && (Number.isNaN(epssValue) || epssValue < 0 || epssValue > 1)
@@ -1131,6 +1179,14 @@ function PolicyDialog({
           fail_on_kev: kev,
           epss_threshold: epssValue,
           fixable_only: fixableOnly,
+          baseline_on_first_run: baselineFirstRun,
+          // Replaced on every write (empty = no end), like epss_threshold.
+          baseline_grace_days: graceValue,
+          baseline_secrets_block: secretsBlock,
+          locked_fields: canLock ? GATE_FIELDS.filter((f) => locked.includes(f)) : undefined,
+          // reason and expires_at are replaced on every write: keep them.
+          reason: scopeType === 'tenant' ? undefined : reason.trim() || undefined,
+          expires_at: policy?.expires_at || undefined,
         },
       })
       toast.success(t('scans.ci.gatePolicy.saved', 'Gate policy saved'))
@@ -1142,7 +1198,7 @@ function PolicyDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent size="sm">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>
             {isNew
@@ -1257,6 +1313,72 @@ function PolicyDialog({
               checked={fixableOnly}
               onChange={setFixableOnly}
             />
+            <SwitchRow
+              id="gp-baseline-first-run"
+              label={t(
+                'scans.ci.gatePolicy.baselineFirstRunSwitch',
+                'Record the gate baseline on a repository’s first verified default-branch run'
+              )}
+              checked={baselineFirstRun}
+              onChange={setBaselineFirstRun}
+            />
+            <Field
+              label={t(
+                'scans.ci.gatePolicy.graceDays',
+                'Baseline grace (days, optional): baseline findings block again after it'
+              )}
+              id="gp-grace"
+              hint={
+                graceInvalid
+                  ? t(
+                      'scans.ci.repoSettings.graceInvalid',
+                      'Whole days from 1 to 730, or empty for no end.'
+                    )
+                  : undefined
+              }
+            >
+              <Input
+                id="gp-grace"
+                inputMode="numeric"
+                value={graceDays}
+                onChange={(e) => setGraceDays(e.target.value)}
+                aria-invalid={graceInvalid}
+              />
+            </Field>
+            <SwitchRow
+              id="gp-baseline-secrets"
+              label={t(
+                'scans.ci.gatePolicy.baselineSecretsSwitch',
+                'Secrets in the baseline still block default-branch runs'
+              )}
+              checked={secretsBlock}
+              onChange={setSecretsBlock}
+            />
+            {scopeType !== 'tenant' && (
+              <Field
+                label={t(
+                  'scans.ci.gatePolicy.reason',
+                  'Reason (needed when a change loosens the gate)'
+                )}
+                id="gp-reason"
+              >
+                <Textarea
+                  id="gp-reason"
+                  value={reason}
+                  maxLength={MAX_REASON}
+                  rows={2}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </Field>
+            )}
+            {canLock && (
+              <PolicyLocks
+                scopeType={scopeType}
+                locked={locked}
+                onChange={setLocked}
+                overrideCounts={scopeType === 'tenant' ? overrideCounts : {}}
+              />
+            )}
           </div>
         </DialogBody>
         <DialogFooter>
@@ -1266,7 +1388,10 @@ function PolicyDialog({
           <Button
             onClick={submit}
             disabled={
-              isMutating || epssInvalid || (isNew && scopeType !== 'tenant' && !scopeId.trim())
+              isMutating ||
+              epssInvalid ||
+              graceInvalid ||
+              (isNew && scopeType !== 'tenant' && !scopeId.trim())
             }
           >
             {t('common.save', 'Save')}
@@ -1274,6 +1399,86 @@ function PolicyDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * Per-field locks: a locked field can only be made stricter by the layers
+ * below (business units, repositories). Removing a lock loosens the gate, so
+ * the API asks for step-up. Each row also says how many repositories set the
+ * field themselves, with a link to them.
+ */
+export function PolicyLocks({
+  scopeType,
+  locked,
+  onChange,
+  overrideCounts,
+}: {
+  scopeType: string
+  locked: string[]
+  onChange: (next: string[]) => void
+  overrideCounts: Record<string, number>
+}) {
+  const { t } = useTranslation()
+  return (
+    <fieldset className="space-y-2 rounded-md border p-3">
+      <legend className="px-1 text-sm font-medium">
+        {scopeType === 'tenant'
+          ? t('scans.ci.gatePolicy.locksOrg', 'Locks for business units and repositories')
+          : t('scans.ci.gatePolicy.locksUnit', 'Locks for repositories')}
+      </legend>
+      <p className="text-xs text-muted-foreground">
+        {t(
+          'scans.ci.gatePolicy.locksHelp',
+          'A locked field can only be made stricter below this policy. Removing a lock loosens the gate and asks you to confirm your identity.'
+        )}
+      </p>
+      <ul className="divide-y">
+        {GATE_FIELDS.map((f) => {
+          const n = overrideCounts[f] ?? 0
+          const on = locked.includes(f)
+          return (
+            <li key={f} className="flex items-center justify-between gap-3 py-1.5">
+              <div className="min-w-0">
+                <Label htmlFor={`gp-lock-${f}`} className="font-normal">
+                  {t(`scans.ci.gateField.${f}`, GATE_FIELD_LABEL[f])}
+                </Label>
+                {n > 0 && (
+                  <Link
+                    href={OVERRIDES_LIST_HREF}
+                    className="block text-xs text-primary hover:underline"
+                    data-testid={`override-count-${f}`}
+                  >
+                    {n === 1
+                      ? t('scans.ci.gatePolicy.oneOverride', '1 repository overrides this')
+                      : t(
+                          'scans.ci.gatePolicy.overrideCount',
+                          '{count} repositories override this',
+                          {
+                            count: n,
+                          }
+                        )}
+                  </Link>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {on && <Lock className="size-3.5 text-muted-foreground" aria-hidden />}
+                <Switch
+                  id={`gp-lock-${f}`}
+                  checked={on}
+                  aria-label={t('scans.ci.gatePolicy.lockLabel', 'Lock {field}', {
+                    field: t(`scans.ci.gateField.${f}`, GATE_FIELD_LABEL[f]),
+                  })}
+                  onCheckedChange={(v) =>
+                    onChange(v ? [...locked, f] : locked.filter((x) => x !== f))
+                  }
+                />
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </fieldset>
   )
 }
 

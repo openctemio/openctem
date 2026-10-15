@@ -6,7 +6,9 @@
  * workflow file of each repository, and their runs. A pipeline is fresh or
  * stale against its own cadence and never offline; archived, retired, revoked
  * and never-run pipelines are hidden until "Show inactive" (nothing is
- * deleted). The Coverage view lists repositories by capability.
+ * deleted). The Coverage view lists repositories by capability. "Has
+ * overrides" (?overrides=1) lists the pipelines whose repository has its own
+ * gate settings.
  */
 
 import { useMemo } from 'react'
@@ -142,6 +144,8 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
   const [q, setQ] = useUrlFilter('q', '')
   const [statusParam, setStatusParam] = useUrlFilterList('pipeline_status')
   const [inactiveParam, setInactiveParam] = useUrlFilter('inactive', '')
+  const [overridesParam, setOverridesParam] = useUrlFilter('overrides', '')
+  const hasOverrides = overridesParam === '1'
   const [openId, setOpenId] = useUrlFilter('pipeline', '')
   const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
 
@@ -151,6 +155,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
     {
       status: statuses,
       includeInactive,
+      hasPolicyOverride: hasOverrides,
       search: q,
       page: pagination.pageIndex + 1,
       perPage: pagination.pageSize,
@@ -281,7 +286,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
     )
   }
 
-  const empty = !isLoading && !error && active + inactive === 0 && !q
+  const empty = !isLoading && !error && active + inactive === 0 && !q && !hasOverrides
   return (
     <div className="mt-5 space-y-5">
       {!empty && <MetricStrip loading={isLoading && !data} items={metrics} />}
@@ -334,12 +339,17 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
           paginationNoun={t('scans.ci.noun.pipelines', 'pipelines')}
           emptyMessage={t('scans.ci.noPipelineMatches', 'No pipeline matches')}
           emptyDescription={
-            includeInactive
-              ? undefined
-              : t(
-                  'scans.ci.inactiveHidden',
-                  'Inactive pipelines are hidden: turn on Show inactive.'
+            hasOverrides
+              ? t(
+                  'scans.ci.noOverrides',
+                  'No repository you can see overrides the gate settings. Turn off Has overrides to see every pipeline.'
                 )
+              : includeInactive
+                ? undefined
+                : t(
+                    'scans.ci.inactiveHidden',
+                    'Inactive pipelines are hidden: turn on Show inactive.'
+                  )
           }
           toolbarStart={
             <>
@@ -361,18 +371,33 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
             </>
           }
           toolbarEnd={
-            <div className="flex items-center gap-2">
-              <Switch
-                id="pipelines-inactive"
-                checked={includeInactive}
-                onCheckedChange={(on) => {
-                  setInactiveParam(on ? '1' : '')
-                  setPage(1)
-                }}
-              />
-              <Label htmlFor="pipelines-inactive" className="text-sm font-normal">
-                {t('scans.ci.showInactive', 'Show inactive')}
-              </Label>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="pipelines-overrides"
+                  checked={hasOverrides}
+                  onCheckedChange={(on) => {
+                    setOverridesParam(on ? '1' : '')
+                    setPage(1)
+                  }}
+                />
+                <Label htmlFor="pipelines-overrides" className="text-sm font-normal">
+                  {t('scans.ci.hasOverrides', 'Has overrides')}
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="pipelines-inactive"
+                  checked={includeInactive}
+                  onCheckedChange={(on) => {
+                    setInactiveParam(on ? '1' : '')
+                    setPage(1)
+                  }}
+                />
+                <Label htmlFor="pipelines-inactive" className="text-sm font-normal">
+                  {t('scans.ci.showInactive', 'Show inactive')}
+                </Label>
+              </div>
             </div>
           }
         />
