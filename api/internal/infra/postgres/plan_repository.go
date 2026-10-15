@@ -72,6 +72,13 @@ func (r *PlanRepository) SaveDefaults(ctx context.Context, d plan.Defaults, expe
 	return version, nil
 }
 
+// tenantPlanExpr is the plan of the organization aliased t: the stored one,
+// or plan.Unassigned when none is stored. Every SQL reader of an
+// organization's plan uses it (the membership list, the organization, the
+// console list and filter, plan module grace) so they agree with
+// entitlement.PlanOf, which limit enforcement reads.
+const tenantPlanExpr = `COALESCE((SELECT tp.plan FROM tenant_plans tp WHERE tp.tenant_id = t.id), '` + string(plan.Unassigned) + `')`
+
 // TenantPlan returns the organization's plan; ok=false when none is stored.
 func (r *PlanRepository) TenantPlan(ctx context.Context, tenantID shared.ID) (plan.Plan, bool, error) {
 	var p string
