@@ -123,7 +123,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/ci/code-scanning/repositories":       {classScoped, "code scanning: repositories listed with an SQL data-scope condition; by id out of scope is 404 (RFC-091)"},
 	"/api/v1/ci/coverage":                         {classScoped, "CI coverage: repositories listed and marked only within the caller's data scope, 404 otherwise (RFC-051)"},
 	"/api/v1/ci/pipelines":                        {classScoped, "CI pipelines: SQL data-scope condition on the repository asset; by id out of scope is 404 (RFC-051)"},
-	"/api/v1/fleet":                               {classScoped, "fleet: daemon rows are tenant sensors (configuration), runner rows are CI pipelines under the repository data scope; each mode needs its own permission (RFC-051)"},
 	"/api/v1/ci/oidc/exchange":                    {classSystem, "CI token exchange: the CI provider's OIDC token is the credential (RFC-051)"},
 	"/api/v1/hooks/github-app":                    {classSystem, "GitHub App webhook: HMAC-verified installation status events (RFC-077)"},
 	"POST /api/v1/ci/runs/{id}/results":           {classSystem, "CI run token: write to the run's repository only (RFC-051)"},

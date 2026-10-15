@@ -56,6 +56,7 @@ ci_gate_baseline_findings
 ci_gate_baselines
 ci_gate_overrides
 ci_gate_policies
+ci_oidc_replay
 ci_pipelines
 ci_run_findings
 ci_run_tokens
