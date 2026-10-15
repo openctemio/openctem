@@ -1,5 +1,5 @@
-// Package signup holds the platform sign-up policy: who may create an
-// organization on this deployment. It is one platform setting, edited in the
+// Package signup holds the platform sign-up policy: who may create an account
+// and who may create an organization on this deployment. It is one platform setting, edited in the
 // admin console (docs/architecture/user-onboarding.md, "Sign-up policy").
 package signup
 
@@ -28,6 +28,39 @@ const (
 // IsValid reports whether m is a known mode.
 func (m Mode) IsValid() bool { return m == ModeAdminOnly || m == ModeSelfService }
 
+// Accounts says who may create an account by public sign-up. Invitations,
+// organization SSO and SCIM are not public sign-up: the organization chose
+// those people, under every value.
+type Accounts string
+
+const (
+	// AccountsClosed: no public sign-up.
+	AccountsClosed Accounts = "closed"
+	// AccountsDomain: public sign-up only for an address on a domain an
+	// organization verified and opened to joining; the account joins that
+	// organization and never creates one.
+	AccountsDomain Accounts = "domain"
+	// AccountsOpen: anyone may sign up (not a disposable address).
+	AccountsOpen Accounts = "open"
+)
+
+// rank orders the values: closed < domain < open. Unknown is below closed.
+func (a Accounts) rank() int {
+	switch a {
+	case AccountsClosed:
+		return 1
+	case AccountsDomain:
+		return 2
+	case AccountsOpen:
+		return 3
+	default:
+		return 0
+	}
+}
+
+// IsValid reports whether a is a known value.
+func (a Accounts) IsValid() bool { return a.rank() > 0 }
+
 // Source records where the stored policy came from.
 type Source string
 
@@ -41,9 +74,15 @@ const (
 	SourceDefault Source = "default"
 )
 
-// Policy is the sign-up policy.
+// Policy is the sign-up policy: two decisions.
 type Policy struct {
+	// Mode says who may create an organization (admin_only or
+	// self_service). self_service needs Accounts open.
 	Mode Mode `json:"mode"`
+	// Accounts says who may create an account by public sign-up. Empty (a
+	// policy stored before this field) reads as open with self_service and
+	// as closed otherwise: see AccountSignup.
+	Accounts Accounts `json:"accounts,omitempty"`
 	// RequestAccess lets people who cannot sign up ask the platform
 	// administrators for an organization (admin_only mode).
 	RequestAccess bool `json:"request_access"`
@@ -62,22 +101,59 @@ type Static Policy
 // Current returns the fixed policy.
 func (s Static) Current(context.Context) Policy { return Policy(s) }
 
-// Default is the fail-closed policy: admin_only, no request-access form.
-func Default() Policy { return Policy{Mode: ModeAdminOnly} }
+// Default is the fail-closed policy: no public sign-up, admin_only, no
+// request-access form.
+func Default() Policy { return Policy{Mode: ModeAdminOnly, Accounts: AccountsClosed} }
 
 // ErrInvalidPolicy is returned for an unknown mode.
 var ErrInvalidPolicy = fmt.Errorf("%w: invalid sign-up policy", shared.ErrValidation)
 
+// ErrSelfServiceNeedsOpenAccounts is returned for organization self-service
+// without open account sign-up (nobody could reach it).
+var ErrSelfServiceNeedsOpenAccounts = fmt.Errorf("%w: organization self-service needs open account sign-up", shared.ErrValidation)
+
+// AccountSignup is who may create an account by public sign-up. An empty
+// Accounts follows Mode: self_service meant anyone may sign up, admin_only
+// meant nobody. An unknown value is closed.
+func (p Policy) AccountSignup() Accounts {
+	switch {
+	case p.Accounts == "" && p.Mode == ModeSelfService:
+		return AccountsOpen
+	case p.Accounts.IsValid():
+		return p.Accounts
+	default:
+		return AccountsClosed
+	}
+}
+
 // Validate checks the policy.
 func (p Policy) Validate() error {
-	if !p.Mode.IsValid() {
+	if !p.Mode.IsValid() || (p.Accounts != "" && !p.Accounts.IsValid()) {
 		return ErrInvalidPolicy
+	}
+	if p.Mode == ModeSelfService && p.AccountSignup() != AccountsOpen {
+		return ErrSelfServiceNeedsOpenAccounts
 	}
 	return nil
 }
 
+// Normalized returns p with Accounts spelled out.
+func (p Policy) Normalized() Policy {
+	p.Accounts = p.AccountSignup()
+	return p
+}
+
 // AllowsSelfService reports whether people may create their own organization.
-func (p Policy) AllowsSelfService() bool { return p.Mode == ModeSelfService }
+func (p Policy) AllowsSelfService() bool {
+	return p.Mode == ModeSelfService && p.AccountSignup() == AccountsOpen
+}
+
+// AllowsPublicSignup reports whether some public account sign-up is open
+// (domain or open): the web then offers "Sign up".
+func (p Policy) AllowsPublicSignup() bool {
+	a := p.AccountSignup()
+	return a == AccountsDomain || a == AccountsOpen
+}
 
 // Encode serializes the policy for storage.
 func (p Policy) Encode() ([]byte, error) { return json.Marshal(p) }
@@ -92,7 +168,7 @@ func Decode(raw []byte) (Policy, error) {
 	if err := p.Validate(); err != nil {
 		return Policy{}, err
 	}
-	return p, nil
+	return p.Normalized(), nil
 }
 
 // State is the stored policy with its bookkeeping.

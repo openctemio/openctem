@@ -21,6 +21,13 @@ type Identity struct {
 	// JITEligible: an organization's SSO admits this identity just-in-time
 	// (auto-provision on, DNS-verified SSO domain, allowed domains).
 	JITEligible bool
+	// DomainJoinable: the (verified) email is on a domain an organization
+	// verified and opened to joining (join policy approval or auto).
+	DomainJoinable bool
+	// SSORequired: the email is on a domain whose organization requires its
+	// SSO for every account on it. Password and social sign-up are refused
+	// and the person is sent to the identity provider.
+	SSORequired bool
 	// DisposableEmail: the email is on a disposable-address service
 	// (pkg/emaildomain). Self-service sign-up refuses it; an invitation or an
 	// organization's SSO is the organization choosing the person.
@@ -36,8 +43,15 @@ const (
 	// OutcomeJITMember: create the account and join the organization by SSO.
 	OutcomeJITMember Outcome = "jit_member"
 	// OutcomeSelfService: self-service sign-up; the person may create an
-	// account and their own organization.
+	// account (and, when the policy allows it, their own organization).
 	OutcomeSelfService Outcome = "self_service"
+	// OutcomeDomainAccount: create the account; it joins the organization
+	// of its verified domain by that organization's join policy and never
+	// creates an organization.
+	OutcomeDomainAccount Outcome = "domain_account"
+	// OutcomeSSORequired: refused here; the person must sign in through the
+	// SSO of the organization that claims the domain. Nothing is written.
+	OutcomeSSORequired Outcome = "sso_required"
 	// OutcomeNotSetUp: refused. The caller writes nothing (no account, no
 	// session, no organization) and answers the same "not set up" response
 	// whatever the reason, so the answer does not enumerate.
@@ -45,19 +59,22 @@ const (
 )
 
 // Admitted reports whether the outcome lets the path go on.
-func (o Outcome) Admitted() bool { return o != OutcomeNotSetUp }
+func (o Outcome) Admitted() bool { return o != OutcomeNotSetUp && o != OutcomeSSORequired }
 
 // Admit is the one admission rule every sign-up path applies, so the paths
 // cannot drift apart (docs/architecture/user-onboarding.md, "Admission"):
 //
-//	creating an organization          → self_service mode only
+//	creating an organization              → self-service policy only
 //	creating an account:
-//	  an organization's SSO admits it  → jit_member     (either mode)
-//	  a pending invitation for it      → accept_invitation (either mode)
-//	  self_service mode, not a disposable email → self_service
-//	otherwise                          → not_set_up (write nothing)
+//	  an organization's SSO admits it      → jit_member        (any policy)
+//	  its domain requires the org's SSO    → sso_required      (write nothing)
+//	  a pending invitation for it          → accept_invitation (any policy)
+//	  accounts open, not disposable        → self_service
+//	  accounts domain, joinable domain, not disposable → domain_account
+//	otherwise                              → not_set_up (write nothing)
 //
-// An existing account signing in is never refused here: a mode change never
+// The policy passed in is the policy in force (clamped to the ceiling). An
+// existing account signing in is never refused here: a policy change never
 // locks anyone out.
 func Admit(p Policy, id Identity) Outcome {
 	switch id.Intent {
@@ -70,10 +87,14 @@ func Admit(p Policy, id Identity) Outcome {
 		switch {
 		case id.JITEligible:
 			return OutcomeJITMember
+		case id.SSORequired:
+			return OutcomeSSORequired
 		case id.InvitedPending:
 			return OutcomeAcceptInvitation
-		case p.AllowsSelfService() && !id.DisposableEmail:
+		case p.AccountSignup() == AccountsOpen && !id.DisposableEmail:
 			return OutcomeSelfService
+		case p.AccountSignup() == AccountsDomain && id.DomainJoinable && !id.DisposableEmail:
+			return OutcomeDomainAccount
 		}
 	}
 	return OutcomeNotSetUp

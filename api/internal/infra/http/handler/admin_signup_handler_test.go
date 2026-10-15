@@ -169,6 +169,15 @@ func TestAdminSignupHandler(t *testing.T) {
 			if resp.DeploymentMode != string(ceiling) || !resp.SelfServiceLocked || resp.EffectiveMode != "admin_only" {
 				t.Fatalf("GET must report the ceiling and the lock: %s", rec.Body.String())
 			}
+			if resp.MaxAccounts != string(ceiling.MaxAccounts()) || resp.EffectiveAccounts != string(ceiling.SeedPolicy().Accounts) {
+				t.Fatalf("GET must report the widest account sign-up allowed: %s", rec.Body.String())
+			}
+			// Open account sign-up is above both ceilings.
+			rec = httptest.NewRecorder()
+			h.Update(rec, signupRequest(t, http.MethodPut, map[string]any{"mode": "admin_only", "accounts": "open", "version": 1, "totp_code": "123456"}))
+			if rec.Code != http.StatusConflict || step.calls != 0 {
+				t.Fatalf("open accounts above the ceiling: %d %s (codes spent %d)", rec.Code, rec.Body.String(), step.calls)
+			}
 		})
 	}
 

@@ -26,9 +26,14 @@ type signupPolicyMailer struct {
 var _ signup.ChangeNotifier = signupPolicyMailer{}
 
 func describeSignupPolicy(p signupdom.Policy) string {
-	mode := "Only platform administrators create organizations"
-	if p.AllowsSelfService() {
+	mode := "No public sign-up; only platform administrators create organizations"
+	switch {
+	case p.AllowsSelfService():
 		mode = "Anyone may sign up and create an organization"
+	case p.AccountSignup() == signupdom.AccountsOpen:
+		mode = "Anyone may sign up; only platform administrators create organizations"
+	case p.AccountSignup() == signupdom.AccountsDomain:
+		mode = "People on an organization's verified domain may sign up and join it; only platform administrators create organizations"
 	}
 	if p.RequestAccess {
 		return mode + "; people may request access"
