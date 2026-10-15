@@ -102,7 +102,7 @@ findings per run.
   composite FK (cascade); the repository's policy follows it on asset merge
   (the kept repository's own wins). The API keeps `scope_type` + `scope_id`.
 - `ci_gate_baselines` and `ci_gate_baseline_findings`: one gate baseline per repository (tenant, repository
-  asset), and the fingerprints it holds. Written only by `POST /api/v1/ci/repositories/{id}/gate-baseline`
+  asset), and the fingerprints it holds. Written only by `PUT /api/v1/ci/gate-baselines/{id}`
   (`scans:ci:policy`, step-up, audited high); a default-branch run is judged against it only (RFC-051 §6.2).
 - `ci_gate_overrides`: per tenant, composite FK to the repository asset. The
   creator is `created_by` (a user id); its email is read from `users` when the

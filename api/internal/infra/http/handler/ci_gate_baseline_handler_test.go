@@ -43,7 +43,7 @@ func TestCIGateBaselineHandlerIsolation(t *testing.T) {
 		ok     int
 	}{
 		{http.MethodGet, h.GetGateBaseline, http.StatusOK},
-		{http.MethodPost, h.SetGateBaseline, http.StatusOK},
+		{http.MethodPut, h.SetGateBaseline, http.StatusOK},
 		{http.MethodDelete, h.DeleteGateBaseline, http.StatusNoContent},
 	}
 	for _, rt := range routes {
