@@ -30,6 +30,7 @@ import {
   type FindingUser,
 } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
+import { FINDINGS_CLOSED_STATUSES } from '@/features/findings/lib/list-defaults'
 
 export interface FindingTriageTarget {
   id: string
@@ -95,11 +96,14 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       })
       opts.onStatusChange?.(next)
       await invalidateFindingsCache()
+      // No Undo on a closing move (resolve): reverting it is a reopen, which
+      // a person makes deliberately from the status control.
+      const closing = (FINDINGS_CLOSED_STATUSES as readonly string[]).includes(next)
       toast.success(
         t('findings.triage.statusUpdated', 'Status updated to {status}', {
           status: t(FINDING_STATUS_CONFIG[next].labelKey, FINDING_STATUS_CONFIG[next].label),
         }),
-        isUndo
+        isUndo || closing
           ? { duration: 3000 }
           : {
               action: {
