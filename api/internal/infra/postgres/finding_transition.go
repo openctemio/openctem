@@ -108,15 +108,29 @@ func clearFindingTransition(ctx context.Context, tx *sql.Tx) error {
 // execStatusWrite runs a statement that may change findings.status. When ctx
 // carries a vulnerability.StatusTransition (an application path moving a
 // finding on the platform's behalf), it runs in a transaction recorded as
-// that transition, so the move and its timeline entry commit together;
-// otherwise it runs as is (a person's move, recorded by its service).
+// that transition, so the move and its timeline entry commit together. When
+// ctx marks a person's move (vulnerability.WithPersonMove), the transaction is
+// marked openctem.person_move, so the regression trigger does not count a
+// person moving a finding back from resolved (Undo, a correction). Otherwise it
+// runs as is.
 func (db *DB) execStatusWrite(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	t, ok := vulnerability.StatusTransitionFrom(ctx)
-	if !ok {
+	t, platform := vulnerability.StatusTransitionFrom(ctx)
+	person := vulnerability.IsPersonMove(ctx)
+	if !platform && !person {
 		return db.ExecContext(ctx, query, args...)
 	}
 	var res sql.Result
-	err := db.withFindingTransition(ctx, t, func(tx *sql.Tx) error {
+	err := db.Transaction(ctx, func(tx *sql.Tx) error {
+		if platform {
+			if err := setFindingTransition(ctx, tx, t); err != nil {
+				return err
+			}
+		}
+		if person {
+			if _, err := tx.ExecContext(ctx, `SELECT set_config('openctem.person_move', 'on', true)`); err != nil {
+				return fmt.Errorf("mark person move: %w", err)
+			}
+		}
 		var err error
 		res, err = tx.ExecContext(ctx, query, args...)
 		return err
