@@ -111,7 +111,7 @@ func (r *FindingRepository) ResolveRepoCoverageStale(ctx context.Context, tenant
 		UPDATE findings f
 		SET status = 'resolved',
 			resolution = 'auto_fixed',
-			resolution_method = 'scan_verified',
+			closure_reason = 'fixed', verification = 'covered_scan',
 			resolved_at = NOW(),
 			updated_at = NOW()
 		FROM repository_branches rb

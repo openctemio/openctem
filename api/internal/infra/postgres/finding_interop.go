@@ -209,16 +209,18 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 	fps := make([]string, len(items))
 	assets := make([]string, len(items))
 	reasons := make([]string, len(items))
+	codes := make([]string, len(items))
 	for i, it := range items {
 		fps[i] = it.Fingerprint
 		assets[i] = it.AssetID
 		reasons[i] = it.Resolution
+		codes[i] = string(vulnerability.ClosureReasonFromVEXJustification(string(it.ClosureReason)))
 	}
 	match := `
 		WITH m AS (
-			SELECT * FROM unnest($2::text[], $3::uuid[], $4::text[]) AS m(fingerprint, asset_id, reason)
+			SELECT * FROM unnest($2::text[], $3::uuid[], $4::text[], $6::text[]) AS m(fingerprint, asset_id, reason, code)
 		)
-		SELECT f.id, m.reason
+		SELECT f.id, m.reason, m.code
 		FROM findings f
 		JOIN m ON m.fingerprint = f.fingerprint AND m.asset_id = f.asset_id
 		WHERE f.tenant_id = $1
@@ -233,8 +235,8 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 		// earlier VEX request a person rejected or canceled, gets none.
 		query = `
 		WITH x AS (` + match + `), ins AS (
-			INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status)
-			SELECT $1::uuid, x.id, 'false_positive', '` + vulnerability.ApprovalActorVEX + `', LEFT(x.reason, 1000), 'pending'
+			INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status, closure_reason)
+			SELECT $1::uuid, x.id, 'false_positive', '` + vulnerability.ApprovalActorVEX + `', LEFT(x.reason, 1000), 'pending', x.code
 			FROM x
 			WHERE NOT EXISTS (
 				SELECT 1 FROM finding_status_approvals p
@@ -254,7 +256,7 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 	out, err := r.db.queryIDsWithTransition(ctx, findingTransition{
 		Source: "vex", Reason: "vex_not_affected", ActorType: "scanner", ActorName: "system: VEX in a scan report",
 		Message: "A VEX statement in a scan report says the component is not affected",
-	}, query, tenantID.String(), pq.Array(fps), pq.Array(assets), pq.Array(reasons), strings.ToLower(tool))
+	}, query, tenantID.String(), pq.Array(fps), pq.Array(assets), pq.Array(reasons), strings.ToLower(tool), pq.Array(codes))
 	if err != nil {
 		return nil, fmt.Errorf("apply vex not_affected: %w", err)
 	}
