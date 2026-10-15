@@ -63,5 +63,10 @@
   "insights.programMetrics.controls.logging.title": "Lưu trữ quan trọng không ghi log",
   "insights.programMetrics.controls.edr.info": "Máy chủ có mức quan trọng critical hoặc được đánh dấu là tài sản trọng yếu mà thuộc tính \"Đã cài EDR\" là false hoặc chưa được ghi nhận. Chưa ghi nhận được tính là thiếu: chưa có nguồn nào báo EDR trên máy.",
   "insights.programMetrics.controls.mfa.info": "Tài khoản đám mây và danh tính có mức quan trọng critical hoặc được đánh dấu là tài sản trọng yếu mà thuộc tính \"MFA\" là false hoặc chưa được ghi nhận. Chưa ghi nhận được tính là thiếu.",
-  "insights.programMetrics.controls.logging.info": "Tài sản lưu trữ có mức quan trọng critical hoặc được đánh dấu là tài sản trọng yếu mà thuộc tính \"Ghi log\" là false hoặc chưa được ghi nhận. Chưa ghi nhận được tính là thiếu."
+  "insights.programMetrics.controls.logging.info": "Tài sản lưu trữ có mức quan trọng critical hoặc được đánh dấu là tài sản trọng yếu mà thuộc tính \"Ghi log\" là false hoặc chưa được ghi nhận. Chưa ghi nhận được tính là thiếu.",
+  "insights.scoringChange.note": "Cách tính điểm thay đổi ngày {date} ({what}): không nên so sánh trực tiếp giá trị trước và sau ngày này.",
+  "insights.scoringChange.source.platform_model": "mô hình tính điểm mới",
+  "insights.scoringChange.source.risk_settings": "cấu hình tính điểm rủi ro",
+  "insights.scoringChange.source.priority_rules": "quy tắc ưu tiên",
+  "insights.scoringChange.source.sla_policy": "chính sách SLA"
 }
