@@ -69,7 +69,7 @@ func (f *approvalFixture) request(t *testing.T, tenant, findingID shared.ID, sta
 	t.Helper()
 	return f.svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID: tenant.String(), FindingID: findingID.String(), RequestedStatus: status,
-		Justification: "the input is a constant", RequestedBy: f.requester.String(),
+		Justification: "the input is a constant", RequestedBy: f.requester.String(), ClosureReason: closureFor(status),
 	})
 }
 
@@ -358,4 +358,12 @@ func TestMigrationFindingApprovalPendingDedupe(t *testing.T) {
 	}
 	testdb.Migrate(t, db, dir, v, idx, true)
 	testdb.Migrate(t, db, dir, v, idx, false)
+}
+
+// closureFor is a valid closure reason for a requested status.
+func closureFor(status string) string {
+	if status == "accepted" {
+		return "risk_accepted"
+	}
+	return "detection_error"
 }
