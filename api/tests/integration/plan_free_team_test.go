@@ -39,7 +39,7 @@ func TestFreePlanOnSelfServiceOrganizations(t *testing.T) {
 	}
 	ent := entitlement.NewService(postgres.NewPlanRepository(db), nil, nil, nil, log)
 
-	svc := orgAuthService(db, config.TenantCreationSelfService)
+	svc := orgAuthService(db, config.SignupModeOpen)
 	email, refresh := orgSelfServiceUser(t, db, svc)
 	slug := "free-" + uuid.NewString()[:8]
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM tenants WHERE slug = $1`, slug) })

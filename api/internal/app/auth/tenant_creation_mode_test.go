@@ -15,7 +15,7 @@ import (
 // outside the platform admin console (RFC-022).
 func TestCreateFirstTeamRefusedInAdminOnlyMode(t *testing.T) {
 	svc := NewAuthService(nil, nil, nil, nil, nil,
-		config.AuthConfig{TenantCreationMode: config.TenantCreationAdminOnly}, logger.NewNop())
+		config.AuthConfig{SignupMode: config.SignupModeDisabled}, logger.NewNop())
 	_, err := svc.CreateFirstTeam(context.Background(), CreateFirstTeamInput{
 		RefreshToken: "irrelevant", TeamName: "Sneaky", TeamSlug: "sneaky",
 	})
@@ -29,7 +29,7 @@ func TestCreateFirstTeamRefusedInAdminOnlyMode(t *testing.T) {
 func TestCreateFirstTeamRefusedWhenModeUnset(t *testing.T) {
 	for _, mode := range []string{"", "adminonly"} {
 		svc := NewAuthService(nil, nil, nil, nil, nil,
-			config.AuthConfig{TenantCreationMode: mode}, logger.NewNop())
+			config.AuthConfig{SignupMode: mode}, logger.NewNop())
 		_, err := svc.CreateFirstTeam(context.Background(), CreateFirstTeamInput{
 			RefreshToken: "irrelevant", TeamName: "Sneaky", TeamSlug: "sneaky",
 		})
@@ -43,7 +43,7 @@ func TestCreateFirstTeamRefusedWhenModeUnset(t *testing.T) {
 // even with TENANT_CREATION_MODE=self_service in the environment.
 func TestCreateFirstTeamFollowsTheConsolePolicy(t *testing.T) {
 	svc := NewAuthService(nil, nil, nil, nil, nil,
-		config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService}, logger.NewNop())
+		config.AuthConfig{SignupMode: config.SignupModeOpen}, logger.NewNop())
 	svc.SetSignupPolicy(signupdom.Static{Mode: signupdom.ModeAdminOnly})
 	_, err := svc.CreateFirstTeam(context.Background(), CreateFirstTeamInput{
 		RefreshToken: "irrelevant", TeamName: "Sneaky", TeamSlug: "sneaky",

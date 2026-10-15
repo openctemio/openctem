@@ -64,7 +64,7 @@ func TestOrganizationPlanHasOneSource(t *testing.T) {
 	}
 
 	// Self-service organizations start on Free.
-	authSvc := orgAuthService(db, config.TenantCreationSelfService)
+	authSvc := orgAuthService(db, config.SignupModeOpen)
 	selfService := func(name string) (shared.ID, shared.ID) {
 		t.Helper()
 		email, refresh := orgSelfServiceUser(t, db, authSvc)

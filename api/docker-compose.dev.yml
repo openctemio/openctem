@@ -64,9 +64,12 @@ services:
       AUTH_MAX_LOGIN_ATTEMPTS: "5"
       AUTH_LOCKOUT_DURATION: 15m
       AUTH_MAX_ACTIVE_SESSIONS: "10"
-      # Who creates organizations: admin_only (platform administrator: console or
-      # bootstrap-admin -org-*) or self_service (any signed-in user; SaaS/trial).
-      TENANT_CREATION_MODE: ${TENANT_CREATION_MODE:-admin_only}
+      # Sign-up ceiling (no API can change it): disabled (default; accounts and
+      # organizations come from the platform administrator, invitations or
+      # SSO), domain (sign-up for an organization's verified domain, joins
+      # that organization) or open (hosted service: anyone signs up; needs the
+      # platform e-mail, and Turnstile keys or SIGNUP_CAPTCHA in production).
+      SIGNUP_MODE: ${SIGNUP_MODE:-disabled}
       AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
       # Keycloak (optional - for hybrid mode)
       # KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-http://localhost:8180}

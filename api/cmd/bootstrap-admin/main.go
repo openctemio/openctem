@@ -17,7 +17,7 @@
 //
 // With -org-name and -org-owner-email it also creates the first organization
 // (organizations are created by the platform administrator,
-// TENANT_CREATION_MODE=admin_only by default). It
+// SIGNUP_MODE=disabled by default). It
 // goes through the same services as the admin console's Organizations ->
 // Create: audited tenant.created and user.created, the owner's membership and
 // role, and a one-time set-password link for a new owner, emailed when SMTP is

@@ -31,19 +31,38 @@ func NewAdminSignupHandler(svc *signup.Service, stepUp StepUpVerifier, log *logg
 	return &AdminSignupHandler{svc: svc, stepUp: stepUp, logger: log.With("handler", "admin_signup")}
 }
 
-// SignupPolicyResponse is the stored policy.
+// SignupPolicyResponse is the stored policy, the deployment ceiling and the
+// policy in force.
 type SignupPolicyResponse struct {
 	// Mode: admin_only (only platform administrators create organizations)
-	// or self_service (anyone may sign up and create one).
+	// or self_service (anyone may sign up and create one). The stored value.
 	Mode string `json:"mode"`
 	// RequestAccess: people who cannot sign up may ask for an organization.
 	RequestAccess bool `json:"request_access"`
 	// Version to send back on PUT (optimistic concurrency).
 	Version int `json:"version"`
-	// Source: environment (seeded from TENANT_CREATION_MODE at first start),
-	// console (saved by an administrator) or default (nothing stored).
+	// Source: environment (seeded from SIGNUP_MODE at first start), console
+	// (saved by an administrator) or default (nothing stored).
 	Source    string `json:"source"`
 	UpdatedAt string `json:"updated_at,omitempty"`
+	// DeploymentMode is SIGNUP_MODE (disabled, domain or open): the ceiling
+	// set in the server configuration, which no API can change.
+	DeploymentMode string `json:"deployment_mode"`
+	// SelfServiceLocked: the deployment does not allow self_service, so the
+	// console cannot choose it (PUT answers 409 SIGNUP_LOCKED_BY_DEPLOYMENT).
+	SelfServiceLocked bool `json:"self_service_locked"`
+	// EffectiveMode is the mode in force: the stored mode clamped to the
+	// ceiling (and closed while public sign-up has no working e-mail).
+	EffectiveMode string `json:"effective_mode"`
+}
+
+// CodeSignupLockedByDeployment is the error code of a console change above
+// the deployment's SIGNUP_MODE.
+const CodeSignupLockedByDeployment apierror.Code = "SIGNUP_LOCKED_BY_DEPLOYMENT"
+
+func signupLockedError() *apierror.Error {
+	return apierror.New(http.StatusConflict, CodeSignupLockedByDeployment,
+		"Sign-up is limited by this server's configuration (SIGNUP_MODE). Change the server configuration to allow it.")
 }
 
 // UpdateSignupPolicyRequest changes the policy.
@@ -56,12 +75,16 @@ type UpdateSignupPolicyRequest struct {
 	TOTPCode string `json:"totp_code"`
 }
 
-func toSignupPolicyResponse(st signupdom.State) SignupPolicyResponse {
+func (h *AdminSignupHandler) toSignupPolicyResponse(st signupdom.State) SignupPolicyResponse {
+	ceiling := h.svc.Ceiling()
 	resp := SignupPolicyResponse{
-		Mode:          string(st.Policy.Mode),
-		RequestAccess: st.Policy.RequestAccess,
-		Version:       st.Version,
-		Source:        string(st.Source),
+		Mode:              string(st.Policy.Mode),
+		RequestAccess:     st.Policy.RequestAccess,
+		Version:           st.Version,
+		Source:            string(st.Source),
+		DeploymentMode:    ceiling.String(),
+		SelfServiceLocked: !ceiling.Permits(signupdom.Policy{Mode: signupdom.ModeSelfService}),
+		EffectiveMode:     string(h.svc.Effective(st.Policy).Mode),
 	}
 	if !st.UpdatedAt.IsZero() {
 		resp.UpdatedAt = st.UpdatedAt.UTC().Format(time.RFC3339)
@@ -71,7 +94,7 @@ func toSignupPolicyResponse(st signupdom.State) SignupPolicyResponse {
 
 // Get returns the sign-up policy.
 // @Summary      Get the sign-up policy
-// @Description  Who may create an organization on this deployment. Any administrator.
+// @Description  Who may create an organization on this deployment: the stored policy, the deployment ceiling (SIGNUP_MODE) and the policy in force. Any administrator.
 // @Tags         Admin System
 // @Produce      json
 // @Success      200  {object}  SignupPolicyResponse
@@ -84,14 +107,14 @@ func (h *AdminSignupHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toSignupPolicyResponse(st))
+	_ = json.NewEncoder(w).Encode(h.toSignupPolicyResponse(st))
 }
 
 // Update changes the sign-up policy. Super admin, with a fresh authenticator
 // code. Existing organizations, users and sessions are not affected. Audited
 // (critical); the other administrators are notified.
 // @Summary      Change the sign-up policy
-// @Description  Super admin with a fresh authenticator code. Sends the version read (409 when it moved on). Audited; other administrators are emailed.
+// @Description  Super admin with a fresh authenticator code. Sends the version read (409 when it moved on). self_service needs SIGNUP_MODE=open (409 SIGNUP_LOCKED_BY_DEPLOYMENT otherwise). Audited; other administrators are emailed.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
@@ -112,6 +135,11 @@ func (h *AdminSignupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	policy := signupdom.Policy{Mode: signupdom.Mode(strings.TrimSpace(req.Mode)), RequestAccess: req.RequestAccess}
 	if err := policy.Validate(); err != nil {
 		apierror.BadRequest("mode must be admin_only or self_service").WriteJSON(w)
+		return
+	}
+	// Above the ceiling: refused before the authenticator code is spent.
+	if !h.svc.Ceiling().Permits(policy) {
+		signupLockedError().WriteJSON(w)
 		return
 	}
 	req.TOTPCode = strings.TrimSpace(req.TOTPCode)
@@ -137,6 +165,8 @@ func (h *AdminSignupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	st, err := h.svc.Update(r.Context(), actor, policy, req.Version, middleware.ClientIP(r), r.UserAgent())
 	if err != nil {
 		switch {
+		case errors.Is(err, signupdom.ErrLockedByDeployment):
+			signupLockedError().WriteJSON(w)
 		case errors.Is(err, signupdom.ErrVersionConflict):
 			apierror.Conflict("The sign-up policy was changed by someone else; reload and try again").WriteJSON(w)
 		default:
@@ -146,5 +176,5 @@ func (h *AdminSignupHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toSignupPolicyResponse(st))
+	_ = json.NewEncoder(w).Encode(h.toSignupPolicyResponse(st))
 }

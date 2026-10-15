@@ -549,7 +549,7 @@ type TenantSMTPResolver interface {
 ### User Management (Production)
 
 Public registration is **off by default**: the sign-up policy (Console >
-System > Sign-up, seeded from `TENANT_CREATION_MODE`) is `admin_only`, RFC-025. People get accounts from an administrator, an invitation, or their
+System > Sign-up, a runtime switch under the `SIGNUP_MODE` ceiling, default `disabled`) is `admin_only`, RFC-025, RFC-104. People get accounts from an administrator, an invitation, or their
 organization's SSO (JIT on verified domains). See
 `docs/architecture/user-onboarding.md`.
 

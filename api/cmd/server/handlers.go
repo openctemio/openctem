@@ -57,6 +57,7 @@ import (
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -249,7 +250,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// constructed. The handler returns 503 from the dry-run
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
-	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
+	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SignupOpen())
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
@@ -1499,7 +1500,10 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.Announcement != nil {
 		s.Announcements = h.Announcement.ActiveResponses
 	}
-	mode := cfg.Auth.TenantCreationMode
+	mode := string(signupdom.Default().Mode)
+	if cfg.Auth.SignupOpen() {
+		mode = string(signupdom.ModeSelfService)
+	}
 	signup := svc.Signup
 	s.TenantCreationMode = func(ctx context.Context) string {
 		if signup != nil {

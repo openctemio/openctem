@@ -780,7 +780,7 @@ func defaultAuthTestConfig() config.AuthConfig {
 		MaxLoginAttempts:          5,
 		LockoutDuration:           15 * time.Minute,
 		MaxActiveSessions:         10,
-		TenantCreationMode:        config.TenantCreationSelfService,
+		SignupMode:                config.SignupModeOpen,
 		RequireEmailVerification:  false,
 		EmailVerificationDuration: 24 * time.Hour,
 		PasswordResetDuration:     1 * time.Hour,
@@ -1154,7 +1154,7 @@ func TestAuthService_Register(t *testing.T) {
 
 	t.Run("registration disabled", func(t *testing.T) {
 		cfg := defaultAuthTestConfig()
-		cfg.TenantCreationMode = config.TenantCreationAdminOnly
+		cfg.SignupMode = config.SignupModeDisabled
 		svc, _ := newTestAuthServiceWithConfig(cfg)
 
 		_, err := svc.Register(context.Background(), auth.RegisterInput{
@@ -2847,7 +2847,7 @@ func (m *mockAuthAuditRepo) ApplyChainRebaseline(_ context.Context, _ audit.Chai
 func registrationOffWithInvitation(t *testing.T, invitedEmail string, allowedDomains ...string) (*auth.AuthService, *authTestDeps, *tenant.Invitation) {
 	t.Helper()
 	cfg := defaultAuthTestConfig()
-	cfg.TenantCreationMode = config.TenantCreationAdminOnly
+	cfg.SignupMode = config.SignupModeDisabled
 	cfg.RequireEmailVerification = true
 	svc, deps := newTestAuthServiceWithConfig(cfg)
 

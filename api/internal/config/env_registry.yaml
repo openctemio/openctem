@@ -509,12 +509,17 @@ vars:
     type: int
     default: "32"
     description: "Largest public IPv6 range one scope entry may cover."
-  - name: TENANT_CREATION_MODE
+  - name: SIGNUP_MODE
     component: api
     group: "Organizations and scope guardrails"
     type: string
-    default: "admin_only"
-    description: "`admin_only`: only a platform administrator creates organizations (admin console or `bootstrap-admin`). `self_service`: any signed-in user may create organizations. Any other value stops start-up."
+    default: "disabled"
+    description: "The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (System > E-mail) at start and verify every self-registered address; `open` in production also needs the Turnstile keys or `SIGNUP_CAPTCHA`. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`."
+  - name: SIGNUP_CAPTCHA
+    component: api
+    group: "Organizations and scope guardrails"
+    type: string
+    description: "Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: open sign-up in production refuses to start without `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`."
   - name: CAPTCHA_TURNSTILE_SECRET
     component: api
     group: "Organizations and scope guardrails"

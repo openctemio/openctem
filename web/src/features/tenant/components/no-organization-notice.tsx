@@ -15,7 +15,7 @@ interface NoOrganizationNoticeProps {
 
 /**
  * Shown instead of the create-team form when the installation lets only the
- * platform administrator create organizations (`TENANT_CREATION_MODE=admin_only`).
+ * platform administrator create organizations (`the admin_only sign-up policy`).
  */
 export function NoOrganizationNotice({
   hasOtherTeams = false,

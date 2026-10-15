@@ -145,45 +145,88 @@ func minimalValidConfig() *Config {
 	}
 }
 
-func TestValidate_TenantCreationMode(t *testing.T) {
+func TestValidate_SignupMode(t *testing.T) {
 	cfg := minimalValidConfig()
-	cfg.Auth.TenantCreationMode = ""
+	cfg.Auth.SignupMode = ""
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("empty mode must default, got %v", err)
 	}
-	if cfg.Auth.TenantCreationMode != TenantCreationAdminOnly {
-		t.Fatalf("empty mode defaulted to %q, want admin_only", cfg.Auth.TenantCreationMode)
+	if cfg.Auth.SignupMode != SignupModeDisabled {
+		t.Fatalf("empty mode defaulted to %q, want disabled", cfg.Auth.SignupMode)
 	}
-	cfg.Auth.TenantCreationMode = TenantCreationSelfService
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("self_service must be valid, got %v", err)
+	for _, ok := range []string{SignupModeDomain, SignupModeOpen} {
+		cfg.Auth.SignupMode = ok
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("%s must be valid, got %v", ok, err)
+		}
 	}
-	cfg.Auth.TenantCreationMode = "adminonly"
+	// The old TENANT_CREATION_MODE values and typos are refused, never read
+	// as "open".
+	for _, bad := range []string{"self_service", "admin_only", "opne", "true"} {
+		cfg.Auth.SignupMode = bad
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("SIGNUP_MODE=%q must fail validation", bad)
+		}
+	}
+	cfg.Auth.SignupMode = SignupModeOpen
+	cfg.Auth.SignupCaptcha = "off"
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("a typo must fail validation, not silently allow self-service")
+		t.Fatal("SIGNUP_CAPTCHA accepts only the explicit acceptance value")
+	}
+	cfg.Auth.SignupCaptcha = ""
+	cfg.Auth.Provider = AuthProviderOIDC
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "SIGNUP_MODE") {
+		t.Fatalf("public sign-up without local accounts must fail, got %v", err)
 	}
 }
 
-// Organization creation is admin-only unless the operator opts in, and the
-// check fails closed for any value but self_service (RFC-022 D8, 2026-10).
-func TestLoad_TenantCreationModeDefaultsToAdminOnly(t *testing.T) {
-	t.Setenv("TENANT_CREATION_MODE", "")
+// Public sign-up is closed unless the operator opts in (SIGNUP_MODE, the
+// deployment ceiling); the old variable stops start-up with the way to move.
+func TestLoad_SignupModeDefaultsToDisabled(t *testing.T) {
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Auth.TenantCreationMode != TenantCreationAdminOnly {
-		t.Fatalf("unset TENANT_CREATION_MODE loaded as %q, want admin_only", cfg.Auth.TenantCreationMode)
+	if cfg.Auth.SignupMode != SignupModeDisabled || cfg.Auth.SignupOpen() || cfg.Auth.PublicSignup() {
+		t.Fatalf("unset SIGNUP_MODE loaded as %q, want disabled", cfg.Auth.SignupMode)
 	}
-	t.Setenv("TENANT_CREATION_MODE", TenantCreationSelfService)
-	if cfg, err = Load(); err != nil || !cfg.Auth.SelfServiceTenantCreation() {
-		t.Fatalf("explicit self_service must load and open self-service creation: %v", err)
+	t.Setenv("SIGNUP_MODE", "Open")
+	if cfg, err = Load(); err != nil || !cfg.Auth.SignupOpen() || !cfg.Auth.PublicSignup() {
+		t.Fatalf("explicit open must load: %v", err)
 	}
-	for mode, want := range map[string]bool{
-		"": false, TenantCreationAdminOnly: false, "adminonly": false, TenantCreationSelfService: true,
-	} {
-		if got := (AuthConfig{TenantCreationMode: mode}).SelfServiceTenantCreation(); got != want {
-			t.Fatalf("mode %q: SelfServiceTenantCreation=%v, want %v", mode, got, want)
+	t.Setenv("SIGNUP_MODE", SignupModeDomain)
+	if cfg, err = Load(); err != nil || cfg.Auth.SignupOpen() || !cfg.Auth.PublicSignup() {
+		t.Fatalf("domain allows public sign-up but no organization self-service: %v", err)
+	}
+	t.Setenv("SIGNUP_MODE", "")
+	t.Setenv("TENANT_CREATION_MODE", "self_service")
+	if _, err = Load(); err == nil || !strings.Contains(err.Error(), "SIGNUP_MODE=open") {
+		t.Fatalf("TENANT_CREATION_MODE must stop start-up and name SIGNUP_MODE, got %v", err)
+	}
+}
+
+// SIGNUP_MODE=open in production needs a CAPTCHA, or an explicit acceptance.
+func TestValidateProduction_OpenSignupNeedsCaptcha(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Auth.CookieSameSite = "lax"
+	cfg.Auth.SignupMode = SignupModeOpen
+	if err := cfg.validateProductionAuth(); err == nil || !strings.Contains(err.Error(), "CAPTCHA_TURNSTILE_SECRET") {
+		t.Fatalf("open without a CAPTCHA in production must fail, got %v", err)
+	}
+	cfg.Auth.SignupCaptcha = SignupCaptchaOffAccepted
+	if err := cfg.validateProductionAuth(); err != nil {
+		t.Fatalf("the explicit acceptance must start: %v", err)
+	}
+	cfg.Auth.SignupCaptcha = ""
+	cfg.Auth.CaptchaTurnstileSecret, cfg.Auth.CaptchaTurnstileSiteKey = "secret", "site"
+	if err := cfg.validateProductionAuth(); err != nil {
+		t.Fatalf("open with a CAPTCHA must start: %v", err)
+	}
+	cfg.Auth.CaptchaTurnstileSecret, cfg.Auth.CaptchaTurnstileSiteKey = "", ""
+	for _, m := range []string{SignupModeDisabled, SignupModeDomain} {
+		cfg.Auth.SignupMode = m
+		if err := cfg.validateProductionAuth(); err != nil {
+			t.Fatalf("SIGNUP_MODE=%s needs no CAPTCHA: %v", m, err)
 		}
 	}
 }

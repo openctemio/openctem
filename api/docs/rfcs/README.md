@@ -112,6 +112,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-094](RFC-094-platform-contracts-only.md) | The platform depends on contracts only | Proposed (2026-10-14). |
 | [RFC-095](RFC-095-role-templates-and-invitations.md) | Role templates and invitations | Accepted (owner feedback on the invite dialog, 2026-10-15). |
 | [RFC-096](RFC-096-ci-per-repository-settings.md) | CI gate settings per repository | Proposed (2026-10-15). |
+| [RFC-104](RFC-104-signup-modes-and-joining.md) | Sign-up modes and organization joining | Accepted (2026-10-15). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

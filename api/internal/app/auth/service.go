@@ -42,7 +42,7 @@ var (
 	// sign-up policy does not admit (signup.Admit). The caller has written
 	// nothing; the answer is the same whatever the reason.
 	ErrSignupNotAvailable = errors.New("sign-up is not available")
-	// ErrTenantCreationDisabled: TENANT_CREATION_MODE=admin_only, so only the
+	// ErrTenantCreationDisabled: the admin_only sign-up policy is in force, so only the
 	// platform administrator creates organizations (RFC-022).
 	ErrTenantCreationDisabled   = errors.New("organization creation is reserved for the application administrator")
 	ErrEmailAlreadyExists       = errors.New("email already exists")
@@ -93,7 +93,7 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 // AuthService handles authentication operations.
 type AuthService struct {
 	// signupPolicy decides who may create an organization (the console
-	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
+	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
 
 	userRepo         userdom.Repository
@@ -1791,9 +1791,8 @@ type FreePlan interface {
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
-// signupPolicyNow is the sign-up policy in force: the console setting when
-// wired, else TENANT_CREATION_MODE from the config (admin_only unless
-// self_service).
+// signupPolicyNow is the sign-up policy in force: the console setting clamped
+// to SIGNUP_MODE when wired, else self_service only under SIGNUP_MODE=open.
 func (s *AuthService) signupPolicyNow(ctx context.Context) signupdom.Policy {
 	return policyOrConfig(ctx, s.signupPolicy, s.config)
 }
@@ -1803,7 +1802,7 @@ func policyOrConfig(ctx context.Context, src signupdom.PolicySource, cfg config.
 	if src != nil {
 		return src.Current(ctx)
 	}
-	if cfg.SelfServiceTenantCreation() {
+	if cfg.SignupOpen() {
 		return signupdom.Policy{Mode: signupdom.ModeSelfService}
 	}
 	return signupdom.Default()

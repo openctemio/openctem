@@ -58,8 +58,8 @@ type TenantHandler struct {
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
 	logger          *logger.Logger
-	// selfServiceCreation allows POST /tenants (TENANT_CREATION_MODE=
-	// self_service). Off by default: organizations are then created by the
+	// selfServiceCreation allows POST /tenants when no sign-up policy is
+	// wired (SIGNUP_MODE=open). Off by default: organizations are then created by the
 	// platform administrator only.
 	selfServiceCreation bool
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
@@ -89,7 +89,7 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 }
 
 // SetSelfServiceTenantCreation lets signed-in users create organizations
-// (TENANT_CREATION_MODE=self_service). Without it POST /tenants is refused.
+// (SIGNUP_MODE=open). Without it POST /tenants is refused.
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
 }
