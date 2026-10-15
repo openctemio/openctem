@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Clock, Check, X, Loader2 } from 'lucide-react'
+import { Clock, Check, X, Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { ExposureEvent } from '@/lib/api/exposure-types'
 import { useAuthStore } from '@/stores/auth-store'
+import { SelfApproveDialog } from '@/features/shared/components/self-approve-dialog'
 import {
   acceptExposure,
   markExposureFalsePositive,
@@ -62,10 +63,23 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
   const canApprove = useCanApproveExposures()
   const userId = useAuthStore((s) => s.user?.id)
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
+  const [selfOpen, setSelfOpen] = useState(false)
   const pending = exposure.pending_disposition
   if (!pending) return null
 
   const mine = !!userId && pending.requested_by === userId
+  const canSelfApprove = mine && canApprove && !!pending.self_approval_available
+
+  const selfApprove = async (reason: string, code: string) => {
+    const input = { reason, self_approve: true, totp_code: code }
+    if (pending.requested_state === 'accepted') {
+      await acceptExposure(exposure.id, input)
+    } else {
+      await markExposureFalsePositive(exposure.id, input)
+    }
+    toast.success(t('exposures.disposition.approved', 'Approved'))
+    onChanged?.()
+  }
   const what =
     pending.requested_state === 'accepted'
       ? t('exposures.disposition.requestedAccept', 'Accept risk was requested')
@@ -129,9 +143,17 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
           {pending.reason}
         </p>
       )}
-      {mine && (
+      {mine && !canSelfApprove && (
         <p className="mt-1 text-xs text-muted-foreground">
           {t('exposures.disposition.ownHint', 'A different approver must confirm your request.')}
+        </p>
+      )}
+      {canSelfApprove && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t(
+            'exposures.disposition.selfHint',
+            'Nobody else can approve it. As the owner you may approve it yourself with a reason and a code from your authenticator app.'
+          )}
         </p>
       )}
       {canApprove && (
@@ -146,6 +168,12 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
               {t('exposures.disposition.approve', 'Approve')}
             </Button>
           )}
+          {canSelfApprove && (
+            <Button size="sm" onClick={() => setSelfOpen(true)} disabled={busy !== null}>
+              <ShieldCheck className="h-4 w-4" />
+              {t('exposures.disposition.selfApprove', 'Approve my own request')}
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={reject} disabled={busy !== null}>
             {busy === 'reject' ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -157,6 +185,14 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
               : t('exposures.disposition.reject', 'Reject')}
           </Button>
         </div>
+      )}
+      {canSelfApprove && (
+        <SelfApproveDialog
+          open={selfOpen}
+          onOpenChange={setSelfOpen}
+          subject={exposure.title}
+          onSubmit={selfApprove}
+        />
       )}
     </div>
   )
