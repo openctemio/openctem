@@ -319,3 +319,47 @@ func TestSanitizeKeepsGatedSensorWideCapabilities(t *testing.T) {
 		t.Fatalf("unknown capabilities kept: %v", out.Capabilities)
 	}
 }
+
+// The sensor's reach probe (RFC-089 §4.3) is a sensor service, not a
+// catalog tool: a heartbeat keeps it and its reach.probe@1 capability
+// without a tool catalog row, and the manifest no longer ignores it as
+// "unknown-tool". Any other tool missing from the catalog is still dropped.
+func TestSanitizeKeepsReachProbeService(t *testing.T) {
+	raw := `{"schema":1,
+	  "sensor":{"name":"openctemio-sensor","version":"v0.23.1"},
+	  "capabilities":["http.identity@1","reach.probe@1"],
+	  "tools":[{"name":"nuclei","kind":"scanner","installed":true,"capabilities":["dast"]},
+	           {"name":"reach-probe","kind":"scanner","installed":true,"capabilities":["reach.probe@1"]},
+	           {"name":"not-in-catalog","kind":"scanner","installed":true}]}`
+	m, _, _, err := ParseManifest([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := map[string]bool{"nuclei": true}
+	rep := m.CapabilityInput().Sanitize(known, map[string]bool{"dast": true})
+	var names []string
+	for _, tl := range rep.Tools {
+		names = append(names, tl.Name)
+		if tl.Name == ToolReachProbe && !reflect.DeepEqual(tl.Capabilities, []string{CapabilityReachProbe}) {
+			t.Fatalf("reach-probe capabilities %v", tl.Capabilities)
+		}
+	}
+	if !reflect.DeepEqual(names, []string{"nuclei", ToolReachProbe}) {
+		t.Fatalf("tools %v", names)
+	}
+	if !slices.Contains(rep.Capabilities, CapabilityReachProbe) {
+		t.Fatalf("reach.probe@1 dropped: %v", rep.Capabilities)
+	}
+	if known[ToolReachProbe] {
+		t.Fatal("Sanitize changed the caller's known tools")
+	}
+	_, ignored := m.Sanitized(rep, time.Now())
+	if len(ignored) != 1 || ignored[0].Value != "not-in-catalog" || ignored[0].Reason != IgnoredUnknownTool {
+		t.Fatalf("ignored = %+v, want only not-in-catalog as unknown-tool", ignored)
+	}
+	// A look-alike is still unknown.
+	out := CapabilityReportInput{Capabilities: []string{"reach.probe@2", "reach-probe-x"}, Tools: []ReportedTool{{Name: "reach-probe2", Installed: true}}}.Sanitize(nil, nil)
+	if len(out.Capabilities) != 0 || len(out.Tools) != 0 {
+		t.Fatalf("look-alikes kept: %v %v", out.Capabilities, out.Tools)
+	}
+}
