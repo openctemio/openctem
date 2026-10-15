@@ -28,7 +28,7 @@ type UserInfo struct {
 func FindingValues(f *vulnerability.Finding, asset *AssetInfo, assignee *UserInfo, webBase string) ticketmapdom.Values {
 	v := ticketmapdom.Values{
 		"finding.id":            ticketmapdom.Text(f.ID().String()),
-		"finding.title":         ticketmapdom.Text(f.Title()),
+		"finding.title":         ticketmapdom.Text(findingTitle(f)),
 		"finding.url":           ticketmapdom.Text(strings.TrimRight(webBase, "/") + "/findings/" + f.ID().String()),
 		"finding.severity":      ticketmapdom.Text(string(f.Severity())),
 		"finding.status":        ticketmapdom.Text(string(f.Status())),
