@@ -193,13 +193,14 @@ func (r *FindingRepository) GetInterop(ctx context.Context, tenantID, findingID 
 	return &d, nil
 }
 
-// ApplyVEXNotAffected closes the tenant's open findings that a VEX
-// not_affected statement covers, or with dryRun only returns the ones it
-// would close. A finding qualifies only when it is the tenant's, on the
-// stated asset, under the stated key, open, and not from a human source
-// (pentest, manual, bug bounty, red team). It becomes false_positive with
-// resolution_method 'vex_not_affected' and the statement's reason as its
-// resolution. Returns the ids closed (or that would be).
+// ApplyVEXNotAffected requests a false positive for the tenant's open
+// findings that a VEX not_affected statement covers (a pending four-eyes
+// request by the actor "vex", with the statement's reason as justification,
+// and an approval_requested timeline entry), or with dryRun only returns the
+// ones it would request. A finding qualifies only when it is the tenant's, on
+// the stated asset, under the stated key, last reported by tool, open, and
+// not from a human source (pentest, manual, bug bounty, red team). Returns
+// the ids requested (or that would be).
 func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID shared.ID, tool string,
 	items []vulnerability.VEXNotAffected, dryRun bool) ([]shared.ID, error) {
 	if len(items) == 0 || tool == "" {
@@ -226,17 +227,29 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 			AND lower(COALESCE(f.last_seen_tool, f.tool_name)) = $5`
 	query := `SELECT id::text FROM (` + match + `) x`
 	if !dryRun {
+		// A false positive needs four-eyes: the statement requests it (a
+		// pending request by the actor "vex"); a person with the approve
+		// permission decides. A finding with a pending request, or whose
+		// earlier VEX request a person rejected or canceled, gets none.
 		query = `
-		UPDATE findings f
-		SET status = 'false_positive',
-			resolution = x.reason,
-			resolution_method = 'vex_not_affected',
-			resolved_at = NOW(),
-			updated_at = NOW()
-		FROM (` + match + `) x
-		WHERE f.tenant_id = $1 AND f.id = x.id
-			AND f.status IN ` + vexFalsePositiveFromSQL + `
-		RETURNING f.id::text`
+		WITH x AS (` + match + `), ins AS (
+			INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status)
+			SELECT $1::uuid, x.id, 'false_positive', '` + vulnerability.ApprovalActorVEX + `', LEFT(x.reason, 1000), 'pending'
+			FROM x
+			WHERE NOT EXISTS (
+				SELECT 1 FROM finding_status_approvals p
+				WHERE p.tenant_id = $1::uuid AND p.finding_id = x.id
+				  AND (p.status = 'pending' OR (p.requested_by_actor = '` + vulnerability.ApprovalActorVEX + `' AND p.status IN ('rejected', 'canceled'))))
+			ON CONFLICT DO NOTHING
+			RETURNING id, finding_id
+		), timeline AS (
+			INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
+			SELECT $1::uuid, i.finding_id, 'approval_requested', 'scanner', 'system: VEX in a scan report',
+			       jsonb_build_object('requested_status', 'false_positive', 'requested_by', '` + vulnerability.ApprovalActorVEX + `', 'approval_id', i.id),
+			       'auto', 'A VEX statement in a scan report says the component is not affected; a person decides'
+			FROM ins i
+		)
+		SELECT finding_id::text FROM ins`
 	}
 	out, err := r.db.queryIDsWithTransition(ctx, findingTransition{
 		Source: "vex", Reason: "vex_not_affected", ActorType: "scanner", ActorName: "system: VEX in a scan report",
