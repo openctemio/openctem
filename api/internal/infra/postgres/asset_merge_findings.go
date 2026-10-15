@@ -33,6 +33,8 @@ import (
 var findingMergeRefs = []mergeRef{
 	{table: "finding_comments", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "finding_activities", column: "finding_id", tenantCol: "tenant_id"},
+	// At most one pending request per finding (ux_finding_status_approvals_pending):
+	// settleLoserPendingApproval runs first, so the move cannot collide.
 	{table: "finding_status_approvals", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "validation_evidence", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "pentest_retests", column: "finding_id", tenantCol: "tenant_id"},
@@ -284,7 +286,7 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 	if findingStatusRank(loserStatus) > findingStatusRank(survivorStatus) {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE findings s SET
-				status = l.status, resolution = l.resolution, resolution_method = l.resolution_method,
+				status = l.status, resolution = l.resolution, closure_reason = l.closure_reason, verification = l.verification,
 				resolved_at = l.resolved_at, resolved_by = l.resolved_by,
 				verified_at = l.verified_at, verified_by = l.verified_by,
 				-- an inherited acceptance keeps its end (an accepted risk always ends)
@@ -325,6 +327,9 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 	}
 
 	if err := settleLoserPendingRetest(ctx, tx, tenantID, survivorID, loserID); err != nil {
+		return err
+	}
+	if err := settleLoserPendingApproval(ctx, tx, tenantID, survivorID, loserID); err != nil {
 		return err
 	}
 
@@ -389,6 +394,21 @@ func settleLoserPendingRetest(ctx context.Context, tx *sql.Tx, tenantID, survivo
 		              WHERE tenant_id = $3 AND finding_id = $1 AND status = 'pending')`,
 		survivorID, loserID, tenantID); err != nil {
 		return fmt.Errorf("settle merged finding's pending retest: %w", err)
+	}
+	return nil
+}
+
+// settleLoserPendingApproval cancels the loser's pending status request when
+// the survivor has one too (one pending request per finding); the survivor's
+// request stands and the loser's is kept, canceled, in its history.
+func settleLoserPendingApproval(ctx context.Context, tx *sql.Tx, tenantID, survivorID, loserID string) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE finding_status_approvals SET status = 'canceled', version = version + 1
+		WHERE tenant_id = $3 AND finding_id = $2 AND status = 'pending'
+		  AND EXISTS (SELECT 1 FROM finding_status_approvals
+		              WHERE tenant_id = $3 AND finding_id = $1 AND status = 'pending')`,
+		survivorID, loserID, tenantID); err != nil {
+		return fmt.Errorf("settle merged finding's pending approval: %w", err)
 	}
 	return nil
 }

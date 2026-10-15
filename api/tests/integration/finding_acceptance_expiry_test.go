@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -96,7 +97,7 @@ func TestFindingAcceptance_EndIsWrittenClearedAndEndsTheGate(t *testing.T) {
 	end := time.Now().Add(30 * 24 * time.Hour).UTC().Truncate(time.Second)
 	endStr := end.Format(time.RFC3339)
 	req, err := svc.RequestApproval(ctx, finding.RequestApprovalInput{
-		TenantID: f.tenant.String(), FindingID: f.findingID.String(), RequestedStatus: "accepted",
+		TenantID: f.tenant.String(), FindingID: f.findingID.String(), RequestedStatus: "accepted", ClosureReason: "risk_accepted",
 		Justification: "compensating control", RequestedBy: f.requester.String(), ExpiresAt: &endStr,
 	})
 	if err != nil {
@@ -156,7 +157,7 @@ func TestFindingAcceptance_EndIsWrittenClearedAndEndsTheGate(t *testing.T) {
 
 	// Another tenant's write path cannot set the end on this finding.
 	repo := postgres.NewFindingRepository(f.pdb)
-	if err := repo.AcceptUntil(ctx, f.other, f.findingID, end.AddDate(0, 6, 0), nil); err != nil {
+	if err := repo.AcceptUntil(ctx, f.other, f.findingID, end.AddDate(0, 6, 0), nil, vulnerability.ClosureReasonRiskAccepted); err != nil {
 		t.Fatalf("cross-tenant AcceptUntil: %v", err)
 	}
 	if _, e := f.state(t); e == nil || !e.Equal(end) {
