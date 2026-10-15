@@ -139,7 +139,7 @@ func (h *CIRunnerHandler) SetSecretKeys(k SecretKeys) { h.secretKeys = k }
 
 // Exchange handles POST /api/v1/ci/oidc/exchange
 // @Summary      Exchange a CI OIDC token for a run upload token
-// @Description  A CI job (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, CircleCI, Jenkins with its OpenID Connect provider plugin) presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. Each OIDC token can be exchanged once. With aggregate true, the jobs of one pipeline run (same pipeline, provider run id, attempt and commit, from the verified token) share one run, each with its own token, and one final job evaluates it. Every refusal answers the same 401.
+// @Description  A CI job (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, CircleCI, Jenkins with its OpenID Connect provider plugin) presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. The same OIDC token exchanged again (a bounded number of times, while valid) gets a new token for the same run only. With aggregate true, the jobs of one pipeline run (same pipeline, provider run id, attempt and commit, from the verified token) share one run, each with its own token, and one final job evaluates it. Every refusal answers 401: before the token is admitted by a trust configuration with one generic message (CI_TOKEN_NOT_TRUSTED), after it with the reason (CI_TOKEN_<reason>).
 // @Tags         CI
 // @Accept       json
 // @Produce      json
@@ -149,6 +149,7 @@ func (h *CIRunnerHandler) SetSecretKeys(k SecretKeys) { h.secretKeys = k }
 // @Failure      401  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error "RUNNER_OUTDATED: the runner reports a version below the minimum supported one"
 // @Failure      429  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error "CI_ISSUER_UNAVAILABLE: the provider's keys cannot be fetched now; retry (Retry-After)"
 // @Router       /ci/oidc/exchange [post]
 // runnerOutdatedMessage tells the job exactly which line to change: the
 // openctemio/ci release to pin, in each form a pipeline uses it.
@@ -167,6 +168,19 @@ func runnerOutdatedMessage(err error) string {
 		"other CI systems `ghcr.io/openctemio/ci:%[3]s`.", have, oe.Min, oe.Pin)
 }
 
+// ciRefusalHelp points the job at the refusal list.
+const ciRefusalHelp = "See https://github.com/openctemio/ci/blob/main/docs/troubleshooting.md"
+
+// ciNotTrustedMessage answers every refusal before a trust configuration
+// admitted the token. It lists what to check without saying which check
+// failed: a token from anyone on a shared issuer reaches this point, and the
+// organization's configuration is not theirs to learn. An administrator
+// sees the exact reason in the audit log.
+const ciNotTrustedMessage = "The CI token was not accepted. Check that OPENCTEM_TENANT_ID is your organization's id, " +
+	"that the job's id_token audience is openctem:tenant:<that id>, that the token is not expired, and that a CI trust " +
+	"configuration of the organization admits this issuer, repository and ref (an administrator sees the exact reason " +
+	"in the audit log). " + ciRefusalHelp
+
 func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	r.Body = http.MaxBytesReader(w, r.Body, maxExchangeBody)
@@ -181,8 +195,23 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		RunID: req.RunID, Aggregate: req.Aggregate, Hints: cirun.Hints{CommitSHA: req.CommitSHA, Repository: req.Repository, BaseRef: req.BaseRef},
 		ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
 	if err != nil {
+		var refused *cirunapp.RefusedError
+		if errors.As(err, &refused) {
+			// The token was admitted by the organization's trust
+			// configuration: the job is told why it was refused.
+			apierror.New(http.StatusUnauthorized, apierror.Code("CI_TOKEN_"+strings.ToUpper(refused.Code)),
+				"The CI token was not accepted: "+refused.Message+" "+ciRefusalHelp).WriteJSON(w)
+			return
+		}
 		if errors.Is(err, cirunapp.ErrExchangeRefused) {
-			apierror.Unauthorized("The CI token was not accepted").WriteJSON(w)
+			apierror.New(http.StatusUnauthorized, "CI_TOKEN_NOT_TRUSTED", ciNotTrustedMessage).WriteJSON(w)
+			return
+		}
+		if errors.Is(err, cirunapp.ErrIssuerUnavailable) {
+			// Nothing was claimed: the same token may be retried.
+			w.Header().Set("Retry-After", "30")
+			apierror.New(http.StatusServiceUnavailable, "CI_ISSUER_UNAVAILABLE",
+				"The CI provider's signing keys cannot be fetched right now (the provider is unreachable or has just rotated its keys); retry in 30 seconds").WriteJSON(w)
 			return
 		}
 		if errors.Is(err, cirunapp.ErrRunnerOutdated) {

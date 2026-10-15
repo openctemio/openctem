@@ -1981,13 +1981,14 @@ deliberately.
 
 ## Role templates
 
-The built-in roles (`permission.SystemRoles`) are deliberately coarse.
-Least-privilege roles for the people in a CTEM program are custom roles,
-created from a **role template** (`permission.RoleTemplates`,
-`GET /api/v1/roles/templates`, `team:roles:read`). A template is a starting
-point and grants nothing. Creating a role from one is an ordinary
-`POST /api/v1/roles`: the grant ceiling, the admin-only refusal and the audit
-apply, so a template never lets anyone build a role above their own grants.
+The built-in roles (`permission.SystemRoles`) are deliberately few: **owner,
+admin, member and viewer**. Every other role is a custom role of the
+organization, usually created from a **role template**
+(`permission.RoleTemplates`, `GET /api/v1/roles/templates`, `team:roles:read`;
+design: RFC-095). A template is a starting point and grants nothing. Creating
+a role from one is an ordinary `POST /api/v1/roles` with `template_id`: the
+grant ceiling, the admin-only refusal and the audit apply, so a template never
+lets anyone build a role above their own grants.
 
 | Template | For | Full data |
 |---|---|---|
@@ -1996,13 +1997,38 @@ apply, so a template never lets anyone build a role above their own grants.
 | `vulnerability-manager` | backlog routing, assignment rules, campaigns, scan schedules, reports | no |
 | `remediation-owner` | asset owners, IT, developers: comments, remediation, fix applied | no |
 | `appsec-engineer` | code and dependency scanning, application findings, the CI gate | no |
+| `ci-integrator` | platform engineers keeping pipelines connected: CI runs and gate results, read only | no |
 | `scan-operator` | scans and scan workflows on approved scope | no |
+| `sensor-operator` | sensor health, zones and commands; pairing and keys stay with administrators | no |
 | `validation-engineer` | pentest campaigns, simulations, control tests, retests | no |
 | `external-tester` | a vendor tester: only the campaigns they are a member of | no |
+| `researcher` | bug-bounty researchers: programs, scans and findings of their programs (RFC-065) | no |
+| `bounty-triager` | triages researcher reports; never approves or changes program scope | no |
 | `threat-intel-analyst` | attacker profiles, threat intel, external exposures | no |
 | `risk-approver` | GRC: approves risk acceptance and suppressions, compliance | no |
 | `auditor` | read-only evidence, the audit log and exports | yes |
 | `executive` | dashboards, cycle outcomes and reports; less than viewer | no |
+
+**Versions.** Each template has a version. A role created from a template
+records the template id, the version and the template's permissions at that
+version (`roles.template_id`, `template_version`, `template_permissions`).
+A later change to the template never changes the role. When the catalog has a
+newer version, the role's responses carry `template.update_available` and the
+difference (in `GET /api/v1/roles/{id}` and the role list); an editor applies it with
+`POST /api/v1/roles/{id}/template/apply {version}` (`team:roles:write`). The
+update adds what the template added and removes what it removed, keeps the
+role's own edits, never changes full data access, and goes through
+`UpdateRole`, so the editor ceiling and the team-binding guard apply. A
+version other than the one the editor reviewed answers 409.
+`TestRoleTemplates_VersionPinned` pins each template's version to a digest of
+its grants, so a grant change without a new version fails CI.
+
+**Summaries.** Role and template responses carry `summary`: a risk tier
+(`critical` for owner and admin; `high` for full data, people, roles, keys,
+settings or secrets; `medium` for any change, scan run or approval; `low` for
+reads), the reasons, and per product area whether the role views or changes
+it (`permission.Summarize`). The console shows these instead of a permission
+count.
 
 Unit tests (`templates_test.go`) keep the templates honest:
 - every permission is in the catalog and none is admin-only;
@@ -2014,7 +2040,9 @@ Unit tests (`templates_test.go`) keep the templates honest:
 - no template administers the organization or deletes anything;
 - only `program-lead` and `auditor` see all data;
 - `auditor` and `executive` are read-only, and `executive` is within viewer;
-- `external-tester` holds no organization-wide findings, exposures, members or scans.
+- `external-tester` holds no organization-wide findings, exposures, members or scans;
+- the CI gate policy and break-glass stay with `appsec-engineer`;
+- `researcher` comments but never re-scores or approves.
 
 `TestRoleTemplates_CreationIsBoundedByTheCreator` checks two things: the owner can create every template, and a delegated role manager can create only the templates their own grants cover.
 
@@ -2064,7 +2092,7 @@ role. A custom role created later needs them explicitly for those reads.
 `PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
 finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
 reactions (`/comments/{comment_id}/reactions*`). The migration granted both to
-every role that held `findings:write`, except that the built-in Researcher role
+every role that held `findings:write`, except that the built-in Researcher role (now the `researcher` template, RFC-095)
 gets `findings:comment` only (researchers report and discuss; triage owns
 severity). A custom role without `findings:severity`
 (the remediation-owner template) can fix and discuss a finding but not
