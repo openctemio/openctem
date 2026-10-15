@@ -331,5 +331,7 @@
   "settings.mcpPolicy.scopes": "Quyền thành viên được cấp",
   "settings.mcpPolicy.title": "Chính sách của tổ chức",
   "settings.item.tool-defaults": "Mặc định công cụ",
-  "settings.desc.tool-defaults": "Tùy chọn mặc định của từng công cụ trên mọi sensor; mỗi sensor có thể ghi đè."
+  "settings.desc.tool-defaults": "Tùy chọn mặc định của từng công cụ trên mọi sensor; mỗi sensor có thể ghi đè.",
+  "settings.item.ticket-field-mapping": "Ánh xạ trường ticket",
+  "settings.desc.ticket-field-mapping": "Các trường và trạng thái đồng bộ với Jira, theo từng dự án."
 }
