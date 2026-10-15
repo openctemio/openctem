@@ -153,6 +153,8 @@ interface BackendAsset {
     scan_refusal_code?: string
   }
   risk_score: number // 0-100
+  risk_scored_at?: string // absent = never scored (with risk_score_pending present)
+  risk_score_pending?: boolean // a rescore is queued
   finding_count: number
   finding_severity_counts?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
   parent_id?: string
@@ -217,6 +219,16 @@ function transformAsset(backend: BackendAsset): Asset {
         }
       : undefined,
     riskScore: backend.risk_score,
+    // The asset API always sends risk_score_pending; without risk_scored_at
+    // the asset was never scored. Other payloads carry neither: unknown.
+    riskScored:
+      backend.risk_scored_at !== undefined
+        ? true
+        : backend.risk_score_pending !== undefined
+          ? false
+          : undefined,
+    riskScoredAt: backend.risk_scored_at || undefined,
+    riskScorePending: backend.risk_score_pending ?? undefined,
     findingCount: backend.finding_count,
     // Detail fields the API always sent but the transform used to drop, so the
     // detail sheet had nothing to show beyond tags.
