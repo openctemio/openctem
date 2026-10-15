@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -368,6 +369,11 @@ type CreateTenantInput struct {
 	Name        string `json:"name" validate:"required,min=2,max=100"`
 	Slug        string `json:"slug" validate:"required,min=3,max=100,slug"`
 	Description string `json:"description" validate:"max=500"`
+	// Plan is stored with the organization when set (Free for a
+	// self-service organization). Empty: no plan is stored and the
+	// organization is on plan.Unassigned until an administrator picks one
+	// (bootstrap-admin, the console, an approved access request).
+	Plan plan.Plan `json:"-"`
 }
 
 // CreateTenant creates a new tenant and adds the creator as owner.
@@ -392,6 +398,11 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 
 	if input.Description != "" {
 		t.UpdateDescription(input.Description)
+	}
+	if input.Plan != "" {
+		if err := t.SetPlan(input.Plan); err != nil {
+			return nil, err
+		}
 	}
 
 	// Build the owner membership before any write so a construction error can't
