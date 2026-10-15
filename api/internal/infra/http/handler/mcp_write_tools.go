@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -63,7 +64,7 @@ func (h *MCPHandler) buildWriteTools() []mcpTool {
 		Description: "Add an internal comment to a finding (visible to the organization's members, never sent to " +
 			"integrations). On a pentest finding the comment is team-only unless visibility is \"client\", which only " +
 			"the campaign lead or a reviewer may set; the client then reads it. Changes data: the first call returns a " +
-			"link where the user confirms the exact comment and its visibility in OpenCTEM; after they confirm, call " +
+			"link where the user confirms the exact comment and its visibility in " + brand.Name() + "; after they confirm, call " +
 			"again with the same arguments plus confirmation_id.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"finding_id":{"type":"string","description":"finding UUID"},` +

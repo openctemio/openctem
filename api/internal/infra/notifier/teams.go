@@ -15,6 +15,7 @@ import (
 
 // TeamsClient implements the Client interface for Microsoft Teams notifications.
 type TeamsClient struct {
+	product    string // brand name in test messages
 	webhookURL string
 	httpClient *http.Client
 }
@@ -26,6 +27,7 @@ func NewTeamsClient(config Config) (*TeamsClient, error) {
 	}
 
 	return &TeamsClient{
+		product:    config.productName(),
 		webhookURL: config.WebhookURL,
 		// SSRF: see slack.go — tenant-controlled webhook URL needs the
 		// dialer-level blocklist as defense in depth.
@@ -135,7 +137,7 @@ func (c *TeamsClient) Send(ctx context.Context, msg Message) (*SendResult, error
 // TestConnection tests the Teams webhook configuration.
 func (c *TeamsClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	testMsg := Message{
-		Title:    "OpenCTEM.io Test Notification",
+		Title:    c.product + " Test Notification",
 		Body:     "This is a test notification to verify your Microsoft Teams integration is working correctly.",
 		Severity: "low",
 	}
