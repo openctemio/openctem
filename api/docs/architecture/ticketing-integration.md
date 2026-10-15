@@ -9,6 +9,9 @@
 > Ticket links live in `ticket_links` (one row per finding or task ↔ issue,
 > with the owning integration, the issue key and a state); the ticket paths
 > move onto it from the `findings.work_item_uris` strings (display only).
+> Field and status mapping profiles per destination and object (finding or
+> task) are described in [ticket field and status mapping](ticket-field-mapping.md)
+> ([RFC-097](../rfcs/RFC-097-ticket-field-mapping.md)).
 
 ## Overview
 
