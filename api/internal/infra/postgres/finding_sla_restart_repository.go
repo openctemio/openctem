@@ -93,6 +93,9 @@ func (r *FindingSLARestartRepository) RestartSLA(ctx context.Context, tenantID s
 	}
 	wrote := false
 	err = r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		if err := markSLARestart(ctx, tx); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `
 			UPDATE findings SET sla_deadline = $3, sla_status = 'on_track', updated_at = NOW()
 			WHERE tenant_id = $1 AND id = $2 AND status = ANY($4)`,
@@ -114,4 +117,16 @@ func (r *FindingSLARestartRepository) RestartSLA(ctx context.Context, tenantID s
 		return nil
 	})
 	return wrote, err
+}
+
+// markSLARestart marks the transaction as one that starts a new SLA clock on
+// purpose, so trg_findings_sla_deadline_guard lets it move an open finding's
+// deadline later. Only the regression restart and the acceptance expiry call
+// it; every other writer stays tighten-only. SET LOCAL ends with the
+// transaction.
+func markSLARestart(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `SET LOCAL openctem.sla_restart = on`); err != nil {
+		return fmt.Errorf("mark sla restart: %w", err)
+	}
+	return nil
 }
