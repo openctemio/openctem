@@ -65,7 +65,7 @@ var findingStatusWriters = map[string]int{
 	"finding_pentest_duplicate.go":         2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
 	"finding_interop.go":                   1, // vexFalsePositiveFromSQL
 	"finding_repo_coverage_autoresolve.go": 1, // autoResolveFromSQL
-	"finding_repository.go":                9, // entity Update; UpdateStatusBatch ($6); auto-resolve x4; reopen x2; branch expiry
+	"finding_repository.go":                4, // entity Update; UpdateStatusBatch ($6); scan reopen batch; branch expiry
 	"finding_retest_repository.go":         2, // moveFindingInTx checks the lifecycle
 	"finding_template_provenance.go":       1, // staleFromSQL
 	"finding_vex_document.go":              1, // vexFalsePositiveFromSQL
