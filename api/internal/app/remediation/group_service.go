@@ -64,6 +64,8 @@ type ResolveGroupInput struct {
 	ActorID    string
 	// HasVerifyPermission: a resolved target needs findings:verify.
 	HasVerifyPermission bool
+	// HasFixApplyPermission: a fix_applied target needs findings:fix_apply.
+	HasFixApplyPermission bool
 	// OperatorApproved lets an over-ceiling bulk through the abuse guard.
 	OperatorApproved bool
 }
@@ -116,11 +118,12 @@ func (s *GroupService) ResolveGroup(ctx context.Context, tenantID shared.ID, in 
 
 	s.logger.Info("resolving remediation group", "tenant", tenantID.String(), "key", sanitizeLogValue(in.Key), "count", len(idStrs), "status", logger.SanitizeValue(status))
 	return s.resolver.BulkUpdateFindingsStatus(ctx, tenantID.String(), finding.BulkUpdateStatusInput{
-		FindingIDs:          idStrs,
-		Status:              status,
-		Resolution:          in.Resolution,
-		ActorID:             in.ActorID,
-		HasVerifyPermission: in.HasVerifyPermission,
+		FindingIDs:            idStrs,
+		Status:                status,
+		Resolution:            in.Resolution,
+		ActorID:               in.ActorID,
+		HasVerifyPermission:   in.HasVerifyPermission,
+		HasFixApplyPermission: in.HasFixApplyPermission,
 	})
 }
 

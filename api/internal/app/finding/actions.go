@@ -861,3 +861,44 @@ func validateCVEID(cveID string) error {
 	}
 	return nil
 }
+
+// FixAppliers returns which of the findings the user may mark fix_applied:
+// the direct assignee, a member of an assigned group, or a primary or
+// secondary owner of the asset. The same rule as BulkFixApplied, for every
+// route that marks a fix applied (the status endpoint, the bulk status change,
+// remediation group and campaign resolves). A lookup failure narrows, never
+// widens.
+func (s *FindingActionsService) FixAppliers(ctx context.Context, tenantID, userID shared.ID, findings []*vulnerability.Finding) map[shared.ID]bool {
+	out := make(map[shared.ID]bool, len(findings))
+	if len(findings) == 0 {
+		return out
+	}
+	groupIDSet := map[shared.ID]bool{}
+	if s.groupRepo != nil {
+		ids, err := s.groupRepo.ListGroupIDsByUser(ctx, tenantID, userID)
+		if err != nil {
+			s.logger.Warn("failed to load user groups", "error", err)
+		}
+		for _, gid := range ids {
+			groupIDSet[gid] = true
+		}
+	}
+	findingIDs := make([]shared.ID, len(findings))
+	for i, f := range findings {
+		findingIDs[i] = f.ID()
+	}
+	findingGroupMap := map[shared.ID][]shared.ID{}
+	if s.accessCtrlRepo != nil {
+		m, err := s.accessCtrlRepo.BatchListFindingGroupIDs(ctx, tenantID, findingIDs)
+		if err != nil {
+			s.logger.Warn("failed to batch load finding groups", "error", err)
+		} else {
+			findingGroupMap = m
+		}
+	}
+	owned := s.assetsOwnedBy(ctx, tenantID, userID, findings)
+	for _, f := range findings {
+		out[f.ID()] = s.canMarkFixApplied(userID, groupIDSet, findingGroupMap, owned, f)
+	}
+	return out
+}
