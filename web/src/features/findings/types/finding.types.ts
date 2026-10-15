@@ -390,6 +390,10 @@ export interface FindingComponent {
   /** direct | transitive | …; undefined when unknown. */
   dependencyType?: string
   manifestFile?: string
+  /** The package's first line in manifestFile, when the scanner reported it. */
+  manifestLine?: number
+  /** Transitive: package ids from the direct dependency to this package. */
+  dependencyPath?: string[]
 }
 
 /** A branch a finding was seen on (detail only). */

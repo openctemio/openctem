@@ -91,7 +91,7 @@
   "confirm.ciPipeline.retire": "Retire pipeline",
   "confirm.ciPipeline.retireDesc": "Findings that only this pipeline reported and nothing else has seen since close as \"source retired\". Findings another source still sees are not touched. Each closed finding can be reopened, and the next run of the pipeline brings it back.",
   "confirm.ciPipeline.retireTitle": "Retire the CI pipeline {name}?",
-  "confirm.ciTrust.deleteDesc": "Pipelines it admits can no longer send results. Tokens already issued expire within 15 minutes. This cannot be undone.",
+  "confirm.ciTrust.deleteDesc": "Pipelines it admits can no longer send results. Tokens already issued expire within 15 minutes. The repository scope entries it added are removed. This cannot be undone.",
   "confirm.ciTrust.deleteTitle": "Delete the CI trust \"{name}\"?",
   "confirm.comment.deleteDesc": "The comment is permanently deleted for everyone. This cannot be undone.",
   "confirm.comment.deleteTitle": "Delete this comment?",
