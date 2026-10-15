@@ -31,7 +31,7 @@ const (
 type AutoStore interface {
 	ListDueAutoTenants(ctx context.Context, now time.Time, limit int) ([]retestdom.AutoTenant, error)
 	ClaimTenantTick(ctx context.Context, tenantID shared.ID, seen *time.Time, next time.Time) (bool, error)
-	ListAutoCandidates(ctx context.Context, tenantID shared.ID, retestedBefore, resolvedSince time.Time, limit int) ([]shared.ID, error)
+	ListAutoCandidates(ctx context.Context, tenantID shared.ID, tools []string, retestedBefore, resolvedSince time.Time, limit int) ([]shared.ID, error)
 	CountCreatedSince(ctx context.Context, tenantID shared.ID, trigger retestdom.Trigger, since time.Time) (int, error)
 	CountPending(ctx context.Context, tenantID shared.ID, trigger retestdom.Trigger) (int, error)
 }
@@ -91,8 +91,22 @@ func (s *Service) serveTenant(ctx context.Context, auto AutoStore, t retestdom.A
 	if want <= 0 {
 		return 0
 	}
+	if s.sensors == nil {
+		return 0
+	}
+	// Only findings of tools an online sensor can re-check now are
+	// candidates: the tool's own retest handler, or the template re-verify
+	// rung. Nothing online, nothing queued (next tick tries again).
+	tools, err := s.sensors.RetestTools(ctx, t.TenantID)
+	if err != nil {
+		s.logger.Warn("auto-retest sensor lookup failed", "tenant_id", t.TenantID.String(), "error", err)
+		return 0
+	}
+	if len(tools) == 0 {
+		return 0
+	}
 	interval := time.Duration(settings.EffectiveIntervalHours()) * time.Hour
-	candidates, err := auto.ListAutoCandidates(ctx, t.TenantID, now.Add(-interval), now.Add(-ResolvedLookback), want*candidateOverfetch)
+	candidates, err := auto.ListAutoCandidates(ctx, t.TenantID, tools, now.Add(-interval), now.Add(-ResolvedLookback), want*candidateOverfetch)
 	if err != nil {
 		s.logger.Warn("auto-retest candidate lookup failed", "tenant_id", t.TenantID.String(), "error", err)
 		return 0
