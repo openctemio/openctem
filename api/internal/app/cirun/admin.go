@@ -55,7 +55,13 @@ func (s *Service) CreateTrustConfig(ctx context.Context, tenantID shared.ID, in 
 	if in.Enabled != nil {
 		c.Enabled = *in.Enabled
 	}
+	// Adding repositories to scope widens scope: only a caller who may
+	// change scope chooses it, and it is their default.
+	c.ManageScope = a.ScopeWrite
 	if in.ManageScope != nil {
+		if *in.ManageScope && !a.ScopeWrite {
+			return nil, ErrManageScopeForbidden
+		}
 		c.ManageScope = *in.ManageScope
 	}
 	if uid, err := shared.IDFromString(a.UserID); err == nil {
@@ -99,6 +105,9 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 	if err := next.Validate(); err != nil {
 		return nil, err
 	}
+	if !a.ScopeWrite && widensScope(cur, &next) {
+		return nil, ErrManageScopeForbidden
+	}
 	if err := s.repo.UpdateTrustConfig(ctx, &next); err != nil {
 		return nil, err
 	}
@@ -124,6 +133,26 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 		WithChanges(auditdom.NewChanges().Set("config", before, trustSnapshot(&next))))
 	s.syncScope(ctx, tenantID, &next, false, a)
 	return &next, nil
+}
+
+// ErrManageScopeForbidden refuses a trust change that would add
+// repositories to scope from a caller without attack_surface:scope:write.
+var ErrManageScopeForbidden = shared.NewDomainError("MANAGE_SCOPE_FORBIDDEN",
+	"adding the trusted repositories to scope needs the scope write permission; turn off Trust and add to scope or ask an administrator",
+	shared.ErrForbidden)
+
+// widensScope reports whether next claims a repository pattern cur did not.
+func widensScope(cur, next *cirun.TrustConfig) bool {
+	had := map[string]bool{}
+	for _, p := range cirun.ScopePatterns(cur) {
+		had[p] = true
+	}
+	for _, p := range cirun.ScopePatterns(next) {
+		if !had[p] {
+			return true
+		}
+	}
+	return false
 }
 
 // DeleteTrustConfig removes a trust configuration (audited). Runs it

@@ -12,11 +12,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -42,11 +44,45 @@ func (f *scopeSettingsFake) set(tenantID shared.ID, s tenant.ScopeSettings) {
 	f.m[tenantID.String()] = s
 }
 
+// govFake answers the organization's scan approval mode.
+type govFake struct {
+	mu   sync.Mutex
+	mode scangov.Mode
+}
+
+func (g *govFake) ScanGovernanceMode(context.Context, shared.ID) (scangov.Mode, string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.mode, scangov.SourceOrganization
+}
+
+func (g *govFake) set(m scangov.Mode) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.mode = m
+}
+
 type ciScopeRig struct {
 	*ciRig
 	scope    *scopeapp.Service
 	settings *scopeSettingsFake
+	gov      *govFake
 	host     string
+	// admin may change CI trust and scope and approve scope entries;
+	// ciOnly holds scans:ci:write but no scope permission (a custom role).
+	admin, ciOnly cirunapp.Actor
+}
+
+// scopeTrust creates a trust as an administrator who may change scope.
+func (r *ciScopeRig) scopeTrust(tenantID shared.ID, rules cirun.Rules) *cirun.TrustConfig {
+	r.t.Helper()
+	c, err := r.svc.CreateTrustConfig(context.Background(), tenantID, cirunapp.TrustConfigInput{
+		Name: "gitlab-" + shared.NewID().String()[28:], Provider: "gitlab", Issuer: r.idp.srv.URL, Rules: rules,
+	}, r.admin)
+	if err != nil {
+		r.t.Fatalf("create trust config: %v", err)
+	}
+	return c
 }
 
 func newCIScopeRig(t *testing.T) *ciScopeRig {
@@ -57,8 +93,13 @@ func newCIScopeRig(t *testing.T) *ciScopeRig {
 	scope.SetCITrustLinks(postgres.NewScopeCITrustLinkRepository(r.db))
 	settings := &scopeSettingsFake{m: map[string]tenant.ScopeSettings{}}
 	scope.SetEntryPolicy(settings, nil, nil)
+	scope.SetStepUpGate(recentAuth{})
+	gov := &govFake{mode: scangov.ModeOff} // the default: scan approval off
+	scope.SetGovernance(gov)
 	r.svc.SetScopeLinker(scope)
-	return &ciScopeRig{ciRig: r, scope: scope, settings: settings,
+	admin := cirunapp.Actor{UserID: seedActUser(t, r.db.DB).String(), Email: "admin@acme.test", ScopeWrite: true, ScopeApprove: true}
+	ciOnly := cirunapp.Actor{UserID: seedActUser(t, r.db.DB).String(), Email: "ci@acme.test"}
+	return &ciScopeRig{ciRig: r, scope: scope, settings: settings, gov: gov, admin: admin, ciOnly: ciOnly,
 		host: strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://"))}
 }
 
@@ -93,7 +134,7 @@ func (r *ciScopeRig) links(tenantID, trustID shared.ID) []scopedom.CITrustLink {
 func TestCITrustScope_ConfirmedAtOnceWithEvidence(t *testing.T) {
 	r := newCIScopeRig(t)
 	ctx := context.Background()
-	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	cfg := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
 	pattern := r.host + "/acme/*"
 
 	e := r.entry(r.tenant, pattern)
@@ -148,7 +189,7 @@ func TestCITrustScope_ConfirmedAtOnceWithEvidence(t *testing.T) {
 func TestCITrustScope_RequiresProofOptIn(t *testing.T) {
 	r := newCIScopeRig(t)
 	r.settings.set(r.tenant, tenant.ScopeSettings{CIScopeRequiresProof: true})
-	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	cfg := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
 	pattern := r.host + "/acme/*"
 	if e := r.entry(r.tenant, pattern); e == nil || e.Status() != scopedom.StatusInactive {
 		t.Fatalf("entry before proof: %+v", e)
@@ -190,7 +231,7 @@ func TestCITrustScope_Lifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	cfg := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
 	acme := r.host + "/acme/*"
 	acmeEntry := r.entry(r.tenant, acme)
 
@@ -198,7 +239,7 @@ func TestCITrustScope_Lifecycle(t *testing.T) {
 	// entry is linked as it is.
 	in := cirunapp.TrustConfigInput{Name: cfg.Name, Provider: "gitlab", Issuer: cfg.Issuer, Audience: cfg.Audience,
 		Rules: cirun.Rules{Owners: []string{"beta"}}}
-	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
+	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, r.admin); err != nil {
 		t.Fatal(err)
 	}
 	if r.entry(r.tenant, acme) != nil {
@@ -221,7 +262,7 @@ func TestCITrustScope_Lifecycle(t *testing.T) {
 
 	// Disable: managed entries retire (none here but the manual one stays).
 	in.Rules = cirun.Rules{Owners: []string{"acme", "beta"}}
-	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, cirunapp.Actor{}); err != nil {
+	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, r.admin); err != nil {
 		t.Fatal(err)
 	}
 	if e := r.entry(r.tenant, acme); e == nil || e.Status() != scopedom.StatusActive || e.ID().Equals(acmeEntry.ID()) {
@@ -229,7 +270,7 @@ func TestCITrustScope_Lifecycle(t *testing.T) {
 	}
 	off := false
 	in.Enabled = &off
-	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, cirunapp.Actor{}); err != nil {
+	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, r.admin); err != nil {
 		t.Fatal(err)
 	}
 	if r.entry(r.tenant, acme) != nil || len(r.links(r.tenant, cfg.ID)) != 0 {
@@ -242,7 +283,7 @@ func TestCITrustScope_Lifecycle(t *testing.T) {
 	// "Trust and add to scope" off: the trust manages nothing.
 	on, noScope := true, false
 	in.Enabled, in.ManageScope = &on, &noScope
-	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, cirunapp.Actor{}); err != nil {
+	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, r.admin); err != nil {
 		t.Fatal(err)
 	}
 	if r.entry(r.tenant, acme) != nil {
@@ -251,7 +292,7 @@ func TestCITrustScope_Lifecycle(t *testing.T) {
 
 	// Delete: retired first, the links go with the trust.
 	in.ManageScope = &on
-	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, cirunapp.Actor{}); err != nil {
+	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, in, r.admin); err != nil {
 		t.Fatal(err)
 	}
 	if r.entry(r.tenant, acme) == nil {
@@ -269,8 +310,8 @@ func TestCITrustScope_Lifecycle(t *testing.T) {
 	}
 
 	// Two trusts on one namespace share one entry; it retires with the last.
-	a := r.trust(r.tenant, cirun.Rules{Owners: []string{"gamma"}})
-	b := r.trust(r.tenant, cirun.Rules{Owners: []string{"gamma"}})
+	a := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"gamma"}})
+	b := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"gamma"}})
 	gamma := r.entry(r.tenant, r.host+"/gamma/*")
 	if gamma == nil || len(r.links(r.tenant, a.ID)) != 1 || len(r.links(r.tenant, b.ID)) != 1 {
 		t.Fatal("overlapping trusts")
@@ -294,8 +335,8 @@ func TestCITrustScope_Lifecycle(t *testing.T) {
 func TestCITrustScope_CrossTenant(t *testing.T) {
 	r := newCIScopeRig(t)
 	ctx := context.Background()
-	a := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	b := r.trust(r.other, cirun.Rules{Owners: []string{"acme"}})
+	a := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	b := r.scopeTrust(r.other, cirun.Rules{Owners: []string{"acme"}})
 	pattern := r.host + "/acme/*"
 	ea, eb := r.entry(r.tenant, pattern), r.entry(r.other, pattern)
 	if ea == nil || eb == nil || ea.ID().Equals(eb.ID()) {
@@ -339,7 +380,7 @@ func TestCITrustScope_PublicHostNamespace(t *testing.T) {
 	r := newCIScopeRig(t)
 	c, err := r.svc.CreateTrustConfig(context.Background(), r.tenant, cirunapp.TrustConfigInput{
 		Name: "gitlab.com", Provider: "gitlab", Rules: cirun.Rules{Owners: []string{"0xmanhnv"}},
-	}, cirunapp.Actor{})
+	}, r.admin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,3 +390,136 @@ func TestCITrustScope_PublicHostNamespace(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// Adding a trust's repositories to scope needs the scope write permission:
+// a custom role with only scans:ci:write cannot widen scope through a trust.
+func TestCITrustScope_NeedsScopeWrite(t *testing.T) {
+	r := newCIScopeRig(t)
+	ctx := context.Background()
+	on := true
+	in := cirunapp.TrustConfigInput{Name: "ci-only", Provider: "gitlab", Issuer: r.idp.srv.URL,
+		Rules: cirun.Rules{Owners: []string{"acme"}}, ManageScope: &on}
+	if _, err := r.svc.CreateTrustConfig(ctx, r.tenant, in, r.ciOnly); !errors.Is(err, cirunapp.ErrManageScopeForbidden) {
+		t.Fatalf("manage_scope=true without scope write: %v", err)
+	}
+	// Left out, it defaults to off for this caller: the trust works, scope
+	// is untouched.
+	in.ManageScope = nil
+	c, err := r.svc.CreateTrustConfig(ctx, r.tenant, in, r.ciOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ManageScope || r.entry(r.tenant, r.host+"/acme/*") != nil {
+		t.Fatalf("a caller without scope write added scope: %+v", c)
+	}
+	// An administrator turns it on; afterwards the CI-only caller may rename
+	// it or narrow it, never widen it.
+	in.ManageScope = &on
+	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, c.ID, in, r.admin); err != nil {
+		t.Fatal(err)
+	}
+	in.ManageScope, in.Name = nil, "renamed"
+	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, c.ID, in, r.ciOnly); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	in.Rules = cirun.Rules{Owners: []string{"acme", "beta"}}
+	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, c.ID, in, r.ciOnly); !errors.Is(err, cirunapp.ErrManageScopeForbidden) {
+		t.Fatalf("widen without scope write: %v", err)
+	}
+	if r.entry(r.tenant, r.host+"/beta/*") != nil {
+		t.Fatal("a refused change widened scope")
+	}
+}
+
+// The entries follow the organization's scope approval rules as the person
+// who saved the trust: under Strict, an approver's entry waits for its
+// approvals and anyone else's is not added.
+func TestCITrustScope_FollowsGovernance(t *testing.T) {
+	r := newCIScopeRig(t)
+	r.gov.set(scangov.ModeStrict)
+	cfg := r.scopeTrust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	e := r.entry(r.tenant, r.host+"/acme/*")
+	if e == nil || e.Status() != scopedom.StatusPending {
+		t.Fatalf("Strict, approver: %+v", e)
+	}
+	active, _ := r.scope.ListActiveTargets(context.Background(), r.tenant.String())
+	for _, a := range active {
+		if a.ID().Equals(e.ID()) {
+			t.Fatal("an entry awaiting approval authorizes")
+		}
+	}
+	if len(r.links(r.tenant, cfg.ID)) != 1 {
+		t.Fatal("the pending entry is not linked")
+	}
+	noApprove := r.admin
+	noApprove.ScopeApprove = false
+	if _, err := r.svc.CreateTrustConfig(context.Background(), r.tenant, cirunapp.TrustConfigInput{
+		Name: "writer", Provider: "gitlab", Issuer: r.idp.srv.URL, Rules: cirun.Rules{Owners: []string{"beta"}},
+	}, noApprove); err != nil {
+		t.Fatal(err)
+	}
+	if r.entry(r.tenant, r.host+"/beta/*") != nil {
+		t.Fatal("Strict: a non-approver's trust added an entry")
+	}
+	if r.auditCount(r.tenant, "ci_trust_config.updated", r.host+"/beta/*") != 1 {
+		t.Fatal("the refused pattern is not audited")
+	}
+}
+
+// A pipeline run never creates an entry, and an entry a person deleted is
+// not created again, by a run or a trust change.
+func TestCITrustScope_RunsNeverCreate(t *testing.T) {
+	r := newCIScopeRig(t)
+	ctx := context.Background()
+	// A trust saved before trusts managed scope, with manage_scope on but no
+	// links: a run links an existing equal entry and creates nothing.
+	now := time.Now().UTC()
+	legacy := &cirun.TrustConfig{ID: shared.NewID(), TenantID: r.tenant, Name: "legacy", Provider: cirun.ProviderGitLab,
+		Issuer: r.idp.srv.URL, Rules: cirun.Rules{Owners: []string{"acme", "beta"}}, Enabled: true, ManageScope: true,
+		CreatedAt: now, UpdatedAt: now}
+	legacy.Normalize()
+	if err := r.repo.CreateTrustConfig(ctx, legacy); err != nil {
+		t.Fatal(err)
+	}
+	manual, err := r.scope.CreateTarget(ctx, scopeapp.CreateTargetInput{TenantID: r.tenant.String(), TargetType: "repository",
+		Pattern: r.host + "/beta/*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, legacy.Audience, "acme/api", "main", strings.Repeat("1", 40), nil)); code != http.StatusCreated {
+		t.Fatalf("exchange: %d", code)
+	}
+	if r.entry(r.tenant, r.host+"/acme/*") != nil {
+		t.Fatal("a run created a scope entry")
+	}
+	links := r.links(r.tenant, legacy.ID)
+	if len(links) != 1 || links[0].Pattern != r.host+"/beta/*" || !links[0].TargetID.Equals(manual.ID()) {
+		t.Fatalf("links after the run: %+v", links)
+	}
+
+	// A person deletes the linked entry: neither a run nor a trust change
+	// adds it again, and the link says so.
+	if err := r.scope.DeleteTarget(ctx, manual.ID().String(), r.tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, legacy.Audience, "beta/api", "main", strings.Repeat("2", 40), nil)); code != http.StatusCreated {
+		t.Fatalf("exchange: %d", code)
+	}
+	in := cirunapp.TrustConfigInput{Name: "legacy", Provider: "gitlab", Issuer: legacy.Issuer, Audience: legacy.Audience,
+		Rules: cirun.Rules{Owners: []string{"acme", "beta"}}}
+	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, legacy.ID, in, r.admin); err != nil {
+		t.Fatal(err)
+	}
+	if r.entry(r.tenant, r.host+"/beta/*") != nil {
+		t.Fatal("a deleted entry came back")
+	}
+	for _, l := range r.links(r.tenant, legacy.ID) {
+		if l.Pattern == r.host+"/beta/*" && (l.TargetID != nil || l.TargetRemovedAt == nil) {
+			t.Fatalf("the removal is not recorded: %+v", l)
+		}
+	}
+	// The administrator's change did add the namespace no one deleted.
+	if r.entry(r.tenant, r.host+"/acme/*") == nil {
+		t.Fatal("the trust change did not add acme")
+	}
+}
