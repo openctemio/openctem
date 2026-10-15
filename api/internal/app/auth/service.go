@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
@@ -91,10 +92,6 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
-	// freePlan assigns the Free plan to self-service organizations. Nil: no
-	// plans (organizations unlimited).
-	freePlan FreePlan
-
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -1775,16 +1772,12 @@ type CreateFirstTeamResult struct {
 	Tenant       TenantMembershipInfo `json:"tenant"`
 }
 
-// FreePlan is the slice of the entitlement service self-service creation uses.
-// create-first-team only assigns the plan: it serves people with no
-// organization, who own no Free one; POST /tenants checks the per-person cap.
+// FreePlan is the slice of the entitlement service POST /tenants uses to cap
+// the Free organizations one person owns. create-first-team needs no cap: it
+// serves people with no organization, who own no Free one.
 type FreePlan interface {
 	CheckFreeTeam(ctx context.Context, userID shared.ID) error
-	AssignFree(ctx context.Context, tenantID shared.ID) error
 }
-
-// SetFreePlan wires the Free plan for self-service organizations.
-func (s *AuthService) SetFreePlan(p FreePlan) { s.freePlan = p }
 
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
@@ -1892,6 +1885,11 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
+	// A self-service organization starts on the Free plan, stored with the
+	// organization in one transaction.
+	if err := newTenant.SetPlan(plan.Free); err != nil {
+		return nil, err
+	}
 
 	// Tenant, owner membership and owner role in one transaction, the same
 	// write the other organization-creation paths use.
@@ -1901,13 +1899,6 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 	if err := s.tenantRepo.CreateWithOwner(ctx, newTenant, membership); err != nil {
 		return nil, fmt.Errorf("failed to create team: %w", err)
-	}
-
-	// A self-service organization starts on the Free plan.
-	if s.freePlan != nil {
-		if err := s.freePlan.AssignFree(ctx, newTenant.ID()); err != nil {
-			s.logger.Error("assign the Free plan to a new organization", "tenant_id", newTenant.ID().String(), "error", err)
-		}
 	}
 
 	s.logger.Info("first team created",
