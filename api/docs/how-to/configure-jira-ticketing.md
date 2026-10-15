@@ -73,6 +73,11 @@ delivery whose payload `timestamp` is more than an hour old. Generating or
 entering a new secret stops the old one at once. Both need the
 `integrations:manage` permission and a recent sign-in (step-up).
 
+> **Upgrading:** the old organization-wide URL
+> (`/api/v1/webhooks/incoming/jira?tenant=...`) and its secret endpoints are
+> removed. A Jira webhook still pointed at it gets 404: recreate it with the
+> integration's URL and secret as above.
+
 Outbound (OpenCTEM to Jira) needs no webhook and works once **status sync** is on.
 
 ## Troubleshooting
