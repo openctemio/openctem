@@ -28,8 +28,6 @@ export type FindingStatus =
   | 'confirmed' // Verified as real issue, needs fix
   | 'in_progress' // Being fixed
   | 'fix_applied' // Marked fixed, awaiting verification (scan, retest or security review)
-  | 'validated_fixed' // A validation re-check no longer observes it; a person closes it
-  | 'not_observed' // Not seen by recent scans, no proof the check ran: stale, NOT fixed (SLA keeps running)
   | 'resolved' // Verified fixed; how is the resolution (scan, retest, security review)
   | 'false_positive' // Not a real issue (requires approval)
   | 'accepted' // Risk accepted (requires approval, has expiration)
@@ -88,24 +86,6 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
     bgColor: 'bg-yellow-600/20',
     textColor: 'text-yellow-500',
     icon: 'wrench',
-    category: 'in_progress',
-  },
-  validated_fixed: {
-    label: 'Validated Fixed',
-    labelKey: 'findings.status.validated_fixed',
-    color: 'border-teal-500/50', // palette-ok: status scheme, like every status here
-    bgColor: 'bg-teal-500/20', // palette-ok: status scheme
-    textColor: 'text-teal-400', // palette-ok: status scheme
-    icon: 'shield-check',
-    category: 'in_progress',
-  },
-  not_observed: {
-    label: 'Not Observed',
-    labelKey: 'findings.status.not_observed',
-    color: 'border-zinc-500/50', // palette-ok: status scheme, like every status here
-    bgColor: 'bg-zinc-500/20', // palette-ok: status scheme
-    textColor: 'text-zinc-400', // palette-ok: status scheme
-    icon: 'eye-off',
     category: 'in_progress',
   },
   resolved: {
@@ -183,10 +163,6 @@ export const STATUS_TRANSITIONS: Record<FindingStatus, FindingStatus[]> = {
   in_progress: ['fix_applied', 'confirmed'],
   // Fix applied — awaiting a proof-of-fix retest or manual security review
   fix_applied: ['resolved', 'in_progress'],
-  // Validated fixed — a validation re-check no longer observes it; a person closes or reopens it
-  validated_fixed: ['resolved', 'confirmed', 'duplicate', 'false_positive', 'accepted'],
-  // Not observed — set by the platform only; seen again, triaged, or closed with proof
-  not_observed: ['confirmed', 'in_progress', 'resolved', 'duplicate', 'false_positive', 'accepted'],
   // Closed states (can reopen to confirmed)
   resolved: ['confirmed'],
   false_positive: ['confirmed'],
@@ -203,8 +179,6 @@ export const AUTOMATED_STATUSES: FindingStatus[] = [
   'confirmed',
   'in_progress',
   'fix_applied',
-  'validated_fixed',
-  'not_observed',
   'resolved',
   'false_positive',
   'accepted',
@@ -820,6 +794,10 @@ export interface Finding {
   closureReason?: string
   /** How a resolve was proven. */
   verification?: string
+  /** present or stale (no longer reported, not fixed). */
+  observation?: 'present' | 'stale'
+  /** Latest re-check verdict. */
+  validation?: 'reproducible' | 'not_reproducible'
   verifiedAt?: string
   createdAt: string
   updatedAt: string
