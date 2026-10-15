@@ -126,6 +126,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -1666,6 +1667,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize integration & notification services
 	s.Integration = integration.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
+	s.Integration.SetBrand(cfg.Brand)
 	s.Integration.SetTransactionDB(deps.DB)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
@@ -1686,6 +1688,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Events about private program assets reach only the programs' own
 	// channels (RFC-065 §15.4): one rule for every integration provider.
 	s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
+	s.Outbox.SetBrand(cfg.Brand)
 
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
@@ -2895,6 +2898,7 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 		return nil
 	}
 	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.Brand.DisplayName(), log)
+	s.Email.SetBranding(email.Branding{FooterText: cfg.Brand.EmailFooter, PoweredBy: cfg.Brand.ShowPoweredBy()})
 	if !s.Email.IsConfigured() {
 		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
 	}
