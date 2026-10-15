@@ -243,7 +243,7 @@ func (s *SuggestionService) Members(ctx context.Context, tenantID, id shared.ID,
 	return s.repo.SuggestionMembers(ctx, tenantID, id, scope, page)
 }
 
-// Counts summarises the open suggestions the caller may see.
+// Counts summarizes the open suggestions the caller may see.
 func (s *SuggestionService) Counts(ctx context.Context, tenantID shared.ID) (remediationdom.SuggestionCounts, error) {
 	scope, err := s.scope(ctx, tenantID)
 	if err != nil {
