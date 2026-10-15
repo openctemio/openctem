@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	branchdom "github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -91,12 +94,27 @@ func (s *IntegrationService) ImportSCMRepositories(ctx context.Context, input Im
 		}
 	}
 
+	webHost := ""
+	if intgID, err := shared.IDFromString(input.IntegrationID); err == nil {
+		if intg, err := s.repo.GetByTenantAndID(ctx, tenantID, intgID); err == nil && intg != nil {
+			webHost = integrationWebHost(intg.Provider(), intg.BaseURL())
+		}
+	}
+
 	result := &ImportReposResult{Total: len(repos)}
 	for i := range repos {
 		r := repos[i]
 		if r.FullName == "" || (r.IsArchived && !input.IncludeArchived) {
 			result.Skipped++
 			continue
+		}
+		if !repositoryOnHost(r, webHost) {
+			// Imported, but without an identity: no repository id is
+			// recorded and the asset keeps the plain full name, so the
+			// listing cannot claim another host's repository of that id.
+			s.logger.Warn("repository imported without its id: its address is not on the integration's host",
+				"integration_id", input.IntegrationID, "full_name", r.FullName)
+			r = withoutIdentity(r)
 		}
 		created, err := s.upsertRepositoryAsset(ctx, tenantID, r)
 		if err != nil {
@@ -180,11 +198,75 @@ type RepositoryIdentity interface {
 	RenameRepositoryAsset(ctx context.Context, tenantID, assetID shared.ID, name string) (bool, error)
 }
 
+// RenameAuditor records repository asset renames (auditapp.AuditService).
+type RenameAuditor interface {
+	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
+}
+
 // SetRepositoryIdentity makes repository import find a repository by its
 // code host id first and name new assets host/path, the name CI uses, so one
-// repository is one asset whichever reports it first. Without it import
-// dedups by full name only.
-func (s *IntegrationService) SetRepositoryIdentity(r RepositoryIdentity) { s.repoIdentity = r }
+// repository is one asset whichever reports it first. Renames are audited
+// through audit (nil: logged only). Without it import dedups by full name
+// only.
+func (s *IntegrationService) SetRepositoryIdentity(r RepositoryIdentity, audit RenameAuditor) {
+	s.repoIdentity, s.renameAudit = r, audit
+}
+
+// integrationWebHost is the lower-case host the integration's repositories
+// live on: the configured base URL's host (a self-hosted server), else the
+// provider's public host; an API host of a public provider maps to its web
+// host (api.github.com -> github.com). "" when it cannot be told.
+func integrationWebHost(provider integrationdom.Provider, baseURL string) string {
+	if strings.TrimSpace(baseURL) == "" {
+		switch provider {
+		case integrationdom.ProviderGitHub:
+			return "github.com"
+		case integrationdom.ProviderGitLab:
+			return "gitlab.com"
+		case integrationdom.ProviderBitbucket:
+			return "bitbucket.org"
+		case integrationdom.ProviderAzureDevOps:
+			return "dev.azure.com"
+		}
+		return ""
+	}
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	host := strings.ToLower(u.Host)
+	switch host {
+	case "api.github.com":
+		return "github.com"
+	case "api.bitbucket.org":
+		return "bitbucket.org"
+	}
+	return host
+}
+
+// withoutIdentity drops what would tie an imported repository to a code host
+// identity (its id and addresses), keeping the rest of its metadata.
+func withoutIdentity(r scm.Repository) scm.Repository {
+	r.ID, r.HTMLURL, r.CloneURL, r.SSHURL = "", "", "", ""
+	return r
+}
+
+// repositoryOnHost reports whether a repository the code host listed lives
+// on that code host: its web address, or else its clone address, is on host.
+// A repository a code host lists on another host (a tenant's self-hosted
+// server answering with github.com addresses) is imported without its id
+// (withoutIdentity): the id would otherwise claim the public host's
+// repository of that id. An unknown integration host trusts no address.
+func repositoryOnHost(r scm.Repository, host string) bool {
+	if host == "" {
+		return false
+	}
+	h, _ := cirun.RepositoryFromURL(r.HTMLURL)
+	if h == "" {
+		h, _ = cirun.RepositoryFromURL(r.CloneURL)
+	}
+	return h == "" || strings.EqualFold(h, host)
+}
 
 // upsertRepositoryAsset creates (or refreshes) a repository asset + extension
 // from an SCM repository DTO. Returns created=true on first import.
@@ -286,8 +368,26 @@ func (s *IntegrationService) renameToCanonical(ctx context.Context, tenantID, as
 	if s.repoIdentity == nil || canonical == "" {
 		return
 	}
-	if _, err := s.repoIdentity.RenameRepositoryAsset(ctx, tenantID, assetID, canonical); err != nil {
+	oldName := ""
+	if a, err := s.assetRepo.GetByID(ctx, tenantID, assetID); err == nil && a != nil {
+		oldName = a.Name()
+	}
+	renamed, err := s.repoIdentity.RenameRepositoryAsset(ctx, tenantID, assetID, canonical)
+	if err != nil {
 		s.logger.Warn("repository asset not renamed", "asset_id", assetID.String(), "error", err)
+		return
+	}
+	if !renamed || s.renameAudit == nil {
+		return
+	}
+	ev := auditapp.NewSuccessEvent(auditdom.ActionAssetRenamed, auditdom.ResourceTypeAsset, assetID.String()).
+		WithResourceName(canonical).
+		WithMessage(fmt.Sprintf("Repository asset renamed from %s to %s by repository import", oldName, canonical)).
+		WithMetadata("old_name", oldName).
+		WithMetadata("new_name", canonical).
+		WithMetadata("source", "repository_import")
+	if err := s.renameAudit.LogEvent(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorEmail: "system:repository-import"}, ev); err != nil {
+		s.logger.Warn("repository rename not audited", "asset_id", assetID.String(), "error", err)
 	}
 }
 
