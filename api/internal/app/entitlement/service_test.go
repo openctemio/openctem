@@ -443,3 +443,25 @@ func TestStartLimits(t *testing.T) {
 		t.Fatal("a read error is reported")
 	}
 }
+
+func TestApplies(t *testing.T) {
+	a, b := shared.NewID(), shared.NewID()
+	repo := &memRepo{lims: []limits.Limit{
+		{TenantID: a, Key: limits.Seats, Value: 5, Origin: limits.OriginOperator, Reason: "x"},
+		{TenantID: b, Key: limits.Seats, Value: limits.Unlimited, Origin: limits.OriginOperator, Reason: "x"},
+	}}
+	svc := NewService(repo, nil, nil)
+	if ok, err := svc.Applies(context.Background(), a); err != nil || !ok {
+		t.Fatalf("a: %v %v", ok, err)
+	}
+	if ok, _ := svc.Applies(context.Background(), b); ok {
+		t.Fatal("an unlimited row is not a limit")
+	}
+	if repo.usageCalls != 0 {
+		t.Fatal("Applies must not count usage")
+	}
+	repo.denies = []limits.FeatureDeny{{TenantID: b, Feature: "pentest", Origin: limits.OriginOperator}}
+	if ok, _ := svc.Applies(context.Background(), b); !ok {
+		t.Fatal("a deny applies")
+	}
+}
