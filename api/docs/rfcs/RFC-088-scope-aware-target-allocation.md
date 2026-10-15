@@ -125,6 +125,14 @@ and kept only when the stage accepts that kind:
 | `crawl.web`, `dast.web` | – | – | – | yes | – |
 | `vuln.templates` | yes | yes | **no** | yes | yes |
 
+A sixth kind, `path`, is a host and a path without a scheme: the form of a
+repository (`github.com/acme/app`, `git@github.com:acme/app`) or an image
+reference. No stage in the table takes it, whatever its stored type, and a
+repository asset counts as a `path` whatever its name: a network tool given
+one would probe the code host, which many organizations share. A web path is
+written as a URL with its scheme. See "Repositories and path targets" in
+`docs/architecture/active-probe-gate.md`.
+
 Stages outside the network kinds (code, containers, cloud) are not gated
 here. A single-scanner scan applies the same rule for the scanner's stage. A
 step left with nothing fails with `INCOMPATIBLE_TARGETS`, as before; a
