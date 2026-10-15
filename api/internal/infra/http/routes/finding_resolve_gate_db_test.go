@@ -75,7 +75,6 @@ func TestResolveGate_MemberWithoutVerifyCannotClose(t *testing.T) {
 	}{
 		{"single", http.MethodPatch, "/api/v1/findings/" + fa + "/status", map[string]any{"status": "resolved", "resolution": "fixed"}},
 		{"bulk", http.MethodPost, "/api/v1/findings/bulk/status", map[string]any{"finding_ids": []string{fa}, "status": "resolved", "resolution": "fixed"}},
-		{"group", http.MethodPost, "/api/v1/findings/remediation-groups/" + key + "/resolve", map[string]any{"status": "resolved", "resolution": "fixed"}},
 	}
 	for _, a := range attempts {
 		status, body := h.doPerms(h.memberA, rgMemberPerms, a.method, a.path, a.body)
@@ -84,6 +83,18 @@ func TestResolveGate_MemberWithoutVerifyCannotClose(t *testing.T) {
 		}
 		if st, _, _ := h.closure(h.findingA); st != "fix_applied" {
 			t.Fatalf("%s: the member closed the finding (status %s)", a.name, st)
+		}
+	}
+
+	// A group resolve never closes findings, not even for a findings:verify
+	// holder: each finding is verified on its own.
+	for _, perms := range [][]string{rgMemberPerms, rgVerifierPerms()} {
+		if status, body := h.doPerms(h.memberA, perms, http.MethodPost, "/api/v1/findings/remediation-groups/"+key+"/resolve",
+			map[string]any{"status": "resolved", "resolution": "fixed"}); status != http.StatusBadRequest {
+			t.Errorf("group resolve to resolved = %d %.300s, want 400", status, body)
+		}
+		if st, _, _ := h.closure(h.findingA); st != "fix_applied" {
+			t.Fatalf("group resolve closed the finding (status %s)", st)
 		}
 	}
 
