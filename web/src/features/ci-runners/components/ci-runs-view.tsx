@@ -10,7 +10,15 @@
 
 import { useState } from 'react'
 import Link from '@/components/link'
-import { ExternalLink, GitBranch, GitPullRequest, ShieldAlert, Workflow } from 'lucide-react'
+import {
+  ExternalLink,
+  GitBranch,
+  GitPullRequest,
+  Plug,
+  ShieldAlert,
+  ShieldCheck,
+  Workflow,
+} from 'lucide-react'
 import { PageHeader, EmptyState, ErrorState, RelativeTime } from '@/features/shared'
 import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
 import { useListParams } from '@/hooks/use-list-params'
@@ -48,7 +56,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useCIRun, useCIRuns } from '../api/use-ci'
-import { PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
+import { baselineCounts, missingCodeHost, runAttempts } from '../lib/gate-settings'
+import { INFO_REASON_CODES, PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
 import type { CIGateReason, CIRun, CIVerdictFilter } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
 import { CIOverrideDialog } from './ci-override-dialog'
@@ -102,7 +111,22 @@ export function consolePath(url?: string): string | null {
   }
 }
 
-function RefCell({ run }: { run: CIRun }) {
+/** "Attempt 2 of 3" for a retried commit; nothing for a single run. */
+export function RunAttempt({ attempt }: { attempt?: { attempt: number; of: number } }) {
+  const { t } = useTranslation()
+  if (!attempt) return null
+  return (
+    <span className="font-sans text-muted-foreground" data-testid="ci-run-attempt">
+      {' · '}
+      {t('scans.ci.runAttempt', 'Attempt {attempt} of {of}', {
+        attempt: attempt.attempt,
+        of: attempt.of,
+      })}
+    </span>
+  )
+}
+
+function RefCell({ run, attempt }: { run: CIRun; attempt?: { attempt: number; of: number } }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <span className="flex items-center gap-1 truncate text-sm">
@@ -114,7 +138,10 @@ function RefCell({ run }: { run: CIRun }) {
         <span className="truncate">{run.branch || run.ref}</span>
         {run.pull_request && <span className="text-muted-foreground">#{run.pull_request}</span>}
       </span>
-      <span className="font-mono text-xs text-muted-foreground">{shortSHA(run.commit_sha)}</span>
+      <span className="font-mono text-xs text-muted-foreground">
+        {shortSHA(run.commit_sha)}
+        <RunAttempt attempt={attempt} />
+      </span>
     </div>
   )
 }
@@ -147,6 +174,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
   const runs = data?.data ?? []
+  const attempts = runAttempts(runs)
   const totalPages = data?.total_pages ?? 1
 
   return (
@@ -268,7 +296,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
                       />
                     </TableCell>
                     <TableCell className="max-w-56">
-                      <RefCell run={run} />
+                      <RefCell run={run} attempt={attempts.get(run.id ?? '')} />
                     </TableCell>
                     <TableCell>{run.findings_count ?? 0}</TableCell>
                     <TableCell className="text-sm">{run.actor}</TableCell>
@@ -373,14 +401,21 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
   const { t, locale } = useTranslation()
   const { can } = usePermissions()
   const canOverride = can(Permission.CIOverride)
+  // Code-host connections are managed with scans:ci:write (Pull request feedback).
+  const canConnect = can(Permission.CIWrite)
   const [overrideOpen, setOverrideOpen] = useState(false)
   const { data: run, error, mutate } = useCIRun(id)
   const v = run?.verdict_detail
   const dfLocale = dateFnsLocaleFor(locale)
   const reasons = v?.reasons ?? []
-  const blocking = reasons.filter((r) => r.mode !== 'comment')
-  const commentOnly = reasons.filter((r) => r.mode === 'comment')
+  const isInfo = (r: CIGateReason) => INFO_REASON_CODES.includes(r.code ?? '')
+  const blocking = reasons.filter((r) => r.mode !== 'comment' && !isInfo(r))
+  const commentOnly = reasons.filter((r) => r.mode === 'comment' && !isInfo(r))
+  const notes = reasons.filter(isInfo)
   const findingsPath = safeHref(consolePath(v?.links?.findings))
+  const codeHost =
+    run?.decoration_state === 'skipped' ? missingCodeHost(run.decoration_detail) : null
+  const counts = baselineCounts(v)
   const override = run?.override
   // A break-glass covers a commit the provider signed, and only a failed one
   // needs it; the API is the authority (permission and step-up).
@@ -538,10 +573,73 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                       {run.decoration_detail && (
                         <span className="ml-2 text-muted-foreground">{run.decoration_detail}</span>
                       )}
+                      {codeHost && canConnect && (
+                        <Button
+                          asChild
+                          size="sm"
+                          variant="outline"
+                          className="mt-1.5 flex w-fit"
+                          data-testid="ci-run-connect-host"
+                        >
+                          <Link href="/ci-cd?tab=setup&section=feedback">
+                            <Plug className="size-3.5" aria-hidden />
+                            {codeHost === 'gitlab'
+                              ? t('scans.ci.runDetail.connectGitLab', 'Connect GitLab')
+                              : t('scans.ci.runDetail.installGitHub', 'Install the GitHub App')}
+                          </Link>
+                        </Button>
+                      )}
+                      {codeHost && !canConnect && (
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {t(
+                            'scans.ci.runDetail.askConnect',
+                            'An administrator can connect the code host under CI trust and gate, Pull request feedback.'
+                          )}
+                        </span>
+                      )}
                     </span>
                   </Row>
                 )}
               </dl>
+
+              {v?.baseline?.established && (
+                <Alert data-testid="ci-run-baseline-established">
+                  <ShieldCheck className="size-4" aria-hidden />
+                  <AlertTitle className="line-clamp-none">
+                    {t(
+                      'scans.ci.runDetail.baselineEstablished',
+                      'First run: {count} existing findings recorded as the baseline',
+                      { count: v.summary?.pre_existing ?? 0 }
+                    )}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'scans.ci.runDetail.baselineEstablishedBody',
+                      'They do not block pipelines; new findings do. Manage the baseline in the pipeline’s Settings tab.'
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {counts && (
+                <p className="font-medium" data-testid="ci-run-baseline-counts">
+                  {t(
+                    'scans.ci.runDetail.baselineCounts',
+                    '{baseline} baseline (not blocking) · {new} new',
+                    {
+                      baseline: counts.baseline,
+                      new: counts.fresh,
+                    }
+                  )}
+                  {v?.baseline?.due_at && (
+                    <span className="ms-1 font-normal text-muted-foreground">
+                      {t('scans.ci.runDetail.baselineDue', '· baseline blocks again from {date}', {
+                        date: new Date(v.baseline.due_at).toLocaleDateString(),
+                      })}
+                    </span>
+                  )}
+                </p>
+              )}
 
               {v?.summary && (
                 <p className="text-muted-foreground">
@@ -586,6 +684,13 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                     reasons={commentOnly}
                     label={t('scans.ci.runDetail.commentOnly', 'Comment only (does not block)')}
                   />
+                </section>
+              )}
+
+              {notes.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="font-medium">{t('scans.ci.runDetail.notes', 'Notes')}</h3>
+                  <ReasonList reasons={notes} label={t('scans.ci.runDetail.notes', 'Notes')} />
                 </section>
               )}
 

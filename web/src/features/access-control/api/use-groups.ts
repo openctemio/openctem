@@ -59,7 +59,7 @@ interface GroupListResponse {
   per_page: number
 }
 
-export function useGroups(filters?: GroupFilters) {
+export function useGroups(filters?: GroupFilters, enabled = true) {
   const params = new URLSearchParams()
   if (filters?.type) params.set('type', filters.type)
   if (filters?.search) params.set('search', filters.search)
@@ -67,10 +67,14 @@ export function useGroups(filters?: GroupFilters) {
   const queryString = params.toString()
   const url = queryString ? `${API_BASE}?${queryString}` : API_BASE
 
-  const { data, error, isLoading, mutate } = useSWR<GroupListResponse | Group[]>(url, fetcher, {
-    revalidateOnFocus: false,
-    dedupingInterval: 30000,
-  })
+  const { data, error, isLoading, mutate } = useSWR<GroupListResponse | Group[]>(
+    enabled ? url : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 30000,
+    }
+  )
 
   // Defensive access: support both { groups: [...] } and [...]
   const groups = Array.isArray(data) ? data : data?.groups || []
