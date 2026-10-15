@@ -519,9 +519,9 @@ export default function CampaignDetailPage() {
                     )}
                     {/* Inline status change (reuses the finding status endpoint). */}
                     <StatusSelect
+                      findingId={f.id}
                       value={f.status as FindingStatus}
                       onChange={(s) => handleFindingStatus(f.id, s)}
-                      source={f.source}
                     />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
