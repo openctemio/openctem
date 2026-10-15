@@ -75,6 +75,7 @@ type IntegrationService struct {
 	repoExtRepo assetdom.RepositoryExtensionRepository
 	// repoIdentity finds repositories by their code host id (optional).
 	repoIdentity RepositoryIdentity
+	renameAudit  RenameAuditor
 	branchRepo   branchdom.Repository
 
 	// ticketingTester verifies a ticketing integration's credentials against
