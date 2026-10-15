@@ -1697,9 +1697,12 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 		}
 		f.SetAttachments(atts)
 	}
-	if len(ctisFinding.WorkItemURIs) > 0 {
-		f.SetWorkItemURIs(ctisFinding.WorkItemURIs)
-	}
+	// work_item_uris are the finding's ticket links, and the ticket sync acts
+	// on them (moves and comments on the linked issue, and an inbound issue
+	// change moves the finding). A report never sets them: only the platform
+	// (create ticket) or a person links a ticket. A sensor or an imported
+	// file could otherwise point a finding at any issue of the tenant's
+	// tracker.
 	if ctisFinding.HostedViewerURI != "" {
 		f.SetHostedViewerURI(ctisFinding.HostedViewerURI)
 	}
