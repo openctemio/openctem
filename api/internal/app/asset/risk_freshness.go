@@ -28,6 +28,45 @@ type AssetBatchReader interface {
 	GetByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[string]*assetdom.Asset, error)
 }
 
+// ControlReductionLookup returns the strongest active, effective
+// compensating-control reduction (0-1) per asset of one tenant
+// (postgres.CompensatingControlLookupRepo).
+type ControlReductionLookup interface {
+	GetEffectiveForAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]float64, error)
+}
+
+// SetControlReductionLookup wires compensating controls into scoring.
+func (s *AssetService) SetControlReductionLookup(l ControlReductionLookup) {
+	s.controlLookup = l
+}
+
+// riskInputsMap resolves, in one lookup each, the inputs of the scores of
+// the given assets of one tenant that do not live on the asset row: the
+// effective criticality and the compensating-control reduction. A failed
+// control lookup scores without reduction (never lower than it should).
+func (s *AssetService) riskInputsMap(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) map[shared.ID]assetdom.RiskInputs {
+	eff := s.effectiveCriticalityMap(ctx, tenantID, assets)
+	var reductions map[shared.ID]float64
+	if s.controlLookup != nil && len(assets) > 0 {
+		ids := make([]shared.ID, 0, len(assets))
+		for _, a := range assets {
+			ids = append(ids, a.ID())
+		}
+		r, err := s.controlLookup.GetEffectiveForAssets(ctx, tenantID, ids)
+		if err != nil {
+			s.logger.Warn("compensating control lookup failed; scoring without reduction",
+				"tenant_id", tenantID.String(), "error", err.Error())
+		} else {
+			reductions = r
+		}
+	}
+	out := make(map[shared.ID]assetdom.RiskInputs, len(assets))
+	for _, a := range assets {
+		out[a.ID()] = assetdom.RiskInputs{EffectiveCriticality: eff[a.ID()], ControlReduction: reductions[a.ID()]}
+	}
+	return out
+}
+
 // SetRiskQueue wires the rescore queue and the batch reader it rescores with.
 func (s *AssetService) SetRiskQueue(q assetdom.RiskQueueRepository, reader AssetBatchReader) {
 	s.riskQueue = q
@@ -136,23 +175,81 @@ func (s *AssetService) rescoreAssets(ctx context.Context, tenantID shared.ID, as
 	}
 	config := s.getScoringConfig(ctx, tenantID)
 	engine := assetdom.NewRiskScoringEngine(*config)
-	eff := s.effectiveCriticalityMap(ctx, tenantID, assets)
+	inputs := s.riskInputsMap(ctx, tenantID, assets)
 
 	write := make([]*assetdom.Asset, 0, len(assets))
 	for _, a := range assets {
 		old := a.RiskScore()
-		score := engine.CalculateScoreWithCriticality(a, eff[a.ID()])
+		in := inputs[a.ID()]
+		score := engine.CalculateScoreWithInputs(a, in)
 		scored++
 		if score != old || a.RiskScoredAt() == nil {
-			a.CalculateRiskScoreWithConfigAndCriticality(config, eff[a.ID()])
+			a.CalculateRiskScoreWithInputs(config, in)
 			write = append(write, a)
 		}
 	}
-	if len(write) == 0 {
-		return scored, 0, nil
+	if len(write) > 0 {
+		if err := s.repo.BatchUpdateRiskScores(ctx, tenantID, write); err != nil {
+			return scored, 0, fmt.Errorf("store risk scores: %w", err)
+		}
 	}
-	if err := s.repo.BatchUpdateRiskScores(ctx, tenantID, write); err != nil {
-		return scored, 0, fmt.Errorf("store risk scores: %w", err)
+	// The unit and group roll-ups follow every rescore: a finding change can
+	// move their open-finding counts even when no score changed.
+	if s.riskQueue != nil {
+		ids := make([]shared.ID, 0, len(assets))
+		for _, a := range assets {
+			ids = append(ids, a.ID())
+		}
+		if err := s.riskQueue.RefreshRollups(ctx, tenantID, ids); err != nil {
+			s.logger.Warn("risk roll-up refresh failed", "tenant_id", tenantID.String(), "error", err.Error())
+		}
 	}
 	return scored, len(write), nil
+}
+
+// SetRiskContributorReader wires the reader behind the score explanation.
+func (s *AssetService) SetRiskContributorReader(r assetdom.RiskContributorReader) {
+	s.riskContributors = r
+}
+
+// RiskExplanation explains an asset's risk score.
+type RiskExplanation struct {
+	Asset        *assetdom.Asset
+	Level        string
+	Breakdown    assetdom.RiskBreakdown
+	Contributors []assetdom.RiskContributor
+	RiskLevels   assetdom.RiskLevelMap
+}
+
+// riskContributorLimit is how many findings the explanation lists.
+const riskContributorLimit = 5
+
+// ExplainRisk explains the risk score of one asset the caller may see (the
+// same tenant and data-scope check as reading the asset; out of scope is
+// not found). The breakdown is computed now from the current inputs, so it
+// may already differ from a stored score whose rescore is still queued.
+func (s *AssetService) ExplainRisk(ctx context.Context, tenantID, assetID, actingUserID string, isAdmin bool) (*RiskExplanation, error) {
+	a, err := s.GetAssetWithScope(ctx, tenantID, assetID, actingUserID, isAdmin)
+	if err != nil {
+		return nil, err
+	}
+	tid := a.TenantID()
+	config := s.getScoringConfig(ctx, tid)
+	engine := assetdom.NewRiskScoringEngine(*config)
+	in := s.riskInputsMap(ctx, tid, []*assetdom.Asset{a})[a.ID()]
+	b := engine.Explain(a, in)
+	out := &RiskExplanation{
+		Asset:      a,
+		Breakdown:  b,
+		Level:      config.Level(a.RiskScore()),
+		RiskLevels: config.RiskLevels,
+	}
+	if s.riskContributors != nil {
+		c, err := s.riskContributors.TopContributors(ctx, tid, a.ID(), riskContributorLimit)
+		if err != nil {
+			return nil, fmt.Errorf("risk contributors: %w", err)
+		}
+		out.Contributors = c
+	}
+	return out, nil
 }
