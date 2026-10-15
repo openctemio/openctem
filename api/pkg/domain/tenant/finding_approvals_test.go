@@ -6,7 +6,7 @@ import (
 )
 
 // Raising the false-positive level is immediate; lowering waits 24 hours and
-// is cancelled by choosing a level at or above the one in force.
+// is canceled by choosing a level at or above the one in force.
 func TestFindingApprovalSettings_SetFPApproval(t *testing.T) {
 	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 	var s FindingApprovalSettings
