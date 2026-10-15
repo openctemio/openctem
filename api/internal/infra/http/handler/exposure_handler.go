@@ -103,6 +103,11 @@ type CreateExposureRequest struct {
 // ChangeStateRequest represents the request to change exposure state.
 type ChangeStateRequest struct {
 	Reason string `json:"reason" validate:"max=500"`
+	// SelfApprove: the owner approves their own pending request of a high or
+	// critical exposure because no other approver exists. Needs Reason and
+	// a fresh TOTPCode from the owner's authenticator app.
+	SelfApprove bool   `json:"self_approve,omitempty"`
+	TOTPCode    string `json:"totp_code,omitempty" validate:"max=16"`
 }
 
 // SetCTEMIDRequest represents the request to tag an exposure with a CTEM-ID.
@@ -615,7 +620,8 @@ func (h *ExposureHandler) Accept(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeDisposition(w, r, exposuresvc.DispositionCall{TenantID: tenantID, ExposureID: exposureID, UserID: userID,
-		State: exposure.StateAccepted, Reason: req.Reason, Audit: configAuditContext(r)})
+		State: exposure.StateAccepted, Reason: req.Reason, Audit: configAuditContext(r),
+		Self: exposuresvc.SelfApproval{Requested: req.SelfApprove, Code: req.TOTPCode}})
 }
 
 // MarkFalsePositive handles POST /api/v1/exposures/{id}/false-positive
@@ -645,7 +651,8 @@ func (h *ExposureHandler) MarkFalsePositive(w http.ResponseWriter, r *http.Reque
 	}
 
 	h.writeDisposition(w, r, exposuresvc.DispositionCall{TenantID: tenantID, ExposureID: exposureID, UserID: userID,
-		State: exposure.StateFalsePositive, Reason: req.Reason, Audit: configAuditContext(r)})
+		State: exposure.StateFalsePositive, Reason: req.Reason, Audit: configAuditContext(r),
+		Self: exposuresvc.SelfApproval{Requested: req.SelfApprove, Code: req.TOTPCode}})
 }
 
 // Reactivate handles POST /api/v1/exposures/{id}/reactivate
@@ -790,6 +797,7 @@ func (h *ExposureHandler) writeDisposition(w http.ResponseWriter, r *http.Reques
 	status := http.StatusOK
 	if out.Pending {
 		resp.PendingDisposition = exposuresvc.PendingView(out.Request)
+		h.markSelfApproval(r, resp.PendingDisposition)
 		status = http.StatusAccepted
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -852,8 +860,30 @@ func (h *ExposureHandler) attachPending(r *http.Request, tenantID string, resps 
 	}
 	for i, e := range events {
 		resps[i].PendingDisposition = exposuresvc.PendingView(pending[e.ID()])
+		h.markSelfApproval(r, resps[i].PendingDisposition)
 	}
 	return nil
+}
+
+// markSelfApproval tells the viewer whether they may approve their own
+// pending request (owner, no other approver). Best effort: the call
+// re-checks everything.
+func (h *ExposureHandler) markSelfApproval(r *http.Request, v *exposuresvc.PendingDispositionView) {
+	userID := middleware.GetUserID(r.Context())
+	if v == nil || userID == "" || v.RequestedBy != userID {
+		return
+	}
+	tid, err1 := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	uid, err2 := shared.IDFromString(userID)
+	if err1 != nil || err2 != nil {
+		return
+	}
+	ok, err := h.service.SelfApprovalAvailable(r.Context(), tid, uid)
+	if err != nil {
+		h.logger.Warn("self-approval availability", "error", err)
+		return
+	}
+	v.SelfApprovalAvailable = ok
 }
 
 // writeDispositionError answers the four-eyes refusals of an exposure or
