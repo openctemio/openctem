@@ -139,6 +139,8 @@ func (h *AdminSignupHandler) Update(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, signupdom.ErrVersionConflict):
 			apierror.Conflict("The sign-up policy was changed by someone else; reload and try again").WriteJSON(w)
+		case errors.Is(err, signup.ErrStartLimitsRequired):
+			apierror.Conflict(err.Error()).WriteJSON(w)
 		default:
 			h.logger.Error("update sign-up policy", "error", err)
 			apierror.InternalServerError("could not save the sign-up policy").WriteJSON(w)
