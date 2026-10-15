@@ -401,7 +401,7 @@ func (s *TenantService) requireWithinTrustCeiling(ctx context.Context, tenantID 
 	if err != nil {
 		return err
 	}
-	if privileged || accesscontrol.MembershipRoleForRoleIDs(roleIDs) == tenantdom.RoleAdmin {
+	if privileged {
 		return accesscontrol.ErrExternalRoleCeiling
 	}
 	if ceiling == orgtrust.MaxRoleViewer && !(len(roleIDs) == 1 && strings.EqualFold(roleIDs[0], roledom.ViewerRoleID.String())) {
