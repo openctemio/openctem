@@ -536,7 +536,7 @@ func (r *RemediationSuggestionRepository) ListSuggestions(ctx context.Context, t
 		return pagination.Result[*remediation.Suggestion]{}, fmt.Errorf("list suggestions: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]*remediation.Suggestion, 0, page.Limit())
+	out := make([]*remediation.Suggestion, 0)
 	for rows.Next() {
 		s, err := scanScopedSuggestion(rows.Scan, f.Scope)
 		if err != nil {
@@ -610,7 +610,7 @@ func (r *RemediationSuggestionRepository) SuggestionMembers(ctx context.Context,
 		return pagination.Result[remediation.TaskMember]{}, fmt.Errorf("list suggestion members: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]remediation.TaskMember, 0, page.Limit())
+	out := make([]remediation.TaskMember, 0)
 	for rows.Next() {
 		var (
 			m       remediation.TaskMember
@@ -660,7 +660,7 @@ func (r *RemediationSuggestionRepository) DecideSuggestion(ctx context.Context, 
 	return r.GetSuggestion(ctx, tenantID, id, nil)
 }
 
-// CountSuggestions summarises the open suggestions the scope can see.
+// CountSuggestions summarizes the open suggestions the scope can see.
 func (r *RemediationSuggestionRepository) CountSuggestions(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (remediation.SuggestionCounts, error) {
 	args := []any{tenantID.String()}
 	scopeCond, args := dataScopeCond("f.asset_id", scope, args)
