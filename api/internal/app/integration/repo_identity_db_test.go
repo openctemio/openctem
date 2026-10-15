@@ -7,6 +7,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
@@ -41,7 +42,8 @@ func TestRepositoryImportUsesHostAndProviderID(t *testing.T) {
 	svc := integration.NewIntegrationService(nil, nil, nil, logger.NewNop())
 	svc.SetRepoImportRepos(postgres.NewAssetRepository(pdb), postgres.NewRepositoryExtensionRepository(pdb), nil)
 	ident := postgres.NewRepositoryIdentityRepository(pdb)
-	svc.SetRepositoryIdentity(ident)
+	aud := &renameAudits{}
+	svc.SetRepositoryIdentity(ident, aud)
 	repo := func(id, full string) scm.Repository {
 		return scm.Repository{ID: id, FullName: full, HTMLURL: "https://github.com/" + full,
 			CloneURL: "https://github.com/" + full + ".git", DefaultBranch: "main"}
@@ -87,6 +89,10 @@ func TestRepositoryImportUsesHostAndProviderID(t *testing.T) {
 	if assetOf(tenant, "github.com/acme/api-v2") != api || count(tenant) != 1 {
 		t.Fatalf("rename split the repository: %d assets", count(tenant))
 	}
+	if len(aud.events) != 1 || aud.events[0].ResourceID != api || aud.events[0].Metadata["old_name"] != "github.com/acme/api" ||
+		aud.events[0].Metadata["new_name"] != "github.com/acme/api-v2" || aud.tenants[0] != tenant.String() {
+		t.Fatalf("rename audit = %+v", aud.events)
+	}
 
 	// CI reported a repository first (asset github.com/acme/web): import
 	// adopts it instead of creating "acme/web".
@@ -116,4 +122,15 @@ func TestRepositoryImportUsesHostAndProviderID(t *testing.T) {
 	if count(tenant) != 2 || count(other) != 1 {
 		t.Fatalf("tenants mixed: %d %d", count(tenant), count(other))
 	}
+}
+
+type renameAudits struct {
+	events  []auditapp.AuditEvent
+	tenants []string
+}
+
+func (a *renameAudits) LogEvent(_ context.Context, actx auditapp.AuditContext, ev auditapp.AuditEvent) error {
+	a.events = append(a.events, ev)
+	a.tenants = append(a.tenants, actx.TenantID)
+	return nil
 }

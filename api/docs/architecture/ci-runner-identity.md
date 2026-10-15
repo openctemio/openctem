@@ -208,13 +208,24 @@ Each group is merged into its oldest asset by the asset merge
 folded, same-named branches are joined, one gate policy and one expectation
 per repository, the kept one first), logged in `asset_merge_log`
 (`repository_identity`), and the kept asset takes the current `host/path`
-name. One transaction per repository; idempotent.
+name. One transaction per repository, which first locks every asset of the
+group (`FOR UPDATE`): a run, finding or branch written meanwhile either
+commits first and moves with the rest, or waits and fails its foreign key;
+it is never left on a duplicate and lost to its delete. Idempotent.
+
+A repository whose duplicates carry several gate policies is refused
+(`gate_policy_conflict`, listed by the dry run): keeping the wrong one would
+loosen its gate. With `-resolve` it is merged keeping the policy at least as
+strict as every other on every setting (`cirun.StrictestPolicy`); when the
+policies are stricter on different settings it is never merged
+(`gate_policies_incomparable`) and an administrator settles it first.
 
 ```
 repomerge                  # dry run, every tenant (read-only connection), aggregate counts only
 repomerge -tenant <id>     # one tenant
 repomerge -apply           # merge
 repomerge -json            # report with asset ids
+repomerge -apply -resolve  # also merge repositories with several gate policies, keeping the strictest
 ```
 
 ### Exchange and pipeline flow
@@ -300,6 +311,13 @@ A decision made on the platform holds on the next run of the same repository:
   break-glass, owners) and the asset takes the new name when it is free.
   Repository import uses the same id first and names new assets `host/path`,
   so import and CI share one asset. Every lookup is tenant-scoped.
+  The id is bound to the host that vouches for it: CI takes the host from
+  the verified issuer (a self-managed GitLab's own host, `github.com` only
+  for GitHub's issuer), and import records an id only for a repository whose
+  address is on the integration's own host (a self-hosted server listing
+  `github.com` addresses imports them without an id or address, so it cannot
+  claim a `github.com` repository). A rename is an `asset.renamed` audit
+  event (old and new name, source `ci` or `repository_import`).
 - Pipeline reads are tenant-scoped and follow the repository data scope.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
