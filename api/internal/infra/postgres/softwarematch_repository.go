@@ -469,6 +469,10 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 	return out, nil
 }
 
+// softwarematchVerification is how a matcher close is proven: the inventory
+// (the source) reports another installed version, or the advisory changed.
+const softwarematchVerification = string(vulnerability.VerificationSourceReported)
+
 // CloseFindings (see softwarematch.Store). The status re-check in the
 // UPDATE leaves alone a finding someone triaged, or a scanner reported,
 // since it was read.
@@ -479,11 +483,11 @@ func (r *SoftwareMatchRepository) CloseFindings(ctx context.Context, tenantID sh
 	var set, from string
 	switch kind {
 	case softwarematch.CloseVersionChanged:
-		set, from = `status = 'resolved', resolution = 'auto_fixed', resolution_method = 'version_changed', resolved_at = NOW()`, autoResolveFromSQL
+		set, from = `status = 'resolved', resolution = 'auto_fixed', closure_reason = 'fixed', verification = '`+softwarematchVerification+`', resolved_at = NOW()`, autoResolveFromSQL
 	case softwarematch.CloseNotObserved:
 		set, from = `status = 'not_observed'`, staleFromSQL
 	case softwarematch.CloseAdvisoryUpdated:
-		set, from = `status = 'false_positive', resolution = 'advisory_updated', resolution_method = 'advisory_updated', resolved_at = NOW()`, vexFalsePositiveFromSQL
+		set, from = `status = 'false_positive', resolution = 'advisory_updated', closure_reason = 'detection_error', verification = '`+softwarematchVerification+`', resolved_at = NOW()`, vexFalsePositiveFromSQL
 	default:
 		return nil, fmt.Errorf("unknown close kind %q", kind)
 	}
@@ -510,11 +514,11 @@ func (r *SoftwareMatchRepository) ReopenFindings(ctx context.Context, tenantID s
 		Source: "vulnmatch", Reason: "matched_again", ActorName: "system: software vulnerability matcher",
 		Message: "The software vulnerability matcher matched it again",
 	}, `
-		UPDATE findings f SET status = 'confirmed', resolution = NULL, resolution_method = NULL,
+		UPDATE findings f SET status = 'confirmed', resolution = NULL, closure_reason = NULL, verification = NULL,
 			resolved_at = NULL, updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[]) AND `+matcherOwnedSQL+`
 		  AND f.status IN `+regressionReopenFromSQL+`
-		  AND (f.status = 'not_observed' OR f.resolution_method = 'version_changed')
+		  AND (f.status = 'not_observed' OR (f.closure_reason = 'fixed' AND f.verification = '`+softwarematchVerification+`'))
 		RETURNING f.id::text`, tenantID, ids)
 }
 
