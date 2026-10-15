@@ -74,6 +74,11 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	if in.ScanFailures < 0 {
 		in.ScanFailures = 0
 	}
+	// A re-run of only the gate job cannot drop the failures of the scans
+	// it did not run again: they count until a later attempt reports.
+	if run.CarriedScanFailures > in.ScanFailures {
+		in.ScanFailures = run.CarriedScanFailures
+	}
 	// The first verdict is final: asking again returns it unchanged, so a job
 	// cannot turn a stored failure into a pass by evaluating again.
 	if run.Status == cirun.StatusEvaluated {
@@ -152,14 +157,21 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, fmt.Errorf("load expected capabilities: %w", err)
 	}
+	// A run nothing was uploaded to cannot pass: there is nothing to judge.
+	noResults := run.ReportsCount == 0
+	// A capability that failed in an earlier attempt of this pipeline run
+	// keeps failing it until a report of that capability arrived, whatever
+	// the evaluating job says.
+	failedCaps := withCarriedCapabilities(cirun.FailedCapabilities(in.Capabilities), run.CarriedFailedCapabilities)
 	overCap, err := s.repo.RunFindingsOverCap(ctx, run.TenantID, run.ID)
 	if err != nil {
 		return nil, fmt.Errorf("load run findings cap: %w", err)
 	}
 	gv := cirun.Evaluate(cirun.GateInput{
-		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
+		NoResults: noResults,
+		Policy:    policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
 		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, BaselineEstablished: cmp.established, BaselineDueAt: cmp.dueAt, ScanFailures: in.ScanFailures,
-		FailedCapabilities:  cirun.FailedCapabilities(in.Capabilities),
+		FailedCapabilities:  failedCaps,
 		FindingsOverCap:     overCap,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
@@ -173,7 +185,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now, run.FindingsCount); err != nil {
+	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now, run.FindingsCount, capabilityNames(failedCaps)); err != nil {
 		if errors.Is(err, cirun.ErrRunChanged) {
 			return nil, err
 		}
@@ -335,6 +347,36 @@ func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []ci
 		}
 	}
 	return cmp, nil
+}
+
+// withCarriedCapabilities adds to the capabilities the job reported failed
+// those carried from an earlier attempt that no report has cleared since.
+func withCarriedCapabilities(failed []cirun.CapabilityState, carried []string) []cirun.CapabilityState {
+	seen := make(map[string]bool, len(failed))
+	for _, c := range failed {
+		seen[c.Name] = true
+	}
+	for _, name := range carried {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		failed = append(failed, cirun.CapabilityState{Name: name, State: CapabilityCarried,
+			Reason: "failed in an earlier attempt of this pipeline run, and no report of it arrived since"})
+	}
+	return failed
+}
+
+// CapabilityCarried is the state of a capability carried from an earlier
+// attempt of the pipeline run.
+const CapabilityCarried = "failed_earlier"
+
+func capabilityNames(cs []cirun.CapabilityState) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, c.Name)
+	}
+	return out
 }
 
 // firstRunBaseline records the repository's gate baseline from its first

@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
-import { ExternalLink, FileText, Link2, ShieldCheck, Ticket } from 'lucide-react'
+import { Copy, ExternalLink, FileText, Link2, ShieldCheck, Ticket } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -31,7 +31,8 @@ import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules
 import type { Severity } from '@/features/shared/types'
 import { useFindingApi, useFindingApprovals } from '../api/use-findings-api'
 import { useFindingTriage } from '../hooks/use-finding-triage'
-import { findingDescription, findingSourceLabel, toFindingDetail } from '../lib/finding-detail'
+import { findingDescription, toFindingDetail } from '../lib/finding-detail'
+import { displayTitle } from '../lib/finding-display'
 import {
   APPROVAL_STATUS_CONFIG,
   FINDING_STATUS_CONFIG,
@@ -53,6 +54,7 @@ import { FindingProperties } from './detail/finding-properties'
 import { FindingRetestSection } from './detail/finding-retest'
 import { FindingTenableRescanSection } from './detail/finding-tenable-rescan'
 import { FindingActivity } from './finding-activity'
+import { AdvisoryText } from './detail/advisory-text'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { AIProposalBadge } from './ai-proposal-badge'
 
@@ -168,6 +170,14 @@ export function FindingDetailDrawer({
         toast.success(t('findings.drawer.linkCopied', 'Link copied'))
       },
     },
+    {
+      label: t('findings.drawer.copyId', 'Copy finding ID'),
+      icon: Copy,
+      onSelect: () => {
+        void copyToClipboard(finding.id)
+        toast.success(t('findings.drawer.idCopied', 'Finding ID copied'))
+      },
+    },
     ...(integrationsEnabled
       ? [
           {
@@ -180,7 +190,15 @@ export function FindingDetailDrawer({
   ]
 
   const asset = detail.assets[0]
-  const description = findingDescription(detail)
+  // The row has no description yet (it may carry the code snippet): wait
+  // for the full record rather than flash the wrong text.
+  const description = api ? findingDescription(detail) : { text: '', fromAdvisory: false }
+  const c = detail.component
+  const where = c
+    ? `${c.name} ${c.version}`
+    : detail.filePath
+      ? `${detail.filePath}${detail.startLine ? `:${detail.startLine}` : ''}`
+      : undefined
 
   return (
     <>
@@ -190,8 +208,8 @@ export function FindingDetailDrawer({
         width="xl"
         header={
           <DetailHeader
-            title={detail.title}
-            meta={[findingSourceLabel(detail.source), detail.cve, asset?.name]}
+            title={displayTitle(detail, t)}
+            meta={[detail.cve || detail.ruleId, where, asset?.name]}
             menu={menu}
             onClose={() => onOpenChange(false)}
             actions={
@@ -249,9 +267,7 @@ export function FindingDetailDrawer({
                   title={t('findings.drawer.description', 'Description')}
                   icon={FileText}
                 >
-                  <p className="line-clamp-6 text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                    {description.text}
-                  </p>
+                  <AdvisoryText text={description.text} />
                 </DetailSection>
               )}
 
