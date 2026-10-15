@@ -203,8 +203,12 @@ and remediation group and campaign resolves (which use the bulk path).
   verification checklist is `security_reviewed`; any other person's resolve is
   attested (`admin_direct`) and needs a note. A bulk resolve reads no
   checklist, so it always needs one.
-- Errors: `ErrFixApplyRequiresPermission` and `ErrFixApplyNotYours` (403),
-  `ErrNoteRequired` (400).
+- **Callers without a user** (an organization API key) get the same rules,
+  never an exemption: they need the permission and the note, and cannot claim
+  a fix at all (`ErrFixApplyNotAPerson`). Only an explicit system move, a
+  workflow's `update_status` (a transition with source `workflow`), is exempt.
+- Errors: `ErrFixApplyRequiresPermission`, `ErrFixApplyNotYours` and
+  `ErrFixApplyNotAPerson` (403), `ErrNoteRequired` (400).
 - The web asks for the note in the drawer's status control, the bulk resolve
   dialog and the group and campaign resolve dialogs.
 
