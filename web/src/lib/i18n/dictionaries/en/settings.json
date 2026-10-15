@@ -329,5 +329,7 @@
   "settings.mcpPolicy.saveFailed": "Could not save the policy",
   "settings.mcpPolicy.saved": "Policy saved. It applies to existing connections at once.",
   "settings.mcpPolicy.scopes": "Access members may grant",
-  "settings.mcpPolicy.title": "Organization policy"
+  "settings.mcpPolicy.title": "Organization policy",
+  "settings.item.tool-defaults": "Tool defaults",
+  "settings.desc.tool-defaults": "Default options for each tool on every sensor; a sensor can override them."
 }
