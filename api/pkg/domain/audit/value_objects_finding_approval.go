@@ -26,6 +26,9 @@ const (
 	// ActionFindingApprovalSettingsChanged: the organization's finding
 	// approval settings changed (step-up; old and new values).
 	ActionFindingApprovalSettingsChanged Action = "finding_approval.settings_changed"
+	// ActionFindingApprovalSinglePerson: one person decided a false
+	// positive alone because the organization's level allowed it.
+	ActionFindingApprovalSinglePerson Action = "finding_approval.single_person_decided"
 )
 
 var _ = registerActions("finding_approval", map[Action]Severity{
@@ -38,4 +41,5 @@ var _ = registerActions("finding_approval", map[Action]Severity{
 	ActionFindingApprovalSelfRefused:     SeverityMedium,
 	ActionFindingApprovalSelfApproved:    SeverityHigh,
 	ActionFindingApprovalSettingsChanged: SeverityHigh,
+	ActionFindingApprovalSinglePerson:    SeverityMedium,
 })

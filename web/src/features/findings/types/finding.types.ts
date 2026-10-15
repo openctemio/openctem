@@ -1325,6 +1325,11 @@ export interface ApiApproval {
    */
   self_approved?: boolean
   self_approval_reason?: string
+  /**
+   * One person decided this false positive alone under the organization's
+   * false-positive approval level.
+   */
+  single_person?: boolean
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'
