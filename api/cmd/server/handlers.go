@@ -290,6 +290,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// secondary provider on the same create-ticket endpoint.
 	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
+	var ticketMappingHandler *handler.TicketMappingHandler
+	if svc.TicketMapping != nil {
+		ticketMappingHandler = handler.NewTicketMappingHandler(svc.TicketMapping, svc.Audit, log)
+	}
 
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
@@ -460,6 +464,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}(),
 		FindingEvidenceItems:      handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:               jiraWebhookHandler,
+		TicketMapping:             ticketMappingHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             githubWebhookHandler,
 		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),

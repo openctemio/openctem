@@ -95,6 +95,9 @@ var stepUpRoutes = []string{
 	"POST /api/v1/integrations/jira/webhook-secret/rotate",
 	"GET /api/v1/integrations/github/webhook-secret",
 	"POST /api/v1/integrations/github/webhook-secret/rotate",
+	// A published ticket mapping decides what leaves for the tracker.
+	"POST /api/v1/integrations/ticket-mappings/{id}/publish",
+	"POST /api/v1/integrations/ticket-mappings/{id}/dry-run",
 	"PATCH /api/v1/attachments/storage-config",
 	// Widening scope (RFC-054 §6): approving an entry, the settings, and
 	// taking an exclusion out of effect.
@@ -183,7 +186,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSCMAppRoutes(router, &handler.SCMAppHandler{}, auth, nil, chain(), logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
-			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil)
+			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil, &handler.TicketMappingHandler{})
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
