@@ -9,7 +9,7 @@ package integration
 //   audit chain is deterministic and detects tamper     (invariant B5)
 //
 // These are NOT new unit tests for the wires (those live next to each
-// wire — sla.Applier, reclassify.MemoryQueue, jira.RescanHook,
+// wire — sla.Applier, the reclassify queue, jira.RescanHook,
 // sla.BreachOutboxAdapter). The tests here exercise each wire through
 // the same interface the rest of the system uses at runtime (the
 // controller contract, the hook signature, the publisher call), so a
@@ -33,7 +33,6 @@ import (
 
 	appjira "github.com/openctemio/openctem/api/internal/app/jira"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
-	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	appsla "github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -136,103 +135,64 @@ func TestCTEM_F3_PriorityClassDrivesSLADeadline(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// B1: compensating-control change → reclassify sweep re-runs for the
-// affected assets. The wire is:
+// B1: compensating-control change → the affected assets are queued for a
+// priority recompute. The wire is:
 //   ControlChangePublisher.PublishChange
-//     → reclassify.MemoryQueue.Enqueue
-//       → PriorityReclassifyController.Reconcile
-//         → Reclassifier.ReclassifyForRequest  (scope = AssetIDs)
+//     → ReclassifyQueue.Enqueue (durable finding_priority_queue)
+//       → finding-priority worker (internal/app/reclassify)
 // -----------------------------------------------------------------------------
 
-type recordingReclassifier struct {
-	calls     int32
-	lastReq   controller.ReclassifyRequest
-	perCall   int
-	returnErr error
+type recordingQueue struct {
+	reqs []controller.ReclassifyRequest
 }
 
-func (r *recordingReclassifier) ReclassifyForRequest(_ context.Context, req controller.ReclassifyRequest) (int, error) {
-	atomic.AddInt32(&r.calls, 1)
-	r.lastReq = req
-	return r.perCall, r.returnErr
+func (q *recordingQueue) Enqueue(_ context.Context, req controller.ReclassifyRequest) error {
+	q.reqs = append(q.reqs, req)
+	return nil
 }
 
-// TestCTEM_B1_ControlChangeReaches Reclassifier confirms a single
-// PublishChange propagates through the in-memory queue and surfaces at
-// the reclassifier with the correct scope. Breakage here means the
-// sweep loop stops running — findings become stale when controls or
-// asset context change.
-func TestCTEM_B1_ControlChangeReachesReclassifier(t *testing.T) {
+// TestCTEM_B1_ControlChangeReachesQueue confirms a single PublishChange
+// queues exactly the affected assets of the tenant with the control reason.
+func TestCTEM_B1_ControlChangeReachesQueue(t *testing.T) {
 	tenantID := shared.NewID()
 	affectedAssets := []shared.ID{shared.NewID(), shared.NewID(), shared.NewID()}
 
-	queue := reclassify.NewMemoryQueue()
+	queue := &recordingQueue{}
 	publisher := controller.NewControlChangePublisher(queue, logger.NewNop())
-
-	recorder := &recordingReclassifier{perCall: len(affectedAssets)}
-	ctrl := controller.NewPriorityReclassifyController(queue, recorder, &controller.PriorityReclassifyConfig{
-		BatchSize: 10,
-	})
-
-	// 1. control write publishes → queue grows
 	publisher.PublishChange(context.Background(), tenantID, affectedAssets, "control-activated")
-	if queue.Len() != 1 {
-		t.Fatalf("queue.Len = %d, want 1 (publisher did not enqueue)", queue.Len())
-	}
 
-	// 2. controller reconcile drains the queue once
-	reexamined, err := ctrl.Reconcile(context.Background())
-	if err != nil {
-		t.Fatalf("reconcile: %v", err)
+	if len(queue.reqs) != 1 {
+		t.Fatalf("enqueued %d requests, want 1", len(queue.reqs))
 	}
-	if reexamined != len(affectedAssets) {
-		t.Fatalf("reexamined = %d, want %d", reexamined, len(affectedAssets))
+	req := queue.reqs[0]
+	if req.TenantID != tenantID {
+		t.Fatalf("tenant_id not preserved: got %s want %s", req.TenantID, tenantID)
 	}
-	if atomic.LoadInt32(&recorder.calls) != 1 {
-		t.Fatalf("reclassifier calls = %d, want 1", recorder.calls)
+	if req.Reason != controller.ReasonControlChange {
+		t.Fatalf("reason = %q, want control_change", req.Reason)
 	}
-
-	// 3. the scope that made it through matches the publisher's input
-	if recorder.lastReq.TenantID != tenantID {
-		t.Fatalf("tenant_id not preserved: got %s want %s", recorder.lastReq.TenantID, tenantID)
+	if len(req.AssetIDs) != len(affectedAssets) {
+		t.Fatalf("asset ids len = %d, want %d", len(req.AssetIDs), len(affectedAssets))
 	}
-	if recorder.lastReq.Reason != controller.ReasonControlChange {
-		t.Fatalf("reason = %q, want control_change", recorder.lastReq.Reason)
-	}
-	if len(recorder.lastReq.AssetIDs) != len(affectedAssets) {
-		t.Fatalf("asset ids len = %d, want %d", len(recorder.lastReq.AssetIDs), len(affectedAssets))
-	}
-	for i, got := range recorder.lastReq.AssetIDs {
+	for i, got := range req.AssetIDs {
 		if got != affectedAssets[i] {
 			t.Fatalf("asset[%d] = %s, want %s", i, got, affectedAssets[i])
 		}
 	}
-
-	// 4. idempotency — a second reconcile with empty queue is a no-op
-	n, err := ctrl.Reconcile(context.Background())
-	if err != nil {
-		t.Fatalf("second reconcile: %v", err)
-	}
-	if n != 0 {
-		t.Fatalf("empty reconcile returned %d, want 0", n)
-	}
-	if atomic.LoadInt32(&recorder.calls) != 1 {
-		t.Fatalf("reclassifier fired again on empty queue: calls = %d", recorder.calls)
-	}
 }
 
 // TestCTEM_B1_PublisherDropsEmptyScope protects against an accidental
-// sweep-everything publish — the publisher must refuse to enqueue when
-// no assets are named.
+// queue-everything publish: the publisher must refuse to enqueue when no
+// assets are named.
 func TestCTEM_B1_PublisherDropsEmptyScope(t *testing.T) {
-	queue := reclassify.NewMemoryQueue()
+	queue := &recordingQueue{}
 	publisher := controller.NewControlChangePublisher(queue, logger.NewNop())
 
 	publisher.PublishChange(context.Background(), shared.NewID(), nil, "empty")
 	publisher.PublishChange(context.Background(), shared.NewID(), []shared.ID{}, "empty")
 
-	if queue.Len() != 0 {
-		t.Fatalf("queue.Len = %d, want 0 — empty scope must NOT enqueue", queue.Len())
+	if len(queue.reqs) != 0 {
+		t.Fatalf("enqueued %d, want 0: empty scope must NOT enqueue", len(queue.reqs))
 	}
 }
 
