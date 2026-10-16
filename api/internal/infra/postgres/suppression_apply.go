@@ -223,6 +223,17 @@ func (r *SuppressionRepository) Approve(
 func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Rule, actorID shared.ID, ids []string) (int, error) {
 	target := rule.SuppressionType().Disposition()
 	from := suppressionApplyFrom[vulnerability.FindingStatus(target)]
+	// Lock the candidates, then let the transition engine decide each one
+	// with the rule as the actor (the rule's own four-eyes approval is what
+	// authorises the move). A finding someone moved since it was read, or
+	// one the engine refuses, is skipped.
+	ids, err := lockAndDecideSuppression(ctx, tx, rule, target, from, ids)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
 	rows, err := tx.QueryContext(ctx, `
 		WITH old AS (
 			SELECT id, status FROM findings
@@ -264,6 +275,7 @@ func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Ru
 		"resolution":          "suppressed",
 		"reason":              "suppression rule approved",
 		"suppression_rule_id": rule.ID().String(),
+		"actor_kind":          string(vulnerability.TransitionActorRule),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("marshal apply activity: %w", err)
@@ -277,6 +289,40 @@ func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Ru
 		return 0, fmt.Errorf("record apply activity: %w", err)
 	}
 	return len(changed), nil
+}
+
+// lockAndDecideSuppression row-locks the listed open findings of the rule's
+// tenant and returns the ids the transition engine allows the rule to move
+// to target.
+func lockAndDecideSuppression(ctx context.Context, tx *sql.Tx, rule *suppression.Rule, target string, from, ids []string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id::text, status, source FROM findings
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+		  AND status = ANY($3)
+		  AND source NOT IN `+coverageProtectedSources+`
+		ORDER BY id
+		FOR UPDATE`,
+		rule.TenantID().String(), pq.Array(ids), pq.Array(from))
+	if err != nil {
+		return nil, fmt.Errorf("lock suppression candidates: %w", err)
+	}
+	defer rows.Close()
+	actor := vulnerability.TransitionActor{Kind: vulnerability.TransitionActorRule, RuleID: rule.ID()}
+	var allowed []string
+	for rows.Next() {
+		var id, status, source string
+		if err := rows.Scan(&id, &status, &source); err != nil {
+			return nil, fmt.Errorf("scan suppression candidate: %w", err)
+		}
+		facts := vulnerability.TransitionFacts{Status: vulnerability.FindingStatus(status), Source: vulnerability.FindingSource(source)}
+		if vulnerability.EvaluateTransition(facts, actor, vulnerability.FindingStatus(target)).Allowed {
+			allowed = append(allowed, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate suppression candidates: %w", err)
+	}
+	return allowed, nil
 }
 
 // scanAppliedFindings reads the (id, previous status) rows of the apply
