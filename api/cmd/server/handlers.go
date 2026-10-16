@@ -814,6 +814,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
 	}
+	// Console > System > Shared sensors (RFC-100 §12): the fleet, queue
+	// aggregates, job metadata, the audited job view and remote actions.
+	handlers.AdminSharedFleet = handler.NewAdminSharedFleetHandler(sensor.NewSharedFleetService(
+		postgres.NewSharedFleetRepository(deps.DB), repos.CommandLog, repos.AdminAuditLog, log), log)
 	// Scan approval governance (RFC-073): settings, requests, the inbox and
 	// the scan list badge.
 	if svc.ScanGovernance != nil {
