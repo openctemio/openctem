@@ -104,6 +104,10 @@ func (in OffboardMemberInput) plan() (tenantdom.OffboardPlan, error) {
 // stripped, and the membership kept as a tombstone so history and foreign
 // keys stay valid. A re-invite later starts from zero.
 func (s *TenantService) OffboardMember(ctx context.Context, membershipID string, input OffboardMemberInput, actx auditapp.AuditContext) (*tenantdom.OffboardResult, error) {
+	return s.offboardMember(ctx, membershipID, input, actx, false)
+}
+
+func (s *TenantService) offboardMember(ctx context.Context, membershipID string, input OffboardMemberInput, actx auditapp.AuditContext, allowOwner bool) (*tenantdom.OffboardResult, error) {
 	if s.lifecycle == nil {
 		return nil, fmt.Errorf("member lifecycle is not configured")
 	}
@@ -111,7 +115,7 @@ func (s *TenantService) OffboardMember(ctx context.Context, membershipID string,
 	if err != nil {
 		return nil, err
 	}
-	if membership.IsOwner() {
+	if membership.IsOwner() && !allowOwner {
 		return nil, fmt.Errorf("%w: cannot offboard the owner", shared.ErrValidation)
 	}
 	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
@@ -180,10 +184,23 @@ func (s *TenantService) OffboardMember(ctx context.Context, membershipID string,
 // they do, they are disabled (access cut at once) and the administrators are
 // asked to finish the offboarding with a reassignment.
 func (s *TenantService) DeprovisionMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
+	return s.deprovisionMember(ctx, membershipID, actx, false)
+}
+
+// DeprovisionMemberForAccountErasure is DeprovisionMember for an account
+// being erased (RFC-104): an owner is offboarded too, because the erasure
+// runs only while the organization has another active owner (checked by the
+// caller). Work that needs a new owner leaves the membership disabled and the
+// administrators asked to reassign it, as for any deprovisioning.
+func (s *TenantService) DeprovisionMemberForAccountErasure(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
+	return s.deprovisionMember(ctx, membershipID, actx, true)
+}
+
+func (s *TenantService) deprovisionMember(ctx context.Context, membershipID string, actx auditapp.AuditContext, allowOwner bool) error {
 	if s.lifecycle == nil {
 		return s.SuspendMember(ctx, membershipID, actx)
 	}
-	_, err := s.OffboardMember(ctx, membershipID, OffboardMemberInput{}, actx)
+	_, err := s.offboardMember(ctx, membershipID, OffboardMemberInput{}, actx, allowOwner)
 	if err == nil {
 		return nil
 	}
