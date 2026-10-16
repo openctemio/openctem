@@ -267,7 +267,14 @@ type fakeAccounts struct {
 	suspended map[string]bool
 	passwords map[string]string // user id -> password
 	resets    int               // RecordPasswordSuccess calls
+	failures  int               // RecordPasswordFailure calls
 	lockedFor map[string]bool   // sign-in email -> directory reports a locked tenant account
+}
+
+func (f *fakeAccounts) RecordPasswordFailure(_ context.Context, _ shared.ID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failures++
 }
 
 func (f *fakeAccounts) RecordPasswordSuccess(_ context.Context, _ shared.ID) {

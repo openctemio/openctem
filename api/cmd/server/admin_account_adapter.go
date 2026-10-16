@@ -40,6 +40,10 @@ func (d adminAccountDirectory) RecordPasswordSuccess(ctx context.Context, userID
 	d.auth.RecordConsolePasswordSuccess(ctx, userID)
 }
 
+func (d adminAccountDirectory) RecordPasswordFailure(ctx context.Context, userID shared.ID) {
+	d.auth.RecordConsolePasswordFailure(ctx, userID)
+}
+
 func (d adminAccountDirectory) CreateAccount(ctx context.Context, email, name string) (shared.ID, string, error) {
 	acc, err := d.auth.CreateLocalAccount(ctx, email, name)
 	if err != nil {
