@@ -174,7 +174,7 @@ func (r *PlanRepository) Usage(ctx context.Context, tenantID shared.ID, withFind
 		SELECT
 		  (SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND status <> 'offboarded'),
 		  (SELECT count(*) FROM assets WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'archived'),
-		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND is_platform_sensor = false AND status <> 'revoked'),
+		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND scope = 'organization' AND status <> 'revoked'),
 		  (SELECT count(*) FROM api_keys WHERE tenant_id = $1 AND status = 'active'),
 		  (SELECT count(*) FROM ci_trust_configs WHERE tenant_id = $1),
 		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND created_at > now() - interval '24 hours')`,

@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15); S0 in review (#2308), the rest designed |
+| Status | Accepted (2026-10-15); S0 in review (#2308), S2 in review, the rest designed |
 | Scope | api (schema, access policy, claim, enrollment, signer, quotas, console), web (console fleet page, tenant view), sdk-go (per-job isolation, target re-check), sensor (instance enrollment, isolation profile), helm-charts and compose (bundled sensor) |
-| Architecture | [sensors.md](../architecture/sensors.md#platform-sensors-on-the-tenant-plane) |
+| Architecture | [sensors.md](../architecture/sensors.md#shared-sensors-on-the-tenant-plane) |
 | Amends | RFC-023 D14 (public targets only becomes a deployment default), RFC-022 (console owns the shared fleet), RFC-090 W11/W12 (shared-pool lanes replace `get_next_platform_job`) |
 | Related | RFC-030 (pull, leases, fair share), RFC-032 (enrollment), RFC-034 (egress), RFC-040 (mutual distrust, signed jobs), RFC-052 (grants), RFC-054 §8.1 (domain proof), RFC-059 (transport v3), RFC-064 (entitlements and limits), RFC-065 §8 (program targets) |
 
@@ -62,6 +62,9 @@ address but should not run it). A level between instance and organization
 - `sensors.tenant_id` becomes nullable, with `CHECK ((scope = 'instance') =
   (tenant_id IS NULL))`. The fake "operator's tenant" goes away: it is what
   let a shared row take that tenant's jobs through the tenant poll.
+- The scope is fixed at creation: an organization sensor never becomes a
+  shared one (its keys, grant and history would move to the instance);
+  re-enroll instead.
 - `sensors.dedicated_tenant_id uuid NULL` (only for `scope = 'instance'`).
 - Every repository filter that says `NOT is_platform_sensor` says
   `scope = 'organization'`; the tenant-plane walk test still answers 404 for
@@ -223,7 +226,7 @@ needs them.
 |---|---|---|
 | S0 | tenant claims skip shared jobs; least-privilege grant clamp; the trigger's target check on every workflow step | in review (#2308) |
 | S1 | this RFC | this PR |
-| S2 | `sensors.scope`, nullable `tenant_id`, drop `is_platform_sensor` | designed |
+| S2 | `sensors.scope`, nullable `tenant_id`, drop `is_platform_sensor`; scope fixed at creation; a shared sensor's grant limited to scan, validate and retest | in review |
 | S3 | access policy (§5) with the instance switch off everywhere | designed |
 | S4 | instance enrollment token, bundled sensor at instance scope | designed |
 | S5 | shared claim path (lanes, fair share, region, untagged switch, approved-only); remove `get_next_platform_job` | designed |
