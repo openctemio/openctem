@@ -20,11 +20,14 @@ import { ApprovalDialog } from '../approval-dialog'
 
 // Mock the approval API hook
 const mockRequestApproval = vi.fn()
+// The false-positive policy of the finding (GET .../approvals/policy).
+let mockPolicy: Record<string, unknown> | undefined
 vi.mock('../../api/use-findings-api', () => ({
   useRequestApproval: vi.fn(() => ({
     trigger: mockRequestApproval,
     isMutating: false,
   })),
+  useFalsePositivePolicy: vi.fn(() => ({ data: mockPolicy })),
 }))
 
 // Mock the findings types
@@ -126,6 +129,62 @@ const defaultProps = {
 describe('ApprovalDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockPolicy = undefined
+  })
+
+  // ============================================
+  // ORGANIZATION'S FALSE-POSITIVE LEVEL
+  // ============================================
+
+  describe('false-positive level', () => {
+    it('says no approval is needed and changes the submit when the caller may decide alone', async () => {
+      mockPolicy = {
+        fp_approval: 'off',
+        single_person: true,
+        can_decide_alone: true,
+        material: false,
+      }
+      mockRequestApproval.mockResolvedValue({ status: 'approved', single_person: true })
+      const user = userEvent.setup()
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /doesn't require approval for this finding/
+      )
+      await chooseReason(user, 'Test or example code')
+      await user.type(screen.getByLabelText('Justification'), 'fixture')
+      await user.click(screen.getByText('Review'))
+      await user.click(screen.getByRole('button', { name: 'Mark as false positive' }))
+      expect(mockRequestApproval).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requested_status: 'false_positive',
+          closure_reason: 'test_or_example_code',
+        })
+      )
+    })
+
+    it('says a person with approval permission could decide it alone', () => {
+      mockPolicy = {
+        fp_approval: 'off',
+        single_person: true,
+        can_decide_alone: false,
+        material: false,
+      }
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(screen.getByText(/could mark this finding a false positive alone/)).toBeInTheDocument()
+    })
+
+    it('keeps the four-eyes text when a second person is needed', () => {
+      mockPolicy = {
+        fp_approval: 'all',
+        single_person: false,
+        can_decide_alone: false,
+        material: false,
+      }
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(screen.queryByText(/alone/)).not.toBeInTheDocument()
+    })
   })
 
   // ============================================
