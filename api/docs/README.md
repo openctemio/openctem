@@ -36,7 +36,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 **Foundations**
 - [Overview](architecture/overview.md), [clean architecture](architecture/clean-arch.md), [project structure](architecture/project-structure.md)
-- [Module coupling](architecture/module-coupling-and-decoupling.md), [plans and limits](architecture/plans-and-limits.md), [idle Free workspaces](architecture/idle-workspaces.md)
+- [Module coupling](architecture/module-coupling-and-decoupling.md), [plans and limits](architecture/plans-and-limits.md), [idle-organization policy](architecture/idle-workspaces.md)
 - [Organization settings](architecture/organization-settings.md), [product brand](architecture/brand.md), [database notes](architecture/database-notes.md), [row-level security rollout](architecture/rls-rollout.md)
 - Decisions: [ADR-001 standard net/http](architecture/decisions/001-use-stdlib-http.md), [ADR-002 protocols](architecture/decisions/002-multi-protocol.md), [ADR-003 connectors](architecture/decisions/003-connector-pattern.md), [ADR-004 finding provenance](architecture/decisions/004-finding-provenance.md)
 
@@ -68,7 +68,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md)
 
 **Mobilization, automation and reporting**
-- [Remediation campaigns](architecture/remediation-campaigns.md), [campaign Jira sync](architecture/remediation-campaign-jira-sync.md), [ticketing (Jira)](architecture/ticketing-integration.md), [GitHub Issues ticketing](architecture/github-issue-ticketing.md)
+- [Remediation tasks](architecture/remediation-tasks.md), [remediation campaigns](architecture/remediation-campaigns.md), [campaign Jira sync](architecture/remediation-campaign-jira-sync.md), [ticketing (Jira)](architecture/ticketing-integration.md), [GitHub Issues ticketing](architecture/github-issue-ticketing.md)
 - [Automations](architecture/automations.md), [notification system](architecture/notification-system.md), [SIEM ingest](architecture/siem-ingest.md)
 - [CTEM program metrics](architecture/program-metrics.md), [CTEM definition of done](architecture/ctem-dod-checklist.md), [report PDF export](architecture/report-pdf-export.md), [pentest report templates](architecture/pentest-report-templates.md), [pentest remediation and retest](architecture/pentest-remediation.md), [pentest campaign phases, delivery and sign-off](architecture/pentest-campaign-completion.md), [pentest campaign profile](architecture/pentest-campaign-profile.md), [pentest methodology checklists](architecture/pentest-checklists.md)
 - [API ↔ CTIS decoupling](architecture/api-ctis-decoupling.md)

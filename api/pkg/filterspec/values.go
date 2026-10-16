@@ -33,6 +33,9 @@ func parseScalar(f *Field, raw string, now time.Time, endOfDay bool) (any, error
 				return e, nil // the registry's spelling
 			}
 		}
+		if hint, ok := f.EnumRetired[strings.ToLower(v)]; ok {
+			return nil, errors.New(hint)
+		}
 		return nil, fmt.Errorf("must be one of: %s", strings.Join(f.Enum, ", "))
 	case TypeString:
 		return raw, nil

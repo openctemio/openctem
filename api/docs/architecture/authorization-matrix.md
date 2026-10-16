@@ -765,7 +765,8 @@ Platform admin routes are for OpenCTEM operators, NOT tenant users. They
 authenticate **only** with a **console session** (RFC-022: `/login` password
 sign-in + mandatory TOTP, server-side session in the `admin_session` cookie,
 scoped to `/api/v1/admin`; cookie-authenticated writes must pass the
-`admin_csrf` double-submit check). There are **no admin API keys**: an
+`admin_csrf` double-submit check: `admin_csrf` is HttpOnly on `/api/v1/admin`,
+the console pages echo its copy `admin_csrf_ui`, scoped to `/admin`). There are **no admin API keys**: an
 `X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
 so every admin action has passed TOTP. The session resolves to an
 `admin_users` row with a platform role: `super_admin` > `ops_admin` >
@@ -776,12 +777,30 @@ Authorization is enforced at the **route layer** in
 `internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
 — not in the handlers.
 
+**Step-up on protected actions.** Every identity, privilege and platform-trust
+change also takes the route-level step-up (`middleware.RequireAdminStepUp`): a
+fresh console authenticator code in the `X-Admin-Step-Up` header, or the
+five-minute step-up window of the same console session (one confirmation,
+recorded in `admin_sessions.step_up_at`, covers the protected actions that
+follow). Without either the API answers `401 ADMIN_STEP_UP_REQUIRED` and the
+console asks for a code and retries; an administrator with no console
+authenticator gets `403 STEP_UP_UNAVAILABLE`. Each confirmation is audited
+(`console.step_up`, the purpose names the action), a wrong code counts toward
+the sign-in lockout. Every console write is classified in
+`adminWriteInventory` (`routes/admin_step_up_inventory_test.go`): step-up,
+routine (with the reason), or sign-in; CI fails on an unclassified write.
+Every write is step-up except the routine ones: an organization's limits and
+idle exemption, rejecting an access request, the e-mail test, announcements,
+threat-intel sync, AI-client blocks and target mappings. Where a row below
+says "a fresh authenticator code", that is this step-up (a body `totp_code`
+is still accepted and checked the same way).
+
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
 | `GET /api/v1/admin/platform-users?q=` | any admin (3+ characters; account-level facts only) |
 | `GET /api/v1/admin/platform-users/{user_id}` | any admin (audited `platform_user.view`) |
-| `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
+| `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
 | `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
 | `GET /api/v1/admin/operations` | any admin (build, schema, database, Redis, queues, sensor versions, controllers; no tenant content) |
@@ -793,26 +812,27 @@ Authorization is enforced at the **route layer** in
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
 | `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (token-exchange rate limit, 20/min; state bound to the `admin_idp` cookie, single use) |
-| `POST /api/v1/admin/administrators` | **super_admin** (audited; `break_glass` audited high) |
-| `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** (audited; not self) |
-| `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |
-| `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** (audited high) |
-| `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
+| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited; `break_glass` audited high) |
+| `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** + **step-up** (audited; not self) |
+| `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** + **step-up** (audited; not the break-glass account itself) |
+| `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** + **step-up** (audited high) |
+| `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin**; writes + **step-up** (audited high; secret never returned) |
 | `GET /api/v1/admin/access-requests` | any admin |
-| `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner |
+| `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner and takes **step-up** |
 | `GET /api/v1/admin/settings/plans` | any admin |
 | `PUT /api/v1/admin/settings/plans` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/tenants/{tenantId}/plan` | any admin (limits, usage, over-limit flag) |
-| `GET /api/v1/admin/tenants/{tenantId}/idle` | any admin (idle lifecycle of a Free organization) |
-| `PUT /api/v1/admin/tenants/{tenantId}/idle/exemption` | **ops_admin+** (reason required to exempt; audited high; `docs/architecture/idle-workspaces.md`) |
+| `GET /api/v1/admin/tenants/{tenantId}/idle` | any admin (the organization's idle policy and stage) |
+| `PUT /api/v1/admin/tenants/{tenantId}/idle/policy` | **ops_admin+** (turns the idle policy on or off; reason required both ways; audited high; `docs/architecture/idle-workspaces.md`) |
 | `PUT /api/v1/admin/tenants/{tenantId}/plan`, `PUT/DELETE .../plan/overrides/{key}` | **ops_admin+** (audited high; an override needs a reason, an expiry is optional) |
 | `GET /api/v1/admin/settings/signup` | any admin |
 | `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
-| `PATCH /api/v1/admin/users/{id}` | **super_admin** (audited) |
-| `DELETE /api/v1/admin/users/{id}` | **super_admin** (audited) |
+| `PATCH /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
+| `DELETE /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
 | `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
+| `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
 | `GET /api/v1/admin/tenants/{tenantId}/audit-chain` | any admin (classifies the organization's audit hash-chain; read-only) |
@@ -899,11 +919,11 @@ and certificates are never logged — an IdP update records
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filters `owner=none\|present`, `plan=free\|pro\|enterprise`; other values 400) |
-| `POST /api/v1/admin/tenants` | **ops_admin+** (audited; creates the owner's account when `owner_email` has none) |
+| `POST /api/v1/admin/tenants` | **ops_admin+** + **step-up** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
-| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) and a fresh console authenticator code in `totp_code` (step-up: 401 `STEP_UP_REQUIRED` without one, 401 for a wrong or replayed one), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
+| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** + **step-up**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) (the route's step-up confirms it), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
-| `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
+| `PUT/POST/PATCH/DELETE` on those SSO resources, and `PUT .../sso/enforcement` | **super_admin** + **step-up** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/changes` | any admin (what is waiting for the owner) |
 
 Verifying an SSO domain reads other organizations' rows for the same domain
@@ -1403,6 +1423,8 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
 | `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
 | `POST /remediation/campaigns/{id}/resolve` (gate and filter) | `findings:remediation:write` alone could mark findings fixed; an unparseable condition was dropped and a status-only filter counted as scope, widening a resolve to the organization | `RequireAll(findings:remediation:write, findings:fix_apply)`; the filter is parsed strictly (400 on save, 400 on resolve of an old unparseable one), a status alone is not scope, only `active`/`validating` campaigns resolve |
+| `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision needs every finding in scope |
+| `/remediation/tasks*` (new, RFC-098) | — | a task is listed and read through its in-scope findings only (counters, deadline and risk over those; `hidden_members` counts the rest; none visible = 404); a change needs every finding in scope; named findings must be in scope (404 otherwise) |
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
