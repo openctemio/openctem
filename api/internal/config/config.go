@@ -569,31 +569,45 @@ func (p AuthProvider) SupportsOIDC() bool {
 	return p == AuthProviderOIDC || p == AuthProviderHybrid
 }
 
-// Organization (tenant) creation modes, TENANT_CREATION_MODE (RFC-022 D8).
+// Sign-up ceilings, SIGNUP_MODE (docs/architecture/user-onboarding.md,
+// "Sign-up ceiling"). The console sign-up policy is a runtime switch below it
+// and can never exceed it.
 const (
-	// TenantCreationSelfService lets any signed-in user create an organization
-	// (SaaS / trial installs). An explicit opt-in.
-	TenantCreationSelfService = "self_service"
-	// TenantCreationAdminOnly reserves organization creation for the platform
-	// administrator: the admin console, or bootstrap-admin -org-name at first
-	// install (on-prem / enterprise installs). The default.
-	TenantCreationAdminOnly = "admin_only"
+	// SignupModeDisabled: no public account creation; organizations come
+	// from the platform administrator only. The default.
+	SignupModeDisabled = "disabled"
+	// SignupModeDomain: public sign-up only for addresses on an
+	// organization's verified domain; such a person joins that organization
+	// and never creates one.
+	SignupModeDomain = "domain"
+	// SignupModeOpen: anyone may sign up and create an organization (the
+	// hosted service), within the console policy and the limits.
+	SignupModeOpen = "open"
+	// SignupCaptchaOffAccepted is the one SIGNUP_CAPTCHA value: an explicit
+	// acceptance of open sign-up in production without a CAPTCHA (labs,
+	// training installs).
+	SignupCaptchaOffAccepted = "off-i-understand"
 )
 
-// SelfServiceTenantCreation reports whether signed-in users may create
-// organizations themselves. It fails closed: only an explicit
-// TENANT_CREATION_MODE=self_service opens it.
-func (c AuthConfig) SelfServiceTenantCreation() bool {
-	return c.TenantCreationMode == TenantCreationSelfService
+// SignupOpen reports whether the deployment allows organization self-service
+// at all (SIGNUP_MODE=open). The console policy may still keep it closed.
+func (c AuthConfig) SignupOpen() bool { return c.SignupMode == SignupModeOpen }
+
+// PublicSignup reports whether the deployment allows any public account
+// creation (SIGNUP_MODE=domain or open).
+func (c AuthConfig) PublicSignup() bool {
+	return c.SignupMode == SignupModeDomain || c.SignupMode == SignupModeOpen
 }
 
 // AuthConfig holds authentication configuration.
 type AuthConfig struct {
-	// TenantCreationMode is TenantCreationSelfService or TenantCreationAdminOnly.
-	// The platform administrator can create organizations in either mode.
-	// Anything but TenantCreationSelfService (including empty) is admin-only:
-	// use SelfServiceTenantCreation to test it.
-	TenantCreationMode string
+	// SignupMode is the deployment's sign-up ceiling: SignupModeDisabled
+	// (default), SignupModeDomain or SignupModeOpen. No API can change it.
+	// The platform administrator creates organizations in every mode.
+	SignupMode string
+	// SignupCaptcha is SignupCaptchaOffAccepted or empty: see
+	// validateProductionAuth.
+	SignupCaptcha string
 
 	// Provider determines which authentication methods are available.
 	// Values: "local", "oidc", "hybrid"
@@ -1103,6 +1117,17 @@ type EncryptionConfig struct {
 	// Key. Empty: derived from Key under its own label.
 	// Env var: APP_CONTENT_SIGNING_KEY
 	ContentSigningKey string
+
+	// ContentTrustRootKeyIDs are extra content catalog roots (key ids,
+	// "SHA256:<hex>") trusted beside the ones pinned in the release, for an
+	// operator's own catalog source (RFC-099). Env var:
+	// CONTENT_TRUST_ROOT_KEY_IDS (comma separated).
+	ContentTrustRootKeyIDs []string
+
+	// ContentSigstoreTrustedRoot is a Sigstore trusted root file that
+	// replaces the one embedded in the release for publisher signatures.
+	// Env var: CONTENT_SIGSTORE_TRUSTED_ROOT.
+	ContentSigstoreTrustedRoot string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1371,7 +1396,8 @@ func Load() (*Config, error) {
 				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),
 			},
 			AllowedRedirectURIs: getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
-			TenantCreationMode:  getEnv("TENANT_CREATION_MODE", TenantCreationAdminOnly),
+			SignupMode:          strings.ToLower(strings.TrimSpace(getEnv("SIGNUP_MODE", SignupModeDisabled))),
+			SignupCaptcha:       strings.TrimSpace(getEnv("SIGNUP_CAPTCHA", "")),
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),
@@ -1472,6 +1498,9 @@ func Load() (*Config, error) {
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
+
+			ContentTrustRootKeyIDs:     getEnvSlice("CONTENT_TRUST_ROOT_KEY_IDS", nil),
+			ContentSigstoreTrustedRoot: getEnv("CONTENT_SIGSTORE_TRUSTED_ROOT", ""),
 		},
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
@@ -1682,7 +1711,7 @@ func (c *Config) validateBasic() error {
 	}
 	if c.Scope.ZoneResolver == "" {
 		c.Scope.ZoneResolver = ScanZoneResolverSystem
-		if c.Auth.SelfServiceTenantCreation() {
+		if c.Auth.SignupOpen() {
 			c.Scope.ZoneResolver = DefaultPublicZoneResolver
 		}
 	}
@@ -1884,14 +1913,22 @@ func (c *Config) validateEncryption() error {
 
 // validateAuth validates authentication configuration.
 func (c *Config) validateAuth() error {
-	switch c.Auth.TenantCreationMode {
+	switch c.Auth.SignupMode {
 	case "":
 		// Unset (e.g. a Config built in code): the default.
-		c.Auth.TenantCreationMode = TenantCreationAdminOnly
-	case TenantCreationSelfService, TenantCreationAdminOnly:
+		c.Auth.SignupMode = SignupModeDisabled
+	case SignupModeDisabled, SignupModeDomain, SignupModeOpen:
 	default:
-		return fmt.Errorf("invalid TENANT_CREATION_MODE: %s (must be '%s' or '%s')",
-			c.Auth.TenantCreationMode, TenantCreationSelfService, TenantCreationAdminOnly)
+		return fmt.Errorf("invalid SIGNUP_MODE: %s (must be '%s', '%s' or '%s')",
+			c.Auth.SignupMode, SignupModeDisabled, SignupModeDomain, SignupModeOpen)
+	}
+	switch c.Auth.SignupCaptcha {
+	case "", SignupCaptchaOffAccepted:
+	default:
+		return fmt.Errorf("invalid SIGNUP_CAPTCHA: the only value is '%s' (open sign-up in production without a CAPTCHA)", SignupCaptchaOffAccepted)
+	}
+	if c.Auth.PublicSignup() && !c.Auth.Provider.SupportsLocal() {
+		return fmt.Errorf("SIGNUP_MODE=%s needs local accounts (AUTH_PROVIDER=local or hybrid); with AUTH_PROVIDER=oidc people come from the identity provider, use SIGNUP_MODE=disabled", c.Auth.SignupMode)
 	}
 	if !c.Auth.Provider.IsValid() {
 		return fmt.Errorf("invalid AUTH_PROVIDER: %s (must be 'local', 'oidc', or 'hybrid')", c.Auth.Provider)
@@ -2087,6 +2124,12 @@ func (c *Config) validateProductionAuth() error {
 		if !c.Auth.RequireEmailVerification {
 			return fmt.Errorf("AUTH_REQUIRE_EMAIL_VERIFICATION must be true in production")
 		}
+		// Open sign-up on the internet needs a CAPTCHA, or an explicit
+		// acceptance of running without one.
+		if c.Auth.SignupMode == SignupModeOpen && strings.TrimSpace(c.Auth.CaptchaTurnstileSecret) == "" &&
+			c.Auth.SignupCaptcha != SignupCaptchaOffAccepted {
+			return fmt.Errorf("SIGNUP_MODE=open in production needs CAPTCHA_TURNSTILE_SECRET and CAPTCHA_TURNSTILE_SITE_KEY (or SIGNUP_CAPTCHA=%s to accept open sign-up without a CAPTCHA)", SignupCaptchaOffAccepted)
+		}
 		// Validate SameSite policy
 		switch c.Auth.CookieSameSite {
 		case "strict", "lax":
@@ -2270,6 +2313,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	{"TENANT_CREATION_MODE", "unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open"},
 	// The platform SMTP server is set in the admin console (RFC-079).
 	{"SMTP_ENABLED", smtpMoved},
 	{"SMTP_HOST", smtpMoved},
