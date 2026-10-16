@@ -1035,6 +1035,7 @@
   "findings.approvals.requesterFormer": "Former member",
   "findings.approvals.actor.ai_triage": "AI triage",
   "findings.approvals.actor.vex": "VEX statement",
+  "findings.approvals.actor.ticket": "Linked ticket",
   "findings.approvals.action.approve": "Approve",
   "findings.approvals.action.reject": "Reject",
   "findings.approvals.action.cancel": "Cancel request",
