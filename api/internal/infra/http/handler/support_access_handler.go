@@ -106,7 +106,7 @@ func (h *SupportAccessHandler) writeError(w http.ResponseWriter, err error, op s
 	case shared.IsValidation(err):
 		apierror.BadRequest(sanitizeLogField(err.Error())).WriteJSON(w)
 	default:
-		h.log.Error("support access", "op", op, "error", err)
+		h.log.Error("support access", "op", sanitizeLogField(op), "error", logger.SanitizeError(err))
 		apierror.InternalServerError("could not complete the request").WriteJSON(w)
 	}
 }
