@@ -425,8 +425,9 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
      (default off);
   2. the instance administrator's decision for the organization,
      `tenants.shared_sensors_access` (`allow`, `deny`), or, without one,
-     `platform_settings['shared_sensors'].new_orgs` (default on). A deny
-     always wins;
+     `platform_settings['shared_sensors'].new_orgs`: unset by default, and
+     unset refuses. Turning the switch on requires `new_orgs` true or false in
+     the same request (400 `NEW_ORGS_CHOICE_REQUIRED`). A deny always wins;
   3. the owner's opt-out, the organization setting `shared_sensors.opt_out`.
 
   Console > System > Platform scanning (`/api/v1/admin/settings/shared-sensors`)

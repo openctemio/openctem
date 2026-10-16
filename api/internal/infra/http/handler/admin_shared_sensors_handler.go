@@ -23,13 +23,18 @@ const stepUpPurposeSharedSensors = "shared sensor access change"
 // codeSharedSensorsNotReady is the error code of a refused switch-on.
 const codeSharedSensorsNotReady apierror.Code = "SHARED_SENSORS_NOT_READY"
 
+// codeNewOrgsChoiceRequired refuses a switch-on without the choice for
+// organizations without a decision.
+const codeNewOrgsChoiceRequired apierror.Code = "NEW_ORGS_CHOICE_REQUIRED"
+
 // SharedSensorsSettingResponse is the instance shared sensor setting.
 type SharedSensorsSettingResponse struct {
 	// Enabled is the instance switch (default false).
 	Enabled bool `json:"enabled"`
-	// NewOrgs: an organization without a decision may use shared sensors
-	// (default true).
-	NewOrgs bool `json:"new_orgs"`
+	// NewOrgs: whether an organization without a decision may use shared
+	// sensors; null when unset (the default), which refuses such an
+	// organization.
+	NewOrgs *bool `json:"new_orgs"`
 	// Ready is false while shared sensors cannot be used on any deployment
 	// yet; the switch cannot be turned on until it is true.
 	Ready bool `json:"ready"`
@@ -63,7 +68,7 @@ type UpdateSharedSensorsOrganizationRequest struct {
 
 // GetSharedSensors returns the instance setting.
 // @Summary      Shared sensors on this instance
-// @Description  The instance switch (off by default), whether organizations without a decision may use shared sensors (on by default) and whether shared sensors can be used yet. Any administrator.
+// @Description  The instance switch (off by default), whether organizations without a decision may use shared sensors (null until the administrator chooses; null refuses them) and whether shared sensors can be used yet. Any administrator.
 // @Tags         Admin System
 // @Produce      json
 // @Success      200  {object}  SharedSensorsSettingResponse
@@ -81,7 +86,7 @@ func (h *AdminScanPolicyHandler) GetSharedSensors(w http.ResponseWriter, r *http
 
 // UpdateSharedSensors changes the instance setting.
 // @Summary      Change the shared sensor setting
-// @Description  Super admin with a reason and a fresh authenticator code. Turning the switch on is refused (409 SHARED_SENSORS_NOT_READY) while shared sensors are not available yet. Audited (critical); the other administrators are emailed.
+// @Description  Super admin with a reason and a fresh authenticator code (route-level step-up). Turning the switch on needs new_orgs true or false in the same request (400 NEW_ORGS_CHOICE_REQUIRED without it); it is refused (409 SHARED_SENSORS_NOT_READY) while shared sensors are not available yet. Audited (critical); the other administrators are emailed.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
@@ -100,12 +105,18 @@ func (h *AdminScanPolicyHandler) UpdateSharedSensors(w http.ResponseWriter, r *h
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	if req.Enabled == nil || req.NewOrgs == nil {
-		apierror.BadRequest("enabled and new_orgs must be true or false").WriteJSON(w)
+	if req.Enabled == nil {
+		apierror.BadRequest("enabled must be true or false").WriteJSON(w)
 		return
 	}
-	// Refused before the code is spent: the switch stays off until the
-	// rollout gate opens.
+	// Turning the switch on needs an explicit choice for organizations
+	// without a decision, in the same action: never an implicit default.
+	if *req.Enabled && req.NewOrgs == nil {
+		apierror.New(http.StatusBadRequest, codeNewOrgsChoiceRequired,
+			"Choose whether organizations without a decision may use shared sensors (new_orgs true or false) when you turn shared sensors on").WriteJSON(w)
+		return
+	}
+	// The switch stays off until the rollout gate opens.
 	if *req.Enabled && !scanpolicy.SharedSensorsReady() {
 		apierror.New(http.StatusConflict, codeSharedSensorsNotReady, scanpolicy.ReasonSharedSensorsNotReady).WriteJSON(w)
 		return
@@ -113,7 +124,7 @@ func (h *AdminScanPolicyHandler) UpdateSharedSensors(w http.ResponseWriter, r *h
 	if !h.stepUpChange(w, r, actor, stepUpPurposeSharedSensors, req.Reason, req.TOTPCode) {
 		return
 	}
-	next := scanpolicy.SharedSensorsSetting{Enabled: *req.Enabled, NewOrgs: *req.NewOrgs}
+	next := scanpolicy.SharedSensorsSetting{Enabled: *req.Enabled, NewOrgs: req.NewOrgs}
 	v, err := h.svc.UpdateSharedSensors(r.Context(), next, req.Version, h.change(r, actor, req.Reason))
 	if err != nil {
 		h.writeSharedErr(w, err)

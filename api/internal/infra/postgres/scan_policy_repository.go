@@ -210,10 +210,10 @@ func (r *ScanPolicyRepository) GetSharedSensors(ctx context.Context) (scanpolicy
 		Enabled *bool `json:"enabled"`
 		NewOrgs *bool `json:"new_orgs"`
 	}
-	if err := json.Unmarshal(raw, &v); err != nil || v.Enabled == nil || v.NewOrgs == nil {
+	if err := json.Unmarshal(raw, &v); err != nil || v.Enabled == nil {
 		return scanpolicy.SharedSensorsSetting{}, 0, fmt.Errorf("decode shared sensor setting: invalid value")
 	}
-	return scanpolicy.SharedSensorsSetting{Enabled: *v.Enabled, NewOrgs: *v.NewOrgs}, version, nil
+	return scanpolicy.SharedSensorsSetting{Enabled: *v.Enabled, NewOrgs: v.NewOrgs}, version, nil
 }
 
 // SetSharedSensors stores the setting when the stored version is
