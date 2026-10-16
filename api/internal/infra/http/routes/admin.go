@@ -267,6 +267,24 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// Instance scan zones (RFC-100 §6.1): any admin reads; a super admin
+	// changes a zone, its shared sensors and its organizations with a fresh
+	// code and a reason (the service records it with the job signer first
+	// and writes the critical audit row).
+	if h.AdminInstanceScanZone != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		z := h.AdminInstanceScanZone
+		router.Group("/api/v1/admin/instance-scan-zones", func(r Router) {
+			r.GET("/", z.List)
+			r.POST("/", z.Create, requireSuper, stepUp("instance_scan_zone.create"))
+			r.GET("/{zoneId}", z.Get)
+			r.PUT("/{zoneId}", z.Update, requireSuper, stepUp("instance_scan_zone.update"))
+			r.DELETE("/{zoneId}", z.Delete, requireSuper, stepUp("instance_scan_zone.delete"))
+			r.PUT("/{zoneId}/sensors", z.SetSensors, requireSuper, stepUp("instance_scan_zone.sensors"))
+			r.PUT("/{zoneId}/organizations", z.SetOrganizations, requireSuper, stepUp("instance_scan_zone.organizations"))
+		}, adminMiddlewares...)
+	}
+
 	// The request-access queue: any admin reads; approving (creates the
 	// organization, requester as owner) or rejecting needs ops_admin+, audited.
 	if h.AccessRequest != nil {

@@ -142,6 +142,12 @@ type Command struct {
 	// set, only a sensor assigned to that zone may poll or claim it, even after
 	// the reaper unpins it. Never sent on the protocol-v1 wire.
 	ScanZoneID *shared.ID
+	// InstanceScanZoneID is the instance scan zone of a shared job that
+	// reaches internal addresses (docs/rfcs/RFC-100-shared-sensors.md
+	// §6.1). Written when the command is created; the general readers do
+	// not load it: the job signer reads it back by id
+	// (CommandRepository.InstanceScanZoneID) when it signs the job.
+	InstanceScanZoneID *shared.ID
 
 	// HostKeys are the hosts the command sends traffic to (AssignHostKeys
 	// sets them on create, for every command). While the command is
@@ -247,6 +253,12 @@ func NewCommand(tenantID shared.ID, cmdType CommandType, priority CommandPriorit
 // SetSensorID sets the target sensor ID.
 func (c *Command) SetSensorID(sensorID shared.ID) {
 	c.SensorID = &sensorID
+}
+
+// SetInstanceScanZone stamps the instance scan zone of a shared job (after
+// SetPlatformJob).
+func (c *Command) SetInstanceScanZone(zoneID shared.ID) {
+	c.InstanceScanZoneID = &zoneID
 }
 
 // SetScanZone stamps the scan zone the command was routed to.

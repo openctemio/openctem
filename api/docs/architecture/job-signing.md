@@ -230,9 +230,32 @@ Its own rules; nothing the API sends relaxes them:
   end in `localhost`, `.local`, `.internal`, `.home.arpa` or a reverse-DNS
   zone. Names are resolved by the API and again by the sensor. Any other
   `sensor_scope` value is refused (`internal/signer/shared.go`).
+- except inside an **instance scan zone** (RFC-100 §6.1): a shared job's
+  statement may carry `zone` (`id` and canonical, sorted, private `ranges`).
+  The signer then lets internal **addresses and ranges** through only when
+  they lie wholly inside those ranges (internal names never pass), and signs
+  only when its own **zone ledger** holds the zone, the zone is assigned to
+  the statement's `tenant_id`, the claiming `sensor_id` serves it and the
+  statement carries exactly the zone's ranges (reasons `zone_not_in_ledger`,
+  `zone_not_assigned`, `zone_sensor`, `zone_ranges`, `bad_zone`). Zone checks
+  apply in every ledger mode. A `zone` on an organization's statement is
+  refused (`internal/signer/zones.go`).
 
-It does not yet check zone ranges, time windows or per-hour distinct-target
-ceilings (see "Not yet").
+It does not yet check time windows or per-hour distinct-target ceilings
+(see "Not yet").
+
+### Zone ledger
+
+`POST /v1/ledger/zones` (`jobsign.ZoneChange`: `put` a `LedgerZone` with
+`id`, `ranges`, `tenants`, `sensors`, or `delete_id`, and the `requester`)
+is called by the API's instance scan zone service on every console change,
+**before** the database changes: a narrowing takes effect at the signer
+first, and a change the signer did not record is refused (409). Each change
+is a hash-chained `ledger.log` line (`zone_put`, `zone_delete`) replayed at
+start. A compromised API can record a zone; the organization's scope ledger
+still bounds every target, and the sensor's local policy and private-target
+switch still bound what a shared sensor reaches. Limits: 256 ranges, 10000
+organizations and 1000 sensors per zone, 10000 zones.
 
 ## Statement
 
@@ -246,6 +269,7 @@ payload bytes it received and never re-serializes them.
 | `tenant_id` | UUID | the organization of the command |
 | `sensor_id` | UUID | the sensor the claim handed it to |
 | `sensor_scope` | string | only for a job of a shared sensor: `instance`. Absent for an organization's sensor |
+| `zone` | object | only for a shared job inside an instance scan zone: `id` and `ranges` (canonical private CIDRs, sorted). The only private ranges the job may reach |
 | `command_id` | UUID | the command |
 | `command_type` | string | `scan`, `collect`, `health_check`, `config_update`, … |
 | `tool` | string | payload `scanner`, else `preferred_tool`; `""` when neither |
@@ -324,7 +348,10 @@ Before it parses anything else of the command:
    A **shared** sensor instead requires `sensor_scope` = `instance` and its
    own `sensor_id`, accepts any `tenant_id`, and tags every result and
    outbox entry of the job with that `tenant_id` and `command_id`; an
-   organization's sensor refuses a statement that carries `sensor_scope`;
+   organization's sensor refuses a statement that carries `sensor_scope`.
+   A shared sensor reaches a private address only inside the signed
+   `zone.ranges` (sdk-go `core.WithJobZone`), never inside ranges an
+   unsigned command field names; an organization's sensor refuses a `zone`;
 5. `issued_at` within its clock skew; `expires_at` in the future;
 6. `nonce` not seen before (keep nonces until their `expires_at`);
 7. `seq` greater than the last accepted one (persisted; gaps allowed);
@@ -685,8 +712,8 @@ when people approved it and the signer recorded its digest in the ledger.
   gone.
 - **The scope document** (P3): the approved part of the ledger signed by
   the offline root's delegated scope role and checked by the sensor next to
-  the job (RFC-040 §5.6 point 4, two repositories); zone ranges, time
-  windows and per-hour distinct-target ceilings in the ledger.
+  the job (RFC-040 §5.6 point 4, two repositories); time windows and
+  per-hour distinct-target ceilings in the ledger.
 - **WebAuthn approvals** (P3): each approval an assertion over the change
   digest, verified by the signer against approver credentials enrolled
   through its own CLI, so a compromised API cannot invent approvals.

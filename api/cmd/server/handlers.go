@@ -818,6 +818,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
 	}
+	// Instance scan zones (RFC-100 §6.1): console routes, the trigger's
+	// zone lookup and the zone in a shared job's signed statement.
+	handlers.AdminInstanceScanZone = wireInstanceScanZones(svc, repos, deps.DB, adminConsoleSvc, log)
 	// Scan approval governance (RFC-073): settings, requests, the inbox and
 	// the scan list badge.
 	if svc.ScanGovernance != nil {
