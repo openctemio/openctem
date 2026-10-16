@@ -68,6 +68,10 @@ var findingMergeRefs = []mergeRef{
 		keys: []mergeKey{{}}},
 	{table: "finding_remediation_keys", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// Ticket links follow the finding; a loser's link to an issue the
+	// survivor already links is dropped (one link per finding and issue).
+	{table: "ticket_links", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"integration_id", "external_key"}}}},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},
@@ -250,8 +254,7 @@ func findingStatusRank(status string) int {
 	switch vulnerability.FindingStatus(status) {
 	case vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusAccepted:
 		return 5
-	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied,
-		vulnerability.FindingStatusValidatedFixed:
+	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied:
 		return 4
 	case vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusInReview:
 		return 3

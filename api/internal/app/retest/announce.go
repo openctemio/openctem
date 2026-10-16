@@ -166,7 +166,7 @@ const maxAnnouncedPerScan = 50
 
 // ScanRegressions handles the regressions an ingested scan produced (the scan
 // reopened findings closed as fixed): fresh SLA (RFC-039 D2) and an
-// announcement. A validated_fixed finding reopened by a scan refutes a
+// announcement. A not-reproducible finding a scan sees again refutes a
 // validation downgrade; it was never closed, so its SLA keeps running.
 type ScanRegressions struct {
 	sla      RegressionSLA
