@@ -5,6 +5,7 @@
 --
 -- Safe on populated tables: two nullable columns on a table this release
 -- created, plus additive seed rows.
+-- expand-contract-ok: the only NOT NULL text is inside a CHECK expression; both columns are nullable.
 
 ALTER TABLE content_packages
     ADD COLUMN content_pack_id uuid,
