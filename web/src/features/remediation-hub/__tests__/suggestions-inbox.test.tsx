@@ -122,6 +122,7 @@ describe('SuggestionsInbox keyboard review', () => {
     expect(buttons).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    expect(screen.getByText(/a accept as owner/)).toBeInTheDocument()
     // The keyboard follows the same rule: a on the new fix does nothing, on the join it accepts.
     const user = userEvent.setup()
     await user.keyboard('a')

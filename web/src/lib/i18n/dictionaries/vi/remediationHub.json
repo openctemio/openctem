@@ -205,6 +205,7 @@
   "remediationHub.suggestions.hidden": "{n} phát hiện nằm ngoài quyền truy cập của bạn; hãy nhờ người xem được tất cả",
   "remediationHub.suggestions.keyKindFilter": "Kiểu sửa",
   "remediationHub.suggestions.keys": "Phím tắt: j/k di chuyển, a chấp nhận, e sửa, d bỏ qua, s tạm hoãn, x chọn, ? tại sao",
+  "remediationHub.suggestions.keysOwner": "Phím tắt: j/k di chuyển, a chấp nhận với tư cách chủ sở hữu, ? tại sao",
   "remediationHub.suggestions.kindFilter": "Loại",
   "remediationHub.suggestions.loadError": "Không tải được đề xuất",
   "remediationHub.suggestions.owners": "Chủ sở hữu đề xuất",

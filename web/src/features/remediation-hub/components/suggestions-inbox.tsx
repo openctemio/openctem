@@ -318,7 +318,7 @@ export function SuggestionsInbox() {
         </div>
       </div>
       <p className="text-muted-foreground text-xs" aria-live="polite">
-        {t('remediationHub.suggestions.keys')}
+        {t(canWrite ? 'remediationHub.suggestions.keys' : 'remediationHub.suggestions.keysOwner')}
       </p>
 
       {error ? (
