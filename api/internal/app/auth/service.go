@@ -18,7 +18,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
@@ -1792,13 +1791,6 @@ type CreateFirstTeamResult struct {
 	Tenant       TenantMembershipInfo `json:"tenant"`
 }
 
-// FreePlan is the slice of the entitlement service POST /tenants uses to cap
-// the Free organizations one person owns. create-first-team needs no cap: it
-// serves people with no organization, who own no Free one.
-type FreePlan interface {
-	CheckFreeTeam(ctx context.Context, userID shared.ID) error
-}
-
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
@@ -1924,11 +1916,8 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
-	// A self-service organization starts on the Free plan, stored with the
-	// organization in one transaction.
-	if err := newTenant.SetPlan(plan.Free); err != nil {
-		return nil, err
-	}
+	// No limits for a self-service organization: limits apply only where an
+	// operator set them for that organization.
 
 	// Tenant, owner membership and owner role in one transaction, the same
 	// write the other organization-creation paths use.

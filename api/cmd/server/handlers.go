@@ -5,6 +5,7 @@ import (
 
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -52,6 +53,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
@@ -274,9 +276,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			})
 		}
 	}
-	if svc.Entitlement != nil {
-		tenantHandler.SetFreePlan(svc.Entitlement)
-	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}
@@ -305,11 +304,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetProvenanceLister(repos.Finding)
 	vulnHandler.SetPackageFixLister(repos.Finding)
 	vulnHandler.SetIntelFeeds(repos.ThreatIntel.EPSS(), repos.ThreatIntel.KEV())
+	// The approvals inbox names each requester from this tenant's members.
+	vulnHandler.SetApprovalMemberNamer(postgres.NewScopeActorRepository(deps.DB))
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
 	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
+	var ticketMappingHandler *handler.TicketMappingHandler
+	if svc.TicketMapping != nil {
+		ticketMappingHandler = handler.NewTicketMappingHandler(svc.TicketMapping, svc.Audit, log)
+	}
 	// Inbound Jira deliveries: the integration in the URL and its own secret
 	// authenticate them; replays are ignored for 24 hours (all replicas).
 	jiraWebhookHandler.SetDeliveryVerifier(svc.Integration)
@@ -487,6 +492,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}(),
 		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:          jiraWebhookHandler,
+		TicketMapping:        ticketMappingHandler,
 		GitHubWebhook:        githubWebhookHandler,
 		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
@@ -649,6 +655,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
 		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
+			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
+			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
+				log.Error("console step-up", "purpose", purpose, "error", err)
+			}
+			return err
+		}),
 
 		// Admin Audit middleware (audit logging for admin operations)
 		AdminAuditMiddleware: middleware.NewAuditMiddleware(repos.AdminAuditLog, log),
