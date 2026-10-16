@@ -55,9 +55,11 @@ finding of the organization).
 | `remediation_key`      | a solution family (alone, no other key) | `"sol:…"`    |
 
 The tenant is always pinned, so counts are tenant-isolated regardless of the
-filter contents. A campaign has **scope** only when a condition other than a
-status narrows it: an empty filter, or a status alone ("every new finding" is
-the whole organization), tracks nothing and cannot resolve. A filter stored
+filter contents. A campaign has **scope** only when it names what is fixed:
+an asset, CVEs, linked findings, a tool, or a fix key (`remediation_key`).
+Severity, source, status and search only narrow that scope; on their own
+("every critical finding", "every new finding") they are the whole
+organization, so such a campaign tracks nothing and cannot resolve. A filter stored
 before the strict check that no longer parses is treated the same way, and a
 resolve answers 400 until its scope is edited.
 
@@ -149,8 +151,16 @@ scope: at least one of the campaign's findings, or its `asset_id`, is on an
 in-scope asset, or they created it. Any other campaign answers 404 for every
 read and write (get, findings, update, status, resolve, refresh,
 create-ticket, delete) and is left out of the list, whose total counts only
-the visible campaigns (the list examines at most 1,000 campaigns of the
-tenant for such a caller). Within a visible campaign the member sees it
+the visible campaigns (the list examines every campaign of the tenant, page
+by page). Seeing a campaign is not changing it: update, status, refresh,
+create-ticket and delete need **every** finding of the campaign (and its
+`asset_id`) in the member's scope, or an empty campaign they created; a
+campaign they can see that also covers another team's findings answers 403
+(`ErrCampaignOutsideScope`), so one shared finding never gives them control of
+it. The same check runs on a new or changed `finding_filter` before it is
+saved (create and update), so a restricted member cannot point a campaign at
+another team's assets or CVEs. Resolve stays open on a visible campaign because it changes only the
+member's in-scope findings. Within a visible campaign the member sees it
 through their scope only:
 `finding_count`, `resolved_count`, `verified_count` and `progress` count the
 findings on their in-scope assets; the explicit `finding_ids` and the

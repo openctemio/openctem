@@ -36,6 +36,7 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
@@ -47,7 +48,7 @@ import (
 )
 
 // DefaultMFAIssuer is the issuer label shown by authenticator apps.
-const DefaultMFAIssuer = "OpenCTEM"
+const DefaultMFAIssuer = brand.DefaultName
 
 // recoveryCodeAlphabet omits look-alike characters (0/o, 1/l/i).
 const recoveryCodeAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
