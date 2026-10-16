@@ -120,7 +120,7 @@ func keyset(args []string) error {
 		}
 		pubs = append(pubs, b)
 	}
-	if *version == 0 || *days < 1 || time.Duration(*days)*24*time.Hour > feedsign.MaxKeySetValidity {
+	if *version == 0 || *days < 1 || time.Duration(*days)*24*time.Hour > contentpkg.MaxKeySetValidity {
 		return errors.New("-version must be set and -days must be 1 to 365")
 	}
 	now := time.Now().UTC()

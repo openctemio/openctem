@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -69,7 +70,7 @@ func TestSigningScripts(t *testing.T) {
 		t.Fatalf("init-keys: %v\n%s", err, out)
 	}
 	var seeds []string
-	for _, f := range []string{"catalog-root.key", "online.key"} {
+	for _, f := range []string{"catalog-root.key", "online.key", "catalog-online.key"} {
 		raw, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {
 			t.Fatal(err)
@@ -87,7 +88,13 @@ func TestSigningScripts(t *testing.T) {
 		t.Fatalf("directory mode %v", st.Mode().Perm())
 	}
 	pub, _ := os.ReadFile(filepath.Join(dir, "online.pub"))
-	for _, want := range []string{"keyset.dsse.json", "--env release-feed", "< \"" + filepath.Join(dir, "online.key") + "\"", strings.TrimSpace(string(pub)), "SHA256:"} {
+	catalogPub, _ := os.ReadFile(filepath.Join(dir, "catalog-online.pub"))
+	if strings.TrimSpace(string(pub)) == strings.TrimSpace(string(catalogPub)) {
+		t.Fatal("the release feed key and the catalog key are the same key")
+	}
+	for _, want := range []string{"keyset.dsse.json", "--env release-feed", "< \"" + filepath.Join(dir, "online.key") + "\"",
+		"--env content-catalog", "CONTENT_CATALOG_SIGNING_KEY", "< \"" + filepath.Join(dir, "catalog-online.key") + "\"",
+		strings.TrimSpace(string(pub)), strings.TrimSpace(string(catalogPub)), "SHA256:"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -96,8 +103,28 @@ func TestSigningScripts(t *testing.T) {
 		t.Fatalf("key set version %v", v)
 	}
 
+	// The catalog key set lists the catalog online key and not the release feed key.
+	ksRaw, _ := os.ReadFile(filepath.Join(dir, "keyset.dsse.json"))
+	var ksEnv struct{ Payload string }
+	_ = json.Unmarshal(ksRaw, &ksEnv)
+	ksPayload, _ := base64.StdEncoding.DecodeString(ksEnv.Payload)
+	var ksDoc struct {
+		Keys []struct {
+			PublicKey string `json:"public_key"`
+		} `json:"keys"`
+	}
+	_ = json.Unmarshal(ksPayload, &ksDoc)
+	if len(ksDoc.Keys) != 1 {
+		t.Fatalf("catalog key set lists %d keys", len(ksDoc.Keys))
+	}
+	listed, _ := base64.StdEncoding.DecodeString(ksDoc.Keys[0].PublicKey)
+	if hex.EncodeToString(listed) != strings.TrimSpace(string(catalogPub)) {
+		t.Fatalf("catalog key set lists %x, not the catalog online key", listed)
+	}
+
 	// Existing keys are never overwritten, and the refusal prints no secret.
 	before, _ := os.ReadFile(filepath.Join(dir, "online.key"))
+	beforeCatalog, _ := os.ReadFile(filepath.Join(dir, "catalog-online.key"))
 	out2, err := signingScript(t, bin, "init-keys.sh", dir)
 	if err == nil {
 		t.Fatal("init-keys overwrote existing keys")
@@ -105,6 +132,20 @@ func TestSigningScripts(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(dir, "online.key"))
 	if !bytes.Equal(before, after) {
 		t.Fatal("the online key changed")
+	}
+	if afterCatalog, _ := os.ReadFile(filepath.Join(dir, "catalog-online.key")); !bytes.Equal(beforeCatalog, afterCatalog) {
+		t.Fatal("the catalog online key changed")
+	}
+	// A directory with only the catalog key is refused too.
+	partial := filepath.Join(t.TempDir(), "partial")
+	if err := os.MkdirAll(partial, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(partial, "catalog-online.key"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := signingScript(t, bin, "init-keys.sh", partial); err == nil {
+		t.Fatal("init-keys ran over an existing catalog online key")
 	}
 
 	out3, err := signingScript(t, bin, "rotate-keyset.sh", dir)

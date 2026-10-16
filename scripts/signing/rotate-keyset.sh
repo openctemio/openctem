@@ -5,8 +5,9 @@
 #
 #   scripts/signing/rotate-keyset.sh [key-directory]   default ./openctem-signing-keys
 #
-# The online public key is read from online.pub. To add a second online key
-# (rotation overlap) or drop one, list the keys: ONLINE_PUBS=<hex>,<hex> ...
+# The catalog online public key is read from catalog-online.pub (never the
+# release feed key, online.pub). To add a second catalog online key (rotation
+# overlap) or drop one, list the keys: ONLINE_PUBS=<hex>,<hex> ...
 #
 # Prints only public material. The old key set stays in keyset.dsse.json.prev.
 set -euo pipefail
@@ -22,8 +23,8 @@ for f in catalog-root.key keyset.dsse.json; do
 done
 pubs="${ONLINE_PUBS:-}"
 if [ -z "$pubs" ]; then
-  [ -f "$dir/online.pub" ] || { echo "rotate-keyset: $dir/online.pub is missing; set ONLINE_PUBS" >&2; exit 1; }
-  pubs="$(tr -d ' \n' < "$dir/online.pub")"
+  [ -f "$dir/catalog-online.pub" ] || { echo "rotate-keyset: $dir/catalog-online.pub is missing; set ONLINE_PUBS" >&2; exit 1; }
+  pubs="$(tr -d ' \n' < "$dir/catalog-online.pub")"
 fi
 
 # The key set payload is base64 in the DSSE envelope; read its version.
@@ -41,7 +42,7 @@ chmod 644 "$dir/keyset.dsse.json"
 
 cat <<OUT
 Key set re-signed: version $old -> $new, valid $CATALOG_KEYSET_DAYS days.
-Online public key(s): $pubs
+Catalog online public key(s): $pubs
 
 Commit and publish the new key set (public):
   $dir/keyset.dsse.json

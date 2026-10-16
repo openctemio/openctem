@@ -62,7 +62,7 @@ operator can decide.
 | # | Decision |
 |---|---|
 | D1 | The version check is on by default (`VERSION_CHECK_ENABLED`, default `true`). It is a server-side `GET` of one static file with no query string, no cookies, no `Referer`, and a fixed `User-Agent` (`openctem-version-check/1`) that names no version. Comparison happens on the instance. |
-| D2 | The file is one DSSE envelope in the shared signed-feed format (`pkg/feedsign`), signed directly by one online Ed25519 key (kind `openctem.io/release-feed/v1`), in the file `openctem-releases.json`. There is no key set and no offline root for the feed: the feed is display-only (D9), so a second tier would add ceremony without protecting anything the first tier does not. The payload type (`application/vnd.openctem.release-feed+json`) is the feed's own, so the same online key may also sign other content (the content catalog) and no signature over one can be replayed as the other (domain separation). |
+| D2 | The file is one DSSE envelope in the shared signed-feed format (`pkg/feedsign`), signed directly by one online Ed25519 key (kind `openctem.io/release-feed/v1`), in the file `openctem-releases.json`. There is no key set and no offline root for the feed: the feed is display-only (D9), so a second tier would add ceremony without protecting anything the first tier does not. The payload type (`application/vnd.openctem.release-feed+json`) is the feed's own (domain separation). The release feed key signs only the feed: the content catalog has its own, separate online key, because a key that signs information must not be able to ship code. |
 | D3 | The online public key is pinned in the binary (`releasefeed.PinnedKeys`, hex, at most two entries), not configurable. A configuration override would let anyone with access to the environment make the console say anything; a fork that publishes its own releases rebuilds with its own key. Rotation: a release pins the new key alongside the old one (two entries), the feed switches to the new key, and a later release drops the old one. Until a key is pinned, the check is inert and the console says so. |
 | D4 | The feed is published as an asset of the latest GitHub release of `openctemio/openctem`; the default URL is `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`. The release workflow publishes it on every release and a weekly scheduled run re-signs it (so it never expires between releases). `VERSION_CHECK_URL` points an instance at a mirror; the signature makes every host untrusted, so moving the feed to openctem.io later only changes the default. |
 | D5 | Anti-rollback and anti-freeze: the feed carries a sequence and an expiry (at most 45 days after issue). An instance refuses a feed whose sequence is below the one it applied, a feed with the applied sequence but other content (it stores the payload digest), and an expired feed. A stored feed that has passed its expiry is shown as out of date with its date, never silently trusted. |
@@ -178,11 +178,13 @@ Not built. Recorded so the decision is not reopened without these rules:
 ## 9. Owner actions
 
 - Run `scripts/signing/init-keys.sh` on your own machine (see
-  [signing keys](../architecture/signing-keys.md)); it creates the online key
-  and the catalog root.
+  [signing keys](../architecture/signing-keys.md)); it creates the release feed key,
+  a separate catalog online key and the catalog root.
 - Pin the printed online public key in `api/pkg/releasefeed` (`PinnedKeys`)
   in a reviewed pull request.
-- Store the online key seed as the `RELEASE_FEED_SIGNING_KEY` secret of a
+- Store the release feed key seed as the `RELEASE_FEED_SIGNING_KEY` secret of a
   `release-feed` GitHub environment limited to `main` and protected `v*` tags
-  (the publish job also refuses any other ref).
+  (the publish job also refuses any other ref). The catalog online key is a
+  different key in a different environment (`content-catalog`); the release feed
+  key never signs catalog documents.
 - Once a year: `scripts/signing/rotate-keyset.sh` (the content catalog key set; the release feed has none).

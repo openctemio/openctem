@@ -329,10 +329,13 @@ and moves unpinned installations forward. Any failure stores nothing. The bundle
 | The program and vulnerability feeds | `openctem/program-feed`, `openctem/vulnerability-feed`, `feeds` | the feed key set | the feed root (RFC-072) |
 
 A generator (`cmd/content-bundle`) builds the first-party bundle from these sources; the catalog online key signs
-it in the release pipeline:
+it in the release pipeline. The catalog online key is its own key, held in its own GitHub environment
+(`content-catalog`); the release feed key (RFC-105) is a different key and is never listed in the catalog key set,
+so a key that signs information cannot ship code. The catalog key set may be valid up to 365 days (the program
+and vulnerability feed key sets, up to 180):
 
 ```
-go run ./cmd/content-bundle keygen -out root.key                      # offline, once (root) and per online key
+go run ./cmd/content-bundle keygen -out root.key                      # offline, once (root) and per online key (the catalog's own)
 go run ./cmd/content-bundle keyset -root root.key -online <hex> -version 1 -days 365 -out keyset.dsse.json
 go run ./cmd/content-bundle build -keyset keyset.dsse.json -online-key online.key \
     -sast-rules dist/ -image sensor=sha256:<hex>:<size>:GPL-3.0-only \
