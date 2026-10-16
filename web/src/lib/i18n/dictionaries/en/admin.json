@@ -659,5 +659,15 @@
   "admin.signup.accounts.openHint": "Anyone may sign up (disposable addresses are refused). Every address is verified by e-mail.",
   "admin.signup.accounts.locked": "Locked by the server configuration (SIGNUP_MODE).",
   "admin.signup.mode.selfServiceNeedsOpen": "Needs \"Anyone\" above: people must be able to sign up to create an organization.",
-  "admin.signup.confirmAccounts": "New accounts: {accounts}."
+  "admin.signup.confirmAccounts": "New accounts: {accounts}.",
+  "admin.elevation.active": "Acting as {role} until {until}.",
+  "admin.elevation.end": "End now",
+  "admin.elevation.endFailed": "The elevation could not be ended. Try again.",
+  "admin.elevation.readonly": "You are acting as read-only. Elevate for a while to change anything.",
+  "admin.elevation.elevate": "Elevate",
+  "admin.elevation.title": "Elevate for a while",
+  "admin.elevation.description": "Your session acts with the chosen role until the time is up, then read-only again. Every elevation is in the administrator audit log.",
+  "admin.elevation.role": "Role",
+  "admin.elevation.duration": "For",
+  "admin.elevation.minutes": "{n} minutes"
 }
