@@ -153,6 +153,21 @@ describe('Console support access', () => {
     expect(within(frame).queryByRole('tab', { name: 'Findings' })).not.toBeInTheDocument()
   })
 
+  it('shows only the overview parts the grant opens', async () => {
+    const user = userEvent.setup()
+    route(['assets'])
+    const base = adminFetch.getMockImplementation()!
+    adminFetch.mockImplementation(async (path: string, init?: { method?: string }) =>
+      path === '/support/sessions/s1/overview'
+        ? { tenant_name: 'Acme Corp', asset_count: 12 }
+        : base(path, init)
+    )
+    renderPanel()
+    const frame = await openSession(user)
+    expect(await within(frame).findByText('12')).toBeInTheDocument()
+    expect(within(frame).queryByText('Open findings')).not.toBeInTheDocument()
+  })
+
   it('ends the session on request and returns to the list', async () => {
     const user = userEvent.setup()
     route(['findings'])
