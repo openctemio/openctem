@@ -563,6 +563,11 @@ type SuggestionRepository interface {
 	AcceptSuggestion(ctx context.Context, plan AcceptPlan) (*AcceptResult, error)
 	AutoJoin(ctx context.Context, tenantID, actionID, taskID shared.ID, findingIDs []shared.ID) (int, error)
 	SetAutoJoin(ctx context.Context, tenantID, actionID shared.ID, on bool, actor *shared.ID) (*Action, error)
+	// IsGroupMember reports whether the user belongs to the tenant's group.
+	IsGroupMember(ctx context.Context, tenantID, groupID, userID shared.ID) (bool, error)
+	// OwnsFindingAssets reports whether every finding is on an asset the
+	// user owns (primary or secondary), directly or through a group.
+	OwnsFindingAssets(ctx context.Context, tenantID, userID shared.ID, findingIDs []shared.ID) (bool, error)
 }
 
 // Accept limits.

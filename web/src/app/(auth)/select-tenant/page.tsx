@@ -287,7 +287,7 @@ export default function SelectTenantPage() {
             rather than "another team". p-3 on mobile (vs p-4) keeps it
             from dominating the small screen. */}
         {/* Hidden when only the platform administrator creates organizations
-            (TENANT_CREATION_MODE=admin_only). */}
+            (the admin_only sign-up policy). */}
         {canCreateTeam && (
           <button
             onClick={() => router.push('/onboarding/create-team')}
