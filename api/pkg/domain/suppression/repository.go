@@ -32,6 +32,11 @@ type Repository interface {
 	// rule's criteria match and an approval would change, counting at most
 	// limit+1 so the caller can tell the count was capped.
 	CountMatchingOpenFindings(ctx context.Context, rule *Rule, limit int) (int, error)
+	// SampleMatchingOpenFindings is the preview of one caller: how many of
+	// the matching open findings sit on assets the scope admits (at most
+	// limit+1) and the first sampleSize of them in id order, read-only. The
+	// scope is asked per page of candidates; a nil scope admits nothing.
+	SampleMatchingOpenFindings(ctx context.Context, rule *Rule, scope ScopeFilter, limit, sampleSize int) (int, []SampleFinding, error)
 
 	// Query operations
 	FindByTenant(ctx context.Context, tenantID shared.ID, filter RuleFilter) ([]*Rule, error)
@@ -84,4 +89,22 @@ type ApplyResult struct {
 	// Capped: more findings matched than the per-approval limit; the rest
 	// stay open (the CI gate and ingest still honor the rule).
 	Capped bool
+}
+
+// ScopeFilter returns, for the caller of ctx, a function telling whether an
+// asset is inside the caller's data scope (datascope.Enforcer.FilterForCaller).
+type ScopeFilter func(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, error)
+
+// SampleFinding is one finding of a preview sample: enough to recognize the
+// finding. Never its evidence; the title of a secret finding is empty (its
+// message can quote the secret), so its rule id and path identify it.
+type SampleFinding struct {
+	ID        shared.ID
+	AssetID   shared.ID
+	AssetName string
+	RuleID    string
+	FilePath  string
+	Title     string
+	Severity  string
+	Status    string
 }
