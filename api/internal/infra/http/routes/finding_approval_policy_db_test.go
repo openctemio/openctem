@@ -555,3 +555,35 @@ func TestApprovalPolicy_TicketRequestEndFollowsTheOrganizationCap_DB(t *testing.
 		t.Fatalf("the proposed end is %.2f days away; the organization's cap is 7", days)
 	}
 }
+
+// PUT cancel_pending drops a waiting lowering of the false-positive level and
+// keeps the level in force; it needs settings:write like any change.
+func TestApprovalSettings_CancelPending_DB(t *testing.T) {
+	h := newApprovalPolicyHarness(t)
+	org := h.tenantWithFindings()
+	owner, member := h.member(org, "owner"), h.member(org, "member")
+	const path = "/api/v1/organization/settings/finding-approvals/"
+	h.expect(owner, http.MethodPut, path, `{"fp_approval":"off"}`, http.StatusOK)
+	var st struct {
+		FPApproval        string `json:"fp_approval"`
+		PendingFPApproval string `json:"pending_fp_approval"`
+	}
+	read := func() {
+		st.FPApproval, st.PendingFPApproval = "", ""
+		if err := json.Unmarshal([]byte(h.expect(owner, http.MethodGet, path, "", http.StatusOK)), &st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read()
+	if st.PendingFPApproval != "off" || st.FPApproval != "all" {
+		t.Fatalf("lowering did not wait: %+v", st)
+	}
+	if code, _ := h.do(member, http.MethodPut, path, `{"cancel_pending":true}`); code != http.StatusForbidden {
+		t.Fatalf("a member canceled a change: %d", code)
+	}
+	h.expect(owner, http.MethodPut, path, `{"cancel_pending":true}`, http.StatusOK)
+	read()
+	if st.PendingFPApproval != "" || st.FPApproval != "all" {
+		t.Fatalf("pending change not canceled: %+v", st)
+	}
+}
