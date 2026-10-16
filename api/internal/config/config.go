@@ -231,6 +231,9 @@ type InternalAPIConfig struct {
 	AllowAllInterfaces bool
 }
 
+// schemeHTTPS is the URL scheme the configured links must use.
+const schemeHTTPS = "https"
+
 // validateAccountPortalURL accepts an empty value or an absolute https URL
 // (the link is shown to organization administrators).
 func validateAccountPortalURL(raw string) error {
@@ -238,7 +241,7 @@ func validateAccountPortalURL(raw string) error {
 		return nil
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+	if err != nil || u.Scheme != schemeHTTPS || u.Host == "" || u.User != nil {
 		return errors.New("ACCOUNT_PORTAL_URL must be an absolute https URL without credentials")
 	}
 	return nil
@@ -257,8 +260,12 @@ func (c InternalAPIConfig) validate() error {
 	if err != nil {
 		return fmt.Errorf("INTERNAL_API_ADDR %q is not host:port: %w", c.Addr, err)
 	}
-	if ip := net.ParseIP(host); (host == "" || (ip != nil && ip.IsUnspecified())) && !c.AllowAllInterfaces {
-		return fmt.Errorf("INTERNAL_API_ADDR %q listens on every interface; bind a private address, or set INTERNAL_API_ALLOW_ALL_INTERFACES=true when only a private network reaches it", c.Addr)
+	// Only a loopback or private address (10/8, 172.16/12, 192.168/16,
+	// fc00::/7) is accepted: not every interface, not a public address, not a
+	// link-local one, and not a hostname (what it resolves to cannot be
+	// checked here), unless the operator explicitly allows it.
+	if ip := net.ParseIP(host); !c.AllowAllInterfaces && (ip == nil || !(ip.IsLoopback() || ip.IsPrivate())) {
+		return fmt.Errorf("INTERNAL_API_ADDR %q is not a loopback or private IP address; bind one (for example 10.0.0.5:9443), or set INTERNAL_API_ALLOW_ALL_INTERFACES=true when only a private network reaches it", c.Addr)
 	}
 	for _, f := range []struct{ name, value string }{
 		{"INTERNAL_API_TLS_CERT", c.CertFile}, {"INTERNAL_API_TLS_KEY", c.KeyFile},
@@ -1755,13 +1762,13 @@ func (c *Config) validateBasic() error {
 	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)
-		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+		if err != nil || pu.Scheme != schemeHTTPS || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
 			return errors.New("PROGRAMFEED_URL and PROGRAMFEED_MIRRORS must be https URLs without credentials, query or fragment")
 		}
 	}
 	for _, u := range c.Worker.VulnFeedMirrors {
 		pu, err := url.Parse(u)
-		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+		if err != nil || pu.Scheme != schemeHTTPS || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
 			return errors.New("VULNFEED_MIRRORS must be https URLs without credentials, query or fragment")
 		}
 	}
@@ -2447,7 +2454,7 @@ func deriveSecrets(cfg *Config) {
 // credentials, query or fragment, else nil.
 func parsePublicURL(raw string) *url.URL {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
+	if err != nil || (u.Scheme != schemeHTTPS && u.Scheme != "http") || u.Host == "" ||
 		u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
 		return nil
 	}
