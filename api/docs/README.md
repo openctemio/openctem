@@ -20,7 +20,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 - [Setup](development/setup.md), [coding style](development/coding-style.md), [testing](development/testing.md), [logging](development/logging.md)
 - [Migrations](development/migrations.md)
-- [CI/CD and releases](development/ci-cd.md), [versioning and releases](architecture/versioning-and-releases.md)
+- [CI/CD and releases](development/ci-cd.md), [versioning and releases](architecture/versioning-and-releases.md), [version check](architecture/version-check.md)
 - [Pre-commit and security tooling](development/pre-commit-security.md)
 - [Asset type registry](development/asset-type-registry.md), [relationship types](development/relationship-types.md)
 - [Makefile reference](MAKEFILE.md), [Swagger annotations](SWAGGER_GUIDE.md)
