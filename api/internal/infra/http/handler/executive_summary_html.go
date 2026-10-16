@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/pkg/brand"
 )
 
 // Print-ready HTML export of the executive summary.
@@ -25,8 +26,9 @@ import (
 // be registered on the template BEFORE Parse or Go html/template
 // complains about "function not defined" at parse time.
 var execSummaryFuncs = template.FuncMap{
-	"add":   func(a, b int) int { return a + b },
-	"lower": lowerASCII,
+	"product": brand.Name,
+	"add":     func(a, b int) int { return a + b },
+	"lower":   lowerASCII,
 	"deref": func(p *float64) float64 {
 		if p == nil {
 			return 0
@@ -173,7 +175,7 @@ var executiveSummaryTemplate = template.Must(
   {{end}}
 
   <footer>
-    OpenCTEM · This report is generated from tenant data. Save as PDF with your browser's Print dialog.
+    {{product}} · This report is generated from tenant data. Save as PDF with your browser's Print dialog.
   </footer>
 </body>
 </html>`),
