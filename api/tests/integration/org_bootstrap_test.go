@@ -375,6 +375,13 @@ func TestCreateFirstTeamModes(t *testing.T) {
 	if actor != email || !strings.HasPrefix(ip, "198.51.100.7") {
 		t.Fatalf("audit actor %q ip %q", actor, ip)
 	}
+	// A taken URL gets the one "not available" answer, which does not echo
+	// the slug or say another organization has it.
+	_, refresh2 := orgSelfServiceUser(t, db, svc)
+	_, err = svc.CreateFirstTeam(ctx, authapp.CreateFirstTeamInput{RefreshToken: refresh2, TeamName: "Copy", TeamSlug: slug})
+	if !errors.Is(err, authapp.ErrTeamURLNotAvailable) || strings.Contains(err.Error(), slug) || strings.Contains(err.Error(), "taken") {
+		t.Fatalf("a taken URL must answer not available without detail, got %v", err)
+	}
 }
 
 // POST /tenants: refused unless self_service; with it the organization is

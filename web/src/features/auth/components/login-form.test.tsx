@@ -6,7 +6,7 @@
  * the "or continue with" divider never appears orphaned.
  */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
@@ -18,6 +18,12 @@ import { toast } from 'sonner'
 
 vi.mock('../api/use-auth-providers')
 vi.mock('@/features/sso/api/use-sso-api')
+vi.mock('./turnstile-widget', () => ({
+  TurnstileWidget: ({ onToken }: { onToken: (t: string) => void }) => {
+    queueMicrotask(() => onToken('turnstile-token'))
+    return <div data-testid="turnstile" />
+  },
+}))
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }))
@@ -167,6 +173,27 @@ describe('LoginForm two-factor step', () => {
     await user.click(screen.getByRole('button', { name: /sign in/i }))
     return user
   }
+
+  it('shows the security check after CAPTCHA_REQUIRED and sends its token', async () => {
+    mockUseAuthProviders.mockReturnValue({
+      data: {
+        social: { google: false, github: false, microsoft: false },
+        sso_env_entra_enabled: false,
+        captcha_site_key: 'site',
+      },
+    } as ReturnType<typeof useAuthProviders>)
+    loginAction
+      .mockResolvedValueOnce({ success: false, code: 'CAPTCHA_REQUIRED', error: 'x' })
+      .mockResolvedValueOnce({ success: false, error: 'Invalid email or password' })
+    const user = await signIn()
+    expect(await screen.findByTestId('turnstile')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+    await waitFor(() =>
+      expect(loginAction).toHaveBeenLastCalledWith(
+        expect.objectContaining({ captchaToken: 'turnstile-token' })
+      )
+    )
+  })
 
   it('asks for the authenticator code instead of navigating', async () => {
     loginAction.mockResolvedValueOnce({ success: true, mfaRequired: true, mfaPurpose: 'verify' })
