@@ -611,5 +611,6 @@
   "admin.versionCheck.state.unknown": "Chưa có thông tin phát hành",
   "admin.versionCheck.state.update": "Có bản cập nhật",
   "admin.versionCheck.statusTitle": "Phiên bản đang chạy",
-  "admin.versionCheck.validUntil": "Hiệu lực đến"
+  "admin.versionCheck.validUntil": "Hiệu lực đến",
+  "admin.versionCheck.error.conflict": "Đã áp dụng một nguồn phát hành khác có cùng số thứ tự."
 }

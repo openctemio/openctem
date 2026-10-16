@@ -58,6 +58,7 @@ const ERROR_FALLBACK: Record<VersionCheckErrorCode, string> = {
   too_large: 'The file is larger than a release feed can be.',
   invalid: 'Not a valid signed release feed.',
   rollback: 'Older than the release information already applied.',
+  conflict: 'Another release feed with the same sequence is already applied.',
   expired: 'The release feed has expired; get a current copy.',
   no_root: 'This build pins no release feed key.',
 }

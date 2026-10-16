@@ -611,5 +611,6 @@
   "admin.versionCheck.state.unknown": "No release information",
   "admin.versionCheck.state.update": "Update available",
   "admin.versionCheck.statusTitle": "This instance",
-  "admin.versionCheck.validUntil": "Valid until"
+  "admin.versionCheck.validUntil": "Valid until",
+  "admin.versionCheck.error.conflict": "Another release feed with the same sequence is already applied."
 }
