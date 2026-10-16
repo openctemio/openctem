@@ -296,7 +296,9 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 		switch {
 		case !ok:
 			create = append(create, c)
-		case f.Status == string(vulnerability.FindingStatusResolved) || f.Status == string(vulnerability.FindingStatusNotObserved):
+		case f.Status == string(vulnerability.FindingStatusResolved) || (f.Stale && vulnerability.IsOpenStatus(vulnerability.FindingStatus(f.Status))):
+			// The store reopens the ones it closed as fixed and makes stale
+			// open ones present again; every other id is left alone.
 			reopen = append(reopen, f.ID)
 		}
 	}

@@ -38,6 +38,7 @@ type stubFindingRepo struct {
 	vulnerability.FindingRepository
 	finding      *vulnerability.Finding
 	updatedURIs  []string
+	updateErr    error
 	updateCalled int32
 }
 
@@ -46,6 +47,9 @@ func (r *stubFindingRepo) GetByID(_ context.Context, _, _ shared.ID) (*vulnerabi
 }
 func (r *stubFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, uris []string) error {
 	atomic.AddInt32(&r.updateCalled, 1)
+	if r.updateErr != nil {
+		return r.updateErr
+	}
 	r.updatedURIs = uris
 	return nil
 }

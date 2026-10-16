@@ -254,8 +254,7 @@ func findingStatusRank(status string) int {
 	switch vulnerability.FindingStatus(status) {
 	case vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusAccepted:
 		return 5
-	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied,
-		vulnerability.FindingStatusValidatedFixed:
+	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied:
 		return 4
 	case vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusInReview:
 		return 3
