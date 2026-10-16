@@ -2,7 +2,8 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-16). Version check: designed, implementation in review. Usage ping: designed, deferred (not built) |
+| Status | Accepted (2026-10-16). Version check: implemented (API, release pipeline); console page in review. Usage ping: designed, deferred (not built) |
+| Architecture | [version-check.md](../architecture/version-check.md) |
 | Scope | api (signed release feed format, fetcher, offline import, console endpoints), web (console banner and page), release pipeline (feed builder and publishing) |
 | Related | RFC-022 (platform console), RFC-037 (versioning and release train), RFC-065 §16 and RFC-066 §5.5 (signed feeds: the shared envelope and key set), RFC-099 (content packages) |
 
