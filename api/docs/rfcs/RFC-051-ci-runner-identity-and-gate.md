@@ -304,6 +304,18 @@ upload is audited (`ci_run.results_uploaded`: finding count, tool label, job;
 never finding content). A run
 accepts at most 200 reports (`409` beyond), and a pipeline may start at most
 300 runs an hour (the exchange is refused beyond, audited `pipeline_rate`).
+
+**Retries (`Idempotency-Key`).** An upload may carry an `Idempotency-Key`
+header (1 to 128 printable ASCII characters). The first completed answer
+(`201`) is stored for one hour under tenant + run + the key's hash (the run
+comes from the upload token, so a key never reaches another run or tenant),
+and a retry with the same key and body gets that answer back with
+`Idempotent-Replayed: true`, without ingesting again or counting another
+report. The same key with a different body is `422 IDEMPOTENCY_KEY_REUSED`;
+the same key while the first request is still running is `409` with
+`Retry-After`. A refusal or failure releases the key, so the retry runs again.
+The store is the shared Redis; without it, or when it fails, the upload runs
+as it always did (the fingerprints still dedupe findings).
 A secret finding is never stored in clear whatever the runner sends: the
 runner masks it, and the server keeps only a preview of at most four
 characters at each end (`vulnerability.MaskSecretPreview`), redacts the
