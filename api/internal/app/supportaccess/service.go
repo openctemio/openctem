@@ -175,7 +175,7 @@ func (s *Service) CreateGrant(ctx context.Context, in CreateGrantInput, client C
 		auditdom.ActionSupportGrantCreated, g, "Support access granted to "+g.AdminEmail, nil)
 	s.emailOwners(ctx, g.TenantID, "Support access was granted for your organization",
 		fmt.Sprintf("%s granted platform support (%s) read-only access to %s until %s. Reason: %s%s. "+
-			"Every access is recorded in the audit log. Revoke it at any time under Settings > Security > Support access.",
+			"Every access is recorded in the audit log. Revoke it at any time under Settings > Access > Support access.",
 			in.GrantedByEmail, g.AdminEmail, strings.Join(g.Scopes, " and "), fmtTime(g.ExpiresAt), g.Reason, caseSuffix(g.CaseRef)))
 	return g, nil
 }
@@ -254,7 +254,7 @@ func (s *Service) StartSession(ctx context.Context, a *admin.AdminUser, consoleS
 	}
 	s.emailOwners(ctx, g.TenantID, "Platform support opened a session in your organization",
 		fmt.Sprintf("%s opened a read-only support session in %s under the access granted until %s%s. "+
-			"Every page they open is recorded in the audit log. Revoke the access under Settings > Security > Support access to end it at once.",
+			"Every page they open is recorded in the audit log. Revoke the access under Settings > Access > Support access to end it at once.",
 			a.Email(), name, fmtTime(g.ExpiresAt), caseSuffix(g.CaseRef)))
 	return sess, g, nil
 }
