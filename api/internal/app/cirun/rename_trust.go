@@ -58,7 +58,7 @@ func (s *Service) noteRenamedRepository(ctx context.Context, tenantID shared.ID,
 	if !s.firstRenameAlert(tenantID, key, newName) {
 		return
 	}
-	var names []string
+	names := make([]string, 0, len(configs))
 	var only *shared.ID
 	for i := range configs {
 		c := &configs[i]
