@@ -98,6 +98,7 @@ const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
 const APPROVAL_ACTOR_LABELS: Record<string, string> = {
   ai_triage: 'AI triage',
   vex: 'VEX statement',
+  ticket: 'Linked ticket',
 }
 
 const APPROVAL_TABS: readonly string[] = ['all', ...APPROVAL_STATUSES]
