@@ -43,14 +43,50 @@ func TestSupportReadHidesPrivateProgramAndOtherTenants_DB(t *testing.T) {
 			t.Fatal("the hidden program finding is listed")
 		}
 	}
-	if _, err := r.GetFinding(ctx, fx.tenant, fx.hiddenFinding); !errors.Is(err, supportaccess.ErrNotFound) {
+	if _, err := r.GetFinding(ctx, fx.tenant, fx.hiddenFinding, true); !errors.Is(err, supportaccess.ErrNotFound) {
 		t.Fatalf("hidden finding by id: %v", err)
 	}
-	if f, err := r.GetFinding(ctx, fx.tenant, fx.ownFinding); err != nil || f.ID != fx.ownFinding.String() {
+	if f, err := r.GetFinding(ctx, fx.tenant, fx.ownFinding, true); err != nil || f.ID != fx.ownFinding.String() {
 		t.Fatalf("own finding: %v", err)
 	}
-	o, err := r.Overview(ctx, fx.tenant)
-	if err != nil || o.OpenFindingCount != 1 || o.AssetCount != int64(len(assets)) {
+	both := supportaccess.ReadScope{Assets: true, Findings: true}
+	o, err := r.Overview(ctx, fx.tenant, both)
+	if err != nil || o.OpenFindingCount == nil || *o.OpenFindingCount != 1 || o.AssetCount == nil || *o.AssetCount != int64(len(assets)) {
 		t.Fatalf("overview: %+v %v", o, err)
+	}
+
+	// The overview carries only the granted scopes' parts.
+	o, err = r.Overview(ctx, fx.tenant, supportaccess.ReadScope{Findings: true})
+	if err != nil || o.AssetCount != nil || o.OpenFindingCount == nil || len(o.OpenFindingsBySeverity) == 0 {
+		t.Fatalf("findings-only overview: %+v %v", o, err)
+	}
+	o, err = r.Overview(ctx, fx.tenant, supportaccess.ReadScope{Assets: true})
+	if err != nil || o.AssetCount == nil || o.OpenFindingCount != nil || o.OpenFindingsBySeverity != nil {
+		t.Fatalf("assets-only overview: %+v %v", o, err)
+	}
+
+	// Asset columns of a finding row need the assets scope.
+	with, _, err := r.ListFindings(ctx, fx.tenant, supportaccess.ListQuery{Limit: 100, WithAssets: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	without, _, err := r.ListFindings(ctx, fx.tenant, supportaccess.ListQuery{Limit: 100})
+	if err != nil || len(without) != len(with) || len(with) == 0 {
+		t.Fatalf("lists: %d vs %d %v", len(without), len(with), err)
+	}
+	named := false
+	for _, f := range with {
+		named = named || f.AssetName != ""
+	}
+	if !named {
+		t.Fatal("with the assets scope a finding names its asset")
+	}
+	for _, f := range without {
+		if f.AssetID != "" || f.AssetName != "" || f.AssetType != "" {
+			t.Fatalf("finding row leaked asset columns without the assets scope: %+v", f)
+		}
+	}
+	if f, err := r.GetFinding(ctx, fx.tenant, fx.ownFinding, false); err != nil || f.AssetID != "" || f.AssetName != "" || f.AssetType != "" {
+		t.Fatalf("finding by id without the assets scope: %+v %v", f, err)
 	}
 }

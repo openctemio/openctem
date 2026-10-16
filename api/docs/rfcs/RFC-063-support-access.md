@@ -282,7 +282,42 @@ each for a stated reason.
 | Cross-tenant ids in a support URL | the organization comes from the live grant; every query carries it (404) |
 | Secrets in findings | the read model never selects message, snippet, description or evidence |
 
-### 11.4 Not built yet
+### 11.4 What a grant opens
+
+The overview and the finding rows carry only what the grant's scopes open.
+With the `findings` scope alone the overview has the open-finding counts and no
+asset count, and a finding row has no asset id, name or type (the columns are
+not selected and the assets table is not joined). With the `assets` scope alone
+the overview has the asset count and no finding counts. A part that is not
+granted is absent from the JSON, not zero.
+
+### 11.5 Grant-bypass paths
+
+Three console routes that predate support access reach an organization's data
+without a grant. They are not blocked (an operator must still be able to
+list the users of an organization, give it a first owner, recover one, and
+set up its sign-in) but each use is a recorded, announced event:
+
+| Route | What it reaches |
+|---|---|
+| `GET /api/v1/admin/tenants/{tenantId}/users` (user list) | names and emails of the organization's users |
+| `POST /api/v1/admin/tenants/{tenantId}/users` (first owner create, owner recovery) | creates the account that owns the organization |
+| `POST /api/v1/admin/tenants/{tenantId}/sso/identity-providers` (identity provider creation) | who may sign in to the organization |
+
+Before the route runs, the organization's audit log gets
+`admin_console.tenant_access` (actor `console:<email>`, route, method, request
+id) and the organization's active owners are emailed. The user list is a page
+that is refreshed and paged, so its audit row is written on every use and the
+owner email at most once per hour per administrator and organization; the
+create routes email every time. If the audit write fails the use is refused
+(503): no audit, no access. An organization with no active owner (first owner
+create, recovery of an organization whose owners are suspended) has no one to
+email; the audit row is still written. The other organization-scoped console
+routes (SSO enforcement, SAML, verified domains, plan, idle policy, audit
+chain) are organization configuration and are still reached without a grant and
+without this notice; they read no findings and no assets.
+
+### 11.6 Not built yet
 
 Read and write with two-owner approval, emergency access (§7), the tenant tab
 frame (§4.2), expiry emails, the console Security > Support sessions page for
