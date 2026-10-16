@@ -234,23 +234,7 @@ func (h *AdminScanPolicyHandler) decodeAndStepUp(w http.ResponseWriter, r *http.
 		apierror.BadRequest("a reason (at most 1000 characters) is required").WriteJSON(w)
 		return nil, false
 	}
-	code = strings.TrimSpace(code)
-	if code == "" {
-		apierror.New(http.StatusUnauthorized, codeStepUpRequired,
-			"Enter a code from your authenticator to confirm the change").WriteJSON(w)
-		return nil, false
-	}
-	if err := h.stepUp.StepUp(r.Context(), actor, code, purpose, clientInfo(r)); err != nil {
-		switch {
-		case errors.Is(err, admin.ErrStepUpUnavailable):
-			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
-				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
-		case errors.Is(err, admin.ErrInvalidMFACode):
-			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
-		default:
-			h.logger.Error("scan policy step-up", "error", err)
-			apierror.InternalServerError("could not verify the code").WriteJSON(w)
-		}
+	if !confirmAdminStepUp(w, r, h.stepUp, code, purpose, h.logger) {
 		return nil, false
 	}
 	return actor, true
