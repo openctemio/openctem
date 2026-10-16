@@ -69,7 +69,7 @@ var _ dom.Repository = (*ContentCatalogRepository)(nil)
 const contentPackageColumns = `p.id, p.tenant_id, p.package_id, p.version, p.type, p.origin, p.title, p.manifest_raw,
 	p.manifest_digest, p.artifact_media_type, p.artifact_digest, p.artifact_size, p.statement, p.publisher_signature,
 	p.publisher_identity, p.publisher_issuer, p.publisher_signed_at, p.tier, p.service_use, p.revoked_at,
-	p.revoke_reason, p.revoke_severity, p.created_by, p.created_at`
+	p.revoke_reason, p.revoke_severity, p.content_pack_id, p.platform_pack_id, p.created_by, p.created_at`
 
 // visibleTo is the predicate of the rows an organization sees ($1 = tenant).
 const visibleTo = `(p.tenant_id IS NULL OR p.tenant_id = $1)`
@@ -89,16 +89,19 @@ func scanContentPackage(row interface{ Scan(...any) error }) (*dom.Package, erro
 	var (
 		p                                             dom.Package
 		tenant, identity, issuer, reason, sev, author sql.NullString
+		contentPack, platformPack                     sql.NullString
 		signedAt, revokedAt                           sql.NullTime
 		typ                                           string
 	)
 	if err := row.Scan(&p.ID, &tenant, &p.PackageID, &p.Version, &typ, &p.Origin, &p.Title, &p.ManifestRaw,
 		&p.ManifestDigest, &p.ArtifactMediaType, &p.ArtifactDigest, &p.ArtifactSize, &p.Statement, &p.PublisherSignature,
-		&identity, &issuer, &signedAt, &p.Tier, &p.ServiceUse, &revokedAt, &reason, &sev, &author, &p.CreatedAt); err != nil {
+		&identity, &issuer, &signedAt, &p.Tier, &p.ServiceUse, &revokedAt, &reason, &sev, &contentPack, &platformPack,
+		&author, &p.CreatedAt); err != nil {
 		return nil, err
 	}
 	p.Type = contentpkg.Type(typ)
 	p.TenantID, p.CreatedBy = optID(tenant), optID(author)
+	p.ContentPackID, p.PlatformPackID = optID(contentPack), optID(platformPack)
 	p.PublisherIdentity, p.PublisherIssuer = identity.String, issuer.String
 	p.PublisherSignedAt, p.RevokedAt = nullTimeValue(signedAt), nullTimeValue(revokedAt)
 	p.RevokeReason, p.RevokeSeverity = reason.String, sev.String
@@ -195,6 +198,15 @@ func (r *ContentCatalogRepository) ApplyImport(ctx context.Context, b *dom.Impor
 
 	out := &dom.ImportOutcome{}
 	for _, p := range b.Packages {
+		var taken bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS (SELECT 1 FROM content_packages WHERE package_id = $1 AND origin = 'instance')`,
+			p.PackageID).Scan(&taken); err != nil {
+			return nil, fmt.Errorf("apply content import: %w", err)
+		}
+		if taken {
+			return nil, fmt.Errorf("%w: %s", dom.ErrIDTaken, p.PackageID)
+		}
 		var existing string
 		err := tx.QueryRowContext(ctx, `
 			SELECT manifest_digest FROM content_packages
@@ -313,7 +325,7 @@ func (r *ContentCatalogRepository) ListPackages(ctx context.Context, tenantID sh
 		SELECT v.id, v.tenant_id, v.package_id, v.version, v.type, v.origin, v.title, v.manifest_raw,
 			v.manifest_digest, v.artifact_media_type, v.artifact_digest, v.artifact_size, v.statement, v.publisher_signature,
 			v.publisher_identity, v.publisher_issuer, v.publisher_signed_at, v.tier, v.service_use, v.revoked_at,
-			v.revoke_reason, v.revoke_severity, v.created_by, v.created_at, v.versions,
+			v.revoke_reason, v.revoke_severity, v.content_pack_id, v.platform_pack_id, v.created_by, v.created_at, v.versions,
 			(SELECT COUNT(DISTINCT package_id) FROM visible)
 		FROM visible v JOIN ids USING (package_id)
 		ORDER BY v.package_id`
@@ -736,6 +748,94 @@ func (r *ContentCatalogRepository) PutSettings(ctx context.Context, tenantID sha
 		return fmt.Errorf("put content catalog settings: %w", err)
 	}
 	return nil
+}
+
+// CreatePrivate implements dom.Repository.
+func (r *ContentCatalogRepository) CreatePrivate(ctx context.Context, p *dom.Package) error {
+	manifest, err := json.Marshal(p.Manifest)
+	if err != nil {
+		return err
+	}
+	tx, err := r.begin(ctx)
+	if err != nil {
+		return fmt.Errorf("create private content package: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// The id must not belong to a package of another origin in the same
+	// scope: an organization package never shares an id with the instance
+	// catalog, an instance package never with the signed catalog. The
+	// advisory lock serializes publishers of one id.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('content_package:' || $1))`, p.PackageID); err != nil {
+		return fmt.Errorf("create private content package: %w", err)
+	}
+	var taken bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM content_packages
+			WHERE package_id = $1 AND origin <> $2 AND (tenant_id IS NULL OR tenant_id = $3))`,
+		p.PackageID, p.Origin, nullableID(p.TenantID)).Scan(&taken); err != nil {
+		return fmt.Errorf("create private content package: %w", err)
+	}
+	if taken {
+		return dom.ErrIDTaken
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO content_packages (id, tenant_id, package_id, version, type, origin, title, manifest, manifest_raw,
+			manifest_digest, artifact_media_type, artifact_digest, artifact_size, statement, tier, service_use,
+			content_pack_id, platform_pack_id, created_by, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+		p.ID, nullableID(p.TenantID), p.PackageID, p.Version, string(p.Type), p.Origin, p.Title, manifest, p.ManifestRaw,
+		p.ManifestDigest, p.ArtifactMediaType, p.ArtifactDigest, p.ArtifactSize, p.Statement, p.Tier, p.ServiceUse,
+		nullableID(p.ContentPackID), nullableID(p.PlatformPackID), nullableID(p.CreatedBy), p.CreatedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return dom.ErrVersionConflict
+		}
+		return fmt.Errorf("create private content package: %w", err)
+	}
+	return tx.Commit()
+}
+
+// RevokePrivate implements dom.Repository.
+func (r *ContentCatalogRepository) RevokePrivate(ctx context.Context, tenantID *shared.ID, packageID, version, reason string, at time.Time) (*dom.Package, error) {
+	tx, err := r.begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("revoke private content package: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	scope, origin := "p.tenant_id = $1", "organization"
+	arg := any(nullableID(tenantID))
+	if tenantID == nil {
+		scope, origin, arg = "p.tenant_id IS NULL AND $1::uuid IS NULL", "instance", nil
+	}
+	p, err := scanContentPackage(tx.QueryRowContext(ctx, `SELECT `+contentPackageColumns+`
+		FROM content_packages p WHERE `+scope+` AND p.origin = $2 AND p.package_id = $3 AND p.version = $4 FOR UPDATE`,
+		arg, origin, packageID, version))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, dom.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("revoke private content package: %w", err)
+	}
+	if p.Revoked() {
+		return nil, dom.ErrAlreadyRevoked
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE content_packages SET revoked_at = $2, revoke_reason = $3, revoke_severity = 'high'
+		WHERE id = $1 AND tenant_id IS NOT DISTINCT FROM $4`,
+		p.ID, at, reason, nullableID(tenantID)); err != nil {
+		return nil, fmt.Errorf("revoke private content package: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE content_installs SET status = 'revoked', updated_at = $2
+		WHERE package_row_id = $1 AND status = 'active' AND ($3::uuid IS NULL OR tenant_id = $3)`,
+		p.ID, at, nullableID(tenantID)); err != nil {
+		return nil, fmt.Errorf("revoke private content package: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("revoke private content package: %w", err)
+	}
+	p.RevokedAt, p.RevokeReason, p.RevokeSeverity = &at, reason, "high"
+	return p, nil
 }
 
 // ListAdmins returns the organization's active owners and administrators.

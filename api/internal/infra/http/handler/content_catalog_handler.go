@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
 	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
+	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -819,4 +821,154 @@ func (h *ContentCatalogHandler) handleError(w http.ResponseWriter, err error) {
 		h.logger.Error("content catalog error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// maxPrivateArtifact bounds a private package artifact: the organization
+// pack upload limit.
+const maxPrivateArtifact = 32 << 20
+
+// readPublishForm reads a multipart body with the parts manifest (file),
+// artifact (file) and optional text fields. Unknown parts are refused.
+func readPublishForm(w http.ResponseWriter, r *http.Request, maxArtifact int64, fields map[string]*string) (catalogapp.PublishInput, bool) {
+	var in catalogapp.PublishInput
+	r.Body = http.MaxBytesReader(w, r.Body, maxArtifact+contentpkg.MaxManifestBytes+64<<10)
+	mr, err := r.MultipartReader()
+	if err != nil {
+		apierror.BadRequest("a multipart body is required").WriteJSON(w)
+		return in, false
+	}
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			apierror.BadRequest("Invalid request body").WriteJSON(w)
+			return in, false
+		}
+		name := part.FormName()
+		var limit int64 = 1024
+		switch name {
+		case "manifest":
+			limit = contentpkg.MaxManifestBytes
+		case "artifact":
+			limit = maxArtifact
+		case "acknowledge_secrets":
+		default:
+			if _, ok := fields[name]; !ok {
+				apierror.BadRequest("unexpected form field " + strconv.Quote(name)).WriteJSON(w)
+				return in, false
+			}
+		}
+		b, err := io.ReadAll(io.LimitReader(part, limit+1))
+		if err != nil || int64(len(b)) > limit {
+			apierror.BadRequest(name + " is too large").WriteJSON(w)
+			return in, false
+		}
+		switch name {
+		case "manifest":
+			in.ManifestRaw = b
+		case "artifact":
+			in.Artifact = b
+		case "acknowledge_secrets":
+			in.AcknowledgeSecrets = strings.TrimSpace(string(b)) == "true"
+		default:
+			*fields[name] = strings.TrimSpace(string(b))
+		}
+	}
+	if len(in.ManifestRaw) == 0 || len(in.Artifact) == 0 {
+		apierror.BadRequest("manifest and artifact are required").WriteJSON(w)
+		return in, false
+	}
+	return in, true
+}
+
+// Publish handles POST /api/v1/content/private-packages
+// @Summary      Publish a private content package
+// @Description  Multipart: manifest (package.yaml), artifact, acknowledge_secrets. The package is visible and installable in this organization only. Its namespace must be the organization's slug; rules, templates and wordlists are supported. The artifact is linted like a content pack and its tier may not exceed the declared one. content:publish and a recent sign-in; audited.
+// @Tags         Content Catalog
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        manifest             formData  file    true   "package.yaml"
+// @Param        artifact             formData  file    true   "Artifact"
+// @Param        acknowledge_secrets  formData  bool    false  "Store although lint found what look like credentials"
+// @Success      201  {object}  ContentPackageVersionResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Failure      422  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /content/private-packages [post]
+func (h *ContentCatalogHandler) Publish(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tenant(r)
+	if !ok {
+		apierror.Unauthorized("").WriteJSON(w)
+		return
+	}
+	in, ok := readPublishForm(w, r, maxPrivateArtifact, nil)
+	if !ok {
+		return
+	}
+	p, err := h.service.PublishOrganization(r.Context(), tid, in, buildScanZoneAuditContext(r))
+	if err != nil {
+		h.handlePublishError(w, err)
+		return
+	}
+	writeScanZoneJSON(w, http.StatusCreated, toContentPackageVersion(p))
+}
+
+// RevokeContentPackageRequest revokes a private version.
+type RevokeContentPackageRequest struct {
+	Reason string `json:"reason"`
+}
+
+// RevokePrivate handles POST /api/v1/content/private-packages/{namespace}/{name}/{version}/revoke
+// @Summary      Revoke a private content package version
+// @Description  Every installation of the version in the organization becomes revoked. content:publish and a recent sign-in; audited.
+// @Tags         Content Catalog
+// @Accept       json
+// @Produce      json
+// @Param        namespace  path      string                       true  "Namespace"
+// @Param        name       path      string                       true  "Name"
+// @Param        version    path      string                       true  "Version"
+// @Param        body       body      RevokeContentPackageRequest  true  "Reason"
+// @Success      200        {object}  ContentPackageVersionResponse
+// @Failure      400        {object}  apierror.Error
+// @Failure      401        {object}  apierror.Error
+// @Failure      403        {object}  apierror.Error
+// @Failure      404        {object}  apierror.Error
+// @Failure      409        {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /content/private-packages/{namespace}/{name}/{version}/revoke [post]
+func (h *ContentCatalogHandler) RevokePrivate(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tenant(r)
+	if !ok {
+		apierror.Unauthorized("").WriteJSON(w)
+		return
+	}
+	var req RevokeContentPackageRequest
+	if !decodeContentBody(w, r, &req) {
+		return
+	}
+	p, err := h.service.RevokeOrganization(r.Context(), tid, packageIDParam(r), chi.URLParam(r, "version"), req.Reason, buildScanZoneAuditContext(r))
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeScanZoneJSON(w, http.StatusOK, toContentPackageVersion(p))
+}
+
+func (h *ContentCatalogHandler) handlePublishError(w http.ResponseWriter, err error) {
+	if errors.Is(err, catalogapp.ErrPublishingUnavailable) || errors.Is(err, contentpack.ErrSigningKey) {
+		apierror.New(http.StatusServiceUnavailable, apierror.Code("CONTENT_SIGNING_UNAVAILABLE"),
+			"Content signing is not configured on this platform").WriteJSON(w)
+		return
+	}
+	var de *shared.DomainError
+	if errors.As(err, &de) && (de.Code == "CONTENT_LINT_FAILED" || de.Code == "CONTENT_SECRETS_FOUND") {
+		apierror.New(http.StatusUnprocessableEntity, apierror.Code(de.Code), de.Message).WithDetails(de.Details).WriteJSON(w)
+		return
+	}
+	h.handleError(w, err)
 }

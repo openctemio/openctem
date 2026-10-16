@@ -201,3 +201,41 @@ func Verify(envelope []byte, pub ed25519.PublicKey) (*Statement, error) {
 	}
 	return &st, nil
 }
+
+// SignTenantPayload signs payload as a DSSE envelope of payloadType with
+// tenantID's content key: the statement of an organization's private
+// content package (RFC-099). It refuses the pack statement type, so it can
+// never mint a pack signature.
+func (s *Signer) SignTenantPayload(tenantID, payloadType string, payload []byte) ([]byte, error) {
+	priv, err := s.tenantKey(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return sealPayload(priv, payloadType, payload)
+}
+
+// SignPlatformPayload signs payload with the platform content key: the
+// statement of an instance private content package (RFC-099). It refuses
+// the pack statement type.
+func (s *Signer) SignPlatformPayload(payloadType string, payload []byte) ([]byte, error) {
+	priv, err := s.platformKey()
+	if err != nil {
+		return nil, err
+	}
+	return sealPayload(priv, payloadType, payload)
+}
+
+func sealPayload(priv ed25519.PrivateKey, payloadType string, payload []byte) ([]byte, error) {
+	if payloadType == "" || payloadType == StatementPayloadType {
+		return nil, errors.New("this payload type cannot be signed here")
+	}
+	pub, _ := priv.Public().(ed25519.PublicKey)
+	return json.Marshal(scannertemplate.Envelope{
+		PayloadType: payloadType,
+		Payload:     payload,
+		Signatures: []scannertemplate.EnvelopeSignature{{
+			KeyID: scannertemplate.KeyID(pub),
+			Sig:   ed25519.Sign(priv, scannertemplate.PreAuthEncoding(payloadType, payload)),
+		}},
+	})
+}

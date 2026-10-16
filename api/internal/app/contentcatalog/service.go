@@ -55,7 +55,10 @@ type Service struct {
 	now       func() time.Time
 	release   func() string
 	importMu  sync.Mutex
-	notifier  Notifier
+
+	publishing *Publishing
+
+	notifier Notifier
 }
 
 // NewService creates the service. roots are the key ids of the catalog
