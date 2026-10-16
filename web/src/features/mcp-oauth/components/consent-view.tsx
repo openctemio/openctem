@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
@@ -54,6 +55,7 @@ interface ConsentViewProps {
  * to be another one, and lists the access in plain words.
  */
 export function ConsentView({ requestId }: ConsentViewProps) {
+  const { t } = useTranslation()
   const { currentTenant, tenants, loadTenants, switchTeam, isSwitching } = useTenant()
   const [request, setRequest] = useState<ConsentRequest | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -147,7 +149,9 @@ export function ConsentView({ requestId }: ConsentViewProps) {
     <Card>
       <CardHeader className="space-y-2">
         <CardTitle className="text-xl break-words">
-          Connect {request.client_name} to OpenCTEM?
+          {t('settings.mcp.consentTitle', 'Connect {client} to {product}?', {
+            client: request.client_name,
+          })}
         </CardTitle>
         <CardDescription className="flex flex-wrap items-center gap-2">
           {verified ? (
@@ -269,7 +273,10 @@ export function ConsentView({ requestId }: ConsentViewProps) {
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>This application can change data</AlertTitle>
             <AlertDescription>
-              Each change still asks you to confirm it in OpenCTEM.
+              {t(
+                'settings.mcp.consentConfirmEach',
+                'Each change still asks you to confirm it in {product}.'
+              )}
             </AlertDescription>
           </Alert>
         )}

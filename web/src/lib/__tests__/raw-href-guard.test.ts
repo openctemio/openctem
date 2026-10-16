@@ -36,6 +36,9 @@ const SAFE_CALLS = new Set([
   'safeAvatarSrc',
   'safeInternalHref',
   'sanitizeExternalUrl',
+  // Moves a docs catalog constant (src/lib/docs-links.ts) onto the brand's
+  // documentation origin, which src/lib/brand.ts validated as https.
+  'docsHref',
   // Route builders: each returns a fixed same-origin prefix, or a fixed
   // https://attack.mitre.org prefix, with the data only in the path/query.
   'assetDetailHref',
@@ -91,11 +94,7 @@ const REVIEWED = new Set([
   'features/scoping/components/scoping-overview.tsx|Link|href={r.href}',
   'app/(dashboard)/(validation)/validation/page.tsx|Link|href={a.href}',
   // Build-time constants (process.env / literals in the module).
-  'components/layout/about-dialog.tsx|a|href={DOCS_URL}',
-  'components/layout/sidebar-footer-links.tsx|a|href={DOCS_URL}',
   'components/layout/sidebar-footer-links.tsx|a|href={REPORT_ISSUE_URL}',
-  'features/sensors/components/content-policy-settings.tsx|a|href={DOCS.scanning.scannerContent}',
-  'app/(admin-console)/admin/(console)/operations/page.tsx|a|href={DOCS.sensors.transportPlatform}',
   'features/auth/components/legal-notice.tsx|a|href={termsUrl}',
   'features/auth/components/legal-notice.tsx|a|href={privacyUrl}',
   // Same-origin paths built in the component from route builders/literals.
