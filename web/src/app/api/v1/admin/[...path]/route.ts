@@ -9,7 +9,7 @@
  *   never forwards tenant credentials.
  * - Admin auth is a server-side session in the `admin_session` cookie (plus
  *   `admin_mfa` during login, `admin_idp` during an identity-provider sign-in,
- *   and the readable `admin_csrf`). Only those cookies
+ *   and `admin_csrf`, HttpOnly like the session). Only those cookies
  *   are forwarded, and the backend's Set-Cookie headers are passed back so the
  *   browser stores them under the same paths.
  * - The console signs in on its own (POST /auth/login with the account's

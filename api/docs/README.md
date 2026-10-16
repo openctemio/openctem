@@ -68,7 +68,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md)
 
 **Mobilization, automation and reporting**
-- [Remediation campaigns](architecture/remediation-campaigns.md), [campaign Jira sync](architecture/remediation-campaign-jira-sync.md), [ticketing (Jira)](architecture/ticketing-integration.md), [GitHub Issues ticketing](architecture/github-issue-ticketing.md)
+- [Remediation tasks](architecture/remediation-tasks.md), [remediation campaigns](architecture/remediation-campaigns.md), [campaign Jira sync](architecture/remediation-campaign-jira-sync.md), [ticketing (Jira)](architecture/ticketing-integration.md), [GitHub Issues ticketing](architecture/github-issue-ticketing.md)
 - [Automations](architecture/automations.md), [notification system](architecture/notification-system.md), [SIEM ingest](architecture/siem-ingest.md)
 - [CTEM program metrics](architecture/program-metrics.md), [CTEM definition of done](architecture/ctem-dod-checklist.md), [report PDF export](architecture/report-pdf-export.md), [pentest report templates](architecture/pentest-report-templates.md), [pentest remediation and retest](architecture/pentest-remediation.md), [pentest campaign phases, delivery and sign-off](architecture/pentest-campaign-completion.md), [pentest campaign profile](architecture/pentest-campaign-profile.md), [pentest methodology checklists](architecture/pentest-checklists.md)
 - [API ↔ CTIS decoupling](architecture/api-ctis-decoupling.md)

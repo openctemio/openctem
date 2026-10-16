@@ -6,6 +6,9 @@
 > [RFC-006](../rfcs/RFC-006-ticketing-provider-and-mapping.md) /
 > [RFC-006 Phase 3](../rfcs/RFC-006-phase-3-bidirectional-sync.md).
 > Ticketing is the CTEM **Mobilization** pillar.
+> Ticket links live in `ticket_links` (one row per finding or task ↔ issue,
+> with the owning integration, the issue key and a state); the ticket paths
+> move onto it from the `findings.work_item_uris` strings (display only).
 > Field and status mapping profiles per destination and object (finding or
 > task) are described in [ticket field and status mapping](ticket-field-mapping.md)
 > ([RFC-097](../rfcs/RFC-097-ticket-field-mapping.md)).
@@ -17,7 +20,10 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
 - **Create** a Jira ticket from a finding (`POST /api/v1/findings/{id}/create-ticket`)
   into the tenant's **default project** (or an explicit `project_key`); the
   project picker is fed by `GET /api/v1/integrations/jira/projects`.
-- **Link / unlink** an existing ticket to a finding.
+- **Link / unlink** an existing ticket to a finding. Linking is limited to
+  the projects the organization configured for ticketing (default project,
+  routing rules, mapping profiles); the issue's current project is checked
+  after the tracker resolves the key, so a moved issue cannot slip through.
 - **Inbound** (`POST /hooks/jira-integrations/{integration_id}`): a Jira status
   change updates the finding status (and can trigger a verification scan). The
   URL names one Jira integration (one tenant); the delivery must carry Jira's
