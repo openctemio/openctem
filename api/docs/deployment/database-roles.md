@@ -13,6 +13,7 @@ This guide splits the database into three roles.
 | superuser (`DB_SUPERUSER`, e.g. `postgres`) | `initdb`, and the bootstrap script below | everything; the API never holds its password |
 | `openctem_migrator` (`DB_MIGRATE_USER`) | the migrations (`migrate` job, all-in-one start-up) | own the application schemas: create, alter and drop tables, indexes (including `CREATE INDEX CONCURRENTLY`), functions, triggers, policies |
 | `openctem_app` (`DB_USER`) | the API server and its workers | `SELECT`/`INSERT`/`UPDATE`/`DELETE` on the application tables; nothing else |
+| `openctem_console` (`DB_ADMIN_USER`, optional) | the API's second, small pool for the platform console's identity tables; `bootstrap-admin` and `rekey` | the app's privileges, and alone writes `admin_users`, `admin_credentials`, `admin_sessions`, `platform_identity_provider` and `admin_idp_login_states` |
 
 Neither role is `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `REPLICATION` or
 `BYPASSRLS`. Neither belongs to `pg_read_server_files`, `pg_write_server_files`
@@ -80,6 +81,34 @@ It is idempotent. It:
 Run it again after restoring a dump, or after someone applied a migration as a
 different role. That repairs ownership and grants.
 
+### The console role
+
+With `-v admin_user=openctem_console -v admin_password=…` the script also
+creates the console role (same attributes as the app, no memberships) and
+moves the platform console's identity tables to it:
+
+- the app role loses `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` on `admin_users`,
+  `admin_credentials`, `admin_sessions`, `platform_identity_provider` and
+  `admin_idp_login_states`, and `SELECT` on all of them but `admin_users`
+  (the trigger that keeps platform administrators out of organizations and the
+  "is this account an administrator" checks read it);
+- the console role gets the app's privileges plus write on those tables. It
+  cannot change or delete `admin_audit_logs` rows either.
+
+The API then opens a second pool (`DB_ADMIN_USER`/`DB_ADMIN_PASSWORD`, at most
+5 connections) for the administrator, console-session and platform identity
+provider repositories. A SQL injection in any tenant-facing code path, which
+runs on the app pool, can no longer add an administrator, read a console
+session or credential, or swap the platform identity provider.
+
+Limits, today: the console role still reads and writes the tenant tables (the
+console manages organizations, members and settings through the same
+services as the tenant plane), so it is not yet a role that cannot see tenant
+data. The script reruns after the migrations (`db-grants` in compose), so a
+console table a release adds is moved before the API starts. If
+`DB_ADMIN_USER` is set but the script did not run with `admin_user`, the API
+logs an error at start-up saying the app role still writes `admin_users`.
+
 ## Configuration
 
 Separate credentials, with the old single-role layout as the fallback:
@@ -90,9 +119,12 @@ Separate credentials, with the old single-role layout as the fallback:
 | `DB_MIGRATE_USER` / `DB_MIGRATE_PASSWORD` | what migrations connect as (`openctem_migrator`) | `DB_USER` / `DB_PASSWORD` |
 | `DATABASE_MIGRATE_URL` | all-in-one image only: the full migrator URL | built from `DB_MIGRATE_USER` |
 | `DB_SUPERUSER` / `DB_SUPERUSER_PASSWORD` | compose: the bundled Postgres superuser and the `db-roles` job | `DB_USER` / `DB_PASSWORD` |
+| `DB_ADMIN_USER` / `DB_ADMIN_PASSWORD` | the console role (API second pool, `bootstrap-admin`, `rekey`); needs `DB_MIGRATE_USER` | unset: the API writes the console tables as `DB_USER` |
 
 - **`deploy/docker-compose.yml`** has a one-shot `db-roles` job. When `DB_MIGRATE_USER` is set, it
-  runs the bootstrap script as `DB_SUPERUSER` on every `up`, before `migrate`.
+  runs the bootstrap script as `DB_SUPERUSER` on every `up`, before `migrate`,
+  and `db-grants` runs it again after `migrate`, before the API.
+  With `DB_ADMIN_USER` set both pass `admin_user`.
   `migrate` connects as `DB_MIGRATE_USER`, and the API as `DB_USER`. With
   `DB_MIGRATE_USER` unset, the job exits at once and nothing changes.
   `deploy/.env.example` sets up the split for new installations.
@@ -120,7 +152,15 @@ The live order is:
 4. Restart in this order: `db-roles` (re-runs the script, a no-op) → `migrate`
    (as the migrator; a no-op if the schema is current) → the API. Then check
    `/health` and the API log for `permission denied`.
-5. **Rollback**: put `DB_USER`/`DB_PASSWORD` back to the superuser, unset
+5. Optional, the console role: add `DB_ADMIN_USER=openctem_console` and a new
+   `DB_ADMIN_PASSWORD` and run `up` again. `db-roles`/`db-grants` create the role
+   and move the console tables; the API starts with the second pool. Console
+   sessions survive (same table). To undo: unset both variables and, before
+   restarting the API, give the app its write back by hand (the script does
+   not re-grant it): `GRANT SELECT, INSERT, UPDATE, DELETE ON admin_users,
+   admin_credentials, admin_sessions, platform_identity_provider,
+   admin_idp_login_states TO openctem_app`.
+6. **Rollback**: put `DB_USER`/`DB_PASSWORD` back to the superuser, unset
    `DB_MIGRATE_USER`, and restart the API. The superuser still owns everything
    implicitly, so nothing else needs reverting. The roles can stay.
    `DROP OWNED BY` / `DROP ROLE` would only be needed to remove them.
@@ -144,4 +184,7 @@ The live order is:
   - asserts that the app is refused `CREATE TABLE`, `COPY ... TO` a file,
     `pg_read_file`, `ALTER TABLE`, `DROP TABLE`, `TRUNCATE` on a tenant table and
     writes to `schema_migrations`;
-  - asserts that a table created later by the migrator is usable by the app.
+  - asserts that a table created later by the migrator is usable by the app;
+  - with `admin_user`: asserts the app reads `admin_users` and nothing more of
+    the console's tables, and the console role writes them but cannot alter the
+    admin audit log or the schema.

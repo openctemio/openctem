@@ -7,8 +7,9 @@
 //
 //	DATABASE_URL     postgres connection string; when unset it is built from
 //	                 the server's DB_HOST, DB_PORT, DB_USER, DB_PASSWORD,
-//	                 DB_NAME and DB_SSLMODE, so it runs as-is inside the API
-//	                 container
+//	                 DB_NAME and DB_SSLMODE (DB_ADMIN_USER/DB_ADMIN_PASSWORD
+//	                 instead of DB_USER/DB_PASSWORD when set), so it runs
+//	                 as-is inside the API container
 //	REKEY_OLD_KEY    the key the values are encrypted with now
 //	REKEY_NEW_KEY    the key to re-encrypt them with
 //	REKEY_OLD_KEY_FORMAT / REKEY_NEW_KEY_FORMAT  optional: hex|base64|raw
@@ -188,12 +189,22 @@ func databaseURL() string {
 	}
 	u := url.URL{
 		Scheme:   "postgres",
-		User:     url.UserPassword(get("DB_USER", "openctem"), os.Getenv("DB_PASSWORD")),
+		User:     dbUserinfo(get),
 		Host:     host + ":" + get("DB_PORT", "5432"),
 		Path:     "/" + get("DB_NAME", "openctem"),
 		RawQuery: "sslmode=" + url.QueryEscape(get("DB_SSLMODE", "disable")),
 	}
 	return u.String()
+}
+
+// dbUserinfo picks the role: DB_ADMIN_USER when the console has its own role
+// (the app role then cannot touch the console's encrypted columns, and the
+// re-encryption is one transaction over every location), else DB_USER.
+func dbUserinfo(get func(k, def string) string) *url.Userinfo {
+	if u := os.Getenv("DB_ADMIN_USER"); u != "" {
+		return url.UserPassword(u, os.Getenv("DB_ADMIN_PASSWORD"))
+	}
+	return url.UserPassword(get("DB_USER", "openctem"), os.Getenv("DB_PASSWORD"))
 }
 
 func fail(code int, msg string) {

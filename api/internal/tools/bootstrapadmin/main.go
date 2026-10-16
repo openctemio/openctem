@@ -210,6 +210,11 @@ func databaseURLFrom(getenv func(string) string) string {
 	dbHost := getenv("DB_HOST")
 	dbUser := getenv("DB_USER")
 	dbPassword := getenv("DB_PASSWORD")
+	// With a separate console role the app role cannot write admin_users, so
+	// the CLI connects as DB_ADMIN_USER, like the server's console pool.
+	if u := getenv("DB_ADMIN_USER"); u != "" {
+		dbUser, dbPassword = u, getenv("DB_ADMIN_PASSWORD")
+	}
 	dbName := getenv("DB_NAME")
 	if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
 		return ""
