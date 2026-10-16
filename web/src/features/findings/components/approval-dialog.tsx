@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { useRequestApproval } from '../api/use-findings-api'
+import { useFalsePositivePolicy, useRequestApproval } from '../api/use-findings-api'
 import { FINDING_STATUS_CONFIG } from '../types'
 import type { FindingStatus } from '../types'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
@@ -76,6 +76,13 @@ export function ApprovalDialog({
   const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(defaultDays))
   const [step, setStep] = useState<'input' | 'confirm'>('input')
   const { trigger: requestApproval, isMutating } = useRequestApproval(findingId)
+  // How a false positive on this finding is decided now: the organization may
+  // let a person with approval permission decide it alone.
+  const isFalsePositive = targetStatus === 'false_positive'
+  const { data: fpPolicy } = useFalsePositivePolicy(findingId, open && isFalsePositive)
+  const decideAlone = isFalsePositive && fpPolicy?.can_decide_alone === true
+  const othersMayDecideAlone =
+    isFalsePositive && fpPolicy?.single_person === true && !fpPolicy.can_decide_alone
 
   const statusConfig = FINDING_STATUS_CONFIG[targetStatus]
   const statusLabel = statusConfig ? t(statusConfig.labelKey, statusConfig.label) : targetStatus
@@ -122,7 +129,7 @@ export function ApprovalDialog({
     }
 
     try {
-      await requestApproval({
+      const result = await requestApproval({
         requested_status: targetStatus,
         justification: justification.trim(),
         closure_reason: reason,
@@ -130,10 +137,17 @@ export function ApprovalDialog({
           ? { expires_at: new Date(`${expiresAt}T00:00:00`).toISOString() }
           : {}),
       })
+      const appliedAlone =
+        (result as { status?: string; single_person?: boolean } | undefined)?.single_person === true
       toast.success(
-        t('findings.approvalDialog.submitted', 'Approval request submitted for "{status}"', {
-          status: statusLabel,
-        })
+        appliedAlone
+          ? t(
+              'findingApprovals.single.applied',
+              'Marked a false positive. It is recorded with your name and reason.'
+            )
+          : t('findings.approvalDialog.submitted', 'Approval request submitted for "{status}"', {
+              status: statusLabel,
+            })
       )
       setJustification('')
       setReason('')
@@ -178,6 +192,25 @@ export function ApprovalDialog({
             </DialogHeader>
             <DialogBody>
               <div className="grid gap-4 py-4">
+                {decideAlone && (
+                  <div
+                    role="status"
+                    className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
+                  >
+                    {t(
+                      'findingApprovals.single.notice',
+                      "This organization doesn't require approval for this finding: it is marked a false positive at once. Choose a reason and explain it; the decision is audited and flagged for review if the finding later becomes more serious."
+                    )}
+                  </div>
+                )}
+                {othersMayDecideAlone && (
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      'findingApprovals.single.othersNotice',
+                      'A person with approval permission could mark this finding a false positive alone; your request waits for one of them.'
+                    )}
+                  </p>
+                )}
                 <div className="grid gap-2">
                   <Label htmlFor="closure-reason">
                     {t('findings.approvalDialog.reason', 'Reason')}
@@ -310,7 +343,9 @@ export function ApprovalDialog({
               <Button onClick={handleSubmit} disabled={isMutating}>
                 {isMutating
                   ? t('findings.approvalDialog.submitting', 'Submitting...')
-                  : t('findings.approvalDialog.submit', 'Submit for Approval')}
+                  : decideAlone
+                    ? t('findingApprovals.single.submit', 'Mark as false positive')
+                    : t('findings.approvalDialog.submit', 'Submit for Approval')}
               </Button>
             </DialogFooter>
           </>
