@@ -643,7 +643,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			log),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
-		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
+		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
@@ -1622,6 +1622,9 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, rc
 	// An install state is usable once (all replicas).
 	if rc != nil {
 		s.SetOnceStore(redis.NewWebhookDeliveryStore(rc))
+	}
+	if repos.RepoIdentity != nil {
+		s.SetRepositoryLifecycle(repos.RepoIdentity)
 	}
 	if svc.Encryptor != nil {
 		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
