@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
@@ -79,6 +80,19 @@ type Config struct {
 	// is tenant-controlled and the guard is the sole defense against
 	// IMDS / internal-network exfil. Default zero-value is safe.
 	AllowLoopback bool
+
+	// ProductName and ProductURL are the instance brand
+	// (docs/architecture/brand.md), named in test messages and email footers.
+	// Set by the ClientFactory; empty means the default brand.
+	ProductName string
+	ProductURL  string
+}
+
+func (c Config) productName() string {
+	if c.ProductName == "" {
+		return brand.DefaultName
+	}
+	return c.ProductName
 }
 
 // Provider represents a notification provider.
@@ -107,7 +121,15 @@ func (p Provider) String() string {
 }
 
 // ClientFactory creates notification clients for different providers.
-type ClientFactory struct{}
+type ClientFactory struct {
+	product    string
+	productURL string
+}
+
+// SetBrand names the instance brand in every client this factory creates.
+func (f *ClientFactory) SetBrand(b brand.Brand) {
+	f.product, f.productURL = b.DisplayName(), b.WebsiteURL
+}
 
 // NewClientFactory creates a new ClientFactory.
 func NewClientFactory() *ClientFactory {
@@ -117,6 +139,9 @@ func NewClientFactory() *ClientFactory {
 // CreateClient creates a notification client based on the configuration.
 // Every client it returns cleans each message first (see Message.Cleaned).
 func (f *ClientFactory) CreateClient(config Config) (Client, error) {
+	if config.ProductName == "" {
+		config.ProductName, config.ProductURL = f.product, f.productURL
+	}
 	c, err := newProviderClient(config)
 	if err != nil {
 		return nil, err

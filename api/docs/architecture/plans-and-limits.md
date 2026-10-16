@@ -64,9 +64,10 @@ the console shows them.
   Organizations > Create and an approved access request. It stays
   unlimited until an administrator picks a plan.
 - An organization a person creates themselves (onboarding create-first-team,
-  `POST /api/v1/tenants`) starts on **Free**. The Free row is written in the
-  same transaction as the organization, so a self-service organization can
-  never be left without it (and so unlimited).
+  `POST /api/v1/tenants`) also starts without a row, so with no limits:
+  limits apply only where an administrator set them for that organization.
+  A self-hosted install with self-service sign-up on never caps new
+  organizations on its own.
 - A plan change (`PUT /api/v1/admin/tenants/{id}/plan`) is audited with the
   plan it replaced (`from`) and the new one (`plan`).
 
@@ -116,7 +117,6 @@ so every path that adds a row passes it, whatever the caller:
 | `CIRunRepository.CreateTrustConfig` | `ci_trusts` | CI trust create |
 | `FindingRepository.Create`, `CreateInTx` | `findings` | manual finding create, finding import, pentest findings |
 | `FindingRepository.CreateBatchWithResult` | `findings` (only the batch's fingerprints the organization does not have yet) | ingest: new findings are admitted in report order up to the headroom; **each one over it is refused on its own** (a per-item error: v1 `errors`, v2 `finding_not_stored` item error), while the report's assets, the other findings and every re-sighting of an existing finding are still stored. The report is not failed or retried. When the limit cannot be read, every new finding of the batch is refused the same way (fail-closed). |
-| `POST /api/v1/tenants` | `free_teams_per_user` | another self-service organization |
 
 Not checked: the first owner of an organization (its creation, and the
 console's first-owner account), and re-activating an existing row.
@@ -158,7 +158,7 @@ administrator saves them the built-in defaults above apply.
 ## Code map
 
 - `pkg/domain/plan`: plans, keys, defaults, overrides, `ErrLimitReached`.
-- `internal/app/entitlement`: effective limits, `Check`, `Headroom`, `CheckFreeTeam`,
+- `internal/app/entitlement`: effective limits, `Check`, `Headroom`,
   console changes (audit, notification).
 - `internal/infra/postgres/plan_repository.go`: storage and usage counts,
   every query scoped by `tenant_id`.
