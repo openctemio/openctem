@@ -239,6 +239,7 @@ func (h *RemediationTaskHandler) RequestException(w http.ResponseWriter, r *http
 // @Tags         Findings
 // @Produce      json
 // @Param        status    query  string  false  "pending, approved, rejected, canceled or expired"
+// @Param        source_id query  string  false  "Only the exceptions of this source (a remediation task id)"
 // @Param        page      query  int     false  "Page"
 // @Param        per_page  query  int     false  "Per page"
 // @Success      200  {object}  map[string]interface{}
@@ -253,7 +254,7 @@ func (h *VulnerabilityHandler) ListApprovalBatches(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	res, err := h.service.ListGroupExceptions(r.Context(), tid, r.URL.Query().Get("status"), paging)
+	res, err := h.service.ListGroupExceptions(r.Context(), tid, r.URL.Query().Get("status"), r.URL.Query().Get("source_id"), paging)
 	if err != nil {
 		h.handleServiceError(w, err, "group exceptions")
 		return
