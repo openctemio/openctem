@@ -18,6 +18,8 @@ type Service struct {
 	approvers ApproverDirectory
 	assetRefs AssetRefChecker
 	totp      TOTPVerifier
+	policy    PolicySource
+	stepUp    shared.RecentAuthGate
 }
 
 // TOTPVerifier checks a fresh code from the user's authenticator app. It
@@ -93,6 +95,9 @@ type CreateRuleInput struct {
 	AssetID         *shared.ID // Optional asset filter
 	RequestedBy     shared.ID
 	ExpiresAt       *string // ISO8601 format
+	// ReasonCode is the structured reason (closure reason catalog of the
+	// rule's type), required alongside the description (the note).
+	ReasonCode string
 }
 
 // CreateRule creates a new suppression rule.
@@ -127,6 +132,15 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 	if err := rule.Validate(); err != nil {
 		return nil, err
 	}
+	// A rule says why, with a code and a note.
+	code, err := ParseReasonCode(input.SuppressionType, input.ReasonCode)
+	if err != nil {
+		return nil, err
+	}
+	rule.SetReasonCode(code)
+	if strings.TrimSpace(input.Description) == "" {
+		return nil, fmt.Errorf("%w: description is required: say why the rule is safe", shared.ErrValidation)
+	}
 
 	// Every rule ends: the default when none is asked, at most a year ahead.
 	var requested *time.Time
@@ -142,6 +156,9 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 		return nil, err
 	}
 	rule.SetExpiresAt(&end)
+	if err := s.stampPolicy(ctx, rule); err != nil {
+		return nil, err
+	}
 
 	// Save the rule and its audit entry atomically.
 	if err := s.repo.SaveWithAudit(ctx, rule, "created", &input.RequestedBy, map[string]any{
@@ -150,6 +167,8 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 		"rule_id":          input.RuleID,
 		"tool_name":        input.ToolName,
 		"path_pattern":     input.PathPattern,
+		"reason_code":      code,
+		"tier":             rule.Tier(),
 	}); err != nil {
 		return nil, err
 	}
@@ -191,6 +210,11 @@ type ApproveResult struct {
 	// MaxFindingsAppliedOnApprove.
 	AppliedFindings int
 	Capped          bool
+	// Pending: the approval was recorded and the rule needs more approvals
+	// (ApprovalsCollected of ApprovalsRequired) under the approval policy.
+	Pending            bool
+	ApprovalsCollected int
+	ApprovalsRequired  int
 }
 
 // Preview is what approving a rule would do to existing findings now.
@@ -250,6 +274,9 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 	}
 
 	selfApproved := false
+	if s.policy != nil && (rule.RequestedBy().IsZero() || rule.RequestedBy() != input.ApprovedBy) {
+		return s.approveUnderPolicy(ctx, rule, input)
+	}
 	if !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.ApprovedBy {
 		allowed, err := s.mayApproveOwnRule(ctx, input.TenantID, input.ApprovedBy)
 		if err != nil {
@@ -441,6 +468,14 @@ func (s *Service) UpdateRule(ctx context.Context, input UpdateRuleInput) (*Rule,
 	// Validate after changes
 	if err := rule.Validate(); err != nil {
 		return nil, err
+	}
+	// The criteria may match other findings now: evaluate the tier again
+	// (sign-offs made before this change no longer count).
+	if rule.Status() == RuleStatusPending && len(changes) > 0 {
+		if err := s.stampPolicy(ctx, rule); err != nil {
+			return nil, err
+		}
+		changes["tier"] = rule.Tier()
 	}
 
 	// Save the rule and its audit entry atomically.
