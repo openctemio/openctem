@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/dpop"
 )
@@ -52,7 +53,7 @@ func (h *MCPResourceMetadataHandler) Serve(w http.ResponseWriter, _ *http.Reques
 		AuthorizationServers:          []string{h.endpoints.Issuer},
 		ScopesSupported:               names,
 		BearerMethodsSupported:        []string{"header"},
-		ResourceName:                  "OpenCTEM",
+		ResourceName:                  brand.Name(),
 		DPoPSigningAlgValuesSupported: dpop.Algorithms,
 	}
 	writePublicMetadata(w, doc)
