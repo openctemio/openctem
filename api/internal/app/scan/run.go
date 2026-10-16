@@ -257,11 +257,10 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 
 	sc.Description = fmt.Sprintf("Quick scan of %d targets", len(input.Targets))
 
-	// Persist the direct targets on the scan for BOTH paths. The single-scanner
-	// path also mirrors them into scanner_config below (the sensor scanner reads
-	// config), while the workflow path relies on sc.Targets being propagated
-	// into the workflow run context (see triggerWorkflow) so the step commands
-	// actually carry the targets to the sensor.
+	// The typed targets live on the scan's target list only, for BOTH paths:
+	// the run expands wildcards and ranges from them and gates the result.
+	// They are never copied into the scanner settings: a pattern there would
+	// reach the sensor as written.
 	sc.SetTargets(input.Targets)
 
 	if scanType == scan.ScanTypeWorkflow {
@@ -273,7 +272,8 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		if config == nil {
 			config = make(map[string]any)
 		}
-		config["targets"] = input.Targets
+		delete(config, "targets")
+		delete(config, "target")
 		if err := sc.SetSingleScanner(input.ScannerName, config, 1); err != nil {
 			return nil, fmt.Errorf("failed to set scanner: %w", err)
 		}

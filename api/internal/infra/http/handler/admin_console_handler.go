@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -322,6 +324,76 @@ func (h *AdminConsoleHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	h.clearCookie(w, middleware.AdminSessionCookie, adminAPIPath, true)
 	h.clearCSRFCookies(w)
 	h.clearCookie(w, middleware.AdminMFACookie, adminAuthPath, true)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// AdminElevateRequest elevates the console session for a while.
+type AdminElevateRequest struct {
+	// Role is ops_admin or super_admin, not above the administrator's own.
+	Role string `json:"role"`
+	// Minutes is 15 to 60.
+	Minutes int `json:"minutes"`
+	// Reason (10 to 500 characters) is kept in the audit log.
+	Reason string `json:"reason"`
+}
+
+// AdminElevateResponse says until when the session acts as the role.
+type AdminElevateResponse struct {
+	Role          string    `json:"role"`
+	ElevatedUntil time.Time `json:"elevated_until"`
+}
+
+// Elevate handles POST /api/v1/admin/auth/elevate.
+// @Summary Elevate the console session for a while
+// @Description Administrators act as read-only until they elevate: a role no higher than their own (ops_admin or super_admin), for 15 to 60 minutes, with a reason; the route takes step-up. Audited at high severity.
+// @Tags Admin Auth
+// @Accept json
+// @Produce json
+// @Param request body AdminElevateRequest true "Elevation"
+// @Success 200 {object} AdminElevateResponse
+// @Failure 400 {object} apierror.Error "Bad role, duration or reason"
+// @Router /admin/auth/elevate [post]
+func (h *AdminConsoleHandler) Elevate(w http.ResponseWriter, r *http.Request) {
+	actor := middleware.MustGetAdminUser(r.Context())
+	var req AdminElevateRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	until, err := h.svc.Elevate(r.Context(), actor, middleware.GetAdminSession(r.Context()), admin.AdminRole(req.Role),
+		time.Duration(req.Minutes)*time.Minute, req.Reason, clientInfo(r))
+	if err != nil {
+		switch {
+		case errors.Is(err, adminconsole.ErrElevationRole), errors.Is(err, adminconsole.ErrElevationDuration), errors.Is(err, adminconsole.ErrElevationReason):
+			apierror.BadRequest(strings.TrimPrefix(err.Error(), "validation error: ")).WriteJSON(w)
+		case errors.Is(err, admin.ErrSessionNotFound):
+			apierror.Unauthorized("console session required").WriteJSON(w)
+		default:
+			h.logger.Error("admin console elevate", "error", err)
+			apierror.InternalError(err).WriteJSON(w)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, AdminElevateResponse{Role: req.Role, ElevatedUntil: until})
+}
+
+// EndElevation handles DELETE /api/v1/admin/auth/elevate.
+// @Summary End the console session's elevation
+// @Description The session acts as read-only again at once.
+// @Tags Admin Auth
+// @Success 204 "No Content"
+// @Router /admin/auth/elevate [delete]
+func (h *AdminConsoleHandler) EndElevation(w http.ResponseWriter, r *http.Request) {
+	actor := middleware.MustGetAdminUser(r.Context())
+	if err := h.svc.EndElevation(r.Context(), actor, middleware.GetAdminSession(r.Context()), clientInfo(r)); err != nil {
+		if errors.Is(err, admin.ErrSessionNotFound) {
+			apierror.Unauthorized("console session required").WriteJSON(w)
+			return
+		}
+		h.logger.Error("admin console end elevation", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

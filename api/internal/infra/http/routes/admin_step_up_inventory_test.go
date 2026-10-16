@@ -43,6 +43,8 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/auth/mfa":                      {signIn, "the TOTP step of the sign-in"},
 	"POST /api/v1/admin/auth/logout":                   {signIn, "ends the caller's own session"},
 	"POST /api/v1/admin/auth/password":                 {signIn, "needs the current password"},
+	"POST /api/v1/admin/auth/elevate":                  {stepUpRoute, "elevates the session's role"},
+	"DELETE /api/v1/admin/auth/elevate":                {routine, "drops the session back to read-only"},
 	"POST /api/v1/admin/auth/idp/start":                {signIn, "platform identity provider sign-in"},
 	"POST /api/v1/admin/auth/idp/callback":             {signIn, "platform identity provider sign-in"},
 	"POST /api/v1/admin/auth/webauthn/session/options": {signIn, "the security-key step of the sign-in"},
