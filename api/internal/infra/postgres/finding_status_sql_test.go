@@ -20,7 +20,7 @@ func TestFindingStatusSQL_ListsComeFromTheLifecycle(t *testing.T) {
 		"autoResolve":   {autoResolveFromSQL, vulnerability.AutoCloseFromStatuses()},
 		"vex":           {vexFalsePositiveFromSQL, vulnerability.AutoCloseFromStatuses()},
 		"stale":         {staleFromSQL, vulnerability.AutoCloseFromStatuses()},
-		"sourceRetired": {sourceRetiredFromSQL, append(vulnerability.AutoCloseFromStatuses(), vulnerability.FindingStatusNotObserved)},
+		"sourceRetired": {sourceRetiredFromSQL, vulnerability.AutoCloseFromStatuses()},
 		"regression":    {regressionReopenFromSQL, vulnerability.RegressionReopenFromStatuses()},
 		"suppression":   {suppressionLiftFromSQL, vulnerability.SuppressedStatuses()},
 		"relink":        {suppressionRelinkFromSQL, vulnerability.SuppressedStatuses()},
@@ -56,20 +56,18 @@ func TestFindingStatusSQL_IllegalListPanics(t *testing.T) {
 // add it here.
 var findingStatusWriters = map[string]int{
 	"asset_merge_findings.go":              2, // identity merge: survivor inherits, tombstone -> duplicate
-	"ci_coverage_repository.go":            2, // staleFromSQL, sourceRetiredFromSQL
+	"ci_coverage_repository.go":            1, // sourceRetiredFromSQL (going stale is observation_state, not a status)
 	"finding_acceptance_expiry.go":         1, // accepted -> confirmed when the acceptance ended (guarded by status under lock)
-	"finding_branch_only.go":               1, // branchOnlyExpiryFromSQL
 	"finding_decision_review.go":           1, // ReopenResolved: resolved -> confirmed, guarded by fixedReopenFromSQL
 	"finding_correlation_repository.go":    2, // correlate: open -> duplicate (isOpenStatus checked under lock); release: duplicate -> prior open status
 	"finding_coverage_autoresolve.go":      2, // autoResolveFromSQL
 	"finding_group_repository.go":          1, // UserFromStatuses($6)
 	"finding_pentest_duplicate.go":         2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
 	"finding_repo_coverage_autoresolve.go": 1, // autoResolveFromSQL
-	"finding_repository.go":                4, // entity Update; UpdateStatusBatch ($6); scan reopen batch; branch expiry
+	"finding_repository.go":                3, // entity Update; UpdateStatusBatch ($7); scan reopen batch
 	"finding_retest_repository.go":         2, // moveFindingInTx checks the lifecycle
-	"finding_template_provenance.go":       1, // staleFromSQL
 	"finding_vex_document.go":              1, // vexFalsePositiveFromSQL
-	"softwarematch_repository.go":          1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, staleFromSQL, vexFalsePositiveFromSQL
+	"softwarematch_repository.go":          1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, vexFalsePositiveFromSQL (stale is observation_state)
 	"suppression_apply.go":                 1, // suppressionApplyFrom (SuppressionApplyFromStatuses)
 	"suppression_repository.go":            2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
 	"license_policy_repository.go":         2, // autoResolveFromSQL (policy no longer flags), fixedReopenFromSQL (flags again)
