@@ -252,8 +252,8 @@ func isDomainError(err error) bool {
 	return false
 }
 
-// SetActionAutoJoin turns an action's auto-join rule on or off.
-func (s *SuggestionService) SetActionAutoJoin(ctx context.Context, tenantID, actionID shared.ID, on bool, actor *shared.ID, actx auditapp.AuditContext) (*remediationdom.Action, error) {
+// ChangeActionAutoJoin turns an action's auto-join rule on or off.
+func (s *SuggestionService) ChangeActionAutoJoin(ctx context.Context, tenantID, actionID shared.ID, on bool, actor *shared.ID, actx auditapp.AuditContext) (*remediationdom.Action, error) {
 	if err := s.requireFullScope(ctx, tenantID); err != nil {
 		return nil, err
 	}
