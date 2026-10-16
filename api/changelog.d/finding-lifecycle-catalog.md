@@ -5,6 +5,6 @@
   canonical status (and, under a closed status, to one closure reason); the database refuses a sub-status of
   another tenant or another status, and any status change that does not name a new sub-status falls back
   to the default label. Nothing uses them yet: no behaviour changes.
-- Migrations `002712_lifecycle_catalog`, `002713_findings_sub_status_fk` (foreign key `NOT VALID`),
-  `002714_findings_sub_status_fk_validate` and `002715_findings_sub_status_index` (built concurrently). Every
+- Migrations `002767_lifecycle_catalog`, `002768_findings_sub_status_fk` (foreign key `NOT VALID`),
+  `002769_findings_sub_status_fk_validate` and `002770_findings_sub_status_index` (built concurrently). Every
   existing finding has no sub-status, so the validation and the index are quick; no long locks.
