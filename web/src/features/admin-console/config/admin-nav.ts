@@ -1,4 +1,5 @@
 import {
+  ArrowUpCircle,
   Bot,
   Building2,
   Activity,
@@ -218,6 +219,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/announcements',
         icon: Megaphone,
         keywords: ['maintenance', 'banner', 'notice', 'downtime'],
+      },
+      {
+        title: 'Software updates',
+        i18nKey: 'admin.nav.softwareUpdates',
+        url: '/admin/system/software-updates',
+        icon: ArrowUpCircle,
+        keywords: ['version', 'upgrade', 'release', 'security advisory', 'update check'],
       },
       {
         title: 'AI applications',

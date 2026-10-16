@@ -102,6 +102,9 @@ type SSOService struct {
 	// for SSO (email-first sign-in, discovery.go). Nil: discovery always
 	// answers "password".
 	domainOwner DomainOwnerLookup
+	// discoveryKey signs the opaque organization references discovery
+	// returns (discovery.go).
+	discoveryKey []byte
 
 	// revocations records back-channel-logged-out sessions so their access
 	// tokens (and live WebSocket connections) stop at once rather than at

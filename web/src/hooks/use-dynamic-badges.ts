@@ -11,9 +11,11 @@
 'use client'
 
 import { useMemo } from 'react'
-import useSWR from 'swr'
+import useSWR, { mutate as globalMutate } from 'swr'
 import { get } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
+import { useBootstrapPending } from '@/context/bootstrap-provider'
+import { PENDING_APPROVALS_COUNT_URL } from '@/context/bootstrap-session'
 import { useCredentialStatsApi } from '@/features/credentials/api'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { env } from '@/lib/env'
@@ -53,19 +55,28 @@ interface DashboardStats {
  */
 function usePendingApprovalCount(shouldFetch: boolean): number | undefined {
   const { currentTenant } = useTenant()
+  // The session bootstrap seeds this count; wait for it so the page load
+  // does not ask a second time, and do not revalidate the seeded value.
+  const bootstrapPending = useBootstrapPending()
   const key =
-    currentTenant?.id && shouldFetch ? '/api/v1/approvals?status=pending&page=1&per_page=1' : null
+    currentTenant?.id && shouldFetch && !bootstrapPending ? PENDING_APPROVALS_COUNT_URL : null
   const { data } = useSWR<{ status_counts?: { pending?: number } }>(
     key,
     (url: string) => get<{ status_counts?: { pending?: number } }>(url),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
+      revalidateIfStale: false,
       dedupingInterval: 60000,
       errorRetryCount: 1,
     }
   )
   return data?.status_counts?.pending
+}
+
+/** Refetches the Approvals badge count (after a decision on the inbox). */
+export function refreshPendingApprovalCount() {
+  return globalMutate(PENDING_APPROVALS_COUNT_URL)
 }
 
 /**
