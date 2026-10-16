@@ -218,12 +218,12 @@ func TestRemediationAccept_AutoJoinRule(t *testing.T) {
 	assert.ErrorIs(t, err, shared.ErrNotFound, "another tenant's action")
 
 	// Off again.
-	off, err := r.sug.SetActionAutoJoin(ctx, r.tenant, res.ActionID, false, &r.admin, auditapp.AuditContext{})
+	off, err := r.sug.ChangeActionAutoJoin(ctx, r.tenant, res.ActionID, false, &r.admin, auditapp.AuditContext{})
 	require.NoError(t, err)
 	assert.False(t, off.AutoJoin)
-	_, err = r.sug.SetActionAutoJoin(r.memberCtx(), r.tenant, res.ActionID, true, &r.member, auditapp.AuditContext{})
+	_, err = r.sug.ChangeActionAutoJoin(r.memberCtx(), r.tenant, res.ActionID, true, &r.member, auditapp.AuditContext{})
 	assert.ErrorIs(t, err, shared.ErrForbidden)
-	_, err = r.sug.SetActionAutoJoin(ctx, r.other, res.ActionID, true, &r.admin, auditapp.AuditContext{})
+	_, err = r.sug.ChangeActionAutoJoin(ctx, r.other, res.ActionID, true, &r.admin, auditapp.AuditContext{})
 	assert.ErrorIs(t, err, shared.ErrNotFound, "another tenant's action")
 }
 

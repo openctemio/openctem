@@ -672,7 +672,7 @@ func (h *RemediationSuggestionHandler) UpdateAction(w http.ResponseWriter, r *ht
 		apierror.BadRequest("auto_join is required").WriteJSON(w)
 		return
 	}
-	a, err := h.service.SetActionAutoJoin(r.Context(), tid, id, *req.AutoJoin, callerID(r), h.tasks.auditContext(r))
+	a, err := h.service.ChangeActionAutoJoin(r.Context(), tid, id, *req.AutoJoin, callerID(r), h.tasks.auditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
