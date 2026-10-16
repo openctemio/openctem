@@ -408,7 +408,7 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 		return nil, fmt.Errorf("failed to check slug existence: %w", err)
 	}
 	if exists {
-		return nil, fmt.Errorf("%w: slug '%s' is already taken", shared.ErrValidation, input.Slug)
+		return nil, fmt.Errorf("%w: this URL is not available; choose another", shared.ErrValidation)
 	}
 
 	// Create tenant (createdBy still uses string for now as it's stored separately)
