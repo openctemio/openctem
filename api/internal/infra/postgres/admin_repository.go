@@ -801,7 +801,7 @@ func (r *AuditLogRepository) scanAuditLogFromRows(rows *sql.Rows) (*admin.AuditL
 const adminAuditPruneBatch = 5000
 
 // DeleteOlderThan prunes the oldest prefix of the chain written before
-// olderThan through admin_audit_prune (migration 002545), batch by batch.
+// olderThan through admin_audit_prune (migration 002613), batch by batch.
 // The function itself never deletes rows newer than a year and anchors the
 // chain at the last deleted row.
 func (r *AuditLogRepository) DeleteOlderThan(ctx context.Context, olderThan time.Time) (int64, error) {
