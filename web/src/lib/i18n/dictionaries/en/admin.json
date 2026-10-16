@@ -592,7 +592,7 @@
   "admin.versionCheck.banner.securityTitle": "Security release: upgrade to {version}",
   "admin.versionCheck.banner.updateBody": "This instance runs {running}.",
   "admin.versionCheck.banner.updateLink": "What is new",
-  "admin.versionCheck.banner.updateTitle": "OpenCTEM {version} is available",
+  "admin.versionCheck.banner.updateTitle": "{product} {version} is available",
   "admin.versionCheck.error.expired": "The release feed has expired; get a current copy.",
   "admin.versionCheck.error.http_status": "The release feed host answered with an error.",
   "admin.versionCheck.error.invalid": "Not a valid signed release feed.",

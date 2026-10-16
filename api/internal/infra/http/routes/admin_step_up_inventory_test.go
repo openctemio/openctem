@@ -93,6 +93,7 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":         {stepUpRoute, "platform sensor domain proof"},
 	"PUT /api/v1/admin/settings/shared-sensors/":                {stepUpRoute, "shared sensors on or off for the instance, and the default for organizations"},
 	"PUT /api/v1/admin/program-feed/local-bundle":               {stepUpRoute, "program feed source"},
+	"POST /api/v1/admin/version-check/import":                   {stepUpRoute, "release feed trust: what the console says about releases"},
 	"POST /api/v1/admin/content-packs/":                         {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/import":                   {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/{id}/revoke":              {stepUpRoute, "platform content pack"},
