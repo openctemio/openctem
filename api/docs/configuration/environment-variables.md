@@ -368,6 +368,17 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `ADMIN_AUDIT_RETENTION_BATCH_SIZE` | int | `10000` |  |  | Rows per delete transaction. |
+
+### Admin console
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ADMIN_ELEVATION` | string | `required` |  |  | `required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in. |
+
+### Audit log retention
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
 | `ADMIN_AUDIT_SINK` | string | empty |  |  | Streams the platform administrators' audit log off the box: every row with its hash-chain position and hash (no request body), and the chain head every `ADMIN_AUDIT_SINK_HEAD_INTERVAL`. `https://collector/path` (one JSON object per POST, `Authorization: Bearer ADMIN_AUDIT_SINK_TOKEN`, no redirects), `syslog+tls://host:6514`, `syslog+tcp://host:514`, `syslog+udp://host:514` (RFC 5424) or `file:///path` (JSON lines, 0600). A destination that cannot be used stops the start-up. Empty: off. |
 | `ADMIN_AUDIT_SINK_TOKEN` | string | empty |  | yes | Bearer token sent to an `https://` `ADMIN_AUDIT_SINK`. |
 | `ADMIN_AUDIT_SINK_HEAD_INTERVAL` | duration | `15m` |  |  | How often the administrators' audit chain head (position and hash) is sent to `ADMIN_AUDIT_SINK`. A later re-signing of the chain cannot match a head already sent. |

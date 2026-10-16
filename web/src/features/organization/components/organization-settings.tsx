@@ -44,6 +44,7 @@ import { InvitationPolicyCard } from './invitation-policy-card'
 import { PersonalAccountsCard } from './personal-accounts-card'
 import type { InviteesPolicy, PersonalAccountsPolicy, SSOException } from '../types/settings.types'
 import { DeleteOrganization } from './delete-organization'
+import { LeaveOrganization } from './leave-organization'
 import { OrganizationRegion } from '@/features/tenant/components/region-note'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
 import { SensorOptInSwitches } from '@/features/sensors/components/sensor-opt-in-switches'
@@ -1082,6 +1083,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
               </Card>
 
               {/* Owner only; renders nothing for anyone else. */}
+              <LeaveOrganization />
               <DeleteOrganization />
             </TabsContent>
 
