@@ -918,8 +918,8 @@ type SensorConfig struct {
 	// VersionCheckEnabled turns on the daily version check: one anonymous
 	// download of the signed release feed, compared with the running version
 	// on the instance (RFC-105). VERSION_CHECK_ENABLED, default true.
-	// VersionCheckURL is where the feed is read (VERSION_CHECK_URL, http or
-	// https; the signature carries the trust, so a mirror is fine).
+	// VersionCheckURL is where the feed is read (VERSION_CHECK_URL, https; the
+	// signature carries the trust, so a mirror is fine).
 	VersionCheckEnabled bool
 	VersionCheckURL     string
 
@@ -1670,8 +1670,8 @@ func (c *Config) validateBasic() error {
 	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
 		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
 	}
-	if c.Worker.VersionCheckURL != "" && parsePublicURL(c.Worker.VersionCheckURL) == nil {
-		return errors.New("VERSION_CHECK_URL must be an http or https URL without credentials, query or fragment")
+	if v := c.Worker.VersionCheckURL; v != "" && (parsePublicURL(v) == nil || !strings.HasPrefix(v, "https://")) {
+		return errors.New("VERSION_CHECK_URL must be an https URL without credentials, query or fragment")
 	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)

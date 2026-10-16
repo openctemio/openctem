@@ -13,6 +13,8 @@ package releasefeed
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,10 +113,13 @@ type Trust struct {
 	MinSequence      uint64
 }
 
-// Verified is a feed that passed every check.
+// Verified is a feed that passed every check. Digest is the SHA-256 (hex)
+// of the signed feed payload: an instance accepts the same sequence again
+// only with the same digest.
 type Verified struct {
 	Feed          Feed
 	KeySetVersion uint64
+	Digest        string
 }
 
 // Verify checks a published file at now and returns its feed.
@@ -166,7 +171,12 @@ func Verify(raw []byte, t Trust, now time.Time) (*Verified, error) {
 	if !f.ExpiresAt.After(now) {
 		return nil, fmt.Errorf("%w at %s", ErrExpired, f.ExpiresAt.UTC().Format(time.RFC3339))
 	}
-	return &Verified{Feed: f, KeySetVersion: ks.Version}, nil
+	env, err := feedsign.Open(b.Feed, FeedPayloadType, MaxBundleBytes)
+	if err != nil {
+		return nil, fmt.Errorf("release feed: %w", err)
+	}
+	sum := sha256.Sum256(env.Payload)
+	return &Verified{Feed: f, KeySetVersion: ks.Version, Digest: hex.EncodeToString(sum[:])}, nil
 }
 
 var (
