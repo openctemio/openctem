@@ -338,6 +338,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
 		w.ControllerManager.Register(controller.NewCIRetentionController(cirunapp.NewRetentionJob(repos.CIRun, log), 0))
+		// Runs whose gate job never ran are concluded as not judged (fail)
+		// after the pipeline window.
+		w.ControllerManager.Register(controller.NewCISweepController(cirunapp.NewSweepJob(repos.CIRun, auditor, log), 0))
 		// The OpenCTEM gate as a GitHub check run or GitLab commit status, and
 		// the pull or merge request comment (RFC-077).
 		if repos.SCMApp != nil {
@@ -558,6 +561,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		approvalExpiry.SetOverdueRequests(repos.FindingApproval)
 	}
 	w.ControllerManager.Register(approvalExpiry)
+	// The daily digest of finding requests waiting for each approver.
+	if svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewApprovalDigestController(svc.Vulnerability,
+			log.With("controller", "approval-digest")))
+	}
+	// Approver notices for requests VEX statements made, drained from the
+	// requests table (the outbox) off the ingest path.
+	if svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewVEXRequestNoticeController(svc.Vulnerability,
+			log.With("controller", "vex-request-notice")))
+	}
 
 	// Asset identity model: derive identifiers for assets that predate it and
 	// queue suspected duplicates for review (never merges).
@@ -634,6 +648,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
 		svc.CTEMID,
 		log.With("controller", "ctem-id-refresh"),
+	))
+
+	// Version check (RFC-105): wakes hourly; fetches the signed release feed
+	// once a day when VERSION_CHECK_ENABLED and a root is pinned, weekly
+	// after repeated failures. One replica fetches per check.
+	w.ControllerManager.Register(controller.NewVersionCheckController(
+		svc.VersionCheck,
+		log.With("controller", "version-check"),
 	))
 
 	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data
