@@ -306,6 +306,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"finding_fingerprints": func(s *schemaSeeder) map[string]any { return map[string]any{"fingerprint": s.uniq()} },
 	// target_version has a range CHECK.
 	"finding_rekey_runs": func(*schemaSeeder) map[string]any { return map[string]any{"target_version": "2"} },
+	// Ticket links: an issue key (CHECK) and exactly one object (the finding).
+	"ticket_links": func(*schemaSeeder) map[string]any {
+		return map[string]any{"external_key": "SEC-1", "campaign_id": nil, "role": "own", "state": "active", "source": "person", "provider": "jira"}
+	},
 	// emoji has a length CHECK.
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
 	// kind is a closed set and redirect_uris must list 1 to 20 URIs (RFC-062).

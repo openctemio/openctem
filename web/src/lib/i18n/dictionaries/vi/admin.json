@@ -536,5 +536,13 @@
   "admin.modules.allowed": "{name} đã khả dụng trở lại",
   "admin.modules.allowTitle": "Cho phép lại {name}?",
   "admin.modules.allowWhat": "Lệnh từ chối kết thúc và tổ chức có thể bật lại mô-đun.",
-  "admin.modules.allow": "Cho phép lại"
+  "admin.modules.allow": "Cho phép lại",
+  "admin.auditChain.unavailable": "Hiện không thể kiểm tra chuỗi nhật ký kiểm toán.",
+  "admin.auditChain.reasonChanged": "đã bị sửa sau khi ghi",
+  "admin.auditChain.reasonGap": "thiếu các dòng trước nó",
+  "admin.auditChain.reasonLink": "không nối tiếp dòng trước nó",
+  "admin.auditChain.okTitle": "Nhật ký kiểm toán nguyên vẹn",
+  "admin.auditChain.okBody": "Cả {count} mục đều hợp lệ: không mục nào bị sửa hay xóa kể từ khi ghi.",
+  "admin.auditChain.brokenTitle": "Nhật ký kiểm toán đã bị can thiệp",
+  "admin.auditChain.brokenBody": "{count} mục không hợp lệ. Hãy xử lý như một sự cố bảo mật: đối chiếu với bản sao nhật ký lưu ở nơi khác."
 }

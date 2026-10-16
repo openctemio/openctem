@@ -63,8 +63,7 @@ const findingSeverityRank = `CASE f.severity
 
 // statusCountCols counts a group's findings per bucket. Every open status
 // lands in exactly one of open, in_progress and fix_applied: open is the open
-// set (OpenStatuses) less the two work buckets, so validated_fixed and
-// not_observed findings are counted as open instead of vanishing.
+// set (OpenStatuses) less the two work buckets, so no open status vanishes.
 func statusCountCols() string {
 	return `
 		COUNT(*) as total,
