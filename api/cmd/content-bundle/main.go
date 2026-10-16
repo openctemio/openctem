@@ -6,7 +6,7 @@
 // Usage (from api/):
 //
 //	go run ./cmd/content-bundle keygen -out root.key
-//	go run ./cmd/content-bundle keyset -root root.key -online <public key hex>[,<hex>] -version 1 -days 180 -out keyset.dsse.json
+//	go run ./cmd/content-bundle keyset -root root.key -online <public key hex>[,<hex>] -version 1 -days 365 -out keyset.dsse.json
 //	go run ./cmd/content-bundle build -keyset keyset.dsse.json -online-key online.key -sequence 7 \
 //	    -sast-rules dist/ -image sensor=sha256:<hex>:<size>:GPL-3.0-only \
 //	    -feed program-feed=feeds/program/keyset.dsse.json -out openctem-content.tar
@@ -102,7 +102,7 @@ func keyset(args []string) error {
 	rootPath := fs.String("root", "", "root private key file")
 	online := fs.String("online", "", "online public keys, hex, comma separated")
 	version := fs.Uint64("version", 0, "key set version (higher than every earlier one)")
-	days := fs.Int("days", 180, "validity in days (at most 180)")
+	days := fs.Int("days", 365, "validity in days (at most 365)")
 	out := fs.String("out", "keyset.dsse.json", "output file")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -121,7 +121,7 @@ func keyset(args []string) error {
 		pubs = append(pubs, b)
 	}
 	if *version == 0 || *days < 1 || time.Duration(*days)*24*time.Hour > feedsign.MaxKeySetValidity {
-		return errors.New("-version must be set and -days must be 1 to 180")
+		return errors.New("-version must be set and -days must be 1 to 365")
 	}
 	now := time.Now().UTC()
 	env, err := contentpkg.SignKeySet(root, *version, now, now.Add(time.Duration(*days)*24*time.Hour), pubs...)

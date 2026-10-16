@@ -141,7 +141,7 @@ easy to read in a review.
  offline catalog root (Ed25519, kept offline)  ── key id pinned in the platform release
         │ signs
         ▼
- catalog key set (version, issued, not after ≤ 180 days, ≤ 8 online keys)
+ catalog key set (version, issued, not after ≤ 365 days, ≤ 8 online keys)
         │ each online key signs
         ▼
  statements (one per package version) · the index · the revocation list
@@ -333,7 +333,7 @@ it in the release pipeline:
 
 ```
 go run ./cmd/content-bundle keygen -out root.key                      # offline, once (root) and per online key
-go run ./cmd/content-bundle keyset -root root.key -online <hex> -version 1 -days 180 -out keyset.dsse.json
+go run ./cmd/content-bundle keyset -root root.key -online <hex> -version 1 -days 365 -out keyset.dsse.json
 go run ./cmd/content-bundle build -keyset keyset.dsse.json -online-key online.key \
     -sast-rules dist/ -image sensor=sha256:<hex>:<size>:GPL-3.0-only \
     -feed program-feed=keyset.dsse.json -out openctem-content.tar

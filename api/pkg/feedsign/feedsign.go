@@ -22,7 +22,7 @@ import (
 
 // Bounds.
 const (
-	MaxKeySetValidity = 180 * 24 * time.Hour
+	MaxKeySetValidity = 365 * 24 * time.Hour
 	MaxKeySetBytes    = 64 << 10
 	MaxKeySetKeys     = 8
 	MaxClockSkew      = 5 * time.Minute
