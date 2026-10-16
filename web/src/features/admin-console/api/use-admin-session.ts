@@ -32,12 +32,16 @@ export function useAdminSession() {
 }
 
 /**
- * Opens the TOTP step of a console session for the account signed in on the
- * normal /login page (the API reads its refresh-token cookie). 401: not signed
- * in; 403: not a platform administrator, or signed in with SSO.
+ * The console's own sign-in: the account's email and password open the TOTP
+ * step of a console session. No tenant sign-in is involved. 401: wrong email
+ * or password (one answer for both); 403: not a platform administrator,
+ * locked, or the identity provider is required.
  */
-export function adminStartSession() {
-  return adminFetch<AdminLoginResult>('/auth/session', { method: 'POST' })
+export function adminSignIn(email: string, password: string) {
+  return adminFetch<AdminLoginResult>('/auth/login', {
+    method: 'POST',
+    body: { email, password },
+  })
 }
 
 export function adminVerifyMFA(code: string) {
