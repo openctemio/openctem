@@ -275,7 +275,7 @@ gets opaque ids and counts. `POST
 /jobs/{job_id}/view` returns a job's targets and logs to a super or
 operations administrator with a reason, rate-limited, after a high admin
 audit row naming the organization and the reason is written (no row, no
-data). Pause, resume and retire (`POST /{sensor_id}/pause|resume|retire`)
+data). Pause, resume and retire (`POST /{sensor_id}/disable|enable|revoke`)
 need a super admin, a reason and a route-level step-up, write a critical
 admin audit row before the change (no row, no change), and change only rows with `scope = 'instance'`. Pause stops
 new claims (the heartbeat answers pause) and lets held jobs finish, which is
