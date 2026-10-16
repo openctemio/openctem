@@ -229,6 +229,9 @@ expect "console site never serves /metrics" "* 404" "$(console "$run-gwa" 8444 G
 expect "main site has no console pages" "* 404" "$(console "$run-gwa" 443 GET /admin)"
 expect "main site has no console API" "* 404" "$(console "$run-gwa" 443 GET /api/v1/admin/tenants -H 'Cookie: admin_session=abc')"
 expect "main site has no console API, even for a token client" "* 404" "$(console "$run-gwa" 443 GET /api/v1/admin/tenants -H 'Authorization: Bearer eyJ.token')"
+for p in //admin /admin/ /x/../admin "/api/v1//admin/tenants" "/api/v1/./admin/tenants" "/%61dmin" "/api/v1%2Fadmin/tenants"; do
+	expect "main site has no console as $p either" "* 404" "$(console "$run-gwa" 443 GET "$p" --path-as-is)"
+done
 expect "main site still serves the tenant UI" "web *200" "$(console "$run-gwa" 443 GET /login)"
 expect "a client cannot mark a main-site request as the console's" "web *plane=|*200" "$(console "$run-gwa" 443 GET /login -H 'X-OpenCTEM-Plane: admin')"
 expect "console site refuses a network outside the allow-list" "* 403" "$(console "$run-gwb" 8444 GET /admin)"

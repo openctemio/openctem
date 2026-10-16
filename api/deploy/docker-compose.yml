@@ -267,10 +267,11 @@ services:
       APP_ENV: ${APP_ENV:-production}
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
-      # The console API on its own internal listener (never published); the
+      # The console API on its own internal listener (plain HTTP on the stack's
+      # private network, never published); the
       # main listener answers 404 for /api/v1/admin. Same allow-list as the
       # gateway's console site (empty = private networks).
-      ADMIN_LISTEN_ADDR: ":8081"
+      ADMIN_LISTEN_ADDR: ${OPENCTEM_NET_PREFIX:-172.30.80}.12:8081
       ADMIN_ALLOWED_CIDRS: ${OPENCTEM_ADMIN_ALLOWED_CIDRS:-}
       # Only the gateway and the web UI may assert a client address
       # (X-Real-IP / X-Forwarded-For). Anything else is recorded as its own
@@ -337,7 +338,9 @@ services:
       migrate:
         condition: service_completed_successfully
     networks:
-      - openctem
+      openctem:
+        # Fixed, so the console listener can bind this private address only.
+        ipv4_address: ${OPENCTEM_NET_PREFIX:-172.30.80}.12
     restart: unless-stopped
     volumes:
       - datastore-tls:/datastore-tls:ro
