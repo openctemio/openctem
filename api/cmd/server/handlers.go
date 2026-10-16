@@ -504,17 +504,18 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		DefectDojo: handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
-		Command:         commandHandler,
-		Sensor:          sensorHandler,
-		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
-		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
-		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		ScanWindow:      newScanWindowHandler(svc, log),
-		Ingest:          ingestHandler,
-		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
-		SensorPairing:   newSensorPairingHandler(svc, log),
-		IOC:             newIOCHandlerWithFindingCheck(deps, log),
-		Validation:      validationHandler,
+		Command:          commandHandler,
+		Sensor:           sensorHandler,
+		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
+		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
+		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		ScanWindow:       newScanWindowHandler(svc, log),
+		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
+		Ingest:           ingestHandler,
+		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
+		SensorPairing:    newSensorPairingHandler(svc, log),
+		IOC:              newIOCHandlerWithFindingCheck(deps, log),
+		Validation:       validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
