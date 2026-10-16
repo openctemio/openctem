@@ -11,5 +11,5 @@
   page now shows every notification type in English and Vietnamese.
 - A new hourly `approval-digest` controller sends it, at most once per
   approver and organization per 23 hours (`finding_approval_digest_sent`,
-  migration `002700`; a new per-tenant table, deleted with the member's
+  migration `002780`; a new per-tenant table, deleted with the member's
   account).
