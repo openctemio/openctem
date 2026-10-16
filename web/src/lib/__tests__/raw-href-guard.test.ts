@@ -62,6 +62,8 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
 const REVIEWED = new Set([
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
   'features/legal/components/legal-document.tsx|Link|href={d.path}',
+  // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
+  'features/remediation-hub/components/fix-plan.tsx|Link|href={r.href}',
   // Navigation config (src/config/*) and settings/category tables in code.
   'app/(dashboard)/settings/page.tsx|LinkCard|href={item.url}',
   // integrationManageHref returns one of the constant settings paths only.

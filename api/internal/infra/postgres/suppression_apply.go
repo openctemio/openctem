@@ -182,6 +182,7 @@ func (r *SuppressionRepository) Approve(
 	if err := tx.Commit(); err != nil {
 		return res, fmt.Errorf("commit transaction: %w", err)
 	}
+	observeSuppressionHits("approval", res.Applied)
 	return res, nil
 }
 
