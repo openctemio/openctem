@@ -108,10 +108,28 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   action per day); a `verifying`, held or closed task gets a `join` suggestion instead. It never changes a
   finding's status.
 
+## Moves, split, merge, detach
+
+| Route | Gate | Does |
+|---|---|---|
+| `POST /api/v1/remediation/moves/preview` | `findings:remediation:write` | the warnings of a move, nothing changes |
+| `POST /api/v1/remediation/moves` | `findings:remediation:write` | moves findings (`confirm` for warnings; no target = detach) |
+| `POST /api/v1/remediation/tasks/{task_id}/splits` | `findings:remediation:write` | new task of the same fix from some findings |
+| `POST /api/v1/remediation/tasks/{task_id}/merges` | `findings:remediation:write` | moves all findings of same-fix tasks here |
+
+- Refused: another tenant (404), a terminal task on either side, a task with findings outside the caller's
+  scope, a finding outside it. Warned (409 `MOVE_NEEDS_CONFIRMATION` until `confirm`): different fix, different
+  owner, target or source verifying, emptying the source.
+- One transaction: both tasks locked in id order at the caller's versions, findings locked in id order, both
+  sides recomputed; an emptied source is archived with a note naming the target; one timeline entry per task and
+  a `remediation_task_changed` entry on every finding (left and joined). Findings not in the source are skipped
+  and reported. A detach records `remediation_key_exclusions` (reason `detached`) for the source's key.
+- Undo = the reverse move with the versions the response returns.
+
 ## Shipped and planned
 
-Shipped: everything above. Planned (RFC-098 §7–§8): moves, split, merge and detach, task-level mark fixed and
-regression tasks, the new Remediation console.
+Shipped: everything above. Planned (RFC-098 §8): task-level mark fixed and regression tasks, the new Remediation
+console.
 
 ## Key files
 
