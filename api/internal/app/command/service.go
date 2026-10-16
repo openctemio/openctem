@@ -57,6 +57,9 @@ type Service struct {
 	// sharedLimits reads each organization's limit of shared jobs in flight
 	// (shared_claim.go); nil: the shared claim hands out nothing.
 	sharedLimits SharedLimitSource
+	// sharedAccess is the shared sensor access policy applied at claim
+	// time (shared_claim.go); nil: the shared claim hands out nothing.
+	sharedAccess SharedAccessPolicy
 	// now is the clock (tests replace it).
 	now func() time.Time
 	// programRules applies bug-bounty program rules at delivery

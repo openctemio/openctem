@@ -33,11 +33,21 @@ func (l testSharedLimits) Limit(_ context.Context, tenantID shared.ID, key plan.
 	if key != plan.PlatformScansConcurrent {
 		return 0, nil
 	}
-	if v, ok := l[tenantID.String()]; ok {
+	if v, ok := l[tenantID.String()]; ok && v != denied {
 		return v, nil
 	}
 	return 0, nil
 }
+
+// allowed is the access policy of the test: its own organizations only,
+// except those the test denies (limit -2).
+func (l testSharedLimits) allowed(_ context.Context, tenantID shared.ID) (bool, string) {
+	v, ok := l[tenantID.String()]
+	return ok && v != denied, "not this test's organization"
+}
+
+// denied marks an organization that may not use shared sensors.
+const denied = -2
 
 // isolate makes s a shared sensor that reports the shared isolation profile
 // and verified tool (a name only this test uses).
@@ -80,7 +90,7 @@ func idsOf(l wireCommandList) map[string]wireCommand {
 
 func TestSharedClaim_V2ClaimsSharedJobsOfEveryOrganization(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits))
+	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
 	tenantX, tenantY := h.tenantID, h.newTenant()
 	limits[tenantX], limits[tenantY] = -1, -1
 	tool := uniqueTool()
@@ -121,7 +131,7 @@ func TestSharedClaim_V2ClaimsSharedJobsOfEveryOrganization(t *testing.T) {
 
 func TestSharedClaim_V2NoIsolationNoJobs(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits))
+	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
 	tenant := h.tenantID
 	limits[tenant] = -1
 	tool := uniqueTool()
@@ -140,20 +150,24 @@ func TestSharedClaim_V2NoIsolationNoJobs(t *testing.T) {
 	}
 }
 
-func TestSharedClaim_V2OrganizationAtItsLimitWaits(t *testing.T) {
+func TestSharedClaim_V2OrganizationAtItsLimitOrWithoutAccessWaits(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits))
-	full, open := h.tenantID, h.newTenant()
-	limits[full], limits[open] = 0, -1
+	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
+	full, open, off := h.tenantID, h.newTenant(), h.newTenant()
+	limits[full], limits[open], limits[off] = 0, -1, denied
 	tool := uniqueTool()
 	a := h.newSharedSensor("shared-a")
 	h.isolate(a, tool)
 	waits := h.pendingSharedJob(full, tool)
 	runs := h.pendingSharedJob(open, tool)
+	lostAccess := h.pendingSharedJob(off, tool)
 
 	got := idsOf(h.sharedClaim(a.key))
 	if _, ok := got[waits]; ok {
 		t.Fatal("an organization at its platform_scans_concurrent limit got a shared job")
+	}
+	if _, ok := got[lostAccess]; ok {
+		t.Fatal("an organization that may not use shared sensors got a shared job")
 	}
 	if _, ok := got[runs]; !ok {
 		t.Fatalf("the organization under its limit got nothing: %v", got)
@@ -162,7 +176,7 @@ func TestSharedClaim_V2OrganizationAtItsLimitWaits(t *testing.T) {
 
 func TestSharedClaim_V2StepsOnlyForHeldJobsInTheirOrganization(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits))
+	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
 	tenantX, tenantY := h.tenantID, h.newTenant()
 	limits[tenantX], limits[tenantY] = -1, -1
 	tool := uniqueTool()
@@ -226,7 +240,7 @@ func TestSharedClaim_V2StepsOnlyForHeldJobsInTheirOrganization(t *testing.T) {
 
 func TestSharedClaim_V2HeartbeatRenewsOnlyHeldSharedLeases(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits))
+	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
 	limits[h.tenantID] = -1
 	h.sensors.SetLeaseRenewer(postgres.NewCommandRepository(&postgres.DB{DB: h.db}))
 	tool := uniqueTool()
@@ -281,7 +295,7 @@ func TestSharedClaim_V2HeartbeatRenewsOnlyHeldSharedLeases(t *testing.T) {
 func TestSharedClaim_V2ClaimsAreSignedForTheCommandsOrganization(t *testing.T) {
 	client, pub := realSigner(t)
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithJobSigner(client), command.WithSharedLimits(limits))
+	h := newCtlHarness(t, command.WithJobSigner(client), command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
 	tenantX, tenantY := h.tenantID, h.newTenant()
 	limits[tenantX], limits[tenantY] = -1, -1
 	// verifySignedJob expects the semgrep job of a scope-ledger test; the
@@ -306,3 +320,21 @@ func TestSharedClaim_V2ClaimsAreSignedForTheCommandsOrganization(t *testing.T) {
 }
 
 func uniqueTool() string { return "tool-" + shared.NewID().String() }
+
+// Without the access policy wired (and, on a deployment, while the access
+// gate is closed) the shared claim hands out nothing.
+func TestSharedClaim_V2NoAccessPolicyNoJobs(t *testing.T) {
+	limits := testSharedLimits{}
+	h := newCtlHarness(t, command.WithSharedLimits(limits))
+	limits[h.tenantID] = -1
+	tool := uniqueTool()
+	a := h.newSharedSensor("shared-a")
+	h.isolate(a, tool)
+	job := h.pendingSharedJob(h.tenantID, tool)
+	if got := idsOf(h.sharedClaim(a.key)); len(got) != 0 {
+		t.Fatalf("claimed %v without an access policy", got)
+	}
+	if status, _, _ := h.commandState(job); status != "pending" {
+		t.Fatalf("job is %s", status)
+	}
+}
