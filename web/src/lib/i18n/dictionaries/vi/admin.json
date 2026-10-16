@@ -555,5 +555,18 @@
   "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}",
   "admin.stepUp.confirm": "Xác nhận",
   "admin.stepUp.description": "Thao tác này thay đổi ai có thể đăng nhập hoặc được làm gì. Nhập một mã mới từ ứng dụng xác thực. Một mã có hiệu lực cho các thao tác như vậy trong năm phút tiếp theo.",
-  "admin.stepUp.title": "Xác nhận đó là bạn"
+  "admin.stepUp.title": "Xác nhận đó là bạn",
+  "admin.login.title": "Quản trị nền tảng",
+  "admin.login.description": "Đăng nhập để quản trị hệ thống này.",
+  "admin.login.enroll": "Thiết lập xác thực hai bước. Bắt buộc với mọi quản trị viên.",
+  "admin.login.code": "Nhập mã 6 chữ số từ ứng dụng xác thực để tiếp tục.",
+  "admin.login.or": "hoặc đăng nhập bằng mật khẩu",
+  "admin.login.email": "Email",
+  "admin.login.password": "Mật khẩu",
+  "admin.login.submit": "Tiếp tục",
+  "admin.login.wrongCredentials": "Sai email hoặc mật khẩu.",
+  "admin.login.idpRequired": "Quản trị viên đăng nhập bằng nhà cung cấp danh tính. Đăng nhập bằng mật khẩu chỉ dành cho tài khoản khẩn cấp.",
+  "admin.login.unreachable": "Không thể kết nối tới bảng điều khiển.",
+  "admin.login.breakGlassNote": "Đăng nhập bằng mật khẩu dành cho tài khoản khẩn cấp (break-glass) khi bắt buộc dùng nhà cung cấp danh tính.",
+  "admin.shell.signOutFailed": "Đăng xuất thất bại; phiên vẫn sẽ tự hết hạn."
 }

@@ -8,13 +8,12 @@ import (
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// adminAccountDirectory lets the admin console (RFC-022) resolve the user
-// signed in on the normal /login page and provision the users-table account a
-// new platform administrator signs in with. The console owns the second factor
+// adminAccountDirectory lets the admin console (RFC-022) check an account's
+// password for its own sign-in and provision the users-table account a new
+// platform administrator signs in with. The console owns the second factor
 // and the admin_users link; everything about the account itself stays with
 // AuthService.
 type adminAccountDirectory struct {
@@ -23,27 +22,18 @@ type adminAccountDirectory struct {
 
 var _ adminconsole.AccountDirectory = adminAccountDirectory{}
 
-func (d adminAccountDirectory) SignedInUser(ctx context.Context, refreshToken string) (*adminconsole.SignedInUser, error) {
-	id, err := d.auth.IdentifyRefreshSession(ctx, refreshToken)
-	if err != nil {
-		return nil, err
+func (d adminAccountDirectory) VerifyPassword(ctx context.Context, email, password string, client adminconsole.ClientInfo) (*adminconsole.SignedInUser, error) {
+	u, err := d.auth.VerifyConsolePassword(ctx, email, password, client.IP, client.UserAgent)
+	switch {
+	case err == nil:
+	case errors.Is(err, authapp.ErrAccountLocked):
+		return nil, admin.ErrAccountLocked
+	default:
+		// Wrong password, unknown email, suspended or not a local account:
+		// one answer.
+		return nil, admin.ErrInvalidCredentials
 	}
-	u := id.User
-	return &adminconsole.SignedInUser{
-		UserID:         u.ID(),
-		Email:          u.Email(),
-		Name:           u.Name(),
-		Active:         u.CanLogin(),
-		PasswordSignIn: id.AuthMethod == sessiondom.AuthMethodPassword,
-	}, nil
-}
-
-func (d adminAccountDirectory) EndSignIn(ctx context.Context, refreshToken string) error {
-	id, err := d.auth.IdentifyRefreshSession(ctx, refreshToken)
-	if err != nil {
-		return err
-	}
-	return d.auth.Logout(ctx, id.SessionID.String())
+	return &adminconsole.SignedInUser{UserID: u.ID(), Email: u.Email(), Name: u.Name(), Active: u.CanLogin()}, nil
 }
 
 func (d adminAccountDirectory) CreateAccount(ctx context.Context, email, name string) (shared.ID, string, error) {
