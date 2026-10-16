@@ -16,6 +16,7 @@ type Service struct {
 	repo      Repository
 	log       *logger.Logger
 	approvers ApproverDirectory
+	scope     ScopeFilter
 	assetRefs AssetRefChecker
 	totp      TOTPVerifier
 }
@@ -60,7 +61,15 @@ type ApproverDirectory interface {
 	CountEligibleApprovers(ctx context.Context, tenantID shared.ID) (int, error)
 	// IsTenantOwner reports whether the user is the tenant's active owner.
 	IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	// RecentMemberRemoval answers the latest member suspension, removal,
+	// offboarding or membership expiry in the tenant after since (nil: none).
+	RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error)
 }
+
+// SelfApprovalRemovalCooldown: an owner may not approve their own rule
+// within this long after any member was suspended or removed (removing the
+// only other approver must not open the own-approval path at once).
+const SelfApprovalRemovalCooldown = 7 * 24 * time.Hour
 
 // SetApproverDirectory wires the directory the four-eyes rule reads. Without
 // it a requester can never approve their own rule (fail closed).
@@ -185,6 +194,13 @@ type ApproveResult struct {
 	Capped          bool
 }
 
+// PreviewSampleSize is the number of findings a preview lists.
+const PreviewSampleSize = 10
+
+// SetScopeFilter wires the data-scope filter the preview sample uses. Without
+// it a preview lists nothing and counts no finding as in scope (fail closed).
+func (s *Service) SetScopeFilter(f ScopeFilter) { s.scope = f }
+
 // Preview is what approving a rule would do to existing findings now.
 type Preview struct {
 	// MatchingOpenFindings is the number of the tenant's open findings the
@@ -193,11 +209,18 @@ type Preview struct {
 	// Capped: more than Limit match; an approval closes Limit of them.
 	Capped bool
 	Limit  int
+	// InScopeFindings is how many of those sit on assets the caller's data
+	// scope admits, at most Limit; Sample lists the first PreviewSampleSize
+	// of them. Findings outside the caller's scope are only in the
+	// organization-wide count, never listed.
+	InScopeFindings int
+	Sample          []SampleFinding
 }
 
 // PreviewRule counts the open findings an approval of the rule would close,
 // with the same matcher and status set the approval uses. The count is
-// tenant-wide because the approval is.
+// tenant-wide because the approval is; the sample and the in-scope count are
+// limited to the caller's data scope.
 func (s *Service) PreviewRule(ctx context.Context, tenantID, ruleID shared.ID) (*Preview, error) {
 	rule, err := s.repo.FindByID(ctx, tenantID, ruleID)
 	if err != nil {
@@ -215,6 +238,12 @@ func (s *Service) PreviewRule(ctx context.Context, tenantID, ruleID shared.ID) (
 		p.MatchingOpenFindings = MaxFindingsAppliedOnApprove
 		p.Capped = true
 	}
+	inScope, sample, err := s.repo.SampleMatchingOpenFindings(ctx, rule, s.scope, MaxFindingsAppliedOnApprove, PreviewSampleSize)
+	if err != nil {
+		return nil, err
+	}
+	p.InScopeFindings = min(inScope, MaxFindingsAppliedOnApprove)
+	p.Sample = sample
 	return p, nil
 }
 
@@ -282,8 +311,17 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 }
 
 // verifySelfApproval requires the reason and a fresh authenticator code of
-// an owner approving their own rule.
+// an owner approving their own rule, and no member suspended or removed in
+// the last SelfApprovalRemovalCooldown.
 func (s *Service) verifySelfApproval(ctx context.Context, input ApproveRuleInput) error {
+	at, err := s.approvers.RecentMemberRemoval(ctx, input.TenantID, time.Now().Add(-SelfApprovalRemovalCooldown))
+	if err != nil {
+		return err
+	}
+	if at != nil {
+		return fmt.Errorf("%w; approving your own rule is possible again from %s",
+			ErrSelfApprovalAfterRemoval, at.Add(SelfApprovalRemovalCooldown).UTC().Format(time.RFC3339))
+	}
 	if strings.TrimSpace(input.SelfApprovalReason) == "" {
 		return ErrSelfApprovalNeedsReason
 	}
@@ -297,7 +335,7 @@ func (s *Service) verifySelfApproval(ctx context.Context, input ApproveRuleInput
 // IsSelfApprovalRefusal reports whether err refused an own approval (to be
 // audited by the caller).
 func IsSelfApprovalRefusal(err error) bool {
-	return errors.Is(err, ErrSelfApproval) || errors.Is(err, ErrSelfApprovalNeedsReason) ||
+	return errors.Is(err, ErrSelfApproval) || errors.Is(err, ErrSelfApprovalNeedsReason) || errors.Is(err, ErrSelfApprovalAfterRemoval) ||
 		errors.Is(err, ErrSelfApprovalNeedsTOTP) || errors.Is(err, ErrSelfApprovalBadCode)
 }
 
@@ -432,6 +470,64 @@ func (s *Service) UpdateRule(ctx context.Context, input UpdateRuleInput) (*Rule,
 	}
 
 	return rule, nil
+}
+
+// MarkReviewed clears the review flag of a rule (an approver looked at a
+// rule the platform gave an end it did not have). It changes nothing else:
+// the rule keeps its end. Recorded in the rule's own trail with the flag it
+// cleared. Returns the flag's time and reason before the change.
+func (s *Service) MarkReviewed(ctx context.Context, input MarkReviewedInput) (*Rule, *time.Time, string, error) {
+	rule, err := s.repo.FindByID(ctx, input.TenantID, input.RuleID)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if rule == nil {
+		return nil, nil, "", ErrRuleNotFound
+	}
+	flaggedAt, reason := rule.ReviewFlaggedAt(), rule.ReviewReason()
+	if flaggedAt == nil {
+		return nil, nil, "", ErrRuleNotFlagged
+	}
+	details := map[string]any{
+		"review_cleared":    true,
+		"review_flagged_at": flaggedAt.UTC().Format(time.RFC3339),
+		"review_reason":     reason,
+	}
+	// Reviewing one's own rule is not a review: the requester may clear the
+	// flag only on the sole-approver path (the owner, nobody else can
+	// approve, a reason and a fresh authenticator code), like approving it.
+	if !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.By {
+		allowed, err := s.mayApproveOwnRule(ctx, input.TenantID, input.By)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if !allowed {
+			return nil, nil, "", ErrSelfApproval
+		}
+		if err := s.verifySelfApproval(ctx, ApproveRuleInput{TenantID: input.TenantID, ApprovedBy: input.By,
+			SelfApprovalReason: input.SelfApprovalReason, TOTPCode: input.TOTPCode}); err != nil {
+			return nil, nil, "", err
+		}
+		details["self_reviewed"] = true
+		details["reason"] = strings.TrimSpace(input.SelfApprovalReason)
+		details["step_up"] = "totp"
+	}
+	rule.ClearReview()
+	if err := s.repo.SaveWithAudit(ctx, rule, "updated", &input.By, details); err != nil {
+		return nil, nil, "", err
+	}
+	return rule, flaggedAt, reason, nil
+}
+
+// MarkReviewedInput clears a rule's review flag. SelfApprovalReason and
+// TOTPCode are required when the caller requested the rule (the
+// sole-approver path).
+type MarkReviewedInput struct {
+	TenantID           shared.ID
+	RuleID             shared.ID
+	By                 shared.ID
+	SelfApprovalReason string
+	TOTPCode           string
 }
 
 // GetRule retrieves a suppression rule by ID.

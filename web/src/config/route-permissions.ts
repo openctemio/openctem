@@ -443,14 +443,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.RemediationRead,
     module: Module.Remediation,
   },
-  '/remediations': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
-  '/remediations/**': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
   '/automations': {
     permission: Permission.WorkflowsRead,
     module: Module.Workflows,
@@ -783,9 +775,17 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/vulnerability-matching': {
     permission: Permission.TeamUpdate,
   },
+  // Finding approvals: settings:read to see, settings:write (+ step-up) to save.
+  '/settings/finding-approvals': {
+    permission: Permission.SettingsRead,
+  },
   // License policy (RFC-070): settings:read to see, settings:write to save.
   '/settings/license-policy': {
     permission: Permission.SettingsRead,
+  },
+  // Content catalog (RFC-099): content:read to see; the API gates every change.
+  '/settings/content': {
+    permission: Permission.ContentRead,
   },
   // Asset source precedence (RFC-069): owner/admin on the API.
   '/settings/asset-sources': {

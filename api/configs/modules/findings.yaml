@@ -15,9 +15,12 @@
     - finding_stats
     - list_active_cves
     - explain_finding_priority
+    - list_finding_transitions
     - list_remediation_groups
   jobs:
     - ApprovalExpirationController
+    - VEXRequestNoticeController
+    - ApprovalDigestController
     - FindingPriorityController
     - FindingPriorityReconcileController
     - PriorityAuditRetentionController

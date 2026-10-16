@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,6 +118,43 @@ func TestSuppressionSelfApproval_Routes_DB(t *testing.T) {
 		t.Fatalf("refusal with a second approver audited %d times, want 1", n)
 	}
 	approve(multiAdmin, id, ts+`"}`, http.StatusOK)
+
+	// Within 7 days of suspending a member, a lone owner may not approve
+	// their own rule; after 7 days they may.
+	recent := h.tenant()
+	t.Cleanup(func() { h.exec(`DELETE FROM suppression_rules WHERE tenant_id = $1`, recent) })
+	recentOwner := h.member(recent, "owner")
+	suspended := h.member(recent, "admin")
+	h.exec(`UPDATE tenant_members SET status = 'suspended', suspended_at = now() - interval '2 days' WHERE user_id = $1`, suspended.id)
+	id, ts = create(recentOwner)
+	code, body := h.do(recentOwner, http.MethodPost, "/api/v1/suppressions/"+id+"/approve",
+		`{"reviewed_updated_at":"`+ts+`","self_approval_reason":"alone now","totp_code":"135790"}`)
+	if code != http.StatusForbidden || !strings.Contains(body, "possible again from") {
+		t.Fatalf("2 days after a suspension: %d %s", code, body)
+	}
+	if n := len(h.auditRows(recent, "suppression_rule.self_approval_refused")); n != 1 {
+		t.Fatalf("refusal audited %d times, want 1", n)
+	}
+	h.exec(`UPDATE tenant_members SET suspended_at = now() - interval '8 days' WHERE user_id = $1`, suspended.id)
+	approve(recentOwner, id, ts+`","self_approval_reason":"alone now","totp_code":"135790"}`, http.StatusOK)
+
+	// Demoting the other approver (admin to viewer) makes the owner alone,
+	// but it is a recent approver change: refused for 7 days.
+	demoted := h.tenant()
+	t.Cleanup(func() { h.exec(`DELETE FROM suppression_rules WHERE tenant_id = $1`, demoted) })
+	demotedOwner := h.member(demoted, "owner")
+	demotedAdmin := h.member(demoted, "admin")
+	h.exec(`UPDATE tenant_members SET role = 'viewer' WHERE user_id = $1 AND tenant_id = $2`, demotedAdmin.id, demoted)
+	h.exec(`INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
+		VALUES (gen_random_uuid(), $1, 'member.role_changed', 'membership', $2, 'success', 'medium', 'admin to viewer', now() - interval '1 hour')`, demoted, demotedAdmin.id)
+	id, ts = create(demotedOwner)
+	code, body = h.do(demotedOwner, http.MethodPost, "/api/v1/suppressions/"+id+"/approve",
+		`{"reviewed_updated_at":"`+ts+`","self_approval_reason":"alone now","totp_code":"135790"}`)
+	if code != http.StatusForbidden || !strings.Contains(body, "possible again from") {
+		t.Fatalf("1 hour after demoting the other approver: %d %s", code, body)
+	}
+	h.exec(`UPDATE audit_logs SET logged_at = now() - interval '8 days' WHERE tenant_id = $1 AND action = 'member.role_changed'`, demoted)
+	approve(demotedOwner, id, ts+`","self_approval_reason":"alone now","totp_code":"135790"}`, http.StatusOK)
 
 	// A lone administrator who is not an owner may not.
 	id, ts = create(lonelyAdmin)

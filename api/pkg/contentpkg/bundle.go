@@ -167,8 +167,11 @@ type VerifyOptions struct {
 	// sequence is refused, the same one only with the same bytes.
 	LastIndexSequence uint64
 	LastIndexDigest   string
-	// LastRevocationsSequence is the applied revocation list.
+	// LastRevocationsSequence and LastRevocationsDigest are the applied
+	// revocation list: a lower sequence is refused, the same one only with
+	// the same bytes.
 	LastRevocationsSequence uint64
+	LastRevocationsDigest   string
 	// Revoked are the entries already applied; a package they name is
 	// refused even when the bundle's own list no longer names it.
 	Revoked   []RevocationEntry
@@ -196,11 +199,12 @@ type Refused struct {
 
 // Verified is a bundle that passed verification.
 type Verified struct {
-	KeySetVersion    uint64
-	Index            *Index
-	IndexDigest      string
-	Revocations      *Revocations
-	RevocationsStale bool
+	KeySetVersion     uint64
+	Index             *Index
+	IndexDigest       string
+	Revocations       *Revocations
+	RevocationsDigest string
+	RevocationsStale  bool
 	// Unchanged: the same index was applied before (a repeated import).
 	Unchanged bool
 	Packages  []VerifiedPackage
@@ -251,10 +255,14 @@ func Verify(b *Bundle, opt VerifyOptions) (*Verified, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rv.Sequence < opt.LastRevocationsSequence {
+	rvDigest := Digest(rvRaw)
+	switch {
+	case rv.Sequence < opt.LastRevocationsSequence:
 		return nil, fmt.Errorf("%w: revocation list sequence %d is below the applied %d", ErrRollback, rv.Sequence, opt.LastRevocationsSequence)
+	case rv.Sequence == opt.LastRevocationsSequence && rvDigest != opt.LastRevocationsDigest:
+		return nil, fmt.Errorf("%w: revocation list sequence %d was applied with other contents", ErrRollback, rv.Sequence)
 	}
-	out.Revocations, out.RevocationsStale = rv, rv.Stale(now)
+	out.Revocations, out.RevocationsDigest, out.RevocationsStale = rv, rvDigest, rv.Stale(now)
 
 	listed := map[string]bool{}
 	for _, e := range ix.Packages {
@@ -332,8 +340,8 @@ func verifyPackage(b *Bundle, ks *feedsign.KeySet, e IndexEntry, pv PublisherVer
 	case !fileArtifact && hasArt:
 		return nil, errors.New("this artifact type is not carried in a bundle")
 	case fileArtifact:
-		if int64(len(art)) != m.Artifact.Size || Digest(art) != m.Artifact.Digest {
-			return nil, fmt.Errorf("%w: the artifact does not match its digest", ErrTampered)
+		if err := CheckArtifact(art, m.Artifact); err != nil {
+			return nil, err
 		}
 		vp.Artifact = art
 	}

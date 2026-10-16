@@ -33,19 +33,22 @@ const (
 	// vulnerability matching policy (RFC-066).
 	ActionTenantVulnMatchingUpdated Action = "tenant.vuln_matching_updated"
 
-	// Idle Free workspaces (docs/architecture/idle-workspaces.md).
-	ActionTenantIdleReminded         Action = "tenant.idle_reminded"
-	ActionTenantIdleReadOnly         Action = "tenant.idle_read_only"
-	ActionTenantIdleFinalWarning     Action = "tenant.idle_final_warning"
-	ActionTenantIdleDeletionDue      Action = "tenant.idle_deletion_due"
-	ActionTenantIdleReactivated      Action = "tenant.idle_reactivated"
-	ActionTenantIdleExemptionChanged Action = "tenant.idle_exemption_changed"
+	// Idle-organization policy (docs/architecture/idle-workspaces.md).
+	ActionTenantIdleReminded      Action = "tenant.idle_reminded"
+	ActionTenantIdleReadOnly      Action = "tenant.idle_read_only"
+	ActionTenantIdleFinalWarning  Action = "tenant.idle_final_warning"
+	ActionTenantIdleDeletionDue   Action = "tenant.idle_deletion_due"
+	ActionTenantIdleReactivated   Action = "tenant.idle_reactivated"
+	ActionTenantIdlePolicyChanged Action = "tenant.idle_policy_changed"
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
 	// ActionTenantCyclePolicyUpdated records a change to the organization's
 	// CTEM cycle policy (whether the coverage SLO blocks closing a cycle).
 	ActionTenantCyclePolicyUpdated Action = "tenant.cycle_policy_updated"
+	// ActionTenantSharedSensorsUpdated records the owner's shared sensor
+	// opt-out changing.
+	ActionTenantSharedSensorsUpdated Action = "tenant.shared_sensors_updated"
 
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
@@ -148,6 +151,13 @@ const (
 	// ActionMemberDataErased: an offboarded person's name and email were
 	// anonymised (owner only).
 	ActionMemberDataErased Action = "member.data_erased"
+	// Self-service account deletion (RFC-104): asked, canceled by signing in
+	// again, and the account erased after the grace period.
+	ActionAccountDeletionRequested Action = "account.deletion_requested"
+	ActionAccountDeletionCanceled  Action = "account.deletion_canceled"
+	ActionAccountErased            Action = "account.erased"
+	// ActionMemberLeft: a member left the organization themselves.
+	ActionMemberLeft Action = "member.left"
 	// ActionMemberAccessChanged: the end date of an external member's access
 	// was changed (RFC-058).
 	ActionMemberAccessChanged Action = "member.access_changed"
@@ -198,6 +208,10 @@ const (
 	// ActionFindingEvidenceDeleted records the removal of a manually-attached
 	// evidence note from a generic (non-pentest) finding.
 	ActionFindingEvidenceDeleted Action = "finding.evidence_deleted"
+	// ActionFindingTicketLinked records a person linking an existing tracker
+	// issue to a finding; ActionFindingTicketUnlinked removing a link.
+	ActionFindingTicketLinked   Action = "finding.ticket_linked"
+	ActionFindingTicketUnlinked Action = "finding.ticket_unlinked"
 	// ActionFindingEvidenceRevealed records a reveal of masked secret values
 	// in a finding's evidence: the item, the placeholders and the purpose
 	// (view, copy, copy_curl). Never the values.
@@ -459,6 +473,10 @@ const (
 	// authenticator code) is recorded too, at High.
 	ActionSuppressionRuleSelfApprovalRefused Action = "suppression_rule.self_approval_refused"
 
+	// An approver looked at a rule the platform flagged for review (it had
+	// no end date) and cleared the flag.
+	ActionSuppressionRuleReviewed Action = "suppression_rule.reviewed"
+
 	// Four-eyes dispositions of high and critical exposures.
 	ActionExposureDispositionRequested    Action = "exposure.disposition_requested"
 	ActionExposureDispositionApproved     Action = "exposure.disposition_approved"
@@ -670,8 +688,9 @@ func (a Action) IsValid() bool {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
-		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
+		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,
@@ -688,6 +707,7 @@ func (a Action) IsValid() bool {
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
+		ActionAccountDeletionRequested, ActionAccountDeletionCanceled, ActionAccountErased, ActionMemberLeft,
 		ActionMemberAccessChanged,
 		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
 		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined,
@@ -699,6 +719,7 @@ func (a Action) IsValid() bool {
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
@@ -746,6 +767,7 @@ func (a Action) IsValid() bool {
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
+		ActionSuppressionRuleReviewed,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -824,6 +846,7 @@ func (a Action) Category() string {
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
@@ -874,6 +897,8 @@ func (a Action) Category() string {
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
 	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
+		return "suppression"
+	case ActionSuppressionRuleReviewed:
 		return "suppression"
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused:
@@ -1024,7 +1049,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
 		ResourceTypeFindingApproval:
 		return true
 	}
@@ -1154,6 +1179,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionSuppressionRuleApproved,
 		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
+		ActionSuppressionRuleReviewed,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,

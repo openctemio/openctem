@@ -74,7 +74,11 @@ compensating_controls
 compliance_assessments
 compliance_finding_mappings
 compliance_frameworks
+content_catalog_settings
+content_install_requests
+content_installs
 content_pack_blobs
+content_packages
 content_packs
 control_tests
 credentials
@@ -95,6 +99,7 @@ exposure_disposition_requests
 exposure_events
 exposures
 finding_activities
+finding_approval_digest_sent
 finding_branch_occurrences
 finding_comments
 finding_correlations
@@ -123,6 +128,9 @@ ingest_reports
 integrations
 ioc_matches
 iocs
+lifecycle_scheme_versions
+lifecycle_schemes
+lifecycle_sub_statuses
 mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
@@ -147,8 +155,15 @@ pentest_retests
 priority_class_audit_log
 priority_override_rules
 relationship_suggestions
+remediation_actions
 remediation_campaign_tickets
 remediation_campaigns
+remediation_key_exclusions
+remediation_suggestion_runs
+remediation_suggestions
+remediation_task_events
+remediation_task_members
+remediation_tasks
 report_schedules
 risk_snapshots
 roles
@@ -219,6 +234,7 @@ tenant_tool_settings
 threat_actors
 threat_model_threats
 threat_models
+ticket_links
 ticket_mapping_profiles
 ticket_mapping_versions
 tool_categories

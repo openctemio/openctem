@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -94,7 +95,7 @@ func (a *ChangeAnnouncer) Announce(ctx context.Context, c Change) {
 		if detail != "" {
 			body += "\n\n" + detail
 		}
-		body += fmt.Sprintf("\n\nObserved by OpenCTEM (%s) at %s.", c.Source, time.Now().UTC().Format(time.RFC3339))
+		body += fmt.Sprintf("\n\nObserved by %s (%s) at %s.", brand.Name(), c.Source, time.Now().UTC().Format(time.RFC3339))
 		if err := a.tickets.CommentOnFinding(ctx, c.TenantID, c.FindingID, body); err != nil {
 			a.logger.Warn("announce: ticket comment failed", "finding_id", c.FindingID.String(), "error", err)
 		}
@@ -165,7 +166,7 @@ const maxAnnouncedPerScan = 50
 
 // ScanRegressions handles the regressions an ingested scan produced (the scan
 // reopened findings closed as fixed): fresh SLA (RFC-039 D2) and an
-// announcement. A validated_fixed finding reopened by a scan refutes a
+// announcement. A not-reproducible finding a scan sees again refutes a
 // validation downgrade; it was never closed, so its SLA keeps running.
 type ScanRegressions struct {
 	sla      RegressionSLA

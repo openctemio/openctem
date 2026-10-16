@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -160,6 +161,14 @@ func (r *ExposureDispositionRepository) IsTenantOwner(ctx context.Context, tenan
 		return false, fmt.Errorf("check tenant owner: %w", err)
 	}
 	return ok, nil
+}
+
+// RecentMemberRemoval answers the latest time after since at which the
+// tenant lost a possible second approver: a member suspended, offboarded,
+// removed, expired, demoted, or a role change that can strip the approve
+// permission (recentApproverChange; nil: none).
+func (r *ExposureDispositionRepository) RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error) {
+	return recentApproverChange(ctx, r.db, tenantID, since)
 }
 
 func scanDisposition(s interface{ Scan(dest ...any) error }) (*exposure.DispositionRequest, error) {

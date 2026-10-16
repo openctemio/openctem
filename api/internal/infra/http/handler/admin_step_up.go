@@ -22,6 +22,11 @@ func confirmAdminStepUp(w http.ResponseWriter, r *http.Request, v StepUpVerifier
 		apierror.Unauthorized("administrator session required").WriteJSON(w)
 		return false
 	}
+	// The route already confirmed this request (RequireAdminStepUp): one
+	// confirmation per action.
+	if middleware.AdminSteppedUp(r.Context()) {
+		return true
+	}
 	if v == nil {
 		apierror.ServiceUnavailable("This action is not available").WriteJSON(w)
 		return false

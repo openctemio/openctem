@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useMemo, useCallback } from 'react'
 import { getDictionary, translate, defaultLocale, type TranslateVars } from '@/lib/i18n'
+import { useBrand } from '@/context/brand-provider'
+import type { Brand } from '@/lib/brand'
 
 type TranslateFn = (key: string, fallback?: string, vars?: TranslateVars) => string
 
@@ -13,15 +15,24 @@ type I18nContextValue = {
 const I18nContext = createContext<I18nContextValue | null>(null)
 
 /**
+ * The brand variables every string can use: `{product}` (the brand name) and
+ * `{productShort}`. A caller's own vars win.
+ */
+export function brandVars(brand: Brand, vars?: TranslateVars): TranslateVars {
+  return { product: brand.name, productShort: brand.shortName, ...vars }
+}
+
+/**
  * Provides the active locale + a `t()` translator to the client tree. The locale
  * is resolved server-side (from the `x-locale` header, see app/layout.tsx) and
  * threaded down, so the first paint already matches the detected language.
  */
 export function I18nProvider({ locale, children }: { locale: string; children: React.ReactNode }) {
   const dict = useMemo(() => getDictionary(locale), [locale])
+  const brand = useBrand()
   const t = useCallback<TranslateFn>(
-    (key, fallback, vars) => translate(dict, key, fallback, vars),
-    [dict]
+    (key, fallback, vars) => translate(dict, key, fallback, brandVars(brand, vars)),
+    [dict, brand]
   )
   const value = useMemo(() => ({ locale, t }), [locale, t])
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>

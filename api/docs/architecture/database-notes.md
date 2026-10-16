@@ -111,6 +111,37 @@ suppression rules; read by the CI gate. Trigger function
 on any row whose status is not `accepted`. See
 [finding-status-lifecycle.md](finding-status-lifecycle.md#risk-acceptance-end).
 
+### sub_status_id - Organization Sub-Status
+
+An organization's label for the finding inside its canonical status
+(`lifecycle_sub_statuses`, [RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)).
+The composite foreign key `fk_findings_sub_status` on
+`(tenant_id, sub_status_id, status)` guarantees it belongs to the finding's own
+tenant and current status. Trigger function `findings_settle_sub_status()`
+(trigger `trg_findings_sub_status_settle`, `BEFORE INSERT OR UPDATE`, named to
+run after the triggers that change the status or the closure reason) drops it
+to NULL (the default label) when the status changes without a new choice, or
+when the closure reason no longer matches the one the sub-status is bound to;
+an explicit mismatching choice is refused. Metrics never read it
+(`TestMetricQueriesNeverReadSubStatus`).
+
+Catalog functions: `lifecycle_sub_status_category_guard()` (trigger
+`trg_lifecycle_sub_statuses_category`) refuses a change of a sub-status's
+tenant, kind, canonical status, closure reason or key;
+`lifecycle_scheme_version_guard()` (trigger
+`trg_lifecycle_scheme_versions_immutable`) keeps a published or superseded
+lifecycle version unchanged.
+
+## Finding decision review functions
+
+- `finding_severity_rank(sev text) RETURNS integer` - severity order (critical 4 ... else 0) for comparisons in triggers.
+- `flag_single_person_fp_review(p_tenant uuid, p_finding uuid, p_change text, p_evidence jsonb) RETURNS void` -
+  raises the `material_change_single_person` review flag (`finding_decision_reviews`) and a `decision_review`
+  timeline entry on a false positive whose latest approved decision was one person's (`single_person` or
+  `self_approved`). Called by the triggers `trg_findings_single_person_fp_review` (severity raised, KEV added)
+  and `trg_finding_evidence_single_person_fp_review` (new evidence). See
+  [finding status lifecycle](finding-status-lifecycle.md#false-positive-approval-level).
+
 ## Best Practices
 
 1. **Never add a `finding_count` column** - Keep it calculated dynamically
