@@ -3230,3 +3230,17 @@ func (s *Services) SharedSensorsAllowed(ctx context.Context, tenantID shared.ID)
 	}
 	return s.ScanPolicy.SharedSensorsAllowed(ctx, tenantID)
 }
+
+// SharedSensorsEgress is the egress addresses the instance administrator
+// published for shared sensors (RFC-100 §9): the global list first, then
+// each region, sorted. Nothing without the scan policy service.
+func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.PlatformEgress, error) {
+	if s == nil || s.ScanPolicy == nil {
+		return nil, nil
+	}
+	v, _, err := s.ScanPolicy.SharedSensorsEgress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
+}

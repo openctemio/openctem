@@ -60,7 +60,7 @@ import (
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed, tenant admins told)
-//	/admin/settings/shared-sensors, /admin/tenants/{id}/shared-sensors
+//	/admin/settings/shared-sensors(/egress), /admin/tenants/{id}/shared-sensors
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed); switch-on refused until
@@ -254,6 +254,9 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/shared-sensors", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetSharedSensors)
 			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensors, requireSuper, stepUp("settings.shared_sensors"))
+			// Egress addresses organizations see to allowlist the scanners.
+			r.GET("/egress", h.AdminScanPolicy.GetSharedSensorsEgress)
+			r.PUT("/egress", h.AdminScanPolicy.UpdateSharedSensorsEgress, requireSuper, stepUp("settings.shared_sensors_egress"))
 		}, adminMiddlewares...)
 	}
 
