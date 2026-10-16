@@ -5,6 +5,12 @@ import Link from '@/components/link'
 import { usePathname } from 'next/navigation'
 import { TAB_CLASS, TAB_STRIP_CLASS, TabsCount, useTabStripScroll } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
+
+/** The i18n key of a tab label, the same as the sidebar's ("Fix plan" -> nav.item.fix-plan). */
+export function sectionTabKey(label: string): string {
+  return `nav.item.${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+}
 
 export interface SectionTab {
   label: string
@@ -46,6 +52,7 @@ interface SectionTabsProps {
  */
 export function SectionTabs({ tabs, className, label = 'Sections', counts }: SectionTabsProps) {
   const pathname = usePathname()
+  const { t } = useTranslation()
   const ref = React.useRef<HTMLElement>(null)
   useTabStripScroll(ref)
 
@@ -67,7 +74,7 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
             className={TAB_CLASS}
           >
             {Icon && <Icon aria-hidden />}
-            {tab.label}
+            {t(sectionTabKey(tab.label), tab.label)}
             {counts?.[tab.href] ? <TabsCount value={counts[tab.href]} /> : null}
           </Link>
         )

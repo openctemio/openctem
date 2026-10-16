@@ -48,9 +48,17 @@ export const EXPOSURES_SECTION_TABS: readonly SectionTab[] = [
   { label: 'Misconfigurations', href: '/exposures/misconfigurations', icon: Wrench },
 ]
 
-/** Remediation: the task list and the solution families it groups findings into. */
+/**
+ * Remediation (api/docs/rfcs/RFC-098-remediation-tasks.md): the fix plan,
+ * the suggestions to review, the tasks people work on, and the campaigns
+ * that track them. The solution families stay reachable until the
+ * suggestions replace them.
+ */
 export const REMEDIATION_SECTION_TABS: readonly SectionTab[] = [
-  { label: 'Tasks', href: '/remediation' },
+  { label: 'Fix plan', href: '/remediation' },
+  { label: 'Suggestions', href: '/remediation/suggestions' },
+  { label: 'Tasks', href: '/remediation/tasks' },
+  { label: 'Campaigns', href: '/remediation/campaigns' },
   { label: 'Solution families', href: '/remediations' },
 ]
 
