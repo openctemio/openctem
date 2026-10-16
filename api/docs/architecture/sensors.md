@@ -1509,7 +1509,8 @@ policy wired the shared claim hands out nothing.
 
 **Gates.** Each organization's candidates pass the same gates as an
 organization sensor's claim, in that organization: the shared sensor's grant
-(it has no tenant), its manifest and local policy, the scope re-check, scan
+(it has no tenant; without a reader for it, or without the grant, nothing is
+claimed), its manifest and local policy, the scope re-check, scan
 windows, program rules and tool settings. Scans are capped at the sensor's
 free slots.
 

@@ -197,25 +197,27 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 }
 
 // sharedSubject is the gate subject of a shared sensor: its grant (which has
-// no tenant), its current manifest and the local policy it reported.
+// no tenant), its current manifest and the local policy it reported. No
+// grant reader, or no grant: closed.
 func (s *Service) sharedSubject(ctx context.Context, a *sensordom.Sensor) gateSubject {
 	subj := gateSubject{report: a.LocalPolicy}
-	if s.grants != nil {
-		reader, ok := s.grants.(SharedGrantReader)
-		if !ok {
-			return gateSubject{closed: true}
-		}
-		g, err := reader.GetShared(ctx, a.ID)
-		if err != nil || g == nil {
-			s.logger.Warn("cannot read the shared sensor's grant; withholding shared jobs",
-				"sensor_id", a.ID.String(), "error", err)
-			return gateSubject{closed: true}
-		}
-		subj.grant = g
-		if s.contracts != nil {
-			if v, err := s.contracts.CurrentManifest(ctx, nil, a.ID); err == nil && v != nil {
-				subj.manifest = &v.Manifest
-			}
+	// A shared sensor is never handed work outside its grant: without a
+	// grant reader that can read a shared sensor's grant, nothing (fail
+	// closed; an organization sensor's claim keeps its own rule).
+	reader, ok := s.grants.(SharedGrantReader)
+	if s.grants == nil || !ok {
+		return gateSubject{closed: true}
+	}
+	g, err := reader.GetShared(ctx, a.ID)
+	if err != nil || g == nil {
+		s.logger.Warn("cannot read the shared sensor's grant; withholding shared jobs",
+			"sensor_id", a.ID.String(), "error", err)
+		return gateSubject{closed: true}
+	}
+	subj.grant = g
+	if s.contracts != nil {
+		if v, err := s.contracts.CurrentManifest(ctx, nil, a.ID); err == nil && v != nil {
+			subj.manifest = &v.Manifest
 		}
 	}
 	return subj
