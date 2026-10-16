@@ -163,3 +163,33 @@ Transient state that is not re-encrypted: SSO/OIDC `state` parameters are
 encrypted with the key while a sign-in is in flight. A sign-in that started
 before the restart in step 6 and finishes after it still works while the
 previous key is listed.
+
+## Legacy secret fingerprints
+
+Secret findings created before the fingerprint was keyed with a server secret
+carry a value computed from the tenant id alone. It cannot be verified, and
+anyone who knows the tenant id can use it to test a guessed secret offline.
+A finding only gains a fingerprint while it has none, so these values would
+stay for ever. Clear them with the `refingerprint` tool (in the API container):
+
+```
+refingerprint -clear-legacy-secret-fingerprints            # dry run: counts
+refingerprint -clear-legacy-secret-fingerprints -apply
+```
+
+- It clears `type_details.secret.fingerprint` of the findings created before
+  the keyed fingerprint was introduced (`-before <RFC 3339 time>` moves the
+  cutoff to when your install first ran the keyed version; `-tenant <id>`
+  limits it to one organization). Nothing else on the finding changes.
+- It works in batches (`-batch`, default 500), each a short statement that
+  skips rows another transaction holds, so it takes no long lock. Run it again
+  if it reports rows still held; it is safe to repeat.
+- The next sighting of the secret writes the keyed fingerprint. Until then the
+  finding has none.
+- **One-time duplicate.** A finding without a fingerprint is not recognised as
+  the same credential as one that has it. The first sighting of a secret
+  that was cleared may therefore open one new finding next to the old one
+  (for example when the same secret is found in a second repository). Resolve
+  the older finding once it is no longer seen.
+- Run `refingerprint -remediation-keys -apply` afterwards, so the remediation
+  groups of secrets follow the new fingerprints.
