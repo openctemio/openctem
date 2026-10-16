@@ -468,7 +468,14 @@ export interface ReleaseFeedAdvisory {
 
 /** Error codes of the last online check or of a refused import. */
 export type VersionCheckErrorCode =
-  'unreachable' | 'http_status' | 'too_large' | 'invalid' | 'rollback' | 'expired' | 'no_root'
+  | 'unreachable'
+  | 'http_status'
+  | 'too_large'
+  | 'invalid'
+  | 'rollback'
+  | 'conflict'
+  | 'expired'
+  | 'no_root'
 
 /** GET /admin/version-check/: what the release feed says about this instance. */
 export interface VersionCheckStatus {
