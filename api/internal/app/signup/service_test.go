@@ -305,3 +305,23 @@ func TestUpdate_SelfServiceNeedsStartLimits(t *testing.T) {
 		t.Fatalf("configured: %v", err)
 	}
 }
+
+// Under disabled or domain the save of self_service fails as locked by the
+// deployment, before the starting-limits check runs.
+func TestUpdate_LockedCeilingSkipsLimitsCheck(t *testing.T) {
+	actor := mustAdmin(t, "alice@op.example")
+	ctx := context.Background()
+	for _, c := range []signupdom.Ceiling{signupdom.CeilingDisabled, signupdom.CeilingDomain} {
+		svc := NewService(&memRepo{}, nil, nil, nil, nil)
+		svc.SetCeiling(c)
+		called := false
+		svc.SetStartLimitsCheck(func(context.Context) (bool, error) { called = true; return true, nil })
+		_, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 0, "", "")
+		if !errors.Is(err, signupdom.ErrLockedByDeployment) {
+			t.Fatalf("ceiling %q: expected ErrLockedByDeployment, got %v", c, err)
+		}
+		if called {
+			t.Fatalf("ceiling %q: the limits check must not run for a locked save", c)
+		}
+	}
+}
