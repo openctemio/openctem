@@ -63,6 +63,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -71,6 +72,7 @@ import (
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
+	findinglifecycleapp "github.com/openctemio/openctem/api/internal/app/findinglifecycle"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
@@ -94,6 +96,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/app/versioncheck"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -126,6 +129,7 @@ import (
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -133,6 +137,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/releasefeed"
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 // findingMutatorAdapter adapts the postgres FindingRepository (GetByID) to the
@@ -238,6 +244,38 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 	}
 	id := u.ID()
 	return &id, nil
+}
+
+// ticketStatusApplier adapts the finding service's inbound ticket path to
+// the Jira sync service.
+type ticketStatusApplier struct{ vuln *finding.VulnerabilityService }
+
+func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
+) ([]shared.ID, []jira.InboundRefusal, error) {
+	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
+	if err != nil {
+		return nil, nil, err
+	}
+	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
+	for _, r := range out.Refused {
+		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
+	}
+	return out.Applied, refused, nil
+}
+
+func (a ticketStatusApplier) RequestTicketDisposition(ctx context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
+) ([]shared.ID, []shared.ID, []jira.InboundRefusal, error) {
+	out, err := a.vuln.RequestTicketDisposition(ctx, tenantID, ids, target, integration, ref, externalActor)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
+	for _, r := range out.Refused {
+		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
+	}
+	return out.Requested, out.Pending, refused, nil
 }
 
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
@@ -570,7 +608,9 @@ type Services struct {
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
 	CTEMID          *ctemidapp.Service
-	CertMonitor     *certmonitorapp.Service
+	// VersionCheck is the release feed check (RFC-105); never nil with a database.
+	VersionCheck *versioncheck.Service
+	CertMonitor  *certmonitorapp.Service
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
 	ActiveGate *easmapp.ActiveGate
 	// ScopeJoin confirms discovered names a permanent scope target or seed
@@ -650,6 +690,8 @@ type Services struct {
 	ContentPacks *contentpackapp.Service
 	// PlatformContentPacks are the platform's packs and channels (RFC-061).
 	PlatformContentPacks *contentpackapp.PlatformService
+	// ContentCatalog is the content catalog (RFC-099).
+	ContentCatalog *catalogapp.Service
 
 	// Workflows
 	Workflow           *automation.WorkflowService
@@ -820,6 +862,9 @@ type Services struct {
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
 	IdleWorkspaces *lifecycleapp.Service
+	// FindingLifecycle manages the organization's finding sub-statuses and
+	// lifecycle schemes (RFC-110).
+	FindingLifecycle *findinglifecycleapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -920,6 +965,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	} {
 		r.SetPlanLimits(s.Entitlement)
 	}
+	s.FindingLifecycle = findinglifecycleapp.NewService(repos.LifecycleSubStatus, repos.LifecycleScheme, s.Entitlement, s.Audit, log)
 
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)
@@ -1152,6 +1198,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
+	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
+		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
+		Roots: releasefeed.PinnedRoots, Running: version.Get().Version,
+	}, log)
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
 	// transaction (research/22 P0-7, decision E4).
@@ -1671,6 +1721,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound status changes are recorded with the integration as the actor.
 	s.JiraSync.SetActivityRecorder(s.FindingActivity)
+	// Inbound status changes go through the finding service rules (transition
+	// map, gates, "mark fixed" with proof of fix) for every finding linked to
+	// the issue; refusals are commented back once per window (all replicas).
+	s.JiraSync.SetInboundApplier(ticketStatusApplier{vuln: s.Vulnerability})
+	s.JiraSync.SetWorkItemFindingLister(repos.Finding)
+	if deps.RedisClient != nil {
+		s.JiraSync.SetRefusalCommentGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 	// Ticket links: create-ticket records its link; people link existing issues.
 	if repos.TicketLink != nil {
 		s.JiraSync.SetLinkStore(repos.TicketLink)
@@ -1695,8 +1753,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// here (JiraSync is created after the campaign service above).
 	if s.RemediationCampaign != nil {
 		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
-		// Inbound: a Jira webhook moving the campaign's epic to Done completes
-		// the campaign (the reverse of the outbound transition above).
+		// Inbound: a Jira webhook moving the campaign's epic to Done marks the
+		// campaign's findings fixed (a fix claim; verification closes them).
 		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
 	}
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
@@ -1847,6 +1905,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Platform packs: their own storage namespace (not a tenant id, so an
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
+	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -1980,7 +2039,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
 	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
-	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)))
+	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())))
 	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
@@ -2149,7 +2208,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// The scope check names the private address a refused hostname
 		// resolves to, unless that answer may come from the platform's own
 		// DNS in a self-service (multi-tenant) install.
-		scan.WithRevealResolved(cfg.Scope.ZoneResolver != config.ScanZoneResolverSystem || !cfg.Auth.SelfServiceTenantCreation()),
+		scan.WithRevealResolved(cfg.Scope.ZoneResolver != config.ScanZoneResolverSystem || !cfg.Auth.SignupOpen()),
 		// Scan windows (RFC-067): never-opening targets refuse the run, a
 		// scheduled run with nothing open is deferred to the next opening.
 		scan.WithScanWindows(s.ScanWindowResolver),
@@ -2408,6 +2467,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// An asset-bound rule names an asset of the tenant the requester may see
 	// (RFC-050 W8, 21b M-10).
 	s.Suppression.SetAssetRefChecker(s.DataScope)
+	// The approval preview lists only findings of assets the caller sees.
+	s.Suppression.SetScopeFilter(s.DataScope.FilterForCaller)
 
 	// Enforce approved suppression rules during ingest: a new finding matching an
 	// active (approved, non-expired) rule lands resolved+suppressed (out of the
@@ -2639,6 +2700,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire in-app notification service to pentest service
 	s.Pentest.SetUserNotificationService(s.Notification)
 
+	// The content catalog tells owners and administrators when install
+	// approval is being switched off (RFC-099).
+	s.ContentCatalog.SetNotifier(s.Notification)
+
 	// Change detection: an asset an ingest newly created (not a re-scan merge,
 	// not a manual create) fires the `asset_discovered` workflow trigger and,
 	// when it is internet-facing, a throttled tenant notification. Wired here
@@ -2714,10 +2779,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
-	// The sign-up policy (Console > System > Sign-up). TENANT_CREATION_MODE
-	// seeds it on the first start only; afterwards the console value wins.
+	// The sign-up policy (Console > System > Sign-up), a runtime switch below
+	// the deployment ceiling SIGNUP_MODE. The ceiling seeds it on the first
+	// start only; afterwards the console value wins, clamped to the ceiling.
 	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
-	if err := s.Signup.Seed(context.Background(), cfg.Auth.TenantCreationMode); err != nil {
+	s.Signup.SetCeiling(signupdom.Ceiling(cfg.Auth.SignupMode))
+	if err := s.Signup.Seed(context.Background()); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
@@ -2946,6 +3013,27 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 	if !s.Email.IsConfigured() {
 		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
 	}
+	return s.guardPublicSignupMail(cfg, log)
+}
+
+// guardPublicSignupMail refuses to start a deployment that allows public
+// sign-up (SIGNUP_MODE=domain or open) without working platform e-mail: every
+// self-registered address must be verified, and an address that cannot be
+// verified must never become an account that joins or is invited by domain.
+// While running, the sign-up policy also closes public sign-up whenever the
+// e-mail settings stop working (signup.Service.Effective).
+func (s *Services) guardPublicSignupMail(cfg *config.Config, log *logger.Logger) error {
+	if !cfg.Auth.PublicSignup() {
+		return nil
+	}
+	if s.Email == nil || !s.Email.IsConfigured() {
+		return fmt.Errorf("SIGNUP_MODE=%s needs the platform e-mail to verify sign-ups: set it with bootstrap-admin (BOOTSTRAP_SMTP_*) or start with SIGNUP_MODE=disabled, set it in the admin console (System > E-mail) and restart", cfg.Auth.SignupMode)
+	}
+	if s.Signup != nil {
+		email := s.Email
+		s.Signup.SetMailReady(email.IsConfigured)
+	}
+	log.Warn("public sign-up is allowed by this deployment's configuration", "signup_mode", cfg.Auth.SignupMode)
 	return nil
 }
 

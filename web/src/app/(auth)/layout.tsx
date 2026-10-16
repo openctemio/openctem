@@ -1,4 +1,4 @@
-import { LogoFull } from '@/assets/logo'
+import { BrandLogoFull, PoweredBy } from '@/components/brand-logo'
 
 type AuthLayoutProps = {
   children: React.ReactNode
@@ -26,9 +26,10 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
               h-12 on mobile (smaller, gives the form more room above the
               fold) and h-16 on sm+ where there's space for the bigger
               cap-height to match the card title. */}
-          <LogoFull className="h-12 sm:h-16 w-auto" />
+          <BrandLogoFull className="h-12 sm:h-16 w-auto" />
         </div>
         {children}
+        <PoweredBy className="pt-4" />
       </div>
     </div>
   )
