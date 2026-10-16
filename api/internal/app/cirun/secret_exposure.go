@@ -131,6 +131,13 @@ func (e *SecretExposure) ensureTask(ctx context.Context, tenantID shared.ID, f c
 	if err != nil {
 		return nil, err
 	}
+	return e.joinOrCreate(ctx, tenantID, f, key, title, existing, true)
+}
+
+// joinOrCreate joins the action's active task, or opens one. When another run
+// opened it first (the one-active-task-per-action index refuses a second), it
+// looks the task up again and joins it, once.
+func (e *SecretExposure) joinOrCreate(ctx context.Context, tenantID shared.ID, f cirun.RunFinding, key, title string, existing *remediation.Task, retry bool) (*SecretRotation, error) {
 	if existing != nil {
 		if _, err := e.tasks.AddMembers(ctx, tenantID, existing.ID, existing.Version, []shared.ID{f.ID},
 			remediation.MemberRolePrimary, remediation.JoinSourceAutoJoin, nil); err != nil {
@@ -152,6 +159,16 @@ func (e *SecretExposure) ensureTask(ctx context.Context, tenantID shared.ID, f c
 		EventData: map[string]any{"title": title, "reason": "ci_secret"},
 	}
 	if err := e.tasks.CreateTask(ctx, rec); err != nil {
+		if errors.Is(err, remediation.ErrActiveTaskExists) && retry {
+			winner, lerr := e.tasks.ActiveTaskByActionKey(ctx, tenantID, key)
+			if lerr != nil {
+				return nil, lerr
+			}
+			if winner == nil {
+				return nil, err
+			}
+			return e.joinOrCreate(ctx, tenantID, f, key, title, winner, false)
+		}
 		var other *remediation.FindingsInOtherTaskError
 		if errors.As(err, &other) {
 			return nil, nil
