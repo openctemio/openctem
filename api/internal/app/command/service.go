@@ -21,9 +21,10 @@ import (
 
 // Service handles command-related business operations.
 type Service struct {
-	repo      commanddom.Repository
-	sensors   SensorLookup
-	templates TemplateSigner
+	sharedFailures SharedFailureObserver
+	repo           commanddom.Repository
+	sensors        SensorLookup
+	templates      TemplateSigner
 	// jobs signs every claimed command (job_signing.go); nil: claims
 	// carry no signed job.
 	jobs JobSigner
@@ -861,6 +862,7 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 		if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 			return nil, err
 		}
+		s.observeSharedFailure(ctx, cmd)
 		return cmd, nil
 	}
 
@@ -883,8 +885,25 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
 	}
+	s.observeSharedFailure(ctx, cmd)
 
 	return cmd, nil
+}
+
+// SharedFailureObserver counts failed shared jobs per organization
+// (*scanpolicy.Service, anomaly signals of
+// docs/rfcs/RFC-100-shared-sensors.md §9). It never refuses and never blocks.
+type SharedFailureObserver interface {
+	ObserveSharedFailure(ctx context.Context, tenantID shared.ID)
+}
+
+// SetSharedFailureObserver wires the observer; nil: none.
+func (s *Service) SetSharedFailureObserver(o SharedFailureObserver) { s.sharedFailures = o }
+
+func (s *Service) observeSharedFailure(ctx context.Context, cmd *commanddom.Command) {
+	if s.sharedFailures != nil && cmd.IsPlatformJob {
+		s.sharedFailures.ObserveSharedFailure(ctx, cmd.TenantID)
+	}
 }
 
 // truncateUTF8 cuts s to at most maxBytes without splitting a UTF-8 rune.
