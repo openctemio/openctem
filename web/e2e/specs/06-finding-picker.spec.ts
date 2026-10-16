@@ -93,12 +93,14 @@ test.describe('Remediation — findings picker', () => {
     // checkbox flips each time (Check icon appears, then goes). An unlinked
     // row is used because a task keeps at least one finding: unlinking the
     // last one is refused (an empty finding_ids filter is not a scope).
-    const unlinked = findingRows.filter({ hasNot: page.locator('svg.lucide-check') })
-    test.skip((await unlinked.count()) === 0, 'every listed finding is already linked')
-    // Found again by its title, so a re-sort after linking cannot move the
-    // test onto another row.
-    const title = await unlinked.first().locator('span.text-sm').first().innerText()
-    const finding = findingRows.filter({ hasText: title }).first()
+    const checks = await findingRows.evaluateAll((rows) =>
+      rows.map((r) => r.querySelector('svg.lucide-check') !== null)
+    )
+    const index = checks.indexOf(false)
+    test.skip(index < 0, 'every listed finding is already linked')
+    // The list keeps its order when a link changes (titles can repeat, so
+    // the row is held by position).
+    const finding = findingRows.nth(index)
     const isChecked = async () => (await finding.locator('svg.lucide-check').count()) > 0
     await finding.click()
     await expect.poll(isChecked).toBe(true)
