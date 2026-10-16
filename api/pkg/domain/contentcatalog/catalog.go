@@ -151,11 +151,23 @@ func (t *TrustState) RevocationsStale(now time.Time) bool {
 	return t.RevocationsExpiresAt == nil || !t.RevocationsExpiresAt.After(now)
 }
 
+// ApprovalOffDelay is how long turning approval off waits before it takes
+// effect; turning it on is immediate and cancels a pending switch-off.
+const ApprovalOffDelay = 24 * time.Hour
+
 // Settings is an organization's catalog settings.
 type Settings struct {
+	// RequireApproval is the stored choice; ApprovalOffAt, when set, is
+	// when a switch-off takes effect.
 	RequireApproval bool
+	ApprovalOffAt   *time.Time
 	UpdatedBy       *shared.ID
 	UpdatedAt       *time.Time
+}
+
+// ApprovalRequired reports whether installs need approval at now.
+func (s *Settings) ApprovalRequired(now time.Time) bool {
+	return s.RequireApproval && (s.ApprovalOffAt == nil || now.Before(*s.ApprovalOffAt))
 }
 
 // ImportBatch is a verified bundle to store in one transaction.
@@ -230,6 +242,13 @@ type Repository interface {
 	// DecideRequest moves a pending request to status (or an approved one
 	// to failed, by its approver); ErrRequestDecided otherwise.
 	DecideRequest(ctx context.Context, tenantID, id shared.ID, status RequestStatus, decidedBy *shared.ID, reason string, at time.Time) error
+
+	// InTx runs fn with a repository whose statements share one
+	// transaction (committed when fn returns nil).
+	InTx(ctx context.Context, fn func(Repository) error) error
+
+	// ListAdmins returns the organization's owners and administrators.
+	ListAdmins(ctx context.Context, tenantID shared.ID) ([]shared.ID, error)
 
 	GetSettings(ctx context.Context, tenantID shared.ID) (*Settings, error)
 	PutSettings(ctx context.Context, tenantID shared.ID, s *Settings) error

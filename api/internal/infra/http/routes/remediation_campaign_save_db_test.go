@@ -54,7 +54,7 @@ func newCampaignSaveEnv(t *testing.T) *campaignSaveEnv {
 func (e *campaignSaveEnv) campaign(status string) shared.ID {
 	id := shared.NewID()
 	e.h.exec(`INSERT INTO remediation_campaigns (id, tenant_id, name, status, finding_filter)
-		VALUES ($1, $2, 'rc-save', $3, '{"severities": ["high"]}')`, id.String(), e.h.tenant.String(), status)
+		VALUES ($1, $2, 'rc-save', $3, '{"severities": ["high"], "tool_name": "ds-tool"}')`, id.String(), e.h.tenant.String(), status)
 	return id
 }
 
@@ -208,7 +208,7 @@ func TestRemediationCampaign_CompletesWithManyFindings_DB(t *testing.T) {
 		FROM generate_series(1, 1200) g`, e.h.tenant.String(), e.h.assetA.String())
 	id := shared.NewID()
 	e.h.exec(`INSERT INTO remediation_campaigns (id, tenant_id, name, status, finding_filter)
-		VALUES ($1, $2, 'rc-many', 'active', '{"severities": ["low"]}')`, id.String(), e.h.tenant.String())
+		VALUES ($1, $2, 'rc-many', 'active', '{"severities": ["low"], "tool_name": "rc-many"}')`, id.String(), e.h.tenant.String())
 
 	c, err := e.svc.UpdateCampaignStatus(ctx, e.h.tenant.String(), id.String(), "completed", audit.AuditContext{})
 	if err != nil {

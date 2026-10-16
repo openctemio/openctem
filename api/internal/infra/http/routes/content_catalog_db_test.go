@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
+	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -67,6 +68,16 @@ type ccHarness struct {
 	tenantA, tenantB      shared.ID
 	userA1, userA2, userB shared.ID
 	sastArt, sastSig      []byte
+	notices               []shared.ID
+}
+
+type ccNotifier struct{ h *ccHarness }
+
+func (n ccNotifier) Notify(_ context.Context, p notificationdom.NotificationParams) error {
+	if p.AudienceID != nil {
+		n.h.notices = append(n.h.notices, *p.AudienceID)
+	}
+	return nil
 }
 
 var ccAllPerms = []string{permission.ContentRead.String(), permission.ContentInstall.String(), //nolint:gochecknoglobals // test fixture
@@ -100,8 +111,12 @@ func newCCHarness(t *testing.T) *ccHarness {
 		h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tn.String(), "cc-"+tn.String())
 	}
 	for u, tn := range map[shared.ID]shared.ID{h.userA1: h.tenantA, h.userA2: h.tenantA, h.userB: h.tenantB} {
+		role := "member"
+		if u == h.userA1 || u == h.userA2 {
+			role = "admin"
+		}
 		h.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'cc')`, u.String(), u.String()+"@cc.test")
-		h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, u.String(), tn.String())
+		h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, $3)`, u.String(), tn.String(), role)
 	}
 
 	pg := &postgres.DB{DB: db}
@@ -110,6 +125,7 @@ func newCCHarness(t *testing.T) *ccHarness {
 	h.svc = catalogapp.NewService(postgres.NewContentCatalogRepository(pg),
 		[]string{contentpkg.RootKeyID(h.root.Public().(ed25519.PublicKey))}, ccPublisher{real: real},
 		func() string { return "v0.9.7" }, audit, log)
+	h.svc.SetNotifier(ccNotifier{h: h})
 
 	prevStepUp := stepUpChecker
 	stepUpChecker = recentAuthFunc(time.Now)
@@ -475,8 +491,27 @@ func TestContentCatalog_DB(t *testing.T) {
 		if n := h.count(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'content_package.request_approved'`, h.tenantA.String()); n != 1 {
 			t.Fatalf("approval audit rows: %d", n)
 		}
-		if code, _ := h.a1(http.MethodPut, "/settings", map[string]any{"require_approval": false}); code != http.StatusOK {
-			t.Fatal("settings off")
+		// Switching approval off waits 24 hours and tells the administrators.
+		code, body = h.a1(http.MethodPut, "/settings", map[string]any{"require_approval": false})
+		if code != http.StatusOK || body["require_approval"] != true || body["approval_off_at"] == nil {
+			t.Fatalf("switch-off is pending: %d %v", code, body)
+		}
+		if len(h.notices) != 1 || h.notices[0] != h.userA2 {
+			t.Fatalf("administrators notified: %v", h.notices)
+		}
+		if code, _ := h.a1(http.MethodPost, "/installs/openctem/sensor/rollback", map[string]any{}); code != http.StatusAccepted {
+			t.Fatalf("approval still applies during the delay: %d", code)
+		}
+		h.exec(`UPDATE content_install_requests SET status = 'canceled' WHERE tenant_id = $1 AND status = 'pending'`, h.tenantA.String())
+		// Turning it on cancels the switch-off.
+		if code, body = h.a1(http.MethodPut, "/settings", map[string]any{"require_approval": true}); code != http.StatusOK || body["approval_off_at"] != nil {
+			t.Fatalf("turn on cancels: %d %v", code, body)
+		}
+		h.a1(http.MethodPut, "/settings", map[string]any{"require_approval": false})
+		// After the delay approval no longer applies.
+		h.exec(`UPDATE content_catalog_settings SET approval_off_at = now() - interval '1 minute' WHERE tenant_id = $1`, h.tenantA.String())
+		if code, body = h.a1(http.MethodGet, "/settings", nil); code != http.StatusOK || body["require_approval"] != false {
+			t.Fatalf("after the delay: %d %v", code, body)
 		}
 	})
 
