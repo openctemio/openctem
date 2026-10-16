@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/internal/versions"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
@@ -104,6 +105,7 @@ func run() int {
 		return 1
 	}
 
+	brand.SetInstance(cfg.Brand)
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
 	for _, w := range cfg.EnvWarnings {
@@ -324,7 +326,7 @@ func run() int {
 		}
 		services.AccessRequest = accessrequestapp.NewService(repos.AccessRequest, services.Signup,
 			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
-			accessRequestMailer{email: services.Email, appName: cfg.App.Name, log: log},
+			accessRequestMailer{email: services.Email, appName: cfg.Brand.DisplayName(), log: log},
 			captcha, cfg.SMTP.BaseURL, log)
 	}
 

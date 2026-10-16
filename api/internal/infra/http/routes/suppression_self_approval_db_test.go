@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -59,7 +60,8 @@ func TestSuppressionSelfApproval_Routes_DB(t *testing.T) {
 			UpdatedAt string `json:"updated_at"`
 		}
 		body := h.expect(u, http.MethodPost, "/api/v1/suppressions",
-			`{"name":"test fixtures","suppression_type":"false_positive","rule_id":"go.test.fixture","expires_at":"2099-01-01T00:00:00Z"}`, http.StatusCreated)
+			`{"name":"test fixtures","suppression_type":"false_positive","rule_id":"go.test.fixture","expires_at":"`+
+				time.Now().UTC().Add(30*24*time.Hour).Format(time.RFC3339)+`"}`, http.StatusCreated)
 		if err := json.Unmarshal([]byte(body), &rule); err != nil || rule.ID == "" {
 			t.Fatalf("create: %s", body)
 		}
