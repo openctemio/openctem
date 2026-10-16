@@ -729,6 +729,7 @@ the console's own second factor. Signing out of the console ends only the
 console session. A tenant-side session bug can no longer lead into the
 console, and the console works on an origin of its own, where a host-only
 cookie of the tenant origin would never arrive anyway.
+
 ### Time-boxed elevation
 
 Administrators act as read-only until they elevate (owner decision D8,
