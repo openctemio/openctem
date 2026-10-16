@@ -67,8 +67,14 @@ func TestLimitsReplacePlansMigration_DB(t *testing.T) {
 	if n := count(`SELECT count(*) FROM tenant_limits WHERE limit_key = 'free_teams_per_user'`); n != 0 {
 		t.Fatalf("free_teams_per_user rows must go: %d", n)
 	}
-	if n := count(`SELECT count(*) FROM tenant_limits WHERE tenant_id = ANY($1)`, []string{pro.String(), none.String()}); n != 0 {
-		t.Fatalf("Pro and unassigned organizations had no limits: %d rows", n)
+	if limit(free, "lifecycle_sub_statuses") != 3 || limit(free, "lifecycle_schemes") != 0 {
+		t.Fatalf("Free keeps its lifecycle caps: sub-statuses=%d schemes=%d", limit(free, "lifecycle_sub_statuses"), limit(free, "lifecycle_schemes"))
+	}
+	if n := count(`SELECT count(*) FROM tenant_limits WHERE tenant_id = $1`, pro.String()); n != 1 || limit(pro, "lifecycle_schemes") != 1 {
+		t.Fatalf("Pro had one limit, one lifecycle scheme: %d rows", n)
+	}
+	if n := count(`SELECT count(*) FROM tenant_limits WHERE tenant_id = $1`, none.String()); n != 0 {
+		t.Fatalf("an unassigned organization had no limits: %d rows", n)
 	}
 
 	denied := func(id shared.ID, feature string) bool {
