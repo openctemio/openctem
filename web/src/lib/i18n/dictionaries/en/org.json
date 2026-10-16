@@ -241,7 +241,7 @@
   "org.onboarding.invitedBy": "Invited by {name} as {role}",
   "org.onboarding.invitedAs": "Invited as {role}",
   "org.onboarding.accept": "Accept",
-  "org.onboarding.yourCompany": "Your company on OpenCTEM",
+  "org.onboarding.yourCompany": "Your company on {product}",
   "org.onboarding.yourCompanyDesc": "This organization verified your email domain and lets colleagues join.",
   "org.onboarding.join": "Join",
   "org.onboarding.askToJoin": "Ask to join",
