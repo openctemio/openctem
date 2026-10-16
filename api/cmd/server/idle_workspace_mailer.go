@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/lifecycle"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	lifecycledom "github.com/openctemio/openctem/api/pkg/domain/lifecycle"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -31,7 +32,7 @@ func (m idleWorkspaceMailer) NotifyIdle(_ context.Context, n lifecycle.Notice) e
 	}
 	name := m.appName
 	if name == "" {
-		name = "OpenCTEM"
+		name = brand.DefaultName
 	}
 	org := strings.NewReplacer("\r", "", "\n", "").Replace(n.Organization)
 	esc := html.EscapeString
