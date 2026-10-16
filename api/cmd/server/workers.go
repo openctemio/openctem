@@ -831,6 +831,19 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
 		))
 	}
+	// Remediation suggestions: propose groups and tasks from the remediation
+	// keys (never create them) and send the daily digest.
+	if svc != nil && svc.RemediationSuggest != nil {
+		if svc.Module != nil {
+			svc.RemediationSuggest.SetModuleGuard(svc.Module)
+		}
+		if svc.Outbox != nil {
+			svc.RemediationSuggest.SetNotifier(svc.Outbox)
+		}
+		w.ControllerManager.Register(controller.NewRemediationSuggestionController(
+			svc.RemediationSuggest, 15*time.Minute, log.With("controller", "remediation-suggestions"),
+		))
+	}
 
 	// Control test scheduler — daily sweep to mark stale detection coverage as overdue
 	w.ControllerManager.Register(controller.NewControlTestSchedulerController(

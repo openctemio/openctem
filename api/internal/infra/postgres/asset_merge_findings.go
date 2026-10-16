@@ -68,6 +68,9 @@ var findingMergeRefs = []mergeRef{
 		keys: []mergeKey{{}}},
 	{table: "finding_remediation_keys", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// A person took the finding out of a fix: the survivor stays out of it.
+	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"action_key"}}}},
 }
 
 // findingMergeKeptRefs reference findings.id and deliberately stay on the
