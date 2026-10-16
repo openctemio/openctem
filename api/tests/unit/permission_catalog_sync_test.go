@@ -41,6 +41,7 @@ var permSeedMigrations = []string{
 	"pentest_checklists",                      // pentest:checklists:manage (RFC-087)
 	"ci_policy_permission",                    // scans:ci:policy (RFC-051)
 	"content_catalog",                         // content:read, content:install (RFC-099)
+	"finding_lifecycles_permission",           // findings:lifecycles:write (RFC-110)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
