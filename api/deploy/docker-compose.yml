@@ -285,6 +285,13 @@ services:
       # gateway never routes /metrics: scrape api:8080 from inside the network
       # (deploy/observability). openssl rand -hex 32
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Version check (docs/architecture/version-check.md): once a day the API
+      # downloads the signed release feed from GitHub and compares it with its
+      # own version locally. The request sends nothing about this instance;
+      # GitHub sees its IP address. false = no request (air-gapped: import the
+      # file in the console instead). The URL must be https.
+      VERSION_CHECK_ENABLED: ${VERSION_CHECK_ENABLED:-true}
+      VERSION_CHECK_URL: ${VERSION_CHECK_URL:-}
       AUTH_COOKIE_SECURE: "true"
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -318,9 +325,12 @@ services:
       APP_TEMPLATE_SIGNING_KEY: ${APP_TEMPLATE_SIGNING_KEY:-}
       # Master of the content pack signing keys (unset: derived from APP_ENCRYPTION_KEY).
       APP_CONTENT_SIGNING_KEY: ${APP_CONTENT_SIGNING_KEY:-}
-      # Who creates organizations: admin_only (platform administrator: console or
-      # bootstrap-admin -org-*) or self_service (any signed-in user; SaaS/trial).
-      TENANT_CREATION_MODE: ${TENANT_CREATION_MODE:-admin_only}
+      # Sign-up ceiling (no API can change it): disabled (default; accounts and
+      # organizations come from the platform administrator, invitations or
+      # SSO), domain (sign-up for an organization's verified domain, joins
+      # that organization) or open (hosted service: anyone signs up; needs the
+      # platform e-mail, and Turnstile keys or SIGNUP_CAPTCHA in production).
+      SIGNUP_MODE: ${SIGNUP_MODE:-disabled}
       # Platform e-mail (SMTP) is set in the admin console: System > E-mail.
       # Sensors: the install snippets on the Sensors page install the
       # gateway's internal CA (TLS mode internal; the file is absent in the

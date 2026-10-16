@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,6 +60,9 @@ type Config struct {
 	// AdminAuditRetention controls pruning of the platform-level
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
+
+	// AdminAuditSink streams the administrators' audit log off the box.
+	AdminAuditSink AdminAuditSinkConfig
 
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
 	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
@@ -182,6 +186,21 @@ type AdminAuditRetentionConfig struct {
 	BatchSize int
 }
 
+// AdminAuditSinkConfig sends every administrators' audit row (with its chain
+// position and hash) and the chain head to a destination outside the
+// application database.
+type AdminAuditSinkConfig struct {
+	// URL is the destination: https://..., syslog+tls://host:port,
+	// syslog+tcp://host:port, syslog+udp://host:port or file:///path.
+	// ADMIN_AUDIT_SINK; empty = off.
+	URL string
+	// Token is the webhook's Bearer token. ADMIN_AUDIT_SINK_TOKEN.
+	Token string
+	// HeadInterval is how often the chain head is sent.
+	// ADMIN_AUDIT_SINK_HEAD_INTERVAL, default 15m.
+	HeadInterval time.Duration
+}
+
 // MetricsConfig controls exposure of the Prometheus /metrics endpoint.
 //
 // SECURITY: /metrics leaks internal cardinality (route names, error rates,
@@ -295,6 +314,10 @@ type AppConfig struct {
 	Name string
 	Env  string
 	URL  string // Public app URL (used as fallback for sensor config base URL)
+	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
+	// to every organization created here and never changed (empty: not
+	// named).
+	Region string
 }
 
 // SensorConfigConfig holds the sensor config template service settings.
@@ -605,31 +628,45 @@ func (p AuthProvider) SupportsOIDC() bool {
 	return p == AuthProviderOIDC || p == AuthProviderHybrid
 }
 
-// Organization (tenant) creation modes, TENANT_CREATION_MODE (RFC-022 D8).
+// Sign-up ceilings, SIGNUP_MODE (docs/architecture/user-onboarding.md,
+// "Sign-up ceiling"). The console sign-up policy is a runtime switch below it
+// and can never exceed it.
 const (
-	// TenantCreationSelfService lets any signed-in user create an organization
-	// (SaaS / trial installs). An explicit opt-in.
-	TenantCreationSelfService = "self_service"
-	// TenantCreationAdminOnly reserves organization creation for the platform
-	// administrator: the admin console, or bootstrap-admin -org-name at first
-	// install (on-prem / enterprise installs). The default.
-	TenantCreationAdminOnly = "admin_only"
+	// SignupModeDisabled: no public account creation; organizations come
+	// from the platform administrator only. The default.
+	SignupModeDisabled = "disabled"
+	// SignupModeDomain: public sign-up only for addresses on an
+	// organization's verified domain; such a person joins that organization
+	// and never creates one.
+	SignupModeDomain = "domain"
+	// SignupModeOpen: anyone may sign up and create an organization (the
+	// hosted service), within the console policy and the limits.
+	SignupModeOpen = "open"
+	// SignupCaptchaOffAccepted is the one SIGNUP_CAPTCHA value: an explicit
+	// acceptance of open sign-up in production without a CAPTCHA (labs,
+	// training installs).
+	SignupCaptchaOffAccepted = "off-i-understand"
 )
 
-// SelfServiceTenantCreation reports whether signed-in users may create
-// organizations themselves. It fails closed: only an explicit
-// TENANT_CREATION_MODE=self_service opens it.
-func (c AuthConfig) SelfServiceTenantCreation() bool {
-	return c.TenantCreationMode == TenantCreationSelfService
+// SignupOpen reports whether the deployment allows organization self-service
+// at all (SIGNUP_MODE=open). The console policy may still keep it closed.
+func (c AuthConfig) SignupOpen() bool { return c.SignupMode == SignupModeOpen }
+
+// PublicSignup reports whether the deployment allows any public account
+// creation (SIGNUP_MODE=domain or open).
+func (c AuthConfig) PublicSignup() bool {
+	return c.SignupMode == SignupModeDomain || c.SignupMode == SignupModeOpen
 }
 
 // AuthConfig holds authentication configuration.
 type AuthConfig struct {
-	// TenantCreationMode is TenantCreationSelfService or TenantCreationAdminOnly.
-	// The platform administrator can create organizations in either mode.
-	// Anything but TenantCreationSelfService (including empty) is admin-only:
-	// use SelfServiceTenantCreation to test it.
-	TenantCreationMode string
+	// SignupMode is the deployment's sign-up ceiling: SignupModeDisabled
+	// (default), SignupModeDomain or SignupModeOpen. No API can change it.
+	// The platform administrator creates organizations in every mode.
+	SignupMode string
+	// SignupCaptcha is SignupCaptchaOffAccepted or empty: see
+	// validateProductionAuth.
+	SignupCaptcha string
 
 	// Provider determines which authentication methods are available.
 	// Values: "local", "oidc", "hybrid"
@@ -957,6 +994,14 @@ type SensorConfig struct {
 	VulnFeedBundleDir string
 	VulnFeedMirrors   []string
 
+	// VersionCheckEnabled turns on the daily version check: one anonymous
+	// download of the signed release feed, compared with the running version
+	// on the instance (RFC-105). VERSION_CHECK_ENABLED, default true.
+	// VersionCheckURL is where the feed is read (VERSION_CHECK_URL, https; the
+	// signature carries the trust, so a mirror is fine).
+	VersionCheckEnabled bool
+	VersionCheckURL     string
+
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
 	// no-credentials external-exposure source. Set CERT_MONITOR_ENABLED=false to
@@ -1139,6 +1184,17 @@ type EncryptionConfig struct {
 	// Key. Empty: derived from Key under its own label.
 	// Env var: APP_CONTENT_SIGNING_KEY
 	ContentSigningKey string
+
+	// ContentTrustRootKeyIDs are extra content catalog roots (key ids,
+	// "SHA256:<hex>") trusted beside the ones pinned in the release, for an
+	// operator's own catalog source (RFC-099). Env var:
+	// CONTENT_TRUST_ROOT_KEY_IDS (comma separated).
+	ContentTrustRootKeyIDs []string
+
+	// ContentSigstoreTrustedRoot is a Sigstore trusted root file that
+	// replaces the one embedded in the release for publisher signatures.
+	// Env var: CONTENT_SIGSTORE_TRUSTED_ROOT.
+	ContentSigstoreTrustedRoot string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1249,9 +1305,10 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name: getEnv("APP_NAME", "openctem"),
-			Env:  appEnv(),
-			URL:  getEnv("APP_URL", ""),
+			Name:   getEnv("APP_NAME", "openctem"),
+			Env:    appEnv(),
+			URL:    getEnv("APP_URL", ""),
+			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
@@ -1407,7 +1464,8 @@ func Load() (*Config, error) {
 				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),
 			},
 			AllowedRedirectURIs: getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
-			TenantCreationMode:  getEnv("TENANT_CREATION_MODE", TenantCreationAdminOnly),
+			SignupMode:          strings.ToLower(strings.TrimSpace(getEnv("SIGNUP_MODE", SignupModeDisabled))),
+			SignupCaptcha:       strings.TrimSpace(getEnv("SIGNUP_CAPTCHA", "")),
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),
@@ -1472,6 +1530,8 @@ func Load() (*Config, error) {
 			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
 			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
 			VulnFeedMirrors:             feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+			VersionCheckEnabled:         getEnvBool("VERSION_CHECK_ENABLED", true),
+			VersionCheckURL:             getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
 			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
@@ -1508,6 +1568,9 @@ func Load() (*Config, error) {
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
+
+			ContentTrustRootKeyIDs:     getEnvSlice("CONTENT_TRUST_ROOT_KEY_IDS", nil),
+			ContentSigstoreTrustedRoot: getEnv("CONTENT_SIGSTORE_TRUSTED_ROOT", ""),
 		},
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
@@ -1552,6 +1615,11 @@ func Load() (*Config, error) {
 			ProgramFeedLocalBundleDir: getEnv("PROGRAMFEED_LOCAL_BUNDLE_DIR", ""),
 			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
+		},
+		AdminAuditSink: AdminAuditSinkConfig{
+			URL:          getEnv("ADMIN_AUDIT_SINK", ""),
+			Token:        getEnv("ADMIN_AUDIT_SINK_TOKEN", ""),
+			HeadInterval: getEnvDuration("ADMIN_AUDIT_SINK_HEAD_INTERVAL", 15*time.Minute),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
@@ -1643,6 +1711,9 @@ func deriveSSORedirectAllowList(cfg *Config) []string {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
+	if c.App.Region != "" && !deploymentRegionRE.MatchString(c.App.Region) {
+		return fmt.Errorf("DEPLOYMENT_REGION=%q must be 1-32 lowercase letters, digits or hyphens (e.g. eu-central)", c.App.Region)
+	}
 	if err := c.validateBasic(); err != nil {
 		return err
 	}
@@ -1704,6 +1775,9 @@ func (c *Config) validateBasic() error {
 	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
 		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
 	}
+	if v := c.Worker.VersionCheckURL; v != "" && (parsePublicURL(v) == nil || !strings.HasPrefix(v, "https://")) {
+		return errors.New("VERSION_CHECK_URL must be an https URL without credentials, query or fragment")
+	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)
 		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
@@ -1718,7 +1792,7 @@ func (c *Config) validateBasic() error {
 	}
 	if c.Scope.ZoneResolver == "" {
 		c.Scope.ZoneResolver = ScanZoneResolverSystem
-		if c.Auth.SelfServiceTenantCreation() {
+		if c.Auth.SignupOpen() {
 			c.Scope.ZoneResolver = DefaultPublicZoneResolver
 		}
 	}
@@ -1923,14 +1997,22 @@ func (c *Config) validateEncryption() error {
 
 // validateAuth validates authentication configuration.
 func (c *Config) validateAuth() error {
-	switch c.Auth.TenantCreationMode {
+	switch c.Auth.SignupMode {
 	case "":
 		// Unset (e.g. a Config built in code): the default.
-		c.Auth.TenantCreationMode = TenantCreationAdminOnly
-	case TenantCreationSelfService, TenantCreationAdminOnly:
+		c.Auth.SignupMode = SignupModeDisabled
+	case SignupModeDisabled, SignupModeDomain, SignupModeOpen:
 	default:
-		return fmt.Errorf("invalid TENANT_CREATION_MODE: %s (must be '%s' or '%s')",
-			c.Auth.TenantCreationMode, TenantCreationSelfService, TenantCreationAdminOnly)
+		return fmt.Errorf("invalid SIGNUP_MODE: %s (must be '%s', '%s' or '%s')",
+			c.Auth.SignupMode, SignupModeDisabled, SignupModeDomain, SignupModeOpen)
+	}
+	switch c.Auth.SignupCaptcha {
+	case "", SignupCaptchaOffAccepted:
+	default:
+		return fmt.Errorf("invalid SIGNUP_CAPTCHA: the only value is '%s' (open sign-up in production without a CAPTCHA)", SignupCaptchaOffAccepted)
+	}
+	if c.Auth.PublicSignup() && !c.Auth.Provider.SupportsLocal() {
+		return fmt.Errorf("SIGNUP_MODE=%s needs local accounts (AUTH_PROVIDER=local or hybrid); with AUTH_PROVIDER=oidc people come from the identity provider, use SIGNUP_MODE=disabled", c.Auth.SignupMode)
 	}
 	if !c.Auth.Provider.IsValid() {
 		return fmt.Errorf("invalid AUTH_PROVIDER: %s (must be 'local', 'oidc', or 'hybrid')", c.Auth.Provider)
@@ -2010,6 +2092,7 @@ func (c *Config) validatePlaceholders() error {
 		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
 		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
 		{"METRICS_TOKEN", c.Metrics.Token},
+		{"ADMIN_AUDIT_SINK_TOKEN", c.AdminAuditSink.Token},
 	}
 	for i, prev := range c.Encryption.PreviousKeys {
 		secrets = append(secrets, struct{ name, value string }{fmt.Sprintf("APP_ENCRYPTION_KEY_PREVIOUS entry %d", i+1), prev})
@@ -2126,6 +2209,12 @@ func (c *Config) validateProductionAuth() error {
 		// Ensure email verification is required
 		if !c.Auth.RequireEmailVerification {
 			return fmt.Errorf("AUTH_REQUIRE_EMAIL_VERIFICATION must be true in production")
+		}
+		// Open sign-up on the internet needs a CAPTCHA, or an explicit
+		// acceptance of running without one.
+		if c.Auth.SignupMode == SignupModeOpen && strings.TrimSpace(c.Auth.CaptchaTurnstileSecret) == "" &&
+			c.Auth.SignupCaptcha != SignupCaptchaOffAccepted {
+			return fmt.Errorf("SIGNUP_MODE=open in production needs CAPTCHA_TURNSTILE_SECRET and CAPTCHA_TURNSTILE_SITE_KEY (or SIGNUP_CAPTCHA=%s to accept open sign-up without a CAPTCHA)", SignupCaptchaOffAccepted)
 		}
 		// Validate SameSite policy
 		switch c.Auth.CookieSameSite {
@@ -2310,6 +2399,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	{"TENANT_CREATION_MODE", "unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open"},
 	// The platform SMTP server is set in the admin console (RFC-079).
 	{"SMTP_ENABLED", smtpMoved},
 	{"SMTP_HOST", smtpMoved},
@@ -2530,3 +2620,7 @@ func feedURLs(primary, mirrors string) []string {
 	}
 	return out
 }
+
+// deploymentRegionRE is the shape of DEPLOYMENT_REGION (the tenants.region
+// check in the database is the same).
+var deploymentRegionRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
