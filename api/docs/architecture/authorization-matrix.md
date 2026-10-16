@@ -917,6 +917,13 @@ for 1 to 72 hours, read-only, with a reason and the data scopes (`findings`,
 - The read model selects an explicit column allow-list (no messages,
   snippets, descriptions, evidence, secrets or people), is scoped to the
   grant's organization, and hides private-program assets and their findings.
+- The overview and finding rows carry only the granted scopes' parts: without
+  `assets` there is no asset count and a finding row names no asset.
+- Grant-bypass paths (RFC-063 section 11.5): the console user list, first owner
+  create or recovery and identity provider creation do not need a grant. They
+  write `admin_console.tenant_access` (actor `console:<email>`) to the
+  organization's audit log and email its owners before running; a failed audit
+  write refuses the use.
 
 #### Break-glass administrators and the platform IdP (RFC-022 revision 4)
 

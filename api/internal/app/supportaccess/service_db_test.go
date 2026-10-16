@@ -281,6 +281,17 @@ func TestSupportAccessSessions_DB(t *testing.T) {
 	if items[0].Title != "AWS key in config" {
 		t.Fatalf("title: %q", items[0].Title)
 	}
+	// A findings-only grant never names the asset of a finding, and the
+	// overview carries no asset count.
+	if items[0].AssetID != "" || items[0].AssetName != "" || items[0].AssetType != "" {
+		t.Fatalf("findings-only grant leaked asset columns: %+v", items[0])
+	}
+	if one, err := f.svc.GetFinding(ctx, ls, f.ownFinding); err != nil || one.AssetID != "" || one.AssetName != "" || one.AssetType != "" {
+		t.Fatalf("finding by id leaked asset columns: %+v %v", one, err)
+	}
+	if ov, err := f.svc.Overview(ctx, ls); err != nil || ov.AssetCount != nil || ov.OpenFindingCount == nil || *ov.OpenFindingCount != 1 {
+		t.Fatalf("findings-only overview: %+v %v", ov, err)
+	}
 	// The secret value (message, snippet) is never selected.
 	if raw, _ := json.Marshal(items); strings.Contains(string(raw), "AKIAEXAMPLESECRET") {
 		t.Fatalf("a support read leaked the secret: %s", raw)
@@ -351,5 +362,39 @@ func TestSupportAccessSessions_DB(t *testing.T) {
 	// Owners were emailed: grant, session start, revoke, grant 2, session 2 start.
 	if f.mailer.count() < 5 {
 		t.Fatalf("owner emails: %d", f.mailer.count())
+	}
+}
+
+// A console route that reaches organization data without a grant is never
+// blocked, but its use lands in the organization's audit log and the owners
+// are emailed; a repeatable read emails once per hour.
+func TestConsoleTenantAccessNotice_DB(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	in := supportaccess.ConsoleAccessInput{TenantID: f.tenant, Route: "user list", Method: "GET", Repeatable: true}
+	for range 3 {
+		if err := f.svc.NoticeConsoleAccess(ctx, f.support, in, client); err != nil {
+			t.Fatalf("notice: %v", err)
+		}
+	}
+	if n := f.count(t, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'admin_console.tenant_access' AND actor_email = $2`,
+		f.tenant.String(), "console:"+f.support.Email()); n != 3 {
+		t.Fatalf("tenant audit rows: %d, want 3 (every use)", n)
+	}
+	if f.mailer.count() != 1 {
+		t.Fatalf("owner emails for a repeatable read: %d, want 1", f.mailer.count())
+	}
+	in = supportaccess.ConsoleAccessInput{TenantID: f.tenant, Route: "owner create or recovery", Method: "POST"}
+	for range 2 {
+		if err := f.svc.NoticeConsoleAccess(ctx, f.support, in, client); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if f.mailer.count() != 3 {
+		t.Fatalf("owner emails: %d, want 3 (every write is emailed)", f.mailer.count())
+	}
+	// Nothing leaks into another organization's log.
+	if n := f.count(t, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'admin_console.tenant_access'`, f.other.String()); n != 0 {
+		t.Fatalf("other organization: %d rows", n)
 	}
 }
