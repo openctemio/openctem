@@ -65,8 +65,8 @@ import (
 //	                                            TOTP code (audited, both logs)
 //	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
 //	                                            code (audited with the reason)
-//	/admin/content-catalog    any admin         import: super_admin + reason + fresh
-//	                                            TOTP code (audited with the reason)
+//	/admin/content-catalog    any admin         import, publish, revoke: super_admin +
+//	                                            reason + fresh TOTP code (audited)
 //	/admin/program-feed       any admin         local bundle switch: super_admin +
 //	                                            reason + fresh TOTP code (audited)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
@@ -292,6 +292,8 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/content-catalog", func(r Router) {
 			r.GET("/", c.Status)
 			r.POST("/import", c.Import, requireSuper)
+			r.POST("/packages", c.Publish, requireSuper)
+			r.POST("/packages/{namespace}/{name}/{version}/revoke", c.Revoke, requireSuper)
 		}, adminMiddlewares...)
 	}
 
