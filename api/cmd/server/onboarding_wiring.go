@@ -19,6 +19,10 @@ func (t onboardingTenants) AddMember(ctx context.Context, tenantID string, in on
 	return t.TenantService.AddMember(ctx, tenantID, tenantapp.AddMemberInput{UserID: in.UserID, Role: in.Role}, inviter, actx)
 }
 
+func (t onboardingTenants) AddMemberApprovingJoinRequest(ctx context.Context, tenantID string, in onboardingapp.AddMemberInput, approver, requestID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	return t.TenantService.AddMemberApprovingJoinRequest(ctx, tenantID, tenantapp.AddMemberInput{UserID: in.UserID, Role: in.Role}, approver, requestID, actx)
+}
+
 // deriveKey derives a purpose-bound key from a server secret, so the
 // onboarding offer key is never the session signing key itself.
 func deriveKey(secret, label string) []byte {
