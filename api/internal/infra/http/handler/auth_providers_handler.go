@@ -34,6 +34,8 @@ type AuthProvidersHandler struct {
 	// signupPolicy, when wired, replaces tenantCreationMode (the console
 	// sign-up setting).
 	signupPolicy signupdom.PolicySource
+	// deploymentRegion is DEPLOYMENT_REGION.
+	deploymentRegion string
 	// captchaSiteKey is the public Turnstile site key.
 	captchaSiteKey string
 	// registrationEnabled is reported when no sign-up policy is wired (the
@@ -85,6 +87,12 @@ func (h *AuthProvidersHandler) WithTenantCreationMode(mode string) *AuthProvider
 // WithSignupPolicy reports tenant_creation_mode from the console sign-up policy.
 func (h *AuthProvidersHandler) WithSignupPolicy(p signupdom.PolicySource) *AuthProvidersHandler {
 	h.signupPolicy = p
+	return h
+}
+
+// WithDeploymentRegion sets the region reported to the UI.
+func (h *AuthProvidersHandler) WithDeploymentRegion(region string) *AuthProvidersHandler {
+	h.deploymentRegion = region
 	return h
 }
 
@@ -152,6 +160,9 @@ type AuthProvidersResponse struct {
 	// RequestAccess reports whether people who cannot sign up may request an
 	// organization (POST /auth/access-requests).
 	RequestAccess bool `json:"request_access"`
+	// DeploymentRegion is DEPLOYMENT_REGION: the data region a new
+	// organization gets (shown, fixed, when creating one). Empty: not named.
+	DeploymentRegion string `json:"deployment_region,omitempty"`
 	// CaptchaSiteKey is the Turnstile site key the request-access form
 	// renders; empty when no CAPTCHA is configured.
 	CaptchaSiteKey string `json:"captcha_site_key,omitempty"`
@@ -188,6 +199,7 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Reque
 		resp.RequestAccess = p.RequestAccess && !p.AllowsSelfService()
 	}
 	resp.CaptchaSiteKey = h.captchaSiteKey
+	resp.DeploymentRegion = h.deploymentRegion
 	// Report what the server enforces: anything but an explicit self_service
 	// is admin-only.
 	if resp.TenantCreationMode != config.TenantCreationSelfService {
