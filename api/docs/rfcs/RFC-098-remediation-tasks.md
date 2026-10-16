@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest). Designed: accept flows, moves/split/merge, task-level "mark fixed", the new Remediation console |
+| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk) and the auto-join rule. Designed: moves/split/merge, task-level "mark fixed", the new Remediation console |
 | Scope | api, web |
 | Related | RFC-015 (remediation groups: the candidate keys), RFC-006 (ticketing), RFC-039 (retest and SLA restart), RFC-097 (ticket field and status mapping) |
 
@@ -51,7 +51,7 @@ first match wins:
 | `on_hold` | a person put it on hold |
 | `done` | every member is closed **and at least one is verified fixed** (resolved by a covered scan, a retest or a reviewer with `findings:verify`) |
 | `closed_unverified` | every member is closed but none was verified fixed (accepted, false positive, duplicate, or resolved without proof) |
-| `verifying` | every open member is claimed fixed (`fix_applied`, `validated_fixed`) and awaits its own verification |
+| `verifying` | every open member is claimed fixed (`fix_applied`) and awaits its own verification |
 | `in_progress` | some member is in progress or claimed fixed |
 | `open` | otherwise |
 
@@ -102,7 +102,7 @@ Algorithms propose; a person with permission accepts.
   the same identity are updated in place, a snoozed one past its date is proposed again, open suggestions the
   run no longer produces expire, and held-back proposals are surfaced up to the daily cap.
 
-## 6. Accept flows (designed)
+## 6. Accept flows
 
 1. **Accept as is:** creates the action and one task per owner.
 2. **Edit, then accept:** remove members, change the owner, title or deadline (tighter only).
@@ -111,6 +111,12 @@ Algorithms propose; a person with permission accepts.
    key join an `open` or `in_progress` task with the same owner; a `verifying` or closed task gets a `join`
    suggestion instead. Auto-join never changes a finding's status and never closes anything; a per-action daily
    cap falls back to suggestions.
+
+Each accept is one transaction: the suggestion is locked at the version the person saw (409 when it changed),
+its findings are locked and re-checked, and findings that closed or joined another task since are left out and
+listed (`dropped`). Removed findings go to `remediation_key_exclusions`. Bulk accept takes up to 50
+suggestions and 5000 findings, each on its own. Turning auto-join on needs a caller with access to every asset
+(the rule acts on findings they may not see); `upgrade` and `rotate` keys only (also a table CHECK).
 
 ## 7. Moves, split, merge, detach (designed)
 
@@ -153,6 +159,10 @@ PATCH /api/v1/remediation/suggestions/{id}               snooze (snoozed_until, 
 GET   /api/v1/remediation/suggestions/{id}/members
 POST  /api/v1/remediation/suggestions/{id}/reject        dismiss with a reason; version required
 POST  /api/v1/remediation/suggestions/{id}/reopen        undo a dismissal or a snooze
+POST  /api/v1/remediation/suggestions/{id}/approve       accept, optionally edited (title, removed findings, owners, deadline, auto_join)
+POST  /api/v1/remediation/suggestions/approve            accept several as they are
+GET   /api/v1/remediation/actions/{id}
+PATCH /api/v1/remediation/actions/{id}                   auto_join on or off
 ```
 
 Reads need `findings:remediation:read` (members also `findings:read`); changes need
@@ -178,7 +188,8 @@ Reads need `findings:remediation:read` (members also `findings:read`); changes n
   and owner partitions of the others are not returned (`hidden_members` counts them), and they may not decide
   on it. The generator runs as the platform but writes only proposals.
 - **Audit:** `remediation_task.created`, `.updated`, `.members_added`, `.state_changed` (hold, resume, cancel);
-  `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`.
+  `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`, `.accepted`;
+  `remediation_action.auto_join_changed`.
 
 ## 12. Rollout
 
@@ -186,7 +197,7 @@ Reads need `findings:remediation:read` (members also `findings:read`); changes n
 |---|---|---|
 | 1 | Task model, derived state, deadline, membership, timeline, API with data scope | Implemented |
 | 2 | Suggestions engine (deterministic keys, owner partition, ranking, lifecycle, dedup, dismissal memory, rate limit, digest) | Implemented |
-| 3 | Accept flows (as is, edit, bulk, auto-join rule) | Designed |
+| 3 | Accept flows (as is, edit, bulk, auto-join rule) | Implemented |
 | 4 | Moves, split, merge, detach with compatibility rules, tickets comments, undo | Designed |
 | 5 | Task-level mark fixed and regression tasks | Designed |
 | 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Designed |
