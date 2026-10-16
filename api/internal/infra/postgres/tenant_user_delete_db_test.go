@@ -315,7 +315,7 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"finding_rekey_runs": func(*schemaSeeder) map[string]any { return map[string]any{"target_version": "2"} },
 	// Ticket links: an issue key (CHECK) and exactly one object (the finding).
 	"ticket_links": func(*schemaSeeder) map[string]any {
-		return map[string]any{"external_key": "SEC-1", "campaign_id": nil, "role": "own", "state": "active", "source": "person", "provider": "jira"}
+		return map[string]any{"external_key": "SEC-1", "campaign_id": nil, "task_id": nil, "role": "own", "state": "active", "source": "person", "provider": "jira"}
 	},
 	// Lifecycle catalog: a key pattern, a closed status set, a closure reason
 	// only under a closed status, and an object spec (CHECKs, RFC-110).

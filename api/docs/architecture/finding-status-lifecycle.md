@@ -284,6 +284,7 @@ Actors:
 - **api_key**: an organization key. The same rules apply, but it is not a person, so it cannot claim a fix.
 - **workflow**: an automation `update_status` and an explicit system move. It holds no permission to verify, triage or request a disposition, and is free of the fix-claim person rules.
 - **ticket_inbound**: Jira or GitHub. It moves work state only (`IsTicketInboundTarget`).
+- **rule**: an approved suppression rule (the rule itself passed four-eyes). It moves the open findings the rule matches (`SuppressionApplyFromStatuses`) to the rule's disposition (`false_positive` or `accepted`) directly, with no person permission, and nothing else: any other target, a pentest finding, or a rule actor without a rule id is blocked (`rule_scope`). Approving a rule decides each matching finding through the engine with this actor and records the rule id and `actor_kind: rule` on each timeline entry. The acceptance end is still capped by priority, and the rule's scope is unchanged (the organization, or its asset).
 
 The engine only adds constraints to the lifecycle map. `TestEvaluateTransition_NeverWiderThanTheLifecycle` proves that, for every actor and status pair, no allowed move is off the map. It also proves that no disposition is direct, no resolve lacks `findings:verify`, and no ticket closes a finding.
 

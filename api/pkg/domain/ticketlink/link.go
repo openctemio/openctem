@@ -44,6 +44,7 @@ type Link struct {
 	Provider      string
 	FindingID     *shared.ID
 	CampaignID    *shared.ID
+	TaskID        *shared.ID
 	ExternalID    string
 	ExternalKey   string
 	ProjectKey    string
@@ -53,10 +54,13 @@ type Link struct {
 	Source        string
 	CreatedBy     *shared.ID
 	LastStatus    string
-	LastSyncedAt  *time.Time
-	SyncError     string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// LastPushedState is the object state last pushed to the issue (a task's
+	// state); the reconciler pushes again when it differs.
+	LastPushedState string
+	LastSyncedAt    *time.Time
+	SyncError       string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 var issueKeyRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*-[0-9]+$`)
@@ -98,11 +102,34 @@ func KeyFromURL(site, raw string) (string, error) {
 	return key, nil
 }
 
-// New builds a link of a finding or a campaign (exactly one). site is the
-// integration's base URL: the link's URL must be https on that same host.
-func New(tenantID, integrationID shared.ID, findingID, campaignID *shared.ID, key, externalID, site, browseURL, role, source string, by *shared.ID) (*Link, error) {
-	if (findingID == nil) == (campaignID == nil) {
-		return nil, fmt.Errorf("%w: a link names a finding or a task", shared.ErrValidation)
+// Object is what a link is for: exactly one of a finding, a campaign or a
+// remediation task.
+type Object struct {
+	FindingID  *shared.ID
+	CampaignID *shared.ID
+	TaskID     *shared.ID
+}
+
+// ForFinding, ForCampaign and ForTask name the object of a link.
+func ForFinding(id shared.ID) Object  { return Object{FindingID: &id} }
+func ForCampaign(id shared.ID) Object { return Object{CampaignID: &id} }
+func ForTask(id shared.ID) Object     { return Object{TaskID: &id} }
+
+func (o Object) count() int {
+	n := 0
+	for _, p := range []*shared.ID{o.FindingID, o.CampaignID, o.TaskID} {
+		if p != nil {
+			n++
+		}
+	}
+	return n
+}
+
+// New builds a link of one object. site is the integration's base URL: the
+// link's URL must be https on that same host.
+func New(tenantID, integrationID shared.ID, obj Object, key, externalID, site, browseURL, role, source string, by *shared.ID) (*Link, error) {
+	if obj.count() != 1 {
+		return nil, fmt.Errorf("%w: a link names one finding, campaign or task", shared.ErrValidation)
 	}
 	key = strings.ToUpper(strings.TrimSpace(key))
 	if !ValidKey(key) {
@@ -132,7 +159,7 @@ func New(tenantID, integrationID shared.ID, findingID, campaignID *shared.ID, ke
 	now := time.Now().UTC()
 	return &Link{
 		ID: shared.NewID(), TenantID: tenantID, IntegrationID: integrationID, Provider: "jira",
-		FindingID: findingID, CampaignID: campaignID, ExternalID: externalID, ExternalKey: key,
+		FindingID: obj.FindingID, CampaignID: obj.CampaignID, TaskID: obj.TaskID, ExternalID: externalID, ExternalKey: key,
 		ProjectKey: ProjectOf(key), URL: browseURL, Role: role, State: StateActive, Source: source,
 		CreatedBy: by, CreatedAt: now, UpdatedAt: now,
 	}, nil
@@ -153,6 +180,7 @@ type Repository interface {
 	Get(ctx context.Context, tenantID, id shared.ID) (*Link, error)
 	ListForFinding(ctx context.Context, tenantID, findingID shared.ID) ([]*Link, error)
 	ListForCampaign(ctx context.Context, tenantID, campaignID shared.ID) ([]*Link, error)
+	ListForTask(ctx context.Context, tenantID, taskID shared.ID) ([]*Link, error)
 	// FindByIssue lists the active links of an issue of an integration (at
 	// most MaxLinksPerIssue).
 	FindByIssue(ctx context.Context, tenantID, integrationID shared.ID, key string) ([]*Link, error)
@@ -160,4 +188,17 @@ type Repository interface {
 	SetState(ctx context.Context, tenantID, id shared.ID, state string) error
 	// RecordSync stores the last status pushed or read and the last error.
 	RecordSync(ctx context.Context, tenantID, id shared.ID, status, syncErr string, at time.Time) error
+	// RecordPush stores the object state last pushed to the issue and the
+	// issue's status after the push.
+	RecordPush(ctx context.Context, tenantID, id shared.ID, state, status string, at time.Time) error
+	// TaskLinksBehindForPlatform lists active task links whose task state differs from
+	// the state last pushed (all tenants; the reconciler pushes each in its
+	// own tenant).
+	TaskLinksBehindForPlatform(ctx context.Context, limit int) ([]TaskLinkRef, error)
+}
+
+// TaskLinkRef names a task link the reconciler pushes.
+type TaskLinkRef struct {
+	TenantID shared.ID
+	TaskID   shared.ID
 }
