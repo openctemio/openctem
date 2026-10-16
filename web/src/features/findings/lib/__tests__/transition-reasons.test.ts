@@ -4,7 +4,7 @@ import vi from '@/lib/i18n/dictionaries/vi/findings.json'
 import { summarizeDryRun, transitionReason } from '../transition-reasons'
 
 const t = (key: string, fallback?: string, vars?: Record<string, string | number>) =>
-  (fallback ?? key).replace('{permission}', String(vars?.permission ?? ''))
+  (fallback ?? key).replace(/\{(\w+)\}/g, (_, k: string) => String(vars?.[k] ?? ''))
 
 describe('transition reasons', () => {
   it('every reason code has an English and a Vietnamese sentence', () => {
@@ -18,6 +18,14 @@ describe('transition reasons', () => {
       'evidence_required',
       'checklist_required',
       'not_found',
+      'not_in_lifecycle',
+      'same_sub_status',
+      'closure_reason_change',
+      'platform_sub_status',
+      'lifecycle_permission',
+      'actor_kind_denied',
+      'fields_required',
+      'note_too_short',
     ]) {
       expect((en as Record<string, string>)[`findings.transitionReason.${code}`], code).toBeTruthy()
       expect((vi as Record<string, string>)[`findings.transitionReason.${code}`], code).toBeTruthy()
@@ -46,5 +54,35 @@ describe('transition reasons', () => {
     expect(out.allowed).toEqual(['a'])
     expect(out.refused).toHaveLength(2)
     expect(out.refused.find((r) => r.count === 2)).toBeTruthy()
+  })
+
+  it('refuses up front a bulk move the lifecycle asks fields or a longer note for', () => {
+    const out = summarizeDryRun(
+      t,
+      [
+        { finding_id: 'a', decision: { to: 'resolved', allowed: true } },
+        {
+          finding_id: 'b',
+          decision: { to: 'resolved', allowed: true, fields: ['ticket_link', 'change_id'] },
+        },
+        { finding_id: 'c', decision: { to: 'resolved', allowed: true, note_min_len: 30 } },
+        { finding_id: 'd', decision: { to: 'resolved', allowed: true, note_min_len: 5 } },
+      ],
+      { note: 'short note' }
+    )
+    expect(out.allowed).toEqual(['a', 'd'])
+    expect(out.refused.map((r) => r.reason)).toEqual([
+      'Needs ticket_link, change_id: change these findings one at a time',
+      'Needs a note of at least 30 characters',
+    ])
+  })
+
+  it("names the organization's required permissions", () => {
+    expect(
+      transitionReason(t, {
+        code: 'lifecycle_permission',
+        params: { any_of: 'findings:verify,findings:triage' },
+      })
+    ).toContain('findings:verify, findings:triage')
   })
 })
