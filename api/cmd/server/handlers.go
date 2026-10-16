@@ -1525,10 +1525,6 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.Announcement != nil {
 		s.Announcements = h.Announcement.ActiveResponses
 	}
-	mode := string(signupdom.Default().Mode)
-	if cfg.Auth.SignupOpen() {
-		mode = string(signupdom.ModeSelfService)
-	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability
 		s.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
@@ -1538,7 +1534,11 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 			}
 			return int(page.StatusCounts[vulnerability.ApprovalStatusPending]), nil
 		}
-	mode := cfg.Auth.TenantCreationMode
+	}
+	mode := string(signupdom.Default().Mode)
+	if cfg.Auth.SignupOpen() {
+		mode = string(signupdom.ModeSelfService)
+	}
 	signup := svc.Signup
 	s.TenantCreationMode = func(ctx context.Context) string {
 		if signup != nil {
