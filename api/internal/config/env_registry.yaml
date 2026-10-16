@@ -1516,6 +1516,12 @@ vars:
     type: int
     default: "10000"
     description: "Rows per delete transaction."
+  - name: ADMIN_ELEVATION
+    component: api
+    group: "Admin console"
+    type: string
+    default: "required"
+    description: "`required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in."
   - name: ADMIN_AUDIT_SINK
     component: api
     group: "Audit log retention"
