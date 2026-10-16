@@ -191,6 +191,32 @@ func TestRemediationAccept_AutoJoinRule(t *testing.T) {
 	}
 	assert.Equal(t, 1, joins, "a join suggestion instead")
 
+	// A restricted member reads the action only through a task they can
+	// see: its task is on asset A, in their scope.
+	_, err = r.sug.GetAction(r.memberCtx(), r.tenant, res.ActionID)
+	require.NoError(t, err)
+	// An action whose only task holds findings outside their scope is not
+	// found for them (its title, key and fix stay hidden).
+	hiddenKey := "upgrade:npm:hidden:9.9.9"
+	r.keyed(r.assetB, hiddenKey, "P1")
+	r.keyed(r.assetB, hiddenKey, "P1")
+	r.run()
+	var hidden *remediation.Suggestion
+	for _, s := range r.list(ctx) {
+		if s.Key == hiddenKey {
+			hidden = s
+		}
+	}
+	require.NotNil(t, hidden)
+	hres, err := r.sug.Accept(ctx, remediationapp.AcceptInput{TenantID: r.tenant, ID: hidden.ID, Version: hidden.Version, ActorID: &r.admin}, auditapp.AuditContext{})
+	require.NoError(t, err)
+	_, err = r.sug.GetAction(r.memberCtx(), r.tenant, hres.ActionID)
+	assert.ErrorIs(t, err, shared.ErrNotFound)
+	_, err = r.sug.GetAction(ctx, r.tenant, hres.ActionID)
+	require.NoError(t, err, "an unrestricted caller reads it")
+	_, err = r.sug.GetAction(ctx, r.other, hres.ActionID)
+	assert.ErrorIs(t, err, shared.ErrNotFound, "another tenant's action")
+
 	// Off again.
 	off, err := r.sug.SetActionAutoJoin(ctx, r.tenant, res.ActionID, false, &r.admin, auditapp.AuditContext{})
 	require.NoError(t, err)
