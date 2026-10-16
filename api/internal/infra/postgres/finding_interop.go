@@ -235,8 +235,9 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 		// earlier VEX request a person rejected or canceled, gets none.
 		query = `
 		WITH x AS (` + match + `), ins AS (
-			INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status, closure_reason)
-			SELECT $1::uuid, x.id, 'false_positive', '` + vulnerability.ApprovalActorVEX + `', LEFT(x.reason, 1000), 'pending', x.code
+			INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status, closure_reason, decide_by)
+			SELECT $1::uuid, x.id, 'false_positive', '` + vulnerability.ApprovalActorVEX + `', LEFT(x.reason, 1000), 'pending', x.code,
+			       NOW() + INTERVAL '14 days' -- vulnerability.DefaultDecisionWindow
 			FROM x
 			WHERE NOT EXISTS (
 				SELECT 1 FROM finding_status_approvals p

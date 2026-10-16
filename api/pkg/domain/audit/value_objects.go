@@ -33,13 +33,13 @@ const (
 	// vulnerability matching policy (RFC-066).
 	ActionTenantVulnMatchingUpdated Action = "tenant.vuln_matching_updated"
 
-	// Idle Free workspaces (docs/architecture/idle-workspaces.md).
-	ActionTenantIdleReminded         Action = "tenant.idle_reminded"
-	ActionTenantIdleReadOnly         Action = "tenant.idle_read_only"
-	ActionTenantIdleFinalWarning     Action = "tenant.idle_final_warning"
-	ActionTenantIdleDeletionDue      Action = "tenant.idle_deletion_due"
-	ActionTenantIdleReactivated      Action = "tenant.idle_reactivated"
-	ActionTenantIdleExemptionChanged Action = "tenant.idle_exemption_changed"
+	// Idle-organization policy (docs/architecture/idle-workspaces.md).
+	ActionTenantIdleReminded      Action = "tenant.idle_reminded"
+	ActionTenantIdleReadOnly      Action = "tenant.idle_read_only"
+	ActionTenantIdleFinalWarning  Action = "tenant.idle_final_warning"
+	ActionTenantIdleDeletionDue   Action = "tenant.idle_deletion_due"
+	ActionTenantIdleReactivated   Action = "tenant.idle_reactivated"
+	ActionTenantIdlePolicyChanged Action = "tenant.idle_policy_changed"
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
@@ -455,6 +455,9 @@ const (
 	// own rule because nobody else can, owner decision B16) is Critical.
 	ActionSuppressionRuleApproved     Action = "suppression_rule.approved"
 	ActionSuppressionRuleSelfApproved Action = "suppression_rule.self_approved"
+	// A refused own approval (not allowed, no reason, missing or wrong
+	// authenticator code) is recorded too, at High.
+	ActionSuppressionRuleSelfApprovalRefused Action = "suppression_rule.self_approval_refused"
 
 	// An approver looked at a rule the platform flagged for review (it had
 	// no end date) and cleared the flag.
@@ -465,6 +468,8 @@ const (
 	ActionExposureDispositionApproved     Action = "exposure.disposition_approved"
 	ActionExposureDispositionSelfApproved Action = "exposure.disposition_self_approved"
 	ActionExposureDispositionRejected     Action = "exposure.disposition_rejected"
+	// A refused own approval of a disposition, at High.
+	ActionExposureDispositionSelfApprovalRefused Action = "exposure.disposition_self_approval_refused"
 
 	// Report schedule actions: a schedule mails organization posture to its
 	// recipients (members or the allowed domains, D12).
@@ -670,7 +675,7 @@ func (a Action) IsValid() bool {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
-		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
+		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,
@@ -743,7 +748,8 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
-		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved,
+		ActionExposureDispositionSelfApprovalRefused,
+		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
 		ActionSuppressionRuleReviewed,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
@@ -872,11 +878,12 @@ func (a Action) Category() string {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
-	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved:
+	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
 		return "suppression"
 	case ActionSuppressionRuleReviewed:
 		return "suppression"
-	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected:
+	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
+		ActionExposureDispositionSelfApprovalRefused:
 		return "exposure"
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
 		return "report_schedule"
@@ -1024,7 +1031,8 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
+		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeFindingApproval:
 		return true
 	}
 	return isConfigResourceType(r)
@@ -1117,7 +1125,9 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated, ActionScannerTemplateApproved,
 		// Deleting an asset also deletes its findings.
-		ActionAssetDeleted:
+		ActionAssetDeleted,
+		// A refused own approval: someone tried to skip the second approver.
+		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused:
 		return SeverityHigh
 
 	// Medium - important changes

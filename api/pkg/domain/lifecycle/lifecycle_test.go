@@ -37,7 +37,7 @@ func TestNext_OneStepAtATime(t *testing.T) {
 	}
 }
 
-func TestDecide_WaitsBetweenWarningsAndHonoursExemption(t *testing.T) {
+func TestDecide_WaitsBetweenWarnings(t *testing.T) {
 	th := DefaultThresholds()
 	now := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
 	created := now.Add(-days(400))
@@ -51,11 +51,6 @@ func TestDecide_WaitsBetweenWarningsAndHonoursExemption(t *testing.T) {
 	w.StageChangedAt = now.Add(-days(8))
 	if got := th.Decide(w, now); got != StageReadOnly {
 		t.Fatalf("got %q, want read_only", got)
-	}
-
-	w.Exempt = true
-	if got := th.Decide(w, now); got != StageActive {
-		t.Fatalf("exempt: got %q", got)
 	}
 
 	// No sign-in ever: idle since creation.

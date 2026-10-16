@@ -2,7 +2,9 @@ package suppression
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -15,6 +17,20 @@ type Service struct {
 	log       *logger.Logger
 	approvers ApproverDirectory
 	assetRefs AssetRefChecker
+	totp      TOTPVerifier
+}
+
+// TOTPVerifier checks a fresh code from the user's authenticator app. It
+// answers ErrSelfApprovalNeedsTOTP when the account has no authenticator and
+// ErrSelfApprovalBadCode for a wrong or reused code.
+type TOTPVerifier interface {
+	VerifyFreshTOTP(ctx context.Context, userID, code string) error
+}
+
+// SetTOTPVerifier wires the authenticator check of an owner's own approval.
+// Without it an own approval is refused (fail closed).
+func (s *Service) SetTOTPVerifier(v TOTPVerifier) {
+	s.totp = v
 }
 
 // AssetRefChecker checks an asset id a caller writes onto a row: a live asset
@@ -142,6 +158,11 @@ type ApproveRuleInput struct {
 	// approval is refused if the rule changed since (the approval pins the
 	// reviewed version).
 	ReviewedUpdatedAt *time.Time
+	// SelfApprovalReason and TOTPCode are required when the approver is the
+	// requester (an owner with no other approver): a reason and a fresh code
+	// from their authenticator app. Nothing self-approves without them.
+	SelfApprovalReason string
+	TOTPCode           string
 }
 
 // MaxFindingsAppliedOnApprove caps the existing findings one approval
@@ -202,9 +223,9 @@ func (s *Service) PreviewRule(ctx context.Context, tenantID, ruleID shared.ID) (
 // Four-eyes (owner decision B16): the approver must not be the requester when
 // the organization has at least two people who can approve. In an
 // organization with a single eligible approver, that person may approve their
-// own rule only if they are the owner; the result says so, and the caller
-// records it at Critical severity. (Step-up re-authentication for this case
-// arrives with the step-up primitive.)
+// own rule only if they are the owner, give a reason and prove presence with
+// a fresh authenticator code; the result says so, and the caller records it
+// at Critical severity (a refusal at High).
 func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*ApproveResult, error) {
 	if input.ReviewedUpdatedAt == nil {
 		return nil, ErrReviewedVersionRequired
@@ -229,6 +250,9 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 		if !allowed {
 			return nil, ErrSelfApproval
 		}
+		if err := s.verifySelfApproval(ctx, input); err != nil {
+			return nil, err
+		}
 		selfApproved = true
 	}
 
@@ -239,7 +263,8 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 	details := map[string]any{}
 	if selfApproved {
 		details["self_approved"] = true
-		details["reason"] = "only eligible approver (owner)"
+		details["reason"] = strings.TrimSpace(input.SelfApprovalReason)
+		details["step_up"] = "totp"
 	}
 	// Save the rule, give the open findings it matches its disposition and
 	// record the audit entry (with the count) in one transaction.
@@ -254,6 +279,26 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 		AppliedFindings: applied.Applied,
 		Capped:          applied.Capped,
 	}, nil
+}
+
+// verifySelfApproval requires the reason and a fresh authenticator code of
+// an owner approving their own rule.
+func (s *Service) verifySelfApproval(ctx context.Context, input ApproveRuleInput) error {
+	if strings.TrimSpace(input.SelfApprovalReason) == "" {
+		return ErrSelfApprovalNeedsReason
+	}
+	code := strings.TrimSpace(input.TOTPCode)
+	if s.totp == nil || code == "" {
+		return ErrSelfApprovalBadCode
+	}
+	return s.totp.VerifyFreshTOTP(ctx, input.ApprovedBy.String(), code)
+}
+
+// IsSelfApprovalRefusal reports whether err refused an own approval (to be
+// audited by the caller).
+func IsSelfApprovalRefusal(err error) bool {
+	return errors.Is(err, ErrSelfApproval) || errors.Is(err, ErrSelfApprovalNeedsReason) ||
+		errors.Is(err, ErrSelfApprovalNeedsTOTP) || errors.Is(err, ErrSelfApprovalBadCode)
 }
 
 // mayApproveOwnRule: only when the requester is the owner and nobody else in
