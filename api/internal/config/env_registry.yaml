@@ -48,7 +48,7 @@ vars:
     group: "Application"
     type: bool
     default: "false"
-    description: "Set to  only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, shared sensors need a verified domain before they scan a target (Console > System > Platform scanning) and may not scan internal zones. A value saved in the console always wins. Read at start-up; never tenant data."
+    description: "Set to  only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
   - name: BRAND_FILE
     component: api
     group: "Brand"

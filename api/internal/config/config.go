@@ -297,8 +297,7 @@ type AppConfig struct {
 	URL  string // Public app URL (used as fallback for sensor config base URL)
 	// ManagedService (MANAGED_SERVICE, default false) marks a hosted,
 	// multi-tenant service. It changes defaults only, never features: the
-	// verified-domain requirement for shared sensors defaults on and
-	// "shared sensors may scan internal zones" defaults off until an
+	// verified-domain requirement for platform sensors defaults on until an
 	// administrator stores a value in the console
 	// (docs/rfcs/RFC-100-shared-sensors.md §6).
 	ManagedService bool

@@ -52,6 +52,9 @@ type Settings struct {
 	FindingCorrelation FindingCorrelationSettings `json:"finding_correlation,omitempty"`
 	// SharedSensors is the owner's shared sensor opt-out (RFC-100 §5).
 	SharedSensors SharedSensorsSettings `json:"shared_sensors,omitempty"`
+	// FindingApprovals governs finding false-positive and accepted-risk
+	// decisions.
+	FindingApprovals FindingApprovalSettings `json:"finding_approvals,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of
