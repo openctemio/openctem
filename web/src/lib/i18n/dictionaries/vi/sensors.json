@@ -1238,7 +1238,7 @@
   "sensors.health.belowProductMin": "{count} dưới mức tối thiểu của sản phẩm",
   "sensors.snippets.product": "Sản phẩm",
   "sensors.snippets.customProduct": "Sensor tùy chỉnh (xây trên SDK)",
-  "sensors.snippets.customNote": "Sensor tùy chỉnh là bản dựng riêng của bạn trên OpenCTEM SDK. Cài đặt theo hướng dẫn của tác giả, với API key của sensor này và URL của nền tảng. Nền tảng kiểm tra nó theo giao thức và năng lực, không theo phiên bản.",
+  "sensors.snippets.customNote": "Sensor tùy chỉnh là bản dựng riêng của bạn trên SDK sensor. Cài đặt theo hướng dẫn của tác giả, với API key của sensor này và URL của nền tảng. Nền tảng kiểm tra nó theo giao thức và năng lực, không theo phiên bản.",
   "sensors.snippets.customDocs": "Hướng dẫn cho tác giả công cụ",
   "sensors.products.openctemio-sensor": "Sensor quét",
   "sensors.products.openctemio-connector-tenable": "Connector Tenable.sc",
