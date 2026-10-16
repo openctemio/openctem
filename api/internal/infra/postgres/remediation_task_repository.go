@@ -164,7 +164,7 @@ func (r *RemediationTaskRepository) GetTask(ctx context.Context, tenantID, taskI
 
 // GetAction returns an action of the tenant.
 func (r *RemediationTaskRepository) GetAction(ctx context.Context, tenantID, actionID shared.ID) (*remediation.Action, error) {
-	const q = `SELECT id, tenant_id, action_key, kind, title, fix_spec, origin, created_by, created_at, updated_at
+	const q = `SELECT id, tenant_id, action_key, kind, title, fix_spec, origin, auto_join, created_by, created_at, updated_at
 		FROM remediation_actions WHERE tenant_id = $1 AND id = $2`
 	var (
 		a               remediation.Action
@@ -173,7 +173,7 @@ func (r *RemediationTaskRepository) GetAction(ctx context.Context, tenantID, act
 		createdBy       sql.NullString
 	)
 	err := r.db.QueryRowContext(ctx, q, tenantID.String(), actionID.String()).Scan(
-		&id, &tid, &a.Key, &a.Kind, &a.Title, &spec, &origin, &createdBy, &a.CreatedAt, &a.UpdatedAt)
+		&id, &tid, &a.Key, &a.Kind, &a.Title, &spec, &origin, &a.AutoJoin, &createdBy, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: remediation action not found", shared.ErrNotFound)
 	}
@@ -828,8 +828,23 @@ func (r *RemediationTaskRepository) recomputeInTx(ctx context.Context, tx *sql.T
 	if err != nil {
 		return err
 	}
+	var regressions []shared.ID
 	for id, in := range inputs {
 		c := counts[id]
+		if isRegression(in, c) {
+			// A closed task is never reopened: its reopened findings move to
+			// a new task linked to it, and it keeps its closed history.
+			newID, err := r.regressInTx(ctx, tx, tenantID, id, actor)
+			if err != nil {
+				return err
+			}
+			regressions = append(regressions, newID)
+			again, err := memberCounts(ctx, tx, tenantID, []shared.ID{id}, nil)
+			if err != nil {
+				return err
+			}
+			c = again[id]
+		}
 		state := remediation.DeriveState(in.manual, in.archived, c)
 		dl, src := remediation.EffectiveDeadline(c.MemberDeadline, in.manualDL, in.campDL)
 		if c.Total > 0 && c.Closed >= c.Total {
@@ -866,6 +881,9 @@ func (r *RemediationTaskRepository) recomputeInTx(ctx context.Context, tx *sql.T
 				return err
 			}
 		}
+	}
+	if len(regressions) > 0 {
+		return r.recomputeInTx(ctx, tx, tenantID, regressions, actor)
 	}
 	return nil
 }
@@ -1008,3 +1026,63 @@ func (r *RemediationTaskRepository) CampaignInTenant(ctx context.Context, tenant
 }
 
 var _ remediation.TaskRepository = (*RemediationTaskRepository)(nil)
+
+// isRegression reports a done or closed task with an open member again.
+func isRegression(in taskDerivationInput, c remediation.TaskCounts) bool {
+	if in.archived || in.manual != nil {
+		return false
+	}
+	closed := in.state == remediation.TaskStateDone || in.state == remediation.TaskStateClosedUnverified
+	return closed && c.Total > 0 && c.Closed < c.Total
+}
+
+// regressInTx opens a regression task linked to a closed task (same fix,
+// owner, campaign and manual deadline) and moves the reopened findings into
+// it. Returns the new task's id.
+func (r *RemediationTaskRepository) regressInTx(ctx context.Context, tx *sql.Tx, tenantID, taskID shared.ID, actor *shared.ID) (shared.ID, error) {
+	src, err := lockTaskInTx(ctx, tx, tenantID, taskID, 0)
+	if err != nil {
+		return shared.ID{}, err
+	}
+	reopened, err := queryIDsInTx(ctx, tx, `
+		SELECT tm.finding_id FROM remediation_task_members tm
+		JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
+		WHERE tm.tenant_id = $1 AND tm.task_id = $2 AND tm.left_at IS NULL AND tm.role = 'primary'
+		  AND f.status <> ALL($3::text[])
+		ORDER BY tm.finding_id`, tenantID.String(), taskID.String(), closedStatusArray())
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("read reopened findings: %w", err)
+	}
+	child := &remediation.Task{ID: shared.NewID(), TenantID: tenantID, Title: clipTitle("Regression: " + src.Title)}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO remediation_tasks (id, tenant_id, action_id, campaign_id, title, description, assignee_user_id,
+			assignee_group_id, manual_deadline, regression_of, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL)`,
+		child.ID.String(), tenantID.String(), src.ActionID.String(), idArg(src.CampaignID), child.Title, src.Description,
+		idArg(src.AssigneeUserID), idArg(src.AssigneeGroupID), timeArg(src.ManualDeadline), src.ID.String()); err != nil {
+		return shared.ID{}, fmt.Errorf("create regression task: %w", err)
+	}
+	if err := leaveInTx(ctx, tx, src, reopened, remediation.LeftReasonRegressed, actor,
+		map[string]any{"to_task_id": child.ID.String(), "to_task_title": child.Title}); err != nil {
+		return shared.ID{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO remediation_task_members (tenant_id, task_id, finding_id, role, join_source, joined_by)
+		SELECT $1, $2, f.id, 'primary', 'regression', NULL FROM findings f WHERE f.tenant_id = $1 AND f.id = ANY($3::uuid[])`,
+		tenantID.String(), child.ID.String(), pq.Array(rtIDStrings(reopened))); err != nil {
+		return shared.ID{}, fmt.Errorf("join regression task: %w", err)
+	}
+	if err := insertFindingTaskActivityInTx(ctx, tx, child, reopened, "joined", remediation.MemberRolePrimary, actor,
+		map[string]any{"from_task_id": src.ID.String(), "from_task_title": src.Title, "reason": "regressed"}); err != nil {
+		return shared.ID{}, err
+	}
+	if err := insertTaskEventInTx(ctx, tx, tenantID, child.ID, remediation.TaskEventCreated, actor,
+		map[string]any{"title": child.Title, "members": len(reopened), "regression_of": src.ID.String(), "regression_of_title": src.Title}); err != nil {
+		return shared.ID{}, err
+	}
+	if err := insertTaskEventInTx(ctx, tx, tenantID, src.ID, remediation.TaskEventRegressed, actor,
+		map[string]any{"count": len(reopened), "regression_task_id": child.ID.String()}); err != nil {
+		return shared.ID{}, err
+	}
+	return child.ID, nil
+}
