@@ -552,5 +552,17 @@
   "admin.legal.title": "Legal information",
   "admin.legal.websiteUrl": "Website (https)",
   "admin.nav.legal": "Legal",
-  "admin.ops.fleet.advisories": "security advisory: {v}"
+  "admin.ops.fleet.advisories": "security advisory: {v}",
+  "admin.sharedSensors.title": "Shared sensors",
+  "admin.sharedSensors.desc": "Sensors that belong to this instance and scan for the organizations you allow. No organization sees them as its own sensors.",
+  "admin.sharedSensors.notReady": "Shared sensors are not available yet: they can be turned on once the shared job queue and per-job isolation are in place.",
+  "admin.sharedSensors.enabledLabel": "Turn on shared sensors",
+  "admin.sharedSensors.enabledHint": "Off (default): no organization sends scans to shared sensors.",
+  "admin.sharedSensors.newOrgsLabel": "Allow organizations without a decision",
+  "admin.sharedSensors.newOrgsHint": "On (default): every organization may use shared sensors unless you deny it. Off: only organizations you allow. An organization's owner can still opt out.",
+  "admin.sharedSensors.confirmTitle": "Change the shared sensor setting?",
+  "admin.sharedSensors.confirmDesc": "The change is recorded in the admin audit log; the other administrators are emailed.",
+  "admin.sharedSensors.saved": "Shared sensor setting saved",
+  "admin.sharedSensors.saveFailed": "Could not save the setting",
+  "admin.sharedSensors.errorTitle": "the shared sensor setting"
 }

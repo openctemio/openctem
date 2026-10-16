@@ -46,6 +46,9 @@ const (
 	// ActionTenantCyclePolicyUpdated records a change to the organization's
 	// CTEM cycle policy (whether the coverage SLO blocks closing a cycle).
 	ActionTenantCyclePolicyUpdated Action = "tenant.cycle_policy_updated"
+	// ActionTenantSharedSensorsUpdated records the owner's shared sensor
+	// opt-out changing.
+	ActionTenantSharedSensorsUpdated Action = "tenant.shared_sensors_updated"
 
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
@@ -670,6 +673,7 @@ func (a Action) IsValid() bool {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
