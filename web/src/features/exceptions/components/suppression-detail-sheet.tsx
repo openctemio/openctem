@@ -37,6 +37,8 @@ interface SuppressionDetailSheetProps {
   onApprove?: (rule: SuppressionRule) => void
   onReject?: (rule: SuppressionRule) => void
   onDelete?: (rule: SuppressionRule) => void
+  /** An approver confirms they reviewed a flagged rule (clears the flag). */
+  onReviewed?: (rule: SuppressionRule) => void
 }
 
 function relative(iso?: string | null): string {
@@ -67,6 +69,7 @@ export function SuppressionDetailSheet({
   onApprove,
   onReject,
   onDelete,
+  onReviewed,
 }: SuppressionDetailSheetProps) {
   const { t } = useTranslation()
   const canApprove = useHasPermission(Permission.SuppressionsApprove)
@@ -166,6 +169,14 @@ export function SuppressionDetailSheet({
             tone="warning"
             icon={AlertTriangle}
             title={t('exceptions.detail.reviewTitle', 'Review this rule')}
+            actions={
+              canApprove && onReviewed ? (
+                <Button size="sm" variant="outline" onClick={() => onReviewed(rule)}>
+                  <Check className="h-4 w-4" />
+                  {t('exceptions.detail.markReviewed', 'Mark as reviewed')}
+                </Button>
+              ) : undefined
+            }
           >
             {t(
               'exceptions.detail.reviewBody',

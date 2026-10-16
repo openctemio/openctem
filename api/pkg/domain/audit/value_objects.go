@@ -456,6 +456,10 @@ const (
 	ActionSuppressionRuleApproved     Action = "suppression_rule.approved"
 	ActionSuppressionRuleSelfApproved Action = "suppression_rule.self_approved"
 
+	// An approver looked at a rule the platform flagged for review (it had
+	// no end date) and cleared the flag.
+	ActionSuppressionRuleReviewed Action = "suppression_rule.reviewed"
+
 	// Four-eyes dispositions of high and critical exposures.
 	ActionExposureDispositionRequested    Action = "exposure.disposition_requested"
 	ActionExposureDispositionApproved     Action = "exposure.disposition_approved"
@@ -740,6 +744,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved,
+		ActionSuppressionRuleReviewed,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -868,6 +873,8 @@ func (a Action) Category() string {
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
 	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved:
+		return "suppression"
+	case ActionSuppressionRuleReviewed:
 		return "suppression"
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected:
 		return "exposure"
@@ -1144,6 +1151,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionSuppressionRuleApproved,
 		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
+		ActionSuppressionRuleReviewed,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,

@@ -36,7 +36,12 @@ Rules made before the end was required were given 90 days from the upgrade by
 migration `suppression_rule_end_backfill`; the pending and approved ones carry
 a review flag (`review_flagged_at`, `review_reason = no_end_date`), shown as a
 "Review" badge in the list and a callout in the rule's detail, so an approver
-looks at them again. An edit of the rule clears the flag.
+looks at them again. An edit of a pending rule clears the flag; for an approved
+rule (which cannot be edited) an approver clears it with
+`POST /api/v1/suppressions/{id}/reviewed` (`findings:suppressions:approve`,
+409 when not flagged): the rule keeps its end, the rule's trail records the
+cleared flag and the tenant audit log has `suppression_rule.reviewed` with the
+flag before and after.
 
 ## Where an active rule applies
 
