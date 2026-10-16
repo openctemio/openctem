@@ -1,8 +1,9 @@
-// Package lifecycle holds the idle-workspace policy for Free organizations
-// (docs/architecture/idle-workspaces.md): an organization on the Free plan
-// that nobody signs in to is reminded, then made read-only, warned again,
-// and finally marked for deletion. A sign-in by any member resets it; a
-// platform administrator can exempt it.
+// Package lifecycle holds the idle-organization policy
+// (docs/architecture/idle-workspaces.md): an organization the policy is on
+// for, that nobody signs in to, is reminded, then made read-only, warned
+// again, and finally marked for deletion. A sign-in by any member resets it.
+// The policy is off for every organization until a platform administrator
+// turns it on for that organization.
 package lifecycle
 
 import (
@@ -95,11 +96,7 @@ const MinStageGap = 7 * day
 
 // Decide is the stage the organization should be in at now: Next, except
 // that a warning step waits at least MinStageGap after the previous one.
-// Exempt organizations are always active.
 func (t Thresholds) Decide(w Workspace, now time.Time) Stage {
-	if w.Exempt {
-		return StageActive
-	}
 	current := w.Stage
 	if !current.IsValid() {
 		current = StageActive
@@ -114,7 +111,7 @@ func (t Thresholds) Decide(w Workspace, now time.Time) Stage {
 	return next
 }
 
-// Workspace is one Free organization's lifecycle row with its activity.
+// Workspace is one organization under the idle policy, with its activity.
 type Workspace struct {
 	TenantID       shared.ID
 	Name           string
@@ -125,7 +122,6 @@ type Workspace struct {
 	// the organization's creation time is used instead).
 	LastSignIn time.Time
 	CreatedAt  time.Time
-	Exempt     bool
 }
 
 // Idle is how long nobody signed in, at now.
@@ -137,13 +133,14 @@ func (w Workspace) Idle(now time.Time) time.Duration {
 	return now.Sub(since)
 }
 
-// Exemption is a platform administrator's decision to keep an organization
-// out of the idle lifecycle.
-type Exemption struct {
-	Exempt bool
-	Reason string
-	By     *shared.ID
-	At     time.Time
+// Policy is a platform administrator's decision to put an organization under
+// the idle policy (Enabled) or take it out. Off is the default for every
+// organization: no row, or a row with Enabled false.
+type Policy struct {
+	Enabled bool
+	Reason  string
+	By      *shared.ID
+	At      time.Time
 }
 
 // Status is an organization's lifecycle as the console shows it.
@@ -151,22 +148,24 @@ type Status struct {
 	Stage          Stage
 	StageChangedAt *time.Time
 	LastSignIn     *time.Time
-	Exempt         bool
-	ExemptReason   string
-	ExemptAt       *time.Time
+	PolicyEnabled  bool
+	PolicyReason   string
+	PolicySetAt    *time.Time
 }
 
 // Repository persists the lifecycle. Every per-organization query is scoped
 // by tenant_id.
 type Repository interface {
-	// FreeWorkspaces lists the Free organizations with their stage and the
-	// latest member sign-in.
-	FreeWorkspaces(ctx context.Context) ([]Workspace, error)
+	// Workspaces lists the organizations the policy is on for, with their
+	// stage and the latest member sign-in.
+	Workspaces(ctx context.Context) ([]Workspace, error)
 	SetStage(ctx context.Context, tenantID shared.ID, stage Stage, at time.Time) error
 	Status(ctx context.Context, tenantID shared.ID) (*Status, error)
-	SetExemption(ctx context.Context, tenantID shared.ID, e Exemption) error
-	// ReadOnly reports whether the organization is read-only now: in a
-	// read-only stage, not exempt, and nobody signed in since the stage
+	// SetPolicy turns the policy on or off for the organization. Turning it
+	// off returns the organization to active.
+	SetPolicy(ctx context.Context, tenantID shared.ID, p Policy) error
+	// ReadOnly reports whether the organization is read-only now: the policy
+	// is on, it is in a read-only stage, and nobody signed in since the stage
 	// started (a sign-in lifts it at once; the sweep then resets the stage).
 	ReadOnly(ctx context.Context, tenantID shared.ID) (bool, error)
 	// Recipients are the emails of the organization's active owners and
