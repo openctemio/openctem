@@ -45,6 +45,7 @@ import { PersonalAccountsCard } from './personal-accounts-card'
 import type { InviteesPolicy, PersonalAccountsPolicy, SSOException } from '../types/settings.types'
 import { DeleteOrganization } from './delete-organization'
 import { LeaveOrganization } from './leave-organization'
+import { OrganizationRegion } from '@/features/tenant/components/region-note'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
 import { SensorOptInSwitches } from '@/features/sensors/components/sensor-opt-in-switches'
 import {
@@ -1057,6 +1058,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                           <p className="text-xs text-muted-foreground">
                             Lowercase letters, numbers, and hyphens only
                           </p>
+                          <OrganizationRegion slug={currentTenant?.slug} />
                         </div>
                       </div>
 
