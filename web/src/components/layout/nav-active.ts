@@ -18,9 +18,8 @@ export function isUrlActive(pathname: string, url: unknown): boolean {
 type MatchableLink = { url: NavLink['url']; sections?: readonly NavSectionLink[] }
 
 /**
- * Every url a nav link stands for: its own, plus its in-page section tabs (the
- * Remediation row covers its "Solution families" tab at /remediations, which is
- * not a child route of /remediation).
+ * Every url a nav link stands for: its own, plus its in-page section tabs (a
+ * tab may live outside the row's own path).
  */
 function linkUrls(item: MatchableLink): string[] {
   const own = typeof item.url === 'string' ? [item.url] : []
