@@ -90,7 +90,7 @@ export function VersionCheckBanner() {
       <Alert data-testid="version-check-update">
         <ArrowUpCircle />
         <AlertTitle className="pe-8">
-          {t('admin.versionCheck.banner.updateTitle', 'OpenCTEM {version} is available', {
+          {t('admin.versionCheck.banner.updateTitle', '{product} {version} is available', {
             version: latest,
           })}
         </AlertTitle>

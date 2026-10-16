@@ -332,7 +332,7 @@ has an account or an organization exists:
 
 | Endpoint | Unknown and known answer the same way |
 |---|---|
-| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal. With Turnstile keys, after 3 failed sign-ins from one client address in 15 minutes the next attempt from it answers 403 `CAPTCHA_REQUIRED` until a passing `captcha_token` is sent (counted per address, never per account; Redis across replicas) |
+| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal. With Turnstile keys, after 3 failed sign-ins from one client address in 15 minutes the next attempt from it answers 403 `CAPTCHA_REQUIRED` until a passing `captcha_token` is sent (counted per address, never per account, in Redis across replicas; the count only decays with its window, a success does not clear it, and an unreadable counter asks for the CAPTCHA) |
 | `POST /auth/register` | 201 with the same body for a new and an existing email: no account id, the verification rule a new account would get, one message; the password policy is checked first for both; the verification email is sent after the response |
 | `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response |
 | `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
@@ -350,6 +350,18 @@ An organization a person creates themselves starts on the **Free** plan, and
 one person owns at most the Free plan's `free_teams_per_user` (1 by default):
 another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 `docs/architecture/plans-and-limits.md`.
+
+## Data region (RFC-104)
+
+`DEPLOYMENT_REGION` names the data region of the deployment (1-32 lowercase
+letters, digits or hyphens; validated at start). Every organization created
+here gets it in `tenants.region` (migration 002571), at insert, and keeps it
+for its life: no update writes the column, and a later change of
+`DEPLOYMENT_REGION` never moves an existing organization. Organizations from
+before have no region. The region is shown on the create form
+(`deployment_region` on `GET /auth/providers`) and in the organization's
+settings (`region` on the organization). With a second region, each region
+runs its own deployment; the selector appears only then.
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 

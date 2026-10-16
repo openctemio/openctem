@@ -40,6 +40,8 @@ export interface AuthProvidersResponse {
   password_policy?: PasswordPolicy
   /** Turnstile site key; set when the sign-up forms must pass a CAPTCHA. */
   captcha_site_key?: string
+  /** DEPLOYMENT_REGION: the region a new organization gets (fixed). */
+  deployment_region?: string
 }
 
 // ============================================
