@@ -1322,6 +1322,9 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	if dataScopeGuardMiddleware != nil {
 		middlewares = append(middlewares, dataScopeGuardMiddleware)
 	}
+	// The caller's fresh permissions for rules decided in services (a
+	// finding lifecycle move that needs a permission).
+	middlewares = append(middlewares, middleware.PermissionCheckContext())
 	return middlewares
 }
 

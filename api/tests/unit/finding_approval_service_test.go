@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
+	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -1472,4 +1473,42 @@ func TestFindingApprovalService_AcceptanceCapByPriority(t *testing.T) {
 	})
 	require.ErrorIs(t, err, shared.ErrValidation, "approving past the current cap is refused")
 	assert.Empty(t, findingRepo.statusUpdates, "nothing was accepted")
+}
+
+// stubLifecycles gives the service one organization scheme.
+type stubLifecycles struct{ cands []lc.Candidate }
+
+func (s stubLifecycles) Candidates(context.Context, shared.ID) ([]lc.Candidate, error) {
+	return s.cands, nil
+}
+
+// Approving runs the organization's lifecycle again with the approver as the
+// actor: a scheme that now needs a permission the approver does not hold
+// refuses the approval, which stays pending.
+func TestFindingApprovalService_ApproveStatus_LifecycleDecidesForTheApprover(t *testing.T) {
+	tenantID, findingID := shared.NewID(), shared.NewID()
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "false_positive",
+		ClosureReason: "detection_error", Justification: "Known test pattern", RequestedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+
+	scheme, v := lc.Compile(lc.Spec{Transitions: []lc.TransitionSpec{{
+		ID: "fp", Name: "False positive", From: []string{"status:confirmed"}, To: "status:false_positive",
+		Guards: []lc.Guard{{Kind: lc.GuardRequirePermission, AnyOf: []string{"findings:verify"}}},
+	}}}, nil, lc.Meta{VersionID: shared.NewID(), Version: 1})
+	require.True(t, v.OK(), "%+v", v.Errors)
+	svc.SetLifecycles(stubLifecycles{cands: []lc.Candidate{{Scheme: scheme, Default: true}}})
+
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: created.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, finding.ErrLifecycleMove), "got %v", err)
+	assert.Empty(t, findingRepo.statusUpdates, "the finding must not move")
 }
