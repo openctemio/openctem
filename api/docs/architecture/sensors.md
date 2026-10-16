@@ -409,10 +409,16 @@ Rows that refer to a sensor through `(tenant_id, sensor_id)`:
   `tenant_id` is `NULL` then, and only then (trigger
   `sensor_child_tenant_matches_scope`); a plain foreign key on `sensor_id`
   keeps the cascade on delete.
-- `scan_zone_sensors`, `sensor_tool_settings`, `collector_assets` and
-  `ingest_reports` keep `tenant_id NOT NULL`, so the composite foreign key
-  refuses a shared sensor: it is never a zone member, has no organization's
-  tool settings, collects no assets and pushes no reports.
+- `scan_zone_sensors`, `sensor_tool_settings` and `collector_assets` keep
+  `tenant_id NOT NULL`, so the composite foreign key refuses a shared sensor:
+  it is never a zone member, has no organization's tool settings and collects
+  no assets.
+- `ingest_reports` holds a shared sensor's report of a shared job in the
+  command's organization: a plain foreign key on `sensor_id` and the trigger
+  `trigger_ingest_reports_sensor_binding` keep an organization sensor's
+  reports in its organization and store a shared sensor's report only with a
+  shared job of that organization it holds; a shared sensor pushes nothing
+  ([result binding](sensor-result-binding.md#shared-sensors)).
 
 A shared sensor has no "home" organization. Managing shared sensors belongs to
 the platform admin console (RFC-022); on the tenant plane they do not exist:
