@@ -59,6 +59,8 @@ const (
 	EventCategoryApproval EventCategory = "approval"
 	EventCategoryWorkflow EventCategory = "workflow"
 	EventCategorySensor   EventCategory = "sensor"
+	// EventCategoryRemediation groups remediation task and suggestion events.
+	EventCategoryRemediation EventCategory = "remediation"
 )
 
 // EventCategoryInfo pairs an event category with its display label.
@@ -149,6 +151,11 @@ const (
 	// output, or repeated failures (docs/rfcs/RFC-093-asset-coverage.md).
 	EventTypeCoverageGap EventType = "coverage_gap"
 
+	// EventTypeRemediationSuggestionsDigest is the daily digest of new
+	// remediation suggestions to review (docs/rfcs/RFC-098-remediation-tasks.md):
+	// one message per tenant and day, never one per suggestion.
+	EventTypeRemediationSuggestionsDigest EventType = "remediation_suggestions_digest"
+
 	// EventTypeSensorOffline fires when the sensor-health controller sees a
 	// sensor stop heartbeating (online -> offline). The id keeps the dotted
 	// form of the event_types catalog row it has always had, which is also
@@ -203,6 +210,8 @@ const (
 	ModuleSensors  = "sensors"
 	// ModuleAttackSurface is the EASM module.
 	ModuleAttackSurface = "attack_surface"
+	// ModuleRemediation is the remediation tasks and campaigns module.
+	ModuleRemediation = "remediation"
 )
 
 // AllEventTypes returns all event types with metadata for UI.
@@ -241,6 +250,9 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
 		{Type: EventTypeCoverageGap, Category: EventCategoryAsset, Label: "Coverage Gap", Description: "Assets went without a capability their type needs (never or not recently scanned), a capability stopped producing its output, or it failed repeatedly", RequiredModule: ModuleAttackSurface},
 		{Type: EventTypeAttackSurfaceDigest, Category: EventCategoryExposure, Label: "Attack Surface Weekly Digest", Description: "Weekly summary of what changed on the external attack surface: new and removed hosts, ports, certificates, DNS, technologies and exposures", RequiredModule: ModuleAttackSurface},
+
+		// Remediation events - require the 'remediation' module
+		{Type: EventTypeRemediationSuggestionsDigest, Category: EventCategoryRemediation, Label: "Remediation Suggestions Digest", Description: "Daily summary of new remediation suggestions to review (findings one fix closes); nothing changes until someone accepts one", RequiredModule: ModuleRemediation},
 
 		// Sensor events - require 'sensors' module
 		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
@@ -376,6 +388,9 @@ func SeverityFilterApplies(eventType EventType) bool {
 		return false
 	// A coverage gap carries a fixed severity chosen by the coverage loop.
 	case EventTypeCoverageGap:
+		return false
+	// The suggestions digest is a summary with a fixed "info" severity.
+	case EventTypeRemediationSuggestionsDigest:
 		return false
 	default:
 		return true

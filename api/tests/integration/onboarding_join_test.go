@@ -32,6 +32,10 @@ import (
 
 type onbTenants struct{ *tenantapp.TenantService }
 
+func (t onbTenants) AddMemberApprovingJoinRequest(ctx context.Context, tenantID string, in onboarding.AddMemberInput, approver, requestID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	return t.TenantService.AddMemberApprovingJoinRequest(ctx, tenantID, tenantapp.AddMemberInput{UserID: in.UserID, Role: in.Role}, approver, requestID, actx)
+}
+
 func (t onbTenants) AddMember(ctx context.Context, tenantID string, in onboarding.AddMemberInput, inviter shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
 	return t.TenantService.AddMember(ctx, tenantID, tenantapp.AddMemberInput{UserID: in.UserID, Role: in.Role}, inviter, actx)
 }
@@ -157,6 +161,38 @@ func TestOnboardingJoinByDomain(t *testing.T) {
 	}
 	if err := svc.Reject(ctx, orgA, reqID, admin.ID(), actx); !errors.Is(err, joinrequest.ErrNotPending) {
 		t.Fatalf("a decided request cannot be decided again, got %v", err)
+	}
+
+	// Approval re-checks the domain now: a request made while joining was
+	// open is not approved once the owner turned joining off.
+	fay := onbUser(t, db, "fay-"+uuid.NewString()[:6]+"@"+domain, true)
+	opts, _ = svc.Options(ctx, fay)
+	if _, err := svc.Accept(ctx, fay, opts.Organizations[0].Ref, actx); err != nil {
+		t.Fatal(err)
+	}
+	listed, _ = svc.ListRequests(ctx, orgA)
+	fayReq := listed[0].ID
+	setPolicy(verifieddomain.SignupPolicy{Join: verifieddomain.JoinOff, JoinRole: "viewer", Discoverable: true})
+	if err := svc.Approve(ctx, orgA, fayReq, shared.ID{}, "viewer", actx); !errors.Is(err, onboarding.ErrNoLongerJoinable) {
+		t.Fatalf("approval after joining was turned off must be refused, got %v", err)
+	}
+	if _, err := tenants.GetMembership(ctx, fay.ID(), orgA); err == nil {
+		t.Fatal("a refused approval adds nobody")
+	}
+	setPolicy(verifieddomain.SignupPolicy{Join: verifieddomain.JoinApproval, JoinRole: "viewer", Discoverable: true})
+
+	// One transaction: when the membership cannot be created (the person
+	// became a platform administrator), the request stays waiting.
+	if _, err := db.Exec(`INSERT INTO admin_users (id, email, name, role, is_active, api_key_hash, api_key_prefix, user_id, created_at, updated_at)
+		VALUES ($1, $2, 'fay', 'super_admin', FALSE, '!revoked', 'revoked-x', $3, NOW(), NOW())`, uuid.NewString(), fay.Email(), fay.ID().String()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM admin_users WHERE user_id = $1`, fay.ID().String()) })
+	if err := svc.Approve(ctx, orgA, fayReq, shared.ID{}, "viewer", actx); err == nil {
+		t.Fatal("the membership insert must fail for a platform administrator")
+	}
+	if jr, err := requests.GetForTenant(ctx, orgA, fayReq); err != nil || jr.Status != joinrequest.StatusPending {
+		t.Fatalf("the failed approval must roll back the decision: %+v %v", jr, err)
 	}
 
 	// Auto: joins at once as the domain's role.

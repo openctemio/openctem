@@ -27,7 +27,7 @@ func TestGetStats_OverviewAgreesWithTheOpenTab(t *testing.T) {
 		{source: "sca", severity: "critical", status: "new", kev: true, sla: "overdue"},
 		{source: "sca", severity: "critical", status: "confirmed"},
 		{source: "sca", severity: "high", status: "fix_applied"},
-		{source: "sca", severity: "high", status: "not_observed", sla: "exceeded"},
+		{source: "sca", severity: "high", status: "in_progress", sla: "exceeded"},
 		{source: "sca", severity: "none", status: "new"},
 		// Closed: never open.
 		{source: "sca", severity: "critical", status: "resolved", kev: true, sla: "overdue"},

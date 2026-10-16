@@ -109,11 +109,11 @@ func TestCICoverageAndAlerts(t *testing.T) {
 	if n.count("ci.coverage_regression") != 1 || res.StaleFindings != 1 {
 		t.Fatalf("after 8 days: %+v, sent %+v", res, n.sent)
 	}
-	var st, why string
-	_ = r.db.QueryRowContext(ctx, `SELECT status, COALESCE(resolution, '') FROM findings WHERE tenant_id = $1 AND title = 'AWS key'`,
-		r.tenant.String()).Scan(&st, &why)
-	if st != "not_observed" || why != "source_stale" {
-		t.Fatalf("stale-source finding = %s/%s", st, why)
+	var st, obs string
+	_ = r.db.QueryRowContext(ctx, `SELECT status, observation_state FROM findings WHERE tenant_id = $1 AND title = 'AWS key'`,
+		r.tenant.String()).Scan(&st, &obs)
+	if st != "new" || obs != "stale" {
+		t.Fatalf("stale-source finding = %s/%s, want new (unchanged)/stale", st, obs)
 	}
 	for _, p := range n.sent {
 		if p.TenantID != r.tenant {
@@ -145,6 +145,7 @@ func TestCICoverageAndAlerts(t *testing.T) {
 	if err != nil || len(closed) != 1 {
 		t.Fatalf("retire: %v %v", closed, err)
 	}
+	var why string
 	_ = r.db.QueryRowContext(ctx, `SELECT status, COALESCE(resolution, '') FROM findings WHERE tenant_id = $1 AND title = 'AWS key'`,
 		r.tenant.String()).Scan(&st, &why)
 	if st != "resolved" || why != "source_retired" {

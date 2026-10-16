@@ -19,6 +19,7 @@ import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
 import { useAdminAuditLogs, type AuditOutcome } from '@/features/admin-console/api/use-admin-audit'
 import { AdminActivityTable } from '@/features/admin-console/components/admin-activity-table'
+import { AdminAuditChainStatus } from '@/features/admin-console/components/admin-audit-chain-status'
 import { AdminAuditDetailSheet } from '@/features/admin-console/components/admin-audit-detail-sheet'
 import { dayBound } from '@/features/admin-console/lib/audit-range'
 import type { AdminAuditEntry } from '@/features/admin-console/types'
@@ -77,6 +78,9 @@ export default function AdminActivityPage() {
           {t('admin.activity.export', 'Export this page (CSV)')}
         </Button>
       </PageHeader>
+      <div className="mt-5">
+        <AdminAuditChainStatus />
+      </div>
       <div className="mt-5">
         {error ? (
           <ErrorState title="admin activity" error={error} onRetry={() => void mutate()} />
