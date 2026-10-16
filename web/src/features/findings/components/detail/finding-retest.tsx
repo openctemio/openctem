@@ -11,7 +11,7 @@
  *
  * "Retest now" re-runs the check that produced the finding against the origin
  * of its matched-at URL. A verified fix (the endpoint answered and the check
- * did not match) moves the finding to validated_fixed, or resolves it when the
+ * did not match) marks the finding not reproducible, or resolves it when the
  * organization auto-resolves; still vulnerable keeps it (or reopens a resolved
  * one); not reproduced and inconclusive change nothing. Each attempt's
  * request and response are shown under "View evidence". Needs

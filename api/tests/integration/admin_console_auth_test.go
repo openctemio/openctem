@@ -73,10 +73,11 @@ func (c *consoleClient) do(method, path string, body any) (*http.Response, []byt
 	}
 	req, _ := http.NewRequestWithContext(c.t.Context(), method, c.base+path, &buf)
 	req.Header.Set("Content-Type", "application/json")
-	// Browser behavior: echo the readable admin CSRF cookie on writes.
-	u, _ := url.Parse(c.base + "/")
+	// Browser behavior: a console page echoes the readable copy of the CSRF
+	// token, which only the console's pages (/admin) can see.
+	u, _ := url.Parse(c.base + "/admin/")
 	for _, ck := range c.http.Jar.Cookies(u) {
-		if ck.Name == middleware.AdminCSRFCookie && method != http.MethodGet {
+		if ck.Name == middleware.AdminCSRFPageCookie && method != http.MethodGet {
 			req.Header.Set(middleware.CSRFHeaderName, ck.Value)
 		}
 	}
