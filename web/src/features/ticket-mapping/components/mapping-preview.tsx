@@ -185,7 +185,7 @@ export function MappingPreview({ profileId, kind, fields, dirty }: Props) {
 
       <section className="grid gap-3 rounded-lg border p-4" aria-labelledby="tm-prev-in">
         <h3 id="tm-prev-in" className="text-sm font-semibold">
-          {t('ticketMapping.preview.in', 'What a Jira issue would change in OpenCTEM')}
+          {t('ticketMapping.preview.in', 'What a Jira issue would change in {product}')}
         </h3>
         <div className="flex flex-wrap items-end gap-2">
           <div className="grid gap-1">
