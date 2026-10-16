@@ -91,6 +91,9 @@ func internalTarget(target string) bool {
 		return addrscope.IsInternal(a)
 	}
 	lower := strings.ToLower(host)
+	if jobsign.NumericHost(lower) {
+		return true
+	}
 	return lower == "localhost" || strings.HasSuffix(lower, ".localhost") ||
 		strings.HasSuffix(lower, ".local") || strings.HasSuffix(lower, ".internal") ||
 		strings.HasSuffix(lower, ".home.arpa") || strings.HasSuffix(lower, ".in-addr.arpa") ||

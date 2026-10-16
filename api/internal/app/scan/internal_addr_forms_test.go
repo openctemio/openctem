@@ -32,6 +32,9 @@ func TestPlatformTargetRefusal_InternalAddressForms(t *testing.T) {
 		"2002:a00:1::1":           true,
 		"[64:ff9b::a9fe:a9fe]:80": true,
 		"8.0.0.0/6":               true, // holds 10.0.0.0/8
+		"2130706433":              true, // inet_aton forms of 127.0.0.1
+		"http://0x7f.1/":          true,
+		"0177.0.0.1:8080":         true,
 		"8.8.8.0/24":              false,
 		"64:ff9b::808:808":        false, // NAT64 of 8.8.8.8
 		"nat64.example.com":       true,

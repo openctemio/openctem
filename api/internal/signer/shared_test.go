@@ -36,7 +36,8 @@ func TestSign_SharedJobRules(t *testing.T) {
 	for _, target := range []string{
 		"10.0.0.5", "169.254.169.254", "http://127.0.0.1:8080/x", "[::1]:22", "fd00:ec2::254",
 		"64:ff9b::a00:1", "2002:a00:1::1", "8.0.0.0/6", "100.64.0.0/10", "0.0.0.0", "224.0.0.1",
-		"intranet.local", "db.internal", "localhost:5432", "router.home.arpa", "https://svc.internal/", "",
+		"intranet.local", "db.internal", "localhost:5432", "router.home.arpa", "https://svc.internal/",
+		"2130706433", "0x7f.1", "0x7f000001", "127.1", "0177.0.0.1", "http://2130706433/", "017700000001:80", "",
 	} {
 		if target == "" {
 			continue
