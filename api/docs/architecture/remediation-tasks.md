@@ -133,6 +133,12 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   a `remediation_task_changed` entry on every finding (left and joined). Findings not in the source are skipped
   and reported. A detach records `remediation_key_exclusions` (reason `detached`) for the source's key.
 - Undo = the reverse move with the versions the response returns.
+- Tracker comments: after the move is stored, `TaskService` calls `TaskMoveNotifier.TaskMembersMoved` (set with
+  `SetMoveNotifier`; `internal/app/remediation/move_notify.go`) once per move, split, detach and once per merge
+  source, with a `TaskMoveEvent`. `Comments()` (`pkg/domain/remediation/move.go`) words one comment per task
+  touched from counts and task titles only. The task ticket integration implements the notifier for tasks with
+  an active issue; it must not block the request and logs its own failures. Not wired in `cmd/server` until then
+  (listed in the wiring guard's optional setters with that reason).
 
 ## Mark fixed and regressions
 
@@ -161,8 +167,8 @@ Strings are in the `remediationHub` dictionary (en, vi). Write actions show only
 
 ## Shipped and planned
 
-Shipped: everything above. Planned: the finding drawer band ("tracked in task"), the My Work tasks tab, the
-removal of the solution families page once suggestions replace it.
+Shipped: everything above; the solution families page is removed (the Suggestions tab replaces it). Planned:
+the finding drawer band ("tracked in task"), the My Work tasks tab.
 
 ## Key files
 
