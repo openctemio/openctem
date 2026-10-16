@@ -653,6 +653,31 @@ type AddMemberInput struct {
 // AddMember adds a user to a tenant.
 // inviterUserID is the local user ID of the person inviting.
 func (s *TenantService) AddMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	return s.addMember(ctx, tenantID, input, inviterUserID, actx, s.repo.CreateMembership)
+}
+
+// joinRequestMembershipCreator approves a join request and creates the
+// membership in one transaction (postgres.TenantRepository).
+type joinRequestMembershipCreator interface {
+	CreateMembershipApprovingJoinRequest(ctx context.Context, m *tenantdom.Membership, requestID, approver shared.ID, at time.Time) error
+}
+
+// AddMemberApprovingJoinRequest adds a member exactly as AddMember does
+// (every check applies) and approves the person's waiting join request in
+// the same transaction: either both happen or neither (RFC-104).
+func (s *TenantService) AddMemberApprovingJoinRequest(ctx context.Context, tenantID string, input AddMemberInput, approver, requestID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	creator, ok := s.repo.(joinRequestMembershipCreator)
+	if !ok {
+		return nil, fmt.Errorf("%w: join requests are not supported by this repository", shared.ErrInternal)
+	}
+	return s.addMember(ctx, tenantID, input, approver, actx, func(ctx context.Context, m *tenantdom.Membership) error {
+		return creator.CreateMembershipApprovingJoinRequest(ctx, m, requestID, approver, time.Now().UTC())
+	})
+}
+
+func (s *TenantService) addMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx auditapp.AuditContext,
+	create func(ctx context.Context, m *tenantdom.Membership) error,
+) (*tenantdom.Membership, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -737,7 +762,7 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		return nil, err
 	}
 
-	if err := s.repo.CreateMembership(ctx, membership); err != nil {
+	if err := create(ctx, membership); err != nil {
 		return nil, fmt.Errorf("failed to add member: %w", err)
 	}
 
