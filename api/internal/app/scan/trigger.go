@@ -806,6 +806,9 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	if err := s.commandRepo.Create(ctx, cmd); err != nil {
 		return err
 	}
+	if usePlatform {
+		s.observeSharedTargets(ctx, sc.TenantID, targets)
+	}
 
 	// Link the step run to the command it is waiting on, matching the workflow
 	// path. Without the link a step stays 'pending' forever in the UI even

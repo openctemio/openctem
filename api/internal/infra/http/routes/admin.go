@@ -255,6 +255,16 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminScanPolicy.GetSharedSensors)
 			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensors, requireSuper, stepUp("settings.shared_sensors"))
 		}, adminMiddlewares...)
+		// Shared sensors may scan internal zones, and the anomaly alert
+		// thresholds (RFC-100 §6, §9): same gate, step-up and audit.
+		router.Group("/api/v1/admin/settings/shared-sensor-internal-zones", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensorInternalZones)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorInternalZones, requireSuper, stepUp("settings.shared_sensor_internal_zones"))
+		}, adminMiddlewares...)
+		router.Group("/api/v1/admin/settings/shared-sensor-anomaly", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensorAnomaly)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorAnomaly, requireSuper, stepUp("settings.shared_sensor_anomaly"))
+		}, adminMiddlewares...)
 	}
 
 	// The request-access queue: any admin reads; approving (creates the
