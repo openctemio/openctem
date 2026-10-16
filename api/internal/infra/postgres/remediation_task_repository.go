@@ -346,6 +346,21 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 		}
 	}
 	rec.Task.ActionID = rec.Action.ID
+	if rec.OneActive {
+		// The upsert above holds the action row until this transaction ends,
+		// so a concurrent creator of the same action waits here and then sees
+		// the winner's task.
+		var active bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS (SELECT 1 FROM remediation_tasks
+			                WHERE tenant_id = $1 AND action_id = $2 AND state IN ('open', 'in_progress'))`,
+			tenant, rec.Action.ID.String()).Scan(&active); err != nil {
+			return fmt.Errorf("check active task: %w", err)
+		}
+		if active {
+			return remediation.ErrActiveTaskExists
+		}
+	}
 
 	if err := lockFindingsInTx(ctx, tx, rec.Task.TenantID, append(append([]shared.ID{}, rec.Members...), rec.Related...)); err != nil {
 		return err
@@ -362,10 +377,6 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 		t.ID.String(), tenant, t.ActionID.String(), idArg(t.CampaignID), t.Title, t.Description,
 		idArg(t.AssigneeUserID), idArg(t.AssigneeGroupID), timeArg(t.ManualDeadline), idArg(t.RegressionOf), idArg(t.CreatedBy))
 	if err != nil {
-		var pqErr *pq.Error
-		if errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "uq_remediation_tasks_one_active_per_action" {
-			return remediation.ErrActiveTaskExists
-		}
 		return fmt.Errorf("create remediation task: %w", err)
 	}
 	if err := insertMembersInTx(ctx, tx, t, rec.Members, remediation.MemberRolePrimary, rec.Source, rec.ActorID); err != nil {
