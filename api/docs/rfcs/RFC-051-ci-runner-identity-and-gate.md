@@ -313,7 +313,10 @@ and a retry with the same key and body gets that answer back with
 `Idempotent-Replayed: true`, without ingesting again or counting another
 report. The same key with a different body is `422 IDEMPOTENCY_KEY_REUSED`;
 the same key while the first request is still running is `409` with
-`Retry-After`. A refusal or failure releases the key, so the retry runs again.
+`Retry-After`; the in-flight marker lives at least as long as the run token
+(15 minutes), or until the request deadline when later. A refusal or failure
+releases the key, so the retry runs again; a finished request only overwrites or
+releases the key while the stored record still carries its own body hash.
 The store is the shared Redis; without it, or when it fails, the upload runs
 as it always did (the fingerprints still dedupe findings).
 A secret finding is never stored in clear whatever the runner sends: the
