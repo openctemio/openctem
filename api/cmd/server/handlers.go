@@ -426,7 +426,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Core
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
-		User:   handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log),
+		User:   newUserHandler(svc, repos, v, log),
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
@@ -1691,4 +1691,13 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 		return svc.DataScope
 	}
 	return findingAccessGuard{DataScopeAsserter: svc.DataScope, findings: svc.Vulnerability}
+}
+
+// newUserHandler builds the user handler with self-service account deletion.
+func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
+	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	if svc.AccountDeletion != nil {
+		h.SetAccountDeletion(svc.AccountDeletion)
+	}
+	return h
 }
