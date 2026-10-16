@@ -2035,6 +2035,12 @@ func (c *Config) validateAuth() error {
 		return fmt.Errorf("APP_ENCRYPTION_KEY is the docker-compose default and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
 	}
 
+	// The example FINGERPRINT_KEY values are public: refuse them outside
+	// development.
+	if !c.IsDevelopment() && isDevDefaultFingerprintKey(c.Encryption.FingerprintKey) {
+		return fmt.Errorf("FINGERPRINT_KEY is an example value from the repository and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
+	}
+
 	// A dedicated sensor-key pepper must be a real secret: at least 32
 	// characters (openssl rand -hex 32 gives 64).
 	if p := c.SensorConfig.KeyPepper; p != "" && len(p) < 32 {
@@ -2113,6 +2119,18 @@ var devDefaultJWTSecrets = []string{
 
 func isDevDefaultJWTSecret(s string) bool {
 	return slices.Contains(devDefaultJWTSecrets, s)
+}
+
+// devDefaultFingerprintKeys is the closed set of FINGERPRINT_KEY values that
+// ship in .env.example, the registry example and the compose fallback.
+// Update it whenever a new example is introduced.
+var devDefaultFingerprintKeys = []string{
+	"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+}
+
+func isDevDefaultFingerprintKey(s string) bool {
+	return s != "" && slices.Contains(devDefaultFingerprintKeys, s)
 }
 
 // isDevDefaultEncryptionKey flags the repeating-hex-digit AES-256 key

@@ -49,3 +49,17 @@ func TestFingerprintSecret_DevelopmentFallsBackToTheEncryptionKeyOnly(t *testing
 		t.Fatalf("production fell back to the encryption key: %q", got)
 	}
 }
+
+func TestLoad_FingerprintKeyExamplesAreRefusedInProduction(t *testing.T) {
+	for _, ex := range devDefaultFingerprintKeys {
+		prodEnv(t)
+		t.Setenv("FINGERPRINT_KEY", ex)
+		_, err := Load()
+		if err == nil || !strings.Contains(err.Error(), "example value") {
+			t.Fatalf("example key %q accepted in production: %v", ex[:8], err)
+		}
+		if strings.Contains(err.Error(), ex) {
+			t.Fatal("the error printed the key")
+		}
+	}
+}
