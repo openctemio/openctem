@@ -231,6 +231,9 @@ type InternalAPIConfig struct {
 	AllowAllInterfaces bool
 }
 
+// schemeHTTPS is the URL scheme the configured links must use.
+const schemeHTTPS = "https"
+
 // validateAccountPortalURL accepts an empty value or an absolute https URL
 // (the link is shown to organization administrators).
 func validateAccountPortalURL(raw string) error {
@@ -238,7 +241,7 @@ func validateAccountPortalURL(raw string) error {
 		return nil
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+	if err != nil || u.Scheme != schemeHTTPS || u.Host == "" || u.User != nil {
 		return errors.New("ACCOUNT_PORTAL_URL must be an absolute https URL without credentials")
 	}
 	return nil
@@ -1759,13 +1762,13 @@ func (c *Config) validateBasic() error {
 	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)
-		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+		if err != nil || pu.Scheme != schemeHTTPS || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
 			return errors.New("PROGRAMFEED_URL and PROGRAMFEED_MIRRORS must be https URLs without credentials, query or fragment")
 		}
 	}
 	for _, u := range c.Worker.VulnFeedMirrors {
 		pu, err := url.Parse(u)
-		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+		if err != nil || pu.Scheme != schemeHTTPS || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
 			return errors.New("VULNFEED_MIRRORS must be https URLs without credentials, query or fragment")
 		}
 	}
@@ -2451,7 +2454,7 @@ func deriveSecrets(cfg *Config) {
 // credentials, query or fragment, else nil.
 func parsePublicURL(raw string) *url.URL {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
+	if err != nil || (u.Scheme != schemeHTTPS && u.Scheme != "http") || u.Host == "" ||
 		u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
 		return nil
 	}
