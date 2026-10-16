@@ -78,7 +78,9 @@ export function LifecycleDraftEditor({
 }: LifecycleDraftEditorProps) {
   const { t, locale } = useTranslation()
   const draft = lifecycle.draft
-  const [spec, setSpec] = useState<LifecycleSpec>(() => normalize(draft?.spec))
+  // Without a draft the published version is shown, read-only.
+  const shown = draft ?? lifecycle.published
+  const [spec, setSpec] = useState<LifecycleSpec>(() => normalize(shown?.spec))
   const [hash, setHash] = useState(draft?.spec_hash ?? '')
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState<'save' | 'test' | 'draft' | null>(null)
@@ -88,12 +90,12 @@ export function LifecycleDraftEditor({
   const [publishing, setPublishing] = useState(false)
 
   useEffect(() => {
-    setSpec(normalize(draft?.spec))
+    setSpec(normalize(shown?.spec))
     setHash(draft?.spec_hash ?? '')
     setDirty(false)
     setResult(null)
     setConflict(false)
-  }, [draft?.spec, draft?.spec_hash, draft?.version])
+  }, [shown?.spec, draft?.spec_hash, draft?.version])
 
   const byId = useMemo(() => new Map(catalog.map((s) => [s.id, s])), [catalog])
 
@@ -126,45 +128,44 @@ export function LifecycleDraftEditor({
 
   const readOnly = !canWrite || !draft
 
-  if (!draft) {
-    return (
-      <div className="space-y-3 rounded-lg border border-dashed p-4">
-        <p className="text-sm text-muted-foreground">
-          {t(
-            'findingLifecycle.draft.none',
-            'No draft. Start one from the published version to change this lifecycle.'
-          )}
-        </p>
-        {canWrite && (
-          <Button
-            size="sm"
-            disabled={busy !== null}
-            onClick={async () => {
-              setBusy('draft')
-              try {
-                await createLifecycleDraft(lifecycle.id)
-                onReload()
-              } catch (err) {
-                toast.error(
-                  getErrorMessage(
-                    err,
-                    t('findingLifecycle.draft.startFailed', 'Could not start a draft')
-                  )
-                )
-              } finally {
-                setBusy(null)
-              }
-            }}
-          >
-            {busy === 'draft' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('findingLifecycle.draft.start', 'Start a draft')}
-          </Button>
+  const startDraft = !draft ? (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-4">
+      <p className="text-sm text-muted-foreground">
+        {t(
+          'findingLifecycle.draft.none',
+          'This is the version in force. Start a draft to change it.'
         )}
-      </div>
-    )
-  }
+      </p>
+      {canWrite && (
+        <Button
+          size="sm"
+          disabled={busy !== null}
+          onClick={async () => {
+            setBusy('draft')
+            try {
+              await createLifecycleDraft(lifecycle.id)
+              onReload()
+            } catch (err) {
+              toast.error(
+                getErrorMessage(
+                  err,
+                  t('findingLifecycle.draft.startFailed', 'Could not start a draft')
+                )
+              )
+            } finally {
+              setBusy(null)
+            }
+          }}
+        >
+          {busy === 'draft' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {t('findingLifecycle.draft.start', 'Start a draft')}
+        </Button>
+      )}
+    </div>
+  ) : null
 
   const save = async (): Promise<LifecycleVersion | null> => {
+    if (!draft) return null
     setBusy('save')
     setConflict(false)
     try {
@@ -194,6 +195,7 @@ export function LifecycleDraftEditor({
   }
 
   const check = async () => {
+    if (!draft) return
     if (dirty && !(await save())) return
     setBusy('test')
     try {
@@ -240,6 +242,7 @@ export function LifecycleDraftEditor({
 
   return (
     <div className="space-y-6">
+      {startDraft}
       {conflict && (
         <div
           role="alert"
@@ -437,58 +440,59 @@ export function LifecycleDraftEditor({
         )}
       </SettingsSection>
 
-      <SettingsSection
-        title={t('findingLifecycle.validation.title', 'Check and publish')}
-        actions={
-          canWrite && (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy !== null || !dirty}
-                onClick={() => void save()}
-              >
-                {busy === 'save' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {t('findingLifecycle.draft.save', 'Save draft')}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy !== null}
-                onClick={() => void check()}
-              >
-                {busy === 'test' ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ShieldCheck className="mr-1 size-3.5" />
-                )}
-                {t('findingLifecycle.validation.run', 'Check')}
-              </Button>
-              <Button
-                size="sm"
-                disabled={busy !== null || !publishable}
-                title={
-                  publishable
-                    ? undefined
-                    : t('findingLifecycle.publish.needsCheck', 'Save and check the draft first')
-                }
-                onClick={() => setPublishing(true)}
-              >
-                <Upload className="mr-1 size-3.5" />
-                {t('findingLifecycle.publish.confirm', 'Publish')}
-              </Button>
-            </>
-          )
-        }
-      >
-        {dirty && (
-          <p className="text-xs text-warning">
-            {t('findingLifecycle.draft.unsaved', 'Unsaved changes')}
-          </p>
-        )}
-        <LifecycleValidationPanel result={result} />
-      </SettingsSection>
-
+      {draft && (
+        <SettingsSection
+          title={t('findingLifecycle.validation.title', 'Check and publish')}
+          actions={
+            canWrite && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null || !dirty}
+                  onClick={() => void save()}
+                >
+                  {busy === 'save' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('findingLifecycle.draft.save', 'Save draft')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => void check()}
+                >
+                  {busy === 'test' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="mr-1 size-3.5" />
+                  )}
+                  {t('findingLifecycle.validation.run', 'Check')}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={busy !== null || !publishable}
+                  title={
+                    publishable
+                      ? undefined
+                      : t('findingLifecycle.publish.needsCheck', 'Save and check the draft first')
+                  }
+                  onClick={() => setPublishing(true)}
+                >
+                  <Upload className="mr-1 size-3.5" />
+                  {t('findingLifecycle.publish.confirm', 'Publish')}
+                </Button>
+              </>
+            )
+          }
+        >
+          {dirty && (
+            <p className="text-xs text-warning">
+              {t('findingLifecycle.draft.unsaved', 'Unsaved changes')}
+            </p>
+          )}
+          <LifecycleValidationPanel result={result} />
+        </SettingsSection>
+      )}
       <TransitionDialog
         open={editing !== null}
         onOpenChange={(o) => !o && setEditing(null)}
@@ -504,16 +508,18 @@ export function LifecycleDraftEditor({
           })
         }
       />
-      <PublishDialog
-        open={publishing}
-        onOpenChange={setPublishing}
-        lifecycleId={lifecycle.id}
-        version={draft.version}
-        onPublished={() => {
-          toast.success(t('findingLifecycle.publish.done', 'Lifecycle published'))
-          onReload()
-        }}
-      />
+      {draft && (
+        <PublishDialog
+          open={publishing}
+          onOpenChange={setPublishing}
+          lifecycleId={lifecycle.id}
+          version={draft.version}
+          onPublished={() => {
+            toast.success(t('findingLifecycle.publish.done', 'Lifecycle published'))
+            onReload()
+          }}
+        />
+      )}
     </div>
   )
 }
