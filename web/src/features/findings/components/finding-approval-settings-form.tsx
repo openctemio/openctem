@@ -206,7 +206,7 @@ export function FindingApprovalSettingsForm({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="mt-2"
+                  className="col-start-2 mt-2 justify-self-start"
                   disabled={canceling !== null}
                   onClick={() => void cancelPending('level')}
                 >
@@ -282,7 +282,7 @@ export function FindingApprovalSettingsForm({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="mt-2"
+                  className="col-start-2 mt-2 justify-self-start"
                   disabled={canceling !== null}
                   onClick={() => void cancelPending('percent')}
                 >
