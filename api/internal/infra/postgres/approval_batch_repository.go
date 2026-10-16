@@ -396,7 +396,7 @@ func (r *FindingApprovalRepository) lockBatchMembersTx(ctx context.Context, tx *
 		return nil, nil, err
 	}
 	var kept []*vulnerability.Approval
-	var canceled []shared.ID
+	canceled := make([]shared.ID, 0, len(pending))
 	for _, a := range pending {
 		if onTask[a.FindingID] {
 			kept = append(kept, a)
