@@ -10,7 +10,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -157,23 +156,7 @@ func (h *AdminSignupHandler) Update(w http.ResponseWriter, r *http.Request) {
 		signupLockedError().WriteJSON(w)
 		return
 	}
-	req.TOTPCode = strings.TrimSpace(req.TOTPCode)
-	if req.TOTPCode == "" {
-		apierror.New(http.StatusUnauthorized, codeStepUpRequired,
-			"Enter a code from your authenticator to confirm the change").WriteJSON(w)
-		return
-	}
-	if err := h.stepUp.StepUp(r.Context(), actor, req.TOTPCode, stepUpPurposeSignupPolicy, clientInfo(r)); err != nil {
-		switch {
-		case errors.Is(err, admin.ErrStepUpUnavailable):
-			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
-				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
-		case errors.Is(err, admin.ErrInvalidMFACode):
-			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
-		default:
-			h.logger.Error("sign-up policy step-up", "error", err)
-			apierror.InternalServerError("could not verify the code").WriteJSON(w)
-		}
+	if !confirmAdminStepUp(w, r, h.stepUp, req.TOTPCode, stepUpPurposeSignupPolicy, h.logger) {
 		return
 	}
 

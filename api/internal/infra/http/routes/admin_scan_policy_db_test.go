@@ -47,10 +47,13 @@ func TestAdminScanPolicy_Routes_DB(t *testing.T) {
 		map[string]any{"policy": "off", "totp_code": root.freshCode(true)}, true); code != http.StatusBadRequest {
 		t.Fatalf("no reason: %d", code)
 	}
+	root.closeStepUpWindow()
 	if code, _ := root.do(http.MethodPut, "/api/v1/admin/settings/scan-approval-policy",
 		map[string]any{"policy": "off", "reason": "lab"}, true); code != http.StatusUnauthorized {
 		t.Fatalf("no code: %d", code)
 	}
+	// The route spent the code of the request refused for its reason.
+	root.resetReplayGuard()
 	if code, body := root.do(http.MethodPut, "/api/v1/admin/settings/scan-approval-policy",
 		map[string]any{"policy": "off", "reason": "lab deployment", "version": 0, "totp_code": root.freshCode(true)}, true); code != http.StatusOK || !jsonHas(body, "policy", "off") {
 		t.Fatalf("set default: %d %s", code, body)
