@@ -89,6 +89,16 @@ type Batch struct {
 	Rows   []Row
 	Head   Head
 	Chain  ChainStatus
+	// Gap is set when the first row does not continue the last delivered row.
+	Gap *Gap
+}
+
+// Gap says how a batch fails to continue the cursor: rows were removed or
+// rewritten between the last delivered row and this one.
+type Gap struct {
+	ExpectedPosition int64 `json:"expected_position"`
+	FirstPosition    int64 `json:"first_position"`
+	PrevHashMatches  bool  `json:"prev_hash_matches"`
 }
 
 // ID names the range, for the receiver's de-duplication.
@@ -221,7 +231,8 @@ func (f *Forwarder) Reconcile(ctx context.Context) (int, error) {
 		if err != nil {
 			return sent, f.fail(now, "", err)
 		}
-		if name, err := f.deliver(ctx, Batch{SentAt: f.now(), Rows: rows, Head: head, Chain: f.chain}); err != nil {
+		gap := f.continuity(cur, rows)
+		if name, err := f.deliver(ctx, Batch{SentAt: f.now(), Rows: rows, Head: head, Chain: f.chain, Gap: gap}); err != nil {
 			return sent, f.fail(now, name, err)
 		}
 		last := rows[len(rows)-1]
@@ -251,6 +262,24 @@ func (f *Forwarder) Reconcile(ctx context.Context) (int, error) {
 	}
 	f.succeed(now, head, cur, pending)
 	return sent, nil
+}
+
+// continuity checks that the first row follows the cursor row, by position and
+// by hash link. A break is reported (log, metric, batch payload) but delivery
+// goes on: the off-box copy must not stall behind a tampered chain.
+func (f *Forwarder) continuity(cur Cursor, rows []Row) *Gap {
+	if cur.Position == 0 && cur.Hash == "" {
+		return nil // nothing delivered yet
+	}
+	r := rows[0]
+	posOK, hashOK := r.Position == cur.Position+1, r.PrevHash == cur.Hash
+	if posOK && hashOK {
+		return nil
+	}
+	metrics.AdminAuditForwardGaps.Inc()
+	f.log.Error("admin_audit_forward_gap: the next row does not continue the last delivered row",
+		"expected_position", cur.Position+1, "first_position", r.Position, "prev_hash_matches", hashOK)
+	return &Gap{ExpectedPosition: cur.Position + 1, FirstPosition: r.Position, PrevHashMatches: hashOK}
 }
 
 func (f *Forwarder) chainHead(ctx context.Context) (Head, error) {
@@ -352,7 +381,10 @@ func (f *Forwarder) verifyIfDue(ctx context.Context, now time.Time) {
 		metrics.AdminAuditChainBreaks.Add(float64(len(rep.Breaks)))
 	}
 	f.chainAlert = true
-	first := rep.Breaks[0]
-	f.log.Error("admin_audit_chain_break: the administrators' audit chain does not verify",
-		"breaks", len(rep.Breaks), "first_position", first.Position, "first_reason", first.Reason)
+	args := []any{"breaks", len(rep.Breaks)}
+	if len(rep.Breaks) > 0 {
+		first := rep.Breaks[0]
+		args = append(args, "first_position", first.Position, "first_reason", first.Reason)
+	}
+	f.log.Error("admin_audit_chain_break: the administrators' audit chain does not verify", args...)
 }
