@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -32,6 +33,25 @@ type AdminConsoleHandler struct {
 	svc          *adminconsole.Service
 	cookieSecure bool
 	logger       *logger.Logger
+
+	// captcha and loginFailures add the same CAPTCHA after repeated failed
+	// sign-ins as the tenant /login (counted per client address, under a
+	// console-only key).
+	captcha       Captcha
+	loginFailures LoginFailureCounter
+}
+
+// SetLoginGuard wires the CAPTCHA and the failed-sign-in counter on the
+// console's /login.
+func (h *AdminConsoleHandler) SetLoginGuard(c Captcha, f LoginFailureCounter) {
+	h.captcha, h.loginFailures = c, f
+}
+
+func consoleFailureKey(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	return "console:" + ip
 }
 
 // NewAdminConsoleHandler creates the handler. cookieSecure mirrors
@@ -43,8 +63,9 @@ func NewAdminConsoleHandler(svc *adminconsole.Service, cookieSecure bool, log *l
 // AdminConsoleLoginRequest is the console's own first factor: the account's
 // email and password.
 type AdminConsoleLoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email        string `json:"email"`
+	Password     string `json:"password"`
+	CaptchaToken string `json:"captcha_token,omitempty"`
 }
 
 // AdminLoginResponse tells the client which second step follows.
@@ -125,8 +146,8 @@ func (h *AdminConsoleHandler) clearCookie(w http.ResponseWriter, name, path stri
 // @Produce json
 // @Param request body AdminConsoleLoginRequest true "Email and password"
 // @Success 200 {object} AdminLoginResponse
-// @Failure 401 {object} apierror.Error "Wrong email or password"
-// @Failure 403 {object} apierror.Error "Not an active platform administrator, locked, or the identity provider is required"
+// @Failure 401 {object} apierror.Error "Wrong email or password, or not an active unlocked platform administrator (one answer)"
+// @Failure 403 {object} apierror.Error "CAPTCHA required, or the identity provider sign-in is required"
 // @Router /admin/auth/login [post]
 func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req AdminConsoleLoginRequest
@@ -134,23 +155,40 @@ func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
+	ip := getClientIP(r)
+	key := consoleFailureKey(ip)
+	if captchaNeeded(r.Context(), h.captcha, h.loginFailures, key, h.logger) {
+		ok, cerr := h.captcha.Verify(r.Context(), strings.TrimSpace(req.CaptchaToken), ip)
+		if cerr != nil || !ok {
+			apierror.New(http.StatusForbidden, CodeCaptchaRequired,
+				"Complete the security check and try again.").WriteJSON(w)
+			return
+		}
+	}
 	res, err := h.svc.Start(r.Context(), req.Email, req.Password, clientInfo(r))
 	if err != nil {
 		switch {
-		case errors.Is(err, admin.ErrInvalidCredentials):
+		// A wrong password, an unknown email, a tenant account that is not an
+		// administrator and an inactive or locked one all answer the same, so
+		// the sign-in is not an oracle for a tenant password.
+		case errors.Is(err, admin.ErrInvalidCredentials), errors.Is(err, admin.ErrNotPlatformAdmin), errors.Is(err, admin.ErrAccountLocked):
+			if h.loginFailures != nil && key != "" {
+				if rerr := h.loginFailures.Record(r.Context(), key); rerr != nil {
+					h.logger.Warn("record failed console sign-in", "error", rerr)
+				}
+			}
 			apierror.Unauthorized("Wrong email or password").WriteJSON(w)
-		case errors.Is(err, admin.ErrAccountLocked):
-			apierror.New(http.StatusForbidden, codeAccountLocked, "Too many failed attempts; try again later").WriteJSON(w)
 		case errors.Is(err, admin.ErrIdPSignInRequired):
 			apierror.New(http.StatusForbidden, codeIdPSignInRequired,
 				"Sign in to the admin console with the identity provider").WriteJSON(w)
-		case errors.Is(err, admin.ErrNotPlatformAdmin):
-			apierror.Forbidden("This account is not a platform administrator").WriteJSON(w)
 		default:
 			h.logger.Error("admin console sign-in", "error", err)
 			apierror.InternalError(err).WriteJSON(w)
 		}
 		return
+	}
+	if h.loginFailures != nil && key != "" {
+		_ = h.loginFailures.Reset(r.Context(), key)
 	}
 	h.setCookie(w, middleware.AdminMFACookie, res.PendingToken, adminAuthPath, int(admin.PendingMFATTL.Seconds()), true)
 	writeJSON(w, http.StatusOK, AdminLoginResponse{Status: string(res.Status), OTPAuthURI: res.OTPAuthURI, Secret: res.Secret})

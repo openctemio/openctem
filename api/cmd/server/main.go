@@ -369,6 +369,13 @@ func run() int {
 			handlers.LocalAuth.SetLoginFailureCounter(newLoginFailureCounter(redisClient, log))
 		}
 	}
+	// The console sign-in gets the same CAPTCHA after repeated failures, with
+	// its own per-address counter keys.
+	if handlers.AdminConsole != nil && cfg.Auth.CaptchaTurnstileSecret != "" {
+		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
+			handlers.AdminConsole.SetLoginGuard(t, newLoginFailureCounter(redisClient, log))
+		}
+	}
 	wireStepUpGate(&handlers, services)
 
 	// ==========================================================================

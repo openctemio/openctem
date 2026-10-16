@@ -3018,6 +3018,13 @@ func TestAuthService_VerifyConsolePassword(t *testing.T) {
 		if len(deps.sessionRepo.sessions) != 0 {
 			t.Fatalf("the console check must not open a /login session: %d", len(deps.sessionRepo.sessions))
 		}
+		if deps.userRepo.updateCalls != 0 {
+			t.Fatal("a right password must not clear the lockout counter before the caller accepts the account")
+		}
+		svc.RecordConsolePasswordSuccess(context.Background(), u.ID())
+		if deps.userRepo.updateCalls != 1 {
+			t.Fatal("RecordConsolePasswordSuccess must reset the counter")
+		}
 	})
 
 	t.Run("wrong password and unknown email answer the same", func(t *testing.T) {
