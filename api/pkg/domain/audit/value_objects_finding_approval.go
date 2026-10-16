@@ -36,6 +36,12 @@ const (
 	// (asset owner, assignee, not in the security pool, signed already, or
 	// not enough eligible approvers).
 	ActionFindingApprovalRefused Action = "finding_approval.approval_refused"
+	// Group exceptions (RFC-111 §7): one approval of a group exception
+	// (pending or applied), its rejection and its cancellation.
+	ActionFindingApprovalBatchApproved Action = "finding_approval.batch_approved"
+	ActionFindingApprovalBatchSigned   Action = "finding_approval.batch_signed"
+	ActionFindingApprovalBatchRejected Action = "finding_approval.batch_rejected"
+	ActionFindingApprovalBatchCanceled Action = "finding_approval.batch_canceled"
 )
 
 var _ = registerActions("finding_approval", map[Action]Severity{
@@ -51,4 +57,8 @@ var _ = registerActions("finding_approval", map[Action]Severity{
 	ActionFindingApprovalSinglePerson:    SeverityMedium,
 	ActionFindingApprovalSigned:          SeverityMedium,
 	ActionFindingApprovalRefused:         SeverityMedium,
+	ActionFindingApprovalBatchApproved:   SeverityMedium,
+	ActionFindingApprovalBatchSigned:     SeverityMedium,
+	ActionFindingApprovalBatchRejected:   SeverityMedium,
+	ActionFindingApprovalBatchCanceled:   SeverityLow,
 })
