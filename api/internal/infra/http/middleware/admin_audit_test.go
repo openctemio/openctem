@@ -51,6 +51,9 @@ func (f *fakeAuditRepo) GetFailedActions(context.Context, time.Duration, int) ([
 }
 func (f *fakeAuditRepo) DeleteOlderThan(context.Context, time.Time) (int64, error) { panic("unused") }
 func (f *fakeAuditRepo) CountOlderThan(context.Context, time.Time) (int64, error)  { panic("unused") }
+func (f *fakeAuditRepo) VerifyChain(context.Context) (*admin.AuditChainReport, error) {
+	panic("unused")
+}
 
 func waitForAudit(t *testing.T, ch chan *admin.AuditLog) *admin.AuditLog {
 	t.Helper()
