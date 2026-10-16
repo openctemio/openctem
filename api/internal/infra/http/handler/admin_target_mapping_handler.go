@@ -183,7 +183,7 @@ func (h *AdminTargetMappingHandler) Create(w http.ResponseWriter, r *http.Reques
 	currentAdmin := middleware.MustGetAdminUser(ctx)
 
 	// RBAC Check: Only super_admin and ops_admin can create mappings
-	if currentAdmin.Role() != admin.AdminRoleSuperAdmin && currentAdmin.Role() != admin.AdminRoleOpsAdmin {
+	if currentAdmin.EffectiveRole() != admin.AdminRoleSuperAdmin && currentAdmin.EffectiveRole() != admin.AdminRoleOpsAdmin {
 		apierror.Forbidden("only super admins and ops admins can create target mappings").WriteJSON(w)
 		return
 	}
@@ -272,7 +272,7 @@ func (h *AdminTargetMappingHandler) Update(w http.ResponseWriter, r *http.Reques
 	currentAdmin := middleware.MustGetAdminUser(ctx)
 
 	// RBAC Check: Only super_admin and ops_admin can update mappings
-	if currentAdmin.Role() != admin.AdminRoleSuperAdmin && currentAdmin.Role() != admin.AdminRoleOpsAdmin {
+	if currentAdmin.EffectiveRole() != admin.AdminRoleSuperAdmin && currentAdmin.EffectiveRole() != admin.AdminRoleOpsAdmin {
 		apierror.Forbidden("only super admins and ops admins can update target mappings").WriteJSON(w)
 		return
 	}
@@ -353,7 +353,7 @@ func (h *AdminTargetMappingHandler) Delete(w http.ResponseWriter, r *http.Reques
 	currentAdmin := middleware.MustGetAdminUser(ctx)
 
 	// RBAC Check: Only super_admin can delete mappings
-	if currentAdmin.Role() != admin.AdminRoleSuperAdmin {
+	if currentAdmin.EffectiveRole() != admin.AdminRoleSuperAdmin {
 		apierror.Forbidden("only super admins can delete target mappings").WriteJSON(w)
 		return
 	}
