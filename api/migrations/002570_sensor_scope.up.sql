@@ -169,6 +169,7 @@ UPDATE sensor_grants g SET version = g.version + 1, updated_at = NOW()
 FROM sensors s WHERE s.id = g.sensor_id AND s.scope = 'instance';
 
 -- 8. The flag goes.
+-- expand-contract-ok: is_platform_sensor is replaced by scope in this migration and no code reads it (minimal back-compat; the API is stopped during this deploy, see the upgrade note)
 DROP INDEX IF EXISTS idx_sensors_platform;
 ALTER TABLE sensors DROP COLUMN is_platform_sensor;
 CREATE INDEX idx_sensors_scope_instance ON sensors (id) WHERE scope = 'instance';
