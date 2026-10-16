@@ -108,6 +108,8 @@ func (s stubSignIn) VerifyPassword(_ context.Context, email, password string, _ 
 
 func (s stubSignIn) RecordPasswordSuccess(context.Context, shared.ID) {}
 
+func (s stubSignIn) RecordPasswordFailure(context.Context, shared.ID) {}
+
 func (s stubSignIn) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
 	return shared.ID{}, "", errors.New("not used")
 }
