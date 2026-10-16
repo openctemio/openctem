@@ -19,7 +19,7 @@ function isRateLimited(error: unknown): boolean {
 /**
  * Whether this installation lets users create organizations. Every
  * "Create organization" affordance goes through this, so
- * `TENANT_CREATION_MODE=admin_only` hides them all.
+ * `the admin_only sign-up policy` hides them all.
  *
  * While loading, nothing is offered. A 429 counts as still loading (the
  * public endpoint shares the auth rate limit with sign-in, and offering
