@@ -186,6 +186,17 @@ func (r *PlanRepository) Usage(ctx context.Context, tenantID shared.ID, withFind
 		plan.Seats: seats, plan.Assets: assets, plan.Sensors: sensors,
 		plan.APIKeys: keys, plan.CITrusts: trusts, plan.InvitesPerDay: invites,
 	}
+	// Shared-sensor scans started today (UTC): one per run (a run's chunks
+	// count once), or per command outside a run.
+	var sharedToday int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT count(DISTINCT COALESCE(payload->>'scan_run_id', id::text)) FROM commands
+		WHERE tenant_id = $1 AND is_platform_job
+		  AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
+		tenantID.String()).Scan(&sharedToday); err != nil {
+		return nil, fmt.Errorf("count shared sensor scans: %w", err)
+	}
+	usage[plan.PlatformScansPerDay] = sharedToday
 	if withFindings {
 		var n int
 		if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM findings WHERE tenant_id = $1`, tenantID.String()).Scan(&n); err != nil {

@@ -67,7 +67,7 @@ func TestShouldUsePlatformSensor_ProofRequired(t *testing.T) {
 		{"no verifier: fail closed", true, nil, scan.SensorPreferencePlatform, []string{"app.verified.example"}, false, codeProofRequired},
 	}
 	for _, tc := range cases {
-		svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), zoneResolver: publicResolver{}, proofPolicy: StaticProofPolicy(tc.on), attributionGate: tc.gate}
+		svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), zoneResolver: publicResolver{}, sharedLimits: noLimits{}, proofPolicy: StaticProofPolicy(tc.on), attributionGate: tc.gate}
 		sc := testScan("nuclei")
 		sc.SensorPreference = tc.pref
 		got, err := svc.shouldUsePlatformSensor(ctx, sc, tc.targets)
@@ -82,7 +82,7 @@ func TestShouldUsePlatformSensor_ProofRequired(t *testing.T) {
 		}
 	}
 	// A failed proof lookup fails the explicit-platform decision.
-	svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), zoneResolver: publicResolver{}, proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{err: errors.New("db down")}}
+	svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), zoneResolver: publicResolver{}, sharedLimits: noLimits{}, proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{err: errors.New("db down")}}
 	sc := testScan("nuclei")
 	sc.SensorPreference = scan.SensorPreferencePlatform
 	if _, err := svc.shouldUsePlatformSensor(ctx, sc, []string{"app.verified.example"}); err == nil {
