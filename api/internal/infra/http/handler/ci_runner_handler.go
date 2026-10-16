@@ -52,6 +52,8 @@ type CIRunnerHandler struct {
 	vex CIVEXApplier
 	// secretKeys derives the job's secret hashing key (nil: none).
 	secretKeys SecretKeys
+	// idem stores answers for Idempotency-Key (nil: the header is ignored).
+	idem IdempotencyStore
 }
 
 // CIVEXApplier applies converted VEX statements (findingimport.Service).
@@ -277,11 +279,13 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 // @Produce      json
 // @Param        id   path string true "Run ID"
 // @Param        body body CTISIngestRequest true "CTIS report"
+// @Param        Idempotency-Key header string false "Retry key: the same key and body replays the first answer (stored one hour)"
 // @Success      201  {object}  CIUploadResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
+// @Failure      422  {object}  apierror.Error
 // @Security     CIRunToken
 // @Router       /ci/runs/{id}/results [post]
 func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) {
@@ -290,6 +294,15 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 		apierror.Unauthorized("A CI run token is required").WriteJSON(w)
 		return
 	}
+	if h.idempotentUpload(w, r, run.TenantID.String(), run.ID.String(), func(w http.ResponseWriter, r *http.Request) {
+		h.uploadResults(w, r, run)
+	}) {
+		return
+	}
+	h.uploadResults(w, r, run)
+}
+
+func (h *CIRunnerHandler) uploadResults(w http.ResponseWriter, r *http.Request, run *cirun.Run) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		apierror.BadRequest("Failed to read request body").WriteJSON(w)

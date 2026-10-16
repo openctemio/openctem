@@ -558,6 +558,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		approvalExpiry.SetOverdueRequests(repos.FindingApproval)
 	}
 	w.ControllerManager.Register(approvalExpiry)
+	// Approver notices for requests VEX statements made, drained from the
+	// requests table (the outbox) off the ingest path.
+	if svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewVEXRequestNoticeController(svc.Vulnerability,
+			log.With("controller", "vex-request-notice")))
+	}
 
 	// Asset identity model: derive identifiers for assets that predate it and
 	// queue suspected duplicates for review (never merges).
