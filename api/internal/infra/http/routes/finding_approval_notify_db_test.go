@@ -161,3 +161,88 @@ func TestFindingApprovals_NotifyEligibleApprovers_DB(t *testing.T) {
 		t.Fatalf("AI proposal recipients %v, want %v", got, want)
 	}
 }
+
+// Requests made by VEX statements are announced from the outbox (the
+// requests table), off the ingest path: once per tenant and approver per
+// run, counting and naming only the findings in that approver's data scope;
+// an approver who can see none is not told, another organization's members
+// never are, and a claimed request is never announced twice.
+func TestFindingApprovals_VEXRequestsBatchedPerApprover_DB(t *testing.T) {
+	rec := &approvalNoticeRecorder{}
+	h := newFindingApprovalHarness(t, withDataScope, func(svc *finding.VulnerabilityService, _ *handler.VulnerabilityHandler, db *postgres.DB) {
+		svc.SetApprovalNotifier(postgres.NewScopeActorRepository(db), rec, rec, "https://console.example.com")
+	})
+	org, other := h.tenantWithFindings(), h.tenantWithFindings()
+	owner := h.member(org, "owner")
+	scoped, blind := h.member(org, "member"), h.member(org, "member")
+	otherOwner := h.member(other, "owner")
+	h.customRoleMember(scoped, org, permission.FindingsApprove, permission.FindingsRead)
+	h.customRoleMember(blind, org, permission.FindingsApprove, permission.FindingsRead)
+	f1, a1 := h.scopedFinding(org)
+	f2, _ := h.scopedFinding(org)
+	f3, _ := h.scopedFinding(org)
+	of, _ := h.scopedFinding(other)
+	h.exec(`UPDATE findings SET title = 'finding ' || id::text WHERE tenant_id IN ($1, $2)`, org, other)
+	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`, scoped.id, org, a1)
+	vex := func(tenant, findingID string) {
+		h.exec(`INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status)
+			VALUES ($1, $2, 'false_positive', 'vex', 'not affected', 'pending')`, tenant, findingID)
+	}
+	for _, f := range []string{f1, f2, f3} {
+		vex(org, f)
+	}
+	vex(other, of)
+
+	n, err := h.svc.DispatchVEXRequestNotices(context.Background())
+	if err != nil || n < 4 {
+		t.Fatalf("dispatched %d (%v)", n, err)
+	}
+	got := map[string]string{}
+	for _, p := range rec.inApp {
+		got[p.AudienceID.String()] = p.Title
+		if p.URL != "/findings/approvals" {
+			t.Fatalf("notice: %+v", p)
+		}
+		if p.TenantID.String() == other && p.AudienceID.String() != otherOwner.id {
+			t.Fatalf("another organization's request reached %s", p.AudienceID)
+		}
+	}
+	if !strings.HasPrefix(got[owner.id], "3 ") || !strings.HasPrefix(got[scoped.id], "1 ") || !strings.HasPrefix(got[otherOwner.id], "1 ") {
+		t.Fatalf("counts per approver: %v", got)
+	}
+	if _, told := got[blind.id]; told {
+		t.Fatal("an approver who can see none of the findings was told")
+	}
+	for i, to := range rec.emails {
+		if len(to) == 1 && to[0] == emailOf(scoped) {
+			if !strings.Contains(rec.bodies[i], f1) || strings.Contains(rec.bodies[i], f2) || strings.Contains(rec.bodies[i], f3) {
+				t.Fatalf("in-scope approver's email: %s", rec.bodies[i])
+			}
+		}
+	}
+	// Claimed once: the next run announces nothing.
+	rec.reset()
+	if n, err := h.svc.DispatchVEXRequestNotices(context.Background()); err != nil || n != 0 || len(rec.inApp) != 0 {
+		t.Fatalf("second run: %d %v %d notices", n, err, len(rec.inApp))
+	}
+}
+
+// Without a data-scope enforcer no finding counts as visible (fail closed):
+// nobody is told rather than everybody.
+func TestFindingApprovals_VEXNoticeFailsClosedWithoutScope_DB(t *testing.T) {
+	rec := &approvalNoticeRecorder{}
+	h := newFindingApprovalHarness(t, func(svc *finding.VulnerabilityService, _ *handler.VulnerabilityHandler, db *postgres.DB) {
+		svc.SetApprovalNotifier(postgres.NewScopeActorRepository(db), rec, rec, "https://console.example.com")
+	})
+	org := h.tenantWithFindings()
+	h.member(org, "owner")
+	f, _ := h.scopedFinding(org)
+	h.exec(`INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status)
+		VALUES ($1, $2, 'false_positive', 'vex', 'not affected', 'pending')`, org, f)
+	if _, err := h.svc.DispatchVEXRequestNotices(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.inApp) != 0 || len(rec.emails) != 0 {
+		t.Fatalf("told %d in-app, %d emails without a scope check", len(rec.inApp), len(rec.emails))
+	}
+}
