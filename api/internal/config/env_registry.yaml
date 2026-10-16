@@ -1814,6 +1814,17 @@ vars:
     group: "Administration tools"
     type: string
     description: "`openctem-signer`: signatures per second allowed per organization."
+  - name: ADMIN_API_URL
+    component: web
+    group: "Web console"
+    type: string
+    description: "Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`."
+  - name: OPENCTEM_ADMIN_PLANE
+    component: web
+    group: "Web console"
+    type: string
+    default: "shared"
+    description: "`separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`."
   - name: BACKEND_API_URL
     component: web
     group: "Web console"
