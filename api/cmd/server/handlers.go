@@ -426,7 +426,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Core
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
-		User:   handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log),
+		User:   newUserHandler(svc, repos, v, log),
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
@@ -646,7 +646,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
-		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
 			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
@@ -1691,4 +1691,13 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 		return svc.DataScope
 	}
 	return findingAccessGuard{DataScopeAsserter: svc.DataScope, findings: svc.Vulnerability}
+}
+
+// newUserHandler builds the user handler with self-service account deletion.
+func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
+	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	if svc.AccountDeletion != nil {
+		h.SetAccountDeletion(svc.AccountDeletion)
+	}
+	return h
 }
