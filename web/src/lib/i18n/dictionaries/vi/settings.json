@@ -356,5 +356,7 @@
   "settings.jiraWebhook.copyFailed": "Không sao chép được",
   "settings.jiraWebhook.close": "Đóng",
   "settings.item.ticket-field-mapping": "Ánh xạ trường ticket",
-  "settings.desc.ticket-field-mapping": "Các trường và trạng thái đồng bộ với Jira, theo từng dự án."
+  "settings.desc.ticket-field-mapping": "Các trường và trạng thái đồng bộ với Jira, theo từng dự án.",
+  "settings.item.content": "Danh mục nội dung",
+  "settings.desc.content": "Quy tắc, mẫu và các gói đã ký khác: cài đặt, cập nhật và phê duyệt."
 }
