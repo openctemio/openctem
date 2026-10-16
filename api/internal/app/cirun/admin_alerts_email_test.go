@@ -34,15 +34,25 @@ func TestAdminAlertEmailsAdministratorsOnlyWhenAsked(t *testing.T) {
 	}
 
 	n.AlertAdmins(context.Background(), tenant, AdminAlert{Title: "Renamed <x>", Body: "body & more", Email: true, EmailLink: "https://app.example.com/ci-cd?tab=setup"})
-	select {
-	case got := <-m.ch:
-		if got[0] != tenant.String()+"|a@example.com,b@example.com" || got[1] != "Renamed <x>" {
-			t.Fatalf("mail = %v", got)
+	seen := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case got := <-m.ch:
+			if strings.Contains(got[0], ",") {
+				t.Fatalf("recipients share one To list: %v", got[0])
+			}
+			seen[got[0]] = true
+			if got[1] != "Renamed <x>" {
+				t.Fatalf("subject = %q", got[1])
+			}
+			if !strings.Contains(got[2], "body &amp; more") || !strings.Contains(got[2], `href="https://app.example.com/ci-cd?tab=setup"`) {
+				t.Fatalf("body must be escaped and carry the link: %q", got[2])
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("e-mail missing")
 		}
-		if !strings.Contains(got[2], "body &amp; more") || !strings.Contains(got[2], `href="https://app.example.com/ci-cd?tab=setup"`) {
-			t.Fatalf("body must be escaped and carry the link: %q", got[2])
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("no e-mail sent")
+	}
+	if !seen[tenant.String()+"|a@example.com"] || !seen[tenant.String()+"|b@example.com"] {
+		t.Fatalf("one mail per administrator expected: %v", seen)
 	}
 }

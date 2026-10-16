@@ -42,7 +42,9 @@ func (r renameAssets) Create(context.Context, *asset.Asset) error { return nil }
 
 type captureAlerts struct{ got []AdminAlert }
 
-func (c *captureAlerts) AlertAdmins(_ context.Context, _ shared.ID, a AdminAlert) { c.got = append(c.got, a) }
+func (c *captureAlerts) AlertAdmins(_ context.Context, _ shared.ID, a AdminAlert) {
+	c.got = append(c.got, a)
+}
 
 func renameService(t *testing.T, oldName string, known bool) (*Service, *captureAlerts, shared.ID) {
 	t.Helper()

@@ -148,8 +148,13 @@ func (n *AdminAlerts) emailAdmins(ctx context.Context, tenantID shared.ID, a Adm
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	go func() {
 		defer cancel()
-		if err := n.mailer.SendReport(bg, tenantID.String(), to, a.Title, body); err != nil {
-			n.log.Warn("ci admin alert: e-mail not sent", "error", logger.SanitizeError(err))
+		// One message per administrator: a shared To list would show every
+		// administrator's address to the others, and one bad address would
+		// fail the whole send.
+		for _, addr := range to {
+			if err := n.mailer.SendReport(bg, tenantID.String(), []string{addr}, a.Title, body); err != nil {
+				n.log.Warn("ci admin alert: e-mail not sent", "error", logger.SanitizeError(err))
+			}
 		}
 	}()
 }
