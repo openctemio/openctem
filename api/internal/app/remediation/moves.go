@@ -155,6 +155,14 @@ func (s *TaskService) Move(ctx context.Context, in MoveInput, actx auditapp.Audi
 		ev = ev.WithMetadata("confirmed_warnings", ws).WithSeverity(auditdom.SeverityMedium)
 	}
 	s.logAudit(ctx, actx, ev)
+	mv := remediationdom.TaskMoveEvent{TenantID: in.TenantID, Kind: remediationdom.MoveKindMove, FromTaskID: src.ID, FromTitle: src.Title,
+		Findings: len(res.Moved), SourceArchived: res.SourceArchived, ActorID: in.ActorID}
+	if dst == nil {
+		mv.Kind = remediationdom.MoveKindDetach
+	} else {
+		mv.ToTaskID, mv.ToTitle = &dst.ID, dst.Title
+	}
+	s.notifyMove(ctx, mv)
 	return out, nil
 }
 
@@ -218,6 +226,8 @@ func (s *TaskService) Split(ctx context.Context, in SplitInput, actx auditapp.Au
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskSplit, auditdom.ResourceTypeRemediationTask, src.ID.String()).
 		WithResourceName(src.Title).WithMessage(fmt.Sprintf("%d finding(s) of %q split into a new task %q", len(res.Moved), src.Title, title)).
 		WithMetadata("new_task_id", childID.String()).WithMetadata("findings", len(res.Moved)))
+	s.notifyMove(ctx, remediationdom.TaskMoveEvent{TenantID: in.TenantID, Kind: remediationdom.MoveKindSplit, FromTaskID: src.ID,
+		FromTitle: src.Title, ToTaskID: &childID, ToTitle: title, Findings: len(res.Moved), ActorID: in.ActorID})
 	return out, nil
 }
 
@@ -246,6 +256,7 @@ func (s *TaskService) Merge(ctx context.Context, in MergeInput, actx auditapp.Au
 	if target.State.IsTerminal() {
 		return nil, remediationdom.ErrTaskTerminal
 	}
+	titles := make(map[shared.ID]string, len(in.Sources))
 	for id, v := range in.Sources {
 		if id == in.TargetID || v <= 0 {
 			return nil, fmt.Errorf("%w: a source must be another task, with its version", shared.ErrValidation)
@@ -260,11 +271,16 @@ func (s *TaskService) Merge(ctx context.Context, in MergeInput, actx auditapp.Au
 		if src.ActionID != target.ActionID {
 			return nil, remediationdom.ErrMergeDifferentFix
 		}
+		titles[id] = src.Title
 	}
-	n, err := s.repo.MergeTasks(ctx, remediationdom.MergeRequest{TenantID: in.TenantID, TargetID: in.TargetID,
+	perSource, err := s.repo.MergeTasks(ctx, remediationdom.MergeRequest{TenantID: in.TenantID, TargetID: in.TargetID,
 		TargetVersion: in.TargetVersion, Sources: in.Sources, ActorID: in.ActorID})
 	if err != nil {
 		return nil, err
+	}
+	n := 0
+	for _, c := range perSource {
+		n += c
 	}
 	t, err := s.repo.GetTask(ctx, in.TenantID, in.TargetID)
 	if err != nil {
@@ -273,5 +289,9 @@ func (s *TaskService) Merge(ctx context.Context, in MergeInput, actx auditapp.Au
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskMerged, auditdom.ResourceTypeRemediationTask, t.ID.String()).
 		WithResourceName(t.Title).WithMessage(fmt.Sprintf("%d task(s) merged into %q (%d finding(s))", len(in.Sources), t.Title, n)).
 		WithMetadata("sources", len(in.Sources)).WithMetadata("findings", n))
+	for id, c := range perSource {
+		s.notifyMove(ctx, remediationdom.TaskMoveEvent{TenantID: in.TenantID, Kind: remediationdom.MoveKindMerge, FromTaskID: id,
+			FromTitle: titles[id], ToTaskID: &t.ID, ToTitle: t.Title, Findings: c, SourceArchived: true, ActorID: in.ActorID})
+	}
 	return t, nil
 }

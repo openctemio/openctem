@@ -253,7 +253,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
           title={t('scans.ci.noRunsTitle', 'No CI runs yet')}
           description={t(
             'scans.ci.noRuns',
-            'Add a CI trust configuration, then add the OpenCTEM CI scan to a pipeline.'
+            'Add a CI trust configuration, then add the {product} CI scan to a pipeline.'
           )}
           action={<CISetupEntry canWrite={canWrite} />}
         />
