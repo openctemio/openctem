@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -64,6 +65,8 @@ type Config struct {
 	// they elevate their console session for a while (ADMIN_ELEVATION=
 	// required, the default; off = act as their own role at once).
 	AdminElevationRequired bool
+	// AdminAuditSink streams the administrators' audit log off the box.
+	AdminAuditSink AdminAuditSinkConfig
 
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
 	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
@@ -187,6 +190,21 @@ type AdminAuditRetentionConfig struct {
 	BatchSize int
 }
 
+// AdminAuditSinkConfig sends every administrators' audit row (with its chain
+// position and hash) and the chain head to a destination outside the
+// application database.
+type AdminAuditSinkConfig struct {
+	// URL is the destination: https://..., syslog+tls://host:port,
+	// syslog+tcp://host:port, syslog+udp://host:port or file:///path.
+	// ADMIN_AUDIT_SINK; empty = off.
+	URL string
+	// Token is the webhook's Bearer token. ADMIN_AUDIT_SINK_TOKEN.
+	Token string
+	// HeadInterval is how often the chain head is sent.
+	// ADMIN_AUDIT_SINK_HEAD_INTERVAL, default 15m.
+	HeadInterval time.Duration
+}
+
 // MetricsConfig controls exposure of the Prometheus /metrics endpoint.
 //
 // SECURITY: /metrics leaks internal cardinality (route names, error rates,
@@ -300,6 +318,10 @@ type AppConfig struct {
 	Name string
 	Env  string
 	URL  string // Public app URL (used as fallback for sensor config base URL)
+	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
+	// to every organization created here and never changed (empty: not
+	// named).
+	Region string
 }
 
 // SensorConfigConfig holds the sensor config template service settings.
@@ -1245,9 +1267,10 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name: getEnv("APP_NAME", "openctem"),
-			Env:  appEnv(),
-			URL:  getEnv("APP_URL", ""),
+			Name:   getEnv("APP_NAME", "openctem"),
+			Env:    appEnv(),
+			URL:    getEnv("APP_URL", ""),
+			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
@@ -1554,6 +1577,11 @@ func Load() (*Config, error) {
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
 		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
+		AdminAuditSink: AdminAuditSinkConfig{
+			URL:          getEnv("ADMIN_AUDIT_SINK", ""),
+			Token:        getEnv("ADMIN_AUDIT_SINK_TOKEN", ""),
+			HeadInterval: getEnvDuration("ADMIN_AUDIT_SINK_HEAD_INTERVAL", 15*time.Minute),
+		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
 			// Default TRUE: never start deleting audit history on upgrade.
@@ -1644,6 +1672,9 @@ func deriveSSORedirectAllowList(cfg *Config) []string {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
+	if c.App.Region != "" && !deploymentRegionRE.MatchString(c.App.Region) {
+		return fmt.Errorf("DEPLOYMENT_REGION=%q must be 1-32 lowercase letters, digits or hyphens (e.g. eu-central)", c.App.Region)
+	}
 	if err := c.validateBasic(); err != nil {
 		return err
 	}
@@ -2018,6 +2049,7 @@ func (c *Config) validatePlaceholders() error {
 		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
 		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
 		{"METRICS_TOKEN", c.Metrics.Token},
+		{"ADMIN_AUDIT_SINK_TOKEN", c.AdminAuditSink.Token},
 	}
 	for i, prev := range c.Encryption.PreviousKeys {
 		secrets = append(secrets, struct{ name, value string }{fmt.Sprintf("APP_ENCRYPTION_KEY_PREVIOUS entry %d", i+1), prev})
@@ -2545,3 +2577,7 @@ func feedURLs(primary, mirrors string) []string {
 	}
 	return out
 }
+
+// deploymentRegionRE is the shape of DEPLOYMENT_REGION (the tenants.region
+// check in the database is the same).
+var deploymentRegionRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)

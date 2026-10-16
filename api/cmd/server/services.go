@@ -72,6 +72,7 @@ import (
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
+	findinglifecycleapp "github.com/openctemio/openctem/api/internal/app/findinglifecycle"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
@@ -261,6 +262,20 @@ func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID sha
 		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
 	}
 	return out.Applied, refused, nil
+}
+
+func (a ticketStatusApplier) RequestTicketDisposition(ctx context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
+) ([]shared.ID, []shared.ID, []jira.InboundRefusal, error) {
+	out, err := a.vuln.RequestTicketDisposition(ctx, tenantID, ids, target, integration, ref, externalActor)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
+	for _, r := range out.Refused {
+		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
+	}
+	return out.Requested, out.Pending, refused, nil
 }
 
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
@@ -847,6 +862,9 @@ type Services struct {
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
 	IdleWorkspaces *lifecycleapp.Service
+	// FindingLifecycle manages the organization's finding sub-statuses and
+	// lifecycle schemes (RFC-110).
+	FindingLifecycle *findinglifecycleapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -947,6 +965,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	} {
 		r.SetPlanLimits(s.Entitlement)
 	}
+	s.FindingLifecycle = findinglifecycleapp.NewService(repos.LifecycleSubStatus, repos.LifecycleScheme, s.Entitlement, s.Audit, log)
 
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)
