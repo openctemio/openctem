@@ -159,10 +159,10 @@ migration on publish (which only remaps between sub-statuses of the same canonic
 | Route | Gate | Notes |
 |---|---|---|
 | `GET /api/v1/lifecycle-sub-statuses` | `findings:read` | catalog, archived ones on request |
-| `POST /api/v1/lifecycle-sub-statuses`, `PATCH .../{id}`, `DELETE .../{id}` (archive) | `findings:lifecycles:write` | plan limit on additions; category immutable |
-| `GET /api/v1/lifecycles`, `GET /api/v1/lifecycles/{id}` | `findings:read` | schemes with the published version |
-| `POST /api/v1/lifecycles`, versions (draft edit, validate, simulate) | `findings:lifecycles:write` | |
-| `POST /api/v1/lifecycles/{id}/versions/{version}/publish` | `findings:lifecycles:write` + step-up | audited; the published version id is stored on the timeline rows it decides |
+| `POST /api/v1/lifecycle-sub-statuses`, `PATCH .../{id}`, `DELETE .../{id}` (archive), `POST .../{id}/reactivate` | `findings:lifecycles:write` | plan limit on additions; category immutable |
+| `GET /api/v1/lifecycles`, `GET /api/v1/lifecycles/{id}`, `GET .../{id}/versions[/{version}]` | `findings:read` | schemes with the published and draft versions |
+| `POST /api/v1/lifecycles`, `PATCH .../{id}`, `DELETE .../{id}` (archive), `POST .../{id}/versions` (new draft), `PUT .../{id}/versions/{version_id}` (edit the draft, `If-Match: <spec_hash>`), `POST .../{id}/versions/{version_id}/test` (validate) | `findings:lifecycles:write` | |
+| `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up | a draft is put in force; an older version is published again as a new version copied from it (roll back); audited |
 | `GET /api/v1/findings/{id}/transitions`, `POST /api/v1/findings/transitions/preview` | `findings:read` | include sub-status moves and tenant reasons |
 | `PATCH /api/v1/findings/{id}/status` | as today | accepts `sub_status_id` and `fields` |
 
@@ -213,9 +213,9 @@ data with optional per-language names.
 | Step | Content | State |
 |---|---|---|
 | 1 | Schema: catalog, schemes, versions, `findings.sub_status_id` with its foreign key and reset trigger; domain catalog types and repository | in review |
-| 2 | Pure engine layer: spec compiler, validator, guards, scheme selection, property test, fuzz | designed |
-| 3 | Sub-status catalog API, permission `findings:lifecycles:write`, plan limits, finding resource and filter | designed |
-| 4 | Schemes and versions API (validate, simulate, publish with step-up, rollback); the tenant layer wired into every status path; `PATCH /status` with `sub_status_id` and `fields`; timeline | designed |
+| 2 | Pure engine layer: spec compiler, validator, guards, scheme selection, property test, fuzz | in review |
+| 3 | Catalog and schemes API (versions, validate, publish with step-up, roll back), permission `findings:lifecycles:write`, plan limits | in review |
+| 4 | The tenant layer wired into every status path (sub-status changes only as engine-decided, audited moves); `PATCH /status` with `sub_status_id` and `fields`; finding resource and filter; simulate; timeline | designed |
 | 5 | Settings → Findings → Lifecycle | designed |
 | 6 | Drawer, list and bulk with sub-statuses | designed |
 | 7 | Templates, extra approval steps, ticket mapping by sub-status, flow report | designed |
