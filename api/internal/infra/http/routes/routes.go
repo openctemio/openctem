@@ -142,6 +142,8 @@ type Handlers struct {
 	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
+	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
 	AdminProgramFeed    *handler.AdminProgramFeedHandler    // program feed sources (RFC-065 §16.6)
 	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
@@ -976,6 +978,9 @@ func Register(
 	// Template Source routes (tenant from JWT token)
 	if h.ContentPack != nil {
 		registerContentPackRoutes(router, h.ContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+	if h.ContentCatalog != nil {
+		registerContentCatalogRoutes(router, h.ContentCatalog, authMiddleware, userSync)
 	}
 	if h.PlatformContentPack != nil {
 		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
