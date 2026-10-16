@@ -16,6 +16,7 @@ type Service struct {
 	repo      Repository
 	log       *logger.Logger
 	approvers ApproverDirectory
+	scope     ScopeFilter
 	assetRefs AssetRefChecker
 	totp      TOTPVerifier
 	policy    PolicySource
@@ -217,6 +218,13 @@ type ApproveResult struct {
 	ApprovalsRequired  int
 }
 
+// PreviewSampleSize is the number of findings a preview lists.
+const PreviewSampleSize = 10
+
+// SetScopeFilter wires the data-scope filter the preview sample uses. Without
+// it a preview lists nothing and counts no finding as in scope (fail closed).
+func (s *Service) SetScopeFilter(f ScopeFilter) { s.scope = f }
+
 // Preview is what approving a rule would do to existing findings now.
 type Preview struct {
 	// MatchingOpenFindings is the number of the tenant's open findings the
@@ -225,11 +233,18 @@ type Preview struct {
 	// Capped: more than Limit match; an approval closes Limit of them.
 	Capped bool
 	Limit  int
+	// InScopeFindings is how many of those sit on assets the caller's data
+	// scope admits, at most Limit; Sample lists the first PreviewSampleSize
+	// of them. Findings outside the caller's scope are only in the
+	// organization-wide count, never listed.
+	InScopeFindings int
+	Sample          []SampleFinding
 }
 
 // PreviewRule counts the open findings an approval of the rule would close,
 // with the same matcher and status set the approval uses. The count is
-// tenant-wide because the approval is.
+// tenant-wide because the approval is; the sample and the in-scope count are
+// limited to the caller's data scope.
 func (s *Service) PreviewRule(ctx context.Context, tenantID, ruleID shared.ID) (*Preview, error) {
 	rule, err := s.repo.FindByID(ctx, tenantID, ruleID)
 	if err != nil {
@@ -247,6 +262,12 @@ func (s *Service) PreviewRule(ctx context.Context, tenantID, ruleID shared.ID) (
 		p.MatchingOpenFindings = MaxFindingsAppliedOnApprove
 		p.Capped = true
 	}
+	inScope, sample, err := s.repo.SampleMatchingOpenFindings(ctx, rule, s.scope, MaxFindingsAppliedOnApprove, PreviewSampleSize)
+	if err != nil {
+		return nil, err
+	}
+	p.InScopeFindings = min(inScope, MaxFindingsAppliedOnApprove)
+	p.Sample = sample
 	return p, nil
 }
 
