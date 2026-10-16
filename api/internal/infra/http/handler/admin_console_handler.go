@@ -90,7 +90,7 @@ func clientInfo(r *http.Request) adminconsole.ClientInfo {
 // setCookie writes an admin console cookie. admin_session, admin_mfa and
 // admin_csrf are HttpOnly (admin_session is forced so a caller can never weaken
 // it) and scoped to the console API. The console's pages echo the CSRF token
-// in a header, so they read a copy, admin_csrf_page, scoped to /admin: a
+// in a header, so they read a copy, admin_csrf_ui, scoped to /admin: a
 // tenant page's script does not find it in document.cookie. Paths are not a
 // boundary inside one origin (a same-origin frame of a console page can read
 // it); the console's own origin removes that.

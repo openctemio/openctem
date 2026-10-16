@@ -13,7 +13,7 @@ describe('adminFetch', () => {
   const fetchMock = vi.fn()
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchMock)
-    document.cookie = 'admin_csrf_page=csrf-123; path=/'
+    document.cookie = 'admin_csrf_ui=csrf-123; path=/'
     // A tenant CSRF cookie must never be used for admin calls.
     document.cookie = 'csrf_token=tenant-csrf; path=/'
   })
@@ -35,13 +35,13 @@ describe('adminFetch', () => {
   })
 
   it('reads the console page copy of the token, never the HttpOnly API cookie name', async () => {
-    document.cookie = 'admin_csrf_page=; path=/; max-age=0'
+    document.cookie = 'admin_csrf_ui=; path=/; max-age=0'
     document.cookie = 'admin_csrf=api-only; path=/'
     fetchMock.mockResolvedValueOnce(ok({}))
     await adminFetch('/tenants/t1/sso/enforcement', { method: 'PUT', body: {} })
     expect(fetchMock.mock.calls[0][1].headers['X-CSRF-Token']).toBeUndefined()
     document.cookie = 'admin_csrf=; path=/; max-age=0'
-    document.cookie = 'admin_csrf_page=csrf-123; path=/'
+    document.cookie = 'admin_csrf_ui=csrf-123; path=/'
   })
 
   it('writes carry the admin CSRF cookie value, not the tenant one', async () => {

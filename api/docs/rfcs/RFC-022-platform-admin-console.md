@@ -752,7 +752,7 @@ lifts this).
 - The admin session cookie is scoped to `/api/v1/admin`, so it is never sent to
   tenant routes, and the tenant JWT never authenticates admin routes.
 - The CSRF token is HttpOnly on `/api/v1/admin` as well (`admin_csrf`); the
-  console's pages read a copy scoped to `/admin` (`admin_csrf_page`) to echo it
+  console's pages read a copy scoped to `/admin` (`admin_csrf_ui`) to echo it
   in the `X-CSRF-Token` header, and the older readable copy at `/` is cleared
   on every sign-in. A script on a tenant page no longer finds the token in
   `document.cookie`. **Residual risk until the console has its own origin:**
