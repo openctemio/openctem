@@ -1514,8 +1514,8 @@ func Load() (*Config, error) {
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
 		AdminPlane: AdminPlaneConfig{
-			AllowedCIDRs: getEnvSlice("ADMIN_ALLOWED_CIDRS", DefaultAdminAllowedCIDRs),
-			ListenAddr:   getEnv("ADMIN_LISTEN_ADDR", ""),
+			AllowedCIDRs:             getEnvSlice("ADMIN_ALLOWED_CIDRS", DefaultAdminAllowedCIDRs),
+			ListenAddr:               getEnv("ADMIN_LISTEN_ADDR", ""),
 			ListenAllowAllInterfaces: getEnvBool("ADMIN_LISTEN_ALLOW_ALL_INTERFACES", false),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{

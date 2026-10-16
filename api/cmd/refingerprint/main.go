@@ -61,6 +61,12 @@ import (
 
 var _ refingerprint.Store = (*postgres.FindingRekeyRepository)(nil)
 
+// Run modes printed in the reports.
+const (
+	modeDryRun  = "dry run"
+	modeApplied = "applied"
+)
+
 func main() {
 	apply := flag.Bool("apply", false, "commit the re-keys and merges (default is a dry run)")
 	tenantFlag := flag.String("tenant", "", "tenant id (default: every tenant with older keys)")
@@ -130,9 +136,9 @@ func main() {
 		}
 		reports = append(reports, rep)
 		if !*asJSON {
-			mode := "dry run"
+			mode := modeDryRun
 			if rep.Applied {
-				mode = "applied"
+				mode = modeApplied
 			}
 			fmt.Printf("tenant %s (%s): scanned %d, re-keyed %d, merged %d, kept %d %v, completed %v, resumed %v\n",
 				rep.TenantID, mode, rep.Scanned, rep.Rekeyed, rep.Merged, rep.SkippedTotal(), rep.Skipped, rep.Completed, rep.Resumed)
@@ -219,9 +225,9 @@ func runDASTRepair(ctx context.Context, db *sql.DB, store *postgres.FindingRekey
 		}
 		reports = append(reports, rep)
 		if !asJSON {
-			mode := "dry run"
+			mode := modeDryRun
 			if rep.Applied {
-				mode = "applied"
+				mode = modeApplied
 			}
 			fmt.Printf("tenant %s (%s): scanned %d, merges %d, re-keyed %d\n", rep.TenantID, mode, rep.Scanned, len(rep.Merges), rep.Rekeyed)
 			for _, m := range rep.Merges {
@@ -285,9 +291,9 @@ func runCorrelate(ctx context.Context, db *sql.DB, tenantFlag string, apply, asJ
 		}
 		reports = append(reports, rep)
 		if !asJSON {
-			mode := "dry run"
+			mode := modeDryRun
 			if rep.Applied {
-				mode = "applied"
+				mode = modeApplied
 			}
 			fmt.Printf("tenant %s (%s): injection points %d on %d asset(s); link %d, suggest %d, release %d\n",
 				rep.TenantID, mode, rep.Points, rep.Assets, rep.Linked, rep.Suggested, rep.Released)
