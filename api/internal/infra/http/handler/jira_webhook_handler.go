@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app/jira"
@@ -42,6 +44,8 @@ type JiraWebhookHandler struct {
 	verifier JiraDeliveryVerifier
 	// deliveries remembers delivery ids (replay protection).
 	deliveries WebhookDeliveryGuard
+	// audit records ticket link changes (nil → none).
+	audit *auditapp.AuditService
 }
 
 // NewJiraWebhookHandler creates a new JiraWebhookHandler.

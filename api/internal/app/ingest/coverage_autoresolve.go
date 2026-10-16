@@ -231,7 +231,7 @@ type CoverageOutcome struct {
 	Resolved     []shared.ID
 	// TemplateDrift are the candidates whose last sighting ran other
 	// template content than this run (research/18 O6): not proven fixed,
-	// marked not_observed (NotObserved) in enforce mode.
+	// marked stale (NotObserved, observation_state) in enforce mode.
 	TemplateDrift []shared.ID
 	NotObserved   []shared.ID
 	Held          bool
@@ -383,7 +383,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 			if dr, ok := s.findingRepo.(templateDriftRepo); ok {
 				marked, err := dr.MarkCoverageNotObserved(ctx, tenantID, drifted)
 				if err != nil {
-					s.logger.Warn("coverage auto-resolve: marking template-drifted findings not_observed failed", append(logArgs, "error", err)...)
+					s.logger.Warn("coverage auto-resolve: marking template-drifted findings stale failed", append(logArgs, "error", err)...)
 				} else {
 					out.NotObserved = marked
 					metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "not_observed").Add(float64(len(marked)))

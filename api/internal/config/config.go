@@ -1105,6 +1105,17 @@ type EncryptionConfig struct {
 	// Key. Empty: derived from Key under its own label.
 	// Env var: APP_CONTENT_SIGNING_KEY
 	ContentSigningKey string
+
+	// ContentTrustRootKeyIDs are extra content catalog roots (key ids,
+	// "SHA256:<hex>") trusted beside the ones pinned in the release, for an
+	// operator's own catalog source (RFC-099). Env var:
+	// CONTENT_TRUST_ROOT_KEY_IDS (comma separated).
+	ContentTrustRootKeyIDs []string
+
+	// ContentSigstoreTrustedRoot is a Sigstore trusted root file that
+	// replaces the one embedded in the release for publisher signatures.
+	// Env var: CONTENT_SIGSTORE_TRUSTED_ROOT.
+	ContentSigstoreTrustedRoot string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1474,6 +1485,9 @@ func Load() (*Config, error) {
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
+
+			ContentTrustRootKeyIDs:     getEnvSlice("CONTENT_TRUST_ROOT_KEY_IDS", nil),
+			ContentSigstoreTrustedRoot: getEnv("CONTENT_SIGSTORE_TRUSTED_ROOT", ""),
 		},
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
