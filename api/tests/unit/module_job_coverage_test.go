@@ -20,6 +20,7 @@ var jobInfrastructure = map[string]string{
 	"PrometheusMetrics":      "controller metrics",
 	"PurgeController":        "generic table purge, configured per retention policy",
 	"ControlChangePublisher": "publishes control changes for other jobs; schedules nothing",
+	"VersionCheckController": "instance-level release feed check for the platform console; no organization module (RFC-105)",
 }
 
 // Every background controller the server builds is owned by exactly one
