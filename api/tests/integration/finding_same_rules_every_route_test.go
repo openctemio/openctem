@@ -51,7 +51,7 @@ func TestSameRules_FixAppliedAndResolveOnEveryRoute(t *testing.T) {
 	newFinding := func(status string) shared.ID {
 		id := shared.NewID()
 		exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
-			VALUES ($1, $2, $3, 'sast', 'sr-tool', 'm', 'high', $4, $5)`, id.String(), tenant.String(), asset.String(), "sr-"+id.String(), status)
+			VALUES ($1, $2, $3, 'sast', 'sr-tool', 'm', 'medium', $4, $5)`, id.String(), tenant.String(), asset.String(), "sr-"+id.String(), status)
 		return id
 	}
 	statusOf := func(id shared.ID) string {

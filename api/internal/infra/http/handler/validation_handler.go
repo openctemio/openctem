@@ -121,7 +121,7 @@ type evidenceResponse struct {
 	Outcome       string `json:"outcome"`
 	StatusChanged bool   `json:"status_changed"`
 	// Downgraded is true when a not_reproducible verdict downgraded a still-open
-	// finding to validated_fixed (RFC-011.2 confirm-or-downgrade).
+	// finding's validation to not_reproducible (RFC-011.2 confirm-or-downgrade).
 	Downgraded bool `json:"downgraded"`
 }
 
@@ -539,7 +539,7 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 		"validated":       validated,
 		"overall_pct":     overall,
 		// Downgrade outcome metric: of the findings validated, the share a
-		// re-check downgraded (validated_fixed). downgrade_validated is the
+		// re-check downgraded (validation not_reproducible). downgrade_validated is the
 		// metric's own denominator (distinct findings with any evidence).
 		"downgraded":          downgraded,
 		"downgrade_validated": dgValidated,

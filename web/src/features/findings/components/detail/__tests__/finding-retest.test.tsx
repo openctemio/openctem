@@ -151,7 +151,7 @@ describe('retestMeta', () => {
 
   it('labels each outcome; only a confirmed fix reads as fixed', () => {
     expect(
-      retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'validated_fixed' })).label
+      retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'confirmed' })).label
     ).toBe('Verified fixed — awaiting confirmation')
     expect(
       retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'resolved' })).label

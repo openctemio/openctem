@@ -48,7 +48,7 @@ type IngestResult struct {
 	Stored        StoredEvidence
 	StatusChanged bool // the finding moved to resolved (the fix stood)
 	// Downgraded is true when a not_reproducible verdict downgraded a
-	// still-open finding to validated_fixed (feeds the downgrade % metric).
+	// still-open finding (validation not_reproducible; feeds the downgrade % metric).
 	Downgraded bool
 }
 

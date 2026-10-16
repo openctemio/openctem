@@ -98,20 +98,20 @@ follow-up.
 
 ## Inbound status sync (epic → campaign)
 
-The reverse direction, mirroring finding-level inbound sync. A Jira webhook that
-moves a campaign's linked epic to a done state (`Done`/`Resolved`/`Closed`/
-`Complete`/`Completed`) marks the campaign **completed**.
+The reverse direction. A Jira webhook that moves a campaign's linked epic to a
+done state (`Done`/`Resolved`/`Closed`/`Complete`/`Completed`) is a **fix
+claim** for the campaign's findings, not a completion.
 
-- `HandleJiraWebhook` calls `CampaignEpicSink.HandleEpicStatusChange` (best-
-  effort, independent of the finding path — an issue is either a finding ticket
-  or a campaign epic, and each sink no-ops on a key that isn't its own).
-- `RemediationCampaignService.HandleEpicStatusChange`: done-status guard →
-  `CampaignTicketRepository.GetByIssueKey` (reverse lookup) → load campaign →
-  `Complete()`. A draft/paused (non-completable) campaign is logged and skipped.
-- **Loop-safe**: it persists via `repo.Update` directly (not
-  `UpdateCampaignStatus`), so it does **not** re-fire the outbound transition;
-  and an already-terminal campaign is a clean no-op. So the
-  completion→epic-Done→webhook→inbound cycle converges immediately.
+- `HandleJiraWebhook` asks `CampaignEpicSink.HandleEpicStatusChange` first; a
+  campaign epic is handled there and never treated as a finding ticket.
+- `RemediationCampaignService.HandleEpicStatusChange`: reverse lookup
+  (`CampaignTicketRepository.GetByIssueKey`) → done-status guard →
+  `ResolveCampaignFindings` (the campaign "mark fixed": legal steps to
+  `fix_applied`, proof of fix per finding) with the Jira integration as the
+  recorded actor. The campaign stays as it is: it completes when its findings
+  are verified closed. Findings the rules refuse are commented back on the
+  epic, once per window.
+- Loop-safe: no campaign status changes, so no outbound epic transition fires.
 
 Together with the outbound path, **campaign↔epic sync is now bidirectional** —
 matching the finding↔ticket sync.

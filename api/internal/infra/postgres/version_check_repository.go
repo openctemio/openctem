@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/versioncheck"
@@ -83,13 +82,6 @@ func (r *VersionCheckRepository) ClaimDue(ctx context.Context, now, first, next 
 	}
 	n, err := res.RowsAffected()
 	return n == 1, err
-}
-
-func toInt64(v uint64) (int64, error) {
-	if v > math.MaxInt64 {
-		return 0, errors.New("value out of range")
-	}
-	return int64(v), nil
 }
 
 // Apply stores a verified feed unless a newer sequence or key set is stored,

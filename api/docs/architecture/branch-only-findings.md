@@ -41,7 +41,7 @@ and never counts (migration `002147`): anyone who can push can create
 | A finding is inserted with no branch (host, cloud, pentest, manual…) or on a counting branch | `branch_only = false` | same trigger |
 | A counting branch sees a branch-only finding (its occurrence there is recorded at ingest) | promoted: `branch_only = false`, the SLA deadline keeps its length measured from now, `sla_status = on_track`; its workflows (notifications, ticket rules) run as for a new finding | `promote_branch_only_findings()` from `FindingProcessor.promoteBranchOnly` |
 | A branch starts to count (made default or protected) | its branch-only findings are promoted (no workflows) | `AFTER UPDATE` trigger on `repository_branches` |
-| No branch still shows a branch-only finding | `not_observed`, resolution `branch_expired`, a `status_changed` activity with reason `branch_only_expired` | `ExpireFeatureBranchFindings` (finding lifecycle job) |
+| No branch still shows a branch-only finding | stale (`observation_state`; the status stays) | `ExpireFeatureBranchFindings` (finding lifecycle job) |
 
 Only the insert sets the mark: a finding that already counts is never hidden
 later, and a branch that stops counting hides nothing. `first_detected_at`
@@ -56,8 +56,8 @@ period and none of its occurrences is open and seen within its branch's
 retention (`retention_days`, else the default). A deleted branch removes its
 occurrences; a merged branch is no longer scanned, so its occurrences age out.
 `keep_when_inactive` is not consulted: it keeps findings of branches that
-count. `not_observed` is never a fix (decision O2); a sighting reopens
-the finding without a regression flag.
+count. Stale is never a fix (decision O2); a sighting makes the finding
+present again without a regression flag.
 
 ## Where branch-only findings are left out
 

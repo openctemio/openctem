@@ -159,8 +159,9 @@ type reconcileResult struct {
 	// Stood is true when a fix_applied finding was verified and moved to
 	// resolved (the proof-of-fix stood).
 	Stood bool
-	// Downgraded is true when a still-open finding was downgraded to
-	// validated_fixed after a not_reproducible verdict (feeds downgrade %).
+	// Downgraded is true when a still-open finding was downgraded (its
+	// validation stamped not_reproducible) after a not_reproducible verdict
+	// (feeds downgrade %). The status does not change.
 	Downgraded bool
 }
 
@@ -172,20 +173,19 @@ type reconcileResult struct {
 //	outcome not_detected  (== VerdictNotReproducible, "exposure gone"):
 //	    - fix_applied            → hold (verdict stamped; reachability is
 //	                               sensor-asserted, so never a close)
-//	    - new/confirmed/in_prog. → validated_fixed (DOWNGRADE)        Downgraded=true
-//	    - already validated_fixed→ hold (re-stamp verdict only)
+//	    - new/confirmed/in_prog. → status held, verdict stamped (DOWNGRADE) Downgraded=true
 //	outcome detected      (== VerdictReproducible, "still exploitable"):
 //	    - fix_applied            → in_progress (fix did not hold, re-open) + notify
-//	    - validated_fixed        → confirmed (downgrade refuted — re-open)
-//	    - other open states      → hold (stamp "still exploitable")
+//	    - other open states      → hold (stamp "still exploitable", which also
+//	                               refutes an earlier downgrade)
 //	inconclusive/error/skipped   → no verdict, no state change.
 //
 // Only an exploitability-grade result acts (actionableVerdict, RFC-039 D3): a
 // safe-check reachability probe never moves a finding, and a detection miss
 // needs evidence that the target answered.
 //
-// The downgrade default is conservative — validated_fixed is NOT a closed state,
-// so a human still closes it (validated_fixed→resolved requires findings:verify).
+// The downgrade is conservative: it never changes the status, so a human still
+// closes the finding (resolved requires findings:verify).
 // A non-intrusive re-check is not proof enough to silently close a live finding
 // and bypass that gate. Closed / pentest-workflow states are never auto-moved;
 // their verdict is still stamped for the record.
@@ -231,17 +231,13 @@ func applyOutcomeToFinding(
 			vulnerability.FindingStatusConfirmed,
 			vulnerability.FindingStatusInProgress:
 			// Downgrade a still-open finding: exposure no longer observable.
-			if err := f.TransitionStatus(vulnerability.FindingStatusValidatedFixed, "validation: exposure condition no longer observable", nil); err != nil {
-				return reconcileResult{}, fmt.Errorf("transition to validated_fixed: %w", err)
-			}
-			if err := finding.Update(validationTransition(ctx, "not_reproducible", ev), f); err != nil {
-				return reconcileResult{}, err
-			}
+			// The verdict (validation_outcome, downgraded_at) is the downgrade;
+			// the status stays.
 			now := time.Now().UTC()
 			downgradedAt = &now
 			res.Downgraded = true
 		default:
-			// validated_fixed (re-confirm) / closed / pentest states: hold, stamp only.
+			// closed / pentest states: hold, stamp only.
 		}
 
 	case VerdictReproducible:
@@ -256,15 +252,6 @@ func applyOutcomeToFinding(
 			}
 			if notifier != nil {
 				_ = notifier.NotifyFixRejected(ctx, tenantID, findingID, ev.Summary)
-			}
-		case vulnerability.FindingStatusValidatedFixed:
-			// A prior downgrade is now refuted — re-open (downgraded_at is left
-			// intact so the historical downgrade still counts toward the metric).
-			if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, "validation: exposure reproduced after downgrade", nil); err != nil {
-				return reconcileResult{}, fmt.Errorf("reopen validated_fixed: %w", err)
-			}
-			if err := finding.Update(validationTransition(ctx, "reproduced_after_downgrade", ev), f); err != nil {
-				return reconcileResult{}, err
 			}
 		default:
 			// open states / closed / pentest: hold state; stamp "still exploitable".

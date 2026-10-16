@@ -103,7 +103,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "findings:read",
-		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_remediation_groups"},
+		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_finding_transitions", "list_remediation_groups"},
 		Jobs:       []string{"ApprovalExpirationController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController", "VulnFeedImportController"},
 	},
 	{
@@ -495,7 +495,7 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "remediation closes findings"},
 		},
-		Routes: []string{"/api/v1/remediation/campaigns", "/api/v1/remediation/tasks", "/api/v1/remediation/suggestions"},
+		Routes: []string{"/api/v1/remediation/campaigns", "/api/v1/remediation/tasks", "/api/v1/remediation/suggestions", "/api/v1/remediation/actions", "/api/v1/remediation/moves"},
 		Jobs:   []string{"RemediationProgressController", "RemediationTaskController", "RemediationSuggestionController"},
 	},
 	{

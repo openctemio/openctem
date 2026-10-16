@@ -53,6 +53,17 @@ func registerRemediationTaskRoutes(
 		r.GET("/{task_id}/members", h.ListMembers, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))
 		r.POST("/{task_id}/members", h.AddMembers, middleware.Require(permission.RemediationWrite))
 		r.GET("/{task_id}/timeline", h.Timeline, middleware.Require(permission.RemediationRead))
+		r.POST("/{task_id}/splits", h.Split, middleware.Require(permission.RemediationWrite))
+		r.POST("/{task_id}/merges", h.Merge, middleware.Require(permission.RemediationWrite))
+		// Marking the task fixed is a fix claim on each of its findings: the
+		// task write plus findings:fix_apply.
+		r.POST("/{task_id}/resolve", h.Resolve, middleware.RequireAll(permission.RemediationWrite, permission.FindingsFixApply))
+	}, tenantMiddlewares...)
+
+	// Moves of findings between tasks (or out of any task).
+	router.Group("/api/v1/remediation/moves", func(r Router) {
+		r.POST("/", h.Move, middleware.Require(permission.RemediationWrite))
+		r.POST("/preview", h.PreviewMove, middleware.Require(permission.RemediationWrite))
 	}, tenantMiddlewares...)
 }
 
@@ -78,5 +89,13 @@ func registerRemediationSuggestionRoutes(
 		r.GET("/{id}/members", h.Members, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))
 		r.POST("/{id}/reject", h.Dismiss, middleware.Require(permission.RemediationWrite))
 		r.POST("/{id}/reopen", h.Reopen, middleware.Require(permission.RemediationWrite))
+		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.RemediationWrite))
+		r.POST("/approve", h.BulkApprove, middleware.Require(permission.RemediationWrite))
+	}, tenantMiddlewares...)
+
+	// Actions: what fixes a set of findings; their auto-join rule.
+	router.Group("/api/v1/remediation/actions", func(r Router) {
+		r.GET("/{id}", h.GetAction, middleware.Require(permission.RemediationRead))
+		r.PATCH("/{id}", h.UpdateAction, middleware.Require(permission.RemediationWrite))
 	}, tenantMiddlewares...)
 }

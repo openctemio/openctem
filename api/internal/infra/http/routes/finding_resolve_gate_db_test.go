@@ -64,7 +64,9 @@ func (h *gsHarness) closure(id shared.ID) (status, method, by string) {
 func TestResolveGate_MemberWithoutVerifyCannotClose(t *testing.T) {
 	h := newGroupScopeHarness(t)
 	const key = "rg-test-upgrade-lib"
-	h.exec(`UPDATE findings SET status = 'fix_applied' WHERE id = $1`, h.findingA.String())
+	// Medium: a findings:verify holder closes it with a note (attested). High
+	// and critical need more evidence; TestBulkResolve_EvidenceByRisk covers it.
+	h.exec(`UPDATE findings SET status = 'fix_applied', severity = 'medium' WHERE id = $1`, h.findingA.String())
 	h.exec(`INSERT INTO finding_remediation_keys (finding_id, tenant_id, remediation_key, title) VALUES ($1, $2, $3, 'upgrade lib')`,
 		h.findingA.String(), h.tenant.String(), key)
 

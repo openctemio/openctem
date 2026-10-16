@@ -272,6 +272,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
 	vulnHandler.SetAuditService(svc.Audit)
+	if svc.Tenant != nil {
+		vulnHandler.SetFindingApprovalSettings(svc.Tenant)
+	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
 	if svc.BulkGuard != nil {
@@ -291,6 +294,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// secondary provider on the same create-ticket endpoint.
 	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
+	jiraWebhookHandler.SetAuditService(svc.Audit)
 	var ticketMappingHandler *handler.TicketMappingHandler
 	if svc.TicketMapping != nil {
 		ticketMappingHandler = handler.NewTicketMappingHandler(svc.TicketMapping, svc.Audit, log)
@@ -528,6 +532,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
+		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
 		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
 			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
@@ -696,6 +702,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	wireFindingApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).
 	wireScanWindowTOTP(svc)
@@ -1502,7 +1509,8 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 
 // bootstrapSession wires the session parts of GET /me/bootstrap to the same
 // code that serves /users/me, /users/me/tenants, /notifications/unread-count,
-// /easm/candidates and the organization policy of /auth/providers.
+// /easm/candidates, the pending count of /approvals and the organization
+// policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
 	s := handler.BootstrapSession{}
 	if h.User != nil {
@@ -1517,6 +1525,16 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	}
 	if h.Announcement != nil {
 		s.Announcements = h.Announcement.ActiveResponses
+	}
+	if svc.Vulnerability != nil {
+		vulns := svc.Vulnerability
+		s.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
+			page, err := vulns.ListApprovals(ctx, tenantID.String(), string(vulnerability.ApprovalStatusPending), 1, 1)
+			if err != nil {
+				return 0, err
+			}
+			return int(page.StatusCounts[vulnerability.ApprovalStatusPending]), nil
+		}
 	}
 	mode := cfg.Auth.TenantCreationMode
 	signup := svc.Signup
