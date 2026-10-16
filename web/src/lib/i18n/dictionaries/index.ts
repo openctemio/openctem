@@ -56,6 +56,7 @@ import en_validation from './en/validation.json'
 import en_webEvidence from './en/webEvidence.json'
 import en_workflowStages from './en/workflowStages.json'
 import en_remediationTasks from './en/remediationTasks.json'
+import en_remediationHub from './en/remediationHub.json'
 import vi_activity from './vi/activity.json'
 import vi_actor from './vi/actor.json'
 import vi_admin from './vi/admin.json'
@@ -105,6 +106,7 @@ import vi_validation from './vi/validation.json'
 import vi_webEvidence from './vi/webEvidence.json'
 import vi_workflowStages from './vi/workflowStages.json'
 import vi_remediationTasks from './vi/remediationTasks.json'
+import vi_remediationHub from './vi/remediationHub.json'
 
 export type Dictionary = Record<string, string>
 
@@ -159,6 +161,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   webEvidence: en_webEvidence,
   workflowStages: en_workflowStages,
   remediationTasks: en_remediationTasks,
+  remediationHub: en_remediationHub,
 }
 
 export const viNamespaces: Record<string, Dictionary> = {
@@ -211,6 +214,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   webEvidence: vi_webEvidence,
   workflowStages: vi_workflowStages,
   remediationTasks: vi_remediationTasks,
+  remediationHub: vi_remediationHub,
 }
 
 const merge = (parts: Record<string, Dictionary>): Dictionary =>

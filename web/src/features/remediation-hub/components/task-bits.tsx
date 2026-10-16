@@ -27,19 +27,31 @@ export function TaskStatePill({ state, className }: { state: TaskState; classNam
 }
 
 /** The task deadline with its status, and what set it. */
-export function DeadlinePill({ task }: { task: Pick<RemediationTask, 'deadline' | 'deadline_source'> }) {
+export function DeadlinePill({
+  task,
+}: {
+  task: Pick<RemediationTask, 'deadline' | 'deadline_source'>
+}) {
   const { t, locale } = useTranslation()
   const status = deadlineStatus(task.deadline)
   if (status === 'none' || !task.deadline) {
-    return <span className="text-muted-foreground text-xs">{t('remediationHub.deadline.none')}</span>
+    return (
+      <span className="text-muted-foreground text-xs">{t('remediationHub.deadline.none')}</span>
+    )
   }
-  const date = new Date(task.deadline).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })
+  const date = new Date(task.deadline).toLocaleDateString(locale, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
   return (
     <TonePill
       tone={DEADLINE_TONE[status]}
       label={date}
       title={
-        task.deadline_source ? t(`remediationHub.deadline.source.${task.deadline_source}`) : undefined
+        task.deadline_source
+          ? t(`remediationHub.deadline.source.${task.deadline_source}`)
+          : undefined
       }
       state={status}
     />

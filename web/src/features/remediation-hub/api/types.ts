@@ -106,12 +106,7 @@ export interface Page<T> {
 
 export type SuggestionKind = 'new_group' | 'join' | 'task_route'
 export type SuggestionState =
-  | 'proposed'
-  | 'accepted'
-  | 'dismissed'
-  | 'snoozed'
-  | 'superseded'
-  | 'expired'
+  'proposed' | 'accepted' | 'dismissed' | 'snoozed' | 'superseded' | 'expired'
 
 export const DISMISS_REASONS = [
   'wrong_grouping',
@@ -193,11 +188,7 @@ export interface BulkAcceptItem {
 }
 
 export type MoveWarning =
-  | 'different_fix'
-  | 'different_owner'
-  | 'target_verifying'
-  | 'source_verifying'
-  | 'empties_source'
+  'different_fix' | 'different_owner' | 'target_verifying' | 'source_verifying' | 'empties_source'
 
 export interface MovePreview {
   warnings: MoveWarning[]

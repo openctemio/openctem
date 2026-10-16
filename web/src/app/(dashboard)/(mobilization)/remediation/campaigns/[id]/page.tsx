@@ -351,7 +351,11 @@ export default function CampaignDetailPage() {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => router.push('/remediation/campaigns')}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => router.push('/remediation/campaigns')}
+            >
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className="min-w-0">
