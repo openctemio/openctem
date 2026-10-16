@@ -20,7 +20,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 - [Setup](development/setup.md), [coding style](development/coding-style.md), [testing](development/testing.md), [logging](development/logging.md)
 - [Migrations](development/migrations.md)
-- [CI/CD and releases](development/ci-cd.md), [versioning and releases](architecture/versioning-and-releases.md)
+- [CI/CD and releases](development/ci-cd.md), [versioning and releases](architecture/versioning-and-releases.md), [version check](architecture/version-check.md)
 - [Pre-commit and security tooling](development/pre-commit-security.md)
 - [Asset type registry](development/asset-type-registry.md), [relationship types](development/relationship-types.md)
 - [Makefile reference](MAKEFILE.md), [Swagger annotations](SWAGGER_GUIDE.md)
@@ -64,7 +64,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Scan coverage (Tenable)](architecture/scan-coverage.md), [Tenable.sc connector](architecture/tenable-sc-connector.md)
 
 **Findings and prioritization**
-- [Vulnerability model](architecture/vulnerability-model.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md)
+- [Vulnerability model](architecture/vulnerability-model.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md)
 - [Global catalog trust](architecture/global-catalog-trust.md), [priority explainability](architecture/priority-explainability.md), [CTEM-ID catalog](architecture/ctem-id-catalog.md)
 - [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md)
 

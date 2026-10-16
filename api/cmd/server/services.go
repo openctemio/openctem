@@ -95,6 +95,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/app/versioncheck"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -127,6 +128,7 @@ import (
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -134,6 +136,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/releasefeed"
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 // findingMutatorAdapter adapts the postgres FindingRepository (GetByID) to the
@@ -589,7 +593,9 @@ type Services struct {
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
 	CTEMID          *ctemidapp.Service
-	CertMonitor     *certmonitorapp.Service
+	// VersionCheck is the release feed check (RFC-105); never nil with a database.
+	VersionCheck *versioncheck.Service
+	CertMonitor  *certmonitorapp.Service
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
 	ActiveGate *easmapp.ActiveGate
 	// ScopeJoin confirms discovered names a permanent scope target or seed
@@ -1174,6 +1180,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
+	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
+		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
+		Roots: releasefeed.PinnedRoots, Running: version.Get().Version,
+	}, log)
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
 	// transaction (research/22 P0-7, decision E4).
@@ -2180,7 +2190,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// The scope check names the private address a refused hostname
 		// resolves to, unless that answer may come from the platform's own
 		// DNS in a self-service (multi-tenant) install.
-		scan.WithRevealResolved(cfg.Scope.ZoneResolver != config.ScanZoneResolverSystem || !cfg.Auth.SelfServiceTenantCreation()),
+		scan.WithRevealResolved(cfg.Scope.ZoneResolver != config.ScanZoneResolverSystem || !cfg.Auth.SignupOpen()),
 		// Scan windows (RFC-067): never-opening targets refuse the run, a
 		// scheduled run with nothing open is deferred to the next opening.
 		scan.WithScanWindows(s.ScanWindowResolver),
@@ -2749,13 +2759,15 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
-	// The sign-up policy (Console > System > Sign-up). TENANT_CREATION_MODE
-	// seeds it on the first start only; afterwards the console value wins.
+	// The sign-up policy (Console > System > Sign-up), a runtime switch below
+	// the deployment ceiling SIGNUP_MODE. The ceiling seeds it on the first
+	// start only; afterwards the console value wins, clamped to the ceiling.
 	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
 	if s.Entitlement != nil {
 		s.Signup.SetStartLimitsCheck(s.Entitlement.StartLimitsConfigured)
 	}
-	if err := s.Signup.Seed(context.Background(), cfg.Auth.TenantCreationMode); err != nil {
+	s.Signup.SetCeiling(signupdom.Ceiling(cfg.Auth.SignupMode))
+	if err := s.Signup.Seed(context.Background()); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
@@ -2987,6 +2999,27 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 	if !s.Email.IsConfigured() {
 		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
 	}
+	return s.guardPublicSignupMail(cfg, log)
+}
+
+// guardPublicSignupMail refuses to start a deployment that allows public
+// sign-up (SIGNUP_MODE=domain or open) without working platform e-mail: every
+// self-registered address must be verified, and an address that cannot be
+// verified must never become an account that joins or is invited by domain.
+// While running, the sign-up policy also closes public sign-up whenever the
+// e-mail settings stop working (signup.Service.Effective).
+func (s *Services) guardPublicSignupMail(cfg *config.Config, log *logger.Logger) error {
+	if !cfg.Auth.PublicSignup() {
+		return nil
+	}
+	if s.Email == nil || !s.Email.IsConfigured() {
+		return fmt.Errorf("SIGNUP_MODE=%s needs the platform e-mail to verify sign-ups: set it with bootstrap-admin (BOOTSTRAP_SMTP_*) or start with SIGNUP_MODE=disabled, set it in the admin console (System > E-mail) and restart", cfg.Auth.SignupMode)
+	}
+	if s.Signup != nil {
+		email := s.Email
+		s.Signup.SetMailReady(email.IsConfigured)
+	}
+	log.Warn("public sign-up is allowed by this deployment's configuration", "signup_mode", cfg.Auth.SignupMode)
 	return nil
 }
 

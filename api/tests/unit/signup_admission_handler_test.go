@@ -81,9 +81,13 @@ func TestRegister_SelfServiceRefusesDisposableEmail(t *testing.T) {
 
 // Switching to admin_only never locks out someone who already has an account.
 func TestSignupModeSwitch_ExistingAccountStillSignsIn(t *testing.T) {
-	h, _, pol := signupHarness(t, signupdom.ModeSelfService)
+	h, deps, pol := signupHarness(t, signupdom.ModeSelfService)
 	if rec := postJSON(t, h.Register, map[string]string{"email": "early@example.com", "password": "Str0ngPassw0rd!", "name": "E"}); rec.Code != http.StatusCreated {
 		t.Fatalf("seed: %d", rec.Code)
+	}
+	// Self-registration verifies the address first; the person did.
+	for _, u := range deps.userRepo.users {
+		u.VerifyEmail()
 	}
 	pol.set(signupdom.ModeAdminOnly)
 	rec := postJSON(t, h.Login, map[string]string{"email": "early@example.com", "password": "Str0ngPassw0rd!"})

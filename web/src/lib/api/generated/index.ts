@@ -309,3 +309,18 @@ export type ContentLintReport =
   Schemas['github_com_openctemio_openctem_api_pkg_domain_contentpack.LintReport']
 export type ContentLintIssue =
   Schemas['github_com_openctemio_openctem_api_pkg_domain_contentpack.Issue']
+
+// Content catalog (Settings > Content catalog, RFC-099).
+export type ContentPackageVersion =
+  Schemas['internal_infra_http_handler.ContentPackageVersionResponse']
+export type ContentPackageListItem = Schemas['internal_infra_http_handler.ContentPackageListItem']
+export type ContentPackageList = Schemas['internal_infra_http_handler.ContentPackageListResponse']
+export type ContentPackageDetail =
+  Schemas['internal_infra_http_handler.ContentPackageDetailResponse']
+export type ContentInstall = Schemas['internal_infra_http_handler.ContentInstallResponse']
+export type ContentInstallRequest = Schemas['internal_infra_http_handler.ContentRequestResponse']
+export type ContentOutcome = Schemas['internal_infra_http_handler.ContentOutcomeResponse']
+export type ContentCatalogSettings = Schemas['internal_infra_http_handler.ContentSettingsResponse']
+export type ContentTrust = Schemas['internal_infra_http_handler.ContentTrustResponse']
+export type ContentPackagePermissions =
+  Schemas['github_com_openctemio_openctem_api_pkg_contentpkg.Permissions']

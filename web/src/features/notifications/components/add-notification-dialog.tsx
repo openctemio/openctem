@@ -1,5 +1,6 @@
 'use client'
 
+import { useBrand } from '@/context/brand-provider'
 import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -180,6 +181,7 @@ export function AddNotificationDialog({
   onOpenChange,
   onSuccess,
 }: AddNotificationDialogProps) {
+  const brand = useBrand()
   const [step, setStep] = useState<'provider' | 'config'>('provider')
   const [selectedProvider, setSelectedProvider] = useState<(typeof PROVIDERS)[number] | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -226,7 +228,7 @@ export function AddNotificationDialog({
       smtp_username: '',
       smtp_password: '',
       from_email: '',
-      from_name: 'OpenCTEM.io',
+      from_name: brand.name,
       to_emails: '',
       use_tls: false,
       use_starttls: true,
@@ -481,7 +483,7 @@ export function AddNotificationDialog({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="from_name">From Name</Label>
-                      <Input id="from_name" placeholder="OpenCTEM.io" {...register('from_name')} />
+                      <Input id="from_name" placeholder={brand.name} {...register('from_name')} />
                     </div>
                   </div>
 
