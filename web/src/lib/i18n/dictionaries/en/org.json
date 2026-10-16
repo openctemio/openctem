@@ -233,5 +233,7 @@
   "org.ownership.action": "Transfer ownership...",
   "org.ownership.error.action": "Could not complete this action",
   "org.invite.code.LIMIT_REACHED": "The organization's limit is reached (seats or invitations a day).",
-  "org.createTeam.urlNotAvailable": "This URL is not available. Choose another one."
+  "org.createTeam.urlNotAvailable": "This URL is not available. Choose another one.",
+  "org.region.new": "Data region: {region}. It is fixed for the organization once created.",
+  "org.region.current": "Data region: {region} (fixed)"
 }

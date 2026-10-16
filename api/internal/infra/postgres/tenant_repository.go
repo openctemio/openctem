@@ -23,6 +23,8 @@ type TenantRepository struct {
 	// and direct adds all insert through CreateMembership or
 	// AcceptInvitationTx. Invitations: CreateInvitation (invites_per_day).
 	limitChecks
+	// defaultRegion is DEPLOYMENT_REGION: the region new organizations get.
+	defaultRegion string
 }
 
 // NewTenantRepository creates a new TenantRepository.
@@ -41,9 +43,15 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 		return fmt.Errorf("failed to marshal settings: %w", err)
 	}
 
+	// The region is set once, here: the organization's own, else the
+	// deployment's (DEPLOYMENT_REGION). Update never writes it.
+	region := t.Region()
+	if region == "" {
+		region = r.defaultRegion
+	}
 	query := `
-		INSERT INTO tenants (id, name, slug, description, logo_url, settings, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO tenants (id, name, slug, description, logo_url, settings, created_by, created_at, updated_at, region)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''))
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -56,20 +64,26 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 		t.CreatedBy(),
 		t.CreatedAt(),
 		t.UpdatedAt(),
+		region,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
+	t.WithRegion(region)
 
 	return nil
 }
+
+// SetDefaultRegion sets the region new organizations get (DEPLOYMENT_REGION).
+func (r *TenantRepository) SetDefaultRegion(region string) { r.defaultRegion = region }
 
 // GetByID retrieves a tenant by ID.
 //
 //getbyid:unsafe - Tenants ARE the scope unit; lookup by tenant ID alone is the correct primary-key access pattern.
 func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.Tenant, error) {
 	query := `
-		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at
+		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
+		       COALESCE(t.region, '')
 		FROM tenants t
 		WHERE t.id = $1
 	`
@@ -80,7 +94,8 @@ func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.T
 // GetBySlug retrieves a tenant by slug.
 func (r *TenantRepository) GetBySlug(ctx context.Context, slug string) (*tenant.Tenant, error) {
 	query := `
-		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at
+		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
+		       COALESCE(t.region, '')
 		FROM tenants t
 		WHERE t.slug = $1
 	`
@@ -1680,9 +1695,10 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 		description, logoURL sql.NullString
 		settingsJSON         []byte
 		createdAt, updatedAt time.Time
+		region               string
 	)
 
-	err := row.Scan(&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt)
+	err := row.Scan(&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt, &region)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -1701,6 +1717,7 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 		id, name, slug, description.String, logoURL.String,
 		settings, createdBy.String, createdAt, updatedAt,
 	)
+	t.WithRegion(region)
 	return t, nil
 }
 

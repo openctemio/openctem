@@ -134,8 +134,13 @@ suggestions and 5000 findings, each on its own. Turning auto-join on needs a cal
   to the pool and are excluded from that fix's suggestions. `POST /tasks/{task_id}/splits` creates a task of
   the same fix (campaign and manual deadline kept; owner kept unless named) for some findings (at least one
   stays); `POST /tasks/{task_id}/merges` moves every finding of up to 20 same-fix tasks into it and archives
-  them. Archived tasks are not restored (a move into them is refused). Task tickets get a comment once tasks
-  carry tickets (the RFC-097 engine).
+  them. Archived tasks are not restored (a move into them is refused).
+- Ticket comments: after a move, split, merge or detach is stored, the task service hands a `TaskMoveEvent`
+  (kind, source and target task with titles, finding count, source archived) to its `TaskMoveNotifier`;
+  `TaskMoveEvent.Comments()` gives one comment per task touched (source and target), with counts and task titles
+  only, never finding identifiers or titles (people who see the issue may not see every finding). The ticket
+  integration implements the notifier for tasks that carry an issue; the call is best effort and never fails or
+  undoes the move. Until it is wired, a move writes the task timeline only.
 
 ## 8. Mark fixed at task level
 
@@ -221,6 +226,6 @@ auto-join stay with write. Marking findings fixed will also need `findings:fix_a
 | 1 | Task model, derived state, deadline, membership, timeline, API with data scope | Implemented |
 | 2 | Suggestions engine (deterministic keys, owner partition, ranking, lifecycle, dedup, dismissal memory, rate limit, digest) | Implemented |
 | 3 | Accept flows (as is, edit, bulk, auto-join rule; asset owners accept their own join or task route as is) | Implemented |
-| 4 | Moves, split, merge, detach with compatibility rules, undo (ticket comments once tasks carry tickets) | Implemented |
+| 4 | Moves, split, merge, detach with compatibility rules, undo; the ticket comment hook (wired by the task ticket integration) | Implemented |
 | 5 | Task-level mark fixed and regression tasks | Implemented |
 | 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Designed |
