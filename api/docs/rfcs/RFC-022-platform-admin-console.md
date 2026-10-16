@@ -727,7 +727,7 @@ Administrators act as read-only until they elevate (owner decision D8,
 to 60 minutes (never past the session), audited at high severity
 (`console.elevated`); `DELETE /api/v1/admin/auth/elevate` ends it at once.
 The elevation lives on the session (`admin_sessions.elevated_role`,
-`elevated_until`, migration 002772), so another session of the same
+`elevated_until`, migration 002813), so another session of the same
 administrator stays read-only. Authorization uses the acting role
 (`AdminUser.EffectiveRole`); the persisted role is the ceiling and is never
 changed by acting. `GET /admin/auth/validate` returns `role` (acting),
