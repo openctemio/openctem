@@ -498,13 +498,19 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   checked the seeds. A refusal or a failed lookup keeps the step on the
   organization's own sensors.
 - **Deployment defaults.** `MANAGED_SERVICE` (environment, default false,
-  read at start-up) marks a hosted multi-tenant service and changes two
-  defaults only, never a feature or a stored value (RFC-100 §6):
+  read at start-up) marks a hosted multi-tenant service and changes defaults
+  only, never a feature or a stored value (RFC-100 §6):
 
   | Setting (`platform_settings` key) | Self-hosted default | `MANAGED_SERVICE=true` default |
   |---|---|---|
   | Verified domain before platform sensors scan (`platform_sensor_proof`) | off | on |
-  | Shared sensors may scan internal zones (`shared_sensor_internal_zones`) | on | off |
+  | Shared sensors may scan internal zones (`shared_sensor_internal_zones`) | off | off |
+
+  The internal-zones setting is stored but **not enforced yet**: nothing
+  reads it until instance scan zones and their signed zone ranges land
+  (RFC-100 §6.1). Its GET answers `enforced: false` and the console labels
+  the card "Not enforced yet". Whether a self-hosted install defaults it on
+  is decided when it is wired.
 
   Once an administrator saves a value in Console > System > Platform
   scanning, the stored value wins. The GET routes return the value in force,
