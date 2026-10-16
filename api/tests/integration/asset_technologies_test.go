@@ -7,6 +7,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -181,5 +182,44 @@ func TestAssetTechnologies_VersionedProductsAreCPEComponents(t *testing.T) {
 		if !cpe {
 			t.Errorf("%s is not resolved to a curated CPE product", n)
 		}
+	}
+}
+
+// The per-asset cap holds on what is stored: sightings accumulated across
+// reports past assettech.MaxPerAsset are trimmed, oldest last_seen first.
+func TestAssetTechnologies_StoredCapPerAsset(t *testing.T) {
+	g := newTechRig(t)
+	const name = "cap.tech.example.com"
+	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name})
+	id := g.assetID(g.tn, name)
+	repo := postgres.NewAssetTechnologyRepository(&postgres.DB{DB: g.r.db})
+	ctx := context.Background()
+	base := time.Now().UTC().Add(-48 * time.Hour)
+	batch := func(from, to int) {
+		var techs []assettech.Technology
+		for i := from; i < to; i++ {
+			tech, ok := assettech.Observation(id, fmt.Sprintf("tool%03d", i), "", nil, 0, "x", base.Add(time.Duration(i)*time.Minute))
+			if !ok {
+				t.Fatalf("observation %d rejected", i)
+			}
+			techs = append(techs, tech)
+		}
+		if err := repo.Upsert(ctx, g.tn.tenant, techs); err != nil {
+			t.Fatal(err)
+		}
+	}
+	batch(0, 80)
+	batch(80, 130) // two reports: 130 stored sightings in all
+	var n int
+	var oldest string
+	if err := g.r.db.QueryRowContext(ctx, `SELECT count(*), min(name) FROM asset_technologies WHERE tenant_id = $1 AND asset_id = $2`,
+		g.tn.tenant.String(), id.String()).Scan(&n, &oldest); err != nil {
+		t.Fatal(err)
+	}
+	if n != assettech.MaxPerAsset {
+		t.Fatalf("stored %d technologies, want the cap %d", n, assettech.MaxPerAsset)
+	}
+	if oldest != "tool030" {
+		t.Errorf("oldest kept = %s, want tool030 (the 30 oldest sightings go)", oldest)
 	}
 }
