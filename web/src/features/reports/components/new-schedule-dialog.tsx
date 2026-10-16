@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Plus, X } from 'lucide-react'
@@ -71,6 +72,7 @@ interface NewScheduleDialogProps {
 }
 
 export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -177,8 +179,10 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
         <DialogHeader>
           <DialogTitle>New report schedule</DialogTitle>
           <DialogDescription>
-            On the chosen cadence, OpenCTEM renders a finding-summary digest and emails it to the
-            recipients below. It does not store a downloadable file.
+            {t(
+              'reports.schedule.newDescription',
+              'On the chosen cadence, {product} renders a finding-summary digest and emails it to the recipients below. It does not store a downloadable file.'
+            )}
           </DialogDescription>
         </DialogHeader>
 

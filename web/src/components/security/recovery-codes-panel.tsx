@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { Check, Copy, Download } from 'lucide-react'
 import { toast } from 'sonner'
@@ -17,10 +18,15 @@ interface RecoveryCodesPanelProps {
  * The server keeps only hashes, so this is the only time they can be read.
  */
 export function RecoveryCodesPanel({ codes, accountLabel }: RecoveryCodesPanelProps) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
   const text = [
-    `OpenCTEM two-factor recovery codes${accountLabel ? ` for ${accountLabel}` : ''}`,
+    accountLabel
+      ? t('auth.mfa.recoveryFileTitleFor', '{product} two-factor recovery codes for {account}', {
+          account: accountLabel,
+        })
+      : t('auth.mfa.recoveryFileTitle', '{product} two-factor recovery codes'),
     `Generated ${new Date().toISOString()}`,
     'Each code works once. Keep them somewhere safe.',
     '',
