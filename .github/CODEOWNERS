@@ -178,8 +178,9 @@
 /api/internal/infra/postgres/finding_correlation_repository.go @0xmanhnv
 /api/internal/infra/postgres/finding_sla_restart_repository.go @0xmanhnv
 /api/internal/infra/postgres/sla_repository.go @0xmanhnv
-/api/internal/infra/postgres/suppression_apply.go @0xmanhnv
-/api/internal/infra/postgres/suppression_repository.go @0xmanhnv
+/api/internal/infra/postgres/suppression_*.go @0xmanhnv
+/api/pkg/domain/suppression/** @0xmanhnv
+/api/internal/infra/http/handler/suppression_handler.go @0xmanhnv
 /api/internal/infra/postgres/exposure_disposition_repository.go @0xmanhnv
 /api/internal/infra/postgres/asset_merge_findings.go @0xmanhnv
 /api/internal/infra/http/handler/vulnerability_handler.go @0xmanhnv
