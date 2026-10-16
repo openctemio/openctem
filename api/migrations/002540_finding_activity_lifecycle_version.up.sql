@@ -32,7 +32,13 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     IF NEW.lifecycle_version IS NULL AND NEW.changes ? 'new_status' THEN
-        NEW.lifecycle_version := COALESCE(NULLIF(NEW.changes->>'lifecycle_version', ''), finding_lifecycle_version());
+        -- A writer may name the version in changes; an empty or over-long
+        -- value (the column holds 64) falls back to the platform version, so
+        -- it can never fail the insert and with it the status change.
+        NEW.lifecycle_version := CASE
+            WHEN length(NEW.changes->>'lifecycle_version') BETWEEN 1 AND 64 THEN NEW.changes->>'lifecycle_version'
+            ELSE finding_lifecycle_version()
+        END;
     END IF;
     IF NEW.lifecycle_version IS NOT NULL THEN
         NEW.changes := COALESCE(NEW.changes, '{}'::jsonb) || jsonb_build_object('lifecycle_version', NEW.lifecycle_version);
