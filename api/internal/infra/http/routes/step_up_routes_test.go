@@ -87,6 +87,9 @@ var stepUpRoutes = []string{
 	// A domain's sign-up policy decides who may join and who must use SSO.
 	"PUT /api/v1/organization/settings/domains/{id}/signup-policy",
 	"DELETE /api/v1/tenants/acme",
+	// Deleting one's own account (RFC-104).
+	"DELETE /api/v1/me/account",
+	"POST /api/v1/organization/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
 	"POST /api/v1/organization/members/{id}/erase",
@@ -198,6 +201,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSCMAppRoutes(router, &handler.SCMAppHandler{}, auth, nil, chain(), logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
+			registerUserRoutes(router, &handler.UserHandler{}, nil, auth, nil, config.AuthProviderLocal)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil, &handler.TicketMappingHandler{})
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
