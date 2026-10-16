@@ -32,6 +32,7 @@ import (
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
@@ -555,7 +556,7 @@ func summaryMarkdown(v *Verdict, runURL string) string {
 		v.Summary.Accepted, v.Summary.Blocking)
 	fmt.Fprintf(&b, "Policy: %s (%s).\n\n", md(v.Policy.Mode, 20), md(v.Policy.Source, 20))
 	writeReasons(&b, v, 20)
-	fmt.Fprintf(&b, "\n[Open the run in OpenCTEM](%s)\n", runURL)
+	fmt.Fprintf(&b, "\n[Open the run in %s](%s)\n", brand.Name(), runURL)
 	return b.String()
 }
 
