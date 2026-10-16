@@ -58,10 +58,10 @@ import { ApprovalTierCell } from './approval-tier-cell'
 type Translate = ReturnType<typeof useTranslation>['t']
 
 const STATUS_STYLES: Record<string, string> = {
-  pending: 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30',
-  approved: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
-  rejected: 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30',
-  canceled: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30',
+  pending: 'bg-warning/15 text-warning border-warning/30',
+  approved: 'bg-success/15 text-success border-success/30',
+  rejected: 'bg-destructive/15 text-destructive border-destructive/30',
+  canceled: 'bg-muted text-muted-foreground border-border',
   expired: 'bg-muted text-muted-foreground border-border',
 }
 
@@ -483,7 +483,7 @@ export function GroupExceptionSheet({
                     }}
                     disabled={!!busy}
                   >
-                    <X className="me-2 h-4 w-4 text-red-500" aria-hidden />
+                    <X className="me-2 h-4 w-4 text-destructive" aria-hidden />
                     {t('findings.approvals.action.reject', 'Reject')}
                   </Button>
                   <Button onClick={() => void approve()} disabled={!!busy}>
