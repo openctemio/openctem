@@ -58,10 +58,54 @@ export function SuppressionApprovePreview({ ruleId }: { ruleId: string | undefin
     })
   }
 
+  const sample = data.sample ?? []
+  const hidden = Math.max(0, count - (data.in_scope_findings ?? 0))
+
   return (
-    <Alert data-testid="suppression-approve-preview">
-      <Info aria-hidden />
-      <AlertDescription>{text}</AlertDescription>
-    </Alert>
+    <div className="space-y-2">
+      <Alert data-testid="suppression-approve-preview">
+        <Info aria-hidden />
+        <AlertDescription>{text}</AlertDescription>
+      </Alert>
+      {sample.length > 0 && (
+        <div className="text-sm" data-testid="suppression-approve-sample">
+          <p className="text-muted-foreground mb-1">
+            {t(
+              'confirm.suppression.previewSampleTitle',
+              'Examples within your access ({shown} of {count})',
+              {
+                shown: sample.length.toLocaleString(),
+                count: data.in_scope_findings.toLocaleString(),
+              }
+            )}
+          </p>
+          <ul
+            className="divide-y rounded-md border"
+            aria-label={t(
+              'confirm.suppression.previewSampleAria',
+              'Findings this rule matches within your access'
+            )}
+          >
+            {sample.map((f) => (
+              <li key={f.id} className="px-3 py-2">
+                <div className="truncate font-medium">{f.title}</div>
+                <div className="text-muted-foreground truncate text-xs">
+                  {[f.severity, f.asset_name, f.file_path].filter(Boolean).join(' · ')}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {hidden > 0 && (
+        <p className="text-muted-foreground text-xs" data-testid="suppression-approve-hidden">
+          {t(
+            'confirm.suppression.previewOutOfScope',
+            '{count} matching findings are on assets outside your access and are not listed.',
+            { count: hidden.toLocaleString() }
+          )}
+        </p>
+      )}
+    </div>
   )
 }
