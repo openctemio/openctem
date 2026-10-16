@@ -196,12 +196,25 @@ var (
 // people's emails are ever selected.
 // ---------------------------------------------------------------------------
 
-// Overview is the organization at a glance.
+// Overview is the organization at a glance. It carries only the parts of the
+// scopes the grant opens: the asset count needs the assets scope, the
+// finding counts the findings scope; a part that is not granted is absent.
 type Overview struct {
 	TenantName             string           `json:"tenant_name"`
-	AssetCount             int64            `json:"asset_count"`
-	OpenFindingCount       int64            `json:"open_finding_count"`
-	OpenFindingsBySeverity map[string]int64 `json:"open_findings_by_severity"`
+	AssetCount             *int64           `json:"asset_count,omitempty"`
+	OpenFindingCount       *int64           `json:"open_finding_count,omitempty"`
+	OpenFindingsBySeverity map[string]int64 `json:"open_findings_by_severity,omitempty"`
+}
+
+// ReadScope is which data areas a live grant opens, for the read model.
+type ReadScope struct {
+	Assets   bool
+	Findings bool
+}
+
+// ReadScopeOf is the read scope of a grant.
+func ReadScopeOf(g *Grant) ReadScope {
+	return ReadScope{Assets: g.HasScope(ScopeAssets), Findings: g.HasScope(ScopeFindings)}
 }
 
 // FindingView is one finding as support sees it.
@@ -246,6 +259,9 @@ type ListQuery struct {
 	Status   string
 	Limit    int
 	Offset   int
+	// WithAssets: the grant has the assets scope, so a finding row may name
+	// its asset (id, name, type). Without it those columns are not read.
+	WithAssets bool
 }
 
 // ReadRepository is support's read model. Every query is scoped to tenantID
@@ -253,9 +269,9 @@ type ListQuery struct {
 // private programs (and their findings), which only program members and
 // owners see.
 type ReadRepository interface {
-	Overview(ctx context.Context, tenantID shared.ID) (*Overview, error)
+	Overview(ctx context.Context, tenantID shared.ID, scope ReadScope) (*Overview, error)
 	ListFindings(ctx context.Context, tenantID shared.ID, q ListQuery) ([]FindingView, int64, error)
-	GetFinding(ctx context.Context, tenantID, id shared.ID) (*FindingView, error)
+	GetFinding(ctx context.Context, tenantID, id shared.ID, withAssets bool) (*FindingView, error)
 	ListAssets(ctx context.Context, tenantID shared.ID, q ListQuery) ([]AssetView, int64, error)
 	GetAsset(ctx context.Context, tenantID, id shared.ID) (*AssetView, error)
 }

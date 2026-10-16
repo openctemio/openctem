@@ -61,20 +61,29 @@ func supportLimit(q supportaccess.ListQuery) (int, int) {
 }
 
 // Overview counts the organization's assets and open findings.
-func (r *SupportReadRepository) Overview(ctx context.Context, tenantID shared.ID) (*supportaccess.Overview, error) {
-	o := &supportaccess.Overview{OpenFindingsBySeverity: map[string]int64{}}
+func (r *SupportReadRepository) Overview(ctx context.Context, tenantID shared.ID, scope supportaccess.ReadScope) (*supportaccess.Overview, error) {
+	o := &supportaccess.Overview{}
 	if err := r.db.QueryRowContext(ctx, `SELECT name FROM tenants WHERE id = $1`, tenantID.String()).Scan(&o.TenantName); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, supportaccess.ErrNotFound
 		}
 		return nil, fmt.Errorf("support overview: %w", err)
 	}
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM assets a
-		WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND `+supportNotHidden("a.id"),
-		tenantID.String()).Scan(&o.AssetCount); err != nil {
-		return nil, fmt.Errorf("support overview assets: %w", err)
+	if scope.Assets {
+		var n int64
+		if err := r.db.QueryRowContext(ctx, `
+			SELECT count(*) FROM assets a
+			WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND `+supportNotHidden("a.id"),
+			tenantID.String()).Scan(&n); err != nil {
+			return nil, fmt.Errorf("support overview assets: %w", err)
+		}
+		o.AssetCount = &n
 	}
+	if !scope.Findings {
+		return o, nil
+	}
+	o.OpenFindingsBySeverity = map[string]int64{}
+	var open int64
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT lower(f.severity), count(*) FROM findings f
 		WHERE f.tenant_id = $1 AND f.status = ANY($2) AND `+supportNotHidden("f.asset_id")+`
@@ -90,17 +99,29 @@ func (r *SupportReadRepository) Overview(ctx context.Context, tenantID shared.ID
 			return nil, err
 		}
 		o.OpenFindingsBySeverity[sev] = n
-		o.OpenFindingCount += n
+		open += n
 	}
+	o.OpenFindingCount = &open
 	return o, rows.Err()
 }
 
-const supportFindingColumns = `
+// supportFindingSelect is the column list and FROM of a finding row. The asset
+// columns (id, name, type) are read only with the assets scope: without it the
+// query neither selects them nor joins assets.
+func supportFindingSelect(withAssets bool) string {
+	assetCols, from := `'', '', ''`, `findings f`
+	if withAssets {
+		assetCols = `COALESCE(f.asset_id::text, ''), COALESCE(a.name, ''), COALESCE(a.asset_type, '')`
+		from = `findings f LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id`
+	}
+	return `
 	f.id, COALESCE(NULLIF(f.title, ''), f.rule_name, ''), COALESCE(f.severity, ''), COALESCE(f.status, ''), COALESCE(f.source, ''),
 	COALESCE(f.tool_name, ''), COALESCE(f.rule_id, ''), COALESCE(f.cve_id, ''), COALESCE(f.cwe_ids, '{}'),
-	COALESCE(f.asset_id::text, ''), COALESCE(a.name, ''), COALESCE(a.asset_type, ''),
+	` + assetCols + `,
 	COALESCE(f.file_path, ''), COALESCE(f.start_line, 0), COALESCE(f.sla_status, ''),
-	f.first_detected_at, f.last_seen_at`
+	f.first_detected_at, f.last_seen_at
+	FROM ` + from
+}
 
 func scanSupportFinding(row interface{ Scan(...any) error }) (supportaccess.FindingView, error) {
 	var (
@@ -152,8 +173,7 @@ func (r *SupportReadRepository) ListFindings(ctx context.Context, tenantID share
 	}
 	limit, offset := supportLimit(q)
 	args = append(args, limit, offset)
-	rows, err := r.db.QueryContext(ctx, `SELECT `+supportFindingColumns+`
-		FROM findings f LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
+	rows, err := r.db.QueryContext(ctx, `SELECT `+supportFindingSelect(q.WithAssets)+`
 		WHERE `+cond+fmt.Sprintf(`
 		ORDER BY CASE lower(f.severity) WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
 		         f.last_seen_at DESC NULLS LAST, f.id
@@ -174,9 +194,8 @@ func (r *SupportReadRepository) ListFindings(ctx context.Context, tenantID share
 }
 
 // GetFinding returns one finding of the organization.
-func (r *SupportReadRepository) GetFinding(ctx context.Context, tenantID, id shared.ID) (*supportaccess.FindingView, error) {
-	v, err := scanSupportFinding(r.db.QueryRowContext(ctx, `SELECT `+supportFindingColumns+`
-		FROM findings f LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
+func (r *SupportReadRepository) GetFinding(ctx context.Context, tenantID, id shared.ID, withAssets bool) (*supportaccess.FindingView, error) {
+	v, err := scanSupportFinding(r.db.QueryRowContext(ctx, `SELECT `+supportFindingSelect(withAssets)+`
 		WHERE f.tenant_id = $1 AND f.id = $2 AND `+supportNotHidden("f.asset_id"), tenantID.String(), id.String()))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, supportaccess.ErrNotFound

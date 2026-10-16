@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -76,6 +77,10 @@ type Service struct {
 	mailer      Mailer
 	now         func() time.Time
 	log         *logger.Logger
+
+	// Owner-email throttle of repeatable grant-bypass reads (console_access.go).
+	consoleMu   sync.Mutex
+	consoleMail map[consoleMailKey]time.Time
 }
 
 // NewService wires the service. mailer may be nil (no emails).
@@ -328,17 +333,18 @@ func (s *Service) Access(ctx context.Context, a *admin.AdminUser, in AccessInput
 
 // Overview returns the organization at a glance.
 func (s *Service) Overview(ctx context.Context, ls *dom.LiveSession) (*dom.Overview, error) {
-	return s.reads.Overview(ctx, ls.Grant.TenantID)
+	return s.reads.Overview(ctx, ls.Grant.TenantID, dom.ReadScopeOf(&ls.Grant))
 }
 
 // ListFindings pages the organization's findings (grant scope "findings").
 func (s *Service) ListFindings(ctx context.Context, ls *dom.LiveSession, q dom.ListQuery) ([]dom.FindingView, int64, error) {
+	q.WithAssets = ls.Grant.HasScope(dom.ScopeAssets)
 	return s.reads.ListFindings(ctx, ls.Grant.TenantID, q)
 }
 
 // GetFinding returns one finding of the organization.
 func (s *Service) GetFinding(ctx context.Context, ls *dom.LiveSession, id shared.ID) (*dom.FindingView, error) {
-	return s.reads.GetFinding(ctx, ls.Grant.TenantID, id)
+	return s.reads.GetFinding(ctx, ls.Grant.TenantID, id, ls.Grant.HasScope(dom.ScopeAssets))
 }
 
 // ListAssets pages the organization's assets (grant scope "assets").

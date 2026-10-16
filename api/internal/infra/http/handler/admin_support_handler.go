@@ -355,3 +355,29 @@ func (h *AdminSupportHandler) Asset(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, v)
 }
+
+// TenantDataNotice is the middleware of the grant-bypass console routes (older
+// routes that reach an organization's data without a support grant,
+// RFC-063 section 11.5): it writes the use to the organization's audit log and
+// emails the owners before the route runs. It never refuses for lack of a
+// grant; it refuses (503) only when the audit write fails. repeatable marks a
+// read that is refreshed and paged (owner email throttled).
+func (h *AdminSupportHandler) TenantDataNotice(route string, repeatable bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			a := middleware.GetAdminUser(r.Context())
+			id, err := shared.IDFromString(r.PathValue(middleware.AdminTenantParam))
+			if a == nil || err != nil {
+				apierror.BadRequest("invalid organization id").WriteJSON(w)
+				return
+			}
+			if err := h.svc.NoticeConsoleAccess(r.Context(), a, supportapp.ConsoleAccessInput{
+				TenantID: id, Route: route, Method: r.Method, Repeatable: repeatable,
+			}, supportClient(r)); err != nil {
+				h.writeError(w, err, route)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}

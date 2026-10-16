@@ -393,6 +393,15 @@ func registerAdminRoutes(
 			return out
 		}
 		read := []Middleware{scope}
+		// Grant-bypass paths (RFC-063 section 11.5): console routes that reach
+		// the organization's data without a support grant. Never blocked; each
+		// use goes to the organization's audit log and its owners' email.
+		bypass := func(route string, repeatable bool) []Middleware {
+			if h.AdminSupport == nil {
+				return nil
+			}
+			return []Middleware{h.AdminSupport.TenantDataNotice(route, repeatable)}
+		}
 		// Organization SSO writes change who may sign in to the organization:
 		// super admin, step-up, audited.
 		ssoStepUp := stepUp("organization.sso_change")
@@ -409,11 +418,11 @@ func registerAdminRoutes(
 			// organization that has none (RFC-022 rev. 5). The platform
 			// administrator never adds users to an organization that has an
 			// owner (409); the owner and its administrators do that.
-			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, read...)
+			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, with(read, bypass("user list", true))...)
 			// Creating the first owner (or recovering one) hands an
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
-				with([]Middleware{opsWrite, stepUp("organization.owner_create"), scope}, audit("organization.user_create"))...)
+				with([]Middleware{opsWrite, stepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
 
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
@@ -432,7 +441,7 @@ func registerAdminRoutes(
 			}
 			if h.SSO != nil {
 				r.GET("/{tenantId}/sso/identity-providers", h.SSO.ListProviders, read...)
-				r.POST("/{tenantId}/sso/identity-providers", h.SSO.CreateProvider, write("organization.idp_create")...)
+				r.POST("/{tenantId}/sso/identity-providers", h.SSO.CreateProvider, with(write("organization.idp_create"), bypass("identity provider creation", false))...)
 				r.GET("/{tenantId}/sso/identity-providers/{id}", h.SSO.GetProvider, read...)
 				r.PUT("/{tenantId}/sso/identity-providers/{id}", h.SSO.UpdateProvider, write("organization.idp_update")...)
 				r.DELETE("/{tenantId}/sso/identity-providers/{id}", h.SSO.DeleteProvider, write("organization.idp_delete")...)
