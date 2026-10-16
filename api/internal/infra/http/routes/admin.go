@@ -60,6 +60,10 @@ import (
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed, tenant admins told)
+//	/admin/shared-sensors     any admin (fleet,  pause/resume/retire: super_admin +
+//	                          queue, job         fresh TOTP code + reason (critical
+//	                          metadata)          audit); job view: super/ops_admin +
+//	                                            reason (audited high, rate-limited)
 //	/admin/settings/shared-sensors(/egress), /admin/tenants/{id}/shared-sensors
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
@@ -257,6 +261,28 @@ func registerAdminRoutes(
 			// Egress addresses organizations see to allowlist the scanners.
 			r.GET("/egress", h.AdminScanPolicy.GetSharedSensorsEgress)
 			r.PUT("/egress", h.AdminScanPolicy.UpdateSharedSensorsEgress, requireSuper, stepUp("settings.shared_sensors_egress"))
+		}, adminMiddlewares...)
+	}
+
+	// Shared sensors fleet (RFC-100 §12): any admin reads the fleet, queue
+	// aggregates and job metadata; a job's targets and logs only through
+	// the audited view with a reason (super or ops admin, rate-limited);
+	// pause, resume and retire need a super admin, a reason and a fresh code.
+	if h.AdminSharedFleet != nil {
+		f := h.AdminSharedFleet
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		view := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		if h.AdminSupportRateLimiter != nil {
+			view = append(view, h.AdminSupportRateLimiter.WriteMiddleware())
+		}
+		router.Group("/api/v1/admin/shared-sensors", func(r Router) {
+			r.GET("/", f.List)
+			r.GET("/queue", f.Queue)
+			r.GET("/jobs", f.Jobs)
+			r.POST("/jobs/{job_id}/view", f.ViewJob, view...)
+			r.POST("/{sensor_id}/pause", f.Pause, requireSuper, stepUp("shared_sensor.pause"))
+			r.POST("/{sensor_id}/resume", f.Resume, requireSuper, stepUp("shared_sensor.resume"))
+			r.POST("/{sensor_id}/retire", f.Retire, requireSuper, stepUp("shared_sensor.retire"))
 		}, adminMiddlewares...)
 	}
 
