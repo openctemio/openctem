@@ -1,10 +1,24 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ArchiveRestore, Archive, ArrowDown, ArrowUp, Pencil, Plus } from 'lucide-react'
+import {
+  ArchiveRestore,
+  Archive,
+  ArrowDown,
+  ArrowUp,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { GatedButton } from '@/features/shared'
@@ -138,100 +152,81 @@ export function SubStatusLanes({
                       </div>
                     </div>
                     {canWrite && (
-                      <div className="flex shrink-0 items-center">
-                        {!s.archived && (
-                          <>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7"
-                              disabled={i === 0 || busy !== null}
-                              aria-label={t('findingLifecycle.subStatus.moveUp', 'Move {name} up', {
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7 shrink-0"
+                            disabled={busy !== null}
+                            aria-label={t(
+                              'findingLifecycle.subStatus.actions',
+                              'Actions for {name}',
+                              {
                                 name: s.name,
-                              })}
-                              onClick={() => move(list, i, -1)}
-                            >
-                              <ArrowUp className="size-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7"
-                              disabled={i === list.length - 1 || busy !== null}
-                              aria-label={t(
-                                'findingLifecycle.subStatus.moveDown',
-                                'Move {name} down',
-                                { name: s.name }
-                              )}
-                              onClick={() => move(list, i, 1)}
-                            >
-                              <ArrowDown className="size-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7"
-                              disabled={busy !== null}
-                              aria-label={t('findingLifecycle.subStatus.edit', 'Edit {name}', {
-                                name: s.name,
-                              })}
-                              onClick={() => setDialog({ status, sub: s })}
-                            >
-                              <Pencil className="size-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7"
-                              disabled={busy !== null}
-                              aria-label={t(
-                                'findingLifecycle.subStatus.archive',
-                                'Archive {name}',
-                                {
-                                  name: s.name,
+                              }
+                            )}
+                          >
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {!s.archived ? (
+                            <>
+                              <DropdownMenuItem onClick={() => setDialog({ status, sub: s })}>
+                                <Pencil className="mr-2 size-3.5" />
+                                {t('findingLifecycle.subStatus.editShort', 'Edit')}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={i === 0}
+                                onClick={() => move(list, i, -1)}
+                              >
+                                <ArrowUp className="mr-2 size-3.5" />
+                                {t('findingLifecycle.subStatus.moveUpShort', 'Move up')}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={i === list.length - 1}
+                                onClick={() => move(list, i, 1)}
+                              >
+                                <ArrowDown className="mr-2 size-3.5" />
+                                {t('findingLifecycle.subStatus.moveDownShort', 'Move down')}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  void run(
+                                    s.id,
+                                    () => archiveSubStatus(s.id),
+                                    t(
+                                      'findingLifecycle.subStatus.archivedToast',
+                                      'Sub-status archived'
+                                    )
+                                  )
                                 }
-                              )}
+                              >
+                                <Archive className="mr-2 size-3.5" />
+                                {t('findingLifecycle.subStatus.archiveShort', 'Archive')}
+                              </DropdownMenuItem>
+                            </>
+                          ) : (
+                            <DropdownMenuItem
+                              disabled={limitReached}
                               onClick={() =>
                                 void run(
                                   s.id,
-                                  () => archiveSubStatus(s.id),
+                                  () => reactivateSubStatus(s.id),
                                   t(
-                                    'findingLifecycle.subStatus.archivedToast',
-                                    'Sub-status archived'
+                                    'findingLifecycle.subStatus.reactivated',
+                                    'Sub-status reactivated'
                                   )
                                 )
                               }
                             >
-                              <Archive className="size-3.5" />
-                            </Button>
-                          </>
-                        )}
-                        {s.archived && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-7"
-                            disabled={busy !== null || limitReached}
-                            aria-label={t(
-                              'findingLifecycle.subStatus.reactivate',
-                              'Reactivate {name}',
-                              { name: s.name }
-                            )}
-                            onClick={() =>
-                              void run(
-                                s.id,
-                                () => reactivateSubStatus(s.id),
-                                t(
-                                  'findingLifecycle.subStatus.reactivated',
-                                  'Sub-status reactivated'
-                                )
-                              )
-                            }
-                          >
-                            <ArchiveRestore className="size-3.5" />
-                          </Button>
-                        )}
-                      </div>
+                              <ArchiveRestore className="mr-2 size-3.5" />
+                              {t('findingLifecycle.subStatus.reactivateShort', 'Reactivate')}
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     )}
                   </li>
                 ))}
