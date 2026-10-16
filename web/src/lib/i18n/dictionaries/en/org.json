@@ -232,5 +232,6 @@
   "org.ownership.error.previousRole": "Choose administrator, member or viewer for yourself.",
   "org.ownership.action": "Transfer ownership...",
   "org.ownership.error.action": "Could not complete this action",
-  "org.invite.code.LIMIT_REACHED": "The organization's limit is reached (seats or invitations a day)."
+  "org.invite.code.LIMIT_REACHED": "The organization's limit is reached (seats or invitations a day).",
+  "org.createTeam.urlNotAvailable": "This URL is not available. Choose another one."
 }
