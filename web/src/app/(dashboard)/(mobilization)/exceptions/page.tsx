@@ -51,6 +51,7 @@ import { Can, Permission } from '@/lib/permissions'
 import {
   useSuppressions,
   useApproveSuppression,
+  useMarkSuppressionReviewed,
   useRejectSuppression,
   useDeleteSuppression,
   SuppressionApprovePreview,
@@ -116,6 +117,7 @@ export default function ExceptionsPage() {
   const [editRule, setEditRule] = useState<SuppressionRule | null>(null)
   const [approveOpen, setApproveOpen] = useState(false)
   const [selfApproveOpen, setSelfApproveOpen] = useState(false)
+  const [selfReviewOpen, setSelfReviewOpen] = useState(false)
   const userId = useAuthStore((s) => s.user?.id)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -125,6 +127,7 @@ export default function ExceptionsPage() {
   const { trigger: triggerApprove, isMutating: isApproving } = useApproveSuppression(
     selectedRule?.id ?? ''
   )
+  const { trigger: triggerReviewed } = useMarkSuppressionReviewed(selectedRule?.id ?? '')
   const { trigger: triggerReject, isMutating: isRejecting } = useRejectSuppression(
     selectedRule?.id ?? ''
   )
@@ -230,6 +233,36 @@ export default function ExceptionsPage() {
     } finally {
       setApproveOpen(false)
     }
+  }
+
+  const markReviewed = async () => {
+    if (!selectedRule) return
+    // Reviewing one's own rule takes the sole-approver path (reason + code).
+    if (userId && selectedRule.requested_by === userId) {
+      setSelfReviewOpen(true)
+      return
+    }
+    try {
+      await triggerReviewed()
+      toast.success(t('exceptions.page.reviewed', 'Marked as reviewed'))
+      setDetailOpen(false)
+      await mutate()
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('exceptions.page.reviewFailed', 'Could not mark the rule as reviewed')
+        )
+      )
+    }
+  }
+
+  const confirmSelfReview = async (reason: string, code: string) => {
+    if (!selectedRule) return
+    await triggerReviewed({ self_approval_reason: reason, totp_code: code })
+    toast.success(t('exceptions.page.reviewed', 'Marked as reviewed'))
+    setDetailOpen(false)
+    await mutate()
   }
 
   const confirmReject = async () => {
@@ -539,6 +572,7 @@ export default function ExceptionsPage() {
         onOpenChange={setDetailOpen}
         onEdit={openEdit}
         onApprove={openApprove}
+        onReviewed={markReviewed}
         onReject={openReject}
         onDelete={openDelete}
       />
@@ -583,6 +617,12 @@ export default function ExceptionsPage() {
         onOpenChange={setSelfApproveOpen}
         subject={selectedRule?.name ?? ''}
         onSubmit={confirmSelfApprove}
+      />
+      <SelfApproveDialog
+        open={selfReviewOpen}
+        onOpenChange={setSelfReviewOpen}
+        subject={selectedRule?.name ?? ''}
+        onSubmit={confirmSelfReview}
       />
 
       {/* Reject dialog */}
