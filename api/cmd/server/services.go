@@ -1235,7 +1235,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
-		Roots: releasefeed.PinnedRoots, Running: version.Get().Version,
+		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
 	}, log)
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
