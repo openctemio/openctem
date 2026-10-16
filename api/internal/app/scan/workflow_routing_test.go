@@ -40,7 +40,7 @@ func TestDecideWorkflowRouting(t *testing.T) {
 		{"auto, no selector: tenant only", nil, scan.SensorPreferenceAuto, false, false, []string{"a.example.com"}, sensorRoutingTenant, false},
 	}
 	for _, tc := range cases {
-		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop(), zoneResolver: publicResolver{}}
+		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop(), zoneResolver: publicResolver{}, sharedLimits: noLimits{}}
 		sc := testScan("")
 		sc.SensorPreference = tc.pref
 		sc.RunOnTenantRunner = tc.tenantRO
