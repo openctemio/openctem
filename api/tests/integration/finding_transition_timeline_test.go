@@ -121,7 +121,11 @@ func TestTransitionTimeline_AutomaticMovesAreRecorded(t *testing.T) {
 	if _, err := f.repo.MarkCoverageNotObserved(scanCtx, f.tenant, []shared.ID{drifted}); err != nil {
 		t.Fatal(err)
 	}
-	f.wantOne(t, "template drift", drifted, "status_changed", "template_drift", "new", "not_observed", nil)
+	// Template drift marks it stale: the status does not move, so no entry.
+	var driftEntries int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM finding_activities WHERE finding_id = $1`, drifted.String()).Scan(&driftEntries); err != nil || driftEntries != 0 {
+		t.Errorf("template drift wrote %d entries (%v), want 0 (no status move)", driftEntries, err)
+	}
 
 	// Source said mitigated.
 	mitigated, mfp := f.finding(t, "in_progress")
@@ -190,8 +194,8 @@ func TestTransitionTimeline_AutomaticMovesAreRecorded(t *testing.T) {
 func TestTransitionTimeline_TenantAndTransactionScoped(t *testing.T) {
 	f := newTimelineFixture(t)
 	ctx := context.Background()
-	a, _ := f.finding(t, "new")
-	if _, err := f.repo.MarkCoverageNotObserved(ctx, f.tenant, []shared.ID{a}); err != nil {
+	a, _ := f.finding(t, "confirmed")
+	if _, err := f.repo.ResolveCoverageStale(ctx, f.tenant, []shared.ID{a}); err != nil {
 		t.Fatal(err)
 	}
 	var n int
