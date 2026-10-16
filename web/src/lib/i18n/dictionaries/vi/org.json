@@ -233,5 +233,8 @@
   "org.ownership.error.confirmInternal": "Hãy xác nhận người này trở thành thành viên nội bộ.",
   "org.ownership.error.previousRole": "Hãy chọn quản trị viên, thành viên hoặc người xem cho chính bạn.",
   "org.ownership.action": "Chuyển quyền sở hữu...",
-  "org.ownership.error.action": "Không thể hoàn tất thao tác này"
+  "org.ownership.error.action": "Không thể hoàn tất thao tác này",
+  "org.createTeam.urlNotAvailable": "Địa chỉ URL này không dùng được. Hãy chọn địa chỉ khác.",
+  "org.region.new": "Vùng dữ liệu: {region}. Vùng này cố định sau khi tổ chức được tạo.",
+  "org.region.current": "Vùng dữ liệu: {region} (cố định)"
 }

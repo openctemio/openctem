@@ -38,7 +38,6 @@ reachable from browsers.
 | Variable                                           | Default                 | Purpose                                                                                                                          |
 | -------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `NEXT_PUBLIC_APP_URL`                              | `http://localhost:3000` | The console's public URL (CSP `connect-src`, read at run time; Compose and the all-in-one image derive it from the platform URL) |
-| `NEXT_PUBLIC_APP_NAME`                             | `OpenCTEM`              | Product name shown in the UI                                                                                                     |
 | `NEXT_PUBLIC_APP_DESCRIPTION`                      |                         | Page description metadata                                                                                                        |
 | `NEXT_PUBLIC_TERMS_URL`, `NEXT_PUBLIC_PRIVACY_URL` | (empty)                 | Legal links on the sign-in and register pages; empty shows no notice                                                             |
 | `NEXT_PUBLIC_WS_BASE_URL`                          | (empty)                 | WebSocket host override. Leave empty; set only for a same-site host that receives the session cookie                             |
