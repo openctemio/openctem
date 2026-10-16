@@ -816,6 +816,12 @@ Authorization is enforced at the **route layer** in
 `internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
 — not in the handlers.
 
+**Acting role.** With `ADMIN_ELEVATION=required` (default) every request acts
+as `readonly` unless the console session holds a live elevation
+(`POST /api/v1/admin/auth/elevate`, step-up, 15-60 minutes, a role no higher
+than the administrator's own; `DELETE` ends it). Role checks below use that
+acting role, never the stored one.
+
 **Step-up on protected actions.** Every identity, privilege and platform-trust
 change also takes the route-level step-up (`middleware.RequireAdminStepUp`): a
 fresh console authenticator code in the `X-Admin-Step-Up` header, or the
