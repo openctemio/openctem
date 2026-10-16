@@ -478,8 +478,13 @@ instead).
   title, requested status and dates, never the justification; the link opens
   the inbox, sign-in required. `POST /api/v1/approvals/{id}/remind`
   (`findings:write`) repeats it at most once an hour per request
-  (`reminded_at`, atomic), audited `finding_approval.reminded`. VEX requests
-  from a scan report are not notified one by one.
+  (`reminded_at`, atomic), audited `finding_approval.reminded`. Requests VEX
+  statements make are announced from the requests table as an outbox: the
+  `vex-request-notice` job (every minute) claims rows with no
+  `approvers_notified_at` (`FOR UPDATE SKIP LOCKED`) and sends one notice and
+  one email per tenant and approver, counting only findings in that
+  approver's data scope and naming at most five titles; without a data-scope
+  check nobody is told (`DispatchVEXRequestNotices`, `NotifyVEXRequests`).
 - **Sole member.** An organization with one person has nobody to ask. Its
   owner may approve their own pending request
   (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while
@@ -499,6 +504,15 @@ instead).
   (`/api/v1/organization/settings/finding-approvals`) needs `settings:write`
   and a recent re-authentication; changes are audited with before/after and
   the approvers are told.
+
+- **Daily digest.** The hourly `approval-digest` controller sends each
+  approver, at most once per 23 hours and organization
+  (`finding_approval_digest_sent`), one in-app notice
+  (`finding_approval_digest`) and one email: the requests they may decide
+  (never their own, the finding in their data scope), how many expire within
+  two days, and up to five titles they can see
+  (`internal/app/finding/approval_digest.go`). Muting the digest type in the
+  notification preferences opts out of both.
 
 ### Approval policy
 
