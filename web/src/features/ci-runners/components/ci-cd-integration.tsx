@@ -8,6 +8,7 @@
  * the component the rest of the console shows.
  */
 
+import { useDocsHref } from '@/context/brand-provider'
 import { BookOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -27,6 +28,7 @@ export function cicdTab(raw: string): CICDTab {
 }
 
 export function CICDIntegration() {
+  const docsHref = useDocsHref()
   const { t } = useTranslation()
   const [tabParam, setTabParam] = useUrlFilter('tab', 'pipelines')
   const tab = cicdTab(tabParam)
@@ -41,7 +43,7 @@ export function CICDIntegration() {
         )}
       >
         <Button asChild variant="outline" size="sm">
-          <SafeExternalLink href={DOCS.ci.guide}>
+          <SafeExternalLink href={docsHref(DOCS.ci.guide)}>
             <BookOpen className="h-4 w-4" />
             {t('scans.ci.guide', 'CI integration guide')}
           </SafeExternalLink>
