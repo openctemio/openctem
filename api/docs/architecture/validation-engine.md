@@ -184,17 +184,16 @@ finding:
 
 | Verdict (outcome) | Finding before | Transition |
 |-------------------|----------------|------------|
-| `not_reproducible` (`not_detected`) | new / confirmed / in_progress | → `validated_fixed` (**downgrade**, `downgraded_at` stamped) |
+| `not_reproducible` (`not_detected`) | new / confirmed / in_progress | status held, `validation_outcome = not_reproducible` (**downgrade**, `downgraded_at` stamped) |
 | `not_reproducible` | `fix_applied` | hold, verdict stamped. Not a close: `raw_meta.reachable` is the sensor's own claim. A retest (RFC-039) or a `findings:verify` holder closes it. |
 | `reproducible` (`detected`) | `fix_applied` | → `in_progress` (fix did not hold) + notify |
-| `reproducible` | `validated_fixed` | → `confirmed` (prior downgrade refuted) |
-| `reproducible` | other open | hold, stamp "still exploitable" |
+| `reproducible` | other open | hold, stamp "still exploitable" (refutes an earlier downgrade) |
 | inconclusive / error / skipped | any | no change |
 
-`validated_fixed` is a new **in_progress-category** state: de-prioritized but
-**not closed** — the conservative default is that a human still closes it
-(`validated_fixed → resolved` requires `findings:verify`). A non-intrusive
-re-check never auto-closes a live finding.
+A downgrade never moves the status: the validation verdict is a field beside
+it, so a human still closes the finding (`resolved` requires
+`findings:verify`). A non-intrusive re-check never auto-closes a live
+finding.
 
 The verdict is persisted on the finding by a `VerdictRecorder`
 (`findings.validation_outcome` + `downgraded_at`, migration `000209`), a narrow

@@ -61,8 +61,8 @@ code that defines them is the source of truth:
 - **Stop:** `findings.resolved_at`.
 - Excluded:
   - findings resolved before they were validated;
-  - `false_positive`, `accepted` and `validated_fixed`, because none of them is
-    a remediation.
+  - `false_positive` and `accepted`, and obsolete closures, because none of
+    them is a remediation.
 
 ### 3. Owner acceptance rate (`owner_acceptance`)
 
