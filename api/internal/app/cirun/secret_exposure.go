@@ -85,7 +85,7 @@ func (e *SecretExposure) Raise(ctx context.Context, run *cirun.Run, findings []c
 	if run == nil || run.Fork {
 		return nil
 	}
-	var paging []cirun.RunFinding
+	paging := make([]cirun.RunFinding, 0, min(len(findings), maxSecretsPerUpload))
 	for _, f := range findings {
 		if !f.SecretPages() || f.Suppressed || !vulnerability.IsOpenStatus(vulnerability.FindingStatus(f.Status)) {
 			continue
@@ -135,7 +135,7 @@ func (e *SecretExposure) ensureTask(ctx context.Context, tenantID shared.ID, f c
 }
 
 // joinOrCreate joins the action's active task, or opens one. When another run
-// opened it first (the one-active-task-per-action index refuses a second), it
+// opened it first (the create refuses a second active task for the action), it
 // looks the task up again and joins it, once.
 func (e *SecretExposure) joinOrCreate(ctx context.Context, tenantID shared.ID, f cirun.RunFinding, key, title string, existing *remediation.Task, retry bool) (*SecretRotation, error) {
 	if existing != nil {
@@ -155,7 +155,7 @@ func (e *SecretExposure) joinOrCreate(ctx context.Context, tenantID shared.ID, f
 			Description: "A CI run found this secret in the repository. Rotate it at its provider; removing it from the branch does not remove it from history."},
 		Action: remediation.Action{TenantID: tenantID, Key: key, Kind: remediation.KindRotate, Title: title,
 			FixSpec: remediation.FixSpecForKey(key), Origin: remediation.ActionOriginSystem},
-		Members: []shared.ID{f.ID}, Source: remediation.JoinSourceAutoJoin,
+		Members: []shared.ID{f.ID}, Source: remediation.JoinSourceAutoJoin, OneActive: true,
 		EventData: map[string]any{"title": title, "reason": "ci_secret"},
 	}
 	if err := e.tasks.CreateTask(ctx, rec); err != nil {

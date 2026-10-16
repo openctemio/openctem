@@ -69,13 +69,13 @@ func TestCISecretExposure_PromoteAndRotationTask_DB(t *testing.T) {
 		t.Fatal("another tenant found the task")
 	}
 
-	// A second active task for the same action is refused by the index, as a
-	// typed error the caller turns into a join.
+	// A second active task for the same action is refused when the creator
+	// asks for one active task, as a typed error the caller turns into a join.
 	second := seed(tenant, asset)
 	dup := &remediation.NewTaskRecord{
 		Task:    remediation.Task{ID: shared.NewID(), TenantID: tenant, Title: "Rotate aws_access_key"},
 		Action:  remediation.Action{TenantID: tenant, Key: key, Kind: remediation.KindRotate, Title: "Rotate aws_access_key", FixSpec: remediation.FixSpecForKey(key), Origin: remediation.ActionOriginSystem},
-		Members: []shared.ID{second}, Source: remediation.JoinSourceAutoJoin,
+		Members: []shared.ID{second}, Source: remediation.JoinSourceAutoJoin, OneActive: true,
 	}
 	if err := tasks.CreateTask(ctx, dup); !errors.Is(err, remediation.ErrActiveTaskExists) {
 		t.Fatalf("second active task for one action: %v", err)

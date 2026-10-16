@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS uq_remediation_tasks_one_active_per_action;
