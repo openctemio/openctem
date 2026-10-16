@@ -89,6 +89,12 @@ chmod 600 "$tmp"
 mv "$tmp" "$env_file"
 trap - EXIT
 
+# The bundled shared sensor's local policy (docker-compose.sensor.yml): a
+# copy of the example the operator edits; never overwritten.
+if [[ ! -e "$here/sensor/sensor-policy.yaml" && -f "$here/sensor/sensor-policy.example.yaml" ]]; then
+  install -m 0644 "$here/sensor/sensor-policy.example.yaml" "$here/sensor/sensor-policy.yaml"
+fi
+
 cat <<MSG
 Wrote $env_file (mode 0600) for https://$host with generated secrets.
 Back up APP_ENCRYPTION_KEY from it now: without that key the stored
