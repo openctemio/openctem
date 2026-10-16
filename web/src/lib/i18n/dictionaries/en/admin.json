@@ -589,7 +589,7 @@
   "admin.internalZones.label": "Shared sensors may scan internal zones",
   "admin.internalZones.onHint": "On: an organization's internal target may go to a shared sensor, but only inside an instance scan zone you assigned to that organization.",
   "admin.internalZones.offHint": "Off: shared sensors scan public targets only. Internal targets run on the organization's own sensors.",
-  "admin.internalZones.recommend": "Leave it on when you run this instance for your own organizations and scan them from a central pool. Turn it off on a public multi-tenant service.",
+  "admin.internalZones.recommend": "Shared sensors scan public targets only. Turn this on only for a self-hosted instance that scans its own organizations from a central pool; keep it off on a public multi-tenant service.",
   "admin.internalZones.alwaysOn": "Turning it on assigns no zone: each instance scan zone still reaches only the organizations you assign it to.",
   "admin.internalZones.confirmOnTitle": "Let shared sensors scan internal zones?",
   "admin.internalZones.confirmOnDesc": "Shared sensors may then scan the private ranges of instance scan zones you assign to organizations. The change is recorded in the admin audit log; the other administrators are emailed.",
@@ -609,5 +609,7 @@
   "admin.anomaly.confirmDesc": "The change is recorded in the admin audit log; the other administrators are emailed.",
   "admin.anomaly.saved": "Anomaly alert thresholds saved",
   "admin.anomaly.saveFailed": "Could not save the thresholds",
-  "admin.anomaly.errorTitle": "the anomaly alert thresholds"
+  "admin.anomaly.errorTitle": "the anomaly alert thresholds",
+  "admin.platformDefault.notEnforced": "Not enforced yet",
+  "admin.platformDefault.notEnforcedHint": "Saved only: nothing reads this setting yet. Shared sensors scan public targets only until instance scan zones and their signed ranges are available."
 }
