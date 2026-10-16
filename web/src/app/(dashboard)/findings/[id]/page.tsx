@@ -56,6 +56,7 @@ import {
   RelatedTab,
   RemediationTab,
 } from '@/features/findings/components/detail'
+import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
 import { PentestDetailsTab } from '@/features/findings/components/detail/pentest-details-tab'
 import { getSourceLayout, getOrderedTabs } from '@/features/findings/config/source-layout'
 import '@/features/findings/config/register-layouts'
@@ -259,6 +260,7 @@ export default function FindingDetailPage() {
             </DetailCallout>
           )}
           <FindingWhyItMatters finding={finding} />
+          <FindingTaskBand findingId={finding.id} />
           <FindingFixCard finding={finding} onOpenPlan={() => setTab('remediation')} />
         </div>
 
