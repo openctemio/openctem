@@ -198,6 +198,10 @@ const (
 	// ActionFindingEvidenceDeleted records the removal of a manually-attached
 	// evidence note from a generic (non-pentest) finding.
 	ActionFindingEvidenceDeleted Action = "finding.evidence_deleted"
+	// ActionFindingTicketLinked records a person linking an existing tracker
+	// issue to a finding; ActionFindingTicketUnlinked removing a link.
+	ActionFindingTicketLinked   Action = "finding.ticket_linked"
+	ActionFindingTicketUnlinked Action = "finding.ticket_unlinked"
 	// ActionFindingEvidenceRevealed records a reveal of masked secret values
 	// in a finding's evidence: the item, the placeholders and the purpose
 	// (view, copy, copy_curl). Never the values.
@@ -709,6 +713,7 @@ func (a Action) IsValid() bool {
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
@@ -835,6 +840,7 @@ func (a Action) Category() string {
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
