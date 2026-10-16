@@ -340,8 +340,8 @@ func verifyPackage(b *Bundle, ks *feedsign.KeySet, e IndexEntry, pv PublisherVer
 	case !fileArtifact && hasArt:
 		return nil, errors.New("this artifact type is not carried in a bundle")
 	case fileArtifact:
-		if int64(len(art)) != m.Artifact.Size || Digest(art) != m.Artifact.Digest {
-			return nil, fmt.Errorf("%w: the artifact does not match its digest", ErrTampered)
+		if err := CheckArtifact(art, m.Artifact); err != nil {
+			return nil, err
 		}
 		vp.Artifact = art
 	}

@@ -354,7 +354,7 @@ create's target validator, exclusions, zone routing) in one call.
 | `PUT /settings` (approval option) | `settings:write` + a recent sign-in |
 
 Another organization's installation or request answers 404. Owners and administrators hold both content
-permissions; members and viewers hold `content:read` (migration `002420`). `/api/v1/admin/content-catalog`: any
+permissions; members and viewers hold `content:read` (migration `002540`). `/api/v1/admin/content-catalog`: any
 platform administrator reads the trust status; `POST /import` needs a super admin, a reason and a fresh console
 authenticator code, and is audited.
 

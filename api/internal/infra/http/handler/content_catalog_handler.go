@@ -215,13 +215,20 @@ func toContentTrust(t *catalogapp.TrustStatus) ContentTrustResponse {
 
 // ContentSettingsResponse is the organization's catalog settings.
 type ContentSettingsResponse struct {
-	RequireApproval bool       `json:"require_approval"`
-	UpdatedBy       string     `json:"updated_by,omitempty"`
-	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+	// RequireApproval is whether installs need a second person now.
+	RequireApproval bool `json:"require_approval"`
+	// ApprovalOffAt: approval was switched off and stops being required at
+	// this time (24 hours after the change); turning it on cancels it.
+	ApprovalOffAt *time.Time `json:"approval_off_at,omitempty"`
+	UpdatedBy     string     `json:"updated_by,omitempty"`
+	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
 }
 
 func toContentSettings(s *dom.Settings) ContentSettingsResponse {
-	out := ContentSettingsResponse{RequireApproval: s.RequireApproval, UpdatedAt: s.UpdatedAt}
+	out := ContentSettingsResponse{RequireApproval: s.ApprovalRequired(time.Now()), UpdatedAt: s.UpdatedAt}
+	if out.RequireApproval {
+		out.ApprovalOffAt = s.ApprovalOffAt
+	}
 	if s.UpdatedBy != nil {
 		out.UpdatedBy = s.UpdatedBy.String()
 	}
@@ -737,7 +744,7 @@ func (h *ContentCatalogHandler) Settings(w http.ResponseWriter, r *http.Request)
 
 // PutSettings handles PUT /api/v1/content/settings
 // @Summary      Change content catalog settings
-// @Description  require_approval: every install, update, rollback and uninstall needs a second person. Organization settings permission and a recent sign-in; audited.
+// @Description  require_approval: every install, update, rollback and uninstall needs a second person. Turning it on is immediate; turning it off takes effect 24 hours later (approval_off_at) and the owners and administrators are notified; turning it on again cancels that. Organization settings permission and a recent sign-in; audited.
 // @Tags         Content Catalog
 // @Accept       json
 // @Produce      json
