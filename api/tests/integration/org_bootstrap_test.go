@@ -316,7 +316,7 @@ func orgSelfServiceUser(t *testing.T, db *postgres.DB, svc *authapp.AuthService)
 
 func orgAuthService(db *postgres.DB, mode string) *authapp.AuthService {
 	cfg := config.AuthConfig{
-		TenantCreationMode:   mode,
+		SignupMode:           mode,
 		JWTSecret:            "orgboot-test-secret-orgboot-test-secret-0123456789",
 		JWTIssuer:            "openctem-test",
 		AccessTokenDuration:  15 * time.Minute,
@@ -338,8 +338,8 @@ func TestCreateFirstTeamModes(t *testing.T) {
 	db := openConsoleDB(t)
 	ctx := context.Background()
 
-	for _, mode := range []string{"", config.TenantCreationAdminOnly} {
-		svc := orgAuthService(db, config.TenantCreationSelfService) // sign in normally
+	for _, mode := range []string{"", config.SignupModeDisabled} {
+		svc := orgAuthService(db, config.SignupModeOpen) // sign in normally
 		_, refresh := orgSelfServiceUser(t, db, svc)
 		_, err := orgAuthService(db, mode).CreateFirstTeam(ctx, authapp.CreateFirstTeamInput{
 			RefreshToken: refresh, TeamName: "Sneaky", TeamSlug: "sneaky-" + uuid.NewString()[:8],
@@ -349,7 +349,7 @@ func TestCreateFirstTeamModes(t *testing.T) {
 		}
 	}
 
-	svc := orgAuthService(db, config.TenantCreationSelfService)
+	svc := orgAuthService(db, config.SignupModeOpen)
 	email, refresh := orgSelfServiceUser(t, db, svc)
 	slug := "self-" + uuid.NewString()[:8]
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM tenants WHERE slug = $1`, slug) })
@@ -375,6 +375,13 @@ func TestCreateFirstTeamModes(t *testing.T) {
 	if actor != email || !strings.HasPrefix(ip, "198.51.100.7") {
 		t.Fatalf("audit actor %q ip %q", actor, ip)
 	}
+	// A taken URL gets the one "not available" answer, which does not echo
+	// the slug or say another organization has it.
+	_, refresh2 := orgSelfServiceUser(t, db, svc)
+	_, err = svc.CreateFirstTeam(ctx, authapp.CreateFirstTeamInput{RefreshToken: refresh2, TeamName: "Copy", TeamSlug: slug})
+	if !errors.Is(err, authapp.ErrTeamURLNotAvailable) || strings.Contains(err.Error(), slug) || strings.Contains(err.Error(), "taken") {
+		t.Fatalf("a taken URL must answer not available without detail, got %v", err)
+	}
 }
 
 // POST /tenants: refused unless self_service; with it the organization is
@@ -385,7 +392,7 @@ func TestCreateTenantModes(t *testing.T) {
 	tenantSvc := tenantapp.NewTenantService(postgres.NewTenantRepository(db), log,
 		tenantapp.WithTenantAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log)))
 	users := postgres.NewUserRepository(db)
-	email, _ := orgSelfServiceUser(t, db, orgAuthService(db, config.TenantCreationSelfService))
+	email, _ := orgSelfServiceUser(t, db, orgAuthService(db, config.SignupModeOpen))
 	u, err := users.GetByEmail(context.Background(), email)
 	if err != nil {
 		t.Fatal(err)

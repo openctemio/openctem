@@ -157,6 +157,7 @@ type Action struct {
 	Title     string
 	FixSpec   map[string]any
 	Origin    ActionOrigin
+	AutoJoin  bool
 	CreatedBy *shared.ID
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -174,7 +175,7 @@ type TaskCounts struct {
 	Total      int
 	Open       int // new, confirmed, not observed, draft, in review
 	InProgress int // in_progress
-	FixApplied int // fix_applied, validated_fixed: claimed fixed, awaiting verification
+	FixApplied int // fix_applied: claimed fixed, awaiting verification
 	Closed     int // resolved, false_positive, accepted, duplicate
 	Verified   int // resolved with proof (a covered scan, a retest or a reviewer)
 	Related    int
@@ -313,6 +314,12 @@ const (
 	TaskEventMembersRemoved = "members_removed"
 	TaskEventUpdated        = "updated"
 	TaskEventStateChanged   = "state_changed"
+	// TaskEventFixClaimed: a person marked the task fixed (each open
+	// finding claimed fixed, each verified on its own).
+	TaskEventFixClaimed = "fix_claimed"
+	// TaskEventRegressed: findings of a done task reopened and moved to a
+	// new linked task.
+	TaskEventRegressed = "regressed"
 )
 
 // Errors.
