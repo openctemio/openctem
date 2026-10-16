@@ -12,7 +12,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -476,7 +478,7 @@ func toAcceptResp(r *remediation.AcceptResult) RemediationAcceptResponse {
 
 // Approve accepts a suggestion.
 // @Summary      Accept (approve) a remediation suggestion
-// @Description  Creates what the suggestion proposes: a new group creates the action and one task per owner; a join adds the findings to the owner's task; a task route creates a task under the existing action. Optional edits: title, findings to remove (remembered for this fix), other owners per partition, a deadline (it only tightens), and the auto-join rule (exact keys only, needs access to every asset). Findings that closed or joined another task since are left out and listed in dropped.
+// @Description  Creates what the suggestion proposes: a new group creates the action and one task per owner; a join adds the findings to the owner's task; a task route creates a task under the existing action. Optional edits: title, findings to remove (remembered for this fix), other owners per partition, a deadline (it only tightens), and the auto-join rule (exact keys only, needs access to every asset). Findings that closed or joined another task since are left out and listed in dropped. A member without findings:remediation:write may accept, as it is, a join into their own task or a task route to them when every finding is on an asset they own.
 // @Tags         Remediation
 // @Accept       json
 // @Produce      json
@@ -504,6 +506,9 @@ func (h *RemediationSuggestionHandler) Approve(w http.ResponseWriter, r *http.Re
 		return
 	}
 	in := remediationapp.AcceptInput{TenantID: tid, ID: id, Version: req.Version, ActorID: callerID(r), Title: req.Title, AutoJoin: req.AutoJoin}
+	// Without write access the caller accepts as the asset owner; the
+	// service narrows what that allows.
+	in.AsOwner = !middleware.HasPermission(r.Context(), permission.RemediationWrite.String())
 	var err error
 	if in.Exclude, err = parseIDList("exclude_finding_ids", req.ExcludeFindingIDs); err != nil {
 		h.handleError(w, err)
