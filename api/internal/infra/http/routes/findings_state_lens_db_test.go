@@ -23,7 +23,7 @@ import (
 func (h *gsHarness) seedLensFindings(t *testing.T) map[string]string {
 	t.Helper()
 	ids := map[string]string{}
-	for _, st := range []string{"new", "fix_applied", "not_observed", "resolved", "false_positive", "accepted", "duplicate"} {
+	for _, st := range []string{"new", "fix_applied", "in_progress", "resolved", "false_positive", "accepted", "duplicate"} {
 		id := shared.NewID()
 		resolvedAt := "NULL"
 		switch st {
@@ -71,8 +71,8 @@ func TestFindingsStateLens_CountContract(t *testing.T) {
 
 	want := map[string]map[string][]string{
 		"open": {
-			"owner":   sorted(fa, fb, ids["new"], ids["fix_applied"], ids["not_observed"]),
-			"memberA": sorted(fa, ids["new"], ids["fix_applied"], ids["not_observed"]),
+			"owner":   sorted(fa, fb, ids["new"], ids["fix_applied"], ids["in_progress"]),
+			"memberA": sorted(fa, ids["new"], ids["fix_applied"], ids["in_progress"]),
 		},
 		"fixed": {
 			"owner":   sorted(fb2, ids["resolved"]),

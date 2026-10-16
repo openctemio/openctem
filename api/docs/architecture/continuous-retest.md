@@ -19,8 +19,8 @@ decides:
 
 | Re-run | Attempt evidence | Outcome (`reason_code`) | Finding |
 |---|---|---|---|
-| matched | any | `still_vulnerable` (`matched`) | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress` · `validated_fixed` / `not_observed` → `confirmed` |
-| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429 | `confirmed_fixed` (`not_matched`) | → `validated_fixed` ("verified fixed — awaiting confirmation"); → `resolved` (`retest_verified`) only with `settings.retest.auto_resolve`; `resolved` stays |
+| matched | any | `still_vulnerable` (`matched`) | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress`; validation `reproducible`, observation `present` |
+| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429 | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve`; `resolved` stays |
 | no match | answered 403 / 429 | `inconclusive` (`blocked`) | unchanged |
 | no match | answered 401 / 407 | `inconclusive` (`auth_changed`) | unchanged |
 | no match | answered 5xx | `inconclusive` (`server_error`) | unchanged |
@@ -44,8 +44,7 @@ separates "unreachable" from "not reproduced"; it never proves a fix.
 
 Eligible findings: `tool_name = nuclei` with a template id that passes the
 template guard (no path, no `dos`/`fuzz`/`intrusive`/`brute-force` marker), in
-`new`, `confirmed`, `in_progress`, `fix_applied`, `validated_fixed`,
-`not_observed` or `resolved`, on an `active`, network-addressable asset that passes the scope
+`new`, `confirmed`, `in_progress`, `fix_applied` or `resolved`, on an `active`, network-addressable asset that passes the scope
 gates. `false_positive`, `accepted`, `duplicate`, suppressed and pentest
 findings are never retested.
 
@@ -112,8 +111,8 @@ cannot be read is inconclusive (fail closed).
 
 The scan side is coverage auto-resolve: a covered nuclei run whose template
 release differs from the release of a candidate's last sighting (or that
-reported none) does not resolve that candidate; in enforce mode it becomes
-`not_observed` ([finding-status-not-observed.md](finding-status-not-observed.md)).
+reported none) does not resolve that candidate; in enforce mode it is marked
+stale ([finding-status-not-observed.md](finding-status-not-observed.md)).
 A run whose reports disagree on the release counts as reporting none.
 
 ## Limits (server-side)
@@ -144,8 +143,7 @@ ordering: until the scans redesign P1 lands).
 ## Regression reopen from scans
 
 Independently of retests, ingest reopens every re-detected finding that was
-closed as fixed — by a scan or by a person — and (since RFC-039) every
-`validated_fixed` one: `AutoReopenByFingerprintsBatch` locks the rows, reopens
+closed as fixed — by a scan or by a person: `AutoReopenByFingerprintsBatch` locks the rows, reopens
 them to `confirmed` and returns what it cleared. The `auto_reopened` activity
 keeps `previous_status`, `previous_resolution`, `previous_closure_reason`, `previous_verification`,
 `previous_resolved_by`, `previous_resolved_at`, `scanner` and `scan_id`, so the
@@ -159,8 +157,7 @@ reopened.
   (priority class, then severity) from the reopen, `sla_status = on_track`, and
   an `sla_restarted` activity with the reason, the trigger (`scan`/`retest`) and
   the previous deadline (`sla.RegressionRestarter`,
-  `postgres.FindingSLARestartRepository`). A `validated_fixed` finding a scan
-  reopens was never closed: its SLA keeps running.
+  `postgres.FindingSLARestartRepository`).
 - **Announcements.** A retest that resolves a finding (`finding_fixed`), a
   regression (`finding_reopened`) and a rejected fix (`fix_applied` still
   detected, `finding_reopened`) queue a notification and comment on the linked
@@ -203,7 +200,7 @@ reopened.
 - `internal/infra/http/routes/finding_retest_authz_db_test.go` —
   `findings:verify`, cross-tenant 404, data scope 404.
 - `internal/infra/postgres/finding_reopen_regression_db_test.go` — a scan
-  regression keeps the previous resolver; `validated_fixed` reopens.
+  regression keeps the previous resolver.
 
 ## Run linkage
 

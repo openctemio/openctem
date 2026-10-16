@@ -12,8 +12,6 @@ lifecycle.
 | `confirmed` | open | A real issue that needs a fix |
 | `in_progress` | in progress | Being fixed |
 | `fix_applied` | in progress | Marked fixed; a scan, a retest or a security reviewer still has to verify it |
-| `validated_fixed` | in progress | A validation re-check no longer observes it; a person closes it |
-| `not_observed` | in progress | Not reported lately and no coverage proof: stale, not fixed ([finding-status-not-observed.md](finding-status-not-observed.md)) |
 | `resolved` | closed | Verified fixed |
 | `false_positive` | closed | Not a real issue (approval) |
 | `accepted` | closed | Risk accepted, with an expiry (approval) |
@@ -24,6 +22,16 @@ The list is `vulnerability.AllFindingStatuses()`; the database CHECK
 `chk_findings_status` (migration `001378`) and the web registry
 (`web/src/features/findings/types/finding.types.ts`, labels in en and vi) hold
 exactly the same values, and tests on each side pin them.
+
+## Observation and validation: fields, not statuses
+
+Whether the scanner still reports a finding and whether a re-check still
+reproduces it are fields beside the status
+([finding-status-not-observed.md](finding-status-not-observed.md)): a finding
+can be in progress, stale and not reproducible at once. The statuses
+`validated_fixed` and `not_observed` were retired for them (migration
+`finding_status_dimensions`); the API refuses them with a 400 that names the
+filter replacing them (`observation=stale`, `validation=not_reproducible`).
 
 ## Closure reason and verification
 
@@ -88,7 +96,7 @@ Every count, metric, list and job asks "open?" or "fixed?" the same way
 
 | Set | Statuses | SQL predicate |
 |---|---|---|
-| Open | `new`, `confirmed`, `in_progress`, `fix_applied`, `validated_fixed`, `not_observed` | `vulnerability.OpenStatusSQL(col)`; in the database `is_open_finding_status(status)` |
+| Open | `new`, `confirmed`, `in_progress`, `fix_applied` | `vulnerability.OpenStatusSQL(col)`; in the database `is_open_finding_status(status)` |
 | Fixed | `resolved` | `vulnerability.FixedStatusSQL(col)` |
 | Dispositioned | `false_positive`, `accepted`, `duplicate` | `vulnerability.DispositionedStatusSQL(col)` |
 | Closed | Fixed and Dispositioned | `vulnerability.ClosedStatusSQL(col)` |
@@ -120,10 +128,8 @@ a list filter; it never maps one to another.
   reopen).
 - `PlatformStatusTransitions`: the extra moves only the platform makes, each on
   evidence a person does not hand over: a covered scan or a source's own
-  "mitigated" state closes open work (`new`/`in_progress` -> `resolved`), a
-  stale source or expired feature branch marks open work `not_observed`, a VEX
-  `not_affected` statement marks it `false_positive`, a retest moves
-  `fix_applied`/`not_observed` to `validated_fixed`, an approved suppression
+  "mitigated" state closes open work (`new`/`in_progress` -> `resolved`), a VEX
+  `not_affected` statement marks it `false_positive`, an approved suppression
   rule gives a new finding, and on approval the open findings it matches
   (`SuppressionApplyFromStatuses`), its disposition, and lifting the rule
   returns them to `new` (`suppression-rules.md`).
@@ -157,6 +163,18 @@ a list filter; it never maps one to another.
 Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
+
+## Lifecycle version on the timeline
+
+Every timeline entry of a status change records the version of the rules it
+was decided under: `finding_activities.lifecycle_version` (and
+`changes.lifecycle_version`). Today that is `platform:1`
+(`vulnerability.PlatformLifecycleVersion`, the SQL function
+`finding_lifecycle_version()`, pinned by a test). A BEFORE INSERT trigger
+(`trg_finding_activities_lifecycle_version`, migration
+`finding_activity_lifecycle_version`) sets it on every entry whose changes name
+a new status, so no writer can forget it. Entries written before the column
+existed stay empty.
 
 ## What counts as a regression
 
@@ -238,6 +256,43 @@ reopens each to `confirmed` with a timeline entry instead of failing the delete.
 Migration `002151` repaired existing orphan duplicates the same way (status
 `confirmed`, timeline reason `duplicate_link_missing`).
 
+## Transition engine
+
+Every status change a person or a delegated actor makes is decided by one
+pure function, `vulnerability.EvaluateTransition(facts, actor, to)`
+(`pkg/domain/vulnerability/transition_engine.go`). The caller loads the
+facts: the finding's status, source, severity, priority, KEV, whether the
+actor may claim its fix, and whether its verification checklist is complete.
+The engine decides:
+
+| Target | Rule | Mode | Needs |
+|---|---|---|---|
+| any | an edge of `ValidStatusTransitions`; a pentest finding belongs to the pentest module | | |
+| `false_positive`, `accepted` | `findings:write`; four-eyes approval | `request` | `closure_reason`, note (and the acceptance end) |
+| `duplicate` | `findings:triage`; the canonical picker (`/duplicates`, `CheckMarkDuplicate`) | `duplicate_picker` | `duplicate_of` |
+| `resolved` | `findings:verify`, from every status | `direct` | a note unless the checklist is complete |
+| `fix_applied` | `findings:fix_apply`, a person, whose finding it is (assignee, assigned group, asset owner) | `direct` | a note |
+| others | `findings:status`; a `findings:verify` holder may reject a fix (`fix_applied` → `in_progress`) | `direct` | |
+
+Actors:
+- **person**: a signed-in user.
+- **api_key**: an organization key. The same rules apply, but it is not a person, so it cannot claim a fix.
+- **workflow**: an automation `update_status` and an explicit system move. It holds no permission to verify, triage or request a disposition, and is free of the fix-claim person rules.
+- **ticket_inbound**: Jira or GitHub. It moves work state only (`IsTicketInboundTarget`).
+
+The engine only adds constraints to the lifecycle map. `TestEvaluateTransition_NeverWiderThanTheLifecycle` proves that, for every actor and status pair, no allowed move is off the map. It also proves that no disposition is direct, no resolve lacks `findings:verify`, and no ticket closes a finding.
+
+The paths that use the engine:
+- `PATCH /findings/{id}/status` and `POST /findings/bulk/status`. Bulk refuses on the target first (`EvaluateTransitionRequest`), then refuses finding by finding.
+- `/actions/fix-applied`, `/actions/verify` and `/actions/reject-fix`, plus their by-filter variants.
+- Approval requests and decisions.
+- Remediation group and campaign resolves (through bulk), workflow `update_status`, and the Jira and GitHub webhooks.
+
+The same decisions are served to clients, so no client keeps a copy of the rules:
+- `GET /findings/{id}/transitions` (`findings:read`) returns every move from the finding's status. Each move says whether it is allowed, its mode, the inputs it needs, and the blocked reason codes (`missing_permission` with the permission, `not_a_lifecycle_move`, `not_fix_owner`, `not_a_person`, `ticket_cannot_close`, `pentest_module`). An out-of-scope or other tenant's finding answers 404.
+- `POST /findings/transitions/preview` (`findings:read`, at most 100 ids) is a dry run for a bulk change. It returns the decision per finding, and `not_found` for an id the caller cannot see. It changes nothing.
+- The MCP tool `list_finding_transitions` returns the same answer as the GET route.
+
 ## The same claim and close rules on every route
 
 Marking a fix applied and resolving follow the same rules on every route a
@@ -250,10 +305,11 @@ and remediation group and campaign resolves (which use the bulk path).
   asset (`FindingActionsService.FixAppliers`, wired into the status service
   with `SetFixApplierCheck`). The bulk paths skip, and report, each finding
   that is not theirs.
-- **Resolved:** `findings:verify` (unchanged). A resolve backed by a complete
-  verification checklist is verified by `security_review`; any other person's
-  resolve is `attested` and needs a note. A bulk resolve reads no
-  checklist, so it always needs one.
+- **Resolved:** `findings:verify` (unchanged), plus evidence in proportion to
+  risk (see "Evidence by risk" below). A resolve backed by a retest that
+  confirmed the fix is verified by `retest`, one backed by a complete
+  verification checklist by `security_review`; any other person's resolve is
+  `attested` and needs a note.
 - **Callers without a user** (an organization API key) get the same rules,
   never an exemption: they need the permission and the note, and cannot claim
   a fix at all (`ErrFixApplyNotAPerson`). Only an explicit system move, a
@@ -322,11 +378,59 @@ When the priority or the SLA policy changes, an open finding's deadline only
 tightens (`min(old, now + new SLA)`) and never moves later; see
 [scoring versions](scoring-versions.md#sla-on-a-priority-change).
 
+## Evidence by risk
+
+A person's resolve needs evidence in proportion to how risky the finding is
+(`vulnerability.FindingRiskTier`, enforced by the transition engine on every
+route, so the drawer, `PATCH /status`, the bulk paths, `/actions/verify` and
+its by-filter form all answer the same):
+
+| Tier | Finding | A person may resolve it with |
+| --- | --- | --- |
+| critical | severity critical, priority P0, or a KEV | a retest that confirmed the fix, or the verification checklist completed by someone other than the person resolving |
+| high | severity high or priority P1 | the verification checklist complete, or a confirming retest |
+| standard | medium, low, info | a note (attested) |
+
+- A blocked move is reported by `GET /findings/{id}/transitions` and the bulk
+  preview with the code `evidence_required` (critical) or
+  `checklist_required` (high), so the web disables it with the reason instead
+  of failing on submit. `PATCH /status` answers 400 with the same reason.
+- Evidence must be newer than the finding's last reopen and its last
+  sighting (`GREATEST(last_reopened_at, last_seen_at)`): a retest or a
+  checklist completed before a regression, or before a scan saw the finding
+  again, no longer counts, so a critical finding that came back is not closed
+  by one person on the proof of the previous fix.
+- A covered scan that no longer sees the finding, and a retest with
+  `retest.auto_resolve`, close it without a person and are not affected.
+- The by-filter verify evaluates each matching finding (up to 1000 per call)
+  and resolves only those whose evidence is in place; the response counts
+  what moved.
+
 ## Risk acceptance end
 
 An accepted risk always ends; a false positive does not (it is re-reviewed
 instead).
 
+- **Capped by priority.** The longest a risk may stay accepted is P0 or KEV
+  30 days, P1 90, P2 180, P3 (and unclassified) 365
+  (`vulnerability.MaxAcceptanceFor`). A request that names no end gets 90
+  days, or the cap when it is shorter; a request whose end is past the cap is
+  refused with the limit, never shortened silently. Approving a request whose
+  end is past the finding's current cap (its priority rose since) is refused
+  too; the requester asks again with a shorter end. The finding response
+  carries `max_acceptance_days`, and the approval dialog limits its date
+  picker to it.
+- **Suppression rules too.** An accepted-risk rule keeps its own end (at
+  most a year), but each finding it accepts, on approval, on a re-link or
+  when ingest links a new finding, ends at the rule's end or the cap of that
+  finding's priority, whichever is sooner (`acceptanceCappedSQL`, using
+  `finding_max_acceptance_days`).
+- **Existing acceptances over the cap are flagged, not cut.** Migration
+  `002541_acceptance_cap_review` opens a decision review
+  (`acceptance_exceeds_cap`) with a timeline entry for every accepted finding
+  whose end is past its cap, and reports the count (`NOTICE`). The end is not
+  changed; a person decides. `002542_acceptance_cap_review_validate`
+  validates the widened review-reason constraint.
 - **One value, one meaning.** `finding_status_approvals.expires_at` is the end
   of the decision the request asks for. A request for `accepted` gets 90 days
   when it names no end and is refused with an end in the past or more than a
@@ -464,7 +568,11 @@ authenticator app (a stolen session or password alone is not enough). The
 approval is audited Critical (`exposure.disposition_self_approved`); every
 refused attempt (not allowed, no reason, no code, a wrong or reused code) is
 audited High (`exposure.disposition_self_approval_refused`) and changes
-nothing. Without the authenticator check wired, an own approval is refused.
+nothing. Own approval is also refused for 7 days after any member of the
+organization was suspended, offboarded or removed, or a membership expired
+(read from `tenant_members` and the tenant's audit log): removing the only
+other approver must not open the path at once. The refusal says from when it
+is possible again. Without the authenticator check wired, an own approval is refused.
 The pending view carries `self_approval_available` for the requester so the
 web offers the call only when it can succeed. Every request, approval and rejection
 is in the audit log (`exposure.disposition_*`) and the state change keeps both
