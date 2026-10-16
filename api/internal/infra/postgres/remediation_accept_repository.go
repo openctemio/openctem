@@ -29,21 +29,9 @@ func (r *RemediationSuggestionRepository) AcceptSuggestion(ctx context.Context, 
 	defer func() { _ = tx.Rollback() }()
 	tenant := plan.TenantID.String()
 
-	var (
-		state   string
-		version int
-		key     string
-	)
-	err = tx.QueryRowContext(ctx, `SELECT state, version, action_key FROM remediation_suggestions
-		WHERE tenant_id = $1 AND id = $2 FOR UPDATE`, tenant, plan.SuggestionID.String()).Scan(&state, &version, &key)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, remediation.ErrSuggestionNotFound
-	}
+	key, err := lockOpenSuggestionInTx(ctx, tx, plan)
 	if err != nil {
-		return nil, fmt.Errorf("lock suggestion: %w", err)
-	}
-	if !remediation.SuggestionState(state).IsOpen() || version != plan.Version {
-		return nil, remediation.ErrSuggestionDecided
+		return nil, err
 	}
 
 	all := append([]shared.ID{}, plan.JoinIDs...)
@@ -71,93 +59,20 @@ func (r *RemediationSuggestionRepository) AcceptSuggestion(ctx context.Context, 
 		return out
 	}
 
-	// The action: a new group creates it (or reuses one a concurrent accept
-	// just created for the same key).
-	var actionID shared.ID
-	switch {
-	case plan.NewAction != nil:
-		spec, merr := json.Marshal(plan.NewAction.FixSpec)
-		if merr != nil || plan.NewAction.FixSpec == nil {
-			spec = []byte("{}")
-		}
-		var autoBy any
-		if plan.AutoJoin {
-			autoBy = idArg(plan.ActorID)
-		}
-		err = tx.QueryRowContext(ctx, `
-			INSERT INTO remediation_actions (tenant_id, action_key, kind, title, fix_spec, origin, created_by,
-				auto_join, auto_join_by, auto_join_at)
-			VALUES ($1, $2, $3, $4, $5, 'suggestion', $6, $7, $8, CASE WHEN $7 THEN now() END)
-			ON CONFLICT (tenant_id, action_key) DO UPDATE SET updated_at = now()
-			RETURNING id`,
-			tenant, plan.NewAction.Key, plan.NewAction.Kind, plan.NewAction.Title, spec, idArg(plan.ActorID),
-			plan.AutoJoin, autoBy).Scan(&actionID)
-		if err != nil {
-			return nil, fmt.Errorf("create remediation action: %w", err)
-		}
-	case plan.ActionID != nil:
-		actionID = *plan.ActionID
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM remediation_actions WHERE tenant_id = $1 AND id = $2`,
-			tenant, actionID.String()).Scan(&actionID); err != nil {
-			return nil, fmt.Errorf("%w: the remediation action was not found", shared.ErrValidation)
-		}
-	default:
-		return nil, fmt.Errorf("%w: accept plan without an action", shared.ErrValidation)
+	actionID, err := ensureActionInTx(ctx, tx, plan)
+	if err != nil {
+		return nil, err
 	}
 	res.ActionID = actionID
 
 	tr := &RemediationTaskRepository{db: r.db}
-	created := 0
-	for _, pt := range plan.Tasks {
-		members := keep(pt.FindingIDs)
-		if len(members) == 0 {
-			continue
-		}
-		t := &remediation.Task{ID: shared.NewID(), TenantID: plan.TenantID, ActionID: actionID, Title: pt.Title,
-			AssigneeUserID: pt.Owner.UserID, AssigneeGroupID: pt.Owner.GroupID, ManualDeadline: pt.Deadline, CreatedBy: plan.ActorID}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO remediation_tasks (id, tenant_id, action_id, title, assignee_user_id, assignee_group_id, manual_deadline, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			t.ID.String(), tenant, actionID.String(), t.Title, idArg(t.AssigneeUserID), idArg(t.AssigneeGroupID),
-			timeArg(t.ManualDeadline), idArg(t.CreatedBy)); err != nil {
-			return nil, fmt.Errorf("create remediation task: %w", err)
-		}
-		if err := insertMembersInTx(ctx, tx, t, members, remediation.MemberRolePrimary, remediation.JoinSourceSuggestion, plan.ActorID); err != nil {
-			return nil, err
-		}
-		if err := insertTaskEventInTx(ctx, tx, plan.TenantID, t.ID, remediation.TaskEventCreated, plan.ActorID,
-			map[string]any{"title": t.Title, "members": len(members), "related": 0, "suggestion_id": plan.SuggestionID.String()}); err != nil {
-			return nil, err
-		}
-		if err := tr.recomputeInTx(ctx, tx, plan.TenantID, []shared.ID{t.ID}, plan.ActorID); err != nil {
-			return nil, err
-		}
-		res.TaskIDs = append(res.TaskIDs, t.ID)
-		created += len(members)
+	created, err := tr.createPlanTasksInTx(ctx, tx, plan, actionID, keep, res)
+	if err != nil {
+		return nil, err
 	}
 
-	if plan.TargetTaskID != nil {
-		joins := keep(plan.JoinIDs)
-		if len(joins) > 0 {
-			t, err := lockTaskInTx(ctx, tx, plan.TenantID, *plan.TargetTaskID, 0)
-			if err != nil {
-				return nil, err
-			}
-			if t.State.IsTerminal() {
-				return nil, remediation.ErrTaskTerminal
-			}
-			if err := insertMembersInTx(ctx, tx, t, joins, remediation.MemberRolePrimary, remediation.JoinSourceSuggestion, plan.ActorID); err != nil {
-				return nil, err
-			}
-			if err := bumpTaskInTx(ctx, tx, plan.TenantID, t.ID, remediation.TaskEventMembersAdded, plan.ActorID,
-				map[string]any{"count": len(joins), "role": "primary", "source": "suggestion", "suggestion_id": plan.SuggestionID.String()}); err != nil {
-				return nil, err
-			}
-			if err := tr.recomputeInTx(ctx, tx, plan.TenantID, []shared.ID{t.ID}, plan.ActorID); err != nil {
-				return nil, err
-			}
-			res.Joined = len(joins)
-		}
+	if res.Joined, err = tr.joinPlanInTx(ctx, tx, plan, keep(plan.JoinIDs)); err != nil {
+		return nil, err
 	}
 	if created == 0 && res.Joined == 0 {
 		return nil, remediation.ErrNothingToAccept
@@ -180,6 +95,130 @@ func (r *RemediationSuggestionRepository) AcceptSuggestion(ctx context.Context, 
 		return nil, fmt.Errorf("commit accept: %w", err)
 	}
 	return res, nil
+}
+
+// lockOpenSuggestionInTx locks the suggestion and checks it is still open at
+// the caller's version; it returns the suggestion's key.
+func lockOpenSuggestionInTx(ctx context.Context, tx *sql.Tx, plan remediation.AcceptPlan) (string, error) {
+	var (
+		state   string
+		version int
+		key     string
+	)
+	err := tx.QueryRowContext(ctx, `SELECT state, version, action_key FROM remediation_suggestions
+		WHERE tenant_id = $1 AND id = $2 FOR UPDATE`, plan.TenantID.String(), plan.SuggestionID.String()).Scan(&state, &version, &key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", remediation.ErrSuggestionNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("lock suggestion: %w", err)
+	}
+	if !remediation.SuggestionState(state).IsOpen() || version != plan.Version {
+		return "", remediation.ErrSuggestionDecided
+	}
+	return key, nil
+}
+
+// ensureActionInTx creates the action of a new group (or reuses one a
+// concurrent accept just created for the same key), or checks the existing
+// action of a join or task route belongs to the tenant.
+func ensureActionInTx(ctx context.Context, tx *sql.Tx, plan remediation.AcceptPlan) (shared.ID, error) {
+	tenant := plan.TenantID.String()
+	var (
+		actionID shared.ID
+		err      error
+	)
+	switch {
+	case plan.NewAction != nil:
+		spec, merr := json.Marshal(plan.NewAction.FixSpec)
+		if merr != nil || plan.NewAction.FixSpec == nil {
+			spec = []byte("{}")
+		}
+		var autoBy any
+		if plan.AutoJoin {
+			autoBy = idArg(plan.ActorID)
+		}
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO remediation_actions (tenant_id, action_key, kind, title, fix_spec, origin, created_by,
+				auto_join, auto_join_by, auto_join_at)
+			VALUES ($1, $2, $3, $4, $5, 'suggestion', $6, $7, $8, CASE WHEN $7 THEN now() END)
+			ON CONFLICT (tenant_id, action_key) DO UPDATE SET updated_at = now()
+			RETURNING id`,
+			tenant, plan.NewAction.Key, plan.NewAction.Kind, plan.NewAction.Title, spec, idArg(plan.ActorID),
+			plan.AutoJoin, autoBy).Scan(&actionID)
+		if err != nil {
+			return shared.ID{}, fmt.Errorf("create remediation action: %w", err)
+		}
+	case plan.ActionID != nil:
+		actionID = *plan.ActionID
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM remediation_actions WHERE tenant_id = $1 AND id = $2`,
+			tenant, actionID.String()).Scan(&actionID); err != nil {
+			return shared.ID{}, fmt.Errorf("%w: the remediation action was not found", shared.ErrValidation)
+		}
+	default:
+		return shared.ID{}, fmt.Errorf("%w: accept plan without an action", shared.ErrValidation)
+	}
+	return actionID, nil
+}
+
+// createPlanTasksInTx creates the accept plan's tasks with their findings
+// (those still available); it returns how many findings joined them.
+func (r *RemediationTaskRepository) createPlanTasksInTx(ctx context.Context, tx *sql.Tx, plan remediation.AcceptPlan, actionID shared.ID, keep func([]shared.ID) []shared.ID, res *remediation.AcceptResult) (int, error) {
+	tenant := plan.TenantID.String()
+	created := 0
+	for _, pt := range plan.Tasks {
+		members := keep(pt.FindingIDs)
+		if len(members) == 0 {
+			continue
+		}
+		t := &remediation.Task{ID: shared.NewID(), TenantID: plan.TenantID, ActionID: actionID, Title: pt.Title,
+			AssigneeUserID: pt.Owner.UserID, AssigneeGroupID: pt.Owner.GroupID, ManualDeadline: pt.Deadline, CreatedBy: plan.ActorID}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO remediation_tasks (id, tenant_id, action_id, title, assignee_user_id, assignee_group_id, manual_deadline, created_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			t.ID.String(), tenant, actionID.String(), t.Title, idArg(t.AssigneeUserID), idArg(t.AssigneeGroupID),
+			timeArg(t.ManualDeadline), idArg(t.CreatedBy)); err != nil {
+			return 0, fmt.Errorf("create remediation task: %w", err)
+		}
+		if err := insertMembersInTx(ctx, tx, t, members, remediation.MemberRolePrimary, remediation.JoinSourceSuggestion, plan.ActorID); err != nil {
+			return 0, err
+		}
+		if err := insertTaskEventInTx(ctx, tx, plan.TenantID, t.ID, remediation.TaskEventCreated, plan.ActorID,
+			map[string]any{"title": t.Title, "members": len(members), "related": 0, "suggestion_id": plan.SuggestionID.String()}); err != nil {
+			return 0, err
+		}
+		if err := r.recomputeInTx(ctx, tx, plan.TenantID, []shared.ID{t.ID}, plan.ActorID); err != nil {
+			return 0, err
+		}
+		res.TaskIDs = append(res.TaskIDs, t.ID)
+		created += len(members)
+	}
+	return created, nil
+}
+
+// joinPlanInTx adds a join's findings to its live target task.
+func (r *RemediationTaskRepository) joinPlanInTx(ctx context.Context, tx *sql.Tx, plan remediation.AcceptPlan, joins []shared.ID) (int, error) {
+	if plan.TargetTaskID == nil || len(joins) == 0 {
+		return 0, nil
+	}
+	t, err := lockTaskInTx(ctx, tx, plan.TenantID, *plan.TargetTaskID, 0)
+	if err != nil {
+		return 0, err
+	}
+	if t.State.IsTerminal() {
+		return 0, remediation.ErrTaskTerminal
+	}
+	if err := insertMembersInTx(ctx, tx, t, joins, remediation.MemberRolePrimary, remediation.JoinSourceSuggestion, plan.ActorID); err != nil {
+		return 0, err
+	}
+	if err := bumpTaskInTx(ctx, tx, plan.TenantID, t.ID, remediation.TaskEventMembersAdded, plan.ActorID,
+		map[string]any{"count": len(joins), "role": "primary", "source": "suggestion", "suggestion_id": plan.SuggestionID.String()}); err != nil {
+		return 0, err
+	}
+	if err := r.recomputeInTx(ctx, tx, plan.TenantID, []shared.ID{t.ID}, plan.ActorID); err != nil {
+		return 0, err
+	}
+	return len(joins), nil
 }
 
 // unavailableFindingsInTx returns the findings that are closed, gone or the

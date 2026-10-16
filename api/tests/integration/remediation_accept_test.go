@@ -35,6 +35,7 @@ func (r *rsRig) taskMembers(taskID shared.ID) map[shared.ID]string {
 		require.NoError(r.t, rows.Scan(&id, &src))
 		out[id] = src
 	}
+	require.NoError(r.t, rows.Err())
 	return out
 }
 

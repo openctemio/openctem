@@ -90,6 +90,37 @@ func (s *SuggestionService) Accept(ctx context.Context, in AcceptInput, actx aud
 			return nil, err
 		}
 	}
+	owners, err := s.acceptOwners(ctx, in, sg)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := s.buildAcceptPlan(ctx, sg, in, title, owners, excluded)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.repo.AcceptSuggestion(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	if in.AutoJoin && sg.Kind != remediationdom.SuggestionNewGroup {
+		if _, err := s.repo.SetAutoJoin(ctx, in.TenantID, res.ActionID, true, in.ActorID); err != nil {
+			return nil, err
+		}
+	}
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationSuggestionAccepted, auditdom.ResourceTypeRemediationSuggestion, sg.ID.String()).
+		WithResourceName(title).
+		WithMessage(fmt.Sprintf("Remediation suggestion %q accepted: %d task(s) created, %d finding(s) joined, %d removed, %d left out", title,
+			len(res.TaskIDs), res.Joined, len(excluded), len(res.Dropped))).
+		WithMetadata("kind", string(sg.Kind)).WithMetadata("action_id", res.ActionID.String()).
+		WithMetadata("tasks", len(res.TaskIDs)).WithMetadata("removed", len(excluded)).
+		WithMetadata("edited", in.Title != nil || len(excluded) > 0 || len(in.Owners) > 0 || in.Deadline != nil).
+		WithMetadata("auto_join", in.AutoJoin))
+	return res, nil
+}
+
+// acceptOwners returns each partition's owner, with the person's changes,
+// checked against the tenant.
+func (s *SuggestionService) acceptOwners(ctx context.Context, in AcceptInput, sg *remediationdom.Suggestion) ([]remediationdom.Owner, error) {
 	owners := make([]remediationdom.Owner, len(sg.Partitions))
 	for i, p := range sg.Partitions {
 		owners[i] = p.Owner
@@ -107,6 +138,12 @@ func (s *SuggestionService) Accept(ctx context.Context, in AcceptInput, actx aud
 			}
 		}
 	}
+	return owners, nil
+}
+
+// buildAcceptPlan turns a suggestion and the person's edits into what the
+// repository stores.
+func (s *SuggestionService) buildAcceptPlan(ctx context.Context, sg *remediationdom.Suggestion, in AcceptInput, title string, owners []remediationdom.Owner, excluded map[shared.ID]bool) (remediationdom.AcceptPlan, error) {
 	plan := remediationdom.AcceptPlan{TenantID: in.TenantID, SuggestionID: sg.ID, Version: sg.Version, Kind: sg.Kind,
 		ActorID: in.ActorID, AutoJoin: in.AutoJoin}
 	for id := range excluded {
@@ -136,37 +173,20 @@ func (s *SuggestionService) Accept(ctx context.Context, in AcceptInput, actx aud
 		}
 	case remediationdom.SuggestionJoin:
 		if sg.TargetTaskID == nil || sg.TargetActionID == nil {
-			return nil, fmt.Errorf("%w: the suggestion has no target task", shared.ErrValidation)
+			return remediationdom.AcceptPlan{}, fmt.Errorf("%w: the suggestion has no target task", shared.ErrValidation)
 		}
 		if s.tasks != nil {
 			// Adding to a task is a change of that task: the caller must
 			// see all of its findings.
 			if _, err := s.tasks.writableTask(ctx, in.TenantID, *sg.TargetTaskID); err != nil {
-				return nil, err
+				return remediationdom.AcceptPlan{}, err
 			}
 		}
 		plan.ActionID, plan.TargetTaskID, plan.JoinIDs = sg.TargetActionID, sg.TargetTaskID, keep(sg.FindingIDs)
 	default:
-		return nil, fmt.Errorf("%w: unknown suggestion kind", shared.ErrValidation)
+		return remediationdom.AcceptPlan{}, fmt.Errorf("%w: unknown suggestion kind", shared.ErrValidation)
 	}
-	res, err := s.repo.AcceptSuggestion(ctx, plan)
-	if err != nil {
-		return nil, err
-	}
-	if in.AutoJoin && sg.Kind != remediationdom.SuggestionNewGroup {
-		if _, err := s.repo.SetAutoJoin(ctx, in.TenantID, res.ActionID, true, in.ActorID); err != nil {
-			return nil, err
-		}
-	}
-	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationSuggestionAccepted, auditdom.ResourceTypeRemediationSuggestion, sg.ID.String()).
-		WithResourceName(title).
-		WithMessage(fmt.Sprintf("Remediation suggestion %q accepted: %d task(s) created, %d finding(s) joined, %d removed, %d left out", title,
-			len(res.TaskIDs), res.Joined, len(excluded), len(res.Dropped))).
-		WithMetadata("kind", string(sg.Kind)).WithMetadata("action_id", res.ActionID.String()).
-		WithMetadata("tasks", len(res.TaskIDs)).WithMetadata("removed", len(excluded)).
-		WithMetadata("edited", in.Title != nil || len(excluded) > 0 || len(in.Owners) > 0 || in.Deadline != nil).
-		WithMetadata("auto_join", in.AutoJoin))
-	return res, nil
+	return plan, nil
 }
 
 // BulkAcceptItem is the outcome of one suggestion in a bulk accept.
