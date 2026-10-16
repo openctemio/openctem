@@ -38,7 +38,7 @@ func TestRegression_UndoIsNotARegression(t *testing.T) {
 	newFinding := func(fp string) shared.ID {
 		id := shared.NewID()
 		if _, err := db.Exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
-			VALUES ($1, $2, $3, 'sast', 'undo-tool', 'm', 'high', $4, 'confirmed')`,
+			VALUES ($1, $2, $3, 'sast', 'undo-tool', 'm', 'medium', $4, 'confirmed')`,
 			id.String(), tenant.String(), asset.String(), fp); err != nil {
 			t.Fatal(err)
 		}

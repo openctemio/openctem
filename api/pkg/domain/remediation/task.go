@@ -175,7 +175,7 @@ type TaskCounts struct {
 	Total      int
 	Open       int // new, confirmed, not observed, draft, in review
 	InProgress int // in_progress
-	FixApplied int // fix_applied, validated_fixed: claimed fixed, awaiting verification
+	FixApplied int // fix_applied: claimed fixed, awaiting verification
 	Closed     int // resolved, false_positive, accepted, duplicate
 	Verified   int // resolved with proof (a covered scan, a retest or a reviewer)
 	Related    int
