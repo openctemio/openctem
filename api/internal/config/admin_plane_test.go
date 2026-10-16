@@ -25,3 +25,21 @@ func TestParseAdminAllowedCIDRs(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 }
+
+func TestAdminListenAddr(t *testing.T) {
+	for addr, ok := range map[string]bool{
+		"127.0.0.1:8081": true, "10.0.0.5:8081": true, "172.30.80.12:8081": true, "192.168.1.2:8081": true, "[fd00::1]:8081": true, "[::1]:8081": true,
+		":8081": false, "0.0.0.0:8081": false, "[::]:8081": false, "203.0.113.5:8081": false, "169.254.1.1:8081": false, "api:8081": false, "8081": false,
+	} {
+		err := checkAdminListenAddr(addr, false)
+		if (err == nil) != ok {
+			t.Errorf("%s: err=%v, want ok=%v", addr, err, ok)
+		}
+	}
+	if err := checkAdminListenAddr(":8081", true); err != nil {
+		t.Errorf("allow-all: %v", err)
+	}
+	if err := checkAdminListenAddr("8081", true); err == nil {
+		t.Error("not host:port must fail even with allow-all")
+	}
+}

@@ -34,6 +34,16 @@ func TestAdminNetworkGate(t *testing.T) {
 		{"tenant routes are not gated", "/api/v1/findings", "203.0.113.9:5000", "", http.StatusNoContent},
 		{"a look-alike prefix is not the console", "/api/v1/administrators", "203.0.113.9:5000", "", http.StatusNoContent},
 		{"unparseable peer refused", "/api/v1/admin/overview", "garbage", "", http.StatusForbidden},
+		// Every way of writing the path that the router cleans to the console.
+		{"double slash", "/api/v1//admin/overview", "203.0.113.9:5000", "", http.StatusForbidden},
+		{"double slash before the prefix", "//api/v1/admin/overview", "203.0.113.9:5000", "", http.StatusForbidden},
+		{"dot segment", "/api/v1/./admin/overview", "203.0.113.9:5000", "", http.StatusForbidden},
+		{"dot-dot segment", "/api/v1/x/../admin/overview", "203.0.113.9:5000", "", http.StatusForbidden},
+		{"trailing slash", "/api/v1/admin/", "203.0.113.9:5000", "", http.StatusForbidden},
+		{"encoded letter", "/api/v1/%61dmin/overview", "203.0.113.9:5000", "", http.StatusForbidden},
+		{"encoded slash", "/api/v1%2Fadmin/overview", "203.0.113.9:5000", "", http.StatusForbidden},
+		{"encoded dot segment", "/api/v1/%2e/admin/overview", "203.0.113.9:5000", "", http.StatusForbidden},
+		{"a dot-dot out of the console is not the console", "/api/v1/admin/../findings", "203.0.113.9:5000", "", http.StatusNoContent},
 	}
 	prev := trustedProxies
 	SetTrustedProxies(httpsec.NewTrustedProxySet([]string{"127.0.0.1/32"}))
@@ -51,5 +61,34 @@ func TestAdminNetworkGate(t *testing.T) {
 				t.Fatalf("got %d, want %d (%s)", rec.Code, tc.want, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestAdminPathReadings(t *testing.T) {
+	cases := []struct {
+		raw        string
+		maybe, all bool
+	}{
+		{"/api/v1/admin/tenants", true, true},
+		{"/api/v1/admin", true, true},
+		{"/api/v1/admin/", true, true},
+		{"/api/v1//admin/tenants", true, true},
+		{"/api/v1/./admin/tenants", true, true},
+		{"/api/v1/x/../admin/tenants", true, true},
+		{"/api/v1/admin/../findings", false, false},
+		{"/api/v1/admin/x/../../findings", false, false},
+		{"/api/v1/admin/..%2f..%2ffindings", true, false},
+		{"/api/v1%2fadmin/tenants", true, false},
+		{"/api/v1/administrators", false, false},
+		{"/api/v1/findings", false, false},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, tc.raw, nil)
+		if got := MayBeAdminAPIRequest(req); got != tc.maybe {
+			t.Errorf("MayBeAdminAPIRequest(%q) = %v, want %v", tc.raw, got, tc.maybe)
+		}
+		if got := OnlyAdminAPIRequest(req); got != tc.all {
+			t.Errorf("OnlyAdminAPIRequest(%q) = %v, want %v", tc.raw, got, tc.all)
+		}
 	}
 }
