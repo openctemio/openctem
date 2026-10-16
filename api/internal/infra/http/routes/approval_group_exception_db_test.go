@@ -284,3 +284,68 @@ func TestGroupException_RejectCancelOwnersAndMoves_DB(t *testing.T) {
 		t.Fatalf("approved groups listed: %+v", list)
 	}
 }
+
+// A finding that left the task after the exception was requested is not
+// decided by it: approving the group cancels that member (with a timeline
+// entry) and leaves the finding as it was.
+func TestGroupException_FindingThatLeftTheTaskIsNotDecided_DB(t *testing.T) {
+	h := newGroupExceptionHarness(t)
+	org := h.org()
+	requester, a1 := h.member(org, "admin"), h.member(org, "admin")
+	stays, _ := h.findingOnAsset(org, "low")
+	leaves, _ := h.findingOnAsset(org, "low")
+	task := h.task(org, stays, leaves)
+	var b batchOut
+	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", acceptBody(30), http.StatusCreated)), &b)
+	if b.Members != 2 || b.Required != 1 {
+		t.Fatalf("batch: %+v", b)
+	}
+	h.exec(`UPDATE remediation_task_members SET left_at = now(), left_reason = 'moved' WHERE task_id = $1 AND finding_id = $2`, task, leaves)
+
+	var done batchOut
+	_ = json.Unmarshal([]byte(h.expect(a1, http.MethodPost, "/api/v1/approvals/batches/"+b.ID+"/approve", "", http.StatusOK)), &done)
+	if done.Status != "approved" || done.Applied == nil || *done.Applied != 1 || len(done.Canceled) != 1 || done.Canceled[0] != leaves {
+		t.Fatalf("approval: %+v", done)
+	}
+	if st := findingStatusOf(h.findingApprovalHarness, stays); st != "accepted" {
+		t.Fatalf("the member on the task is %s", st)
+	}
+	if st := findingStatusOf(h.findingApprovalHarness, leaves); st != "confirmed" {
+		t.Fatalf("the finding that left the task was decided: %s", st)
+	}
+	if n := h.countRows(`SELECT COUNT(*) FROM finding_status_approvals WHERE batch_id = $1 AND finding_id = $2 AND status = 'canceled'`, b.ID, leaves); n != 1 {
+		t.Fatal("its member request was not canceled")
+	}
+	if n := h.countRows(`SELECT COUNT(*) FROM finding_activities WHERE finding_id = $1 AND activity_type = 'approval_canceled' AND changes->>'reason' = 'finding_left_task'`, leaves); n != 1 {
+		t.Fatal("no timeline entry for the canceled member")
+	}
+}
+
+// The batches list filters by source (the task), so a task's page reads its
+// own exceptions only; a malformed source id is refused.
+func TestGroupException_ListFiltersBySource_DB(t *testing.T) {
+	h := newGroupExceptionHarness(t)
+	org := h.org()
+	requester := h.member(org, "admin")
+	f1, _ := h.findingOnAsset(org, "low")
+	f2, _ := h.findingOnAsset(org, "low")
+	t1, t2 := h.task(org, f1), h.task(org, f2)
+	for _, task := range []string{t1, t2} {
+		h.expect(requester, http.MethodPost, "/api/v1/remediation/tasks/"+task+"/exception", acceptBody(30), http.StatusCreated)
+	}
+	var list struct {
+		Data []struct {
+			SourceID string `json:"source_id"`
+		} `json:"data"`
+		Total int `json:"total"`
+	}
+	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodGet, "/api/v1/approvals/batches?source_id="+t1, "", http.StatusOK)), &list)
+	if list.Total != 1 || len(list.Data) != 1 || list.Data[0].SourceID != t1 {
+		t.Fatalf("filtered list: %+v", list)
+	}
+	_ = json.Unmarshal([]byte(h.expect(requester, http.MethodGet, "/api/v1/approvals/batches", "", http.StatusOK)), &list)
+	if list.Total != 2 {
+		t.Fatalf("unfiltered list: %+v", list)
+	}
+	h.expect(requester, http.MethodGet, "/api/v1/approvals/batches?source_id=not-an-id", "", http.StatusBadRequest)
+}
