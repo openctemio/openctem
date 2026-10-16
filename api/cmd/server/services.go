@@ -2486,6 +2486,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		accesscontrol.WithScopeDelegationCap(s.DataScope),
 	)
 
+	// Edits of the security pool group of the approval policy need a recent
+	// re-authentication (the gate is wired with the others).
+	s.Group.SetSecurityPoolGuard(func(ctx context.Context, tenantID, groupID shared.ID) (bool, error) {
+		st, err := s.Tenant.GetFindingApprovalSettings(ctx, tenantID.String())
+		if err != nil {
+			return false, err
+		}
+		if st.Policy.SecurityPoolGroupID == groupID.String() {
+			return true, nil
+		}
+		return st.PendingPolicy != nil && st.PendingPolicy.SecurityPoolGroupID == groupID.String(), nil
+	})
+
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule.SetAssetGroupValidator(repos.AccessControl)
