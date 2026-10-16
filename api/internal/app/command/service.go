@@ -54,6 +54,9 @@ type Service struct {
 	// limits computes the scope limits a signed job carries for an
 	// enforcing sensor (scope_limits.go); nil: none.
 	limits ScopeLimitSource
+	// sharedLimits reads each organization's limit of shared jobs in flight
+	// (shared_claim.go); nil: the shared claim hands out nothing.
+	sharedLimits SharedLimitSource
 	// now is the clock (tests replace it).
 	now func() time.Time
 	// programRules applies bug-bounty program rules at delivery
@@ -849,7 +852,9 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 	// hear about every refusal.
 	if ref := sensordom.RefusalOf(input.Refusal, input.ErrorMessage); ref != nil {
 		sensorID := cmd.SensorID
-		if s.refusals != nil && sensorID != nil {
+		// A shared job's refusal is not reported into the organization's
+		// timeline and audit: they never name a shared sensor.
+		if s.refusals != nil && sensorID != nil && !cmd.IsPlatformJob {
 			s.refusals.ObserveLocalPolicyRefusal(ctx, cmd.TenantID, *sensorID, cmd.ID.String(), ref.Message())
 		}
 		out, done, err := s.handleRefusal(ctx, cmd, input, ref)

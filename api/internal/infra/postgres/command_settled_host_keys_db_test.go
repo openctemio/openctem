@@ -134,38 +134,5 @@ func TestCommandHostKeys_ReleasedRangeBucket(t *testing.T) {
 	}
 }
 
-// get_next_platform_job applies the same holder rule.
-func TestGetNextPlatformJob_HonoursReleasedHosts(t *testing.T) {
-	db := openPlatformJobDB(t)
-	ctx := context.Background()
-	tenant := seedTestTenant(ctx, t, db)
-	sensorID := seedJobSensor(ctx, t, db, tenant)
-
-	withIsolatedPlatformQueue(ctx, t, db, []shared.ID{tenant}, func(tx *sql.Tx) error {
-		insert := func(status string, platform bool, settled []string, keys ...string) shared.ID {
-			t.Helper()
-			id := shared.NewID()
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO commands (id, tenant_id, type, priority, payload, status, is_platform_job, queue_priority, queued_at, host_keys, settled_host_keys)
-				VALUES ($1, $2, 'scan', 'normal', '{"scanner":"naabu"}'::jsonb, $3, $4, 1, NOW(), $5, $6)`,
-				id.String(), tenant.String(), status, platform, pq.Array(keys), pq.Array(settled)); err != nil {
-				t.Fatalf("seed command: %v", err)
-			}
-			return id
-		}
-		insert("running", false, []string{"a.example.com"}, "a.example.com", "b.example.com")
-		onB := insert("pending", true, nil, "b.example.com")
-		if got, err := claimPlatformJobTx(ctx, tx, sensorID, nil, []string{"naabu"}); err != nil || !got.IsZero() {
-			t.Fatalf("claimed %s (%v) on a host still held", got, err)
-		}
-		onA := insert("pending", true, nil, "a.example.com")
-		if got, err := claimPlatformJobTx(ctx, tx, sensorID, nil, []string{"naabu"}); err != nil || got != onA {
-			t.Fatalf("claimed %s (%v), want the job on the released host %s", got, err, onA)
-		}
-		_ = onB
-		return nil
-	})
-}
-
 // uniqueTestHostSuffix makes a host name no other test names.
 func uniqueTestHostSuffix() string { return shared.NewID().String() + ".example.test" }

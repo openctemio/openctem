@@ -195,13 +195,6 @@ func (m *cmdMockRepo) GetQueuedPlatformJobs(_ context.Context, _ int) ([]*comman
 	return nil, nil
 }
 
-func (m *cmdMockRepo) GetNextPlatformJob(_ context.Context, _ shared.ID, _ []string, _ []string) (*commanddom.Command, error) {
-	if m.getNextErr != nil {
-		return nil, m.getNextErr
-	}
-	return nil, nil
-}
-
 func (m *cmdMockRepo) UpdateQueuePriorities(_ context.Context) (int64, error) {
 	if m.updatePrioritiesErr != nil {
 		return 0, m.updatePrioritiesErr

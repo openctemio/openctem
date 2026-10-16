@@ -9,13 +9,12 @@ import (
 
 // Filter represents filter options for listing commands.
 type Filter struct {
-	TenantID         *shared.ID
-	SensorID         *shared.ID
-	Type             *CommandType
-	Status           *CommandStatus
-	Priority         *CommandPriority
-	IsPlatformJob    *bool      // Filter by platform job status (v3.2)
-	PlatformSensorID *shared.ID // Filter by assigned platform sensor (v3.2)
+	TenantID      *shared.ID
+	SensorID      *shared.ID
+	Type          *CommandType
+	Status        *CommandStatus
+	Priority      *CommandPriority
+	IsPlatformJob *bool // Filter by platform job status (v3.2)
 }
 
 // Repository defines the interface for command persistence.
@@ -83,11 +82,6 @@ type Repository interface {
 	// GetQueuedPlatformJobs retrieves queued platform jobs ordered by priority.
 	// Returns jobs that are pending and not yet assigned to a sensor.
 	GetQueuedPlatformJobs(ctx context.Context, limit int) ([]*Command, error)
-
-	// GetNextPlatformJob atomically claims the next job from the queue for a sensor.
-	// Uses FOR UPDATE SKIP LOCKED for concurrent safety.
-	// Returns nil if no suitable job is available.
-	GetNextPlatformJob(ctx context.Context, sensorID shared.ID, capabilities []string, tools []string) (*Command, error)
 
 	// UpdateQueuePriorities recalculates queue priorities for all pending platform jobs.
 	// Returns the number of jobs updated.
