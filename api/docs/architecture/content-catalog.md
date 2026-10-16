@@ -8,7 +8,7 @@ built.
 | Package format, JSON schema, validator (`pkg/contentpkg`) | shipped |
 | Signatures, signed index and revocation list, offline bundle reader and verifier (`pkg/contentpkg`) | shipped |
 | Catalog: tables, offline import, install / update / pin / rollback / uninstall, approval option, audit | shipped |
-| Private catalogs (organization and instance publishing, migration 002541) | shipped |
+| Private catalogs (organization and instance publishing, migration 002640) | shipped |
 | First-party packages and the bundle generator (`pkg/contentpkg/firstparty`, `cmd/content-bundle`) | shipped |
 | Console page | designed |
 | Installed packs delivered to sensors (desired state) | designed |
@@ -31,7 +31,7 @@ publisher (Sigstore keyless) ─────────► artifact
   high-severity admin audit row `content_catalog.trust_override` naming the extra roots and the SHA-256 of the
   replacement trusted root.
 
-## Model (migration 002540)
+## Model (migration 002571)
 
 | Table | What |
 |---|---|
