@@ -358,5 +358,8 @@
   "settings.item.ticket-field-mapping": "Ticket field mapping",
   "settings.desc.ticket-field-mapping": "Which fields and statuses sync with Jira, per project.",
   "settings.item.finding-approvals": "Finding approvals",
-  "settings.desc.finding-approvals": "Who decides false positives and accepted risks, and who is told."
+  "settings.desc.finding-approvals": "Who decides false positives and accepted risks, and who is told.",
+  "settings.item.finding-lifecycle": "Finding lifecycle",
+  "settings.desc.finding-lifecycle": "Your own sub-statuses, moves and the requirements each move needs.",
+  "settings.group.findings": "Findings"
 }

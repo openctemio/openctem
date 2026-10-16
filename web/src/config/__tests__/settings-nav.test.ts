@@ -67,11 +67,12 @@ function staticPagesUnder(prefix: string): string[] {
 const isPersonal = (url: string) => url === '/account' || url.startsWith('/account/')
 
 describe('settings nav config', () => {
-  it('has the six groups in order', () => {
+  it('has the seven groups in order', () => {
     expect(settingsNav.map((g) => g.id)).toEqual([
       'account',
       'organization',
       'access',
+      'findings',
       'policies',
       'scanning',
       'integrations',
