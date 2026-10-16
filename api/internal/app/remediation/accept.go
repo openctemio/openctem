@@ -21,6 +21,7 @@ import (
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // SetTasks wires the task service (task scope checks on join).
@@ -283,11 +284,33 @@ func (s *SuggestionService) requireFullScope(ctx context.Context, tenantID share
 }
 
 // GetAction returns an action of the tenant.
+// A restricted caller sees an action only through one of its tasks they can
+// see (a task with at least one of their findings); otherwise it is not
+// found, so its title, key and fix are not readable by id.
 func (s *SuggestionService) GetAction(ctx context.Context, tenantID, actionID shared.ID) (*remediationdom.Action, error) {
+	notFound := fmt.Errorf("%w: remediation action not found", shared.ErrNotFound)
 	if s.tasks == nil {
-		return nil, fmt.Errorf("%w: remediation action not found", shared.ErrNotFound)
+		return nil, notFound
 	}
-	return s.tasks.repo.GetAction(ctx, tenantID, actionID)
+	a, err := s.tasks.repo.GetAction(ctx, tenantID, actionID)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := s.scope(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if scope.Restricted() {
+		res, err := s.tasks.ListTasks(ctx, ListTasksInput{TenantID: tenantID,
+			Filter: remediationdom.TaskFilter{ActionID: &actionID}}, pagination.New(1, 1))
+		if err != nil {
+			return nil, err
+		}
+		if res.Total == 0 {
+			return nil, notFound
+		}
+	}
+	return a, nil
 }
 
 // applyAutoJoin adds the findings of join suggestions into their task when
