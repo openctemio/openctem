@@ -89,19 +89,22 @@ test.describe('Remediation — findings picker', () => {
       })
     }
 
-    // Toggle a finding row and confirm its checkbox flips (Check icon appears).
-    const firstFinding = findingRows.first()
-    const wasChecked = (await firstFinding.locator('svg.lucide-check').count()) > 0
-    await firstFinding.click()
-    // The checkbox state must flip.
-    await expect
-      .poll(async () => (await firstFinding.locator('svg.lucide-check').count()) > 0)
-      .toBe(!wasChecked)
+    // Link a finding that is not linked yet, then unlink it, and confirm its
+    // checkbox flips each time (Check icon appears, then goes). An unlinked
+    // row is used because a task keeps at least one finding: unlinking the
+    // last one is refused (an empty finding_ids filter is not a scope).
+    const unlinked = findingRows.filter({ hasNot: page.locator('svg.lucide-check') })
+    test.skip((await unlinked.count()) === 0, 'every listed finding is already linked')
+    // Found again by its title, so a re-sort after linking cannot move the
+    // test onto another row.
+    const title = await unlinked.first().locator('span.text-sm').first().innerText()
+    const finding = findingRows.filter({ hasText: title }).first()
+    const isChecked = async () => (await finding.locator('svg.lucide-check').count()) > 0
+    await finding.click()
+    await expect.poll(isChecked).toBe(true)
     // Toggle back so the test leaves the task's links unchanged.
-    await firstFinding.click()
-    await expect
-      .poll(async () => (await firstFinding.locator('svg.lucide-check').count()) > 0)
-      .toBe(wasChecked)
+    await finding.click()
+    await expect.poll(isChecked).toBe(false)
 
     // Leave the picker → back to task details.
     await drawer.getByRole('button', { name: 'Done' }).click()
