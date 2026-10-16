@@ -1060,5 +1060,19 @@
   "findings.approvals.action.remind": "Remind approvers",
   "findings.approvals.toast.reminded": "Reminded {count} approver(s)",
   "findings.approvals.toast.remindTooSoon": "The approvers were already reminded in the last hour.",
-  "findings.approvals.toast.remindFailed": "Failed to send the reminder"
+  "findings.approvals.toast.remindFailed": "Failed to send the reminder",
+  "findings.ticketLinks.linked": "{key} linked",
+  "findings.ticketLinks.linkFailed": "Could not link the issue",
+  "findings.ticketLinks.syncError": "Sync error",
+  "findings.ticketLinks.unlinkAria": "Unlink {key}",
+  "findings.ticketLinks.linkExisting": "Link an existing issue",
+  "findings.ticketLinks.dialogTitle": "Link an existing Jira issue",
+  "findings.ticketLinks.dialogDescription": "The issue must be on your organization’s Jira site and visible to the integration.",
+  "findings.ticketLinks.issueLabel": "Issue key or URL",
+  "findings.ticketLinks.cancel": "Cancel",
+  "findings.ticketLinks.link": "Link",
+  "findings.ticketLinks.unlinkTitle": "Unlink {key}?",
+  "findings.ticketLinks.unlinkDescription": "The finding stops syncing with this issue. The issue itself is not changed.",
+  "findings.ticketLinks.unlink": "Unlink",
+  "findings.ticketLinks.unlinkFailed": "Could not unlink the issue"
 }
