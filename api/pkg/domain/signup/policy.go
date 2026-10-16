@@ -32,7 +32,7 @@ func (m Mode) IsValid() bool { return m == ModeAdminOnly || m == ModeSelfService
 type Source string
 
 const (
-	// SourceEnvironment: seeded from TENANT_CREATION_MODE at first start.
+	// SourceEnvironment: seeded from SIGNUP_MODE at first start.
 	SourceEnvironment Source = "environment"
 	// SourceConsole: set by a platform administrator in the console.
 	SourceConsole Source = "console"
