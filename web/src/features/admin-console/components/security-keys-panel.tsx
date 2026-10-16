@@ -303,7 +303,7 @@ export function SecurityKeysPanel({
 
 /** The policy and what this administrator still needs. */
 function PolicyState({ factors }: { factors: ConsoleFactors }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   if (!factors.webauthn_enabled) {
     return (
       <Alert>
@@ -353,6 +353,15 @@ function PolicyState({ factors }: { factors: ConsoleFactors }) {
             })}
           </li>
         </ul>
+        {factors.require_webauthn && keys === 0 && factors.webauthn_grace_until && (
+          <p>
+            {t(
+              'admin.keys.graceUntil',
+              'Register a key before {date}: after that the authenticator app is no longer accepted for your account.',
+              { date: new Date(factors.webauthn_grace_until).toLocaleString(locale) }
+            )}
+          </p>
+        )}
         {factors.require_webauthn && keys > 0 && !factors.totp_allowed && (
           <p>
             {t(

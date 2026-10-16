@@ -213,6 +213,22 @@ describe('My security keys', () => {
     expect(screen.getByTestId('recovery-codes-left')).toHaveTextContent('2 unused codes left.')
   })
 
+  it('shows the grace deadline to an administrator without a key under the policy', async () => {
+    factors = { ...BASE, require_webauthn: true, webauthn_grace_until: '2030-01-01T00:00:00Z' }
+    wrap(<SecurityKeysPanel />)
+    expect(await screen.findByText(/Register a key before/)).toBeInTheDocument()
+  })
+  it('shows no deadline once the administrator holds a key', async () => {
+    factors = {
+      ...BASE,
+      require_webauthn: true,
+      webauthn_grace_until: '2030-01-01T00:00:00Z',
+      authenticators: [KEY('k1', 'Blue key')],
+    }
+    wrap(<SecurityKeysPanel />)
+    expect(await screen.findByText('Blue key')).toBeInTheDocument()
+    expect(screen.queryByText(/Register a key before/)).not.toBeInTheDocument()
+  })
   it('explains when the console has no relying party', async () => {
     factors = { ...BASE, webauthn_enabled: false }
     wrap(<SecurityKeysPanel />)

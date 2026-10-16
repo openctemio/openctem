@@ -42,6 +42,8 @@ export interface ConsoleFactors {
   totp_enabled: boolean
   totp_allowed: boolean
   require_webauthn: boolean
+  /** Until then an administrator with no key may use the authenticator app. */
+  webauthn_grace_until?: string
   enrollment_required: boolean
   min_authenticators: number
   max_authenticators: number
@@ -49,6 +51,8 @@ export interface ConsoleFactors {
 
 export interface ConsoleMfaPolicy {
   require_webauthn: boolean
+  /** Until then administrators with no key may use the authenticator app. */
+  grace_until?: string
   version: number
   webauthn_enabled: boolean
 }
