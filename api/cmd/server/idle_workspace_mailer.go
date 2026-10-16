@@ -31,7 +31,7 @@ func (m idleWorkspaceMailer) NotifyIdle(_ context.Context, n lifecycle.Notice) e
 	}
 	name := m.appName
 	if name == "" {
-		name = "OpenCTEM"
+		name = defaultAppName
 	}
 	org := strings.NewReplacer("\r", "", "\n", "").Replace(n.Organization)
 	esc := html.EscapeString
