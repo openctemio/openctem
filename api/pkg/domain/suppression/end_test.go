@@ -39,7 +39,7 @@ func TestService_RuleEndRequired(t *testing.T) {
 	repo := newMockRepository()
 	svc := NewService(repo, nil)
 	create := func(end *string) (*Rule, error) {
-		return svc.CreateRule(ctx, CreateRuleInput{TenantID: tenant, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+		return svc.CreateRule(ctx, CreateRuleInput{TenantID: tenant, Name: "r", SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 			RuleID: "x", RequestedBy: shared.NewID(), ExpiresAt: end})
 	}
 	rule, err := create(nil)
