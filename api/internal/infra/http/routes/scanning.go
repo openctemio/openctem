@@ -471,6 +471,8 @@ func registerScanRoutes(
 		r.POST("/schedule-preview", h.PreviewSchedule, middleware.Require(permission.ScansRead))
 		// What a workflow scan would do, before it is saved or started
 		r.POST("/workflow-preview", h.PreviewWorkflow, middleware.Require(permission.ScansWrite))
+		// What a quick scan of the typed targets would do (read-only)
+		r.POST("/quick/preview", h.PreviewQuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
 		// Quick scan (consolidated from /quick-scan)
 		if triggerRateLimiter != nil {
 			r.POST("/quick", h.QuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.QuickScanMiddleware())
