@@ -15,6 +15,12 @@ type AdminPlaneConfig struct {
 	// allows every network, an explicit choice for an internet-facing console.
 	AllowedCIDRs []string
 
+	// ListenAddr is the console's own listener (ADMIN_LISTEN_ADDR, e.g.
+	// ":8081"). Set, the console API is served only there and the main
+	// listener answers 404 for it; empty (the default), it shares the main
+	// listener.
+	ListenAddr string
+
 	// allowed is AllowedCIDRs parsed by validateAdminPlane.
 	allowed []netip.Prefix
 }
@@ -77,6 +83,9 @@ func ParseAdminAllowedCIDRs(entries []string) ([]netip.Prefix, error) {
 }
 
 func (c *Config) validateAdminPlane() error {
+	if c.AdminPlane.ListenAddr != "" && c.AdminPlane.ListenAddr == c.Server.Addr() {
+		return fmt.Errorf("ADMIN_LISTEN_ADDR must differ from the main listener (%s)", c.Server.Addr())
+	}
 	if len(c.AdminPlane.AllowedCIDRs) == 0 {
 		c.AdminPlane.AllowedCIDRs = DefaultAdminAllowedCIDRs
 	}

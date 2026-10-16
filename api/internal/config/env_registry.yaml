@@ -1482,6 +1482,11 @@ vars:
     type: list
     default: "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
     description: "Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address."
+  - name: ADMIN_LISTEN_ADDR
+    component: api
+    group: "Admin console"
+    type: string
+    description: "The platform admin console's own listener, e.g. `:8081`. Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener."
   - name: ADMIN_AUDIT_RETENTION_DAYS
     component: api
     group: "Audit log retention"

@@ -784,6 +784,14 @@ lifts this).
   `X-Forwarded-For` from `SERVER_TRUSTED_PROXIES` only. An internet-facing
   console is an explicit choice (`0.0.0.0/0,::/0`, logged as a warning at
   start).
+- With `ADMIN_LISTEN_ADDR` set (e.g. `:8081`) the console API has its own
+  listener: `/api/v1/admin` is served only there and the main listener
+  answers 404 for it; the admin listener answers 404 for every other route
+  but `/health`. Both share the router and its global middleware, so the
+  console's guards are unchanged; the listener decides where it can be
+  reached (the gateway's admin site, or nowhere outside the host). Any later
+  internal-only surface (the control-plane API) gets its own listener the
+  same way.
 - A verified console sign-in from another address than the administrator's
   last one is audited (`console.new_network_sign_in`, high) and emailed to
   every administrator (the system SMTP sender; a WARN line with

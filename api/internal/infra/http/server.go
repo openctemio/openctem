@@ -30,6 +30,9 @@ type Server struct {
 	rateLimit func(http.Handler) http.Handler
 	// splitTLS shares the TLS port with the sensor gRPC binding.
 	splitTLS TLSSplitter
+	// adminServer is the console's own listener (ADMIN_LISTEN_ADDR), nil
+	// when the console shares the main listener.
+	adminServer *http.Server
 }
 
 type prefixHandler struct {
@@ -168,8 +171,19 @@ func (s *Server) Logger() *logger.Logger {
 	return s.logger
 }
 
-// Start starts the HTTP server.
+// Start starts the HTTP server, and the console's own listener when
+// ADMIN_LISTEN_ADDR is set (the main listener then answers 404 for the
+// console API).
 func (s *Server) Start() error {
+	if s.adminListenerEnabled() {
+		s.httpServer.Handler = publicOnly(s.httpServer.Handler)
+		s.adminServer = s.newAdminServer()
+		go func() {
+			if err := s.startAdminListener(); err != nil {
+				s.logger.Error("platform admin console listener stopped", "error", err)
+			}
+		}()
+	}
 	if !s.config.Server.TLSEnabled() {
 		s.logger.Info("starting HTTP server", "addr", s.config.Server.Addr())
 		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -202,6 +216,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		cleanup()
 	}
 
+	if s.adminServer != nil {
+		if err := s.adminServer.Shutdown(ctx); err != nil {
+			s.logger.Warn("shut down the admin console listener", "error", err)
+		}
+	}
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		return fmt.Errorf("failed to shutdown server: %w", err)
 	}
