@@ -25,6 +25,7 @@ const defaultSplunkSourcetype = "openctem:notification"
 // same notification fan-out (outbox + event/severity filters) as the other
 // providers, so it inherits reliable, deduplicated delivery for free.
 type SplunkClient struct {
+	product    string // brand name in test messages
 	endpoint   string // full collector event URL
 	token      string // HEC token (secret)
 	index      string // optional target index
@@ -62,6 +63,7 @@ func NewSplunkClient(config Config) (*SplunkClient, error) {
 	}
 
 	return &SplunkClient{
+		product:    config.productName(),
 		endpoint:   splunkCollectorURL(config.WebhookURL),
 		token:      config.Token,
 		index:      config.Index,
@@ -150,7 +152,7 @@ func (c *SplunkClient) Send(ctx context.Context, msg Message) (*SendResult, erro
 // and endpoint from the integration settings page.
 func (c *SplunkClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	return c.Send(ctx, Message{
-		Title:    "OpenCTEM Test Notification",
+		Title:    c.product + " Test Notification",
 		Body:     "This is a test event to verify your Splunk HEC integration is working correctly.",
 		Severity: SeverityLow,
 	})
