@@ -1,5 +1,6 @@
 'use client'
 
+import { useDocsHref } from '@/context/brand-provider'
 import type { ReactNode } from 'react'
 import { Info } from 'lucide-react'
 import { Main } from '@/components/layout'
@@ -65,6 +66,7 @@ function minutes(seconds: number): string {
 }
 
 function Body({ o }: { o: AdminOperations }) {
+  const docsHref = useDocsHref()
   const { t } = useTranslation()
   const schema = schemaState(o)
   const fleet = summarizeSensors(o)
@@ -211,7 +213,7 @@ function Body({ o }: { o: AdminOperations }) {
                   <p>{t(transport.noteKey)}</p>
                   <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <a
-                      href={DOCS.sensors.transportPlatform}
+                      href={docsHref(DOCS.sensors.transportPlatform)}
                       target="_blank"
                       rel="noreferrer"
                       className="underline underline-offset-2"
