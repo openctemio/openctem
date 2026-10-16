@@ -285,6 +285,13 @@ services:
       # gateway never routes /metrics: scrape api:8080 from inside the network
       # (deploy/observability). openssl rand -hex 32
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Version check (docs/architecture/version-check.md): once a day the API
+      # downloads the signed release feed from GitHub and compares it with its
+      # own version locally. The request sends nothing about this instance;
+      # GitHub sees its IP address. false = no request (air-gapped: import the
+      # file in the console instead). The URL must be https.
+      VERSION_CHECK_ENABLED: ${VERSION_CHECK_ENABLED:-true}
+      VERSION_CHECK_URL: ${VERSION_CHECK_URL:-}
       AUTH_COOKIE_SECURE: "true"
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
