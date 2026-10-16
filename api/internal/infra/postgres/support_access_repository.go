@@ -29,7 +29,7 @@ var _ supportaccess.Repository = (*SupportAccessRepository)(nil)
 
 const supportGrantColumns = `
 	g.id, g.tenant_id, g.admin_id, g.admin_email, g.admin_name, g.access_level, g.scopes,
-	g.reason, COALESCE(g.case_ref, ''), g.granted_by, g.starts_at, g.expires_at,
+	g.reason, COALESCE(g.case_ref, ''), COALESCE(g.granted_by::text, ''), g.starts_at, g.expires_at,
 	g.revoked_at, g.revoked_by, g.created_at,
 	(SELECT count(*) FROM support_sessions s WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id),
 	(SELECT max(COALESCE(s.last_access_at, s.started_at)) FROM support_sessions s WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id),
@@ -58,8 +58,10 @@ func scanSupportGrant(row interface{ Scan(...any) error }) (*supportaccess.Grant
 	if g.AdminID, err = shared.IDFromString(adminID); err != nil {
 		return nil, err
 	}
-	if g.GrantedBy, err = shared.IDFromString(grantedBy); err != nil {
-		return nil, err
+	if grantedBy != "" { // the granter's account was deleted
+		if g.GrantedBy, err = shared.IDFromString(grantedBy); err != nil {
+			return nil, err
+		}
 	}
 	g.Scopes = []string(scopes)
 	if revokedAt.Valid {
