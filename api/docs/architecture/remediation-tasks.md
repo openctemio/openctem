@@ -149,7 +149,9 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 | `/remediation/campaigns` | the campaigns (formerly the page at `/remediation`) |
 
 Strings are in the `remediationHub` dictionary (en, vi). Write actions show only with
-`findings:remediation:write` (Mark fixed also `findings:fix_apply`); the API stays the authority.
+`findings:remediation:write` (Mark fixed also `findings:fix_apply`); the API stays the authority. A member with only
+`findings:remediation:read` sees "Accept as owner" (and the `a` key) on `join` and `task_route` suggestions, and
+nothing else; the API decides whether they own the task and the assets.
 
 ## Shipped and planned
 

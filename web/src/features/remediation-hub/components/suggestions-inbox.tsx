@@ -49,6 +49,15 @@ export function SuggestionsInbox() {
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const canWrite = hasPermission(Permission.RemediationWrite)
+  // Asset owners without write access may accept a join into their task or a
+  // new task for them, as it is; the API checks ownership and scope.
+  const canOwnerAccept = useCallback(
+    (s: RemediationSuggestion) =>
+      !canWrite &&
+      hasPermission(Permission.RemediationRead) &&
+      (s.kind === 'join' || s.kind === 'task_route'),
+    [canWrite, hasPermission]
+  )
   const revalidate = useRevalidateHub()
   const [kind, setKind] = useState<SuggestionKind | 'all'>('all')
   const [keyKind, setKeyKind] = useState<string>('all')
@@ -198,7 +207,7 @@ export function SuggestionsInbox() {
           setActive((a) => Math.max(a - 1, 0))
           break
         case 'a':
-          if (s && canWrite && s.hidden_members === 0) void accept(s)
+          if (s && (canWrite || canOwnerAccept(s)) && s.hidden_members === 0) void accept(s)
           break
         case 'e':
           if (s && canWrite && s.hidden_members === 0) setEditing(s)
@@ -228,7 +237,7 @@ export function SuggestionsInbox() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [items, active, editing, dismissing, canWrite, accept, snooze])
+  }, [items, active, editing, dismissing, canWrite, canOwnerAccept, accept, snooze])
 
   useEffect(() => {
     const el = cardRefs.current[active]
@@ -343,6 +352,7 @@ export function SuggestionsInbox() {
               active={i === active}
               selected={selected.has(s.id)}
               canWrite={canWrite}
+              canOwnerAccept={canOwnerAccept(s)}
               onSelect={(v) =>
                 setSelected((cur) => {
                   const n = new Set(cur)
