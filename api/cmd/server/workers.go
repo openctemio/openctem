@@ -576,7 +576,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Detected technologies (RFC-112): fill them for assets that predate
 	// them and drop the component links ingest no longer creates.
 	w.ControllerManager.Register(controller.NewAssetTechnologyBackfillController(
-		assettechapp.NewBackfill(repos.AssetTechnologyBackfill, repos.AssetTechnology,
+		assettechapp.NewBackfill(repos.AssetTechnologyBackfill,
 			log.With("controller", "asset-technology-backfill")),
 	))
 

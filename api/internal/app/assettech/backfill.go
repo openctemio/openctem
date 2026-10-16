@@ -5,8 +5,6 @@ package assettech
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -21,23 +19,10 @@ const BackfillVersion = 1
 // writes: small, so no statement holds row locks for long.
 const backfillBatch = 500
 
-// BackfillElement is one stored technology element of an asset with what
-// its sources recorded about it.
-type BackfillElement struct {
-	Element   string
-	FirstSeen time.Time
-	LastSeen  time.Time
-	Source    string
-}
-
-// BackfillAsset is one asset's stored technologies.
-type BackfillAsset struct {
-	ID        shared.ID
-	Elements  []string // properties.technologies, "Name:version"
-	FirstSeen time.Time
-	LastSeen  time.Time
-	// Seen is what set reconciliation recorded per element, when it did.
-	Seen map[string]BackfillElement
+// BackfillRow is one stored technology still in category other.
+type BackfillRow struct {
+	AssetID shared.ID
+	Key     string
 }
 
 // BackfillLink is one component link ingest created from a technology.
@@ -50,33 +35,38 @@ type BackfillLink struct {
 
 // BackfillStats is what the backfill did for one tenant.
 type BackfillStats struct {
-	AssetsScanned int
-	Technologies  int
-	LinksRemoved  int
+	// Technologies: rows looked at; Classified: rows given a category.
+	Technologies int
+	Classified   int
+	LinksRemoved int
 }
 
 // BackfillStore is the backfill's view of the database. Every method is
 // tenant-scoped.
 type BackfillStore interface {
 	PendingTenants(ctx context.Context, version int) ([]shared.ID, error)
-	ScanAssets(ctx context.Context, tenantID shared.ID, afterID string, limit int) ([]BackfillAsset, error)
+	// ScanUnclassified returns the tenant's next technologies in category
+	// other, after (afterAsset, afterKey).
+	ScanUnclassified(ctx context.Context, tenantID shared.ID, afterAsset, afterKey string, limit int) ([]BackfillRow, error)
+	// SetCategories sets the category of the tenant's technologies.
+	SetCategories(ctx context.Context, tenantID shared.ID, rows []BackfillRow, cats []assettech.Category) error
 	ScanTechnologyLinks(ctx context.Context, tenantID shared.ID, afterID string, limit int) ([]BackfillLink, error)
 	DeleteLinks(ctx context.Context, tenantID shared.ID, ids []shared.ID) (int, error)
 	MarkBackfilled(ctx context.Context, tenantID shared.ID, version int, stats BackfillStats) error
 }
 
-// Backfill fills asset_technologies from the technologies assets already
-// show, and removes the component links ingest no longer creates (a
-// technology without a version or CPE, or one that is not software).
+// Backfill classifies the technologies the copy migration filled (category
+// other: the curated list lives in code), and removes the component links
+// ingest no longer creates (a technology without a version or CPE, or one
+// that is not software).
 type Backfill struct {
 	store BackfillStore
-	techs assettech.Repository
 	log   *logger.Logger
 }
 
 // NewBackfill creates the backfill.
-func NewBackfill(store BackfillStore, techs assettech.Repository, log *logger.Logger) *Backfill {
-	return &Backfill{store: store, techs: techs, log: log}
+func NewBackfill(store BackfillStore, log *logger.Logger) *Backfill {
+	return &Backfill{store: store, log: log}
 }
 
 // Run backfills every pending tenant and returns how many it finished.
@@ -99,7 +89,7 @@ func (b *Backfill) Run(ctx context.Context) (int, error) {
 			return done, err
 		}
 		b.log.Info("asset technology backfill done", "tenant_id", t.String(),
-			"assets", stats.AssetsScanned, "technologies", stats.Technologies, "links_removed", stats.LinksRemoved)
+			"technologies", stats.Technologies, "classified", stats.Classified, "links_removed", stats.LinksRemoved)
 		done++
 	}
 	return done, nil
@@ -108,30 +98,37 @@ func (b *Backfill) Run(ctx context.Context) (int, error) {
 // RunTenant backfills one tenant in batches.
 func (b *Backfill) RunTenant(ctx context.Context, tenantID shared.ID) (BackfillStats, error) {
 	var stats BackfillStats
-	after := ""
+	afterAsset, afterKey := "", ""
 	for {
-		assets, err := b.store.ScanAssets(ctx, tenantID, after, backfillBatch)
+		rows, err := b.store.ScanUnclassified(ctx, tenantID, afterAsset, afterKey, backfillBatch)
 		if err != nil {
 			return stats, err
 		}
-		if len(assets) == 0 {
+		if len(rows) == 0 {
 			break
 		}
-		techs := make([]assettech.Technology, 0, len(assets)*4)
-		for _, a := range assets {
-			techs = append(techs, backfillTechnologies(a)...)
+		var set []BackfillRow
+		var cats []assettech.Category
+		for _, r := range rows {
+			if c := assettech.Classify(r.Key, nil); c != assettech.CategoryOther {
+				set = append(set, r)
+				cats = append(cats, c)
+			}
 		}
-		if err := b.techs.Upsert(ctx, tenantID, techs); err != nil {
-			return stats, fmt.Errorf("backfill technologies: %w", err)
+		if len(set) > 0 {
+			if err := b.store.SetCategories(ctx, tenantID, set, cats); err != nil {
+				return stats, err
+			}
 		}
-		stats.AssetsScanned += len(assets)
-		stats.Technologies += len(techs)
-		after = assets[len(assets)-1].ID.String()
-		if len(assets) < backfillBatch {
+		stats.Technologies += len(rows)
+		stats.Classified += len(set)
+		last := rows[len(rows)-1]
+		afterAsset, afterKey = last.AssetID.String(), last.Key
+		if len(rows) < backfillBatch {
 			break
 		}
 	}
-	after = ""
+	after := ""
 	for {
 		links, err := b.store.ScanTechnologyLinks(ctx, tenantID, after, backfillBatch)
 		if err != nil {
@@ -169,29 +166,4 @@ func linkStillSoftware(l BackfillLink) bool {
 		cpe = "cpe"
 	}
 	return assettech.IsSoftwareCandidate(l.Product, l.Version, cpe, nil)
-}
-
-// backfillTechnologies is an asset's stored technologies as rows, at most
-// assettech.MaxPerAsset.
-func backfillTechnologies(a BackfillAsset) []assettech.Technology {
-	out := make([]assettech.Technology, 0, min(len(a.Elements), assettech.MaxPerAsset))
-	for _, el := range a.Elements {
-		name, version := assettech.Split(el)
-		first, last, source := a.FirstSeen, a.LastSeen, ""
-		if s, ok := a.Seen[el]; ok {
-			first, last, source = s.FirstSeen, s.LastSeen, s.Source
-		}
-		t, ok := assettech.Observation(a.ID, name, version, nil, 0, source, last)
-		if !ok {
-			continue
-		}
-		if !first.IsZero() && first.Before(last) {
-			t.FirstSeen = first
-		}
-		out = append(out, t)
-		if len(out) == assettech.MaxPerAsset {
-			break
-		}
-	}
-	return out
 }

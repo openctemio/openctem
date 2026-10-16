@@ -1,13 +1,16 @@
 package integration
 
-// The asset technology backfill (RFC-112 §3.7) on a migrated database:
-// assets that predate asset_technologies get their rows from
-// properties.technologies; component links ingest no longer creates are
-// removed; a real component stays; another tenant is never touched; a
-// tenant is done once.
+// The asset technology backfill (RFC-112 §3.7) on a migrated database: the
+// copy migration fills asset_technologies from properties.technologies; the
+// controller classifies the rows and removes the component links ingest no
+// longer creates; a real component stays; another tenant is never touched;
+// a tenant is done once.
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,29 +99,45 @@ func TestAssetTechnologyBackfill(t *testing.T) {
 	insertTechLink(t, g, g.tn.tenant, a, "next.js", "13.4.1")
 	insertTechLink(t, g, other.tenant, b, "hsts", "")
 
+	// The copy migration's statement, run again on this data.
+	files, _ := filepath.Glob("../../migrations/*_asset_technologies_backfill.up.sql")
+	if len(files) != 1 {
+		t.Fatalf("copy migration: %v", files)
+	}
+	body, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	copySQL, _, _ := strings.Cut(string(body), "-- Tenants the asset-technology-backfill")
+	if _, err := g.r.db.ExecContext(ctx, copySQL); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	if got := g.technologies(g.tn, name); len(got) != 4 || got["next.js"].Version != "13.4.1" || got["hsts"].Category != "other" {
+		t.Fatalf("copied = %+v", got)
+	}
+
 	db := &postgres.DB{DB: g.r.db}
-	bf := assettechapp.NewBackfill(postgres.NewAssetTechnologyBackfillRepository(db),
-		postgres.NewAssetTechnologyRepository(db), logger.NewNop())
+	bf := assettechapp.NewBackfill(postgres.NewAssetTechnologyBackfillRepository(db), logger.NewNop())
 	stats, err := bf.RunTenant(ctx, g.tn.tenant)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.LinksRemoved != 4 || stats.Technologies != 4 {
-		t.Fatalf("stats = %+v, want 4 technologies, 4 links removed", stats)
+	if stats.LinksRemoved != 4 || stats.Technologies != 4 || stats.Classified != 4 {
+		t.Fatalf("stats = %+v, want 4 technologies classified, 4 links removed", stats)
 	}
 	if got := techLinkNames(t, g, g.tn.tenant); len(got) != 1 || !got["next.js"] {
 		t.Fatalf("links left = %v, want only next.js", got)
 	}
 	if got := g.technologies(g.tn, name); len(got) != 4 || got["vercel"].Category != "hosting" ||
-		got["hsts"].Category != "security_header" || got["hsts"].Source != "httpx" {
+		got["hsts"].Category != "security_header" || got["nginx"].Category != "web_server" {
 		t.Fatalf("technologies = %+v", got)
 	}
 	// Tenant B is untouched by tenant A's run.
 	if got := techLinkNames(t, g, other.tenant); !got["hsts"] {
 		t.Fatalf("tenant B's links changed: %v", got)
 	}
-	if got := g.technologies(other, otherName); len(got) != 0 {
-		t.Fatalf("tenant B got rows from tenant A's run: %+v", got)
+	if got := g.technologies(other, otherName); len(got) != 1 || got["hsts"].Category != "other" {
+		t.Fatalf("tenant A's run changed tenant B's rows: %+v", got)
 	}
 
 	// Run marks each tenant; a second run finds nothing pending for them.
