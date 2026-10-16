@@ -24,22 +24,25 @@ func TestTenantClaim_NeverTakesPlatformJobs(t *testing.T) {
 	tenant := seedTestTenant(ctx, t, sqlDB)
 
 	own := seedZoneSensor(ctx, t, sqlDB, &tenant, "own", zoneSensorOpts{tools: []string{"nuclei"}})
-	// A sensor row flagged as shared but carrying this tenant's id (how the
-	// one live shared sensor was made) is no exception on the tenant poll.
+	// A shared sensor (no tenant) asked for on this tenant's poll: it is not
+	// the tenant's sensor, so it is offered and may claim nothing of it.
 	sharedRow := seedZoneSensor(ctx, t, sqlDB, &tenant, "shared", zoneSensorOpts{tools: []string{"nuclei"}, platform: true})
 
 	tenantJob := createZoneCommand(ctx, t, cmds, tenant, nil, nil, "nuclei")
 	platformJob := createPlatformCommand(ctx, t, cmds, tenant, "nuclei")
 
-	for name, sensor := range map[string]shared.ID{"own sensor": own, "shared-flagged sensor": sharedRow} {
+	for name, sensor := range map[string]shared.ID{"own sensor": own, "shared sensor": sharedRow} {
+		isOwn := sensor == own
 		got := polledIDs(ctx, t, cmds, tenant, sensor)
 		if got[platformJob] {
 			t.Errorf("%s: the tenant poll offered a job queued for shared sensors", name)
 		}
-		if !got[tenantJob] {
-			t.Errorf("%s: the tenant poll did not offer the tenant's own job", name)
+		if got[tenantJob] != isOwn {
+			t.Errorf("%s: the tenant poll offered the tenant's own job: %v, want %v", name, got[tenantJob], isOwn)
 		}
-		assertPollParity(ctx, t, cmds, tenant, sensor, nil, 1)
+		if isOwn {
+			assertPollParity(ctx, t, cmds, tenant, sensor, nil, 1)
+		}
 
 		claimed, err := cmds.ClaimManyForSensor(ctx, tenant, sensor, nil, []shared.ID{platformJob})
 		if err != nil {
@@ -51,6 +54,13 @@ func TestTenantClaim_NeverTakesPlatformJobs(t *testing.T) {
 		if ok, err := cmds.ClaimForSensor(ctx, tenant, platformJob, sensor.String()); err != nil || ok {
 			t.Errorf("%s: claim by id took a job queued for shared sensors: ok=%v err=%v", name, ok, err)
 		}
+	}
+	// Nor may the shared sensor take the tenant's own job.
+	if claimed, err := cmds.ClaimManyForSensor(ctx, tenant, sharedRow, nil, []shared.ID{tenantJob}); err != nil || len(claimed) != 0 {
+		t.Errorf("shared sensor batch-claimed the tenant's job: %d %v", len(claimed), err)
+	}
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, tenantJob, sharedRow.String()); err != nil || ok {
+		t.Errorf("shared sensor claimed the tenant's job by id: ok=%v err=%v", ok, err)
 	}
 
 	// A poll without a sensor identity does not see it either.

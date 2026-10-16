@@ -127,6 +127,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -742,6 +743,8 @@ type Services struct {
 
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
+	RemediationTask     *remediation.TaskService
+	RemediationSuggest  *remediation.SuggestionService
 	RemediationGroup    *remediation.GroupService
 
 	// Business Units
@@ -1555,6 +1558,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(remediation.NewCampaignFilterResolver(s.Vulnerability, s.BulkGuard))
+	// Remediation tasks (RFC-098): who fixes an action and by when; state,
+	// deadline and counters derived from the member findings.
+	s.RemediationTask = remediation.NewTaskService(repos.RemediationTask, log)
+	s.RemediationTask.SetDataScope(s.DataScope)
+	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
+	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Remediation suggestions: algorithms propose, a person accepts.
+	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
+	s.RemediationSuggest.SetDataScope(s.DataScope)
+	s.RemediationSuggest.SetAuditLogger(s.Audit)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -1683,6 +1696,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize integration & notification services
 	s.Integration = integration.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
+	s.Integration.SetBrand(cfg.Brand)
 	s.Integration.SetTransactionDB(deps.DB)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
@@ -1703,6 +1717,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Events about private program assets reach only the programs' own
 	// channels (RFC-065 §15.4): one rule for every integration provider.
 	s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
+	s.Outbox.SetBrand(cfg.Brand)
 
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
@@ -2066,7 +2081,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
-	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector)
+	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
@@ -2149,7 +2164,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithToolAvailability(s.Tool),
 		// Workflow readiness: the New Scan picker, the workflow list and
 		// the refusal of a workflow no sensor here can run.
-		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor)),
+		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor, s.SharedSensorsAllowed)),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
@@ -2214,7 +2229,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scanrun package
 	pipelineAuditAdapter := app.NewScanWorkflowAuditServiceAdapter(s.Audit)
-	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector)
+	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	scanWorkflowSecurityValidatorAdapter := app.NewScanWorkflowSecurityValidatorAdapter(securityValidator)
 
 	// Initialize scan run service with security validator, audit service, transaction support, and tool repo
@@ -2915,6 +2930,7 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 		return nil
 	}
 	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.Brand.DisplayName(), log)
+	s.Email.SetBranding(email.Branding{FooterText: cfg.Brand.EmailFooter, PoweredBy: cfg.Brand.ShowPoweredBy()})
 	if !s.Email.IsConfigured() {
 		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
 	}
@@ -3202,4 +3218,15 @@ func (a pentestJiraTicketing) CreateFindingTicket(ctx context.Context, tenantID,
 		return "", err
 	}
 	return info.TicketURL, nil
+}
+
+// SharedSensorsAllowed is the shared sensor access policy (RFC-100 §5) of
+// the scan policy service, read when called: the service is wired after the
+// scan services that hold this method. Without it every organization is
+// refused.
+func (s *Services) SharedSensorsAllowed(ctx context.Context, tenantID shared.ID) (bool, string) {
+	if s == nil || s.ScanPolicy == nil {
+		return false, scanpolicy.ReasonSharedSensorsUnavailable
+	}
+	return s.ScanPolicy.SharedSensorsAllowed(ctx, tenantID)
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -455,12 +456,12 @@ func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, f
 		return nil
 	}
 
-	comment := fmt.Sprintf("OpenCTEM set this finding to %q.", finding.Status())
+	comment := fmt.Sprintf("%s set this finding to %q.", brand.Name(), finding.Status())
 	if err := client.TransitionToStatus(ctx, issueKey, target, comment); err != nil {
 		if errors.Is(err, ErrNoMatchingTransition) {
 			// Workflow can't reach the target from its current status — leave a
 			// note instead of failing so a human can move the card.
-			body := fmt.Sprintf("OpenCTEM marked this finding %q, but no Jira transition to %q is available from its current status — please move it manually.",
+			body := fmt.Sprintf("%s marked this finding %q, but no Jira transition to %q is available from its current status — please move it manually.", brand.Name(),
 				finding.Status(), target)
 			if cErr := client.AddComment(ctx, issueKey, body); cErr != nil {
 				return fmt.Errorf("comment fallback after no transition: %w", cErr)
@@ -677,7 +678,7 @@ func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, is
 
 	if terr := client.TransitionToStatus(ctx, issueKey, targetStatus, comment); terr != nil {
 		if errors.Is(terr, ErrNoMatchingTransition) {
-			body := fmt.Sprintf("OpenCTEM wanted to move this epic to %q but no transition is available from its current status — please move it manually.", targetStatus)
+			body := fmt.Sprintf("%s wanted to move this epic to %q but no transition is available from its current status — please move it manually.", brand.Name(), targetStatus)
 			if cerr := client.AddComment(ctx, issueKey, body); cerr != nil {
 				return fmt.Errorf("comment fallback after no transition: %w", cerr)
 			}
@@ -788,6 +789,14 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 	// Apply-time guard: whatever the mapping says, a ticket never closes a
 	// finding (no verify gate, no approval, no person). FindingStatusForJira
 	// already refuses these; this keeps the rule if the mapping code changes.
+	ticket := vulnerability.TransitionActor{Kind: vulnerability.TransitionActorTicket}
+	facts := vulnerability.TransitionFacts{Status: finding.Status(), Source: finding.Source(), Severity: finding.Severity()}
+	if d := vulnerability.EvaluateTransition(facts, ticket, newFindingStatus); !d.Allowed {
+		s.logger.Warn("jira webhook: the transition engine refused the move",
+			"finding_id", finding.ID().String(), "current_status", finding.Status(),
+			"target_status", logger.SanitizeValue(string(newFindingStatus)), "error", d.Err())
+		return nil
+	}
 	if !newFindingStatus.IsTicketInboundTarget() {
 		s.logger.Warn("jira webhook: refused a closing status from a ticket",
 			"issue_key", logger.SanitizeValue(payload.Issue.Key), "target_status", logger.SanitizeValue(string(newFindingStatus)))

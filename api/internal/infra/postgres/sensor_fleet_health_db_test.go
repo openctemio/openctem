@@ -65,9 +65,7 @@ func TestUpdateHeartbeat_StoresProcessStartFromUptime(t *testing.T) {
 }
 
 // The stats endpoint and the list must count the same sensors: the tenant's
-// own, without shared platform sensors (they have their own page). The list
-// used to include rows flagged is_platform_sensor that the stats left out, so
-// the page header and the table disagreed.
+// own, without shared sensors (they have their own page).
 func TestTenantSensorStats_CountsWhatTheListShows(t *testing.T) {
 	db := openSensorDB(t)
 	ctx := context.Background()
@@ -76,10 +74,7 @@ func TestTenantSensorStats_CountsWhatTheListShows(t *testing.T) {
 	now := time.Now()
 
 	own := seedSensor(ctx, t, db, tenantID, "online", &now, "nuclei", 0)
-	platform := seedSensor(ctx, t, db, tenantID, "online", &now, "trivy", 0)
-	if _, err := db.ExecContext(ctx, `UPDATE sensors SET is_platform_sensor = TRUE WHERE id = $1`, platform.String()); err != nil {
-		t.Fatalf("flag platform sensor: %v", err)
-	}
+	platform := seedZoneSensor(ctx, t, db, &tenantID, "platform", zoneSensorOpts{tools: []string{"trivy"}, platform: true})
 
 	listed, err := repo.List(ctx, sensor.Filter{TenantID: &tenantID}, pagination.New(1, 100))
 	if err != nil {

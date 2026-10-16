@@ -36,7 +36,7 @@ const sensorGrantFrom = ` FROM sensor_grants g JOIN sensors s ON s.id = g.sensor
 
 // sensorGrantTenantFrom is sensorGrantFrom for the tenant's console lists:
 // the grants of the tenant's own sensors, never a shared platform sensor's.
-const sensorGrantTenantFrom = sensorGrantFrom + ` AND NOT s.is_platform_sensor`
+const sensorGrantTenantFrom = sensorGrantFrom + ` AND s.scope = 'organization'`
 
 // Get returns the grant of a sensor of the tenant.
 func (r *SensorGrantRepository) Get(ctx context.Context, tenantID, sensorID shared.ID) (*sensordom.Grant, error) {

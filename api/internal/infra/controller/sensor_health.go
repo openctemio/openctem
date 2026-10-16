@@ -242,7 +242,7 @@ func (c *SensorHealthController) onOffline(ctx context.Context, sensorID shared.
 		)
 		return
 	}
-	if a.TenantID == nil || a.IsPlatformSensor {
+	if a.TenantID == nil || a.IsShared() {
 		// A platform sensor is shared infrastructure, not the sensor of the
 		// tenant its row carries: no tenant audit row or notification.
 		return

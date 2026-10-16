@@ -136,14 +136,16 @@ func TestPlanLimitsRefuseAtTheInsert(t *testing.T) {
 			t.Fatalf("refused sensor written: %d", n)
 		}
 
-		// A platform sensor is never one of the organization's sensors.
+		// A shared sensor is never one of the organization's sensors.
 		before := len(chk.calls)
 		ps, _ := sensordom.NewSensor(tid, "ps-"+suffix, sensordom.SensorTypeWorker, "", nil, "")
-		ps.IsPlatformSensor = true
-		_ = r.Create(ctx, ps)
+		ps.Scope, ps.TenantID = sensordom.ScopeInstance, nil
+		if err := r.Create(ctx, ps); err != nil {
+			t.Fatalf("create shared sensor: %v", err)
+		}
 		_, _ = sqlDB.ExecContext(ctx, `DELETE FROM sensors WHERE id = $1`, ps.ID.String())
 		if len(chk.calls) != before {
-			t.Fatal("a platform sensor must not count against the sensor limit")
+			t.Fatal("a shared sensor must not count against the sensor limit")
 		}
 
 		p := NewSensorPairingRepository(db)

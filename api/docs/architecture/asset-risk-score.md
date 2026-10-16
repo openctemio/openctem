@@ -16,8 +16,7 @@ risk = findings score × exposure factor × criticality factor × (1 − control
 ```
 
 **Findings score (0-100).** Only open findings count
-(`vulnerability.OpenStatuses`: new, confirmed, in_progress, fix_applied,
-validated_fixed, not_observed) on the default branch. Resolved, accepted,
+(`vulnerability.OpenStatuses`: new, confirmed, in_progress, fix_applied) on the default branch. Resolved, accepted,
 false-positive and duplicate findings and unpublished pentest drafts carry no
 risk; informational findings add nothing. The asset's `finding_count` and severity counts in the API are
 the same population. The worst

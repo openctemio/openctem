@@ -92,7 +92,7 @@ func (p *V2JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byt
 	if p.sensors == nil {
 		return nil, errors.New("v2 processor: sensor status check is not configured")
 	}
-	_, dropped, err := p.sensors.QueuedWorkSensor(ctx, rep.TenantID, &rep.SensorID, rep.ReportID)
+	agt, dropped, err := p.sensors.QueuedWorkSensor(ctx, rep.TenantID, &rep.SensorID, rep.CommandID, rep.ReportID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,15 +105,19 @@ func (p *V2JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byt
 		return json.Marshal(dropped)
 	}
 
+	// A shared sensor's report is written into the command's tenant (the
+	// report's, set at accept) as that tenant never sees the sensor:
+	// evidence says sensor:platform (docs/rfcs/RFC-100-shared-sensors.md §8).
+	sharedSensor := agt != nil && agt.IsShared()
 	if !seg.IsCommit() {
-		r, err := p.processSegment(ctx, rep, job, *seg.Seq)
+		r, err := p.processSegment(ctx, rep, job, *seg.Seq, sharedSensor)
 		if err != nil {
 			p.failOnLastAttempt(ctx, job, rep)
 			return nil, err
 		}
 		result.Accepted, result.Rejected = r.AcceptedFindings, r.RejectedFindings
 	}
-	if err := p.finalize(ctx, rep); err != nil {
+	if err := p.finalize(ctx, rep, sharedSensor); err != nil {
 		p.failOnLastAttempt(ctx, job, rep)
 		return nil, err
 	}
@@ -134,9 +138,9 @@ func (p *V2JobProcessor) failOnLastAttempt(ctx context.Context, job *ingestjob.J
 	p.service.commandIngestedNow(ctx, rep.TenantID, rep.CommandID)
 }
 
-func (p *V2JobProcessor) provenance(rep *ingestreport.Report, seq int, job *ingestjob.Job) Provenance {
+func (p *V2JobProcessor) provenance(rep *ingestreport.Report, seq int, job *ingestjob.Job, sharedSensor bool) Provenance {
 	prov := Provenance{
-		TenantID: rep.TenantID, SensorID: rep.SensorID, SensorType: rep.SensorType,
+		TenantID: rep.TenantID, SensorID: rep.SensorID, SensorType: rep.SensorType, SharedSensor: sharedSensor,
 		CommandID: rep.CommandID, ScanZoneID: rep.ScanZoneID,
 		ReportRef: rep.ID, ReportID: rep.ReportID, SegmentSeq: seq, MediaType: rep.MediaType,
 	}
@@ -146,7 +150,7 @@ func (p *V2JobProcessor) provenance(rep *ingestreport.Report, seq int, job *inge
 	return prov
 }
 
-func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.Report, job *ingestjob.Job, seq int) (ingestreport.SegmentOutcome, error) {
+func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.Report, job *ingestjob.Job, seq int, sharedSensor bool) (ingestreport.SegmentOutcome, error) {
 	report, err := ParseV2Report(job.Payload(), rep.ReportID, p.limits)
 	if err != nil {
 		// The payload was validated before it was accepted; failing now
@@ -160,7 +164,7 @@ func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.R
 	if rep.CommandID == nil {
 		// A report without a command (RFC-040 §5.3): quarantined or applied
 		// with the unsolicited limits, decided here once per segment.
-		if o, held, err := p.service.admitV2Segment(ctx, p.provenance(rep, seq, job), report); err != nil {
+		if o, held, err := p.service.admitV2Segment(ctx, p.provenance(rep, seq, job, sharedSensor), report); err != nil {
 			return ingestreport.SegmentOutcome{}, err
 		} else if held {
 			if err := p.reports.RecordSegmentOutcome(ctx, rep.ID, seq, o, nil); err != nil {
@@ -170,7 +174,7 @@ func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.R
 			return o, nil
 		}
 	}
-	res, err := p.service.IngestV2Segment(ctx, p.provenance(rep, seq, job), report)
+	res, err := p.service.IngestV2Segment(ctx, p.provenance(rep, seq, job, sharedSensor), report)
 	if err != nil {
 		return ingestreport.SegmentOutcome{}, fmt.Errorf("v2: ingest segment: %w", err)
 	}
@@ -184,7 +188,7 @@ func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.R
 // finalize claims and runs the commit-time steps when the report is committed
 // and every segment has an outcome. Losing the claim is not an error: another
 // job, or a later one, finalizes.
-func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report) error {
+func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report, sharedSensor bool) error {
 	claimed, ok, err := p.reports.ClaimFinalize(ctx, rep.ID)
 	if err != nil {
 		return fmt.Errorf("v2: claim finalize: %w", err)
@@ -196,7 +200,7 @@ func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report)
 	if err := json.Unmarshal(claimed.Header, &header); err != nil {
 		p.logger.Error("v2: stored header does not parse", "report_ref", claimed.ID.String())
 	}
-	res := p.service.CommitV2Report(ctx, p.provenance(claimed, -1, nil), header, claimed.TouchedAssetIDs, p.guard)
+	res := p.service.CommitV2Report(ctx, p.provenance(claimed, -1, nil, sharedSensor), header, claimed.TouchedAssetIDs, p.guard)
 	// A complete report of a trusted collector: the assets its source
 	// created and no longer lists are marked not seen.
 	p.service.sweepCollectorReport(ctx, claimed, header, p.guard)

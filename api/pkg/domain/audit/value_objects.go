@@ -33,19 +33,22 @@ const (
 	// vulnerability matching policy (RFC-066).
 	ActionTenantVulnMatchingUpdated Action = "tenant.vuln_matching_updated"
 
-	// Idle Free workspaces (docs/architecture/idle-workspaces.md).
-	ActionTenantIdleReminded         Action = "tenant.idle_reminded"
-	ActionTenantIdleReadOnly         Action = "tenant.idle_read_only"
-	ActionTenantIdleFinalWarning     Action = "tenant.idle_final_warning"
-	ActionTenantIdleDeletionDue      Action = "tenant.idle_deletion_due"
-	ActionTenantIdleReactivated      Action = "tenant.idle_reactivated"
-	ActionTenantIdleExemptionChanged Action = "tenant.idle_exemption_changed"
+	// Idle-organization policy (docs/architecture/idle-workspaces.md).
+	ActionTenantIdleReminded      Action = "tenant.idle_reminded"
+	ActionTenantIdleReadOnly      Action = "tenant.idle_read_only"
+	ActionTenantIdleFinalWarning  Action = "tenant.idle_final_warning"
+	ActionTenantIdleDeletionDue   Action = "tenant.idle_deletion_due"
+	ActionTenantIdleReactivated   Action = "tenant.idle_reactivated"
+	ActionTenantIdlePolicyChanged Action = "tenant.idle_policy_changed"
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
 	// ActionTenantCyclePolicyUpdated records a change to the organization's
 	// CTEM cycle policy (whether the coverage SLO blocks closing a cycle).
 	ActionTenantCyclePolicyUpdated Action = "tenant.cycle_policy_updated"
+	// ActionTenantSharedSensorsUpdated records the owner's shared sensor
+	// opt-out changing.
+	ActionTenantSharedSensorsUpdated Action = "tenant.shared_sensors_updated"
 
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
@@ -670,8 +673,9 @@ func (a Action) IsValid() bool {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
-		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
+		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,
@@ -1024,7 +1028,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
 		ResourceTypeFindingApproval:
 		return true
 	}

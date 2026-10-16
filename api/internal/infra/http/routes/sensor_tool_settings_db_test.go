@@ -139,8 +139,9 @@ func TestSensorToolSettings_Routes_DB(t *testing.T) {
 		h.expect(outsider, req.method, req.path, req.body, http.StatusNotFound)
 	}
 	plat := uuid.NewString()
-	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix, is_platform_sensor)
-	        VALUES ($1, $2, $3, 'worker', 'active', 'unknown', 'daemon', $4, 'octs_plt', TRUE)`, plat, tid, "plat-"+plat[:8], "hash-"+plat)
+	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix, scope)
+	        VALUES ($1, NULL, $2, 'worker', 'active', 'unknown', 'daemon', $3, 'octs_plt', 'instance')`, plat, "plat-"+plat[:8], "hash-"+plat)
+	t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, plat) })
 	h.expect(admin, http.MethodGet, "/api/v1/sensors/"+plat+"/tool-settings", "", http.StatusNotFound)
 	h.expect(admin, http.MethodPut, "/api/v1/sensors/"+plat+"/tool-settings/nuclei", body, http.StatusNotFound)
 	mustJSON(t, h.expect(admin, http.MethodGet, base, "", http.StatusOK), &list)

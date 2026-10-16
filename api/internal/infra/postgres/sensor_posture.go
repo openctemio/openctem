@@ -44,7 +44,7 @@ func (r *SensorRepository) HasConfinedSensor(ctx context.Context, tenantID share
 		SELECT EXISTS (
 			SELECT 1 FROM sensors
 			WHERE tenant_id = $1 AND status = 'active'
-			  AND COALESCE(is_platform_sensor, FALSE) = FALSE
+			  AND scope = 'organization'
 			  AND $2 = ANY(COALESCE(reported_capabilities, ARRAY[]::text[])))`,
 		tenantID.String(), sensor.CapabilityNetConfined).Scan(&ok)
 	if err != nil {

@@ -221,7 +221,7 @@ func readOpsQueue(ctx context.Context, db opsQuerier) ([]OpsQueueDepth, error) {
 
 func readOpsSensors(ctx context.Context, db opsQuerier) ([]OpsSensorCount, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT is_platform_sensor, COALESCE(health, 'unknown'), COALESCE(config_health, ''),
+		SELECT scope = 'instance', COALESCE(health, 'unknown'), COALESCE(config_health, ''),
 		       COALESCE(sdk_version, ''), count(*)
 		FROM sensors
 		WHERE status = 'active'
@@ -254,7 +254,7 @@ func readOpsUnhardened(ctx context.Context, db opsQuerier) (map[string]int64, er
 		       COALESCE(s.auth_kind, '') = '`+string(sensor.AuthKindKeyBound)+`', s.last_seen_at IS NOT NULL, count(*)
 		FROM sensors s
 		LEFT JOIN LATERAL (SELECT `+sensorManifestPostureSQL("s")+` AS posture) p ON TRUE
-		WHERE s.status = 'active' AND NOT s.is_platform_sensor
+		WHERE s.status = 'active' AND s.scope = 'organization'
 		GROUP BY 1, 2, 3, 4, 5, 6`)
 	if err != nil {
 		return nil, err
