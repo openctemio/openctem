@@ -2,7 +2,7 @@
  * Who may create an organization (team).
  *
  * The API publishes its policy as `tenant_creation_mode` on the public
- * GET /auth/providers (RFC-022 D8, `TENANT_CREATION_MODE`):
+ * GET /auth/providers (RFC-022 D8, RFC-104 `SIGNUP_MODE`):
  *   - `self_service` (the default): any signed-in user may create one.
  *   - `admin_only`: only the platform administrator creates organizations;
  *     POST /tenants and POST /auth/create-first-team answer 403.
