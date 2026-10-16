@@ -5,9 +5,12 @@ import Link from '@/components/link'
 import { usePathname } from 'next/navigation'
 import { TAB_CLASS, TAB_STRIP_CLASS, TabsCount, useTabStripScroll } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 
 export interface SectionTab {
   label: string
+  /** i18n key of the label; `label` is the English fallback. */
+  labelKey?: string
   href: string
   /** Optional icon shown before the label. */
   icon?: React.ElementType
@@ -46,6 +49,7 @@ interface SectionTabsProps {
  */
 export function SectionTabs({ tabs, className, label = 'Sections', counts }: SectionTabsProps) {
   const pathname = usePathname()
+  const { t } = useTranslation()
   const ref = React.useRef<HTMLElement>(null)
   useTabStripScroll(ref)
 
@@ -67,7 +71,7 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
             className={TAB_CLASS}
           >
             {Icon && <Icon aria-hidden />}
-            {tab.label}
+            {tab.labelKey ? t(tab.labelKey, tab.label) : tab.label}
             {counts?.[tab.href] ? <TabsCount value={counts[tab.href]} /> : null}
           </Link>
         )
