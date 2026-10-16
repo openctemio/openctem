@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -17,11 +18,13 @@ type memStore struct {
 	mu   sync.Mutex
 	m    map[string]string
 	fail bool
+	ttls []time.Duration
 }
 
-func (s *memStore) SetNX(_ context.Context, k, v string, _ time.Duration) (bool, error) {
+func (s *memStore) SetNX(_ context.Context, k, v string, ttl time.Duration) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ttls = append(s.ttls, ttl)
 	if s.fail {
 		return false, errors.New("down")
 	}
@@ -161,5 +164,59 @@ func TestIdempotentUploadRejectsBadKey(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatal("bad key reached the upload")
+	}
+}
+
+func TestIdempotentUploadSameKeyAndBodyUnderAnotherRunTokenDoesNotReplay(t *testing.T) {
+	h := NewCIRunnerHandler(nil, logger.NewNop())
+	h.SetIdempotencyStore(&memStore{m: map[string]string{}})
+	calls := 0
+	idemCall(h, "t", "run-of-token-1", "k", `{"a":1}`, 201, &calls)
+	w := idemCall(h, "t", "run-of-token-2", "k", `{"a":1}`, 201, &calls)
+	if calls != 2 || w.Header().Get("Idempotent-Replayed") != "" {
+		t.Fatalf("a key replayed under another run's token: calls=%d", calls)
+	}
+}
+
+func TestIdempotentPendingMarkerLivesAtLeastTheTokenLife(t *testing.T) {
+	h := NewCIRunnerHandler(nil, logger.NewNop())
+	st := &memStore{m: map[string]string{}}
+	h.SetIdempotencyStore(st)
+	calls := 0
+	idemCall(h, "t", "r", "k", `{}`, 201, &calls)
+	if len(st.ttls) != 1 || st.ttls[0] < cirun.TokenTTL {
+		t.Fatalf("pending ttl = %v, want >= %v", st.ttls, cirun.TokenTTL)
+	}
+	// A later request deadline extends it.
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{}`))
+	r.Header.Set("Idempotency-Key", "k2")
+	ctx, cancel := context.WithTimeout(r.Context(), time.Hour)
+	defer cancel()
+	h.idempotentUpload(httptest.NewRecorder(), r.WithContext(ctx), "t", "r", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(500) })
+	if got := st.ttls[1]; got < 59*time.Minute {
+		t.Fatalf("pending ttl with a 1h deadline = %v", got)
+	}
+}
+
+func TestIdempotentUploadDoesNotTouchAKeyAnotherBodyOwns(t *testing.T) {
+	h := NewCIRunnerHandler(nil, logger.NewNop())
+	st := &memStore{m: map[string]string{}}
+	h.SetIdempotencyStore(st)
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"a":1}`))
+	r.Header.Set("Idempotency-Key", "k")
+	h.idempotentUpload(httptest.NewRecorder(), r, "t", "r", func(w http.ResponseWriter, _ *http.Request) {
+		// The marker expired and a request with another body took the key.
+		for k := range st.m {
+			st.m[k] = `{"state":"pending","body_sha":"someone-else"}`
+		}
+		w.WriteHeader(201)
+	})
+	for _, v := range st.m {
+		if !strings.Contains(v, "someone-else") {
+			t.Fatalf("record of another request was overwritten: %s", v)
+		}
+	}
+	if len(st.m) != 1 {
+		t.Fatalf("the other request's record was deleted")
 	}
 }
