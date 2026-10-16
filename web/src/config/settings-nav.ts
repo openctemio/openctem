@@ -22,6 +22,7 @@
 import {
   GitMerge,
   Handshake,
+  LifeBuoy,
   Activity,
   Bell,
   Bot,
@@ -297,6 +298,17 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: ShieldCheck,
         permission: Permission.TeamUpdate,
         keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
+      },
+      {
+        // Time-boxed, read-only, audited access for platform support (api
+        // RFC-063): owners grant, owners and admins revoke and see history.
+        id: 'support-access',
+        title: 'Support access',
+        description: 'Let platform support read your data for a limited time.',
+        url: '/settings/support-access',
+        icon: LifeBuoy,
+        permission: Permission.TeamUpdate,
+        keywords: ['support', 'help', 'troubleshoot', 'grant', 'revoke', 'case'],
       },
       {
         id: 'api-keys',

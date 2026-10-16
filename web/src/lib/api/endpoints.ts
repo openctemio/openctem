@@ -396,6 +396,16 @@ export const tenantEndpoints = {
   approveOrgTrust: (trustId: string) => `/api/v1/organization/trusts/${trustId}/approve`,
 
   /**
+   * Support access (RFC-063): who from platform support can read this
+   * organization's data now (GET any member), the grants (GET owner/admin),
+   * a new grant (POST owner + step-up) and a revoke (DELETE owner/admin).
+   */
+  supportAccessActive: () => '/api/v1/organization/support-access/active',
+  supportAccessGrants: () => '/api/v1/organization/support-access/grants',
+  supportAccessGrant: (grantId: string) =>
+    `/api/v1/organization/support-access/grants/${encodeURIComponent(grantId)}`,
+
+  /**
    * Offboard a member with mandatory reassignment (POST, owner/admin)
    */
   offboardMember: (memberId: string) => `/api/v1/organization/members/${memberId}/offboard`,
