@@ -141,6 +141,15 @@ and the internal-zones default. A stored console value always wins. A
 runbook step was rejected because a forgotten step fails open on a public
 multi-tenant service.
 
+Implementation: `MANAGED_SERVICE` (default false) is read at start-up into
+the platform scanning policy (`scanpolicy.Service.SetManagedService`). The
+proof setting (`platform_sensor_proof`) and the internal-zones setting
+(`shared_sensor_internal_zones`) answer the deployment default while nothing
+is stored and the stored value afterwards; the console shows which applies.
+An unreadable stored value fails closed (proof required, internal zones
+refused). Both are changed only by a super admin with a reason and a fresh
+authenticator code, audited, the other administrators emailed.
+
 ### 6.1 Amendment of RFC-023 D14
 
 D14 said shared scanners scan public targets only and never zones. That stays
@@ -212,6 +221,20 @@ sensor must not trust any tenant's key set. Design:
   reverse DNS and an information page on the scanner addresses, a
   per-organization kill switch (the deny of §5) and anomaly alerts (many
   distinct registrable domains, failure spikes, deny-list hits).
+- **Anomaly alerts** (implemented): per organization per UTC day, the count
+  of distinct registrable domains queued for shared sensors, of failed
+  shared jobs and of deny-list hits. The first time a count reaches its
+  threshold that day the platform raises one alert (metric labeled by
+  signal only, admin audit row naming the organization, email to every
+  administrator). Thresholds are an instance setting (defaults 25, 50 and 5;
+  0 turns a signal off). The counters keep no target: the domain count is a
+  cardinality estimate, every key carries the organization and the day and
+  expires. The signals are detective only: no admission decision reads them,
+  and a missing counter store loses a signal without blocking a scan.
+- **Scanner identity** (documented, `docs/architecture/sensors.md`, "Shared
+  sensors on the tenant plane"): the sdk-go User-Agent, the tool
+  `http.user_agent` setting on shared sensors, reverse DNS and an information
+  page on the scanner addresses, separate egress addresses.
 - **Egress addresses are published to tenants** (G11): the console stores the
   egress addresses (or ranges) of each region or shared sensor; organization
   members see them in the shared sensors card so they can allowlist the
@@ -246,7 +269,7 @@ needs them.
 | S9 | tenant view rename, egress addresses, organization opt-out | designed |
 | S10 | instance scan zones assigned to organizations | designed |
 | S11 | per-job isolation and private-range egress drop in sdk-go, used by the sensor | designed |
-| S12 | `MANAGED_SERVICE` defaults, anomaly alerts, scanner identity | designed |
+| S12 | `MANAGED_SERVICE` defaults, anomaly alerts, scanner identity | in review |
 | G8 | API-side name resolution for shared jobs, sensor re-check | designed |
 
 **Gate.** No deployment enables shared sensors before S0, S5 and S11 have
