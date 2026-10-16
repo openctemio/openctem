@@ -21,7 +21,7 @@
 # Retired and removed names live in config.go (retiredEnv, removedEnv).
 
 # Prefixes the API owns: any variable under them must be listed here.
-prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_]
+prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_, VERSION_CHECK_]
 
 vars:
   - name: APP_ENV
@@ -1267,6 +1267,18 @@ vars:
     type: string
     default: "https://api.certspotter.com"
     description: "Fallback CT search service when the primary fails. `off` disables the fallback."
+  - name: VERSION_CHECK_ENABLED
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: bool
+    default: "true"
+    description: "Daily version check: one anonymous download of the signed release feed (no instance id, version or counts), compared with the running version on the instance; the platform console shows newer and security releases. `false` stops the download; offline import in the console still works. See `docs/architecture/version-check.md`."
+  - name: VERSION_CHECK_URL
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: url
+    default: "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"
+    description: "Where the version check reads the signed release feed (https only). Point it at an internal mirror if needed; the signature, not the host, is trusted. A mirror on a private address also needs the private egress allowlist."
   - name: CERT_MONITOR_ENABLED
     component: api
     group: "Discovery feeds and background jobs"
