@@ -831,6 +831,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
 		))
 	}
+	// Task issues: push each task's state to its tracker issue (move and a
+	// progress comment) when it changed since the last push.
+	if svc != nil && svc.JiraSync != nil && repos.TicketLink != nil {
+		w.ControllerManager.Register(controller.NewTaskTicketController(
+			repos.TicketLink, svc.JiraSync, time.Minute, log.With("controller", "task-tickets"),
+		))
+	}
 	// Remediation suggestions: propose groups and tasks from the remediation
 	// keys (never create them) and send the daily digest.
 	if svc != nil && svc.RemediationSuggest != nil {
