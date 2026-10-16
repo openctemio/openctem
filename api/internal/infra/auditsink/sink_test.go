@@ -304,3 +304,43 @@ func TestSyslogPresentsClientCertificate(t *testing.T) {
 		t.Fatalf("bad pair: want an error without the path, got %v", err)
 	}
 }
+
+// A collector that reads the batch but never closes its side has not
+// acknowledged anything: the send fails at the deadline instead of counting
+// a local write as delivered.
+func TestSyslogFailsWhenCollectorDoesNotClose(t *testing.T) {
+	srv := httptest.NewUnstartedServer(nil)
+	srv.StartTLS()
+	srv.Close()
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{srv.TLS.Certificates[0]}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	release := make(chan struct{})
+	defer close(release)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = c.Close() }()
+		buf := make([]byte, 4096)
+		_, _ = c.Read(buf)
+		<-release // hold the connection open, never answer
+	}()
+	s, err := newSyslogSink(ln.Addr().String(), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.tlsCfg.ServerName = "example.com"
+	s.tlsCfg.RootCAs = srv.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+	s.dial = func(ctx context.Context, n, a string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, n, a)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	if err := s.Send(ctx, sampleBatch()); err == nil {
+		t.Fatal("a collector that never closed counted as delivered")
+	}
+}
