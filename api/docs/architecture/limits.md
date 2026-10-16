@@ -255,7 +255,7 @@ internal API fit as a third source, with no change to any check:
 - `internal/infra/http/internalapi`: the internal API (token verifier,
   replay cache, listener and endpoints); `cmd/server/internal_api.go` wires
   it.
-- Migration `per_organization_limits` (002660): moved every organization's
+- Migration `per_organization_limits` (002783): moved every organization's
   earlier limits and excluded modules to operator rows, then dropped the old
   tables.
 
