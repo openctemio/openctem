@@ -120,6 +120,11 @@ type AccountDirectory interface {
 	// console calls it only after the account is confirmed an active, unlocked
 	// administrator.
 	RecordPasswordSuccess(ctx context.Context, userID shared.ID)
+	// RecordPasswordFailure counts a refused sign-in toward the account's
+	// lockout. The console calls it when a correct password is still refused
+	// (the organization requires the identity provider), so the refusal can
+	// neither clear nor dodge the lockout.
+	RecordPasswordFailure(ctx context.Context, userID shared.ID)
 	// CreateAccount creates a new local account with a temporary password. It
 	// returns admin.ErrEmailHasAccount when the email already has an account:
 	// an existing account is never linked, because whoever registered it (with
@@ -207,13 +212,16 @@ func (s *Service) Start(ctx context.Context, email, password string, client Clie
 		s.record(ctx, a, ActionLoginFailed, client, "inactive or locked")
 		return nil, admin.ErrInvalidCredentials
 	}
-	s.accounts.RecordPasswordSuccess(ctx, u.UserID)
 	if err := s.checkPasswordPathAllowed(ctx, a); err != nil {
 		if errors.Is(err, admin.ErrIdPSignInRequired) {
+			// A refused sign-in is a failure: it counts toward the lockout
+			// and never clears it.
+			s.accounts.RecordPasswordFailure(ctx, u.UserID)
 			s.record(ctx, a, ActionLoginFailed, client, "identity provider sign-in required")
 		}
 		return nil, err
 	}
+	s.accounts.RecordPasswordSuccess(ctx, u.UserID)
 	return s.beginSecondFactor(ctx, a, admin.AuthMethodPassword, client)
 }
 

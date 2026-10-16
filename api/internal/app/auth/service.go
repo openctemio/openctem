@@ -680,6 +680,20 @@ func (s *AuthService) RecordConsolePasswordSuccess(ctx context.Context, userID s
 	}
 }
 
+// RecordConsolePasswordFailure counts a refused console sign-in (a correct
+// password the console still turned away) toward the account's lockout.
+func (s *AuthService) RecordConsolePasswordFailure(ctx context.Context, userID shared.ID) {
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		s.logger.Error("failed to load account to record a refused console sign-in", "error", err)
+		return
+	}
+	if u.IsLocked() {
+		return
+	}
+	s.recordPasswordFailure(ctx, u)
+}
+
 // Login authenticates a user and creates a session.
 // Returns a global refresh token and list of tenant memberships.
 // Client should call ExchangeToken to get a tenant-scoped access token.

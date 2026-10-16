@@ -4,6 +4,8 @@
   inactive or locked administrator, now answers the same 401 as a wrong
   password (the real reason stays in the audit record).
 - A correct password no longer resets the account's failed-sign-in counter until
-  the account is confirmed an active, unlocked administrator.
+  the account is confirmed an active, unlocked administrator, and a sign-in
+  refused because the identity provider is required counts as a failure toward
+  the lockout instead of clearing it.
 - The console `/login` counts failures per client address and asks for the
   CAPTCHA after repeated failures, like the tenant sign-in.
