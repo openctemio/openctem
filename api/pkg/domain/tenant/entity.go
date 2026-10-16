@@ -23,7 +23,11 @@ type Tenant struct {
 	createdBy   string // Keycloak user ID
 	// initial are the limits, feature denies and idle policy written with the
 	// organization when it is created; never loaded back.
-	initial   InitialEntitlements
+	initial InitialEntitlements
+	// region is the data region set when the organization was created
+	// (DEPLOYMENT_REGION); empty for organizations from before. Never
+	// changed afterwards.
+	region    string
 	createdAt time.Time
 	updatedAt time.Time
 }
@@ -225,4 +229,16 @@ func GenerateSlug(name string) string {
 		slug = slug[:100]
 	}
 	return slug
+}
+
+// Region is the organization's data region ("" when it predates regions).
+func (t *Tenant) Region() string { return t.region }
+
+// WithRegion sets the region from persistence or at creation; a region once
+// set is never replaced.
+func (t *Tenant) WithRegion(region string) *Tenant {
+	if t.region == "" {
+		t.region = region
+	}
+	return t
 }
