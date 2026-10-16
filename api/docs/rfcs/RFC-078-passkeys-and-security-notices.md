@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-11) |
+| Status | Partially implemented: the platform console part (§7, 2026-10-16); the user-account phases P1 and P3 are Proposed |
 | Scope | api (`pkg/domain/passkey`, `internal/app/auth` second factor, step-up and admin console step, known-device tracking, security notices, two migrations), web (account security page, sign-in second step, step-up dialog, admin console step) |
 | Related | RFC-022 (platform admin console), RFC-024 (user two-factor authentication), RFC-009 (enterprise SSO), [step-up-reauth.md](../architecture/step-up-reauth.md), [user-two-factor-authentication.md](../architecture/user-two-factor-authentication.md) |
 
@@ -186,3 +186,92 @@ factor". No route takes a tenant id.
 - P2 drops `admin_credentials` after every platform administrator has
   enrolled a user-level factor. The drop is a contract migration.
 - No change for users without passkeys. TOTP stays a first-class factor.
+
+## 7. Amendment: the platform console (2026-10-16)
+
+The console moves to its own origin (`OPENCTEM_ADMIN_SITE`, the console's own
+host or port). Its WebAuthn relying party is that origin, so console security
+keys cannot be the user-level passkeys of §3, which are bound to the tenant
+site. This amendment replaces P2 for the console.
+
+### 7.1 Decisions
+
+| ID | Decision | Reason |
+|---|---|---|
+| W1 | Relying party = the console origin, `ADMIN_PUBLIC_URL` (default the origin of `APP_URL`). The RP ID is its host; it is the only accepted origin | the browser binds the assertion to the origin: a relay on another domain, or a script on the tenant site (same host in port mode, other origin), cannot produce an accepted assertion |
+| W2 | Console keys live in `admin_webauthn_credentials` (public key, counter, AAGUID, transports, UV/BE/BS flags, name), at most 10 per administrator | separate RP ID from the tenant site; no shared store is possible |
+| W3 | `userVerification: required`, `residentKey: preferred`, `attestation: none`, ES256/EdDSA/RS256 as offered by the library | a key alone is not enough (PIN or biometric); no attestation keeps synced passkeys and every FIDO2 key usable, and needs no metadata service |
+| W4 | Synced passkeys are allowed; the response shows "synced" (backup state). The AAGUID is stored, so an allow-list or a "device-bound only" option can be added without a migration | most administrators have a platform passkey; the stricter options are an owner decision (§7.5) |
+| W5 | A counter that does not move forward refuses the assertion and is audited (`console.webauthn_counter_regressed`); 0 → 0 passes (synced passkeys) | cloned non-synced authenticators |
+| W6 | Ceremony state is stored per console session and purpose (`admin_webauthn_ceremonies`), taken (deleted) by the finishing request, 5-minute TTL | a challenge is accepted once, only by the session that asked for it; no Redis dependency |
+| W7 | Ten one-time recovery codes (60 bits each, SHA-256 at rest), shown once, regenerated with step-up; a recovery code completes a sign-in, never a step-up | the lost-key path that needs no other administrator |
+| W8 | Step-up with a key opens the session's five-minute step-up window; the action is retried without a code | one mechanism for route-level and handler-level step-ups |
+| W9 | Policy "require security keys" (platform setting `console_mfa_policy`, super admin + step-up), off by default | the off → on path below never locks anyone out |
+| W10 | TOTP stays (fallback, and the only factor of an administrator without keys). `admin_credentials` is not dropped yet | dropping it is a contract step once every administrator holds keys |
+
+### 7.2 "Require security keys": the off → on path
+
+1. Each administrator registers keys and recovery codes while the policy is
+   off (registration takes a step-up with TOTP or an existing key).
+2. A super admin turns the policy on. The API refuses unless the console has
+   a relying party and the actor has **at least two keys and unused recovery
+   codes**, so the person turning it on can always sign in.
+3. Under the policy:
+   - an administrator holding a key must use it: TOTP is refused at sign-in
+     and step-up (403 `WEBAUTHN_REQUIRED`); recovery codes still work;
+   - a platform-IdP sign-in whose MFA is trusted still asks for the key;
+   - an administrator with fewer than two keys or no recovery codes can still
+     sign in (TOTP while they hold no key), but the session reaches only the
+     enrollment routes (403 `FACTOR_ENROLLMENT_REQUIRED`) until they comply;
+   - the last two keys cannot be removed (register a replacement first);
+   - break-glass administrators keep TOTP (they exist for the day the normal
+     path fails).
+4. A lost key: sign in with the other key or a recovery code; a super admin's
+   reset-credentials removes every factor so the administrator enrolls again.
+5. Turning the policy off needs no compliance check.
+
+### 7.3 API
+
+| Route | Who | Notes |
+|---|---|---|
+| `POST /api/v1/admin/auth/webauthn/session/options`, `POST …/webauthn/session` | pending sign-in | login rate limit; a refused assertion counts toward the lockout |
+| `POST /api/v1/admin/auth/recovery` | pending sign-in | as above |
+| `GET /api/v1/admin/auth/factors` | own | keys (no key material), codes left, policy, `enrollment_required` |
+| `POST …/webauthn/credentials/options`, `POST …/webauthn/credentials` | own | options take the route-level step-up; the finish call completes that ceremony |
+| `PATCH`, `DELETE …/webauthn/credentials/{id}` | own | delete takes the step-up and keeps the floor |
+| `POST /api/v1/admin/auth/recovery-codes` | own | step-up; `Cache-Control: no-store` |
+| `POST …/step-up/webauthn/options`, `POST …/step-up/webauthn` | own session | opens the step-up window |
+| `GET`, `PUT /api/v1/admin/settings/console-mfa` | any / super admin + step-up | version compare-and-swap |
+
+The sign-in answer (`/auth/session`) adds `methods`, in order of preference.
+Audit actions: `console.webauthn_registered`, `console.webauthn_removed`,
+`console.webauthn_renamed`, `console.webauthn_failed`,
+`console.webauthn_counter_regressed`, `console.recovery_codes_generated`,
+`console.recovery_code_used`, `console.recovery_code_failed`,
+`console.mfa_policy_changed`, and `console.step_up` with the note `webauthn`.
+
+### 7.4 Threat model (console)
+
+| Threat | Control |
+|---|---|
+| Real-time phishing proxy relays the password and TOTP | under the policy, an administrator with a key cannot use TOTP; the key's assertion is bound to the console origin |
+| Script on the tenant site asks for a console assertion (port mode shares the host, so the RP ID) | the origin in the client data is the tenant origin: refused (only the console origin is accepted) |
+| Stolen console session adds an attacker key | registration needs a fresh step-up (TOTP or an existing key) and is audited at high severity; ceremonies are bound to the session |
+| Stolen session removes keys or replaces recovery codes | both take a step-up; the floor keeps two keys under the policy |
+| Challenge replay | single-use ceremony per session and purpose, 5-minute TTL, deleted on use |
+| Cloned non-synced key | counter regression refused and audited |
+| Another administrator's key | the assertion must match one of the signing-in administrator's own credentials and user handle |
+| Turning the policy on locks administrators out | actor must comply; others are held on enrollment, not refused; break-glass keeps TOTP; reset-credentials remains |
+| Grace period abused (TOTP of an administrator without keys is phished, then a key is registered) | the window lasts only until each administrator enrolls; registration is audited; super admins see compliance in Security > My security keys; enrol before turning the policy on |
+| Recovery code guessing | 60-bit codes, behind the password step, the login rate limit and the lockout |
+| Changing `ADMIN_PUBLIC_URL` | registered keys stop working (different RP ID); administrators sign in with TOTP or a recovery code and register again; documented in the variable |
+
+Tenant isolation: none of these tables or routes carry tenant data; every
+query is keyed on the calling administrator.
+
+### 7.5 Open owner decisions
+
+- O1: allow synced passkeys under the policy (default yes) or require
+  device-bound keys (backup-eligible = false).
+- O2: an AAGUID allow-list for the console (default none).
+- O3: break-glass administrators keep TOTP under the policy (default yes).

@@ -35,6 +35,9 @@ type ValidateResponse struct {
 	IsBreakGlass bool `json:"is_break_glass"`
 	// PasswordChangeRequired: the session may only change the temporary password.
 	PasswordChangeRequired bool `json:"password_change_required"`
+	// FactorEnrollmentRequired: the console requires security keys and this
+	// administrator must register them (and recovery codes) first.
+	FactorEnrollmentRequired bool `json:"factor_enrollment_required"`
 }
 
 // Validate validates the admin API key and returns admin info.
@@ -61,6 +64,7 @@ func (h *AdminAuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 	if sess := middleware.GetAdminSession(r.Context()); sess != nil {
 		response.AuthMethod = sess.AuthMethod
 		response.PasswordChangeRequired = adminUser.PasswordChangeRequired() && sess.AuthMethod == admin.AuthMethodPassword
+		response.FactorEnrollmentRequired = sess.EnrollmentRequired
 	}
 
 	w.Header().Set("Content-Type", "application/json")

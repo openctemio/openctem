@@ -1555,6 +1555,13 @@ vars:
     type: int
     default: "365"
     description: "Organization audit entries older than this are archived and deleted, keeping the hash chain verifiable."
+  - name: ADMIN_PUBLIC_URL
+    component: api
+    group: "Authentication"
+    type: string
+    default: "the origin of APP_URL"
+    example: "https://admin.ctem.example.com"
+    description: "Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8444` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off."
   - name: ADMIN_SESSION_PURGE_INTERVAL
     component: api
     group: "Audit log retention"

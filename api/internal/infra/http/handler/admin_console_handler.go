@@ -54,6 +54,9 @@ type AdminLoginResponse struct {
 	Status     string `json:"status"`
 	OTPAuthURI string `json:"otpauth_uri,omitempty"`
 	Secret     string `json:"secret,omitempty"`
+	// Methods lists the second factors this administrator may use, in order
+	// of preference: webauthn, totp, recovery_code.
+	Methods []string `json:"methods,omitempty"`
 }
 
 // AdminMFARequest is the TOTP step.
@@ -153,7 +156,7 @@ func (h *AdminConsoleHandler) StartSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	h.setCookie(w, middleware.AdminMFACookie, res.PendingToken, adminAuthPath, int(admin.PendingMFATTL.Seconds()), true)
-	writeJSON(w, http.StatusOK, AdminLoginResponse{Status: string(res.Status), OTPAuthURI: res.OTPAuthURI, Secret: res.Secret})
+	writeJSON(w, http.StatusOK, AdminLoginResponse{Status: string(res.Status), OTPAuthURI: res.OTPAuthURI, Secret: res.Secret, Methods: res.Methods})
 }
 
 // Provision handles POST /api/v1/admin/administrators (super admin).
@@ -280,6 +283,10 @@ func (h *AdminConsoleHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) 
 		if errors.Is(err, admin.ErrIdPSignInRequired) {
 			apierror.New(http.StatusForbidden, codeIdPSignInRequired,
 				"Sign in to the admin console with the identity provider").WriteJSON(w)
+			return
+		}
+		if errors.Is(err, admin.ErrWebAuthnRequired) {
+			apierror.New(http.StatusForbidden, codeWebAuthnRequired, "Use your security key or passkey").WriteJSON(w)
 			return
 		}
 		h.logger.Error("admin console mfa", "error", err)

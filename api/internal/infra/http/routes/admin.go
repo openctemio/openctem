@@ -56,6 +56,11 @@ import (
 //	                                            (critical audit, password never
 //	                                            returned); test: super_admin,
 //	                                            to the caller's address only
+//	/admin/settings/console-mfa
+//	                          any admin         super_admin + step-up
+//	/admin/auth/factors, webauthn/*, recovery-codes
+//	                          own account only  register, remove and new codes:
+//	                                            step-up
 //	/admin/settings/scan-approval-policy, /admin/tenants/{id}/scan-approval-policy
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
@@ -134,6 +139,19 @@ func registerAdminRoutes(
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
 				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
+				// Security keys and recovery codes (RFC-078). The sign-in steps
+				// share the TOTP step's login bucket and pending cookie.
+				r.POST("/webauthn/session/options", h.AdminConsole.WebAuthnLoginOptions, preSession(crossSite, loginRL)...)
+				r.POST("/webauthn/session", h.AdminConsole.WebAuthnLogin, preSession(crossSite, loginRL)...)
+				r.POST("/recovery", h.AdminConsole.RecoveryLogin, preSession(crossSite, loginRL)...)
+				r.GET("/factors", h.AdminConsole.Factors, authed)
+				r.POST("/webauthn/credentials/options", h.AdminConsole.WebAuthnRegisterOptions, authed, stepUp("webauthn.register"))
+				r.POST("/webauthn/credentials", h.AdminConsole.WebAuthnRegister, authed)
+				r.PATCH("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRename, authed)
+				r.DELETE("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRemove, authed, stepUp("webauthn.remove"))
+				r.POST("/recovery-codes", h.AdminConsole.GenerateRecoveryCodes, authed, stepUp("recovery_codes.generate"))
+				r.POST("/step-up/webauthn/options", h.AdminConsole.WebAuthnStepUpOptions, authed)
+				r.POST("/step-up/webauthn", h.AdminConsole.WebAuthnStepUp, consoleRL.LoginMiddleware(), authed)
 				// Platform identity provider sign-in (RFC-022 revision 4). Not a
 				// credential-guessing surface (the IdP authenticates, the state is
 				// single use), so it uses the token-exchange bucket (20/min) rather
@@ -208,6 +226,16 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper, stepUp("settings.signup"))
+		}, adminMiddlewares...)
+	}
+
+	// Console MFA policy ("require security keys", RFC-078): any admin reads;
+	// a super admin changes it with a step-up.
+	if h.AdminConsole != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/console-mfa", func(r Router) {
+			r.GET("/", h.AdminConsole.GetMFAPolicy)
+			r.PUT("/", h.AdminConsole.PutMFAPolicy, requireSuper, stepUp("settings.console_mfa"))
 		}, adminMiddlewares...)
 	}
 

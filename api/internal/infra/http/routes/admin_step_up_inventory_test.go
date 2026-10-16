@@ -39,12 +39,25 @@ var adminWriteInventory = map[string]struct {
 	why   string
 }{
 	// Sign-in steps: before a console session exists.
-	"POST /api/v1/admin/auth/session":      {signIn, "first step of the console sign-in"},
-	"POST /api/v1/admin/auth/mfa":          {signIn, "the TOTP step of the sign-in"},
-	"POST /api/v1/admin/auth/logout":       {signIn, "ends the caller's own session"},
-	"POST /api/v1/admin/auth/password":     {signIn, "needs the current password"},
-	"POST /api/v1/admin/auth/idp/start":    {signIn, "platform identity provider sign-in"},
-	"POST /api/v1/admin/auth/idp/callback": {signIn, "platform identity provider sign-in"},
+	"POST /api/v1/admin/auth/session":                  {signIn, "first step of the console sign-in"},
+	"POST /api/v1/admin/auth/mfa":                      {signIn, "the TOTP step of the sign-in"},
+	"POST /api/v1/admin/auth/logout":                   {signIn, "ends the caller's own session"},
+	"POST /api/v1/admin/auth/password":                 {signIn, "needs the current password"},
+	"POST /api/v1/admin/auth/idp/start":                {signIn, "platform identity provider sign-in"},
+	"POST /api/v1/admin/auth/idp/callback":             {signIn, "platform identity provider sign-in"},
+	"POST /api/v1/admin/auth/webauthn/session/options": {signIn, "the security-key step of the sign-in"},
+	"POST /api/v1/admin/auth/webauthn/session":         {signIn, "the security-key step of the sign-in"},
+	"POST /api/v1/admin/auth/recovery":                 {signIn, "the recovery-code step of the sign-in"},
+	"POST /api/v1/admin/auth/step-up/webauthn/options": {signIn, "opens a step-up assertion for the caller's own session"},
+	"POST /api/v1/admin/auth/step-up/webauthn":         {signIn, "is the step-up itself (security key)"},
+
+	// The caller's own console factors.
+	"POST /api/v1/admin/auth/webauthn/credentials/options": {stepUpRoute, "adds a sign-in factor"},
+	"POST /api/v1/admin/auth/webauthn/credentials":         {routine, "completes the ceremony its step-up options call opened in this session (single use)"},
+	"PATCH /api/v1/admin/auth/webauthn/credentials/{id}":   {routine, "renames the caller's own key; audited"},
+	"DELETE /api/v1/admin/auth/webauthn/credentials/{id}":  {stepUpRoute, "removes a sign-in factor"},
+	"POST /api/v1/admin/auth/recovery-codes":               {stepUpRoute, "replaces the caller's recovery codes"},
+	"PUT /api/v1/admin/settings/console-mfa/":              {stepUpRoute, "who may sign in to the console, and how"},
 
 	// Identity and privilege of administrators.
 	"POST /api/v1/admin/administrators/":                         {stepUpRoute, "creates an administrator"},

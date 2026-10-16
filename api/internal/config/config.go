@@ -60,6 +60,12 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AdminPublicURL is the platform console's public origin
+	// (ADMIN_PUBLIC_URL; default the origin of APP_URL). It is the console's
+	// WebAuthn relying party: the RP ID is its host and it is the only origin
+	// an assertion may come from. Empty: console security keys are off.
+	AdminPublicURL string
+
 	// AdminAuditSink streams the administrators' audit log off the box.
 	AdminAuditSink AdminAuditSinkConfig
 
@@ -1571,6 +1577,7 @@ func Load() (*Config, error) {
 			Token:        getEnv("ADMIN_AUDIT_SINK_TOKEN", ""),
 			HeadInterval: getEnvDuration("ADMIN_AUDIT_SINK_HEAD_INTERVAL", 15*time.Minute),
 		},
+		AdminPublicURL: strings.TrimRight(strings.TrimSpace(getEnv("ADMIN_PUBLIC_URL", publicOriginOr(""))), "/"),
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
 			// Default TRUE: never start deleting audit history on upgrade.
@@ -1777,6 +1784,9 @@ func (c *Config) validateBasic() error {
 	if err := c.validateAdminAuditRetention(); err != nil {
 		return err
 	}
+	if err := c.validateAdminPublicURL(); err != nil {
+		return err
+	}
 	if err := c.validateStorage(); err != nil {
 		return err
 	}
@@ -1792,6 +1802,19 @@ const minAdminAuditRetentionDays = 30
 
 // validateAdminAuditRetention guards the destructive knobs. A zero or negative
 // retention window would push the cutoff to now-or-later and delete every row.
+// validateAdminPublicURL checks ADMIN_PUBLIC_URL is an origin: http(s),
+// a host, no path, credentials, query or fragment.
+func (c *Config) validateAdminPublicURL() error {
+	if c.AdminPublicURL == "" {
+		return nil
+	}
+	u := parsePublicURL(c.AdminPublicURL)
+	if u == nil || (u.Path != "" && u.Path != "/") {
+		return errors.New("ADMIN_PUBLIC_URL must be the console origin, scheme://host[:port] without a path, e.g. https://admin.ctem.example.com")
+	}
+	return nil
+}
+
 func (c *Config) validateAdminAuditRetention() error {
 	r := c.AdminAuditRetention
 	if !r.Enabled || r.DryRun {
