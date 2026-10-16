@@ -19,6 +19,8 @@ var (
 	// ErrSelfApproval: the requester tried to approve their own rule while
 	// another person could approve it (owner decision B16).
 	ErrSelfApproval = fmt.Errorf("%w: a suppression rule must be approved by someone other than its requester", shared.ErrForbidden)
+	// ErrRuleNotFlagged: the rule has no review flag to clear.
+	ErrRuleNotFlagged = fmt.Errorf("%w: the rule is not flagged for review", shared.ErrConflict)
 	// ErrSelfApprovalAfterRemoval: a member was suspended or removed in the
 	// last 7 days, so an owner may not approve their own rule yet.
 	ErrSelfApprovalAfterRemoval = fmt.Errorf("%w: a member of the organization was suspended or removed in the last 7 days", shared.ErrForbidden)
