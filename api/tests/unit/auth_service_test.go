@@ -280,6 +280,12 @@ func (m *mockAuthTenantRepo) ExistsBySlug(_ context.Context, _ string) (bool, er
 	return m.existsBySlugResult, nil
 }
 
+// noSMTP reports that no SMTP server is configured anywhere.
+type noSMTP struct{}
+
+func (noSMTP) HasSystemSMTP() bool                        { return false }
+func (noSMTP) HasTenantSMTP(context.Context, string) bool { return false }
+
 func (m *mockAuthTenantRepo) ListActiveTenantIDs(_ context.Context) ([]shared.ID, error) {
 	if m.listActiveTenantIDsErr != nil {
 		return nil, m.listActiveTenantIDsErr
@@ -780,7 +786,7 @@ func defaultAuthTestConfig() config.AuthConfig {
 		MaxLoginAttempts:          5,
 		LockoutDuration:           15 * time.Minute,
 		MaxActiveSessions:         10,
-		TenantCreationMode:        config.TenantCreationSelfService,
+		SignupMode:                config.SignupModeOpen,
 		RequireEmailVerification:  false,
 		EmailVerificationDuration: 24 * time.Hour,
 		PasswordResetDuration:     1 * time.Hour,
@@ -1119,8 +1125,10 @@ func TestAuthService_Register(t *testing.T) {
 		if result.User.Email() != "new@example.com" {
 			t.Errorf("expected email new@example.com, got %s", result.User.Email())
 		}
-		if result.RequiresVerification {
-			t.Error("expected RequiresVerification=false when verification is disabled")
+		// Self-registration under SIGNUP_MODE=open always verifies, whatever
+		// AUTH_REQUIRE_EMAIL_VERIFICATION says.
+		if !result.RequiresVerification {
+			t.Error("expected RequiresVerification=true for open self-registration")
 		}
 		if deps.userRepo.createCalls != 1 {
 			t.Errorf("expected 1 create call, got %d", deps.userRepo.createCalls)
@@ -1154,7 +1162,7 @@ func TestAuthService_Register(t *testing.T) {
 
 	t.Run("registration disabled", func(t *testing.T) {
 		cfg := defaultAuthTestConfig()
-		cfg.TenantCreationMode = config.TenantCreationAdminOnly
+		cfg.SignupMode = config.SignupModeDisabled
 		svc, _ := newTestAuthServiceWithConfig(cfg)
 
 		_, err := svc.Register(context.Background(), auth.RegisterInput{
@@ -1213,15 +1221,13 @@ func TestAuthService_Register(t *testing.T) {
 		_ = deps // used
 	})
 
-	// --- Single-tenant fallback (Fix for the "EmailVerificationMode=never
-	// is ignored at register time" bug) ---
-	t.Run("single tenant with mode=never overrides global verification", func(t *testing.T) {
-		// Global config requires verification, but the platform's only
-		// tenant says "never". Register must respect the tenant rule
-		// because it's the obvious target for any new self-registration.
+	// --- Public sign-up always verifies (one organization's setting never
+	// decides platform-wide sign-up, and missing SMTP never skips it) ---
+	t.Run("open sign-up verifies even when the only tenant says never", func(t *testing.T) {
 		cfg := defaultAuthTestConfig()
-		cfg.RequireEmailVerification = true
+		cfg.RequireEmailVerification = false
 		svc, deps := newTestAuthServiceWithConfig(cfg)
+		svc.SetSMTPChecker(noSMTP{})
 
 		soleTenant := mustNewTenantWithVerificationMode(
 			t, "Acme", tenant.EmailVerificationNever,
@@ -1236,11 +1242,11 @@ func TestAuthService_Register(t *testing.T) {
 		if err != nil {
 			t.Fatalf("register: %v", err)
 		}
-		if result.RequiresVerification {
-			t.Error("expected RequiresVerification=false (single-tenant override should win)")
+		if !result.RequiresVerification || result.VerificationToken == "" {
+			t.Error("self-registration under SIGNUP_MODE=open must always verify")
 		}
-		if !result.User.EmailVerified() {
-			t.Error("expected user to be auto-verified when verification is skipped")
+		if result.User.EmailVerified() {
+			t.Error("the account must stay unverified until the address is proved")
 		}
 	})
 
@@ -2847,7 +2853,7 @@ func (m *mockAuthAuditRepo) ApplyChainRebaseline(_ context.Context, _ audit.Chai
 func registrationOffWithInvitation(t *testing.T, invitedEmail string, allowedDomains ...string) (*auth.AuthService, *authTestDeps, *tenant.Invitation) {
 	t.Helper()
 	cfg := defaultAuthTestConfig()
-	cfg.TenantCreationMode = config.TenantCreationAdminOnly
+	cfg.SignupMode = config.SignupModeDisabled
 	cfg.RequireEmailVerification = true
 	svc, deps := newTestAuthServiceWithConfig(cfg)
 

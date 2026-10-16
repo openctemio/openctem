@@ -48,6 +48,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { useBrand } from '@/context/brand-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -850,6 +851,7 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const [copied, setCopied] = useState(false)
+  const brand = useBrand()
   const snippet = useMemo(
     () =>
       snippetFor((config.provider as CIProvider) ?? 'github', {
@@ -857,8 +859,9 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
           typeof window === 'undefined' ? 'https://openctem.example.com' : window.location.origin,
         tenantId: currentTenant?.id ?? '',
         audience: config.audience ?? '',
+        productName: brand.name,
       }),
-    [config, currentTenant]
+    [config, currentTenant, brand.name]
   )
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>

@@ -59,6 +59,7 @@ import (
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -185,7 +186,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
-	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, log)
+	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, deps.RedisClient, log)
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
@@ -251,7 +252,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// constructed. The handler returns 503 from the dry-run
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
-	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
+	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SignupOpen())
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
@@ -538,6 +539,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
 		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
 			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
+		AdminVersionCheck: handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
+
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
@@ -1408,7 +1411,7 @@ func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.Suppressi
 // newCIHandlers builds the CI run service and its two handlers (RFC-051).
 // The CI providers' discovery and JWKS documents are fetched through the
 // SSRF-safe client: a self-managed GitLab issuer is configured by a tenant.
-func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
+func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redisClient *redis.Client, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
 	if repos.CIRun == nil || svc.Ingest == nil {
 		return nil, nil
 	}
@@ -1494,6 +1497,10 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
 	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
+	// Idempotency-Key on uploads needs the shared store; without Redis the header is ignored.
+	if redisClient != nil {
+		runner.SetIdempotencyStore(redisClient)
+	}
 	return admin, runner
 }
 
@@ -1535,7 +1542,10 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 			return int(page.StatusCounts[vulnerability.ApprovalStatusPending]), nil
 		}
 	}
-	mode := cfg.Auth.TenantCreationMode
+	mode := string(signupdom.Default().Mode)
+	if cfg.Auth.SignupOpen() {
+		mode = string(signupdom.ModeSelfService)
+	}
 	signup := svc.Signup
 	s.TenantCreationMode = func(ctx context.Context) string {
 		if signup != nil {

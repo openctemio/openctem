@@ -215,9 +215,9 @@ func TestAuthProvidersHandler_RegistrationEnabled(t *testing.T) {
 // self_service was set explicitly.
 func TestAuthProvidersHandler_TenantCreationMode(t *testing.T) {
 	for mode, want := range map[string]string{
-		"":                               config.TenantCreationAdminOnly,
-		config.TenantCreationAdminOnly:   config.TenantCreationAdminOnly,
-		config.TenantCreationSelfService: config.TenantCreationSelfService,
+		"":             "admin_only",
+		"admin_only":   "admin_only",
+		"self_service": "self_service",
 	} {
 		h := NewAuthProvidersHandler(config.OAuthConfig{}, config.EntraSSOConfig{}, false, logger.NewNop()).
 			WithTenantCreationMode(mode)
