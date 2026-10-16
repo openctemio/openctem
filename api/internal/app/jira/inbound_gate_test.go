@@ -127,9 +127,16 @@ func TestHandleJiraWebhook_ClosingMappingNeverApplied(t *testing.T) {
 }
 
 type applierStub struct {
-	ids    []shared.ID
-	target vulnerability.FindingStatus
-	ref    string
+	ids     []shared.ID
+	target  vulnerability.FindingStatus
+	ref     string
+	request vulnerability.FindingStatus
+	refuse  []InboundRefusal
+}
+
+func (a *applierStub) RequestTicketDisposition(_ context.Context, _ shared.ID, ids []shared.ID, target vulnerability.FindingStatus, _, ref, _ string) ([]shared.ID, []shared.ID, []InboundRefusal, error) {
+	a.ids, a.request, a.ref = ids, target, ref
+	return ids, nil, a.refuse, nil
 }
 
 func (a *applierStub) ApplyTicketStatus(_ context.Context, _ shared.ID, ids []shared.ID, target vulnerability.FindingStatus, _, ref, _ string) ([]shared.ID, []InboundRefusal, error) {

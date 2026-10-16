@@ -234,5 +234,14 @@
   "org.ownership.error.previousRole": "Hãy chọn quản trị viên, thành viên hoặc người xem cho chính bạn.",
   "org.ownership.action": "Chuyển quyền sở hữu...",
   "org.ownership.error.action": "Không thể hoàn tất thao tác này",
-  "org.createTeam.urlNotAvailable": "Địa chỉ URL này không dùng được. Hãy chọn địa chỉ khác."
+  "org.createTeam.urlNotAvailable": "Địa chỉ URL này không dùng được. Hãy chọn địa chỉ khác.",
+  "org.leave.title": "Rời tổ chức này",
+  "org.leave.desc": "Bạn mất quyền truy cập tổ chức này ngay lập tức. Tài khoản và các tổ chức khác của bạn vẫn được giữ. Chủ sở hữu duy nhất không thể rời đi.",
+  "org.leave.button": "Rời tổ chức",
+  "org.leave.confirmTitle": "Rời {name}?",
+  "org.leave.confirmDesc": "Quyền truy cập của bạn kết thúc ngay và các khóa API của bạn cho tổ chức này bị thu hồi. Quản trị viên có thể mời lại bạn sau.",
+  "org.leave.done": "Bạn đã rời {name}",
+  "org.leave.failed": "Không rời được tổ chức",
+  "org.region.new": "Vùng dữ liệu: {region}. Vùng này cố định sau khi tổ chức được tạo.",
+  "org.region.current": "Vùng dữ liệu: {region} (cố định)"
 }
