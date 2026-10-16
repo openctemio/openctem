@@ -75,6 +75,17 @@ export const NOTIFICATION_TYPES = [
     name: 'System Alerts',
     description: 'Important system-level notifications',
   },
+  {
+    id: 'finding_approval',
+    name: 'Approval requests',
+    description: 'When a false-positive or accepted-risk request waits for your decision',
+  },
+  {
+    id: 'finding_approval_digest',
+    name: 'Approvals digest',
+    description:
+      'A daily summary of the finding requests waiting for you (muting it also stops the email)',
+  },
 ] as const
 
 /** Icon mapping for notification types */
