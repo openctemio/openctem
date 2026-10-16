@@ -12,6 +12,7 @@ import { Search } from '@/components/search'
 import { SearchProvider } from '@/context/search-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { AdminStepUpPrompt } from './admin-step-up-prompt'
 import { AdminConsoleSidebar } from './admin-console-sidebar'
 import { ChangePasswordGate } from './change-password-gate'
 import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
@@ -123,6 +124,7 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
               )}
               {children}
             </div>
+            <AdminStepUpPrompt />
           </SidebarInset>
         </SidebarProvider>
       </SearchProvider>
