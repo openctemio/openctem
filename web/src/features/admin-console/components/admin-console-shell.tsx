@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AdminStepUpPrompt } from './admin-step-up-prompt'
 import { AdminConsoleSidebar } from './admin-console-sidebar'
 import { ChangePasswordGate } from './change-password-gate'
+import { VersionCheckBanner } from './version-check-banner'
 import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
 import { adminLogout, useAdminSession } from '../api/use-admin-session'
 import type { AdminIdentity } from '../types'
@@ -122,6 +123,7 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
                   </Alert>
                 </div>
               )}
+              <VersionCheckBanner />
               {children}
             </div>
             <AdminStepUpPrompt />
