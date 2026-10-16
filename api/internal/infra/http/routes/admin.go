@@ -56,6 +56,10 @@ import (
 //	                                            (critical audit, password never
 //	                                            returned); test: super_admin,
 //	                                            to the caller's address only
+//	/admin/support            own grants only   open a session: ops_admin+ named in
+//	                                            a live grant + step-up; reads only
+//	                                            through a live session (audited in
+//	                                            both logs)
 //	/admin/settings/scan-approval-policy, /admin/tenants/{id}/scan-approval-policy
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
@@ -147,6 +151,25 @@ func registerAdminRoutes(
 				r.POST("/idp/callback", h.AdminConsole.IdPCallback, preSession(crossSite, idpRL)...)
 			}
 		})
+	}
+
+	// Support access (RFC-063): the administrator a grant names opens a
+	// support session with a step-up and reads through it. Every read is
+	// authorized live and audited in both logs by the handler; there is no
+	// write route.
+	if h.AdminSupport != nil {
+		supportChain := append(append([]Middleware{}, adminMiddlewares...),
+			h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin))
+		router.Group("/api/v1/admin/support", func(r Router) {
+			r.GET("/grants", h.AdminSupport.Grants)
+			r.POST("/grants/{grant_id}/sessions", h.AdminSupport.StartSession, stepUp("support.session_start"))
+			r.DELETE("/sessions/{session_id}", h.AdminSupport.EndSession)
+			r.GET("/sessions/{session_id}/overview", h.AdminSupport.Overview)
+			r.GET("/sessions/{session_id}/findings", h.AdminSupport.Findings)
+			r.GET("/sessions/{session_id}/findings/{id}", h.AdminSupport.Finding)
+			r.GET("/sessions/{session_id}/assets", h.AdminSupport.Assets)
+			r.GET("/sessions/{session_id}/assets/{id}", h.AdminSupport.Asset)
+		}, supportChain...)
 	}
 
 	// Build identity for the console's Help > About (any admin role).
