@@ -1284,5 +1284,11 @@
   "sensors.empty.pairHint": "No secret to copy: the sensor prints a code you confirm here.",
   "sensors.empty.askAdmin": "An organization admin can add a sensor.",
   "sensors.empty.ciNoSensor": "Scanning repositories from CI needs no sensor.",
-  "sensors.empty.ciLink": "Set up CI/CD"
+  "sensors.empty.ciLink": "Set up CI/CD",
+  "sensors.sharedOptOut.label": "Never use shared sensors",
+  "sensors.sharedOptOut.description": "Off (default): scans may run on the instance's shared sensors when it offers them. On: this organization's scans run only on its own sensors.",
+  "sensors.sharedOptOut.ownerOnly": "Only the organization owner can change this.",
+  "sensors.sharedOptOut.optedOutToast": "This organization no longer uses shared sensors",
+  "sensors.sharedOptOut.optedInToast": "Shared sensors may be used when available",
+  "sensors.sharedOptOut.error": "Could not save the shared sensor choice"
 }
