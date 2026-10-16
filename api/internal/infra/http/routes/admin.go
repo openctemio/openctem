@@ -291,9 +291,9 @@ func registerAdminRoutes(
 		c := h.AdminContentCatalog
 		router.Group("/api/v1/admin/content-catalog", func(r Router) {
 			r.GET("/", c.Status)
-			r.POST("/import", c.Import, requireSuper)
-			r.POST("/packages", c.Publish, requireSuper)
-			r.POST("/packages/{namespace}/{name}/{version}/revoke", c.Revoke, requireSuper)
+			r.POST("/import", c.Import, requireSuper, stepUp("content_catalog.change"))
+			r.POST("/packages", c.Publish, requireSuper, stepUp("content_catalog.change"))
+			r.POST("/packages/{namespace}/{name}/{version}/revoke", c.Revoke, requireSuper, stepUp("content_catalog.change"))
 		}, adminMiddlewares...)
 	}
 
