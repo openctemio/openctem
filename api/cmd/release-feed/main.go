@@ -118,8 +118,9 @@ func keyset(args []string, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	var pubs []ed25519.PublicKey
-	for _, h := range strings.Split(*online, ",") {
+	parts := strings.Split(*online, ",")
+	pubs := make([]ed25519.PublicKey, 0, len(parts))
+	for _, h := range parts {
 		b, err := hex.DecodeString(strings.TrimSpace(h))
 		if err != nil || len(b) != ed25519.PublicKeySize {
 			return fmt.Errorf("online key %q is not a hex Ed25519 public key", h)
@@ -134,7 +135,7 @@ func keyset(args []string, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(*path, env, 0o644) // #nosec G306 -- public, signed metadata
+	return os.WriteFile(*path, env, 0o644) //nolint:gosec // G306: public, signed metadata
 }
 
 // ghRelease is one row of `gh release list --json tagName,publishedAt,isDraft,isPrerelease`.
@@ -178,7 +179,7 @@ func build(args []string, out io.Writer, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(o.out, raw, 0o644); err != nil { // #nosec G306 -- public, signed feed
+	if err := os.WriteFile(o.out, raw, 0o644); err != nil { //nolint:gosec // G306: public, signed feed
 		return err
 	}
 	_, err = fmt.Fprintf(out, "wrote %s (%d bytes)\n", o.out, len(raw))
