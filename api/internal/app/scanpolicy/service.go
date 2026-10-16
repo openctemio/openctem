@@ -107,6 +107,15 @@ type Service struct {
 	optOut   SharedSensorsOptOut
 	log      *logger.Logger
 
+	// managed is MANAGED_SERVICE: it changes the defaults of the proof
+	// requirement and of internal zones on shared sensors, never a stored
+	// value (docs/rfcs/RFC-100-shared-sensors.md §6).
+	managed bool
+	// counter keeps the per-organization daily anomaly counters of
+	// shared sensor use (nil: signals off).
+	counter AnomalyCounter
+	metrics AnomalyMetrics
+
 	mu       sync.Mutex
 	cached   *scangov.PlatformPolicy
 	cachedV  int
@@ -115,6 +124,13 @@ type Service struct {
 	proofCached *bool
 	proofVer    int
 	proofAt     time.Time
+
+	zonesCached *bool
+	zonesVer    int
+	zonesAt     time.Time
+
+	thresholdsCached *AnomalyThresholds
+	thresholdsAt     time.Time
 }
 
 // NewService creates the service; every dependency but repo may be nil.
@@ -123,6 +139,17 @@ func NewService(repo Repository, audit AuditWriter, admins AdminLister, mail Mai
 		log = logger.NewNop()
 	}
 	return &Service{repo: repo, audit: audit, admins: admins, mail: mail, tenants: tenants, log: log.With("service", "scan_policy")}
+}
+
+// SetManagedService sets MANAGED_SERVICE (read at start-up). It changes only
+// what applies while nothing is stored: the proof requirement defaults on and
+// internal zones on shared sensors default off. A stored console value always
+// wins.
+func (s *Service) SetManagedService(managed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.managed = managed
+	s.proofCached, s.zonesCached = nil, nil
 }
 
 // SetSettings wires the organization settings the effective mode reads.
@@ -444,7 +471,8 @@ func (s *Service) mailOthers(ctx context.Context, c Change, subject, body string
 	}
 	to := []string{}
 	for _, o := range others {
-		if o.ID() != c.Actor.ID() && o.Email() != "" {
+		// A system alert (no actor) goes to every administrator.
+		if (c.Actor == nil || o.ID() != c.Actor.ID()) && o.Email() != "" {
 			to = append(to, o.Email())
 		}
 	}
