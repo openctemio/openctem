@@ -451,6 +451,64 @@ func (s *Service) UpdateRule(ctx context.Context, input UpdateRuleInput) (*Rule,
 	return rule, nil
 }
 
+// MarkReviewed clears the review flag of a rule (an approver looked at a
+// rule the platform gave an end it did not have). It changes nothing else:
+// the rule keeps its end. Recorded in the rule's own trail with the flag it
+// cleared. Returns the flag's time and reason before the change.
+func (s *Service) MarkReviewed(ctx context.Context, input MarkReviewedInput) (*Rule, *time.Time, string, error) {
+	rule, err := s.repo.FindByID(ctx, input.TenantID, input.RuleID)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if rule == nil {
+		return nil, nil, "", ErrRuleNotFound
+	}
+	flaggedAt, reason := rule.ReviewFlaggedAt(), rule.ReviewReason()
+	if flaggedAt == nil {
+		return nil, nil, "", ErrRuleNotFlagged
+	}
+	details := map[string]any{
+		"review_cleared":    true,
+		"review_flagged_at": flaggedAt.UTC().Format(time.RFC3339),
+		"review_reason":     reason,
+	}
+	// Reviewing one's own rule is not a review: the requester may clear the
+	// flag only on the sole-approver path (the owner, nobody else can
+	// approve, a reason and a fresh authenticator code), like approving it.
+	if !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.By {
+		allowed, err := s.mayApproveOwnRule(ctx, input.TenantID, input.By)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if !allowed {
+			return nil, nil, "", ErrSelfApproval
+		}
+		if err := s.verifySelfApproval(ctx, ApproveRuleInput{TenantID: input.TenantID, ApprovedBy: input.By,
+			SelfApprovalReason: input.SelfApprovalReason, TOTPCode: input.TOTPCode}); err != nil {
+			return nil, nil, "", err
+		}
+		details["self_reviewed"] = true
+		details["reason"] = strings.TrimSpace(input.SelfApprovalReason)
+		details["step_up"] = "totp"
+	}
+	rule.ClearReview()
+	if err := s.repo.SaveWithAudit(ctx, rule, "updated", &input.By, details); err != nil {
+		return nil, nil, "", err
+	}
+	return rule, flaggedAt, reason, nil
+}
+
+// MarkReviewedInput clears a rule's review flag. SelfApprovalReason and
+// TOTPCode are required when the caller requested the rule (the
+// sole-approver path).
+type MarkReviewedInput struct {
+	TenantID           shared.ID
+	RuleID             shared.ID
+	By                 shared.ID
+	SelfApprovalReason string
+	TOTPCode           string
+}
+
 // GetRule retrieves a suppression rule by ID.
 func (s *Service) GetRule(ctx context.Context, tenantID, ruleID shared.ID) (*Rule, error) {
 	rule, err := s.repo.FindByID(ctx, tenantID, ruleID)
