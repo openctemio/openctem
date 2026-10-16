@@ -827,6 +827,10 @@ func (h *ContentCatalogHandler) handleError(w http.ResponseWriter, err error) {
 // pack upload limit.
 const maxPrivateArtifact = 32 << 20
 
+// formAcknowledgeSecrets is the publish form field that stores a package
+// although lint found what look like credentials.
+const formAcknowledgeSecrets = "acknowledge_secrets"
+
 // readPublishForm reads a multipart body with the parts manifest (file),
 // artifact (file) and optional text fields. Unknown parts are refused.
 func readPublishForm(w http.ResponseWriter, r *http.Request, maxArtifact int64, fields map[string]*string) (catalogapp.PublishInput, bool) {
@@ -853,7 +857,7 @@ func readPublishForm(w http.ResponseWriter, r *http.Request, maxArtifact int64, 
 			limit = contentpkg.MaxManifestBytes
 		case "artifact":
 			limit = maxArtifact
-		case "acknowledge_secrets":
+		case formAcknowledgeSecrets:
 		default:
 			if _, ok := fields[name]; !ok {
 				apierror.BadRequest("unexpected form field " + strconv.Quote(name)).WriteJSON(w)
@@ -870,7 +874,7 @@ func readPublishForm(w http.ResponseWriter, r *http.Request, maxArtifact int64, 
 			in.ManifestRaw = b
 		case "artifact":
 			in.Artifact = b
-		case "acknowledge_secrets":
+		case formAcknowledgeSecrets:
 			in.AcknowledgeSecrets = strings.TrimSpace(string(b)) == "true"
 		default:
 			*fields[name] = strings.TrimSpace(string(b))
