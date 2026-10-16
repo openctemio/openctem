@@ -558,6 +558,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		approvalExpiry.SetOverdueRequests(repos.FindingApproval)
 	}
 	w.ControllerManager.Register(approvalExpiry)
+	// The daily digest of finding requests waiting for each approver.
+	if svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewApprovalDigestController(svc.Vulnerability,
+			log.With("controller", "approval-digest")))
+	}
 
 	// Asset identity model: derive identifiers for assets that predate it and
 	// queue suspected duplicates for review (never merges).
