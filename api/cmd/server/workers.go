@@ -561,6 +561,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		approvalExpiry.SetOverdueRequests(repos.FindingApproval)
 	}
 	w.ControllerManager.Register(approvalExpiry)
+	// The daily digest of finding requests waiting for each approver.
+	if svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewApprovalDigestController(svc.Vulnerability,
+			log.With("controller", "approval-digest")))
+	}
 	// Approver notices for requests VEX statements made, drained from the
 	// requests table (the outbox) off the ingest path.
 	if svc.Vulnerability != nil {
