@@ -702,6 +702,13 @@ func (h *RemediationTaskHandler) auditContext(r *http.Request) audit.AuditContex
 }
 
 func (h *RemediationTaskHandler) handleError(w http.ResponseWriter, err error) {
+	var mc *remediation.MoveNeedsConfirmationError
+	if errors.As(err, &mc) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"code": "MOVE_NEEDS_CONFIRMATION", "message": mc.Error(), "warnings": warningStrings(mc.Warnings),
+		})
+		return
+	}
 	if e, ok := remediation.AsFindingsInOtherTask(err); ok {
 		ids := make([]string, len(e.FindingIDs))
 		for i, id := range e.FindingIDs {

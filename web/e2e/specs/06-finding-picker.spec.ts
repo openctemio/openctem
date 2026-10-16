@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 import { firstDataRow } from '../helpers/table'
 
@@ -89,19 +90,55 @@ test.describe('Remediation — findings picker', () => {
       })
     }
 
-    // Toggle a finding row and confirm its checkbox flips (Check icon appears).
-    const firstFinding = findingRows.first()
-    const wasChecked = (await firstFinding.locator('svg.lucide-check').count()) > 0
-    await firstFinding.click()
-    // The checkbox state must flip.
-    await expect
-      .poll(async () => (await firstFinding.locator('svg.lucide-check').count()) > 0)
-      .toBe(!wasChecked)
-    // Toggle back so the test leaves the task's links unchanged.
-    await firstFinding.click()
-    await expect
-      .poll(async () => (await firstFinding.locator('svg.lucide-check').count()) > 0)
-      .toBe(wasChecked)
+    // Link a finding that is not linked yet, then unlink it, and confirm its
+    // checkbox flips each time (Check icon appears, then goes). A task keeps
+    // at least one finding: unlinking the last one is refused (an empty
+    // finding_ids filter is not a scope), so a task that starts with none
+    // first gets one that stays.
+    const unlinked = findingRows.filter({ hasNot: page.locator('svg.lucide-check') })
+    // Rows are held by their title (unique in the seed): rows of the same
+    // severity can come back in another order after a refresh.
+    const firstUnlinked = async () => {
+      const title = (await unlinked.first().locator('span.line-clamp-2').innerText()).trim()
+      const exact = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+      return findingRows.filter({ has: page.locator('span.line-clamp-2', { hasText: exact }) })
+    }
+    const isChecked = (row: Locator) => async () =>
+      (await row.locator('svg.lucide-check').count()) > 0
+    const linkedCount = async () =>
+      Number(/(\d+) linked/.exec(await drawer.getByText(/\d+ linked/).innerText())?.[1] ?? 0)
+    // One toggle at a time: the click's PATCH and the task list refresh that
+    // follows it both finish before the next click, as a person would wait
+    // for the checkbox.
+    const toggle = async (row: Locator) => {
+      const saved = page.waitForResponse(
+        (r) =>
+          r.request().method() === 'PATCH' &&
+          new URL(r.url()).pathname.startsWith('/api/v1/remediation/campaigns/')
+      )
+      const refreshed = page.waitForResponse(
+        (r) =>
+          r.request().method() === 'GET' &&
+          new URL(r.url()).pathname === '/api/v1/remediation/campaigns'
+      )
+      await row.click()
+      const res = await saved
+      expect(res.status(), await res.text()).toBe(200)
+      await refreshed
+    }
+
+    test.skip((await unlinked.count()) < 2, 'needs two findings that are not linked yet')
+    if ((await linkedCount()) === 0) {
+      const base = await firstUnlinked()
+      await toggle(base)
+      await expect.poll(isChecked(base)).toBe(true)
+    }
+    const finding = await firstUnlinked()
+    await toggle(finding)
+    await expect.poll(isChecked(finding)).toBe(true)
+    // Toggle back so the test leaves this finding unlinked again.
+    await toggle(finding)
+    await expect.poll(isChecked(finding)).toBe(false)
 
     // Leave the picker → back to task details.
     await drawer.getByRole('button', { name: 'Done' }).click()
