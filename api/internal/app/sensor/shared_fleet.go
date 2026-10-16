@@ -132,10 +132,13 @@ type SharedFleetStore interface {
 	// GetSharedJob returns the job's metadata and payload;
 	// shared.ErrNotFound unless it is a shared job.
 	GetSharedJob(ctx context.Context, id shared.ID) (SharedJob, json.RawMessage, error)
+	// GetSharedSensorState returns an instance sensor's name and status;
+	// shared.ErrNotFound for anything that is not an instance sensor.
+	GetSharedSensorState(ctx context.Context, id shared.ID) (name, status string, err error)
 	// SetSharedSensorStatus sets an instance sensor's status unless it is
 	// retired; shared.ErrNotFound for anything that is not an instance
-	// sensor, ErrSharedSensorRetired for a retired one. It returns the name.
-	SetSharedSensorStatus(ctx context.Context, id shared.ID, status, message string) (string, error)
+	// sensor, ErrSharedSensorRetired for a retired one.
+	SetSharedSensorStatus(ctx context.Context, id shared.ID, status, message string) error
 }
 
 // SharedJobLogs reads a job's logs within its own organization.
@@ -259,15 +262,23 @@ func (s *SharedFleetService) setStatus(ctx context.Context, id shared.ID, status
 	if len(message) > 500 {
 		message = message[:500]
 	}
-	name, err := s.store.SetSharedSensorStatus(ctx, id, status, message)
+	name, current, err := s.store.GetSharedSensorState(ctx, id)
 	if err != nil {
 		return err
 	}
-	s.log.Warn("shared sensor state changed", "alert", action, "admin_id", c.Actor.ID().String(), "sensor_id", id.String(), "status", status)
-	if err := s.record(ctx, c, action, "sensor", &id, name, map[string]any{"status": status, "reason": strings.TrimSpace(c.Reason)}, true); err != nil {
-		// The change is stored; the missing row is logged loudly.
-		s.log.Error("write admin audit for a shared sensor action", "action", action, "error", err)
+	if current == "revoked" {
+		return ErrSharedSensorRetired
 	}
+	// The audit row comes first: an action that cannot be recorded is not
+	// taken.
+	if err := s.record(ctx, c, action, "sensor", &id, name, map[string]any{"status": status, "from": current, "reason": strings.TrimSpace(c.Reason)}, true); err != nil {
+		return err
+	}
+	if err := s.store.SetSharedSensorStatus(ctx, id, status, message); err != nil {
+		s.log.Error("shared sensor action recorded but not applied", "action", action, "sensor_id", id.String(), "error", err)
+		return err
+	}
+	s.log.Warn("shared sensor state changed", "alert", action, "admin_id", c.Actor.ID().String(), "sensor_id", id.String(), "status", status)
 	return nil
 }
 

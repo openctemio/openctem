@@ -32,7 +32,8 @@ export interface SharedQueueLane {
 
 export interface SharedOrgUsage {
   tenant_id: string
-  tenant_name: string
+  /** Super and operations administrators only. */
+  tenant_name?: string
   queued: number
   running: number
   completed_24h: number
@@ -47,7 +48,8 @@ export interface SharedQueue {
 export interface SharedJob {
   id: string
   tenant_id: string
-  tenant_name: string
+  /** Super and operations administrators only. */
+  tenant_name?: string
   type: string
   tool: string
   status: string

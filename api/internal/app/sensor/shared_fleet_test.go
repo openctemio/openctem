@@ -16,6 +16,7 @@ import (
 type fakeFleet struct {
 	reads, writes int
 	job           SharedJob
+	status        string
 }
 
 func (f *fakeFleet) ListSharedSensors(context.Context) ([]SharedFleetSensor, error) { return nil, nil }
@@ -27,9 +28,15 @@ func (f *fakeFleet) GetSharedJob(context.Context, shared.ID) (SharedJob, json.Ra
 	f.reads++
 	return f.job, json.RawMessage(`{"targets":["t.example"],"result":"secret"}`), nil
 }
-func (f *fakeFleet) SetSharedSensorStatus(context.Context, shared.ID, string, string) (string, error) {
+func (f *fakeFleet) GetSharedSensorState(context.Context, shared.ID) (string, string, error) {
+	if f.status == "" {
+		return "s", "active", nil
+	}
+	return "s", f.status, nil
+}
+func (f *fakeFleet) SetSharedSensorStatus(context.Context, shared.ID, string, string) error {
 	f.writes++
-	return "s", nil
+	return nil
 }
 
 type fakeLogs struct{ calls int }
@@ -98,5 +105,26 @@ func TestSharedFleet_ActionsRefuseWithoutReasonOrAudit(t *testing.T) {
 	if err := NewSharedFleetService(store, nil, audit, logger.NewNop()).Resume(ctx, shared.NewID(), AdminChange{Actor: actor, Reason: "x"}); err != nil ||
 		store.writes != 1 || len(audit.rows) != 1 || audit.rows[0].Severity != admin.SeverityCritical {
 		t.Fatalf("resume: %v writes=%d audit=%+v", err, store.writes, audit.rows)
+	}
+}
+
+// The audit row is written before the status changes: when it cannot be
+// written the action fails and nothing changes; a retired sensor is refused
+// before anything is recorded.
+func TestSharedFleet_ActionAuditFirst(t *testing.T) {
+	ctx := context.Background()
+	actor, _ := admin.NewAdminUser("root@platform.test", "Root", admin.AdminRoleSuperAdmin, nil)
+	store := &fakeFleet{}
+	audit := &fakeAudit{fail: true}
+	svc := NewSharedFleetService(store, nil, audit, logger.NewNop())
+	for name, act := range map[string]func(context.Context, shared.ID, AdminChange) error{"pause": svc.Pause, "resume": svc.Resume, "retire": svc.Retire} {
+		if err := act(ctx, shared.NewID(), AdminChange{Actor: actor, Reason: "maintenance"}); err == nil || store.writes != 0 {
+			t.Fatalf("%s with a failing audit log: %v writes=%d", name, err, store.writes)
+		}
+	}
+	audit.fail = false
+	store.status = "revoked"
+	if err := svc.Resume(ctx, shared.NewID(), AdminChange{Actor: actor, Reason: "x"}); !errors.Is(err, ErrSharedSensorRetired) || store.writes != 0 || len(audit.rows) != 0 {
+		t.Fatalf("resume a retired sensor: %v writes=%d audit=%d", err, store.writes, len(audit.rows))
 	}
 }

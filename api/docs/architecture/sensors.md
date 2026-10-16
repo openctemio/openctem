@@ -478,8 +478,9 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   result or error text. A job's targets and logs: `POST
   /jobs/{job_id}/view`, super or ops admin, reason, rate-limited, high admin
   audit row written before the data is read (`shared_sensor.job_viewed`).
-  Pause, resume, retire: super admin, reason, route-level step-up, critical
-  audit row (`shared_sensor.paused|resumed|retired`); the status update is
+  Organization names in the queue and job lists only for super and ops
+  admins. Pause, resume, retire: super admin, reason, route-level step-up,
+  critical audit row written before the status change (no row, no change) (`shared_sensor.paused|resumed|retired`); the status update is
   guarded by `scope = 'instance'` and a retired sensor cannot be resumed
   (409). Pause leaves held jobs to finish (drain); retire is a revoke.
 - **Egress addresses.** Console > System > Platform scanning, "Egress

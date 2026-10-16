@@ -90,11 +90,18 @@ func TestAdminSharedFleet_Routes_DB(t *testing.T) {
 		t.Fatalf("queue: %d %s", code, body)
 	}
 	noTenantData("queue", body)
+	// A read-only administrator gets counts, not organization names.
+	if strings.Contains(body, "Audit chain IT") || strings.Contains(body, "tenant_name") {
+		t.Errorf("a read-only administrator sees organization names in the queue: %s", body)
+	}
 	code, body = reader.do(http.MethodGet, "/api/v1/admin/shared-sensors/jobs?tenant_id="+orgA, nil, true)
 	if code != http.StatusOK || !strings.Contains(body, jobA) || !strings.Contains(body, `"total":1`) || !strings.Contains(body, "shared-eu-1") {
 		t.Fatalf("jobs: %d %s", code, body)
 	}
 	noTenantData("job list", body)
+	if strings.Contains(body, "Audit chain IT") || strings.Contains(body, "tenant_name") {
+		t.Errorf("a read-only administrator sees organization names in the job list: %s", body)
+	}
 	if code, _ := reader.do(http.MethodGet, "/api/v1/admin/shared-sensors/jobs?status=bogus", nil, true); code != http.StatusBadRequest {
 		t.Fatalf("bad status: %d", code)
 	}
@@ -116,6 +123,12 @@ func TestAdminSharedFleet_Routes_DB(t *testing.T) {
 	// A second server (same database): the sign-in rate limit is per server.
 	ops := newChainHarness(t, wire).newAdmin(admin.AdminRoleOpsAdmin)
 	ops.verify()
+	// An operations administrator sees the organization names.
+	for _, p := range []string{"/api/v1/admin/shared-sensors/queue", "/api/v1/admin/shared-sensors/jobs?tenant_id=" + orgA} {
+		if code, body := ops.do(http.MethodGet, p, nil, true); code != http.StatusOK || !strings.Contains(body, `"tenant_name":"Audit chain IT"`) {
+			t.Fatalf("ops %s: %d %s", p, code, body)
+		}
+	}
 	if code, _ := ops.do(http.MethodPost, viewPath, map[string]any{"reason": "  "}, true); code != http.StatusBadRequest {
 		t.Fatalf("view without a reason: %d", code)
 	}
