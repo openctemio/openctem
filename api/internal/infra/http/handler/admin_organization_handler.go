@@ -289,9 +289,9 @@ func (h *AdminOrganizationHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/admin/tenants. The owner must be an existing
-// user; the organization is created in either TENANT_CREATION_MODE.
+// user; the organization is created under every SIGNUP_MODE.
 // @Summary Create an organization (platform admin)
-// @Description Creates an organization with an existing user as its owner. Works in both TENANT_CREATION_MODE values.
+// @Description Creates an organization with an existing user as its owner. Works under every SIGNUP_MODE and sign-up policy.
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json

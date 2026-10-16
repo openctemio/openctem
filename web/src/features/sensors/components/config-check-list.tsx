@@ -15,6 +15,7 @@
  * they point at docs.openctem.io or a same-origin path.
  */
 
+import { useBrand } from '@/context/brand-provider'
 import { useState } from 'react'
 import { BookOpen, Check, KeyRound, X } from 'lucide-react'
 
@@ -129,7 +130,8 @@ function CheckBody({
   runtimeKind?: string
   t: T
 }) {
-  const docs = safeDocsHref(c.docs_url)
+  const brand = useBrand()
+  const docs = safeDocsHref(c.docs_url, brand.docsUrl)
   const observed = (c.observed ?? []).filter((o) => o && (o.label || o.value))
   const keys = c.keys ?? []
   return (

@@ -4,6 +4,8 @@
  * provider's OIDC token (api RFC-051).
  */
 
+import { DEFAULT_BRAND } from '@/lib/brand'
+
 import type { CIProvider, CITrustConfig } from '../types'
 
 /** Splits a comma- or newline-separated list, trimmed and de-duplicated. */
@@ -31,6 +33,8 @@ export interface SnippetInput {
   audience: string
   /** The branch push events scan (the trust's default branch); main if unset. */
   defaultBranch?: string
+  /** The product name in job and stage names (the brand); OpenCTEM if unset. */
+  productName?: string
 }
 
 /**
@@ -49,14 +53,20 @@ const DEFAULT_CAPABILITIES = 'sast,sca,secrets,iac'
  * per capability in parallel, reports into one run with the job's OIDC token
  * and lets one gate job decide.
  */
-export function githubSnippet({ apiUrl, tenantId, audience, defaultBranch }: SnippetInput): string {
+export function githubSnippet({
+  apiUrl,
+  tenantId,
+  audience,
+  defaultBranch,
+  productName = DEFAULT_BRAND.name,
+}: SnippetInput): string {
   const audLine =
     audience && audience !== defaultAudience(tenantId) ? `\n      oidc-audience: ${audience}` : ''
   // The reusable workflow's scan job asks for security-events: write (needed
   // to upload SARIF), and GitHub refuses to start a called job that asks for
   // more than its caller grants, so the caller always grants it.
   const sarifLine = `\n      security-events: write # required by openctemio/ci ${CI_RELEASE}`
-  return `name: OpenCTEM
+  return `name: ${productName}
 on:
   pull_request:
   push:
@@ -140,7 +150,11 @@ function ciEnv(apiUrl: string, tenantId: string, indent: string): string {
 }
 
 /** An Azure Pipelines job: openctem-ci asks Azure DevOps for a pipeline token. */
-export function azureSnippet({ apiUrl, tenantId }: SnippetInput): string {
+export function azureSnippet({
+  apiUrl,
+  tenantId,
+  productName = DEFAULT_BRAND.name,
+}: SnippetInput): string {
   return `steps:
   - checkout: self
   - script: |
@@ -149,7 +163,7 @@ export function azureSnippet({ apiUrl, tenantId }: SnippetInput): string {
         -e BUILD_SOURCEVERSION -e BUILD_REPOSITORY_URI \\
         -e OPENCTEM_API_URL -e OPENCTEM_TENANT_ID \\
         ${CI_IMAGE} openctem-ci scan --capability sast
-    displayName: OpenCTEM scan
+    displayName: ${productName} scan
     env:
       # The job's own access token, only to request its OIDC token; no stored secret.
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
@@ -158,7 +172,12 @@ ${ciEnv(apiUrl, tenantId, '      ')}
 }
 
 /** A Bitbucket Pipelines step with an OIDC token for the platform's audience. */
-export function bitbucketSnippet({ apiUrl, tenantId, audience }: SnippetInput): string {
+export function bitbucketSnippet({
+  apiUrl,
+  tenantId,
+  audience,
+  productName = DEFAULT_BRAND.name,
+}: SnippetInput): string {
   return `image: ${CI_IMAGE}
 
 options:
@@ -169,7 +188,7 @@ options:
 pipelines:
   default:
     - step:
-        name: OpenCTEM scan
+        name: ${productName} scan
         oidc: true # BITBUCKET_STEP_OIDC_TOKEN; no stored secret
         script:
           - export OPENCTEM_API_URL=${apiUrl} OPENCTEM_TENANT_ID=${tenantId}
@@ -178,7 +197,12 @@ pipelines:
 }
 
 /** A CircleCI job that mints a token for the platform's audience. */
-export function circleciSnippet({ apiUrl, tenantId, audience }: SnippetInput): string {
+export function circleciSnippet({
+  apiUrl,
+  tenantId,
+  audience,
+  productName = DEFAULT_BRAND.name,
+}: SnippetInput): string {
   return `version: 2.1
 jobs:
   openctem:
@@ -189,7 +213,7 @@ ${ciEnv(apiUrl, tenantId, '      ')}
     steps:
       - checkout
       - run:
-          name: OpenCTEM scan
+          name: ${productName} scan
           command: |
             # A token for this platform only; the default CIRCLE_OIDC_TOKEN is refused.
             export OPENCTEM_ID_TOKEN="$(circleci run oidc get --claims '{"aud":"${audience}"}')"
@@ -198,11 +222,15 @@ ${ciEnv(apiUrl, tenantId, '      ')}
 }
 
 /** A Jenkins stage that binds the OpenID Connect provider plugin's token. */
-export function jenkinsSnippet({ apiUrl, tenantId }: SnippetInput): string {
+export function jenkinsSnippet({
+  apiUrl,
+  tenantId,
+  productName = DEFAULT_BRAND.name,
+}: SnippetInput): string {
   return `// Needs the OpenID Connect Provider plugin, its claim templates
 // (repository, branch, sha) and an "OpenID Connect id token" credential
 // whose audience is this trust configuration's.
-stage('OpenCTEM scan') {
+stage('${productName} scan') {
   environment {
     OPENCTEM_API_URL = '${apiUrl}'
     OPENCTEM_TENANT_ID = '${tenantId}'
