@@ -2,8 +2,9 @@ package finding
 
 import (
 	"context"
-	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
 	"testing"
+
+	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
