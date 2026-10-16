@@ -51,7 +51,7 @@ first match wins:
 | `on_hold` | a person put it on hold |
 | `done` | every member is closed **and at least one is verified fixed** (resolved by a covered scan, a retest or a reviewer with `findings:verify`) |
 | `closed_unverified` | every member is closed but none was verified fixed (accepted, false positive, duplicate, or resolved without proof) |
-| `verifying` | every open member is claimed fixed (`fix_applied`, `validated_fixed`) and awaits its own verification |
+| `verifying` | every open member is claimed fixed (`fix_applied`) and awaits its own verification |
 | `in_progress` | some member is in progress or claimed fixed |
 | `open` | otherwise |
 
