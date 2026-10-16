@@ -91,10 +91,56 @@ The generator only proposes; nothing is created until a person accepts.
 A restricted member sees a suggestion through its in-scope findings only (no ids of the others,
 `hidden_members` counts them) and may not decide on one with hidden findings.
 
+## Accepting suggestions
+
+- `POST /api/v1/remediation/suggestions/{id}/approve` (`findings:remediation:write`), at the suggestion's
+  `version`: `new_group` creates the action (`origin = suggestion`) and one task per partition owner;
+  `task_route` creates a task under the existing action; `join` adds the findings to the target task (the caller
+  must see all of that task's findings). Edits: `title`, `exclude_finding_ids` (remembered in
+  `remediation_key_exclusions`), `owners` per partition index, `deadline`, `auto_join`.
+- Findings that closed or joined another task since the suggestion are left out and returned in `dropped`; with
+  none left the accept answers 400.
+- `POST /api/v1/remediation/suggestions/approve` accepts up to 50 suggestions (5000 findings) as they are, each
+  on its own.
+- Auto-join (`remediation_actions.auto_join`, `PATCH /api/v1/remediation/actions/{id}`): exact keys only
+  (`upgrade`, `rotate`); needs a caller with no data-scope restriction. Each generator run first adds new
+  findings of such a key to the owner's `open` or `in_progress` task (join source `auto_join`, at most 200 per
+  action per day); a `verifying`, held or closed task gets a `join` suggestion instead. It never changes a
+  finding's status.
+
+## Moves, split, merge, detach
+
+| Route | Gate | Does |
+|---|---|---|
+| `POST /api/v1/remediation/moves/preview` | `findings:remediation:write` | the warnings of a move, nothing changes |
+| `POST /api/v1/remediation/moves` | `findings:remediation:write` | moves findings (`confirm` for warnings; no target = detach) |
+| `POST /api/v1/remediation/tasks/{task_id}/splits` | `findings:remediation:write` | new task of the same fix from some findings |
+| `POST /api/v1/remediation/tasks/{task_id}/merges` | `findings:remediation:write` | moves all findings of same-fix tasks here |
+
+- Refused: another tenant (404), a terminal task on either side, a task with findings outside the caller's
+  scope, a finding outside it. Warned (409 `MOVE_NEEDS_CONFIRMATION` until `confirm`): different fix, different
+  owner, target or source verifying, emptying the source.
+- One transaction: both tasks locked in id order at the caller's versions, findings locked in id order, both
+  sides recomputed; an emptied source is archived with a note naming the target; one timeline entry per task and
+  a `remediation_task_changed` entry on every finding (left and joined). Findings not in the source are skipped
+  and reported. A detach records `remediation_key_exclusions` (reason `detached`) for the source's key.
+- Undo = the reverse move with the versions the response returns.
+
+## Mark fixed and regressions
+
+- `POST /api/v1/remediation/tasks/{task_id}/resolve` (`findings:remediation:write` + `findings:fix_apply`),
+  body `version`, `note`: every open finding of the task goes to `fix_applied` through the finding bulk path
+  (`WalkToFixApplied`: new/confirmed walk through in_progress; the asset owner's claim only; the bulk abuse
+  guard; a proof-of-fix re-check queued per finding). The response lists each finding not updated with the
+  reason; the task records a `fix_claimed` timeline entry. Nothing closes: each finding closes on its own
+  evidence.
+- A finding of a `done` or `closed_unverified` task that reopens is moved, at the next recompute, into a new
+  task `Regression: <title>` with the same fix, owner, campaign and manual deadline and `regression_of` set;
+  the closed task keeps its state (`regressed` timeline entry) and its history.
+
 ## Shipped and planned
 
-Shipped: everything above. Planned (RFC-098 §6–§8): accept flows and auto-join, moves, split, merge and
-detach, task-level mark fixed and regression tasks, the new Remediation console.
+Shipped: everything above. Planned: the new Remediation console.
 
 ## Key files
 
