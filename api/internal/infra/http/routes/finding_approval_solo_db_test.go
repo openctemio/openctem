@@ -153,10 +153,10 @@ func TestFindingApprovals_SoleOwnerSelfApproval_DB(t *testing.T) {
 	// An accepted risk is cut to the self-approval limit: 7 days for KEV.
 	kev := h.newFinding(org, "high")
 	h.exec(`UPDATE findings SET is_in_kev = true WHERE id = $1`, kev)
-	a3 := h.requestAccept(owner, kev, time.Now().AddDate(0, 6, 0))
+	a3 := h.requestAccept(owner, kev, time.Now().AddDate(0, 0, 25)) // within the 30-day KEV cap
 	got = h.selfApprove(owner, a3, "222222", http.StatusOK)
 	if got["end_shortened"] != true {
-		t.Fatalf("a 6-month acceptance was not shortened: %v", got)
+		t.Fatalf("a 25-day acceptance was not shortened: %v", got)
 	}
 	var end time.Time
 	if err := h.db.QueryRowContext(context.Background(), `SELECT acceptance_expires_at FROM findings WHERE id = $1`, kev).Scan(&end); err != nil {
