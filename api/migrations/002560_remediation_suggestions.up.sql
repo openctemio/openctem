@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS remediation_suggestions (
     partitions         jsonb         NOT NULL DEFAULT '[]'::jsonb,
     finding_ids        uuid[]        NOT NULL DEFAULT '{}',
     member_count       integer       NOT NULL DEFAULT 0,
-    truncated          integer       NOT NULL DEFAULT 0,
+    omitted_count      integer       NOT NULL DEFAULT 0,
     risk_points        integer       NOT NULL DEFAULT 0,
     risk_parts         jsonb         NOT NULL DEFAULT '{}'::jsonb,
     has_urgent         boolean       NOT NULL DEFAULT false,
