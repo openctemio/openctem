@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -79,7 +81,20 @@ type GitHubTicketService struct {
 
 	// activity records inbound status changes with the integration as actor.
 	activity statusActivityRecorder
+
+	// lifecycles are the organization's finding lifecycles (RFC-110): a
+	// webhook's move is also decided by the scheme selected for the
+	// finding, which can only narrow it. nil = the platform alone.
+	lifecycles lifecycleSchemes
 }
+
+// lifecycleSchemes returns a tenant's published finding lifecycle schemes.
+type lifecycleSchemes interface {
+	Candidates(ctx context.Context, tenantID shared.ID) ([]lc.Candidate, error)
+}
+
+// SetLifecycles wires the organization lifecycles.
+func (s *GitHubTicketService) SetLifecycles(l lifecycleSchemes) { s.lifecycles = l }
 
 // NewGitHubTicketService constructs a GitHubTicketService.
 //
@@ -411,7 +426,19 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 	// work-state moves only (IsTicketInboundTarget), along the lifecycle.
 	ticket := vulnerability.TransitionActor{Kind: vulnerability.TransitionActorTicket}
 	facts := vulnerability.TransitionFacts{Status: finding.Status(), Source: finding.Source(), Severity: finding.Severity()}
-	if d := vulnerability.EvaluateTransition(facts, ticket, target); !d.Allowed {
+	var cands []lc.Candidate
+	if s.lifecycles != nil {
+		if cands, err = s.lifecycles.Candidates(ctx, tenantID); err != nil {
+			return fmt.Errorf("load finding lifecycle: %w", err)
+		}
+	}
+	lf := lc.Facts{TransitionFacts: facts, ClosureReason: finding.ClosureReason(),
+		FindingType: string(finding.FindingType()), ToolName: finding.ToolName()}
+	if id := finding.SubStatusID(); id != nil {
+		lf.SubStatus = *id
+	}
+	if d := lc.EvaluateMove(lc.SelectScheme(cands, lf.ConditionFacts()), lf, lc.Actor{TransitionActor: ticket},
+		lc.Target{Status: target}); !d.Allowed {
 		s.logger.Warn("github webhook: the transition engine refused the move",
 			"finding_id", finding.ID().String(), "current", finding.Status(), "target", target, "error", d.Err())
 		return nil
