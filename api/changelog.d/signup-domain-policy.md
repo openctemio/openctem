@@ -9,4 +9,4 @@
   default and stops at once when the claim lapses.
 - Accounts already on the domain get one e-mail when the organization first manages it; nothing is
   moved or shown to the organization.
-- Migration 002781 adds the columns to `verified_domains` (small table, constant defaults).
+- Migration 002817 adds the columns to `verified_domains` (small table, constant defaults).
