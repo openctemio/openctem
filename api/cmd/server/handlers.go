@@ -1028,6 +1028,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if svc.Scope != nil {
 		svc.Scope.SetStepUpGate(gate)
 	}
+	if svc.Vulnerability != nil {
+		// Approvals whose policy tier needs a recent re-authentication.
+		svc.Vulnerability.SetStepUpGate(gate)
+	}
 	if svc.Sensor != nil {
 		svc.Sensor.SetStepUpGate(gate)
 	}
