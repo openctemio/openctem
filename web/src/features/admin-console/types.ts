@@ -20,6 +20,10 @@ export interface AdminIdentity {
   password_change_required?: boolean
   /** The console requires security keys: only the enrollment page works until they are registered. */
   factor_enrollment_required?: boolean
+  /** The administrator's own role: the most the session may elevate to. `role` is what it acts as now. */
+  max_role?: AdminRole
+  /** When the session's elevation ends (absent: not elevated). */
+  elevated_until?: string
 }
 
 /** A second factor a sign-in may use, in the API's order of preference. */
