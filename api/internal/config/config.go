@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/versions"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -33,7 +34,9 @@ type Config struct {
 	// (see checkEnvironment); logged at startup.
 	EnvWarnings []string
 
-	App          AppConfig
+	App AppConfig
+	// Brand is the product brand users see (BRAND_*, BRAND_FILE).
+	Brand        brand.Brand
 	Server       ServerConfig
 	Database     DatabaseConfig
 	Redis        RedisConfig
@@ -1540,6 +1543,10 @@ func Load() (*Config, error) {
 	}
 
 	cfg.EnvWarnings = envWarnings
+
+	if cfg.Brand, err = loadBrand(); err != nil {
+		return nil, err
+	}
 
 	deriveSecrets(cfg)
 
