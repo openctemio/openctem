@@ -46,6 +46,11 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/auth/idp/start":    {signIn, "platform identity provider sign-in"},
 	"POST /api/v1/admin/auth/idp/callback": {signIn, "platform identity provider sign-in"},
 
+	// Support access: opening a support session reads an organization's data
+	// under its grant; ending one only reduces access.
+	"POST /api/v1/admin/support/grants/{grant_id}/sessions": {stepUpRoute, "opens read access to an organization's data (its grant)"},
+	"DELETE /api/v1/admin/support/sessions/{session_id}":    {routine, "ends the caller's own support session; audited in both logs"},
+
 	// Identity and privilege of administrators.
 	"POST /api/v1/admin/administrators/":                         {stepUpRoute, "creates an administrator"},
 	"PATCH /api/v1/admin/users/{id}":                             {stepUpRoute, "changes an administrator's role or state"},
