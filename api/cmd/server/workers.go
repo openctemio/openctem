@@ -145,6 +145,11 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 		m.Register(controller.NewPurgeController("invitation-purge", cfg.Worker.InvitationPurgeInterval,
 			svc.Tenant.CleanupExpiredInvitations, log.With("controller", "invitation-purge")))
 	}
+	if svc.AccountDeletion != nil {
+		// Accounts whose deletion grace period ended are erased (RFC-104).
+		m.Register(controller.NewPurgeController("account-erase", cfg.Worker.InvitationPurgeInterval,
+			svc.AccountDeletion.EraseDue, log.With("controller", "account-erase")))
+	}
 	if repos.AdminConsole != nil {
 		console := repos.AdminConsole
 		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,
@@ -859,6 +864,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc != nil && svc.RemediationTask != nil {
 		w.ControllerManager.Register(controller.NewRemediationTaskController(
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
+		))
+	}
+	// Task issues: push each task's state to its tracker issue (move and a
+	// progress comment) when it changed since the last push.
+	if svc != nil && svc.JiraSync != nil && repos.TicketLink != nil {
+		w.ControllerManager.Register(controller.NewTaskTicketController(
+			repos.TicketLink, svc.JiraSync, time.Minute, log.With("controller", "task-tickets"),
 		))
 	}
 	// Remediation suggestions: propose groups and tasks from the remediation

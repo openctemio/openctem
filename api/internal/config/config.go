@@ -61,6 +61,10 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AdminElevationRequired: platform administrators act as read-only until
+	// they elevate their console session for a while (ADMIN_ELEVATION=
+	// required, the default; off = act as their own role at once).
+	AdminElevationRequired bool
 	// AdminAuditSink streams the administrators' audit log off the box.
 	AdminAuditSink AdminAuditSinkConfig
 
@@ -1600,6 +1604,7 @@ func Load() (*Config, error) {
 			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
+		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
 		AdminAuditSink: AdminAuditSinkConfig{
 			URL:          getEnv("ADMIN_AUDIT_SINK", ""),
 			Token:        getEnv("ADMIN_AUDIT_SINK_TOKEN", ""),
