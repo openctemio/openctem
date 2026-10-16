@@ -212,7 +212,7 @@ under the controller lease) with its cursor in `admin_audit_forward_cursor`.
 **Delivery.** Rows go out in chain order in batches of up to 500 (at most 10
 batches per run, every 15 seconds). The cursor (position and hash of the last
 accepted row) moves forward only after the sink accepted the batch (a 2xx for
-the webhook, a completed TLS write for syslog, a synced line for the file), so
+the webhook, the collector closing the TLS stream after reading it for syslog, a synced line for the file), so
 delivery is at-least-once: a failure, a crash or a failed cursor save re-sends
 the batch. The receiver de-duplicates on the chain position; the batch id is
 `<first>-<last>` (or `head-<position>`). A failed run backs off exponentially
@@ -244,6 +244,20 @@ never the URL or the secret.
 the client certificate and key and require them on the collector (mutual TLS)
 so nobody else can write rows or a head into the copy. Restrict who can read
 the copy too: it holds what the table holds, less the request body.
+
+Syslog has no application-level acknowledgement. After the batch is written
+the sender half-closes and counts it delivered only when the collector reads
+to the end and closes its side cleanly before the 20 second deadline; a
+timeout or a reset fails the batch and it is re-sent. That proves less than the
+webhook's 2xx or the file's fsync: a collector can close and still drop the
+batch. Prefer https or file where the copy must be provable.
+
+**Gaps.** The forwarder checks that each batch continues the cursor (first
+position is the cursor's plus one and its previous hash is the cursor's hash).
+When it does not, rows were removed or rewritten after delivery: it logs
+`admin_audit_forward_gap`, raises `openctem_admin_audit_forward_gaps_total` and
+adds a `gap` object (`expected_position`, `first_position`,
+`prev_hash_matches`) to the batch, and keeps delivering so the copy never stalls.
 
 **Chain state and head export.** The forwarder verifies the chain every hour
 and puts the result in every export. `chain.verified` is false until a

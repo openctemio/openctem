@@ -146,11 +146,12 @@ type batchBody struct {
 	Rows          []rowEvent  `json:"rows"`
 	Head          Head        `json:"head"`
 	Chain         ChainStatus `json:"chain"`
+	Gap           *Gap        `json:"gap,omitempty"`
 }
 
 func marshalBatch(b Batch) ([]byte, error) {
 	w := batchBody{Version: 1, Source: "openctem-admin-audit", BatchID: b.ID(), SentAt: b.SentAt.UTC(),
-		Rows: make([]rowEvent, 0, len(b.Rows)), Head: b.Head, Chain: b.Chain}
+		Rows: make([]rowEvent, 0, len(b.Rows)), Head: b.Head, Chain: b.Chain, Gap: b.Gap}
 	for _, r := range b.Rows {
 		w.Rows = append(w.Rows, toRowEvent(r))
 	}
@@ -284,7 +285,8 @@ func (s *syslogSink) Send(ctx context.Context, b Batch) error {
 		BatchID string      `json:"batch_id"`
 		Head    Head        `json:"head"`
 		Chain   ChainStatus `json:"chain"`
-	}{b.ID(), b.Head, b.Chain})
+		Gap     *Gap        `json:"gap,omitempty"`
+	}{b.ID(), b.Head, b.Chain, b.Gap})
 	if err != nil {
 		return fmt.Errorf("encode head: %w", err)
 	}
@@ -308,6 +310,13 @@ func (s *syslogSink) Send(ctx context.Context, b Batch) error {
 	}
 	if err := conn.CloseWrite(); err != nil {
 		return fmt.Errorf("syslog %s: close: %w", s.host, err)
+	}
+	// Syslog has no application-level acknowledgement. The weakest honest
+	// signal is the collector reading to the end of the stream and closing
+	// its side cleanly (close_notify) before the deadline; a timeout or a
+	// reset means it may not have the batch.
+	if _, err := io.Copy(io.Discard, io.LimitReader(conn, 64<<10)); err != nil {
+		return fmt.Errorf("syslog %s: collector did not close the stream: %w", s.host, err)
 	}
 	return nil
 }

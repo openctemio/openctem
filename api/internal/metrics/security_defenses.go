@@ -134,6 +134,11 @@ var (
 		Name: "openctem_admin_audit_chain_ok",
 		Help: "1 when the last admin audit chain verification passed, 0 when it found a break",
 	})
+	// AdminAuditForwardGaps counts batches whose first row does not continue the last delivered row.
+	AdminAuditForwardGaps = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "openctem_admin_audit_forward_gaps_total",
+		Help: "Admin audit batches that did not continue the last delivered row (position or hash link)",
+	})
 	// AdminAuditChainBreaks counts breaks when a verification first fails.
 	AdminAuditChainBreaks = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "openctem_admin_audit_chain_breaks_total",

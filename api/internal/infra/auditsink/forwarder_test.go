@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ type memStore struct {
 func newMemStore(n int, at time.Time) *memStore {
 	s := &memStore{}
 	for i := 1; i <= n; i++ {
-		s.rows = append(s.rows, Row{Position: int64(i), Hash: fmt.Sprintf("h%d", i),
+		s.rows = append(s.rows, Row{Position: int64(i), Hash: fmt.Sprintf("h%d", i), PrevHash: fmt.Sprintf("h%d", i-1),
 			Log: &admin.AuditLog{ID: shared.NewID(), CreatedAt: at, Action: "a", AdminEmail: "root@example.com", Severity: "info"}})
 	}
 	return s
@@ -349,5 +350,48 @@ func TestVerifyFailureExportsUnverified(t *testing.T) {
 	}
 	if !f.chain.Verified || !f.chain.OK {
 		t.Fatalf("chain status after recovery %+v", f.chain)
+	}
+}
+
+func TestGapIsReportedButDeliveryContinues(t *testing.T) {
+	for name, mutate := range map[string]func(*memStore){
+		"missing row":   func(s *memStore) { s.rows = append(s.rows[:2], s.rows[3:]...) },
+		"rewritten row": func(s *memStore) { s.rows[2].PrevHash = "forged" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			st := newMemStore(4, time.Now())
+			st.cursor = Cursor{Position: 2, Hash: "h2"}
+			mutate(st)
+			sink := &fakeSink{}
+			f, _ := newFwd(t, st, &fakeVerifier{okReport()}, sink, Config{VerifyInterval: time.Hour})
+			before := testutil.ToFloat64(metrics.AdminAuditForwardGaps)
+			n, err := f.Reconcile(context.Background())
+			if err != nil || n == 0 {
+				t.Fatalf("delivery stalled: n=%d err=%v", n, err)
+			}
+			if sink.batches[0].Gap == nil {
+				t.Fatal("batch carries no gap")
+			}
+			if testutil.ToFloat64(metrics.AdminAuditForwardGaps)-before != 1 {
+				t.Fatal("gap counter not raised")
+			}
+			body, _ := marshalBatch(sink.batches[0])
+			if !strings.Contains(string(body), `"gap":`) {
+				t.Fatalf("payload has no gap: %s", body)
+			}
+		})
+	}
+}
+
+func TestContiguousBatchesHaveNoGap(t *testing.T) {
+	st := newMemStore(4, time.Now())
+	st.cursor = Cursor{Position: 2, Hash: "h2"}
+	sink := &fakeSink{}
+	f, _ := newFwd(t, st, &fakeVerifier{okReport()}, sink, Config{VerifyInterval: time.Hour})
+	if _, err := f.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if sink.batches[0].Gap != nil {
+		t.Fatalf("false gap %+v", sink.batches[0].Gap)
 	}
 }
