@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
@@ -157,25 +156,6 @@ func (h *AdminEmailHandler) SendTest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *AdminEmailHandler) verifyStepUp(w http.ResponseWriter, r *http.Request, actor *admin.AdminUser, code string) bool {
-	code = strings.TrimSpace(code)
-	if code == "" {
-		apierror.New(http.StatusUnauthorized, codeStepUpRequired,
-			"Enter a code from your authenticator to confirm the change").WriteJSON(w)
-		return false
-	}
-	if err := h.stepUp.StepUp(r.Context(), actor, code, stepUpPurposeEmailSettings, clientInfo(r)); err != nil {
-		switch {
-		case errors.Is(err, admin.ErrStepUpUnavailable):
-			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
-				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
-		case errors.Is(err, admin.ErrInvalidMFACode):
-			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
-		default:
-			h.logger.Error("e-mail settings step-up", "error", err)
-			apierror.InternalServerError("could not verify the code").WriteJSON(w)
-		}
-		return false
-	}
-	return true
+func (h *AdminEmailHandler) verifyStepUp(w http.ResponseWriter, r *http.Request, _ *admin.AdminUser, code string) bool {
+	return confirmAdminStepUp(w, r, h.stepUp, code, stepUpPurposeEmailSettings, h.logger)
 }
