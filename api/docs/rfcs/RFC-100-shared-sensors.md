@@ -239,6 +239,7 @@ needs them.
 | S3 | access policy (§5) with the instance switch off everywhere: instance setting, per-organization allow or deny, owner opt-out, rollout gate in code | in review |
 | S4 | instance enrollment token, bundled sensor at instance scope | designed |
 | S5 | shared claim path (lanes, fair share, region, untagged switch, approved-only); remove `get_next_platform_job` | designed |
+| S5a | results of a shared sensor bound to the job it holds under its lease epoch, written into the command's organization; no push ([architecture](../architecture/sensor-result-binding.md#shared-sensors)) | in review |
 | S6 | instance key set and shared-job envelope | designed |
 | S7 | limits enforced at trigger and claim | designed |
 | S8 | console "Shared sensors" fleet page, audited job view with a reason | designed |

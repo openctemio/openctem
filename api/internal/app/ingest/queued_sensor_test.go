@@ -17,7 +17,7 @@ import (
 // used to rebuild the sensor as active from the job, so a report queued just
 // before a revoke was still processed.
 
-// tenantSensorRepo serves GetByTenantAndID; any other call panics.
+// tenantSensorRepo serves GetByTenantAndID and GetByID; any other call panics.
 type tenantSensorRepo struct {
 	sensor.Repository
 	rows map[shared.ID]*sensor.Sensor
@@ -53,6 +53,16 @@ func queuedService(rows ...*sensor.Sensor) (*Service, *recordingAuditRepo) {
 	return &Service{logger: logger.NewNop(), sensorRepo: repo, auditRepo: auditRepo}, auditRepo
 }
 
+func (r *tenantSensorRepo) GetByID(_ context.Context, id shared.ID) (*sensor.Sensor, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	if a, ok := r.rows[id]; ok {
+		return a, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
 func TestJobProcessor_DropsWorkOfSensorsTakenOutOfService(t *testing.T) {
 	tenantID, otherTenant := shared.NewID(), shared.NewID()
 	mk := func(tid shared.ID, st sensor.SensorStatus) *sensor.Sensor {
@@ -62,6 +72,7 @@ func TestJobProcessor_DropsWorkOfSensorsTakenOutOfService(t *testing.T) {
 	disabled := mk(tenantID, sensor.SensorStatusDisabled)
 	foreign := mk(otherTenant, sensor.SensorStatusActive)
 	deleted := shared.NewID()
+	sharedSensor := &sensor.Sensor{ID: shared.NewID(), Scope: sensor.ScopeInstance, Status: sensor.SensorStatusActive}
 
 	cases := map[string]struct {
 		sensorID *shared.ID
@@ -72,10 +83,13 @@ func TestJobProcessor_DropsWorkOfSensorsTakenOutOfService(t *testing.T) {
 		"deleted":              {&deleted, "the sensor no longer exists"},
 		"other tenant's":       {&foreign.ID, "the sensor no longer exists"},
 		"job without a sensor": {nil, "the job names no sensor"},
+		// A shared sensor's work is processed only for a shared job it holds;
+		// a queued (unsolicited) report of one never is.
+		"shared sensor, no job": {&sharedSensor.ID, "a shared sensor reports only for a job it holds"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			svc, auditRepo := queuedService(revoked, disabled, foreign)
+			svc, auditRepo := queuedService(revoked, disabled, foreign, sharedSensor)
 			ing := &stubIngester{out: &Output{}}
 			p := &JobProcessor{service: ing, sensors: svc}
 
