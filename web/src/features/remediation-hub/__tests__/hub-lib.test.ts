@@ -23,8 +23,23 @@ describe('deadlineStatus', () => {
 
 describe('progressParts', () => {
   it('splits verified from closed otherwise, then claimed and open', () => {
-    const counts = { total: 10, open: 3, in_progress: 1, fix_applied: 2, closed: 4, verified: 3, related: 0, risk_points: 0 }
-    expect(progressParts({ counts })).toEqual({ verified: 3, closed: 1, claimed: 2, open: 4, total: 10 })
+    const counts = {
+      total: 10,
+      open: 3,
+      in_progress: 1,
+      fix_applied: 2,
+      closed: 4,
+      verified: 3,
+      related: 0,
+      risk_points: 0,
+    }
+    expect(progressParts({ counts })).toEqual({
+      verified: 3,
+      closed: 1,
+      claimed: 2,
+      open: 4,
+      total: 10,
+    })
     expect(progressParts({ counts: { ...counts, total: 0 } }).total).toBe(0)
   })
 })
@@ -37,9 +52,12 @@ describe('fixSteps', () => {
     expect(s.commands[0].code).toContain('@scope/pkg@^1.2.3')
   })
   it('prefers the fix spec and shows only a secret fingerprint prefix', () => {
-    expect(fixSteps({ kind: 'upgrade', ecosystem: 'pypi', package: 'django', target_version: '4.2.30' }, 'x').commands[0].code).toContain(
-      'django>=4.2.30'
-    )
+    expect(
+      fixSteps(
+        { kind: 'upgrade', ecosystem: 'pypi', package: 'django', target_version: '4.2.30' },
+        'x'
+      ).commands[0].code
+    ).toContain('django>=4.2.30')
     expect(fixSteps(undefined, 'rotate:secret:0123456789abcdef').secretPrefix).toBe('01234567')
     expect(fixSteps(undefined, 'manual:abc').commands).toEqual([])
   })
