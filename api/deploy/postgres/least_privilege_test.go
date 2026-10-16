@@ -46,14 +46,14 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	}
 
 	sfx := randHex(t)
-	dbName, appRole, migRole := "lp_"+sfx+"_test", "lp_app_"+sfx, "lp_mig_"+sfx
-	appPass, migPass := randHex(t), randHex(t)+"'quote"
+	dbName, appRole, migRole, admRole := "lp_"+sfx+"_test", "lp_app_"+sfx, "lp_mig_"+sfx, "lp_adm_"+sfx
+	appPass, migPass, admPass := randHex(t), randHex(t)+"'quote", randHex(t)
 	exec1(ctx, t, root, `CREATE DATABASE `+dbName)
 	t.Cleanup(func() {
 		c := context.Background()
 		_, _ = root.ExecContext(c, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, dbName)
 		_, _ = root.ExecContext(c, `DROP DATABASE IF EXISTS `+dbName)
-		for _, r := range []string{appRole, migRole} {
+		for _, r := range []string{appRole, migRole, admRole} {
 			_, _ = root.ExecContext(c, `DROP ROLE IF EXISTS `+r)
 		}
 		_ = root.Close()
@@ -165,6 +165,64 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		if _, err := app.ExecContext(ctx, q); err == nil {
 			t.Errorf("app role was allowed: %s", q)
 		}
+	}
+
+	// The console's identity tables with their own role: the app role keeps
+	// reading admin_users and nothing else of them.
+	for _, q := range []string{
+		`CREATE TABLE admin_users (id bigserial PRIMARY KEY, user_id uuid)`,
+		`CREATE TABLE admin_credentials (admin_id bigint PRIMARY KEY)`,
+		`CREATE TABLE admin_sessions (id bigserial PRIMARY KEY)`,
+		`CREATE TABLE platform_identity_provider (id int PRIMARY KEY)`,
+		`CREATE TABLE admin_idp_login_states (state_hash text PRIMARY KEY)`,
+	} {
+		exec1(ctx, t, mig, q)
+	}
+	adminVars := []string{"app_user=" + appRole, "migrator_user=" + migRole, "app_password=" + appPass,
+		"migrator_password=" + migPass, "admin_user=" + admRole, "admin_password=" + admPass}
+	if out, err := run(adminVars...); err != nil || !strings.Contains(out, "writes the console identity tables") {
+		t.Fatalf("bootstrap with admin_user: %v\n%s", err, out)
+	}
+	if out, err := run(adminVars...); err != nil { // idempotent
+		t.Fatalf("second bootstrap with admin_user: %v\n%s", err, out)
+	}
+	exec1(ctx, t, app, `SELECT count(*) FROM admin_users`)
+	for _, q := range []string{
+		`INSERT INTO admin_users (user_id) VALUES (NULL)`,
+		`UPDATE admin_users SET user_id = NULL`,
+		`DELETE FROM admin_users`,
+		`INSERT INTO admin_sessions DEFAULT VALUES`,
+		`SELECT count(*) FROM admin_sessions`,
+		`SELECT count(*) FROM admin_credentials`,
+		`DELETE FROM admin_credentials`,
+		`SELECT count(*) FROM platform_identity_provider`,
+		`INSERT INTO admin_idp_login_states VALUES ('x')`,
+	} {
+		if _, err := app.ExecContext(ctx, q); err == nil {
+			t.Errorf("app role was allowed on the console's tables: %s", q)
+		}
+	}
+	adm := open(t, withUser(t, scratchAdmin, admRole, admPass))
+	exec1(ctx, t, adm, `INSERT INTO admin_users (user_id) VALUES (NULL)`)
+	exec1(ctx, t, adm, `INSERT INTO admin_sessions DEFAULT VALUES`)
+	exec1(ctx, t, adm, `INSERT INTO admin_credentials VALUES (1)`)
+	exec1(ctx, t, adm, `INSERT INTO platform_identity_provider VALUES (1)`)
+	exec1(ctx, t, adm, `INSERT INTO admin_idp_login_states VALUES ('x')`)
+	exec1(ctx, t, adm, `SELECT count(*) FROM tenants`)
+	exec1(ctx, t, adm, `INSERT INTO admin_audit_logs (action) VALUES ('console')`)
+	for _, q := range []string{
+		`UPDATE admin_audit_logs SET action = 'forged'`,
+		`DELETE FROM admin_audit_logs`,
+		`CREATE TABLE evil (x int)`,
+		`UPDATE schema_migrations SET dirty = true`,
+		`SET ROLE ` + appRole,
+	} {
+		if _, err := adm.ExecContext(ctx, q); err == nil {
+			t.Errorf("console role was allowed: %s", q)
+		}
+	}
+	if out, err := run("app_user="+appRole, "migrator_user="+migRole, "admin_user="+appRole); err == nil {
+		t.Errorf("bootstrap accepted the app role as admin_user:\n%s", out)
 	}
 
 	// PUBLIC can no longer connect to the database.

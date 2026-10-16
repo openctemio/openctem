@@ -493,6 +493,48 @@ type DatabaseConfig struct {
 	// on a 200k-finding tenant. Disabled by default, per session, via the
 	// connection startup parameter; the server-wide setting is untouched.
 	JITEnabled bool
+	// AdminUser and AdminPassword: the database role the platform console's
+	// identity tables are written with (DB_ADMIN_USER, DB_ADMIN_PASSWORD).
+	// Set, the API opens a second, small pool with it for the administrator,
+	// console-session and platform identity-provider repositories, and the
+	// least-privilege bootstrap takes writing those tables away from DB_USER.
+	// Empty: one pool, as before.
+	AdminUser     string
+	AdminPassword string
+}
+
+// validateAdminRole: a console role needs its own password and must not be
+// the app role (the split would then protect nothing).
+func (c *DatabaseConfig) validateAdminRole() error {
+	if c.AdminUser == "" {
+		if c.AdminPassword != "" {
+			return fmt.Errorf("DB_ADMIN_PASSWORD is set but DB_ADMIN_USER is not")
+		}
+		return nil
+	}
+	if c.AdminUser == c.User {
+		return fmt.Errorf("DB_ADMIN_USER must differ from DB_USER")
+	}
+	if c.AdminPassword == "" {
+		return fmt.Errorf("DB_ADMIN_USER is set but DB_ADMIN_PASSWORD is empty")
+	}
+	if c.AdminPassword == c.Password {
+		return fmt.Errorf("DB_ADMIN_PASSWORD must differ from DB_PASSWORD")
+	}
+	return nil
+}
+
+// AdminConfig returns the database settings of the console's pool: the same
+// database as DB_USER with DB_ADMIN_USER's credentials and a small pool, or
+// nil when DB_ADMIN_USER is not set.
+func (c *DatabaseConfig) AdminConfig() *DatabaseConfig {
+	if c.AdminUser == "" {
+		return nil
+	}
+	a := *c
+	a.User, a.Password = c.AdminUser, c.AdminPassword
+	a.MaxOpenConns, a.MaxIdleConns = 5, 2
+	return &a
 }
 
 // RedisConfig holds Redis configuration.
@@ -1286,6 +1328,8 @@ func Load() (*Config, error) {
 			Port:            getEnvInt("DB_PORT", 5432),
 			User:            getEnv("DB_USER", "openctem"),
 			Password:        getEnv("DB_PASSWORD", ""),
+			AdminUser:       getEnv("DB_ADMIN_USER", ""),
+			AdminPassword:   getEnv("DB_ADMIN_PASSWORD", ""),
 			Name:            getEnv("DB_NAME", "openctem"),
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
@@ -1700,6 +1744,9 @@ func (c *Config) validateBasic() error {
 	if err := c.validatePlaceholders(); err != nil {
 		return err
 	}
+	if err := c.Database.validateAdminRole(); err != nil {
+		return err
+	}
 	if err := c.validateAuth(); err != nil {
 		return err
 	}
@@ -1958,6 +2005,7 @@ func (c *Config) validatePlaceholders() error {
 		{"APP_CONTENT_SIGNING_KEY", c.Encryption.ContentSigningKey},
 		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
 		{"DB_PASSWORD", c.Database.Password},
+		{"DB_ADMIN_PASSWORD", c.Database.AdminPassword},
 		{"REDIS_PASSWORD", c.Redis.Password},
 		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
 		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
