@@ -547,12 +547,9 @@ func (f fakeApprovers) RecentMemberRemoval(context.Context, shared.ID, time.Time
 	return f.removedAt, nil
 }
 
-func (f fakeApprovers) CountEligibleApprovers(context.Context, shared.ID) (int, error) {
-	return f.count, nil
-}
-
-func (f fakeApprovers) IsTenantOwner(_ context.Context, _ shared.ID, user shared.ID) (bool, error) {
-	return user == f.owner, nil
+// IsSoleActiveOwner: count is the number of active people of the tenant.
+func (f fakeApprovers) IsSoleActiveOwner(_ context.Context, _ shared.ID, user shared.ID) (bool, error) {
+	return f.count == 1 && user == f.owner, nil
 }
 
 // Owner decision B16: the requester may not approve their own rule while a

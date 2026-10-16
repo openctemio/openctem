@@ -10,6 +10,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -21,6 +22,8 @@ import (
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -28,10 +31,12 @@ import (
 type rulePolicyHarness struct {
 	*authzPolicyHarness
 	stepUp *approverStepUp
+	repo   *postgres.SuppressionRepository
 }
 
 func newRulePolicyHarness(t *testing.T) *rulePolicyHarness {
 	gate := &approverStepUp{}
+	var suppRepo *postgres.SuppressionRepository
 	changeAuditExtraHandlers = func(hs *Handlers, db *postgres.DB) {
 		log := logger.NewNop()
 		ts := tenantapp.NewTenantService(postgres.NewTenantRepository(db), log,
@@ -40,16 +45,19 @@ func newRulePolicyHarness(t *testing.T) *rulePolicyHarness {
 		vuln.SetApprovalRepository(postgres.NewFindingApprovalRepository(db))
 		vuln.SetSoloApproval(postgres.NewScopeActorRepository(db), nil, ts)
 		repo := postgres.NewSuppressionRepository(db)
+		suppRepo = repo
 		svc := suppression.NewService(repo, log)
 		svc.SetApproverDirectory(repo)
 		svc.SetApprovalPolicy(finding.NewRulePolicyEvaluator(vuln, repo))
 		svc.SetStepUpGate(gate)
+		svc.SetTOTPVerifier(routeTOTP{good: "135790"})
 		sh := handler.NewSuppressionHandler(svc, log)
 		sh.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 		hs.Suppression = sh
 	}
 	t.Cleanup(func() { changeAuditExtraHandlers = nil })
-	return &rulePolicyHarness{authzPolicyHarness: newChangeAuditHarness(t), stepUp: gate}
+	h := newChangeAuditHarness(t)
+	return &rulePolicyHarness{authzPolicyHarness: h, stepUp: gate, repo: suppRepo}
 }
 
 func (h *rulePolicyHarness) org() string {
@@ -235,4 +243,67 @@ func countAudit(h *authzPolicyHarness, tenantID, action string) int {
 		h.t.Fatal(err)
 	}
 	return n
+}
+
+// Approving one's own rule is never decided by who still holds the approve
+// permission: an owner who takes that permission from every other member
+// does not become the sole approver. With a second active person the owner's
+// own approval is refused (the policy excludes the requester), with a good
+// code and a reason; a lone owner still may.
+func TestRulePolicy_OwnerCannotStripOthersToSelfApprove_DB(t *testing.T) {
+	h := newRulePolicyHarness(t)
+	org := h.org()
+	owner, other := h.member(org, "owner"), h.member(org, "member")
+	h.customRoleMember(other, org, permission.SuppressionsApprove, permission.SuppressionsRead)
+	h.matchedFinding(org, "go.self.approve", "low")
+	rule := h.createRule(owner, "false_positive", "test_or_example_code", "go.self.approve", http.StatusCreated)
+	selfApprove := func(want int) {
+		t.Helper()
+		cur := h.getRule(owner, rule.ID)
+		h.expect(owner, http.MethodPost, "/api/v1/suppressions/"+rule.ID+"/approve",
+			`{"reviewed_updated_at":"`+cur.UpdatedAt+`","self_approval_reason":"nobody else","totp_code":"135790"}`, want)
+	}
+	selfApprove(http.StatusForbidden)
+	// The owner strips the other member's approve permission.
+	h.exec(`DELETE FROM role_permissions WHERE permission_id = $1 AND role_id IN (SELECT role_id FROM user_roles WHERE user_id = $2)`,
+		permission.SuppressionsApprove.String(), other.id)
+	selfApprove(http.StatusForbidden)
+	if st := h.getRule(owner, rule.ID).Status; st != "pending" {
+		t.Fatalf("the rule is %s; the owner approved their own rule while another person was active", st)
+	}
+	// Once the other person is gone the owner is the sole active person.
+	h.exec(`UPDATE tenant_members SET status = 'suspended', suspended_at = now() - interval '8 days' WHERE user_id = $1`, other.id)
+	selfApprove(http.StatusOK)
+}
+
+// A rule that matches more than the cap of open findings is refused as too
+// broad instead of being judged on a sample; within the cap, every match
+// counts (the one critical finding sets the tier).
+func TestRulePolicy_InputsCoverEveryMatch_DB(t *testing.T) {
+	h := newRulePolicyHarness(t)
+	org := h.org()
+	owner := h.member(org, "owner")
+	for i := 0; i < 3; i++ {
+		h.matchedFinding(org, "go.broad", "low")
+	}
+	crit, _ := h.matchedFinding(org, "go.broad", "critical")
+	_ = crit
+	rule := h.createRule(owner, "false_positive", "test_or_example_code", "go.broad", http.StatusCreated)
+	if rule.Tier != "dual" && rule.Tier != "security" {
+		t.Fatalf("a rule matching a critical finding got tier %q", rule.Tier)
+	}
+	tid, _ := shared.IDFromString(org)
+	rid, _ := shared.IDFromString(rule.ID)
+	loaded, err := h.repo.FindByID(context.Background(), tid, rid)
+	if err != nil || loaded == nil {
+		t.Fatalf("load rule: %v", err)
+	}
+	repo := h.repo
+	if _, _, _, err := repo.RulePolicyInputs(context.Background(), loaded, 3); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("a rule matching 4 findings over a cap of 3: %v", err)
+	}
+	facts, _, _, err := repo.RulePolicyInputs(context.Background(), loaded, 4)
+	if err != nil || len(facts) != 4 {
+		t.Fatalf("within the cap: %d facts, %v", len(facts), err)
+	}
 }
