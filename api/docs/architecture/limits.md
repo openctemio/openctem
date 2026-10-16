@@ -179,10 +179,11 @@ self-hosted install leaves it off (the default) and never needs it.
 **Transport and trust**
 
 - A separate listener, `INTERNAL_API_ADDR` (empty: off). Expose it on a
-  private network only, never through the public gateway. The API refuses
-  to start with an every-interface address (`:9443`, `0.0.0.0`, `::`) unless
-  `INTERNAL_API_ALLOW_ALL_INTERFACES=true` (for a container network with no
-  published port).
+  private network only, never through the public gateway. The address must be a
+  loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
+  `fc00::/7`): every-interface, public and link-local addresses and hostnames
+  are refused at start unless `INTERNAL_API_ALLOW_ALL_INTERFACES=true` (for a
+  container network with no published port).
 - mTLS, TLS 1.3 only: a client certificate chaining to
   `INTERNAL_API_CLIENT_CA` is required in the handshake.
 - Plus `Authorization: Bearer <token>` on every request: `EdDSA` (Ed25519)

@@ -257,8 +257,12 @@ func (c InternalAPIConfig) validate() error {
 	if err != nil {
 		return fmt.Errorf("INTERNAL_API_ADDR %q is not host:port: %w", c.Addr, err)
 	}
-	if ip := net.ParseIP(host); (host == "" || (ip != nil && ip.IsUnspecified())) && !c.AllowAllInterfaces {
-		return fmt.Errorf("INTERNAL_API_ADDR %q listens on every interface; bind a private address, or set INTERNAL_API_ALLOW_ALL_INTERFACES=true when only a private network reaches it", c.Addr)
+	// Only a loopback or private address (10/8, 172.16/12, 192.168/16,
+	// fc00::/7) is accepted: not every interface, not a public address, not a
+	// link-local one, and not a hostname (what it resolves to cannot be
+	// checked here), unless the operator explicitly allows it.
+	if ip := net.ParseIP(host); !c.AllowAllInterfaces && (ip == nil || !(ip.IsLoopback() || ip.IsPrivate())) {
+		return fmt.Errorf("INTERNAL_API_ADDR %q is not a loopback or private IP address; bind one (for example 10.0.0.5:9443), or set INTERNAL_API_ALLOW_ALL_INTERFACES=true when only a private network reaches it", c.Addr)
 	}
 	for _, f := range []struct{ name, value string }{
 		{"INTERNAL_API_TLS_CERT", c.CertFile}, {"INTERNAL_API_TLS_KEY", c.KeyFile},
