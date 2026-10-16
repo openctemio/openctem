@@ -787,6 +787,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/license-policy': {
     permission: Permission.SettingsRead,
   },
+  // Content catalog (RFC-099): content:read to see; the API gates every change.
+  '/settings/content': {
+    permission: Permission.ContentRead,
+  },
   // Asset source precedence (RFC-069): owner/admin on the API.
   '/settings/asset-sources': {
     permission: Permission.TeamUpdate,
