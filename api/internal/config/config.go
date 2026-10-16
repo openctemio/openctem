@@ -60,6 +60,9 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AdminAuditSink streams the administrators' audit log off the box.
+	AdminAuditSink AdminAuditSinkConfig
+
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
 	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
 	AssetChangeRetentionDays int
@@ -180,6 +183,21 @@ type AdminAuditRetentionConfig struct {
 	// BatchSize bounds one delete transaction. Default 10000.
 	// ADMIN_AUDIT_RETENTION_BATCH_SIZE
 	BatchSize int
+}
+
+// AdminAuditSinkConfig sends every administrators' audit row (with its chain
+// position and hash) and the chain head to a destination outside the
+// application database.
+type AdminAuditSinkConfig struct {
+	// URL is the destination: https://..., syslog+tls://host:port,
+	// syslog+tcp://host:port, syslog+udp://host:port or file:///path.
+	// ADMIN_AUDIT_SINK; empty = off.
+	URL string
+	// Token is the webhook's Bearer token. ADMIN_AUDIT_SINK_TOKEN.
+	Token string
+	// HeadInterval is how often the chain head is sent.
+	// ADMIN_AUDIT_SINK_HEAD_INTERVAL, default 15m.
+	HeadInterval time.Duration
 }
 
 // MetricsConfig controls exposure of the Prometheus /metrics endpoint.
@@ -1509,6 +1527,11 @@ func Load() (*Config, error) {
 			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
+		AdminAuditSink: AdminAuditSinkConfig{
+			URL:          getEnv("ADMIN_AUDIT_SINK", ""),
+			Token:        getEnv("ADMIN_AUDIT_SINK_TOKEN", ""),
+			HeadInterval: getEnvDuration("ADMIN_AUDIT_SINK_HEAD_INTERVAL", 15*time.Minute),
+		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
 			// Default TRUE: never start deleting audit history on upgrade.
@@ -1962,6 +1985,7 @@ func (c *Config) validatePlaceholders() error {
 		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
 		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
 		{"METRICS_TOKEN", c.Metrics.Token},
+		{"ADMIN_AUDIT_SINK_TOKEN", c.AdminAuditSink.Token},
 	}
 	for i, prev := range c.Encryption.PreviousKeys {
 		secrets = append(secrets, struct{ name, value string }{fmt.Sprintf("APP_ENCRYPTION_KEY_PREVIOUS entry %d", i+1), prev})

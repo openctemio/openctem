@@ -375,6 +375,13 @@ func run() int {
 	// WebSocket Hub
 	// ==========================================================================
 	// Create cancellable context for graceful shutdown
+	stopAdminAuditSink, err := startAdminAuditSink(ctx, cfg.AdminAuditSink, repos.AdminAuditLog, log)
+	if err != nil {
+		log.Error("administrators' audit sink", "error", err)
+		return 1
+	}
+	defer stopAdminAuditSink()
+
 	wsCtx, wsCancel := context.WithCancel(ctx)
 	defer wsCancel()
 
