@@ -362,6 +362,10 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 		t.ID.String(), tenant, t.ActionID.String(), idArg(t.CampaignID), t.Title, t.Description,
 		idArg(t.AssigneeUserID), idArg(t.AssigneeGroupID), timeArg(t.ManualDeadline), idArg(t.RegressionOf), idArg(t.CreatedBy))
 	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "uq_remediation_tasks_one_active_per_action" {
+			return remediation.ErrActiveTaskExists
+		}
 		return fmt.Errorf("create remediation task: %w", err)
 	}
 	if err := insertMembersInTx(ctx, tx, t, rec.Members, remediation.MemberRolePrimary, rec.Source, rec.ActorID); err != nil {

@@ -20,6 +20,9 @@ func TestSecretPages(t *testing.T) {
 		{"hard-coded password literal", RunFinding{FindingType: "secret", RuleID: "hardcoded-password"}, false},
 		{"generic api key", RunFinding{FindingType: "secret", RuleID: "generic-api-key"}, false},
 		{"generic but validated true still follows the rule", RunFinding{FindingType: "secret", RuleID: "generic-api-key", SecretValid: &yes}, false},
+		{"provider rule that merely contains pwd", RunFinding{FindingType: "secret", RuleID: "acme-pwd-service-token"}, true},
+		{"provider rule that merely contains password", RunFinding{FindingType: "secret", RuleID: "slack-password-reset-token"}, true},
+		{"qualified generic rule id", RunFinding{FindingType: "secret", RuleID: "generic.secrets.security.detected-generic-secret"}, false},
 		{"not a secret", RunFinding{FindingType: "vulnerability", RuleID: "aws-access-token"}, false},
 	}
 	for _, c := range cases {

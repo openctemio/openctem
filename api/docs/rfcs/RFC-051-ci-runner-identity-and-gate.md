@@ -327,8 +327,13 @@ one. Removing the secret from the branch does not close it, because history
 keeps it. A fork's run never raises one.
 
 Which secrets page, for the gate and for this task: the finding is a secret, it
-is not validated false, and its rule is not generic or heuristic (rule ids that
-name a generic key, a password or a high-entropy string). A hard-coded password
+is not validated false, and its rule is not on the allowlist of known generic or
+heuristic scanner rule ids (matched exactly, never by substring).
+"Validated false" comes only from a validation the platform ran itself: the
+validity an uploaded report claims is ignored, because a fork pull request
+could otherwise mark a live secret dead and switch off blocking and rotation.
+At most one active rotation task exists per action (a unique index); a run that
+loses the race joins the existing task. A hard-coded password
 hit therefore does not block every pipeline and does not open a task; it follows
 the policy's severity and modes like any finding. Everything else blocks.
 
