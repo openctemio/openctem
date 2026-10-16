@@ -46,6 +46,12 @@ interface ApprovalDialogProps {
   targetStatus: FindingStatus
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * The longest a risk on this finding may be accepted, in days (the API's
+   * rule by priority: P0 or KEV 30, P1 90, P2 180, P3 365). The date picker
+   * stops there and the default end never passes it.
+   */
+  maxAcceptanceDays?: number
   /** Called after an approval request is submitted successfully (e.g. to refresh lists/history) */
   onSuccess?: () => void | Promise<void>
 }
@@ -56,7 +62,10 @@ export function ApprovalDialog({
   open,
   onOpenChange,
   onSuccess,
+  maxAcceptanceDays,
 }: ApprovalDialogProps) {
+  const capDays = maxAcceptanceDays && maxAcceptanceDays > 0 ? maxAcceptanceDays : 365
+  const defaultDays = Math.min(DEFAULT_ACCEPTANCE_DAYS, capDays)
   const { t } = useTranslation()
   const [justification, setJustification] = useState('')
   // Why the finding is not a risk to fix: a VEX-aligned code the server
@@ -64,7 +73,7 @@ export function ApprovalDialog({
   const [reason, setReason] = useState('')
   const reasons = PERSON_CLOSURE_REASONS[targetStatus] ?? []
   // An accepted risk always ends: 90 days ahead unless changed, at most a year.
-  const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(DEFAULT_ACCEPTANCE_DAYS))
+  const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(defaultDays))
   const [step, setStep] = useState<'input' | 'confirm'>('input')
   const { trigger: requestApproval, isMutating } = useRequestApproval(findingId)
 
@@ -72,7 +81,7 @@ export function ApprovalDialog({
   const statusLabel = statusConfig ? t(statusConfig.labelKey, statusConfig.label) : targetStatus
   const showExpiryPicker = targetStatus === 'accepted'
   const minDate = acceptanceDate(1)
-  const maxDate = acceptanceDate(0, 1)
+  const maxDate = capDays >= 365 ? acceptanceDate(0, 1) : acceptanceDate(capDays)
   const expiryValid =
     !showExpiryPicker || (!!expiresAt && expiresAt >= minDate && expiresAt <= maxDate)
   const justificationRequired = t(
@@ -93,7 +102,9 @@ export function ApprovalDialog({
     }
     if (!expiryValid) {
       toast.error(
-        t('findings.approvalDialog.expiryInvalid', 'Choose an expiry date within the next year')
+        t('findings.approvalDialog.expiryInvalid', 'Choose an expiry date within {days} days', {
+          days: capDays,
+        })
       )
       return
     }
@@ -126,7 +137,7 @@ export function ApprovalDialog({
       )
       setJustification('')
       setReason('')
-      setExpiresAt(acceptanceDate(DEFAULT_ACCEPTANCE_DAYS))
+      setExpiresAt(acceptanceDate(defaultDays))
       setStep('input')
       onOpenChange(false)
       await onSuccess?.()
@@ -227,7 +238,8 @@ export function ApprovalDialog({
                     <p className="text-xs text-muted-foreground">
                       {t(
                         'findings.approvalDialog.expiryHint',
-                        'The finding reopens on this date. At most one year ahead.'
+                        'The finding reopens on this date. At most {days} days ahead for its priority.',
+                        { days: capDays }
                       )}
                     </p>
                   </div>

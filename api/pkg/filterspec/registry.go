@@ -152,6 +152,9 @@ type Field struct {
 	EnumTemplates map[string]string
 	// Enum is the allowed set for TypeEnum.
 	Enum []string
+	// EnumRetired maps a value that was retired from Enum to the error
+	// that says what replaces it (a constant, never input).
+	EnumRetired map[string]string
 	// Nullable makes not-in and ne also match NULL, and allows OpIsNull.
 	Nullable bool
 	// Indexed records that an index backs range and in filters on large
