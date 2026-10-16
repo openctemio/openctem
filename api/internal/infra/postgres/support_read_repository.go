@@ -182,7 +182,7 @@ func (r *SupportReadRepository) ListFindings(ctx context.Context, tenantID share
 		return nil, 0, fmt.Errorf("support findings: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]supportaccess.FindingView, 0, limit)
+	out := make([]supportaccess.FindingView, 0, 25)
 	for rows.Next() {
 		v, err := scanSupportFinding(rows)
 		if err != nil {
@@ -247,7 +247,7 @@ func (r *SupportReadRepository) ListAssets(ctx context.Context, tenantID shared.
 		return nil, 0, fmt.Errorf("support assets: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]supportaccess.AssetView, 0, limit)
+	out := make([]supportaccess.AssetView, 0, 25)
 	for rows.Next() {
 		v, err := scanSupportAsset(rows)
 		if err != nil {
