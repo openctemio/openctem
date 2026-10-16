@@ -11,6 +11,9 @@ const (
 	ActionRemediationTaskMerged       Action = "remediation_task.merged"
 	// ActionRemediationTaskFixClaimed: a person marked a task fixed.
 	ActionRemediationTaskFixClaimed Action = "remediation_task.fix_claimed"
+	// ActionRemediationTaskIssueCreated: a person created the task's tracker
+	// issue (the task's title and counts leave the platform).
+	ActionRemediationTaskIssueCreated Action = "remediation_task.issue_created"
 )
 
 // ResourceTypeRemediationTask is a remediation task (table remediation_tasks).
@@ -26,7 +29,8 @@ var _ = registerActions("remediation_task", map[Action]Severity{
 	ActionRemediationTaskSplit:        SeverityLow,
 	ActionRemediationTaskMerged:       SeverityLow,
 	// A fix claim changes the status of every open finding of the task.
-	ActionRemediationTaskFixClaimed: SeverityMedium,
+	ActionRemediationTaskFixClaimed:   SeverityMedium,
+	ActionRemediationTaskIssueCreated: SeverityLow,
 })
 
 // Remediation suggestion decisions (RFC-098 §5). The generator itself writes

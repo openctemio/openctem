@@ -86,6 +86,9 @@ var assetMergeRefs = []mergeRef{
 	// same location is dropped.
 	{table: "asset_software", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"software_version_id", "location"}}}},
+	// Detected technologies (RFC-112): the kept asset's row for a name wins.
+	{table: "asset_technologies", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"name_key"}}}},
 	// Package dependency edges follow their links (moved just above; a
 	// duplicate link was dropped and its edges with it).
 	{table: "asset_software_edges", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid"},
