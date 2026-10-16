@@ -75,6 +75,8 @@ describe('My Work tasks tab', () => {
     render(<MyWorkPage />)
     const link = screen.getByRole('link', { name: 'Upgrade django to 4.2.30' })
     expect(link).toHaveAttribute('href', '/remediation/tasks/t1')
+    // The fix is shown under the task only when it says something else.
+    expect(screen.getByText('Upgrade django')).toBeInTheDocument()
     const queueCall = useTasks.mock.calls.find(
       ([f]) => (f as { sort?: string }).sort === 'deadline'
     )
