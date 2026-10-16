@@ -173,11 +173,37 @@ func (r *SupportAccessRepository) RevokeGrant(ctx context.Context, tenantID, id,
 	return r.GetGrant(ctx, tenantID, id)
 }
 
-// ListGrantsForAdmin returns the grants naming adminID usable at now.
+// ListGrantsForAdmin returns the grants naming adminID usable at now, with
+// the organization's name.
 func (r *SupportAccessRepository) ListGrantsForAdmin(ctx context.Context, adminID shared.ID, now time.Time) ([]*supportaccess.Grant, error) {
-	return r.queryGrants(ctx, `SELECT `+supportGrantColumns+` FROM support_grants g
+	rows, err := r.db.QueryContext(ctx, `SELECT t.name, `+supportGrantColumns+` FROM support_grants g
+		JOIN tenants t ON t.id = g.tenant_id
 		WHERE g.admin_id = $1 AND g.revoked_at IS NULL AND g.starts_at <= $2 AND g.expires_at > $2
 		ORDER BY g.expires_at, g.id`, adminID.String(), now)
+	if err != nil {
+		return nil, fmt.Errorf("query support grants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]*supportaccess.Grant, 0, 4)
+	for rows.Next() {
+		var name string
+		g, err := scanSupportGrant(rowsPrefixScanner{rows: rows, prefix: []any{&name}})
+		if err != nil {
+			return nil, fmt.Errorf("scan support grant: %w", err)
+		}
+		g.TenantName = name
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+type rowsPrefixScanner struct {
+	rows   *sql.Rows
+	prefix []any
+}
+
+func (p rowsPrefixScanner) Scan(dest ...any) error {
+	return p.rows.Scan(append(append([]any{}, p.prefix...), dest...)...)
 }
 
 // GetGrantForAdmin returns a grant only when it names adminID and is usable at now.

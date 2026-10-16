@@ -57,7 +57,9 @@ type Grant struct {
 	RevokedBy  *shared.ID
 	CreatedAt  time.Time
 
-	// Read-side: support sessions opened under the grant and the last access.
+	// Read-side: the organization's name (console list only), support
+	// sessions opened under the grant and the last access.
+	TenantName   string
 	SessionCount int
 	LastAccessAt *time.Time
 	OpenSession  bool

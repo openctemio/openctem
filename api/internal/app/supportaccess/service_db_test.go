@@ -241,6 +241,12 @@ func TestSupportAccessSessions_DB(t *testing.T) {
 	if _, _, err := f.svc.StartSession(ctx, f.readonly, console, g.ID, "", client); !errors.Is(err, dom.ErrGrantRequired) {
 		t.Fatalf("readonly: %v", err)
 	}
+	if mine, err := f.svc.GrantsForAdmin(ctx, f.support); err != nil || len(mine) != 1 || mine[0].TenantName != "support it" {
+		t.Fatalf("my grants: %+v %v", mine, err)
+	}
+	if theirs, _ := f.svc.GrantsForAdmin(ctx, f.otherSupport); len(theirs) != 0 {
+		t.Fatalf("another admin sees %d grants", len(theirs))
+	}
 	sess, _, err := f.svc.StartSession(ctx, f.support, console, g.ID, "looking at P0 ranking", client)
 	if err != nil {
 		t.Fatalf("start: %v", err)

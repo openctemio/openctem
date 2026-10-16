@@ -38,6 +38,7 @@ func NewAdminSupportHandler(svc *supportapp.Service, log *logger.Logger) *AdminS
 type AdminSupportGrantResponse struct {
 	ID          string    `json:"id"`
 	TenantID    string    `json:"tenant_id"`
+	TenantName  string    `json:"tenant_name"`
 	Scopes      []string  `json:"scopes"`
 	Reason      string    `json:"reason"`
 	CaseRef     string    `json:"case_ref,omitempty"`
@@ -121,7 +122,7 @@ func (h *AdminSupportHandler) Grants(w http.ResponseWriter, r *http.Request) {
 	out := AdminSupportGrantListResponse{Data: make([]AdminSupportGrantResponse, 0, len(grants))}
 	for _, g := range grants {
 		out.Data = append(out.Data, AdminSupportGrantResponse{
-			ID: g.ID.String(), TenantID: g.TenantID.String(), Scopes: g.Scopes, Reason: g.Reason,
+			ID: g.ID.String(), TenantID: g.TenantID.String(), TenantName: g.TenantName, Scopes: g.Scopes, Reason: g.Reason,
 			CaseRef: g.CaseRef, ExpiresAt: g.ExpiresAt, OpenSession: g.OpenSession,
 		})
 	}
