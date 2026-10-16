@@ -427,3 +427,23 @@ func (c *Client) DoTransitionWithFields(ctx context.Context, issueKey, transitio
 	}
 	return c.doJSON(ctx, http.MethodPost, "/rest/api/2/issue/"+url.PathEscape(issueKey)+"/transitions", body, nil)
 }
+
+// GetIssueIdentity reads an issue's id and current key (a moved issue answers
+// with its new key). An issue the credentials cannot see is ErrIssueNotVisible.
+func (c *Client) GetIssueIdentity(ctx context.Context, issueKey string) (id, key string, err error) {
+	var resp struct {
+		ID  string `json:"id"`
+		Key string `json:"key"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/rest/api/2/issue/"+url.PathEscape(issueKey)+"?fields=project", nil, &resp); err != nil {
+		var ue *httpsec.UpstreamStatusError
+		if errors.As(err, &ue) && (ue.Status == http.StatusNotFound || ue.Status == http.StatusForbidden) {
+			return "", "", ErrIssueNotVisible
+		}
+		return "", "", err
+	}
+	return resp.ID, resp.Key, nil
+}
+
+// ErrIssueNotVisible: the issue does not exist or the credentials cannot see it.
+var ErrIssueNotVisible = errors.New("jira issue not found or not visible")

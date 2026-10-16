@@ -51,7 +51,7 @@ func closedStatusArray() pq.StringArray {
 }
 
 // fixAppliedStatuses are claimed fixed and await verification.
-var fixAppliedStatuses = pq.StringArray{string(vulnerability.FindingStatusFixApplied), string(vulnerability.FindingStatusValidatedFixed)}
+var fixAppliedStatuses = pq.StringArray{string(vulnerability.FindingStatusFixApplied)}
 
 const taskSelectCols = `t.id, t.tenant_id, t.action_id, a.action_key, a.kind, a.title, t.campaign_id,
 	t.title, t.description, t.assignee_user_id, t.assignee_group_id,

@@ -1,4 +1,4 @@
-package main
+package bootstrapadmin
 
 // `bootstrap-admin sensor-token` gives an install a single-use instance
 // enrollment token for its bundled sensor, which then enrolls as a shared
