@@ -1060,5 +1060,19 @@
   "findings.approvals.action.remind": "Nhắc người phê duyệt",
   "findings.approvals.toast.reminded": "Đã nhắc {count} người phê duyệt",
   "findings.approvals.toast.remindTooSoon": "Người phê duyệt đã được nhắc trong một giờ qua.",
-  "findings.approvals.toast.remindFailed": "Gửi lời nhắc thất bại"
+  "findings.approvals.toast.remindFailed": "Gửi lời nhắc thất bại",
+  "findings.ticketLinks.linked": "Đã liên kết {key}",
+  "findings.ticketLinks.linkFailed": "Không liên kết được issue",
+  "findings.ticketLinks.syncError": "Lỗi đồng bộ",
+  "findings.ticketLinks.unlinkAria": "Bỏ liên kết {key}",
+  "findings.ticketLinks.linkExisting": "Liên kết một issue có sẵn",
+  "findings.ticketLinks.dialogTitle": "Liên kết một issue Jira có sẵn",
+  "findings.ticketLinks.dialogDescription": "Issue phải nằm trên trang Jira của tổ chức và integration nhìn thấy được.",
+  "findings.ticketLinks.issueLabel": "Mã hoặc URL của issue",
+  "findings.ticketLinks.cancel": "Hủy",
+  "findings.ticketLinks.link": "Liên kết",
+  "findings.ticketLinks.unlinkTitle": "Bỏ liên kết {key}?",
+  "findings.ticketLinks.unlinkDescription": "Phát hiện ngừng đồng bộ với issue này. Bản thân issue không thay đổi.",
+  "findings.ticketLinks.unlink": "Bỏ liên kết",
+  "findings.ticketLinks.unlinkFailed": "Không bỏ liên kết được issue"
 }
