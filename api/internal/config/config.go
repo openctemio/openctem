@@ -225,6 +225,10 @@ type InternalAPIConfig struct {
 	JWTPublicKeysFile string
 	// JWTIssuer is the expected iss claim.
 	JWTIssuer string
+	// AllowAllInterfaces permits an address that listens on every interface
+	// (":9443", "0.0.0.0", "::"); off by default, so the listener binds a
+	// private address unless the operator decided otherwise.
+	AllowAllInterfaces bool
 }
 
 // validateAccountPortalURL accepts an empty value or an absolute https URL
@@ -248,6 +252,13 @@ func (c InternalAPIConfig) Enabled() bool { return c.Addr != "" }
 func (c InternalAPIConfig) validate() error {
 	if !c.Enabled() {
 		return nil
+	}
+	host, _, err := net.SplitHostPort(c.Addr)
+	if err != nil {
+		return fmt.Errorf("INTERNAL_API_ADDR %q is not host:port: %w", c.Addr, err)
+	}
+	if ip := net.ParseIP(host); (host == "" || (ip != nil && ip.IsUnspecified())) && !c.AllowAllInterfaces {
+		return fmt.Errorf("INTERNAL_API_ADDR %q listens on every interface; bind a private address, or set INTERNAL_API_ALLOW_ALL_INTERFACES=true when only a private network reaches it", c.Addr)
 	}
 	for _, f := range []struct{ name, value string }{
 		{"INTERNAL_API_TLS_CERT", c.CertFile}, {"INTERNAL_API_TLS_KEY", c.KeyFile},
@@ -1542,12 +1553,13 @@ func Load() (*Config, error) {
 		},
 		AccountPortalURL: getEnv("ACCOUNT_PORTAL_URL", ""),
 		InternalAPI: InternalAPIConfig{
-			Addr:              getEnv("INTERNAL_API_ADDR", ""),
-			CertFile:          getEnv("INTERNAL_API_TLS_CERT", ""),
-			KeyFile:           getEnv("INTERNAL_API_TLS_KEY", ""),
-			ClientCAFile:      getEnv("INTERNAL_API_CLIENT_CA", ""),
-			JWTPublicKeysFile: getEnv("INTERNAL_API_JWT_PUBLIC_KEYS", ""),
-			JWTIssuer:         getEnv("INTERNAL_API_JWT_ISSUER", "openctem-cloud"),
+			Addr:               getEnv("INTERNAL_API_ADDR", ""),
+			CertFile:           getEnv("INTERNAL_API_TLS_CERT", ""),
+			KeyFile:            getEnv("INTERNAL_API_TLS_KEY", ""),
+			ClientCAFile:       getEnv("INTERNAL_API_CLIENT_CA", ""),
+			JWTPublicKeysFile:  getEnv("INTERNAL_API_JWT_PUBLIC_KEYS", ""),
+			JWTIssuer:          getEnv("INTERNAL_API_JWT_ISSUER", "openctem-cloud"),
+			AllowAllInterfaces: getEnvBool("INTERNAL_API_ALLOW_ALL_INTERFACES", false),
 		},
 		SelfServiceStartLimits: getEnv("SELF_SERVICE_START_LIMITS", ""),
 		Metrics: MetricsConfig{
