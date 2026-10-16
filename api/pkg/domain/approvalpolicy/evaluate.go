@@ -364,6 +364,10 @@ func refuse(code, reason, msg string) error {
 	return &RefusalError{Code: code, Reason: reason, msg: msg}
 }
 
+// NewRefusal builds a refused sign-off (for stores that detect one, such as
+// a second sign-off by the same person).
+func NewRefusal(code, reason, msg string) error { return refuse(code, reason, msg) }
+
 // ValidPrior keeps the sign-offs whose signer still qualifies under r (the
 // facts or the pools may have changed since they signed).
 func (r Result) ValidPrior(prior []Signoff) []Signoff {
