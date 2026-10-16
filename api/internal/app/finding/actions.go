@@ -786,11 +786,26 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
 		Source: string(vulnerability.SourceAPI), Reason: "verified_by_filter", ActorType: "user", ActorID: uid.String(), Message: resolution,
 	})
-	if err := s.findingRepo.UpdateStatusBatch(moveCtx, tid, allowed,
+	if err := s.moveFixApplied(moveCtx, tid, allowed,
 		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.Fixed(verifyByFilterVerification)); err != nil {
 		return 0, fmt.Errorf("failed to verify findings: %w", err)
 	}
 	return int64(len(allowed)), nil
+}
+
+// moveFixApplied writes a verifier's decision on fix_applied findings, limited
+// to findings that are still fix_applied: one that moved on since it was read
+// (for example to an approved false positive or accepted risk) is left alone.
+// A repository that cannot limit the write is refused, never written blind.
+func (s *FindingActionsService) moveFixApplied(ctx context.Context, tid shared.ID, ids []shared.ID,
+	to vulnerability.FindingStatus, resolution string, by *shared.ID, closure vulnerability.Closure,
+) error {
+	w, ok := s.findingRepo.(vulnerability.FixClaimBatchWriter)
+	if !ok {
+		return fmt.Errorf("%w: the finding store cannot limit a batch to fix_applied findings", shared.ErrValidation)
+	}
+	return w.UpdateStatusBatchFrom(ctx, tid, ids, []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied},
+		to, resolution, by, closure)
 }
 
 // verifyByFilterVerification is how a verify-by-filter close is recorded: it
@@ -850,7 +865,7 @@ func (s *FindingActionsService) BulkRejectByFilter(
 		if err != nil || len(allowed) == 0 {
 			return 0, err
 		}
-		if err := s.findingRepo.UpdateStatusBatch(moveCtx, tid, allowed,
+		if err := s.moveFixApplied(moveCtx, tid, allowed,
 			vulnerability.FindingStatusInProgress, input.Reason, &uid, vulnerability.Closure{}); err != nil {
 			return 0, fmt.Errorf("failed to reject findings: %w", err)
 		}

@@ -56,8 +56,8 @@ type TenantHandler struct {
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
 	logger          *logger.Logger
-	// selfServiceCreation allows POST /tenants (TENANT_CREATION_MODE=
-	// self_service). Off by default: organizations are then created by the
+	// selfServiceCreation allows POST /tenants when no sign-up policy is
+	// wired (SIGNUP_MODE=open). Off by default: organizations are then created by the
 	// platform administrator only.
 	selfServiceCreation bool
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
@@ -85,7 +85,7 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 }
 
 // SetSelfServiceTenantCreation lets signed-in users create organizations
-// (TENANT_CREATION_MODE=self_service). Without it POST /tenants is refused.
+// (SIGNUP_MODE=open). Without it POST /tenants is refused.
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
 }
@@ -169,14 +169,17 @@ func (h *TenantHandler) SetAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker
 
 // TenantResponse represents a tenant in API responses.
 type TenantResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Slug        string    `json:"slug"`
-	Description string    `json:"description,omitempty"`
-	LogoURL     string    `json:"logo_url,omitempty"`
-	Plan        string    `json:"plan"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description,omitempty"`
+	LogoURL     string `json:"logo_url,omitempty"`
+	Plan        string `json:"plan"`
+	// Region is the organization's data region, fixed at creation; empty
+	// for organizations from before regions were named.
+	Region    string    `json:"region,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // TenantWithRoleResponse represents a tenant with the user's role.
@@ -365,6 +368,7 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 		Description: t.Description(),
 		LogoURL:     t.LogoURL(),
 		Plan:        string(t.Plan()),
+		Region:      t.Region(),
 		CreatedAt:   t.CreatedAt(),
 		UpdatedAt:   t.UpdatedAt(),
 	}

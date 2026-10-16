@@ -131,6 +131,11 @@ var stepUpRoutes = []string{
 	// A published finding lifecycle decides which status moves need what
 	// (RFC-110).
 	"POST /api/v1/lifecycles/{id}/versions/1/publish",
+	// Renaming or archiving a scheme and archiving a sub-status change what
+	// the organization's moves mean as much as publishing does.
+	"PATCH /api/v1/lifecycles/{id}",
+	"DELETE /api/v1/lifecycles/{id}",
+	"DELETE /api/v1/lifecycle-sub-statuses/{id}",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
