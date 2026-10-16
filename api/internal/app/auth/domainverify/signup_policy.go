@@ -72,6 +72,13 @@ func (s *Service) SignupPolicyForEmail(ctx context.Context, email string) (verif
 		return verifieddomain.EmailPolicy{}, false, nil //nolint:nilerr // not a claimable domain: no policy
 	}
 	for candidate, exact := domain, true; ; exact = false {
+		// A public suffix (co.uk), a shared platform suffix, a consumer
+		// mailbox provider or a disposable service is never one
+		// organization's: it governs no address even if a row for it exists
+		// (verification refuses to create one). The walk stops there.
+		if isBlocked(candidate) {
+			return verifieddomain.EmailPolicy{}, false, nil
+		}
 		holder, err := s.unambiguousHolder(ctx, candidate)
 		if err != nil {
 			return verifieddomain.EmailPolicy{}, false, err
