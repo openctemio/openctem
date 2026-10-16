@@ -302,17 +302,29 @@ WHERE m.rolname = :'admin_user' \gexec
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'admin_user') \gexec
 SELECT format('GRANT USAGE ON SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
 SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
--- The console's repositories also read users and memberships (linking an
--- administrator to an account in no organization): same row access as the
--- app for now; narrowing it to the console's own tables is a later step.
-SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
-SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations FROM %I', :'admin_user') \gexec
-SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.%I FROM %I', t, :'admin_user')
-FROM unnest(ARRAY['admin_audit_logs', 'admin_audit_chain_anchors']) AS t
+-- The console role starts from no table privilege (an earlier release granted
+-- it the app's row access) and gets exactly what the console's repositories
+-- touch: full DML on its own identity tables, append and read of its audit
+-- log, read of the audit chain anchors, link/unlink of an administrator to a
+-- users row (SELECT, UPDATE on users) and the membership check that refuses
+-- linking an account that belongs to an organization (SELECT on tenant_members).
+-- Tenant data (findings, assets, ...) is not readable or writable by it.
+SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
+SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO %I', t, :'admin_user')
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('GRANT SELECT, INSERT ON public.%I TO %I', t, :'admin_user')
+FROM unnest(ARRAY['admin_audit_logs']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('GRANT SELECT ON public.%I TO %I', t, :'admin_user')
+FROM unnest(ARRAY['admin_audit_chain_anchors', 'tenant_members']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('GRANT SELECT, UPDATE ON public.%I TO %I', t, :'admin_user')
+FROM unnest(ARRAY['users']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 SELECT format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
 SELECT format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
-SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', :'migrator_user', :'admin_user') \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I REVOKE ALL ON TABLES FROM %I', :'migrator_user', :'admin_user') \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migrator_user', :'admin_user') \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS TO %I', :'migrator_user', :'admin_user') \gexec
 

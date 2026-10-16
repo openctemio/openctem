@@ -12,6 +12,11 @@
   a migration just created gets its grants on the same `up`.
   `deploy/.env.example` and `setup.sh` set the role up for new installations;
   existing ones are unchanged until they add the two variables.
-- `bootstrap-admin` and `rekey` connect as `DB_ADMIN_USER` when it is set.
+- The console role holds only what the console's repositories touch: full DML
+  on its identity tables, insert and read on `admin_audit_logs`, read on the
+  audit chain anchors and `tenant_members`, read and update on `users`. It
+  cannot read or write tenant data.
+- `bootstrap-admin` and `rekey` connect as the schema owner (`DB_MIGRATE_USER`)
+  when it is set.
 - The API logs an error at start-up when `DB_ADMIN_USER` is set but the app
   role can still write `admin_users`.

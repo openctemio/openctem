@@ -7,7 +7,7 @@
 //
 //	DATABASE_URL     postgres connection string; when unset it is built from
 //	                 the server's DB_HOST, DB_PORT, DB_USER, DB_PASSWORD,
-//	                 DB_NAME and DB_SSLMODE (DB_ADMIN_USER/DB_ADMIN_PASSWORD
+//	                 DB_NAME and DB_SSLMODE (DB_MIGRATE_USER/DB_MIGRATE_PASSWORD
 //	                 instead of DB_USER/DB_PASSWORD when set), so it runs
 //	                 as-is inside the API container
 //	REKEY_OLD_KEY    the key the values are encrypted with now
@@ -197,12 +197,13 @@ func databaseURL() string {
 	return u.String()
 }
 
-// dbUserinfo picks the role: DB_ADMIN_USER when the console has its own role
-// (the app role then cannot touch the console's encrypted columns, and the
-// re-encryption is one transaction over every location), else DB_USER.
+// dbUserinfo picks the role: DB_MIGRATE_USER (the schema owner) when roles are
+// split (neither the app role nor the console role can touch every
+// location, and the re-encryption is one transaction over all of them), else
+// DB_USER.
 func dbUserinfo(get func(k, def string) string) *url.Userinfo {
-	if u := os.Getenv("DB_ADMIN_USER"); u != "" {
-		return url.UserPassword(u, os.Getenv("DB_ADMIN_PASSWORD"))
+	if u := os.Getenv("DB_MIGRATE_USER"); u != "" {
+		return url.UserPassword(u, os.Getenv("DB_MIGRATE_PASSWORD"))
 	}
 	return url.UserPassword(get("DB_USER", "openctem"), os.Getenv("DB_PASSWORD"))
 }
