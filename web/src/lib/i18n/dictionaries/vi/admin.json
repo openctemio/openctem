@@ -592,7 +592,7 @@
   "admin.versionCheck.banner.securityTitle": "Bản phát hành bảo mật: hãy nâng cấp lên {version}",
   "admin.versionCheck.banner.updateBody": "Máy chủ này đang chạy {running}.",
   "admin.versionCheck.banner.updateLink": "Có gì mới",
-  "admin.versionCheck.banner.updateTitle": "Đã có OpenCTEM {version}",
+  "admin.versionCheck.banner.updateTitle": "Đã có {product} {version}",
   "admin.versionCheck.error.expired": "Nguồn phát hành đã hết hạn; hãy lấy bản mới.",
   "admin.versionCheck.error.http_status": "Máy chủ chứa nguồn phát hành trả về lỗi.",
   "admin.versionCheck.error.invalid": "Không phải nguồn phát hành có chữ ký hợp lệ.",

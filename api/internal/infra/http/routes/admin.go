@@ -74,6 +74,8 @@ import (
 //	                                            TOTP code (audited with the reason)
 //	/admin/program-feed       any admin         local bundle switch: super_admin +
 //	                                            reason + fresh TOTP code (audited)
+//	/admin/version-check      any admin         import: super_admin + step-up
+//	                                            (audited high)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // "step-up" is the route-level gate (middleware.RequireAdminStepUp): a fresh
@@ -302,6 +304,18 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/program-feed", func(r Router) {
 			r.GET("/", f.Status)
 			r.PUT("/local-bundle", f.SetLocalBundle, requireSuper, stepUp("program_feed.local_bundle"))
+		}, adminMiddlewares...)
+	}
+
+	// Version check (RFC-105): any admin reads the status; importing the
+	// signed release feed file (air-gapped instances) needs super_admin and
+	// the step-up, audited high.
+	if h.AdminVersionCheck != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		vc := h.AdminVersionCheck
+		router.Group("/api/v1/admin/version-check", func(r Router) {
+			r.GET("/", vc.Status)
+			r.POST("/import", vc.Import, requireSuper, stepUp("version_check.import"))
 		}, adminMiddlewares...)
 	}
 
