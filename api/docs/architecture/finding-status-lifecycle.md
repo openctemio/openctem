@@ -505,6 +505,15 @@ instead).
   and a recent re-authentication; changes are audited with before/after and
   the approvers are told.
 
+- **Daily digest.** The hourly `approval-digest` controller sends each
+  approver, at most once per 23 hours and organization
+  (`finding_approval_digest_sent`), one in-app notice
+  (`finding_approval_digest`) and one email: the requests they may decide
+  (never their own, the finding in their data scope), how many expire within
+  two days, and up to five titles they can see
+  (`internal/app/finding/approval_digest.go`). Muting the digest type in the
+  notification preferences opts out of both.
+
 ### False-positive approval level
 
 `settings.finding_approvals.fp_approval` decides who decides a false positive

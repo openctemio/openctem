@@ -1025,6 +1025,12 @@ type SensorConfig struct {
 	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
 	CertMonitorCertSpotterURL string
 
+	// AssetTechnologyBackfillReportOnly makes the asset-technology-backfill
+	// job count and log the component links it would remove instead of
+	// deleting them. ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY, default TRUE: an
+	// operator checks the report, then sets it to false to enforce.
+	AssetTechnologyBackfillReportOnly bool
+
 	// InvitationPurgeInterval is how often expired, unaccepted invitations
 	// (an email address and a token hash) are deleted. They can no longer be
 	// accepted or resent. INVITATION_PURGE_INTERVAL, default 1h.
@@ -1143,6 +1149,14 @@ type EncryptionConfig struct {
 	// Env var: APP_CONTENT_SIGNING_KEY
 	ContentSigningKey string
 
+	// FingerprintKey is the server secret the fingerprint of every reported
+	// secret finding (and the key CI producers hash raw secrets with) is
+	// derived from. It never rotates with APP_ENCRYPTION_KEY: changing it
+	// changes every secret's identity, so a secret seen again would open a
+	// second finding. Empty is allowed only in development, where Key is used.
+	// At least 32 characters. Env var: FINGERPRINT_KEY
+	FingerprintKey string
+
 	// ContentTrustRootKeyIDs are extra content catalog roots (key ids,
 	// "SHA256:<hex>") trusted beside the ones pinned in the release, for an
 	// operator's own catalog source (RFC-099). Env var:
@@ -1153,6 +1167,18 @@ type EncryptionConfig struct {
 	// replaces the one embedded in the release for publisher signatures.
 	// Env var: CONTENT_SIGSTORE_TRUSTED_ROOT.
 	ContentSigstoreTrustedRoot string
+}
+
+// FingerprintSecret is the server secret the secret-finding fingerprint is
+// keyed from: FingerprintKey, or Key in development only. Never log it.
+func (c *Config) FingerprintSecret() string {
+	if c.Encryption.FingerprintKey != "" {
+		return c.Encryption.FingerprintKey
+	}
+	if c.IsDevelopment() {
+		return c.Encryption.Key
+	}
+	return ""
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1477,36 +1503,37 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: SensorConfig{
-			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
-			HeartbeatTimeout:            getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
-			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
-			VulnFeedRootKeyID:           getEnv("VULNFEED_ROOT_KEY_ID", ""),
-			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
-			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
-			VulnFeedMirrors:             feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
-			VersionCheckEnabled:         getEnvBool("VERSION_CHECK_ENABLED", true),
-			VersionCheckURL:             getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
-			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
-			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
-			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
-			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
-			AssetEnrichmentEnabled:      getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
-			AssetEnrichmentDailyBudget:  getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
-			AssetCoverageEnabled:        getEnvBool("ASSET_COVERAGE_ENABLED", true),
-			AssetCoverageInterval:       getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
-			AssetCoverageDailyBudget:    getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
-			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
-			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
-			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),
-			EASMDNSInterval:             getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
-			EASMDNSMaxNamesPerRun:       getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
-			CertMonitorCertSpotterURL:   getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
-			InvitationPurgeInterval:     getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
-			AdminSessionPurgeInterval:   getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
-			QuarantinePurgeInterval:     getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
-			QuarantineRetention:         getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
+			Enabled:                           getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
+			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
+			HealthCheckInterval:               getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
+			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
+			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", ""),
+			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
+			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
+			VersionCheckURL:                   getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
+			CertMonitorEnabled:                getEnvBool("CERT_MONITOR_ENABLED", true),
+			CertMonitorFeedBaseURL:            getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
+			CertMonitorInterval:               getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+			CertMonitorMaxDomainsPerRun:       getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
+			AssetEnrichmentEnabled:            getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
+			AssetEnrichmentDailyBudget:        getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
+			AssetCoverageEnabled:              getEnvBool("ASSET_COVERAGE_ENABLED", true),
+			AssetCoverageInterval:             getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
+			AssetCoverageDailyBudget:          getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
+			EASMDNSChecksEnabled:              getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
+			EASMDNSResolver:                   getEnv("EASM_DNS_RESOLVER", ""),
+			EASMDNSQPS:                        getEnvFloat("EASM_DNS_QPS", 20),
+			EASMDNSInterval:                   getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
+			EASMDNSMaxNamesPerRun:             getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
+			CertMonitorCertSpotterURL:         getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
+			AssetTechnologyBackfillReportOnly: getEnvBool("ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY", true),
+			InvitationPurgeInterval:           getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
+			AdminSessionPurgeInterval:         getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
+			QuarantinePurgeInterval:           getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
+			QuarantineRetention:               getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
@@ -1524,6 +1551,7 @@ func Load() (*Config, error) {
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
+			FingerprintKey:     getEnv("FINGERPRINT_KEY", ""),
 
 			ContentTrustRootKeyIDs:     getEnvSlice("CONTENT_TRUST_ROOT_KEY_IDS", nil),
 			ContentSigstoreTrustedRoot: getEnv("CONTENT_SIGSTORE_TRUSTED_ROOT", ""),
@@ -1888,6 +1916,15 @@ func (c *Config) validateEncryption() error {
 		}
 	}
 
+	// The fingerprint key is its own secret so rotating the encryption key
+	// never changes the identity of a stored secret finding.
+	if k := c.Encryption.FingerprintKey; k != "" && len(k) < 32 {
+		return fmt.Errorf("FINGERPRINT_KEY must be at least 32 characters, got %d; generate one with `openssl rand -hex 32`", len(k))
+	}
+	if c.Encryption.FingerprintKey == "" && !c.IsDevelopment() {
+		return fmt.Errorf("FINGERPRINT_KEY is required when APP_ENV=%q (only APP_ENV=development may omit it); generate one with `openssl rand -hex 32`, and on an existing install set it to the current APP_ENCRYPTION_KEY value so stored secret fingerprints stay valid", c.App.Env)
+	}
+
 	// Encryption key is optional only in development. Any other APP_ENV
 	// (production, staging, preview, etc.) stores real tenant credentials
 	// and MUST have a key — otherwise integration tokens sit in plaintext.
@@ -2014,6 +2051,12 @@ func (c *Config) validateAuth() error {
 		return fmt.Errorf("APP_ENCRYPTION_KEY is the docker-compose default and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
 	}
 
+	// The example FINGERPRINT_KEY values are public: refuse them outside
+	// development.
+	if !c.IsDevelopment() && isDevDefaultFingerprintKey(c.Encryption.FingerprintKey) {
+		return fmt.Errorf("FINGERPRINT_KEY is an example value from the repository and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
+	}
+
 	// A dedicated sensor-key pepper must be a real secret: at least 32
 	// characters (openssl rand -hex 32 gives 64).
 	if p := c.SensorConfig.KeyPepper; p != "" && len(p) < 32 {
@@ -2038,6 +2081,7 @@ func (c *Config) validatePlaceholders() error {
 		{"APP_ENCRYPTION_KEY", c.Encryption.Key},
 		{"APP_TEMPLATE_SIGNING_KEY", c.Encryption.TemplateSigningKey},
 		{"APP_CONTENT_SIGNING_KEY", c.Encryption.ContentSigningKey},
+		{"FINGERPRINT_KEY", c.Encryption.FingerprintKey},
 		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
 		{"DB_PASSWORD", c.Database.Password},
 		{"REDIS_PASSWORD", c.Redis.Password},
@@ -2091,6 +2135,18 @@ var devDefaultJWTSecrets = []string{
 
 func isDevDefaultJWTSecret(s string) bool {
 	return slices.Contains(devDefaultJWTSecrets, s)
+}
+
+// devDefaultFingerprintKeys is the closed set of FINGERPRINT_KEY values that
+// ship in .env.example, the registry example and the compose fallback.
+// Update it whenever a new example is introduced.
+var devDefaultFingerprintKeys = []string{
+	"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+}
+
+func isDevDefaultFingerprintKey(s string) bool {
+	return s != "" && slices.Contains(devDefaultFingerprintKeys, s)
 }
 
 // isDevDefaultEncryptionKey flags the repeating-hex-digit AES-256 key

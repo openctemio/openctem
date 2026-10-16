@@ -1,0 +1,3 @@
+### Behaviour change: secret findings are fingerprinted with their own key, FINGERPRINT_KEY
+
+- The fingerprint of a reported secret (and the key CI jobs hash raw secrets with) is now derived from `FINGERPRINT_KEY` instead of `APP_ENCRYPTION_KEY`, so rotating the encryption key no longer changes a secret's identity. `FINGERPRINT_KEY` is required outside `APP_ENV=development` (at least 32 characters, never printed). **Existing installs:** set it to the current `APP_ENCRYPTION_KEY` value before upgrading; every stored fingerprint stays valid. Never rotate it. See `docs/deployment/encryption-key-rotation.md`. `deploy/setup.sh` generates one for new installs.
