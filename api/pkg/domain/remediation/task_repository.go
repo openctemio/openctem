@@ -69,4 +69,6 @@ type TaskRepository interface {
 	SplitTask(ctx context.Context, sp SplitRequest) (shared.ID, *MoveResult, error)
 	MergeTasks(ctx context.Context, mg MergeRequest) (int, error)
 	CountActivePrimary(ctx context.Context, tenantID, taskID shared.ID, ids []shared.ID) (int, error)
+	OpenPrimaryIDs(ctx context.Context, tenantID, taskID shared.ID) ([]shared.ID, error)
+	RecordFixClaim(ctx context.Context, tenantID, taskID shared.ID, actor *shared.ID, data map[string]any) error
 }

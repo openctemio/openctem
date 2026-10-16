@@ -126,10 +126,21 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   and reported. A detach records `remediation_key_exclusions` (reason `detached`) for the source's key.
 - Undo = the reverse move with the versions the response returns.
 
+## Mark fixed and regressions
+
+- `POST /api/v1/remediation/tasks/{task_id}/resolve` (`findings:remediation:write` + `findings:fix_apply`),
+  body `version`, `note`: every open finding of the task goes to `fix_applied` through the finding bulk path
+  (`WalkToFixApplied`: new/confirmed walk through in_progress; the asset owner's claim only; the bulk abuse
+  guard; a proof-of-fix re-check queued per finding). The response lists each finding not updated with the
+  reason; the task records a `fix_claimed` timeline entry. Nothing closes: each finding closes on its own
+  evidence.
+- A finding of a `done` or `closed_unverified` task that reopens is moved, at the next recompute, into a new
+  task `Regression: <title>` with the same fix, owner, campaign and manual deadline and `regression_of` set;
+  the closed task keeps its state (`regressed` timeline entry) and its history.
+
 ## Shipped and planned
 
-Shipped: everything above. Planned (RFC-098 §8): task-level mark fixed and regression tasks, the new Remediation
-console.
+Shipped: everything above. Planned: the new Remediation console.
 
 ## Key files
 

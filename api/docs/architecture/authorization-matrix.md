@@ -1424,6 +1424,7 @@ a personal address, or be a work domain nobody has verified.
 | `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision or accept needs every finding in scope (a join also every finding of the target task) |
 | `PATCH /remediation/actions/{id}` (auto-join, RFC-098) | — | needs a caller with no data-scope restriction (the rule acts on findings beyond any scope) |
 | `/remediation/moves*`, `/remediation/tasks/{id}/splits|merges` (RFC-098) | — | every task involved must have all its findings in the caller's scope, and every named finding too (404 otherwise); another tenant's task is 404 |
+| `POST /remediation/tasks/{id}/resolve` (RFC-098) | — | `RequireAll(findings:remediation:write, findings:fix_apply)`; every finding of the task in the caller's scope; each finding moves only through the bulk path's legal steps and owner check |
 | `/remediation/tasks*` (new, RFC-098) | — | a task is listed and read through its in-scope findings only (counters, deadline and risk over those; `hidden_members` counts the rest; none visible = 404); a change needs every finding in scope; named findings must be in scope (404 otherwise) |
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
