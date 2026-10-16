@@ -3,6 +3,7 @@ import {
   adminFetch,
   AdminApiError,
   ADMIN_STEP_UP_HEADER,
+  setAdminEnrollmentListener,
   setAdminStepUpPrompt,
 } from '../api/admin-client'
 // Static import: the component tree is heavy to transform, and a dynamic
@@ -83,7 +84,7 @@ describe('adminFetch step-up', () => {
     new Response(JSON.stringify({ code: 'ADMIN_STEP_UP_REQUIRED', message }), { status: 401 })
 
   it('asks for a code and retries the same write with the step-up header', async () => {
-    const prompt = vi.fn().mockResolvedValue('123456')
+    const prompt = vi.fn().mockResolvedValue({ kind: 'code', code: '123456' })
     setAdminStepUpPrompt(prompt)
     fetchMock
       .mockResolvedValueOnce(stepUp())
@@ -91,7 +92,7 @@ describe('adminFetch step-up', () => {
     await expect(
       adminFetch('/administrators', { method: 'POST', body: { email: 'x@example.com' } })
     ).resolves.toEqual({ id: 'a1' })
-    expect(prompt).toHaveBeenCalledWith(undefined)
+    expect(prompt).toHaveBeenCalledWith({ keyOnly: false, formCode: false, problem: undefined })
     expect(fetchMock.mock.calls[0][1].headers[ADMIN_STEP_UP_HEADER]).toBeUndefined()
     const retry = fetchMock.mock.calls[1][1]
     expect(retry.headers[ADMIN_STEP_UP_HEADER]).toBe('123456')
@@ -100,14 +101,21 @@ describe('adminFetch step-up', () => {
   })
 
   it('shows the refusal of a wrong code on the next prompt', async () => {
-    const prompt = vi.fn().mockResolvedValueOnce('000000').mockResolvedValueOnce('654321')
+    const prompt = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: 'code', code: '000000' })
+      .mockResolvedValueOnce({ kind: 'code', code: '654321' })
     setAdminStepUpPrompt(prompt)
     fetchMock
       .mockResolvedValueOnce(stepUp())
       .mockResolvedValueOnce(stepUp('Invalid or already used code'))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
     await adminFetch('/users/u1', { method: 'DELETE' })
-    expect(prompt).toHaveBeenNthCalledWith(2, 'Invalid or already used code')
+    expect(prompt).toHaveBeenNthCalledWith(2, {
+      keyOnly: false,
+      formCode: false,
+      problem: 'Invalid or already used code',
+    })
     expect(fetchMock.mock.calls[2][1].headers[ADMIN_STEP_UP_HEADER]).toBe('654321')
   })
 
@@ -150,13 +158,97 @@ describe('adminFetch step-up', () => {
   it('never prompts for other refusals', async () => {
     const prompt = vi.fn()
     setAdminStepUpPrompt(prompt)
+    // A form code that was refused is the form's to correct.
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ code: 'STEP_UP_REQUIRED', message: 'x' }), { status: 401 })
     )
-    await expect(adminFetch('/settings/legal', { method: 'PUT', body: {} })).rejects.toBeInstanceOf(
+    await expect(
+      adminFetch('/settings/legal', { method: 'PUT', body: { totp_code: '123456' } })
+    ).rejects.toBeInstanceOf(AdminApiError)
+    // A role refusal is not a step-up.
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'FORBIDDEN', message: 'no' }), { status: 403 })
+    )
+    await expect(adminFetch('/plans', { method: 'PUT', body: {} })).rejects.toBeInstanceOf(
       AdminApiError
     )
     expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('after a security-key step-up retries without the header and without the form code', async () => {
+    const prompt = vi.fn().mockResolvedValue({ kind: 'key' })
+    setAdminStepUpPrompt(prompt)
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 'WEBAUTHN_REQUIRED', message: 'key' }), { status: 403 })
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    await adminFetch('/settings/legal', {
+      method: 'PUT',
+      body: { totp_code: '445566', version: 2 },
+    })
+    expect(prompt).toHaveBeenCalledWith({ keyOnly: true, formCode: false })
+    expect(fetchMock.mock.calls[0][1].headers[ADMIN_STEP_UP_HEADER]).toBe('445566')
+    const retry = fetchMock.mock.calls[1][1]
+    expect(retry.headers[ADMIN_STEP_UP_HEADER]).toBeUndefined()
+    expect(retry.body).toBe(JSON.stringify({ version: 2 }))
+  })
+
+  it('drops the code from a FormData body on a key retry', async () => {
+    setAdminStepUpPrompt(vi.fn().mockResolvedValue({ kind: 'key' }))
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 'ADMIN_STEP_UP_REQUIRED', message: 'x' }), {
+          status: 401,
+        })
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'p1' }), { status: 201 }))
+    const form = new FormData()
+    form.set('totp_code', '')
+    form.set('reason', 'refresh')
+    await adminFetch('/content-packs', { method: 'POST', body: form })
+    const sent = fetchMock.mock.calls[1][1].body as FormData
+    expect(sent.has('totp_code')).toBe(false)
+    expect(sent.get('reason')).toBe('refresh')
+  })
+
+  it('an empty form code asks for the key only', async () => {
+    const prompt = vi.fn().mockResolvedValue({ kind: 'key' })
+    setAdminStepUpPrompt(prompt)
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 'STEP_UP_REQUIRED', message: 'x' }), { status: 401 })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await adminFetch('/sessions/s1', { method: 'DELETE', body: { reason: 'r', totp_code: '' } })
+    expect(prompt).toHaveBeenCalledWith({ keyOnly: true, formCode: true })
+    expect(fetchMock.mock.calls[1][1].body).toBe(JSON.stringify({ reason: 'r' }))
+  })
+
+  it('never asks for a step-up on the sign-in steps', async () => {
+    const prompt = vi.fn()
+    setAdminStepUpPrompt(prompt)
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'WEBAUTHN_REQUIRED', message: 'key' }), { status: 403 })
+    )
+    const err = (await adminFetch('/auth/mfa', { method: 'POST', body: { code: '123456' } }).catch(
+      (e: unknown) => e
+    )) as AdminApiError
+    expect(err.code).toBe('WEBAUTHN_REQUIRED')
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('tells the shell when the session is held on enrollment', async () => {
+    const listener = vi.fn()
+    setAdminEnrollmentListener(listener)
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'FACTOR_ENROLLMENT_REQUIRED', message: 'enroll' }), {
+        status: 403,
+      })
+    )
+    await expect(adminFetch('/overview')).rejects.toBeInstanceOf(AdminApiError)
+    expect(listener).toHaveBeenCalledTimes(1)
+    setAdminEnrollmentListener(null)
   })
 })
 

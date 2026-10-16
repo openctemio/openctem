@@ -8,7 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { adminIdPInfo, adminStartSession } from '@/features/admin-console/api/use-admin-session'
 import { AdminApiError } from '@/features/admin-console/api/admin-client'
-import { TotpStepForm, adminErrorMessage } from '@/features/admin-console/components/totp-step-form'
+import { adminErrorMessage } from '@/features/admin-console/components/totp-step-form'
+import { SecondFactorStep } from '@/features/admin-console/components/second-factor-step'
+import { useTranslation } from '@/context/i18n-provider'
 import { IdPSignInButton } from '@/features/admin-console/components/idp-sign-in-button'
 import { nextFromLocation } from '@/features/admin-console/lib/console-navigation'
 import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
@@ -42,6 +44,7 @@ async function enabledIdP(): Promise<AdminIdPInfo | null> {
  *   /admin/login/callback.
  */
 export default function AdminVerifyPage() {
+  const { t } = useTranslation()
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' })
   const [busy, setBusy] = useState(false)
   const started = useRef(false)
@@ -69,10 +72,14 @@ export default function AdminVerifyPage() {
       }
       setPhase({
         kind: 'failed',
-        message: adminErrorMessage(err, 'The console could not be reached.'),
+        message: adminErrorMessage(
+          err,
+          t('admin.login.unreachable', 'The console could not be reached.'),
+          t('admin.login.tooMany', 'Too many attempts. Wait a minute and try again.')
+        ),
       })
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     // Once per mount: each start issues a new pending session (and, before
@@ -95,16 +102,19 @@ export default function AdminVerifyPage() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-xl">
           <ShieldCheck className="size-5 text-muted-foreground" />
-          Platform administration
+          {t('admin.shell.title', 'Platform administration')}
         </CardTitle>
         <CardDescription>
           {phase.kind === 'refused'
-            ? 'This account cannot open the admin console this way.'
+            ? t('admin.login.refused', 'This account cannot open the admin console this way.')
             : phase.kind === 'choose'
-              ? 'Sign in to administer this installation.'
+              ? t('admin.login.choose', 'Sign in to administer this installation.')
               : enrolling
-                ? 'Set up two-step verification. It is required for every administrator.'
-                : 'Enter the 6-digit code from your authenticator app to continue.'}
+                ? t(
+                    'admin.login.enrollDescription',
+                    'Set up two-step verification. It is required for every administrator.'
+                  )
+                : t('admin.login.secondStep', 'Confirm it is you to continue.')}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -112,7 +122,7 @@ export default function AdminVerifyPage() {
           <div
             className="flex justify-center py-6"
             role="status"
-            aria-label="Checking your sign-in"
+            aria-label={t('admin.login.checking', 'Checking your sign-in')}
           >
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
@@ -123,12 +133,14 @@ export default function AdminVerifyPage() {
             <IdPSignInButton displayName={phase.idp.display_name} next={nextFromLocation()} />
             <Button asChild variant="outline" className="w-full">
               <Link href={`/login?redirect=${encodeURIComponent(nextFromLocation())}`}>
-                Sign in with a password
+                {t('admin.login.withPassword', 'Sign in with a password')}
               </Link>
             </Button>
             <p className="text-xs text-muted-foreground">
-              Password sign-in is for break-glass (emergency) accounts when the identity provider is
-              required.
+              {t(
+                'admin.login.passwordBreakGlass',
+                'Password sign-in is for break-glass (emergency) accounts when the identity provider is required.'
+              )}
             </p>
           </div>
         )}
@@ -143,7 +155,7 @@ export default function AdminVerifyPage() {
             )}
             {phase.kind === 'failed' && (
               <Button type="button" className="w-full" onClick={() => void start()}>
-                Try again
+                {t('admin.login.tryAgain', 'Try again')}
               </Button>
             )}
             <Button
@@ -153,13 +165,13 @@ export default function AdminVerifyPage() {
               disabled={busy}
               onClick={switchAccount}
             >
-              Sign in with a different account
+              {t('admin.login.switchAccount', 'Sign in with a different account')}
             </Button>
           </div>
         )}
 
         {step && (
-          <TotpStepForm
+          <SecondFactorStep
             step={step}
             disabled={busy}
             onSwitchAccount={switchAccount}

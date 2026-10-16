@@ -25,6 +25,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '../api/admin-client'
 import type { ScanApprovalMode, ScanApprovalPolicy } from '../api/use-scan-policy'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 const POLICIES: ScanApprovalPolicy[] = ['tenant_controlled', 'off', 'on', 'strict']
 
@@ -100,6 +101,7 @@ export function ScanPolicyForm({
   const [choice, setChoice] = useState<string>(initial)
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -212,7 +214,7 @@ export function ScanPolicyForm({
             )}
           </p>
         }
-        disabled={code.trim().length < 6 || !reason.trim()}
+        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim()}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -250,6 +252,7 @@ export function ScanPolicyForm({
               maxLength={8}
               aria-invalid={!!codeError}
             />
+            <StepUpCodeHint optional={codeOptional} />
             {codeError && <p className="text-sm text-destructive">{codeError}</p>}
           </div>
         </div>

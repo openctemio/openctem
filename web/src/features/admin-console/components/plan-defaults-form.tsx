@@ -28,6 +28,7 @@ import {
 import type { PlanDefaultsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '../api/admin-client'
 import { savePlanDefaults } from '../api/use-plans'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 type Grid = Record<PlanName, Record<PlanKey, string>>
 
@@ -70,6 +71,7 @@ export function PlanDefaultsForm({ defaults, canEdit, onSaved }: PlanDefaultsFor
   const [grid, setGrid] = useState<Grid>(initial)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const codeId = useId()
@@ -199,7 +201,7 @@ export function PlanDefaultsForm({ defaults, canEdit, onSaved }: PlanDefaultsFor
             emailed.
           </p>
         }
-        disabled={code.trim().length < 6}
+        disabled={!stepUpCodeReady(code, codeOptional)}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -224,6 +226,7 @@ export function PlanDefaultsForm({ defaults, canEdit, onSaved }: PlanDefaultsFor
             maxLength={8}
             aria-invalid={!!codeError}
           />
+          <StepUpCodeHint optional={codeOptional} />
           {codeError && <p className="text-sm text-destructive">{codeError}</p>}
         </div>
       </ConfirmDialog>
