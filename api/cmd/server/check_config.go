@@ -18,8 +18,8 @@ func reportConfigCheck(stdout, stderr io.Writer, cfg *config.Config, loadErr err
 		fmt.Fprintf(stderr, "configuration INVALID: %v\n", loadErr)
 		return 1
 	}
-	fmt.Fprintf(stdout, "configuration valid: APP_ENV=%s AUTH_PROVIDER=%s TENANT_CREATION_MODE=%s\n",
-		cfg.App.Env, cfg.Auth.Provider, cfg.Auth.TenantCreationMode)
+	fmt.Fprintf(stdout, "configuration valid: APP_ENV=%s AUTH_PROVIDER=%s SIGNUP_MODE=%s\n",
+		cfg.App.Env, cfg.Auth.Provider, cfg.Auth.SignupMode)
 	if set := config.SetAPIVariables(environ); len(set) > 0 {
 		fmt.Fprintf(stdout, "set from the environment (%d; every other variable has its default): %s\n", len(set), strings.Join(set, " "))
 	}
