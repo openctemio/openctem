@@ -78,7 +78,7 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/tenants/{tenantId}/plan":                              {routine, "limits only; audited by the service"},
 	"PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}":              {routine, "limits only; audited by the service"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}":           {routine, "limits only; audited by the service"},
-	"PUT /api/v1/admin/tenants/{tenantId}/idle/exemption":                    {routine, "idle lifecycle exemption; audited by the service"},
+	"PUT /api/v1/admin/tenants/{tenantId}/idle/policy":                       {routine, "idle policy on or off (read-only at worst, deletes nothing); reason required, audited by the service"},
 	"POST /api/v1/admin/access-requests/{id}/reject":                         {routine, "refuses a request; nothing is created"},
 
 	// Platform settings and trust.
