@@ -75,47 +75,29 @@ func (r *FindingRepository) PromoteBranchOnlyByFingerprints(ctx context.Context,
 }
 
 // expireBranchOnlyFindings marks the tenant's open branch-only findings
-// that no branch still shows as not_observed (resolution branch_expired,
-// never a fix), and records a status_changed activity for each. A branch
-// still shows a finding while its occurrence there is open and was seen
-// within the branch's retention (or defaultExpiryDays). A merged or deleted
-// branch stops showing it: a deleted branch takes its occurrences with it,
-// and a merged one is no longer scanned. The finding itself must also be
-// unseen for defaultExpiryDays, so a missed occurrence write never expires
-// a fresh finding. keep_when_inactive is not consulted: it keeps findings
-// of a branch that counts, and a branch-only finding counts nowhere.
+// that no branch still shows as stale (observation_state; the status stays,
+// it is never a fix). A branch still shows a finding while its occurrence
+// there is open and was seen within the branch's retention (or
+// defaultExpiryDays). A merged or deleted branch stops showing it: a deleted
+// branch takes its occurrences with it, and a merged one is no longer
+// scanned. The finding itself must also be unseen for defaultExpiryDays, so
+// a missed occurrence write never expires a fresh finding. keep_when_inactive
+// is not consulted: it keeps findings of a branch that counts, and a
+// branch-only finding counts nowhere.
 func (r *FindingRepository) expireBranchOnlyFindings(ctx context.Context, tenantID shared.ID, defaultExpiryDays int) (int64, error) {
 	query := `
-		WITH cand AS (
-			SELECT f.id, f.status
-			FROM findings f
-			WHERE f.tenant_id = $1
-			  AND f.branch_only
-			  AND f.status IN ` + branchOnlyExpiryFromSQL + `
-			  AND f.last_seen_at < NOW() - make_interval(days => $2)
-			  AND NOT EXISTS (
-				SELECT 1 FROM finding_branch_occurrences o
-				JOIN repository_branches b ON b.id = o.branch_id
-				WHERE o.tenant_id = $1 AND o.finding_id = f.id AND o.status = 'open'
-				  AND o.last_seen_at >= NOW() - make_interval(days => COALESCE(b.retention_days, $2)))
-			FOR UPDATE OF f
-		), expired AS (
-			UPDATE findings f
-			SET status = 'not_observed',
-				resolution = 'branch_expired',
-				closure_reason = NULL, verification = NULL,
-				resolved_at = NULL,
-				resolved_by = NULL,
-				updated_at = NOW()
-			FROM cand
-			WHERE f.id = cand.id AND f.tenant_id = $1
-			RETURNING f.id, cand.status AS old_status
-		)
-		INSERT INTO finding_activities (id, tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, created_at)
-		SELECT gen_random_uuid(), $1, e.id, 'status_changed', 'system', 'system: branch expiry',
-			jsonb_build_object('old_status', e.old_status, 'new_status', 'not_observed', 'reason', 'branch_only_expired'),
-			'auto', NOW()
-		FROM expired e`
+		UPDATE findings f
+		SET observation_state = 'stale', updated_at = NOW()
+		WHERE f.tenant_id = $1
+		  AND f.branch_only
+		  AND f.status IN ` + branchOnlyExpiryFromSQL + `
+		  AND f.observation_state = 'present'
+		  AND f.last_seen_at < NOW() - make_interval(days => $2)
+		  AND NOT EXISTS (
+			SELECT 1 FROM finding_branch_occurrences o
+			JOIN repository_branches b ON b.id = o.branch_id
+			WHERE o.tenant_id = $1 AND o.finding_id = f.id AND o.status = 'open'
+			  AND o.last_seen_at >= NOW() - make_interval(days => COALESCE(b.retention_days, $2)))`
 	res, err := r.db.ExecContext(ctx, query, tenantID.String(), defaultExpiryDays)
 	if err != nil {
 		return 0, fmt.Errorf("expire branch-only findings: %w", err)
