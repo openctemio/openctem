@@ -43,8 +43,11 @@ type LocalAuthHandler struct {
 	// sign-up setting). Nil: SIGNUP_MODE=open from the config.
 	signupPolicy signupdom.PolicySource
 	// captcha, when set (CAPTCHA_TURNSTILE_SECRET), must pass before a
-	// registration is looked at.
+	// registration is looked at, and before a sign-in after repeated
+	// failures from the same address.
 	captcha Captcha
+	// loginFailures counts failed sign-ins per client address.
+	loginFailures LoginFailureCounter
 }
 
 // Captcha verifies a CAPTCHA token from the browser (Cloudflare Turnstile).
@@ -244,6 +247,9 @@ func registerMessage(requiresVerification bool) string {
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required"`
+	// CaptchaToken is required after repeated failed sign-ins from the same
+	// address (403 CAPTCHA_REQUIRED otherwise).
+	CaptchaToken string `json:"captcha_token,omitempty"`
 }
 
 // TenantInfo represents tenant membership info in login response.
@@ -314,6 +320,15 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	ipAddress := getClientIP(r)
 	userAgent := r.UserAgent()
 
+	if h.loginNeedsCaptcha(r, ipAddress) {
+		ok, cerr := h.captcha.Verify(r.Context(), strings.TrimSpace(req.CaptchaToken), ipAddress)
+		if cerr != nil || !ok {
+			apierror.New(http.StatusForbidden, CodeCaptchaRequired,
+				"Complete the security check and try again.").WriteJSON(w)
+			return
+		}
+	}
+
 	result, err := h.authService.Login(r.Context(), auth.LoginInput{
 		Email:     req.Email,
 		Password:  req.Password,
@@ -321,8 +336,16 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		UserAgent: userAgent,
 	})
 	if err != nil {
+		if h.loginFailures != nil && errors.Is(err, auth.ErrInvalidCredentials) {
+			if rerr := h.loginFailures.Record(r.Context(), ipAddress); rerr != nil {
+				h.logger.Warn("record failed sign-in", "error", rerr)
+			}
+		}
 		h.handleAuthError(w, err)
 		return
+	}
+	if h.loginFailures != nil {
+		_ = h.loginFailures.Reset(r.Context(), ipAddress)
 	}
 
 	// Password was right but a second factor is needed: answer with the

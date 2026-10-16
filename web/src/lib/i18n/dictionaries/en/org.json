@@ -234,6 +234,7 @@
   "org.ownership.error.previousRole": "Choose administrator, member or viewer for yourself.",
   "org.ownership.action": "Transfer ownership...",
   "org.ownership.error.action": "Could not complete this action",
+  "org.createTeam.urlNotAvailable": "This URL is not available. Choose another one.",
   "org.onboarding.loading": "Loading your options",
   "org.onboarding.verifyFirst": "Verify your email address to see the organizations you can join. Check your inbox for the link.",
   "org.onboarding.invitations": "Invitations",

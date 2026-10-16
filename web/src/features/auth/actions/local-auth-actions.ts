@@ -38,6 +38,8 @@ export interface LocalUser {
 export interface LoginInput {
   email: string
   password: string
+  /** Required after repeated failed sign-ins from the same address. */
+  captchaToken?: string
 }
 
 // Tenant info returned from login
@@ -131,6 +133,8 @@ export interface LoginResult {
   success: boolean
   user?: LocalUser
   error?: string
+  /** The API's error code, e.g. CAPTCHA_REQUIRED. */
+  code?: string
   message?: string
   // Multi-tenant selection
   requiresTenantSelection?: boolean
@@ -321,6 +325,7 @@ export async function loginAction(input: LoginInput): Promise<LoginResult> {
       body: JSON.stringify({
         email: input.email,
         password: input.password,
+        ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
       }),
     })
 
@@ -343,6 +348,7 @@ export async function loginAction(input: LoginInput): Promise<LoginResult> {
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Login failed',
+      code: (error as { code?: unknown } | null)?.code as string | undefined,
     }
   }
 }
