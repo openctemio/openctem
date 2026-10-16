@@ -10,6 +10,9 @@ import (
 	"net"
 	"time"
 
+	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
@@ -277,6 +280,30 @@ func (a ticketStatusApplier) RequestTicketDisposition(ctx context.Context, tenan
 		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
 	}
 	return out.Requested, out.Pending, refused, nil
+}
+
+// taskIssueReader is the platform's read of remediation tasks for their
+// tracker issues (no caller scope: the background sync and the inbound
+// webhook act for the organization).
+type taskIssueReader struct {
+	repo *postgres.RemediationTaskRepository
+}
+
+func (r taskIssueReader) GetTask(ctx context.Context, tenantID, taskID shared.ID) (*remediationdom.Task, error) {
+	return r.repo.GetTask(ctx, tenantID, taskID)
+}
+
+func (r taskIssueReader) OpenMemberIDs(ctx context.Context, tenantID, taskID shared.ID, limit int) ([]shared.ID, error) {
+	res, err := r.repo.ListMembers(ctx, tenantID, taskID,
+		remediationdom.MemberFilter{Role: remediationdom.MemberRolePrimary, Status: "open"}, pagination.New(1, limit))
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]shared.ID, 0, len(res.Data))
+	for _, m := range res.Data {
+		ids = append(ids, m.FindingID)
+	}
+	return ids, nil
 }
 
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
@@ -1736,6 +1763,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.TicketLink != nil {
 		s.JiraSync.SetLinkStore(repos.TicketLink)
 	}
+	// Task issues: a person creates a task's issue (a change of the task, in
+	// their data scope); the platform keeps its status in step.
+	s.JiraSync.SetTaskSources(s.RemediationTask, taskIssueReader{repo: repos.RemediationTask})
+	s.JiraSync.SetWebBaseURL(cfg.SMTP.BaseURL)
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
@@ -2022,13 +2053,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
-	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
-	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
-	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)        // License policy on every package write
-	s.Ingest.SetVEXStatementApplier(s.VEX)               // The organization's VEX statements cover new findings
-	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
-	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
-	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset values and sets, incl. open ports (RFC-069)
+	s.Ingest.SetDataFlowRepository(repos.DataFlow)          // Wire data flow persistence
+	s.Ingest.SetComponentRepository(repos.Component)        // Wire component linking for SCA findings
+	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)           // License policy on every package write
+	s.Ingest.SetVEXStatementApplier(s.VEX)                  // The organization's VEX statements cover new findings
+	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)    // Web endpoints under their origin asset (RFC-056)
+	s.Ingest.SetSoftwareRepository(repos.Software)          // Software inventory capture (RFC-066)
+	s.Ingest.SetTechnologyRepository(repos.AssetTechnology) // Detected technologies (RFC-112)
+	s.Ingest.SetAttributeReconciler(s.Asset)                // Per-source asset values and sets, incl. open ports (RFC-069)
 	// Inventory vulnerability matching (RFC-066): told by ingest when an
 	// organization's software changes; findings go through the same
 	// priority and SLA enrichment as ingested ones.

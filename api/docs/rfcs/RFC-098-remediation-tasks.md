@@ -162,6 +162,19 @@ One ticket per task. The tracker field and status mapping is RFC-097 (object kin
 gives it the task's state, deadline and members. A tracker "Done" is a fix claim (task-level mark fixed),
 never a close.
 
+Implemented (built-in map; task profiles follow): a person who may change the task (every member in their data
+scope, `remediation:write`) creates its Jira issue in a project configured for ticketing; one active issue per
+task (a per-task guard covers two clicks at once). The issue carries the task's title, fix, finding count,
+deadline and a link back, and names no finding. The link is a `ticket_links` row with `task_id` (one object per
+link, composite tenant foreign key) and the task state last pushed. The task ticket controller pushes every task
+whose state differs from that state, each in its own tenant, once a minute: in progress → "In Progress", done or
+closed without a verified fix → "Done", every move with a progress comment; a state without a status (verifying,
+on hold, canceled) or a workflow without the move gets the comment alone. A transient tracker error is retried on
+the next pass; a refusal is not. Inbound, a status change of the task's issue applies to the task's open primary
+findings through the finding service (Done is a fix claim for each); the echo of our own move (the status we
+pushed, within ten minutes) is ignored. `SyncService.TaskChanged` pushes a task at once for a caller that wants it
+before the next pass.
+
 ## 10. API
 
 ```
@@ -172,6 +185,8 @@ PATCH /api/v1/remediation/tasks/{task_id}                title, description, own
 GET   /api/v1/remediation/tasks/{task_id}/members
 POST  /api/v1/remediation/tasks/{task_id}/members        add primary or related findings; version required
 POST  /api/v1/remediation/tasks/{task_id}/resolve        mark fixed: each open finding claimed fixed and re-checked
+GET   /api/v1/remediation/tasks/{task_id}/ticket-links   the task's tracker issue links
+POST  /api/v1/remediation/tasks/{task_id}/ticket-links   create the task's Jira issue (409 when it has one)
 POST  /api/v1/remediation/tasks/{task_id}/splits         split findings into a new task of the same fix
 POST  /api/v1/remediation/tasks/{task_id}/merges         merge tasks of the same fix
 POST  /api/v1/remediation/moves[/preview]                move findings between tasks (or out of any)
