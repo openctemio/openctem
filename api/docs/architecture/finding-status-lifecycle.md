@@ -377,8 +377,8 @@ instead).
   the organization has exactly one active person (an active, unexpired
   membership of an active `person` account; checked in the database at
   decision time, `ScopeActorRepository.IsSoleActiveOwner`) and no member was
-  suspended, offboarded, deleted or expired in the last 7 days
-  (`RecentMemberRemoval`, memberships and audit log), with a fresh
+  suspended, offboarded, deleted, expired or demoted, and no role changed, in
+  the last 7 days (`recentApproverChange`, memberships and audit log), with a fresh
   authenticator code (`VerifyFreshTOTP`, single use) and a reason. An accepted
   risk then ends within `vulnerability.SoloAcceptanceLimit` (7 days for P0 or
   KEV, 45 for P1, 90 otherwise). The request carries `self_approved` and the
