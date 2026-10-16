@@ -133,6 +133,12 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   a `remediation_task_changed` entry on every finding (left and joined). Findings not in the source are skipped
   and reported. A detach records `remediation_key_exclusions` (reason `detached`) for the source's key.
 - Undo = the reverse move with the versions the response returns.
+- Tracker comments: after the move is stored, `TaskService` calls `TaskMoveNotifier.TaskMembersMoved` (set with
+  `SetMoveNotifier`; `internal/app/remediation/move_notify.go`) once per move, split, detach and once per merge
+  source, with a `TaskMoveEvent`. `Comments()` (`pkg/domain/remediation/move.go`) words one comment per task
+  touched from counts and task titles only. The task ticket integration implements the notifier for tasks with
+  an active issue; it must not block the request and logs its own failures. Not wired in `cmd/server` until then
+  (listed in the wiring guard's optional setters with that reason).
 
 ## Mark fixed and regressions
 
@@ -146,9 +152,23 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   task `Regression: <title>` with the same fix, owner, campaign and manual deadline and `regression_of` set;
   the closed task keeps its state (`regressed` timeline entry) and its history.
 
+## Console
+
+| Page | Shows |
+|---|---|
+| `/remediation` Fix plan | open tasks and new-fix suggestions in one list ranked by risk left; open, overdue, to-review and my-task counts |
+| `/remediation/suggestions` | the inbox: cards with the fix, reach, risk parts, proposed owners and "Why?" (key, algorithm, fix steps); accept, edit then accept, dismiss with a reason (undo), snooze 7 days (undo), bulk accept; keyboard j/k, a, e, d, s, x, ? |
+| `/remediation/tasks` | views (all open, mine, verifying, on hold, closed, all), search and sort; a server-paged table or a board by state where only "on hold" moves by drag |
+| `/remediation/tasks/{id}` | header (state, deadline and its source, owner, risk left), fix steps with the command to copy, progress, findings grouped by asset in a windowed list that loads as it scrolls, select and Move to… (palette with the server's compatibility warnings) or drag onto a task of the same fix, Split, Mark fixed, hold/resume/cancel, timeline; every move offers Undo |
+| `/remediation/campaigns` | the campaigns (formerly the page at `/remediation`) |
+
+Strings are in the `remediationHub` dictionary (en, vi). Write actions show only with
+`findings:remediation:write` (Mark fixed also `findings:fix_apply`); the API stays the authority.
+
 ## Shipped and planned
 
-Shipped: everything above. Planned: the new Remediation console.
+Shipped: everything above; the solution families page is removed (the Suggestions tab replaces it). Planned:
+the finding drawer band ("tracked in task"), the My Work tasks tab.
 
 ## Key files
 
