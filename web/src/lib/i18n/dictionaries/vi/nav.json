@@ -109,5 +109,8 @@
   "nav.item.threat-model": "Mô hình mối đe dọa",
   "nav.item.scope": "Phạm vi",
   "nav.item.programs": "Chương trình",
-  "nav.item.approvals": "Phê duyệt"
+  "nav.item.approvals": "Phê duyệt",
+  "nav.item.fix-plan": "Kế hoạch khắc phục",
+  "nav.item.suggestions": "Đề xuất",
+  "nav.item.tasks": "Công việc"
 }
