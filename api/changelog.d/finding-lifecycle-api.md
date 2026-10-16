@@ -5,6 +5,6 @@
   lifecycle schemes with versions: draft (edited with `If-Match`), validate, publish, roll back. A scheme
   can only add constraints to the platform's status rules; nothing evaluates it yet.
 - New permission `findings:lifecycles:write`, granted to owners and administrators (migration
-  `002740_finding_lifecycles_permission`). Reading needs `findings:read`. Publishing needs a recent sign-in
+  `002776_finding_lifecycles_permission`). Reading needs `findings:read`. Publishing needs a recent sign-in
   (step-up) and is audited.
 - New plan limits `lifecycle_sub_statuses` (Free: 3) and `lifecycle_schemes` (Free: 0, Pro: 1).
