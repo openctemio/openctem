@@ -53,6 +53,14 @@ func registerRemediationTaskRoutes(
 		r.GET("/{task_id}/members", h.ListMembers, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))
 		r.POST("/{task_id}/members", h.AddMembers, middleware.Require(permission.RemediationWrite))
 		r.GET("/{task_id}/timeline", h.Timeline, middleware.Require(permission.RemediationRead))
+		r.POST("/{task_id}/splits", h.Split, middleware.Require(permission.RemediationWrite))
+		r.POST("/{task_id}/merges", h.Merge, middleware.Require(permission.RemediationWrite))
+	}, tenantMiddlewares...)
+
+	// Moves of findings between tasks (or out of any task).
+	router.Group("/api/v1/remediation/moves", func(r Router) {
+		r.POST("/", h.Move, middleware.Require(permission.RemediationWrite))
+		r.POST("/preview", h.PreviewMove, middleware.Require(permission.RemediationWrite))
 	}, tenantMiddlewares...)
 }
 

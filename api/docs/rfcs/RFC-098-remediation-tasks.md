@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk) and the auto-join rule. Designed: moves/split/merge, task-level "mark fixed", the new Remediation console |
+| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk) and the auto-join rule; moves, split, merge and detach. Designed: moves/split/merge, task-level "mark fixed", the new Remediation console |
 | Scope | api, web |
 | Related | RFC-015 (remediation groups: the candidate keys), RFC-006 (ticketing), RFC-039 (retest and SLA restart), RFC-097 (ticket field and status mapping) |
 
@@ -118,7 +118,7 @@ listed (`dropped`). Removed findings go to `remediation_key_exclusions`. Bulk ac
 suggestions and 5000 findings, each on its own. Turning auto-join on needs a caller with access to every asset
 (the rule acts on findings they may not see); `upgrade` and `rotate` keys only (also a table CHECK).
 
-## 7. Moves, split, merge, detach (designed)
+## 7. Moves, split, merge, detach
 
 - **Move** findings to another task; **split** a task by owner, asset or batch; **merge** tasks of the same
   action; **detach** findings (back to the pool, pinned so suggestions do not propose them again).
@@ -127,6 +127,15 @@ suggestions and 5000 findings, each on its own. Turning auto-join on needs a cal
 - Both tasks are recomputed in the same transaction; a task emptied by moves is archived with a note; every
   finding and both tasks get a timeline entry; the tickets of both tasks get a comment through the ticketing
   service; the request carries each task's `version` (409 when stale); finding rows are locked in id order.
+- Shipped: `POST /api/v1/remediation/moves/preview` returns the warnings (`different_fix`, `different_owner`,
+  `target_verifying`, `source_verifying`, `empties_source`); `POST /api/v1/remediation/moves` needs
+  `confirm: true` when there are any (else 409 `MOVE_NEEDS_CONFIRMATION` with the warnings) and returns both
+  tasks with their new versions, so the undo is the reverse move. No `to_task_id` detaches: the findings return
+  to the pool and are excluded from that fix's suggestions. `POST /tasks/{task_id}/splits` creates a task of
+  the same fix (campaign and manual deadline kept; owner kept unless named) for some findings (at least one
+  stays); `POST /tasks/{task_id}/merges` moves every finding of up to 20 same-fix tasks into it and archives
+  them. Archived tasks are not restored (a move into them is refused). Task tickets get a comment once tasks
+  carry tickets (the RFC-097 engine).
 
 ## 8. Mark fixed at task level (designed)
 
@@ -188,7 +197,7 @@ Reads need `findings:remediation:read` (members also `findings:read`); changes n
   and owner partitions of the others are not returned (`hidden_members` counts them), and they may not decide
   on it. The generator runs as the platform but writes only proposals.
 - **Audit:** `remediation_task.created`, `.updated`, `.members_added`, `.state_changed` (hold, resume, cancel);
-  `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`, `.accepted`;
+  `remediation_task.members_moved`, `.split`, `.merged`; `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`, `.accepted`;
   `remediation_action.auto_join_changed`.
 
 ## 12. Rollout
@@ -198,6 +207,6 @@ Reads need `findings:remediation:read` (members also `findings:read`); changes n
 | 1 | Task model, derived state, deadline, membership, timeline, API with data scope | Implemented |
 | 2 | Suggestions engine (deterministic keys, owner partition, ranking, lifecycle, dedup, dismissal memory, rate limit, digest) | Implemented |
 | 3 | Accept flows (as is, edit, bulk, auto-join rule) | Implemented |
-| 4 | Moves, split, merge, detach with compatibility rules, tickets comments, undo | Designed |
+| 4 | Moves, split, merge, detach with compatibility rules, undo (ticket comments once tasks carry tickets) | Implemented |
 | 5 | Task-level mark fixed and regression tasks | Designed |
 | 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Designed |
