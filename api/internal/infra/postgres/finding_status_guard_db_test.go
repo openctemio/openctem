@@ -84,7 +84,7 @@ func TestFindingStatusGuard_CoverageResolveFromStates_DB(t *testing.T) {
 	repo := NewFindingRepository(&DB{DB: f.db})
 
 	ids := map[string]shared.ID{}
-	for _, s := range []string{"new", "confirmed", "in_progress", "fix_applied", "validated_fixed", "not_observed", "accepted", "false_positive"} {
+	for _, s := range []string{"new", "confirmed", "in_progress", "fix_applied", "accepted", "false_positive"} {
 		ids[s] = f.findingIn(t, s)
 	}
 	all := make([]shared.ID, 0, len(ids))

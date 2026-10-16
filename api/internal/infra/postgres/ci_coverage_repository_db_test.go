@@ -204,9 +204,9 @@ func TestCICoverageRepository(t *testing.T) {
 	manual := finding(tenant, repoA, "fp-only-a-manual", "manual", lastA)
 	otherFinding := finding(other, otherRepo, "fp-only-a", "sast", lastA)
 	status := func(id shared.ID) (string, string) {
-		var st, res string
-		_ = db.QueryRowContext(ctx, `SELECT status, COALESCE(resolution, '') FROM findings WHERE id = $1`, id.String()).Scan(&st, &res)
-		return st, res
+		var st, obs string
+		_ = db.QueryRowContext(ctx, `SELECT status, observation_state FROM findings WHERE id = $1`, id.String()).Scan(&st, &obs)
+		return st, obs
 	}
 
 	pA, _ = repo.GetPipeline(ctx, tenant, pA.ID)
@@ -214,8 +214,8 @@ func TestCICoverageRepository(t *testing.T) {
 	if err != nil || len(ids) != 1 || ids[0] != onlyA {
 		t.Fatalf("stale-source findings = %v %v", ids, err)
 	}
-	if st, res := status(onlyA); st != "not_observed" || res != "source_stale" {
-		t.Fatalf("only-A finding = %s/%s", st, res)
+	if st, obs := status(onlyA); st != "new" || obs != "stale" {
+		t.Fatalf("only-A finding = %s/%s, want new (unchanged)/stale", st, obs)
 	}
 	for _, id := range []shared.ID{shared1, seenLater, manual} {
 		if st, _ := status(id); st != "new" {
@@ -239,8 +239,8 @@ func TestCICoverageRepository(t *testing.T) {
 	if err != nil || len(closed) != 1 || closed[0] != onlyA {
 		t.Fatalf("retire = %v %v", closed, err)
 	}
-	if st, res := status(onlyA); st != "resolved" || res != "source_retired" {
-		t.Fatalf("retired-source finding = %s/%s", st, res)
+	if st, _ := status(onlyA); st != "resolved" {
+		t.Fatalf("retired-source finding = %s", st)
 	}
 	if st, _ := status(shared1); st != "new" {
 		t.Fatal("a finding another pipeline reports was closed")

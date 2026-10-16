@@ -445,7 +445,7 @@ type ProgramMetrics struct {
 	// Clock start: the first 'detected' validation_evidence.created_at.
 	// Clock stop: findings.resolved_at. Findings resolved before they were
 	// validated are excluded (the fix did not follow the validation).
-	// false_positive / accepted / validated_fixed are not remediation and are
+	// false_positive / accepted are not remediation and are
 	// excluded.
 	MTTRValidated DurationMetric `json:"mttr_validated"`
 
