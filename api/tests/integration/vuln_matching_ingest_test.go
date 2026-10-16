@@ -75,7 +75,8 @@ func TestVulnMatching_ThroughIngest(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 	assert.Equal(t, []string{
-		"cloudflare|| private 50",       // unknown name: tenant-private, never matched
+		// "Cloudflare" (a CDN, no version) is an asset technology, not a
+		// component (RFC-112).
 		"nginx|1.18.0| global 65",       // technology string, curated name
 		"nginx|1.18.0|ubuntu global 35", // Server header: distribution build
 		"widget|1.4.2| global 80",       // CPE from the typed technology
