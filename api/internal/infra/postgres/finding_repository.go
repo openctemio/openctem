@@ -750,6 +750,8 @@ func findingUpsertConflictSQL() string {
 			-- auto-resolve guard); tool_name stays the first reporter.
 			last_seen_tool = COALESCE(EXCLUDED.last_seen_tool, findings.last_seen_tool),
 			sensor_id = EXCLUDED.sensor_id,
+			-- A sighting: a stale finding is present again.
+			observation_state = 'present',
 			-- Existing keys win, new keys are added. This path is only reached
 			-- when two ingests race on a new fingerprint or one batch repeats
 			-- it (a normal re-sighting goes through EnrichBatchByFingerprints,
@@ -1263,6 +1265,35 @@ func (r *FindingRepository) GetByWorkItemURI(ctx context.Context, tenantID share
 	return finding, nil
 }
 
+// ListIDsByWorkItemURI returns the ids of every finding of the tenant linked
+// to the work item URI (a ticket may track several findings), oldest first,
+// at most limit. Served by the partial GIN index on work_item_uris.
+func (r *FindingRepository) ListIDsByWorkItemURI(ctx context.Context, tenantID shared.ID, uri string, limit int) ([]shared.ID, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id FROM findings WHERE tenant_id = $1 AND work_item_uris IS NOT NULL AND work_item_uris @> ARRAY[$2]::text[]
+		 ORDER BY created_at, id LIMIT $3`, tenantID.String(), uri, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list findings by work item URI: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	ids := make([]shared.ID, 0, 4)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan finding id: %w", err)
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse finding id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // List retrieves findings matching the filter with pagination.
 func (r *FindingRepository) List(ctx context.Context, filter vulnerability.FindingFilter, opts vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
 	countQuery := `SELECT COUNT(*) FROM findings`
@@ -1472,8 +1503,6 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 					WHEN 'confirmed'   THEN 2
 					WHEN 'in_progress' THEN 3
 					WHEN 'fix_applied' THEN 3
-					WHEN 'validated_fixed' THEN 3
-					WHEN 'not_observed' THEN 3
 					WHEN 'accepted'    THEN 4
 					WHEN 'false_positive' THEN 5
 					WHEN 'resolved'    THEN 6
@@ -2192,7 +2221,7 @@ func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context,
 	// Note: Status is intentionally NOT updated to preserve user-set values (false_positive, accepted, etc.)
 	query := `
 		UPDATE findings
-		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(),
+		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(), observation_state = 'present',
 			last_seen_tool = COALESCE(NULLIF($4, ''), last_seen_tool)
 		WHERE tenant_id = $2 AND fingerprint = ANY($3)
 	`
@@ -2342,7 +2371,7 @@ func (r *FindingRepository) selectQuery() string {
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
-			status, resolution, closure_reason, verification, resolved_at, resolved_by,
+			status, resolution, closure_reason, verification, observation_state, validation_outcome, resolved_at, resolved_by,
 			assigned_to, assigned_at, assigned_by,
 			verified_at, verified_by,
 			sla_deadline, sla_status,
@@ -2421,6 +2450,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		resolution          sql.NullString
 		closureReason       sql.NullString
 		verification        sql.NullString
+		observationState    sql.NullString
+		validationOutcome   sql.NullString
 		resolvedAt          sql.NullTime
 		resolvedBy          sql.NullString
 		assignedTo          sql.NullString
@@ -2511,7 +2542,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&startColumn, &endColumn, &snippet, &contextSnippet, &contextStartLine,
 		&title, &description, &message,
 		&severity, &cvssScore, &cvssVector, &cveID, pq.Array(&cweIDs), pq.Array(&owaspIDs), pq.Array(&tags),
-		&status, &resolution, &closureReason, &verification, &resolvedAt, &resolvedBy,
+		&status, &resolution, &closureReason, &verification, &observationState, &validationOutcome, &resolvedAt, &resolvedBy,
 		&assignedTo, &assignedAt, &assignedBy,
 		&verifiedAt, &verifiedBy,
 		&slaDeadline, &slaStatus,
@@ -2546,7 +2577,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		snippet, contextSnippet, int(contextStartLine.Int64),
 		title, description, message,
 		severity, cvssScore, cvssVector, cveID, cweIDs, owaspIDs, tags,
-		status, resolution, closureReason, verification, resolvedAt, resolvedBy,
+		status, resolution, closureReason, verification, observationState, validationOutcome, resolvedAt, resolvedBy,
 		assignedTo, assignedAt, assignedBy,
 		verifiedAt, verifiedBy,
 		slaDeadline, slaStatus,
@@ -2621,6 +2652,8 @@ type findingRow struct {
 	resolution          sql.NullString
 	closureReason       sql.NullString
 	verification        sql.NullString
+	observationState    sql.NullString
+	validationOutcome   sql.NullString
 	resolvedAt          sql.NullTime
 	resolvedBy          sql.NullString
 	assignedTo          sql.NullString
@@ -2894,6 +2927,8 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		Resolution:          nullStringValue(row.resolution),
 		ClosureReason:       nullStringValue(row.closureReason),
 		Verification:        nullStringValue(row.verification),
+		ObservationState:    nullStringValue(row.observationState),
+		ValidationOutcome:   nullStringValue(row.validationOutcome),
 		ResolvedAt:          nullTimeValue(row.resolvedAt),
 		ResolvedBy:          parseNullID(row.resolvedBy),
 		AssignedTo:          parseNullID(row.assignedTo),
@@ -3181,8 +3216,6 @@ var findingStatsSelect = `
 			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
 			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
 			COALESCE(SUM(CASE WHEN status = 'fix_applied' THEN 1 ELSE 0 END), 0) as status_fix_applied,
-			COALESCE(SUM(CASE WHEN status = 'validated_fixed' THEN 1 ELSE 0 END), 0) as status_validated_fixed,
-			COALESCE(SUM(CASE WHEN status = 'not_observed' THEN 1 ELSE 0 END), 0) as status_not_observed,
 			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
 			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
 			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
@@ -3218,7 +3251,6 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 		total, critical, high, medium, low, info                     int64
 		statusNew, statusConfirmed, statusInProgress, statusResolved int64
 		statusDraft, statusInReview, statusFixApplied                int64
-		statusValidatedFixed, statusNotObserved                      int64
 		statusFalsePositive, statusAccepted, statusDuplicate         int64
 		sourceSast, sourceDast, sourceSca, sourceSecret              int64
 		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
@@ -3235,7 +3267,7 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
 		&statusFalsePositive, &statusAccepted, &statusDuplicate,
 		&statusDraft, &statusInReview,
-		&statusFixApplied, &statusValidatedFixed, &statusNotObserved,
+		&statusFixApplied,
 		&sourceSast, &sourceDast, &sourceSca, &sourceSecret,
 		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
 		&sourceExternal,
@@ -3268,8 +3300,6 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.ByStatus[vulnerability.FindingStatusDraft] = statusDraft
 	stats.ByStatus[vulnerability.FindingStatusInReview] = statusInReview
 	stats.ByStatus[vulnerability.FindingStatusFixApplied] = statusFixApplied
-	stats.ByStatus[vulnerability.FindingStatusValidatedFixed] = statusValidatedFixed
-	stats.ByStatus[vulnerability.FindingStatusNotObserved] = statusNotObserved
 
 	// By source
 	stats.BySource[vulnerability.FindingSourceSAST] = sourceSast
@@ -3631,8 +3661,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 
 // AutoReopenByFingerprintsBatch reopens, in one statement, every finding a scan
 // re-detected that had been closed as fixed — status resolved or verified,
-// whether auto-resolved (resolution = 'auto_fixed') or resolved by a person —
-// and every validated_fixed finding (the scan refutes the validation downgrade).
+// whether auto-resolved (resolution = 'auto_fixed') or resolved by a person.
 // Deliberate dispositions (false_positive, accepted_risk, duplicate, suppressed)
 // are NEVER reopened.
 //
@@ -3683,10 +3712,6 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	err := r.db.withFindingTransition(ctx, findingTransition{
 		ActivityType: "auto_reopened", Source: "auto", Reason: "regression_detected_again", ActorType: "scanner",
 		ActorName: "system: scan detected it again",
-		ReasonByOldStatus: map[string]string{
-			string(vulnerability.FindingStatusValidatedFixed): "validation_downgrade_refuted_by_scan",
-			string(vulnerability.FindingStatusNotObserved):    "observed_again",
-		},
 	}, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints))
 		if err != nil {
@@ -3735,10 +3760,11 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	return result, nil
 }
 
-// ExpireFeatureBranchFindings marks stale feature branch findings as
-// not_observed: not seen for a configurable period on a non-default branch is
-// stale, not fixed (research 18 F7, owner decision O2), so the finding is never
-// counted as fixed and its SLA keeps running. A sighting reopens it.
+// ExpireFeatureBranchFindings marks stale feature branch findings stale
+// (observation_state): not seen for a configurable period on a non-default
+// branch is stale, not fixed (research 18 F7, owner decision O2), so the
+// finding keeps its status, is never counted as fixed and its SLA keeps
+// running. A sighting makes it present again.
 // Uses JOIN with repository_branches to determine default branch status.
 func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, tenantID shared.ID, defaultExpiryDays int) (int64, error) {
 	// Expire findings that:
@@ -3746,15 +3772,10 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 	// 2. The branch allows expiry (keep_when_inactive = false)
 	// 3. Have active status (new, open)
 	// 4. Have not been seen for the configured expiry period (per-branch or default)
-	// Resolution 'branch_expired' records why the finding is not observed.
+	// The status stays: the finding is marked stale (observation_state).
 	query := `
 		UPDATE findings f
-		SET status = 'not_observed',
-			resolution = 'branch_expired',
-			closure_reason = NULL,
-			verification = NULL,
-			resolved_at = NULL,
-			resolved_by = NULL,
+		SET observation_state = 'stale',
 			updated_at = NOW()
 		FROM repository_branches rb
 		WHERE f.tenant_id = $1
@@ -3762,12 +3783,13 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 			AND rb.is_default = false
 			AND rb.keep_when_inactive = false
 			AND f.status IN ` + branchExpiryFromSQL + `
+			AND f.observation_state = 'present'
 			AND f.last_seen_at < NOW() - make_interval(days => COALESCE(rb.retention_days, $2))
 	`
 
 	affected, err := r.db.execWithTransition(ctx, findingTransition{
 		Source: "branch_expiry", Reason: "branch_expired", ActorName: "system: feature branch expiry",
-		Message: "Not seen on its feature branch for the branch's retention period: not observed, not fixed",
+		Message: "Not seen on its feature branch for the branch's retention period: stale, not fixed",
 	}, query, tenantID.String(), defaultExpiryDays)
 	if err != nil {
 		return 0, fmt.Errorf("failed to expire feature branch findings: %w", err)
@@ -3910,7 +3932,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
-			status, resolution, closure_reason, verification, resolved_at, resolved_by,
+			status, resolution, closure_reason, verification, observation_state, validation_outcome, resolved_at, resolved_by,
 			assigned_to, assigned_at, assigned_by,
 			verified_at, verified_by,
 			sla_deadline, sla_status,
@@ -4237,7 +4259,8 @@ func buildBatchEnrichQuery(rowCount int) string {
 	// Estimate capacity: ~3000 for SET clause + ~100 per row for VALUES
 	sb.Grow(3000 + rowCount*120)
 
-	sb.WriteString("UPDATE findings AS f SET ")
+	// A re-sighting makes a stale finding present again (observation.go).
+	sb.WriteString("UPDATE findings AS f SET observation_state = 'present', ")
 
 	// SET clause: columns 2..N (skip id, tenant_id which are WHERE columns)
 	for i := 2; i < colCount; i++ {

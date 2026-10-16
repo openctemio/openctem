@@ -83,6 +83,13 @@ const (
 	// TypeCoverageGap tells administrators that assets went without a
 	// capability their type needs (RFC-093).
 	TypeCoverageGap = "coverage_gap"
+	// TypeFindingApproval tells the members who may approve it that a
+	// finding false-positive or accepted-risk request waits for a decision.
+	TypeFindingApproval = "finding_approval"
+	// TypeFindingApprovalDigest is the daily digest of finding requests
+	// waiting for an approver (muting it opts out of the digest, in-app and
+	// email).
+	TypeFindingApprovalDigest = "finding_approval_digest"
 )
 
 // Notification represents an in-app notification.
@@ -290,7 +297,8 @@ func IsValidType(t string) bool {
 		TypeCampaignStatusChange,
 		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending,
 		TypeMemberLifecycle, TypeCISecurity, TypeSensorSecurity, TypeScopeChange,
-		TypeScanWindowOverride, TypeScanApproval, TypeAttackSurfaceDigest, TypeCoverageGap:
+		TypeScanWindowOverride, TypeScanApproval, TypeAttackSurfaceDigest, TypeCoverageGap,
+		TypeFindingApproval, TypeFindingApprovalDigest:
 		return true
 	}
 	return false

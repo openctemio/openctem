@@ -34,7 +34,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StagePrioritization, StageMobilization},
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
-			"registerFindingImportRoutes", "registerFindingRetestRoutes", "registerFindingSourceRoutes",
+			"registerFindingImportRoutes", "registerFindingRetestRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes",
 			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
@@ -98,17 +98,17 @@ var Features = []Feature{
 		Description: "Remediation campaigns, suppression and exception rules, assignment rules and automation workflows.",
 		Stages:      []string{StageMobilization},
 		Registers: []string{
-			"registerRemediationCampaignRoutes", "registerSuppressionRoutes", "registerAssignmentRuleRoutes",
+			"registerRemediationCampaignRoutes", "registerRemediationTaskRoutes", "registerRemediationSuggestionRoutes", "registerSuppressionRoutes", "registerAssignmentRuleRoutes",
 			"registerWorkflowRoutes",
 		},
 	},
 	{
 		ID: "scans", Title: "Scans and workflows",
-		Description: "Scans, scan runs and workflows, profiles, tools, templates, content packs, the secret store and freeze windows.",
+		Description: "Scans, scan runs and workflows, profiles, tools, templates, content packs and the content catalog, the secret store and freeze windows.",
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
 			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanApprovalRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
-			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes", "registerPlatformContentPackRoutes",
+			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},
@@ -183,6 +183,7 @@ var Features = []Feature{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationPlanRoutes",
 			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
+			"registerSharedSensorsSettingsRoutes",
 		},
 	},
 	{

@@ -17,7 +17,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/auth"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	slaapp "github.com/openctemio/openctem/api/internal/app/sla"
@@ -26,7 +25,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	moduleTypes "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
@@ -58,8 +56,8 @@ type TenantHandler struct {
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
 	logger          *logger.Logger
-	// selfServiceCreation allows POST /tenants (TENANT_CREATION_MODE=
-	// self_service). Off by default: organizations are then created by the
+	// selfServiceCreation allows POST /tenants when no sign-up policy is
+	// wired (SIGNUP_MODE=open). Off by default: organizations are then created by the
 	// platform administrator only.
 	selfServiceCreation bool
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
@@ -68,8 +66,6 @@ type TenantHandler struct {
 	// licenseEvaluator re-evaluates the inventory after a license policy
 	// change (nil: not evaluated until the next package write).
 	licenseEvaluator LicensePolicyEvaluator
-	// freePlan: self-service organizations are Free, capped per person.
-	freePlan auth.FreePlan
 	// provisioning creates accounts on behalf of organization administrators.
 	// Nil disables POST /tenants/{tenant}/users.
 	provisioning *tenantapp.UserProvisioningService
@@ -89,13 +85,10 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 }
 
 // SetSelfServiceTenantCreation lets signed-in users create organizations
-// (TENANT_CREATION_MODE=self_service). Without it POST /tenants is refused.
+// (SIGNUP_MODE=open). Without it POST /tenants is refused.
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
 }
-
-// SetFreePlan wires the Free plan for self-service organizations.
-func (h *TenantHandler) SetFreePlan(p auth.FreePlan) { h.freePlan = p }
 
 // SetSignupPolicy makes POST /tenants follow the console sign-up policy.
 func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
@@ -176,14 +169,17 @@ func (h *TenantHandler) SetAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker
 
 // TenantResponse represents a tenant in API responses.
 type TenantResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Slug        string    `json:"slug"`
-	Description string    `json:"description,omitempty"`
-	LogoURL     string    `json:"logo_url,omitempty"`
-	Plan        string    `json:"plan"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description,omitempty"`
+	LogoURL     string `json:"logo_url,omitempty"`
+	Plan        string `json:"plan"`
+	// Region is the organization's data region, fixed at creation; empty
+	// for organizations from before regions were named.
+	Region    string    `json:"region,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // TenantWithRoleResponse represents a tenant with the user's role.
@@ -372,6 +368,7 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 		Description: t.Description(),
 		LogoURL:     t.LogoURL(),
 		Plan:        string(t.Plan()),
+		Region:      t.Region(),
 		CreatedAt:   t.CreatedAt(),
 		UpdatedAt:   t.UpdatedAt(),
 	}
@@ -663,22 +660,12 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A self-service organization starts on the Free plan, stored with the
-	// organization in one transaction.
+	// A self-service organization gets no limits: limits apply only where an
+	// operator set them for that organization.
 	input := tenantapp.CreateTenantInput{
 		Name:        req.Name,
 		Slug:        req.Slug,
 		Description: req.Description,
-		Plan:        plan.Free,
-	}
-
-	if h.freePlan != nil {
-		if err := h.freePlan.CheckFreeTeam(r.Context(), userID); err != nil {
-			if !WritePlanLimitError(w, err) {
-				h.handleServiceError(w, err)
-			}
-			return
-		}
 	}
 
 	actx := h.buildAuditContext(r)

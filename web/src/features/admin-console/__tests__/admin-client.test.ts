@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { adminFetch, AdminApiError } from '../api/admin-client'
+import {
+  adminFetch,
+  AdminApiError,
+  ADMIN_STEP_UP_HEADER,
+  setAdminStepUpPrompt,
+} from '../api/admin-client'
 // Static import: the component tree is heavy to transform, and a dynamic
 // import inside the test counted that cold transform against the 5s timeout.
 import { humanizeAction } from '../components/admin-activity-table'
@@ -8,7 +13,7 @@ describe('adminFetch', () => {
   const fetchMock = vi.fn()
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchMock)
-    document.cookie = 'admin_csrf=csrf-123; path=/'
+    document.cookie = 'admin_csrf_ui=csrf-123; path=/'
     // A tenant CSRF cookie must never be used for admin calls.
     document.cookie = 'csrf_token=tenant-csrf; path=/'
   })
@@ -27,6 +32,16 @@ describe('adminFetch', () => {
     expect(url).toBe('/api/v1/admin/tenants')
     expect(init.headers['X-CSRF-Token']).toBeUndefined()
     expect(init.credentials).toBe('same-origin')
+  })
+
+  it('reads the console page copy of the token, never the HttpOnly API cookie name', async () => {
+    document.cookie = 'admin_csrf_ui=; path=/; max-age=0'
+    document.cookie = 'admin_csrf=api-only; path=/'
+    fetchMock.mockResolvedValueOnce(ok({}))
+    await adminFetch('/tenants/t1/sso/enforcement', { method: 'PUT', body: {} })
+    expect(fetchMock.mock.calls[0][1].headers['X-CSRF-Token']).toBeUndefined()
+    document.cookie = 'admin_csrf=; path=/; max-age=0'
+    document.cookie = 'admin_csrf_ui=csrf-123; path=/'
   })
 
   it('writes carry the admin CSRF cookie value, not the tenant one', async () => {
@@ -50,6 +65,98 @@ describe('adminFetch', () => {
     expect(err).toBeInstanceOf(AdminApiError)
     expect(err.status).toBe(400)
     expect(err.message).toBe('cannot enforce SSO')
+  })
+})
+
+describe('adminFetch step-up', () => {
+  const fetchMock = vi.fn()
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchMock)
+    document.cookie = 'admin_csrf=csrf-123; path=/'
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+    setAdminStepUpPrompt(null)
+  })
+  const stepUp = (message = 'Confirm this action') =>
+    new Response(JSON.stringify({ code: 'ADMIN_STEP_UP_REQUIRED', message }), { status: 401 })
+
+  it('asks for a code and retries the same write with the step-up header', async () => {
+    const prompt = vi.fn().mockResolvedValue('123456')
+    setAdminStepUpPrompt(prompt)
+    fetchMock
+      .mockResolvedValueOnce(stepUp())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'a1' }), { status: 201 }))
+    await expect(
+      adminFetch('/administrators', { method: 'POST', body: { email: 'x@example.com' } })
+    ).resolves.toEqual({ id: 'a1' })
+    expect(prompt).toHaveBeenCalledWith(undefined)
+    expect(fetchMock.mock.calls[0][1].headers[ADMIN_STEP_UP_HEADER]).toBeUndefined()
+    const retry = fetchMock.mock.calls[1][1]
+    expect(retry.headers[ADMIN_STEP_UP_HEADER]).toBe('123456')
+    expect(retry.headers['X-CSRF-Token']).toBe('csrf-123')
+    expect(retry.body).toBe(JSON.stringify({ email: 'x@example.com' }))
+  })
+
+  it('shows the refusal of a wrong code on the next prompt', async () => {
+    const prompt = vi.fn().mockResolvedValueOnce('000000').mockResolvedValueOnce('654321')
+    setAdminStepUpPrompt(prompt)
+    fetchMock
+      .mockResolvedValueOnce(stepUp())
+      .mockResolvedValueOnce(stepUp('Invalid or already used code'))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await adminFetch('/users/u1', { method: 'DELETE' })
+    expect(prompt).toHaveBeenNthCalledWith(2, 'Invalid or already used code')
+    expect(fetchMock.mock.calls[2][1].headers[ADMIN_STEP_UP_HEADER]).toBe('654321')
+  })
+
+  it('gives up when the administrator cancels', async () => {
+    setAdminStepUpPrompt(vi.fn().mockResolvedValue(null))
+    fetchMock.mockResolvedValueOnce(stepUp())
+    const err = (await adminFetch('/platform-idp', { method: 'DELETE' }).catch(
+      (e: unknown) => e
+    )) as AdminApiError
+    expect(err.code).toBe('ADMIN_STEP_UP_REQUIRED')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends a code the caller already has without prompting', async () => {
+    const prompt = vi.fn()
+    setAdminStepUpPrompt(prompt)
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 201 }))
+    await adminFetch('/tenants/t1/users', { method: 'POST', body: {}, stepUpCode: '111222' })
+    expect(fetchMock.mock.calls[0][1].headers[ADMIN_STEP_UP_HEADER]).toBe('111222')
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('sends a code the form put in the body as the step-up header too', async () => {
+    const prompt = vi.fn()
+    setAdminStepUpPrompt(prompt)
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    await adminFetch('/settings/legal', {
+      method: 'PUT',
+      body: { totp_code: '445566', version: 2 },
+    })
+    expect(fetchMock.mock.calls[0][1].headers[ADMIN_STEP_UP_HEADER]).toBe('445566')
+    const form = new FormData()
+    form.set('totp_code', '778899')
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 201 }))
+    await adminFetch('/content-packs', { method: 'POST', body: form })
+    expect(fetchMock.mock.calls[1][1].headers[ADMIN_STEP_UP_HEADER]).toBe('778899')
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('never prompts for other refusals', async () => {
+    const prompt = vi.fn()
+    setAdminStepUpPrompt(prompt)
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'STEP_UP_REQUIRED', message: 'x' }), { status: 401 })
+    )
+    await expect(adminFetch('/settings/legal', { method: 'PUT', body: {} })).rejects.toBeInstanceOf(
+      AdminApiError
+    )
+    expect(prompt).not.toHaveBeenCalled()
   })
 })
 

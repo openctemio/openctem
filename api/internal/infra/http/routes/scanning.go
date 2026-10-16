@@ -471,6 +471,12 @@ func registerScanRoutes(
 		r.POST("/schedule-preview", h.PreviewSchedule, middleware.Require(permission.ScansRead))
 		// What a workflow scan would do, before it is saved or started
 		r.POST("/workflow-preview", h.PreviewWorkflow, middleware.Require(permission.ScansWrite))
+		// What a quick scan of the typed targets would do (read-only)
+		if triggerRateLimiter != nil {
+			r.POST("/quick/preview", h.PreviewQuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.QuickScanPreviewMiddleware())
+		} else {
+			r.POST("/quick/preview", h.PreviewQuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
+		}
 		// Quick scan (consolidated from /quick-scan)
 		if triggerRateLimiter != nil {
 			r.POST("/quick", h.QuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.QuickScanMiddleware())
@@ -718,6 +724,9 @@ func registerSuppressionRoutes(
 		// Approval workflow (requires separate approve permission)
 		r.POST("/{id}/approve", h.ApproveRule, middleware.Require(permission.SuppressionsApprove))
 		r.POST("/{id}/reject", h.RejectRule, middleware.Require(permission.SuppressionsApprove))
+		// Clearing the review flag of a rule given an end it did not have is
+		// an approver's decision, gated like the approval.
+		r.POST("/{id}/reviewed", h.MarkReviewed, middleware.Require(permission.SuppressionsApprove))
 		// What an approval would close: an organization-wide count of open
 		// findings, so it is gated like the approval.
 		r.GET("/{id}/preview", h.PreviewRule, middleware.Require(permission.SuppressionsApprove))

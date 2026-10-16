@@ -394,6 +394,8 @@ func scanAdminRow(scanner interface{ Scan(dest ...any) error }) (*admin.AdminUse
 // AuditLogRepository implements admin.AuditLogRepository using PostgreSQL.
 type AuditLogRepository struct {
 	db *DB
+	// afterCreate receives each row as written (SetAfterCreate).
+	afterCreate func(admin.AuditChainEntry)
 }
 
 // NewAuditLogRepository creates a new AuditLogRepository.
@@ -419,6 +421,7 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 			ip_address, user_agent, success, error_message, created_at, severity
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		RETURNING chain_position, prev_hash, hash
 	`
 
 	requestBody, err := json.Marshal(log.RequestBody)
@@ -426,7 +429,8 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 		requestBody = []byte("{}")
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
+	var entry admin.AuditChainEntry
+	err = r.db.QueryRowContext(ctx, query,
 		log.ID.String(),
 		nullIDString(log.AdminID),
 		log.AdminEmail,
@@ -444,13 +448,33 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 		nullString(log.ErrorMessage),
 		log.CreatedAt,
 		auditSeverity(log.Severity),
-	)
+	).Scan(&entry.Position, &entry.PrevHash, &entry.Hash)
 
 	if err != nil {
 		return fmt.Errorf("failed to create audit log: %w", err)
 	}
-
+	if r.afterCreate != nil {
+		entry.Log = log
+		r.afterCreate(entry)
+	}
 	return nil
+}
+
+// SetAfterCreate registers fn to receive every row as written, with its chain
+// position and hash (the off-box audit sink). fn must not block.
+func (r *AuditLogRepository) SetAfterCreate(fn func(admin.AuditChainEntry)) {
+	r.afterCreate = fn
+}
+
+// ChainHead returns the chain's newest position and hash: the newest row,
+// else the newest retention anchor, else 0 and "".
+func (r *AuditLogRepository) ChainHead(ctx context.Context) (int64, string, error) {
+	var pos int64
+	var hash string
+	if err := r.db.QueryRowContext(ctx, `SELECT tail_position, tail_hash FROM admin_audit_chain_tail()`).Scan(&pos, &hash); err != nil {
+		return 0, "", fmt.Errorf("read admin audit chain head: %w", err)
+	}
+	return pos, hash, nil
 }
 
 // GetByID retrieves an audit log by ID.
@@ -797,21 +821,112 @@ func (r *AuditLogRepository) scanAuditLogFromRows(rows *sql.Rows) (*admin.AuditL
 // Retention Management
 // =============================================================================
 
-// DeleteOlderThan deletes audit logs older than the specified time.
+// adminAuditPruneBatch bounds one prune transaction.
+const adminAuditPruneBatch = 5000
+
+// DeleteOlderThan prunes the oldest prefix of the chain written before
+// olderThan through admin_audit_prune (migration 002545), batch by batch.
+// The function itself never deletes rows newer than a year and anchors the
+// chain at the last deleted row.
 func (r *AuditLogRepository) DeleteOlderThan(ctx context.Context, olderThan time.Time) (int64, error) {
-	query := `DELETE FROM admin_audit_logs WHERE created_at < $1`
-
-	result, err := r.db.ExecContext(ctx, query, olderThan)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete old audit logs: %w", err)
+	var total int64
+	for {
+		var n int64
+		if err := r.db.QueryRowContext(ctx, `SELECT admin_audit_prune($1, $2)`, olderThan, adminAuditPruneBatch).Scan(&n); err != nil {
+			return total, fmt.Errorf("prune admin audit logs: %w", err)
+		}
+		total += n
+		if n < adminAuditPruneBatch {
+			return total, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
 	}
+}
 
-	count, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+// adminAuditVerifyBatch is how many chain rows one verification query reads.
+const adminAuditVerifyBatch = 1000
+
+// VerifyChain recomputes every online row's hash with the same database
+// function that wrote it, and checks each row links to the one before (the
+// first to the newest retention anchor) with no position missing.
+func (r *AuditLogRepository) VerifyChain(ctx context.Context) (*admin.AuditChainReport, error) {
+	report := &admin.AuditChainReport{Breaks: []admin.AuditChainBreak{}, VerifiedAt: time.Now().UTC()}
+	prevHash := ""
+	err := r.db.QueryRowContext(ctx,
+		`SELECT chain_position, hash FROM admin_audit_chain_anchors ORDER BY chain_position DESC LIMIT 1`).
+		Scan(&report.AnchorPosition, &prevHash)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("read admin audit anchor: %w", err)
 	}
+	after := report.AnchorPosition
+	expected := after + 1
+	addBreak := func(b admin.AuditChainBreak) {
+		if len(report.Breaks) >= admin.AuditChainBreakLimit {
+			report.Truncated = true
+			return
+		}
+		report.Breaks = append(report.Breaks, b)
+	}
+	for {
+		n, err := r.verifyChainBatch(ctx, &after, &expected, &prevHash, report, addBreak)
+		if err != nil {
+			return nil, err
+		}
+		if n < adminAuditVerifyBatch {
+			return report, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+}
 
-	return count, nil
+// verifyChainBatch checks the next batch of chain rows after *after and
+// advances the walk state. It returns how many rows it read.
+func (r *AuditLogRepository) verifyChainBatch(ctx context.Context, after, expected *int64, prevHash *string,
+	report *admin.AuditChainReport, addBreak func(admin.AuditChainBreak)) (int, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT l.id, l.chain_position, l.prev_hash, l.hash, admin_audit_row_hash(l.prev_hash, l)
+		  FROM admin_audit_logs l
+		 WHERE l.chain_position > $1
+		 ORDER BY l.chain_position
+		 LIMIT $2`, *after, adminAuditVerifyBatch)
+	if err != nil {
+		return 0, fmt.Errorf("walk admin audit chain: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	n := 0
+	for rows.Next() {
+		var (
+			id                     string
+			pos                    int64
+			prev, hash, recomputed string
+		)
+		if err := rows.Scan(&id, &pos, &prev, &hash, &recomputed); err != nil {
+			return n, fmt.Errorf("scan admin audit chain: %w", err)
+		}
+		n++
+		report.Entries++
+		if report.FirstPosition == 0 {
+			report.FirstPosition = pos
+		}
+		report.LastPosition = pos
+		switch {
+		case pos != *expected:
+			addBreak(admin.AuditChainBreak{Position: pos, ID: id, Reason: admin.ChainBreakGap})
+		case prev != *prevHash:
+			addBreak(admin.AuditChainBreak{Position: pos, ID: id, Reason: admin.ChainBreakLink})
+		case recomputed != hash:
+			addBreak(admin.AuditChainBreak{Position: pos, ID: id, Reason: admin.ChainBreakChanged})
+		}
+		*prevHash, *expected, *after = hash, pos+1, pos
+	}
+	if err := rows.Err(); err != nil {
+		return n, fmt.Errorf("walk admin audit chain: %w", err)
+	}
+	return n, nil
 }
 
 // CountOlderThan counts audit logs older than the specified time.

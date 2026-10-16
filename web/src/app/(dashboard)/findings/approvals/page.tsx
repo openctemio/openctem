@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  ShieldCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -51,6 +52,7 @@ import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
 
 import { useDisplayUser } from '@/hooks/use-display-user'
+import { refreshPendingApprovalCount } from '@/hooks/use-dynamic-badges'
 import {
   useApprovals,
   useApproveStatus,
@@ -72,6 +74,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
 import { closureReasonLabel } from '@/features/findings/lib/closure'
+import { FindingSelfApproveDialog } from '@/features/findings/components/finding-self-approve-dialog'
 
 // ============================================
 // CONSTANTS
@@ -98,6 +101,7 @@ const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
 const APPROVAL_ACTOR_LABELS: Record<string, string> = {
   ai_triage: 'AI triage',
   vex: 'VEX statement',
+  ticket: 'Linked ticket',
 }
 
 const APPROVAL_TABS: readonly string[] = ['all', ...APPROVAL_STATUSES]
@@ -210,12 +214,20 @@ export default function ApprovalsPage() {
   const [selectedApproval, setSelectedApproval] = useState<ApiApproval | null>(null)
   const [rejectionReason, setRejectionReason] = useState('')
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
+  // The sole member's own approval (shown only when the API offers it).
+  const [selfApproveTarget, setSelfApproveTarget] = useState<ApiApproval | null>(null)
 
   // One server page of the active tab; the counts cover every status.
-  const { data, isLoading, error, mutate } = useApprovals(
-    list.page,
-    list.perPage,
-    activeTab === 'all' ? undefined : activeTab
+  const {
+    data,
+    isLoading,
+    error,
+    mutate: mutateList,
+  } = useApprovals(list.page, list.perPage, activeTab === 'all' ? undefined : activeTab)
+  // A decision changes the list and the sidebar's Approvals badge.
+  const mutate = useCallback(
+    () => Promise.all([mutateList(), refreshPendingApprovalCount()]),
+    [mutateList]
   )
 
   // Action hooks
@@ -230,6 +242,7 @@ export default function ApprovalsPage() {
   )
 
   const approvals = useMemo(() => data?.data ?? [], [data?.data])
+  const selfApprovalAvailable = data?.self_approval_available === true
   const counts = useMemo(() => approvalTabCounts(data?.status_counts), [data?.status_counts])
   const pageCount = data ? Math.max(1, Math.ceil(data.total / list.perPage)) : 1
 
@@ -383,9 +396,35 @@ export default function ApprovalsPage() {
         cell: ({ row }) => {
           const status = row.getValue('status') as ApprovalStatus
           return (
-            <Badge variant="outline" className={cn('text-xs', APPROVAL_BADGE_STYLES[status])}>
-              {t(`findings.approvals.status.${status}`, APPROVAL_STATUS_LABELS[status] ?? status)}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-1">
+              <Badge variant="outline" className={cn('text-xs', APPROVAL_BADGE_STYLES[status])}>
+                {t(`findings.approvals.status.${status}`, APPROVAL_STATUS_LABELS[status] ?? status)}
+              </Badge>
+              {row.original.self_approved && (
+                <Badge
+                  variant="outline"
+                  className="text-xs border-warning/40 text-warning"
+                  title={t(
+                    'findingApprovals.selfApprove.badgeTitle',
+                    "Approved by its own requester, the organization's only member"
+                  )}
+                >
+                  {t('findingApprovals.selfApprove.badge', 'Self-approved')}
+                </Badge>
+              )}
+              {row.original.single_person && (
+                <Badge
+                  variant="outline"
+                  className="text-xs border-info/40 text-info"
+                  title={t(
+                    'findingApprovals.single.badgeTitle',
+                    "Decided by one person: the organization's false-positive level did not require a second"
+                  )}
+                >
+                  {t('findingApprovals.single.badge', 'Single person')}
+                </Badge>
+              )}
+            </div>
           )
         },
         enableSorting: true,
@@ -530,6 +569,14 @@ export default function ApprovalsPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {selfApprovalAvailable && approval.requested_by === currentUserId && (
+                  <Can permission={Permission.FindingsApprove}>
+                    <DropdownMenuItem onClick={() => setSelfApproveTarget(approval)}>
+                      <ShieldCheck className="me-2 h-4 w-4 text-warning" />
+                      {t('findingApprovals.selfApprove.action', 'Approve myself (sole member)')}
+                    </DropdownMenuItem>
+                  </Can>
+                )}
                 <Can permission={Permission.FindingsApprove}>
                   <DropdownMenuItem
                     disabled={own}
@@ -578,6 +625,7 @@ export default function ApprovalsPage() {
       handleCancelClick,
       handleRemind,
       currentUserId,
+      selfApprovalAvailable,
       t,
     ]
   )
@@ -913,6 +961,12 @@ export default function ApprovalsPage() {
         destructive
         isLoading={isCancelling}
         handleConfirm={handleCancelConfirm}
+      />
+
+      <FindingSelfApproveDialog
+        approval={selfApproveTarget}
+        onOpenChange={(open) => !open && setSelfApproveTarget(null)}
+        onApproved={() => void mutate()}
       />
     </>
   )
