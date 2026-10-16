@@ -228,27 +228,25 @@ func TestAdminAuditChainCoversEveryColumn_DB(t *testing.T) {
 	}
 }
 
-// Each written row reaches the after-create hook with the chain position and
-// hash the database gave it, and ChainHead reports the newest one (the
-// off-box sink relies on both).
-func TestAdminAuditAfterCreateAndChainHead_DB(t *testing.T) {
+// ChainHead reports the newest row's position and hash, which the sink's
+// read of the rows after a cursor carries too (the off-box sink relies on both).
+func TestAdminAuditChainHeadMatchesRows_DB(t *testing.T) {
 	db := testdb.PrivateDatabase(t, "admin_audit_head", "../../../migrations")
 	ctx := context.Background()
 	repo := NewAuditLogRepository(&DB{DB: db})
 	if pos, hash, err := repo.ChainHead(ctx); err != nil || pos != 0 || hash != "" {
 		t.Fatalf("empty chain head: %d %q %v", pos, hash, err)
 	}
-	var seen []admin.AuditChainEntry
-	repo.SetAfterCreate(func(e admin.AuditChainEntry) { seen = append(seen, e) })
 	for _, action := range []string{"console.login", "admin.update"} {
 		if err := repo.Create(ctx, &admin.AuditLog{ID: shared.NewID(), AdminEmail: "root@example.com", Action: action,
 			Success: true, CreatedAt: time.Now(), Severity: "info"}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(seen) != 2 || seen[0].Position != 1 || seen[1].Position != 2 || seen[1].PrevHash != seen[0].Hash ||
+	seen, err := repo.ReadForwardRows(ctx, 0, 10)
+	if err != nil || len(seen) != 2 || seen[0].Position != 1 || seen[1].Position != 2 || seen[1].PrevHash != seen[0].Hash ||
 		seen[0].Hash == "" || seen[1].Log.Action != "admin.update" {
-		t.Fatalf("hook saw %+v", seen)
+		t.Fatalf("rows %+v err=%v", seen, err)
 	}
 	pos, hash, err := repo.ChainHead(ctx)
 	if err != nil || pos != 2 || hash != seen[1].Hash {
