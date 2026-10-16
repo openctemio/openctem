@@ -4,7 +4,7 @@
  *
  * Every page of the app shell used to ask, on each load, for the caller's
  * profile (/users/me), their organizations (/users/me/tenants), the unread
- * notification count, the review-queue badge, the organization policy
+ * notification count, the review-queue and approvals badges, the organization policy
  * (/auth/providers) and the platform announcements. The bootstrap now returns all of them in one response
  * (research/81). Seeding the cache keeps every existing consumer (`useProfile`,
  * `useMyTenants`, the bell, the sidebar badge) working unchanged: they read
@@ -24,6 +24,7 @@ import type { UserProfile } from '@/features/account/types/account.types'
 export interface BootstrapBadges {
   unread_notifications?: number
   easm_review?: number
+  pending_approvals?: number
 }
 
 /** One platform announcement (GET /api/v1/announcements). */
@@ -61,6 +62,12 @@ export const ANNOUNCEMENTS_URL = '/api/v1/announcements'
  */
 export const EASM_SUGGESTIONS_COUNT_URL = '/api/v1/easm/suggestions?view=count'
 
+/**
+ * The finding approvals waiting for a decision (the Approvals sidebar badge):
+ * `status_counts.pending` of the approvals list, under the caller's data scope.
+ */
+export const PENDING_APPROVALS_COUNT_URL = '/api/v1/approvals?status=pending&page=1&per_page=1'
+
 /** Writes the session parts into the SWR cache, without revalidating them. */
 export async function seedSessionCache(data: BootstrapSessionData): Promise<void> {
   const writes: Promise<unknown>[] = []
@@ -73,6 +80,14 @@ export async function seedSessionCache(data: BootstrapSessionData): Promise<void
     seed(notificationEndpoints.unreadCount(), { count: data.badges.unread_notifications })
   if (typeof data.badges?.easm_review === 'number')
     seed(EASM_SUGGESTIONS_COUNT_URL, { cards: [], total: data.badges.easm_review, can_add: false })
+  if (typeof data.badges?.pending_approvals === 'number')
+    seed(PENDING_APPROVALS_COUNT_URL, {
+      data: [],
+      total: data.badges.pending_approvals,
+      page: 1,
+      per_page: 1,
+      status_counts: { pending: data.badges.pending_approvals },
+    })
   if (Array.isArray(data.announcements)) seed(ANNOUNCEMENTS_URL, { data: data.announcements })
   seed(LIMITS_APPLY_KEY, data.limits_apply === true)
 
