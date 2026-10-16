@@ -72,7 +72,6 @@ repository root.
 BACKEND_API_URL=http://localhost:8080
 
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_APP_NAME=OpenCTEM
 
 # Forward X-Real-IP / X-Forwarded-For to the API (organization IP allowlists).
 # Only set true when a reverse proxy in front of the console overwrites these

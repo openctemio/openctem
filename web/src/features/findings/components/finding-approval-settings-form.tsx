@@ -83,23 +83,28 @@ export function FindingApprovalSettingsForm({
   const chosen: FPApprovalLevel = settings.pending_fp_approval ?? inForce
   const [email, setEmail] = useState(settings.backup_contact_email ?? '')
   const [level, setLevel] = useState<FPApprovalLevel>(chosen)
-  const [percent, setPercent] = useState(settings.second_look_percent ?? 0)
+  const percentInForce = settings.second_look_percent ?? 0
+  // The share last chosen: a waiting lower share, else the one in force.
+  const chosenPercent = settings.pending_second_look_percent ?? percentInForce
+  const [percent, setPercent] = useState(chosenPercent)
   const [saving, setSaving] = useState(false)
+  const [canceling, setCanceling] = useState<'level' | 'percent' | null>(null)
 
   useEffect(() => {
     setEmail(settings.backup_contact_email ?? '')
     setLevel(settings.pending_fp_approval ?? settings.fp_approval ?? 'all')
-    setPercent(settings.second_look_percent ?? 0)
+    setPercent(settings.pending_second_look_percent ?? settings.second_look_percent ?? 0)
   }, [
     settings.backup_contact_email,
     settings.fp_approval,
     settings.pending_fp_approval,
     settings.second_look_percent,
+    settings.pending_second_look_percent,
   ])
 
   const emailChanged = email.trim() !== (settings.backup_contact_email ?? '')
   const levelChanged = level !== chosen
-  const percentChanged = percent !== (settings.second_look_percent ?? 0)
+  const percentChanged = percent !== chosenPercent
   const dirty = emailChanged || levelChanged || percentChanged
 
   const save = async (e: React.FormEvent) => {
@@ -112,7 +117,8 @@ export function FindingApprovalSettingsForm({
         ...(percentChanged ? { second_look_percent: percent } : {}),
       })
       toast.success(
-        next?.pending_fp_approval && levelChanged
+        (next?.pending_fp_approval && levelChanged) ||
+          (next?.pending_second_look_percent !== undefined && percentChanged)
           ? t(
               'findingApprovals.settings.savedPending',
               'Saved. The lower level takes effect in 24 hours; the approvers were told.'
@@ -135,6 +141,33 @@ export function FindingApprovalSettingsForm({
   const pendingAt = settings.pending_fp_approval_at
     ? new Date(settings.pending_fp_approval_at).toLocaleString()
     : ''
+  const pendingPercentAt = settings.pending_second_look_at
+    ? new Date(settings.pending_second_look_at).toLocaleString()
+    : ''
+
+  // Cancel a waiting lowering: choosing the value in force again applies at
+  // once and clears the pending change (the API treats it as a raise).
+  const cancelPending = async (what: 'level' | 'percent') => {
+    setCanceling(what)
+    try {
+      const next = await updateFindingApprovalSettings(
+        what === 'level' ? { fp_approval: inForce } : { second_look_percent: percentInForce }
+      )
+      toast.success(
+        t('findingApprovals.settings.pendingCanceled', 'The waiting change was canceled')
+      )
+      onSaved?.(next)
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('findingApprovals.settings.cancelFailed', 'Could not cancel the waiting change')
+        )
+      )
+    } finally {
+      setCanceling(null)
+    }
+  }
 
   return (
     <form onSubmit={save} className="space-y-5">
@@ -160,7 +193,7 @@ export function FindingApprovalSettingsForm({
               <AlertDescription>
                 {t(
                   'findingApprovals.fpLevel.pendingBody',
-                  '"{level}" takes effect at {at}. Until then "{current}" applies; choose it again and save to cancel the change.',
+                  '"{level}" takes effect at {at}. Until then "{current}" applies.',
                   {
                     level: fpLevelText(t, settings.pending_fp_approval).label,
                     current: fpLevelText(t, inForce).label,
@@ -168,6 +201,18 @@ export function FindingApprovalSettingsForm({
                   }
                 )}
               </AlertDescription>
+              {canEdit && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  disabled={canceling !== null}
+                  onClick={() => void cancelPending('level')}
+                >
+                  {t('findingApprovals.settings.cancelPending', 'Cancel the change')}
+                </Button>
+              )}
             </Alert>
           )}
           <RadioGroup
@@ -212,6 +257,40 @@ export function FindingApprovalSettingsForm({
               )}
             </p>
           )}
+          {settings.pending_second_look_percent !== undefined && (
+            <Alert>
+              <Clock className="h-4 w-4" aria-hidden />
+              <AlertTitle>
+                {t(
+                  'findingApprovals.fpLevel.pendingPercentTitle',
+                  'A lower second-look share is waiting'
+                )}
+              </AlertTitle>
+              <AlertDescription>
+                {t(
+                  'findingApprovals.fpLevel.pendingPercentBody',
+                  '{next} % takes effect at {at}. Until then {current} % of single-person decisions get a second look.',
+                  {
+                    next: String(settings.pending_second_look_percent),
+                    current: String(percentInForce),
+                    at: pendingPercentAt,
+                  }
+                )}
+              </AlertDescription>
+              {canEdit && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  disabled={canceling !== null}
+                  onClick={() => void cancelPending('percent')}
+                >
+                  {t('findingApprovals.settings.cancelPending', 'Cancel the change')}
+                </Button>
+              )}
+            </Alert>
+          )}
           <div className="space-y-2">
             <Label htmlFor={`${id}-second-look`}>
               {t(
@@ -230,6 +309,14 @@ export function FindingApprovalSettingsForm({
               onChange={(e) => setPercent(clampPercent(Number(e.target.value)))}
               className="w-28"
             />
+            {percentChanged && percent < percentInForce && (
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'findingApprovals.fpLevel.lowerPercentDelay',
+                  'A lower second-look share takes effect 24 hours after you save it. A higher share takes effect at once.'
+                )}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               {t(
                 'findingApprovals.fpLevel.secondLookHelp',

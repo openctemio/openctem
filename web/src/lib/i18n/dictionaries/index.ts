@@ -17,12 +17,14 @@ import en_assetSources from './en/assetSources.json'
 import en_assets from './en/assets.json'
 import en_assetTimeline from './en/assetTimeline.json'
 import en_attackSurface from './en/attackSurface.json'
+import en_brand from './en/brand.json'
 import en_easmReview from './en/easmReview.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
 import en_common from './en/common.json'
 import en_components from './en/components.json'
 import en_confirm from './en/confirm.json'
+import en_contentCatalog from './en/contentCatalog.json'
 import en_criticality from './en/criticality.json'
 import en_findings from './en/findings.json'
 import en_findingApprovals from './en/findingApprovals.json'
@@ -31,6 +33,7 @@ import en_exposures from './en/exposures.json'
 import en_help from './en/help.json'
 import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
+import en_notificationTypes from './en/notificationTypes.json'
 import en_lookalikes from './en/lookalikes.json'
 import en_nav from './en/nav.json'
 import en_networkSeeds from './en/networkSeeds.json'
@@ -69,12 +72,14 @@ import vi_assetSources from './vi/assetSources.json'
 import vi_assets from './vi/assets.json'
 import vi_assetTimeline from './vi/assetTimeline.json'
 import vi_attackSurface from './vi/attackSurface.json'
+import vi_brand from './vi/brand.json'
 import vi_easmReview from './vi/easmReview.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
 import vi_components from './vi/components.json'
 import vi_confirm from './vi/confirm.json'
+import vi_contentCatalog from './vi/contentCatalog.json'
 import vi_criticality from './vi/criticality.json'
 import vi_findings from './vi/findings.json'
 import vi_findingApprovals from './vi/findingApprovals.json'
@@ -83,6 +88,7 @@ import vi_exposures from './vi/exposures.json'
 import vi_help from './vi/help.json'
 import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
+import vi_notificationTypes from './vi/notificationTypes.json'
 import vi_lookalikes from './vi/lookalikes.json'
 import vi_nav from './vi/nav.json'
 import vi_networkSeeds from './vi/networkSeeds.json'
@@ -126,12 +132,14 @@ export const enNamespaces: Record<string, Dictionary> = {
   assets: en_assets,
   assetTimeline: en_assetTimeline,
   attackSurface: en_attackSurface,
+  brand: en_brand,
   easmReview: en_easmReview,
   auth: en_auth,
   automations: en_automations,
   common: en_common,
   components: en_components,
   confirm: en_confirm,
+  contentCatalog: en_contentCatalog,
   criticality: en_criticality,
   findings: en_findings,
   findingApprovals: en_findingApprovals,
@@ -140,6 +148,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   help: en_help,
   insights: en_insights,
   licensePolicy: en_licensePolicy,
+  notificationTypes: en_notificationTypes,
   lookalikes: en_lookalikes,
   nav: en_nav,
   networkSeeds: en_networkSeeds,
@@ -181,12 +190,14 @@ export const viNamespaces: Record<string, Dictionary> = {
   assets: vi_assets,
   assetTimeline: vi_assetTimeline,
   attackSurface: vi_attackSurface,
+  brand: vi_brand,
   easmReview: vi_easmReview,
   auth: vi_auth,
   automations: vi_automations,
   common: vi_common,
   components: vi_components,
   confirm: vi_confirm,
+  contentCatalog: vi_contentCatalog,
   criticality: vi_criticality,
   findings: vi_findings,
   findingApprovals: vi_findingApprovals,
@@ -195,6 +206,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   help: vi_help,
   insights: vi_insights,
   licensePolicy: vi_licensePolicy,
+  notificationTypes: vi_notificationTypes,
   lookalikes: vi_lookalikes,
   nav: vi_nav,
   networkSeeds: vi_networkSeeds,
