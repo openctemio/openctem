@@ -387,6 +387,17 @@
   "settings.domains.save": "Save",
   "settings.domains.saved": "Settings for {domain} saved",
   "settings.domains.saveFailed": "Could not save the domain settings",
+  "settings.connectedApps.empty": "When you connect an AI assistant to {product}, it appears here.",
+  "settings.preferences.appearanceDescription": "Customize how {product} looks on your device",
+  "settings.ticketing.configureDescription": "Control how {product} syncs with this tracker.",
+  "settings.ticketing.syncDescription": "When a finding's status changes in {product}, move the linked Jira issue to match. Jira-side status changes already sync back automatically.",
+  "settings.ticketing.defaultsDescription": "Override how {product} fills new tickets. Leave blank to use the defaults.",
+  "settings.mcp.connectDescription": "Add this server to your MCP client. On first use it opens {product} in your browser: you sign in, choose what it may read, and approve. No key to copy; you can disconnect it any time in My account, Connected applications.",
+  "settings.mcp.otherHost": "If your {product} API is on a different host, replace the URL accordingly.",
+  "settings.mcp.consentTitle": "Connect {client} to {product}?",
+  "settings.mcp.consentConfirmEach": "Each change still asks you to confirm it in {product}.",
   "settings.item.finding-approvals": "Finding approvals",
-  "settings.desc.finding-approvals": "Who decides false positives and accepted risks, and who is told."
+  "settings.desc.finding-approvals": "Who decides false positives and accepted risks, and who is told.",
+  "settings.item.content": "Content catalog",
+  "settings.desc.content": "Signed rules, templates and other packages: install, update and approve."
 }

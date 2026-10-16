@@ -3,7 +3,8 @@
 import type { ReactNode } from 'react'
 import Link from '@/components/link'
 import { PanelLeftIcon } from 'lucide-react'
-import { Logo } from '@/assets/logo'
+import { BrandMark } from '@/components/brand-logo'
+import { useBrand } from '@/context/brand-provider'
 import { ShortcutKeys } from '@/components/layout/keyboard-shortcuts-dialog'
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -54,6 +55,7 @@ interface SidebarBrandProps {
  */
 export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
   const { state, toggleSidebar, isMobile } = useSidebar()
+  const brand = useBrand()
   const collapsed = state === 'collapsed' && !isMobile
 
   if (collapsed) {
@@ -66,7 +68,7 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
             className="group/brand relative flex size-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
             aria-label="Expand sidebar"
           >
-            <Logo
+            <BrandMark
               aria-hidden
               data-slot="brand-mark"
               className="size-7 transition-opacity duration-150 group-hover/brand:opacity-0 group-focus-visible/brand:opacity-0 motion-reduce:transition-none"
@@ -92,8 +94,10 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
         href={href}
         className="flex min-w-0 items-center gap-2 rounded-md text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
       >
-        <Logo className="size-7 shrink-0" />
-        <span className="truncate text-lg leading-none font-semibold tracking-tight">OpenCTEM</span>
+        <BrandMark className="size-7 shrink-0" />
+        <span className="truncate text-lg leading-none font-semibold tracking-tight">
+          {brand.shortName}
+        </span>
       </Link>
       {badge}
       {/* On phones the sidebar is a sheet with its own close button. */}

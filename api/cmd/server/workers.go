@@ -642,6 +642,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "ctem-id-refresh"),
 	))
 
+	// Version check (RFC-105): wakes hourly; fetches the signed release feed
+	// once a day when VERSION_CHECK_ENABLED and a root is pinned, weekly
+	// after repeated failures. One replica fetches per check.
+	w.ControllerManager.Register(controller.NewVersionCheckController(
+		svc.VersionCheck,
+		log.With("controller", "version-check"),
+	))
+
 	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data
 	// external-exposure connector. Per tenant it queries crt.sh for the tenant's
 	// domain assets (SSRF-guarded, rate-limited, body-bounded) and emits

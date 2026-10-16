@@ -96,6 +96,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/app/versioncheck"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -136,6 +137,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/releasefeed"
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 // findingMutatorAdapter adapts the postgres FindingRepository (GetByID) to the
@@ -591,7 +594,9 @@ type Services struct {
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
 	CTEMID          *ctemidapp.Service
-	CertMonitor     *certmonitorapp.Service
+	// VersionCheck is the release feed check (RFC-105); never nil with a database.
+	VersionCheck *versioncheck.Service
+	CertMonitor  *certmonitorapp.Service
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
 	ActiveGate *easmapp.ActiveGate
 	// ScopeJoin confirms discovered names a permanent scope target or seed
@@ -1178,6 +1183,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
+	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
+		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
+		Roots: releasefeed.PinnedRoots, Running: version.Get().Version,
+	}, log)
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
 	// transaction (research/22 P0-7, decision E4).

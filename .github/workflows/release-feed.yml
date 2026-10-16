@@ -1,0 +1,92 @@
+name: Release Feed
+
+# Publishes openctem-releases.json, the signed release feed the instances'
+# version check reads (api/docs/rfcs/RFC-105-version-check-and-usage-telemetry.md,
+# api/docs/architecture/version-check.md), as an asset of the latest release:
+# https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json
+#
+#   release.yml calls it after every release;
+#   the weekly run re-signs it so it never expires between releases (a feed
+#   is valid 30 days; instances refuse one older than 45);
+#   run it by hand after adding an advisory to .github/release-feed/advisories.json.
+#
+# Inputs: the key set (.github/release-feed/keyset.dsse.json, public, signed
+# offline by the root) and the online key seed (secret
+# RELEASE_FEED_SIGNING_KEY of the release-feed environment). While either is
+# missing the job skips with a warning, so a release never fails on it.
+
+on:
+  workflow_call:
+  schedule:
+    - cron: '17 3 * * 1' # Monday 03:17 UTC; schedules run from the default branch (main)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-feed
+  cancel-in-progress: false
+
+env:
+  GOWORK: "off"
+
+jobs:
+  publish:
+    name: Build, verify and upload the release feed
+    # The signing key is used only from main or a release tag, whatever
+    # started the run (the release-feed environment is restricted the same way).
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release-feed
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prerequisites
+        id: pre
+        env:
+          RELEASE_FEED_SIGNING_KEY: ${{ secrets.RELEASE_FEED_SIGNING_KEY }}
+        run: |
+          if [ -z "$RELEASE_FEED_SIGNING_KEY" ] || [ ! -f .github/release-feed/keyset.dsse.json ]; then
+            msg="Release feed not published: the release-feed environment has no RELEASE_FEED_SIGNING_KEY secret or .github/release-feed/keyset.dsse.json is missing (api/docs/architecture/version-check.md#setup-maintainers)."
+            echo "::warning::$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.pre.outputs.skip != 'true'
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Build and verify
+        if: steps.pre.outputs.skip != 'true'
+        working-directory: api
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_FEED_SIGNING_KEY: ${{ secrets.RELEASE_FEED_SIGNING_KEY }}
+        run: |
+          bash ../.github/scripts/release/gh-retry.sh release list -R "$GITHUB_REPOSITORY" \
+            --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > "$RUNNER_TEMP/releases.json"
+          go run ./cmd/release-feed build -keyset ../.github/release-feed/keyset.dsse.json \
+            -key-env RELEASE_FEED_SIGNING_KEY -releases "$RUNNER_TEMP/releases.json" \
+            -advisories ../.github/release-feed/advisories.json -out "$RUNNER_TEMP/openctem-releases.json"
+          # Verified against the roots pinned in this checkout, as an instance would.
+          go run ./cmd/release-feed verify "$RUNNER_TEMP/openctem-releases.json" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload to the latest release
+        if: steps.pre.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(bash .github/scripts/release/gh-retry.sh release view -R "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          bash .github/scripts/release/gh-retry.sh release upload "$tag" "$RUNNER_TEMP/openctem-releases.json" \
+            -R "$GITHUB_REPOSITORY" --clobber
+          echo "Uploaded openctem-releases.json to ${tag}." >> "$GITHUB_STEP_SUMMARY"

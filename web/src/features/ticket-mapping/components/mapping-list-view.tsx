@@ -28,7 +28,7 @@ export function MappingListView() {
         title={t('ticketMapping.list.title', 'Ticket field mapping')}
         description={t(
           'ticketMapping.list.description',
-          'Which OpenCTEM attribute goes to which Jira field, which Jira field comes back, and how statuses map, per project and issue type.'
+          'Which {product} attribute goes to which Jira field, which Jira field comes back, and how statuses map, per project and issue type.'
         )}
       >
         <Can permission={Permission.IntegrationsManage}>
