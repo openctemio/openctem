@@ -125,15 +125,15 @@ func TestFindingTemplateProvenance_KeptAndRebaselined(t *testing.T) {
 		t.Errorf("cross-tenant drift lookup returned %v", got)
 	}
 	if got, _ := repo.MarkCoverageNotObserved(context.Background(), tn.tenant, []shared.ID{fid}); len(got) != 0 {
-		t.Errorf("cross-tenant not_observed marked %v", got)
+		t.Errorf("cross-tenant stale marked %v", got)
 	}
 	marked, err := repo.MarkCoverageNotObserved(context.Background(), other.tenant, []shared.ID{fid})
 	if err != nil || len(marked) != 1 {
-		t.Fatalf("mark not_observed: %v %v", marked, err)
+		t.Fatalf("mark stale: %v %v", marked, err)
 	}
-	var status string
-	_ = r.db.QueryRow(`SELECT status FROM findings WHERE id = $1`, id).Scan(&status)
-	if status != "not_observed" {
-		t.Errorf("status = %s, want not_observed", status)
+	var status, observation string
+	_ = r.db.QueryRow(`SELECT status, observation_state FROM findings WHERE id = $1`, id).Scan(&status, &observation)
+	if observation != "stale" || status == "resolved" {
+		t.Errorf("status = %s, observation = %s; want an open, stale finding", status, observation)
 	}
 }
