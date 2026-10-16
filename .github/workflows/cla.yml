@@ -1,0 +1,142 @@
+name: CLA
+
+# Contributor License Agreement check. Every outside contributor accepts the
+# OpenCTEM CLA once (https://docs.openctem.io/legal/cla/) by posting the
+# sign comment on a pull request; the signature is recorded in the private
+# repository openctemio/cla-signatures and covers every OpenCTEM repository.
+# How to sign: CONTRIBUTING.md and CLA.md.
+#
+# Safety. This workflow runs in the context of the base repository with its
+# secrets, also for pull requests from forks, so:
+# - It never checks out, builds or runs code from the pull request. The scope
+#   step and the CLA action read the commit list and the comments of the pull
+#   request through the API, as data.
+# - The workflow file is taken from the base branch (for comments: from the
+#   default branch), so a pull request cannot change the check it is judged by.
+# - Untrusted text (comment bodies) is only compared inside expressions and is
+#   never placed in a shell command; the scope step gets its inputs through
+#   environment variables.
+# - The token is limited to what the action uses: comment on the pull request
+#   and re-run this workflow's failed run once a contributor signs.
+# - CLA_SIGNATURES_TOKEN is a fine-grained token with Contents read/write on
+#   openctemio/cla-signatures only. The action uses it only to read and update
+#   the signature file there.
+# - The action is archived upstream; it is pinned to the full commit SHA of
+#   its last release, so its code cannot change under us.
+#
+# Allowlist (CLA_ALLOWLIST): the maintainer and the bots that open pull
+# requests here. A pull request opened by one of them is checked only when it
+# carries commits linked to another GitHub account. In a pull request opened
+# by anyone else, a commit that names an allowlisted account counts only when
+# its author and its committer are both allowlisted accounts and its signature
+# is verified: author and committer e-mails can be forged, and a signature
+# proves only the committer. The logic is tested by
+# .github/scripts/cla-scope.test.sh.
+#
+# Keep `cla` a required check on pull requests. In the merge queue it always
+# passes (the pull request was already checked), so requiring it does not
+# block the queue.
+
+on:
+  pull_request_target: # security-review: allow GHA-PR-TARGET no pull request code is checked out or run; see the safety notes above
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  merge_group:
+    types: [checks_requested]
+
+permissions: {}
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  CLA_ALLOWLIST: "0xmanhnv,dependabot[bot],github-actions[bot],renovate[bot]"
+
+jobs:
+  cla:
+    name: cla
+    # Comments on issues (not pull requests) are not for this check.
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write # the CLA comment on the pull request
+      actions: write # re-run the failed check after a contributor signs
+    steps:
+      - name: Decide who must sign
+        id: scope
+        # Pull request events only (not comments, not the merge queue).
+        if: github.event.pull_request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          OPENER: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          opener_allowed=$(jq -rn --arg al "$CLA_ALLOWLIST" --arg u "$OPENER" '$al | split(",") | index($u) != null')
+          # One line per commit: sha, the account the CLA action will judge it by
+          # (author, else committer), and a kind:
+          #   allowlisted  author AND committer allowlisted AND signature verified
+          #   forged       judged as an allowlisted account but not the above
+          #   unlinked     no GitHub account
+          #   other        another account (must sign)
+          # The signature proves only the committer, so both identities count.
+          gh api --paginate "repos/$REPO/pulls/$PR/commits" \
+            | jq -r --arg al "$CLA_ALLOWLIST" '
+                ($al | split(",")) as $list |
+                def ok($u): $u != "" and ($list | index($u)) != null;
+                .[] |
+                (.author.login // "") as $a | (.committer.login // "") as $c |
+                (if $a != "" then $a else $c end) as $id |
+                [.sha, $id,
+                 (if $id == "" then "unlinked"
+                  elif ok($id) | not then "other"
+                  elif ok($a) and ok($c) and (.commit.verification.verified == true) then "allowlisted"
+                  else "forged" end)] | @tsv' > "$RUNNER_TEMP/commits.tsv"
+          run=false
+          forged=""
+          while IFS=$'\t' read -r sha login kind; do
+            case "$kind" in
+              other) run=true ;;
+              unlinked) [ "$opener_allowed" = true ] || run=true ;;
+              forged) [ "$opener_allowed" = true ] || forged="$forged $sha($login)" ;;
+            esac
+          done < "$RUNNER_TEMP/commits.tsv"
+          [ "$opener_allowed" = true ] || run=true
+          if [ -n "$forged" ]; then
+            echo "::error::commits use an allowlisted identity without an allowlisted author, committer and verified signature:$forged"
+            exit 1
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: CLA
+        if: >-
+          (github.event.pull_request && steps.scope.outputs.run == 'true') ||
+          (github.event_name == 'issue_comment' &&
+            (github.event.comment.body == 'recheck' ||
+             startsWith(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA')))
+        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PERSONAL_ACCESS_TOKEN: ${{ secrets.CLA_SIGNATURES_TOKEN }}
+        with:
+          path-to-document: https://docs.openctem.io/legal/cla/
+          remote-organization-name: openctemio
+          remote-repository-name: cla-signatures
+          branch: main
+          path-to-signatures: signatures/v1/cla.json
+          allowlist: ${{ env.CLA_ALLOWLIST }}
+          lock-pullrequest-aftermerge: false
+          create-file-commit-message: "Create the CLA signature file (version 1)"
+          signed-commit-message: "$contributorName accepted the CLA in $owner/$repo#$pullRequestNo"
+          custom-notsigned-prcomment: >-
+            Thank you for your contribution. Before it can be merged, each author of the commits
+            below accepts the OpenCTEM [Contributor License Agreement](https://docs.openctem.io/legal/cla/)
+            once; it covers every OpenCTEM repository. You keep the copyright in your work.
+            If you contribute for your employer, see the
+            [Corporate CLA](https://docs.openctem.io/legal/cla-corporate/). To accept, post this comment:
+          custom-allsigned-prcomment: All commit authors have accepted the OpenCTEM CLA.

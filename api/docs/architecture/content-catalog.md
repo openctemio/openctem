@@ -31,7 +31,7 @@ publisher (Sigstore keyless) ─────────► artifact
   high-severity admin audit row `content_catalog.trust_override` naming the extra roots and the SHA-256 of the
   replacement trusted root.
 
-## Model (migration 002420)
+## Model (migration 002540)
 
 | Table | What |
 |---|---|
@@ -40,7 +40,7 @@ publisher (Sigstore keyless) ─────────► artifact
 | `content_revocations` | Every applied revocation entry, kept |
 | `content_installs` | Per organization and package id: installed version, previous version, pinned, `active`/`revoked` |
 | `content_install_requests` | Pending and decided requests; a CHECK keeps the decider apart from the requester; one pending request per package |
-| `content_catalog_settings` | The approval option per organization (no row: off) |
+| `content_catalog_settings` | The approval option per organization (no row: off) and a pending switch-off time |
 
 ## Import
 
@@ -64,6 +64,10 @@ bundle into `contentcatalog.Service.Import`:
 
 The admin audit row (`content_catalog.import`, high) carries the reason, the index sequence and the counts.
 
+Every read of an artifact goes through `contentpkg.CheckArtifact` (size, then SHA-256 against the signed
+manifest); a source that fetches artifacts later (storage, a mirror, an online catalog) implements
+`contentpkg.ArtifactSource` and is read only through `contentpkg.FetchArtifact`, which bounds the body and checks it.
+
 ## Installs
 
 Routes and gates: [authorization matrix](authorization-matrix.md#content-catalog-apiv1content-rfc-099).
@@ -82,7 +86,11 @@ Routes and gates: [authorization matrix](authorization-matrix.md#content-catalog
   installation. **Pin** stops automatic updates.
 - **Approval option** (`PUT /settings`, `settings:write`): every install, update, rollback and uninstall becomes a
   request. Another member with `content:install` approves it; the request is checked again first and is marked
-  `failed` with the reason when it can no longer be carried out.
+  `failed` with the reason when it can no longer be carried out. The decision and the change commit in one
+  transaction.
+- **Switching approval off waits 24 hours** (`approval_off_at`): until then requests are still required, and the
+  organization's owners and administrators get a high-severity in-app notice so they can turn it back on, which
+  cancels the switch-off. Turning approval on is immediate.
 - Audit actions: `content_package.installed`, `updated`, `rolled_back`, `uninstalled`, `pinned`, `unpinned`,
   `requested`, `request_approved`, `request_rejected`, `request_canceled`, `content_catalog.settings_updated`.
   Each carries the version, artifact digest and origin; T2 and executable installs are high severity.

@@ -1,7 +1,7 @@
 package postgres
 
 // Content catalog (docs/rfcs/RFC-099-content-packages.md; migration
-// 002420_content_catalog). Every query that takes a tenant id reads that
+// 002540_content_catalog). Every query that takes a tenant id reads that
 // organization's rows and the instance catalog (tenant_id IS NULL) only, and
 // every write carries the tenant id.
 
@@ -24,11 +24,44 @@ import (
 // ContentCatalogRepository implements contentcatalog.Repository.
 type ContentCatalogRepository struct {
 	db *DB
+	// q is db, or the transaction of an InTx repository.
+	q ccQuerier
+}
+
+type ccQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
 // NewContentCatalogRepository creates a ContentCatalogRepository.
 func NewContentCatalogRepository(db *DB) *ContentCatalogRepository {
-	return &ContentCatalogRepository{db: db}
+	return &ContentCatalogRepository{db: db, q: db}
+}
+
+// errNestedTx: a method that opens its own transaction was called on an
+// InTx repository.
+var errNestedTx = errors.New("content catalog: nested transaction")
+
+func (r *ContentCatalogRepository) begin(ctx context.Context) (*sql.Tx, error) {
+	if r.db == nil {
+		return nil, errNestedTx
+	}
+	return r.db.BeginTx(ctx, nil)
+}
+
+// InTx runs fn with a repository whose every statement is in one
+// transaction; it commits when fn returns nil.
+func (r *ContentCatalogRepository) InTx(ctx context.Context, fn func(dom.Repository) error) error {
+	tx, err := r.begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := fn(&ContentCatalogRepository{q: tx}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 var _ dom.Repository = (*ContentCatalogRepository)(nil)
@@ -84,7 +117,7 @@ func (r *ContentCatalogRepository) GetTrust(ctx context.Context) (*dom.TrustStat
 	var digest, rvDigest sql.NullString
 	var ixExp, rvIssued, rvExp, imported sql.NullTime
 	var ksv, ixs, rvs int64
-	err := r.db.QueryRowContext(ctx, `
+	err := r.q.QueryRowContext(ctx, `
 		SELECT keyset_version, index_sequence, index_digest, index_expires_at, revocations_sequence,
 			revocations_digest, revocations_issued_at, revocations_expires_at, imported_at
 		FROM content_catalog_trust WHERE id = 1`).
@@ -104,7 +137,7 @@ func (r *ContentCatalogRepository) GetTrust(ctx context.Context) (*dom.TrustStat
 
 // ListRevocations returns every applied revocation entry.
 func (r *ContentCatalogRepository) ListRevocations(ctx context.Context) ([]contentpkg.RevocationEntry, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.q.QueryContext(ctx, `
 		SELECT COALESCE(package_id, ''), COALESCE(version, ''), COALESCE(digest, ''), reason, severity, revoked_at
 		FROM content_revocations ORDER BY id`)
 	if err != nil {
@@ -139,7 +172,7 @@ func (r *ContentCatalogRepository) ApplyImport(ctx context.Context, b *dom.Impor
 	if err := errors.Join(err1, err2, err3); err != nil {
 		return nil, err
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
+	tx, err := r.begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("apply content import: %w", err)
 	}
@@ -284,7 +317,7 @@ func (r *ContentCatalogRepository) ListPackages(ctx context.Context, tenantID sh
 			(SELECT COUNT(DISTINCT package_id) FROM visible)
 		FROM visible v JOIN ids USING (package_id)
 		ORDER BY v.package_id`
-	rows, err := r.db.QueryContext(ctx, q, args...)
+	rows, err := r.q.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list content packages: %w", err)
 	}
@@ -344,7 +377,7 @@ func (s scanWithExtra) Scan(dest ...any) error { return s.rows.Scan(append(dest,
 // ListVersions returns every version of a package the organization sees,
 // newest first.
 func (r *ContentCatalogRepository) ListVersions(ctx context.Context, tenantID shared.ID, packageID string) ([]*dom.Package, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+contentPackageColumns+`
+	rows, err := r.q.QueryContext(ctx, `SELECT `+contentPackageColumns+`
 		FROM content_packages p WHERE `+visibleTo+` AND p.package_id = $2`, tenantID, packageID)
 	if err != nil {
 		return nil, fmt.Errorf("list content package versions: %w", err)
@@ -375,7 +408,7 @@ func sortVersionsDesc(ps []*dom.Package) {
 
 // GetVersion returns one version the organization sees.
 func (r *ContentCatalogRepository) GetVersion(ctx context.Context, tenantID shared.ID, packageID, version string) (*dom.Package, error) {
-	p, err := scanContentPackage(r.db.QueryRowContext(ctx, `SELECT `+contentPackageColumns+`
+	p, err := scanContentPackage(r.q.QueryRowContext(ctx, `SELECT `+contentPackageColumns+`
 		FROM content_packages p WHERE `+visibleTo+` AND p.package_id = $2 AND p.version = $3
 		ORDER BY p.tenant_id NULLS LAST LIMIT 1`, tenantID, packageID, version))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -389,7 +422,7 @@ func (r *ContentCatalogRepository) GetVersion(ctx context.Context, tenantID shar
 
 // GetPackageRow returns a version by row id when the organization sees it.
 func (r *ContentCatalogRepository) GetPackageRow(ctx context.Context, tenantID, rowID shared.ID) (*dom.Package, error) {
-	p, err := scanContentPackage(r.db.QueryRowContext(ctx, `SELECT `+contentPackageColumns+`
+	p, err := scanContentPackage(r.q.QueryRowContext(ctx, `SELECT `+contentPackageColumns+`
 		FROM content_packages p WHERE `+visibleTo+` AND p.id = $2`, tenantID, rowID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, dom.ErrNotFound
@@ -437,7 +470,7 @@ func (r *ContentCatalogRepository) loadVersions(ctx context.Context, tenantID sh
 
 // GetInstall returns the organization's installation of a package.
 func (r *ContentCatalogRepository) GetInstall(ctx context.Context, tenantID shared.ID, packageID string) (*dom.Install, error) {
-	in, err := scanContentInstall(r.db.QueryRowContext(ctx, `SELECT `+contentInstallColumns+`
+	in, err := scanContentInstall(r.q.QueryRowContext(ctx, `SELECT `+contentInstallColumns+`
 		FROM content_installs i WHERE i.tenant_id = $1 AND i.package_id = $2`, tenantID, packageID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, dom.ErrInstallNotFound
@@ -453,7 +486,7 @@ func (r *ContentCatalogRepository) GetInstall(ctx context.Context, tenantID shar
 
 // ListInstalls returns the organization's installations.
 func (r *ContentCatalogRepository) ListInstalls(ctx context.Context, tenantID shared.ID) ([]*dom.Install, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+contentInstallColumns+`
+	rows, err := r.q.QueryContext(ctx, `SELECT `+contentInstallColumns+`
 		FROM content_installs i WHERE i.tenant_id = $1 ORDER BY i.package_id LIMIT 1000`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list content installs: %w", err)
@@ -482,7 +515,7 @@ const visibleRow = `EXISTS (SELECT 1 FROM content_packages p WHERE p.id = $3 AND
 
 // CreateInstall stores a new installation.
 func (r *ContentCatalogRepository) CreateInstall(ctx context.Context, in *dom.Install) error {
-	res, err := r.db.ExecContext(ctx, `
+	res, err := r.q.ExecContext(ctx, `
 		INSERT INTO content_installs (id, tenant_id, package_id, package_row_id, previous_row_id, pinned, status,
 			license_acknowledged, installed_by, updated_by, created_at, updated_at)
 		SELECT $1, $2, $4, $3, NULL, $5, $6, $7, $8, $8, $9, $9
@@ -504,7 +537,7 @@ func (r *ContentCatalogRepository) CreateInstall(ctx context.Context, in *dom.In
 
 // UpdateInstall stores a changed installation.
 func (r *ContentCatalogRepository) UpdateInstall(ctx context.Context, in *dom.Install) error {
-	res, err := r.db.ExecContext(ctx, `
+	res, err := r.q.ExecContext(ctx, `
 		UPDATE content_installs SET package_row_id = $3, previous_row_id = $4, pinned = $5, status = $6,
 			license_acknowledged = $7, updated_by = $8, updated_at = $9
 		WHERE tenant_id = $2 AND id = $1 AND `+visibleRow,
@@ -521,7 +554,7 @@ func (r *ContentCatalogRepository) UpdateInstall(ctx context.Context, in *dom.In
 
 // DeleteInstall removes an installation.
 func (r *ContentCatalogRepository) DeleteInstall(ctx context.Context, tenantID shared.ID, packageID string) error {
-	res, err := r.db.ExecContext(ctx, `DELETE FROM content_installs WHERE tenant_id = $1 AND package_id = $2`, tenantID, packageID)
+	res, err := r.q.ExecContext(ctx, `DELETE FROM content_installs WHERE tenant_id = $1 AND package_id = $2`, tenantID, packageID)
 	if err != nil {
 		return fmt.Errorf("delete content install: %w", err)
 	}
@@ -536,7 +569,7 @@ func (r *ContentCatalogRepository) ListFollowing(ctx context.Context, packageIDs
 	if len(packageIDs) == 0 {
 		return nil, nil
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+contentInstallColumns+`
+	rows, err := r.q.QueryContext(ctx, `SELECT `+contentInstallColumns+`
 		FROM content_installs i WHERE i.package_id = ANY($1) AND NOT i.pinned AND i.status = 'active'
 		ORDER BY i.tenant_id, i.package_id LIMIT 10000`, pq.Array(packageIDs))
 	if err != nil {
@@ -581,7 +614,7 @@ func (r *ContentCatalogRepository) CreateRequest(ctx context.Context, q *dom.Req
 	if q.TargetRowID != nil {
 		target = *q.TargetRowID
 	}
-	res, err := r.db.ExecContext(ctx, `
+	res, err := r.q.ExecContext(ctx, `
 		INSERT INTO content_install_requests (id, tenant_id, package_id, action, target_row_id, pinned,
 			license_acknowledged, status, note, requested_by, created_at)
 		SELECT $1, $2, $4, $5, $3, $6, $7, 'pending', $8, $9, $10
@@ -602,7 +635,7 @@ func (r *ContentCatalogRepository) CreateRequest(ctx context.Context, q *dom.Req
 
 // GetRequest returns one of the organization's requests.
 func (r *ContentCatalogRepository) GetRequest(ctx context.Context, tenantID, id shared.ID) (*dom.Request, error) {
-	q, err := scanContentRequest(r.db.QueryRowContext(ctx, `SELECT `+contentRequestColumns+`
+	q, err := scanContentRequest(r.q.QueryRowContext(ctx, `SELECT `+contentRequestColumns+`
 		FROM content_install_requests q WHERE q.tenant_id = $1 AND q.id = $2`, tenantID, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, dom.ErrRequestNotFound
@@ -623,7 +656,7 @@ func (r *ContentCatalogRepository) ListRequests(ctx context.Context, tenantID sh
 	if limit <= 0 || limit > 200 {
 		limit = 100
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+contentRequestColumns+`
+	rows, err := r.q.QueryContext(ctx, `SELECT `+contentRequestColumns+`
 		FROM content_install_requests q WHERE q.tenant_id = $1 AND ($2 = '' OR q.status = $2)
 		ORDER BY q.created_at DESC LIMIT $3`, tenantID, string(status), limit)
 	if err != nil {
@@ -653,7 +686,7 @@ func (r *ContentCatalogRepository) ListRequests(ctx context.Context, tenantID sh
 
 // DecideRequest implements dom.Repository.
 func (r *ContentCatalogRepository) DecideRequest(ctx context.Context, tenantID, id shared.ID, status dom.RequestStatus, decidedBy *shared.ID, reason string, at time.Time) error {
-	res, err := r.db.ExecContext(ctx, `
+	res, err := r.q.ExecContext(ctx, `
 		UPDATE content_install_requests SET status = $3, decided_by = $4, decision_reason = $5, decided_at = $6
 		WHERE tenant_id = $1 AND id = $2 AND (status = 'pending'
 			OR (status = 'approved' AND $3 = 'failed' AND decided_by = $4))`,
@@ -674,16 +707,16 @@ func (r *ContentCatalogRepository) DecideRequest(ctx context.Context, tenantID, 
 func (r *ContentCatalogRepository) GetSettings(ctx context.Context, tenantID shared.ID) (*dom.Settings, error) {
 	s := &dom.Settings{}
 	var by sql.NullString
-	var at sql.NullTime
-	err := r.db.QueryRowContext(ctx, `SELECT require_approval, updated_by, updated_at FROM content_catalog_settings WHERE tenant_id = $1`,
-		tenantID).Scan(&s.RequireApproval, &by, &at)
+	var at, off sql.NullTime
+	err := r.q.QueryRowContext(ctx, `SELECT require_approval, approval_off_at, updated_by, updated_at FROM content_catalog_settings WHERE tenant_id = $1`,
+		tenantID).Scan(&s.RequireApproval, &off, &by, &at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get content catalog settings: %w", err)
 	}
-	s.UpdatedBy, s.UpdatedAt = optID(by), nullTimeValue(at)
+	s.UpdatedBy, s.UpdatedAt, s.ApprovalOffAt = optID(by), nullTimeValue(at), nullTimeValue(off)
 	return s, nil
 }
 
@@ -693,14 +726,33 @@ func (r *ContentCatalogRepository) PutSettings(ctx context.Context, tenantID sha
 	if s.UpdatedAt != nil {
 		at = *s.UpdatedAt
 	}
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO content_catalog_settings (tenant_id, require_approval, updated_by, updated_at)
-		VALUES ($1, $2, $3, $4)
+	_, err := r.q.ExecContext(ctx, `
+		INSERT INTO content_catalog_settings (tenant_id, require_approval, approval_off_at, updated_by, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (tenant_id) DO UPDATE SET require_approval = EXCLUDED.require_approval,
-			updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at`,
-		tenantID, s.RequireApproval, nullableID(s.UpdatedBy), at)
+			approval_off_at = EXCLUDED.approval_off_at, updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at`,
+		tenantID, s.RequireApproval, nullTime(s.ApprovalOffAt), nullableID(s.UpdatedBy), at)
 	if err != nil {
 		return fmt.Errorf("put content catalog settings: %w", err)
 	}
 	return nil
+}
+
+// ListAdmins returns the organization's active owners and administrators.
+func (r *ContentCatalogRepository) ListAdmins(ctx context.Context, tenantID shared.ID) ([]shared.ID, error) {
+	rows, err := r.q.QueryContext(ctx, `
+		SELECT user_id FROM tenant_members WHERE tenant_id = $1 AND role IN ('owner', 'admin') AND status = 'active' ORDER BY user_id LIMIT 200`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list content catalog administrators: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }

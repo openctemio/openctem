@@ -74,7 +74,11 @@ compensating_controls
 compliance_assessments
 compliance_finding_mappings
 compliance_frameworks
+content_catalog_settings
+content_install_requests
+content_installs
 content_pack_blobs
+content_packages
 content_packs
 control_tests
 credentials
@@ -219,6 +223,8 @@ tenant_tool_settings
 threat_actors
 threat_model_threats
 threat_models
+ticket_mapping_profiles
+ticket_mapping_versions
 tool_categories
 tool_duration_stats
 tools
