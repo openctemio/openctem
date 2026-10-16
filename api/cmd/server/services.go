@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -1666,6 +1668,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound status changes are recorded with the integration as the actor.
 	s.JiraSync.SetActivityRecorder(s.FindingActivity)
+	// Ticket links: create-ticket records its link; people link existing issues.
+	if repos.TicketLink != nil {
+		s.JiraSync.SetLinkStore(repos.TicketLink)
+	}
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
@@ -2793,6 +2799,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// domain (domainverify.Service.OwnerOfDomain).
 	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
 		s.SSO.SetDomainOwnerLookup(owners)
+		// Discovery hands out opaque organization references, signed with
+		// a key derived from the session secret under its own label.
+		dk := hmac.New(sha256.New, []byte(cfg.Auth.JWTSecret))
+		dk.Write([]byte("openctem/sso-discovery/v1"))
+		s.SSO.SetDiscoveryKey(dk.Sum(nil))
 	} else {
 		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
 	}
