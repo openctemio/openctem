@@ -58,6 +58,10 @@ func registerRemediationTaskRoutes(
 		// Marking the task fixed is a fix claim on each of its findings: the
 		// task write plus findings:fix_apply.
 		r.POST("/{task_id}/resolve", h.Resolve, middleware.RequireAll(permission.RemediationWrite, permission.FindingsFixApply))
+		// One exception over the task's open findings (RFC-111 §7): the task
+		// write plus findings:write (it requests a finding disposition).
+		r.POST("/{task_id}/exception/preview", h.PreviewException, middleware.RequireAll(permission.RemediationWrite, permission.FindingsWrite))
+		r.POST("/{task_id}/exception", h.RequestException, middleware.RequireAll(permission.RemediationWrite, permission.FindingsWrite))
 	}, tenantMiddlewares...)
 
 	// Moves of findings between tasks (or out of any task).
