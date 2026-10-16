@@ -241,6 +241,24 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 	return &id, nil
 }
 
+// ticketStatusApplier adapts the finding service's inbound ticket path to
+// the Jira sync service.
+type ticketStatusApplier struct{ vuln *finding.VulnerabilityService }
+
+func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
+) ([]shared.ID, []jira.InboundRefusal, error) {
+	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
+	if err != nil {
+		return nil, nil, err
+	}
+	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
+	for _, r := range out.Refused {
+		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
+	}
+	return out.Applied, refused, nil
+}
+
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
 // solution family): progress from the side-table rollup, resolution via the
 // same guarded group-resolve path as the standalone "resolve group" action.
@@ -1674,6 +1692,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound status changes are recorded with the integration as the actor.
 	s.JiraSync.SetActivityRecorder(s.FindingActivity)
+	// Inbound status changes go through the finding service rules (transition
+	// map, gates, "mark fixed" with proof of fix) for every finding linked to
+	// the issue; refusals are commented back once per window (all replicas).
+	s.JiraSync.SetInboundApplier(ticketStatusApplier{vuln: s.Vulnerability})
+	s.JiraSync.SetWorkItemFindingLister(repos.Finding)
+	if deps.RedisClient != nil {
+		s.JiraSync.SetRefusalCommentGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 	// Ticket links: create-ticket records its link; people link existing issues.
 	if repos.TicketLink != nil {
 		s.JiraSync.SetLinkStore(repos.TicketLink)
@@ -1698,8 +1724,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// here (JiraSync is created after the campaign service above).
 	if s.RemediationCampaign != nil {
 		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
-		// Inbound: a Jira webhook moving the campaign's epic to Done completes
-		// the campaign (the reverse of the outbound transition above).
+		// Inbound: a Jira webhook moving the campaign's epic to Done marks the
+		// campaign's findings fixed (a fix claim; verification closes them).
 		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
 	}
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
