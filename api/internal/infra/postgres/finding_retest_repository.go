@@ -247,6 +247,18 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 		res.PriorStatus = vulnerability.FindingStatus(current)
 		res.ResultStatus = res.PriorStatus
 
+		// A conclusive outcome is the finding's validation verdict, whether or
+		// not it moves the status; still vulnerable also means it is present.
+		if vo := retest.ValidationOutcome(in.Outcome); !findingGone && vo != "" && retest.EligibleStatus(res.PriorStatus) {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE findings SET validation_outcome = $3::text,
+					observation_state = CASE WHEN $3::text = 'reproducible' THEN 'present' ELSE observation_state END
+				WHERE tenant_id = $1 AND id = $2`,
+				in.TenantID.String(), in.FindingID.String(), vo); err != nil {
+				return fmt.Errorf("stamp retest validation: %w", err)
+			}
+		}
+
 		if !findingGone && in.Decide != nil {
 			d := in.Decide(res.PriorStatus)
 			if d.Change && d.Next != res.PriorStatus {
