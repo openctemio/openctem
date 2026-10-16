@@ -47,6 +47,11 @@ export interface GroupExceptionInput {
   justification: string
   /** RFC 3339; accepted only. */
   expires_at?: string
+  /**
+   * Confirms a group above the bulk ceiling (the API answers 400
+   * BULK_TOO_LARGE until it is sent).
+   */
+  approved?: boolean
 }
 
 /** A member request of a group exception. */
@@ -104,9 +109,15 @@ function taskExceptionUrl(taskId: string): string {
   return `/api/v1/remediation/tasks/${encodeURIComponent(taskId)}/exception`
 }
 
-export function approvalBatchesUrl(page: number, perPage: number, status?: ApprovalStatus): string {
+export function approvalBatchesUrl(
+  page: number,
+  perPage: number,
+  status?: ApprovalStatus,
+  sourceId?: string
+): string {
   const p = new URLSearchParams({ page: String(page), per_page: String(perPage) })
   if (status) p.set('status', status)
+  if (sourceId) p.set('source_id', sourceId)
   return `${BATCHES}?${p.toString()}`
 }
 
@@ -115,11 +126,12 @@ export function useApprovalBatches(
   page: number,
   perPage: number,
   status?: ApprovalStatus,
-  enabled = true
+  enabled = true,
+  sourceId?: string
 ) {
   const { currentTenant } = useTenant()
   return useSWR<ApprovalBatchList>(
-    currentTenant && enabled ? approvalBatchesUrl(page, perPage, status) : null,
+    currentTenant && enabled ? approvalBatchesUrl(page, perPage, status, sourceId) : null,
     get,
     { revalidateOnFocus: false, keepPreviousData: true }
   )
@@ -137,12 +149,18 @@ export function useApprovalBatch(id: string | null | undefined) {
 
 /**
  * The pending group exception of one task, if the caller can see it. The
- * list has no task filter, so this reads the newest pending page (a task has
- * at most one pending exception; the request answers 409 when one exists).
+ * server filters by the task (a task has at most one pending exception; the
+ * request answers 409 when one exists).
  */
 export function usePendingTaskException(taskId: string | undefined, enabled = true) {
-  const { data, mutate, isLoading } = useApprovalBatches(1, 100, 'pending', !!taskId && enabled)
-  const batch = data?.data.find((b) => b.source_type === 'task' && b.source_id === taskId)
+  const { data, mutate, isLoading } = useApprovalBatches(
+    1,
+    1,
+    'pending',
+    !!taskId && enabled,
+    taskId
+  )
+  const batch = data?.data.find((b) => b.source_id === taskId)
   return { batch, mutate, isLoading }
 }
 
