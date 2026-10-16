@@ -95,6 +95,7 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/content-packs/import":                   {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/{id}/revoke":              {stepUpRoute, "platform content pack"},
 	"PUT /api/v1/admin/content-packs/channels/{channel}":        {stepUpRoute, "platform content pack"},
+	"POST /api/v1/admin/content-catalog/import":                 {stepUpRoute, "content catalog bundle import"},
 	"POST /api/v1/admin/announcements/":                         {routine, "banner text; reason required, audited"},
 	"POST /api/v1/admin/announcements/{announcement_id}/cancel": {routine, "ends a banner; reason required, audited"},
 	"POST /api/v1/admin/threat-intel/sync":                      {routine, "runs a public feed sync; audited"},
