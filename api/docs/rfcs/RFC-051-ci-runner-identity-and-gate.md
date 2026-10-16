@@ -316,6 +316,22 @@ the same key while the first request is still running is `409` with
 `Retry-After`. A refusal or failure releases the key, so the retry runs again.
 The store is the shared Redis; without it, or when it fails, the upload runs
 as it always did (the fingerprints still dedupe findings).
+**Secrets on a branch.** A secret a run finds on any non-fork branch (a pull
+request included) is exposure the moment it is pushed: the finding becomes an
+organization finding at once (no longer hidden as seen only on a branch), and a
+remediation task "Rotate <secret type>" is opened for it (origin `system`, kind
+`rotate`, action key `rotate:secret:<fingerprint>`). The task is per secret
+identity: the same credential found in other repositories or branches joins the
+open task instead of opening another, and a later sighting never opens a second
+one. Removing the secret from the branch does not close it, because history
+keeps it. A fork's run never raises one.
+
+Which secrets page, for the gate and for this task: the finding is a secret, it
+is not validated false, and its rule is not generic or heuristic (rule ids that
+name a generic key, a password or a high-entropy string). A hard-coded password
+hit therefore does not block every pipeline and does not open a task; it follows
+the policy's severity and modes like any finding. Everything else blocks.
+
 A secret finding is never stored in clear whatever the runner sends: the
 runner masks it, and the server keeps only a preview of at most four
 characters at each end (`vulnerability.MaskSecretPreview`), redacts the

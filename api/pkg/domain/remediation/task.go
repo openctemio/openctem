@@ -137,6 +137,9 @@ type ActionOrigin string
 const (
 	ActionOriginManual     ActionOrigin = "manual"
 	ActionOriginSuggestion ActionOrigin = "suggestion"
+	// ActionOriginSystem: the platform created the action itself (the
+	// rotation task of a secret a CI run found on a branch).
+	ActionOriginSystem ActionOrigin = "system"
 )
 
 // Limits.

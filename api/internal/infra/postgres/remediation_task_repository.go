@@ -388,6 +388,22 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 	return nil
 }
 
+// ActiveTaskByActionKey returns the newest task of the action with this key
+// that still takes members (open or in progress), or nil when there is none.
+func (r *RemediationTaskRepository) ActiveTaskByActionKey(ctx context.Context, tenantID shared.ID, actionKey string) (*remediation.Task, error) {
+	q := `SELECT ` + taskSelectCols + taskFrom + `
+		WHERE t.tenant_id = $1 AND a.action_key = $2 AND t.state IN ('open', 'in_progress')
+		ORDER BY t.created_at DESC LIMIT 1`
+	t, err := scanTask(r.db.QueryRowContext(ctx, q, tenantID.String(), actionKey).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find active task by action key: %w", err)
+	}
+	return t, nil
+}
+
 // lockFindingsInTx locks the findings' rows in id order, so two operations on
 // overlapping findings serialize instead of deadlocking.
 func lockFindingsInTx(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []shared.ID) error {
