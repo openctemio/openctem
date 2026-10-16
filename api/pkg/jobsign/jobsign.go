@@ -58,9 +58,9 @@ const (
 // encoding of this struct, field order as declared. A verifier never
 // re-encodes it: it hashes and parses the envelope's payload bytes.
 type Statement struct {
-	Kind        string `json:"kind"`
-	TenantID    string `json:"tenant_id"`
-	SensorID    string `json:"sensor_id"`
+	Kind     string `json:"kind"`
+	TenantID string `json:"tenant_id"`
+	SensorID string `json:"sensor_id"`
 	// SensorScope is SensorScopeInstance for a job of a shared sensor (one
 	// that serves several organizations), absent for an organization's own
 	// sensor. A shared sensor runs only statements that carry it, binds the
