@@ -1461,6 +1461,11 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	if repos.RepoIdentity != nil {
 		ciSvc.SetRepositoryIdentity(repos.RepoIdentity)
 	}
+	// A secret a run finds on a non-fork branch is an organization finding
+	// with a "Rotate <secret type>" task.
+	if repos.RemediationTask != nil {
+		ciSvc.SetSecretExposure(cirunapp.NewSecretExposure(repos.CIRun, repos.RemediationTask, log))
+	}
 	// A GitLab merge request run's baseline is its target branch as GitLab
 	// reports it through the organization's connection.
 	if repos.SCMApp != nil && svc.Encryptor != nil {
