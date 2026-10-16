@@ -22,7 +22,7 @@ type SharedClaimer interface {
 	GetSharedPendingForSensor(ctx context.Context, sensorID shared.ID, capabilities []string, limit int) ([]*commanddom.Command, error)
 	ClaimManyShared(ctx context.Context, sensorID shared.ID, capabilities []string, ids []shared.ID, limits map[shared.ID]int) ([]shared.ID, error)
 	CountHeldSharedScans(ctx context.Context, sensorID shared.ID) (int, error)
-	GetHeldSharedJob(ctx context.Context, sensorID, commandID shared.ID) (*commanddom.Command, error)
+	GetHeldSharedJobForPlatform(ctx context.Context, sensorID, commandID shared.ID) (*commanddom.Command, error)
 }
 
 // SharedLimitSource reads an organization's limit of a key through the
@@ -273,7 +273,7 @@ func (s *Service) HeldSharedJob(ctx context.Context, a *sensordom.Sensor, comman
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
-	cmd, err := claimer.GetHeldSharedJob(ctx, a.ID, id)
+	cmd, err := claimer.GetHeldSharedJobForPlatform(ctx, a.ID, id)
 	if err != nil {
 		return nil, err
 	}

@@ -238,7 +238,7 @@ func TestSharedClaim_SetsHolderLeaseAndEpoch(t *testing.T) {
 	if err != nil || len(ids) != 1 || ids[0] != job {
 		t.Fatalf("claim: %v %v", ids, err)
 	}
-	cmd, err := repo.GetHeldSharedJob(ctx, a, job)
+	cmd, err := repo.GetHeldSharedJobForPlatform(ctx, a, job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestSharedClaim_SetsHolderLeaseAndEpoch(t *testing.T) {
 		cmd.LeaseEpoch != 1 || cmd.LeaseExpiresAt == nil || cmd.TenantID != tenant {
 		t.Fatalf("claimed job %+v", cmd)
 	}
-	if _, err := repo.GetHeldSharedJob(ctx, b, job); err == nil {
+	if _, err := repo.GetHeldSharedJobForPlatform(ctx, b, job); err == nil {
 		t.Fatal("another shared sensor reads the job as held")
 	}
 	if ids, err := repo.ClaimManyShared(ctx, b, nil, []shared.ID{job}, nil); err != nil || len(ids) != 0 {
@@ -359,7 +359,7 @@ func TestSharedClaim_LeaseExpiryRequeues(t *testing.T) {
 	if ids, err := repo.ClaimManyShared(ctx, b, nil, []shared.ID{job}, nil); err != nil || len(ids) != 1 {
 		t.Fatalf("re-claim: %v %v", ids, err)
 	}
-	if cmd, err = repo.GetHeldSharedJob(ctx, b, job); err != nil || cmd.LeaseEpoch != 2 {
+	if cmd, err = repo.GetHeldSharedJobForPlatform(ctx, b, job); err != nil || cmd.LeaseEpoch != 2 {
 		t.Fatalf("re-claimed job epoch %v (%v), want 2", cmd, err)
 	}
 }
