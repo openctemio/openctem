@@ -61,7 +61,10 @@ func ManifestName(kind string) string { return kind + ".manifest.dsse.json" }
 func FileName(kind, records string) string { return kind + "-" + records + ".jsonl.gz" }
 
 // KeySetType is the program feed's key set.
-var KeySetType = feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind}
+var KeySetType = feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind, MaxValidity: MaxKeySetValidity}
+
+// MaxKeySetValidity caps not_after - issued_at of the program feed key set.
+const MaxKeySetValidity = 180 * 24 * time.Hour
 
 // Source is one upstream source, with its license and attribution.
 type Source struct {

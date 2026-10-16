@@ -130,11 +130,12 @@ run the workflow by hand.
 
 1. Run `scripts/signing/init-keys.sh` on your own machine and follow what it
    prints ([signing keys](signing-keys.md)).
-2. Add the printed online public key to `releasefeed.PinnedKeys` in a pull
+2. Add the printed release feed public key to `releasefeed.PinnedKeys` in a pull
    request.
-3. Store the online key as the secret `RELEASE_FEED_SIGNING_KEY` of the GitHub
-   environment `release-feed`, restricted to `main` and `v*` tags (the printed
-   `gh secret set` command reads it from the file).
+3. Store the release feed key as the secret `RELEASE_FEED_SIGNING_KEY` of the
+   GitHub environment `release-feed`, restricted to `main` and `v*` tags (the
+   printed `gh secret set` command reads it from the file). The catalog online
+   key is a separate key with its own secret and environment.
 4. Rotation and compromise: see [signing keys](signing-keys.md).
 
 ## Key files
