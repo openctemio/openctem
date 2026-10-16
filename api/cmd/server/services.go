@@ -56,6 +56,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	accountdeletionapp "github.com/openctemio/openctem/api/internal/app/accountdeletion"
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	assetfreshnessapp "github.com/openctemio/openctem/api/internal/app/assetfreshness"
@@ -847,6 +848,8 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// AccountDeletion: self-service account deletion with a grace period.
+	AccountDeletion *accountdeletionapp.Service
 	// PlatformEmail is the platform's SMTP settings, set in the admin console
 	// (RFC-079); its Sender backs Email.
 	PlatformEmail *platformemail.Service
@@ -2788,6 +2791,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	// Self-service account deletion: signing in again within the grace
+	// period cancels it.
+	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
+		s.Audit, tenantapp.ErasedUserLabel, log)
+	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2848,6 +2856,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
+	if s.AccountDeletion != nil {
+		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
@@ -2941,6 +2952,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			s.OAuth.SetSignupPolicy(s.Signup)
 			if s.DomainVerify != nil {
 				s.OAuth.SetSignupDomainPolicy(s.DomainVerify)
+			}
+			if s.AccountDeletion != nil {
+				s.OAuth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
