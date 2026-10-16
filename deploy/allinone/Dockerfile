@@ -92,7 +92,9 @@ RUN node --version
 # web: the standalone Next.js server as built by web/Dockerfile (WORKDIR /app there)
 COPY --from=web --chown=0:0 /app /opt/openctem/web
 # api: server + admin tool + migrations + configs (WORKDIR /app in api/Dockerfile)
-COPY --from=api --chown=0:0 /app/server /app/bootstrap-admin /opt/openctem/api/
+# (the API image's operator commands are links to the server binary, see
+# api/Dockerfile; this image keeps bootstrap-admin, linked below)
+COPY --from=api --chown=0:0 /app/server /opt/openctem/api/
 COPY --from=api --chown=0:0 /app/migrations /opt/openctem/api/migrations
 COPY --from=api --chown=0:0 /app/configs /opt/openctem/api/configs
 # The OpenAPI spec the API serves at /openapi.yaml (relative to its working dir).
@@ -106,7 +108,8 @@ COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 # The writable paths, owned by the runtime user: /data and /config (see VOLUME
 # below), and the Next.js cache (.next/cache, the only place the web server
 # writes besides /tmp).
-RUN mkdir -p /data/ca /config /certs /opt/openctem/web/.next/cache \
+RUN ln -s server /opt/openctem/api/bootstrap-admin \
+ && mkdir -p /data/ca /config /certs /opt/openctem/web/.next/cache \
  && chown nextjs:nodejs /data /data/ca /config /opt/openctem/web/.next/cache
 
 # The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + entrypoint.sh).

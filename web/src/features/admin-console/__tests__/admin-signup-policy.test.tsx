@@ -25,6 +25,15 @@ const SEEDED: SignupPolicyResponse = {
   version: 1,
   source: 'environment',
   updated_at: '2026-10-08T09:00:00Z',
+  deployment_mode: 'open',
+  self_service_locked: false,
+  effective_mode: 'admin_only',
+}
+
+const LOCKED: SignupPolicyResponse = {
+  ...SEEDED,
+  deployment_mode: 'disabled',
+  self_service_locked: true,
 }
 
 describe('SignupPolicyForm', () => {
@@ -33,8 +42,26 @@ describe('SignupPolicyForm', () => {
   it('shows the stored policy and where it came from', () => {
     render(<SignupPolicyForm policy={SEEDED} canEdit onSaved={vi.fn()} />)
     expect(screen.getByRole('radio', { name: /only platform administrators/i })).toBeChecked()
-    expect(screen.getByText(/set from the environment at install/i)).toBeInTheDocument()
+    expect(screen.getByText(/set from the server configuration at install/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('under SIGNUP_MODE=disabled self-service is locked and the reason is shown', () => {
+    render(<SignupPolicyForm policy={LOCKED} canEdit onSaved={vi.fn()} />)
+    expect(screen.getByText(/SIGNUP_MODE: disabled/)).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /anyone who signs up/i })).toBeDisabled()
+    expect(screen.getByText(/locked by the server configuration/i)).toBeInTheDocument()
+  })
+
+  it('a stored policy above the ceiling shows what is in force', () => {
+    render(
+      <SignupPolicyForm
+        policy={{ ...LOCKED, mode: 'self_service', effective_mode: 'admin_only' }}
+        canEdit
+        onSaved={vi.fn()}
+      />
+    )
+    expect(screen.getByText(/limited by the server configuration/i)).toBeInTheDocument()
   })
 
   it('a read-only administrator cannot change it', () => {
