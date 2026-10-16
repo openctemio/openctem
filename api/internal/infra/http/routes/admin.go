@@ -159,6 +159,10 @@ func registerAdminRoutes(
 				r.POST("/recovery-codes", h.AdminConsole.GenerateRecoveryCodes, authed, freshStepUp("recovery_codes.generate"))
 				r.POST("/step-up/webauthn/options", h.AdminConsole.WebAuthnStepUpOptions, authed)
 				r.POST("/step-up/webauthn", h.AdminConsole.WebAuthnStepUp, consoleRL.LoginMiddleware(), authed)
+				// Time-boxed elevation: read-only until the session elevates
+				// (a fresh confirmation); ending it is always allowed.
+				r.POST("/elevate", h.AdminConsole.Elevate, authed, stepUp("console.elevate"))
+				r.DELETE("/elevate", h.AdminConsole.EndElevation, authed)
 				// Platform identity provider sign-in (RFC-022 revision 4). Not a
 				// credential-guessing surface (the IdP authenticates, the state is
 				// single use), so it uses the token-exchange bucket (20/min) rather

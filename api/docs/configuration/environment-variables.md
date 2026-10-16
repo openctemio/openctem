@@ -25,6 +25,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
 | `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
+| `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Unset: not named. |
 
 ### Brand
 
@@ -123,6 +124,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENCRYPTION_KEY_PREVIOUS` | list | empty |  | yes | Comma-separated earlier keys, only while a key rotation is in progress. Values encrypted under them stay readable. Remove them when the rotation is finished. |
 | `APP_TEMPLATE_SIGNING_KEY` | string | empty |  | yes | Master secret the per-organization signing keys of custom scanner templates are derived from. Same formats as `APP_ENCRYPTION_KEY` and must differ from it. Set it to rotate template keys independently of the encryption key. Unset: derived from `APP_ENCRYPTION_KEY`. |
 | `APP_CONTENT_SIGNING_KEY` | string | empty |  | yes | Master secret of each organization's content pack signing key (Ed25519). Same formats as `APP_ENCRYPTION_KEY` and must differ from it and from `APP_TEMPLATE_SIGNING_KEY`. Unset: derived from `APP_ENCRYPTION_KEY` under its own label. |
+| `FINGERPRINT_KEY` | string | empty | production | yes | Server secret the fingerprint of each reported secret finding is keyed from (and the key CI jobs hash raw secrets with). At least 32 characters: `openssl rand -hex 32`. Never rotate it with `APP_ENCRYPTION_KEY`: changing it changes every secret's identity, so a secret seen again opens a second finding. On an install that already stores secret findings, set it to the current `APP_ENCRYPTION_KEY` value (the key those fingerprints were made with). Required unless `APP_ENV=development`, where `APP_ENCRYPTION_KEY` is used when it is unset. Back it up with the database. |
 | `CONTENT_TRUST_ROOT_KEY_IDS` | list | empty |  |  | Extra content catalog roots (comma-separated key ids, `SHA256:<hex>`) trusted beside the roots pinned in the release, for an operator's own catalog source (RFC-099). Setting it writes a high-severity admin audit row at startup. Unset: only the pinned roots; with none, bundle imports are refused. |
 | `CONTENT_SIGSTORE_TRUSTED_ROOT` | path | empty |  |  | Path of a Sigstore trusted root (JSON) that replaces the one embedded in the release for verifying publisher signatures of content packages (RFC-099). Setting it writes a high-severity admin audit row with the file's SHA-256 at startup. Unset: the embedded trusted root. |
 
@@ -366,6 +368,17 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `ADMIN_AUDIT_RETENTION_BATCH_SIZE` | int | `10000` |  |  | Rows per delete transaction. |
+
+### Admin console
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ADMIN_ELEVATION` | string | `required` |  |  | `required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in. |
+
+### Audit log retention
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
 | `ADMIN_AUDIT_SINK` | string | empty |  |  | Streams the platform administrators' audit log off the box: every row with its hash-chain position and hash (no request body), and the chain head every `ADMIN_AUDIT_SINK_HEAD_INTERVAL`. `https://collector/path` (one JSON object per POST, `Authorization: Bearer ADMIN_AUDIT_SINK_TOKEN`, no redirects), `syslog+tls://host:6514`, `syslog+tcp://host:514`, `syslog+udp://host:514` (RFC 5424) or `file:///path` (JSON lines, 0600). A destination that cannot be used stops the start-up. Empty: off. |
 | `ADMIN_AUDIT_SINK_TOKEN` | string | empty |  | yes | Bearer token sent to an `https://` `ADMIN_AUDIT_SINK`. |
 | `ADMIN_AUDIT_SINK_HEAD_INTERVAL` | duration | `15m` |  |  | How often the administrators' audit chain head (position and hash) is sent to `ADMIN_AUDIT_SINK`. A later re-signing of the chain cannot match a head already sent. |

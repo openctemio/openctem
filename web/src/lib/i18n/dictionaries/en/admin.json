@@ -776,5 +776,15 @@
   "admin.stepUp.keyRequired": "The console requires a security key for this: the authenticator app is not accepted.",
   "admin.stepUp.loading": "Loading",
   "admin.stepUp.useCode": "Use a code from your authenticator app instead",
-  "admin.stepUp.useKeyInstead": "Use your security key or passkey instead"
+  "admin.stepUp.useKeyInstead": "Use your security key or passkey instead",
+  "admin.elevation.active": "Acting as {role} until {until}.",
+  "admin.elevation.end": "End now",
+  "admin.elevation.endFailed": "The elevation could not be ended. Try again.",
+  "admin.elevation.readonly": "You are acting as read-only. Elevate for a while to change anything.",
+  "admin.elevation.elevate": "Elevate",
+  "admin.elevation.title": "Elevate for a while",
+  "admin.elevation.description": "Your session acts with the chosen role until the time is up, then read-only again. Every elevation is in the administrator audit log.",
+  "admin.elevation.role": "Role",
+  "admin.elevation.duration": "For",
+  "admin.elevation.minutes": "{n} minutes"
 }

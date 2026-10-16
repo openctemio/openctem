@@ -59,10 +59,16 @@ const (
 	// organization. Counting findings is costly on a large table, so their
 	// usage is counted only while a findings limit applies.
 	Findings Key = "findings"
+	// LifecycleSubStatuses caps an organization's finding sub-statuses
+	// (live ones; RFC-110). Free gets a few labels.
+	LifecycleSubStatuses Key = "lifecycle_sub_statuses"
+	// LifecycleSchemes caps its lifecycle schemes (live ones): none on Free
+	// (labels only), one on Pro, context schemes on Enterprise.
+	LifecycleSchemes Key = "lifecycle_schemes"
 )
 
 // Keys lists every limit in display order.
-var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, FreeTeamsPerUser, Findings}
+var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, FreeTeamsPerUser, Findings, LifecycleSubStatuses, LifecycleSchemes}
 
 // IsValid reports whether k is a known limit.
 func (k Key) IsValid() bool {
@@ -98,8 +104,9 @@ func BuiltinDefaults() Defaults {
 		Free: {
 			Seats: 5, Assets: 500, Sensors: 2, APIKeys: 5, CITrusts: 2, InvitesPerDay: 20,
 			PlatformScansPerDay: 10, PlatformScansConcurrent: 1, FreeTeamsPerUser: 1,
+			LifecycleSubStatuses: 3, LifecycleSchemes: 0,
 		},
-		Pro:        {},
+		Pro:        {LifecycleSchemes: 1},
 		Enterprise: {},
 	}
 }
