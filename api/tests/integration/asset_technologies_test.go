@@ -147,3 +147,39 @@ func TestAssetTechnologies_TenantIsolation(t *testing.T) {
 		t.Fatalf("tenant A's technologies changed: %+v", got)
 	}
 }
+
+// Versioned products a probe names (technologies and the Server header)
+// become software components resolved to the curated catalog, so CVE
+// matching works for internet-facing assets.
+func TestAssetTechnologies_VersionedProductsAreCPEComponents(t *testing.T) {
+	g := newTechRig(t)
+	const name = "cpe.tech.example.com"
+	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
+		Properties: ctis.Properties{"technologies": []any{"nginx:1.18.0", "HSTS", "Vercel"}, "server": "Apache/2.4.41 (Ubuntu)"}})
+	rows, err := g.r.db.QueryContext(context.Background(), `
+		SELECT lower(p.name), p.cpe_vendor IS NOT NULL AND p.tenant_id IS NULL
+		  FROM asset_software s JOIN software_products p ON p.id = s.product_id
+		 WHERE s.tenant_id = $1 AND s.asset_id = $2`, g.tn.tenant.String(), g.assetID(g.tn, name).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	got := map[string]bool{}
+	for rows.Next() {
+		var n string
+		var cpe bool
+		_ = rows.Scan(&n, &cpe)
+		got[n] = cpe
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("components = %v, want nginx and Apache only", got)
+	}
+	for n, cpe := range got {
+		if !cpe {
+			t.Errorf("%s is not resolved to a curated CPE product", n)
+		}
+	}
+}
