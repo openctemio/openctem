@@ -148,8 +148,9 @@ type TenantModulesResponse struct {
 	// bare []string here would be a second, thinner copy of that catalog.
 	ComingSoonModuleIDs []string `json:"coming_soon_module_ids,omitempty"`
 	BetaModuleIDs       []string `json:"beta_module_ids,omitempty"`
-	// NotEntitledModuleIDs are modules the organization's plan does not
-	// include: a page of one says "not in your plan", not "turned off".
+	// NotEntitledModuleIDs are modules not available for the organization: a
+	// page of one says "not available for this organization", not "turned
+	// off".
 	NotEntitledModuleIDs []string `json:"not_entitled_module_ids,omitempty"`
 	// ReadOnlyModules are modules the organization lost recently, with the end
 	// of their read-only grace: pages read, writes are refused.

@@ -39,6 +39,12 @@ func TestRequireSelfServiceStartLimits(t *testing.T) {
 	if err := run(config.TenantCreationSelfService, `{"seats":5,"orgs_per_user":1}`); err != nil {
 		t.Fatalf("environment limits: %v", err)
 	}
+	cfg := &config.Config{}
+	cfg.Auth.TenantCreationMode = config.TenantCreationSelfService
+	cfg.InternalAPI.Addr = ":9443"
+	if err := requireSelfServiceStartLimits(ctx, cfg, &Services{Entitlement: entitlement.NewService(noDefaultsRepo{}, nil, nil)}); err != nil {
+		t.Fatalf("the internal API sets the starting limits: %v", err)
+	}
 	if err := run(config.TenantCreationAdminOnly, `{"bogus":1}`); err == nil {
 		t.Fatal("an invalid SELF_SERVICE_START_LIMITS must refuse to start")
 	}

@@ -145,3 +145,68 @@ func TestAdHocEntitlementPattern(t *testing.T) {
 		}
 	}
 }
+
+// planWording matches commercial plan, edition and upgrade wording. The core
+// talks of limits and of what is "not available for this organization";
+// plans and prices exist only in a hosted service's own control plane.
+var planWording = regexp.MustCompile(`(?i)\b(your|organization'?s|this organization'?s|their|the organization's) plan\b` +
+	`|\bupgrade (your|to) (plan|pro|enterprise)\b|\bOSS edition\b|\bfree plan\b|\b(pro|enterprise) (plan|tier|edition)\b` +
+	`|plan ?& ?usage|\benterprise only\b|\benterprise edition\b`)
+
+// TestNoPlanWording fails on plan or edition wording in the API code and the
+// web console, including its translations.
+func TestNoPlanWording(t *testing.T) {
+	roots := []struct {
+		dir  string
+		exts []string
+	}{
+		{"../../internal", []string{".go"}},
+		{"../../pkg", []string{".go"}},
+		{"../../cmd", []string{".go"}},
+		{"../../../web/src", []string{".ts", ".tsx", ".json"}},
+	}
+	for _, root := range roots {
+		if _, err := os.Stat(root.dir); err != nil {
+			if root.dir == "../../../web/src" {
+				continue
+			}
+			t.Fatal(err)
+		}
+		err := filepath.WalkDir(root.dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if d.Name() == "node_modules" || d.Name() == "generated" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			name := d.Name()
+			if strings.HasSuffix(name, "_test.go") || strings.Contains(name, ".test.") || strings.Contains(name, ".spec.") {
+				return nil
+			}
+			ok := false
+			for _, e := range root.exts {
+				ok = ok || strings.HasSuffix(name, e)
+			}
+			if !ok {
+				return nil
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for i, line := range strings.Split(string(raw), "\n") {
+				if planWording.MatchString(line) {
+					t.Errorf("%s:%d: plan or edition wording; say what applies (limits, not available for this organization): %s",
+						path, i+1, strings.TrimSpace(line))
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}

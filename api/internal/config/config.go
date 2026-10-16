@@ -56,6 +56,14 @@ type Config struct {
 	Ingest       IngestConfig
 	Metrics      MetricsConfig
 
+	// AccountPortalURL (ACCOUNT_PORTAL_URL) is the hosted service's account
+	// page, linked from Usage & limits when a limit applies. Empty: no link.
+	AccountPortalURL string
+
+	// InternalAPI is the control-plane listener (docs/architecture/limits.md):
+	// off unless INTERNAL_API_ADDR is set.
+	InternalAPI InternalAPIConfig
+
 	// SelfServiceStartLimits (SELF_SERVICE_START_LIMITS) are the limits an
 	// organization a person creates starts with when no console setting is
 	// stored: a JSON object of limit keys, or "unlimited" for an explicit
@@ -203,6 +211,56 @@ type AdminAuditRetentionConfig struct {
 // (404) — metrics are effectively disabled until a token is set or Public is
 // explicitly enabled. Set METRICS_PUBLIC=true to restore the legacy open
 // endpoint (e.g. when it is already firewalled to an internal scrape network).
+// InternalAPIConfig configures the internal entitlements API: a separate
+// listener for a hosted service's control plane, never routed by the public
+// gateway. mTLS (client certificate required, verified against ClientCAFile)
+// plus a short-lived Ed25519-signed token on every request.
+type InternalAPIConfig struct {
+	// Addr is the listen address; empty turns the internal API off.
+	Addr         string
+	CertFile     string
+	KeyFile      string
+	ClientCAFile string
+	// JWTPublicKeysFile holds one or more PEM Ed25519 public keys (rotation).
+	JWTPublicKeysFile string
+	// JWTIssuer is the expected iss claim.
+	JWTIssuer string
+}
+
+// validateAccountPortalURL accepts an empty value or an absolute https URL
+// (the link is shown to organization administrators).
+func validateAccountPortalURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return errors.New("ACCOUNT_PORTAL_URL must be an absolute https URL without credentials")
+	}
+	return nil
+}
+
+// Enabled reports whether the internal API listener is configured.
+func (c InternalAPIConfig) Enabled() bool { return c.Addr != "" }
+
+// validate refuses a half-configured internal API: every file is required
+// once the address is set (it never starts without mTLS or token keys).
+func (c InternalAPIConfig) validate() error {
+	if !c.Enabled() {
+		return nil
+	}
+	for _, f := range []struct{ name, value string }{
+		{"INTERNAL_API_TLS_CERT", c.CertFile}, {"INTERNAL_API_TLS_KEY", c.KeyFile},
+		{"INTERNAL_API_CLIENT_CA", c.ClientCAFile}, {"INTERNAL_API_JWT_PUBLIC_KEYS", c.JWTPublicKeysFile},
+		{"INTERNAL_API_JWT_ISSUER", c.JWTIssuer},
+	} {
+		if strings.TrimSpace(f.value) == "" {
+			return fmt.Errorf("%s is required when INTERNAL_API_ADDR is set", f.name)
+		}
+	}
+	return nil
+}
+
 type MetricsConfig struct {
 	// Public leaves /metrics unauthenticated when true (legacy behavior).
 	// Default false.
@@ -1482,6 +1540,15 @@ func Load() (*Config, error) {
 			SourceResolve:         getEnv("INGEST_SOURCE_RESOLVE", "dry_run"),
 			VEX:                   getEnv("INGEST_VEX", "dry_run"),
 		},
+		AccountPortalURL: getEnv("ACCOUNT_PORTAL_URL", ""),
+		InternalAPI: InternalAPIConfig{
+			Addr:              getEnv("INTERNAL_API_ADDR", ""),
+			CertFile:          getEnv("INTERNAL_API_TLS_CERT", ""),
+			KeyFile:           getEnv("INTERNAL_API_TLS_KEY", ""),
+			ClientCAFile:      getEnv("INTERNAL_API_CLIENT_CA", ""),
+			JWTPublicKeysFile: getEnv("INTERNAL_API_JWT_PUBLIC_KEYS", ""),
+			JWTIssuer:         getEnv("INTERNAL_API_JWT_ISSUER", "openctem-cloud"),
+		},
 		SelfServiceStartLimits: getEnv("SELF_SERVICE_START_LIMITS", ""),
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.
@@ -1608,6 +1675,12 @@ func deriveSSORedirectAllowList(cfg *Config) []string {
 // Validate validates the configuration.
 func (c *Config) Validate() error {
 	if err := c.validateBasic(); err != nil {
+		return err
+	}
+	if err := c.InternalAPI.validate(); err != nil {
+		return err
+	}
+	if err := validateAccountPortalURL(c.AccountPortalURL); err != nil {
 		return err
 	}
 	if c.App.Env == EnvProduction {
