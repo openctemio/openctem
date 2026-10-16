@@ -18,7 +18,7 @@
 #   Phase 2.3 — Retry logic with max_retries + retry_backoff_seconds
 #
 # Prerequisites:
-#   - API running with the sign-up policy in self_service (TENANT_CREATION_MODE=self_service on a fresh database)
+#   - API running with the sign-up policy in self_service (SIGNUP_MODE=open on a fresh database, with the platform e-mail set)
 #   - Migrations 102 and 103 applied
 #   - jq, curl installed
 #

@@ -98,6 +98,14 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   `task_route` creates a task under the existing action; `join` adds the findings to the target task (the caller
   must see all of that task's findings). Edits: `title`, `exclude_finding_ids` (remembered in
   `remediation_key_exclusions`), `owners` per partition index, `deadline`, `auto_join`.
+- Asset owners without `findings:remediation:write` reach the same route with `findings:remediation:read` and
+  accept as the owner (`AcceptInput.AsOwner`, `owner_accept.go`): only a `join` into a task assigned to them or
+  to one of their groups, or a `task_route` whose every partition owner is them or one of their groups; only as
+  it is (no title, removed findings, owners, deadline or auto-join, since removed findings are remembered for
+  everyone); every finding in their data scope (no hidden members) and on an asset they own as primary or
+  secondary owner, directly or through a group (`asset_owners`, joined through `assets.tenant_id`). A new fix
+  (`new_group`) stays with `findings:remediation:write`. The audit event carries `as_owner`. Owning an asset is
+  not a scope grant: the data scope check applies on top.
 - Findings that closed or joined another task since the suggestion are left out and returned in `dropped`; with
   none left the accept answers 400.
 - `POST /api/v1/remediation/suggestions/approve` accepts up to 50 suggestions (5000 findings) as they are, each
@@ -125,6 +133,12 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   a `remediation_task_changed` entry on every finding (left and joined). Findings not in the source are skipped
   and reported. A detach records `remediation_key_exclusions` (reason `detached`) for the source's key.
 - Undo = the reverse move with the versions the response returns.
+- Tracker comments: after the move is stored, `TaskService` calls `TaskMoveNotifier.TaskMembersMoved` (set with
+  `SetMoveNotifier`; `internal/app/remediation/move_notify.go`) once per move, split, detach and once per merge
+  source, with a `TaskMoveEvent`. `Comments()` (`pkg/domain/remediation/move.go`) words one comment per task
+  touched from counts and task titles only. The task ticket integration implements the notifier for tasks with
+  an active issue; it must not block the request and logs its own failures. Not wired in `cmd/server` until then
+  (listed in the wiring guard's optional setters with that reason).
 
 ## Mark fixed and regressions
 

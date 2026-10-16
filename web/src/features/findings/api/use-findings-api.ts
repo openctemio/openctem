@@ -666,6 +666,9 @@ export interface FindingApprovalSettings {
   pending_fp_approval_at?: string
   /** Share (0-10 %) of single-person false positives flagged for a second look. */
   second_look_percent?: number
+  /** A lower share chosen less than 24 hours ago, in force at pending_second_look_at. */
+  pending_second_look_percent?: number
+  pending_second_look_at?: string
 }
 
 const FINDING_APPROVAL_SETTINGS_URL = '/api/v1/organization/settings/finding-approvals'

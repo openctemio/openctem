@@ -127,12 +127,14 @@ type Handlers struct {
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
 	ScanWindow    *handler.ScanWindowHandler    // nil if not initialized (no database)
-	ScanWorkflow  *handler.ScanWorkflowHandler  // nil if not initialized (no database)
-	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
-	Tool          *handler.ToolHandler          // nil if not initialized (no database)
-	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
-	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
-	Scan          *handler.ScanHandler          // nil if not initialized (no database)
+	// FindingLifecycle serves sub-statuses and lifecycle schemes (RFC-110); nil without a database.
+	FindingLifecycle *handler.FindingLifecycleHandler
+	ScanWorkflow     *handler.ScanWorkflowHandler // nil if not initialized (no database)
+	ScanProfile      *handler.ScanProfileHandler  // nil if not initialized (no database)
+	Tool             *handler.ToolHandler         // nil if not initialized (no database)
+	ToolCategory     *handler.ToolCategoryHandler // nil if not initialized (no database)
+	Capability       *handler.CapabilityHandler   // nil if not initialized (no database)
+	Scan             *handler.ScanHandler         // nil if not initialized (no database)
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
 	CIAdmin             *handler.CIAdminHandler
@@ -142,8 +144,11 @@ type Handlers struct {
 	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
+	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
 	AdminProgramFeed    *handler.AdminProgramFeedHandler    // program feed sources (RFC-065 §16.6)
+	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
@@ -929,6 +934,9 @@ func Register(
 	if h.ScanWindow != nil {
 		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)
 	}
+	if h.FindingLifecycle != nil {
+		registerFindingLifecycleRoutes(router, h.FindingLifecycle, authMiddleware, userSync)
+	}
 
 	// Initialize trigger rate limiter for scan workflow/scan trigger endpoints
 	// This prevents abuse and ensures fair resource usage across tenants
@@ -975,6 +983,9 @@ func Register(
 	// Template Source routes (tenant from JWT token)
 	if h.ContentPack != nil {
 		registerContentPackRoutes(router, h.ContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+	if h.ContentCatalog != nil {
+		registerContentCatalogRoutes(router, h.ContentCatalog, authMiddleware, userSync)
 	}
 	if h.PlatformContentPack != nil {
 		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))

@@ -1,5 +1,6 @@
 'use client'
 
+import { useDocsHref } from '@/context/brand-provider'
 import { useState, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import { Bug, BookOpen, CircleHelp, ExternalLink, Info, Keyboard, Settings } from 'lucide-react'
@@ -94,6 +95,7 @@ export function SidebarFooterLinks({
 
 /** Help: documentation, keyboard shortcuts, issue tracker and version. */
 function HelpMenu({ shell }: { shell: ShortcutShell }) {
+  const docsHref = useDocsHref()
   const { t } = useTranslation()
   const { isMobile } = useSidebar()
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -119,7 +121,7 @@ function HelpMenu({ shell }: { shell: ShortcutShell }) {
           className="min-w-56"
         >
           <DropdownMenuItem asChild>
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+            <a href={docsHref(DOCS_URL)} target="_blank" rel="noopener noreferrer">
               <BookOpen />
               <span>{t('help.documentation', 'Documentation')}</span>
               <ExternalLink className="ms-auto size-3.5 text-muted-foreground" aria-hidden />
@@ -141,7 +143,7 @@ function HelpMenu({ shell }: { shell: ShortcutShell }) {
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setAboutOpen(true)}>
             <Info />
-            <span>{t('help.about', 'About OpenCTEM')}</span>
+            <span>{t('help.about', 'About {product}')}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
