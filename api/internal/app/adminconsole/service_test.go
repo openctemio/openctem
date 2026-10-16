@@ -254,6 +254,14 @@ type fakeAccounts struct {
 	byEmail   map[string]shared.ID
 	suspended map[string]bool
 	passwords map[string]string // user id -> password
+	resets    int               // RecordPasswordSuccess calls
+	lockedFor map[string]bool   // sign-in email -> directory reports a locked tenant account
+}
+
+func (f *fakeAccounts) RecordPasswordSuccess(_ context.Context, _ shared.ID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resets++
 }
 
 // VerifyPassword: sessions maps the email the test signs in with to the
@@ -264,6 +272,9 @@ func (f *fakeAccounts) VerifyPassword(_ context.Context, email, pw string, _ Cli
 	u, ok := f.sessions[email]
 	if !ok {
 		return nil, admin.ErrInvalidCredentials
+	}
+	if f.lockedFor[email] {
+		return nil, admin.ErrAccountLocked
 	}
 	want, ok := f.passwords[u.UserID.String()]
 	if !ok {
@@ -416,8 +427,29 @@ func TestStartRefusals(t *testing.T) {
 	t.Run("signed-in user who is not an administrator", func(t *testing.T) {
 		h := newHarness(t)
 		h.accounts.sessions["member"] = &SignedInUser{UserID: shared.NewID(), Active: true}
-		if _, err := h.svc.Start(ctx, "member", password, client); !errors.Is(err, admin.ErrNotPlatformAdmin) {
-			t.Fatalf("got %v, want ErrNotPlatformAdmin", err)
+		if _, err := h.svc.Start(ctx, "member", password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+			t.Fatalf("got %v, want ErrInvalidCredentials", err)
+		}
+	})
+
+	t.Run("non-admin, inactive and locked admins never reset the lockout counter", func(t *testing.T) {
+		h := newHarness(t)
+		h.accounts.sessions["member"] = &SignedInUser{UserID: shared.NewID(), Active: true}
+		_, _ = h.svc.Start(ctx, "member", password, client)
+		h.admin.Deactivate()
+		_, _ = h.svc.Start(ctx, refresh, password, client)
+		if h.accounts.resets != 0 {
+			t.Fatalf("lockout counter reset %d times for refused accounts", h.accounts.resets)
+		}
+	})
+
+	t.Run("an accepted administrator resets the counter once", func(t *testing.T) {
+		h := newHarness(t)
+		if _, err := h.svc.Start(ctx, refresh, password, client); err != nil {
+			t.Fatal(err)
+		}
+		if h.accounts.resets != 1 {
+			t.Fatalf("resets = %d, want 1", h.accounts.resets)
 		}
 	})
 
@@ -429,11 +461,19 @@ func TestStartRefusals(t *testing.T) {
 		}
 	})
 
+	t.Run("locked tenant account answers like a wrong password", func(t *testing.T) {
+		h := newHarness(t)
+		h.accounts.lockedFor = map[string]bool{refresh: true}
+		if _, err := h.svc.Start(ctx, refresh, password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+			t.Fatalf("got %v, want ErrInvalidCredentials", err)
+		}
+	})
+
 	t.Run("deactivated administrator", func(t *testing.T) {
 		h := newHarness(t)
 		h.admin.Deactivate()
-		if _, err := h.svc.Start(ctx, refresh, password, client); !errors.Is(err, admin.ErrNotPlatformAdmin) {
-			t.Fatalf("got %v, want ErrNotPlatformAdmin", err)
+		if _, err := h.svc.Start(ctx, refresh, password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+			t.Fatalf("got %v, want ErrInvalidCredentials", err)
 		}
 	})
 }
@@ -451,7 +491,7 @@ func TestLockoutBlocksTheConsole(t *testing.T) {
 	if !h.admin.IsLocked() {
 		t.Fatal("expected administrator locked after repeated wrong codes")
 	}
-	if _, err := h.svc.Start(ctx, refresh, password, client); !errors.Is(err, admin.ErrNotPlatformAdmin) {
+	if _, err := h.svc.Start(ctx, refresh, password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
 		t.Fatalf("locked start: %v", err)
 	}
 }

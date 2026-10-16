@@ -12,6 +12,8 @@ import { adminIdPInfo, adminSignIn } from '@/features/admin-console/api/use-admi
 import { AdminApiError } from '@/features/admin-console/api/admin-client'
 import { TotpStepForm, adminErrorMessage } from '@/features/admin-console/components/totp-step-form'
 import { IdPSignInButton } from '@/features/admin-console/components/idp-sign-in-button'
+import { TurnstileWidget } from '@/features/auth/components/turnstile-widget'
+import { useAuthProviders } from '@/features/auth/api/use-auth-providers'
 import { nextFromLocation } from '@/features/admin-console/lib/console-navigation'
 import type { AdminIdPInfo, AdminLoginResult } from '@/features/admin-console/types'
 
@@ -35,6 +37,12 @@ export default function AdminSignInPage() {
   const [idp, setIdp] = useState<AdminIdPInfo | null>(null)
   const [idpRequired, setIdpRequired] = useState(false)
   const [step, setStep] = useState<AdminLoginResult | null>(null)
+  // After repeated failed sign-ins the API asks for a security check
+  // (CAPTCHA_REQUIRED); it is then shown and its token sent along.
+  const [captchaRequired, setCaptchaRequired] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaReset, setCaptchaReset] = useState(0)
+  const { data: authProviders } = useAuthProviders(undefined, captchaRequired)
 
   useEffect(() => {
     let live = true
@@ -54,11 +62,15 @@ export default function AdminSignInPage() {
     setBusy(true)
     setError(null)
     try {
-      setStep(await adminSignIn(email.trim(), password))
+      setStep(await adminSignIn(email.trim(), password, captchaRequired ? captchaToken : undefined))
       setPassword('')
     } catch (err) {
       setPassword('')
-      if (err instanceof AdminApiError && err.status === 401) {
+      if (captchaRequired) setCaptchaReset((n) => n + 1)
+      if (err instanceof AdminApiError && err.code === 'CAPTCHA_REQUIRED') {
+        setCaptchaRequired(true)
+        setError(t('admin.login.captchaRequired', 'Complete the security check and try again.'))
+      } else if (err instanceof AdminApiError && err.status === 401) {
         setError(t('admin.login.wrongCredentials', 'Wrong email or password.'))
       } else if (err instanceof AdminApiError && err.code === 'IDP_SIGN_IN_REQUIRED') {
         setIdpRequired(true)
@@ -151,6 +163,13 @@ export default function AdminSignInPage() {
                   required
                 />
               </div>
+              {captchaRequired && authProviders?.captcha_site_key && (
+                <TurnstileWidget
+                  siteKey={authProviders.captcha_site_key}
+                  onToken={setCaptchaToken}
+                  resetSignal={captchaReset}
+                />
+              )}
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>

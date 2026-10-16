@@ -34,13 +34,13 @@ export function useAdminSession() {
 /**
  * The console's own sign-in: the account's email and password open the TOTP
  * step of a console session. No tenant sign-in is involved. 401: wrong email
- * or password (one answer for both); 403: not a platform administrator,
- * locked, or the identity provider is required.
+ * or password, or not an active unlocked administrator (one answer); 403:
+ * CAPTCHA_REQUIRED after repeated failures, or the identity provider is required.
  */
-export function adminSignIn(email: string, password: string) {
+export function adminSignIn(email: string, password: string, captchaToken?: string) {
   return adminFetch<AdminLoginResult>('/auth/login', {
     method: 'POST',
-    body: { email, password },
+    body: { email, password, captcha_token: captchaToken },
   })
 }
 

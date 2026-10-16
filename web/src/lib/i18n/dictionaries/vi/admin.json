@@ -662,5 +662,6 @@
   "admin.login.idpRequired": "Quản trị viên đăng nhập bằng nhà cung cấp danh tính. Đăng nhập bằng mật khẩu chỉ dành cho tài khoản khẩn cấp.",
   "admin.login.unreachable": "Không thể kết nối tới bảng điều khiển.",
   "admin.login.breakGlassNote": "Đăng nhập bằng mật khẩu dành cho tài khoản khẩn cấp (break-glass) khi bắt buộc dùng nhà cung cấp danh tính.",
-  "admin.shell.signOutFailed": "Đăng xuất thất bại; phiên vẫn sẽ tự hết hạn."
+  "admin.shell.signOutFailed": "Đăng xuất thất bại; phiên vẫn sẽ tự hết hạn.",
+  "admin.login.captchaRequired": "Hãy hoàn tất bước kiểm tra bảo mật rồi thử lại."
 }

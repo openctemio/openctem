@@ -662,5 +662,6 @@
   "admin.login.idpRequired": "Administrators sign in with the identity provider. Password sign-in is for break-glass accounts only.",
   "admin.login.unreachable": "The console could not be reached.",
   "admin.login.breakGlassNote": "Password sign-in is for break-glass (emergency) accounts when the identity provider is required.",
-  "admin.shell.signOutFailed": "Sign-out failed; the session will still expire on its own."
+  "admin.shell.signOutFailed": "Sign-out failed; the session will still expire on its own.",
+  "admin.login.captchaRequired": "Complete the security check and try again."
 }

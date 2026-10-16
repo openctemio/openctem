@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // A CAPTCHA after repeated failed sign-ins (docs/rfcs/RFC-104): when the
@@ -40,12 +41,17 @@ func (h *LocalAuthHandler) SetLoginFailureCounter(c LoginFailureCounter) { h.log
 // A counter error does not lock anyone out (the per-address rate limit and
 // the account lockout still apply).
 func (h *LocalAuthHandler) loginNeedsCaptcha(r *http.Request, ip string) bool {
-	if h.captcha == nil || h.loginFailures == nil || ip == "" {
+	return captchaNeeded(r.Context(), h.captcha, h.loginFailures, ip, h.logger)
+}
+
+// captchaNeeded is the shared rule behind the tenant and console sign-ins.
+func captchaNeeded(ctx context.Context, c Captcha, f LoginFailureCounter, key string, log *logger.Logger) bool {
+	if c == nil || f == nil || key == "" {
 		return false
 	}
-	n, err := h.loginFailures.Failures(r.Context(), ip)
+	n, err := f.Failures(ctx, key)
 	if err != nil {
-		h.logger.Warn("failed sign-in counter unreadable; no CAPTCHA asked", "error", err)
+		log.Warn("failed sign-in counter unreadable; no CAPTCHA asked", "error", err)
 		return false
 	}
 	return n >= LoginCaptchaAfter

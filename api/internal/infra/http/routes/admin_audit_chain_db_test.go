@@ -65,6 +65,8 @@ func (s chainSignIns) VerifyPassword(_ context.Context, email, password string, 
 	}
 	return &u, nil
 }
+func (s chainSignIns) RecordPasswordSuccess(context.Context, shared.ID) {}
+
 func (s chainSignIns) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
 	return shared.ID{}, "", errors.New("not used")
 }

@@ -13,6 +13,19 @@ vi.mock('@/features/admin-console/api/use-admin-session', () => ({
   adminIdPStart: (...a: unknown[]) => idpStart(...a),
 }))
 
+vi.mock('@/features/auth/api/use-auth-providers', () => ({
+  useAuthProviders: (_c: unknown, enabled?: boolean) => ({
+    data: enabled ? { captcha_site_key: 'site' } : undefined,
+  }),
+}))
+vi.mock('@/features/auth/components/turnstile-widget', () => ({
+  TurnstileWidget: ({ onToken }: { onToken: (t: string) => void }) => (
+    <button type="button" onClick={() => onToken('tok')}>
+      solve-captcha
+    </button>
+  ),
+}))
+
 import AdminSignInPage from '@/app/(admin-console)/admin/login/page'
 import { AdminApiError } from '@/features/admin-console/api/admin-client'
 
@@ -58,7 +71,7 @@ describe('Admin console sign-in (its own, no tenant session)', () => {
     stubLocation('')
     signIn.mockResolvedValueOnce({ status: 'mfa_required' })
     await signInWith('ops@acme.io', 'Secret-pass-1')
-    expect(signIn).toHaveBeenCalledWith('ops@acme.io', 'Secret-pass-1')
+    expect(signIn).toHaveBeenCalledWith('ops@acme.io', 'Secret-pass-1', undefined)
     expect(await screen.findByLabelText('Verification code')).toBeInTheDocument()
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
     expect(screen.queryByRole('img', { name: /QR code/ })).not.toBeInTheDocument()
@@ -84,6 +97,17 @@ describe('Admin console sign-in (its own, no tenant session)', () => {
     expect(screen.getByLabelText('Password')).toHaveValue('')
     expect(nav.replace).not.toHaveBeenCalled()
     expect(nav.href).not.toHaveBeenCalled()
+  })
+
+  it('shows the security check when the API asks for it and sends its token', async () => {
+    stubLocation('')
+    signIn.mockRejectedValueOnce(new AdminApiError('check', 403, 'CAPTCHA_REQUIRED'))
+    const user = await signInWith('ops@acme.io', 'Secret-pass-1')
+    await user.click(await screen.findByRole('button', { name: 'solve-captcha' }))
+    signIn.mockResolvedValueOnce({ status: 'mfa_required' })
+    await user.type(screen.getByLabelText('Password'), 'Secret-pass-1')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(signIn).toHaveBeenLastCalledWith('ops@acme.io', 'Secret-pass-1', 'tok')
   })
 
   it('explains a refusal from the API', async () => {

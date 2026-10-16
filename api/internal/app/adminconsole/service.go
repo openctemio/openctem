@@ -116,6 +116,10 @@ type AccountDirectory interface {
 	// locked account admin.ErrAccountLocked. Only a local password account
 	// can pass: an organization's SSO never authenticates an administrator.
 	VerifyPassword(ctx context.Context, email, password string, client ClientInfo) (*SignedInUser, error)
+	// RecordPasswordSuccess resets the account's failed sign-in counter. The
+	// console calls it only after the account is confirmed an active, unlocked
+	// administrator.
+	RecordPasswordSuccess(ctx context.Context, userID shared.ID)
 	// CreateAccount creates a new local account with a temporary password. It
 	// returns admin.ErrEmailHasAccount when the email already has an account:
 	// an existing account is never linked, because whoever registered it (with
@@ -170,7 +174,10 @@ func hashToken(token string) string {
 // and password, entered on the console's sign-in page (its own origin; the
 // tenant /login session plays no part). It succeeds only for a local password
 // account linked to an active, unlocked administrator; a wrong password and an
-// unknown email answer the same. On first use it issues a fresh TOTP secret to
+// unknown email answer the same, and so do an account that is not an
+// administrator, an inactive or locked one (all admin.ErrInvalidCredentials, the
+// real reason only in the audit record), so the sign-in is not an oracle for a
+// tenant account's password. On first use it issues a fresh TOTP secret to
 // enroll; the secret becomes active only once a code from it is verified.
 func (s *Service) Start(ctx context.Context, email, password string, client ClientInfo) (*LoginResult, error) {
 	// Sessions carry an absolute expiry; sweep dead rows here (an indexed delete)
@@ -184,9 +191,6 @@ func (s *Service) Start(ctx context.Context, email, password string, client Clie
 	}
 	u, err := s.accounts.VerifyPassword(ctx, email, password, client)
 	if err != nil {
-		if errors.Is(err, admin.ErrAccountLocked) {
-			return nil, err
-		}
 		return nil, admin.ErrInvalidCredentials
 	}
 	if !u.Active {
@@ -195,14 +199,15 @@ func (s *Service) Start(ctx context.Context, email, password string, client Clie
 	a, err := s.admins.GetByUserID(ctx, u.UserID)
 	if err != nil {
 		if admin.IsAdminNotFound(err) {
-			return nil, admin.ErrNotPlatformAdmin
+			return nil, admin.ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("start console session: %w", err)
 	}
 	if !a.IsActive() || a.IsLocked() {
 		s.record(ctx, a, ActionLoginFailed, client, "inactive or locked")
-		return nil, admin.ErrNotPlatformAdmin
+		return nil, admin.ErrInvalidCredentials
 	}
+	s.accounts.RecordPasswordSuccess(ctx, u.UserID)
 	if err := s.checkPasswordPathAllowed(ctx, a); err != nil {
 		if errors.Is(err, admin.ErrIdPSignInRequired) {
 			s.record(ctx, a, ActionLoginFailed, client, "identity provider sign-in required")
