@@ -8,7 +8,7 @@
  * check is the API's answer; nothing here decides scope.
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { CheckCircle2, ChevronDown, FolderOpen, Loader2, ShieldAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,8 @@ interface SelectionSummaryProps {
   scannerName?: string
   /** A workflow: the scope check runs at the scan intensity's tier (RFC-071). */
   tier?: 0 | 1 | 2
+  /** Extra content under the review toggle (mounted only while it is open). */
+  review?: ReactNode
 }
 
 export function SelectionSummary({
@@ -47,6 +49,7 @@ export function SelectionSummary({
   sensorPreference,
   scannerName,
   tier,
+  review,
 }: SelectionSummaryProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -168,6 +171,7 @@ export function SelectionSummary({
               sensorPreference={sensorPreference}
             />
           )}
+          {review}
           <ul className="flex flex-wrap gap-1.5" aria-label={t('scans.summary.selection')}>
             {chips.map((chip) => (
               <li
