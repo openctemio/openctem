@@ -122,7 +122,7 @@ func TestRetestDB_ToolVerdictSettlesTheFinding(t *testing.T) {
 	rt = fx.request(svc, open)
 	fx.finishTool(rt.CheckCommandID, verdictWithAttempt(open, "fixed", "https://open.example.com/admin", 404))
 	svc.OnCommandFinished(ctx, fx.tenant, *rt.CheckCommandID)
-	if st, _, _ := fx.findingState(open); st != "validated_fixed" {
+	if st, _, _ := fx.findingState(open); st != "confirmed" {
 		t.Fatalf("fixed with proof: status %s", st)
 	}
 	if got := fx.retest(rt.ID); got.Outcome != retestdom.OutcomeConfirmedFixed {
