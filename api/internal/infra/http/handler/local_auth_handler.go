@@ -37,7 +37,7 @@ type LocalAuthHandler struct {
 	validator      *validator.Validator
 	logger         *logger.Logger
 	// signupPolicy answers registration_enabled on /auth/info (the console
-	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
+	// sign-up setting). Nil: SIGNUP_MODE=open from the config.
 	signupPolicy signupdom.PolicySource
 	// captcha, when set (CAPTCHA_TURNSTILE_SECRET), must pass before a
 	// registration is looked at, and before a sign-in after repeated
@@ -67,7 +67,7 @@ func (h *LocalAuthHandler) registrationEnabled(r *http.Request) bool {
 	if h.signupPolicy != nil {
 		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
 	}
-	return h.authConfig.SelfServiceTenantCreation()
+	return h.authConfig.SignupOpen()
 }
 
 // CodeSignupNotAvailable is the error code of every sign-up refusal; the web
