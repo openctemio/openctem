@@ -578,7 +578,7 @@
   "admin.versionCheck.error.expired": "The release feed has expired; get a current copy.",
   "admin.versionCheck.error.http_status": "The release feed host answered with an error.",
   "admin.versionCheck.error.invalid": "Not a valid signed release feed.",
-  "admin.versionCheck.error.no_root": "This build pins no release feed key.",
+  "admin.versionCheck.error.no_key": "This build pins no release feed key.",
   "admin.versionCheck.error.rollback": "Older than the release information already applied.",
   "admin.versionCheck.error.too_large": "The file is larger than a release feed can be.",
   "admin.versionCheck.error.unreachable": "The release feed could not be reached (no internet access?).",
