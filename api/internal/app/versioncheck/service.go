@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -33,6 +32,7 @@ const (
 	ErrCodeTooLarge    = "too_large"
 	ErrCodeInvalid     = "invalid"
 	ErrCodeRollback    = "rollback"
+	ErrCodeConflict    = "conflict"
 	ErrCodeExpired     = "expired"
 	ErrCodeNoRoot      = "no_root"
 )
@@ -55,6 +55,7 @@ const (
 // State is the stored state of the instance's version check.
 type State struct {
 	Feed                *releasefeed.Feed
+	FeedDigest          string
 	Origin              string
 	AppliedSequence     uint64
 	KeySetVersion       uint64
@@ -73,8 +74,9 @@ type Repository interface {
 	// the next check is due at now, moves it to next and reports true. Only
 	// one replica wins a due check.
 	ClaimDue(ctx context.Context, now, first, next time.Time) (bool, error)
-	// Apply stores a verified feed unless a newer one is already stored
-	// (reports false then) and clears the failure count.
+	// Apply stores a verified feed unless a newer one, or another feed with
+	// the same sequence, is already stored (reports false then), and clears
+	// the failure count.
 	Apply(ctx context.Context, v *releasefeed.Verified, origin string, now time.Time) (bool, error)
 	// RecordFailure stores a failed online check and the next check time,
 	// and returns the consecutive failure count.
@@ -86,7 +88,8 @@ type Config struct {
 	// Enabled turns the daily online check on (VERSION_CHECK_ENABLED).
 	// Offline import and the console view work either way.
 	Enabled bool
-	// URL is the feed location (VERSION_CHECK_URL).
+	// URL is the feed location (VERSION_CHECK_URL, https; validated by the
+	// configuration).
 	URL string
 	// Roots are the pinned roots (releasefeed.PinnedRoots in production).
 	Roots []string
@@ -112,7 +115,7 @@ func New(repo Repository, cfg Config, log *logger.Logger) *Service {
 		cfg.URL = DefaultURL
 	}
 	if cfg.Client == nil {
-		cfg.Client = newClient(cfg.URL)
+		cfg.Client = newClient()
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -128,19 +131,15 @@ func New(repo Repository, cfg Config, log *logger.Logger) *Service {
 	return &Service{repo: repo, cfg: cfg, logger: log.With("component", "version-check")}
 }
 
-// newClient is the SSRF-guarded client with a redirect cap; from an https
-// feed URL it never follows a redirect to plain http.
-func newClient(feedURL string) *http.Client {
+// newClient is the SSRF-guarded client with a redirect cap; it never follows
+// a redirect to plain http.
+func newClient() *http.Client {
 	c := httpsec.SafeHTTPClient(FetchTimeout)
-	httpsOnly := false
-	if u, err := url.Parse(feedURL); err == nil && u.Scheme == "https" {
-		httpsOnly = true
-	}
 	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= MaxRedirects {
 			return errors.New("too many redirects")
 		}
-		if httpsOnly && req.URL.Scheme != "https" {
+		if req.URL.Scheme != "https" {
 			return errors.New("redirect away from https")
 		}
 		return nil
@@ -226,6 +225,9 @@ func (s *Service) apply(ctx context.Context, st State, raw []byte, origin string
 	if err != nil {
 		return nil, codeOf(err), err
 	}
+	if v.Feed.Sequence == st.AppliedSequence && st.FeedDigest != "" && v.Digest != st.FeedDigest {
+		return nil, ErrCodeConflict, errSequenceConflict
+	}
 	stored, err := s.repo.Apply(ctx, v, origin, now)
 	if err != nil {
 		return nil, ErrCodeUnreachable, fmt.Errorf("store: %w", err)
@@ -235,6 +237,11 @@ func (s *Service) apply(ctx context.Context, st State, raw []byte, origin string
 	}
 	return v, "", nil
 }
+
+// errSequenceConflict: a feed with the applied sequence but other content.
+// The publisher never signs two feeds with one sequence, so it is a replay or
+// a signing fault; the stored one stays.
+var errSequenceConflict = errors.New("another release feed with the applied sequence")
 
 func codeOf(err error) string {
 	switch {

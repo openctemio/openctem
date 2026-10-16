@@ -34,6 +34,9 @@ env:
 jobs:
   publish:
     name: Build, verify and upload the release feed
+    # The signing key is used only from main or a release tag, whatever
+    # started the run (the release-feed environment is restricted the same way).
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: release-feed

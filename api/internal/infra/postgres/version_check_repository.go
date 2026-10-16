@@ -32,14 +32,15 @@ func (r *VersionCheckRepository) Get(ctx context.Context) (versioncheck.State, e
 		st                     versioncheck.State
 		feed                   []byte
 		origin, lastError      sql.NullString
+		digest                 sql.NullString
 		applied, attempt, next sql.NullTime
 		seq, ksv               int64
 	)
 	err := r.db.QueryRowContext(ctx, `
-		SELECT feed, origin, applied_sequence, keyset_version, applied_at, last_attempt_at,
+		SELECT feed, feed_digest, origin, applied_sequence, keyset_version, applied_at, last_attempt_at,
 		       last_error, consecutive_failures, next_check_at
 		FROM version_check_state WHERE id = 1`).
-		Scan(&feed, &origin, &seq, &ksv, &applied, &attempt, &lastError, &st.ConsecutiveFailures, &next)
+		Scan(&feed, &digest, &origin, &seq, &ksv, &applied, &attempt, &lastError, &st.ConsecutiveFailures, &next)
 	if errors.Is(err, sql.ErrNoRows) {
 		return versioncheck.State{}, nil
 	}
@@ -53,7 +54,7 @@ func (r *VersionCheckRepository) Get(ctx context.Context) (versioncheck.State, e
 		}
 		st.Feed = &f
 	}
-	st.Origin, st.LastError = origin.String, lastError.String
+	st.Origin, st.LastError, st.FeedDigest = origin.String, lastError.String, digest.String
 	st.AppliedSequence, st.KeySetVersion = uint64(max(seq, 0)), uint64(max(ksv, 0)) //nolint:gosec // non-negative
 	st.AppliedAt, st.LastAttemptAt, st.NextCheckAt = scannedTime(applied), scannedTime(attempt), scannedTime(next)
 	return st, nil
@@ -91,7 +92,8 @@ func toInt64(v uint64) (int64, error) {
 	return int64(v), nil
 }
 
-// Apply stores a verified feed unless a newer sequence or key set is stored.
+// Apply stores a verified feed unless a newer sequence or key set is stored,
+// or the same sequence with other bytes (a re-signed feed must be newer).
 func (r *VersionCheckRepository) Apply(ctx context.Context, v *releasefeed.Verified, origin string, now time.Time) (bool, error) {
 	feed, err := json.Marshal(v.Feed)
 	if err != nil {
@@ -107,18 +109,20 @@ func (r *VersionCheckRepository) Apply(ctx context.Context, v *releasefeed.Verif
 	}
 	var id int
 	err = r.db.QueryRowContext(ctx, `
-		INSERT INTO version_check_state (id, feed, origin, applied_sequence, keyset_version, applied_at,
+		INSERT INTO version_check_state (id, feed, feed_digest, origin, applied_sequence, keyset_version, applied_at,
 		                                 last_error, consecutive_failures)
-		VALUES (1, $1, $2, $3, $4, $5, NULL, 0)
+		VALUES (1, $1, $6, $2, $3, $4, $5, NULL, 0)
 		ON CONFLICT (id) DO UPDATE SET
-		    feed = EXCLUDED.feed, origin = EXCLUDED.origin,
+		    feed = EXCLUDED.feed, feed_digest = EXCLUDED.feed_digest, origin = EXCLUDED.origin,
 		    applied_sequence = EXCLUDED.applied_sequence, keyset_version = EXCLUDED.keyset_version,
 		    applied_at = EXCLUDED.applied_at, last_error = NULL, consecutive_failures = 0
-		WHERE version_check_state.applied_sequence <= EXCLUDED.applied_sequence
-		  AND version_check_state.keyset_version <= EXCLUDED.keyset_version
-		RETURNING id`, feed, origin, seq, ksv, now).Scan(&id)
+		WHERE version_check_state.keyset_version <= EXCLUDED.keyset_version
+		  AND (version_check_state.applied_sequence < EXCLUDED.applied_sequence
+		       OR (version_check_state.applied_sequence = EXCLUDED.applied_sequence
+		           AND version_check_state.feed_digest = EXCLUDED.feed_digest))
+		RETURNING id`, feed, origin, seq, ksv, now, v.Digest).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil // a newer feed is stored
+		return false, nil // a newer feed, or another feed with this sequence, is stored
 	}
 	if err != nil {
 		return false, fmt.Errorf("store release feed: %w", err)

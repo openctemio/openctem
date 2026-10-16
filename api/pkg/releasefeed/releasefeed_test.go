@@ -66,7 +66,7 @@ func TestVerify_Valid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.KeySetVersion != 3 || v.Feed.Sequence != 100 || len(v.Feed.Releases) != 2 {
+	if v.KeySetVersion != 3 || v.Feed.Sequence != 100 || len(v.Feed.Releases) != 2 || len(v.Digest) != 64 {
 		t.Fatalf("verified = %+v", v)
 	}
 }

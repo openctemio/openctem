@@ -1263,7 +1263,7 @@ vars:
     group: "Discovery feeds and background jobs"
     type: url
     default: "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"
-    description: "Where the version check reads the signed release feed (http or https). Point it at an internal mirror if needed; the signature, not the host, is trusted. A mirror on a private address also needs the private egress allowlist."
+    description: "Where the version check reads the signed release feed (https only). Point it at an internal mirror if needed; the signature, not the host, is trusted. A mirror on a private address also needs the private egress allowlist."
   - name: CERT_MONITOR_ENABLED
     component: api
     group: "Discovery feeds and background jobs"
