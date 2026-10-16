@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
@@ -370,5 +371,47 @@ func TestExposureDisposition_Credentials(t *testing.T) {
 	low := f.exposure(t, f.a, "credential_leaked", "low")
 	if item, err := f.creds.AcceptCredential(ctx, f.a.String(), low.String(), f.u1.String(), ""); err != nil || item.State != "accepted" {
 		t.Fatalf("low leak takes one approver: %v %+v", err, item)
+	}
+}
+
+// TestExposureDisposition_SelfApprovalAfterMemberRemoval: a lone owner may
+// not approve their own request within 7 days of a member being suspended
+// or removed (removing the other approver must not open the path at once);
+// after 7 days they may; another organization's change does not count.
+func TestExposureDisposition_SelfApprovalAfterMemberRemoval(t *testing.T) {
+	f := newDispositionFixture(t)
+	gone, elsewhere := shared.NewID(), shared.NewID()
+	t.Cleanup(func() {
+		for _, id := range []shared.ID{gone, elsewhere} {
+			_, _ = f.db.Exec(`DELETE FROM tenant_members WHERE user_id = $1`, id.String())
+			_, _ = f.db.Exec(`DELETE FROM users WHERE id = $1`, id.String())
+		}
+	})
+	for _, u := range []shared.ID{gone, elsewhere} {
+		f.exec(t, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'disp')`, u.String(), u.String()+"@example.com")
+	}
+	// Another organization suspended someone yesterday: does not count.
+	f.exec(t, `INSERT INTO tenant_members (user_id, tenant_id, role, status, suspended_at) VALUES ($1, $2, 'admin', 'suspended', now() - interval '1 day')`,
+		elsewhere.String(), f.b.String())
+	high := f.exposure(t, f.solo, "port_open", "high")
+	if out, err := f.call(f.solo, high, f.soloOwner, exposure.StateAccepted); err != nil || !out.Pending {
+		t.Fatalf("request: %v", err)
+	}
+	// The solo organization suspended its admin 2 days ago.
+	f.exec(t, `INSERT INTO tenant_members (user_id, tenant_id, role, status, suspended_at) VALUES ($1, $2, 'admin', 'suspended', now() - interval '2 days')`,
+		gone.String(), f.solo.String())
+	_, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810")
+	if !errors.Is(err, exposure.ErrDispositionSelfApprovalAfterRemoval) || !strings.Contains(err.Error(), "possible again from") {
+		t.Fatalf("2 days after a suspension: %v, want ErrDispositionSelfApprovalAfterRemoval with the date", err)
+	}
+	if got := f.auditSeverity(t, high, "exposure.disposition_self_approval_refused"); len(got) != 1 {
+		t.Fatalf("refusal audited %v, want once", got)
+	}
+	if s := f.state(t, high); s != "active" {
+		t.Fatalf("state %s, want active", s)
+	}
+	f.exec(t, `UPDATE tenant_members SET suspended_at = now() - interval '8 days' WHERE user_id = $1`, gone.String())
+	if out, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810"); err != nil || !out.SelfApproved {
+		t.Fatalf("8 days after: %v", err)
 	}
 }
