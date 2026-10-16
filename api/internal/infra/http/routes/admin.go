@@ -94,8 +94,16 @@ func registerAdminRoutes(
 		return
 	}
 
-	// Base chain: a verified console session (any role).
-	adminMiddlewares := []Middleware{h.AdminAuthMiddleware.Authenticate}
+	// The console network check first, on every console route (the
+	// server-wide gate already ran on the raw path; this one sees what was
+	// routed here).
+	var netGate []Middleware
+	if h.AdminNetwork != nil {
+		netGate = []Middleware{h.AdminNetwork}
+	}
+
+	// Base chain: the network check, then a verified console session (any role).
+	adminMiddlewares := append(cloneMW(netGate), h.AdminAuthMiddleware.Authenticate)
 
 	// Super-admin group guard, composed onto the base chain. Built here so the
 	// authorization guarantee lives at the route layer, not in handlers.
@@ -142,7 +150,7 @@ func registerAdminRoutes(
 				r.POST("/idp/start", h.AdminConsole.IdPStart, preSession(crossSite, idpRL)...)
 				r.POST("/idp/callback", h.AdminConsole.IdPCallback, preSession(crossSite, idpRL)...)
 			}
-		})
+		}, netGate...)
 	}
 
 	// Build identity for the console's Help > About (any admin role).
