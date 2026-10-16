@@ -446,6 +446,14 @@ vars:
     type: string
     secret: true
     description: "Master secret of each organization's content pack signing key (Ed25519). Same formats as `APP_ENCRYPTION_KEY` and must differ from it and from `APP_TEMPLATE_SIGNING_KEY`. Unset: derived from `APP_ENCRYPTION_KEY` under its own label."
+  - name: FINGERPRINT_KEY
+    component: api
+    group: "Encryption keys"
+    type: string
+    required: production
+    secret: true
+    example: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    description: "Server secret the fingerprint of each reported secret finding is keyed from (and the key CI jobs hash raw secrets with). At least 32 characters: `openssl rand -hex 32`. Never rotate it with `APP_ENCRYPTION_KEY`: changing it changes every secret's identity, so a secret seen again opens a second finding. On an install that already stores secret findings, set it to the current `APP_ENCRYPTION_KEY` value (the key those fingerprints were made with). Required unless `APP_ENV=development`, where `APP_ENCRYPTION_KEY` is used when it is unset. Back it up with the database."
   - name: CONTENT_TRUST_ROOT_KEY_IDS
     component: api
     group: "Encryption keys"
@@ -1508,6 +1516,12 @@ vars:
     type: int
     default: "10000"
     description: "Rows per delete transaction."
+  - name: ADMIN_ELEVATION
+    component: api
+    group: "Admin console"
+    type: string
+    default: "required"
+    description: "`required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in."
   - name: ADMIN_AUDIT_SINK
     component: api
     group: "Audit log retention"

@@ -426,7 +426,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Core
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
-		User:   handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log),
+		User:   newUserHandler(svc, repos, v, log),
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
@@ -503,17 +503,18 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		DefectDojo: handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
-		Command:         commandHandler,
-		Sensor:          sensorHandler,
-		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
-		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
-		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		ScanWindow:      newScanWindowHandler(svc, log),
-		Ingest:          ingestHandler,
-		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
-		SensorPairing:   newSensorPairingHandler(svc, log),
-		IOC:             newIOCHandlerWithFindingCheck(deps, log),
-		Validation:      validationHandler,
+		Command:          commandHandler,
+		Sensor:           sensorHandler,
+		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
+		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
+		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		ScanWindow:       newScanWindowHandler(svc, log),
+		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
+		Ingest:           ingestHandler,
+		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
+		SensorPairing:    newSensorPairingHandler(svc, log),
+		IOC:              newIOCHandlerWithFindingCheck(deps, log),
+		Validation:       validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
@@ -645,7 +646,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
-		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
 			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
@@ -703,7 +704,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
-	wireFindingApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
+	wireFindingApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).
 	wireScanWindowTOTP(svc)
@@ -1490,7 +1491,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
-	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)); fp != nil {
+	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())); fp != nil {
 		runner.SetSecretKeys(fp)
 	}
 	// VEX documents a run uploads: stored on the run repository's findings,
@@ -1690,4 +1691,13 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 		return svc.DataScope
 	}
 	return findingAccessGuard{DataScopeAsserter: svc.DataScope, findings: svc.Vulnerability}
+}
+
+// newUserHandler builds the user handler with self-service account deletion.
+func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
+	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	if svc.AccountDeletion != nil {
+		h.SetAccountDeletion(svc.AccountDeletion)
+	}
+	return h
 }
