@@ -121,6 +121,13 @@ func registerAdminRoutes(
 		return middleware.RequireAdminStepUp(h.AdminStepUp, purpose)
 	}
 
+	// freshStepUp is for adding or replacing a sign-in factor and turning the
+	// factor policy: a fresh code or a single-use security-key confirmation,
+	// never the session's step-up window.
+	freshStepUp := func(purpose string) Middleware {
+		return middleware.RequireAdminFreshStepUp(h.AdminStepUp, purpose)
+	}
+
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
 	// per route. /validate needs a verified console session. The console steps (RFC-022) run after the normal /login: the
 	// refresh-token cookie names the user, /session opens a pending console
@@ -145,11 +152,11 @@ func registerAdminRoutes(
 				r.POST("/webauthn/session", h.AdminConsole.WebAuthnLogin, preSession(crossSite, loginRL)...)
 				r.POST("/recovery", h.AdminConsole.RecoveryLogin, preSession(crossSite, loginRL)...)
 				r.GET("/factors", h.AdminConsole.Factors, authed)
-				r.POST("/webauthn/credentials/options", h.AdminConsole.WebAuthnRegisterOptions, authed, stepUp("webauthn.register"))
+				r.POST("/webauthn/credentials/options", h.AdminConsole.WebAuthnRegisterOptions, authed, freshStepUp("webauthn.register"))
 				r.POST("/webauthn/credentials", h.AdminConsole.WebAuthnRegister, authed)
 				r.PATCH("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRename, authed)
 				r.DELETE("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRemove, authed, stepUp("webauthn.remove"))
-				r.POST("/recovery-codes", h.AdminConsole.GenerateRecoveryCodes, authed, stepUp("recovery_codes.generate"))
+				r.POST("/recovery-codes", h.AdminConsole.GenerateRecoveryCodes, authed, freshStepUp("recovery_codes.generate"))
 				r.POST("/step-up/webauthn/options", h.AdminConsole.WebAuthnStepUpOptions, authed)
 				r.POST("/step-up/webauthn", h.AdminConsole.WebAuthnStepUp, consoleRL.LoginMiddleware(), authed)
 				// Platform identity provider sign-in (RFC-022 revision 4). Not a
@@ -235,7 +242,7 @@ func registerAdminRoutes(
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/console-mfa", func(r Router) {
 			r.GET("/", h.AdminConsole.GetMFAPolicy)
-			r.PUT("/", h.AdminConsole.PutMFAPolicy, requireSuper, stepUp("settings.console_mfa"))
+			r.PUT("/", h.AdminConsole.PutMFAPolicy, requireSuper, freshStepUp("settings.console_mfa"))
 		}, adminMiddlewares...)
 	}
 
@@ -418,7 +425,7 @@ func registerAdminRoutes(
 			// Creating the first owner (or recovering one) hands an
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
-				with([]Middleware{opsWrite, stepUp("organization.owner_create"), scope}, audit("organization.user_create"))...)
+				with([]Middleware{opsWrite, freshStepUp("organization.owner_create"), scope}, audit("organization.user_create"))...)
 
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,

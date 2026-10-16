@@ -181,6 +181,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
 	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
+	adminConsoleSvc.SetFactorChangeNotifier(adminFactorMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// Console security keys (RFC-078): the relying party is the console origin.
 	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
 		rp, err := adminconsole.NewConsoleWebAuthn(adminconsole.WebAuthnConfig{

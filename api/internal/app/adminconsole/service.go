@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -106,6 +107,14 @@ type Service struct {
 	webauthn *webauthn.WebAuthn
 	factors  admin.FactorRepository
 	settings platformsetting.Repository
+	// grace is how long TOTP-only administrators keep TOTP after "require
+	// WebAuthn" is switched on (0: admin.DefaultWebAuthnGrace).
+	grace time.Duration
+	// factorCache memoizes the enrollment gate's FactorStatus (webauthn.go).
+	factorMu    sync.Mutex
+	factorCache map[string]factorCacheEntry
+	// factorNotifier emails an administrator about their own factor changes.
+	factorNotifier FactorChangeNotifier
 }
 
 // SignedInUser is the user behind a normal (/login) sign-in session.
@@ -395,7 +404,19 @@ func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess
 		return admin.ErrStepUpRequired
 	}
 	now := s.now()
+	fresh := admin.FreshStepUpRequired(ctx)
 	if code == "" {
+		if fresh {
+			// A security-key confirmation given just now, spent by this action.
+			ok, err := s.console.ConsumeSessionStepUp(ctx, sess.ID, now.Add(-admin.FreshStepUpWindow))
+			if err != nil {
+				return err
+			}
+			if ok {
+				return nil
+			}
+			return admin.ErrStepUpRequired
+		}
 		if sess.SteppedUp(now) {
 			return nil
 		}
@@ -403,6 +424,9 @@ func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess
 	}
 	if err := s.StepUp(ctx, a, code, purpose, client); err != nil {
 		return err
+	}
+	if fresh {
+		return nil // a code is fresh by itself; it opens no window
 	}
 	if err := s.console.MarkSessionStepUp(ctx, sess.ID, now); err != nil {
 		// The code was valid and is spent: this action goes ahead, the next
@@ -631,6 +655,7 @@ func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, 
 	if err := s.console.DeleteCredentials(ctx, target.ID()); err != nil {
 		return err
 	}
+	s.forgetFactors(target)
 	if s.factors != nil {
 		if err := s.factors.DeleteFactorsForAdmin(ctx, target.ID()); err != nil {
 			return err

@@ -63,15 +63,18 @@ type AdminWebAuthnCredentialResponse struct {
 
 // AdminFactorsResponse is the signed-in administrator's console factors.
 type AdminFactorsResponse struct {
-	WebAuthnEnabled    bool                              `json:"webauthn_enabled"`
-	Authenticators     []AdminWebAuthnCredentialResponse `json:"authenticators"`
-	RecoveryCodesLeft  int                               `json:"recovery_codes_left"`
-	TOTPEnabled        bool                              `json:"totp_enabled"`
-	TOTPAllowed        bool                              `json:"totp_allowed"`
-	RequireWebAuthn    bool                              `json:"require_webauthn"`
-	EnrollmentRequired bool                              `json:"enrollment_required"`
-	MinAuthenticators  int                               `json:"min_authenticators"`
-	MaxAuthenticators  int                               `json:"max_authenticators"`
+	WebAuthnEnabled   bool                              `json:"webauthn_enabled"`
+	Authenticators    []AdminWebAuthnCredentialResponse `json:"authenticators"`
+	RecoveryCodesLeft int                               `json:"recovery_codes_left"`
+	TOTPEnabled       bool                              `json:"totp_enabled"`
+	TOTPAllowed       bool                              `json:"totp_allowed"`
+	RequireWebAuthn   bool                              `json:"require_webauthn"`
+	// WebAuthnGraceUntil is when TOTP stops working for an administrator
+	// without a security key (policy on); the console shows it.
+	WebAuthnGraceUntil *time.Time `json:"webauthn_grace_until,omitempty"`
+	EnrollmentRequired bool       `json:"enrollment_required"`
+	MinAuthenticators  int        `json:"min_authenticators"`
+	MaxAuthenticators  int        `json:"max_authenticators"`
 }
 
 // AdminRecoveryCodesResponse returns new recovery codes once.
@@ -82,8 +85,11 @@ type AdminRecoveryCodesResponse struct {
 // AdminMFAPolicyResponse is the console MFA policy.
 type AdminMFAPolicyResponse struct {
 	RequireWebAuthn bool `json:"require_webauthn"`
-	Version         int  `json:"version"`
-	WebAuthnEnabled bool `json:"webauthn_enabled"`
+	// GraceUntil: administrators without a security key may use TOTP until
+	// then (set when the policy is switched on).
+	GraceUntil      *time.Time `json:"grace_until,omitempty"`
+	Version         int        `json:"version"`
+	WebAuthnEnabled bool       `json:"webauthn_enabled"`
 }
 
 // AdminMFAPolicyRequest changes the console MFA policy.
@@ -247,6 +253,7 @@ func (h *AdminConsoleHandler) Factors(w http.ResponseWriter, r *http.Request) {
 		TOTPEnabled:        st.TOTPEnabled,
 		TOTPAllowed:        st.TOTPAllowed(),
 		RequireWebAuthn:    st.PolicyRequires,
+		WebAuthnGraceUntil: st.GraceUntil,
 		EnrollmentRequired: st.EnrollmentRequired(),
 		MinAuthenticators:  admin.MinWebAuthnCredentialsRequired,
 		MaxAuthenticators:  admin.MaxWebAuthnCredentials,
@@ -443,7 +450,7 @@ func (h *AdminConsoleHandler) GetMFAPolicy(w http.ResponseWriter, r *http.Reques
 		h.writeFactorError(w, err, "read policy")
 		return
 	}
-	writeJSON(w, http.StatusOK, AdminMFAPolicyResponse{RequireWebAuthn: p.RequireWebAuthn, Version: v, WebAuthnEnabled: h.svc.WebAuthnEnabled()})
+	writeJSON(w, http.StatusOK, AdminMFAPolicyResponse{RequireWebAuthn: p.RequireWebAuthn, GraceUntil: p.GraceUntil, Version: v, WebAuthnEnabled: h.svc.WebAuthnEnabled()})
 }
 
 // PutMFAPolicy handles PUT /api/v1/admin/settings/console-mfa (super admin, step-up).
@@ -468,5 +475,6 @@ func (h *AdminConsoleHandler) PutMFAPolicy(w http.ResponseWriter, r *http.Reques
 		h.writeFactorError(w, err, "set policy")
 		return
 	}
-	writeJSON(w, http.StatusOK, AdminMFAPolicyResponse{RequireWebAuthn: req.RequireWebAuthn, Version: v, WebAuthnEnabled: h.svc.WebAuthnEnabled()})
+	stored, _, _ := h.svc.MFAPolicy(r.Context())
+	writeJSON(w, http.StatusOK, AdminMFAPolicyResponse{RequireWebAuthn: req.RequireWebAuthn, GraceUntil: stored.GraceUntil, Version: v, WebAuthnEnabled: h.svc.WebAuthnEnabled()})
 }

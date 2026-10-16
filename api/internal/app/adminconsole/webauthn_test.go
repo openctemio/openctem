@@ -29,6 +29,7 @@ const consoleOrigin = "https://admin.ctem.example.com"
 
 type fakeFactors struct {
 	mu         sync.Mutex
+	lists      int                                    // ListWebAuthnCredentials calls
 	creds      map[string][]*admin.WebAuthnCredential // admin id -> creds
 	codes      map[string]map[string]bool             // admin id -> hash -> used
 	ceremonies map[string]struct {
@@ -50,6 +51,7 @@ func newFakeFactors() *fakeFactors {
 func (f *fakeFactors) ListWebAuthnCredentials(_ context.Context, id shared.ID) ([]*admin.WebAuthnCredential, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lists++
 	out := make([]*admin.WebAuthnCredential, 0)
 	for _, c := range f.creds[id.String()] {
 		cp := *c

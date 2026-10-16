@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -199,7 +200,56 @@ func (s *Service) FactorStatus(ctx context.Context, a *admin.AdminUser) (admin.F
 		return st, err
 	}
 	st.PolicyRequires = p.RequireWebAuthn
+	st.GraceUntil = p.GraceUntil
+	st.GraceOver = p.GraceUntil == nil || !s.now().Before(*p.GraceUntil)
 	return st, nil
+}
+
+// factorCacheTTL bounds how stale the per-request enrollment gate may be on
+// another instance; this instance drops an administrator's entry the moment
+// that administrator's factors or the policy change.
+const factorCacheTTL = 30 * time.Second
+
+type factorCacheEntry struct {
+	st  admin.FactorStatus
+	exp time.Time
+}
+
+// factorStatusCached is FactorStatus for the enrollment gate that runs on
+// every console request (four queries otherwise). Decisions about a factor
+// (step-up, sign-in, policy change) never use it.
+func (s *Service) factorStatusCached(ctx context.Context, a *admin.AdminUser) (admin.FactorStatus, error) {
+	now := s.now()
+	key := a.ID().String()
+	s.factorMu.Lock()
+	e, ok := s.factorCache[key]
+	s.factorMu.Unlock()
+	if ok && now.Before(e.exp) {
+		return e.st, nil
+	}
+	st, err := s.FactorStatus(ctx, a)
+	if err != nil {
+		return st, err
+	}
+	s.factorMu.Lock()
+	if s.factorCache == nil {
+		s.factorCache = map[string]factorCacheEntry{}
+	}
+	s.factorCache[key] = factorCacheEntry{st: st, exp: now.Add(factorCacheTTL)}
+	s.factorMu.Unlock()
+	return st, nil
+}
+
+// forgetFactors drops one administrator's cached standing, or everyone's
+// (a == nil, the policy changed).
+func (s *Service) forgetFactors(a *admin.AdminUser) {
+	s.factorMu.Lock()
+	defer s.factorMu.Unlock()
+	if a == nil {
+		s.factorCache = nil
+		return
+	}
+	delete(s.factorCache, a.ID().String())
 }
 
 // signInMethods lists the second factors this administrator may use now,
@@ -398,6 +448,7 @@ func (s *Service) RecoveryLogin(ctx context.Context, pendingToken, code string, 
 		s.recordFailure(ctx, a, client, ActionRecoveryCodeFailed, "wrong or used recovery code")
 		return "", nil, admin.ErrInvalidRecoveryCode
 	}
+	s.forgetFactors(a)
 	left, _ := s.factors.CountRecoveryCodes(ctx, a.ID())
 	s.recordNote(ctx, a, ActionRecoveryCodeUsed, client, fmt.Sprintf("%d recovery codes left", left))
 	return s.completeSecondFactor(ctx, sess, a, client, "recovery code")
@@ -549,7 +600,9 @@ func (s *Service) FinishWebAuthnRegistration(ctx context.Context, a *admin.Admin
 	if err := s.factors.CreateWebAuthnCredential(ctx, c); err != nil {
 		return nil, err
 	}
+	s.forgetFactors(a)
 	s.recordNote(ctx, a, ActionWebAuthnRegistered, client, name)
+	s.notifyFactorChange(ctx, a, FactorKeyAdded, name, client)
 	return c, nil
 }
 
@@ -592,6 +645,7 @@ func (s *Service) RemoveWebAuthn(ctx context.Context, a *admin.AdminUser, id sha
 	if st.PolicyRequires && !st.BreakGlassExempted {
 		keep = admin.MinWebAuthnCredentialsRequired
 	}
+	defer s.forgetFactors(a)
 	if err := s.factors.DeleteWebAuthnCredential(ctx, a.ID(), id, keep); err != nil {
 		return err
 	}
@@ -623,7 +677,9 @@ func (s *Service) GenerateRecoveryCodes(ctx context.Context, a *admin.AdminUser,
 	if err := s.factors.ReplaceRecoveryCodes(ctx, a.ID(), hashes, s.now()); err != nil {
 		return nil, err
 	}
+	s.forgetFactors(a)
 	s.recordNote(ctx, a, ActionRecoveryCodesGenerated, client, "")
+	s.notifyFactorChange(ctx, a, FactorRecoveryCodesRegenerated, "", client)
 	return codes, nil
 }
 
@@ -675,11 +731,27 @@ func (s *Service) SetMFAPolicy(ctx context.Context, actor *admin.AdminUser, p ad
 			return 0, admin.ErrPolicyActorNotCompliant
 		}
 	}
+	now := s.now()
+	if p.RequireWebAuthn {
+		// The grace for TOTP-only administrators starts when the policy goes
+		// from off to on; saving it again while on keeps the deadline.
+		prev, _, err := s.MFAPolicy(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if prev.RequireWebAuthn && prev.GraceUntil != nil {
+			p.GraceUntil = prev.GraceUntil
+		} else {
+			until := now.Add(s.webauthnGrace())
+			p.GraceUntil = &until
+		}
+	} else {
+		p.GraceUntil = nil
+	}
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return 0, err
 	}
-	now := s.now()
 	var version int
 	if expectedVersion == 0 {
 		created, err := s.settings.CreateIfAbsent(ctx, admin.ConsoleMFAPolicyKey, platformsetting.State{
@@ -706,6 +778,7 @@ func (s *Service) SetMFAPolicy(ctx context.Context, actor *admin.AdminUser, p ad
 	if p.RequireWebAuthn {
 		note = "require_webauthn=on"
 	}
+	s.forgetFactors(nil)
 	s.recordNote(ctx, actor, ActionMFAPolicyChanged, client, note)
 	return version, nil
 }
@@ -732,7 +805,7 @@ func (s *Service) enrollmentRequired(ctx context.Context, a *admin.AdminUser) bo
 	if !s.WebAuthnEnabled() {
 		return false
 	}
-	st, err := s.FactorStatus(ctx, a)
+	st, err := s.factorStatusCached(ctx, a)
 	if err != nil {
 		s.log.Warn("console mfa policy check", "error", err)
 		return true

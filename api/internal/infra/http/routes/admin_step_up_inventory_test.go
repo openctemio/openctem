@@ -146,6 +146,15 @@ func (s inventorySessions) AuthenticateSession(context.Context, string) (*admin.
 // confirmer that records the purposes it is asked about and refuses.
 func inventoryRouter(t *testing.T) (infrahttp.Router, *[]string) {
 	t.Helper()
+	router, purposes, _ := inventoryRouterFresh(t)
+	return router, purposes
+}
+
+// inventoryRouterFresh is inventoryRouter that also reports, per purpose,
+// whether the route asked for a fresh check (no step-up window).
+func inventoryRouterFresh(t *testing.T) (infrahttp.Router, *[]string, map[string]bool) {
+	t.Helper()
+	fresh := map[string]bool{}
 	now := time.Now()
 	a := admin.Reconstitute(shared.NewID(), "root@example.com", "Root", admin.AdminRoleSuperAdmin, true,
 		nil, nil, "", 0, nil, nil, "", now, nil, now)
@@ -160,8 +169,9 @@ func inventoryRouter(t *testing.T) (infrahttp.Router, *[]string) {
 	}
 	h.AdminAuthMiddleware = middleware.NewAdminAuthMiddleware(inventorySessions{a}, logger.NewNop())
 	purposes := &[]string{}
-	h.AdminStepUp = middleware.AdminStepUpFunc(func(_ context.Context, _ *admin.AdminUser, _ *admin.Session, code, purpose string, _ middleware.AdminStepUpClient) error {
+	h.AdminStepUp = middleware.AdminStepUpFunc(func(ctx context.Context, _ *admin.AdminUser, _ *admin.Session, code, purpose string, _ middleware.AdminStepUpClient) error {
 		*purposes = append(*purposes, purpose)
+		fresh[purpose] = admin.FreshStepUpRequired(ctx)
 		if code != "" {
 			t.Errorf("no step-up header was sent, got code %q", code)
 		}
@@ -169,7 +179,30 @@ func inventoryRouter(t *testing.T) (infrahttp.Router, *[]string) {
 	})
 	router := infrahttp.NewChiRouter()
 	registerAdminRoutes(router, h, nil)
-	return router, purposes
+	return router, purposes, fresh
+}
+
+// Adding a key, replacing recovery codes, turning the factor policy and
+// recovering an organization owner must not ride the step-up window.
+func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
+	router, _, fresh := inventoryRouterFresh(t)
+	handler := router.Handler()
+	for _, c := range []struct{ method, path, purpose string }{
+		{"POST", "/api/v1/admin/auth/webauthn/credentials/options", "webauthn.register"},
+		{"POST", "/api/v1/admin/auth/recovery-codes", "recovery_codes.generate"},
+		{"PUT", "/api/v1/admin/settings/console-mfa/", "settings.console_mfa"},
+		{"POST", "/api/v1/admin/tenants/" + shared.NewID().String() + "/users", "organization.owner_create"},
+	} {
+		req := httptest.NewRequest(c.method, c.path, strings.NewReader(`{}`))
+		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
+		req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
+		req.Header.Set(middleware.CSRFHeaderName, "c")
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+		got, asked := fresh[c.purpose]
+		if !asked || !got {
+			t.Errorf("%s %s (%s): fresh check asked=%v fresh=%v", c.method, c.path, c.purpose, asked, got)
+		}
+	}
 }
 
 func adminWrites(t *testing.T, router infrahttp.Router) []string {
