@@ -10,7 +10,7 @@ built.
 | Catalog: tables, offline import, install / update / pin / rollback / uninstall, approval option, audit | shipped |
 | Private catalogs (organization and instance publishing, migration 002766) | shipped |
 | First-party packages and the bundle generator (`pkg/contentpkg/firstparty`, `cmd/content-bundle`) | shipped |
-| Console page | designed |
+| Console page (Settings > Content catalog, `/settings/content`) | shipped |
 | Installed packs delivered to sensors (desired state) | designed |
 
 ## Trust
@@ -115,10 +115,32 @@ Routes and gates: [authorization matrix](authorization-matrix.md#content-catalog
 - Audit: `content_package.published`, `content_package.revoked` (organization); admin audit rows
   `content_catalog.publish`, `content_catalog.revoke` (instance).
 
+## Console page
+
+Settings > Content catalog (`/settings/content`, needs `content:read`):
+
+- **Catalog**: the imported packages with type, search and installed filters (server pagination). A row opens the
+  package: its versions, what each asks for (tier, side effects, network, declared hosts, credentials, data
+  scopes), the license and whether it allows use as a service, dependencies, revocation, and the signatures and
+  provenance with copyable digests.
+- **Actions** (shown with `content:install`): install (version, pin, license acknowledgement when service use is
+  not allowed, note), update with what the new version asks for beyond the installed one highlighted, rollback,
+  pin or unpin, uninstall. A 202 shows "request sent for approval"; a pending request hides further actions on that
+  package. Writes need a recent sign-in: the console asks for it and retries.
+- **Installed** and **Requests** tabs: pending requests first; another member approves or rejects (a reason is
+  required to reject), the requester cancels.
+- **Settings** tab: the approval option (`settings:write`). A pending switch-off shows its time and that turning
+  approval back on cancels it.
+- A banner warns when the signed index has expired or the revocation list is stale, and explains an instance with
+  no trust root or no import yet.
+
+The page hides what the member cannot do; the API enforces every gate.
+
 ## Key files
 
 `pkg/contentpkg` (format, trust, bundle), `pkg/domain/contentcatalog`, `internal/app/contentcatalog`,
 `internal/infra/postgres/content_catalog_repository.go`, `internal/infra/http/handler/content_catalog_handler.go`,
 `internal/infra/http/handler/admin_content_catalog_handler.go`, `internal/infra/http/routes/content_catalog.go`,
-`cmd/server/content_catalog.go`. Tests: `pkg/contentpkg/*_test.go`,
+`cmd/server/content_catalog.go`; console: `web/src/features/content-catalog`,
+`web/src/app/(dashboard)/settings/content/page.tsx`. Tests: `pkg/contentpkg/*_test.go`,
 `internal/infra/http/routes/content_catalog_db_test.go`.

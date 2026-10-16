@@ -20,16 +20,16 @@
  *   SECURITY_TXT_ENABLED=false turns the file off (404).
  */
 
-import { DOCS_URL } from '@/lib/docs-links'
+import { DEFAULT_BRAND } from '@/lib/brand'
 
 type Env = Record<string, string | undefined>
 
 export const DEFAULT_CONTACTS = {
-  general: 'info@openctem.io',
+  general: DEFAULT_BRAND.supportEmail,
   security: 'security@openctem.io',
-  website: 'https://openctem.io',
-  docs: DOCS_URL,
-  securityPolicy: `${DOCS_URL}/security/vulnerability-disclosure/`,
+  website: DEFAULT_BRAND.websiteUrl,
+  docs: DEFAULT_BRAND.docsUrl,
+  securityPolicy: `${DEFAULT_BRAND.docsUrl}/security/vulnerability-disclosure/`,
 } as const
 
 export interface LegalValues {
@@ -114,7 +114,7 @@ export function legalConfig(env: Env = {}): LegalConfig {
     privacyUrl: privacy || (templatesEnabled ? '/privacy' : ''),
     values: {
       organization: clean(env.LEGAL_ORGANIZATION_NAME) || PENDING.organization,
-      service: clean(env.LEGAL_SERVICE_NAME) || 'OpenCTEM',
+      service: clean(env.LEGAL_SERVICE_NAME) || DEFAULT_BRAND.name,
       contactEmail: email(env.LEGAL_CONTACT_EMAIL, DEFAULT_CONTACTS.general),
       securityEmail: email(env.SECURITY_CONTACT, DEFAULT_CONTACTS.security),
       website: httpsUrl(env.LEGAL_WEBSITE_URL, DEFAULT_CONTACTS.website),
