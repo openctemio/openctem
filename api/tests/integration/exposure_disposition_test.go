@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	exposureapp "github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/integration"
@@ -413,5 +415,34 @@ func TestExposureDisposition_SelfApprovalAfterMemberRemoval(t *testing.T) {
 	f.exec(t, `UPDATE tenant_members SET suspended_at = now() - interval '8 days' WHERE user_id = $1`, gone.String())
 	if out, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810"); err != nil || !out.SelfApproved {
 		t.Fatalf("8 days after: %v", err)
+	}
+}
+
+// Demoting the other approver, changing a role so it loses the approve
+// permission, removing them from a team or unbinding or deleting the team
+// that gave it, is a recent approver change: the owner left alone may not
+// approve their own disposition for 7 days.
+func TestExposureDisposition_SelfApprovalAfterRoleChange(t *testing.T) {
+	f := newDispositionFixture(t)
+	actions := []string{"member.role_changed", "user.roles_updated", "role.updated", "role.deleted", "role.unassigned",
+		"group.updated", "group.deleted", "permission_set.updated", "permission_set.deleted", "permission_set.unassigned",
+		"scim.group_mappings_updated", "member.removed"}
+	for i, action := range actions {
+		high := f.exposure(t, f.solo, "port_open", "high")
+		if out, err := f.call(f.solo, high, f.soloOwner, exposure.StateAccepted); err != nil || !out.Pending {
+			t.Fatalf("request: %v", err)
+		}
+		f.exec(t, `DELETE FROM audit_logs WHERE tenant_id = $1 AND action = ANY($2)`, f.solo.String(),
+			pq.Array(actions))
+		f.exec(t, `INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
+			VALUES (gen_random_uuid(), $1, $2, 'role', 'x', 'success', 'medium', 'changed', now() - interval '1 hour')`, f.solo.String(), action)
+		_, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810")
+		if !errors.Is(err, exposure.ErrDispositionSelfApprovalAfterRemoval) {
+			t.Fatalf("%d: 1 hour after %s: %v, want ErrDispositionSelfApprovalAfterRemoval", i, action, err)
+		}
+		f.exec(t, `UPDATE audit_logs SET logged_at = now() - interval '8 days' WHERE tenant_id = $1 AND action = $2`, f.solo.String(), action)
+		if out, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810"); err != nil || !out.SelfApproved {
+			t.Fatalf("%d: 8 days after %s: %v", i, action, err)
+		}
 	}
 }
