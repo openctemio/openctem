@@ -126,7 +126,9 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(r.Context(), sensorContextKey, id.Sensor)
 		ctx = context.WithValue(ctx, sensorIdentityContextKey, id)
-		if id.Sensor.TenantID != nil {
+		// A shared sensor (scope instance) has no tenant and never gets a
+		// tenant context.
+		if id.Sensor.TenantID != nil && !id.Sensor.IsShared() {
 			ctx = context.WithValue(ctx, middleware.TenantIDKey, id.Sensor.TenantID.String())
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
