@@ -17,8 +17,8 @@
   the software matcher mark findings stale instead of changing their status;
   any sighting makes them present again. A covered scan can now resolve a stale
   finding.
-- Migrations `002410_finding_status_dimensions_column` (the column, a catalog
-  change), `002411_finding_status_dimensions` (row moves first, the status CHECK
-  replaced last and NOT VALID), `002412_finding_status_dimensions_validate`: findings in a retired status go
+- Migrations `002530_finding_status_dimensions_column` (the column, a catalog
+  change), `002531_finding_status_dimensions` (row moves first, the status CHECK
+  replaced last and NOT VALID), `002532_finding_status_dimensions_validate`: findings in a retired status go
   back to the status they had before (from their timeline, else `confirmed`)
   with a timeline entry; live had none.
