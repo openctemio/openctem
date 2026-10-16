@@ -147,6 +147,8 @@ github.com/openctemio/ctis v1.6.1-0.20261015085746-ba2f3a6e0fe9 h1:JbArUJBVqrgF0
 github.com/openctemio/ctis v1.6.1-0.20261015085746-ba2f3a6e0fe9/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
 github.com/openctemio/ctis v1.6.1-0.20261015212032-0d07d0903f89 h1:7Ui5HOVR4dtsw3KM/yGr5XgBhLNyHAnSexLHv+kioo4=
 github.com/openctemio/ctis v1.6.1-0.20261015212032-0d07d0903f89/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
+github.com/openctemio/ctis v1.6.1-0.20261015213517-1d0678577c43 h1:DBsQbauCxNNVBZzQrt+umfl0bkkJX2rY6xiMZkoGfMo=
+github.com/openctemio/ctis v1.6.1-0.20261015213517-1d0678577c43/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
 github.com/openctemio/ctis/transfer v0.0.0-20261015010154-bec927219ecf h1:jOZ+PafruAMXf99eldJwKUmY5jqQpqHYuItB4FwLbCQ=
 github.com/openctemio/ctis/transfer v0.0.0-20261015010154-bec927219ecf/go.mod h1:v5F8TVqndfNFfnnVJpb5lwtxg6kY040z8EDp4OHaO0A=
 github.com/pires/go-proxyproto v0.15.0 h1:dTshmNbFm/D+0+sbrxUuddPOZ5Y0B7c5NhtsBkm6LqI=
