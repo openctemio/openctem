@@ -263,6 +263,20 @@ func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID sha
 	return out.Applied, refused, nil
 }
 
+func (a ticketStatusApplier) RequestTicketDisposition(ctx context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
+) ([]shared.ID, []shared.ID, []jira.InboundRefusal, error) {
+	out, err := a.vuln.RequestTicketDisposition(ctx, tenantID, ids, target, integration, ref, externalActor)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
+	for _, r := range out.Refused {
+		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
+	}
+	return out.Requested, out.Pending, refused, nil
+}
+
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
 // solution family): progress from the side-table rollup, resolution via the
 // same guarded group-resolve path as the standalone "resolve group" action.
