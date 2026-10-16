@@ -84,10 +84,32 @@ finding (`findinglifecycle.EvaluateMove`, `internal/app/finding/lifecycle_moves.
   rule (verify permission, evidence matrix, fix-claim rules, four-eyes, canonical edges), the lifecycle's own
   guards bind, and another organization's sub-status is refused.
 
+### Console: Settings → Findings → Finding lifecycle
+
+`web/src/app/(dashboard)/settings/finding-lifecycle/page.tsx`, components in
+`web/src/features/findings/components/lifecycle/`, API client in
+`web/src/features/findings/api/use-finding-lifecycles.ts`.
+
+- **Sub-statuses tab:** a lane per canonical status with its sub-statuses (add, rename, Vietnamese name,
+  colour from the fixed palette, reorder, archive, reactivate). A closed status's sub-status picks its
+  closure reason once; the key and closure reason are read-only afterwards.
+- **Lifecycles tab:** the organization's lifecycles; for the selected one, the draft editor (sub-statuses
+  used, the default label per status, `person_moves`, the listed moves with conditions, a longer note,
+  required fields, a required permission and refused actor kinds), a check panel showing the validator's
+  errors and warnings, publish, and the version history with roll back.
+- Saving a draft sends the `spec_hash` it read as `If-Match`; a 409 tells the editor someone else changed
+  the draft and offers a reload, never an overwrite. Publish and roll back go through the shared API
+  client, which opens the step-up dialog on `STEP_UP_REQUIRED` and retries once.
+- Everyone with `findings:read` sees the page read-only; changing needs `findings:lifecycles:write`. Plan
+  usage (`GET /organization/plan`, administrators) shows "used of limit" and disables adding at the limit;
+  a `PLAN_LIMIT` refusal from the API is shown in words either way. The API stays the only authority.
+- Sub-status colours only tint a small dot (`web/src/lib/sub-status-colors.ts`); names are plain text,
+  rendered escaped.
+
 ## Planned (RFC-110 §11)
 
 - The pure engine layer (scheme spec, validator, guards, context selection) and its property test (in
   review).
 - Sub-statuses and fields on approval requests; the list filter by sub-status; the simulator.
-- Settings → Findings → Lifecycle, and sub-statuses in the finding drawer, list and bulk actions.
+- Sub-statuses in the finding drawer, list and bulk actions.
 - Templates, extra approval steps, ticket mapping by sub-status, the flow report.
