@@ -915,6 +915,14 @@ type SensorConfig struct {
 	VulnFeedBundleDir string
 	VulnFeedMirrors   []string
 
+	// VersionCheckEnabled turns on the daily version check: one anonymous
+	// download of the signed release feed, compared with the running version
+	// on the instance (RFC-105). VERSION_CHECK_ENABLED, default true.
+	// VersionCheckURL is where the feed is read (VERSION_CHECK_URL, http or
+	// https; the signature carries the trust, so a mirror is fine).
+	VersionCheckEnabled bool
+	VersionCheckURL     string
+
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
 	// no-credentials external-exposure source. Set CERT_MONITOR_ENABLED=false to
@@ -1428,6 +1436,8 @@ func Load() (*Config, error) {
 			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
 			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
 			VulnFeedMirrors:             feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+			VersionCheckEnabled:         getEnvBool("VERSION_CHECK_ENABLED", true),
+			VersionCheckURL:             getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
 			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
@@ -1659,6 +1669,10 @@ func (c *Config) validateBasic() error {
 	}
 	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
 		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
+	}
+	if vu, err := url.Parse(c.Worker.VersionCheckURL); c.Worker.VersionCheckURL != "" && (err != nil ||
+		(vu.Scheme != "https" && vu.Scheme != "http") || vu.Host == "" || vu.User != nil || vu.Fragment != "") {
+		return errors.New("VERSION_CHECK_URL must be an http or https URL without credentials or fragment")
 	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)
