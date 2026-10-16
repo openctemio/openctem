@@ -6,4 +6,8 @@
   was changed or deleted (`role.updated`, `role.deleted`), not only when a
   member was suspended, removed or offboarded. Demoting the other approver to
   viewer, or stripping the approve permission from their role, no longer
-  opens the path at once. One shared query decides it for every path.
+  opens the path at once. Approve permission held through a team is covered
+  too: removing the member from the team, unbinding the team's role
+  (`role.unassigned`), changing or deleting the team (`group.updated`,
+  `group.deleted`), a permission set change, or new SCIM group-to-role
+  mappings start the same wait. One shared query decides it for every path.
