@@ -278,6 +278,14 @@ into ONE run and is judged once. Each job sends `aggregate: true`:
   upload.
 - A run, aggregate or not, that no report was uploaded to fails
   (`no_results`): there is nothing to judge.
+- A run whose gate job never ran (pipeline cancelled, gate removed, a rule
+  that skipped it) would stay `running` for ever, with no verdict and nothing
+  blocking a merge. A sweeper (controller `ci-sweep`, every 15 minutes, one
+  replica) concludes each run still running after `MaxRunContinuation` (6 h,
+  the longest a run can still get a token) with the verdict `fail` and the
+  reason `not_judged`. Silence is never a pass; the uploaded findings are
+  kept, and the verdict is audited as `ci_run.evaluated` with
+  `reason: not_judged`. A run judged meanwhile keeps its verdict.
 - The response says `aggregate: true`; a client that asked for an aggregate
   run and does not see it refuses to continue (otherwise its gate would judge
   an empty run).
@@ -313,7 +321,10 @@ and a retry with the same key and body gets that answer back with
 `Idempotent-Replayed: true`, without ingesting again or counting another
 report. The same key with a different body is `422 IDEMPOTENCY_KEY_REUSED`;
 the same key while the first request is still running is `409` with
-`Retry-After`. A refusal or failure releases the key, so the retry runs again.
+`Retry-After`; the in-flight marker lives at least as long as the run token
+(15 minutes), or until the request deadline when later. A refusal or failure
+releases the key, so the retry runs again; a finished request only overwrites or
+releases the key while the stored record still carries its own body hash.
 The store is the shared Redis; without it, or when it fails, the upload runs
 as it always did (the fingerprints still dedupe findings).
 A secret finding is never stored in clear whatever the runner sends: the
