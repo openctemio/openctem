@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,7 +23,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // AdminSharedFleetHandler serves the console's shared sensor fleet.
@@ -228,9 +226,11 @@ func (h *AdminSharedFleetHandler) Jobs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.Status = q.Get("status")
-	page, _ := strconv.Atoi(q.Get("page"))
-	perPage, _ := strconv.Atoi(q.Get("per_page"))
-	res, err := h.svc.Jobs(r.Context(), f, pagination.New(page, perPage))
+	pg, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	res, err := h.svc.Jobs(r.Context(), f, pg)
 	if err != nil {
 		h.writeErr(w, err)
 		return
