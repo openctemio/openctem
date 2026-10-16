@@ -30,6 +30,13 @@
 //	                                   fingerprint); dry run prints per-kind
 //	                                   counts before/after and added, changed,
 //	                                   removed; idempotent, one tenant at a time
+//	refingerprint -clear-legacy-secret-fingerprints [-before <time>] [-tenant <id>] [-apply]
+//	                                   clear the secret fingerprints written
+//	                                   before the keyed fingerprint (computed
+//	                                   from the tenant id alone, unverifiable);
+//	                                   batched, resumable; the next sighting
+//	                                   writes the keyed value. Re-derive the
+//	                                   remediation keys afterwards
 //	refingerprint -correlate [-apply]  one-time cross-rule correlation of
 //	                                   existing DAST findings (injection points
 //	                                   from stored evidence); dry run reports
@@ -81,6 +88,8 @@ func Main() {
 	dastRepair := flag.Bool("dast-repair", false, "repair forked DAST findings instead of re-keying older versions")
 	correlate := flag.Bool("correlate", false, "correlate existing DAST findings across rules (research/134 section 12)")
 	remediationKeys := flag.Bool("remediation-keys", false, "re-derive remediation group keys instead of re-keying identities")
+	clearLegacy := flag.Bool("clear-legacy-secret-fingerprints", false, "clear the unverifiable secret fingerprints written before the keyed fingerprint (the next sighting rewrites them)")
+	before := flag.String("before", "", "with -clear-legacy-secret-fingerprints: clear fingerprints of findings created before this RFC 3339 time (default: when the keyed fingerprint was introduced)")
 	foldRules := flag.String("fold-dast-rules", "", "comma-separated DAST rules whose fixed request paths are one issue per origin (with -dast-repair)")
 	flag.Parse()
 
@@ -108,6 +117,9 @@ func Main() {
 	store := postgres.NewFindingRekeyRepository(&postgres.DB{DB: sqlDB})
 	svc := refingerprint.NewService(store)
 
+	if *clearLegacy {
+		os.Exit(runClearLegacySecretFingerprints(ctx, sqlDB, *tenantFlag, *before, *apply, *batch))
+	}
 	if *remediationKeys {
 		os.Exit(runRemediationKeys(ctx, sqlDB, *tenantFlag, *apply, *asJSON, *batch))
 	}
@@ -309,4 +321,36 @@ func runCorrelate(ctx context.Context, db *sql.DB, tenantFlag string, apply, asJ
 		_ = enc.Encode(reports)
 	}
 	return code
+}
+
+// runClearLegacySecretFingerprints clears the legacy secret fingerprints.
+func runClearLegacySecretFingerprints(ctx context.Context, db *sql.DB, tenantFlag, before string, apply bool, batch int) int {
+	cutoff := postgres.LegacySecretFingerprintCutoff
+	if before != "" {
+		t, err := time.Parse(time.RFC3339, before)
+		if err != nil {
+			fail(2, "-before: not an RFC 3339 time")
+		}
+		cutoff = t
+	}
+	var tenant *shared.ID
+	if tenantFlag != "" {
+		id, err := shared.IDFromString(tenantFlag)
+		if err != nil {
+			fail(2, "-tenant: not an id")
+		}
+		tenant = &id
+	}
+	rep, err := postgres.ClearLegacySecretFingerprints(ctx, db, tenant, cutoff, apply, batch)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "refingerprint: %v\n", err)
+		return 1
+	}
+	if rep.Applied {
+		fmt.Printf("cleared %d legacy secret fingerprint(s) (findings created before %s); %d still held by another transaction\n",
+			rep.Matched, cutoff.Format(time.RFC3339), rep.Remaining)
+	} else {
+		fmt.Printf("dry run: %d legacy secret fingerprint(s) would be cleared (findings created before %s)\n", rep.Matched, cutoff.Format(time.RFC3339))
+	}
+	return 0
 }

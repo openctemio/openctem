@@ -704,7 +704,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
-	wireFindingApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
+	wireFindingApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).
 	wireScanWindowTOTP(svc)
@@ -1491,7 +1491,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
-	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)); fp != nil {
+	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())); fp != nil {
 		runner.SetSecretKeys(fp)
 	}
 	// VEX documents a run uploads: stored on the run repository's findings,
