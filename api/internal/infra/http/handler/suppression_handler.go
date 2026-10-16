@@ -559,8 +559,23 @@ func (h *SuppressionHandler) MarkReviewed(w http.ResponseWriter, r *http.Request
 		apierror.BadRequest("Invalid user ID").WriteJSON(w)
 		return
 	}
-	rule, flaggedAt, reason, err := h.service.MarkReviewed(r.Context(), tenantUUID, ruleUUID, userUUID)
+	// The body is optional: the rule's own requester sends a reason and a
+	// fresh authenticator code (the sole-approver path).
+	var req MarkReviewedRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apierror.BadRequest("invalid request body").WriteJSON(w)
+			return
+		}
+	}
+	rule, flaggedAt, reason, err := h.service.MarkReviewed(r.Context(), suppression.MarkReviewedInput{
+		TenantID: tenantUUID, RuleID: ruleUUID, By: userUUID,
+		SelfApprovalReason: req.SelfApprovalReason, TOTPCode: req.TOTPCode,
+	})
 	if err != nil {
+		if suppression.IsSelfApprovalRefusal(err) || errors.Is(err, suppression.ErrSelfApprovalAfterRemoval) {
+			h.auditReviewRefusal(r, tenantUUID, userUUID, ruleUUID, err)
+		}
 		h.handleServiceError(w, err)
 		return
 	}
@@ -804,5 +819,30 @@ func (h *SuppressionHandler) handleServiceError(w http.ResponseWriter, err error
 	default:
 		h.logger.Error("suppression service error", "error", err)
 		apierror.InternalServerError("Internal server error").WriteJSON(w)
+	}
+}
+
+// MarkReviewedRequest is the optional body of POST /suppressions/{id}/reviewed:
+// the rule's own requester gives a reason and a fresh authenticator code.
+type MarkReviewedRequest struct {
+	SelfApprovalReason string `json:"self_approval_reason"`
+	TOTPCode           string `json:"totp_code"`
+}
+
+// auditReviewRefusal records a refused attempt to clear the review flag of
+// one's own rule.
+func (h *SuppressionHandler) auditReviewRefusal(r *http.Request, tenantID, userID, ruleID shared.ID, cause error) {
+	if h.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{
+		TenantID: tenantID.String(), ActorID: userID.String(), ActorEmail: auditActorEmail(r.Context()),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+	}
+	event := auditapp.NewDeniedEvent(auditdom.ActionSuppressionRuleReviewed, auditdom.ResourceTypeSuppressionRule, ruleID.String(), cause.Error()).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage("Refused: the requester tried to clear the review flag of their own rule")
+	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
+		h.logger.Warn("failed to audit suppression review refusal", "error", err)
 	}
 }
