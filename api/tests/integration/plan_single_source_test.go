@@ -65,7 +65,7 @@ func TestOrganizationPlanHasOneSource(t *testing.T) {
 
 	// Self-service organizations start with no plan; an administrator sets
 	// one on Free and the other on Enterprise.
-	authSvc := orgAuthService(db, config.TenantCreationSelfService)
+	authSvc := orgAuthService(db, config.SignupModeOpen)
 	selfService := func(name string) (shared.ID, shared.ID) {
 		t.Helper()
 		email, refresh := orgSelfServiceUser(t, db, authSvc)

@@ -98,6 +98,14 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   `task_route` creates a task under the existing action; `join` adds the findings to the target task (the caller
   must see all of that task's findings). Edits: `title`, `exclude_finding_ids` (remembered in
   `remediation_key_exclusions`), `owners` per partition index, `deadline`, `auto_join`.
+- Asset owners without `findings:remediation:write` reach the same route with `findings:remediation:read` and
+  accept as the owner (`AcceptInput.AsOwner`, `owner_accept.go`): only a `join` into a task assigned to them or
+  to one of their groups, or a `task_route` whose every partition owner is them or one of their groups; only as
+  it is (no title, removed findings, owners, deadline or auto-join, since removed findings are remembered for
+  everyone); every finding in their data scope (no hidden members) and on an asset they own as primary or
+  secondary owner, directly or through a group (`asset_owners`, joined through `assets.tenant_id`). A new fix
+  (`new_group`) stays with `findings:remediation:write`. The audit event carries `as_owner`. Owning an asset is
+  not a scope grant: the data scope check applies on top.
 - Findings that closed or joined another task since the suggestion are left out and returned in `dropped`; with
   none left the accept answers 400.
 - `POST /api/v1/remediation/suggestions/approve` accepts up to 50 suggestions (5000 findings) as they are, each

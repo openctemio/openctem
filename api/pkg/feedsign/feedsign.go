@@ -28,6 +28,10 @@ const (
 	MaxClockSkew      = 5 * time.Minute
 )
 
+// ErrKeySetRollback: a key set older than one applied before (a rollback
+// that would bring a revoked key back).
+var ErrKeySetRollback = errors.New("key set rolled back")
+
 // KeySet lists the online keys an offline root allows.
 type KeySet struct {
 	Kind          string              `json:"kind"`
@@ -60,8 +64,10 @@ func VerifyKeySet(envelope []byte, typ KeySetType, pinnedRoot string, minVersion
 	switch {
 	case ks.Kind != typ.Kind:
 		return nil, fmt.Errorf("key set: kind %q", ks.Kind)
-	case ks.Version == 0 || ks.Version < minVersion:
-		return nil, fmt.Errorf("key set: version %d is below %d (rolled back)", ks.Version, minVersion)
+	case ks.Version == 0:
+		return nil, errors.New("key set: version 0")
+	case ks.Version < minVersion:
+		return nil, fmt.Errorf("key set: version %d is below %d: %w", ks.Version, minVersion, ErrKeySetRollback)
 	case pinnedRoot == "" || ks.RootKeyID != pinnedRoot:
 		return nil, fmt.Errorf("key set: signed by root %s, the pinned root is %q", ks.RootKeyID, pinnedRoot)
 	case ks.IssuedAt.IsZero() || !ks.NotAfter.After(ks.IssuedAt) || ks.NotAfter.Sub(ks.IssuedAt) > MaxKeySetValidity:
@@ -149,4 +155,25 @@ func Sign(priv ed25519.PrivateKey, payloadType string, payload []byte) ([]byte, 
 		Signatures: []scannertemplate.EnvelopeSignature{{KeyID: jobsign.KeyID(pub),
 			Sig: ed25519.Sign(priv, scannertemplate.PreAuthEncoding(payloadType, payload))}}}
 	return json.Marshal(env)
+}
+
+// SignKeySet signs a key set of typ listing online with the offline root
+// (feed generators and tests; an instance never holds a root).
+func SignKeySet(root ed25519.PrivateKey, typ KeySetType, version uint64, issuedAt, notAfter time.Time, online ...ed25519.PublicKey) ([]byte, error) {
+	if len(online) == 0 || len(online) > MaxKeySetKeys {
+		return nil, fmt.Errorf("a key set lists 1 to %d online keys", MaxKeySetKeys)
+	}
+	pub, _ := root.Public().(ed25519.PublicKey)
+	ks := KeySet{
+		Kind: typ.Kind, Version: version, IssuedAt: issuedAt.UTC(), NotAfter: notAfter.UTC(),
+		RootKeyID: jobsign.KeyID(pub), RootPublicKey: base64.StdEncoding.EncodeToString(pub),
+	}
+	for _, k := range online {
+		ks.Keys = append(ks.Keys, jobsign.NewPublicKey(k))
+	}
+	payload, err := json.Marshal(ks)
+	if err != nil {
+		return nil, err
+	}
+	return Sign(root, typ.PayloadType, payload)
 }
