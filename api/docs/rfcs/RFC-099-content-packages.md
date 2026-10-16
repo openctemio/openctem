@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-15). Implemented: the package format (`package.yaml`, JSON schema, validator); signatures and trust, the signed index and revocation list, the offline bundle reader and verifier (`pkg/contentpkg`); the content catalog (offline import, install, update, pin, rollback, uninstall, approval option, audit; [architecture](../architecture/content-catalog.md)). Designed: private catalogs, first-party packages, the console |
+| Status | Proposed (2026-10-15). Implemented: the package format (`package.yaml`, JSON schema, validator); signatures and trust, the signed index and revocation list, the offline bundle reader and verifier (`pkg/contentpkg`); the content catalog (offline import, install, update, pin, rollback, uninstall, approval option, audit; [architecture](../architecture/content-catalog.md)); the first-party package descriptions and the bundle generator (`pkg/contentpkg/firstparty`, `cmd/content-bundle`). Designed: private catalogs, the console |
 | Scope | api, web |
 | Related | RFC-061 (content packs), RFC-040 (mutual distrust, signed jobs), RFC-037 (versions and the sensor product catalog), RFC-072 (chunked feed transfer), RFC-094 (contracts only) |
 | Schema | [`api/pkg/contentpkg/schema/package.v1.schema.json`](../../pkg/contentpkg/schema/package.v1.schema.json) |
@@ -328,8 +328,19 @@ and moves unpinned installations forward. Any failure stores nothing. The bundle
 | The sensor product catalog (`versions.yaml`) | `openctem/<product>`, `sensors` | the image digest of the `latest` release | the image signature in the registry (`release_identity`) |
 | The program and vulnerability feeds | `openctem/program-feed`, `openctem/vulnerability-feed`, `feeds` | the feed key set | the feed root (RFC-072) |
 
-A generator builds the first-party bundle from these sources and the catalog key signs it in the release
-pipeline. Delivery does not change: rules, images and feeds keep their current paths; the catalog adds the signed
+A generator (`cmd/content-bundle`) builds the first-party bundle from these sources; the catalog online key signs
+it in the release pipeline:
+
+```
+go run ./cmd/content-bundle keygen -out root.key                      # offline, once (root) and per online key
+go run ./cmd/content-bundle keyset -root root.key -online <hex> -version 1 -days 180 -out keyset.dsse.json
+go run ./cmd/content-bundle build -keyset keyset.dsse.json -online-key online.key \
+    -sast-rules dist/ -image sensor=sha256:<hex>:<size>:GPL-3.0-only \
+    -feed program-feed=keyset.dsse.json -out openctem-content.tar
+```
+
+The image digests are resolved from the registry when the bundle is built; the generator never fetches anything
+itself. Delivery does not change: rules, images and feeds keep their current paths; the catalog adds the signed
 listing, the provenance, the revocation path and per-organization install state on top.
 
 ## 7. Threat model
