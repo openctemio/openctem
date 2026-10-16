@@ -22,7 +22,7 @@ type Tenant struct {
 	settings    map[string]any
 	createdBy   string // Keycloak user ID
 	// plan is the stored plan (tenant_plans); empty when none is stored.
-	plan      plan.Plan
+	plan plan.Plan
 	// region is the data region set when the organization was created
 	// (DEPLOYMENT_REGION); empty for organizations from before. Never
 	// changed afterwards.

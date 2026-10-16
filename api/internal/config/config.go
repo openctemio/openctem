@@ -11,9 +11,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
-	"regexp"
 	"strings"
 	"time"
 
@@ -1223,9 +1223,9 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name: getEnv("APP_NAME", "openctem"),
-			Env:  appEnv(),
-			URL:  getEnv("APP_URL", ""),
+			Name:   getEnv("APP_NAME", "openctem"),
+			Env:    appEnv(),
+			URL:    getEnv("APP_URL", ""),
 			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
 		},
 		SensorConfig: SensorConfigConfig{
