@@ -9,6 +9,30 @@ export const ADMIN_API = '/api/v1/admin'
 /** The readable copy of the console's CSRF token, scoped to /admin pages. */
 const ADMIN_CSRF_COOKIE = 'admin_csrf_page'
 
+/**
+ * Protected console actions (identity, privilege and platform-trust changes)
+ * need a fresh authenticator code in this header, unless the console session
+ * confirmed one in the last few minutes. The API answers
+ * ADMIN_STEP_UP_REQUIRED (401) and the console asks for a code and retries.
+ */
+export const ADMIN_STEP_UP_HEADER = 'X-Admin-Step-Up'
+export const ADMIN_STEP_UP_REQUIRED = 'ADMIN_STEP_UP_REQUIRED'
+/** Codes asked for one action before giving up. */
+const STEP_UP_ATTEMPTS = 3
+
+/**
+ * Asks the administrator for a fresh code. `problem` is the API's refusal of
+ * the previous code, if any. Resolves to null when the administrator cancels.
+ */
+export type AdminStepUpPrompt = (problem?: string) => Promise<string | null>
+
+let stepUpPrompt: AdminStepUpPrompt | null = null
+
+/** Registers the console's step-up dialog (one per console shell). */
+export function setAdminStepUpPrompt(prompt: AdminStepUpPrompt | null) {
+  stepUpPrompt = prompt
+}
+
 export class AdminApiError extends Error {
   constructor(
     message: string,
@@ -32,9 +56,56 @@ function readCookie(name: string): string | undefined {
   return undefined
 }
 
-export async function adminFetch<T>(
+export interface AdminFetchInit {
+  method?: string
+  body?: unknown
+  /** A code the caller already asked for (sent as the step-up header). */
+  stepUpCode?: string
+}
+
+/**
+ * A form that already asked for a fresh code sends it in `totp_code`; it goes
+ * in the step-up header too, so the route confirms it once and no second
+ * prompt appears.
+ */
+function bodyStepUpCode(body: unknown): string | undefined {
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    const v = body.get('totp_code')
+    return typeof v === 'string' && v ? v : undefined
+  }
+  if (body && typeof body === 'object' && 'totp_code' in body) {
+    const v = (body as { totp_code?: unknown }).totp_code
+    return typeof v === 'string' && v ? v : undefined
+  }
+  return undefined
+}
+
+export async function adminFetch<T>(path: string, init: AdminFetchInit = {}): Promise<T> {
+  let code = init.stepUpCode ?? bodyStepUpCode(init.body)
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await adminRequest<T>(path, init, code)
+    } catch (err) {
+      const prompt = stepUpPrompt
+      const retry =
+        err instanceof AdminApiError &&
+        err.code === ADMIN_STEP_UP_REQUIRED &&
+        prompt !== null &&
+        attempt <= STEP_UP_ATTEMPTS
+      if (!retry) throw err
+      // The first refusal only means "confirm"; a later one names the problem
+      // with the code that was typed (wrong or already used).
+      const next = await prompt(code ? err.message : undefined)
+      if (!next) throw err
+      code = next
+    }
+  }
+}
+
+async function adminRequest<T>(
   path: string,
-  init: { method?: string; body?: unknown } = {}
+  init: AdminFetchInit,
+  stepUpCode?: string
 ): Promise<T> {
   const method = init.method ?? 'GET'
   const headers: Record<string, string> = { Accept: 'application/json' }
@@ -44,6 +115,7 @@ export async function adminFetch<T>(
   if (method !== 'GET' && method !== 'HEAD') {
     const csrf = readCookie(ADMIN_CSRF_COOKIE)
     if (csrf) headers['X-CSRF-Token'] = csrf
+    if (stepUpCode) headers[ADMIN_STEP_UP_HEADER] = stepUpCode
   }
 
   const res = await fetch(`${ADMIN_API}${path}`, {
