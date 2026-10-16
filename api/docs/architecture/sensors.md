@@ -414,6 +414,14 @@ registration secret:
    (`identity.scope = "instance"`, empty tenant in the signed transcript) and
    the key becomes active.
 
+The installs enroll their bundled sensor this way: the compose overlay
+`api/deploy/docker-compose.sensor.yml` (the token from `.env`, which
+`setup.sh` generates, registered by a one-shot `sensor-enrollment` service)
+and the Helm chart's `sensor.enrollment=instance` (a generated Secret and a
+post-install/post-upgrade Job). An existing organization sensor keeps its
+identity: the scope is fixed at creation, so converting means retiring it and
+enrolling a fresh one.
+
 Such a request has no tenant ever (`chk_sensor_pairings_instance_no_tenant`):
 no organization can look it up, approve or deny it. Redemption, approval and
 confirmation each write a console audit row; nothing reaches an
