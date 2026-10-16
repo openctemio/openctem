@@ -51,15 +51,13 @@ export const EXPOSURES_SECTION_TABS: readonly SectionTab[] = [
 /**
  * Remediation (api/docs/rfcs/RFC-098-remediation-tasks.md): the fix plan,
  * the suggestions to review, the tasks people work on, and the campaigns
- * that track them. The solution families stay reachable until the
- * suggestions replace them.
+ * that track them.
  */
 export const REMEDIATION_SECTION_TABS: readonly SectionTab[] = [
   { label: 'Fix plan', labelKey: 'nav.item.fix-plan', href: '/remediation' },
   { label: 'Suggestions', labelKey: 'nav.item.suggestions', href: '/remediation/suggestions' },
   { label: 'Tasks', labelKey: 'nav.item.tasks', href: '/remediation/tasks' },
   { label: 'Campaigns', labelKey: 'nav.item.campaigns', href: '/remediation/campaigns' },
-  { label: 'Solution families', labelKey: 'nav.item.solution-families', href: '/remediations' },
 ]
 
 /**

@@ -153,8 +153,8 @@ Strings are in the `remediationHub` dictionary (en, vi). Write actions show only
 
 ## Shipped and planned
 
-Shipped: everything above. Planned: the finding drawer band ("tracked in task"), the My Work tasks tab, the
-removal of the solution families page once suggestions replace it.
+Shipped: everything above; the solution families page is removed (the Suggestions tab replaces it). Planned:
+the finding drawer band ("tracked in task"), the My Work tasks tab.
 
 ## Key files
 
