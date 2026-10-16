@@ -772,7 +772,10 @@ lifts this).
   year through `admin_audit_prune`, anchoring the chain where it stopped.
   `GET /api/v1/admin/audit-logs/chain` (any admin; shown on Security >
   Activity) and `bootstrap-admin verify-audit` report every row that does not
-  verify. See `docs/architecture/audit-hash-chain.md`.
+  verify. `ADMIN_AUDIT_SINK` streams every row (with its chain position and
+  hash) and the chain head to a syslog, HTTPS or file destination outside the
+  database, so a re-signed chain no longer matches the copy already sent.
+  See `docs/architecture/audit-hash-chain.md`.
 - Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
   code from the console authenticator, single use (the sign-in replay guard),
   counted toward lockout when wrong, audited as `console.step_up` /

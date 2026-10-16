@@ -22,7 +22,11 @@ type Tenant struct {
 	settings    map[string]any
 	createdBy   string // Keycloak user ID
 	// plan is the stored plan (tenant_plans); empty when none is stored.
-	plan      plan.Plan
+	plan plan.Plan
+	// region is the data region set when the organization was created
+	// (DEPLOYMENT_REGION); empty for organizations from before. Never
+	// changed afterwards.
+	region    string
 	createdAt time.Time
 	updatedAt time.Time
 }
@@ -227,4 +231,16 @@ func GenerateSlug(name string) string {
 		slug = slug[:100]
 	}
 	return slug
+}
+
+// Region is the organization's data region ("" when it predates regions).
+func (t *Tenant) Region() string { return t.region }
+
+// WithRegion sets the region from persistence or at creation; a region once
+// set is never replaced.
+func (t *Tenant) WithRegion(region string) *Tenant {
+	if t.region == "" {
+		t.region = region
+	}
+	return t
 }
