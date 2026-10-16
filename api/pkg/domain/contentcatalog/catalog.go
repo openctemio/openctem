@@ -26,6 +26,7 @@ var (
 	ErrStaleImport      = fmt.Errorf("%w: a newer catalog state was applied meanwhile", shared.ErrConflict)
 	ErrIDTaken          = fmt.Errorf("%w: this package id belongs to another publisher on this instance", shared.ErrConflict)
 	ErrAlreadyRevoked   = fmt.Errorf("%w: the version is already revoked", shared.ErrConflict)
+	ErrNamespaceTaken   = fmt.Errorf("%w: this namespace is an organization's; pick another for instance packages", shared.ErrConflict)
 )
 
 // Package is one package version the instance holds.
