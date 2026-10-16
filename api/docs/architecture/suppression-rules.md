@@ -36,7 +36,12 @@ Rules made before the end was required were given 90 days from the upgrade by
 migration `suppression_rule_end_backfill`; the pending and approved ones carry
 a review flag (`review_flagged_at`, `review_reason = no_end_date`), shown as a
 "Review" badge in the list and a callout in the rule's detail, so an approver
-looks at them again. An edit of the rule clears the flag.
+looks at them again. An edit of a pending rule clears the flag; for an approved
+rule (which cannot be edited) an approver clears it with
+`POST /api/v1/suppressions/{id}/reviewed` (`findings:suppressions:approve`,
+409 when not flagged): the rule keeps its end, the rule's trail records the
+cleared flag and the tenant audit log has `suppression_rule.reviewed` with the
+flag before and after.
 
 ## Where an active rule applies
 
@@ -60,11 +65,11 @@ looks at them again. An edit of the rule clears the flag.
 
 - Open work only: `vulnerability.SuppressionApplyFromStatuses(disposition)`,
   the active statuses the platform may move to that disposition. A
-  false-positive rule closes `new`, `confirmed`, `in_progress`, `fix_applied`
-  and `not_observed`; an accepted-risk rule closes `new`, `confirmed` and
-  `not_observed` and leaves work in progress alone (someone decided to fix it).
+  false-positive rule closes `new`, `confirmed`, `in_progress` and
+  `fix_applied`; an accepted-risk rule closes `new` and `confirmed` and leaves
+  work in progress alone (someone decided to fix it).
 - Never: findings already `false_positive`, `accepted`, `duplicate`,
-  `resolved` or `validated_fixed`; findings a person reported (sources
+  or `resolved`; findings a person reported (sources
   `pentest`, `manual`, `bug_bounty`, `red_team`); other organizations'
   findings; findings of other assets when the rule is asset-bound; findings
   without a file path when the rule has a path condition.

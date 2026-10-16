@@ -76,7 +76,6 @@ func TestRemediationGroupMarkFixed_LegalStepsReasonsAndProofOfFix(t *testing.T) 
 	fConfirmed := h.addFindingOnA("confirmed", key)
 	fInProgress := h.addFindingOnA("in_progress", key)
 	fClaimed := h.addFindingOnA("fix_applied", key)
-	fValidated := h.addFindingOnA("validated_fixed", key)
 	h.exec(`UPDATE findings SET resolution = 'earlier claim' WHERE id = $1`, fClaimed.String())
 
 	path := "/api/v1/findings/remediation-groups/" + url.PathEscape(key) + "/resolve"
@@ -114,22 +113,21 @@ func TestRemediationGroupMarkFixed_LegalStepsReasonsAndProofOfFix(t *testing.T) 
 	}
 
 	// The owner of A1 (memberA): new, confirmed and in_progress reach
-	// fix_applied with the note; fix_applied is skipped; validated_fixed is
-	// refused with the reason.
+	// fix_applied with the note; fix_applied is skipped with the reason.
 	status, body = h.doPerms(h.memberA, rgMemberPerms, http.MethodPost, path, map[string]any{"resolution": "bumped lib to 2.0.0"})
 	var got markFixedBody
 	if status != http.StatusOK || json.Unmarshal([]byte(body), &got) != nil {
 		t.Fatalf("mark fixed = %d %.300s", status, body)
 	}
-	if got.Updated != 3 || got.Skipped != 1 || got.Failed != 1 || got.ValidationsQueued != 3 {
-		t.Errorf("mark fixed = %+v, want 3 updated, 1 skipped, 1 failed, 3 re-checks queued", got)
+	if got.Updated != 3 || got.Skipped != 1 || got.Failed != 0 || got.ValidationsQueued != 3 {
+		t.Errorf("mark fixed = %+v, want 3 updated, 1 skipped, 3 re-checks queued", got)
 	}
 	reasons := map[string]string{}
 	for _, r := range got.Rows {
 		reasons[r.FindingID] = r.Outcome + ": " + r.Reason
 	}
-	if reasons[fClaimed.String()] == "" || reasons[fValidated.String()] == "" || len(reasons) != 2 {
-		t.Errorf("rows = %v, want the skipped fix_applied and the refused validated_fixed finding, each with a reason", reasons)
+	if reasons[fClaimed.String()] == "" || len(reasons) != 1 {
+		t.Errorf("rows = %v, want the skipped fix_applied finding with a reason", reasons)
 	}
 	for _, id := range []shared.ID{fNew, fConfirmed, fInProgress} {
 		st, res, by := h.findingRow(id)
@@ -139,9 +137,6 @@ func TestRemediationGroupMarkFixed_LegalStepsReasonsAndProofOfFix(t *testing.T) 
 	}
 	if st, res, _ := h.findingRow(fClaimed); st != "fix_applied" || res != "earlier claim" {
 		t.Errorf("an earlier claim was rewritten: status=%s resolution=%q", st, res)
-	}
-	if st, _, _ := h.findingRow(fValidated); st != "validated_fixed" {
-		t.Errorf("validated_fixed finding moved to %s", st)
 	}
 	want := []string{fNew.String(), fConfirmed.String(), fInProgress.String()}
 	gotQueued := make([]string, 0, len(queued))

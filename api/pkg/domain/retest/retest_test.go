@@ -103,20 +103,21 @@ func TestNextStatus(t *testing.T) {
 		auto    bool
 		want    want
 	}{
-		// A confirmed fix awaits a person, unless the tenant auto-resolves.
-		{"new", OutcomeConfirmedFixed, false, want{"validated_fixed", true}},
-		{"confirmed", OutcomeConfirmedFixed, false, want{"validated_fixed", true}},
-		{"fix_applied", OutcomeConfirmedFixed, false, want{"validated_fixed", true}},
-		{"not_observed", OutcomeConfirmedFixed, false, want{"validated_fixed", true}},
-		{"validated_fixed", OutcomeConfirmedFixed, false, want{"validated_fixed", false}},
+		// A confirmed fix awaits a person (the status stays; the finding's
+		// validation says not reproducible), unless the tenant auto-resolves.
+		{"new", OutcomeConfirmedFixed, false, want{"new", false}},
+		{"confirmed", OutcomeConfirmedFixed, false, want{"confirmed", false}},
+		{"fix_applied", OutcomeConfirmedFixed, false, want{"fix_applied", false}},
 		{"resolved", OutcomeConfirmedFixed, false, want{"resolved", false}},
 		{"confirmed", OutcomeConfirmedFixed, true, want{"resolved", true}},
-		{"validated_fixed", OutcomeConfirmedFixed, true, want{"resolved", true}},
+		{"fix_applied", OutcomeConfirmedFixed, true, want{"resolved", true}},
 		{"resolved", OutcomeConfirmedFixed, true, want{"resolved", false}},
+		// The retired statuses are not eligible: nothing moves them.
+		{"validated_fixed", OutcomeConfirmedFixed, true, want{"validated_fixed", false}},
+		{"not_observed", OutcomeStillVulnerable, false, want{"not_observed", false}},
 
 		{"resolved", OutcomeStillVulnerable, false, want{"confirmed", true}}, // regression reopen
 		{"fix_applied", OutcomeStillVulnerable, false, want{"in_progress", true}},
-		{"validated_fixed", OutcomeStillVulnerable, false, want{"confirmed", true}},
 		{"confirmed", OutcomeStillVulnerable, false, want{"confirmed", false}},
 
 		// Nothing else moves a finding, auto-resolve or not.
@@ -139,12 +140,23 @@ func TestNextStatus(t *testing.T) {
 	}
 }
 
+func TestValidationOutcome(t *testing.T) {
+	for o, want := range map[Outcome]string{
+		OutcomeConfirmedFixed: "not_reproducible", OutcomeStillVulnerable: "reproducible",
+		OutcomeNotReproduced: "", OutcomeInconclusive: "",
+	} {
+		if got := ValidationOutcome(o); got != want {
+			t.Errorf("ValidationOutcome(%s) = %q, want %q", o, got, want)
+		}
+	}
+}
+
 func TestIsRegression(t *testing.T) {
 	if !IsRegression(vulnerability.FindingStatusResolved, vulnerability.FindingStatusConfirmed) {
 		t.Error("resolved → confirmed is a regression")
 	}
-	if IsRegression(vulnerability.FindingStatusValidatedFixed, vulnerability.FindingStatusConfirmed) {
-		t.Error("validated_fixed → confirmed refutes a downgrade; it is not a regression of a fix")
+	if IsRegression(vulnerability.FindingStatusFixApplied, vulnerability.FindingStatusInProgress) {
+		t.Error("fix_applied → in_progress is a failed claim, not a regression of a fix")
 	}
 }
 
