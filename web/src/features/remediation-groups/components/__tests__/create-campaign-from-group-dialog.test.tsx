@@ -50,7 +50,7 @@ describe('CreateCampaignFromGroupDialog', () => {
       })
     )
     expect(onOpenChange).toHaveBeenCalledWith(false)
-    expect(mockPush).toHaveBeenCalledWith('/remediation/camp-99')
+    expect(mockPush).toHaveBeenCalledWith('/remediation/campaigns/camp-99')
   })
 
   it('does not submit an empty name', async () => {

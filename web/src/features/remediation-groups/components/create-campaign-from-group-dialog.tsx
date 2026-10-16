@@ -72,7 +72,7 @@ export function CreateCampaignFromGroupDialog({
       } as Partial<RemediationCampaign>)) as RemediationCampaign | undefined
       toast.success(`Campaign "${trimmed}" created`)
       onOpenChange(false)
-      if (created?.id) router.push(`/remediation/${created.id}`)
+      if (created?.id) router.push(`/remediation/campaigns/${created.id}`)
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to create the campaign'))
     }

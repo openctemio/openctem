@@ -658,7 +658,7 @@ export default function RemediationPage() {
         return
       }
       if (action === 'open_campaign') {
-        router.push(`/remediation/${task.id}`)
+        router.push(`/remediation/campaigns/${task.id}`)
         return
       }
 
@@ -821,7 +821,7 @@ export default function RemediationPage() {
   }, [])
 
   const handleCopyLink = useCallback((id: string) => {
-    copyToClipboard(`${window.location.origin}/remediation/${id}`)
+    copyToClipboard(`${window.location.origin}/remediation/campaigns/${id}`)
     toast.success('Link copied')
   }, [])
 
@@ -1160,8 +1160,8 @@ export default function RemediationPage() {
     <TooltipProvider>
       <Main>
         <PageHeader
-          title="Remediation tasks"
-          description="Track the work of fixing findings — who owns it, where it stands, and when it is due."
+          title={t('remediationHub.campaigns.title')}
+          description={t('remediationHub.campaigns.description')}
         >
           {canWrite && (
             <Button
@@ -1390,7 +1390,7 @@ export default function RemediationPage() {
         findingCampaigns={findingCampaigns}
         onCopyId={handleCopyId}
         onCopyLink={handleCopyLink}
-        onOpenCampaign={(task) => router.push(`/remediation/${task.id}`)}
+        onOpenCampaign={(task) => router.push(`/remediation/campaigns/${task.id}`)}
       />
 
       {/* ─── Task Form Dialog ─────────────────────────────────────────── */}
