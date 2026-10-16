@@ -241,5 +241,7 @@
   "org.leave.confirmTitle": "Leave {name}?",
   "org.leave.confirmDesc": "Your access ends now and your API keys for this organization are revoked. An administrator can invite you again later.",
   "org.leave.done": "You left {name}",
-  "org.leave.failed": "Could not leave the organization"
+  "org.leave.failed": "Could not leave the organization",
+  "org.region.new": "Data region: {region}. It is fixed for the organization once created.",
+  "org.region.current": "Data region: {region} (fixed)"
 }
