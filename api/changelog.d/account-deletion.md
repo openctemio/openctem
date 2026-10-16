@@ -6,4 +6,4 @@
   "Deleted user #…"). Refused while you are the only owner of an organization, which is named.
 - Settings > General > Leave this organization (`POST /api/v1/organization/leave`): the same
   offboarding an administrator runs, for yourself. The only owner cannot leave.
-- Migration 002778 adds `account_deletions`.
+- Migration 002812 adds `account_deletions`.
