@@ -130,6 +130,14 @@ var stepUpRoutes = []string{
 	"POST /api/v1/sensors",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
+	// A published finding lifecycle decides which status moves need what
+	// (RFC-110).
+	"POST /api/v1/lifecycles/{id}/versions/1/publish",
+	// Renaming or archiving a scheme and archiving a sub-status change what
+	// the organization's moves mean as much as publishing does.
+	"PATCH /api/v1/lifecycles/{id}",
+	"DELETE /api/v1/lifecycles/{id}",
+	"DELETE /api/v1/lifecycle-sub-statuses/{id}",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -197,6 +205,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerScannerTemplateRoutes(router, &handler.ScannerTemplateHandler{}, auth, nil, chain())
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
+			registerFindingLifecycleRoutes(router, &handler.FindingLifecycleHandler{}, auth, nil)
 			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
 			scanH := &handler.ScanHandler{}
 			scanH.SetApprovals(&handler.ScanApprovalHandler{})
