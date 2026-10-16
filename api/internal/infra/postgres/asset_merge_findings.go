@@ -68,6 +68,13 @@ var findingMergeRefs = []mergeRef{
 		keys: []mergeKey{{}}},
 	{table: "finding_remediation_keys", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// Ticket links follow the finding; a loser's link to an issue the
+	// survivor already links is dropped (one link per finding and issue).
+	{table: "ticket_links", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"integration_id", "external_key"}}}},
+	// A person took the finding out of a fix: the survivor stays out of it.
+	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"action_key"}}}},
 }
 
 // findingMergeKeptRefs reference findings.id and deliberately stay on the
@@ -85,6 +92,10 @@ var findingMergeKeptRefs = map[string]string{
 	// A suspended decision is the history of the finding it was made on.
 	"finding_decision_suspensions.finding_id": "kept on the tombstone; history of that finding",
 	"finding_decision_reviews.finding_id":     "kept on the tombstone; a review flag of that finding's decision",
+	// A remediation task membership is the task's history of that finding:
+	// the tombstone closes (duplicate) inside its task; the survivor keeps
+	// its own task, or is proposed for one.
+	"remediation_task_members.finding_id": "kept on the tombstone; the duplicate closes in its task, the survivor keeps its own",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to
@@ -243,8 +254,7 @@ func findingStatusRank(status string) int {
 	switch vulnerability.FindingStatus(status) {
 	case vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusAccepted:
 		return 5
-	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied,
-		vulnerability.FindingStatusValidatedFixed:
+	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied:
 		return 4
 	case vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusInReview:
 		return 3
