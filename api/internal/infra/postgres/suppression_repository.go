@@ -576,19 +576,25 @@ func (r *SuppressionRepository) RecordSuppression(ctx context.Context, findingID
 			INSERT INTO finding_suppressions (finding_id, suppression_rule_id, applied_by)
 			VALUES ($1, $2, $3)
 			ON CONFLICT (finding_id, suppression_rule_id) DO NOTHING
+			RETURNING 1
+		), acc AS (
+			UPDATE findings f
+			SET acceptance_expires_at = ` + acceptanceCappedSQL("COALESCE(sr.expires_at, $4)", "f") + `
+			FROM suppression_rules sr
+			WHERE f.id = $1 AND sr.id = $2 AND sr.tenant_id = f.tenant_id
+			  AND f.status = 'accepted'
+			RETURNING 1
 		)
-		UPDATE findings f
-		SET acceptance_expires_at = ` + acceptanceCappedSQL("COALESCE(sr.expires_at, $4)", "f") + `
-		FROM suppression_rules sr
-		WHERE f.id = $1 AND sr.id = $2 AND sr.tenant_id = f.tenant_id
-		  AND f.status = 'accepted'
+		SELECT (SELECT count(*) FROM rec), (SELECT count(*) FROM acc)
 	`
 
-	_, err := r.db.ExecContext(ctx, query, findingID.String(), ruleID.String(), appliedBy,
-		ruleAcceptanceEnd(nil, time.Now()))
+	var recorded, accepted int
+	err := r.db.QueryRowContext(ctx, query, findingID.String(), ruleID.String(), appliedBy,
+		ruleAcceptanceEnd(nil, time.Now())).Scan(&recorded, &accepted)
 	if err != nil {
 		return fmt.Errorf("failed to record finding suppression: %w", err)
 	}
+	observeSuppressionHits(appliedBy, recorded)
 
 	return nil
 }
