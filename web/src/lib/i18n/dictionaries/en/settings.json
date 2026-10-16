@@ -354,5 +354,7 @@
   "settings.jiraWebhook.rotateFailed": "Could not generate a secret",
   "settings.jiraWebhook.copied": "Copied",
   "settings.jiraWebhook.copyFailed": "Could not copy",
-  "settings.jiraWebhook.close": "Close"
+  "settings.jiraWebhook.close": "Close",
+  "settings.item.ticket-field-mapping": "Ticket field mapping",
+  "settings.desc.ticket-field-mapping": "Which fields and statuses sync with Jira, per project."
 }

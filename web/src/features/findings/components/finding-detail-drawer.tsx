@@ -27,7 +27,6 @@ import {
   DetailSheetFooter,
   type DetailMenuItem,
 } from '@/features/shared/components/detail-sheet-layout'
-import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import type { Severity } from '@/features/shared/types'
 import { useFindingApi, useFindingApprovals } from '../api/use-findings-api'
 import { useFindingTriage } from '../hooks/use-finding-triage'
@@ -45,6 +44,7 @@ import {
 } from '../types'
 import { AssigneeSelect } from './assignee-select'
 import { CreateTicketDialog } from './create-ticket-dialog'
+import { useCanCreateTicket } from '../hooks/use-can-create-ticket'
 import { SeveritySelect } from './severity-select'
 import { useCanMutate } from '@/lib/permissions'
 import { StatusSelect } from './status-select'
@@ -98,7 +98,7 @@ export function FindingDetailDrawer({
 }: FindingDetailDrawerProps) {
   const { t } = useTranslation()
   const router = useRouter()
-  const integrationsEnabled = useModuleEnabled('integrations')
+  const canCreateTicket = useCanCreateTicket()
   const [ticketOpen, setTicketOpen] = useState(false)
   const activityRef = useRef<EntityActivityHandle>(null)
 
@@ -181,7 +181,7 @@ export function FindingDetailDrawer({
         toast.success(t('findings.drawer.idCopied', 'Finding ID copied'))
       },
     },
-    ...(integrationsEnabled
+    ...(canCreateTicket
       ? [
           {
             label: t('findings.drawer.createTicket', 'Create ticket'),
@@ -339,7 +339,7 @@ export function FindingDetailDrawer({
         )}
       </DetailSheet>
 
-      {integrationsEnabled && (
+      {canCreateTicket && (
         <CreateTicketDialog
           findingId={finding.id}
           findingTitle={detail.title}
