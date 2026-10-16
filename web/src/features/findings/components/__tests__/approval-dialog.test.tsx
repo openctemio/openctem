@@ -366,3 +366,15 @@ describe('ApprovalDialog', () => {
     })
   })
 })
+
+describe('ApprovalDialog acceptance cap', () => {
+  it('a P0 or KEV finding defaults to and stops at its 30-day cap', () => {
+    render(<ApprovalDialog {...defaultProps} targetStatus="accepted" maxAcceptanceDays={30} />)
+    const expiry = screen.getByLabelText('Acceptance expires on') as HTMLInputElement
+    const days = (Date.parse(`${expiry.max}T00:00:00`) - Date.now()) / 86_400_000
+    expect(days).toBeGreaterThan(28)
+    expect(days).toBeLessThan(31)
+    const dflt = (Date.parse(`${expiry.value}T00:00:00`) - Date.now()) / 86_400_000
+    expect(dflt).toBeLessThan(31)
+  })
+})

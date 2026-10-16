@@ -442,3 +442,22 @@ func TestAssetSoftware_ScoresAndFlagsPolicy(t *testing.T) {
 		t.Fatal("no error without a reader")
 	}
 }
+
+// An open finding the matcher marked stale and matches again becomes present
+// again (the store makes it so); an open one that is present is left alone.
+func TestReconcile_StaleOpenFindingMatchedAgainIsPresent(t *testing.T) {
+	asset := shared.NewID()
+	m := match(asset, "CVE-2021-23017", 80)
+	store := newFakeStore()
+	store.matches = []softwarematch.Match{m}
+	stale := shared.NewID()
+	store.existing = []softwarematch.MatcherFinding{{ID: stale, Fingerprint: fp(m), Status: "in_progress", Stale: true}}
+	svc, w := newSvc(store, true)
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.created) != 0 || len(store.reopened) != 1 || store.reopened[0] != stale {
+		t.Fatalf("created %d, reopened %v; want the stale finding passed to the store", len(w.created), store.reopened)
+	}
+}

@@ -263,6 +263,11 @@ func registerVulnerabilityRoutes(
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
 		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsStatus))
+		// The transition engine: the caller's allowed moves of one finding,
+		// and a bulk dry run. Reading them needs only findings:read; each
+		// decision states what the move itself would need.
+		r.GET("/{id}/transitions", h.GetFindingTransitions, middleware.Require(permission.FindingsRead))
+		r.POST("/transitions/preview", h.EvaluateFindingTransitions, middleware.Require(permission.FindingsRead))
 
 		// Assignment operations
 		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsAssign))
@@ -317,6 +322,11 @@ func registerVulnerabilityRoutes(
 		// Jira: open a ticket for a finding.
 		if jiraHandler != nil {
 			r.POST("/{id}/create-ticket", jiraHandler.CreateTicket, middleware.Require(permission.FindingsWrite))
+			// Ticket links: the finding's linked issues; link an existing
+			// issue of the organization's Jira site; unlink.
+			r.GET("/{id}/ticket-links", jiraHandler.ListTicketLinks, middleware.Require(permission.FindingsRead))
+			r.POST("/{id}/ticket-links", jiraHandler.LinkTicketIssue, middleware.Require(permission.FindingsWrite))
+			r.DELETE("/{id}/ticket-links/{link_id}", jiraHandler.UnlinkTicketIssue, middleware.Require(permission.FindingsWrite))
 		}
 
 		// Delete operations
