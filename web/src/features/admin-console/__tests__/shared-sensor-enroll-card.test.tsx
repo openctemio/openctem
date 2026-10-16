@@ -18,6 +18,8 @@ describe('SharedSensorEnrollCard', () => {
   it('offers nothing to issue without the super admin role', () => {
     render(<SharedSensorEnrollCard canEdit={false} onIssue={vi.fn()} />)
     expect(screen.getByText('Enroll a shared sensor')).toBeInTheDocument()
+    // The token is short-lived and single use: issue it right before enrolling.
+    expect(screen.getByText(/right before you start the sensor/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Issue token' })).not.toBeInTheDocument()
   })
 
