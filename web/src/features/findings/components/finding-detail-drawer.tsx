@@ -218,11 +218,11 @@ export function FindingDetailDrawer({
             actions={
               <>
                 <StatusSelect
+                  findingId={detail.id}
                   value={triage.status}
                   onChange={triage.changeStatus}
                   loading={triage.statusBusy}
                   showCheck
-                  source={detail.source}
                 />
                 <SeveritySelect
                   value={triage.severity}
