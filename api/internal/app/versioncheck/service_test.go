@@ -48,7 +48,8 @@ func (m *memRepo) ClaimDue(_ context.Context, now, first, next time.Time) (bool,
 func (m *memRepo) Apply(_ context.Context, v *releasefeed.Verified, origin string, now time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.st.AppliedSequence > v.Feed.Sequence || m.st.KeySetVersion > v.KeySetVersion {
+	if m.st.AppliedSequence > v.Feed.Sequence || m.st.KeySetVersion > v.KeySetVersion ||
+		(m.st.AppliedSequence == v.Feed.Sequence && m.st.FeedDigest != v.Digest) {
 		return false, nil
 	}
 	f := v.Feed
@@ -56,6 +57,7 @@ func (m *memRepo) Apply(_ context.Context, v *releasefeed.Verified, origin strin
 		m.exists, m.st.NextCheckAt = true, &now
 	}
 	m.st.Feed, m.st.Origin, m.st.AppliedSequence, m.st.KeySetVersion = &f, origin, f.Sequence, v.KeySetVersion
+	m.st.FeedDigest = v.Digest
 	m.st.AppliedAt, m.st.LastError, m.st.ConsecutiveFailures = &now, "", 0
 	return true, nil
 }
@@ -275,6 +277,29 @@ func TestRollbackRefused(t *testing.T) {
 	}
 }
 
+// The same sequence is accepted again only with the same bytes: a second
+// feed under an applied sequence is a replay or a signing fault.
+func TestSameSequenceOtherBytesRefused(t *testing.T) {
+	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
+	svc := newService(repo, []string{k.rootID()}, srv.srv.URL, c, "v0.9.7")
+	ctx := context.Background()
+	if _, err := svc.Import(ctx, k.feed(t, 300, t0.Add(-time.Hour), "v0.9.8")); err != nil {
+		t.Fatal(err)
+	}
+	var ie *ImportError
+	if _, err := svc.Import(ctx, k.feed(t, 300, t0.Add(-time.Hour), "v0.9.9")); !errors.As(err, &ie) || ie.Code != ErrCodeConflict {
+		t.Fatalf("same sequence, other bytes: %v", err)
+	}
+	srv.body = k.feed(t, 300, t0.Add(-time.Hour), "v0.9.9")
+	_ = svc.RunDue(ctx)
+	if repo.st.LastError != ErrCodeConflict || repo.st.Feed.Releases[0].Version != "v0.9.8" {
+		t.Fatalf("online: %+v", repo.st)
+	}
+	if _, err := svc.Import(ctx, k.feed(t, 300, t0.Add(-time.Hour), "v0.9.8")); err != nil {
+		t.Fatalf("identical feed: %v", err)
+	}
+}
+
 func TestImport(t *testing.T) {
 	k, c := newKeys(t), &clock{now: t0}
 	ctx := context.Background()
@@ -310,7 +335,7 @@ func TestImport(t *testing.T) {
 // The production client refuses a redirect from https to http and long
 // redirect chains.
 func TestClientRedirectPolicy(t *testing.T) {
-	c := newClient("https://example.com/feed.json")
+	c := newClient()
 	req := func(u string) *http.Request {
 		r, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
 		return r

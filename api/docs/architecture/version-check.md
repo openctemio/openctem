@@ -16,6 +16,7 @@ version locally. Nothing about the instance is sent.
 | Headers | `User-Agent: openctem-version-check/1`, `Accept: application/json`. No version, no instance id, no cookies, no `Referer`, no query string |
 | Body | none |
 | Who sees it | the host of the file (by default GitHub, which serves release assets) sees the source IP of one anonymous download a day; OpenCTEM receives only the aggregate download count GitHub shows for an asset |
+| Default | on, in every edition |
 | Turn it off | `VERSION_CHECK_ENABLED=false`: no request at all. The console still shows a feed imported by hand |
 
 There is no usage reporting of any kind. Usage telemetry is designed in the
@@ -38,8 +39,9 @@ The instance trusts only the root key ids pinned in the binary
 - a key set from another root, of another kind, expired, or with a version
   below the one it applied (a revoked online key cannot come back);
 - a feed not signed by a key of that key set, of another payload type, with a
-  sequence below the one it applied (rollback), expired or issued in the
-  future;
+  sequence below the one it applied (rollback), with the applied sequence but
+  other content (the SHA-256 of the signed payload is stored; the publisher
+  never signs two feeds with one sequence), expired or issued in the future;
 - any field out of bounds: versions must be `vX.Y.Z`, severities
   low/medium/high/critical, titles at most 200 characters without control
   characters, links HTTPS under `github.com/openctemio/`, `openctem.io` or
@@ -71,8 +73,8 @@ machine, carry it in, upload it. It goes through exactly the same
 verification, including rollback and expiry. Set `VERSION_CHECK_ENABLED=false`
 to stop the outbound attempt entirely.
 
-A mirror: point `VERSION_CHECK_URL` at an internal copy (http or https; the
-signature carries the trust). The fetch uses the SSRF-guarded client
+A mirror: point `VERSION_CHECK_URL` at an internal copy (https only; the
+signature carries the trust, https keeps the request private on the way). The fetch uses the SSRF-guarded client
 (`pkg/httpsec`), so a mirror on a private address also needs the instance's
 private egress allowlist (`OPENCTEM_HTTPSEC_*`). Outbound HTTP proxies are not
 used by this client.
@@ -122,7 +124,9 @@ go run ./cmd/release-feed verify -root <root key id> openctem-releases.json
 
 The workflow `.github/workflows/release-feed.yml` runs on every release (called
 by `release.yml`), every week (so the feed never expires between releases)
-and by hand. It uploads the file to the latest release, which is what the
+and by hand. Its job runs only on `main` or a `v*` tag (an explicit guard; the
+`release-feed` environment is restricted the same way). It uploads the file to
+the latest release, which is what the
 default URL `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`
 serves. It skips with a warning while the key set file or the
 `RELEASE_FEED_SIGNING_KEY` secret is missing, so a release never fails on it.
