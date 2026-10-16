@@ -116,6 +116,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-098](RFC-098-remediation-tasks.md) | Remediation actions, tasks and suggestions | Accepted (2026-10-15). |
 | [RFC-099](RFC-099-content-packages.md) | Content packages, signatures, revocation and the content catalog | Proposed (2026-10-15). |
 | [RFC-100](RFC-100-shared-sensors.md) | Shared sensors | Accepted (2026-10-15); S0 in review (#2308), the rest designed |
+| [RFC-104](RFC-104-signup-modes-and-joining.md) | Sign-up modes and organization joining | Accepted (2026-10-15). |
 | [RFC-105](RFC-105-version-check-and-usage-telemetry.md) | Version check and usage telemetry | Accepted (2026-10-16). |
 <!-- END RFC INDEX -->
 
