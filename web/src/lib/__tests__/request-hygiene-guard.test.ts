@@ -51,6 +51,8 @@ const TUPLE_KEY_BASELINE: Record<string, number> = {
   'features/scan-zones/components/zone-coverage-card.tsx': 1,
   // A POST preview of the form being edited, keyed by its content.
   'features/scans/components/new-scan/workflow-preview.tsx': 1,
+  // A POST preview of the typed quick scan, keyed by its content.
+  'features/scans/components/quick-scan-preview.tsx': 1,
   // POST evaluations and the draft-policy preview, keyed by their bodies.
   'features/scan-windows/api/use-scan-windows.ts': 1,
   // The web's own build (not an API call) and the API's, per shell.
