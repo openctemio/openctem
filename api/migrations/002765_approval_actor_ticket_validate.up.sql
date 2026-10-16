@@ -1,0 +1,1 @@
+ALTER TABLE finding_status_approvals VALIDATE CONSTRAINT chk_finding_status_approvals_actor;

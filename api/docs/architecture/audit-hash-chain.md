@@ -195,13 +195,26 @@ and the `bootstrap-admin` CLI alike.
 | Retention: `admin_audit_prune(cutoff, max_rows)` (`SECURITY DEFINER`, runs as the table owner) deletes only the oldest prefix older than `max(cutoff, now - 365 days)` and records an anchor | `admin_audit_chain_anchors`; the admin audit retention controller calls it |
 | Verify: recompute each online row with the same SQL function, check links from the newest anchor and that no position is missing | `AuditLogRepository.VerifyChain`; `GET /api/v1/admin/audit-logs/chain` (any admin, Security > Activity); `bootstrap-admin verify-audit [-json]` (exit 1 on a break) |
 
+Off-box copy (`ADMIN_AUDIT_SINK`): every row, as written, is sent with its
+chain position, previous hash and hash (not the request body), and the chain
+head every `ADMIN_AUDIT_SINK_HEAD_INTERVAL` (15 minutes): `https://` (one JSON
+object per POST, Bearer `ADMIN_AUDIT_SINK_TOKEN`, no redirects followed),
+`syslog+tls://`, `syslog+tcp://` (RFC 5424, octet-counted), `syslog+udp://` or
+`file:///path` (JSON lines, 0600). Delivery is in order, retried three times,
+and never blocks the console: a full queue (1000 events) drops the newest event
+with an error line, and the next head covers it. A destination that cannot be
+used stops the API's start-up (`internal/infra/auditsink`). Someone who
+controls the database can re-sign the whole chain, but cannot change the heads
+and rows already sent: compare them with `GET /api/v1/admin/audit-logs/chain`
+or `bootstrap-admin verify-audit -json`.
+
 The administrator a row names is history: the foreign key from `admin_id` to
 `admin_users` is dropped, so deleting an administrator never rewrites a row.
 
 Threat model. The chain detects a row edited or removed by anyone who can
 bypass the triggers (the table owner disabling them, a restore from an edited
-dump); it cannot stop the owner from re-signing the whole chain, so keep an
-off-box copy of the administrators' actions. With the single-role database
+dump); it cannot stop the owner from re-signing the whole chain: that is what
+the off-box copy (`ADMIN_AUDIT_SINK`) is for. With the single-role database
 setup the API role is the owner, so the guarantee then rests on the triggers
 alone; the least-privilege roles make it a database permission.
 
