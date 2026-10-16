@@ -101,15 +101,22 @@ ARG BUILD_TIME=""
 # changed; it never ends up in a layer). -trimpath keeps the builder's paths
 # out of the binaries, so the same source gives the same binary on any host.
 # Binaries:
-#   server           the API
-#   bootstrap-admin  initial setup: platform administrators and the first
-#                    organization
-#   refingerprint    re-keys findings to the current identity recipe (a dry run
-#                    by default, RFC-043 §6)
-#   repomerge        merges duplicate repository assets (a dry run by default)
-#   ci-trust-scope-plan  dry run for adding existing CI trusts' repositories to scope (read-only)
+#   server           the API, and the operator commands below: each is a link
+#                    to the server binary, which runs the command named by the
+#                    link (cmd/server/tools.go). One binary instead of one per
+#                    command keeps the shared packages in the image once.
+#     bootstrap-admin      initial setup: platform administrators and the
+#                          first organization
+#     refingerprint        re-keys findings to the current identity recipe (a
+#                          dry run by default, RFC-043 §6)
+#     repomerge            merges duplicate repository assets (a dry run by
+#                          default)
+#     ci-trust-scope-plan  dry run for adding existing CI trusts' repositories
+#                          to scope (read-only)
 #   openctem-signer  the job signer (RFC-040 §5.6); runs as its own container
-#                    from this image, see deploy/docker-compose.job-signer.yml
+#                    from this image, see deploy/docker-compose.job-signer.yml.
+#                    A binary of its own: it holds the signing key and links
+#                    none of the API.
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 \
     GOOS=${TARGETOS:-linux} \
@@ -118,7 +125,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION} \
       -X github.com/openctemio/openctem/api/pkg/version.Commit=${COMMIT} \
       -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}" \
-    -o /app/bin/ ./cmd/server ./cmd/bootstrap-admin ./cmd/refingerprint ./cmd/repomerge ./cmd/ci-trust-scope-plan ./cmd/signer \
+    -o /app/bin/ ./cmd/server ./cmd/signer \
  && mv /app/bin/signer /app/bin/openctem-signer
 
 
@@ -138,7 +145,9 @@ RUN echo 'openctem:x:1000:1000:openctem:/app:/sbin/nologin' >> /out/etc/passwd \
  && echo 'openctem:x:1000:' >> /out/etc/group \
  && mkdir -p /out/app-data/attachments /out/signer-lib/keys /out/signer-lib/state /out/signer-run \
  && chmod 0700 /out/signer-lib/keys /out/signer-lib/state \
- && chmod 0770 /out/signer-run
+ && chmod 0770 /out/signer-run \
+ && mkdir -p /out/tool-links \
+ && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan; do ln -s server /out/tool-links/$t; done
 
 # -----------------------------------------------------------------------------
 # Production stage
@@ -155,7 +164,9 @@ COPY --from=runtime-fs /out/etc/passwd /out/etc/group /etc/
 
 # Everything below is owned by root and read-only to the runtime users: the API
 # cannot rewrite its own binaries, spec, migrations or configs.
-COPY --from=builder /app/bin/server /app/bin/bootstrap-admin /app/bin/refingerprint /app/bin/repomerge /app/bin/ci-trust-scope-plan /app/bin/openctem-signer ./
+COPY --from=builder /app/bin/server /app/bin/openctem-signer ./
+# The operator commands: /app/<command> -> server (see the builder stage).
+COPY --from=runtime-fs /out/tool-links/ ./
 
 # The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
 # cmd/server/handlers.go NewDocsHandler).
