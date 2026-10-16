@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -82,6 +83,17 @@ var enrollmentAllowed = map[string]bool{
 type AdminAuthMiddleware struct {
 	sessions AdminSessionAuthenticator
 	logger   *logger.Logger
+	// elevation: administrators act as read-only unless their session is
+	// elevated (ADMIN_ELEVATION=required).
+	elevation bool
+	now       func() time.Time
+}
+
+// WithElevation makes every request act as the session's acting role:
+// read-only unless the session holds a live elevation.
+func (m *AdminAuthMiddleware) WithElevation(on bool) *AdminAuthMiddleware {
+	m.elevation = on
+	return m
 }
 
 // authenticateSession accepts a verified console session cookie and, for
@@ -126,6 +138,7 @@ func NewAdminAuthMiddleware(sessions AdminSessionAuthenticator, log *logger.Logg
 	return &AdminAuthMiddleware{
 		sessions: sessions,
 		logger:   log.With("middleware", "admin_auth"),
+		now:      time.Now,
 	}
 }
 
@@ -153,6 +166,11 @@ func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 				"Register your security keys and recovery codes before using the console").WriteJSON(w)
 			return
 		}
+		// Time-boxed elevation: without a live elevation the administrator
+		// acts as read-only, whatever their own role.
+		if m.elevation {
+			adminUser.ActAs(sess.ActingRole(m.now()))
+		}
 		ctx := withAdmin(r.Context(), adminUser, AdminAuthMethodSession)
 		if sess != nil {
 			ctx = context.WithValue(ctx, AdminSessionKey, sess)
@@ -176,7 +194,7 @@ func (m *AdminAuthMiddleware) RequireRole(roles ...admin.AdminRole) func(http.Ha
 			// Check if admin has one of the required roles
 			hasRole := false
 			for _, role := range roles {
-				if adminUser.Role() == role {
+				if adminUser.EffectiveRole() == role {
 					hasRole = true
 					break
 				}
@@ -185,7 +203,7 @@ func (m *AdminAuthMiddleware) RequireRole(roles ...admin.AdminRole) func(http.Ha
 			if !hasRole {
 				m.logger.Debug("admin auth: insufficient role",
 					"admin_id", adminUser.ID().String(),
-					"role", adminUser.Role(),
+					"role", adminUser.EffectiveRole(),
 					"required_roles", roles)
 				apierror.Forbidden("insufficient permissions").WriteJSON(w)
 				return
@@ -211,7 +229,7 @@ func (m *AdminAuthMiddleware) RequirePermission(action string) func(http.Handler
 			if !adminUser.HasPermission(action) {
 				m.logger.Debug("admin auth: permission denied",
 					"admin_id", adminUser.ID().String(),
-					"role", adminUser.Role(),
+					"role", adminUser.EffectiveRole(),
 					"action", action)
 				apierror.Forbidden("permission denied: " + action).WriteJSON(w)
 				return
@@ -289,7 +307,7 @@ func extractIP(r *http.Request) string {
 func withAdmin(ctx context.Context, a *admin.AdminUser, method string) context.Context {
 	ctx = context.WithValue(ctx, AdminUserKey, a)
 	ctx = context.WithValue(ctx, AdminIDKey, a.ID().String())
-	ctx = context.WithValue(ctx, AdminRoleKey, string(a.Role()))
+	ctx = context.WithValue(ctx, AdminRoleKey, string(a.EffectiveRole()))
 	ctx = context.WithValue(ctx, AdminAuthMethodKey, method)
 	// Logger context for request tracing.
 	return context.WithValue(ctx, logger.ContextKeyUserID, a.ID().String())
