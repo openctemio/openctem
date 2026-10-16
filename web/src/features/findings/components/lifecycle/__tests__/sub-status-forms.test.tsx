@@ -175,8 +175,7 @@ describe('SubStatusLanes', () => {
         onChanged={() => {}}
       />
     )
-    expect(screen.queryByRole('button', { name: /edit in review/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /archive in review/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /actions for in review/i })).not.toBeInTheDocument()
     for (const b of screen.getAllByRole('button', { name: /add a sub-status/i }))
       expect(b).toBeDisabled()
   })
@@ -193,7 +192,7 @@ describe('SubStatusLanes', () => {
     )
     for (const b of screen.getAllByRole('button', { name: /add a sub-status/i }))
       expect(b).toBeDisabled()
-    expect(screen.getByRole('button', { name: /edit in review/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /actions for in review/i })).toBeEnabled()
   })
 
   it('reorders by renumbering the lane', async () => {
@@ -210,7 +209,8 @@ describe('SubStatusLanes', () => {
         onChanged={onChanged}
       />
     )
-    await userEvent.click(screen.getByRole('button', { name: /move b up/i }))
+    await userEvent.click(screen.getByRole('button', { name: /actions for b/i }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /move up/i }))
     expect(update).toHaveBeenCalledWith('b', { sort_order: 0 })
     expect(update).toHaveBeenCalledWith('a', { sort_order: 1 })
     expect(onChanged).toHaveBeenCalled()

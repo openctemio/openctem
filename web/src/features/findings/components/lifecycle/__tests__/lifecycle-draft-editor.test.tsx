@@ -177,4 +177,32 @@ describe('LifecycleDraftEditor', () => {
     expect(screen.queryByRole('button', { name: /^publish$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /add move/i })).not.toBeInTheDocument()
   })
+
+  it('shows the version in force read-only when there is no draft', () => {
+    const published = {
+      ...lifecycle().draft!,
+      version: 1,
+      state: 'published' as const,
+      spec: {
+        sub_statuses: [REVIEW.id],
+        transitions: [
+          { id: 'to_review', name: 'Send to review', from: ['status:confirmed'], to: REVIEW.id },
+        ],
+      },
+    }
+    render(
+      <LifecycleDraftEditor
+        lifecycle={lifecycle({ draft: undefined, published })}
+        catalog={[REVIEW]}
+        canWrite
+        onReload={() => {}}
+      />
+    )
+    expect(screen.getByText(/version in force/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /start a draft/i })).toBeInTheDocument()
+    expect(screen.getByText('Send to review')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /use in review/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /save draft/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /edit send to review/i })).not.toBeInTheDocument()
+  })
 })
