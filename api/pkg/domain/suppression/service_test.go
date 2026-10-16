@@ -525,8 +525,13 @@ func TestService_DeleteRule(t *testing.T) {
 }
 
 type fakeApprovers struct {
-	count int
-	owner shared.ID
+	count     int
+	owner     shared.ID
+	removedAt *time.Time
+}
+
+func (f fakeApprovers) RecentMemberRemoval(context.Context, shared.ID, time.Time) (*time.Time, error) {
+	return f.removedAt, nil
 }
 
 func (f fakeApprovers) CountEligibleApprovers(context.Context, shared.ID) (int, error) {
@@ -585,6 +590,18 @@ func TestService_ApproveRule_FourEyes(t *testing.T) {
 		}
 		if rule.Status() != RuleStatusPending {
 			t.Fatalf("refused self-approval changed the rule: %s", rule.Status())
+		}
+	})
+	t.Run("lone owner refused within 7 days of a member removal", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		removed := time.Now().Add(-2 * 24 * time.Hour)
+		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester, removedAt: &removed})
+		svc.SetTOTPVerifier(fakeTOTP{good: "123456"})
+		rule := newPending(svc)
+		_, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester,
+			ReviewedUpdatedAt: reviewedAt(rule), SelfApprovalReason: "alone", TOTPCode: "123456"})
+		if !errors.Is(err, ErrSelfApprovalAfterRemoval) || !IsSelfApprovalRefusal(err) {
+			t.Fatalf("recent removal = %v, want ErrSelfApprovalAfterRemoval", err)
 		}
 	})
 	t.Run("lone owner without a verifier fails closed", func(t *testing.T) {

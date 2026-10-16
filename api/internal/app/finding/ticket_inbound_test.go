@@ -2,32 +2,41 @@ package finding
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// Only a verified Jira/GitHub ticket move is exempt from the person-only
-// fix-claim rules. Another integration (VEX, coverage) carrying actor type
+// Only a verified Jira/GitHub ticket move is the ticket actor (work state
+// only). Another integration (VEX, coverage) carrying actor type
 // "integration" is not, and the flag ignores any other source.
-func TestTicketInboundExemptionIsDedicated(t *testing.T) {
-	s := &VulnerabilityService{}
-	claim := func(ctx context.Context) error {
-		return s.authorizePersonClaimOrClose(ctx, vulnerability.FindingStatusFixApplied,
-			vulnerability.VerificationAttested, "fixed", "", true, nil)
+func TestTicketInboundActorIsDedicated(t *testing.T) {
+	kind := func(ctx context.Context) vulnerability.TransitionActorKind {
+		return transitionActor(ctx, "", TransitionPermissions{FixApply: true}).Kind
 	}
 	vex := vulnerability.WithStatusTransition(context.Background(), vulnerability.StatusTransition{
 		Source: "vex", ActorType: IntegrationActorType,
 	})
-	if err := claim(vex); !errors.Is(err, ErrFixApplyNotAPerson) {
-		t.Errorf("a VEX integration move claimed a fix: err = %v, want ErrFixApplyNotAPerson", err)
+	if k := kind(vex); k != vulnerability.TransitionActorAPIKey {
+		t.Errorf("a VEX integration move is %q, want api_key (no person, no exemption)", k)
 	}
-	if err := claim(vulnerability.WithTicketInbound(vex, "vex")); !errors.Is(err, ErrFixApplyNotAPerson) {
-		t.Errorf("an unknown ticket source was exempt: err = %v", err)
+	if k := kind(vulnerability.WithTicketInbound(vex, "vex")); k != vulnerability.TransitionActorAPIKey {
+		t.Errorf("an unknown ticket source is %q", k)
 	}
-	if err := claim(vulnerability.WithTicketInbound(context.Background(), "jira")); err != nil {
-		t.Errorf("a verified Jira move was refused: %v", err)
+	jira := vulnerability.WithTicketInbound(context.Background(), "jira")
+	if k := kind(jira); k != vulnerability.TransitionActorTicket {
+		t.Fatalf("a verified Jira move is %q, want ticket_inbound", k)
+	}
+	a := transitionActor(jira, "", TransitionPermissions{})
+	for _, to := range []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied, vulnerability.FindingStatusInProgress} {
+		if d := vulnerability.EvaluateTransitionRequest(a, to); !d.Allowed {
+			t.Errorf("a ticket may report %s: %+v", to, d)
+		}
+	}
+	for _, to := range []vulnerability.FindingStatus{vulnerability.FindingStatusResolved, vulnerability.FindingStatusFalsePositive} {
+		if d := vulnerability.EvaluateTransitionRequest(a, to); d.Allowed {
+			t.Errorf("a ticket closed a finding: %s", to)
+		}
 	}
 }
 
