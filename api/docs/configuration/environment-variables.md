@@ -379,9 +379,12 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `ADMIN_AUDIT_SINK` | string | empty |  |  | Streams the platform administrators' audit log off the box: every row with its hash-chain position and hash (no request body), and the chain head every `ADMIN_AUDIT_SINK_HEAD_INTERVAL`. `https://collector/path` (one JSON object per POST, `Authorization: Bearer ADMIN_AUDIT_SINK_TOKEN`, no redirects), `syslog+tls://host:6514`, `syslog+tcp://host:514`, `syslog+udp://host:514` (RFC 5424) or `file:///path` (JSON lines, 0600). A destination that cannot be used stops the start-up. Empty: off. |
-| `ADMIN_AUDIT_SINK_TOKEN` | string | empty |  | yes | Bearer token sent to an `https://` `ADMIN_AUDIT_SINK`. |
-| `ADMIN_AUDIT_SINK_HEAD_INTERVAL` | duration | `15m` |  |  | How often the administrators' audit chain head (position and hash) is sent to `ADMIN_AUDIT_SINK`. A later re-signing of the chain cannot match a head already sent. |
+| `ADMIN_AUDIT_SINK` | string | empty |  |  | Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off. |
+| `ADMIN_AUDIT_SINK_SECRET` | string | empty |  | yes | HMAC-SHA256 key that signs each request to an `https://` `ADMIN_AUDIT_SINK` (`X-OpenCTEM-Signature`, `X-OpenCTEM-Timestamp`, `X-OpenCTEM-Batch-Id`). At least 32 bytes, required for https, refused for other destinations. Never logged. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CA_FILE` | path | empty |  |  | PEM bundle that replaces the system roots when verifying a `syslog+tls://` `ADMIN_AUDIT_SINK`. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT` | path | empty |  |  | PEM client certificate presented to a `syslog+tls://` `ADMIN_AUDIT_SINK` (mutual TLS), so the collector can accept only this sender. Set together with `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY`. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY` | path | empty |  |  | PEM private key of `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT`. |
+| `ADMIN_AUDIT_SINK_HEAD_INTERVAL` | duration | `15m` |  |  | How often the administrators' audit chain head (position and hash) and the chain verification state are sent to `ADMIN_AUDIT_SINK` when no row is new. A later re-signing of the chain cannot match a head already sent. |
 | `ADMIN_AUDIT_RETENTION_DAYS` | int | `365` |  |  | Age threshold. At least 30 when deletion is enabled. |
 | `ADMIN_AUDIT_RETENTION_DRY_RUN` | bool | `true` |  |  | Report what would be deleted instead of deleting. Set `false` to enforce retention (irreversible). |
 | `ADMIN_AUDIT_RETENTION_ENABLED` | bool | `true` |  |  | Run the platform admin audit-log retention controller. |
