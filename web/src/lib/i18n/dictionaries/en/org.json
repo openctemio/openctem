@@ -233,5 +233,8 @@
   "org.ownership.error.confirmInternal": "Confirm that this person becomes an internal member.",
   "org.ownership.error.previousRole": "Choose administrator, member or viewer for yourself.",
   "org.ownership.action": "Transfer ownership...",
-  "org.ownership.error.action": "Could not complete this action"
+  "org.ownership.error.action": "Could not complete this action",
+  "org.createTeam.urlNotAvailable": "This URL is not available. Choose another one.",
+  "org.region.new": "Data region: {region}. It is fixed for the organization once created.",
+  "org.region.current": "Data region: {region} (fixed)"
 }
