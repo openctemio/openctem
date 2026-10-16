@@ -31,7 +31,7 @@ publisher (Sigstore keyless) ─────────► artifact
   high-severity admin audit row `content_catalog.trust_override` naming the extra roots and the SHA-256 of the
   replacement trusted root.
 
-## Model (migration 002540)
+## Model (migration 002571)
 
 | Table | What |
 |---|---|
