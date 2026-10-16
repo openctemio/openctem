@@ -57,8 +57,12 @@ type Repository interface {
 	Schedule(ctx context.Context, userID shared.ID, requestedAt, eraseAfter time.Time) error
 	// Get returns when the account will be erased, or ErrNotScheduled.
 	Get(ctx context.Context, userID shared.ID) (time.Time, error)
-	// Cancel removes the request; false when none was pending.
+	// Cancel removes the request unless the erasure already claimed it;
+	// false when nothing was removed.
 	Cancel(ctx context.Context, userID shared.ID) (bool, error)
+	// Claim marks a due request as being erased; false when it is not due
+	// or was canceled. A claimed request can no longer be canceled.
+	Claim(ctx context.Context, userID shared.ID, at time.Time) (bool, error)
 	// Due lists accounts whose grace period ended before t.
 	Due(ctx context.Context, t time.Time, limit int) ([]shared.ID, error)
 	// SoleOwnerOrganizations names the organizations the account is the only
@@ -71,9 +75,10 @@ type Repository interface {
 	ActiveMemberships(ctx context.Context, userID shared.ID) ([]Membership, error)
 	// RevokeAPIKeys revokes the account's API keys in every organization.
 	RevokeAPIKeys(ctx context.Context, userID shared.ID) (int64, error)
-	// EraseAccount anonymises the account (every membership, any status),
-	// removes its second factor, federated identities, sessions and refresh
-	// tokens, and deletes the request, in one transaction.
+	// EraseAccount deletes the claimed request and anonymises the account
+	// (removes its second factor, federated identities, sessions, refresh
+	// tokens and API keys) in one transaction; ErrNotScheduled when no
+	// claimed request exists.
 	EraseAccount(ctx context.Context, userID shared.ID, label string) error
 }
 
@@ -81,7 +86,7 @@ type Repository interface {
 // when the person still owns work the membership is disabled and the
 // organization's administrators are asked to reassign it).
 type Offboarder interface {
-	DeprovisionMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error
+	DeprovisionMemberForAccountErasure(ctx context.Context, membershipID string, actx auditapp.AuditContext) error
 }
 
 // Sessions ends every session of the account.
@@ -129,14 +134,22 @@ func (s *Service) Request(ctx context.Context, userID shared.ID, actx auditapp.A
 	if err := s.repo.Schedule(ctx, userID, now, eraseAfter); err != nil {
 		return time.Time{}, err
 	}
+	// The request stands only when every way in has ended: a failure undoes
+	// it and is reported.
+	undo := func(cause error) (time.Time, error) {
+		if _, cerr := s.repo.Cancel(ctx, userID); cerr != nil {
+			s.log.Error("undo account deletion request", "error", cerr)
+		}
+		return time.Time{}, cause
+	}
 	if s.sessions != nil {
 		if err := s.sessions.RevokeAllSessions(ctx, userID.String(), ""); err != nil {
-			s.log.Warn("end sessions after an account deletion request", "error", err)
+			return undo(fmt.Errorf("end sessions: %w", err))
 		}
 	}
 	// Keys do not come back on cancel: the person creates new ones.
 	if _, err := s.repo.RevokeAPIKeys(ctx, userID); err != nil {
-		return time.Time{}, err
+		return undo(fmt.Errorf("revoke api keys: %w", err))
 	}
 	s.record(ctx, actx, audit.ActionAccountDeletionRequested, userID, "Account deletion requested",
 		map[string]any{"erase_after": eraseAfter.Format(time.RFC3339)})
@@ -182,8 +195,18 @@ func (s *Service) EraseDue(ctx context.Context) (int64, error) {
 }
 
 func (s *Service) erase(ctx context.Context, userID shared.ID) error {
+	// Claim the request first: a sign-in from here on no longer cancels it,
+	// and one that came first leaves nothing to claim.
+	claimed, err := s.repo.Claim(ctx, userID, s.now().UTC())
+	if err != nil {
+		return err
+	}
+	if !claimed {
+		return nil
+	}
 	// Someone who became the only owner during the grace period is not
-	// erased: the organization would be left without an owner.
+	// erased: the organization would be left without an owner. The claim
+	// stays; the next run tries again.
 	orgs, err := s.repo.SoleOwnerOrganizations(ctx, userID)
 	if err != nil {
 		return err
@@ -197,11 +220,10 @@ func (s *Service) erase(ctx context.Context, userID shared.ID) error {
 	}
 	for _, m := range members {
 		actx := auditapp.AuditContext{TenantID: m.TenantID.String(), ActorEmail: "account-deletion"}
-		// Best effort: an owner (one of several) is not offboarded and a
-		// failure is logged; the erasure below still ends every way in
-		// (inactive account, sessions, refresh tokens and API keys revoked).
-		if err := s.offboard.DeprovisionMember(ctx, m.MembershipID, actx); err != nil && !errors.Is(err, shared.ErrNotFound) {
-			s.log.Warn("offboard an account being erased", "tenant_id", m.TenantID.String(), "error", err)
+		// A failure stops this account's erasure; the next run retries
+		// (offboarding an already offboarded membership is a no-op).
+		if err := s.offboard.DeprovisionMemberForAccountErasure(ctx, m.MembershipID, actx); err != nil && !errors.Is(err, shared.ErrNotFound) {
+			return fmt.Errorf("offboard from %s: %w", m.TenantID, err)
 		}
 	}
 	if err := s.repo.EraseAccount(ctx, userID, s.label(userID)); err != nil {

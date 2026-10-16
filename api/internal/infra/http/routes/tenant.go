@@ -311,7 +311,7 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 		// Leaving the organization of the credential (RFC-104): any member,
 		// for themselves only.
 		router.Group("/api/v1/organization/leave", func(r Router) {
-			r.POST("/", tenantH.LeaveOrganization, middleware.Require(permission.TeamRead))
+			r.POST("/", tenantH.LeaveOrganization, middleware.Require(permission.TeamRead), requireStepUp())
 		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 	}
 	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {

@@ -6,7 +6,9 @@
 CREATE TABLE account_deletions (
     user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     requested_at timestamp with time zone NOT NULL DEFAULT now(),
-    erase_after timestamp with time zone NOT NULL
+    erase_after timestamp with time zone NOT NULL,
+    -- Set when the erasure takes the request: signing in no longer cancels.
+    claimed_at timestamp with time zone
 );
 
 CREATE INDEX idx_account_deletions_erase_after ON account_deletions (erase_after);

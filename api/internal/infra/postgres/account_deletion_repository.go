@@ -50,9 +50,21 @@ func (r *AccountDeletionRepository) Get(ctx context.Context, userID shared.ID) (
 
 // Cancel removes the request.
 func (r *AccountDeletionRepository) Cancel(ctx context.Context, userID shared.ID) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `DELETE FROM account_deletions WHERE user_id = $1`, userID.String())
+	res, err := r.db.ExecContext(ctx, `DELETE FROM account_deletions WHERE user_id = $1 AND claimed_at IS NULL`, userID.String())
 	if err != nil {
 		return false, fmt.Errorf("cancel account deletion: %w", err)
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// Claim marks a due request as being erased.
+func (r *AccountDeletionRepository) Claim(ctx context.Context, userID shared.ID, at time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE account_deletions SET claimed_at = COALESCE(claimed_at, $2)
+		 WHERE user_id = $1 AND erase_after < $2`, userID.String(), at)
+	if err != nil {
+		return false, fmt.Errorf("claim account deletion: %w", err)
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
@@ -151,6 +163,14 @@ func (r *AccountDeletionRepository) RevokeAPIKeys(ctx context.Context, userID sh
 // transaction.
 func (r *AccountDeletionRepository) EraseAccount(ctx context.Context, userID shared.ID, label string) error {
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		// Only a claimed request is carried out.
+		res, err := tx.ExecContext(ctx, `DELETE FROM account_deletions WHERE user_id = $1 AND claimed_at IS NOT NULL`, userID.String())
+		if err != nil {
+			return fmt.Errorf("take account deletion: %w", err)
+		}
+		if n, rerr := res.RowsAffected(); rerr != nil || n == 0 {
+			return accountdeletion.ErrNotScheduled
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE users
 			SET name = $2, email = $3, avatar_url = NULL, phone = NULL, preferences = '{}'::jsonb,
@@ -170,7 +190,6 @@ func (r *AccountDeletionRepository) EraseAccount(ctx context.Context, userID sha
 			// The person's own API keys stop working in every organization.
 			`UPDATE api_keys SET status = 'revoked', revoked_at = NOW(), updated_at = NOW()
 			  WHERE user_id = $1 AND status <> 'revoked'`,
-			`DELETE FROM account_deletions WHERE user_id = $1`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, userID.String()); err != nil {
 				return fmt.Errorf("erase account: %w", err)
