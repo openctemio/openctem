@@ -8,9 +8,10 @@ package versioncheck
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/rand/v2"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -125,7 +126,11 @@ func New(repo Repository, cfg Config, log *logger.Logger) *Service {
 			if max <= 0 {
 				return 0
 			}
-			return time.Duration(rand.Int64N(int64(max))) // #nosec G404 -- schedule jitter, not security
+			n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+			if err != nil {
+				return 0
+			}
+			return time.Duration(n.Int64())
 		}
 	}
 	return &Service{repo: repo, cfg: cfg, logger: log.With("component", "version-check")}

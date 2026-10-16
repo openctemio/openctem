@@ -83,7 +83,8 @@ func (h *AdminVersionCheckHandler) Import(w http.ResponseWriter, r *http.Request
 	switch {
 	case errors.As(err, &ie):
 		h.audit(r, actor, http.StatusBadRequest, nil, ie.Code)
-		h.logger.Info("release feed import refused", "reason", ie.Code, "error", logger.SanitizeError(err))
+		// Only the code: the error text can quote the uploaded file.
+		h.logger.Info("release feed import refused", "reason", ie.Code)
 		apierror.New(http.StatusBadRequest, apierror.Code("RELEASE_FEED_"+strings.ToUpper(ie.Code)), importMessage(ie.Code)).WriteJSON(w)
 		return
 	case err != nil:
