@@ -377,9 +377,9 @@ function PolicyState({ factors }: { factors: ConsoleFactors }) {
 
 function StatusDot({ ok }: { ok: boolean }) {
   return ok ? (
-    <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+    <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden />
   ) : (
-    <ShieldAlert className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+    <ShieldAlert className="size-4 shrink-0 text-warning" aria-hidden />
   )
 }
 
