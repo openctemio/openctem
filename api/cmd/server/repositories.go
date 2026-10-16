@@ -228,9 +228,13 @@ type Repositories struct {
 	Plan            *postgres.PlanRepository
 	IdleLifecycle   *postgres.IdleLifecycleRepository
 	AdminAuditLog   *postgres.AuditLogRepository
-	AdminOrg        *postgres.AdminOrganizationRepository
-	AdminConsole    *postgres.AdminConsoleRepository
-	PlatformIdP     *postgres.PlatformIdPRepository
+	// SupportAccess stores support grants and sessions; SupportRead is the
+	// read model a support session sees (RFC-063).
+	SupportAccess *postgres.SupportAccessRepository
+	SupportRead   *postgres.SupportReadRepository
+	AdminOrg      *postgres.AdminOrganizationRepository
+	AdminConsole  *postgres.AdminConsoleRepository
+	PlatformIdP   *postgres.PlatformIdPRepository
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -526,6 +530,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Plan:            postgres.NewPlanRepository(db),
 		IdleLifecycle:   postgres.NewIdleLifecycleRepository(db),
 		AdminAuditLog:   postgres.NewAuditLogRepository(db),
+		SupportAccess:   postgres.NewSupportAccessRepository(db),
+		SupportRead:     postgres.NewSupportReadRepository(db),
 		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:    postgres.NewAdminConsoleRepository(db),
 		PlatformIdP:     postgres.NewPlatformIdPRepository(db),

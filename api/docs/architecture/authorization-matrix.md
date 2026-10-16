@@ -895,6 +895,29 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 
+#### Support access (RFC-063)
+
+A platform administrator never holds standing access to an organization's
+data. The only path is a **support grant**: an owner (with a recent
+re-authentication) names one active `ops_admin` or `super_admin` by email,
+for 1 to 72 hours, read-only, with a reason and the data scopes (`findings`,
+`assets`). Owners and admins list and revoke grants under
+`/api/v1/organization/support-access`; every member reads the active ones.
+
+- The named administrator opens a support session from the console
+  (`POST /api/v1/admin/support/grants/{grant_id}/sessions`, route-level
+  step-up); the session is bound to that console session.
+- Reads (`/api/v1/admin/support/sessions/{session_id}/…`) are resolved live on
+  every request: open session, same administrator and console session, grant
+  not revoked and unexpired (server clock), scope granted. Otherwise 403
+  `SUPPORT_GRANT_REQUIRED`. There is no write route.
+- Every read is written to the organization's audit log (`support.accessed`,
+  actor `support:<email>`) and to the admin audit log before data is returned;
+  if either write fails the read is refused.
+- The read model selects an explicit column allow-list (no messages,
+  snippets, descriptions, evidence, secrets or people), is scoped to the
+  grant's organization, and hides private-program assets and their findings.
+
 #### Break-glass administrators and the platform IdP (RFC-022 revision 4)
 
 - **Platform IdP** (`platform_identity_provider`, one OIDC provider, not
