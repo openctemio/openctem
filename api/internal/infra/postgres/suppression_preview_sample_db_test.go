@@ -98,3 +98,39 @@ func TestSuppressionPreviewSample_RespectsDataScope_DB(t *testing.T) {
 		}
 	}
 }
+
+// The message of a secret finding can quote the secret: the preview sample
+// carries the rule id and path, never the message.
+func TestSuppressionPreviewSample_NeverCarriesASecretMessage_DB(t *testing.T) {
+	ctx := context.Background()
+	db := openGroupsDB(t)
+	repo := NewSuppressionRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	requester := seedGroupsUser(ctx, t, db, "supp.sample.req2")
+	approver := seedGroupsUser(ctx, t, db, "supp.sample.appr2")
+	asset := seedOwnedAsset(ctx, t, db, tenant, nil)
+	rule, _ := newPendingRule(ctx, t, repo, tenant, requester, approver, suppression.SuppressionTypeFalsePositive, func(r *suppression.Rule) {
+		r.SetRuleIDPattern("leak.rule")
+	})
+	secret := seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: asset, rule: "leak.rule", path: "s.go", source: "secret"})
+	plain := seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: asset, rule: "leak.rule", path: "p.go"})
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET message = 'token AKIA-REAL-VALUE found' WHERE id = ANY($1::uuid[])`,
+		"{"+secret.String()+","+plain.String()+"}"); err != nil {
+		t.Fatal(err)
+	}
+	all := func(_ context.Context, _ shared.ID, _ []shared.ID) (func(shared.ID) bool, error) {
+		return func(shared.ID) bool { return true }, nil
+	}
+	_, sample, err := repo.SampleMatchingOpenFindings(ctx, rule, all, suppression.MaxFindingsAppliedOnApprove, 10)
+	if err != nil || len(sample) != 2 {
+		t.Fatalf("sample = %d, %v", len(sample), err)
+	}
+	for _, f := range sample {
+		if f.ID == secret && (f.Title != "" || f.RuleID != "leak.rule" || f.FilePath != "s.go") {
+			t.Errorf("secret sample = %+v: no message, but rule and path", f)
+		}
+		if f.ID == plain && f.Title == "" {
+			t.Errorf("a plain finding lost its message: %+v", f)
+		}
+	}
+}
