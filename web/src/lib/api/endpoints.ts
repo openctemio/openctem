@@ -1724,6 +1724,11 @@ export const scanEndpoints = {
    */
   workflowPreview: () => `${API_BASE.SCANS}/workflow-preview`,
 
+  /**
+   * What a quick scan of the typed targets would do before it starts
+   */
+  quickScanPreview: () => `${API_BASE.SCANS}/quick/preview`,
+
   // ============================================
   // BULK OPERATIONS
   // ============================================

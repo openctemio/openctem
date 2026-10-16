@@ -38,6 +38,7 @@ import { invalidateScanConfigsCache, useSaveQuickScan } from '@/lib/api/scan-hoo
 import { ScannerSelect } from './scanner-select'
 import { PasteSource } from './target-picker/paste-source'
 import { SelectionSummary } from './target-picker/selection-summary'
+import { QuickScanPreviewPanel } from './quick-scan-preview'
 import { parsePastedTargets } from '../lib/target-format'
 import { enTranslate, type Translate } from '../lib/translate'
 import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
@@ -67,6 +68,17 @@ export function defaultSaveName(
   return `${scanner} — ${targets[0]}${more}`
 }
 
+/** User-terms text for a refusal the API reports by code; else the server's text. */
+export function quickScanErrorText(error: unknown, t: Translate, fallback: string): string {
+  const code = (error as { code?: unknown } | null)?.code
+  if (typeof code === 'string') {
+    const key = `scans.quick.err.${code}`
+    const text = t(key, '')
+    if (text && text !== key) return text
+  }
+  return getErrorMessage(error, fallback)
+}
+
 export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDialogProps) {
   const { t } = useTranslation()
   const [targets, setTargets] = useState<string[]>([])
@@ -85,12 +97,14 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
   const pasted = useMemo(() => parsePastedTargets(targets), [targets])
   const targetList = pasted.targets
 
-  const handleSubmit = async () => {
-    if (targetList.length === 0) {
+  const handleSubmit = async (override?: { targets: string[]; scanner: string }) => {
+    const sendTargets = override?.targets ?? targetList
+    const sendScanner = override?.scanner ?? scannerName
+    if (sendTargets.length === 0) {
       toast.error(t('scans.quick.needTarget'))
       return
     }
-    if (!scannerName) {
+    if (!sendScanner) {
       toast.error(t('scans.err.scanner'))
       return
     }
@@ -98,11 +112,11 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
     setIsSubmitting(true)
     setRefused([])
     try {
-      const result = await quickScan({ targets: targetList, scanner_name: scannerName })
-      toast.success(t('scans.quick.started', undefined, { count: targetList.length }))
+      const result = await quickScan({ targets: sendTargets, scanner_name: sendScanner })
+      toast.success(t('scans.quick.started', undefined, { count: sendTargets.length }))
       await Promise.all([invalidateScanRunsCache(), invalidateScanManagementStatsCache()])
       setStarted(result ?? null)
-      setSaveName(defaultSaveName(scannerName, targetList, t))
+      setSaveName(defaultSaveName(sendScanner, sendTargets, t))
       onSuccess?.()
     } catch (error) {
       const scopeRefused = refusedFromError(error)
@@ -110,7 +124,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
         setRefused(scopeRefused)
         return
       }
-      toast.error(getErrorMessage(error, t('scans.quick.startFailed')))
+      toast.error(quickScanErrorText(error, t, t('scans.quick.startFailed')))
     } finally {
       setIsSubmitting(false)
     }
@@ -229,6 +243,16 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
                   groupCount={0}
                   invalidCount={pasted.invalid.length}
                   scannerName={scannerName}
+                  review={
+                    <QuickScanPreviewPanel
+                      targets={targetList}
+                      scannerName={scannerName}
+                      discovering={isSubmitting}
+                      onDiscover={(tool, root) => {
+                        void handleSubmit({ targets: [root], scanner: tool })
+                      }}
+                    />
+                  }
                 />
               )}
             </DialogBody>
@@ -238,7 +262,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
                 {t('common.cancel')}
               </Button>
               <Button
-                onClick={handleSubmit}
+                onClick={() => void handleSubmit()}
                 disabled={
                   isSubmitting ||
                   targetList.length === 0 ||
