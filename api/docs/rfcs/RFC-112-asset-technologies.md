@@ -72,7 +72,11 @@ fixed list the console can group and filter on.
   caller's data scope; both misses answer 404.
 - `GET /api/v1/assets?technology=nginx,next.js&technology_category=cdn,hosting`: assets using any of the
   named technologies (normalised names, at most 20) and assets with any technology in the categories.
-  Both are tenant- and data-scope-filtered like every other list filter.
+  Both are tenant- and data-scope-filtered like every other list filter. Unknown categories are
+  ignored.
+- `GET /api/v1/assets/technologies?q=&category=&limit=` (`assets:read`): the filter's options, the
+  technologies on the assets the caller may list (the list's data-scope predicate), most used first,
+  with category and asset count. `q` is a name substring (at most 128 characters), `limit` 1-100.
 
 ## 5. Security
 
@@ -113,4 +117,5 @@ kept asset's row for a name. `asset_technology_backfill` records the tenants the
 | 1 | model, ingest, read endpoint | #2413 |
 | 2 | backfill and cleanup of non-software component links | #2415 |
 | 3 | one store: rows are the reconciled set, property retired, responses embed technologies | #2425 |
-| 4 | console: Technologies section and tab, Software tab wording and empty state, tab overflow, default zone hidden | open |
+| 4 | console: Technologies section and tab, Software tab wording and empty state, tab overflow, default zone hidden | #2427 |
+| 5 | filters: API (`technology`, `technology_category`, facets endpoint) and the inventory filter section | open |

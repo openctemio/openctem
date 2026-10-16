@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -215,4 +216,58 @@ func dedupTechnologies(in []assettech.Technology) []assettech.Technology {
 		out[i] = t
 	}
 	return out
+}
+
+// Facets returns the technologies on the tenant's assets the access scope
+// admits (the same predicate as the asset list, so a scoped user never sees
+// a name only an asset outside their scope carries), most used first. q
+// filters names by substring (case-insensitive), category by category.
+func (r *AssetTechnologyRepository) Facets(ctx context.Context, tenantID shared.ID, access asset.AccessScope,
+	q string, category assettech.Category, limit int,
+) ([]assettech.Facet, error) {
+	if limit <= 0 || limit > assettech.MaxFacets {
+		limit = assettech.MaxFacets
+	}
+	where := "t.tenant_id = $1 AND a.deleted_at IS NULL"
+	args := []any{tenantID.String()}
+	idx := 2
+	if k := assettech.Key(q); k != "" {
+		where += fmt.Sprintf(` AND t.name_key LIKE $%d ESCAPE '\'`, idx)
+		args = append(args, wrapLikePattern(k))
+		idx++
+	}
+	if category.IsValid() {
+		where += fmt.Sprintf(" AND t.category = $%d", idx)
+		args = append(args, string(category))
+		idx++
+	}
+	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), idx); cond != "" {
+		where += " AND " + cond
+		args = append(args, scopeArgs...)
+		idx += len(scopeArgs)
+	}
+	args = append(args, limit)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT t.name_key, min(t.name), mode() WITHIN GROUP (ORDER BY t.category), count(DISTINCT t.asset_id)
+		  FROM asset_technologies t
+		  JOIN assets a ON a.tenant_id = t.tenant_id AND a.id = t.asset_id
+		 WHERE %s
+		 GROUP BY t.name_key
+		 ORDER BY count(DISTINCT t.asset_id) DESC, t.name_key
+		 LIMIT $%d`, where, idx), args...)
+	if err != nil {
+		return nil, fmt.Errorf("technology facets: %w", err)
+	}
+	defer rows.Close()
+	out := []assettech.Facet{}
+	for rows.Next() {
+		var f assettech.Facet
+		var cat string
+		if err := rows.Scan(&f.Key, &f.Name, &cat, &f.AssetCount); err != nil {
+			return nil, fmt.Errorf("scan technology facet: %w", err)
+		}
+		f.Category = assettech.Category(cat)
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
