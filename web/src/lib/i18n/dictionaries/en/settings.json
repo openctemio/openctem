@@ -365,5 +365,7 @@
   "settings.mcp.connectDescription": "Add this server to your MCP client. On first use it opens {product} in your browser: you sign in, choose what it may read, and approve. No key to copy; you can disconnect it any time in My account, Connected applications.",
   "settings.mcp.otherHost": "If your {product} API is on a different host, replace the URL accordingly.",
   "settings.mcp.consentTitle": "Connect {client} to {product}?",
-  "settings.mcp.consentConfirmEach": "Each change still asks you to confirm it in {product}."
+  "settings.mcp.consentConfirmEach": "Each change still asks you to confirm it in {product}.",
+  "settings.item.finding-approvals": "Finding approvals",
+  "settings.desc.finding-approvals": "Who decides false positives and accepted risks, and who is told."
 }
