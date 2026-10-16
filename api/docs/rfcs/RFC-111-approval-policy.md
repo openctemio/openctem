@@ -68,7 +68,10 @@ most needs more than accepting it elsewhere.
 
 The **sole member** of an organization (exactly one active person) keeps the existing own-approval path
 (fresh authenticator code, reason, halved acceptance caps, alerts). It is the only way a person approves
-their own request, and it is not a tier: it is refused while a second eligible person exists.
+their own request, and it is not a tier: it is refused while a second active person exists, whether or not
+that person holds the approve permission (taking the permission from the others does not open it). This holds
+for suppression rules too. A rule that matches more open findings than the approval cap is refused as too
+broad: its tier and the asset owners are read from every finding it matches, never a sample.
 
 ### 3.1 Floors and defaults
 

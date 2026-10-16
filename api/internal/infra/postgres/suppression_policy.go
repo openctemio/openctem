@@ -109,10 +109,19 @@ func (r *SuppressionRepository) ApproveWithSignoff(ctx context.Context, rule *su
 // their assets and of the rule's asset, and the members who may approve
 // rules (owners, administrators, and roles with
 // findings:suppressions:approve, active memberships).
+//
+// The tier and the owners must come from every finding the rule matches, not
+// a sample: a sample could miss the one critical finding or the one asset
+// owner. A rule that matches more than limit open findings is refused as too
+// broad (the caller narrows it) rather than judged on part of what it hides.
 func (r *SuppressionRepository) RulePolicyInputs(ctx context.Context, rule *suppression.Rule, limit int) ([]approvalpolicy.Facts, []shared.ID, []shared.ID, error) {
-	ids, err := matchingOpenFindings(ctx, r.db, rule, limit)
+	ids, err := matchingOpenFindings(ctx, r.db, rule, limit+1)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if len(ids) > limit {
+		return nil, nil, nil, fmt.Errorf("%w: this rule matches more than %d open findings; narrow it (a tool, a rule id, a path or an asset) so its approvers can judge all of them",
+			shared.ErrValidation, limit)
 	}
 	tenant := rule.TenantID().String()
 	facts, err := r.findingFacts(ctx, tenant, ids)
