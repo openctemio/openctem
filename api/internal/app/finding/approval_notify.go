@@ -299,3 +299,149 @@ func (s *VulnerabilityService) NotifyApprovalSettingsChanged(ctx context.Context
 		}
 	}
 }
+
+// maxVEXNoticeFindings bounds one VEX notice: how many findings are read
+// for titles and how many titles are named.
+const (
+	maxVEXNoticeFindings = 1000
+	maxVEXNoticeTitles   = 5
+)
+
+// NotifyVEXRequests tells the approvers about the false-positive requests
+// VEX statements in one scan report made (a platform actor requested them;
+// nobody is excluded as requester). Batched: each approver gets one in-app
+// notice and one email per report, counting only the findings in their own
+// data scope and naming at most a few of their titles; an approver who can
+// see none of them is not told. Best effort: the requests exist already.
+func (s *VulnerabilityService) NotifyVEXRequests(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) {
+	if s.approverDir == nil || len(findingIDs) == 0 {
+		return
+	}
+	if len(findingIDs) > maxVEXNoticeFindings {
+		findingIDs = findingIDs[:maxVEXNoticeFindings]
+	}
+	approvers, err := s.approverDir.FindingApprovers(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("vex notice: list approvers", "error", logger.SanitizeError(err))
+		return
+	}
+	findings, err := s.findingRepo.GetByIDs(ctx, tenantID, findingIDs)
+	if err != nil {
+		s.logger.Warn("vex notice: read findings", "error", logger.SanitizeError(err))
+		return
+	}
+	titles := make(map[shared.ID]string, len(findings))
+	for _, f := range findings {
+		if f.TenantID() == tenantID {
+			titles[f.ID()] = f.Title()
+		}
+	}
+	for _, ap := range approvers {
+		uid, err := shared.IDFromString(ap.UserID)
+		if err != nil {
+			continue
+		}
+		visible := s.findingsVisibleTo(ctx, tenantID, uid, findingIDs)
+		if len(visible) == 0 {
+			continue
+		}
+		names := make([]string, 0, maxVEXNoticeTitles)
+		for _, id := range visible {
+			if t := oneLineTitle(titles[id]); t != "" && len(names) < maxVEXNoticeTitles {
+				names = append(names, t)
+			}
+		}
+		title := fmt.Sprintf("%d false-positive request(s) from VEX statements await a decision", len(visible))
+		body := "A VEX statement in a scan report says the component is not affected; a person decides."
+		if len(names) > 0 {
+			body += " " + strings.Join(names, "; ")
+			if len(visible) > len(names) {
+				body += fmt.Sprintf(" and %d more", len(visible)-len(names))
+			}
+			body += "."
+		}
+		if s.approvalInApp != nil {
+			if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
+				TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
+				NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+				Severity: notificationdom.SeverityMedium, ResourceType: "finding", URL: approvalInboxURL,
+			}); err != nil {
+				s.logger.Warn("vex notice: in-app", "error", logger.SanitizeError(err))
+			}
+		}
+		if s.approvalMail != nil && ap.Email != "" {
+			s.approvalMail.SendFindingApprovalMail(ctx, tenantID.String(), []string{ap.Email}, "[Findings] "+title,
+				s.vexMailBody(len(visible), names))
+		}
+	}
+}
+
+// findingsVisibleTo keeps the findings in the user's data scope. Without a
+// data-scope enforcer none is visible (fail closed): a notice must never
+// name a finding nobody checked the recipient may see.
+func (s *VulnerabilityService) findingsVisibleTo(ctx context.Context, tenantID, userID shared.ID, ids []shared.ID) []shared.ID {
+	if s.dataScope == nil {
+		return nil
+	}
+	scope, err := s.dataScope.ForUser(ctx, tenantID, userID)
+	if err != nil {
+		s.logger.Warn("vex notice: data scope", "error", logger.SanitizeError(err))
+		return nil
+	}
+	in, err := s.dataScope.FilterFindings(ctx, scope, ids)
+	if err != nil {
+		s.logger.Warn("vex notice: data scope", "error", logger.SanitizeError(err))
+		return nil
+	}
+	out := make([]shared.ID, 0, len(ids))
+	for _, id := range ids {
+		if in(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// vexMailBody is the email of a VEX batch: the count and the titles the
+// approver can see, escaped; the link only opens the inbox.
+func (s *VulnerabilityService) vexMailBody(n int, titles []string) string {
+	link := s.webBaseURL + approvalInboxURL
+	var items strings.Builder
+	for _, t := range titles {
+		items.WriteString("<li>" + html.EscapeString(t) + "</li>")
+	}
+	list := ""
+	if items.Len() > 0 {
+		list = "<ul>" + items.String() + "</ul>"
+	}
+	return fmt.Sprintf(`<p>VEX statements in a scan report requested %d false positive(s) you may decide.</p>%s
+<p>A person must approve or reject each one. Review them: <a href="%s">%s</a> (sign-in required).</p>`,
+		n, list, html.EscapeString(link), html.EscapeString(link))
+}
+
+// vexNoticeOutbox claims the VEX requests nobody was told about yet
+// (*postgres.FindingApprovalRepository).
+type vexNoticeOutbox interface {
+	ClaimUnnotifiedVEXRequests(ctx context.Context, limit int) (map[shared.ID][]shared.ID, error)
+}
+
+// DispatchVEXRequestNotices sends the batched notices for the requests VEX
+// statements made since the last run: one per tenant and approver. Called by
+// a background job, never on the ingest path. It answers how many requests
+// it announced.
+func (s *VulnerabilityService) DispatchVEXRequestNotices(ctx context.Context) (int, error) {
+	outbox, ok := s.approvalRepo.(vexNoticeOutbox)
+	if !ok || s.approverDir == nil {
+		return 0, nil
+	}
+	byTenant, err := outbox.ClaimUnnotifiedVEXRequests(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for tid, ids := range byTenant {
+		s.NotifyVEXRequests(ctx, tid, ids)
+		n += len(ids)
+	}
+	return n, nil
+}
