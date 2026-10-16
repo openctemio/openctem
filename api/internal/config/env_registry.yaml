@@ -1580,6 +1580,12 @@ vars:
     type: int
     default: "400"
     description: "Days the asset change timeline keeps events. Minimum 30."
+  - name: ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY
+    component: api
+    group: "Audit log retention"
+    type: bool
+    default: "true"
+    description: "The asset technology backfill logs the component links it would remove (a count and a sample) instead of deleting them. Set `false` to delete links that have no version and no CPE; each deleted link is recorded."
   - name: INVITATION_PURGE_INTERVAL
     component: api
     group: "Audit log retention"

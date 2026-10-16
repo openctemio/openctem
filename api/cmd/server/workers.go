@@ -585,7 +585,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// them and drop the component links ingest no longer creates.
 	w.ControllerManager.Register(controller.NewAssetTechnologyBackfillController(
 		assettechapp.NewBackfill(repos.AssetTechnologyBackfill,
-			log.With("controller", "asset-technology-backfill")),
+			log.With("controller", "asset-technology-backfill"), cfg.Worker.AssetTechnologyBackfillReportOnly),
 	))
 
 	w.ControllerManager.Register(controller.NewScopeReconciliationController(
