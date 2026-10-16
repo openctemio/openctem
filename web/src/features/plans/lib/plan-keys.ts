@@ -17,6 +17,8 @@ export const PLAN_KEYS = [
   'platform_scans_concurrent',
   'free_teams_per_user',
   'findings',
+  'lifecycle_sub_statuses',
+  'lifecycle_schemes',
 ] as const
 export type PlanKey = (typeof PLAN_KEYS)[number]
 
@@ -40,6 +42,8 @@ export const PLAN_KEY_LABEL: Record<PlanKey, string> = {
   platform_scans_concurrent: 'Concurrent platform scans',
   free_teams_per_user: 'Free organizations per person',
   findings: 'Findings',
+  lifecycle_sub_statuses: 'Finding sub-statuses',
+  lifecycle_schemes: 'Finding lifecycles',
 }
 
 /** Keys that describe a person or the platform rather than this organization's usage. */

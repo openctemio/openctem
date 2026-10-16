@@ -116,10 +116,13 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `PATCH /api/v1/tenants/{tenant}/settings/security`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
 - `DELETE /api/v1/tenants/{tenant}`
+- `DELETE /api/v1/me/account`
+- `POST /api/v1/organization/leave`
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
 - `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
 - `PATCH /api/v1/attachments/storage-config`
+- `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` (finding lifecycles, RFC-110)
 
 Some changes need it only in one case, decided by the service through the
 same check (`shared.RecentAuthGate`): making someone an administrator or an
@@ -217,6 +220,22 @@ and SBOM import write it.
 > self-verify their own fix (AUTHZ B1, api#505). Migration `000217` backfilled the
 > four granular perms onto every role that already held `findings:write`, so the
 > tightening is honest-not-breaking: nobody lost an action they could perform before.
+
+#### Finding lifecycles (`/api/v1/lifecycle-sub-statuses`, `/api/v1/lifecycles`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/lifecycle-sub-statuses`, `GET /api/v1/lifecycles` · `/{id}` · `/{id}/versions` · `/{id}/versions/{version_id}` | `findings:read` |
+| `POST /api/v1/lifecycle-sub-statuses` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/reactivate` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/versions` · `PUT /{id}/versions/{version_id}` · `POST /{id}/versions/{version_id}/test` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up |
+
+> Organization configuration (no finding data), tenant from the token; another
+> organization's sub-status, lifecycle or version is 404. A lifecycle can only
+> add constraints to the status moves the platform allows
+> ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)); `findings:lifecycles:write`
+> is granted to owners and administrators by default (migration
+> `finding_lifecycles_permission`).
 
 #### Exposures (`/api/v1/exposures`)
 
@@ -661,6 +680,8 @@ These routes require the tenant ID in the URL path and use database-based member
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
 | `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
+| `POST /api/v1/organization/leave` | any member (`team:read`) + **step-up**, for themselves in the credential's organization; refused for the only owner (RFC-104) |
+| `DELETE /api/v1/me/account` | the caller's own account + **step-up**; refused while the caller is the only owner of an organization (RFC-104) |
 
 > **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
 > B3). Changing the role of, suspending, reactivating or removing a member who
@@ -850,6 +871,8 @@ is still accepted and checked the same way).
 | `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
+| `GET /api/v1/admin/version-check/` | any admin (release feed status: newer releases, advisories affecting the running version; instance-level, no tenant data; `docs/architecture/version-check.md`) |
+| `POST /api/v1/admin/version-check/import` | **super_admin** + **step-up** (offline import of the signed release feed file, verified like a fetched one; audited high) |
 | `GET /api/v1/admin/tenants/{tenantId}/audit-chain` | any admin (classifies the organization's audit hash-chain; read-only) |
 | `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` | **super_admin** + a fresh console TOTP code in the body (step-up; a wrong code counts toward lockout). Refused 409 when a break is unexplained or the chain changed since the reviewed classification. Audited high in `admin_audit_logs` and as `audit.chain_rebaselined` in the organization's log |
 
@@ -1438,7 +1461,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
 | `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
 | `POST /remediation/campaigns/{id}/resolve` (gate and filter) | `findings:remediation:write` alone could mark findings fixed; an unparseable condition was dropped and a status-only filter counted as scope, widening a resolve to the organization | `RequireAll(findings:remediation:write, findings:fix_apply)`; the filter is parsed strictly (400 on save, 400 on resolve of an old unparseable one), a status alone is not scope, only `active`/`validating` campaigns resolve |
-| `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision or accept needs every finding in scope (a join also every finding of the target task) |
+| `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision or accept needs every finding in scope (a join also every finding of the target task); `POST /{id}/approve` is gated on `findings:remediation:read`: without `findings:remediation:write` only an as-is join or task route to the caller (or their group) on assets they own (primary/secondary) is accepted, 403 otherwise |
 | `GET /remediation/actions/{id}` (RFC-098) | — | a restricted member reads an action only when they can see one of its tasks; otherwise 404 |
 | `PATCH /remediation/actions/{id}` (auto-join, RFC-098) | — | needs a caller with no data-scope restriction (the rule acts on findings beyond any scope) |
 | `/remediation/moves*`, `/remediation/tasks/{id}/splits|merges` (RFC-098) | — | every task involved must have all its findings in the caller's scope, and every named finding too (404 otherwise); another tenant's task is 404 |

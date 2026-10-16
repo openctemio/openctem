@@ -8,6 +8,7 @@
  * never returns a GitLab token.
  */
 
+import { useDocsHref } from '@/context/brand-provider'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ExternalLink, GitPullRequest, Plus, Trash2 } from 'lucide-react'
@@ -44,6 +45,7 @@ import {
 type Pending = { kind: 'github' | 'gitlab'; id: string; label: string } | null
 
 export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
+  const docsHref = useDocsHref()
   const { t } = useTranslation()
   const { data, isLoading, mutate } = useSCMApps()
   const { trigger: installURL, isMutating: starting } = useGitHubInstallURL()
@@ -76,7 +78,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
       <p className="max-w-3xl text-sm text-muted-foreground">
         {t(
           'scans.ci.feedback.description',
-          'OpenCTEM posts each verdict as the "OpenCTEM gate" check (GitHub) or commit status (GitLab) and keeps one comment on the pull or merge request. The check of a commit takes the strictest verdict of every pipeline on it. Make the check required in branch protection and set its expected source to the OpenCTEM app: any other source, such as a workflow\'s own token, could post a check with the same name.'
+          '{product} posts each verdict as the "OpenCTEM gate" check (GitHub) or commit status (GitLab) and keeps one comment on the pull or merge request. The check of a commit takes the strictest verdict of every pipeline on it. Make the check required in branch protection and set its expected source to the {product} app: any other source, such as a workflow\'s own token, could post a check with the same name.'
         )}
       </p>
 
@@ -99,7 +101,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
                     'This deployment has no GitHub App yet. An operator registers it; then install it here.'
                   )}{' '}
                   <SafeExternalLink
-                    href={DOCS.ci.githubApp}
+                    href={docsHref(DOCS.ci.githubApp)}
                     className="text-primary underline-offset-4 hover:underline"
                   >
                     {t('scans.ci.feedback.githubGuide', 'GitHub App guide')}
@@ -172,7 +174,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
             <CardDescription>
               {t(
                 'scans.ci.feedback.gitlabDescription',
-                'A group access token (Developer role, api scope) lets OpenCTEM set the commit status and comment on merge requests of the group. The token is stored encrypted and never shown again.'
+                'A group access token (Developer role, api scope) lets {product} set the commit status and comment on merge requests of the group. The token is stored encrypted and never shown again.'
               )}
             </CardDescription>
           </div>

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,6 +60,9 @@ type Config struct {
 	// AdminAuditRetention controls pruning of the platform-level
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
+
+	// AdminAuditSink streams the administrators' audit log off the box.
+	AdminAuditSink AdminAuditSinkConfig
 
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
 	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
@@ -182,6 +186,21 @@ type AdminAuditRetentionConfig struct {
 	BatchSize int
 }
 
+// AdminAuditSinkConfig sends every administrators' audit row (with its chain
+// position and hash) and the chain head to a destination outside the
+// application database.
+type AdminAuditSinkConfig struct {
+	// URL is the destination: https://..., syslog+tls://host:port,
+	// syslog+tcp://host:port, syslog+udp://host:port or file:///path.
+	// ADMIN_AUDIT_SINK; empty = off.
+	URL string
+	// Token is the webhook's Bearer token. ADMIN_AUDIT_SINK_TOKEN.
+	Token string
+	// HeadInterval is how often the chain head is sent.
+	// ADMIN_AUDIT_SINK_HEAD_INTERVAL, default 15m.
+	HeadInterval time.Duration
+}
+
 // MetricsConfig controls exposure of the Prometheus /metrics endpoint.
 //
 // SECURITY: /metrics leaks internal cardinality (route names, error rates,
@@ -301,6 +320,10 @@ type AppConfig struct {
 	// administrator stores a value in the console
 	// (docs/rfcs/RFC-100-shared-sensors.md §6).
 	ManagedService bool
+	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
+	// to every organization created here and never changed (empty: not
+	// named).
+	Region string
 }
 
 // SensorConfigConfig holds the sensor config template service settings.
@@ -935,6 +958,14 @@ type SensorConfig struct {
 	VulnFeedBundleDir string
 	VulnFeedMirrors   []string
 
+	// VersionCheckEnabled turns on the daily version check: one anonymous
+	// download of the signed release feed, compared with the running version
+	// on the instance (RFC-105). VERSION_CHECK_ENABLED, default true.
+	// VersionCheckURL is where the feed is read (VERSION_CHECK_URL, https; the
+	// signature carries the trust, so a mirror is fine).
+	VersionCheckEnabled bool
+	VersionCheckURL     string
+
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
 	// no-credentials external-exposure source. Set CERT_MONITOR_ENABLED=false to
@@ -1118,6 +1149,14 @@ type EncryptionConfig struct {
 	// Env var: APP_CONTENT_SIGNING_KEY
 	ContentSigningKey string
 
+	// FingerprintKey is the server secret the fingerprint of every reported
+	// secret finding (and the key CI producers hash raw secrets with) is
+	// derived from. It never rotates with APP_ENCRYPTION_KEY: changing it
+	// changes every secret's identity, so a secret seen again would open a
+	// second finding. Empty is allowed only in development, where Key is used.
+	// At least 32 characters. Env var: FINGERPRINT_KEY
+	FingerprintKey string
+
 	// ContentTrustRootKeyIDs are extra content catalog roots (key ids,
 	// "SHA256:<hex>") trusted beside the ones pinned in the release, for an
 	// operator's own catalog source (RFC-099). Env var:
@@ -1128,6 +1167,18 @@ type EncryptionConfig struct {
 	// replaces the one embedded in the release for publisher signatures.
 	// Env var: CONTENT_SIGSTORE_TRUSTED_ROOT.
 	ContentSigstoreTrustedRoot string
+}
+
+// FingerprintSecret is the server secret the secret-finding fingerprint is
+// keyed from: FingerprintKey, or Key in development only. Never log it.
+func (c *Config) FingerprintSecret() string {
+	if c.Encryption.FingerprintKey != "" {
+		return c.Encryption.FingerprintKey
+	}
+	if c.IsDevelopment() {
+		return c.Encryption.Key
+	}
+	return ""
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1238,9 +1289,10 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name: getEnv("APP_NAME", "openctem"),
-			Env:  appEnv(),
-			URL:  getEnv("APP_URL", ""),
+			Name:   getEnv("APP_NAME", "openctem"),
+			Env:    appEnv(),
+			URL:    getEnv("APP_URL", ""),
+			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
 
 			ManagedService: getEnvBool("MANAGED_SERVICE", false),
 		},
@@ -1462,6 +1514,8 @@ func Load() (*Config, error) {
 			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
 			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
 			VulnFeedMirrors:             feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+			VersionCheckEnabled:         getEnvBool("VERSION_CHECK_ENABLED", true),
+			VersionCheckURL:             getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
 			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
@@ -1498,6 +1552,7 @@ func Load() (*Config, error) {
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
+			FingerprintKey:     getEnv("FINGERPRINT_KEY", ""),
 
 			ContentTrustRootKeyIDs:     getEnvSlice("CONTENT_TRUST_ROOT_KEY_IDS", nil),
 			ContentSigstoreTrustedRoot: getEnv("CONTENT_SIGSTORE_TRUSTED_ROOT", ""),
@@ -1545,6 +1600,11 @@ func Load() (*Config, error) {
 			ProgramFeedLocalBundleDir: getEnv("PROGRAMFEED_LOCAL_BUNDLE_DIR", ""),
 			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
+		},
+		AdminAuditSink: AdminAuditSinkConfig{
+			URL:          getEnv("ADMIN_AUDIT_SINK", ""),
+			Token:        getEnv("ADMIN_AUDIT_SINK_TOKEN", ""),
+			HeadInterval: getEnvDuration("ADMIN_AUDIT_SINK_HEAD_INTERVAL", 15*time.Minute),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
@@ -1636,6 +1696,9 @@ func deriveSSORedirectAllowList(cfg *Config) []string {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
+	if c.App.Region != "" && !deploymentRegionRE.MatchString(c.App.Region) {
+		return fmt.Errorf("DEPLOYMENT_REGION=%q must be 1-32 lowercase letters, digits or hyphens (e.g. eu-central)", c.App.Region)
+	}
 	if err := c.validateBasic(); err != nil {
 		return err
 	}
@@ -1696,6 +1759,9 @@ func (c *Config) validateBasic() error {
 	}
 	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
 		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
+	}
+	if v := c.Worker.VersionCheckURL; v != "" && (parsePublicURL(v) == nil || !strings.HasPrefix(v, "https://")) {
+		return errors.New("VERSION_CHECK_URL must be an https URL without credentials, query or fragment")
 	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)
@@ -1851,6 +1917,15 @@ func (c *Config) validateEncryption() error {
 		}
 	}
 
+	// The fingerprint key is its own secret so rotating the encryption key
+	// never changes the identity of a stored secret finding.
+	if k := c.Encryption.FingerprintKey; k != "" && len(k) < 32 {
+		return fmt.Errorf("FINGERPRINT_KEY must be at least 32 characters, got %d; generate one with `openssl rand -hex 32`", len(k))
+	}
+	if c.Encryption.FingerprintKey == "" && !c.IsDevelopment() {
+		return fmt.Errorf("FINGERPRINT_KEY is required when APP_ENV=%q (only APP_ENV=development may omit it); generate one with `openssl rand -hex 32`, and on an existing install set it to the current APP_ENCRYPTION_KEY value so stored secret fingerprints stay valid", c.App.Env)
+	}
+
 	// Encryption key is optional only in development. Any other APP_ENV
 	// (production, staging, preview, etc.) stores real tenant credentials
 	// and MUST have a key — otherwise integration tokens sit in plaintext.
@@ -1977,6 +2052,12 @@ func (c *Config) validateAuth() error {
 		return fmt.Errorf("APP_ENCRYPTION_KEY is the docker-compose default and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
 	}
 
+	// The example FINGERPRINT_KEY values are public: refuse them outside
+	// development.
+	if !c.IsDevelopment() && isDevDefaultFingerprintKey(c.Encryption.FingerprintKey) {
+		return fmt.Errorf("FINGERPRINT_KEY is an example value from the repository and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
+	}
+
 	// A dedicated sensor-key pepper must be a real secret: at least 32
 	// characters (openssl rand -hex 32 gives 64).
 	if p := c.SensorConfig.KeyPepper; p != "" && len(p) < 32 {
@@ -2001,12 +2082,14 @@ func (c *Config) validatePlaceholders() error {
 		{"APP_ENCRYPTION_KEY", c.Encryption.Key},
 		{"APP_TEMPLATE_SIGNING_KEY", c.Encryption.TemplateSigningKey},
 		{"APP_CONTENT_SIGNING_KEY", c.Encryption.ContentSigningKey},
+		{"FINGERPRINT_KEY", c.Encryption.FingerprintKey},
 		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
 		{"DB_PASSWORD", c.Database.Password},
 		{"REDIS_PASSWORD", c.Redis.Password},
 		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
 		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
 		{"METRICS_TOKEN", c.Metrics.Token},
+		{"ADMIN_AUDIT_SINK_TOKEN", c.AdminAuditSink.Token},
 	}
 	for i, prev := range c.Encryption.PreviousKeys {
 		secrets = append(secrets, struct{ name, value string }{fmt.Sprintf("APP_ENCRYPTION_KEY_PREVIOUS entry %d", i+1), prev})
@@ -2053,6 +2136,18 @@ var devDefaultJWTSecrets = []string{
 
 func isDevDefaultJWTSecret(s string) bool {
 	return slices.Contains(devDefaultJWTSecrets, s)
+}
+
+// devDefaultFingerprintKeys is the closed set of FINGERPRINT_KEY values that
+// ship in .env.example, the registry example and the compose fallback.
+// Update it whenever a new example is introduced.
+var devDefaultFingerprintKeys = []string{
+	"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+}
+
+func isDevDefaultFingerprintKey(s string) bool {
+	return s != "" && slices.Contains(devDefaultFingerprintKeys, s)
 }
 
 // isDevDefaultEncryptionKey flags the repeating-hex-digit AES-256 key
@@ -2534,3 +2629,7 @@ func feedURLs(primary, mirrors string) []string {
 	}
 	return out
 }
+
+// deploymentRegionRE is the shape of DEPLOYMENT_REGION (the tenants.region
+// check in the database is the same).
+var deploymentRegionRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
