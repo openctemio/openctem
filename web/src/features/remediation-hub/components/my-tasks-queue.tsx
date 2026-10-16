@@ -57,7 +57,7 @@ export function MyTasksQueue() {
             >
               {row.original.title}
             </Link>
-            {row.original.action_title && (
+            {row.original.action_title && row.original.action_title !== row.original.title && (
               <p className="text-muted-foreground truncate text-xs">{row.original.action_title}</p>
             )}
           </div>
