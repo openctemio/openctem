@@ -226,6 +226,7 @@ tenant_tool_settings
 threat_actors
 threat_model_threats
 threat_models
+ticket_links
 ticket_mapping_profiles
 ticket_mapping_versions
 tool_categories

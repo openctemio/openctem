@@ -83,6 +83,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
         <CardHeader>
           <CardTitle>{t('admin.sharedSensorEnroll.title')}</CardTitle>
           <CardDescription>{t('admin.sharedSensorEnroll.desc')}</CardDescription>
+          <CardDescription>{t('admin.sharedSensorEnroll.mintRightBefore')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {issued ? (

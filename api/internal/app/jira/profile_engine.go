@@ -45,6 +45,9 @@ type ProfileStatus struct {
 type ProfileSource interface {
 	RenderFindingCreate(ctx context.Context, tenantID, integrationID shared.ID, projectKey, issueType string, findingID shared.ID) (*ProfileCreate, error)
 	FindingStatusTarget(ctx context.Context, tenantID, integrationID shared.ID, projectKey string, findingID shared.ID) (*ProfileStatus, error)
+	// ProjectKeys lists the projects that have a mapping profile on the
+	// integration; linking an existing issue is limited to configured projects.
+	ProjectKeys(ctx context.Context, tenantID, integrationID shared.ID) ([]string, error)
 }
 
 // ProfileClient is what the engine needs from a tracker client beyond Client.

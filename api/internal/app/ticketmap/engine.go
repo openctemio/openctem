@@ -107,3 +107,18 @@ func (s *Service) findingValues(ctx context.Context, tenantID, findingID shared.
 	}
 	return FindingValues(f, asset, user, s.webBase), findingState(f), nil
 }
+
+// ProjectKeys lists the Jira projects that have a mapping profile on an
+// integration of the tenant (any object kind, published or not).
+func (s *Service) ProjectKeys(ctx context.Context, tenantID, integrationID shared.ID) ([]string, error) {
+	iid := integrationID
+	res, err := s.repo.ListProfiles(ctx, tenantID, ticketmapdom.ProfileFilter{IntegrationID: &iid}, pagination.New(1, 200))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(res.Data))
+	for _, p := range res.Data {
+		out = append(out, p.ProjectKey)
+	}
+	return out, nil
+}

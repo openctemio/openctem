@@ -201,7 +201,7 @@ touches a finding it cannot attribute to a run).
 One repository could be two assets of a tenant: repository import named it
 `org/repo` and CI `github.com/org/repo`, or a rename or transfer made CI create
 a second asset while the first kept the findings, branches, gate policy and
-coverage expectation. `repomerge` (`cmd/repomerge`, in the API image as
+coverage expectation. `repomerge` (`internal/tools/repomerge`, in the API image as
 `/app/repomerge`; `internal/infra/postgres/repository_merge.go`) finds, per
 tenant, assets that are one repository:
 
