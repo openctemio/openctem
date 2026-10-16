@@ -91,6 +91,8 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
+	// onSignIn runs after a sign-in created a session (signin_hook.go).
+	onSignIn SignInHook
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -791,6 +793,7 @@ func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddr
 	if err := s.sessionRepo.Create(ctx, sess); err != nil {
 		return nil, fmt.Errorf("failed to save session: %w", err)
 	}
+	runSignInHook(ctx, s.onSignIn, u.ID())
 
 	// Store refresh token in database
 	refreshToken, err := sessiondom.NewRefreshToken(
