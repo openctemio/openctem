@@ -8,11 +8,13 @@ import { useAdmin } from '@/features/admin-console/components/admin-console-shel
 import { useAdminUsers } from '@/features/admin-console/api/use-admin-users'
 import { usePlatformIdP } from '@/features/admin-console/api/use-platform-idp'
 import { PlatformIdPForm } from '@/features/admin-console/components/platform-idp-form'
+import { ConsoleMfaPolicyCard } from '@/features/admin-console/components/console-mfa-policy-card'
 import { adminCan } from '@/features/admin-console/types'
 
 /**
  * System -> Admin sign-in: the administrators' identity provider and the
- * "require IdP" policy (RFC-022 revision 4). Super admins only.
+ * "require IdP" policy (RFC-022 revision 4), and "require security keys"
+ * (RFC-078). Super admins only.
  */
 export default function AdminSignInPage() {
   const me = useAdmin()
@@ -44,7 +46,8 @@ export default function AdminSignInPage() {
         title="Admin sign-in"
         description="How administrators sign in to this console. Separate from organization sign-in."
       />
-      <div className="mt-5">
+      <div className="mt-5 space-y-4">
+        <ConsoleMfaPolicyCard />
         {error ? (
           <ErrorState title="admin sign-in" error={error} onRetry={() => void mutate()} />
         ) : isLoading || !data ? (

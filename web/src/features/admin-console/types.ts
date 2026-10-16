@@ -18,7 +18,12 @@ export interface AdminIdentity {
   is_break_glass?: boolean
   /** The session may only change the temporary password. */
   password_change_required?: boolean
+  /** The console requires security keys: only the enrollment page works until they are registered. */
+  factor_enrollment_required?: boolean
 }
+
+/** A second factor a sign-in may use, in the API's order of preference. */
+export type AdminSignInMethod = 'webauthn' | 'totp' | 'recovery_code'
 
 export type AdminLoginStatus = 'mfa_required' | 'mfa_enrollment_required'
 
@@ -77,6 +82,8 @@ export interface AdminLoginResult {
   /** Only for mfa_enrollment_required. */
   otpauth_uri?: string
   secret?: string
+  /** The second factors this administrator may use, preferred first. */
+  methods?: AdminSignInMethod[]
 }
 
 export interface AdminOrganization {

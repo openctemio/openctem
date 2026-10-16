@@ -3,6 +3,7 @@ import {
   Bot,
   Building2,
   Activity,
+  Fingerprint,
   Gauge,
   History,
   Inbox,
@@ -118,6 +119,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/security/activity',
         icon: History,
         keywords: ['audit', 'logs', 'system logs', 'history'],
+      },
+      {
+        title: 'My security keys',
+        i18nKey: 'admin.nav.securityKeys',
+        url: '/admin/security/keys',
+        icon: Fingerprint,
+        keywords: ['passkey', 'webauthn', 'fido2', 'two-factor', 'recovery codes', 'mfa'],
       },
       {
         title: 'Sessions',
