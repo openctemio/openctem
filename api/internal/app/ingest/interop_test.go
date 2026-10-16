@@ -147,11 +147,14 @@ func vexScope() *alterScope {
 	return s
 }
 
-func runInterop(t *testing.T, mode VEXMode, scope *alterScope, findings []ctis.Finding, repo *interopRepo) (*Output, shared.ID) {
+func runInterop(t *testing.T, mode VEXMode, scope *alterScope, findings []ctis.Finding, repo *interopRepo, notifier ...VEXRequestNotifier) (*Output, shared.ID) {
 	t.Helper()
 	tenantID := shared.NewID()
 	p := NewFindingProcessor(repo, nil, nil, logger.NewNop())
 	p.vexMode = mode
+	if len(notifier) > 0 {
+		p.SetVEXRequestNotifier(notifier[0])
+	}
 	out := &Output{}
 	report := &ctis.Report{Version: "1.4", Tool: &ctis.Tool{Name: "trivy"}, Findings: findings}
 	err := p.processBatch(context.Background(), newTestSensor(t, tenantID), tenantID, report,
@@ -306,4 +309,37 @@ func TestIdentityHints(t *testing.T) {
 	assert.Len(t, long["fqdn"], maxHintLen)
 	_, hasMACs := long["mac_addresses"]
 	assert.False(t, hasMACs, "empty MACs are dropped")
+}
+
+// vexNotices records the batched approver notices.
+type vexNotices struct {
+	calls   int
+	tenant  shared.ID
+	finding []shared.ID
+}
+
+func (n *vexNotices) NotifyVEXRequests(_ context.Context, tenantID shared.ID, ids []shared.ID) {
+	n.calls++
+	n.tenant, n.finding = tenantID, append([]shared.ID(nil), ids...)
+}
+
+// The approvers are told once per report about the requests VEX statements
+// made under enforce, with exactly those findings and the ingesting tenant;
+// a dry run or a report that requested nothing tells nobody.
+func TestVEX_EnforceNotifiesApproversOncePerReport(t *testing.T) {
+	requested := []shared.ID{shared.NewID(), shared.NewID()}
+	n := &vexNotices{}
+	repo := &interopRepo{vexMatch: requested}
+	_, tenant := runInterop(t, SourceResolveEnforce, vexScope(), []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}, repo, n)
+	require.Equal(t, 1, n.calls)
+	assert.Equal(t, tenant, n.tenant)
+	assert.Equal(t, requested, n.finding)
+
+	dry := &vexNotices{}
+	_, _ = runInterop(t, SourceResolveDryRun, vexScope(), []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}, &interopRepo{vexMatch: requested}, dry)
+	assert.Equal(t, 0, dry.calls, "a dry run requests nothing and tells nobody")
+
+	none := &vexNotices{}
+	_, _ = runInterop(t, SourceResolveEnforce, vexScope(), []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}, &interopRepo{}, none)
+	assert.Equal(t, 0, none.calls, "no request made, nobody told")
 }

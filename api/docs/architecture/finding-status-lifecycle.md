@@ -473,8 +473,12 @@ instead).
   title, requested status and dates, never the justification; the link opens
   the inbox, sign-in required. `POST /api/v1/approvals/{id}/remind`
   (`findings:write`) repeats it at most once an hour per request
-  (`reminded_at`, atomic), audited `finding_approval.reminded`. VEX requests
-  from a scan report are not notified one by one.
+  (`reminded_at`, atomic), audited `finding_approval.reminded`. Requests VEX
+  statements in one scan report make are batched: one in-app notice and one
+  email per report and approver, counting only the findings in that
+  approver's data scope and naming at most five titles
+  (`NotifyVEXRequests`, called by ingest after `ApplyVEXNotAffected` under
+  enforce).
 - **Sole member.** An organization with one person has nobody to ask. Its
   owner may approve their own pending request
   (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while
