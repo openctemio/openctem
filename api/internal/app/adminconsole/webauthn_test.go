@@ -265,8 +265,11 @@ func (k *virtualKey) authData(attested bool) []byte {
 		buf.Write(make([]byte, 16)) // AAGUID
 		_ = binary.Write(buf, binary.BigEndian, uint16(len(k.id)))
 		buf.Write(k.id)
-		x := k.priv.PublicKey.X.FillBytes(make([]byte, 32))
-		y := k.priv.PublicKey.Y.FillBytes(make([]byte, 32))
+		pub, err := k.priv.PublicKey.Bytes() // 0x04 || X || Y
+		if err != nil {
+			panic(err)
+		}
+		x, y := pub[1:33], pub[33:65]
 		cose, _ := cbor.Marshal(map[int]any{1: 2, 3: -7, -1: 1, -2: x, -3: y})
 		buf.Write(cose)
 	}
