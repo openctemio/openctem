@@ -6,8 +6,7 @@
 -- the asset, its row is deleted in the same transaction.
 --
 -- New, empty table: no lock on any existing table beyond the foreign key's
--- share lock while the constraint is added. Existing assets are filled by
--- the asset-technology-backfill controller in small batches.
+-- share lock while the constraint is added.
 CREATE TABLE asset_technologies (
     tenant_id  UUID         NOT NULL,
     asset_id   UUID         NOT NULL,
@@ -37,15 +36,3 @@ COMMENT ON COLUMN asset_technologies.confidence IS 'The tool''s confidence 0-100
 -- "Assets using technology X" and "assets by category" filters.
 CREATE INDEX idx_asset_technologies_name ON asset_technologies (tenant_id, name_key);
 CREATE INDEX idx_asset_technologies_category ON asset_technologies (tenant_id, category);
-
--- Tenants whose existing assets the backfill has filled, by version.
-CREATE TABLE asset_technology_backfill (
-    tenant_id      UUID        NOT NULL PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
-    version        INTEGER     NOT NULL,
-    assets_scanned INTEGER     NOT NULL DEFAULT 0,
-    technologies   INTEGER     NOT NULL DEFAULT 0,
-    links_removed  INTEGER     NOT NULL DEFAULT 0,
-    completed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE asset_technology_backfill IS
-    'RFC-112: tenants whose assets the technology backfill has processed (technologies filled, non-software component links removed).';
