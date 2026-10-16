@@ -180,7 +180,7 @@ func (s *VulnerabilityService) planGroupException(ctx context.Context, in GroupE
 			preview.Members = append(preview.Members, m)
 			continue
 		}
-		ev, err := s.evaluateFindingRequest(ctx, f, kind, in.RequestedBy, false, in.RequestedBy)
+		ev, err := s.evaluateFindingRequest(ctx, f, kind, in.RequestedBy, false, false, in.RequestedBy)
 		if err != nil {
 			return nil, nil, "", err
 		}
@@ -383,7 +383,7 @@ func (s *VulnerabilityService) ApproveGroupException(ctx context.Context, tenant
 	var org orgPolicy
 	shortened := 0
 	for _, f := range findings {
-		ev, err := s.evaluateFindingRequest(ctx, f, kind, b.RequestedBy, false, known...)
+		ev, err := s.evaluateFindingRequest(ctx, f, kind, b.RequestedBy, false, false, known...)
 		if err != nil {
 			return nil, err
 		}
