@@ -755,7 +755,7 @@ lifts this).
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes
   are written to `admin_audit_logs`. That log is append-only and hash-chained
-  (migration 002470): the database chains every insert, refuses updates,
+  (migration 002545): the database chains every insert, refuses updates,
   deletes and truncation, and removes only the oldest prefix older than a
   year through `admin_audit_prune`, anchoring the chain where it stopped.
   `GET /api/v1/admin/audit-logs/chain` (any admin; shown on Security >
