@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"strings"
 )
@@ -20,6 +21,12 @@ type AdminPlaneConfig struct {
 	// listener answers 404 for it; empty (the default), it shares the main
 	// listener.
 	ListenAddr string
+
+	// ListenAllowAllInterfaces lets ListenAddr be any address: every
+	// interface, a public IP or a hostname. Off (the default), only a
+	// loopback or private IP is accepted.
+	// ADMIN_LISTEN_ALLOW_ALL_INTERFACES
+	ListenAllowAllInterfaces bool
 
 	// allowed is AllowedCIDRs parsed by validateAdminPlane.
 	allowed []netip.Prefix
@@ -85,8 +92,13 @@ func ParseAdminAllowedCIDRs(entries []string) ([]netip.Prefix, error) {
 }
 
 func (c *Config) validateAdminPlane() error {
-	if c.AdminPlane.ListenAddr != "" && c.AdminPlane.ListenAddr == c.Server.Addr() {
-		return fmt.Errorf("ADMIN_LISTEN_ADDR must differ from the main listener (%s)", c.Server.Addr())
+	if c.AdminPlane.ListenAddr != "" {
+		if c.AdminPlane.ListenAddr == c.Server.Addr() {
+			return fmt.Errorf("ADMIN_LISTEN_ADDR must differ from the main listener (%s)", c.Server.Addr())
+		}
+		if err := checkAdminListenAddr(c.AdminPlane.ListenAddr, c.AdminPlane.ListenAllowAllInterfaces); err != nil {
+			return err
+		}
 	}
 	if len(c.AdminPlane.AllowedCIDRs) == 0 {
 		c.AdminPlane.AllowedCIDRs = DefaultAdminAllowedCIDRs
@@ -96,5 +108,24 @@ func (c *Config) validateAdminPlane() error {
 		return err
 	}
 	c.AdminPlane.allowed = p
+	return nil
+}
+
+// checkAdminListenAddr accepts only a loopback or private IP (10/8,
+// 172.16/12, 192.168/16, fc00::/7) for the console's plain-HTTP listener,
+// unless allowAll: every interface, a public or link-local IP, or a hostname
+// would put it on networks nobody chose.
+func checkAdminListenAddr(addr string, allowAll bool) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("ADMIN_LISTEN_ADDR %q is not host:port: %w", addr, err)
+	}
+	if allowAll {
+		return nil
+	}
+	if ip := net.ParseIP(host); ip == nil || !(ip.IsLoopback() || ip.IsPrivate()) {
+		return fmt.Errorf("ADMIN_LISTEN_ADDR %q is not a loopback or private IP address; bind one (for example 10.0.0.5:8081), "+
+			"or set ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true when only a private network reaches it", addr)
+	}
 	return nil
 }

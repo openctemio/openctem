@@ -277,7 +277,7 @@ func TestRetestDB_QueuesTwoScopedValidateCommands(t *testing.T) {
 // RFC-057 R2: a bare "not detected" on a host that answers a TCP probe is
 // not reproduced (the finding stays); only an attempt at the finding's own
 // endpoint that got an answer is a confirmed fix, which awaits a person
-// (validated_fixed) unless the tenant auto-resolves.
+// (status kept, validation not_reproducible) unless the tenant auto-resolves.
 func TestRetestDB_NoMatchWithoutEndpointProofIsNotReproduced(t *testing.T) {
 	fx := newFixture(t)
 	svc := fx.service()
@@ -340,12 +340,17 @@ func TestRetestDB_ConfirmedFixAwaitsAPersonUnlessAutoResolve(t *testing.T) {
 	if got.SensorID == nil || *got.SensorID != sensor || got.CheckCommandID == nil {
 		t.Fatalf("retest run linkage = sensor %v command %v, want the claiming sensor and the check command", got.SensorID, got.CheckCommandID)
 	}
-	if got.Outcome != retestdom.OutcomeConfirmedFixed || got.ResultStatus != "validated_fixed" ||
+	if got.Outcome != retestdom.OutcomeConfirmedFixed || got.ResultStatus != "confirmed" ||
 		!strings.Contains(got.Reason, "https://shop.example.com/admin answered 404") {
-		t.Fatalf("retest = %+v, want confirmed_fixed → validated_fixed", got)
+		t.Fatalf("retest = %+v, want confirmed_fixed, status kept", got)
 	}
-	if status, _, _ := fx.findingState(f); status != "validated_fixed" {
-		t.Errorf("finding = %s, want validated_fixed", status)
+	if status, _, _ := fx.findingState(f); status != "confirmed" {
+		t.Errorf("finding = %s, want confirmed (kept)", status)
+	}
+	var validation string
+	if err := fx.db.QueryRow(`SELECT COALESCE(validation_outcome, '') FROM findings WHERE id = $1`, f.String()).Scan(&validation); err != nil ||
+		validation != "not_reproducible" {
+		t.Errorf("validation = %q (%v), want not_reproducible", validation, err)
 	}
 	// The attempt's proof is kept, masked, on the finding.
 	var n int
