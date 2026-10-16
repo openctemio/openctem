@@ -617,3 +617,41 @@ func (r *FindingApprovalRepository) MarkDigestSent(ctx context.Context, tenantID
 	}
 	return ok, nil
 }
+
+// ClaimUnnotifiedVEXRequests marks up to limit pending requests made by VEX
+// statements that no approver was told about yet as notified, and answers
+// them by tenant (the notice outbox; a background job across tenants, each
+// row carries its tenant). SKIP LOCKED: two workers never claim the same
+// row. Claim-then-send: a crash in between loses that notice (the daily
+// digest still lists the request).
+func (r *FindingApprovalRepository) ClaimUnnotifiedVEXRequests(ctx context.Context, limit int) (map[shared.ID][]shared.ID, error) {
+	if limit <= 0 {
+		limit = 2000
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		UPDATE finding_status_approvals a SET approvers_notified_at = now()
+		WHERE a.id IN (
+			SELECT id FROM finding_status_approvals
+			WHERE status = 'pending' AND requested_by_actor = $2 AND approvers_notified_at IS NULL
+			ORDER BY created_at LIMIT $1
+			FOR UPDATE SKIP LOCKED)
+		RETURNING a.tenant_id::text, a.finding_id::text`, limit, vulnerability.ApprovalActorVEX)
+	if err != nil {
+		return nil, fmt.Errorf("claim vex requests to notify: %w", err)
+	}
+	defer rows.Close()
+	out := map[shared.ID][]shared.ID{}
+	for rows.Next() {
+		var t, f string
+		if err := rows.Scan(&t, &f); err != nil {
+			return nil, err
+		}
+		tid, err1 := shared.IDFromString(t)
+		fid, err2 := shared.IDFromString(f)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		out[tid] = append(out[tid], fid)
+	}
+	return out, rows.Err()
+}

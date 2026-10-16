@@ -313,12 +313,6 @@ func (s *Service) SetVEXStatementApplier(a VEXStatementApplier) {
 	s.findingProcessor.SetVEXStatementApplier(a)
 }
 
-// SetVEXRequestNotifier wires the batched approver notice for
-// false-positive requests made by VEX statements in a report.
-func (s *Service) SetVEXRequestNotifier(n VEXRequestNotifier) {
-	s.findingProcessor.SetVEXRequestNotifier(n)
-}
-
 func (s *Service) SetRemediationKeyApplier(applier RemediationKeyApplier) {
 	s.findingProcessor.SetRemediationKeyApplier(applier)
 }
