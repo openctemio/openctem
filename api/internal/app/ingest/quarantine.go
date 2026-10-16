@@ -160,9 +160,9 @@ func OpenCommand(ctx context.Context, commands commandReader, agt *sensor.Sensor
 
 // SharedCommandReader finds a shared job by its holder. The tenant is read
 // from the command row, never supplied by the caller: a shared sensor has
-// none (CommandRepository.GetHeldSharedJob).
+// none (CommandRepository.GetHeldSharedJobForPlatform).
 type SharedCommandReader interface {
-	GetHeldSharedJob(ctx context.Context, sensorID, commandID shared.ID) (*command.Command, error)
+	GetHeldSharedJobForPlatform(ctx context.Context, sensorID, commandID shared.ID) (*command.Command, error)
 }
 
 // OpenSharedCommand is OpenCommand for a shared sensor (scope instance,
@@ -182,7 +182,7 @@ func OpenSharedCommand(ctx context.Context, commands SharedCommandReader, agt *s
 	if err != nil {
 		return nil, ErrCommandNotFound
 	}
-	cmd, err := commands.GetHeldSharedJob(ctx, agt.ID, id)
+	cmd, err := commands.GetHeldSharedJobForPlatform(ctx, agt.ID, id)
 	if err != nil || cmd == nil || cmd.ID != id || !cmd.IsPlatformJob || cmd.TenantID.IsZero() ||
 		cmd.LeaseEpoch != *leaseEpoch || !heldOpen(cmd, agt.ID, now) {
 		return nil, ErrCommandNotFound
