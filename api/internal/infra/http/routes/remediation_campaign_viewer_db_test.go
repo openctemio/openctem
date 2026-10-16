@@ -9,6 +9,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -316,6 +317,85 @@ func TestRemediationCampaign_RestrictedMemberCannotTouchOtherTeamsCampaign_DB(t 
 	}
 	if code, _ := call(http.MethodGet, "/api/v1/remediation/campaigns/"+created["id"].(string), nil); code != http.StatusOK {
 		t.Errorf("GET the campaign the member created = %d, want 200", code)
+	}
+
+	// A shared campaign (one finding in the member's scope, one outside):
+	// they see it, but changing it needs every finding in scope (owner
+	// decision), so one shared finding never gives them control of it.
+	shared2 := insert("rcw-shared", map[string]any{"finding_ids": []string{h.findingA.String(), h.findingB.String()}})
+	sbase := "/api/v1/remediation/campaigns/" + shared2.String()
+	if code, _ := call(http.MethodGet, sbase, nil); code != http.StatusOK {
+		t.Errorf("GET a shared campaign = %d, want 200", code)
+	}
+	for _, c := range []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodPatch, sbase, map[string]any{"name": "taken over"}},
+		{http.MethodPatch, sbase + "/status", map[string]any{"status": "paused"}},
+		{http.MethodPost, sbase + "/refresh", nil},
+		{http.MethodPost, sbase + "/create-ticket", map[string]any{"project_key": "SEC"}},
+		{http.MethodDelete, sbase, nil},
+	} {
+		if code, _ := call(c.method, c.path, c.body); code != http.StatusForbidden {
+			t.Errorf("%s %s on a shared campaign = %d, want 403", c.method, c.path, code)
+		}
+	}
+	var sname, sstatus string
+	if err := h.db.QueryRowContext(context.Background(), `SELECT name, status FROM remediation_campaigns WHERE tenant_id = $1 AND id = $2`,
+		h.tenant.String(), shared2.String()).Scan(&sname, &sstatus); err != nil || sname != "rcw-shared" || sstatus != "active" {
+		t.Errorf("shared campaign changed by refused writes: %s/%s %v", sname, sstatus, err)
+	}
+
+	// A new scope must be the caller's too: re-scoping their own campaign
+	// onto another team's finding or asset, or creating one over them, is
+	// refused and writes nothing.
+	mineBase := "/api/v1/remediation/campaigns/" + mine.String()
+	for _, f := range []map[string]any{
+		{"finding_ids": []string{h.findingB.String()}},
+		{"finding_ids": []string{h.findingA.String(), h.findingB.String()}},
+		{"asset_id": h.assetB.String(), "severities": []string{"high"}},
+	} {
+		if code, _ := call(http.MethodPatch, mineBase, map[string]any{"finding_filter": f}); code != http.StatusForbidden {
+			t.Errorf("re-scope own campaign to %v = %d, want 403", f, code)
+		}
+		if code, _ := call(http.MethodPost, "/api/v1/remediation/campaigns/", map[string]any{"name": "rcw-grab", "finding_filter": f}); code != http.StatusForbidden {
+			t.Errorf("create over %v = %d, want 403", f, code)
+		}
+	}
+	var mineFilter string
+	var grabs int
+	if err := h.db.QueryRowContext(context.Background(), `SELECT finding_filter::text FROM remediation_campaigns WHERE id = $1`, mine.String()).Scan(&mineFilter); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(mineFilter, h.findingB.String()) || strings.Contains(mineFilter, h.assetB.String()) {
+		t.Errorf("refused re-scope was saved: %s", mineFilter)
+	}
+	if err := h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM remediation_campaigns WHERE tenant_id = $1 AND name = 'rcw-grab'`, h.tenant.String()).Scan(&grabs); err != nil || grabs != 0 {
+		t.Errorf("refused creates saved %d campaigns (%v)", grabs, err)
+	}
+	if code, _ := call(http.MethodPost, "/api/v1/remediation/campaigns/", map[string]any{"name": "rcw-own-scope", "finding_filter": map[string]any{"finding_ids": []string{h.findingA.String()}}}); code != http.StatusCreated {
+		t.Errorf("create over the member's own finding = %d, want 201", code)
+	}
+
+	// The list examines every campaign, not only the first thousand: the
+	// member's oldest campaign behind 1,050 of another team's still lists.
+	h.exec(`UPDATE remediation_campaigns SET priority = 'low', created_at = now() - interval '10 days' WHERE id = $1`, mine.String())
+	h.exec(`INSERT INTO remediation_campaigns (id, tenant_id, name, status, finding_filter)
+		SELECT gen_random_uuid(), $1, 'rcw-bulk-' || g, 'active', $2::jsonb FROM generate_series(1, 1050) g`,
+		h.tenant.String(), `{"finding_ids": ["`+h.findingB.String()+`"]}`)
+	found := false
+	for p := 1; p <= 3 && !found; p++ {
+		_, pg := call(http.MethodGet, fmt.Sprintf("/api/v1/remediation/campaigns/?page=%d&per_page=100", p), nil)
+		rows, _ := pg["data"].([]any)
+		for _, d := range rows {
+			if d.(map[string]any)["id"] == mine.String() {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("the member's campaign behind 1,050 others is missing from their list")
 	}
 }
 
