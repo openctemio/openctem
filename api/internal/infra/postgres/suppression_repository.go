@@ -87,7 +87,7 @@ func (r *SuppressionRepository) saveInTx(ctx context.Context, exec executor, rul
 			rejected_at = EXCLUDED.rejected_at,
 			rejection_reason = EXCLUDED.rejection_reason,
 			expires_at = EXCLUDED.expires_at,
-			updated_at = EXCLUDED.updated_at,
+			updated_at = now(),
 			review_flagged_at = EXCLUDED.review_flagged_at,
 			review_reason = EXCLUDED.review_reason,
 			reason_code = COALESCE(EXCLUDED.reason_code, suppression_rules.reason_code),
@@ -556,6 +556,14 @@ const suppressionApprovePermission = "findings:suppressions:approve"
 // permission (recentApproverChange; nil: none).
 func (r *SuppressionRepository) RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error) {
 	return recentApproverChange(ctx, r.db, tenantID, since)
+}
+
+// IsSoleActiveOwner reports whether the user is an owner and the only active
+// person in the tenant: exactly one active, unexpired membership of an active
+// person account, and it is the user's with the owner role. Read at decision
+// time. A member who cannot approve still counts as a person.
+func (r *SuppressionRepository) IsSoleActiveOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	return isSoleActiveOwner(ctx, r.db, tenantID, userID.String())
 }
 
 // IsTenantOwner reports whether the user is an active owner of the tenant.

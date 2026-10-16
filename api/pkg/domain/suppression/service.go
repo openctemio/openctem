@@ -57,12 +57,10 @@ func (s *Service) SetAssetRefChecker(c AssetRefChecker) {
 // ApproverDirectory answers the two questions the four-eyes rule needs
 // (owner decision B16). Implemented by *postgres.SuppressionRepository.
 type ApproverDirectory interface {
-	// CountEligibleApprovers counts the tenant's active members who may
-	// approve suppression rules (owners, admins and holders of a role with
-	// findings:suppressions:approve).
-	CountEligibleApprovers(ctx context.Context, tenantID shared.ID) (int, error)
-	// IsTenantOwner reports whether the user is the tenant's active owner.
-	IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	// IsSoleActiveOwner reports whether the user is an owner and the only
+	// active person of the tenant (service accounts do not count; a member
+	// without the approve permission does).
+	IsSoleActiveOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 	// RecentMemberRemoval answers the latest member suspension, removal,
 	// offboarding or membership expiry in the tenant after since (nil: none).
 	RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error)
@@ -295,15 +293,23 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 	}
 
 	selfApproved := false
-	if s.policy != nil && (rule.RequestedBy().IsZero() || rule.RequestedBy() != input.ApprovedBy) {
+	selfRequest := !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.ApprovedBy
+	if s.policy != nil && !selfRequest {
 		return s.approveUnderPolicy(ctx, rule, input)
 	}
-	if !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.ApprovedBy {
-		allowed, err := s.mayApproveOwnRule(ctx, input.TenantID, input.ApprovedBy)
+	if selfRequest {
+		// The only one-person path is the sole active person of the
+		// organization (an owner, with a reason and a fresh code). Anyone
+		// else approving their own rule is judged by the policy, which
+		// excludes the requester.
+		sole, err := s.isSoleActiveOwner(ctx, input.TenantID, input.ApprovedBy)
 		if err != nil {
 			return nil, err
 		}
-		if !allowed {
+		if !sole {
+			if s.policy != nil {
+				return s.approveUnderPolicy(ctx, rule, input)
+			}
 			return nil, ErrSelfApproval
 		}
 		if err := s.verifySelfApproval(ctx, input); err != nil {
@@ -366,20 +372,15 @@ func IsSelfApprovalRefusal(err error) bool {
 		errors.Is(err, ErrSelfApprovalNeedsTOTP) || errors.Is(err, ErrSelfApprovalBadCode)
 }
 
-// mayApproveOwnRule: only when the requester is the owner and nobody else in
-// the organization can approve.
-func (s *Service) mayApproveOwnRule(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+// isSoleActiveOwner: the user is an owner and the only active person of the
+// organization, read now. Members who lost the approve permission still
+// count as people, so taking the permission from the others does not open
+// the path.
+func (s *Service) isSoleActiveOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
 	if s.approvers == nil {
 		return false, nil
 	}
-	n, err := s.approvers.CountEligibleApprovers(ctx, tenantID)
-	if err != nil {
-		return false, fmt.Errorf("count eligible approvers: %w", err)
-	}
-	if n >= 2 {
-		return false, nil
-	}
-	return s.approvers.IsTenantOwner(ctx, tenantID, userID)
+	return s.approvers.IsSoleActiveOwner(ctx, tenantID, userID)
 }
 
 // RejectRuleInput contains input for rejecting a rule.
@@ -532,7 +533,7 @@ func (s *Service) MarkReviewed(ctx context.Context, input MarkReviewedInput) (*R
 	// flag only on the sole-approver path (the owner, nobody else can
 	// approve, a reason and a fresh authenticator code), like approving it.
 	if !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.By {
-		allowed, err := s.mayApproveOwnRule(ctx, input.TenantID, input.By)
+		allowed, err := s.isSoleActiveOwner(ctx, input.TenantID, input.By)
 		if err != nil {
 			return nil, nil, "", err
 		}
