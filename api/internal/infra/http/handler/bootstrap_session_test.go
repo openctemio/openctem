@@ -33,6 +33,8 @@ type bsCalls struct {
 	tenantsUser              shared.ID
 	reviewTenant             shared.ID
 	reviewCalled             bool
+	approvalsTenant          shared.ID
+	approvalsCalled          bool
 }
 
 func bsRequest(t *testing.T, u *user.User, perms []string, admin bool) *http.Request {
@@ -83,6 +85,13 @@ func bsHandler(calls *bsCalls, failing bool) *BootstrapHandler {
 				return 0, fail
 			}
 			return 3, nil
+		},
+		PendingApprovalCount: func(_ context.Context, tenantID shared.ID) (int, error) {
+			calls.approvalsTenant, calls.approvalsCalled = tenantID, true
+			if failing {
+				return 0, fail
+			}
+			return 4, nil
 		},
 		TenantCreationMode: func(context.Context) string { return "admin_only" },
 		Announcements: func(context.Context) ([]AnnouncementResponse, error) {
@@ -171,6 +180,48 @@ func TestBootstrapSession_ReviewCountNeedsTheModule(t *testing.T) {
 	}
 }
 
+// The approvals inbox badge is the caller's own count: the token's tenant,
+// and the request context (which carries the caller's data scope) passed
+// through unchanged to the same call GET /approvals makes.
+func TestBootstrapSession_PendingApprovalsForAnApprover(t *testing.T) {
+	calls := &bsCalls{}
+	h := bsHandler(calls, false)
+	resp := withModules(module.ModuleFindings)
+	h.addSession(bsRequest(t, bsUserEntity(t, bsUser), []string{permission.FindingsApprove.String()}, false), resp, bsTenant, bsUser)
+
+	if resp.Badges == nil || resp.Badges.PendingApprovals == nil || *resp.Badges.PendingApprovals != 4 {
+		t.Fatalf("pending approvals badge = %+v, want 4", resp.Badges)
+	}
+	if calls.approvalsTenant.String() != bsTenant {
+		t.Fatalf("approvals counted for tenant %s, want the token's", calls.approvalsTenant)
+	}
+}
+
+func TestBootstrapSession_PendingApprovalsNeedFindingsApprove(t *testing.T) {
+	calls := &bsCalls{}
+	h := bsHandler(calls, false)
+	resp := withModules(module.ModuleFindings)
+	h.addSession(bsRequest(t, bsUserEntity(t, bsUser), []string{permission.FindingsRead.String(), permission.FindingsWrite.String()}, false), resp, bsTenant, bsUser)
+
+	if calls.approvalsCalled {
+		t.Fatal("approvals were counted for a caller without findings:approve")
+	}
+	if resp.Badges != nil && resp.Badges.PendingApprovals != nil {
+		t.Fatalf("pending approvals badge = %d, want omitted", *resp.Badges.PendingApprovals)
+	}
+}
+
+func TestBootstrapSession_PendingApprovalsNeedTheFindingsModule(t *testing.T) {
+	calls := &bsCalls{}
+	h := bsHandler(calls, false)
+	resp := withModules(module.ModuleAttackSurface)
+	h.addSession(bsRequest(t, bsUserEntity(t, bsUser), []string{permission.FindingsApprove.String()}, false), resp, bsTenant, bsUser)
+
+	if calls.approvalsCalled {
+		t.Fatal("approvals were counted with the findings module off")
+	}
+}
+
 func TestBootstrapSession_ProfileOnlyForTheTokensOwnUser(t *testing.T) {
 	calls := &bsCalls{}
 	h := bsHandler(calls, false)
@@ -186,11 +237,14 @@ func TestBootstrapSession_ProfileOnlyForTheTokensOwnUser(t *testing.T) {
 func TestBootstrapSession_AFailingSourceIsLeftOut(t *testing.T) {
 	calls := &bsCalls{}
 	h := bsHandler(calls, true)
-	resp := withModules(module.ModuleAttackSurface)
+	resp := withModules(module.ModuleAttackSurface, module.ModuleFindings)
 	h.addSession(bsRequest(t, bsUserEntity(t, bsUser), nil, true), resp, bsTenant, bsUser)
 
 	if resp.Tenants != nil {
 		t.Fatalf("tenants = %+v, want omitted after a failure", resp.Tenants)
+	}
+	if !calls.approvalsCalled {
+		t.Fatal("the pending approval count was not asked for")
 	}
 	if resp.Badges != nil {
 		t.Fatalf("badges = %+v, want omitted after failures", resp.Badges)

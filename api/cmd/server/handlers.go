@@ -1489,7 +1489,8 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 
 // bootstrapSession wires the session parts of GET /me/bootstrap to the same
 // code that serves /users/me, /users/me/tenants, /notifications/unread-count,
-// /easm/candidates and the organization policy of /auth/providers.
+// /easm/candidates, the pending count of /approvals and the organization
+// policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
 	s := handler.BootstrapSession{}
 	if h.User != nil {
@@ -1504,6 +1505,16 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	}
 	if h.Announcement != nil {
 		s.Announcements = h.Announcement.ActiveResponses
+	}
+	if svc.Vulnerability != nil {
+		vulns := svc.Vulnerability
+		s.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
+			page, err := vulns.ListApprovals(ctx, tenantID.String(), string(vulnerability.ApprovalStatusPending), 1, 1)
+			if err != nil {
+				return 0, err
+			}
+			return int(page.StatusCounts[vulnerability.ApprovalStatusPending]), nil
+		}
 	}
 	mode := cfg.Auth.TenantCreationMode
 	signup := svc.Signup
