@@ -295,6 +295,17 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"content_packs": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "seed", "version": "1", "kind": "wordlist", "tier": "T0", "status": "active", "source": "upload"}
 	},
+	// Content catalog (RFC-099): an organization package with valid
+	// digests; a request that has no target (uninstall) and no decider yet
+	// (the decider must differ from the requester).
+	"content_packages": func(*schemaSeeder) map[string]any {
+		return map[string]any{"type": "rules", "origin": "organization", "tier": "T0",
+			"manifest_digest": "sha256:" + strings.Repeat("a", 64), "artifact_digest": "sha256:" + strings.Repeat("b", 64),
+			"revoked_at": nil, "revoke_reason": nil}
+	},
+	"content_install_requests": func(*schemaSeeder) map[string]any {
+		return map[string]any{"action": "uninstall", "target_row_id": nil, "status": "pending", "decided_by": nil}
+	},
 	"finding_imports": func(*schemaSeeder) map[string]any {
 		return map[string]any{"filename_sha256": strings.Repeat("ab", 32)}
 	},
