@@ -519,6 +519,8 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/audit-logs", func(r Router) {
 			r.GET("/", h.AdminAudit.List)
 			r.GET("/stats", h.AdminAudit.GetStats)
+			// The hash chain's state (append-only log, migration 002545).
+			r.GET("/chain", h.AdminAudit.VerifyChain)
 			r.GET("/{id}", h.AdminAudit.Get)
 		}, adminMiddlewares...)
 	}
