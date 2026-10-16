@@ -46,7 +46,7 @@ func (m breakGlassMailer) NotifyBreakGlassSignIn(_ context.Context, a adminconso
 	}
 	name := m.appName
 	if name == "" {
-		name = "OpenCTEM"
+		name = defaultAppName
 	}
 	who := strings.NewReplacer("\r", "", "\n", "").Replace(a.AdminEmail)
 	subject := fmt.Sprintf("[%s] Break-glass administrator sign-in: %s", name, who)
