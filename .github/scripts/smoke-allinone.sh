@@ -19,7 +19,7 @@ name="openctem-smoke-$$"
 common=(
   --network "$net"
   -e APP_ENV=development -e AUTH_PROVIDER=local -e AUTH_REQUIRE_EMAIL_VERIFICATION=false
-  -e AUTH_JWT_SECRET="$(openssl rand -hex 32)" -e APP_ENCRYPTION_KEY="$(openssl rand -hex 32)"
+  -e AUTH_JWT_SECRET="$(openssl rand -hex 32)" -e APP_ENCRYPTION_KEY="$(openssl rand -hex 32)" -e FINGERPRINT_KEY="$(openssl rand -hex 32)"
   -e DB_HOST="${DB_HOST:-localhost}" -e DB_PORT="${DB_PORT:-5432}" -e DB_USER="${DB_USER:-openctem}"
   -e DB_PASSWORD="${DB_PASSWORD:-}" -e DB_NAME="${DB_NAME:-app_smoke}" -e DB_SSLMODE=disable
   -e REDIS_HOST="${REDIS_HOST:-localhost}" -e REDIS_PORT="${REDIS_PORT:-6379}"
