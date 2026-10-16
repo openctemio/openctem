@@ -86,9 +86,13 @@ func TestAdminContentPacks_StepUpAndAudit_DB(t *testing.T) {
 	if code, _ := su.do(http.MethodPut, channel, map[string]string{"pack_id": p.ID.String(), "totp_code": su.freshCode(true)}, true); code != http.StatusBadRequest {
 		t.Fatalf("no reason: %d", code)
 	}
+	// The code of the refused request still opened the step-up window.
+	su.closeStepUpWindow()
 	if code, body := su.do(http.MethodPut, channel, map[string]string{"pack_id": p.ID.String(), "reason": "promote"}, true); code != http.StatusUnauthorized || !strings.Contains(body, "STEP_UP_REQUIRED") {
 		t.Fatalf("no code: %d %s", code, body)
 	}
+	// The route spent the code of the request refused for its reason.
+	su.resetReplayGuard()
 	if code, _ := su.do(http.MethodPost, revoke, map[string]string{"reason": "bad", "totp_code": "000000"}, true); code != http.StatusUnauthorized {
 		t.Fatalf("wrong code: %d", code)
 	}
