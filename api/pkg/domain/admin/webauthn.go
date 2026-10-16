@@ -126,7 +126,15 @@ var (
 // ConsoleMFAPolicy is the platform setting "require WebAuthn for the console".
 type ConsoleMFAPolicy struct {
 	RequireWebAuthn bool `json:"require_webauthn"`
+	// GraceUntil is when administrators who hold no security key yet lose
+	// TOTP sign-in under the policy (set when the policy is switched on).
+	// Absent while the policy is on means the grace is over.
+	GraceUntil *time.Time `json:"grace_until,omitempty"`
 }
+
+// DefaultWebAuthnGrace is how long, from the policy switch, an administrator
+// without a security key may still sign in with TOTP to enroll one.
+const DefaultWebAuthnGrace = 7 * 24 * time.Hour
 
 // ConsoleMFAPolicyKey is the platform_settings key of ConsoleMFAPolicy.
 const ConsoleMFAPolicyKey = "console_mfa_policy"
@@ -138,6 +146,10 @@ type FactorStatus struct {
 	TOTPEnabled        bool
 	PolicyRequires     bool
 	BreakGlassExempted bool
+	// GraceUntil is the policy's enrollment deadline for TOTP-only
+	// administrators; GraceOver is true once it has passed (or none is set).
+	GraceUntil *time.Time
+	GraceOver  bool
 }
 
 // Compliant reports whether the administrator meets "require WebAuthn": at
@@ -155,7 +167,8 @@ func (f FactorStatus) EnrollmentRequired() bool {
 // TOTPAllowed reports whether a TOTP code may prove this administrator. Under
 // "require WebAuthn" an administrator who holds an authenticator must use it
 // (TOTP can be relayed by a phishing proxy); one who has none yet may use TOTP
-// to reach the enrollment pages. Break-glass accounts keep TOTP.
+// to reach the enrollment pages until the grace deadline, then is refused.
+// Break-glass accounts keep TOTP.
 func (f FactorStatus) TOTPAllowed() bool {
-	return !f.PolicyRequires || f.BreakGlassExempted || f.WebAuthnCount == 0
+	return !f.PolicyRequires || f.BreakGlassExempted || (f.WebAuthnCount == 0 && !f.GraceOver)
 }

@@ -207,6 +207,10 @@ site. This amendment replaces P2 for the console.
 | W7 | Ten one-time recovery codes (60 bits each, SHA-256 at rest), shown once, regenerated with step-up; a recovery code completes a sign-in, never a step-up | the lost-key path that needs no other administrator |
 | W8 | Step-up with a key opens the session's five-minute step-up window; the action is retried without a code | one mechanism for route-level and handler-level step-ups |
 | W9 | Policy "require security keys" (platform setting `console_mfa_policy`, super admin + step-up), off by default | the off → on path below never locks anyone out |
+| W11 | Four actions never ride the five-minute window: adding a key, regenerating recovery codes, the require-keys policy change and owner create or recovery. Each takes a fresh authenticator code, or a security-key confirmation given within the last minute that this one action spends (single use: the mark is cleared in one statement). The window itself is not widened and the other step-up routes are unchanged | a stolen session inside someone's window could otherwise add its own key and lock the owner out |
+| W12 | Under the policy, an administrator with no key may use TOTP only until a grace deadline, 7 days from the off → on switch (`grace_until` in the policy, shown in the console); saving the policy again while on keeps it. After it TOTP is refused (`WEBAUTHN_REQUIRED`); recovery codes and break-glass accounts are unaffected | an unenrolled account is the phishable one; the deadline bounds that exposure while still letting everyone enroll |
+| W13 | Every key added and every recovery-code regeneration emails the administrator (system SMTP, after the change committed, failures only logged; the audit row is written either way) | a takeover that adds its own key or replaces the codes is noticed by the owner of the account |
+| W14 | The enrollment gate that runs on every console request reads the administrator's factor standing from a 30-second in-process cache, dropped at once on this instance when the administrator's factors or the policy change; sign-in, step-up and policy decisions never use it | removes four queries from every console request; another instance may act on a change up to 30 seconds late |
 | W10 | TOTP stays (fallback, and the only factor of an administrator without keys). `admin_credentials` is not dropped yet | dropping it is a contract step once every administrator holds keys |
 
 ### 7.2 "Require security keys": the off → on path
@@ -221,8 +225,10 @@ site. This amendment replaces P2 for the console.
      and step-up (403 `WEBAUTHN_REQUIRED`); recovery codes still work;
    - a platform-IdP sign-in whose MFA is trusted still asks for the key;
    - an administrator with fewer than two keys or no recovery codes can still
-     sign in (TOTP while they hold no key), but the session reaches only the
-     enrollment routes (403 `FACTOR_ENROLLMENT_REQUIRED`) until they comply;
+     sign in (TOTP while they hold no key and the grace deadline of W12 has
+     not passed), but the session reaches only the enrollment routes (403
+     `FACTOR_ENROLLMENT_REQUIRED`) until they comply; after the deadline an
+     administrator with no key is refused TOTP too;
    - the last two keys cannot be removed (register a replacement first);
    - break-glass administrators keep TOTP (they exist for the day the normal
      path fails).
@@ -256,13 +262,13 @@ Audit actions: `console.webauthn_registered`, `console.webauthn_removed`,
 |---|---|
 | Real-time phishing proxy relays the password and TOTP | under the policy, an administrator with a key cannot use TOTP; the key's assertion is bound to the console origin |
 | Script on the tenant site asks for a console assertion (port mode shares the host, so the RP ID) | the origin in the client data is the tenant origin: refused (only the console origin is accepted) |
-| Stolen console session adds an attacker key | registration needs a fresh step-up (TOTP or an existing key) and is audited at high severity; ceremonies are bound to the session |
-| Stolen session removes keys or replaces recovery codes | both take a step-up; the floor keeps two keys under the policy |
+| Stolen console session adds an attacker key | registration needs a fresh check for that action alone (a code, or a key confirmation under a minute old, spent by it; W11), is audited, and emails the administrator (W13); ceremonies are bound to the session |
+| Stolen session removes keys or replaces recovery codes | removal takes a step-up and keeps the floor of two keys under the policy; regenerating codes takes the fresh check of W11 and emails the administrator |
 | Challenge replay | single-use ceremony per session and purpose, 5-minute TTL, deleted on use |
 | Cloned non-synced key | counter regression refused and audited |
 | Another administrator's key | the assertion must match one of the signing-in administrator's own credentials and user handle |
 | Turning the policy on locks administrators out | actor must comply; others are held on enrollment, not refused; break-glass keeps TOTP; reset-credentials remains |
-| Grace period abused (TOTP of an administrator without keys is phished, then a key is registered) | the window lasts only until each administrator enrolls; registration is audited; super admins see compliance in Security > My security keys; enrol before turning the policy on |
+| Grace period abused (TOTP of an administrator without keys is phished, then a key is registered) | the window lasts until each administrator enrolls and never past the 7-day deadline (W12); registration is audited and emailed; super admins see compliance in Security > My security keys; enrol before turning the policy on |
 | Recovery code guessing | 60-bit codes, behind the password step, the login rate limit and the lockout |
 | Changing `ADMIN_PUBLIC_URL` | registered keys stop working (different RP ID); administrators sign in with TOTP or a recovery code and register again; documented in the variable |
 

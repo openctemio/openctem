@@ -23,7 +23,26 @@ const (
 	// StepUpWindow is how long one step-up confirmation covers the protected
 	// actions of the same console session.
 	StepUpWindow = 5 * time.Minute
+	// FreshStepUpWindow is how recent a security-key confirmation must be for
+	// an action that asks for a fresh check (RequireAdminFreshStepUp). The
+	// confirmation is spent by that one action, so it cannot carry a second.
+	FreshStepUpWindow = time.Minute
 )
+
+type freshStepUpKey struct{}
+
+// WithFreshStepUp marks ctx so that the protected-action check accepts only a
+// fresh authenticator code or a just-given, single-use security-key
+// confirmation, never the session's step-up window.
+func WithFreshStepUp(ctx context.Context) context.Context {
+	return context.WithValue(ctx, freshStepUpKey{}, true)
+}
+
+// FreshStepUpRequired reports whether ctx was marked by WithFreshStepUp.
+func FreshStepUpRequired(ctx context.Context) bool {
+	v, _ := ctx.Value(freshStepUpKey{}).(bool)
+	return v
+}
 
 // Credentials are an admin's console second factor. Absent (nil) until the
 // admin first opens the console and is issued a secret to enroll.
@@ -93,6 +112,10 @@ type ConsoleRepository interface {
 	TouchSession(ctx context.Context, id shared.ID, at time.Time) error
 	// MarkSessionStepUp records a step-up confirmation on a verified session.
 	MarkSessionStepUp(ctx context.Context, id shared.ID, at time.Time) error
+	// ConsumeSessionStepUp atomically clears the session's step-up mark and
+	// reports whether it was set no earlier than notBefore: a security-key
+	// confirmation can pay for one fresh action only.
+	ConsumeSessionStepUp(ctx context.Context, id shared.ID, notBefore time.Time) (bool, error)
 	DeleteSession(ctx context.Context, id shared.ID) error
 	// DeleteSessionsForAdmin ends every session of one admin.
 	DeleteSessionsForAdmin(ctx context.Context, adminID shared.ID) error
