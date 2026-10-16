@@ -322,6 +322,11 @@ func registerVulnerabilityRoutes(
 		// Jira: open a ticket for a finding.
 		if jiraHandler != nil {
 			r.POST("/{id}/create-ticket", jiraHandler.CreateTicket, middleware.Require(permission.FindingsWrite))
+			// Ticket links: the finding's linked issues; link an existing
+			// issue of the organization's Jira site; unlink.
+			r.GET("/{id}/ticket-links", jiraHandler.ListTicketLinks, middleware.Require(permission.FindingsRead))
+			r.POST("/{id}/ticket-links", jiraHandler.LinkTicketIssue, middleware.Require(permission.FindingsWrite))
+			r.DELETE("/{id}/ticket-links/{link_id}", jiraHandler.UnlinkTicketIssue, middleware.Require(permission.FindingsWrite))
 		}
 
 		// Delete operations
@@ -364,6 +369,9 @@ func registerVulnerabilityRoutes(
 	router.Group("/api/v1/findings/{id}/approvals", func(r Router) {
 		r.GET("/", h.ListFindingApprovals, middleware.Require(permission.FindingsRead))
 		r.POST("/", h.RequestApproval, middleware.Require(permission.FindingsWrite))
+		// How a false positive on this finding is decided now (the request
+		// dialog says when no second person is needed).
+		r.GET("/policy", h.GetFalsePositivePolicy, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 
 	// Approval management routes - tenant from JWT token
@@ -372,8 +380,19 @@ func registerVulnerabilityRoutes(
 		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/reject", h.RejectApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/cancel", h.CancelApproval, middleware.Require(permission.FindingsWrite))
+		r.POST("/{id}/remind", h.RemindApprovals, middleware.Require(permission.FindingsWrite))
+		// The sole member's own approval: findings:approve, and the service
+		// checks owner, sole active person, fresh authenticator code, reason.
+		r.POST("/{id}/self-approve", h.SelfApproveApproval, middleware.Require(permission.FindingsApprove))
 	}, tenantMiddlewares...)
 
+	// The organization's finding approval settings: read with findings:read;
+	// change only by an owner or administrator holding settings:write, with a
+	// recent re-authentication (audited, approvers told).
+	router.Group("/api/v1/organization/settings/finding-approvals", func(r Router) {
+		r.GET("/", h.GetFindingApprovalSettings, middleware.Require(permission.FindingsRead))
+		r.PUT("/", h.UpdateFindingApprovalSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
+	}, tenantMiddlewares...)
 }
 
 // registerFindingActivityRoutes registers finding activity endpoints.
