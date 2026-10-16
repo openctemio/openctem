@@ -23,7 +23,7 @@ import { saveConsoleMfaPolicy, useConsoleMfaPolicy } from '../api/use-console-fa
  * the authority.
  */
 export function ConsoleMfaPolicyCard() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const switchId = useId()
   const { data, error, isLoading, mutate } = useConsoleMfaPolicy()
   const [pending, setPending] = useState<boolean | null>(null)
@@ -150,6 +150,15 @@ export function ConsoleMfaPolicyCard() {
               'Other administrators are not locked out: they are asked to register keys and recovery codes before the rest of the console opens.'
             )}
           </li>
+          {data.require_webauthn && data.grace_until && (
+            <li>
+              {t(
+                'admin.mfaPolicy.grace',
+                'Administrators who hold no key may use the authenticator app until {date}; after that they are refused and must be reset by another super admin or sign in with a recovery code.',
+                { date: new Date(data.grace_until).toLocaleString(locale) }
+              )}
+            </li>
+          )}
           <li>
             {t(
               'admin.mfaPolicy.ruleFloor',
