@@ -178,6 +178,17 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   exceptions expire at their decision deadline with the hourly job.
 - Afterwards each member is an ordinary decision: its own expiry and material-change check. Findings that join
   the task later are not covered.
+- Console: the task page offers **Request exception** (with `findings:remediation:write` and `findings:write`
+  on an open task whose findings are all visible). The dialog takes the status, the reason code of that status,
+  the note (at least the preview's `min_note_length`) and, for an accepted risk, the end (within a year), and
+  previews the group as the choices change: the tier and why, who may approve, and every finding with its tier,
+  its end ("shortened to its limit" when its cap is earlier) or why it is left out. While an exception is
+  pending, the task page shows it (tier, approvals so far, member count, deadline) with a link to the inbox
+  instead of the action. The approvals inbox (`/findings/approvals`) has a **Group exceptions** view: one row
+  per exception (task, status, tier and approvals, member count, deadline) and a side panel with the members,
+  Approve / Reject (reason required) / Cancel (the requester), handled like a single approval (the remaining
+  approvals, the refusal reason, re-authentication). A member request in the findings view links to its group
+  instead of offering its own Approve / Reject. Strings are in the `findingApprovals` dictionary (en, vi).
 
 ## Console
 
@@ -186,7 +197,7 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 | `/remediation` Fix plan | open tasks and new-fix suggestions in one list ranked by risk left; open, overdue, to-review and my-task counts |
 | `/remediation/suggestions` | the inbox: cards with the fix, reach, risk parts, proposed owners and "Why?" (key, algorithm, fix steps); accept, edit then accept, dismiss with a reason (undo), snooze 7 days (undo), bulk accept; keyboard j/k, a, e, d, s, x, ? |
 | `/remediation/tasks` | views (all open, mine, verifying, on hold, closed, all), search and sort; a server-paged table or a board by state where only "on hold" moves by drag |
-| `/remediation/tasks/{id}` | header (state, deadline and its source, owner, risk left), fix steps with the command to copy, progress, findings grouped by asset in a windowed list that loads as it scrolls, select and Move to… (palette with the server's compatibility warnings) or drag onto a task of the same fix, Split, Mark fixed, hold/resume/cancel, timeline; every move offers Undo |
+| `/remediation/tasks/{id}` | header (state, deadline and its source, owner, risk left), fix steps with the command to copy, progress, findings grouped by asset in a windowed list that loads as it scrolls, select and Move to… (palette with the server's compatibility warnings) or drag onto a task of the same fix, Split, Mark fixed, Request exception (or the pending exception), hold/resume/cancel, timeline; every move offers Undo |
 | `/remediation/campaigns` | the campaigns (formerly the page at `/remediation`) |
 
 Strings are in the `remediationHub` dictionary (en, vi). Write actions show only with
