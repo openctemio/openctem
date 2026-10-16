@@ -170,8 +170,10 @@ services:
   # superuser and (re)applies postgres/least-privilege-roles.sql: the migrator
   # (DB_MIGRATE_USER) owns the schema, the API's DB_USER gets DML only. It is
   # idempotent and runs on every `up`. Without DB_MIGRATE_USER it does nothing
-  # and everything connects as DB_USER, as before.
-  db-roles:
+  # and everything connects as DB_USER, as before. With DB_ADMIN_USER too, the
+  # platform console's identity tables (administrators, console sessions) are
+  # written by that role alone, and the API's DB_USER only reads admin_users.
+  db-roles: &db-roles
     image: postgres:${POSTGRES_VERSION:-17}
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -188,10 +190,15 @@ services:
         if same "$$PGPASSWORD" "$$DB_PASSWORD" || same "$$DB_MIGRATE_PASSWORD" "$$DB_PASSWORD"; then
           echo "db-roles: the superuser, migrator and app (DB_PASSWORD) need different passwords; set DB_SUPERUSER_PASSWORD and DB_MIGRATE_PASSWORD" >&2; exit 1
         fi
-        exec psql -X -v ON_ERROR_STOP=1 \
-          -v app_user="$$DB_USER" -v app_password="$$DB_PASSWORD" \
-          -v migrator_user="$$DB_MIGRATE_USER" -v migrator_password="$$DB_MIGRATE_PASSWORD" \
-          -f /bootstrap/least-privilege-roles.sql
+        set -- -v app_user="$$DB_USER" -v app_password="$$DB_PASSWORD" \
+          -v migrator_user="$$DB_MIGRATE_USER" -v migrator_password="$$DB_MIGRATE_PASSWORD"
+        if [ -n "$${DB_ADMIN_USER:-}" ]; then
+          if [ -z "$${DB_ADMIN_PASSWORD:-}" ] || same "$$DB_ADMIN_PASSWORD" "$$DB_PASSWORD" || same "$$DB_ADMIN_PASSWORD" "$$DB_MIGRATE_PASSWORD"; then
+            echo "db-roles: DB_ADMIN_USER needs its own DB_ADMIN_PASSWORD" >&2; exit 1
+          fi
+          set -- "$$@" -v admin_user="$$DB_ADMIN_USER" -v admin_password="$$DB_ADMIN_PASSWORD"
+        fi
+        exec psql -X -v ON_ERROR_STOP=1 "$$@" -f /bootstrap/least-privilege-roles.sql
     environment:
       PGHOST: ${DB_HOST:-postgres}
       PGPORT: ${DB_PORT:-5432}
@@ -203,6 +210,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       DB_MIGRATE_USER: ${DB_MIGRATE_USER:-}
       DB_MIGRATE_PASSWORD: ${DB_MIGRATE_PASSWORD:-}
+      DB_ADMIN_USER: ${DB_ADMIN_USER:-}
+      DB_ADMIN_PASSWORD: ${DB_ADMIN_PASSWORD:-}
     volumes:
       - ./postgres:/bootstrap:ro
     depends_on:
@@ -218,6 +227,15 @@ services:
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
+
+  # The same script again once the migrations ran: tables a migration just
+  # created (a fresh install, a release adding a table) get their grants and
+  # revokes before the API starts, not on the next `up`.
+  db-grants:
+    <<: *db-roles
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   # ---------------------------------------------------------------------------
   # Database migrations (one-shot, before the API), as the schema owner
@@ -279,6 +297,9 @@ services:
       DB_PORT: ${DB_PORT:-5432}
       DB_USER: ${DB_USER:-openctem}
       DB_PASSWORD: ${DB_PASSWORD}
+      # The console's identity tables are written with this role (db-roles).
+      DB_ADMIN_USER: ${DB_ADMIN_USER:-}
+      DB_ADMIN_PASSWORD: ${DB_ADMIN_PASSWORD:-}
       DB_NAME: ${DB_NAME:-openctem}
       DB_SSLMODE: ${DB_SSLMODE:-require}
       REDIS_HOST: ${REDIS_HOST:-redis}
@@ -330,7 +351,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
+      db-grants:
         condition: service_completed_successfully
     networks:
       - openctem
