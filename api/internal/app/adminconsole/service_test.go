@@ -158,6 +158,18 @@ func (f *fakeConsole) GetSessionByTokenHash(_ context.Context, h string) (*admin
 	return &cp, nil
 }
 
+func (f *fakeConsole) SetSessionElevation(_ context.Context, id shared.ID, role admin.AdminRole, until *time.Time, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, s := range f.sessions {
+		if s.ID == id && s.MFAVerified {
+			s.ElevatedRole, s.ElevatedUntil = role, until
+			return nil
+		}
+	}
+	return admin.ErrSessionNotFound
+}
+
 func (f *fakeConsole) MarkSessionStepUp(_ context.Context, id shared.ID, at time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

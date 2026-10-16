@@ -729,6 +729,21 @@ the console's own second factor. Signing out of the console ends only the
 console session. A tenant-side session bug can no longer lead into the
 console, and the console works on an origin of its own, where a host-only
 cookie of the tenant origin would never arrive anyway.
+### Time-boxed elevation
+
+Administrators act as read-only until they elevate (owner decision D8,
+`ADMIN_ELEVATION=required`, the default). `POST /api/v1/admin/auth/elevate
+{role, minutes, reason}` (step-up) makes the console session act as
+`ops_admin` or `super_admin`, never above the administrator's own role, for 15
+to 60 minutes (never past the session), audited at high severity
+(`console.elevated`); `DELETE /api/v1/admin/auth/elevate` ends it at once.
+The elevation lives on the session (`admin_sessions.elevated_role`,
+`elevated_until`, migration 002813), so another session of the same
+administrator stays read-only. Authorization uses the acting role
+(`AdminUser.EffectiveRole`); the persisted role is the ceiling and is never
+changed by acting. `GET /admin/auth/validate` returns `role` (acting),
+`max_role` and `elevated_until`; the console shows a bar to elevate or end.
+Approval of an elevation by another super admin is a later step.
 
 ## Later phases
 

@@ -21,8 +21,11 @@ Decided 2026-10-08.
 | `platform_scans_concurrent` | platform scans running at once | 1 |
 | `free_teams_per_user` | Free organizations one person owns (checked when an organization is created) | 1 |
 | `findings` | the organization's findings (a new fingerprint; a re-sighting of an existing finding counts nothing) | unlimited |
+| `lifecycle_sub_statuses` | finding sub-statuses that are not archived ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)) | 3 |
+| `lifecycle_schemes` | finding lifecycle schemes that are not archived (Free: labels only; Pro defaults to 1) | 0 |
 
-`-1` means unlimited. Pro and Enterprise start unlimited; a platform
+`-1` means unlimited. Pro and Enterprise start unlimited, except that Pro
+starts with one finding lifecycle scheme (`lifecycle_schemes` = 1); a platform
 administrator sets the Pro limits in the console before selling it.
 
 `findings` is unlimited on every plan by default (decided 2026-10-09). It
