@@ -98,6 +98,9 @@ func (r *SuppressionRepository) ApproveWithSignoff(ctx context.Context, rule *su
 		res, err = r.approveLockedInTx(ctx, tx, rule, rec.UserID, details, limit)
 		return err
 	})
+	if err == nil && complete {
+		observeSuppressionHits("approval", res.Applied)
+	}
 	return res, collected, complete, err
 }
 
