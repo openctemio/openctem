@@ -107,12 +107,22 @@ type acceptanceEnding struct {
 	dueOnly bool
 	extra   map[string]any
 	audit   string
+	// approvalID, when set, is the approved request the ending acts on: the
+	// row is locked first and the ending stops when it is no longer approved
+	// or the finding holds a newer approved request (a decision made after the
+	// change was seen must not be undone by it).
+	approvalID string
 }
 
 // endAcceptance reopens one accepted finding in one transaction (see Expire).
 func (r *FindingAcceptanceExpiryRepository) endAcceptance(ctx context.Context, due vulnerability.AcceptanceDue, newDeadline *time.Time, now time.Time, why acceptanceEnding) (bool, error) {
 	wrote := false
 	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		if why.approvalID != "" {
+			if ok, err := lockApprovedRequest(ctx, tx, due.TenantID, why.approvalID); err != nil || !ok {
+				return err
+			}
+		}
 		var expiresAt sql.NullTime
 		err := tx.QueryRowContext(ctx, `
 			SELECT acceptance_expires_at FROM findings
@@ -125,6 +135,13 @@ func (r *FindingAcceptanceExpiryRepository) endAcceptance(ctx context.Context, d
 		}
 		if err != nil {
 			return fmt.Errorf("lock ended acceptance: %w", err)
+		}
+		if why.approvalID != "" {
+			// The finding is locked now, so a request approved a moment ago
+			// is visible.
+			if newer, err := hasNewerApprovedRequest(ctx, tx, due.TenantID, why.approvalID); err != nil || newer {
+				return err
+			}
 		}
 
 		if newDeadline != nil {

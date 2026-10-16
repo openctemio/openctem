@@ -6,13 +6,24 @@
 -- now and ends, flags or revokes the decision; an accepted risk that is
 -- flagged rather than ended gets the review reason material_change_accepted.
 --
--- Live impact: one nullable column (catalog change); the review reason CHECK
+-- last_checked_at is when the controller last looked at the decision, on
+-- every attempt including a failed one; the controller takes the least
+-- recently checked first, so a decision that keeps failing cannot hold the
+-- batch and starve other organizations.
+--
+-- Live impact: two nullable columns (catalog change); the review reason CHECK
 -- is re-added NOT VALID (no scan) and validated by the next migration; a
 -- partial index on the few standing approved decisions, built in place
 -- (finding_status_approvals is small: approvals are rare).
 
 ALTER TABLE finding_status_approvals
     ADD COLUMN IF NOT EXISTS facts_baseline jsonb;
+
+ALTER TABLE finding_status_approvals
+    ADD COLUMN IF NOT EXISTS last_checked_at timestamptz;
+
+COMMENT ON COLUMN finding_status_approvals.last_checked_at IS
+    'When the material-change controller last looked at this decision, successful or not (RFC-111 §6); NULL: never';
 
 COMMENT ON COLUMN finding_status_approvals.facts_baseline IS
     'Finding facts the material-change controller last checked this decision against (RFC-111 §6); NULL until the first check';
