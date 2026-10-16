@@ -14,6 +14,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/jobsign"
 )
 
 // maxResolvedTargets bounds how many targets one scan run may dispatch. Larger
@@ -365,6 +366,11 @@ func isInternalTarget(target string) bool {
 		return isInternalAddr(a)
 	}
 	lower := strings.ToLower(host)
+	// "2130706433", "0x7f.1": tools that accept inet_aton forms read these
+	// as addresses (127.0.0.1); no real name ends in a numeric label.
+	if jobsign.NumericHost(lower) {
+		return true
+	}
 	return lower == "localhost" || strings.HasSuffix(lower, ".localhost") ||
 		strings.HasSuffix(lower, ".local") || strings.HasSuffix(lower, ".internal")
 }
