@@ -1033,6 +1033,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 		// Approvals whose policy tier needs a recent re-authentication.
 		svc.Vulnerability.SetStepUpGate(gate)
 	}
+	if svc.Group != nil {
+		// Edits of the approval policy's security pool group.
+		svc.Group.SetStepUpGate(gate)
+	}
 	if svc.Sensor != nil {
 		svc.Sensor.SetStepUpGate(gate)
 	}
@@ -1495,7 +1499,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
-	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)); fp != nil {
+	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())); fp != nil {
 		runner.SetSecretKeys(fp)
 	}
 	// VEX documents a run uploads: stored on the run repository's findings,

@@ -200,14 +200,11 @@ export function ApprovalPolicyForm({ settings, canEdit, onSaved }: ApprovalPolic
     }
   }
 
-  // Choosing the policy in force again only tightens: it applies at once and
-  // clears the waiting relaxation.
+  // The API drops the waiting relaxation and keeps the policy in force.
   const cancelPending = async () => {
     setCanceling(true)
     try {
-      const next = await updateFindingApprovalSettings({
-        policy: settings.policy ?? platformDefaultPolicy(),
-      })
+      const next = await updateFindingApprovalSettings({ cancel_pending: true })
       toast.success(
         t('findingApprovals.settings.pendingCanceled', 'The waiting change was canceled')
       )
@@ -630,11 +627,6 @@ export function ApprovalPolicyForm({ settings, canEdit, onSaved }: ApprovalPolic
       )}
     </form>
   )
-}
-
-/** The platform defaults: what an organization without a policy has. */
-function platformDefaultPolicy(): ApprovalPolicy {
-  return { security_pool_strict: false, exclude_assignee: false, step_up_all_tiers: false }
 }
 
 function ToggleRow({

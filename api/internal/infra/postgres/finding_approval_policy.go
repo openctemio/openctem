@@ -96,12 +96,17 @@ func (r *FindingApprovalRepository) PolicyFacts(ctx context.Context, tenantID, f
 }
 
 // GroupMemberIDs lists the members of a group of the tenant (none for a
-// group of another tenant).
-func (r *FindingApprovalRepository) GroupMemberIDs(ctx context.Context, tenantID, groupID shared.ID) ([]shared.ID, error) {
+// group of another tenant) who joined it at or before addedBefore and whose
+// membership has not ended. A member who joined later is left out: the
+// security pool's membership is read when someone signs off, so a person
+// added a moment ago must not count.
+func (r *FindingApprovalRepository) GroupMemberIDs(ctx context.Context, tenantID, groupID shared.ID, addedBefore time.Time) ([]shared.ID, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT gm.user_id::text FROM group_members gm
 		JOIN groups g ON g.id = gm.group_id
-		WHERE g.tenant_id = $1 AND g.id = $2`, tenantID.String(), groupID.String())
+		WHERE g.tenant_id = $1 AND g.id = $2
+		  AND (gm.joined_at IS NULL OR gm.joined_at <= $3)
+		  AND (gm.expires_at IS NULL OR gm.expires_at > now())`, tenantID.String(), groupID.String(), addedBefore)
 	if err != nil {
 		return nil, fmt.Errorf("list security pool members: %w", err)
 	}
