@@ -699,7 +699,7 @@ func (s *Service) sensorInTenant(ctx context.Context, tenantID, id shared.ID) bo
 		return false
 	}
 	sen, err := s.sensors.GetByTenantAndID(ctx, tenantID, id)
-	return err == nil && sen != nil && !sen.IsPlatformSensor && sen.Status != sensordom.SensorStatusRevoked
+	return err == nil && sen != nil && !sen.IsShared() && sen.Status != sensordom.SensorStatusRevoked
 }
 
 func (s *Service) auditContext(a Actor) auditapp.AuditContext {

@@ -1255,7 +1255,7 @@ func TestSensorService_RenewAPIKey_PlatformSensor(t *testing.T) {
 	svc := newSensorSvcTestService(repo)
 	a := repo.seedSensor(shared.NewID(), "platform-1", sensor.SensorTypeWorker)
 	a.TenantID = nil
-	a.IsPlatformSensor = true
+	a.Scope = sensor.ScopeInstance
 
 	newKey, _, err := svc.RenewAPIKey(context.Background(), sensorapp.SensorIdentity{Sensor: a})
 	if err != nil {

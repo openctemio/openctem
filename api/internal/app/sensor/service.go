@@ -1312,7 +1312,7 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 			return "", nil, err
 		}
 		s.logger.Info("sensor renewed its API key (overlap)",
-			"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
+			"sensor_id", fresh.ID.String(), "shared", fresh.IsShared(),
 			"presented", id.presentedKeyLabel(), "expires_at", expiresAt, "previous_keys_expire_at", retireAt)
 		s.auditKeyRenewed(ctx, fresh, expiresAt, true, id.presentedLegacy)
 		return apiKey, expiresAt, nil
@@ -1345,7 +1345,7 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 	}
 
 	s.logger.Info("sensor renewed its API key",
-		"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
+		"sensor_id", fresh.ID.String(), "shared", fresh.IsShared(),
 		"presented", id.presentedKeyLabel(), "expires_at", expiresAt)
 	s.auditKeyRenewed(ctx, fresh, expiresAt, false, id.presentedLegacy)
 	return apiKey, expiresAt, nil
@@ -1358,7 +1358,7 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 func (s *SensorService) auditKeyRenewed(ctx context.Context, a *sensordom.Sensor, expiresAt *time.Time, overlap, fromLegacy bool) {
 	if fromLegacy {
 		s.logger.Info("sensor moved from a legacy rda_ key to an octs_ key on renewal",
-			"sensor_id", a.ID.String(), "is_platform", a.IsPlatformSensor)
+			"sensor_id", a.ID.String(), "shared", a.IsShared())
 	}
 	if s.auditService == nil || a.TenantID == nil {
 		return
@@ -1389,7 +1389,7 @@ func (s *SensorService) renewalRefused(ctx context.Context, a *sensordom.Sensor,
 	}
 	reason := err.Error()
 	s.logger.Warn("sensor key renewal refused",
-		"sensor_id", a.ID.String(), "is_platform", a.IsPlatformSensor,
+		"sensor_id", a.ID.String(), "shared", a.IsShared(),
 		"presented", id.presentedKeyLabel(), "reason", reason)
 	if s.auditService != nil && a.TenantID != nil {
 		s.warnAudit(s.auditService.LogSensorKeyRenewalRefused(ctx, auditapp.AuditContext{

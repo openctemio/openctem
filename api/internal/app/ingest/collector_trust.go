@@ -26,7 +26,7 @@ func (s *Service) trustedCollector(ctx context.Context, agt *sensor.Sensor, tena
 	}
 	stored, err := s.sensorRepo.GetByID(ctx, agt.ID)
 	if err != nil || stored == nil || stored.TenantID == nil || *stored.TenantID != tenantID ||
-		stored.IsPlatformSensor || stored.Type != sensor.SensorTypeCollector || stored.Status != sensor.SensorStatusActive {
+		stored.IsShared() || stored.Type != sensor.SensorTypeCollector || stored.Status != sensor.SensorStatusActive {
 		return false
 	}
 	g, err := s.grants.Get(ctx, tenantID, agt.ID)

@@ -180,7 +180,7 @@ func TestDoorbell_PlatformSensorSkipsTheQuery(t *testing.T) {
 	src := &fakeWork{work: sensordom.PendingWork{Count: 5}}
 	a := testSensor()
 	a.TenantID = nil
-	a.IsPlatformSensor = true
+	a.Scope = sensordom.ScopeInstance
 	h := newTestDoorbell(src).Ring(context.Background(), DoorbellRequest{Identity: SensorIdentity{Sensor: a}, Aware: true})
 	if src.calls != 0 || h.PendingJobs != 0 {
 		t.Fatalf("platform sensor: %d queries, pending %d; it does not use the tenant poll", src.calls, h.PendingJobs)

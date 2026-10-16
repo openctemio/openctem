@@ -204,7 +204,7 @@ func TestContentService_NoRegistryRulesetsForPlatformSensors(t *testing.T) {
 	tenant := shared.NewID()
 	own := contentSensor(tenant, true, sensordom.SensorStatusActive)
 	platform := contentSensor(tenant, true, sensordom.SensorStatusActive)
-	platform.IsPlatformSensor = true
+	platform.Scope = sensordom.ScopeInstance
 	svc, cmds, pols := newTestContentService(own, platform)
 	pols.stored = &sensordom.StoredContentPolicy{TenantID: tenant, Policy: sensordom.ContentPolicy{Content: map[string]sensordom.ContentPin{
 		sensordom.ContentSemgrepRules: {Rulesets: []string{"p/default"}, Version: "v0.1.0"},
