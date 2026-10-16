@@ -1954,6 +1954,7 @@
   "scans.ci.runDetail.notes": "Ghi chú",
   "scans.ci.reason.baseline_established": "Đã ghi đường cơ sở",
   "scans.ci.reason.no_results": "Không có kết quả",
+  "scans.ci.reason.not_judged": "Chưa được đánh giá (job cổng không chạy)",
   "scans.ci.repoSettings.ignoredValue": "Kho mã này đặt {value}, lỏng hơn mức khóa cho phép, nên bị bỏ qua.",
   "scans.ci.repoSettings.droppedFields": "Khi lưu, {fields} cũng bị gỡ khỏi ghi đè của kho mã này: khóa ở cấp trên bỏ qua giá trị lỏng hơn của nó.",
   "scans.ci.gatePolicy.deleteReason": "Lý do (bắt buộc khi việc này nới lỏng cổng kiểm tra)",
