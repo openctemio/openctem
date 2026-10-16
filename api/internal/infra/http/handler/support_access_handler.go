@@ -97,6 +97,8 @@ func (h *SupportAccessHandler) writeError(w http.ResponseWriter, err error, op s
 	switch {
 	case errors.Is(err, supportaccess.ErrGrantNotFound):
 		apierror.NotFound("support grant").WriteJSON(w)
+	case errors.Is(err, supportaccess.ErrNotOwner):
+		apierror.Forbidden("Only an owner of the organization grants support access").WriteJSON(w)
 	case errors.Is(err, supportaccess.ErrNotSupportAdmin):
 		apierror.BadRequest("No platform support administrator has this email").WriteJSON(w)
 	case errors.Is(err, supportaccess.ErrTooManyActiveGrant):
