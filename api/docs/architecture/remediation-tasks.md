@@ -60,10 +60,41 @@ A restricted member sees a task through its findings in their scope: counters, d
 findings and `hidden_members` counts the others. A task with none of their findings is `404`. They may change a
 task only when `hidden_members` is 0, and every finding they name must be in their scope.
 
+## Suggestions
+
+The generator only proposes; nothing is created until a person accepts.
+
+- **Candidates:** open, non-pentest findings with a remediation key (`finding_remediation_keys`) that are not
+  the primary member of an active task and not excluded for that key (`remediation_key_exclusions`).
+- **Owner:** the asset's first primary user owner (an active member) and first primary group owner
+  (`asset_owners`); none = the default queue.
+- **Kinds:** a key with no action → one `new_group` suggestion with a partition per owner (at least two
+  findings unless one is P0 or in KEV); a key with an action → per owner, `join` into that owner's live task or
+  `task_route` for a new task.
+- **Rank:** risk points, then findings, then the earliest SLA deadline. Confidence: 1.0 for `upgrade` and
+  `rotate` keys, 0.7 for `sol` (solution text) keys.
+- **Lifecycle:** `proposed`, `snoozed` (wakes at its date), `dismissed` (reason required; proposed again only
+  when findings grow by half or by ten, risk doubles or a finding becomes P0/KEV), `expired` (the run no longer
+  produces it), `accepted`.
+- **Noise:** at most 50 new suggestions shown per tenant per 24 hours (the rest wait, `queued` in the list and
+  stats); one `remediation_suggestions_digest` notification per tenant per day when new ones were shown.
+- **Runs:** the `remediation-suggestions` controller every 15 minutes (tenants with the remediation module on),
+  and `POST /api/v1/remediation/suggestions/run` (once a minute per tenant). One run = one transaction under a
+  per-tenant advisory lock.
+
+| Route | Gate |
+|---|---|
+| `GET /api/v1/remediation/suggestions`, `/stats`, `/{id}` | `findings:remediation:read` |
+| `GET /api/v1/remediation/suggestions/{id}/members` | `findings:remediation:read` + `findings:read` |
+| `POST /run`, `PATCH /{id}` (snooze), `POST /{id}/reject`, `POST /{id}/reopen` | `findings:remediation:write` |
+
+A restricted member sees a suggestion through its in-scope findings only (no ids of the others,
+`hidden_members` counts them) and may not decide on one with hidden findings.
+
 ## Shipped and planned
 
-Shipped: everything above. Planned (RFC-098 §5–§8): suggestions and accept flows, auto-join, moves, split,
-merge and detach, task-level mark fixed and regression tasks, the new Remediation console.
+Shipped: everything above. Planned (RFC-098 §6–§8): accept flows and auto-join, moves, split, merge and
+detach, task-level mark fixed and regression tasks, the new Remediation console.
 
 ## Key files
 
@@ -73,4 +104,9 @@ merge and detach, task-level mark fixed and regression tasks, the new Remediatio
 - `api/internal/app/remediation/tasks.go`
 - `api/internal/infra/http/handler/remediation_task_handler.go`, `routes/remediation.go`
 - `api/internal/infra/controller/remediation_tasks.go`
-- `api/tests/integration/remediation_tasks_test.go`
+- `api/migrations/*_remediation_suggestions.up.sql`
+- `api/pkg/domain/remediation/suggestion.go` (generator rules), `api/internal/app/remediation/suggestions.go`,
+  `api/internal/infra/postgres/remediation_suggestion_repository.go`,
+  `api/internal/infra/http/handler/remediation_suggestion_handler.go`,
+  `api/internal/infra/controller/remediation_suggestions.go`
+- `api/tests/integration/remediation_tasks_test.go`, `remediation_suggestions_test.go`
