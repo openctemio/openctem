@@ -1501,6 +1501,12 @@ more than the limit; an organization at its limit is skipped and its jobs
 wait. A limit that cannot be read counts as 0 (fail closed). Without the
 entitlement service the shared claim hands out nothing.
 
+**Access.** The access policy of RFC-100 §5 (`SharedSensorsAllowed`: the
+instance switch, the administrator's decision, the organization's opt-out)
+is applied again at claim time: an organization that lost access or opted
+out after queueing is skipped, and its jobs wait and expire. Without the
+policy wired the shared claim hands out nothing.
+
 **Gates.** Each organization's candidates pass the same gates as an
 organization sensor's claim, in that organization: the shared sensor's grant
 (it has no tenant), its manifest and local policy, the scope re-check, scan
@@ -1527,8 +1533,8 @@ fingerprints, key renewal, content) still refuse a shared sensor.
 treat shared jobs like the others. A shared job still queued 60 minutes
 after it was queued, or after it last went back to the queue, expires.
 
-**Gate.** No shared job is created until the access gate opens
-(`PlatformSensorsAllowed` answers false, RFC-100 §11).
+**Gate.** No shared job is created, and none is claimed, until the access
+gate opens (`SharedSensorsAllowed` answers false, RFC-100 §11).
 
 ## Load, capacity and release (RFC-030)
 

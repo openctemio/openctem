@@ -37,6 +37,19 @@ type SharedGrantReader interface {
 	GetShared(ctx context.Context, sensorID shared.ID) (*sensordom.Grant, error)
 }
 
+// SharedAccessPolicy says whether an organization may use shared sensors
+// now (the access policy of RFC-100 §5: the instance switch, the
+// administrator's decision, the organization's opt-out), and if not, why.
+type SharedAccessPolicy func(ctx context.Context, tenantID shared.ID) (bool, string)
+
+// WithSharedAccess wires the access policy the shared claim applies to each
+// organization at claim time: jobs an organization queued before it lost
+// access (or opted out) wait and expire instead of running. Without it the
+// shared claim hands out nothing (fail closed).
+func WithSharedAccess(p SharedAccessPolicy) Option {
+	return func(s *Service) { s.sharedAccess = p }
+}
+
 // WithSharedLimits wires the per-organization limit of shared jobs in
 // flight (platform_scans_concurrent). Without it the shared claim hands out
 // nothing (fail closed).
@@ -62,7 +75,8 @@ type SharedClaimInput struct {
 // ClaimShared is the shared sensor's claim-N poll. Candidates come in the
 // shared dispatch order (priority class with aging, the organization with
 // the fewest shared jobs in flight first). Each organization's candidates
-// pass the same gates as an organization sensor's claim, in that
+// pass the access policy (an organization that lost access or opted out is
+// skipped) and the same gates as an organization sensor's claim, in that
 // organization (the sensor's grant and local policy, scope re-check, scan
 // windows, program rules, tool settings); scans are capped at the sensor's
 // free slots; an organization gets no more shared jobs in flight than its
@@ -75,7 +89,7 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 		return nil, ErrNotSharedSensor
 	}
 	claimer, ok := s.repo.(SharedClaimer)
-	if !ok || s.sharedLimits == nil {
+	if !ok || s.sharedLimits == nil || s.sharedAccess == nil {
 		return nil, nil
 	}
 	defer observeClaimDuration(claimModeShared, time.Now())
@@ -106,6 +120,11 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 	layers := map[shared.ID]settingsLayers{}
 	kept := map[shared.ID]bool{}
 	for _, tenantID := range order {
+		if allowed, why := s.sharedAccess(ctx, tenantID); !allowed {
+			s.logger.Debug("organization may not use shared sensors now; its shared jobs wait",
+				"tenant_id", tenantID.String(), "reason", why)
+			continue
+		}
 		group := groups[tenantID]
 		group = s.gateWith(ctx, tenantID, subj, group).accepted(group)
 		group = s.recheckScope(ctx, tenantID, &sensorID, group)
