@@ -292,10 +292,10 @@ export function WorkflowMapper({
       <Tabs defaultValue="outbound">
         <TabsList>
           <TabsTrigger value="outbound">
-            {t('ticketMapping.status.outbound', 'OpenCTEM → Jira')}
+            {t('ticketMapping.status.outbound', '{product} → Jira')}
           </TabsTrigger>
           <TabsTrigger value="inbound">
-            {t('ticketMapping.status.inbound', 'Jira → OpenCTEM')}
+            {t('ticketMapping.status.inbound', 'Jira → {product}')}
           </TabsTrigger>
           <TabsTrigger value="simulate">
             {t('ticketMapping.status.simulator', 'Simulator')}
@@ -458,7 +458,7 @@ export function WorkflowMapper({
           <p className="mb-3 text-sm text-muted-foreground">
             {t(
               'ticketMapping.status.inboundHelp',
-              'A Jira status never closes a finding: Done claims a fix that OpenCTEM verifies, and the locked intents open a request that a second person approves.'
+              'A Jira status never closes a finding: Done claims a fix that {product} verifies, and the locked intents open a request that a second person approves.'
             )}
           </p>
           <ul className="grid gap-2">
@@ -577,7 +577,7 @@ export function WorkflowMapper({
           )}
           <div className="grid gap-3 rounded-lg border p-3">
             <h4 className="text-sm font-semibold">
-              {t('ticketMapping.status.simOut', 'When OpenCTEM changes state')}
+              {t('ticketMapping.status.simOut', 'When {product} changes state')}
             </h4>
             <div className="flex flex-wrap items-end gap-2">
               <div className="grid gap-1">
