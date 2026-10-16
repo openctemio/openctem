@@ -374,7 +374,7 @@ create's target validator, exclusions, zone routing) in one call.
 | `POST /private-packages` · `POST /private-packages/{ns}/{name}/{version}/revoke` | `content:publish` + a recent sign-in |
 
 Another organization's installation or request answers 404. Owners and administrators hold all three content
-permissions; members and viewers hold `content:read` (migrations `002571`, `002856`). `/api/v1/admin/content-catalog`: any
+permissions; members and viewers hold `content:read` (migrations `002571`, `002862`). `/api/v1/admin/content-catalog`: any
 platform administrator reads the trust status; `POST /import` needs a super admin, a reason and a fresh console
 authenticator code, and is audited.
 
