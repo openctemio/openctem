@@ -55,6 +55,8 @@
   "limits.key.ci_trusts": "CI trust configurations",
   "limits.key.findings": "Findings",
   "limits.key.invites_per_day": "Invitations a day",
+  "limits.key.lifecycle_schemes": "Finding lifecycles",
+  "limits.key.lifecycle_sub_statuses": "Finding sub-statuses",
   "limits.key.orgs_per_user": "Organizations per person",
   "limits.key.platform_scans_concurrent": "Concurrent platform scans",
   "limits.key.platform_scans_per_day": "Platform scans a day",

@@ -80,6 +80,8 @@ The limit is 5 seats; 7 are in use. Remove some, or ask your administrator for m
 | `platform_scans_per_day` | platform scans started a day (stored; enforced with platform scanning) |
 | `platform_scans_concurrent` | platform scans running at once (stored; enforced with platform scanning) |
 | `findings` | the organization's findings (a new fingerprint; a re-sighting counts nothing) |
+| `lifecycle_sub_statuses` | the organization's finding sub-statuses that are not archived ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)) |
+| `lifecycle_schemes` | its finding lifecycle schemes that are not archived |
 | `orgs_per_user` | organizations one person owns, checked when they create one themselves; an instance setting (self-service defaults), never per organization |
 
 `-1` means unlimited, the default of every key.
@@ -137,6 +139,7 @@ so every path that adds a row passes it, whatever the caller:
 | `SensorPairingRepository.Approve` (new sensor, not a re-pair) | `sensors` | sensor pairing |
 | `APIKeyRepository.Create` | `api_keys` | API key create |
 | `CIRunRepository.CreateTrustConfig` | `ci_trusts` | CI trust create |
+| `findinglifecycle.Service.CreateSubStatus`, `CreateScheme` | `lifecycle_sub_statuses`, `lifecycle_schemes` | finding lifecycle catalog |
 | `FindingRepository.Create`, `CreateInTx` | `findings` | manual finding create, finding import, pentest findings |
 | `FindingRepository.CreateBatchWithResult` | `findings` (only the batch's fingerprints the organization does not have yet) | ingest: new findings are admitted in report order up to the headroom; **each one over it is refused on its own** (a per-item error: v1 `errors`, v2 `finding_not_stored` item error), while the report's assets, the other findings and every re-sighting of an existing finding are still stored. The report is not failed or retried. When the limit cannot be read, every new finding of the batch is refused the same way (fail-closed). |
 
@@ -255,7 +258,7 @@ internal API fit as a third source, with no change to any check:
 - `internal/infra/http/internalapi`: the internal API (token verifier,
   replay cache, listener and endpoints); `cmd/server/internal_api.go` wires
   it.
-- Migration `per_organization_limits` (002783): moved every organization's
+- Migration `per_organization_limits` (002834): moved every organization's
   earlier limits and excluded modules to operator rows, then dropped the old
   tables.
 

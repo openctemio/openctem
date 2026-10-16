@@ -13,6 +13,8 @@ export const LIMIT_KEYS = [
   'platform_scans_per_day',
   'platform_scans_concurrent',
   'findings',
+  'lifecycle_sub_statuses',
+  'lifecycle_schemes',
   'orgs_per_user',
 ] as const
 export type LimitKey = (typeof LIMIT_KEYS)[number]
@@ -36,6 +38,8 @@ export const LIMIT_KEY_LABEL: Record<LimitKey, string> = {
   platform_scans_per_day: 'Platform scans a day',
   platform_scans_concurrent: 'Concurrent platform scans',
   findings: 'Findings',
+  lifecycle_sub_statuses: 'Finding sub-statuses',
+  lifecycle_schemes: 'Finding lifecycles',
   orgs_per_user: 'Organizations per person',
 }
 

@@ -55,6 +55,8 @@
   "limits.key.ci_trusts": "Cấu hình tin cậy CI",
   "limits.key.findings": "Phát hiện",
   "limits.key.invites_per_day": "Lời mời mỗi ngày",
+  "limits.key.lifecycle_schemes": "Vòng đời phát hiện",
+  "limits.key.lifecycle_sub_statuses": "Trạng thái con của phát hiện",
   "limits.key.orgs_per_user": "Tổ chức mỗi người",
   "limits.key.platform_scans_concurrent": "Lượt quét nền tảng đồng thời",
   "limits.key.platform_scans_per_day": "Lượt quét nền tảng mỗi ngày",
