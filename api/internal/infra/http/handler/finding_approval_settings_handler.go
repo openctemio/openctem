@@ -272,6 +272,10 @@ type UpdateFindingApprovalSettingsRequest struct {
 	// Policy replaces the approval policy. A change that relaxes anything
 	// takes effect 24 hours later (the stricter of both applies meanwhile).
 	Policy *ApprovalPolicyDTO `json:"policy"`
+	// CancelPending drops the waiting lowerings (false-positive level,
+	// second look share, relaxing policy) and keeps the values in force. It
+	// is applied before the other fields.
+	CancelPending bool `json:"cancel_pending"`
 }
 
 // UpdateFindingApprovalSettings handles PUT /organization/settings/finding-approvals
@@ -311,6 +315,9 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 		}
 	}
 	before, after, err := h.approvalSettings.UpdateFindingApprovalSettings(r.Context(), tenantID, func(s *tenantdom.FindingApprovalSettings) error {
+		if req.CancelPending {
+			s.CancelPending(time.Now())
+		}
 		if req.Policy != nil {
 			if _, err := s.SetPolicy(req.Policy.toPolicy(), time.Now()); err != nil {
 				return err

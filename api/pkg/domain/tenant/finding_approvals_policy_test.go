@@ -55,3 +55,45 @@ func TestSetPolicy_TightenNowRelaxLater(t *testing.T) {
 		t.Fatal("invalid stored policy accepted")
 	}
 }
+
+// CancelPending drops the waiting lowerings and keeps what is in force; a
+// lowering whose time has come is in force and stays.
+func TestCancelPending(t *testing.T) {
+	now := time.Now()
+	var s FindingApprovalSettings
+	if err := s.SetFPApproval(FPApprovalOff, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSecondLookPercent(0, now); err != nil {
+		t.Fatal(err)
+	}
+	s.SecondLookPercent = 5
+	if err := s.SetSecondLookPercent(1, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetPolicy(approvalpolicy.Policy{ExcludeAssignee: true}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetPolicy(approvalpolicy.Policy{}, now); err != nil {
+		t.Fatal(err)
+	}
+	if s.PendingFPApproval == "" || s.PendingSecondLookPercent == nil || s.PendingPolicy == nil {
+		t.Fatalf("lowerings did not wait: %+v", s)
+	}
+	canceled := s
+	canceled.CancelPending(now)
+	if canceled.PendingFPApproval != "" || canceled.PendingSecondLookPercent != nil || canceled.PendingPolicy != nil ||
+		canceled.PendingFPApprovalAt != nil || canceled.PendingSecondLookAt != nil || canceled.PendingPolicyAt != nil {
+		t.Fatalf("pending values remain: %+v", canceled)
+	}
+	if canceled.EffectiveFPApproval(now.Add(48*time.Hour)) != FPApprovalAll || canceled.EffectiveSecondLookPercent(now.Add(48*time.Hour)) != 5 ||
+		!canceled.EffectivePolicy(now.Add(48*time.Hour)).ExcludeAssignee {
+		t.Fatalf("canceling lowered a value: %+v", canceled)
+	}
+	// After the delay the lowerings are in force; canceling keeps them.
+	late := s
+	late.CancelPending(now.Add(48 * time.Hour))
+	if late.FPApproval != FPApprovalOff || late.SecondLookPercent != 1 || late.Policy.ExcludeAssignee {
+		t.Fatalf("canceling undid a change already in force: %+v", late)
+	}
+}
