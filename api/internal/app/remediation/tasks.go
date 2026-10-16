@@ -48,6 +48,7 @@ type TaskService struct {
 	audit     TaskAuditLogger
 	claimer   TaskFixClaimer
 	guard     TaskBulkGuard
+	moves     TaskMoveNotifier
 	logger    *logger.Logger
 }
 
