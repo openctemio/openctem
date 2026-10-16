@@ -64,15 +64,15 @@ func TestQuickScan_WildcardRunsInScopeNamesOnlyAndPreviewCounts(t *testing.T) {
 		t.Fatalf("preview targets = %+v", pv.Targets)
 	}
 	p := pv.Targets[0]
-	if p.Kind != scanservice.QuickKindWildcard || p.Known != 3 || p.InScope != 2 {
-		t.Errorf("preview = %+v, want wildcard, 3 known, 2 in scope", p)
+	if p.Kind != scanservice.QuickKindWildcard || p.Known != 2 || p.InScope != 2 {
+		t.Errorf("preview = %+v, want wildcard, 2 known (not the name out of scope), 2 in scope", p)
 	}
 	skipped := map[string]int{}
 	for _, s := range p.Skipped {
 		skipped[s.Reason] = s.Count
 	}
-	if skipped[scanservice.SkipOutOfScope] != 1 || skipped[scanservice.SkipNotConfirmed] != 1 {
-		t.Errorf("skipped = %v, want one out of scope and one unconfirmed", p.Skipped)
+	if skipped[scanservice.SkipOutOfScope] != 0 || skipped[scanservice.SkipNotConfirmed] != 1 {
+		t.Errorf("skipped = %v, want one unconfirmed and no count of names out of scope", p.Skipped)
 	}
 	if !slices.Equal(p.Sample, []string{"example.com", "ok.example.com"}) {
 		t.Errorf("sample = %v", p.Sample)
@@ -151,5 +151,50 @@ func TestQuickScanPreview_SharedRootIsRefused(t *testing.T) {
 	}
 	if p := pv.Targets[0]; p.RefusedCode != scanservice.QuickRefusedInvalid || len(inv.queries) != 0 {
 		t.Errorf("preview = %+v, queries = %d", p, len(inv.queries))
+	}
+}
+
+// A member with a restricted data scope must not learn how many names the
+// tenant has beyond it: not in known, not in the skipped counts, not in the
+// discovery offer.
+func TestQuickScanPreview_RestrictedMemberLearnsNoTenantWideCount(t *testing.T) {
+	tenantID := shared.NewID()
+	inv := newFakeSelectorAssets(tenantID)
+	inv.byRoot["secret.example"] = []string{"a.secret.example", "b.secret.example", "c.secret.example"}
+	inv.byRoot["mixed.example"] = []string{"mine.mixed.example", "x.mixed.example", "y.mixed.example"}
+	act := &refuseAssetIDs{refused: map[shared.ID]bool{
+		inv.id("a.secret.example"): true, inv.id("b.secret.example"): true, inv.id("c.secret.example"): true,
+		inv.id("x.mixed.example"): true, inv.id("y.mixed.example"): true,
+	}}
+	svc, deps := newTestScanService(scanservice.WithActScope(act))
+	svc.SetSelectorAssets(inv)
+	deps.toolRepo.addTool("nuclei", true)
+	deps.toolRepo.addTool("subfinder", true)
+	preview := func(target string) scanservice.QuickPreviewTarget {
+		pv, err := svc.PreviewQuickScan(context.Background(), scanservice.QuickScanPreviewInput{
+			TenantID: tenantID.String(), UserID: shared.NewID().String(),
+			Targets: []string{target}, ScannerName: "nuclei",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pv.Targets[0]
+	}
+	p := preview("*.mixed.example")
+	if p.Known != 1 || len(p.Skipped) != 0 {
+		t.Errorf("mixed preview = %+v, want 1 known and nothing skipped", p)
+	}
+	for _, n := range p.Sample {
+		if n == "x.mixed.example" || n == "y.mixed.example" {
+			t.Errorf("sample names a hidden asset: %v", p.Sample)
+		}
+	}
+	// Everything under the root is hidden: it looks like an unknown root.
+	p = preview("*.secret.example")
+	if p.Known != 0 || len(p.Skipped) != 0 {
+		t.Errorf("hidden preview = %+v, want 0 known and nothing skipped", p)
+	}
+	if p.Discovery == nil || p.Discovery.Tool != "subfinder" {
+		t.Errorf("discovery = %+v, want the same offer an empty root gets", p.Discovery)
 	}
 }
