@@ -135,13 +135,15 @@ export function useApproveSuppression(id: string) {
 /**
  * Clear the review flag of a rule the platform gave an end it did not have.
  * `POST /api/v1/suppressions/{id}/reviewed` (approvers). The rule keeps its
- * end; 409 when it is not flagged.
+ * end; 409 when it is not flagged. The rule's own requester may clear it only
+ * as the sole approver, with a reason and an authenticator code.
  */
 export function useMarkSuppressionReviewed(id: string) {
   const { currentTenant } = useTenant()
   return useSWRMutation(
     currentTenant && id ? `${SUPPRESSIONS_URL}/${id}/reviewed` : null,
-    (url: string) => post<SuppressionRule>(url, {})
+    (url: string, { arg }: { arg?: { self_approval_reason: string; totp_code: string } } = {}) =>
+      post<SuppressionRule>(url, arg ?? {})
   )
 }
 
