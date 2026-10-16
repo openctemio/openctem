@@ -24,5 +24,7 @@
   "plan.key.platform_scans_concurrent": "Concurrent platform scans",
   "plan.key.free_teams_per_user": "Free organizations per person",
   "plan.key.findings": "Findings",
+  "plan.key.lifecycle_sub_statuses": "Finding sub-statuses",
+  "plan.key.lifecycle_schemes": "Finding lifecycles",
   "plan.notCounted": "Counted while a limit is set"
 }

@@ -443,14 +443,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.RemediationRead,
     module: Module.Remediation,
   },
-  '/remediations': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
-  '/remediations/**': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
   '/automations': {
     permission: Permission.WorkflowsRead,
     module: Module.Workflows,

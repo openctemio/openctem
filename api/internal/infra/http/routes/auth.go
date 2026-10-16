@@ -43,6 +43,7 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
 	}
 	authProvidersHandler.WithCaptchaSiteKey(cfg.Auth.CaptchaTurnstileSiteKey)
+	authProvidersHandler.WithDeploymentRegion(cfg.App.Region)
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
