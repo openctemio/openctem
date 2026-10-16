@@ -397,14 +397,52 @@ check_httpsec_drift() {
     fi
 
     local tables=(hardBlockedIPRanges privateIPRanges)
-    # sdk-go's always-blocked list is ctis addrscope (IsInternal), the one
-    # shared definition, instead of a local table. Then only privateIPRanges
-    # is compared here; the API's own hardBlockedIPRanges stays a tracked gap
-    # until the API uses addrscope as well. The table must not come back in
-    # sdk-go next to addrscope: that would be a second definition.
+    # sdk-go takes its deny list from ctis addrscope (IsInternal), the one
+    # shared definition, instead of a local table. Then the API's tables are
+    # checked against addrscope itself: every addrscope range is blocked by
+    # the API (hard or private), and the API blocks nothing addrscope does not
+    # name (its ranges and the IPv4-embedding carriers it checks). A missing
+    # ctis module fails the rule: it is never skipped.
     if ! grep -q '^var hardBlockedIPRanges ' "$sdk_file" && grep -q 'ctis/addrscope"' "$sdk_file"; then
-        say_gap "Rule 6: $sdk_file uses ctis addrscope for the always-blocked ranges; $api_file still has its own hardBlockedIPRanges until the API moves to addrscope (tracked, not blocking)"
-        tables=(privateIPRanges)
+        local ctis_dir
+        ctis_dir=$(cd sdk-go && GOWORK=off GOFLAGS=-mod=mod go list -m -f '{{.Dir}}' github.com/openctemio/ctis 2>/dev/null)
+        if [[ -z "$ctis_dir" || ! -f "$ctis_dir/addrscope/addrscope.go" ]]; then
+            say_fail "Rule 6: $sdk_file uses ctis addrscope but its source was not found (go list -m github.com/openctemio/ctis in sdk-go/)"
+            return
+        fi
+        local out
+        if out=$(python3 - "$api_file" "$ctis_dir/addrscope/addrscope.go" <<'PY'
+import ipaddress, re, sys
+api = open(sys.argv[1]).read()
+scope = open(sys.argv[2]).read()
+def table(src, name):
+    m = re.search(r"^var %s = \[\]string\{(.*?)^\}" % name, src, re.S | re.M)
+    return [ipaddress.ip_network(c) for c in re.findall(r'"([0-9a-fA-F:.]+/\d+)"', m.group(1))] if m else []
+def prefixes(block):
+    return [ipaddress.ip_network(c) for c in re.findall(r'MustParsePrefix\("([^"]+)"\)', block)]
+direct = []
+for name in ("internalV4", "internalV6"):
+    m = re.search(r"^var %s = \[\]netip.Prefix\{(.*?)^\}" % name, scope, re.S | re.M)
+    if not m:
+        print("addrscope: no %s table" % name); sys.exit(1)
+    direct += prefixes(m.group(1))
+carriers = prefixes(scope) 
+hard, private = table(api, "hardBlockedIPRanges"), table(api, "privateIPRanges")
+def covered(n, nets):
+    return any(n.version == o.version and n.subnet_of(o) for o in nets)
+bad = []
+bad += ["addrscope range %s is not blocked by the API (add it to hardBlockedIPRanges)" % n for n in direct if not covered(n, hard + private)]
+bad += ["API hardBlockedIPRanges %s is not in addrscope" % n for n in hard if not covered(n, carriers)]
+bad += ["API privateIPRanges %s is not in addrscope" % n for n in private if not covered(n, direct)]
+print("\n".join(bad)); sys.exit(1 if bad else 0)
+PY
+        ); then
+            say_pass "Rule 6: api httpsec tables match ctis addrscope, sdk-go's deny list ($ctis_dir)"
+        else
+            say_fail "Rule 6: api httpsec tables drift from ctis addrscope (sdk-go's deny list)"
+            printf '%s\n' "$out" | sed 's/^/       /'
+        fi
+        return
     fi
     local any_drift=0
     for t in "${tables[@]}"; do
@@ -417,7 +455,7 @@ check_httpsec_drift() {
         fi
     done
     if [[ $any_drift -eq 0 ]]; then
-        say_pass "Rule 6: api and sdk-go httpsec CIDR tables agree (${tables[*]})"
+        say_pass "Rule 6: api and sdk-go httpsec CIDR tables agree (hardBlockedIPRanges, privateIPRanges)"
     fi
 }
 
