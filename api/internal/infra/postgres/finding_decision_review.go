@@ -21,6 +21,9 @@ import (
 const (
 	DecisionReviewTaintSourceChanged = "taint_source_changed"
 	DecisionReviewIOCMatch           = "ioc_match"
+	// DecisionReviewAcceptanceExceedsCap: an accepted risk runs longer than
+	// its priority allows (raised by migration acceptance_cap_review).
+	DecisionReviewAcceptanceExceedsCap = "acceptance_exceeds_cap"
 )
 
 // raiseDecisionReview flags the finding for review, in one transaction with
