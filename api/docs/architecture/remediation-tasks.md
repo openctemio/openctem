@@ -205,8 +205,11 @@ Strings are in the `remediationHub` dictionary (en, vi). Write actions show only
 
 ## Shipped and planned
 
-Shipped: everything above; the solution families page is removed (the Suggestions tab replaces it). Planned:
-the finding drawer band ("tracked in task"), the My Work tasks tab.
+Shipped: everything above; the solution families page is removed (the Suggestions tab replaces it). The finding
+drawer and the finding page show a "Tracked in task" band (`FindingTaskBand`): the task the finding belongs to,
+its state and its deadline, linked to the task detail. It reads `GET /remediation/tasks?finding_id=` so the API
+data scope applies, and it renders nothing without `findings:remediation:read` or when the finding is in no task.
+Planned: the My Work tasks tab.
 
 ## Key files
 

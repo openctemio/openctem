@@ -211,10 +211,10 @@ func TestService_CreateRule(t *testing.T) {
 			TenantID:        tenantID,
 			Name:            "Test Rule",
 			Description:     "Test description",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "sql-injection",
-			ToolName:        "semgrep",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error",
+			RuleID:      "sql-injection",
+			ToolName:    "semgrep",
+			RequestedBy: userID,
 		}
 
 		rule, err := svc.CreateRule(ctx, input)
@@ -241,10 +241,10 @@ func TestService_CreateRule(t *testing.T) {
 		input := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Expiring Rule",
-			SuppressionType: SuppressionTypeAcceptedRisk,
-			RuleID:          "test-*",
-			RequestedBy:     userID,
-			ExpiresAt:       &expiresAt,
+			SuppressionType: SuppressionTypeAcceptedRisk, ReasonCode: "risk_accepted", Description: "fixture rule used by tests",
+			RuleID:      "test-*",
+			RequestedBy: userID,
+			ExpiresAt:   &expiresAt,
 		}
 
 		rule, err := svc.CreateRule(ctx, input)
@@ -264,7 +264,7 @@ func TestService_CreateRule(t *testing.T) {
 		input := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Invalid Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 			// No criteria set
 			RequestedBy: userID,
 		}
@@ -290,9 +290,9 @@ func TestService_ApproveRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -350,9 +350,9 @@ func TestService_RejectRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -392,9 +392,9 @@ func TestService_UpdateRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Original Name",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -425,9 +425,9 @@ func TestService_UpdateRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 		svc.ApproveRule(ctx, ApproveRuleInput{
@@ -467,9 +467,9 @@ func TestService_ListActiveRules(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-*",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-*",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -507,9 +507,9 @@ func TestService_DeleteRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -547,12 +547,9 @@ func (f fakeApprovers) RecentMemberRemoval(context.Context, shared.ID, time.Time
 	return f.removedAt, nil
 }
 
-func (f fakeApprovers) CountEligibleApprovers(context.Context, shared.ID) (int, error) {
-	return f.count, nil
-}
-
-func (f fakeApprovers) IsTenantOwner(_ context.Context, _ shared.ID, user shared.ID) (bool, error) {
-	return user == f.owner, nil
+// IsSoleActiveOwner: count is the number of active people of the tenant.
+func (f fakeApprovers) IsSoleActiveOwner(_ context.Context, _ shared.ID, user shared.ID) (bool, error) {
+	return f.count == 1 && user == f.owner, nil
 }
 
 // Owner decision B16: the requester may not approve their own rule while a
@@ -565,7 +562,7 @@ func TestService_ApproveRule_FourEyes(t *testing.T) {
 	newPending := func(svc *Service) *Rule {
 		t.Helper()
 		rule, err := svc.CreateRule(ctx, CreateRuleInput{
-			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 			RuleID: "x", RequestedBy: requester,
 		})
 		if err != nil {
@@ -676,7 +673,7 @@ func TestService_ApproveRule_PinsReviewedVersion(t *testing.T) {
 	tenantID := shared.NewID()
 	svc := NewService(newMockRepository(), nil)
 	rule, err := svc.CreateRule(ctx, CreateRuleInput{
-		TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+		TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 		RuleID: "narrow.rule", RequestedBy: shared.NewID(),
 	})
 	if err != nil {
@@ -709,7 +706,7 @@ func TestService_ApproveRule_AppliesToExistingFindings(t *testing.T) {
 	tenantID := shared.NewID()
 	newPending := func(svc *Service) *Rule {
 		rule, err := svc.CreateRule(ctx, CreateRuleInput{
-			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 			RuleID: "semgrep.sqli", RequestedBy: shared.NewID(),
 		})
 		if err != nil {

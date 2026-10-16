@@ -1189,8 +1189,9 @@ func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, a
 		}
 		id := shared.NewID().String()
 		res, err := r.db.ExecContext(ctx, `INSERT INTO suppression_rules (id, tenant_id, rule_id, path_pattern, asset_id,
-				name, description, suppression_type, status, expires_at, requested_by_actor)
-			SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::uuid, $6::varchar, $7::text, 'accepted_risk', 'pending', $8::timestamptz, $9::varchar
+				name, description, suppression_type, status, expires_at, requested_by_actor, reason_code)
+			SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::uuid, $6::varchar, $7::text, 'accepted_risk', 'pending', $8::timestamptz, $9::varchar,
+			       'risk_accepted'
 			WHERE NOT EXISTS (SELECT 1 FROM suppression_rules
 				WHERE tenant_id = $2::uuid AND asset_id = $5::uuid AND rule_id IS NOT DISTINCT FROM $3::varchar
 				  AND path_pattern IS NOT DISTINCT FROM $4::varchar AND status IN ('pending', 'approved'))`,
