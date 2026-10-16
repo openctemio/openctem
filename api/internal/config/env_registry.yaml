@@ -1537,7 +1537,7 @@ vars:
     group: "Admin audit off-box forwarding"
     type: string
     secret: true
-    description: "HMAC-SHA256 key that signs each webhook request, at least 16 characters. Never logged."
+    description: "HMAC-SHA256 key that signs each webhook request, at least 16 characters. Never logged. Setting it without `ADMIN_AUDIT_FORWARD_URL` stops the API at boot."
   - name: ADMIN_AUDIT_FORWARD_SYSLOG_ADDR
     component: api
     group: "Admin audit off-box forwarding"
@@ -1548,6 +1548,16 @@ vars:
     group: "Admin audit off-box forwarding"
     type: path
     description: "PEM bundle that replaces the system roots when verifying the syslog receiver."
+  - name: ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_CERT
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: path
+    description: "PEM client certificate presented to the syslog receiver (mutual TLS), so the collector can accept only this sender. Set together with `ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_KEY`."
+  - name: ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_KEY
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: path
+    description: "PEM private key of `ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_CERT`."
   - name: ADMIN_AUDIT_FORWARD_INTERVAL
     component: api
     group: "Admin audit off-box forwarding"

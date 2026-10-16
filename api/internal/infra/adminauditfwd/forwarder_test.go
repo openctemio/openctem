@@ -271,3 +271,81 @@ func TestLagIsMeasured(t *testing.T) {
 		t.Fatal("lag should be 0 after delivery")
 	}
 }
+
+// slowSink moves the clock on every send, as a slow collector does.
+type slowSink struct {
+	fakeSink
+	c *clock
+}
+
+func (s *slowSink) Send(ctx context.Context, b Batch) error {
+	s.c.t = s.c.t.Add(time.Minute)
+	return s.fakeSink.Send(ctx, b)
+}
+
+// The signed timestamp is taken when each batch is sent, not once per run: a
+// run of many batches against a slow collector must not send stale stamps the
+// receiver would refuse as replays.
+func TestSentAtIsTakenPerBatch(t *testing.T) {
+	st := newMemStore(25, time.Now())
+	sink := &slowSink{}
+	f, c := newFwd(t, st, &fakeVerifier{okReport()}, sink, Config{BatchSize: 10, MaxBatchesRun: 3})
+	sink.c = c
+	if _, err := f.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.batches) != 3 {
+		t.Fatalf("batches = %d", len(sink.batches))
+	}
+	for i := 1; i < len(sink.batches); i++ {
+		if !sink.batches[i].SentAt.After(sink.batches[i-1].SentAt) {
+			t.Fatalf("batch %d SentAt %s not after batch %d SentAt %s", i, sink.batches[i].SentAt, i-1, sink.batches[i-1].SentAt)
+		}
+	}
+}
+
+type flakyVerifier struct {
+	rep  *admin.AuditChainReport
+	fail bool
+}
+
+func (v *flakyVerifier) VerifyChain(context.Context) (*admin.AuditChainReport, error) {
+	if v.fail {
+		return nil, errors.New("database unavailable")
+	}
+	return v.rep, nil
+}
+
+// When the verification cannot run, the export must not keep carrying the
+// last good result: it says verified=false until a run succeeds, and the run
+// is retried soon rather than after a whole interval.
+func TestVerifyFailureExportsUnverified(t *testing.T) {
+	st := newMemStore(1, time.Now())
+	sink := &fakeSink{}
+	v := &flakyVerifier{rep: okReport()}
+	f, c := newFwd(t, st, v, sink, Config{VerifyInterval: time.Hour, HeadInterval: time.Minute})
+	if _, err := f.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !sink.batches[0].Chain.Verified || !sink.batches[0].Chain.OK {
+		t.Fatalf("first export %+v", sink.batches[0].Chain)
+	}
+	v.fail = true
+	c.t = c.t.Add(time.Hour + time.Minute)
+	if _, err := f.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	last := sink.batches[len(sink.batches)-1]
+	if last.Chain.Verified || last.Chain.OK {
+		t.Fatalf("export after a failed verification still vouches: %+v", last.Chain)
+	}
+	// Retried within minutes, and recovery restores the flag.
+	v.fail = false
+	c.t = c.t.Add(verifyRetry + time.Second)
+	if _, err := f.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !f.chain.Verified || !f.chain.OK {
+		t.Fatalf("chain status after recovery %+v", f.chain)
+	}
+}

@@ -14,13 +14,21 @@ func TestValidateAdminAuditForward(t *testing.T) {
 		cfg  AdminAuditForwardConfig
 		want string
 	}{
-		"off":           {AdminAuditForwardConfig{}, ""},
-		"good":          {good, ""},
-		"secret alone":  {AdminAuditForwardConfig{Secret: "0123456789abcdef"}, "no sink"},
-		"http":          {mut(func(c *AdminAuditForwardConfig) { c.URL = "http://siem.example.com/a" }), "https"},
-		"credentials":   {mut(func(c *AdminAuditForwardConfig) { c.URL = "https://u:p@siem.example.com/a" }), "https"},
-		"short secret":  {mut(func(c *AdminAuditForwardConfig) { c.Secret = "short" }), "SECRET"},
-		"big batch":     {mut(func(c *AdminAuditForwardConfig) { c.BatchSize = 6000 }), "BATCH_SIZE"},
+		"off":                    {AdminAuditForwardConfig{}, ""},
+		"good":                   {good, ""},
+		"secret alone":           {AdminAuditForwardConfig{Secret: "0123456789abcdef"}, "no sink"},
+		"http":                   {mut(func(c *AdminAuditForwardConfig) { c.URL = "http://siem.example.com/a" }), "https"},
+		"credentials":            {mut(func(c *AdminAuditForwardConfig) { c.URL = "https://u:p@siem.example.com/a" }), "https"},
+		"short secret":           {mut(func(c *AdminAuditForwardConfig) { c.Secret = "short" }), "SECRET"},
+		"big batch":              {mut(func(c *AdminAuditForwardConfig) { c.BatchSize = 6000 }), "BATCH_SIZE"},
+		"secret, syslog only":    {AdminAuditForwardConfig{Secret: "0123456789abcdef", SyslogAddr: "h:6514", BatchSize: 500, Interval: time.Second, HeadInterval: time.Hour, VerifyInterval: time.Hour, LagAlert: time.Minute}, "no webhook"},
+		"cert without key":       {mut(func(c *AdminAuditForwardConfig) { c.SyslogAddr = "h:6514"; c.SyslogClientCert = "/c.pem" }), "CLIENT_KEY"},
+		"client cert, no syslog": {mut(func(c *AdminAuditForwardConfig) { c.SyslogClientCert = "/c.pem"; c.SyslogClientKey = "/k.pem" }), "SYSLOG_ADDR"},
+		"mtls ok": {mut(func(c *AdminAuditForwardConfig) {
+			c.SyslogAddr = "h:6514"
+			c.SyslogClientCert = "/c.pem"
+			c.SyslogClientKey = "/k.pem"
+		}), ""},
 		"bad syslog":    {mut(func(c *AdminAuditForwardConfig) { c.SyslogAddr = "nohost" }), "SYSLOG_ADDR"},
 		"zero interval": {mut(func(c *AdminAuditForwardConfig) { c.Interval = 0 }), "INTERVAL"},
 	}

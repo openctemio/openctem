@@ -217,8 +217,9 @@ controller lease), cursor in `admin_audit_forward_cursor` (migration 002775).
 | Setting | Meaning |
 |---|---|
 | `ADMIN_AUDIT_FORWARD_URL` | HTTPS webhook (no credentials in the URL). Required with the secret. |
-| `ADMIN_AUDIT_FORWARD_SECRET` | HMAC-SHA256 key, at least 16 characters. Never logged. |
+| `ADMIN_AUDIT_FORWARD_SECRET` | HMAC-SHA256 key, at least 16 characters. Never logged. Signs webhook requests only: setting it without the URL stops the API at boot. |
 | `ADMIN_AUDIT_FORWARD_SYSLOG_ADDR` | `host:port` of a syslog receiver over TLS (RFC 5425, RFC 5424 messages, octet-counting frames). TLS 1.2 or later, verified against the system roots or `ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE`. |
+| `ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_CERT`, `ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_KEY` | PEM client certificate and key (set together) the syslog sink presents, for mutual TLS. Without them the sender is anonymous. |
 | `ADMIN_AUDIT_FORWARD_INTERVAL` | Run period and base retry delay (15s). |
 | `ADMIN_AUDIT_FORWARD_BATCH_SIZE` | Rows per delivery (500, at most 5000); at most 10 deliveries per run. |
 | `ADMIN_AUDIT_FORWARD_HEAD_INTERVAL` | Chain-head export when no row is new (1h). |
@@ -244,6 +245,27 @@ moves backwards.
 and `X-OpenCTEM-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." +
 body)>`; the receiver verifies the signature in constant time and refuses a
 timestamp older than a few minutes. Redirects are not followed.
+
+**Syslog and the collector.** The syslog sink is TLS-verified toward the
+collector; the other direction is the collector's to enforce. Configure the
+client certificate and key and require them on the collector (mutual TLS), and
+let it accept connections only from a certificate issued for this API, so that
+nobody else can write rows or a head into the off-box copy. Do the same on the
+webhook receiver: accept only requests whose signature verifies. The copy is
+as sensitive as the table, so restrict who can read it too.
+
+**What is shipped.** Each row carries an explicit list of columns, all of
+them: the hash covers every column, so a receiver can recompute the chain only
+with each one (`request_body`, `ip_address` and `user_agent` included, so the
+sink needs the same access control as the audit log). A column added to
+`admin_audit_logs` is not shipped until it is reviewed and added to the list
+(`adminAuditForwardColumns`); a test fails until then.
+
+**Verification result.** `chain.verified` is false until a verification ran,
+and again after one that could not run (the database was unreachable): the
+export never repeats an older good result as current. A failed verification is
+retried within five minutes and counted in
+`openctem_admin_audit_chain_verify_errors_total`.
 
 **Head export.** Every delivery carries the chain head at send time. When
 nothing is new the forwarder still sends a rows-less batch every

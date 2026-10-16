@@ -145,8 +145,11 @@ type SyslogSink struct {
 }
 
 // NewSyslogSink builds a sink for host:port. caFile is an optional PEM bundle
-// that replaces the system roots. The dial goes through the SSRF guard.
-func NewSyslogSink(addr, caFile string) (*SyslogSink, error) {
+// that replaces the system roots. certFile and keyFile are an optional PEM
+// client certificate and key (set together) presented to the collector, so it
+// can accept only this sender (mutual TLS). The dial goes through the SSRF
+// guard.
+func NewSyslogSink(addr, caFile, certFile, keyFile string) (*SyslogSink, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil || host == "" || port == "" {
 		return nil, errors.New("admin audit syslog address must be host:port")
@@ -162,6 +165,16 @@ func NewSyslogSink(addr, caFile string) (*SyslogSink, error) {
 			return nil, errors.New("admin audit syslog CA file has no certificate")
 		}
 		cfg.RootCAs = pool
+	}
+	if (certFile == "") != (keyFile == "") {
+		return nil, errors.New("admin audit syslog client certificate and key must be set together")
+	}
+	if certFile != "" {
+		pair, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, errors.New("load admin audit syslog client certificate: not a valid certificate and key pair")
+		}
+		cfg.Certificates = []tls.Certificate{pair}
 	}
 	hn, _ := os.Hostname()
 	if hn == "" {

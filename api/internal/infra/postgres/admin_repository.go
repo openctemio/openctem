@@ -969,11 +969,32 @@ func auditSeverity(v string) string {
 	return v
 }
 
+// adminAuditForwardColumns are the admin_audit_logs columns the off-box copy
+// carries: every column, because the hash covers each of them and a receiver
+// that lacks one cannot recompute the chain. The list is explicit so a column
+// added to the table is not shipped (it may hold data that must not leave)
+// until it is added here; TestAdminAuditForwardColumns_DB fails until then.
+var adminAuditForwardColumns = []string{
+	"id", "admin_id", "admin_email", "action", "resource_type", "resource_id",
+	"resource_name", "request_method", "request_path", "request_body",
+	"response_status", "ip_address", "user_agent", "success", "error_message",
+	"severity", "created_at", "chain_position", "prev_hash", "hash",
+}
+
+// adminAuditForwardObject renders jsonb_build_object over the column list.
+func adminAuditForwardObject(alias string) string {
+	parts := make([]string, 0, len(adminAuditForwardColumns))
+	for _, c := range adminAuditForwardColumns {
+		parts = append(parts, "'"+c+"', "+alias+"."+c)
+	}
+	return "jsonb_build_object(" + strings.Join(parts, ", ") + ")"
+}
+
 // ReadForwardRows returns up to limit chain rows after position, oldest
-// first, each as the whole row in JSON (for the off-box audit forwarder).
+// first, each as its listed columns in JSON (for the off-box audit forwarder).
 func (r *AuditLogRepository) ReadForwardRows(ctx context.Context, after int64, limit int) ([]adminauditfwd.Row, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT l.chain_position, l.hash, l.created_at, to_jsonb(l)
+		SELECT l.chain_position, l.hash, l.created_at, `+adminAuditForwardObject("l")+`
 		  FROM admin_audit_logs l
 		 WHERE l.chain_position > $1
 		 ORDER BY l.chain_position

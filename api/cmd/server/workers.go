@@ -139,7 +139,7 @@ func adminAuditForwarder(cfg *config.Config, repo *postgres.AuditLogRepository, 
 		sinks = append(sinks, s)
 	}
 	if f.SyslogAddr != "" {
-		s, err := adminauditfwd.NewSyslogSink(f.SyslogAddr, f.SyslogCAFile)
+		s, err := adminauditfwd.NewSyslogSink(f.SyslogAddr, f.SyslogCAFile, f.SyslogClientCert, f.SyslogClientKey)
 		if err != nil {
 			return nil, err
 		}

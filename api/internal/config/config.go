@@ -164,6 +164,9 @@ type AdminAuditForwardConfig struct {
 	SyslogAddr   string // ADMIN_AUDIT_FORWARD_SYSLOG_ADDR, host:port, syslog over TLS
 	SyslogCAFile string // ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE, optional PEM roots
 
+	SyslogClientCert string // ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_CERT, optional PEM client certificate (mutual TLS)
+	SyslogClientKey  string // ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_KEY, its PEM private key
+
 	Interval       time.Duration // ADMIN_AUDIT_FORWARD_INTERVAL, default 15s
 	BatchSize      int           // ADMIN_AUDIT_FORWARD_BATCH_SIZE, default 500, max 5000
 	HeadInterval   time.Duration // ADMIN_AUDIT_FORWARD_HEAD_INTERVAL, default 1h
@@ -1586,15 +1589,18 @@ func Load() (*Config, error) {
 			BatchSize:     getEnvInt("ADMIN_AUDIT_RETENTION_BATCH_SIZE", 10000),
 		},
 		AdminAuditForward: AdminAuditForwardConfig{
-			URL:            getEnv("ADMIN_AUDIT_FORWARD_URL", ""),
-			Secret:         getEnv("ADMIN_AUDIT_FORWARD_SECRET", ""),
-			SyslogAddr:     getEnv("ADMIN_AUDIT_FORWARD_SYSLOG_ADDR", ""),
-			SyslogCAFile:   getEnv("ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE", ""),
-			Interval:       getEnvDuration("ADMIN_AUDIT_FORWARD_INTERVAL", 15*time.Second),
-			BatchSize:      getEnvInt("ADMIN_AUDIT_FORWARD_BATCH_SIZE", 500),
-			HeadInterval:   getEnvDuration("ADMIN_AUDIT_FORWARD_HEAD_INTERVAL", time.Hour),
-			VerifyInterval: getEnvDuration("ADMIN_AUDIT_FORWARD_VERIFY_INTERVAL", time.Hour),
-			LagAlert:       getEnvDuration("ADMIN_AUDIT_FORWARD_LAG_ALERT", 10*time.Minute),
+			URL:          getEnv("ADMIN_AUDIT_FORWARD_URL", ""),
+			Secret:       getEnv("ADMIN_AUDIT_FORWARD_SECRET", ""),
+			SyslogAddr:   getEnv("ADMIN_AUDIT_FORWARD_SYSLOG_ADDR", ""),
+			SyslogCAFile: getEnv("ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE", ""),
+
+			SyslogClientCert: getEnv("ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_CERT", ""),
+			SyslogClientKey:  getEnv("ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_KEY", ""),
+			Interval:         getEnvDuration("ADMIN_AUDIT_FORWARD_INTERVAL", 15*time.Second),
+			BatchSize:        getEnvInt("ADMIN_AUDIT_FORWARD_BATCH_SIZE", 500),
+			HeadInterval:     getEnvDuration("ADMIN_AUDIT_FORWARD_HEAD_INTERVAL", time.Hour),
+			VerifyInterval:   getEnvDuration("ADMIN_AUDIT_FORWARD_VERIFY_INTERVAL", time.Hour),
+			LagAlert:         getEnvDuration("ADMIN_AUDIT_FORWARD_LAG_ALERT", 10*time.Minute),
 		},
 		AITriage: AITriageConfig{
 			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),
@@ -1813,6 +1819,15 @@ func (c *Config) validateAdminAuditForward() error {
 			return fmt.Errorf("ADMIN_AUDIT_FORWARD_SECRET is set but no sink is (ADMIN_AUDIT_FORWARD_URL or ADMIN_AUDIT_FORWARD_SYSLOG_ADDR)")
 		}
 		return nil
+	}
+	if f.URL == "" && f.Secret != "" {
+		return fmt.Errorf("ADMIN_AUDIT_FORWARD_SECRET is set but no webhook is (ADMIN_AUDIT_FORWARD_URL); it signs webhook requests only")
+	}
+	if f.SyslogAddr == "" && (f.SyslogCAFile != "" || f.SyslogClientCert != "" || f.SyslogClientKey != "") {
+		return fmt.Errorf("ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE and _CLIENT_CERT/_CLIENT_KEY are set but ADMIN_AUDIT_FORWARD_SYSLOG_ADDR is not")
+	}
+	if (f.SyslogClientCert == "") != (f.SyslogClientKey == "") {
+		return fmt.Errorf("ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_CERT and ADMIN_AUDIT_FORWARD_SYSLOG_CLIENT_KEY must be set together")
 	}
 	if f.URL != "" {
 		u, err := url.Parse(f.URL)

@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,5 +75,53 @@ func TestAdminAuditForward_DB(t *testing.T) {
 	rep, err := repo.VerifyChain(ctx)
 	if err != nil || rep.OK() {
 		t.Fatalf("tamper not detected: %+v err=%v", rep, err)
+	}
+}
+
+// The forwarder ships an explicit column list, never the whole row: a column
+// added to admin_audit_logs is not shipped until it is listed. The test fails
+// when the table and the list disagree, and the shipped JSON has exactly the
+// listed keys.
+func TestAdminAuditForwardColumns_DB(t *testing.T) {
+	db := testdb.PrivateDatabase(t, "admin_audit_fwdcols", "../../../migrations")
+	ctx := context.Background()
+	cols := queryStrings(t, db, `SELECT column_name FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'admin_audit_logs' ORDER BY column_name`)
+	want := append([]string(nil), adminAuditForwardColumns...)
+	sort.Strings(want)
+	if strings.Join(cols, ",") != strings.Join(want, ",") {
+		t.Fatalf("admin_audit_logs columns %v, forwarded %v: a new column must be reviewed and added to adminAuditForwardColumns", cols, want)
+	}
+
+	repo := NewAuditLogRepository(&DB{DB: db})
+	l := &admin.AuditLog{ID: shared.NewID(), AdminEmail: "root@example.com", Action: "x", Success: true,
+		CreatedAt: time.Now(), Severity: "info", RequestBody: map[string]any{}}
+	if err := repo.Create(ctx, l); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := repo.ReadForwardRows(ctx, 0, 10)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows %v err=%v", rows, err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(rows[0].JSON, &m); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(m))
+	for k := range m {
+		got = append(got, k)
+	}
+	sort.Strings(got)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("shipped keys %v, want %v", got, want)
+	}
+
+	// A column added later is NOT shipped until listed.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE admin_audit_logs ADD COLUMN internal_note text DEFAULT 'secret'`); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = repo.ReadForwardRows(ctx, 0, 10)
+	if err != nil || len(rows) != 1 || strings.Contains(string(rows[0].JSON), "internal_note") || strings.Contains(string(rows[0].JSON), "secret") {
+		t.Fatalf("an unlisted column was shipped: %s err=%v", rows[0].JSON, err)
 	}
 }

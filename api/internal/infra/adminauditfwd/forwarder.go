@@ -41,8 +41,7 @@ type Row struct {
 	Position  int64
 	Hash      string
 	CreatedAt time.Time
-	// JSON is the whole row, every column (so a column added later ships
-	// without a code change).
+	// JSON is the row's listed columns (the store names them explicitly).
 	JSON json.RawMessage
 }
 
@@ -117,7 +116,11 @@ type Config struct {
 	Logger         *logger.Logger
 }
 
-const maxBatchSize = 5000
+const (
+	maxBatchSize = 5000
+	// verifyRetry is how soon a verification that could not run is retried.
+	verifyRetry = 5 * time.Minute
+)
 
 func (c *Config) defaults() {
 	if c.Interval <= 0 {
@@ -162,7 +165,7 @@ type Forwarder struct {
 	failures    int
 	nextAttempt time.Time
 	lastHead    time.Time
-	lastVerify  time.Time
+	nextVerify  time.Time
 	chain       ChainStatus
 	lagAlerted  bool
 	chainAlert  bool
@@ -216,7 +219,7 @@ func (f *Forwarder) Reconcile(ctx context.Context) (int, error) {
 		if err != nil {
 			return sent, f.fail(now, "", fmt.Errorf("read chain head: %w", err))
 		}
-		if name, err := f.deliver(ctx, Batch{SentAt: now, Rows: rows, Head: head, Chain: f.chain}); err != nil {
+		if name, err := f.deliver(ctx, Batch{SentAt: f.now(), Rows: rows, Head: head, Chain: f.chain}); err != nil {
 			return sent, f.fail(now, name, err)
 		}
 		last := rows[len(rows)-1]
@@ -239,7 +242,7 @@ func (f *Forwarder) Reconcile(ctx context.Context) (int, error) {
 		return sent, f.fail(now, "", fmt.Errorf("read rows: %w", err))
 	}
 	if len(pending) == 0 && now.Sub(f.lastHead) >= f.cfg.HeadInterval {
-		if name, err := f.deliver(ctx, Batch{SentAt: now, Head: head, Chain: f.chain}); err != nil {
+		if name, err := f.deliver(ctx, Batch{SentAt: f.now(), Head: head, Chain: f.chain}); err != nil {
 			return sent, f.fail(now, name, err)
 		}
 		f.lastHead = now
@@ -307,16 +310,25 @@ func (f *Forwarder) succeed(now time.Time, head Head, cur Cursor, pending []Row)
 }
 
 func (f *Forwarder) verifyIfDue(ctx context.Context, now time.Time) {
-	if f.chain.Verified && now.Sub(f.lastVerify) < f.cfg.VerifyInterval {
+	if now.Before(f.nextVerify) {
 		return
 	}
-	f.lastVerify = now
 	rep, err := f.verifier.VerifyChain(ctx)
 	if err != nil {
 		metrics.AdminAuditChainVerifyErrors.Inc()
 		f.log.Error("admin audit chain verification could not run", "error", err.Error())
+		// A result from before the failure must not keep vouching for the
+		// chain: the export says it is not verified. The run is retried
+		// within minutes, not on every run.
+		f.chain = ChainStatus{Verified: false}
+		retry := verifyRetry
+		if f.cfg.VerifyInterval < retry {
+			retry = f.cfg.VerifyInterval
+		}
+		f.nextVerify = now.Add(retry)
 		return
 	}
+	f.nextVerify = now.Add(f.cfg.VerifyInterval)
 	at := rep.VerifiedAt
 	f.chain = ChainStatus{Verified: true, OK: rep.OK(), Breaks: len(rep.Breaks), Truncated: rep.Truncated, VerifiedAt: &at}
 	if rep.OK() {
