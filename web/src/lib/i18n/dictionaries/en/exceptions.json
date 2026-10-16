@@ -105,5 +105,8 @@
   "exceptions.form.endsHint": "Every rule ends: 90 days by default, at most 365 days. To keep suppressing after that, submit a new rule for approval.",
   "exceptions.detail.reviewTitle": "Review this rule",
   "exceptions.detail.reviewBody": "This rule had no end date. It was given one ({when}). Check whether it should still suppress findings; to keep it after that date, submit a new rule.",
-  "exceptions.page.reviewBadge": "Review"
+  "exceptions.page.reviewBadge": "Review",
+  "exceptions.detail.markReviewed": "Mark as reviewed",
+  "exceptions.page.reviewed": "Marked as reviewed",
+  "exceptions.page.reviewFailed": "Could not mark the rule as reviewed"
 }
