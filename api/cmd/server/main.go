@@ -204,6 +204,8 @@ func run() int {
 	// Repositories
 	// ==========================================================================
 	repos := NewRepositories(db)
+	// New organizations get the deployment's region, fixed for their life.
+	repos.Tenant.SetDefaultRegion(cfg.App.Region)
 	repos.InitIntegrationExtensions(db)
 	log.Info("repositories initialized")
 
