@@ -40,6 +40,7 @@ import {
   type ModulePreset,
 } from '@/features/organization/api/use-tenant-modules'
 import { OnboardingBundlePicker } from './onboarding-bundle-picker'
+import { NewOrganizationRegion } from './region-note'
 
 interface CreateTeamFormProps {
   /** Whether to show cancel button (hide when shown in TenantGate) */
@@ -345,6 +346,7 @@ function CreateTeamFormUI({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <NewOrganizationRegion />
         {/* Team Name */}
         <FormField
           control={form.control}

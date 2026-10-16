@@ -25,11 +25,11 @@ const LoginFailureWindow = 15 * time.Minute
 // CodeCaptchaRequired asks the client to show the CAPTCHA and retry.
 const CodeCaptchaRequired apierror.Code = "CAPTCHA_REQUIRED"
 
-// LoginFailureCounter counts failed sign-ins per client address.
+// LoginFailureCounter counts failed sign-ins per client address. Counts
+// decay with LoginFailureWindow; nothing clears them early.
 type LoginFailureCounter interface {
 	Failures(ctx context.Context, key string) (int, error)
 	Record(ctx context.Context, key string) error
-	Reset(ctx context.Context, key string) error
 }
 
 // SetLoginFailureCounter wires the failed-sign-in counter (Redis across
@@ -37,16 +37,19 @@ type LoginFailureCounter interface {
 func (h *LocalAuthHandler) SetLoginFailureCounter(c LoginFailureCounter) { h.loginFailures = c }
 
 // loginNeedsCaptcha reports whether this attempt must pass the CAPTCHA first.
-// A counter error does not lock anyone out (the per-address rate limit and
-// the account lockout still apply).
+// When the counter cannot be read the CAPTCHA is asked (fail closed): a human
+// passes it, an automated sprayer does not get a free pass.
 func (h *LocalAuthHandler) loginNeedsCaptcha(r *http.Request, ip string) bool {
-	if h.captcha == nil || h.loginFailures == nil || ip == "" {
+	if h.captcha == nil || h.loginFailures == nil {
 		return false
+	}
+	if ip == "" {
+		return true
 	}
 	n, err := h.loginFailures.Failures(r.Context(), ip)
 	if err != nil {
-		h.logger.Warn("failed sign-in counter unreadable; no CAPTCHA asked", "error", err)
-		return false
+		h.logger.Warn("failed sign-in counter unreadable; CAPTCHA asked (fail closed)", "error", err)
+		return true
 	}
 	return n >= LoginCaptchaAfter
 }
@@ -92,12 +95,5 @@ func (m *memoryLoginFailures) Record(_ context.Context, key string) error {
 		m.hits = map[string][]time.Time{} // bound memory under a flood
 	}
 	m.hits[key] = append(m.prune(key), m.now())
-	return nil
-}
-
-func (m *memoryLoginFailures) Reset(_ context.Context, key string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.hits, key)
 	return nil
 }

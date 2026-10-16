@@ -24,5 +24,7 @@
   "plan.key.platform_scans_concurrent": "Lượt quét nền tảng đồng thời",
   "plan.key.free_teams_per_user": "Tổ chức miễn phí mỗi người",
   "plan.key.findings": "Phát hiện",
+  "plan.key.lifecycle_sub_statuses": "Trạng thái con của phát hiện",
+  "plan.key.lifecycle_schemes": "Vòng đời phát hiện",
   "plan.notCounted": "Chỉ đếm khi có giới hạn"
 }

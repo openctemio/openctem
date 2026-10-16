@@ -40,10 +40,6 @@ const NOT_A_SCALE = new Map<string, string>([
     'compliance control priority (pkg/domain/compliance Priority), no info level',
   ],
   [
-    'features/remediation-groups/components/create-campaign-from-group-dialog.tsx|critical,high,medium,low',
-    'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
-  ],
-  [
     'features/remediation/types/remediation.types.ts|critical,high,medium,low',
     'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
   ],
@@ -52,7 +48,7 @@ const NOT_A_SCALE = new Map<string, string>([
     'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
   ],
   [
-    'app/(dashboard)/(mobilization)/remediation/[id]/page.tsx|critical,high,medium,low',
+    'app/(dashboard)/(mobilization)/remediation/campaigns/[id]/page.tsx|critical,high,medium,low',
     'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
   ],
   [
