@@ -30,7 +30,7 @@ const COOKIE_STATES: Record<string, Record<string, string>> = {
   'malformed refresh': { refresh_token: 'not-a-token', app_tenant: '{"id":"t1"}' },
   'empty access': { auth_token: '' },
   'tenant only': { app_tenant: '{"id":"t1"}' },
-  'admin console': { admin_csrf_page: ADMIN_NONCE },
+  'admin console': { admin_csrf_ui: ADMIN_NONCE },
 }
 
 const SESSION_STATES = new Set(['access', 'refresh', 'refresh+tenant'])
@@ -204,7 +204,7 @@ describe('cookie shape', () => {
     const decision = decideAuth({
       pathname: '/admin',
       search: '',
-      cookie: jar({ admin_csrf_page: 'x' }),
+      cookie: jar({ admin_csrf_ui: 'x' }),
     })
     expect(decision.type).toBe('redirect')
   })

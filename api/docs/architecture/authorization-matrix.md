@@ -766,7 +766,7 @@ authenticate **only** with a **console session** (RFC-022: `/login` password
 sign-in + mandatory TOTP, server-side session in the `admin_session` cookie,
 scoped to `/api/v1/admin`; cookie-authenticated writes must pass the
 `admin_csrf` double-submit check: `admin_csrf` is HttpOnly on `/api/v1/admin`,
-the console pages echo its copy `admin_csrf_page`, scoped to `/admin`). There are **no admin API keys**: an
+the console pages echo its copy `admin_csrf_ui`, scoped to `/admin`). There are **no admin API keys**: an
 `X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
 so every admin action has passed TOTP. The session resolves to an
 `admin_users` row with a platform role: `super_admin` > `ops_admin` >

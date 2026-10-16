@@ -101,11 +101,11 @@ export function hasSessionCookie(read: CookieReader): boolean {
 /**
  * The admin console cookie the page request can see. The console session
  * itself (`admin_session`) is scoped to /api/v1/admin, so a page request never
- * carries it; `admin_csrf_page` is issued and cleared with it, on path `/admin`
+ * carries it; `admin_csrf_ui` is issued and cleared with it, on path `/admin`
  * (console pages only), with the same lifetime. It is a hint for the redirect only; the console API checks
  * the real session.
  */
-export const ADMIN_CONSOLE_COOKIE = 'admin_csrf_page'
+export const ADMIN_CONSOLE_COOKIE = 'admin_csrf_ui'
 
 export function hasAdminConsoleCookie(read: CookieReader): boolean {
   const value = read(ADMIN_CONSOLE_COOKIE)

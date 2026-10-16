@@ -1,13 +1,13 @@
 /**
  * Fetch client for the platform admin console. Requests go to the dedicated
  * /api/v1/admin proxy, which forwards only the admin_* cookies. Writes carry
- * the double-submit CSRF header from the readable admin_csrf_page cookie (distinct
+ * the double-submit CSRF header from the readable admin_csrf_ui cookie (distinct
  * from the tenant csrf_token, so both shells can be open in one browser).
  */
 
 export const ADMIN_API = '/api/v1/admin'
 /** The readable copy of the console's CSRF token, scoped to /admin pages. */
-const ADMIN_CSRF_COOKIE = 'admin_csrf_page'
+const ADMIN_CSRF_COOKIE = 'admin_csrf_ui'
 
 /**
  * Protected console actions (identity, privilege and platform-trust changes)
