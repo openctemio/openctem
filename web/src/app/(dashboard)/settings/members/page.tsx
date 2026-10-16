@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { JoinRequestsCard } from '@/features/organization/components/join-requests-card'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1213,6 +1214,8 @@ export default function UsersPage() {
             </Button>
           </Can>
         </PageHeader>
+
+        <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
 
         <OwnershipTransferBanner
           transfer={pendingTransfer}

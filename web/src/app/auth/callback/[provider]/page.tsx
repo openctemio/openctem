@@ -6,7 +6,11 @@
  */
 
 import { redirect } from 'next/navigation'
-import { NOT_SET_UP_PATH, SIGNUP_NOT_AVAILABLE } from '@/features/auth/lib/signup-outcome'
+import {
+  NOT_SET_UP_PATH,
+  SIGNUP_NOT_AVAILABLE,
+  SSO_REQUIRED,
+} from '@/features/auth/lib/signup-outcome'
 import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { cookies } from 'next/headers'
 
@@ -73,6 +77,8 @@ export default async function OAuthCallbackPage({ params, searchParams }: OAuthC
     // The sign-up policy refused to create an account: the one "not set up"
     // page, whatever the reason.
     if (result.code === SIGNUP_NOT_AVAILABLE) redirect(NOT_SET_UP_PATH)
+    // The address's domain requires its organization's SSO.
+    if (result.code === SSO_REQUIRED) redirect('/login')
     redirect(loginErrorHref('callback_failed'))
   }
 
