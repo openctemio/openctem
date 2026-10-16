@@ -469,6 +469,19 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   one per region). No sensor id, name, host, address, version, node count,
   capacity or other organization's load. The card links administrators to
   the owner's opt-out.
+- **Console fleet.** Console > System > Shared sensors
+  (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
+  `postgres/shared_fleet_repository.go`). Any administrator: the instance
+  sensors, queued and running jobs per tool lane, per-organization counts
+  (queued, running, completed and failed in 24 hours) and job metadata. The
+  read model names its columns, so a job row never carries the payload,
+  result or error text. A job's targets and logs: `POST
+  /jobs/{job_id}/view`, super or ops admin, reason, rate-limited, high admin
+  audit row written before the data is read (`shared_sensor.job_viewed`).
+  Pause, resume, retire: super admin, reason, route-level step-up, critical
+  audit row (`shared_sensor.paused|resumed|retired`); the status update is
+  guarded by `scope = 'instance'` and a retired sensor cannot be resumed
+  (409). Pause leaves held jobs to finish (drain); retire is a revoke.
 - **Egress addresses.** Console > System > Platform scanning, "Egress
   addresses" (`GET/PUT /api/v1/admin/settings/shared-sensors/egress`,
   `platform_settings['shared_sensors_egress']`): IP addresses or CIDR ranges

@@ -246,7 +246,7 @@ needs them.
 | S5a | results of a shared sensor bound to the job it holds under its lease epoch, written into the command's organization; no push ([architecture](../architecture/sensor-result-binding.md#shared-sensors)) | in review |
 | S6 | instance key set and shared-job envelope | designed |
 | S7 | limits enforced at trigger and claim | designed |
-| S8 | console "Shared sensors" fleet page, audited job view with a reason | designed |
+| S8 | console "Shared sensors" fleet page (fleet, queue per tool lane, per-organization counts, job metadata), pause/resume/retire, audited job view with a reason | in review |
 | S9 | tenant view renamed "Shared sensors" / "Organization sensors", egress addresses (console + tenant view), opt-out linked from the card | in review |
 | S10 | instance scan zones assigned to organizations | designed |
 | S11 | per-job isolation and private-range egress drop in sdk-go, used by the sensor | designed |
@@ -264,6 +264,20 @@ Instance administrators see aggregates freely: fleet health, regions, queue
 depth per lane, per-organization usage counts. A job's targets and logs only
 through an audited view that asks for a reason (the pattern of the
 platform-user view). Results and findings never.
+
+Console > System > Shared sensors (`/api/v1/admin/shared-sensors`): any
+administrator lists the fleet (name, region, status, health, version, tools,
+current jobs, last seen), the queue per tool lane, per-organization counts
+and job metadata (organization, type, tool, state, shared sensor, times;
+never payload, targets, result or error text). `POST
+/jobs/{job_id}/view` returns a job's targets and logs to a super or
+operations administrator with a reason, rate-limited, after a high admin
+audit row naming the organization and the reason is written (no row, no
+data). Pause, resume and retire (`POST /{sensor_id}/pause|resume|retire`)
+need a super admin, a reason and a route-level step-up, write a critical
+admin audit row, and change only rows with `scope = 'instance'`. Pause stops
+new claims (the heartbeat answers pause) and lets held jobs finish, which is
+the drain behaviour; retire revokes the sensor for good.
 
 ## 13. Threat model
 
