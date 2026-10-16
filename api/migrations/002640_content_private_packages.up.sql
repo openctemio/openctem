@@ -7,8 +7,11 @@
 -- created, plus additive seed rows.
 
 ALTER TABLE content_packages
-    ADD COLUMN content_pack_id uuid REFERENCES content_packs(id) ON DELETE RESTRICT,
+    ADD COLUMN content_pack_id uuid,
     ADD COLUMN platform_pack_id uuid REFERENCES platform_content_packs(id) ON DELETE RESTRICT,
+    -- The pack of an organization package belongs to the same organization.
+    ADD CONSTRAINT fk_content_packages_content_pack FOREIGN KEY (tenant_id, content_pack_id)
+        REFERENCES content_packs (tenant_id, id) ON DELETE RESTRICT,
     ADD CONSTRAINT chk_content_packages_pack_scope CHECK (
         (content_pack_id IS NULL OR tenant_id IS NOT NULL) AND (platform_pack_id IS NULL OR tenant_id IS NULL));
 
