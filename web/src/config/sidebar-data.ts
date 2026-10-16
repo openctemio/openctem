@@ -483,11 +483,8 @@ export const sidebarData: SidebarData = {
       cluster: 'cycle',
       items: [
         {
-          // One nav item; the two related views (Tasks / Solution Families) are
-          // presented as in-page <SectionTabs> rather than two near-identical
-          // sidebar entries.
-          // "Solution Families" (/remediations) is reachable as an in-page
-          // SectionTabs tab on this page — not a separate sidebar entry.
+          // One nav item; its views (Fix plan, Suggestions, Tasks, Campaigns)
+          // are in-page <SectionTabs>.
           title: 'Remediation',
           url: '/remediation',
           icon: Wrench,
