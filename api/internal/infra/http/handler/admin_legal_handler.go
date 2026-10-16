@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -114,23 +112,7 @@ func (h *AdminLegalHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	code := strings.TrimSpace(req.TOTPCode)
-	if code == "" {
-		apierror.New(http.StatusUnauthorized, codeStepUpRequired,
-			"Enter a code from your authenticator to confirm the change").WriteJSON(w)
-		return
-	}
-	if err := h.stepUp.StepUp(r.Context(), actor, code, stepUpPurposeLegalSettings, clientInfo(r)); err != nil {
-		switch {
-		case errors.Is(err, admin.ErrStepUpUnavailable):
-			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
-				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
-		case errors.Is(err, admin.ErrInvalidMFACode):
-			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
-		default:
-			h.logger.Error("legal settings step-up", "error", err)
-			apierror.InternalServerError("could not verify the code").WriteJSON(w)
-		}
+	if !confirmAdminStepUp(w, r, h.stepUp, req.TOTPCode, stepUpPurposeLegalSettings, h.logger) {
 		return
 	}
 	st, err := h.svc.Update(r.Context(), actor, req.Settings, req.Version, middleware.ClientIP(r), r.UserAgent())
