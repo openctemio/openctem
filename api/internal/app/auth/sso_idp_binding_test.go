@@ -17,7 +17,7 @@ import (
 // regEnabled is the auth config used by findOrCreateUser tests that exercise the
 // create path (the self_service sign-up mode).
 func regEnabled() config.AuthConfig {
-	return config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService}
+	return config.AuthConfig{SignupMode: config.SignupModeOpen}
 }
 
 // ssoTn builds a throwaway tenant for the findOrCreateUser call signature. Same-

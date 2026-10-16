@@ -82,6 +82,10 @@ var (
 )
 
 func main() {
+	if tool := toolFor(os.Args[0]); tool != nil {
+		tool()
+		return
+	}
 	flag.Parse()
 	if *healthcheck {
 		os.Exit(runHealthcheck(os.Stderr))
@@ -359,6 +363,11 @@ func run() int {
 	// Initialize local auth handler if supported
 	if cfg.Auth.Provider.SupportsLocal() {
 		InitLocalAuthHandler(&handlers, services, repos, cfg, log)
+		// The CAPTCHA after repeated failed sign-ins counts failures per
+		// client address across replicas.
+		if handlers.LocalAuth != nil && cfg.Auth.CaptchaTurnstileSecret != "" {
+			handlers.LocalAuth.SetLoginFailureCounter(newLoginFailureCounter(redisClient, log))
+		}
 	}
 	wireStepUpGate(&handlers, services)
 
