@@ -296,7 +296,7 @@ dropping the old `content` columns of the report tables.
   storage, the move, the deletion queue.
 - `internal/infra/storage/local.go`, `s3.go`, `tenant.go`: drivers and the
   organization bucket factory; `metrics.go`: metrics; `migrate.go` and
-  `cmd/bootstrap-admin/storage_migrate.go`: the copy command.
+  `internal/tools/bootstrapadmin/storage_migrate.go`: the copy command.
 - `internal/app/integration/attachment_direct.go`: signed direct downloads.
 - `internal/infra/http/handler/attachment_handler.go`,
   `scope_letter_handler.go`: upload, download, storage setting.

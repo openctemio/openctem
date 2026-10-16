@@ -104,16 +104,13 @@ describe('FindingGroupsTable', () => {
     expect(screen.queryByText('finding a4-x')).toBeNull()
     const asked = fetchFindings.mock.calls.map((c) => c[0])
     expect(asked.map((f) => f.asset_id).sort()).toEqual(['a1', 'a2', 'a3'])
-    // First 5 rows, scoped to the open and fixed statuses (validated_fixed
-    // included: it is open until a person closes it).
+    // First 5 rows, scoped to the open and fixed statuses.
     expect(asked[0]).toMatchObject({ per_page: 5, page: 1 })
     expect(asked[0].statuses).toEqual([
       'new',
       'confirmed',
       'in_progress',
       'fix_applied',
-      'validated_fixed',
-      'not_observed',
       'resolved',
     ])
 
