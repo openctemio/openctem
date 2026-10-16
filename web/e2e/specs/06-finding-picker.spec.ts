@@ -93,19 +93,39 @@ test.describe('Remediation — findings picker', () => {
     // checkbox flips each time (Check icon appears, then goes). An unlinked
     // row is used because a task keeps at least one finding: unlinking the
     // last one is refused (an empty finding_ids filter is not a scope).
-    const checks = await findingRows.evaluateAll((rows) =>
-      rows.map((r) => r.querySelector('svg.lucide-check') !== null)
-    )
-    const index = checks.indexOf(false)
-    test.skip(index < 0, 'every listed finding is already linked')
-    // The list keeps its order when a link changes (titles can repeat, so
-    // the row is held by position).
-    const finding = findingRows.nth(index)
+    const unlinked = findingRows.filter({ hasNot: page.locator('svg.lucide-check') })
+    test.skip((await unlinked.count()) === 0, 'every listed finding is already linked')
+    // Held by its title (titles are unique in the seed): rows of the same
+    // severity can come back in another order after a refresh.
+    const title = (await unlinked.first().locator('span.line-clamp-2').innerText()).trim()
+    const exact = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+    const finding = findingRows.filter({
+      has: page.locator('span.line-clamp-2', { hasText: exact }),
+    })
     const isChecked = async () => (await finding.locator('svg.lucide-check').count()) > 0
-    await finding.click()
+    // One toggle at a time: the click's PATCH and the task list refresh that
+    // follows it both finish before the next click, as a person would wait
+    // for the checkbox.
+    const toggle = async () => {
+      const saved = page.waitForResponse(
+        (r) =>
+          r.request().method() === 'PATCH' &&
+          new URL(r.url()).pathname.startsWith('/api/v1/remediation/campaigns/')
+      )
+      const refreshed = page.waitForResponse(
+        (r) =>
+          r.request().method() === 'GET' &&
+          new URL(r.url()).pathname === '/api/v1/remediation/campaigns'
+      )
+      await finding.click()
+      const res = await saved
+      expect(res.status(), await res.text()).toBe(200)
+      await refreshed
+    }
+    await toggle()
     await expect.poll(isChecked).toBe(true)
     // Toggle back so the test leaves the task's links unchanged.
-    await finding.click()
+    await toggle()
     await expect.poll(isChecked).toBe(false)
 
     // Leave the picker → back to task details.
