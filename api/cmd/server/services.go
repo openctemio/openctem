@@ -1161,6 +1161,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.FindingActions.SetDataScope(s.DataScope)
 	// Every route that marks a fix applied uses the same ownership rule.
 	s.Vulnerability.SetFixApplierCheck(s.FindingActions.FixAppliers)
+	// Organization finding lifecycles (RFC-110): every status path is also
+	// decided by the scheme selected for the finding, which can only narrow
+	// the platform's decision.
+	s.Vulnerability.SetLifecycles(s.FindingLifecycle)
+	s.FindingActions.SetLifecycles(s.FindingLifecycle)
 	// A bulk fix claim (findings bulk, remediation group and campaign
 	// resolves) queues a proof-of-fix re-check per finding, like the
 	// dedicated fix-applied action.
@@ -1736,6 +1741,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
 	// request); resolves the tenant's GitHub integration credentials on demand.
 	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
+	s.GitHubTicket.SetLifecycles(s.FindingLifecycle)
 	s.GitHubTicket.SetActivityRecorder(s.FindingActivity)
 
 	// Initialize integration & notification services

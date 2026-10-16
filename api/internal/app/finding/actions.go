@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"regexp"
 
+	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/validation"
@@ -40,6 +42,30 @@ type FindingActionsService struct {
 	dataScope       *datascope.Enforcer // optional; Layer 2 scope on by-id actions
 	db              *sql.DB
 	logger          *logger.Logger
+	lifecycles      LifecycleSchemes // organization lifecycles (RFC-110); nil = the platform alone
+}
+
+// SetLifecycles wires the organization lifecycles: each action is then also
+// decided by the scheme selected for the finding, which can only narrow it.
+func (s *FindingActionsService) SetLifecycles(l LifecycleSchemes) { s.lifecycles = l }
+
+func (s *FindingActionsService) lifecycleCandidates(ctx context.Context, tenantID shared.ID) ([]lc.Candidate, error) {
+	if s.lifecycles == nil {
+		return nil, nil
+	}
+	return s.lifecycles.Candidates(ctx, tenantID)
+}
+
+// actionAllowed decides one finding's move for an action route: the
+// platform engine narrowed by the organization's lifecycle (the move lands
+// on the target's default sub-status; action routes take no lifecycle
+// fields, so a move that needs them is refused here).
+func actionAllowed(ctx context.Context, cands []lc.Candidate, f *vulnerability.Finding, facts vulnerability.TransitionFacts,
+	actor vulnerability.TransitionActor, to vulnerability.FindingStatus, note string,
+) error {
+	d, _ := lifecycleDecision(cands, f, facts, lifecycleActor(ctx, actor), lc.Target{Status: to})
+	_, err := lifecycleError(d, note, nil)
+	return err
 }
 
 // NewFindingActionsService creates a new FindingActionsService.
@@ -409,10 +435,14 @@ func (s *FindingActionsService) BulkFixApplied(
 	// transition engine decides each claim, with whose finding it is as a
 	// fact (the route requires findings:fix_apply).
 	actor := personActor(uid, TransitionPermissions{FixApply: true})
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
 	for _, f := range allFindings {
 		facts := transitionFactsOf(f)
 		facts.CanClaimFix = s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, ownedAssets, f)
-		if transitionError(vulnerability.EvaluateTransition(facts, actor, vulnerability.FindingStatusFixApplied), input.Note) != nil {
+		if actionAllowed(ctx, cands, f, facts, actor, vulnerability.FindingStatusFixApplied, input.Note) != nil {
 			result.Skipped++
 			continue
 		}
@@ -513,6 +543,10 @@ func (s *FindingActionsService) BulkVerify(
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
 
 	result := &BulkUpdateResult{}
 
@@ -570,8 +604,8 @@ func (s *FindingActionsService) BulkVerify(
 				continue
 			}
 		}
-		if err := transitionError(vulnerability.EvaluateTransition(facts, personActor(uid, TransitionPermissions{Verify: true}),
-			vulnerability.FindingStatusResolved), resolution); err != nil {
+		if err := actionAllowed(ctx, cands, f, facts, personActor(uid, TransitionPermissions{Verify: true}),
+			vulnerability.FindingStatusResolved, resolution); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue
@@ -613,6 +647,10 @@ func (s *FindingActionsService) BulkRejectFix(
 	if reason == "" {
 		return nil, fmt.Errorf("%w: reason is required when rejecting fix", shared.ErrValidation)
 	}
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
 
 	result := &BulkUpdateResult{}
 
@@ -648,8 +686,8 @@ func (s *FindingActionsService) BulkRejectFix(
 
 		// The transition engine: a verifier may reject a fix (the route
 		// requires findings:verify).
-		if err := transitionError(vulnerability.EvaluateTransition(transitionFactsOf(f),
-			personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusInProgress), reason); err != nil {
+		if err := actionAllowed(ctx, cands, f, transitionFactsOf(f),
+			personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusInProgress, reason); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue
@@ -717,6 +755,10 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 		return 0, fmt.Errorf("%w: too many findings (%d), max 1000. Use a narrower filter", shared.ErrValidation, count)
 	}
 	actor := personActor(uid, TransitionPermissions{Verify: true})
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return 0, err
+	}
 	allowed := make([]shared.ID, 0, int(count))
 	const batchSize = 100
 	for offset := int64(0); offset < count; offset += batchSize {
@@ -731,7 +773,7 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 					return 0, err
 				}
 			}
-			if transitionError(vulnerability.EvaluateTransition(facts, actor, vulnerability.FindingStatusResolved), resolution) == nil {
+			if actionAllowed(ctx, cands, f, facts, actor, vulnerability.FindingStatusResolved, resolution) == nil {
 				allowed = append(allowed, f.ID())
 			}
 		}
@@ -796,6 +838,24 @@ func (s *FindingActionsService) BulkRejectByFilter(
 	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
 		Source: string(vulnerability.SourceAPI), Reason: "fix_rejected_by_filter", ActorType: "user", ActorID: uid.String(), Message: input.Reason,
 	})
+	// An organization lifecycle decides each finding: read the set (at most
+	// 1000) and reject only the findings it allows.
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return 0, err
+	}
+	if len(cands) > 0 {
+		allowed, err := s.allowedByFilter(ctx, cands, input.Filter, personActor(uid, TransitionPermissions{Verify: true}),
+			vulnerability.FindingStatusInProgress, input.Reason)
+		if err != nil || len(allowed) == 0 {
+			return 0, err
+		}
+		if err := s.findingRepo.UpdateStatusBatch(moveCtx, tid, allowed,
+			vulnerability.FindingStatusInProgress, input.Reason, &uid, vulnerability.Closure{}); err != nil {
+			return 0, fmt.Errorf("failed to reject findings: %w", err)
+		}
+		return int64(len(allowed)), nil
+	}
 	count, err := s.findingRepo.BulkUpdateStatusByFilter(moveCtx, tid, input.Filter,
 		vulnerability.FindingStatusInProgress, input.Reason, &uid, vulnerability.Closure{})
 	if err != nil {
@@ -856,6 +916,9 @@ func (s *FindingActionsService) AutoAssignToOwners(
 	}
 	assetCache := make(map[shared.ID]assetInfo)
 
+	// The organization's lifecycle decides whether assigning starts work.
+	cands, candsErr := s.lifecycleCandidates(ctx, tid)
+
 	const batchSize = 100
 	// pagination.New is (page, perPage) — page is 1-based. Iterate by page;
 	// the prior (batchSize, offset) call clamped perPage and pinned OFFSET to
@@ -914,7 +977,7 @@ func (s *FindingActionsService) AutoAssignToOwners(
 			// a lifecycle edge). A new finding is not triaged by assigning it,
 			// so it stays new; no other status is changed.
 			started := false
-			if f.Status() == vulnerability.FindingStatusConfirmed {
+			if f.Status() == vulnerability.FindingStatusConfirmed && s.lifecycleLetsWorkStart(ctx, cands, candsErr, f, aid) {
 				if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, "", nil); err != nil {
 					s.logger.Warn("failed to start work on an assigned finding", "finding_id", f.ID(), "error", err)
 				} else {
@@ -1006,4 +1069,59 @@ func (s *FindingActionsService) FixAppliers(ctx context.Context, tenantID, userI
 // returns how many were queued. The bulk status path calls it for a fix claim.
 func (s *FindingActionsService) QueueProofOfFix(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) int {
 	return s.autoQueueValidations(ctx, tenantID, findingIDs)
+}
+
+// allowedByFilter reads the findings a by-filter action selects (at most
+// 1000) and keeps those the lifecycle allows to move to target.
+func (s *FindingActionsService) allowedByFilter(ctx context.Context, cands []lc.Candidate, filter vulnerability.FindingFilter,
+	actor vulnerability.TransitionActor, target vulnerability.FindingStatus, note string,
+) ([]shared.ID, error) {
+	count, err := s.findingRepo.Count(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count findings: %w", err)
+	}
+	if count > 1000 {
+		return nil, fmt.Errorf("%w: too many findings (%d), max 1000. Use a narrower filter", shared.ErrValidation, count)
+	}
+	allowed := make([]shared.ID, 0, int(count))
+	const batchSize = 100
+	for offset := int64(0); offset < count; offset += batchSize {
+		page, err := s.findingRepo.List(ctx, filter, vulnerability.NewFindingListOptions(), pagination.New(int(offset/batchSize)+1, batchSize))
+		if err != nil {
+			return nil, fmt.Errorf("failed to list findings: %w", err)
+		}
+		for _, f := range page.Data {
+			if actionAllowed(ctx, cands, f, transitionFactsOf(f), actor, target, note) == nil {
+				allowed = append(allowed, f.ID())
+			}
+		}
+	}
+	return allowed, nil
+}
+
+// lifecycleLetsWorkStart reports whether the organization's lifecycle lets
+// assign-to-owners start work on a confirmed finding (confirmed ->
+// in_progress, landing on the default sub-status). The move is the
+// platform's side effect of an assignment, so only the lifecycle's own
+// blocks and requirements are asked; when they refuse, the finding is
+// assigned and stays confirmed.
+func (s *FindingActionsService) lifecycleLetsWorkStart(ctx context.Context, cands []lc.Candidate, candsErr error,
+	f *vulnerability.Finding, assigner shared.ID,
+) bool {
+	if candsErr != nil {
+		s.logger.Warn("assign to owners: finding lifecycle unavailable, work not started", "finding_id", f.ID(), "error", candsErr)
+		return false
+	}
+	if len(cands) == 0 {
+		return true
+	}
+	actor := personActor(assigner, TransitionPermissions{Status: true})
+	d, _ := lifecycleDecision(cands, f, transitionFactsOf(f), lifecycleActor(ctx, actor),
+		lc.Target{Status: vulnerability.FindingStatusInProgress})
+	for _, b := range d.Blocked {
+		if _, ok := lifecycleBlockMessage(b); ok {
+			return false
+		}
+	}
+	return d.NoteMinLen == 0 && len(d.Fields) == 0
 }
