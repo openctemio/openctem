@@ -89,9 +89,18 @@ func TestRemediationMoves_WarningsVersionsArchiveUndo(t *testing.T) {
 	assert.Equal(t, 5, n, "joined src, left src, joined other, left other, joined same")
 }
 
+// recordedMoves is a TaskMoveNotifier that keeps what it heard.
+type recordedMoves struct{ events []remediation.TaskMoveEvent }
+
+func (m *recordedMoves) TaskMembersMoved(_ context.Context, ev remediation.TaskMoveEvent) {
+	m.events = append(m.events, ev)
+}
+
 func TestRemediationMoves_DetachSplitMerge(t *testing.T) {
 	r := newRTRig(t)
 	ctx := r.adminCtx()
+	heard := &recordedMoves{}
+	r.svc.SetMoveNotifier(heard)
 	key := "upgrade:npm:lodash:4.17.21"
 	act := r.actionFor(key)
 	f1, f2, f3, f4 := r.finding(r.assetA, "new", nil), r.finding(r.assetA, "new", nil), r.finding(r.assetA, "new", nil), r.finding(r.assetA, "new", nil)
@@ -132,6 +141,27 @@ func TestRemediationMoves_DetachSplitMerge(t *testing.T) {
 	child, err := r.svc.GetTask(ctx, r.tenant, sp.Target.ID)
 	require.NoError(t, err)
 	assert.Equal(t, remediation.TaskStateArchived, child.State)
+
+	// Each stored move was told to the tracker hook once, with counts and
+	// titles; refused moves were not.
+	require.Len(t, heard.events, 3)
+	assert.Equal(t, remediation.MoveKindDetach, heard.events[0].Kind)
+	assert.Nil(t, heard.events[0].ToTaskID)
+	assert.Equal(t, 1, heard.events[0].Findings)
+	assert.Equal(t, remediation.MoveKindSplit, heard.events[1].Kind)
+	assert.Equal(t, sp.Target.ID, *heard.events[1].ToTaskID)
+	assert.Equal(t, remediation.MoveKindMerge, heard.events[2].Kind)
+	assert.Equal(t, sp.Target.ID, heard.events[2].FromTaskID)
+	assert.Equal(t, task.ID, *heard.events[2].ToTaskID)
+	assert.Equal(t, 1, heard.events[2].Findings)
+	for _, ev := range heard.events {
+		assert.Equal(t, r.tenant, ev.TenantID)
+		for _, c := range ev.Comments() {
+			for _, f := range []shared.ID{f1, f2, f3, f4} {
+				assert.NotContains(t, c.Body, f.String(), "comments never name a finding")
+			}
+		}
+	}
 }
 
 func TestRemediationMoves_IsolationAndScope(t *testing.T) {

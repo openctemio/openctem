@@ -225,9 +225,10 @@ export default function MCPConnectPage() {
           <CardHeader>
             <CardTitle>Connect an AI assistant</CardTitle>
             <CardDescription>
-              Add this server to your MCP client. On first use it opens OpenCTEM in your browser:
-              you sign in, choose what it may read, and approve. No key to copy; you can disconnect
-              it any time in My account, Connected applications.
+              {t(
+                'settings.mcp.connectDescription',
+                'Add this server to your MCP client. On first use it opens {product} in your browser: you sign in, choose what it may read, and approve. No key to copy; you can disconnect it any time in My account, Connected applications.'
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -307,8 +308,11 @@ export default function MCPConnectPage() {
                 <code>{configJson}</code>
               </pre>
               <p className="text-muted-foreground text-xs">
-                Endpoint: <code className="font-mono">{endpoint}</code>. If your OpenCTEM API is on
-                a different host, replace the URL accordingly.
+                Endpoint: <code className="font-mono">{endpoint}</code>.{' '}
+                {t(
+                  'settings.mcp.otherHost',
+                  'If your {product} API is on a different host, replace the URL accordingly.'
+                )}
               </p>
             </div>
           </CardContent>

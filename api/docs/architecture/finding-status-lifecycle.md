@@ -4,6 +4,11 @@ Every finding, whatever its source (scanner, import, CI, pentest), takes one
 status from one set, and every write of `findings.status` follows one
 lifecycle.
 
+
+An organization's own labels and rules on top of these statuses (sub-statuses and lifecycle schemes) are
+described in [finding-lifecycles.md](finding-lifecycles.md): they can only add constraints, never relax one
+of the rules below.
+
 ## The status set
 
 | Status | Category | Meaning |
@@ -473,8 +478,13 @@ instead).
   title, requested status and dates, never the justification; the link opens
   the inbox, sign-in required. `POST /api/v1/approvals/{id}/remind`
   (`findings:write`) repeats it at most once an hour per request
-  (`reminded_at`, atomic), audited `finding_approval.reminded`. VEX requests
-  from a scan report are not notified one by one.
+  (`reminded_at`, atomic), audited `finding_approval.reminded`. Requests VEX
+  statements make are announced from the requests table as an outbox: the
+  `vex-request-notice` job (every minute) claims rows with no
+  `approvers_notified_at` (`FOR UPDATE SKIP LOCKED`) and sends one notice and
+  one email per tenant and approver, counting only findings in that
+  approver's data scope and naming at most five titles; without a data-scope
+  check nobody is told (`DispatchVEXRequestNotices`, `NotifyVEXRequests`).
 - **Sole member.** An organization with one person has nobody to ask. Its
   owner may approve their own pending request
   (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while
