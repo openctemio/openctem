@@ -225,7 +225,7 @@ func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Ru
 	from := suppressionApplyFrom[vulnerability.FindingStatus(target)]
 	// Lock the candidates, then let the transition engine decide each one
 	// with the rule as the actor (the rule's own four-eyes approval is what
-	// authorises the move). A finding someone moved since it was read, or
+	// authorizes the move). A finding someone moved since it was read, or
 	// one the engine refuses, is skipped.
 	ids, err := lockAndDecideSuppression(ctx, tx, rule, target, from, ids)
 	if err != nil {
