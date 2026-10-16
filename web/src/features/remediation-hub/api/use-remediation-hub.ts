@@ -63,16 +63,30 @@ export function useTask(id: string | undefined) {
   return useSWR<RemediationTask>(id ? `${TASKS}/${id}` : null, get)
 }
 
-export function memberPageUrl(taskId: string, page: number, perPage: number, status?: string): string {
+export function memberPageUrl(
+  taskId: string,
+  page: number,
+  perPage: number,
+  status?: string
+): string {
   const p = new URLSearchParams({ page: String(page), per_page: String(perPage) })
   if (status) p.set('status', status)
   return `${TASKS}/${taskId}/members?${p.toString()}`
 }
 
-export function useTaskMembers(taskId: string | undefined, page: number, perPage: number, status?: string) {
-  return useSWR<Page<TaskMember>>(taskId ? memberPageUrl(taskId, page, perPage, status) : null, get, {
-    keepPreviousData: true,
-  })
+export function useTaskMembers(
+  taskId: string | undefined,
+  page: number,
+  perPage: number,
+  status?: string
+) {
+  return useSWR<Page<TaskMember>>(
+    taskId ? memberPageUrl(taskId, page, perPage, status) : null,
+    get,
+    {
+      keepPreviousData: true,
+    }
+  )
 }
 
 export function useTaskTimeline(taskId: string | undefined) {
@@ -127,7 +141,9 @@ export function useRevalidateHub() {
       mutate(
         (key) =>
           typeof key === 'string' &&
-          (key.startsWith(TASKS) || key.startsWith(SUGGESTIONS) || key.startsWith('/api/v1/remediation/actions'))
+          (key.startsWith(TASKS) ||
+            key.startsWith(SUGGESTIONS) ||
+            key.startsWith('/api/v1/remediation/actions'))
       ),
     [mutate]
   )
@@ -159,13 +175,23 @@ export const hubApi = {
     post<MarkFixedResult>(`${TASKS}/${id}/resolve`, body),
   splitTask: (
     id: string,
-    body: { version: number; finding_ids: string[]; title?: string; assignee_user_id?: string; assignee_group_id?: string }
+    body: {
+      version: number
+      finding_ids: string[]
+      title?: string
+      assignee_user_id?: string
+      assignee_group_id?: string
+    }
   ) => post<MoveResult>(`${TASKS}/${id}/splits`, body),
-  mergeTasks: (id: string, body: { version: number; sources: { task_id: string; version: number }[] }) =>
-    post<RemediationTask>(`${TASKS}/${id}/merges`, body),
+  mergeTasks: (
+    id: string,
+    body: { version: number; sources: { task_id: string; version: number }[] }
+  ) => post<RemediationTask>(`${TASKS}/${id}/merges`, body),
   previewMove: (body: MoveBody) => post<MovePreview>('/api/v1/remediation/moves/preview', body),
-  move: (body: MoveBody & { confirm?: boolean }) => post<MoveResult>('/api/v1/remediation/moves', body),
-  approve: (id: string, body: ApproveBody) => post<AcceptResult>(`${SUGGESTIONS}/${id}/approve`, body),
+  move: (body: MoveBody & { confirm?: boolean }) =>
+    post<MoveResult>('/api/v1/remediation/moves', body),
+  approve: (id: string, body: ApproveBody) =>
+    post<AcceptResult>(`${SUGGESTIONS}/${id}/approve`, body),
   bulkApprove: (ids: string[]) => post<BulkAcceptItem[]>(`${SUGGESTIONS}/approve`, { ids }),
   reject: (id: string, body: { version: number; reason: DismissReason; note?: string }) =>
     post<RemediationSuggestion>(`${SUGGESTIONS}/${id}/reject`, body),
