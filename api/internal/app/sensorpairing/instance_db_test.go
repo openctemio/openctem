@@ -290,3 +290,54 @@ func TestInstanceEnrollment_IssueAndRegisterLimits_DB(t *testing.T) {
 		t.Fatal("a two-hour token was stored")
 	}
 }
+
+// The host facts a redeeming sensor claims reach the console audit rows
+// only as the known fields, stripped of control and bidi characters and
+// bounded: an attacker holding a token cannot write free-form blobs or
+// terminal escapes into the audit log.
+func TestInstanceEnrollment_AuditHostFactsSanitized_DB(t *testing.T) {
+	f := newFixture(t)
+	sink := &auditSink{}
+	token := f.issue(sink, 0)
+	s := newSensor(7)
+	long := strings.Repeat("h", 5000)
+	_, err := f.svc.Start(context.Background(), sensorpairing.StartInput{
+		Request: pairing.StartRequest{Protocol: pairing.Version, PublicKey: pairing.Encode(s.pub()),
+			Commitment: pairing.Encode(s.commitment), EnrollmentToken: token,
+			Host: pairing.HostFacts{Hostname: long, OS: "linux\x1b[31m‮", Arch: "amd64\n\r", Product: "p\x00q"}},
+		PublicKey: s.pub(), SourceIP: net.ParseIP("203.0.113.21"),
+	})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	var facts map[string]string
+	for _, r := range sink.rows {
+		if r.Action == admin.AuditActionInstanceTokenRedeem {
+			raw, _ := r.RequestBody["host_facts"].(map[string]any)
+			facts = map[string]string{}
+			for k, v := range raw {
+				s, ok := v.(string)
+				if !ok {
+					t.Fatalf("host fact %s is not a string: %T", k, v)
+				}
+				facts[k] = s
+			}
+		}
+	}
+	if facts == nil {
+		t.Fatalf("no host facts in the redeem row: %+v", sink.rows)
+	}
+	for k, v := range facts {
+		if len(v) > 128 || strings.ContainsAny(v, "\x1b\x00\n\r‮") {
+			t.Fatalf("host fact %s not sanitized: %q", k, v)
+		}
+		switch k {
+		case "hostname", "os", "arch", "sensor_version", "sdk_version", "product", "instance_id", "name":
+		default:
+			t.Fatalf("unexpected host fact key %q", k)
+		}
+	}
+	if facts["os"] != "linux[31m" || facts["arch"] != "amd64" || facts["product"] != "pq" || len(facts["hostname"]) != 128 {
+		t.Fatalf("facts %+v", facts)
+	}
+}

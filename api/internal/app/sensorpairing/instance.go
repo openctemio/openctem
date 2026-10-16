@@ -168,7 +168,7 @@ func (s *Service) startInstance(ctx context.Context, token string, p *sensordom.
 	s.writeAdminAudit(ctx, nil, actorSensor, admin.AuditActionInstanceTokenRedeem,
 		admin.ResourceTypeInstanceEnrollmentToken, &t.ID, t.Name, ipString(p), "",
 		map[string]any{"pairing_id": p.ID.String(), "key_fingerprint": pairing.KeyFingerprint(p.Thumbprint),
-			"host_facts": p.HostFacts})
+			"host_facts": auditHostFacts(p.HostFacts)})
 	return nil
 }
 
@@ -194,8 +194,24 @@ func (s *Service) approveInstance(ctx context.Context, p *sensordom.Pairing) err
 	s.writeAdminAudit(ctx, nil, actorSensor, admin.AuditActionSharedSensorEnrolled, admin.ResourceTypeSensor,
 		&res.SensorID, name, ipString(res.Pairing), "",
 		map[string]any{"pairing_id": p.ID.String(), "instance_token_id": p.InstanceTokenID.String(),
-			"key_fingerprint": pairing.KeyFingerprint(p.Thumbprint), "sas": res.Pairing.SAS, "host_facts": p.HostFacts})
+			"key_fingerprint": pairing.KeyFingerprint(p.Thumbprint), "sas": res.Pairing.SAS, "host_facts": auditHostFacts(p.HostFacts)})
 	return nil
+}
+
+// auditHostFacts is what a console audit row keeps of the facts a sensor
+// claimed: the known fields only, each already stripped of control and bidi
+// characters and bounded when the request was stored (sanitizeHostFacts),
+// and empty ones left out. No free-form value reaches the row.
+func auditHostFacts(h sensordom.PairingHostFacts) map[string]string {
+	out := map[string]string{}
+	for k, v := range map[string]string{"hostname": h.Hostname, "os": h.OS, "arch": h.Arch,
+		"sensor_version": h.SensorVersion, "sdk_version": h.SDKVersion, "product": h.Product,
+		"instance_id": h.InstanceID, "name": h.Name} {
+		if v = cleanFact(v); v != "" {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 func ipString(p *sensordom.Pairing) string {

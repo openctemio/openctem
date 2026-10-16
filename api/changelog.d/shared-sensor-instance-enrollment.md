@@ -14,5 +14,5 @@
 - A key-bound shared sensor now authenticates its signed requests (its key has
   no tenant and resolves only to a sensor of scope instance); it never gets a
   tenant context.
-- Migration 002650 adds `instance_enrollment_tokens` and
+- Migration 002730 adds `instance_enrollment_tokens` and
   `sensor_pairings.instance_token_id`.
