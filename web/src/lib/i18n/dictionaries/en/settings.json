@@ -386,5 +386,7 @@
   "settings.domains.ownerOnly": "Only an owner can change these settings.",
   "settings.domains.save": "Save",
   "settings.domains.saved": "Settings for {domain} saved",
-  "settings.domains.saveFailed": "Could not save the domain settings"
+  "settings.domains.saveFailed": "Could not save the domain settings",
+  "settings.item.finding-approvals": "Finding approvals",
+  "settings.desc.finding-approvals": "Who decides false positives and accepted risks, and who is told."
 }

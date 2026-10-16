@@ -386,5 +386,7 @@
   "settings.domains.ownerOnly": "Chỉ chủ sở hữu mới thay đổi được các thiết lập này.",
   "settings.domains.save": "Lưu",
   "settings.domains.saved": "Đã lưu thiết lập cho {domain}",
-  "settings.domains.saveFailed": "Không lưu được thiết lập tên miền"
+  "settings.domains.saveFailed": "Không lưu được thiết lập tên miền",
+  "settings.item.finding-approvals": "Phê duyệt phát hiện",
+  "settings.desc.finding-approvals": "Ai quyết định dương tính giả và rủi ro được chấp nhận, và ai được thông báo."
 }
