@@ -999,8 +999,8 @@ gated (none adds a way in).
 - `PATCH /tenants/{t}/settings/security` refuses `sso_enforced` with 403.
   Enforcement is set only through `PUT /admin/tenants/{tenantId}/sso/enforcement`,
   which keeps the "usable SSO path required" guard.
-- With `TENANT_CREATION_MODE=admin_only` (the default; anything but
-  `self_service` counts), both self-service creation paths
+- With the `admin_only` sign-up policy in force (always under the default
+  `SIGNUP_MODE=disabled`, and under `domain`), both self-service creation paths
   (`POST /api/v1/tenants` and `POST /api/v1/auth/create-first-team`) return
   403. Only `POST /admin/tenants` (and `bootstrap-admin -org-*` at install)
   creates organizations. The mode is published
@@ -1438,7 +1438,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
 | `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
 | `POST /remediation/campaigns/{id}/resolve` (gate and filter) | `findings:remediation:write` alone could mark findings fixed; an unparseable condition was dropped and a status-only filter counted as scope, widening a resolve to the organization | `RequireAll(findings:remediation:write, findings:fix_apply)`; the filter is parsed strictly (400 on save, 400 on resolve of an old unparseable one), a status alone is not scope, only `active`/`validating` campaigns resolve |
-| `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision or accept needs every finding in scope (a join also every finding of the target task) |
+| `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision or accept needs every finding in scope (a join also every finding of the target task); `POST /{id}/approve` is gated on `findings:remediation:read`: without `findings:remediation:write` only an as-is join or task route to the caller (or their group) on assets they own (primary/secondary) is accepted, 403 otherwise |
 | `GET /remediation/actions/{id}` (RFC-098) | — | a restricted member reads an action only when they can see one of its tasks; otherwise 404 |
 | `PATCH /remediation/actions/{id}` (auto-join, RFC-098) | — | needs a caller with no data-scope restriction (the rule acts on findings beyond any scope) |
 | `/remediation/moves*`, `/remediation/tasks/{id}/splits|merges` (RFC-098) | — | every task involved must have all its findings in the caller's scope, and every named finding too (404 otherwise); another tenant's task is 404 |
