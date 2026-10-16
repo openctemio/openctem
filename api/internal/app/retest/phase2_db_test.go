@@ -106,23 +106,6 @@ func TestPhase2DB_ScanRegressionGetsFreshSLA(t *testing.T) {
 	}
 }
 
-// A validated_fixed finding a scan reopens was never closed: no SLA restart,
-// no regression announcement.
-func TestPhase2DB_ScanReopenOfValidatedFixedIsNotARegression(t *testing.T) {
-	fx := newFixture(t)
-	f := fx.newFinding(fx.asset, "validated_fixed", "tpl-downgrade")
-	past := fx.setOverdueSLA(f)
-	ann := &recordingAnnouncer{}
-	retestapp.NewScanRegressions(fx.regressionSLA(), ann, logger.NewNop()).HandleRegressions(context.Background(), fx.tenant,
-		[]vulnerability.ReopenedFinding{{ID: f, PreviousStatus: vulnerability.FindingStatusValidatedFixed}}, "nuclei")
-	if d, _ := fx.sla(f); !d.Equal(past) {
-		t.Errorf("SLA restarted for a refuted downgrade: %s", d)
-	}
-	if len(ann.kinds()) != 0 {
-		t.Errorf("a refuted downgrade was announced as a regression")
-	}
-}
-
 // D2 through a retest: still present on a resolved finding reopens it with a
 // fresh SLA, and the regression is announced.
 func TestPhase2DB_RetestRegressionGetsFreshSLAAndIsAnnounced(t *testing.T) {
@@ -219,8 +202,15 @@ func TestPhase2DB_ProofOfFixRetestsAFixAppliedFinding(t *testing.T) {
 	fx.finishAttempt(rt.CheckCommandID, "not_detected", "https://shop.example.com/admin", 404)
 	fx.finish(rt.ReachCommandID, "detected", "")
 	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.CheckCommandID)
-	if status, _, _ := fx.findingState(f); status != "validated_fixed" {
-		t.Fatalf("finding = %s, want validated_fixed (verified fixed, awaiting a person)", status)
+	// Verified fixed, awaiting a person: the status stays, the validation
+	// says not reproducible.
+	if status, _, _ := fx.findingState(f); status != "fix_applied" {
+		t.Fatalf("finding = %s, want fix_applied (verified fixed, awaiting a person)", status)
+	}
+	var validation string
+	if err := fx.db.QueryRow(`SELECT COALESCE(validation_outcome, '') FROM findings WHERE id = $1`, f.String()).Scan(&validation); err != nil ||
+		validation != "not_reproducible" {
+		t.Fatalf("validation = %q (%v), want not_reproducible", validation, err)
 	}
 	if fallback.calls != 0 {
 		t.Errorf("a retestable finding also went to the fallback")

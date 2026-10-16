@@ -18,7 +18,7 @@ import (
 const ToolName = "version-match"
 
 // StaleAfter is how long a software link counts as current without being
-// seen again (RFC-066 §8: not seen for 30 days → not_observed).
+// seen again (RFC-066 §8: not seen for 30 days → stale, observation_state).
 const StaleAfter = 30 * 24 * time.Hour
 
 // Version is a global catalog version waiting for evaluation.
@@ -89,6 +89,9 @@ type MatcherFinding struct {
 	CVEID       string
 	Fingerprint string
 	Status      string
+	// Stale is true when the matcher (or another source) marked the open
+	// finding stale (observation_state).
+	Stale       bool
 	ProductID   *shared.ID
 	VersionID   *shared.ID
 	Location    string
