@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -1564,10 +1566,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
 	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
+	// own findings, proof-of-fix queued) behind the abuse guard.
+	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
+	s.RemediationSuggest.SetTasks(s.RemediationTask)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -2805,6 +2811,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// domain (domainverify.Service.OwnerOfDomain).
 	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
 		s.SSO.SetDomainOwnerLookup(owners)
+		// Discovery hands out opaque organization references, signed with
+		// a key derived from the session secret under its own label.
+		dk := hmac.New(sha256.New, []byte(cfg.Auth.JWTSecret))
+		dk.Write([]byte("openctem/sso-discovery/v1"))
+		s.SSO.SetDiscoveryKey(dk.Sum(nil))
 	} else {
 		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
 	}

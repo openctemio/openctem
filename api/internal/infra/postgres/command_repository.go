@@ -123,12 +123,12 @@ func (r *CommandRepository) GetByTenantAndID(ctx context.Context, tenantID, id s
 	return r.scanCommand(row)
 }
 
-// GetHeldSharedJob returns the shared job (is_platform_job) commandID that
+// GetHeldSharedJobForPlatform returns the shared job (is_platform_job) commandID that
 // sensorID holds (commands.sensor_id), in whatever tenant it belongs to: a
 // shared sensor has no tenant, so the tenant is read from the command row
 // and never supplied by the caller. Not found for a tenant job, a job held by
 // another sensor, or an unknown id (docs/rfcs/RFC-100-shared-sensors.md §8).
-func (r *CommandRepository) GetHeldSharedJob(ctx context.Context, sensorID, commandID shared.ID) (*command.Command, error) {
+func (r *CommandRepository) GetHeldSharedJobForPlatform(ctx context.Context, sensorID, commandID shared.ID) (*command.Command, error) {
 	query := r.selectQuery() + " WHERE id = $1 AND sensor_id = $2 AND is_platform_job = TRUE"
 	row := r.db.QueryRowContext(ctx, query, commandID.String(), sensorID.String())
 	return r.scanCommand(row)
