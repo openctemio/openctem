@@ -62,8 +62,8 @@ type CreatedOrganization struct {
 }
 
 // OrganizationCreator creates an organization together with its owner on
-// behalf of the platform administrator. It works in either
-// TENANT_CREATION_MODE: that setting governs self-service creation only.
+// behalf of the platform administrator. It works under every SIGNUP_MODE and
+// sign-up policy: those govern self-service creation only.
 type OrganizationCreator struct {
 	tenants      *TenantService
 	provisioning *UserProvisioningService

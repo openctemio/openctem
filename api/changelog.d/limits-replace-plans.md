@@ -4,7 +4,7 @@
 - New organizations created by a person themselves start with the instance's **self-service default limits** (Console > System > Limits, `GET/PUT /api/v1/admin/settings/limits`, super admin with a fresh authenticator code). Empty by default. The same setting holds `orgs_per_user`, the per-person cap on self-service organizations (unlimited by default). The limits are written in the transaction that creates the organization.
 - Migration 002660 (`per_organization_limits`) keeps every organization's caps: the limits of its plan become operator limits with the reason "migrated from plan", and modules its plan left out become module denies. Plans, plan defaults and the plan to module map are dropped.
 - Over a limit only new additions are refused; nothing is deleted. A denied module keeps read access for 30 days.
-- **Self-service sign-up requires starting limits.** With sign-up in `self_service` (`TENANT_CREATION_MODE` or the console policy), the API refuses to start and the console refuses to switch to self-service until starting limits are configured: a saved console setting, `SELF_SERVICE_START_LIMITS` (a JSON object of limits, or `unlimited`), or the internal entitlements API.
+- **Self-service sign-up requires starting limits.** With sign-up in `self_service` (`SIGNUP_MODE=open` or the console policy), the API refuses to start and the console refuses to switch to self-service until starting limits are configured: a saved console setting, `SELF_SERVICE_START_LIMITS` (a JSON object of limits, or `unlimited`), or the internal entitlements API.
 
 ### Removed: plan endpoints and fields
 

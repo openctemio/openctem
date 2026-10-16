@@ -11,7 +11,7 @@ import (
 )
 
 // requireSelfServiceStartLimits refuses to start when self-service sign-up
-// is on (TENANT_CREATION_MODE=self_service, or the console sign-up policy)
+// is on (SIGNUP_MODE=open, or the console sign-up policy)
 // and no starting limits are configured: a public sign-up must never create
 // unlimited organizations by accident (docs/architecture/limits.md). An
 // operator who wants none sets SELF_SERVICE_START_LIMITS=unlimited.
@@ -22,7 +22,7 @@ func requireSelfServiceStartLimits(ctx context.Context, cfg *config.Config, svc 
 	if err := svc.Entitlement.SetStartLimits(cfg.SelfServiceStartLimits); err != nil {
 		return err
 	}
-	selfService := cfg.Auth.SelfServiceTenantCreation()
+	selfService := cfg.Auth.SignupOpen()
 	if svc.Signup != nil {
 		selfService = svc.Signup.Current(ctx).Mode == signupdom.ModeSelfService
 	}
