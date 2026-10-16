@@ -168,6 +168,8 @@
   "findingApprovals.group.previewHint": "Choose a reason to see who decides and which findings are covered.",
   "findingApprovals.group.coverage": "{included} finding(s) covered, {skipped} left out.",
   "findingApprovals.group.submit": "Request exception",
+  "findingApprovals.group.submitConfirmed": "Confirm and request",
+  "findingApprovals.group.bulkConfirm": "This exception covers more findings than one action usually may. Confirm to send it anyway; it is still decided by the approvers.",
   "findingApprovals.group.membersLabel": "Findings",
   "findingApprovals.group.endsOn": "ends {date}",
   "findingApprovals.group.shortenedHelp": "The date you chose is past this finding's limit, so it ends at its limit.",

@@ -168,6 +168,8 @@
   "findingApprovals.group.previewHint": "Chọn lý do để xem ai quyết định và những phát hiện nào được bao gồm.",
   "findingApprovals.group.coverage": "{included} phát hiện được bao gồm, {skipped} bị loại ra.",
   "findingApprovals.group.submit": "Yêu cầu ngoại lệ",
+  "findingApprovals.group.submitConfirmed": "Xác nhận và yêu cầu",
+  "findingApprovals.group.bulkConfirm": "Ngoại lệ này bao gồm nhiều phát hiện hơn mức một thao tác thường được phép. Hãy xác nhận để vẫn gửi; người phê duyệt vẫn quyết định.",
   "findingApprovals.group.membersLabel": "Phát hiện",
   "findingApprovals.group.endsOn": "kết thúc {date}",
   "findingApprovals.group.shortenedHelp": "Ngày bạn chọn vượt quá giới hạn của phát hiện này, nên nó kết thúc tại giới hạn đó.",

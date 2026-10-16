@@ -71,6 +71,11 @@ function isPendingConflict(err: unknown): boolean {
   return err instanceof ApiClientError && err.statusCode === 409
 }
 
+/** The group is above the bulk ceiling: the caller confirms and sends it again. */
+function isBulkTooLarge(err: unknown): boolean {
+  return err instanceof ApiClientError && err.code === 'BULK_TOO_LARGE'
+}
+
 interface GroupExceptionDialogProps {
   taskId: string
   open: boolean
@@ -97,6 +102,9 @@ export function GroupExceptionDialog({
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // The server refused the group as above the bulk ceiling; the next submit
+  // confirms it (the request is sent again with approved: true).
+  const [needsConfirm, setNeedsConfirm] = useState(false)
   // Only the newest preview answer counts.
   const seq = useRef(0)
 
@@ -178,6 +186,7 @@ export function GroupExceptionDialog({
     setReason('')
     setNote('')
     setExpiresAt(localDate(DEFAULT_ACCEPTANCE_DAYS))
+    setNeedsConfirm(false)
   }
 
   const changeStatus = (value: string) => {
@@ -195,6 +204,7 @@ export function GroupExceptionDialog({
         closure_reason: reason,
         justification: note.trim(),
         ...(expiresIso ? { expires_at: expiresIso } : {}),
+        ...(needsConfirm ? { approved: true } : {}),
       })
       toast.success(t('findingApprovals.group.requested', 'Exception requested'), {
         description: t(
@@ -207,7 +217,10 @@ export function GroupExceptionDialog({
       onOpenChange(false)
       await onCreated?.(batch)
     } catch (err) {
-      if (isPendingConflict(err)) {
+      if (isBulkTooLarge(err)) {
+        // Ask first; the next submit sends the confirmed request.
+        setNeedsConfirm(true)
+      } else if (isPendingConflict(err)) {
         toast.error(pendingText)
         onOpenChange(false)
         await onPendingConflict?.()
@@ -381,6 +394,18 @@ export function GroupExceptionDialog({
               )}
             </section>
           </div>
+          {needsConfirm && (
+            <p
+              role="alert"
+              data-testid="group-exception-bulk-confirm"
+              className="mt-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm"
+            >
+              {t(
+                'findingApprovals.group.bulkConfirm',
+                'This exception covers more findings than one action usually may. Confirm to send it anyway; it is still decided by the approvers.'
+              )}
+            </p>
+          )}
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
@@ -388,7 +413,9 @@ export function GroupExceptionDialog({
           </Button>
           <Button onClick={() => void submit()} disabled={!canSubmit}>
             {submitting && <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />}
-            {t('findingApprovals.group.submit', 'Request exception')}
+            {needsConfirm
+              ? t('findingApprovals.group.submitConfirmed', 'Confirm and request')
+              : t('findingApprovals.group.submit', 'Request exception')}
           </Button>
         </DialogFooter>
       </DialogContent>
