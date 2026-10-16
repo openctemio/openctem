@@ -87,7 +87,7 @@ scale, adapted to scanning:
 | "Run untagged jobs" switch | per shared sensor: "accept unzoned public jobs" (pool) or "zone jobs only" |
 | Protected runners take protected jobs only | "approved jobs only": signed jobs from approved scan definitions or above a trust level |
 | Paused runner, maximum job timeout | console pause and drain, per-sensor maximum job duration |
-| Instance runners on for new projects by default, per-group toggle | "Shared sensors for new organizations" (§5), per-organization allow or deny, organization opt-out |
+| Instance runners on for new projects by default, per-group toggle | "Organizations without a decision" (§5), chosen explicitly when shared sensors are turned on (no implicit default), per-organization allow or deny, organization opt-out |
 | Compute quota with a cost factor per runner type | generic per-organization limits (§10), per-tool weights later |
 | Ephemeral VM per job on the hosted fleet | per-job isolation on shared sensors (§8) |
 
@@ -102,15 +102,20 @@ Three layers, all of which must allow:
    step-up, audited). Off on every deployment until S0, S5 and S11 have
    landed (§11); then turning it on is an explicit administrator action, on
    the hosted service and on self-hosted installs alike.
-2. **Default for new organizations** `shared_sensors.new_orgs` (on by
-   default in both deployments), plus a **per-organization allow or deny** by
-   the instance administrator (the entitlement deny key `shared_sensors`,
-   RFC-064). A deny wins over the default.
+2. **Default for organizations without a decision** `shared_sensors.new_orgs`,
+   plus a **per-organization allow or deny** by the instance administrator
+   (the entitlement deny key `shared_sensors`, RFC-064). A deny wins over the
+   default. The default is **unset** until the administrator chooses, and
+   unset refuses: turning the instance switch on requires choosing allow or
+   deny for organizations without a decision **in the same action** (the API
+   answers 400 `NEW_ORGS_CHOICE_REQUIRED` otherwise), so a switch-on alone
+   never grants shared sensors to every organization (decision 2026-10-16,
+   security first: explicit rather than an implicit default).
 3. **Organization opt-out**: the organization owner may say "never send our
    scans to shared sensors" (data residency, allowlists, policy). Default:
    use them when available.
 
-"Default for new organizations" applies to every organization without an
+The default applies to every organization without an
 administrator's decision. An organization does not keep a copy of the
 default from the day it was created.
 
@@ -124,7 +129,7 @@ sensors for your organization") and never mentions an edition.
 | Setting | Hosted service | Self-hosted |
 |---|---|---|
 | Shared sensors exist | the service's regional pools | none until the administrator enrolls one; the bundled compose/Helm sensor enrolls at instance scope |
-| Shared sensors for new organizations | on | on |
+| Organizations without a decision | chosen explicitly when the switch is turned on (unset refuses) | chosen explicitly when the switch is turned on (unset refuses) |
 | Domain proof before shared sensors scan (RFC-054 §8.1) | **on** | off |
 | Shared sensors may scan internal zones (§6.1) | **off** (public targets only) | on (only zones the administrator assigns) |
 | Limits | written by the control plane per organization | none unless the administrator sets them |

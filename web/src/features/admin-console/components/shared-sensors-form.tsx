@@ -3,8 +3,10 @@
 /**
  * System > Platform scanning: shared sensors on this instance (RFC-100 §5).
  * The instance switch is off by default and cannot be turned on until shared
- * sensors are ready (the API refuses too); "for organizations without a
- * decision" is on by default. A change needs a super admin, a reason and a
+ * sensors are ready (the API refuses too). "Organizations without a
+ * decision" has no default: it is unset (they are refused) until the
+ * administrator chooses allow or deny, and turning the switch on needs that
+ * choice in the same change. A change needs a super admin, a reason and a
  * fresh authenticator code; it is audited and the other administrators are
  * emailed.
  */
@@ -17,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
@@ -24,10 +27,11 @@ import { AdminApiError } from '../api/admin-client'
 
 export interface SharedSensorsFormProps {
   enabled: boolean
-  newOrgs: boolean
+  /** null: not chosen yet (organizations without a decision are refused). */
+  newOrgs: boolean | null
   ready: boolean
   canEdit: boolean
-  onSave: (enabled: boolean, newOrgs: boolean, reason: string, code: string) => Promise<void>
+  onSave: (enabled: boolean, newOrgs: boolean | null, reason: string, code: string) => Promise<void>
 }
 
 export function SharedSensorsForm({
@@ -50,6 +54,9 @@ export function SharedSensorsForm({
   useEffect(() => setOn(enabled), [enabled])
   useEffect(() => setOrgs(newOrgs), [newOrgs])
   const dirty = on !== enabled || orgs !== newOrgs
+  // Turning shared sensors on needs an explicit choice for organizations
+  // without a decision (the API refuses it otherwise).
+  const needsChoice = on && orgs === null
 
   const save = async () => {
     setBusy(true)
@@ -101,22 +108,48 @@ export function SharedSensorsForm({
             />
           </div>
           <div className="flex items-start justify-between gap-4">
-            <Label htmlFor={`${id}-orgs`} className="grid min-w-0 gap-1 font-normal">
+            <div id={`${id}-orgs`} className="grid min-w-0 gap-1">
               <span className="font-medium">{t('admin.sharedSensors.newOrgsLabel')}</span>
               <span className="text-sm text-muted-foreground">
                 {t('admin.sharedSensors.newOrgsHint')}
               </span>
-            </Label>
-            <Switch
-              id={`${id}-orgs`}
-              checked={orgs}
-              onCheckedChange={setOrgs}
-              disabled={!canEdit || busy}
-            />
+            </div>
           </div>
+          <RadioGroup
+            aria-labelledby={`${id}-orgs`}
+            value={orgs === null ? '' : orgs ? 'allow' : 'deny'}
+            onValueChange={(v) => setOrgs(v === 'allow')}
+            disabled={!canEdit || busy}
+            className="gap-2"
+          >
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="allow" id={`${id}-orgs-allow`} />
+              <Label htmlFor={`${id}-orgs-allow`} className="font-normal">
+                {t('admin.sharedSensors.newOrgsAllow')}
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="deny" id={`${id}-orgs-deny`} />
+              <Label htmlFor={`${id}-orgs-deny`} className="font-normal">
+                {t('admin.sharedSensors.newOrgsDeny')}
+              </Label>
+            </div>
+          </RadioGroup>
+          {orgs === null && (
+            <p
+              className={needsChoice ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}
+              data-testid="shared-sensors-new-orgs-unset"
+            >
+              {t(
+                needsChoice
+                  ? 'admin.sharedSensors.newOrgsRequired'
+                  : 'admin.sharedSensors.newOrgsUnset'
+              )}
+            </p>
+          )}
           {canEdit ? (
             <div className="flex justify-end">
-              <Button onClick={() => setOpen(true)} disabled={!dirty || busy}>
+              <Button onClick={() => setOpen(true)} disabled={!dirty || busy || needsChoice}>
                 {t('admin.scanPolicy.save')}
               </Button>
             </div>
@@ -132,8 +165,21 @@ export function SharedSensorsForm({
           if (!busy) setOpen(o)
         }}
         title={t('admin.sharedSensors.confirmTitle')}
-        desc={<p>{t('admin.sharedSensors.confirmDesc')}</p>}
-        disabled={code.trim().length < 6 || !reason.trim()}
+        desc={
+          <>
+            {orgs !== null && (
+              <p>
+                {t(
+                  orgs
+                    ? 'admin.sharedSensors.confirmNewOrgsAllow'
+                    : 'admin.sharedSensors.confirmNewOrgsDeny'
+                )}
+              </p>
+            )}
+            <p>{t('admin.sharedSensors.confirmDesc')}</p>
+          </>
+        }
+        disabled={code.trim().length < 6 || !reason.trim() || needsChoice}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={

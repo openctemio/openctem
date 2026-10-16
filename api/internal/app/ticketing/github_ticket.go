@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/scm"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -315,7 +316,7 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 		if masked := finding.SecretMaskedValue(); masked != "" {
 			fmt.Fprintf(&b, "**Masked value:** %s\n\n", safetext.MarkdownInline(masked, safetext.MaxInlineRunes))
 		}
-		b.WriteString("Open the finding in the OpenCTEM platform for full details.\n")
+		b.WriteString("Open the finding in " + brand.Name() + " for full details.\n")
 		appendMobilizationBrief(&b, finding)
 		return b.String()
 	}
