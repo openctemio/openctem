@@ -114,6 +114,21 @@ func TestControlPlaneProvisioningAndSource(t *testing.T) {
 		t.Fatalf("a per-person key is not per organization: %v", err)
 	}
 
+	// An email that already has an account is refused: nobody becomes an
+	// owner on someone else's request.
+	slugC := "cp-c-" + uuid.NewString()[:8]
+	t.Cleanup(func() { _, _ = pg.Exec(`DELETE FROM tenants WHERE slug = $1`, slugC) })
+	if _, err := creator.Create(ctx, tenantapp.CreateOrganizationInput{
+		Name: "Existing owner", Slug: slugC, OwnerEmail: slugA + "@example.com", NewOwnerOnly: true,
+		Provisioned: &tenantapp.ProvisionedEntitlements{Reason: "x"},
+	}, auditapp.AuditContext{ActorEmail: entitlement.ControlPlaneActor}); !errors.Is(err, tenantapp.ErrOwnerAccountExists) {
+		t.Fatalf("existing account must be refused: %v", err)
+	}
+	var created int
+	if err := pg.QueryRow(`SELECT count(*) FROM tenants WHERE slug = $1`, slugC).Scan(&created); err != nil || created != 0 {
+		t.Fatalf("nothing is created for an existing account: %d %v", created, err)
+	}
+
 	// A taken slug creates nothing.
 	if _, err := provision(slugA, &tenantapp.ProvisionedEntitlements{Limits: limits.Limits{limits.Seats: 1}, Reason: "dup"}); err == nil {
 		t.Fatal("duplicate slug must be refused")
