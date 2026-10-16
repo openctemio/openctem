@@ -788,6 +788,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/vulnerability-matching': {
     permission: Permission.TeamUpdate,
   },
+  // Finding approvals: settings:read to see, settings:write (+ step-up) to save.
+  '/settings/finding-approvals': {
+    permission: Permission.SettingsRead,
+  },
   // License policy (RFC-070): settings:read to see, settings:write to save.
   '/settings/license-policy': {
     permission: Permission.SettingsRead,
