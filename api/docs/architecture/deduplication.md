@@ -75,7 +75,7 @@ asset merge re-keys a version-2 finding by rewriting the `asset` field of its
 stored tuple, only when the stored tuple still reproduces the stored key.
 
 Findings a scan does not report again are re-keyed by the re-fingerprint job
-(`cmd/refingerprint`, shipped in the API image as `/app/refingerprint`):
+(`internal/tools/refingerprintcmd`, shipped in the API image as `/app/refingerprint`):
 
 ```bash
 refingerprint                 # dry run, every tenant with older keys (read-only connection)

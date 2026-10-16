@@ -282,15 +282,18 @@ func TestApproveAndMerge_MovesRetestsWithOnePending(t *testing.T) {
 	}
 }
 
-// Every reference to findings.id must be re-pointed by a finding merge, so a
-// new table cannot lose rows to a tombstone silently.
+// Every reference to findings.id (the referencing column, also inside a
+// composite (tenant_id, finding_id) key) must be re-pointed by a finding
+// merge, so a new table cannot lose rows to a tombstone silently.
 func TestFindingMergeCoversEveryFindingReference(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 	rows, err := db.Query(`
 		SELECT c.conrelid::regclass::text || '.' || a.attname
 		FROM pg_constraint c
-		JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+		JOIN pg_attribute a ON a.attrelid = c.conrelid
+		 AND a.attnum = c.conkey[array_position(c.confkey,
+		     (SELECT attnum FROM pg_attribute WHERE attrelid = 'findings'::regclass AND attname = 'id'))]
 		WHERE c.contype = 'f' AND c.confrelid = 'findings'::regclass`)
 	if err != nil {
 		t.Fatal(err)

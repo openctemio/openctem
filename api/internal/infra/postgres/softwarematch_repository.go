@@ -354,7 +354,7 @@ func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, lim
 // MatcherFindings (see softwarematch.Store).
 func (r *SoftwareMatchRepository) MatcherFindings(ctx context.Context, tenantID shared.ID) ([]softwarematch.MatcherFinding, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT f.id, f.asset_id, COALESCE(f.cve_id, ''), f.fingerprint, f.status,
+		SELECT f.id, f.asset_id, COALESCE(f.cve_id, ''), f.fingerprint, f.status, f.observation_state = 'stale',
 			f.metadata->'version_match'->>'product_id', f.metadata->'version_match'->>'version_id',
 			COALESCE(f.metadata->'version_match'->>'location', ''), COALESCE(r.status = 'Rejected', false)
 		FROM findings f
@@ -370,7 +370,7 @@ func (r *SoftwareMatchRepository) MatcherFindings(ctx context.Context, tenantID 
 		var f softwarematch.MatcherFinding
 		var id, asset string
 		var pid, vid sql.NullString
-		if err := rows.Scan(&id, &asset, &f.CVEID, &f.Fingerprint, &f.Status, &pid, &vid, &f.Location, &f.CVERejected); err != nil {
+		if err := rows.Scan(&id, &asset, &f.CVEID, &f.Fingerprint, &f.Status, &f.Stale, &pid, &vid, &f.Location, &f.CVERejected); err != nil {
 			return nil, fmt.Errorf("matcher findings: %w", err)
 		}
 		f.ID, f.AssetID = shared.MustIDFromString(id), shared.MustIDFromString(asset)
@@ -485,7 +485,8 @@ func (r *SoftwareMatchRepository) CloseFindings(ctx context.Context, tenantID sh
 	case softwarematch.CloseVersionChanged:
 		set, from = `status = 'resolved', resolution = 'auto_fixed', closure_reason = 'fixed', verification = '`+softwarematchVerification+`', resolved_at = NOW()`, autoResolveFromSQL
 	case softwarematch.CloseNotObserved:
-		set, from = `status = 'not_observed'`, staleFromSQL
+		// Not seen lately is stale, not fixed: the status stays.
+		set, from = `observation_state = 'stale'`, staleFromSQL
 	case softwarematch.CloseAdvisoryUpdated:
 		set, from = `status = 'false_positive', resolution = 'advisory_updated', closure_reason = 'detection_error', verification = '`+softwarematchVerification+`', resolved_at = NOW()`, vexFalsePositiveFromSQL
 	default:
@@ -505,7 +506,8 @@ func (r *SoftwareMatchRepository) CloseFindings(ctx context.Context, tenantID sh
 }
 
 // ReopenFindings (see softwarematch.Store): only findings the matcher itself
-// closed (not observed, or resolved because the version changed).
+// closed as fixed (the version changed) reopen; an open finding it marked
+// stale becomes present again.
 func (r *SoftwareMatchRepository) ReopenFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -514,11 +516,14 @@ func (r *SoftwareMatchRepository) ReopenFindings(ctx context.Context, tenantID s
 		Source: "vulnmatch", Reason: "matched_again", ActorName: "system: software vulnerability matcher",
 		Message: "The software vulnerability matcher matched it again",
 	}, `
-		UPDATE findings f SET status = 'confirmed', resolution = NULL, closure_reason = NULL, verification = NULL,
-			resolved_at = NULL, updated_at = NOW()
+		UPDATE findings f SET
+			status = CASE WHEN f.status IN `+regressionReopenFromSQL+` THEN 'confirmed' ELSE f.status END,
+			resolution = CASE WHEN f.status IN `+regressionReopenFromSQL+` THEN NULL ELSE f.resolution END,
+			resolved_at = CASE WHEN f.status IN `+regressionReopenFromSQL+` THEN NULL ELSE f.resolved_at END,
+			observation_state = 'present', updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[]) AND `+matcherOwnedSQL+`
-		  AND f.status IN `+regressionReopenFromSQL+`
-		  AND (f.status = 'not_observed' OR (f.closure_reason = 'fixed' AND f.verification = '`+softwarematchVerification+`'))
+		  AND ((f.status IN `+regressionReopenFromSQL+` AND f.closure_reason = 'fixed' AND f.verification = '`+softwarematchVerification+`')
+		       OR (f.status IN `+staleFromSQL+` AND f.observation_state = 'stale'))
 		RETURNING f.id::text`, tenantID, ids)
 }
 
