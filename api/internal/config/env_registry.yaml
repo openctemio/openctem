@@ -1877,12 +1877,6 @@ vars:
     group: "Web console"
     type: string
     description: "Sentry DSN for browser and server error reporting. Unset: off."
-  - name: NEXT_PUBLIC_APP_NAME
-    component: web
-    group: "Web console"
-    type: string
-    default: "OpenCTEM"
-    description: "Product name in the page title."
   - name: NEXT_PUBLIC_APP_DESCRIPTION
     component: web
     group: "Web console"

@@ -3,7 +3,7 @@
   "help.documentation": "Tài liệu",
   "help.shortcuts": "Phím tắt",
   "help.reportIssue": "Báo lỗi",
-  "help.about": "Giới thiệu OpenCTEM",
+  "help.about": "Giới thiệu {product}",
   "help.opensInNewTab": "(mở trong thẻ mới)",
   "help.shortcuts.description": "Thao tác nhanh hơn mà không cần rời bàn phím.",
   "help.shortcutGroup.general": "Chung",

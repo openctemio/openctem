@@ -281,7 +281,7 @@ export const SENSOR_TYPE_CONFIG: Record<
   },
   platform: {
     label: 'Platform Sensor',
-    description: "Running on OpenCTEM's managed cloud infrastructure",
+    description: "Running on the platform's managed infrastructure",
     color: 'purple',
   },
 }
