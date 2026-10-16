@@ -25,6 +25,18 @@ func TestAdminListenerPlaneSplit(t *testing.T) {
 		{"/scim/v2/Users", http.StatusNoContent, http.StatusNotFound},
 		{"/metrics", http.StatusNoContent, http.StatusNotFound},
 		{"/health", http.StatusNoContent, http.StatusNoContent},
+		// Readings of the path the router cleans: the console stays on its
+		// listener, and nothing escapes it.
+		{"/api/v1//admin/tenants", http.StatusNotFound, http.StatusNoContent},
+		{"/api/v1/./admin/tenants", http.StatusNotFound, http.StatusNoContent},
+		{"/api/v1/x/../admin/tenants", http.StatusNotFound, http.StatusNoContent},
+		{"/api/v1/admin/", http.StatusNotFound, http.StatusNoContent},
+		{"/api/v1/%61dmin/tenants", http.StatusNotFound, http.StatusNoContent},
+		{"/api/v1%2Fadmin/tenants", http.StatusNotFound, http.StatusNotFound},
+		{"/api/v1/admin/../findings", http.StatusNoContent, http.StatusNotFound},
+		{"/api/v1/admin/x/../../findings", http.StatusNoContent, http.StatusNotFound},
+		{"/api/v1/admin/..%2f..%2ffindings", http.StatusNotFound, http.StatusNotFound},
+		{"/api/v1/admin/%2e%2e/findings", http.StatusNotFound, http.StatusNotFound},
 	}
 	for _, tc := range cases {
 		for _, h := range []struct {
