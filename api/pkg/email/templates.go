@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/brand"
 )
 
 // Template represents a predefined email template type.
@@ -32,6 +35,38 @@ const (
 	TemplateAccountSetup Template = "account_setup"
 )
 
+// Branding is the instance brand's part of every email: an optional footer
+// line and the "Powered by OpenCTEM" credit (docs/architecture/brand.md).
+// Each template's data embeds it.
+type Branding struct {
+	FooterText string
+	PoweredBy  bool
+}
+
+// poweredByName is the upstream product a "Powered by" credit names; it is
+// fixed whatever the configured brand is.
+const poweredByName = "OpenCTEM"
+
+// FooterHTML renders the footer line and the credit, escaped; "" when
+// neither is set.
+func (b Branding) FooterHTML() template.HTML {
+	var buf bytes.Buffer
+	if t := strings.TrimSpace(b.FooterText); t != "" {
+		buf.WriteString("<p>")
+		for i, line := range strings.Split(t, "\n") {
+			if i > 0 {
+				buf.WriteString("<br>")
+			}
+			buf.WriteString(template.HTMLEscapeString(line))
+		}
+		buf.WriteString("</p>")
+	}
+	if b.PoweredBy {
+		buf.WriteString("<p>Powered by " + poweredByName + "</p>")
+	}
+	return template.HTML(buf.String()) // #nosec G203 -- every part is escaped above
+}
+
 // SecurityNoticeData holds data for the account security notice.
 type SecurityNoticeData struct {
 	UserName   string
@@ -41,6 +76,7 @@ type SecurityNoticeData struct {
 	OccurredAt string
 	IPAddress  string
 	AppName    string
+	Branding
 }
 
 // VerifyEmailData holds data for the email verification template.
@@ -50,6 +86,7 @@ type VerifyEmailData struct {
 	VerificationURL string
 	ExpiresIn       string
 	AppName         string
+	Branding
 }
 
 // PasswordResetData holds data for the password reset template.
@@ -61,6 +98,7 @@ type PasswordResetData struct {
 	AppName     string
 	IPAddress   string
 	RequestedAt string
+	Branding
 }
 
 // PasswordChangedData holds data for the password changed notification.
@@ -70,6 +108,7 @@ type PasswordChangedData struct {
 	ChangedAt string
 	IPAddress string
 	AppName   string
+	Branding
 }
 
 // WelcomeData holds data for the welcome email template.
@@ -78,6 +117,7 @@ type WelcomeData struct {
 	Email    string
 	LoginURL string
 	AppName  string
+	Branding
 }
 
 // TeamInvitationData holds data for the team invitation template.
@@ -87,6 +127,7 @@ type TeamInvitationData struct {
 	InvitationURL string
 	ExpiresIn     string
 	AppName       string
+	Branding
 }
 
 // AccountSetupData holds data for the account-setup (set your password) email.
@@ -96,6 +137,7 @@ type AccountSetupData struct {
 	SetupURL  string
 	ExpiresIn string
 	AppName   string
+	Branding
 }
 
 // MemberStatusChangeData holds data for the suspend/reactivate notifications.
@@ -105,6 +147,7 @@ type MemberStatusChangeData struct {
 	ActorName string // Admin who performed the action; may be empty
 	AppURL    string // Where the user can go to see status (login page)
 	AppName   string
+	Branding
 }
 
 // TemplateEngine handles email template rendering.
@@ -171,7 +214,7 @@ func (e *TemplateEngine) registerTemplates() {
 	// Welcome
 	e.templates[TemplateWelcome] = &templateDef{
 		subjectTmpl: template.Must(template.New("welcome_subject").Parse("Welcome to {{.AppName}}")),
-		bodyTmpl:    template.Must(template.New("welcome").Parse(welcomeTemplate)),
+		bodyTmpl:    template.Must(template.New("welcome").Funcs(template.FuncMap{"docsURL": func() string { return brand.Instance().Docs() + "/" }}).Parse(welcomeTemplate)),
 	}
 
 	// Team Invitation
@@ -246,6 +289,7 @@ const securityNoticeTemplate = `<!DOCTYPE html>
         <div class="footer">
             <p>This email was sent to {{.Email}}</p>
             <p>&copy; {{.AppName}}. All rights reserved.</p>
+            {{.FooterHTML}}
         </div>
     </div>
 </body>
@@ -298,6 +342,7 @@ const verifyEmailTemplate = `<!DOCTYPE html>
         <div class="footer">
             <p>This email was sent to {{.Email}}</p>
             <p>&copy; {{.AppName}}. All rights reserved.</p>
+            {{.FooterHTML}}
         </div>
     </div>
 </body>
@@ -357,6 +402,7 @@ const passwordResetTemplate = `<!DOCTYPE html>
         <div class="footer">
             <p>This email was sent to {{.Email}}</p>
             <p>&copy; {{.AppName}}. All rights reserved.</p>
+            {{.FooterHTML}}
         </div>
     </div>
 </body>
@@ -409,6 +455,7 @@ const passwordChangedTemplate = `<!DOCTYPE html>
         <div class="footer">
             <p>This email was sent to {{.Email}}</p>
             <p>&copy; {{.AppName}}. All rights reserved.</p>
+            {{.FooterHTML}}
         </div>
     </div>
 </body>
@@ -458,11 +505,12 @@ const welcomeTemplate = `<!DOCTYPE html>
             <a href="{{.LoginURL}}" class="button">Go to Dashboard</a>
         </div>
 
-        <p>Need help getting started? Read the documentation at <a href="https://docs.openctem.io/">docs.openctem.io</a> or contact your administrator.</p>
+        <p>Need help getting started? Read the {{.AppName}} documentation at <a href="{{docsURL}}">{{docsURL}}</a> or contact your administrator.</p>
 
         <div class="footer">
             <p>This email was sent to {{.Email}}</p>
             <p>&copy; {{.AppName}}. All rights reserved.</p>
+            {{.FooterHTML}}
         </div>
     </div>
 </body>
@@ -517,6 +565,7 @@ const teamInvitationTemplate = `<!DOCTYPE html>
 
         <div class="footer">
             <p>&copy; {{.AppName}}. All rights reserved.</p>
+            {{.FooterHTML}}
         </div>
     </div>
 </body>
@@ -565,6 +614,7 @@ const accountSetupTemplate = `<!DOCTYPE html>
 
         <div class="footer">
             <p>&copy; {{.AppName}}. All rights reserved.</p>
+            {{.FooterHTML}}
         </div>
     </div>
 </body>
@@ -612,6 +662,7 @@ const memberSuspendedTemplate = `<!DOCTYPE html>
 
         <div class="footer">
             <p>&copy; {{.AppName}}. All rights reserved.</p>
+            {{.FooterHTML}}
         </div>
     </div>
 </body>
@@ -662,6 +713,7 @@ const memberReactivatedTemplate = `<!DOCTYPE html>
 
         <div class="footer">
             <p>&copy; {{.AppName}}. All rights reserved.</p>
+            {{.FooterHTML}}
         </div>
     </div>
 </body>
