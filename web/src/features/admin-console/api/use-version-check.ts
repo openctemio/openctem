@@ -8,11 +8,11 @@ const KEY = '/version-check/'
 
 /**
  * The version check (System > Software updates and the console banner). Any
- * administrator reads it; it changes at most daily, so it refreshes slowly.
+ * administrator reads it; it changes at most daily, so it is read when a
+ * console page mounts and never polled.
  */
 export function useVersionCheck() {
   return useSWR<VersionCheckStatus>(KEY, adminFetcher, {
-    refreshInterval: 15 * 60_000,
     revalidateOnFocus: false,
     shouldRetryOnError: false,
   })
