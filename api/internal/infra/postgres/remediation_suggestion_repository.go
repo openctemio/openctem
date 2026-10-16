@@ -314,7 +314,7 @@ func insertSuggestionInTx(ctx context.Context, tx *sql.Tx, tenantID shared.ID, s
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO remediation_suggestions (tenant_id, kind, algorithm, algorithm_version, action_key, key_kind, title, identity,
-			target_action_id, target_task_id, partitions, finding_ids, member_count, truncated, risk_points, risk_parts,
+			target_action_id, target_task_id, partitions, finding_ids, member_count, omitted_count, risk_points, risk_parts,
 			has_urgent, earliest_deadline, confidence, fix_spec)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::uuid[], $13, $14, $15, $16, $17, $18, $19, $20)`,
 		tenantID.String(), string(s.Kind), s.Algorithm, s.AlgorithmVersion, s.Key, s.KeyKind, clipTitle(s.Title), s.Identity,
@@ -333,7 +333,7 @@ func updateSuggestionInTx(ctx context.Context, tx *sql.Tx, tenantID, id shared.I
 	}
 	_, err = tx.ExecContext(ctx, `
 		UPDATE remediation_suggestions SET title = $3, partitions = $4, finding_ids = $5::uuid[], member_count = $6,
-			truncated = $7, risk_points = $8, risk_parts = $9, has_urgent = $10, earliest_deadline = $11,
+			omitted_count = $7, risk_points = $8, risk_parts = $9, has_urgent = $10, earliest_deadline = $11,
 			confidence = $12, fix_spec = $13, algorithm_version = $14,
 			state = CASE WHEN $15 THEN 'proposed' ELSE state END,
 			snoozed_until = CASE WHEN $15 THEN NULL ELSE snoozed_until END,
@@ -421,7 +421,7 @@ func (r *RemediationSuggestionRepository) MarkDigest(ctx context.Context, tenant
 }
 
 const suggestionCols = `s.id, s.tenant_id, s.kind, s.algorithm, s.algorithm_version, s.action_key, s.key_kind, s.title,
-	s.identity, s.target_action_id, s.target_task_id, s.partitions, s.finding_ids, s.member_count, s.truncated,
+	s.identity, s.target_action_id, s.target_task_id, s.partitions, s.finding_ids, s.member_count, s.omitted_count,
 	s.risk_points, s.risk_parts, s.has_urgent, s.earliest_deadline, s.confidence, s.fix_spec, s.state,
 	COALESCE(s.dismiss_reason, ''), s.state_note, s.decided_by, s.decided_at, s.snoozed_until, s.surfaced_at,
 	s.version, s.created_at, s.updated_at`
