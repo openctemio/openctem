@@ -7,6 +7,9 @@ func TestParseAdminAllowedCIDRs(t *testing.T) {
 	if err != nil || len(p) != 4 || p[1].String() != "203.0.113.7/32" || p[2].String() != "2001:db8::1/128" || p[3].String() != "192.168.0.0/16" {
 		t.Fatalf("parsed %v, %v", p, err)
 	}
+	if p, err := ParseAdminAllowedCIDRs([]string{"10.0.0.0/8 192.168.0.0/16", " fc00::/7 "}); err != nil || len(p) != 3 {
+		t.Fatalf("space-separated: %v, %v", p, err)
+	}
 	for _, bad := range [][]string{{}, {""}, {"10.0.0.0/33"}, {"intranet"}} {
 		if _, err := ParseAdminAllowedCIDRs(bad); err == nil {
 			t.Errorf("%q accepted", bad)

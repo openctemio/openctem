@@ -451,6 +451,8 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
+| `ADMIN_API_URL` | string | empty |  |  | Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. |
+| `OPENCTEM_ADMIN_PLANE` | string | `shared` |  |  | `separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`. |
 | `BACKEND_API_URL` | string | `http://localhost:8080` | yes |  | Internal URL of the API. The console proxies the browser's `/api/v1` calls and the WebSocket upgrade to it. Compose: `http://api:8080`. |
 | `SECURE_COOKIES` | string | `true` |  |  | `Secure` flag on the cookies the console sets. Only `false` turns it off (local `http://` development). |
 | `TRUST_PROXY_HEADERS` | string | `false` |  |  | Forward `X-Real-IP` / `X-Forwarded-For` to the API. Set `true` only when a proxy in front of the console overwrites those headers (the gateway does), otherwise a browser could choose its own address. |
