@@ -23,6 +23,8 @@ import (
 const (
 	adminAuthPath = "/api/v1/admin/auth"
 	adminAPIPath  = "/api/v1/admin"
+	// adminPagePath scopes the readable CSRF copy to the console's pages.
+	adminPagePath = "/admin"
 )
 
 // AdminConsoleHandler serves platform admin console login (RFC-022).
@@ -85,10 +87,13 @@ func clientInfo(r *http.Request) adminconsole.ClientInfo {
 	return adminconsole.ClientInfo{IP: middleware.ClientIP(r), UserAgent: r.UserAgent()}
 }
 
-// setCookie writes an admin console cookie. admin_session and admin_mfa are
-// HttpOnly (admin_session is forced so a caller can never weaken it);
-// admin_csrf is deliberately JS-readable because it is the double-submit CSRF
-// token the console echoes in a header, a nonce rather than a credential.
+// setCookie writes an admin console cookie. admin_session, admin_mfa and
+// admin_csrf are HttpOnly (admin_session is forced so a caller can never weaken
+// it) and scoped to the console API. The console's pages echo the CSRF token
+// in a header, so they read a copy, admin_csrf_ui, scoped to /admin: a
+// tenant page's script does not find it in document.cookie. Paths are not a
+// boundary inside one origin (a same-origin frame of a console page can read
+// it); the console's own origin removes that.
 // Secure follows AUTH_COOKIE_SECURE (required in production) and SameSite is
 // always Strict: the console never needs its cookies on cross-site requests.
 func (h *AdminConsoleHandler) setCookie(w http.ResponseWriter, name, value, path string, maxAge int, httpOnly bool) {
@@ -240,7 +245,7 @@ func (h *AdminConsoleHandler) ChangePassword(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	h.clearCookie(w, middleware.AdminSessionCookie, adminAPIPath, true)
-	h.clearCookie(w, middleware.AdminCSRFCookie, "/", false)
+	h.clearCSRFCookies(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -308,7 +313,7 @@ func (h *AdminConsoleHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("admin console logout", "error", err)
 	}
 	h.clearCookie(w, middleware.AdminSessionCookie, adminAPIPath, true)
-	h.clearCookie(w, middleware.AdminCSRFCookie, "/", false)
+	h.clearCSRFCookies(w)
 	h.clearCookie(w, middleware.AdminMFACookie, adminAuthPath, true)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -359,6 +364,18 @@ func (h *AdminConsoleHandler) issueSessionCookies(w http.ResponseWriter, token s
 	maxAge := int(admin.SessionTTL.Seconds())
 	h.clearCookie(w, middleware.AdminMFACookie, adminAuthPath, true)
 	h.setCookie(w, middleware.AdminSessionCookie, token, adminAPIPath, maxAge, true)
-	h.setCookie(w, middleware.AdminCSRFCookie, csrf, "/", maxAge, false)
+	h.setCookie(w, middleware.AdminCSRFCookie, csrf, adminAPIPath, maxAge, true)
+	h.setCookie(w, middleware.AdminCSRFPageCookie, csrf, adminPagePath, maxAge, false)
+	// The older readable copy at "/", from before the console's cookies were
+	// scoped: never left behind for tenant pages to read.
+	h.clearCookie(w, middleware.AdminCSRFCookie, "/", false)
 	return nil
+}
+
+// clearCSRFCookies removes both copies of the console's CSRF token, and the
+// older one at "/".
+func (h *AdminConsoleHandler) clearCSRFCookies(w http.ResponseWriter) {
+	h.clearCookie(w, middleware.AdminCSRFCookie, adminAPIPath, true)
+	h.clearCookie(w, middleware.AdminCSRFPageCookie, adminPagePath, false)
+	h.clearCookie(w, middleware.AdminCSRFCookie, "/", false)
 }
