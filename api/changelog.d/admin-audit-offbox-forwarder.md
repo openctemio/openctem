@@ -1,0 +1,6 @@
+### Added: off-box copy of the administrators' audit log
+
+- New optional forwarder ships `admin_audit_logs` rows and the chain head (position and hash) to a sink the database operator cannot write: an HMAC-signed HTTPS webhook (`ADMIN_AUDIT_FORWARD_URL`, `ADMIN_AUDIT_FORWARD_SECRET`) and/or syslog over TLS (`ADMIN_AUDIT_FORWARD_SYSLOG_ADDR`). Off by default; a half-set configuration stops the API at boot.
+- Delivery is at-least-once from a durable cursor (migration 002775) in bounded batches, with exponential backoff; the chain head is also exported on a timer when no row is new, and the chain is verified hourly with the result carried in every export.
+- Sinks are dialed through the SSRF guard (a SIEM on a private network needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`); the secret and URL are never logged.
+- New metrics: `openctem_admin_audit_forward_*` (failures, lag rows and seconds, last success) and `openctem_admin_audit_chain_ok` / `_chain_breaks_total`. Settings and the receiver contract are in `docs/architecture/audit-hash-chain.md`.

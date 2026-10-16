@@ -773,6 +773,12 @@ lifts this).
   `GET /api/v1/admin/audit-logs/chain` (any admin; shown on Security >
   Activity) and `bootstrap-admin verify-audit` report every row that does not
   verify. See `docs/architecture/audit-hash-chain.md`.
+- Off-box copy: with `ADMIN_AUDIT_FORWARD_URL` (HTTPS webhook, HMAC-signed) and/or
+  `ADMIN_AUDIT_FORWARD_SYSLOG_ADDR` (syslog over TLS) set, a controller ships new
+  rows and the chain head to a sink the database operator cannot write, with a
+  durable cursor, at-least-once delivery, retry with backoff, a periodic head
+  export and lag, failure and chain-break alerts (see
+  `docs/architecture/audit-hash-chain.md`).
 - Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
   code from the console authenticator, single use (the sign-in replay guard),
   counted toward lockout when wrong, audited as `console.step_up` /

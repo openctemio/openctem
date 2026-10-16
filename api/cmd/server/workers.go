@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/adminauditfwd"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -125,6 +127,30 @@ type WorkerDeps struct {
 // grew forever and no environment variable could change that. DryRun still
 // DEFAULTS to true (see config.AdminAuditRetentionConfig) — the point is that
 // an operator can now turn it off.
+// adminAuditForwarder builds the off-box admin audit forwarder.
+func adminAuditForwarder(cfg *config.Config, repo *postgres.AuditLogRepository, log *logger.Logger) (*adminauditfwd.Forwarder, error) {
+	f := cfg.AdminAuditForward
+	var sinks []adminauditfwd.Sink
+	if f.URL != "" {
+		s, err := adminauditfwd.NewWebhookSink(f.URL, f.Secret)
+		if err != nil {
+			return nil, err
+		}
+		sinks = append(sinks, s)
+	}
+	if f.SyslogAddr != "" {
+		s, err := adminauditfwd.NewSyslogSink(f.SyslogAddr, f.SyslogCAFile)
+		if err != nil {
+			return nil, err
+		}
+		sinks = append(sinks, s)
+	}
+	return adminauditfwd.New(repo, repo, sinks, adminauditfwd.Config{
+		Interval: f.Interval, BatchSize: f.BatchSize, HeadInterval: f.HeadInterval,
+		VerifyInterval: f.VerifyInterval, LagAlert: f.LagAlert, Logger: log,
+	})
+}
+
 func adminAuditRetentionConfig(cfg *config.Config, log *logger.Logger) *controller.AuditRetentionControllerConfig {
 	return &controller.AuditRetentionControllerConfig{
 		Interval:      cfg.AdminAuditRetention.Interval,
@@ -1002,6 +1028,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			"dry_run", arCfg.DryRun,
 			"interval", arCfg.Interval,
 		)
+	}
+
+	// Off-box copy of the administrators' audit log (research/162 D4). Off
+	// unless a sink is configured; a bad sink fails the boot, never silently.
+	if cfg.AdminAuditForward.Enabled() {
+		fwd, err := adminAuditForwarder(cfg, repos.AdminAuditLog, log)
+		if err != nil {
+			return nil, fmt.Errorf("admin audit forwarder: %w", err)
+		}
+		w.ControllerManager.Register(fwd)
+		log.Info("admin audit forwarder registered",
+			"webhook", cfg.AdminAuditForward.URL != "", "syslog", cfg.AdminAuditForward.SyslogAddr != "")
 	}
 
 	// Audit hash-chain integrity verification. The admin endpoint

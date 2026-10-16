@@ -370,6 +370,25 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `ADMIN_AUDIT_RETENTION_DRY_RUN` | bool | `true` |  |  | Report what would be deleted instead of deleting. Set `false` to enforce retention (irreversible). |
 | `ADMIN_AUDIT_RETENTION_ENABLED` | bool | `true` |  |  | Run the platform admin audit-log retention controller. |
 | `ADMIN_AUDIT_RETENTION_INTERVAL` | duration | `24h` |  |  | How often the controller runs. |
+
+### Admin audit off-box forwarding
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ADMIN_AUDIT_FORWARD_URL` | url | empty |  |  | HTTPS webhook that receives the administrators' audit rows and the chain head (HMAC-signed). Empty disables the webhook sink; no credentials in the URL. Needs `ADMIN_AUDIT_FORWARD_SECRET`. |
+| `ADMIN_AUDIT_FORWARD_SECRET` | string | empty |  | yes | HMAC-SHA256 key that signs each webhook request, at least 16 characters. Never logged. |
+| `ADMIN_AUDIT_FORWARD_SYSLOG_ADDR` | string | empty |  |  | `host:port` of a syslog receiver over TLS (RFC 5425). Empty disables the syslog sink. |
+| `ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE` | path | empty |  |  | PEM bundle that replaces the system roots when verifying the syslog receiver. |
+| `ADMIN_AUDIT_FORWARD_INTERVAL` | duration | `15s` |  |  | How often the forwarder runs; also the base retry delay (doubles per failure, capped at 15 minutes). |
+| `ADMIN_AUDIT_FORWARD_BATCH_SIZE` | int | `500` |  |  | Rows per delivery, 1 to 5000. |
+| `ADMIN_AUDIT_FORWARD_HEAD_INTERVAL` | duration | `1h` |  |  | How often the chain head is exported when no row is new. |
+| `ADMIN_AUDIT_FORWARD_VERIFY_INTERVAL` | duration | `1h` |  |  | How often the forwarder verifies the chain; the result is carried in every export. |
+| `ADMIN_AUDIT_FORWARD_LAG_ALERT` | duration | `10m` |  |  | Age of the oldest unsent row that raises the lag error log. |
+
+### Audit log retention
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
 | `AUDIT_ARCHIVE_DIR` | string | empty |  |  | Directory for the gzip JSONL archives. Empty: nothing is deleted. Back it up like the database. |
 | `AUDIT_RETENTION_DAYS` | int | `365` |  |  | Organization audit entries older than this are archived and deleted, keeping the hash chain verifiable. |
 | `ADMIN_SESSION_PURGE_INTERVAL` | duration | `1h` |  |  | How often platform-admin console sessions past their absolute expiry are deleted. |

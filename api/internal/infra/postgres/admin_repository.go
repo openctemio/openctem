@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/infra/adminauditfwd"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -966,4 +967,69 @@ func auditSeverity(v string) string {
 		return admin.SeverityInfo
 	}
 	return v
+}
+
+// ReadForwardRows returns up to limit chain rows after position, oldest
+// first, each as the whole row in JSON (for the off-box audit forwarder).
+func (r *AuditLogRepository) ReadForwardRows(ctx context.Context, after int64, limit int) ([]adminauditfwd.Row, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT l.chain_position, l.hash, l.created_at, to_jsonb(l)
+		  FROM admin_audit_logs l
+		 WHERE l.chain_position > $1
+		 ORDER BY l.chain_position
+		 LIMIT $2`, after, limit)
+	if err != nil {
+		return nil, fmt.Errorf("read admin audit rows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []adminauditfwd.Row
+	for rows.Next() {
+		var row adminauditfwd.Row
+		var raw []byte
+		if err := rows.Scan(&row.Position, &row.Hash, &row.CreatedAt, &raw); err != nil {
+			return nil, fmt.Errorf("scan admin audit row: %w", err)
+		}
+		row.JSON = raw
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// ChainHead returns the chain tail (the newest row, else the newest anchor).
+func (r *AuditLogRepository) ChainHead(ctx context.Context) (adminauditfwd.Head, error) {
+	var h adminauditfwd.Head
+	if err := r.db.QueryRowContext(ctx, `SELECT tail_position, tail_hash FROM admin_audit_chain_tail()`).
+		Scan(&h.Position, &h.Hash); err != nil {
+		return h, fmt.Errorf("read admin audit chain head: %w", err)
+	}
+	return h, nil
+}
+
+const adminAuditForwardCursorName = "default"
+
+// LoadForwardCursor returns the last acknowledged position (zero value when
+// nothing was forwarded yet).
+func (r *AuditLogRepository) LoadForwardCursor(ctx context.Context) (adminauditfwd.Cursor, error) {
+	var c adminauditfwd.Cursor
+	err := r.db.QueryRowContext(ctx,
+		`SELECT position, hash FROM admin_audit_forward_cursor WHERE name = $1`, adminAuditForwardCursorName).
+		Scan(&c.Position, &c.Hash)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return c, fmt.Errorf("read admin audit forward cursor: %w", err)
+	}
+	return c, nil
+}
+
+// SaveForwardCursor stores the cursor; it never moves backwards.
+func (r *AuditLogRepository) SaveForwardCursor(ctx context.Context, c adminauditfwd.Cursor) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO admin_audit_forward_cursor (name, position, hash) VALUES ($1, $2, $3)
+		ON CONFLICT (name) DO UPDATE
+		   SET position = EXCLUDED.position, hash = EXCLUDED.hash, updated_at = now()
+		 WHERE admin_audit_forward_cursor.position < EXCLUDED.position`,
+		adminAuditForwardCursorName, c.Position, c.Hash)
+	if err != nil {
+		return fmt.Errorf("save admin audit forward cursor: %w", err)
+	}
+	return nil
 }

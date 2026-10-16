@@ -205,3 +205,65 @@ off-box copy of the administrators' actions. With the single-role database
 setup the API role is the owner, so the guarantee then rests on the triggers
 alone; the least-privilege roles make it a database permission.
 
+
+## Off-box copy of the administrators' audit log
+
+The chain cannot stop the table owner from re-signing it, so the API ships the
+administrators' audit log to a sink the database operator cannot write. It is
+off unless a sink is configured. Implementation:
+`internal/infra/adminauditfwd` (a controller, one replica at a time under the
+controller lease), cursor in `admin_audit_forward_cursor` (migration 002775).
+
+| Setting | Meaning |
+|---|---|
+| `ADMIN_AUDIT_FORWARD_URL` | HTTPS webhook (no credentials in the URL). Required with the secret. |
+| `ADMIN_AUDIT_FORWARD_SECRET` | HMAC-SHA256 key, at least 16 characters. Never logged. |
+| `ADMIN_AUDIT_FORWARD_SYSLOG_ADDR` | `host:port` of a syslog receiver over TLS (RFC 5425, RFC 5424 messages, octet-counting frames). TLS 1.2 or later, verified against the system roots or `ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE`. |
+| `ADMIN_AUDIT_FORWARD_INTERVAL` | Run period and base retry delay (15s). |
+| `ADMIN_AUDIT_FORWARD_BATCH_SIZE` | Rows per delivery (500, at most 5000); at most 10 deliveries per run. |
+| `ADMIN_AUDIT_FORWARD_HEAD_INTERVAL` | Chain-head export when no row is new (1h). |
+| `ADMIN_AUDIT_FORWARD_VERIFY_INTERVAL` | How often the chain is verified (1h). |
+| `ADMIN_AUDIT_FORWARD_LAG_ALERT` | Age of the oldest unsent row that raises the error log (10m). |
+
+With both sinks set, a batch counts as delivered only when both acknowledged
+it. A bad setting stops the API at boot.
+
+**Delivery.** Rows go out in chain order. The cursor (position and hash of the
+last acknowledged row) moves forward only after every sink acknowledged the
+batch (a 2xx for the webhook; a completed TLS write for syslog), so delivery is
+at-least-once: a failure, a crash or a failed cursor save re-sends the batch.
+The receiver de-duplicates on `chain_position` (the webhook also sends
+`X-OpenCTEM-Batch-Id: <first>-<last>`, or `head-<position>`). A failed run
+backs off exponentially from the interval up to 15 minutes. The cursor never
+moves backwards.
+
+**Webhook.** `POST` of JSON: `version`, `sent_at`, `first_position`,
+`last_position`, `rows` (every column of each row, including `chain_position`,
+`prev_hash`, `hash`), `head` (`position`, `hash`) and `chain` (`verified`,
+`ok`, `breaks`, `verified_at`). Headers `X-OpenCTEM-Timestamp` (unix seconds)
+and `X-OpenCTEM-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." +
+body)>`; the receiver verifies the signature in constant time and refuses a
+timestamp older than a few minutes. Redirects are not followed.
+
+**Head export.** Every delivery carries the chain head at send time. When
+nothing is new the forwarder still sends a rows-less batch every
+`ADMIN_AUDIT_FORWARD_HEAD_INTERVAL`, so the sink can alarm on silence and
+compare the head with what the database later claims. An edited or restored
+database shows as a head or row hash that disagrees with the sink's copy.
+
+**SSRF.** Both sinks dial through `pkg/httpsec`: loopback, link-local and
+cloud-metadata addresses are always refused, and private ranges only when the
+operator lists them in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` (a SIEM on the
+internal network). The secret and the URL are never written to a log or an
+error.
+
+**Alerts.** Prometheus: `openctem_admin_audit_forward_consecutive_failures`
+(above 0 for several minutes), `..._forward_failures_total{sink}`,
+`..._forward_lag_rows`, `..._forward_lag_seconds`,
+`..._forward_last_success_timestamp_seconds` (alert when it stops moving),
+`openctem_admin_audit_chain_ok` (0 on a break), `..._chain_breaks_total` and
+`..._chain_verify_errors_total`. Logs at error level: `admin audit forward
+failed`, `admin audit forwarder is lagging` and `admin_audit_chain_break` (the
+SIEM keyword). The forwarder verifies the chain itself every
+`ADMIN_AUDIT_FORWARD_VERIFY_INTERVAL` and reports the result in every export,
+so a break is visible at the sink even if the API is later silenced.

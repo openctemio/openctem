@@ -1,0 +1,335 @@
+// Package adminauditfwd ships the platform administrators' audit log to an
+// off-box sink.
+//
+// admin_audit_logs is append-only and hash-chained inside the database, but a
+// database administrator (or anyone who restores an older backup) can still
+// rewrite the whole chain consistently. A copy that lives somewhere the
+// database operator cannot write closes that gap: the sink holds every row
+// and the chain head (position and hash) as it was when sent, so a rewrite
+// shows up as a head that no longer matches.
+//
+// The forwarder is a controller. Each run it reads the rows after a durable
+// cursor in bounded batches, sends each batch to every configured sink, and
+// moves the cursor only after all sinks acknowledged it: delivery is
+// at-least-once, so a sink must treat a repeated chain_position as a duplicate
+// (the batch id header names the range). When nothing is new it still sends
+// the chain head every HeadInterval, so a silent sink is itself an alarm. It
+// also verifies the chain on a timer and reports the result in the head it
+// exports, in metrics and in an error log.
+//
+// Threat model: the sinks are operator-configured, but the webhook URL and
+// the syslog address are dialed through the SSRF guard (pkg/httpsec) so a
+// mis-set value cannot reach the cloud metadata service or loopback; private
+// ranges open only through the documented httpsec egress allowlist. The HMAC
+// secret and the webhook URL (which may carry a token) are never logged.
+package adminauditfwd
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/logger"
+)
+
+// Row is one admin_audit_logs row as read for shipping.
+type Row struct {
+	Position  int64
+	Hash      string
+	CreatedAt time.Time
+	// JSON is the whole row, every column (so a column added later ships
+	// without a code change).
+	JSON json.RawMessage
+}
+
+// Head is the chain tail: the newest position and its hash.
+type Head struct {
+	Position int64  `json:"position"`
+	Hash     string `json:"hash"`
+}
+
+// Cursor is the last acknowledged row.
+type Cursor struct {
+	Position int64
+	Hash     string
+}
+
+// Store is the database side.
+type Store interface {
+	ReadForwardRows(ctx context.Context, after int64, limit int) ([]Row, error)
+	ChainHead(ctx context.Context) (Head, error)
+	LoadForwardCursor(ctx context.Context) (Cursor, error)
+	// SaveCursor only moves the cursor forward.
+	SaveForwardCursor(ctx context.Context, c Cursor) error
+}
+
+// Verifier is the chain verification (AuditLogRepository.VerifyChain).
+type Verifier interface {
+	VerifyChain(ctx context.Context) (*admin.AuditChainReport, error)
+}
+
+// ChainStatus is the verification result carried in every export.
+type ChainStatus struct {
+	// Verified is false until the first verification ran.
+	Verified   bool       `json:"verified"`
+	OK         bool       `json:"ok"`
+	Breaks     int        `json:"breaks"`
+	Truncated  bool       `json:"truncated,omitempty"`
+	VerifiedAt *time.Time `json:"verified_at,omitempty"`
+}
+
+// Batch is one delivery: rows (possibly none, for a head-only export), the
+// chain head and the verification state.
+type Batch struct {
+	SentAt time.Time
+	Rows   []Row
+	Head   Head
+	Chain  ChainStatus
+}
+
+// ID names the range, for the receiver's de-duplication.
+func (b Batch) ID() string {
+	if len(b.Rows) == 0 {
+		return fmt.Sprintf("head-%d", b.Head.Position)
+	}
+	return fmt.Sprintf("%d-%d", b.Rows[0].Position, b.Rows[len(b.Rows)-1].Position)
+}
+
+// Sink delivers a batch; nil means the sink acknowledged it.
+type Sink interface {
+	Name() string
+	Send(ctx context.Context, b Batch) error
+}
+
+// Config tunes the forwarder.
+type Config struct {
+	Interval       time.Duration // run period and base retry delay (default 15s)
+	BatchSize      int           // rows per delivery (default 500, max 5000)
+	MaxBatchesRun  int           // deliveries per run (default 10)
+	HeadInterval   time.Duration // head export when idle (default 1h)
+	VerifyInterval time.Duration // chain verification period (default 1h)
+	LagAlert       time.Duration // oldest unsent row age that raises the alarm (default 10m)
+	MaxBackoff     time.Duration // retry delay cap (default 15m)
+	Logger         *logger.Logger
+}
+
+const maxBatchSize = 5000
+
+func (c *Config) defaults() {
+	if c.Interval <= 0 {
+		c.Interval = 15 * time.Second
+	}
+	if c.BatchSize <= 0 {
+		c.BatchSize = 500
+	}
+	if c.BatchSize > maxBatchSize {
+		c.BatchSize = maxBatchSize
+	}
+	if c.MaxBatchesRun <= 0 {
+		c.MaxBatchesRun = 10
+	}
+	if c.HeadInterval <= 0 {
+		c.HeadInterval = time.Hour
+	}
+	if c.VerifyInterval <= 0 {
+		c.VerifyInterval = time.Hour
+	}
+	if c.LagAlert <= 0 {
+		c.LagAlert = 10 * time.Minute
+	}
+	if c.MaxBackoff <= 0 {
+		c.MaxBackoff = 15 * time.Minute
+	}
+	if c.Logger == nil {
+		c.Logger = logger.NewNop()
+	}
+}
+
+// Forwarder is the controller. Reconcile runs serially (one controller lease
+// holder at a time), so its state needs no lock.
+type Forwarder struct {
+	store    Store
+	verifier Verifier
+	sinks    []Sink
+	cfg      Config
+	log      *logger.Logger
+	now      func() time.Time
+
+	failures    int
+	nextAttempt time.Time
+	lastHead    time.Time
+	lastVerify  time.Time
+	chain       ChainStatus
+	lagAlerted  bool
+	chainAlert  bool
+}
+
+// New builds the forwarder; at least one sink is required.
+func New(store Store, verifier Verifier, sinks []Sink, cfg Config) (*Forwarder, error) {
+	if store == nil || verifier == nil {
+		return nil, errors.New("adminauditfwd: store and verifier are required")
+	}
+	if len(sinks) == 0 {
+		return nil, errors.New("adminauditfwd: no sink configured")
+	}
+	cfg.defaults()
+	return &Forwarder{store: store, verifier: verifier, sinks: sinks, cfg: cfg,
+		log: cfg.Logger.With("controller", "admin-audit-forward"), now: time.Now}, nil
+}
+
+// Name implements controller.Controller.
+func (f *Forwarder) Name() string { return "admin-audit-forward" }
+
+// Interval implements controller.Controller.
+func (f *Forwarder) Interval() time.Duration { return f.cfg.Interval }
+
+// Exclusive makes the manager run one replica at a time, so two replicas do
+// not race on the cursor.
+func (f *Forwarder) Exclusive() bool { return true }
+
+// Reconcile ships what is new. It returns the number of rows delivered.
+func (f *Forwarder) Reconcile(ctx context.Context) (int, error) {
+	now := f.now()
+	if now.Before(f.nextAttempt) {
+		return 0, nil
+	}
+	f.verifyIfDue(ctx, now)
+
+	cur, err := f.store.LoadForwardCursor(ctx)
+	if err != nil {
+		return 0, f.fail(now, "", fmt.Errorf("load cursor: %w", err))
+	}
+	sent := 0
+	for i := 0; i < f.cfg.MaxBatchesRun; i++ {
+		rows, err := f.store.ReadForwardRows(ctx, cur.Position, f.cfg.BatchSize)
+		if err != nil {
+			return sent, f.fail(now, "", fmt.Errorf("read rows: %w", err))
+		}
+		if len(rows) == 0 {
+			break
+		}
+		head, err := f.store.ChainHead(ctx)
+		if err != nil {
+			return sent, f.fail(now, "", fmt.Errorf("read chain head: %w", err))
+		}
+		if name, err := f.deliver(ctx, Batch{SentAt: now, Rows: rows, Head: head, Chain: f.chain}); err != nil {
+			return sent, f.fail(now, name, err)
+		}
+		last := rows[len(rows)-1]
+		cur = Cursor{Position: last.Position, Hash: last.Hash}
+		sent += len(rows)
+		f.lastHead = now
+		metrics.AdminAuditForwardRows.Add(float64(len(rows)))
+		if err := f.store.SaveForwardCursor(ctx, cur); err != nil {
+			// The rows are delivered; the next run re-sends them (at-least-once).
+			return sent, f.fail(now, "", fmt.Errorf("save cursor: %w", err))
+		}
+	}
+
+	head, err := f.store.ChainHead(ctx)
+	if err != nil {
+		return sent, f.fail(now, "", fmt.Errorf("read chain head: %w", err))
+	}
+	pending, err := f.store.ReadForwardRows(ctx, cur.Position, 1)
+	if err != nil {
+		return sent, f.fail(now, "", fmt.Errorf("read rows: %w", err))
+	}
+	if len(pending) == 0 && now.Sub(f.lastHead) >= f.cfg.HeadInterval {
+		if name, err := f.deliver(ctx, Batch{SentAt: now, Head: head, Chain: f.chain}); err != nil {
+			return sent, f.fail(now, name, err)
+		}
+		f.lastHead = now
+	}
+	f.succeed(now, head, cur, pending)
+	return sent, nil
+}
+
+// deliver sends to every sink; it stops at the first failure and names it.
+// A sink that already acknowledged is sent the batch again next run, which is
+// the price of at-least-once.
+func (f *Forwarder) deliver(ctx context.Context, b Batch) (string, error) {
+	for _, s := range f.sinks {
+		if err := s.Send(ctx, b); err != nil {
+			return s.Name(), err
+		}
+	}
+	return "", nil
+}
+
+func (f *Forwarder) fail(now time.Time, sink string, err error) error {
+	f.failures++
+	delay := f.cfg.Interval
+	for i := 1; i < f.failures && delay < f.cfg.MaxBackoff; i++ {
+		delay *= 2
+	}
+	if delay > f.cfg.MaxBackoff {
+		delay = f.cfg.MaxBackoff
+	}
+	f.nextAttempt = now.Add(delay)
+	if sink == "" {
+		sink = "store"
+	}
+	metrics.AdminAuditForwardFailures.WithLabelValues(sink).Inc()
+	metrics.AdminAuditForwardConsecutiveFailures.Set(float64(f.failures))
+	// err comes from the sinks, which strip the URL and never include the secret.
+	f.log.Error("admin audit forward failed", "sink", sink, "consecutive_failures", f.failures,
+		"retry_in", delay.String(), "error", err.Error())
+	return err
+}
+
+func (f *Forwarder) succeed(now time.Time, head Head, cur Cursor, pending []Row) {
+	f.failures = 0
+	f.nextAttempt = time.Time{}
+	metrics.AdminAuditForwardConsecutiveFailures.Set(0)
+	metrics.AdminAuditForwardLastSuccess.Set(float64(now.Unix()))
+
+	lagRows := head.Position - cur.Position
+	if lagRows < 0 {
+		lagRows = 0
+	}
+	var lag time.Duration
+	if len(pending) > 0 {
+		lag = now.Sub(pending[0].CreatedAt)
+	}
+	metrics.AdminAuditForwardLagRows.Set(float64(lagRows))
+	metrics.AdminAuditForwardLagSeconds.Set(lag.Seconds())
+	switch {
+	case lag > f.cfg.LagAlert && !f.lagAlerted:
+		f.lagAlerted = true
+		f.log.Error("admin audit forwarder is lagging", "lag_rows", lagRows, "oldest_unsent_age", lag.String())
+	case lag <= f.cfg.LagAlert:
+		f.lagAlerted = false
+	}
+}
+
+func (f *Forwarder) verifyIfDue(ctx context.Context, now time.Time) {
+	if f.chain.Verified && now.Sub(f.lastVerify) < f.cfg.VerifyInterval {
+		return
+	}
+	f.lastVerify = now
+	rep, err := f.verifier.VerifyChain(ctx)
+	if err != nil {
+		metrics.AdminAuditChainVerifyErrors.Inc()
+		f.log.Error("admin audit chain verification could not run", "error", err.Error())
+		return
+	}
+	at := rep.VerifiedAt
+	f.chain = ChainStatus{Verified: true, OK: rep.OK(), Breaks: len(rep.Breaks), Truncated: rep.Truncated, VerifiedAt: &at}
+	if rep.OK() {
+		metrics.AdminAuditChainOK.Set(1)
+		f.chainAlert = false
+		return
+	}
+	metrics.AdminAuditChainOK.Set(0)
+	if !f.chainAlert {
+		metrics.AdminAuditChainBreaks.Add(float64(len(rep.Breaks)))
+	}
+	f.chainAlert = true
+	first := rep.Breaks[0]
+	f.log.Error("admin_audit_chain_break: the administrators' audit chain does not verify",
+		"breaks", len(rep.Breaks), "first_position", first.Position, "first_reason", first.Reason)
+}

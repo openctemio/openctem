@@ -1527,6 +1527,57 @@ vars:
     type: duration
     default: "24h"
     description: "How often the controller runs."
+  - name: ADMIN_AUDIT_FORWARD_URL
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: url
+    description: "HTTPS webhook that receives the administrators' audit rows and the chain head (HMAC-signed). Empty disables the webhook sink; no credentials in the URL. Needs `ADMIN_AUDIT_FORWARD_SECRET`."
+  - name: ADMIN_AUDIT_FORWARD_SECRET
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: string
+    secret: true
+    description: "HMAC-SHA256 key that signs each webhook request, at least 16 characters. Never logged."
+  - name: ADMIN_AUDIT_FORWARD_SYSLOG_ADDR
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: string
+    description: "`host:port` of a syslog receiver over TLS (RFC 5425). Empty disables the syslog sink."
+  - name: ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: path
+    description: "PEM bundle that replaces the system roots when verifying the syslog receiver."
+  - name: ADMIN_AUDIT_FORWARD_INTERVAL
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: duration
+    default: "15s"
+    description: "How often the forwarder runs; also the base retry delay (doubles per failure, capped at 15 minutes)."
+  - name: ADMIN_AUDIT_FORWARD_BATCH_SIZE
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: int
+    default: "500"
+    description: "Rows per delivery, 1 to 5000."
+  - name: ADMIN_AUDIT_FORWARD_HEAD_INTERVAL
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: duration
+    default: "1h"
+    description: "How often the chain head is exported when no row is new."
+  - name: ADMIN_AUDIT_FORWARD_VERIFY_INTERVAL
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: duration
+    default: "1h"
+    description: "How often the forwarder verifies the chain; the result is carried in every export."
+  - name: ADMIN_AUDIT_FORWARD_LAG_ALERT
+    component: api
+    group: "Admin audit off-box forwarding"
+    type: duration
+    default: "10m"
+    description: "Age of the oldest unsent row that raises the lag error log."
   - name: AUDIT_ARCHIVE_DIR
     component: api
     group: "Audit log retention"

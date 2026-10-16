@@ -60,6 +60,10 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AdminAuditForward ships admin_audit_logs to an off-box sink. Off unless
+	// ADMIN_AUDIT_FORWARD_URL or ADMIN_AUDIT_FORWARD_SYSLOG_ADDR is set.
+	AdminAuditForward AdminAuditForwardConfig
+
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
 	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
 	AssetChangeRetentionDays int
@@ -148,6 +152,31 @@ const DefaultPublicZoneResolver = "1.1.1.1:53"
 type AuditRetentionConfig struct {
 	Days       int    // AUDIT_RETENTION_DAYS, default 365, minimum 365
 	ArchiveDir string // AUDIT_ARCHIVE_DIR, default "" (retention off)
+}
+
+// AdminAuditForwardConfig configures the off-box admin audit forwarder
+// (adminauditfwd). Each sink is optional; with both set, a batch counts as
+// delivered only when both acknowledged it.
+type AdminAuditForwardConfig struct {
+	URL    string `json:"-"` // ADMIN_AUDIT_FORWARD_URL, https webhook
+	Secret string `json:"-"` // ADMIN_AUDIT_FORWARD_SECRET, HMAC-SHA256 key (>= 16 chars)
+
+	SyslogAddr   string // ADMIN_AUDIT_FORWARD_SYSLOG_ADDR, host:port, syslog over TLS
+	SyslogCAFile string // ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE, optional PEM roots
+
+	Interval       time.Duration // ADMIN_AUDIT_FORWARD_INTERVAL, default 15s
+	BatchSize      int           // ADMIN_AUDIT_FORWARD_BATCH_SIZE, default 500, max 5000
+	HeadInterval   time.Duration // ADMIN_AUDIT_FORWARD_HEAD_INTERVAL, default 1h
+	VerifyInterval time.Duration // ADMIN_AUDIT_FORWARD_VERIFY_INTERVAL, default 1h
+	LagAlert       time.Duration // ADMIN_AUDIT_FORWARD_LAG_ALERT, default 10m
+}
+
+// Enabled reports whether any sink is configured.
+func (c AdminAuditForwardConfig) Enabled() bool { return c.URL != "" || c.SyslogAddr != "" }
+
+// String never prints the secret or the URL (it may carry a token).
+func (c AdminAuditForwardConfig) String() string {
+	return fmt.Sprintf("AdminAuditForwardConfig{webhook:%t syslog:%t}", c.URL != "", c.SyslogAddr != "")
 }
 
 // AdminAuditRetentionConfig controls the admin-audit-log retention controller.
@@ -1556,6 +1585,17 @@ func Load() (*Config, error) {
 			Interval:      getEnvDuration("ADMIN_AUDIT_RETENTION_INTERVAL", 24*time.Hour),
 			BatchSize:     getEnvInt("ADMIN_AUDIT_RETENTION_BATCH_SIZE", 10000),
 		},
+		AdminAuditForward: AdminAuditForwardConfig{
+			URL:            getEnv("ADMIN_AUDIT_FORWARD_URL", ""),
+			Secret:         getEnv("ADMIN_AUDIT_FORWARD_SECRET", ""),
+			SyslogAddr:     getEnv("ADMIN_AUDIT_FORWARD_SYSLOG_ADDR", ""),
+			SyslogCAFile:   getEnv("ADMIN_AUDIT_FORWARD_SYSLOG_CA_FILE", ""),
+			Interval:       getEnvDuration("ADMIN_AUDIT_FORWARD_INTERVAL", 15*time.Second),
+			BatchSize:      getEnvInt("ADMIN_AUDIT_FORWARD_BATCH_SIZE", 500),
+			HeadInterval:   getEnvDuration("ADMIN_AUDIT_FORWARD_HEAD_INTERVAL", time.Hour),
+			VerifyInterval: getEnvDuration("ADMIN_AUDIT_FORWARD_VERIFY_INTERVAL", time.Hour),
+			LagAlert:       getEnvDuration("ADMIN_AUDIT_FORWARD_LAG_ALERT", 10*time.Minute),
+		},
 		AITriage: AITriageConfig{
 			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),
 			PlatformProvider:            getEnv("AI_PLATFORM_PROVIDER", "claude"),
@@ -1754,8 +1794,45 @@ func (c *Config) validateBasic() error {
 	if err := c.validateAdminAuditRetention(); err != nil {
 		return err
 	}
+	if err := c.validateAdminAuditForward(); err != nil {
+		return err
+	}
 	if err := c.validateStorage(); err != nil {
 		return err
+	}
+	return nil
+}
+
+// validateAdminAuditForward refuses a half-set or unsafe forwarder
+// configuration at boot: a sink that silently never delivers is worse than a
+// process that will not start.
+func (c *Config) validateAdminAuditForward() error {
+	f := c.AdminAuditForward
+	if !f.Enabled() {
+		if f.Secret != "" {
+			return fmt.Errorf("ADMIN_AUDIT_FORWARD_SECRET is set but no sink is (ADMIN_AUDIT_FORWARD_URL or ADMIN_AUDIT_FORWARD_SYSLOG_ADDR)")
+		}
+		return nil
+	}
+	if f.URL != "" {
+		u, err := url.Parse(f.URL)
+		if err != nil || u.Host == "" || u.Scheme != "https" || u.User != nil {
+			return fmt.Errorf("ADMIN_AUDIT_FORWARD_URL must be an https URL without credentials")
+		}
+		if len(f.Secret) < 16 {
+			return fmt.Errorf("ADMIN_AUDIT_FORWARD_SECRET must be at least 16 characters when ADMIN_AUDIT_FORWARD_URL is set")
+		}
+	}
+	if f.SyslogAddr != "" {
+		if h, p, err := net.SplitHostPort(f.SyslogAddr); err != nil || h == "" || p == "" {
+			return fmt.Errorf("ADMIN_AUDIT_FORWARD_SYSLOG_ADDR must be host:port")
+		}
+	}
+	if f.BatchSize < 1 || f.BatchSize > 5000 {
+		return fmt.Errorf("ADMIN_AUDIT_FORWARD_BATCH_SIZE must be between 1 and 5000, got %d", f.BatchSize)
+	}
+	if f.Interval <= 0 || f.HeadInterval <= 0 || f.VerifyInterval <= 0 || f.LagAlert <= 0 {
+		return fmt.Errorf("ADMIN_AUDIT_FORWARD_*INTERVAL and _LAG_ALERT must be positive")
 	}
 	return nil
 }
