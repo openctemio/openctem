@@ -1,4 +1,4 @@
-package main
+package refingerprintcmd
 
 import (
 	"context"
@@ -54,9 +54,9 @@ func runRemediationKeys(ctx context.Context, db *sql.DB, tenantFlag string, appl
 		}
 		reports = append(reports, remediationKeysReport{TenantID: t.String(), Applied: apply, Changes: ch})
 		if !asJSON {
-			mode := "dry run"
+			mode := modeDryRun
 			if apply {
-				mode = "applied"
+				mode = modeApplied
 			}
 			fmt.Printf("tenant %s (%s): scanned %d, added %d, changed %d, removed %d, unchanged %d, failed %d; keys before %s; after %s\n",
 				t, mode, ch.Scanned, ch.Added, ch.Changed, ch.Removed, ch.Unchanged, ch.Failed, kinds(ch.Before), kinds(ch.After))

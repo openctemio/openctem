@@ -1,4 +1,4 @@
-package main
+package bootstrapadmin
 
 // `bootstrap-admin verify-audit` checks the administrators' audit log: the
 // append-only, hash-chained admin_audit_logs table (migration 002545). It

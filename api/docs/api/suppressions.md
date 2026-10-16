@@ -35,6 +35,7 @@ Unlike in-code ignore files, platform-controlled suppression rules:
 | GET | `/api/v1/suppressions/{id}` | Get suppression rule | `findings:suppressions:read` |
 | POST | `/api/v1/suppressions/{id}/approve` | Approve pending rule | `findings:suppressions:approve` |
 | POST | `/api/v1/suppressions/{id}/reject` | Reject pending rule | `findings:suppressions:approve` |
+| POST | `/api/v1/suppressions/{id}/reviewed` | Clear the review flag of a rule given an end it did not have (the rule keeps its end; 409 if not flagged) | `findings:suppressions:approve` |
 | DELETE | `/api/v1/suppressions/{id}` | Delete suppression rule | `findings:suppressions:delete` |
 | GET | `/api/v1/suppressions/active` | List active rules (simplified) | `findings:suppressions:read` |
 
