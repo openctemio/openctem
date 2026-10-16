@@ -38,8 +38,8 @@ func TestTaskTicketController_PushesEachInItsTenant(t *testing.T) {
 	s := &syncStub{fail: b.TaskID}
 	ctl := NewTaskTicketController(behindStub{refs: []ticketlink.TaskLinkRef{a, b, c}}, s, 0, logger.NewNop())
 	n, err := ctl.Reconcile(context.Background())
-	if err != nil || n != 2 {
-		t.Fatalf("n=%d err=%v", n, err)
+	if err == nil || n != 2 {
+		t.Fatalf("a failed push must be reported with the successful count: n=%d err=%v", n, err)
 	}
 	if len(s.pushed) != 2 || s.pushed[0] != a || s.pushed[1] != c {
 		t.Fatalf("pushed %+v", s.pushed)
