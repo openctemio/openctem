@@ -724,5 +724,15 @@
   "admin.support.tab.overview": "Overview",
   "admin.support.title": "Title",
   "admin.support.type": "Type",
-  "admin.support.until": "Until {time}"
+  "admin.support.until": "Until {time}",
+  "admin.elevation.active": "Acting as {role} until {until}.",
+  "admin.elevation.end": "End now",
+  "admin.elevation.endFailed": "The elevation could not be ended. Try again.",
+  "admin.elevation.readonly": "You are acting as read-only. Elevate for a while to change anything.",
+  "admin.elevation.elevate": "Elevate",
+  "admin.elevation.title": "Elevate for a while",
+  "admin.elevation.description": "Your session acts with the chosen role until the time is up, then read-only again. Every elevation is in the administrator audit log.",
+  "admin.elevation.role": "Role",
+  "admin.elevation.duration": "For",
+  "admin.elevation.minutes": "{n} minutes"
 }
