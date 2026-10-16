@@ -207,9 +207,10 @@ type Handlers struct {
 	ThreatActor *handler.ThreatActorHandler // nil if not initialized (no database)
 
 	// Remediation Campaigns
-	RemediationCampaign *handler.RemediationCampaignHandler // nil if not initialized
-	RemediationTask     *handler.RemediationTaskHandler     // nil if not initialized
-	ReportSchedule      *handler.ReportScheduleHandler      // nil if not initialized
+	RemediationCampaign *handler.RemediationCampaignHandler   // nil if not initialized
+	RemediationTask     *handler.RemediationTaskHandler       // nil if not initialized
+	RemediationSuggest  *handler.RemediationSuggestionHandler // nil if not initialized
+	ReportSchedule      *handler.ReportScheduleHandler        // nil if not initialized
 
 	// Business Units
 	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
@@ -758,6 +759,9 @@ func Register(
 	}
 	if h.RemediationTask != nil {
 		registerRemediationTaskRoutes(router, h.RemediationTask, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+	}
+	if h.RemediationSuggest != nil {
+		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.ReportSchedule != nil {
 		registerReportScheduleRoutes(router, h.ReportSchedule, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleReports))

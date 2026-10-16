@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope). Designed: suggestions, accept flows, moves/split/merge, task-level "mark fixed", the new Remediation console |
+| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest). Designed: accept flows, moves/split/merge, task-level "mark fixed", the new Remediation console |
 | Scope | api, web |
 | Related | RFC-015 (remediation groups: the candidate keys), RFC-006 (ticketing), RFC-039 (retest and SLA restart), RFC-097 (ticket field and status mapping) |
 
@@ -74,7 +74,7 @@ recompute (a scan closed one, a fix claim, an SLA change).
   low 1). The same weight ranks suggestions by risk reduced.
 - Member SLAs stay per finding and remain the ones counted in SLA compliance (no double counting).
 
-## 5. Suggestions (designed)
+## 5. Suggestions
 
 Algorithms propose; a person with permission accepts.
 
@@ -93,6 +93,14 @@ Algorithms propose; a person with permission accepts.
 - **Noise control:** minimum two members (one for P0/KEV), at most 50 new suggestions per tenant per day,
   dedup against accepted actions (a key with an accepted action becomes a `join`, never a second action), a
   daily digest notification to reviewers instead of per-suggestion pings.
+- **Never applied:** a suggestion holds finding ids and a proposed owner per partition; it creates nothing.
+  Findings that are already the primary member of an active task, closed findings and pentest findings are
+  never candidates. A finding a person took out of a fix (removed before accepting, detached, moved away) is
+  recorded in `remediation_key_exclusions` and not proposed for that key again.
+- **Runs:** every 15 minutes for each tenant with keyed findings and the remediation module on, and on demand
+  (at most once a minute per tenant). One run is one transaction under a per-tenant lock: open suggestions with
+  the same identity are updated in place, a snoozed one past its date is proposed again, open suggestions the
+  run no longer produces expire, and held-back proposals are surfaced up to the daily cap.
 
 ## 6. Accept flows (designed)
 
@@ -137,6 +145,14 @@ PATCH /api/v1/remediation/tasks/{task_id}                title, description, own
 GET   /api/v1/remediation/tasks/{task_id}/members
 POST  /api/v1/remediation/tasks/{task_id}/members        add primary or related findings; version required
 GET   /api/v1/remediation/tasks/{task_id}/timeline
+GET   /api/v1/remediation/suggestions                    list, best first (state, kind, key_kind, min_risk, search, queued)
+GET   /api/v1/remediation/suggestions/stats              open, held back and snoozed counts (the inbox badge)
+POST  /api/v1/remediation/suggestions/run                run the generator now (at most once a minute; 429 otherwise)
+GET   /api/v1/remediation/suggestions/{id}               with the explanation (key, fix spec, partitions, risk parts, confidence)
+PATCH /api/v1/remediation/suggestions/{id}               snooze (snoozed_until, at most 180 days); version required
+GET   /api/v1/remediation/suggestions/{id}/members
+POST  /api/v1/remediation/suggestions/{id}/reject        dismiss with a reason; version required
+POST  /api/v1/remediation/suggestions/{id}/reopen        undo a dismissal or a snooze
 ```
 
 Reads need `findings:remediation:read` (members also `findings:read`); changes need
@@ -158,14 +174,18 @@ Reads need `findings:remediation:read` (members also `findings:read`); changes n
   bulk path with its permission, note and abuse guard; closing comes only from per-member verification.
 - **Concurrency:** every change carries the task `version`; the task row and the finding rows are locked in a
   fixed order; the background recompute locks the tasks it writes.
-- **Audit:** `remediation_task.created`, `.updated`, `.members_added`, `.state_changed` (hold, resume, cancel).
+- **Suggestions:** a restricted member sees a suggestion only through its findings in their scope; the ids
+  and owner partitions of the others are not returned (`hidden_members` counts them), and they may not decide
+  on it. The generator runs as the platform but writes only proposals.
+- **Audit:** `remediation_task.created`, `.updated`, `.members_added`, `.state_changed` (hold, resume, cancel);
+  `remediation_suggestion.refreshed`, `.dismissed`, `.snoozed`, `.reopened`.
 
 ## 12. Rollout
 
 | Step | Content | Status |
 |---|---|---|
 | 1 | Task model, derived state, deadline, membership, timeline, API with data scope | Implemented |
-| 2 | Suggestions engine (deterministic keys, owner partition, ranking, lifecycle, dedup, dismissal memory, rate limit, digest) | Designed |
+| 2 | Suggestions engine (deterministic keys, owner partition, ranking, lifecycle, dedup, dismissal memory, rate limit, digest) | Implemented |
 | 3 | Accept flows (as is, edit, bulk, auto-join rule) | Designed |
 | 4 | Moves, split, merge, detach with compatibility rules, tickets comments, undo | Designed |
 | 5 | Task-level mark fixed and regression tasks | Designed |

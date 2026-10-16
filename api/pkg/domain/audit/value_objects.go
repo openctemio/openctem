@@ -1024,7 +1024,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
 		ResourceTypeFindingApproval:
 		return true
 	}
