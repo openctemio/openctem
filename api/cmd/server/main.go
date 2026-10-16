@@ -222,6 +222,8 @@ func run() int {
 	// ==========================================================================
 	repos := NewRepositories(db)
 	repos.UseAdminDB(adminDB)
+	// New organizations get the deployment's region, fixed for their life.
+	repos.Tenant.SetDefaultRegion(cfg.App.Region)
 	repos.InitIntegrationExtensions(db)
 	log.Info("repositories initialized")
 
@@ -393,6 +395,13 @@ func run() int {
 	// WebSocket Hub
 	// ==========================================================================
 	// Create cancellable context for graceful shutdown
+	stopAdminAuditSink, err := startAdminAuditSink(ctx, cfg.AdminAuditSink, repos.AdminAuditLog, log)
+	if err != nil {
+		log.Error("administrators' audit sink", "error", err)
+		return 1
+	}
+	defer stopAdminAuditSink()
+
 	wsCtx, wsCancel := context.WithCancel(ctx)
 	defer wsCancel()
 
