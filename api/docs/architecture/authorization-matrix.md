@@ -38,6 +38,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Pentest (granular) | 12 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write`, `pentest:checklists:manage` (RFC-087) |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
 | Reports | 2 | `reports:read/write` |
+| Content catalog | 2 | `content:read`, `content:install` (RFC-099) |
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
@@ -342,6 +343,20 @@ create's target validator, exclusions, zone routing) in one call.
 > `(tenant_id, zone_id)` and `(tenant_id, sensor_id)`, so a zone or sensor of
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
+
+#### Content catalog (`/api/v1/content`, RFC-099)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /packages` · `/packages/{namespace}/{name}` · `/installs` · `/requests` · `/settings` · `/trust` | `content:read` |
+| `POST /installs` · `POST /installs/{ns}/{name}/update` · `/rollback` · `DELETE /installs/{ns}/{name}` · `POST /requests/{id}/approve` · `/reject` | `content:install` + a recent sign-in; nobody approves their own request |
+| `PUT /installs/{ns}/{name}/pin` · `POST /requests/{id}/cancel` (requester only) | `content:install` |
+| `PUT /settings` (approval option) | `settings:write` + a recent sign-in |
+
+Another organization's installation or request answers 404. Owners and administrators hold both content
+permissions; members and viewers hold `content:read` (migration `002571`). `/api/v1/admin/content-catalog`: any
+platform administrator reads the trust status; `POST /import` needs a super admin, a reason and a fresh console
+authenticator code, and is audited.
 
 #### Scan windows (`/api/v1/scan-window-policies`, `/api/v1/scan-windows`, `/api/v1/scan-window-overrides`)
 
@@ -990,8 +1005,8 @@ gated (none adds a way in).
 - `PATCH /tenants/{t}/settings/security` refuses `sso_enforced` with 403.
   Enforcement is set only through `PUT /admin/tenants/{tenantId}/sso/enforcement`,
   which keeps the "usable SSO path required" guard.
-- With `TENANT_CREATION_MODE=admin_only` (the default; anything but
-  `self_service` counts), both self-service creation paths
+- With the `admin_only` sign-up policy in force (always under the default
+  `SIGNUP_MODE=disabled`, and under `domain`), both self-service creation paths
   (`POST /api/v1/tenants` and `POST /api/v1/auth/create-first-team`) return
   403. Only `POST /admin/tenants` (and `bootstrap-admin -org-*` at install)
   creates organizations. The mode is published
