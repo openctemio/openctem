@@ -1273,6 +1273,11 @@ export interface ApiApproval {
   /** People other than the requester who must sign off, and how many did. */
   approvals_required?: number
   approvals_collected?: number
+  /**
+   * Set when the request is a member of a group exception: it is decided
+   * only with its group (approving it alone answers 409 BATCH_MEMBER).
+   */
+  batch_id?: string
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'
