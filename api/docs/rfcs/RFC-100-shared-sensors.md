@@ -131,7 +131,7 @@ sensors for your organization") and never mentions an edition.
 | Shared sensors exist | the service's regional pools | none until the administrator enrolls one; the bundled compose/Helm sensor enrolls at instance scope |
 | Organizations without a decision | chosen explicitly when the switch is turned on (unset refuses) | chosen explicitly when the switch is turned on (unset refuses) |
 | Domain proof before shared sensors scan (RFC-054 §8.1) | **on** | off |
-| Shared sensors may scan internal zones (§6.1) | **off** (public targets only) | on (only zones the administrator assigns) |
+| Shared sensors may scan internal zones (§6.1) | **off** (public targets only) | off until instance scan zones and their signed ranges land (S10); the self-hosted default is decided then (only zones the administrator assigns) |
 | Limits | written by the control plane per organization | none unless the administrator sets them |
 | Credentials on shared sensors | never | off; the administrator may allow them per sensor, by reference only (RFC-040 §5.9) |
 
@@ -143,9 +143,11 @@ multi-tenant service.
 
 Implementation: `MANAGED_SERVICE` (default false) is read at start-up into
 the platform scanning policy (`scanpolicy.Service.SetManagedService`). The
-proof setting (`platform_sensor_proof`) and the internal-zones setting
-(`shared_sensor_internal_zones`) answer the deployment default while nothing
-is stored and the stored value afterwards; the console shows which applies.
+proof setting (`platform_sensor_proof`) answers the deployment default while
+nothing is stored and the stored value afterwards; the console shows which
+applies. The internal-zones setting (`shared_sensor_internal_zones`) defaults
+off on every deployment and is stored but not enforced until S10 wires it to
+the signed zone ranges (the console labels it "Not enforced yet").
 An unreadable stored value fails closed (proof required, internal zones
 refused). Both are changed only by a super admin with a reason and a fresh
 authenticator code, audited, the other administrators emailed.

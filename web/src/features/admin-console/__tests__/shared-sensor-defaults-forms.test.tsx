@@ -33,6 +33,20 @@ describe('internal zones card', () => {
     expect(screen.getByRole('switch')).toBeDisabled()
   })
 
+  it('says the setting is not enforced yet', () => {
+    render(
+      <PlatformSensorProofForm
+        prefix="admin.internalZones"
+        required={false}
+        enforced={false}
+        canEdit
+        onSave={vi.fn()}
+      />
+    )
+    expect(screen.getByText('Not enforced yet')).toBeInTheDocument()
+    expect(screen.getByText(/nothing reads this setting yet/)).toBeInTheDocument()
+  })
+
   it('hides the default hint once a value is stored', () => {
     render(
       <PlatformSensorProofForm

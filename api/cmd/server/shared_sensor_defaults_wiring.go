@@ -17,7 +17,7 @@ func wireSharedSensorDefaults(svc *Services, cfg *config.Config, redisClient *re
 	}
 	svc.ScanPolicy.SetManagedService(cfg.App.ManagedService)
 	if cfg.App.ManagedService {
-		log.Info("MANAGED_SERVICE is set: shared sensors default to a verified domain and public targets only until an administrator stores a value")
+		log.Info("MANAGED_SERVICE is set: platform sensors default to requiring a verified domain until an administrator stores a value")
 	}
 	if redisClient == nil {
 		log.Warn("Redis not configured: shared sensor anomaly signals are off")

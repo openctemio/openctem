@@ -120,13 +120,14 @@ export function saveSharedSensorsSetting(input: {
 }
 
 /**
- * "Shared sensors may scan internal zones" (RFC-100 §6.1). Default on for a
- * self-hosted install, off on a hosted service (MANAGED_SERVICE); a stored
- * value wins.
+ * "Shared sensors may scan internal zones" (RFC-100 §6.1). Default off on
+ * every deployment; stored but not enforced until instance scan zones land.
  */
 export interface SharedSensorInternalZones {
   allowed: boolean
   default: boolean
+  /** False while the setting is stored but nothing reads it yet. */
+  enforced: boolean
   version: number
 }
 

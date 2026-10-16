@@ -130,13 +130,16 @@ func TestProofDefaultFollowsManagedService(t *testing.T) {
 	}
 }
 
-func TestInternalZonesDefaultFollowsManagedService(t *testing.T) {
+func TestInternalZonesDefaultOffEverywhere(t *testing.T) {
 	ctx := context.Background()
-	if !newDefaults(&memDefaults{}, false).SharedSensorsInternalZonesAllowed(ctx) {
-		t.Fatal("self-hosted default must be on")
+	if newDefaults(&memDefaults{}, false).SharedSensorsInternalZonesAllowed(ctx) {
+		t.Fatal("self-hosted default must be off until zones are enforced")
 	}
 	if newDefaults(&memDefaults{}, true).SharedSensorsInternalZonesAllowed(ctx) {
 		t.Fatal("MANAGED_SERVICE default must be off")
+	}
+	if InternalZonesEnforced() {
+		t.Fatal("the setting is not enforced until signed zone ranges land")
 	}
 	if !newDefaults(&memDefaults{zones: boolp(true)}, true).SharedSensorsInternalZonesAllowed(ctx) {
 		t.Fatal("stored on must win over the hosted default")

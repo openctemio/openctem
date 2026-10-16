@@ -41,8 +41,9 @@ func TestAdminSharedSensorDefaults_Routes_DB(t *testing.T) {
 	if _, body := reader.do(http.MethodGet, proofPath, nil, true); !jsonHasBool(body, "required", true) || !jsonHasBool(body, "default", true) {
 		t.Fatalf("hosted proof default must read on: %s", body)
 	}
-	if _, body := reader.do(http.MethodGet, zonesPath, nil, true); !jsonHasBool(body, "allowed", false) || !jsonHasBool(body, "default", false) {
-		t.Fatalf("hosted internal zones default must read off: %s", body)
+	if _, body := reader.do(http.MethodGet, zonesPath, nil, true); !jsonHasBool(body, "allowed", false) ||
+		!jsonHasBool(body, "default", false) || !jsonHasBool(body, "enforced", false) {
+		t.Fatalf("internal zones must read off and not enforced: %s", body)
 	}
 	if code, body := reader.do(http.MethodGet, anomalyPath, nil, true); code != http.StatusOK || !jsonHasNumber(body, "distinct_domains_per_day", 25) {
 		t.Fatalf("anomaly defaults: %d %s", code, body)
