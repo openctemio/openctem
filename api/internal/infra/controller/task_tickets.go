@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -56,7 +57,7 @@ func (c *TaskTicketController) Reconcile(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	n := 0
+	n, failed := 0, 0
 	for _, r := range refs {
 		if ctx.Err() != nil {
 			break
@@ -65,9 +66,16 @@ func (c *TaskTicketController) Reconcile(ctx context.Context) (int, error) {
 			if c.logger != nil {
 				c.logger.Warn("task issue push failed; retried next pass", "tenant_id", r.TenantID.String(), "task_id", r.TaskID.String(), "error", logger.SanitizeError(err))
 			}
+			failed++
 			continue
 		}
 		n++
+	}
+	if failed > 0 {
+		// The pushes that worked still count; the error (without the
+		// per-task detail, which is logged above) reaches the reconcile
+		// metrics so a tracker outage is visible.
+		return n, fmt.Errorf("%d of %d task issue pushes failed; retried next pass", failed, len(refs))
 	}
 	return n, nil
 }
