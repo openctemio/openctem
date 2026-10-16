@@ -564,6 +564,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		approvalExpiry.SetOverdueRequests(repos.FindingApproval)
 	}
 	w.ControllerManager.Register(approvalExpiry)
+	// Approver notices for requests VEX statements made, drained from the
+	// requests table (the outbox) off the ingest path.
+	if svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewVEXRequestNoticeController(svc.Vulnerability,
+			log.With("controller", "vex-request-notice")))
+	}
 
 	// Asset identity model: derive identifiers for assets that predate it and
 	// queue suspected duplicates for review (never merges).
@@ -640,6 +646,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
 		svc.CTEMID,
 		log.With("controller", "ctem-id-refresh"),
+	))
+
+	// Version check (RFC-105): wakes hourly; fetches the signed release feed
+	// once a day when VERSION_CHECK_ENABLED and a root is pinned, weekly
+	// after repeated failures. One replica fetches per check.
+	w.ControllerManager.Register(controller.NewVersionCheckController(
+		svc.VersionCheck,
+		log.With("controller", "version-check"),
 	))
 
 	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data

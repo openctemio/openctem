@@ -31,13 +31,13 @@ export interface ActorRef {
 
 /** System actor codes -> English fallback (i18n keys `actor.system.<code>`). */
 export const SYSTEM_ACTOR_TEXT: Record<string, string> = {
-  upgrade_wildcard_split: 'OpenCTEM upgrade (wildcard rule change)',
-  seed_migration: 'OpenCTEM upgrade (was a discovery seed)',
+  upgrade_wildcard_split: '{product} upgrade (wildcard rule change)',
+  seed_migration: '{product} upgrade (was a discovery seed)',
   review_rule: 'Accepted from a review rule',
   refusal_fix: 'Allowed from a refused scan',
   confirmed_asset: 'Added when an asset was confirmed as ours',
   connector: 'Synced by a connector',
-  system: 'OpenCTEM (automatic)',
+  system: '{product} (automatic)',
 }
 
 /** Stored system strings older rows carry, mapped to a code. */
