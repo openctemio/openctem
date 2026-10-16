@@ -34,5 +34,3 @@ func (r redisLoginFailures) Record(ctx context.Context, key string) error {
 	_, err := r.rl.Allow(ctx, key)
 	return err
 }
-
-func (r redisLoginFailures) Reset(ctx context.Context, key string) error { return r.rl.Reset(ctx, key) }
