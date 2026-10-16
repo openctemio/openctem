@@ -18,6 +18,63 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
 | Self-registration (email, or the first Google/GitHub/Microsoft sign-in) | `POST /api/v1/auth/register`, `/api/v1/auth/oauth/*` | the sign-up policy is `self_service`, or a pending invitation for the email ([Admission](#admission-one-rule-for-every-path)) |
 
+## Sign-up ceiling
+
+The deployment's server configuration sets a **ceiling** that no API can
+change ([RFC-104](../rfcs/RFC-104-signup-modes-and-joining.md)):
+
+| `SIGNUP_MODE` | Meaning |
+|---------------|---------|
+| `disabled` (default) | No public account creation of any kind. Accounts come from a platform administrator, an invitation or an organization's SSO; organizations from a platform administrator. |
+| `domain` | Public sign-up only for addresses on an organization's verified domain; such a person joins that organization and never creates one. |
+| `open` | Anyone may sign up and create an organization (the hosted service), within the console policy and the limits. |
+
+The console policy below is a runtime switch **under** the ceiling. The
+policy in force is the stored policy clamped to the ceiling
+(`signup.Ceiling.Clamp`): with `disabled` or `domain`, a stored
+`self_service` acts as `admin_only`, and `PUT /api/v1/admin/settings/signup`
+with `self_service` answers 409 `SIGNUP_LOCKED_BY_DEPLOYMENT` before the
+authenticator code is checked. Opening sign-up therefore needs two keys: the
+server configuration and a super admin with a fresh authenticator code. A
+stolen console session cannot open registration on a closed deployment.
+Lowering `SIGNUP_MODE` closes sign-up at the next start with no console change.
+
+Start-up refuses to run when:
+
+- `SIGNUP_MODE` is not `disabled`, `domain` or `open`;
+- `SIGNUP_MODE=domain` or `open` and the platform e-mail (System > E-mail) is
+  not set: every self-registered address must be verified. Set it with
+  `bootstrap-admin` (`BOOTSTRAP_SMTP_*`), or start with `disabled`, set it in
+  the console and restart. While running, public sign-up is also closed
+  whenever the e-mail settings stop working;
+- `SIGNUP_MODE=domain` or `open` with `AUTH_PROVIDER=oidc` (no local accounts);
+- `SIGNUP_MODE=open` with `APP_ENV=production` and no
+  `CAPTCHA_TURNSTILE_SECRET`/`CAPTCHA_TURNSTILE_SITE_KEY`, unless
+  `SIGNUP_CAPTCHA=off-i-understand` accepts open sign-up without a CAPTCHA;
+- the retired `TENANT_CREATION_MODE` is still set (`admin_only` is
+  `SIGNUP_MODE=disabled`, `self_service` is `SIGNUP_MODE=open`).
+
+A deployment with `domain` or `open` logs a WARN line at every start.
+
+### Email verification of self-registered accounts
+
+Under `domain` and `open` every account created by self-registration (no
+pending invitation for that exact address) verifies its address before it can
+sign in. The verification rule is decided before the account lookup, the same
+way for a new and an existing address, so it does not enumerate.
+
+- An organization's `security.email_verification_mode` governs only the
+  accounts **invited** into that organization (the invitation proves the
+  mailbox, so an invited registration is verified at once). It never decides
+  public sign-up: there is no "the only organization is the default" rule, and
+  an invitation token for another address does not make its organization's
+  setting apply.
+- Missing SMTP never skips verification there. Start-up refuses `domain`/`open`
+  without the platform e-mail, and sign-up closes at run time without it.
+- Under `disabled` only invited and administrator-created accounts exist; the
+  organization setting, then the platform e-mail (auto: no e-mail, no
+  verification) and `AUTH_REQUIRE_EMAIL_VERIFICATION` apply as before.
+
 ## Sign-up policy (Console > System > Sign-up)
 
 Who may create an organization on this deployment is **one platform setting**,
@@ -37,9 +94,15 @@ organization (the request queue follows in its own change).
   "create organization") read it per request (`signup.Service.Current`,
   cached 15 s per replica).
 - **Fail-closed.** Nothing stored or a read error means `admin_only`.
-- **Seeding.** `TENANT_CREATION_MODE` seeds the first value at start-up when
-  no row exists (`source: environment`). After that the stored value wins and
-  the environment is ignored; the console shows where the value came from.
+- **Ceiling.** The value in force is clamped to `SIGNUP_MODE` (see
+  [Sign-up ceiling](#sign-up-ceiling)). `GET` reports the stored
+  `mode`, the `deployment_mode`, `self_service_locked` and the
+  `effective_mode`; the console shows the self-service choice locked with the
+  reason.
+- **Seeding.** `SIGNUP_MODE` seeds the first value at start-up when no row
+  exists (`source: environment`): `open` seeds `self_service`, anything else
+  `admin_only`. After that the stored value wins (still clamped); the console
+  shows where the value came from.
 - **Changing it.** `PUT /api/v1/admin/settings/signup` with the version that
   was read (409 when another administrator saved since) needs a **super admin**
   and a **fresh authenticator code** (`STEP_UP_REQUIRED` / 401 without or with
@@ -70,10 +133,8 @@ isn't set up yet"), whatever the reason, and the web sends the person to
 `/not-set-up` (en/vi), which names no organization. An account that already
 exists signs in as before: a mode change never locks anyone out.
 
-`AUTH_ALLOW_REGISTRATION` is retired: it could contradict
-`TENANT_CREATION_MODE` (with `admin_only` and registration on, a social
-sign-in created an account that could never get an organization). Startup
-logs a warning when it is still set.
+`AUTH_ALLOW_REGISTRATION` and `TENANT_CREATION_MODE` are retired: start-up
+refuses to run while either is set and names `SIGNUP_MODE` instead.
 
 ### Request access
 
@@ -225,13 +286,14 @@ has an account or an organization exists:
 
 | Endpoint | Unknown and known answer the same way |
 |---|---|
-| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal |
+| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal. With Turnstile keys, after 3 failed sign-ins from one client address in 15 minutes the next attempt from it answers 403 `CAPTCHA_REQUIRED` until a passing `captcha_token` is sent (counted per address, never per account, in Redis across replicas; the count only decays with its window, a success does not clear it, and an unreadable counter asks for the CAPTCHA) |
 | `POST /auth/register` | 201 with the same body for a new and an existing email: no account id, the verification rule a new account would get, one message; the password policy is checked first for both; the verification email is sent after the response |
 | `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response |
 | `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
 | `GET /auth/sso/{provider}/authorize?org=` | 404 "SSO provider not configured" for an unknown organization and a missing provider alike |
 | `GET /auth/saml/{org}/metadata` | SP metadata for any well-formed slug (it is built from the slug and the deployment URL only) |
-| `POST /auth/discover` | `{"next","org"}` for every email; `sso` + the slug only for a domain an organization proved it owns and signs in to by SSO (sso-authentication.md, "Email-first sign-in") |
+| `POST /auth/discover` | `{"next","org"}` for every email; `sso` + an opaque, expiring organization reference (never the slug) only for a domain an organization proved it owns and signs in to by SSO (sso-authentication.md, "Email-first sign-in") |
+| `POST /auth/create-first-team`, `POST /tenants` | a taken and a reserved organization URL get one "this URL is not available" answer that does not echo the slug |
 | `GET /auth/saml/{org}/login`, `POST …/acs` | every failure redirects to `/login?error=saml` |
 
 Tests: `tests/unit/auth_anti_enumeration_test.go`.
@@ -242,6 +304,65 @@ An organization a person creates themselves starts on the **Free** plan, and
 one person owns at most the Free plan's `free_teams_per_user` (1 by default):
 another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 `docs/architecture/plans-and-limits.md`.
+
+## Leaving and deleting (RFC-104)
+
+### Leave an organization
+
+`POST /api/v1/organization/leave` (any member, step-up, the organization of
+the credential) runs the same offboarding an administrator runs: API keys
+revoked, groups, grants, engagements and roles stripped, the membership kept
+as a tombstone. The only active owner is refused (transfer ownership or
+delete the organization first); someone who still owns assignable work is
+refused with "ask an administrator to offboard you" (nothing is reassigned
+without an administrator). Audited `member.left`; administrators notified.
+
+### Delete my account
+
+`DELETE /api/v1/me/account` (step-up) schedules the deletion
+(`account_deletions`, migration 002812):
+
+- refused (409 `SOLE_OWNER`, naming the organizations to the caller only)
+  while the caller is the only active owner of an organization, and for a
+  platform administrator account;
+- every session ends and the account's API keys are revoked at once (keys do
+  not come back on cancel);
+- **signing in again within 14 days cancels it** (password, social or SSO
+  sign-in; `account.deletion_canceled`);
+- after 14 days the `account-erase` controller offboards every membership
+  (best effort: an owner among several, or someone who still owns work, keeps
+  a disabled membership and the administrators are asked to reassign), then
+  anonymises the account in one transaction: name "Deleted user #<hash>",
+  an undeliverable unique email, password, second factor, federated
+  identities, sessions, refresh tokens and API keys removed or revoked. The
+  users row and every foreign key stay, so history remains readable.
+
+The erasure claims the request first (`claimed_at`): a sign-in after the
+claim no longer cancels it, and one before leaves nothing to claim. A failed
+offboarding stops that account's erasure and the next run retries; a failed
+session revoke at request time fails the request and undoes it. An owner
+among several is offboarded too (the erasure runs only while another active
+owner remains).
+
+**What stays.** Audit rows keep the actor's name and email as they were
+recorded (the audit trail is evidence; it is not rewritten). The users row
+keeps its id so foreign keys and history stay valid.
+
+`GET /api/v1/me/account/deletion` reports whether a deletion is pending.
+Audited: `account.deletion_requested`, `account.deletion_canceled`,
+`account.erased`.
+
+## Data region (RFC-104)
+
+`DEPLOYMENT_REGION` names the data region of the deployment (1-32 lowercase
+letters, digits or hyphens; validated at start). Every organization created
+here gets it in `tenants.region` (migration 002571), at insert, and keeps it
+for its life: no update writes the column, and a later change of
+`DEPLOYMENT_REGION` never moves an existing organization. Organizations from
+before have no region. The region is shown on the create form
+(`deployment_region` on `GET /auth/providers`) and in the organization's
+settings (`region` on the organization). With a second region, each region
+runs its own deployment; the selector appears only then.
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 
@@ -368,7 +489,8 @@ UPDATE tenants
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `TENANT_CREATION_MODE` | `admin_only` | **Seeds** the sign-up policy on the first start only (see [Sign-up policy](#sign-up-policy-console--system--sign-up)); afterwards the console value applies. Anything but `admin_only`/`self_service` fails startup. |
+| `SIGNUP_MODE` | `disabled` | The sign-up **ceiling** (see [Sign-up ceiling](#sign-up-ceiling)): `disabled`, `domain` or `open`. Seeds the console policy on the first start; the policy in force never exceeds it. Anything else fails startup. |
+| `SIGNUP_CAPTCHA` | — | `off-i-understand` accepts `SIGNUP_MODE=open` in production without Turnstile keys. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password#token=`). |
 | `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). Pin the proxies' addresses; a range wider than 16 addresses is warned about at startup. |

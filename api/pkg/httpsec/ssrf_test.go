@@ -68,6 +68,8 @@ func TestIsIPBlocked_Ranges(t *testing.T) {
 		// the metadata service on a NAT64/DNS64 network.
 		"64:ff9b::a9fe:a9fe", "64:ff9b:1::1", "2002:a9fe:a9fe::1", "2001:0:a9fe:a9fe::1",
 		"192.0.0.170", "198.18.0.1",
+		// IPv6 site-local (deprecated): internal in ctis addrscope too.
+		"fec0::1",
 	}
 	for _, ip := range blocked {
 		if !IsIPBlocked(net.ParseIP(ip)) {

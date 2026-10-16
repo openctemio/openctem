@@ -147,6 +147,10 @@ func newChainHarness(t *testing.T, extra ...func(h *Handlers, db *postgres.DB, c
 		AdminConsole:        handler.NewAdminConsoleHandler(console, false, "refresh_token", log),
 		AdminAuditChain:     handler.NewAdminAuditChainHandler(auditSvc, console, adminAudit, orgs, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(console, log),
+		// The route-level step-up, wired as the server wires it.
+		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, cl middleware.AdminStepUpClient) error {
+			return console.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: cl.IP, UserAgent: cl.UserAgent})
+		}),
 	}
 	for _, f := range extra {
 		f(&handlers, db, console)
@@ -231,6 +235,9 @@ type consoleAdmin struct {
 	secret string
 	// signInCode is the code that completed the TOTP step.
 	signInCode string
+	// autoStepUp sends a fresh code in the step-up header on every write that
+	// carries none, for tests about something other than the step-up itself.
+	autoStepUp bool
 }
 
 // newAdmin provisions an administrator linked to a users row in no
@@ -299,6 +306,12 @@ func (c *consoleAdmin) freshCode(next bool) string {
 	return code
 }
 
+// closeStepUpWindow ends the step-up window of the admin's console sessions,
+// so the next protected request needs a code again.
+func (c *consoleAdmin) closeStepUpWindow() {
+	c.h.exec(`UPDATE admin_sessions SET step_up_at = NULL WHERE admin_id = $1`, c.a.ID().String())
+}
+
 // resetReplayGuard lets the test use another code within one 30-second step.
 func (c *consoleAdmin) resetReplayGuard() {
 	c.h.exec(`UPDATE admin_credentials SET mfa_last_step = 0 WHERE admin_id = $1`, c.a.ID().String())
@@ -313,6 +326,14 @@ func (c *consoleAdmin) do(method, path string, body any, csrf bool) (int, string
 	}
 	req, _ := http.NewRequestWithContext(context.Background(), method, c.h.srv.URL+path, r)
 	req.Header.Set("Content-Type", "application/json")
+	// As the console's client does: a code the request body carries goes in
+	// the step-up header too, so the route confirms it once.
+	if code := bodyTOTPCode(body); code != "" {
+		req.Header.Set(middleware.AdminStepUpHeader, code)
+	} else if c.autoStepUp && method != http.MethodGet {
+		c.resetReplayGuard()
+		req.Header.Set(middleware.AdminStepUpHeader, c.freshCode(false))
+	}
 	if csrf && method != http.MethodGet {
 		u, _ := url.Parse(c.h.srv.URL + "/api/v1/admin/")
 		for _, ck := range c.jar.Cookies(u) {
@@ -328,6 +349,23 @@ func (c *consoleAdmin) do(method, path string, body any, csrf bool) (int, string
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(b)
+}
+
+// bodyTOTPCode is the "totp_code" of a JSON request body, or "".
+func bodyTOTPCode(body any) string {
+	if body == nil {
+		return ""
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return ""
+	}
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
+		return ""
+	}
+	code, _ := m["totp_code"].(string)
+	return code
 }
 
 func (c *consoleAdmin) classify(tenantID string) handler.AdminAuditChainStatusResponse {

@@ -18,20 +18,20 @@ import (
 )
 
 type idleMemRepo struct {
-	exempt lifecycledom.Exemption
+	policy lifecycledom.Policy
 }
 
-func (m *idleMemRepo) FreeWorkspaces(context.Context) ([]lifecycledom.Workspace, error) {
+func (m *idleMemRepo) Workspaces(context.Context) ([]lifecycledom.Workspace, error) {
 	return nil, nil
 }
 func (m *idleMemRepo) SetStage(context.Context, shared.ID, lifecycledom.Stage, time.Time) error {
 	return nil
 }
 func (m *idleMemRepo) Status(context.Context, shared.ID) (*lifecycledom.Status, error) {
-	return &lifecycledom.Status{Stage: lifecycledom.StageActive, Exempt: m.exempt.Exempt, ExemptReason: m.exempt.Reason}, nil
+	return &lifecycledom.Status{Stage: lifecycledom.StageActive, PolicyEnabled: m.policy.Enabled, PolicyReason: m.policy.Reason}, nil
 }
-func (m *idleMemRepo) SetExemption(_ context.Context, _ shared.ID, e lifecycledom.Exemption) error {
-	m.exempt = e
+func (m *idleMemRepo) SetPolicy(_ context.Context, _ shared.ID, p lifecycledom.Policy) error {
+	m.policy = p
 	return nil
 }
 func (m *idleMemRepo) ReadOnly(context.Context, shared.ID) (bool, error)       { return false, nil }
@@ -57,20 +57,20 @@ func TestIdleWorkspaceHandler(t *testing.T) {
 		t.Fatalf("bad id: %d", rec.Code)
 	}
 	rec = httptest.NewRecorder()
-	h.SetExemption(rec, req(http.MethodPut, id.String(), `{"exempt":true,"reason":"x"}`, false))
-	if rec.Code != http.StatusUnauthorized || repo.exempt.Exempt {
+	h.SetPolicy(rec, req(http.MethodPut, id.String(), `{"enabled":true,"reason":"x"}`, false))
+	if rec.Code != http.StatusUnauthorized || repo.policy.Enabled {
 		t.Fatalf("no admin: %d", rec.Code)
 	}
 	rec = httptest.NewRecorder()
-	h.SetExemption(rec, req(http.MethodPut, id.String(), `{"exempt":true,"reason":"  "}`, true))
-	if rec.Code != http.StatusBadRequest || repo.exempt.Exempt {
+	h.SetPolicy(rec, req(http.MethodPut, id.String(), `{"enabled":true,"reason":"  "}`, true))
+	if rec.Code != http.StatusBadRequest || repo.policy.Enabled {
 		t.Fatalf("no reason: %d", rec.Code)
 	}
 	rec = httptest.NewRecorder()
-	h.SetExemption(rec, req(http.MethodPut, id.String(), `{"exempt":true,"reason":"design partner"}`, true))
+	h.SetPolicy(rec, req(http.MethodPut, id.String(), `{"enabled":true,"reason":"hosted free tier"}`, true))
 	var resp IdleWorkspaceResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if rec.Code != http.StatusOK || !resp.Exempt || resp.ExemptReason != "design partner" || resp.Stage != "active" {
-		t.Fatalf("exempt: %d %+v", rec.Code, resp)
+	if rec.Code != http.StatusOK || !resp.PolicyEnabled || resp.PolicyReason != "hosted free tier" || resp.Stage != "active" {
+		t.Fatalf("enable: %d %+v", rec.Code, resp)
 	}
 }

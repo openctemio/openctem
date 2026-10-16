@@ -33,3 +33,30 @@ export function useAdminAuditLogs(query: {
     keepPreviousData: true,
   })
 }
+
+/** One row of the administrators' audit chain that does not verify. */
+export interface AdminAuditChainBreak {
+  position: number
+  id: string
+  /** changed: the row's content was edited; link: it does not follow the row before; gap: rows are missing before it. */
+  reason: 'changed' | 'link' | 'gap'
+}
+
+/** The state of the append-only, hash-chained administrators' audit log. */
+export interface AdminAuditChainReport {
+  entries: number
+  first_position: number
+  last_position: number
+  /** Where the newest retention prune left the chain (0: never pruned). */
+  anchor_position: number
+  breaks: AdminAuditChainBreak[]
+  truncated: boolean
+  verified_at: string
+}
+
+/** Verifies the administrators' audit chain (any administrator). */
+export function useAdminAuditChain() {
+  return useSWR<AdminAuditChainReport>('/audit-logs/chain', adminFetcher, {
+    revalidateOnFocus: false,
+  })
+}

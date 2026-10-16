@@ -26,7 +26,14 @@ type EmailService struct {
 	tenantSMTP TenantSMTPResolver
 	config     config.SMTPConfig
 	appName    string
+	branding   emaildom.Branding
 	logger     *logger.Logger
+}
+
+// SetBranding sets the brand's email footer line and "Powered by" credit,
+// added to every email this service sends.
+func (s *EmailService) SetBranding(b emaildom.Branding) {
+	s.branding = b
 }
 
 // NewEmailService creates a new EmailService.
@@ -59,7 +66,7 @@ func (s *EmailService) SendReport(ctx context.Context, tenantID string, to []str
 	return sender.Send(ctx, &emaildom.Message{
 		To:      to,
 		Subject: subject,
-		Body:    htmlBody,
+		Body:    htmlBody + string(s.branding.FooterHTML()),
 		IsHTML:  true,
 	})
 }
@@ -126,6 +133,7 @@ func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, use
 		VerificationURL: verificationURL,
 		ExpiresIn:       formatDuration(expiresIn),
 		AppName:         s.appName,
+		Branding:        s.branding,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateVerifyEmail, data); err != nil {
@@ -162,6 +170,7 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 		ResetURL:    resetURL,
 		ExpiresIn:   formatDuration(expiresIn),
 		AppName:     s.appName,
+		Branding:    s.branding,
 		IPAddress:   ipAddress,
 		RequestedAt: time.Now().Format("January 2, 2006 at 3:04 PM MST"),
 	}
@@ -195,6 +204,7 @@ func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, 
 		ChangedAt: time.Now().Format("January 2, 2006 at 3:04 PM MST"),
 		IPAddress: ipAddress,
 		AppName:   s.appName,
+		Branding:  s.branding,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplatePasswordChanged, data); err != nil {
@@ -227,6 +237,7 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 		Email:    userEmail,
 		LoginURL: loginURL,
 		AppName:  s.appName,
+		Branding: s.branding,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateWelcome, data); err != nil {
@@ -268,6 +279,7 @@ func (s *EmailService) SendMemberSuspendedEmail(
 		ActorName: actorName,
 		AppURL:    s.config.BaseURL,
 		AppName:   s.appName,
+		Branding:  s.branding,
 	}
 
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateMemberSuspended, data); err != nil {
@@ -304,6 +316,7 @@ func (s *EmailService) SendMemberReactivatedEmail(
 		ActorName: actorName,
 		AppURL:    s.config.BaseURL,
 		AppName:   s.appName,
+		Branding:  s.branding,
 	}
 
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateMemberReactivated, data); err != nil {
@@ -344,6 +357,7 @@ func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, reci
 		SetupURL:  s.AccountSetupURL(token),
 		ExpiresIn: formatDuration(expiresIn),
 		AppName:   s.appName,
+		Branding:  s.branding,
 	}
 	// tenantID reaches here from the request path; strip line breaks before
 	// logging it (CWE-117).
@@ -383,6 +397,7 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 		InvitationURL: invitationURL,
 		ExpiresIn:     formatDuration(expiresIn),
 		AppName:       s.appName,
+		Branding:      s.branding,
 	}
 
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateTeamInvitation, data); err != nil {
@@ -481,6 +496,7 @@ func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userNa
 		OccurredAt: time.Now().UTC().Format("January 2, 2006 at 3:04 PM MST"),
 		IPAddress:  ipAddress,
 		AppName:    s.appName,
+		Branding:   s.branding,
 	}
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	go func() {

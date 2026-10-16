@@ -14,6 +14,7 @@ import (
 
 // WebhookClient implements the Client interface for generic webhook notifications.
 type WebhookClient struct {
+	product    string // brand name in test messages
 	webhookURL string
 	httpClient *http.Client
 }
@@ -42,6 +43,7 @@ func NewWebhookClient(config Config) (*WebhookClient, error) {
 		hc = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &WebhookClient{
+		product:    config.productName(),
 		webhookURL: config.WebhookURL,
 		httpClient: hc,
 	}, nil
@@ -125,7 +127,7 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 // TestConnection tests the webhook configuration.
 func (c *WebhookClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	testMsg := Message{
-		Title:    "OpenCTEM Test Notification",
+		Title:    c.product + " Test Notification",
 		Body:     "This is a test notification to verify your webhook integration is working correctly.",
 		Severity: "low",
 	}

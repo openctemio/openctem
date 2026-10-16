@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/entitlement"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -29,7 +30,7 @@ func (m planDefaultsMailer) NotifyPlanDefaultsChanged(_ context.Context, adminEm
 	}
 	name := m.appName
 	if name == "" {
-		name = "OpenCTEM"
+		name = brand.DefaultName
 	}
 	who := strings.NewReplacer("\r", "", "\n", "").Replace(adminEmail)
 	subject := fmt.Sprintf("[%s] Plan limits changed by %s", name, who)

@@ -88,6 +88,8 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	exec1(ctx, t, mig, `CREATE INDEX CONCURRENTLY findings_tenant ON findings(tenant_id)`)
 	exec1(ctx, t, mig, `CREATE TABLE epss_scores (cve_id text PRIMARY KEY)`)
 	exec1(ctx, t, mig, `INSERT INTO schema_migrations VALUES (1, false)`)
+	exec1(ctx, t, mig, `CREATE TABLE admin_audit_logs (id bigserial PRIMARY KEY, action text)`)
+	exec1(ctx, t, mig, `CREATE TABLE admin_audit_chain_anchors (id bigserial PRIMARY KEY)`)
 	// Idempotent, and it grants the special cases (TRUNCATE on the feeds).
 	bootstrap()
 
@@ -121,6 +123,9 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	exec1(ctx, t, app, `SELECT pg_advisory_xact_lock(42)`)
 	exec1(ctx, t, app, `SELECT set_config('app.current_tenant_id', $1, false)`, tenant)
 	exec1(ctx, t, app, `TRUNCATE epss_scores`)
+	// The administrators' audit log: append and read only.
+	exec1(ctx, t, app, `INSERT INTO admin_audit_logs (action) VALUES ('test')`)
+	exec1(ctx, t, app, `SELECT count(*) FROM admin_audit_logs`)
 	var version int
 	if err := app.QueryRowContext(ctx, `SELECT version FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatalf("read schema_migrations: %v", err)
@@ -143,6 +148,11 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`TRUNCATE findings`,
 		`UPDATE schema_migrations SET dirty = true`,
 		`DELETE FROM schema_migrations`,
+		`UPDATE admin_audit_logs SET action = 'forged'`,
+		`DELETE FROM admin_audit_logs`,
+		`TRUNCATE admin_audit_logs`,
+		`INSERT INTO admin_audit_chain_anchors DEFAULT VALUES`,
+		`DELETE FROM admin_audit_chain_anchors`,
 		`COPY findings TO '/tmp/openctem-lp-test'`,
 		`COPY findings FROM PROGRAM 'id'`,
 		`SELECT pg_read_file('/etc/passwd')`,

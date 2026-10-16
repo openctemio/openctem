@@ -135,6 +135,8 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/sensor-pairings":                     {classConfig, "sensor pairing (RFC-052): a pending request has no tenant until approved; the approver's tenant binds it"},
 	"/api/v1/scan-zones":                          {classConfig, "scan zones"},
 	"/api/v1/scan-window-policies":                {classConfig, "scan window policies (RFC-067): tenant dispatch configuration"},
+	"/api/v1/lifecycle-sub-statuses":              {classConfig, "finding sub-status catalog (RFC-110): tenant configuration, no finding data"},
+	"/api/v1/lifecycles":                          {classConfig, "finding lifecycle schemes and versions (RFC-110): tenant configuration, no finding data"},
 	"POST /api/v1/scan-window-policies/preview":   {classScoped, "assets a draft policy selects, listed only within the caller's data scope (RFC-067)"},
 	"/api/v1/scan-windows":                        {classScoped, "scan window decisions: an asset id out of the caller's data scope is 404; free-text targets return only window decisions (RFC-067)"},
 	"/api/v1/scan-window-overrides":               {classConfig, "scan window overrides (RFC-067): tenant dispatch configuration"},
@@ -143,6 +145,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/template-sources":                    {classConfig, "template sources"},
 	"/api/v1/platform-content-packs":              {classConfig, "platform content packs and channels (RFC-061): platform catalog, read-only, no tenant data"},
 	"/api/v1/content-packs":                       {classConfig, "content packs (RFC-061): the tenant own templates, rules and wordlists"},
+	"/api/v1/content":                             {classConfig, "content catalog (RFC-099): instance catalog and the organization's private packages, installs, requests"},
 	// Not catalog data: the stats name the caller's own sensors and custom tools
 	// (tenant-filtered in SQL; platform tools are the only shared rows, 23b SC-H1).
 	"/api/v1/secret-store":          {classConfig, "scanner credentials"},
@@ -193,7 +196,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/business-units":    {classPartial, "asset links scoped (L-10); the unit list and counts are tenant-wide"},
 	"/api/v1/ctem-cycles":       {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
 	"/api/v1/approvals":         {classScoped, "approvals by id and the list: SQL data-scope condition on the finding asset; total and status counts scoped too"},
-	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156)"},
+	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156); tasks are seen through in-scope findings and changed only with every finding in scope (RFC-098)"},
 	"/api/v1/dashboard":         {classPartial, "activity and top risks scoped; counts and trends tenant-wide until P1-4 (D6)"},
 
 	// --- separate ------------------------------------------------------------------

@@ -40,7 +40,9 @@ export function ScanControls({
   const [busy, setBusy] = useState(false)
   const { trigger, isTriggering, dialog } = useScanTrigger({
     onViewRun,
-    onTriggered: onChanged,
+    // Started or refused (a refusal is recorded as a blocked run): the
+    // page's run history refreshes either way.
+    onSettled: onChanged,
   })
   const triggering = isTriggering(config.id)
 

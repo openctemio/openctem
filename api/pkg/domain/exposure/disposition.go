@@ -129,4 +129,16 @@ type DispositionRepository interface {
 	CountEligibleApprovers(ctx context.Context, tenantID shared.ID, perms []string) (int, error)
 	// IsTenantOwner reports whether the user is an active owner.
 	IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	// RecentMemberRemoval answers the latest member suspension, removal,
+	// offboarding or membership expiry in the tenant after since (nil: none).
+	RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error)
 }
+
+// SelfApprovalRemovalCooldown: an owner may not approve their own request
+// within this long after any member was suspended or removed (removing the
+// only other approver must not open the own-approval path at once).
+const SelfApprovalRemovalCooldown = 7 * 24 * time.Hour
+
+// ErrDispositionSelfApprovalAfterRemoval: a member was suspended or removed
+// within SelfApprovalRemovalCooldown.
+var ErrDispositionSelfApprovalAfterRemoval = fmt.Errorf("%w: a member of the organization was suspended or removed in the last 7 days", shared.ErrForbidden)

@@ -12,8 +12,7 @@ import (
 // RFC-039 §6.5: a scan that re-detects a finding a person resolved reopens it,
 // and the reopen clears resolved_by / resolution / the closure on the row.
 // Before this change the regression's activity said only
-// {"reason":"finding_detected_again"}: who had fixed it, and how, was gone. A
-// scan re-detecting a validated_fixed finding left it validated_fixed.
+// {"reason":"finding_detected_again"}: who had fixed it, and how, was gone.
 func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T) {
 	db := openReopenDB(t)
 	ctx := context.Background()
@@ -36,20 +35,16 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 		humanID.String(), resolver.String()); err != nil {
 		t.Fatal(err)
 	}
-	downgradedID, downgradedFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "validated_fixed", "")
 
 	// The reopen writes its own timeline entry in the same transaction, with
 	// the scan from the context's evidence.
 	scanCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": "nuclei", "scan_id": "report-9"})
-	reopened, err := repo.AutoReopenByFingerprintsBatch(scanCtx, tenantID, []string{humanFP, downgradedFP})
+	reopened, err := repo.AutoReopenByFingerprintsBatch(scanCtx, tenantID, []string{humanFP})
 	if err != nil {
 		t.Fatalf("AutoReopenByFingerprintsBatch: %v", err)
 	}
 	if got := statusOf(ctx, t, db, humanID); got != "confirmed" {
 		t.Errorf("human-resolved finding status = %s, want confirmed", got)
-	}
-	if got := statusOf(ctx, t, db, downgradedID); got != "confirmed" {
-		t.Errorf("validated_fixed finding a scan saw again: status = %s, want confirmed", got)
 	}
 
 	rf, ok := reopened[humanFP]

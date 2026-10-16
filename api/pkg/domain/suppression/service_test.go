@@ -20,6 +20,11 @@ type mockRepository struct {
 	// of open findings the rule matches.
 	matching   int
 	applyLimit int
+	// sampleScope is the scope filter the last preview sample was asked with
+	// (sampleAsked: it was asked at all).
+	sampleScope ScopeFilter
+	sampleAsked bool
+	sample      []SampleFinding
 }
 
 type auditCall struct {
@@ -80,6 +85,14 @@ func (m *mockRepository) Approve(_ context.Context, rule *Rule, _ time.Time, act
 
 func (m *mockRepository) CountMatchingOpenFindings(_ context.Context, _ *Rule, limit int) (int, error) {
 	return min(m.matching, limit+1), nil
+}
+
+func (m *mockRepository) SampleMatchingOpenFindings(_ context.Context, _ *Rule, scope ScopeFilter, limit, _ int) (int, []SampleFinding, error) {
+	m.sampleScope, m.sampleAsked = scope, true
+	if scope == nil {
+		return 0, nil, nil
+	}
+	return min(m.matching, limit+1), m.sample, nil
 }
 
 func (m *mockRepository) FindByID(_ context.Context, tenantID, ruleID shared.ID) (*Rule, error) {
@@ -525,8 +538,13 @@ func TestService_DeleteRule(t *testing.T) {
 }
 
 type fakeApprovers struct {
-	count int
-	owner shared.ID
+	count     int
+	owner     shared.ID
+	removedAt *time.Time
+}
+
+func (f fakeApprovers) RecentMemberRemoval(context.Context, shared.ID, time.Time) (*time.Time, error) {
+	return f.removedAt, nil
 }
 
 func (f fakeApprovers) CountEligibleApprovers(context.Context, shared.ID) (int, error) {
@@ -585,6 +603,18 @@ func TestService_ApproveRule_FourEyes(t *testing.T) {
 		}
 		if rule.Status() != RuleStatusPending {
 			t.Fatalf("refused self-approval changed the rule: %s", rule.Status())
+		}
+	})
+	t.Run("lone owner refused within 7 days of a member removal", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		removed := time.Now().Add(-2 * 24 * time.Hour)
+		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester, removedAt: &removed})
+		svc.SetTOTPVerifier(fakeTOTP{good: "123456"})
+		rule := newPending(svc)
+		_, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester,
+			ReviewedUpdatedAt: reviewedAt(rule), SelfApprovalReason: "alone", TOTPCode: "123456"})
+		if !errors.Is(err, ErrSelfApprovalAfterRemoval) || !IsSelfApprovalRefusal(err) {
+			t.Fatalf("recent removal = %v, want ErrSelfApprovalAfterRemoval", err)
 		}
 	})
 	t.Run("lone owner without a verifier fails closed", func(t *testing.T) {
@@ -739,6 +769,32 @@ func TestService_ApproveRule_AppliesToExistingFindings(t *testing.T) {
 		}
 		if _, err := svc.PreviewRule(ctx, shared.NewID(), rule.ID()); !errors.Is(err, ErrRuleNotFound) {
 			t.Fatalf("other tenant preview err = %v, want ErrRuleNotFound", err)
+		}
+	})
+
+	t.Run("preview sample follows the data scope and fails closed", func(t *testing.T) {
+		repo := newMockRepository()
+		svc := NewService(repo, nil)
+		rule := newPending(svc)
+		repo.matching = 3
+		repo.sample = []SampleFinding{{ID: shared.NewID(), Title: "t"}}
+
+		// No scope filter wired: the organization-wide count stays, nothing
+		// is listed and nothing counts as in scope.
+		p, err := svc.PreviewRule(ctx, tenantID, rule.ID())
+		if err != nil || !repo.sampleAsked || repo.sampleScope != nil {
+			t.Fatalf("asked = %v, scope set = %v, err = %v; want asked without a scope", repo.sampleAsked, repo.sampleScope != nil, err)
+		}
+		if p.MatchingOpenFindings != 3 || p.InScopeFindings != 0 || len(p.Sample) != 0 {
+			t.Fatalf("preview without scope = %+v, want 3 matching, nothing in scope or listed", p)
+		}
+
+		svc.SetScopeFilter(func(context.Context, shared.ID, []shared.ID) (func(shared.ID) bool, error) {
+			return func(shared.ID) bool { return true }, nil
+		})
+		p, err = svc.PreviewRule(ctx, tenantID, rule.ID())
+		if err != nil || repo.sampleScope == nil || p.InScopeFindings != 3 || len(p.Sample) != 1 {
+			t.Fatalf("preview with scope = %+v, %v; want 3 in scope and the sample", p, err)
 		}
 	})
 }

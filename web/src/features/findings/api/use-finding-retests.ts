@@ -24,14 +24,7 @@ export type FindingRetest = FindingRetestResponse
 export const RETEST_POLL_MS = 5000
 
 /** Statuses a retest may run on (the API refuses the others). */
-const RETESTABLE_STATUSES = new Set([
-  'new',
-  'confirmed',
-  'in_progress',
-  'fix_applied',
-  'validated_fixed',
-  'resolved',
-])
+const RETESTABLE_STATUSES = new Set(['new', 'confirmed', 'in_progress', 'fix_applied', 'resolved'])
 
 /**
  * Whether a finding may have a deterministic re-check: a rule of a tool, in an

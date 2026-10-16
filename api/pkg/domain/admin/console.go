@@ -20,6 +20,9 @@ const (
 	SessionIdleTimeout = 30 * time.Minute
 	// PendingMFATTL is how long a started console session may wait for its TOTP.
 	PendingMFATTL = 5 * time.Minute
+	// StepUpWindow is how long one step-up confirmation covers the protected
+	// actions of the same console session.
+	StepUpWindow = 5 * time.Minute
 )
 
 // Credentials are an admin's console second factor. Absent (nil) until the
@@ -46,6 +49,15 @@ type Session struct {
 	// AuthMethod is how the first factor was proven: AuthMethodPassword (the
 	// /login session) or AuthMethodIdP (the platform identity provider).
 	AuthMethod string
+	// StepUpAt is when this session last confirmed a protected action with a
+	// fresh code; nil when it never did.
+	StepUpAt *time.Time
+}
+
+// SteppedUp reports whether the session confirmed a protected action within
+// StepUpWindow of now.
+func (s *Session) SteppedUp(now time.Time) bool {
+	return s != nil && s.StepUpAt != nil && !now.Before(*s.StepUpAt) && now.Sub(*s.StepUpAt) < StepUpWindow
 }
 
 // Console session authentication methods.
@@ -75,6 +87,8 @@ type ConsoleRepository interface {
 	// GetSessionByTokenHash returns ErrSessionNotFound when absent.
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error)
 	TouchSession(ctx context.Context, id shared.ID, at time.Time) error
+	// MarkSessionStepUp records a step-up confirmation on a verified session.
+	MarkSessionStepUp(ctx context.Context, id shared.ID, at time.Time) error
 	DeleteSession(ctx context.Context, id shared.ID) error
 	// DeleteSessionsForAdmin ends every session of one admin.
 	DeleteSessionsForAdmin(ctx context.Context, adminID shared.ID) error
@@ -96,6 +110,9 @@ var (
 	// this administrator has none enrolled (for example, it only ever signed in
 	// through the platform identity provider).
 	ErrStepUpUnavailable = fmt.Errorf("%w: enroll the console authenticator to confirm this action", shared.ErrForbidden)
+	// ErrStepUpRequired: a protected action without a fresh code, outside the
+	// session's step-up window.
+	ErrStepUpRequired = fmt.Errorf("%w: confirm this action with a fresh code", shared.ErrUnauthorized)
 	// ErrNotSignedIn: no valid /login session behind the request.
 	ErrNotSignedIn = fmt.Errorf("%w: sign in first", shared.ErrUnauthorized)
 	// ErrNotPlatformAdmin: the signed-in account is not an active administrator.

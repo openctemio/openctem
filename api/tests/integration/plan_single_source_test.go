@@ -4,7 +4,7 @@ package integration
 // the membership list (the sidebar organization card), the organization
 // itself, Settings > Plan & usage, the console and limit enforcement all
 // read tenant_plans, a missing row being plan.Unassigned. Covers the
-// organization bootstrap-admin creates, a self-service Free organization and
+// organization bootstrap-admin creates, a self-service organization set to Free and
 // one an administrator moved to Enterprise.
 //
 // Requires DATABASE_URL pointing at a fully migrated database.
@@ -63,8 +63,9 @@ func TestOrganizationPlanHasOneSource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Self-service organizations start on Free.
-	authSvc := orgAuthService(db, config.TenantCreationSelfService)
+	// Self-service organizations start with no plan; an administrator sets
+	// one on Free and the other on Enterprise.
+	authSvc := orgAuthService(db, config.SignupModeOpen)
 	selfService := func(name string) (shared.ID, shared.ID) {
 		t.Helper()
 		email, refresh := orgSelfServiceUser(t, db, authSvc)
@@ -79,10 +80,12 @@ func TestOrganizationPlanHasOneSource(t *testing.T) {
 	freeID, freeOwner := selfService("Free Org")
 	entID, entOwner := selfService("Sales Org")
 
-	// An administrator moves the second one to Enterprise (sales).
 	actor, err := admin.NewAdminUser("ops-"+entID.String()[:8]+"@example.test", "Ops", admin.AdminRoleOpsAdmin, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := ent.ChangeTenantPlan(ctx, actor, freeID, plan.Free, "", ""); err != nil {
+		t.Fatalf("change plan: %v", err)
 	}
 	if err := ent.ChangeTenantPlan(ctx, actor, entID, plan.Enterprise, "", ""); err != nil {
 		t.Fatalf("change plan: %v", err)
@@ -96,7 +99,7 @@ func TestOrganizationPlanHasOneSource(t *testing.T) {
 		limited bool // Free's seat cap is enforced
 	}{
 		{"bootstrap organization", shared.MustIDFromString(bootID), userID(o.OrgOwnerEmail), plan.Unassigned, false},
-		{"self-service Free organization", freeID, freeOwner, plan.Free, true},
+		{"organization set to Free", freeID, freeOwner, plan.Free, true},
 		{"organization moved to Enterprise", entID, entOwner, plan.Enterprise, false},
 	}
 	for _, tc := range cases {

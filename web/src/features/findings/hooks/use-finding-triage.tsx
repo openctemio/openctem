@@ -42,6 +42,8 @@ export interface FindingTriageTarget {
   status: FindingStatus
   severity: Severity
   assignee?: FindingUser
+  /** Longest risk acceptance the API allows for this finding, in days. */
+  maxAcceptanceDays?: number
 }
 
 export interface UseFindingTriageOptions {
@@ -216,6 +218,7 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     <ApprovalDialog
       findingId={finding.id}
       targetStatus={approvalTarget}
+      maxAcceptanceDays={finding.maxAcceptanceDays}
       open
       onOpenChange={(open) => {
         if (!open) setApprovalTarget(null)

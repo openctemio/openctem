@@ -1,9 +1,15 @@
-# Idle Free workspaces
+# Idle-organization policy
 
-An organization on the **Free** plan that nobody signs in to moves through a
-lifecycle, so abandoned workspaces do not accumulate on a shared platform.
-Paid plans (Pro, Enterprise) and organizations without a plan are never
-touched. Decided 2026-10-08.
+An organization the idle policy is **on** for, that nobody signs in to,
+moves through a lifecycle, so abandoned workspaces do not accumulate on a
+shared platform.
+
+**The policy is off for every organization by default.** It applies only
+where a platform administrator turned it on for that organization (or, on a
+hosted service, the service operator did through the same switch). A
+self-hosted install never makes an organization read-only on its own, with
+or without self-service sign-up. Migration `idle_policy_opt_in` turned the
+policy off for every existing organization and returned them to `active`.
 
 ## Stages
 
@@ -32,22 +38,23 @@ the organization was created, if nobody ever signed in).
   the owners had the chance to export. Automatic deletion (with an export
   link in the final email) is a follow-up once organization export exists.
 
-## Exemption
+## Turning the policy on or off
 
-A platform administrator can exempt an organization (a design partner, a
-pilot): it returns to `active` and is never swept until the exemption is
-lifted. A reason is required (1-500 characters).
+A platform administrator turns the policy on or off per organization. A
+reason (1-500 characters) is required both ways. Either way the
+organization returns to `active`: turning it on starts counting from the
+latest sign-in, turning it off lifts read-only at once.
 
 | Endpoint | Who |
 |----------|-----|
-| `GET /api/v1/admin/tenants/{tenantId}/idle` | any admin (stage, last sign-in, read-only now, exemption) |
-| `PUT /api/v1/admin/tenants/{tenantId}/idle/exemption` `{exempt, reason}` | **ops_admin+**; audited high in the admin log and in the organization's log |
+| `GET /api/v1/admin/tenants/{tenantId}/idle` | any admin (policy on or off, stage, last sign-in, read-only now) |
+| `PUT /api/v1/admin/tenants/{tenantId}/idle/policy` `{enabled, reason}` | **ops_admin+**; audited high in the admin log (`organization.idle_policy_changed`) and in the organization's log (`tenant.idle_policy_changed`) |
 
 ## Read-only enforcement
 
 `middleware.IdleReadOnly` runs in the shared tenant chain
 (`buildBaseMiddlewares`): any method but GET, HEAD and OPTIONS on an
-organization in `read_only`, `final_warning` or `deletion_due` (not exempt,
+organization in `read_only`, `final_warning` or `deletion_due` (policy on,
 no sign-in since the stage started) is refused with 403
 `WORKSPACE_READ_ONLY`. The answer is cached for a minute per organization.
 A read error lets the request through: read-only is a nudge, not a security
@@ -56,8 +63,9 @@ boundary, and must never take an organization down.
 ## Code map
 
 - `pkg/domain/lifecycle`: stages, thresholds, `Decide`.
-- `internal/app/lifecycle`: the sweep, the read-only check, the exemption.
-- `internal/infra/postgres/idle_lifecycle_repository.go`: migration 001347
-  (`tenant_idle_lifecycle`), every query scoped by `tenant_id`.
+- `internal/app/lifecycle`: the sweep, the read-only check, the policy switch.
+- `internal/infra/postgres/idle_lifecycle_repository.go`: migrations 001347
+  (`tenant_idle_lifecycle`) and `idle_policy_opt_in` (`policy_enabled`),
+  every query scoped by `tenant_id`.
 - `internal/infra/controller/idle_workspaces.go`: the sweep every 6 hours.
 - `cmd/server/idle_workspace_mailer.go`: the emails.

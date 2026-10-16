@@ -66,9 +66,12 @@ export function createOrganizationUser(id: string, input: AdminCreateOrganizatio
  * set-password link is emailed and never returned.
  */
 export function recoverOrganizationOwner(id: string, input: AdminOwnerRecoveryInput) {
+  // The code goes in the step-up header: the route confirms it once.
+  const { totp_code: stepUpCode, ...body } = input
   return adminFetch<AdminCreatedOrganizationUser>(`/tenants/${id}/users`, {
     method: 'POST',
-    body: { ...input, recovery: true },
+    body: { ...body, recovery: true },
+    stepUpCode,
   })
 }
 

@@ -1238,7 +1238,7 @@
   "sensors.health.belowProductMin": "{count} dưới mức tối thiểu của sản phẩm",
   "sensors.snippets.product": "Sản phẩm",
   "sensors.snippets.customProduct": "Sensor tùy chỉnh (xây trên SDK)",
-  "sensors.snippets.customNote": "Sensor tùy chỉnh là bản dựng riêng của bạn trên OpenCTEM SDK. Cài đặt theo hướng dẫn của tác giả, với API key của sensor này và URL của nền tảng. Nền tảng kiểm tra nó theo giao thức và năng lực, không theo phiên bản.",
+  "sensors.snippets.customNote": "Sensor tùy chỉnh là bản dựng riêng của bạn trên SDK sensor. Cài đặt theo hướng dẫn của tác giả, với API key của sensor này và URL của nền tảng. Nền tảng kiểm tra nó theo giao thức và năng lực, không theo phiên bản.",
   "sensors.snippets.customDocs": "Hướng dẫn cho tác giả công cụ",
   "sensors.products.openctemio-sensor": "Sensor quét",
   "sensors.products.openctemio-connector-tenable": "Connector Tenable.sc",
@@ -1284,5 +1284,11 @@
   "sensors.empty.pairHint": "Không cần sao chép bí mật: sensor in ra một mã để bạn xác nhận tại đây.",
   "sensors.empty.askAdmin": "Quản trị viên tổ chức có thể thêm sensor.",
   "sensors.empty.ciNoSensor": "Quét repository từ CI không cần sensor.",
-  "sensors.empty.ciLink": "Thiết lập CI/CD"
+  "sensors.empty.ciLink": "Thiết lập CI/CD",
+  "sensors.sharedOptOut.label": "Không bao giờ dùng cảm biến dùng chung",
+  "sensors.sharedOptOut.description": "Tắt (mặc định): lượt quét có thể chạy trên cảm biến dùng chung của hệ thống khi có. Bật: lượt quét của tổ chức này chỉ chạy trên cảm biến của chính tổ chức.",
+  "sensors.sharedOptOut.ownerOnly": "Chỉ chủ sở hữu tổ chức mới có thể thay đổi mục này.",
+  "sensors.sharedOptOut.optedOutToast": "Tổ chức này không còn dùng cảm biến dùng chung",
+  "sensors.sharedOptOut.optedInToast": "Có thể dùng cảm biến dùng chung khi sẵn có",
+  "sensors.sharedOptOut.error": "Không lưu được lựa chọn cảm biến dùng chung"
 }

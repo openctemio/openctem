@@ -118,15 +118,20 @@ func (r *AdminConsoleRepository) CreateSession(ctx context.Context, s *admin.Ses
 func (r *AdminConsoleRepository) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*admin.Session, error) {
 	const q = `
 		SELECT id, admin_id, token_hash, mfa_verified, created_at, expires_at, last_seen_at,
-		       COALESCE(ip, ''), COALESCE(user_agent, ''), auth_method
+		       COALESCE(ip, ''), COALESCE(user_agent, ''), auth_method, step_up_at
 		FROM admin_sessions WHERE token_hash = $1`
 	var (
 		s           admin.Session
 		id, adminID string
+		stepUpAt    sql.NullTime
 	)
 	err := r.db.QueryRowContext(ctx, q, tokenHash).Scan(
-		&id, &adminID, &s.TokenHash, &s.MFAVerified, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt, &s.IP, &s.UserAgent, &s.AuthMethod,
+		&id, &adminID, &s.TokenHash, &s.MFAVerified, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt, &s.IP, &s.UserAgent, &s.AuthMethod, &stepUpAt,
 	)
+	if stepUpAt.Valid {
+		at := stepUpAt.Time
+		s.StepUpAt = &at
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, admin.ErrSessionNotFound
 	}
@@ -140,6 +145,20 @@ func (r *AdminConsoleRepository) GetSessionByTokenHash(ctx context.Context, toke
 		return nil, fmt.Errorf("get admin session: %w", err)
 	}
 	return &s, nil
+}
+
+// MarkSessionStepUp records a step-up confirmation on a verified session. A
+// pending (not yet verified) session is never marked.
+func (r *AdminConsoleRepository) MarkSessionStepUp(ctx context.Context, id shared.ID, at time.Time) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE admin_sessions SET step_up_at = $2 WHERE id = $1 AND mfa_verified`, id.String(), at)
+	if err != nil {
+		return fmt.Errorf("mark admin session step-up: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return admin.ErrSessionNotFound
+	}
+	return nil
 }
 
 // TouchSession records that a session was just used.

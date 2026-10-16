@@ -87,10 +87,13 @@ func TestAdminSessions(t *testing.T) {
 	})
 
 	t.Run("a reason and a code are required", func(t *testing.T) {
+		// Inside the step-up window the route lets it through; the handler
+		// still wants a reason.
 		if code, _ := super.do(http.MethodDelete, "/api/v1/admin/console-sessions/"+theirs,
-			map[string]string{"totp_code": "123456"}, true); code != http.StatusBadRequest {
+			map[string]string{}, true); code != http.StatusBadRequest {
 			t.Fatalf("no reason: %d, want 400", code)
 		}
+		super.closeStepUpWindow()
 		if code, _ := super.do(http.MethodDelete, "/api/v1/admin/console-sessions/"+theirs,
 			map[string]string{"reason": "Laptop reported stolen, ticket 77"}, true); code != http.StatusUnauthorized {
 			t.Fatalf("no code: %d, want 401", code)

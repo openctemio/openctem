@@ -549,7 +549,7 @@ type TenantSMTPResolver interface {
 ### User Management (Production)
 
 Public registration is **off by default**: the sign-up policy (Console >
-System > Sign-up, seeded from `TENANT_CREATION_MODE`) is `admin_only`, RFC-025. People get accounts from an administrator, an invitation, or their
+System > Sign-up, a runtime switch under the `SIGNUP_MODE` ceiling, default `disabled`) is `admin_only`, RFC-025, RFC-104. People get accounts from an administrator, an invitation, or their
 organization's SSO (JIT on verified domains). See
 `docs/architecture/user-onboarding.md`.
 
@@ -593,7 +593,7 @@ POST /api/v1/invitations/accept-with-refresh   {"token": "..."}
 | **Sensor** | Customer-side software that authenticates *to* the platform with its own key (`octs_…`; legacy `rda_…`) and heartbeat. Umbrella term; one row in `sensors`. |
 | Scanner / Agent / Collector | Sensor **roles** (RFC-023 D18). *Agent* now means only the endpoint role. |
 | `type` | Legacy v1 value (`worker`, `scanner`, `sensor`, `collector`, `runner`), kept as input and storage. |
-| Platform sensor | `is_platform_sensor = true`: shared infrastructure run by the platform operator. Never one of a tenant's sensors: every tenant route answers 404 for it, and tenants see only the aggregated platform scanning service. |
+| Shared sensor | `scope = 'instance'`, `tenant_id` NULL (RFC-100): a sensor of the instance, run by its administrator. Never one of a tenant's sensors: every tenant route answers 404 for it, it never gets a tenant context, and tenants see only the aggregated platform scanning service. An organization sensor is `scope = 'organization'`. |
 | AI agent | AI-triage mode `agent` (`AIModeAgent`, module `ai_triage.agent`) — an LLM agent, not a sensor. |
 | Protocol v1 | `/api/v1/agent/*`: retired 2026-10-05. Sensors speak protocol v2 (`/api/v2/sensor/*`) only; a sensor older than v0.9.0 must be upgraded. |
 

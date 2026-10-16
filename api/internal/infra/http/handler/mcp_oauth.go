@@ -3,6 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html"
 	"mime"
 	"net/http"
 	"net/url"
@@ -13,6 +15,7 @@ import (
 	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -112,12 +115,12 @@ func (h *MCPOAuthHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
-// oauthErrorPage is the page shown when an authorization request cannot be
+// oauthErrorPageTemplate is the page shown when an authorization request cannot be
 // sent back to the client. Fixed text only: nothing from the request is
 // echoed.
-const oauthErrorPage = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cannot connect the application</title>
+const oauthErrorPageTemplate = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cannot connect the application</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;color:#222}@media(prefers-color-scheme:dark){body{background:#111;color:#ddd}}</style></head>
-<body><h1>Cannot connect the application</h1><p>The application asked to connect to OpenCTEM in a way that cannot be accepted (unknown application, or a return address it did not register). Nothing was shared.</p><p>Contact whoever provides the application.</p></body></html>`
+<body><h1>Cannot connect the application</h1><p>The application asked to connect to %s in a way that cannot be accepted (unknown application, or a return address it did not register). Nothing was shared.</p><p>Contact whoever provides the application.</p></body></html>`
 
 func writeOAuthErrorPage(w http.ResponseWriter, code string) {
 	hdr := w.Header()
@@ -127,7 +130,7 @@ func writeOAuthErrorPage(w http.ResponseWriter, code string) {
 	hdr.Set("X-Frame-Options", "DENY")
 	hdr.Set("X-OAuth-Error", code)
 	w.WriteHeader(http.StatusBadRequest)
-	_, _ = w.Write([]byte(oauthErrorPage))
+	_, _ = fmt.Fprintf(w, oauthErrorPageTemplate, html.EscapeString(brand.Name()))
 }
 
 // Token serves POST /oauth/token.

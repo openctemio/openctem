@@ -15,6 +15,7 @@ import (
 
 // SlackClient implements the Client interface for Slack notifications.
 type SlackClient struct {
+	product    string // brand name in test messages
 	webhookURL string
 	httpClient *http.Client
 }
@@ -26,6 +27,7 @@ func NewSlackClient(config Config) (*SlackClient, error) {
 	}
 
 	return &SlackClient{
+		product:    config.productName(),
 		webhookURL: config.WebhookURL,
 		// SSRF: SafeHTTPClient's dialer rejects connections to loopback,
 		// RFC1918, link-local (169.254.169.254 / cloud IMDS), CGNAT, and
@@ -131,7 +133,7 @@ func (c *SlackClient) Send(ctx context.Context, msg Message) (*SendResult, error
 // TestConnection tests the Slack webhook configuration.
 func (c *SlackClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	testMsg := Message{
-		Title:    "OpenCTEM.io Test Notification",
+		Title:    c.product + " Test Notification",
 		Body:     "This is a test notification to verify your Slack integration is working correctly.",
 		Severity: "low",
 	}

@@ -16,7 +16,6 @@ import (
 var packageFixOpenStatuses = []string{
 	string(vulnerability.FindingStatusNew), string(vulnerability.FindingStatusConfirmed),
 	string(vulnerability.FindingStatusInProgress), string(vulnerability.FindingStatusFixApplied),
-	string(vulnerability.FindingStatusValidatedFixed), string(vulnerability.FindingStatusNotObserved),
 }
 
 // ListPackageFixSiblings returns the open findings of one package version on

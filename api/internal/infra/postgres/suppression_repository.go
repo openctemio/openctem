@@ -233,7 +233,7 @@ func (r *SuppressionRepository) liftSuppressionsInTx(
 			// An accepted risk now held by the covering rule ends when that
 			// rule's acceptance ends.
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE findings SET acceptance_expires_at = $3
+				UPDATE findings SET acceptance_expires_at = `+acceptanceCappedSQL("$3::timestamptz", "findings")+`
 				WHERE tenant_id = $1 AND id = $2 AND status = 'accepted'`,
 				tenantID.String(), c.id, ruleAcceptanceEnd(cover.ExpiresAt(), time.Now())); err != nil {
 				return 0, fmt.Errorf("re-apply acceptance end: %w", err)
@@ -543,6 +543,14 @@ func (r *SuppressionRepository) CountEligibleApprovers(ctx context.Context, tena
 // here to keep the repository free of the permission package).
 const suppressionApprovePermission = "findings:suppressions:approve"
 
+// RecentMemberRemoval answers the latest time after since at which the
+// tenant lost a possible second approver: a member suspended, offboarded,
+// removed, expired, demoted, or a role change that can strip the approve
+// permission (recentApproverChange; nil: none).
+func (r *SuppressionRepository) RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error) {
+	return recentApproverChange(ctx, r.db, tenantID, since)
+}
+
 // IsTenantOwner reports whether the user is an active owner of the tenant.
 func (r *SuppressionRepository) IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
 	var ok bool
@@ -561,26 +569,32 @@ func (r *SuppressionRepository) IsTenantOwner(ctx context.Context, tenantID, use
 // finding the rule made accepted takes the rule's expiry as the end of its
 // acceptance (findings.acceptance_expires_at, read by the CI gate), or the
 // default acceptance length when the rule has none: an accepted risk always
-// ends. The rule and the finding must belong to the same tenant.
+// ends. Either is capped by the finding's priority. The rule and the finding must belong to the same tenant.
 func (r *SuppressionRepository) RecordSuppression(ctx context.Context, findingID, ruleID shared.ID, appliedBy string) error {
 	query := `
 		WITH rec AS (
 			INSERT INTO finding_suppressions (finding_id, suppression_rule_id, applied_by)
 			VALUES ($1, $2, $3)
 			ON CONFLICT (finding_id, suppression_rule_id) DO NOTHING
+			RETURNING 1
+		), acc AS (
+			UPDATE findings f
+			SET acceptance_expires_at = ` + acceptanceCappedSQL("COALESCE(sr.expires_at, $4)", "f") + `
+			FROM suppression_rules sr
+			WHERE f.id = $1 AND sr.id = $2 AND sr.tenant_id = f.tenant_id
+			  AND f.status = 'accepted'
+			RETURNING 1
 		)
-		UPDATE findings f
-		SET acceptance_expires_at = COALESCE(sr.expires_at, $4)
-		FROM suppression_rules sr
-		WHERE f.id = $1 AND sr.id = $2 AND sr.tenant_id = f.tenant_id
-		  AND f.status = 'accepted'
+		SELECT (SELECT count(*) FROM rec), (SELECT count(*) FROM acc)
 	`
 
-	_, err := r.db.ExecContext(ctx, query, findingID.String(), ruleID.String(), appliedBy,
-		ruleAcceptanceEnd(nil, time.Now()))
+	var recorded, accepted int
+	err := r.db.QueryRowContext(ctx, query, findingID.String(), ruleID.String(), appliedBy,
+		ruleAcceptanceEnd(nil, time.Now())).Scan(&recorded, &accepted)
 	if err != nil {
 		return fmt.Errorf("failed to record finding suppression: %w", err)
 	}
+	observeSuppressionHits(appliedBy, recorded)
 
 	return nil
 }
@@ -859,6 +873,17 @@ func (r *SuppressionRepository) buildRule(
 // ruleAcceptanceEnd is when an acceptance given by a suppression rule ends:
 // the rule's expiry, or the default acceptance length from now when the rule
 // has none (an accepted risk always ends; vulnerability.DefaultAcceptanceDuration).
+// acceptanceCappedSQL is the end of an acceptance a suppression rule gives
+// one finding: the rule's end, but never past the cap of that finding's
+// priority (finding_max_acceptance_days: P0 or KEV 30 days, P1 90, P2 180,
+// otherwise 365, the same as vulnerability.MaxAcceptanceFor). A rule that
+// matches findings of several priorities gives each the stricter of the two;
+// the rule itself keeps its end.
+func acceptanceCappedSQL(endExpr, alias string) string {
+	return "LEAST(" + endExpr + ", NOW() + make_interval(days => finding_max_acceptance_days(" +
+		alias + ".priority_class, " + alias + ".is_in_kev)))"
+}
+
 func ruleAcceptanceEnd(ruleExpiry *time.Time, now time.Time) time.Time {
 	if ruleExpiry != nil {
 		return *ruleExpiry

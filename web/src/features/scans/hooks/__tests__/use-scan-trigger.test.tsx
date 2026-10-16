@@ -191,4 +191,29 @@ describe('useScanTrigger', () => {
     const call = vi.mocked(toast.error).mock.calls.at(-1)
     expect((call?.[1] as { description?: string })?.description).toBeUndefined()
   })
+
+  // The API records a refused trigger as a blocked run (NO_SENSOR_FOR_TOOL
+  // with no sensor online): the scan page showed "No runs yet" until its
+  // next poll because only a started run refreshed the history.
+  it('refreshes the run history after a refusal as well as after a start', async () => {
+    const onSettled = vi.fn()
+    const onTriggered = vi.fn()
+    function Settled() {
+      const { trigger } = useScanTrigger({ onSettled, onTriggered })
+      return <button onClick={() => void trigger(scan)}>Trigger</button>
+    }
+    getMock.mockRejectedValue(notFound)
+    postMock.mockRejectedValueOnce(
+      new ApiClientError('No online sensor has nuclei', 'NO_SENSOR_FOR_TOOL', 400)
+    )
+    render(<Settled />)
+    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    expect(onSettled).toHaveBeenCalledWith(scan)
+    expect(onTriggered).not.toHaveBeenCalled()
+
+    postMock.mockResolvedValueOnce({})
+    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    expect(onSettled).toHaveBeenCalledTimes(2)
+    expect(onTriggered).toHaveBeenCalledTimes(1)
+  })
 })

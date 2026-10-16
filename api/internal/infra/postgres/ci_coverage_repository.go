@@ -356,9 +356,9 @@ func scanIDs(rows *sql.Rows) ([]shared.ID, error) {
 	return out, rows.Err()
 }
 
-// MarkStaleSourceFindings moves the open findings only this (stale or
-// archived) pipeline reported to not_observed with the reason
-// "source_stale": not fixed, not current. A sighting reopens them.
+// MarkStaleSourceFindings marks the open findings only this (stale or
+// archived) pipeline reported stale (observation_state): not fixed, not
+// current; the status stays. A sighting makes them present again.
 func (r *CIRunRepository) MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *cirun.Pipeline) ([]shared.ID, error) {
 	var ids []shared.ID
 	err := r.db.withFindingTransition(ctx, findingTransition{
@@ -366,9 +366,8 @@ func (r *CIRunRepository) MarkStaleSourceFindings(ctx context.Context, tenantID 
 		Message: "Not reported lately by its only CI pipeline, which went stale", Changes: map[string]any{"pipeline_id": p.ID.String()},
 	}, func(tx *sql.Tx) error {
 		//nolint:gosec // G202: fixed SQL fragments (lifecycle lists) and numbered placeholders only
-		rows, err := tx.QueryContext(ctx, `UPDATE findings f SET status = 'not_observed', resolution = 'source_stale',
-			closure_reason = NULL, verification = NULL, resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
-			WHERE `+soleSourceFindings+` AND f.status IN `+staleFromSQL+`
+		rows, err := tx.QueryContext(ctx, `UPDATE findings f SET observation_state = 'stale', updated_at = NOW()
+			WHERE `+soleSourceFindings+` AND f.status IN `+staleFromSQL+` AND f.observation_state = 'present'
 			RETURNING f.id::text`, tenantID.String(), p.ID.String(), p.RepositoryAssetID.String(), p.LastRunAt)
 		if err != nil {
 			return fmt.Errorf("mark stale-source findings: %w", err)

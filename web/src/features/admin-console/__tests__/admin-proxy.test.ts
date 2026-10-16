@@ -16,7 +16,12 @@ import { POST, GET } from '@/app/api/v1/admin/[...path]/route'
 const COOKIES =
   'auth_token=tenant-access; refresh_token=signed-in-refresh; csrf_token=tenant-csrf; admin_session=console; admin_csrf=c1; admin_idp=idp-state'
 
-function call(handler: typeof POST, method: string, path: string[]) {
+function call(
+  handler: typeof POST,
+  method: string,
+  path: string[],
+  extra: Record<string, string> = {}
+) {
   const req = new NextRequest(`http://ui.test/api/v1/admin/${path.join('/')}`, {
     method,
     // A same-origin browser write: Origin and the admin double-submit pair.
@@ -25,6 +30,7 @@ function call(handler: typeof POST, method: string, path: string[]) {
       authorization: 'Bearer tenant-access',
       origin: 'http://ui.test',
       'x-csrf-token': 'c1',
+      ...extra,
     },
   })
   return handler(req, { params: Promise.resolve({ path }) })
@@ -51,6 +57,11 @@ describe('admin API proxy', () => {
     await call(POST, 'POST', path)
     expect(sentCookie()).toContain('refresh_token=signed-in-refresh')
     expect(sentCookie()).toContain('admin_session=console')
+  })
+
+  it('forwards the step-up code of a protected action', async () => {
+    await call(POST, 'POST', ['administrators'], { 'x-admin-step-up': '123456' })
+    expect((fetchMock.mock.calls[0][1].headers as Headers).get('x-admin-step-up')).toBe('123456')
   })
 
   it('never forwards the refresh token to other admin routes', async () => {

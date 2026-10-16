@@ -135,6 +135,105 @@ func (r *SuppressionRepository) CountMatchingOpenFindings(ctx context.Context, r
 	return len(ids), nil
 }
 
+// SampleMatchingOpenFindings is the caller's view of the approval preview:
+// the findings the rule would close on assets the scope admits (counted up to
+// limit+1) and the first sampleSize of them, in id order. It reads only;
+// the scope decides per page of candidates, so findings of assets the caller
+// cannot see are neither counted nor listed. A nil scope admits nothing.
+func (r *SuppressionRepository) SampleMatchingOpenFindings(ctx context.Context, rule *suppression.Rule,
+	scope suppression.ScopeFilter, limit, sampleSize int,
+) (int, []suppression.SampleFinding, error) {
+	from := suppressionApplyFrom[vulnerability.FindingStatus(rule.SuppressionType().Disposition())]
+	if scope == nil || len(from) == 0 || limit < 0 {
+		return 0, nil, nil
+	}
+	var exactRule, prefixRule string
+	if rid := rule.RuleID(); rid != "" {
+		if p, ok := strings.CutSuffix(rid, "*"); ok {
+			prefixRule = likeEscape(p) + "%"
+		} else {
+			exactRule = rid
+		}
+	}
+	var assetID any
+	if a := rule.AssetID(); a != nil {
+		assetID = a.String()
+	}
+	args := []any{rule.TenantID().String(), pq.Array(from), rule.ToolName(), exactRule, prefixRule,
+		assetID, rule.PathPattern() != ""}
+
+	count := 0
+	var sampleIDs []string
+	after := "00000000-0000-0000-0000-000000000000"
+	for {
+		page, err := suppressionCandidatePage(ctx, r.db, args, after)
+		if err != nil {
+			return 0, nil, err
+		}
+		assets := make([]shared.ID, 0, len(page))
+		for _, c := range page {
+			assets = append(assets, c.match.AssetID)
+		}
+		admit, err := scope(ctx, rule.TenantID(), assets)
+		if err != nil {
+			return 0, nil, fmt.Errorf("resolve data scope: %w", err)
+		}
+		for _, c := range page {
+			if !rule.MatchesCriteria(c.match) || !admit(c.match.AssetID) {
+				continue
+			}
+			count++
+			if len(sampleIDs) < sampleSize {
+				sampleIDs = append(sampleIDs, c.id)
+			}
+			if count > limit {
+				break
+			}
+		}
+		if count > limit || len(page) < suppressionApplyPage {
+			break
+		}
+		after = page[len(page)-1].id
+	}
+	sample, err := r.loadSample(ctx, rule.TenantID(), sampleIDs)
+	return count, sample, err
+}
+
+// loadSample reads the display fields of the sampled findings, tenant-scoped,
+// in the order of ids. The message of a secret finding can quote the secret,
+// so it is never read: the rule id and path identify it.
+func (r *SuppressionRepository) loadSample(ctx context.Context, tenantID shared.ID, ids []string) ([]suppression.SampleFinding, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT f.id::text, f.asset_id::text, COALESCE(a.name, ''), COALESCE(f.rule_id, ''), COALESCE(f.file_path, ''),
+		       CASE WHEN f.finding_type = 'secret' OR f.source = 'secret' THEN '' ELSE left(COALESCE(f.message, ''), 200) END, f.severity::text, f.status::text
+		FROM findings f
+		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
+		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])
+		ORDER BY f.id`, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("load preview sample: %w", err)
+	}
+	defer rows.Close()
+	var out []suppression.SampleFinding
+	for rows.Next() {
+		var f suppression.SampleFinding
+		var id, asset string
+		if err := rows.Scan(&id, &asset, &f.AssetName, &f.RuleID, &f.FilePath, &f.Title, &f.Severity, &f.Status); err != nil {
+			return nil, fmt.Errorf("scan preview sample: %w", err)
+		}
+		f.ID, _ = shared.IDFromString(id)
+		f.AssetID, _ = shared.IDFromString(asset)
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate preview sample: %w", err)
+	}
+	return out, nil
+}
+
 // Approve persists the approved rule, closes the open findings it matches and
 // records the audit entry in one transaction (see suppression.Repository).
 func (r *SuppressionRepository) Approve(
@@ -212,6 +311,7 @@ func (r *SuppressionRepository) Approve(
 	if err := tx.Commit(); err != nil {
 		return res, fmt.Errorf("commit transaction: %w", err)
 	}
+	observeSuppressionHits("approval", res.Applied)
 	return res, nil
 }
 
@@ -234,7 +334,7 @@ func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Ru
 		UPDATE findings f SET
 			status = $4, resolution = 'suppressed', closure_reason = CASE WHEN $4::varchar = 'accepted' THEN 'risk_accepted' END, verification = NULL,
 			resolved_at = NOW(), resolved_by = NULL, updated_at = NOW(),
-			acceptance_expires_at = CASE WHEN $4::varchar = 'accepted' THEN $5::timestamptz END
+			acceptance_expires_at = CASE WHEN $4::varchar = 'accepted' THEN `+acceptanceCappedSQL("$5::timestamptz", "f")+` END
 		FROM old
 		WHERE f.tenant_id = $1 AND f.id = old.id
 		RETURNING f.id::text, old.status`,
