@@ -122,6 +122,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `POST /api/v1/ci/gate-overrides`
 - `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
 - `PATCH /api/v1/attachments/storage-config`
+- `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` (finding lifecycles, RFC-110)
 
 Some changes need it only in one case, decided by the service through the
 same check (`shared.RecentAuthGate`): making someone an administrator or an
@@ -219,6 +220,22 @@ and SBOM import write it.
 > self-verify their own fix (AUTHZ B1, api#505). Migration `000217` backfilled the
 > four granular perms onto every role that already held `findings:write`, so the
 > tightening is honest-not-breaking: nobody lost an action they could perform before.
+
+#### Finding lifecycles (`/api/v1/lifecycle-sub-statuses`, `/api/v1/lifecycles`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/lifecycle-sub-statuses`, `GET /api/v1/lifecycles` · `/{id}` · `/{id}/versions` · `/{id}/versions/{version_id}` | `findings:read` |
+| `POST /api/v1/lifecycle-sub-statuses` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/reactivate` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/versions` · `PUT /{id}/versions/{version_id}` · `POST /{id}/versions/{version_id}/test` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up |
+
+> Organization configuration (no finding data), tenant from the token; another
+> organization's sub-status, lifecycle or version is 404. A lifecycle can only
+> add constraints to the status moves the platform allows
+> ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)); `findings:lifecycles:write`
+> is granted to owners and administrators by default (migration
+> `finding_lifecycles_permission`).
 
 #### Exposures (`/api/v1/exposures`)
 

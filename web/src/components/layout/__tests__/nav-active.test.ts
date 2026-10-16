@@ -68,12 +68,14 @@ describe('Discovery: one row per section', () => {
 describe('Mobilization: Remediation covers its section tabs', () => {
   const remediation = () => leaves('Mobilization').find((i) => i.url === '/remediation')!
 
-  it('stays active on the Solution families tab (/remediations)', () => {
-    // /remediations is not a child route of /remediation, but it is one of the
-    // row's section tabs, so the row still shows where you are.
+  it('stays active on every section tab', () => {
     expect(checkIsActive('/remediation', remediation())).toBe(true)
-    expect(checkIsActive('/remediations', remediation())).toBe(true)
-    expect(activeSubItemUrl('/remediations', leaves('Mobilization'))).toBe('/remediation')
+    expect(checkIsActive('/remediation/suggestions', remediation())).toBe(true)
+    expect(activeSubItemUrl('/remediation/tasks', leaves('Mobilization'))).toBe('/remediation')
+  })
+
+  it('no longer covers the removed solution families page', () => {
+    expect(checkIsActive('/remediation' + 's', remediation())).toBe(false)
   })
 
   it('does not light up for an unrelated route', () => {
