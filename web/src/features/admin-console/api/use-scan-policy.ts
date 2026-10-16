@@ -107,3 +107,36 @@ export function createSharedSensorEnrollmentToken(input: {
     body: input,
   })
 }
+
+/**
+ * Shared sensors on this instance (RFC-100 §5): the instance switch (off by
+ * default) and whether organizations without a decision may use them
+ * (null until the administrator chooses; null refuses them; turning the
+ * switch on needs the choice in the same change). `ready` is false while shared sensors cannot be used yet; the
+ * API refuses to turn the switch on until then.
+ */
+export interface SharedSensorsSetting {
+  enabled: boolean
+  new_orgs: boolean | null
+  ready: boolean
+  version: number
+}
+
+const SHARED_KEY = '/settings/shared-sensors'
+
+/** The setting (any administrator reads it). */
+export function useSharedSensorsSetting() {
+  return useSWR<SharedSensorsSetting>(SHARED_KEY, adminFetcher)
+}
+
+/** Super admin, a fresh authenticator code and a reason. */
+export function saveSharedSensorsSetting(input: {
+  enabled: boolean
+  /** Required when enabled is true. */
+  new_orgs: boolean | null
+  version: number
+  reason: string
+  totp_code: string
+}) {
+  return adminFetch<SharedSensorsSetting>(SHARED_KEY, { method: 'PUT', body: input })
+}
