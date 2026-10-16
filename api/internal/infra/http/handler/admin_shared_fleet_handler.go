@@ -21,6 +21,7 @@ import (
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -66,8 +67,9 @@ type SharedQueueLaneResponse struct {
 
 // SharedOrgUsageResponse counts one organization's shared jobs.
 type SharedOrgUsageResponse struct {
-	TenantID     string `json:"tenant_id"`
-	TenantName   string `json:"tenant_name"`
+	TenantID string `json:"tenant_id"`
+	// TenantName: for super and operations administrators only.
+	TenantName   string `json:"tenant_name,omitempty"`
 	Queued       int    `json:"queued"`
 	Running      int    `json:"running"`
 	Completed24h int    `json:"completed_24h"`
@@ -82,9 +84,10 @@ type SharedQueueResponse struct {
 
 // SharedJobResponse is one shared job's metadata.
 type SharedJobResponse struct {
-	ID          string     `json:"id"`
-	TenantID    string     `json:"tenant_id"`
-	TenantName  string     `json:"tenant_name"`
+	ID       string `json:"id"`
+	TenantID string `json:"tenant_id"`
+	// TenantName: for super and operations administrators only.
+	TenantName  string     `json:"tenant_name,omitempty"`
 	Type        string     `json:"type"`
 	Tool        string     `json:"tool"`
 	Status      string     `json:"status"`
@@ -129,6 +132,14 @@ type SharedFleetReasonRequest struct {
 	TOTPCode string `json:"totp_code,omitempty"`
 }
 
+// seesOrganizationNames: organization names in the queue and job lists are
+// for super and operations administrators; a read-only administrator gets
+// the counts and opaque ids only.
+func seesOrganizationNames(r *http.Request) bool {
+	a := middleware.GetAdminUser(r.Context())
+	return a != nil && (a.Role() == admin.AdminRoleSuperAdmin || a.Role() == admin.AdminRoleOpsAdmin)
+}
+
 func toSharedJobResponse(j sensorapp.SharedJob) SharedJobResponse {
 	out := SharedJobResponse{ID: j.ID.String(), TenantID: j.TenantID.String(), TenantName: j.TenantName, Type: j.Type,
 		Tool: j.Tool, Status: j.Status, SensorName: j.SensorName, CreatedAt: j.CreatedAt, StartedAt: j.StartedAt, CompletedAt: j.CompletedAt}
@@ -163,7 +174,7 @@ func (h *AdminSharedFleetHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Queue returns the queue aggregates.
 // @Summary      Shared sensor queue
-// @Description  Queued and running shared jobs per tool lane, and per organization (with the last day's completed and failed counts). Counts only. Any administrator.
+// @Description  Queued and running shared jobs per tool lane, and per organization (with the last day's completed and failed counts). Counts only. Any administrator; organization names only for super and operations administrators.
 // @Tags         Admin System
 // @Produce      json
 // @Success      200  {object}  SharedQueueResponse
@@ -180,7 +191,11 @@ func (h *AdminSharedFleetHandler) Queue(w http.ResponseWriter, r *http.Request) 
 	for _, l := range q.Lanes {
 		out.Lanes = append(out.Lanes, SharedQueueLaneResponse(l))
 	}
+	names := seesOrganizationNames(r)
 	for _, o := range q.Organizations {
+		if !names {
+			o.TenantName = ""
+		}
 		out.Organizations = append(out.Organizations, SharedOrgUsageResponse{TenantID: o.TenantID.String(), TenantName: o.TenantName,
 			Queued: o.Queued, Running: o.Running, Completed24h: o.Completed, Failed24h: o.Failed})
 	}
@@ -189,7 +204,7 @@ func (h *AdminSharedFleetHandler) Queue(w http.ResponseWriter, r *http.Request) 
 
 // Jobs returns shared job metadata.
 // @Summary      Shared jobs (metadata)
-// @Description  Shared jobs, newest first: organization, type, tool, state, shared sensor and times. Never targets, payload, result or error text. Any administrator.
+// @Description  Shared jobs, newest first: organization, type, tool, state, shared sensor and times. Never targets, payload, result or error text. Any administrator; organization names only for super and operations administrators.
 // @Tags         Admin System
 // @Produce      json
 // @Param        sensor_id  query     string  false  "Shared sensor ID"
@@ -222,7 +237,11 @@ func (h *AdminSharedFleetHandler) Jobs(w http.ResponseWriter, r *http.Request) {
 	}
 	out := SharedJobListResponse{Data: make([]SharedJobResponse, 0, len(res.Data)), Total: res.Total, Page: res.Page,
 		PerPage: res.PerPage, TotalPages: res.TotalPages}
+	names := seesOrganizationNames(r)
 	for _, j := range res.Data {
+		if !names {
+			j.TenantName = ""
+		}
 		out.Data = append(out.Data, toSharedJobResponse(j))
 	}
 	writeJSON(w, http.StatusOK, out)
