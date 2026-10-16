@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -278,27 +279,49 @@ func bulkRefusalReason(err error) string {
 
 // loadResolveEvidence adds to facts the proof a resolve may rest on: the
 // finding's verification checklist (complete, and by whom) and whether its
-// latest completed retest confirmed the fix. Tenant-scoped reads.
+// latest completed retest confirmed the fix. Only evidence newer than the
+// finding's last reopen and last sighting counts: a regression, or a scan
+// that still sees the finding, makes earlier proof stale, so a critical
+// finding that came back cannot be closed on the evidence of the previous
+// fix. Tenant-scoped reads.
 func loadResolveEvidence(ctx context.Context, db *sql.DB, tenantID, findingID shared.ID, facts *vulnerability.TransitionFacts) error {
+	var since sql.NullTime
+	err := db.QueryRowContext(ctx, `
+		SELECT GREATEST(last_reopened_at, last_seen_at) FROM findings
+		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), findingID.String()).Scan(&since)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read finding evidence horizon: %w", err)
+	}
+	fresh := func(at *time.Time) bool {
+		return at != nil && (!since.Valid || at.After(since.Time))
+	}
+
 	checklist, err := loadVerificationChecklist(ctx, db, tenantID, findingID)
 	if err != nil {
 		return err
 	}
-	if checklist != nil && checklist.FindingID() == findingID && checklist.IsComplete() {
+	if checklist != nil && checklist.FindingID() == findingID && checklist.IsComplete() && fresh(checklist.CompletedAt()) {
 		facts.ChecklistComplete = true
 		if by := checklist.CompletedBy(); by != nil {
 			facts.ChecklistCompletedBy = *by
 		}
 	}
-	var outcome sql.NullString
+	var (
+		outcome     sql.NullString
+		completedAt sql.NullTime
+	)
 	err = db.QueryRowContext(ctx, `
-		SELECT outcome FROM finding_retests
+		SELECT outcome, completed_at FROM finding_retests
 		WHERE tenant_id = $1 AND finding_id = $2 AND status = 'completed'
 		ORDER BY completed_at DESC NULLS LAST
-		LIMIT 1`, tenantID.String(), findingID.String()).Scan(&outcome)
+		LIMIT 1`, tenantID.String(), findingID.String()).Scan(&outcome, &completedAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("read latest retest: %w", err)
 	}
-	facts.RetestConfirmedFixed = outcome.String == "confirmed_fixed"
+	var retestAt *time.Time
+	if completedAt.Valid {
+		retestAt = &completedAt.Time
+	}
+	facts.RetestConfirmedFixed = outcome.String == "confirmed_fixed" && fresh(retestAt)
 	return nil
 }
