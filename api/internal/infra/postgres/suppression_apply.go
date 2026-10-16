@@ -200,14 +200,15 @@ func (r *SuppressionRepository) SampleMatchingOpenFindings(ctx context.Context, 
 }
 
 // loadSample reads the display fields of the sampled findings, tenant-scoped,
-// in the order of ids.
+// in the order of ids. The message of a secret finding can quote the secret,
+// so it is never read: the rule id and path identify it.
 func (r *SuppressionRepository) loadSample(ctx context.Context, tenantID shared.ID, ids []string) ([]suppression.SampleFinding, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.id::text, f.asset_id::text, COALESCE(a.name, ''), COALESCE(f.rule_id, ''), COALESCE(f.file_path, ''),
-		       left(COALESCE(f.message, ''), 200), f.severity::text, f.status::text
+		       CASE WHEN f.finding_type = 'secret' OR f.source = 'secret' THEN '' ELSE left(COALESCE(f.message, ''), 200) END, f.severity::text, f.status::text
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
 		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])

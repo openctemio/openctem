@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -508,8 +509,15 @@ func (h *SuppressionHandler) PreviewRule(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	sample := make([]SuppressionPreviewFindingResp, 0, len(preview.Sample))
-	for _, f := range preview.Sample {
+	// The approver may approve without being allowed to read findings: the
+	// examples are finding data, so they need findings:read as well (the
+	// counts stay).
+	examples := preview.Sample
+	if !middleware.HasPermission(r.Context(), permission.FindingsRead.String()) {
+		examples = nil
+	}
+	sample := make([]SuppressionPreviewFindingResp, 0, len(examples))
+	for _, f := range examples {
 		sample = append(sample, SuppressionPreviewFindingResp{
 			ID: f.ID.String(), AssetID: f.AssetID.String(), AssetName: f.AssetName, RuleID: f.RuleID,
 			FilePath: f.FilePath, Title: f.Title, Severity: f.Severity, Status: f.Status,

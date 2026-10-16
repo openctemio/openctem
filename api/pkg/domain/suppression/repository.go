@@ -96,7 +96,8 @@ type ApplyResult struct {
 type ScopeFilter func(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, error)
 
 // SampleFinding is one finding of a preview sample: enough to recognize the
-// finding, never its evidence or a secret.
+// finding. Never its evidence; the title of a secret finding is empty (its
+// message can quote the secret), so its rule id and path identify it.
 type SampleFinding struct {
 	ID        shared.ID
 	AssetID   shared.ID
