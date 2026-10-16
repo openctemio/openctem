@@ -424,3 +424,39 @@ func TestRepositoryLifecyclePipelines(t *testing.T) {
 		t.Fatal("pipeline still archived")
 	}
 }
+
+// UnjudgedRuns lists only the tenant's own runs that are still running and
+// older than the cutoff.
+func TestCIRunRepositoryUnjudgedRuns(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	repo := NewCIRunRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	other := seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	otherAsset := seedTestAsset(ctx, t, db, other)
+	now := time.Now().UTC()
+	mk := func(tid, aid shared.ID, age time.Duration) *cirun.Run {
+		_, hash, _ := cirun.NewToken()
+		exp := now.Add(time.Hour)
+		r := &cirun.Run{ID: shared.NewID(), TenantID: tid, RepositoryAssetID: aid, Provider: cirun.ProviderGitHub,
+			Issuer: cirun.GitHubIssuer, Repository: "github.com/acme/api", Branch: "main", CommitSHA: "abcdef1234567",
+			Status: cirun.StatusRunning, TokenHash: hash, TokenExpiresAt: &exp, CreatedAt: now.Add(-age), UpdatedAt: now}
+		if err := repo.CreateRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	old, fresh, foreign := mk(tenant, asset, 7*time.Hour), mk(tenant, asset, time.Hour), mk(other, otherAsset, 7*time.Hour)
+	done := mk(tenant, asset, 8*time.Hour)
+	if err := repo.SaveVerdict(ctx, tenant, done.ID, cirun.VerdictPass, []byte(`{}`), now, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.UnjudgedRuns(ctx, tenant, now.Add(-6*time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != old.ID {
+		t.Fatalf("got %+v, want only the old running run %s (not fresh %s, foreign %s)", got, old.ID, fresh.ID, foreign.ID)
+	}
+}
