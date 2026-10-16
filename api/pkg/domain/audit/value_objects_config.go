@@ -35,6 +35,11 @@ const (
 	ActionAssignmentRuleCreated Action = "assignment_rule.created"
 	ActionAssignmentRuleUpdated Action = "assignment_rule.updated"
 	ActionAssignmentRuleDeleted Action = "assignment_rule.deleted"
+
+	ActionTicketMappingCreated   Action = "ticket_mapping.created"
+	ActionTicketMappingUpdated   Action = "ticket_mapping.updated"
+	ActionTicketMappingPublished Action = "ticket_mapping.published"
+	ActionTicketMappingDeleted   Action = "ticket_mapping.deleted"
 )
 
 // Resource types for the configuration-change actions.
@@ -45,6 +50,7 @@ const (
 	ResourceTypePriorityRule       ResourceType = "priority_rule"
 	ResourceTypeScopeRule          ResourceType = "scope_rule"
 	ResourceTypeAssignmentRule     ResourceType = "assignment_rule"
+	ResourceTypeTicketMapping      ResourceType = "ticket_mapping"
 )
 
 var configActions = map[Action]struct{}{
@@ -71,6 +77,10 @@ var configActions = map[Action]struct{}{
 	ActionAssignmentRuleCreated:           {},
 	ActionAssignmentRuleUpdated:           {},
 	ActionAssignmentRuleDeleted:           {},
+	ActionTicketMappingCreated:            {},
+	ActionTicketMappingUpdated:            {},
+	ActionTicketMappingPublished:          {},
+	ActionTicketMappingDeleted:            {},
 }
 
 var configResourceTypes = map[ResourceType]struct{}{
@@ -80,6 +90,7 @@ var configResourceTypes = map[ResourceType]struct{}{
 	ResourceTypePriorityRule:       {},
 	ResourceTypeScopeRule:          {},
 	ResourceTypeAssignmentRule:     {},
+	ResourceTypeTicketMapping:      {},
 }
 
 func isConfigAction(a Action) bool {

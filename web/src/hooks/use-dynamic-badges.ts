@@ -46,6 +46,29 @@ interface DashboardStats {
 // ============================================
 
 /**
+ * The number of finding approval requests waiting for a decision, under the
+ * caller's data scope (the list's own status_counts). An action list like the
+ * ownership review queue: shown whatever the sidebar-badges flag says, one
+ * cached call, only for approvers.
+ */
+function usePendingApprovalCount(shouldFetch: boolean): number | undefined {
+  const { currentTenant } = useTenant()
+  const key =
+    currentTenant?.id && shouldFetch ? '/api/v1/approvals?status=pending&page=1&per_page=1' : null
+  const { data } = useSWR<{ status_counts?: { pending?: number } }>(
+    key,
+    (url: string) => get<{ status_counts?: { pending?: number } }>(url),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 60000,
+      errorRetryCount: 1,
+    }
+  )
+  return data?.status_counts?.pending
+}
+
+/**
  * Fetch dashboard stats for badge counts
  * Uses long cache since badge counts don't need real-time accuracy
  * Note: Tenant is extracted from JWT token by backend, not from URL
@@ -112,10 +135,17 @@ export function useDynamicBadges(): DynamicBadges {
     can(Permission.AssetsRead) && moduleIds.includes('attack_surface')
   )
 
+  const pendingApprovals = usePendingApprovalCount(
+    can(Permission.FindingsApprove) && moduleIds.includes('findings')
+  )
+
   const badges = useMemo(() => {
     const result: DynamicBadges = {}
     if (reviewWaiting && reviewWaiting > 0) {
       result['/attack-surface'] = String(reviewWaiting)
+    }
+    if (pendingApprovals && pendingApprovals > 0) {
+      result['/findings/approvals'] = String(pendingApprovals)
     }
 
     // Respect the feature flag on the RESULT, not just the fetch. isPaused only
@@ -147,7 +177,7 @@ export function useDynamicBadges(): DynamicBadges {
     }
 
     return result
-  }, [badgesEnabled, dashboardStats, credentialStats, reviewWaiting])
+  }, [badgesEnabled, dashboardStats, credentialStats, reviewWaiting, pendingApprovals])
 
   return badges
 }
