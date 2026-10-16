@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15); S0 in review (#2308), S2 in review, S4 in review, the rest designed |
+| Status | Accepted (2026-10-15); S0 in review (#2308), S2 in review (#2325), S3 in review, S4 in review, the rest designed |
 | Scope | api (schema, access policy, claim, enrollment, signer, quotas, console), web (console fleet page, tenant view), sdk-go (per-job isolation, target re-check), sensor (instance enrollment, isolation profile), helm-charts and compose (bundled sensor) |
 | Architecture | [sensors.md](../architecture/sensors.md#shared-sensors-on-the-tenant-plane) |
 | Amends | RFC-023 D14 (public targets only becomes a deployment default), RFC-022 (console owns the shared fleet), RFC-090 W11/W12 (shared-pool lanes replace `get_next_platform_job`) |
@@ -87,7 +87,7 @@ scale, adapted to scanning:
 | "Run untagged jobs" switch | per shared sensor: "accept unzoned public jobs" (pool) or "zone jobs only" |
 | Protected runners take protected jobs only | "approved jobs only": signed jobs from approved scan definitions or above a trust level |
 | Paused runner, maximum job timeout | console pause and drain, per-sensor maximum job duration |
-| Instance runners on for new projects by default, per-group toggle | "Shared sensors for new organizations" (§5), per-organization allow or deny, organization opt-out |
+| Instance runners on for new projects by default, per-group toggle | "Organizations without a decision" (§5), chosen explicitly when shared sensors are turned on (no implicit default), per-organization allow or deny, organization opt-out |
 | Compute quota with a cost factor per runner type | generic per-organization limits (§10), per-tool weights later |
 | Ephemeral VM per job on the hosted fleet | per-job isolation on shared sensors (§8) |
 
@@ -102,13 +102,22 @@ Three layers, all of which must allow:
    step-up, audited). Off on every deployment until S0, S5 and S11 have
    landed (§11); then turning it on is an explicit administrator action, on
    the hosted service and on self-hosted installs alike.
-2. **Default for new organizations** `shared_sensors.new_orgs` (on by
-   default in both deployments), plus a **per-organization allow or deny** by
-   the instance administrator (the entitlement deny key `shared_sensors`,
-   RFC-064). A deny wins over the default.
+2. **Default for organizations without a decision** `shared_sensors.new_orgs`,
+   plus a **per-organization allow or deny** by the instance administrator
+   (the entitlement deny key `shared_sensors`, RFC-064). A deny wins over the
+   default. The default is **unset** until the administrator chooses, and
+   unset refuses: turning the instance switch on requires choosing allow or
+   deny for organizations without a decision **in the same action** (the API
+   answers 400 `NEW_ORGS_CHOICE_REQUIRED` otherwise), so a switch-on alone
+   never grants shared sensors to every organization (decision 2026-10-16,
+   security first: explicit rather than an implicit default).
 3. **Organization opt-out**: the organization owner may say "never send our
    scans to shared sensors" (data residency, allowlists, policy). Default:
    use them when available.
+
+The default applies to every organization without an
+administrator's decision. An organization does not keep a copy of the
+default from the day it was created.
 
 `PlatformSensorsAllowed` becomes this policy. Its refusal names the real
 reason ("shared sensors are turned off on this instance", "your
@@ -120,7 +129,7 @@ sensors for your organization") and never mentions an edition.
 | Setting | Hosted service | Self-hosted |
 |---|---|---|
 | Shared sensors exist | the service's regional pools | none until the administrator enrolls one; the bundled compose/Helm sensor enrolls at instance scope |
-| Shared sensors for new organizations | on | on |
+| Organizations without a decision | chosen explicitly when the switch is turned on (unset refuses) | chosen explicitly when the switch is turned on (unset refuses) |
 | Domain proof before shared sensors scan (RFC-054 §8.1) | **on** | off |
 | Shared sensors may scan internal zones (§6.1) | **off** (public targets only) | on (only zones the administrator assigns) |
 | Limits | written by the control plane per organization | none unless the administrator sets them |
@@ -231,8 +240,8 @@ needs them.
 |---|---|---|
 | S0 | tenant claims skip shared jobs; least-privilege grant clamp; the trigger's target check on every workflow step | in review (#2308) |
 | S1 | this RFC | this PR |
-| S2 | `sensors.scope`, nullable `tenant_id`, drop `is_platform_sensor`; scope fixed at creation; a shared sensor's grant limited to scan, validate and retest | in review |
-| S3 | access policy (§5) with the instance switch off everywhere | designed |
+| S2 | `sensors.scope`, nullable `tenant_id`, drop `is_platform_sensor`; scope fixed at creation; a shared sensor's grant limited to scan, validate and retest | in review (#2325) |
+| S3 | access policy (§5) with the instance switch off everywhere: instance setting, per-organization allow or deny, owner opt-out, rollout gate in code | in review |
 | S4 | instance enrollment token (console issue, bootstrap registration, redemption through pairing), bundled sensor at instance scope ([architecture](../architecture/sensors.md#shared-sensor-enrollment)) | in review |
 | S5 | shared claim path (lanes, fair share, region, untagged switch, approved-only); remove `get_next_platform_job` | designed |
 | S5a | results of a shared sensor bound to the job it holds under its lease epoch, written into the command's organization; no push ([architecture](../architecture/sensor-result-binding.md#shared-sensors)) | in review |

@@ -743,6 +743,8 @@ type Services struct {
 
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
+	RemediationTask     *remediation.TaskService
+	RemediationSuggest  *remediation.SuggestionService
 	RemediationGroup    *remediation.GroupService
 
 	// Business Units
@@ -1556,6 +1558,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(remediation.NewCampaignFilterResolver(s.Vulnerability, s.BulkGuard))
+	// Remediation tasks (RFC-098): who fixes an action and by when; state,
+	// deadline and counters derived from the member findings.
+	s.RemediationTask = remediation.NewTaskService(repos.RemediationTask, log)
+	s.RemediationTask.SetDataScope(s.DataScope)
+	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
+	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Remediation suggestions: algorithms propose, a person accepts.
+	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
+	s.RemediationSuggest.SetDataScope(s.DataScope)
+	s.RemediationSuggest.SetAuditLogger(s.Audit)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -2071,7 +2083,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
-	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector)
+	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
@@ -2154,7 +2166,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithToolAvailability(s.Tool),
 		// Workflow readiness: the New Scan picker, the workflow list and
 		// the refusal of a workflow no sensor here can run.
-		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor)),
+		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor, s.SharedSensorsAllowed)),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
@@ -2219,7 +2231,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scanrun package
 	pipelineAuditAdapter := app.NewScanWorkflowAuditServiceAdapter(s.Audit)
-	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector)
+	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	scanWorkflowSecurityValidatorAdapter := app.NewScanWorkflowSecurityValidatorAdapter(securityValidator)
 
 	// Initialize scan run service with security validator, audit service, transaction support, and tool repo
@@ -3208,4 +3220,15 @@ func (a pentestJiraTicketing) CreateFindingTicket(ctx context.Context, tenantID,
 		return "", err
 	}
 	return info.TicketURL, nil
+}
+
+// SharedSensorsAllowed is the shared sensor access policy (RFC-100 §5) of
+// the scan policy service, read when called: the service is wired after the
+// scan services that hold this method. Without it every organization is
+// refused.
+func (s *Services) SharedSensorsAllowed(ctx context.Context, tenantID shared.ID) (bool, string) {
+	if s == nil || s.ScanPolicy == nil {
+		return false, scanpolicy.ReasonSharedSensorsUnavailable
+	}
+	return s.ScanPolicy.SharedSensorsAllowed(ctx, tenantID)
 }

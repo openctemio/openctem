@@ -82,7 +82,7 @@ func (r *IdleLifecycleRepository) SetStage(ctx context.Context, tenantID shared.
 // Status returns the organization's lifecycle (active when there is no row).
 func (r *IdleLifecycleRepository) Status(ctx context.Context, tenantID shared.ID) (*lifecycle.Status, error) {
 	var (
-		stage                       sql.NullString
+		stage                    sql.NullString
 		changed, setAt, lastSign sql.NullTime
 		enabled                  sql.NullBool
 		reason                   sql.NullString

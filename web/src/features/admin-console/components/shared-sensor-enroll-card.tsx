@@ -71,7 +71,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
         return
       }
       setOpen(false)
-      toast.error(e instanceof Error ? e.message : t('admin.sharedSensors.issueFailed'))
+      toast.error(e instanceof Error ? e.message : t('admin.sharedSensorEnroll.issueFailed'))
     } finally {
       setBusy(false)
     }
@@ -81,13 +81,13 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
     <>
       <Card>
         <CardHeader>
-          <CardTitle>{t('admin.sharedSensors.title')}</CardTitle>
-          <CardDescription>{t('admin.sharedSensors.desc')}</CardDescription>
+          <CardTitle>{t('admin.sharedSensorEnroll.title')}</CardTitle>
+          <CardDescription>{t('admin.sharedSensorEnroll.desc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {issued ? (
             <div className="space-y-2 rounded-md border p-3">
-              <p className="text-sm font-medium">{t('admin.sharedSensors.shownOnce')}</p>
+              <p className="text-sm font-medium">{t('admin.sharedSensorEnroll.shownOnce')}</p>
               <div className="flex min-w-0 items-center gap-2">
                 <code className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all select-all">
                   {`${SHARED_SENSOR_TOKEN_ENV}=${issued.token}`}
@@ -96,7 +96,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
                   type="button"
                   size="icon"
                   variant="outline"
-                  aria-label={t('admin.sharedSensors.copy')}
+                  aria-label={t('admin.sharedSensorEnroll.copy')}
                   onClick={async () => {
                     if (await copyToClipboard(issued.token)) setCopied(true)
                   }}
@@ -105,30 +105,30 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
-                {t('admin.sharedSensors.expires', undefined, {
+                {t('admin.sharedSensorEnroll.expires', undefined, {
                   time: new Date(issued.expires_at).toLocaleString(),
                 })}
               </p>
               <div className="flex justify-end">
                 <Button variant="outline" onClick={() => setIssued(null)}>
-                  {t('admin.sharedSensors.done')}
+                  {t('admin.sharedSensorEnroll.done')}
                 </Button>
               </div>
             </div>
           ) : canEdit ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor={`${id}-name`}>{t('admin.sharedSensors.name')}</Label>
+                <Label htmlFor={`${id}-name`}>{t('admin.sharedSensorEnroll.name')}</Label>
                 <Input
                   id={`${id}-name`}
                   value={name}
                   maxLength={128}
-                  placeholder={t('admin.sharedSensors.namePlaceholder')}
+                  placeholder={t('admin.sharedSensorEnroll.namePlaceholder')}
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor={`${id}-ttl`}>{t('admin.sharedSensors.ttl')}</Label>
+                <Label htmlFor={`${id}-ttl`}>{t('admin.sharedSensorEnroll.ttl')}</Label>
                 <Input
                   id={`${id}-ttl`}
                   type="number"
@@ -141,7 +141,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
               </div>
               <div className="flex justify-end sm:col-span-2">
                 <Button onClick={() => setOpen(true)} disabled={!ttlValid || busy}>
-                  {t('admin.sharedSensors.issue')}
+                  {t('admin.sharedSensorEnroll.issue')}
                 </Button>
               </div>
             </div>
@@ -156,8 +156,8 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
         onOpenChange={(o) => {
           if (!busy) setOpen(o)
         }}
-        title={t('admin.sharedSensors.confirmTitle')}
-        desc={<p>{t('admin.sharedSensors.confirmDesc')}</p>}
+        title={t('admin.sharedSensorEnroll.confirmTitle')}
+        desc={<p>{t('admin.sharedSensorEnroll.confirmDesc')}</p>}
         disabled={code.trim().length < 6 || !reason.trim()}
         isLoading={busy}
         handleConfirm={() => void issue()}
@@ -165,10 +165,10 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
           busy ? (
             <>
               <Loader2 className="me-1.5 size-4 animate-spin" />
-              {t('admin.sharedSensors.issuing')}
+              {t('admin.sharedSensorEnroll.issuing')}
             </>
           ) : (
-            t('admin.sharedSensors.issue')
+            t('admin.sharedSensorEnroll.issue')
           )
         }
       >
