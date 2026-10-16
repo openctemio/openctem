@@ -9,4 +9,4 @@
 - Organizations decide requests in their own inbox: `GET /api/v1/organization/join-requests`,
   `POST .../{id}/approve` (viewer or member only) and `.../reject`. One pending request per person
   and organization, 5 a day per person, 30-day expiry, purged 30 days after decision. Audited.
-- Migration 002761 adds `organization_join_requests`.
+- Migration 002782 adds `organization_join_requests`.
