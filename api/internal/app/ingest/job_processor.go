@@ -111,7 +111,7 @@ func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte,
 	if p.sensors == nil {
 		return nil, errors.New("ingest worker: sensor status check is not configured")
 	}
-	agt, dropped, err := p.sensors.QueuedWorkSensor(ctx, job.TenantID(), job.SensorID(), job.ReportID())
+	agt, dropped, err := p.sensors.QueuedWorkSensor(ctx, job.TenantID(), job.SensorID(), nil, job.ReportID())
 	if err != nil {
 		return nil, err
 	}
