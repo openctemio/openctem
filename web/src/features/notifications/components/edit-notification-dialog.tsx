@@ -1,5 +1,6 @@
 'use client'
 
+import { useBrand } from '@/context/brand-provider'
 import { useEffect, useState } from 'react'
 import { csrfFetch } from '@/lib/api/client'
 import { useForm } from 'react-hook-form'
@@ -143,6 +144,7 @@ export function EditNotificationDialog({
   integration,
   onSuccess,
 }: EditNotificationDialogProps) {
+  const brand = useBrand()
   const ext = integration.notification_extension
   const providerConfig = PROVIDER_CONFIG[integration.provider] || PROVIDER_CONFIG.webhook
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -200,7 +202,7 @@ export function EditNotificationDialog({
       smtp_username: '',
       smtp_password: '',
       from_email: '',
-      from_name: 'OpenCTEM.io',
+      from_name: brand.name,
       to_emails: '',
       use_tls: false,
       use_starttls: true,
@@ -234,7 +236,7 @@ export function EditNotificationDialog({
         smtp_username: '', // Sensitive - leave empty
         smtp_password: '', // Sensitive - leave empty
         from_email: (metadata.from_email as string) || '',
-        from_name: (metadata.from_name as string) || 'OpenCTEM.io',
+        from_name: (metadata.from_name as string) || brand.name,
         to_emails: Array.isArray(metadata.to_emails)
           ? (metadata.to_emails as string[]).join(', ')
           : '',
@@ -244,7 +246,7 @@ export function EditNotificationDialog({
       // Open advanced section if any advanced settings are configured
       setAdvancedOpen(!!(ext?.message_template || ext?.min_interval_minutes))
     }
-  }, [open, integration, ext, reset, defaultEventTypes])
+  }, [open, integration, ext, reset, defaultEventTypes, brand.name])
 
   const handleClose = () => {
     onOpenChange(false)
@@ -426,7 +428,7 @@ export function EditNotificationDialog({
                     <Label htmlFor="edit_from_name">From Name</Label>
                     <Input
                       id="edit_from_name"
-                      placeholder="OpenCTEM.io"
+                      placeholder={brand.name}
                       {...register('from_name')}
                     />
                   </div>
