@@ -155,11 +155,10 @@ The live order is:
 5. Optional, the console role: add `DB_ADMIN_USER=openctem_console` and a new
    `DB_ADMIN_PASSWORD` and run `up` again. `db-roles`/`db-grants` create the role
    and move the console tables; the API starts with the second pool. Console
-   sessions survive (same table). To undo: unset both variables and, before
-   restarting the API, give the app its write back by hand (the script does
-   not re-grant it): `GRANT SELECT, INSERT, UPDATE, DELETE ON admin_users,
-   admin_credentials, admin_sessions, platform_identity_provider,
-   admin_idp_login_states TO openctem_app`.
+   sessions survive (same table). To undo, unset both variables and run `up`:
+   the script without `admin_user` grants the app its write on those tables
+   again (as does an older release's script on a rollback), then the API
+   starts with one pool. The console role can stay or be dropped.
 6. **Rollback**: put `DB_USER`/`DB_PASSWORD` back to the superuser, unset
    `DB_MIGRATE_USER`, and restart the API. The superuser still owns everything
    implicitly, so nothing else needs reverting. The roles can stay.
