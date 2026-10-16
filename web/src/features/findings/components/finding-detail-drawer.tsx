@@ -50,6 +50,7 @@ import { useCanMutate } from '@/lib/permissions'
 import { StatusSelect } from './status-select'
 import { FindingWhyItMatters } from './detail/finding-why-it-matters'
 import { FindingFixCard } from './detail/finding-fix-card'
+import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingProvenanceSection } from './detail/finding-provenance-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
@@ -259,6 +260,7 @@ export function FindingDetailDrawer({
         ) : (
           <div className="space-y-4">
             <FindingWhyItMatters finding={detail} compact />
+            <FindingTaskBand findingId={detail.id} />
             <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />
             <DetailSections>
               <FindingTypePanel finding={detail} onOpenTrace={() => openPage('attack-path')} />
