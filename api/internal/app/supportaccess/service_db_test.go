@@ -197,6 +197,12 @@ func TestSupportAccessGrantRules_DB(t *testing.T) {
 			t.Errorf("%s: %v, want %v", name, err, c.want)
 		}
 	}
+	// A user who is not an active owner (demoted after the token was issued).
+	notOwner := in(f.support.Email(), 4, "a valid reason here")
+	notOwner.GrantedBy = shared.NewID()
+	if _, err := f.svc.CreateGrant(ctx, notOwner, client); !errors.Is(err, dom.ErrNotOwner) {
+		t.Fatalf("not an owner: %v", err)
+	}
 	g := f.grant(t, f.support, nil, 0)
 	if g.ExpiresAt.Sub(g.StartsAt) != dom.DefaultDuration || len(g.Scopes) != 2 || g.Level != dom.LevelRead {
 		t.Fatalf("defaults: %+v", g)
