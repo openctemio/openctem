@@ -240,3 +240,27 @@ func TestFindingApprovals_SoloRefusedAfterRecentMemberRemoval_DB(t *testing.T) {
 	}
 	h.selfApprove(owner, a, "222222", http.StatusOK)
 }
+
+// Demoting the other approver (admin to viewer) leaves the owner the only
+// active person with the approve permission, but it is a recent approver
+// change: the sole-member path stays closed for 7 days.
+func TestFindingApprovals_SoloRefusedAfterDemotion_DB(t *testing.T) {
+	h := newSoloHarness(t)
+	org := h.tenantWithFindings()
+	owner := h.member(org, "owner")
+	demoted := h.member(org, "admin")
+	// Demoted, then suspended: the owner is the only active person.
+	h.exec(`UPDATE tenant_members SET role = 'viewer', status = 'suspended', suspended_at = now() - interval '9 days' WHERE user_id = $1 AND tenant_id = $2`, demoted.id, org)
+	h.exec(`INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
+		VALUES (gen_random_uuid(), $1, 'member.role_changed', 'membership', $2, 'success', 'medium', 'admin to viewer', now() - interval '1 hour')`, org, demoted.id)
+	f := h.newFinding(org, "low")
+	a := h.requestStatus(owner, f, "false_positive")
+	if h.listSelfApprovalAvailable(owner) {
+		t.Fatal("self-approval offered right after the other approver was demoted")
+	}
+	if out := h.selfApprove(owner, a, "111111", http.StatusForbidden); out["code"] != "SELF_APPROVAL_AFTER_MEMBER_REMOVAL" {
+		t.Fatalf("refusal: %v", out)
+	}
+	h.exec(`UPDATE audit_logs SET logged_at = now() - interval '8 days' WHERE tenant_id = $1 AND action = 'member.role_changed'`, org)
+	h.selfApprove(owner, a, "222222", http.StatusOK)
+}
