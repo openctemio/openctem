@@ -495,8 +495,8 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "remediation closes findings"},
 		},
-		Routes: []string{"/api/v1/remediation/campaigns"},
-		Jobs:   []string{"RemediationProgressController"},
+		Routes: []string{"/api/v1/remediation/campaigns", "/api/v1/remediation/tasks", "/api/v1/remediation/suggestions"},
+		Jobs:   []string{"RemediationProgressController", "RemediationTaskController", "RemediationSuggestionController"},
 	},
 	{
 		ID: ModuleSuppressions, Slug: "suppressions", Name: "Suppressions",
