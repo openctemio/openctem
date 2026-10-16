@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
+	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -216,6 +217,11 @@ func (s *Service) resolveSoftware(ctx context.Context, tenantID shared.ID, work 
 func softwareObservations(a *ctis.Asset) []software.Observation {
 	out := make([]software.Observation, 0, len(a.Technologies)+len(a.Services)+2)
 	for _, t := range a.Technologies {
+		// A detection is a component only when it names a real product
+		// with a version or CPE (RFC-112); the rest stay asset technologies.
+		if !assettech.IsSoftwareCandidate(t.Name, t.Version, t.CPE, t.Categories) {
+			continue
+		}
 		out = append(out, software.Observation{
 			Name: t.Name, Version: t.Version, CPE: t.CPE, Source: software.SourceTechnology,
 			Evidence: evidenceOf(t.Name, t.Version), ToolConfidence: t.Confidence,
@@ -274,6 +280,9 @@ func propertyObservations(a *ctis.Asset) []software.Observation {
 	for _, key := range []string{"technologies", "technology"} {
 		for _, t := range stringList(a.Properties[key]) {
 			name, version := software.SplitTechnology(t)
+			if !assettech.IsSoftwareCandidate(name, version, "", nil) {
+				continue
+			}
 			out = append(out, software.Observation{Name: name, Version: version, Source: software.SourceTechnology, Evidence: t})
 		}
 	}
