@@ -60,7 +60,7 @@ func (r *FindingMaterialChangeRepository) ListStandingDecisions(ctx context.Cont
 			SELECT DISTINCT ON (a.tenant_id, a.finding_id)
 			       a.id, a.tenant_id, a.finding_id, a.requested_status, COALESCE(a.tier, '') AS tier,
 			       COALESCE(a.facts_baseline, a.decision_facts) AS baseline, a.expires_at,
-			       a.requested_by, a.approved_by, a.single_person, a.self_approved
+			       a.requested_by, a.approved_by, a.single_person, a.self_approved, a.last_checked_at
 			FROM finding_status_approvals a
 			WHERE a.status = 'approved' AND a.requested_status IN ('accepted', 'false_positive')
 			ORDER BY a.tenant_id, a.finding_id, a.approved_at DESC NULLS LAST, a.created_at DESC
@@ -87,7 +87,7 @@ func (r *FindingMaterialChangeRepository) ListStandingDecisions(ctx context.Cont
 		       OR (COALESCE(f.validation_outcome = 'reproducible', false) AND NOT COALESCE((s.baseline->>'exploit_validated')::boolean, false))
 		       OR (COALESCE(a.is_crown_jewel, false) AND NOT COALESCE((s.baseline->>'crown_jewel')::boolean, false))
 		       OR (COALESCE(a.is_internet_accessible, false) AND NOT COALESCE((s.baseline->>'internet_exposed')::boolean, false)))
-		ORDER BY s.tenant_id, s.finding_id
+		ORDER BY s.last_checked_at NULLS FIRST, s.tenant_id, s.finding_id
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list standing decisions: %w", err)
@@ -143,6 +143,17 @@ func scanStandingDecision(rows *sql.Rows) (vulnerability.StandingDecision, error
 	return d, nil
 }
 
+// MarkChecked records that the controller looked at the decision now,
+// whatever came of it: the next run takes the least recently checked
+// decisions first, so one that keeps failing cannot hold the batch.
+func (r *FindingMaterialChangeRepository) MarkChecked(ctx context.Context, d vulnerability.StandingDecision) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE finding_status_approvals SET last_checked_at = now() WHERE tenant_id = $1 AND id = $2`,
+		d.TenantID.String(), d.ApprovalID.String()); err != nil {
+		return fmt.Errorf("mark decision checked: %w", err)
+	}
+	return nil
+}
+
 // SetBaseline records the facts a decision was last checked against.
 func (r *FindingMaterialChangeRepository) SetBaseline(ctx context.Context, d vulnerability.StandingDecision, facts approvalpolicy.Facts) error {
 	return setBaseline(ctx, r.db, d, facts)
@@ -179,6 +190,8 @@ func (r *FindingMaterialChangeRepository) EndAcceptance(ctx context.Context, d v
 		message: "Risk acceptance ended: the finding changed since the decision and is open again",
 		extra:   map[string]any{"signals": signalStrings(signals), "approval_id": d.ApprovalID.String()},
 		audit:   auditMaterialChangeEnded,
+
+		approvalID: d.ApprovalID.String(),
 	})
 }
 
@@ -251,6 +264,21 @@ func (r *FindingMaterialChangeRepository) RevokeFalsePositive(ctx context.Contex
 		Source: "approval_policy", Reason: vulnerability.ReasonMaterialChange, ActorName: "system: material change",
 		Message: msg, Changes: extra,
 	}, func(tx *sql.Tx) error {
+		ok, err := lockApprovedRequest(ctx, tx, d.TenantID, d.ApprovalID.String())
+		if err != nil || !ok {
+			return err
+		}
+		var locked string
+		if err := tx.QueryRowContext(ctx, `SELECT id::text FROM findings WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+			d.TenantID.String(), d.FindingID.String()).Scan(&locked); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return fmt.Errorf("lock decided finding: %w", err)
+		}
+		if newer, err := hasNewerApprovedRequest(ctx, tx, d.TenantID, d.ApprovalID.String()); err != nil || newer {
+			return err
+		}
 		if newDeadline != nil {
 			if err := markSLARestart(ctx, tx); err != nil {
 				return err
@@ -281,6 +309,42 @@ func (r *FindingMaterialChangeRepository) RevokeFalsePositive(ctx context.Contex
 		return nil
 	})
 	return moved, err
+}
+
+// lockApprovedRequest locks the approved request a standing decision rests on
+// and reports whether it is still approved.
+func lockApprovedRequest(ctx context.Context, tx *sql.Tx, tenantID shared.ID, approvalID string) (bool, error) {
+	var id string
+	err := tx.QueryRowContext(ctx, `
+		SELECT id::text FROM finding_status_approvals
+		WHERE tenant_id = $1 AND id = $2 AND status = 'approved' FOR UPDATE`,
+		tenantID.String(), approvalID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("lock approved request: %w", err)
+	}
+	return true, nil
+}
+
+// hasNewerApprovedRequest reports whether the finding of an approved request
+// holds another approved request decided after it (the order the standing
+// decision is chosen by: approved_at, then created_at).
+func hasNewerApprovedRequest(ctx context.Context, tx *sql.Tx, tenantID shared.ID, approvalID string) (bool, error) {
+	var newer bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM finding_status_approvals o
+			JOIN finding_status_approvals n ON n.tenant_id = o.tenant_id AND n.finding_id = o.finding_id AND n.id <> o.id
+			WHERE o.tenant_id = $1 AND o.id = $2 AND n.status = 'approved'
+			  AND ((n.approved_at IS NOT NULL AND (o.approved_at IS NULL OR n.approved_at > o.approved_at))
+			       OR (n.approved_at IS NOT DISTINCT FROM o.approved_at AND n.created_at > o.created_at)))`,
+		tenantID.String(), approvalID).Scan(&newer)
+	if err != nil {
+		return false, fmt.Errorf("check for a newer approved request: %w", err)
+	}
+	return newer, nil
 }
 
 // insertDecisionAudit writes the tenant audit row of a decision the

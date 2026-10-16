@@ -34,6 +34,10 @@ import (
 type MaterialChangeStore interface {
 	ListStandingDecisions(ctx context.Context, limit int) ([]vulnerability.StandingDecision, error)
 	SetBaseline(ctx context.Context, d vulnerability.StandingDecision, facts approvalpolicy.Facts) error
+	// MarkChecked records that the decision was looked at now, whatever came
+	// of it. The list is ordered by it, least recently checked first, so a
+	// decision that keeps failing cannot hold the batch.
+	MarkChecked(ctx context.Context, d vulnerability.StandingDecision) error
 	EndAcceptance(ctx context.Context, d vulnerability.StandingDecision, signals []approvalpolicy.Signal, newDeadline *time.Time, now time.Time) (bool, error)
 	FlagDecision(ctx context.Context, d vulnerability.StandingDecision, reason string, signals []approvalpolicy.Signal) (bool, error)
 	RevokeFalsePositive(ctx context.Context, d vulnerability.StandingDecision, signals []approvalpolicy.Signal, newDeadline *time.Time, now time.Time) (bool, error)
@@ -99,27 +103,38 @@ func (c *ApprovalMaterialChangeController) Reconcile(ctx context.Context) (int, 
 	policies := map[shared.ID]approvalpolicy.Policy{}
 	acted := 0
 	for _, d := range decisions {
-		if d.Baseline == nil {
-			// A decision made before the check existed: today's facts are
-			// its baseline; no action.
-			if err := c.store.SetBaseline(ctx, d, d.Current); err != nil {
-				c.logger.Warn("material change: set baseline", "finding_id", d.FindingID, "error", err)
-			}
-			continue
-		}
-		p, ok := policies[d.TenantID]
-		if !ok {
-			if p, err = c.policies.EffectiveApprovalPolicy(ctx, d.TenantID); err != nil {
-				c.logger.Warn("material change: policy", "tenant_id", d.TenantID, "error", err)
-				continue
-			}
-			policies[d.TenantID] = p
-		}
-		if c.apply(ctx, p, d) {
+		if c.check(ctx, policies, d) {
 			acted++
+		}
+		// On every attempt, a failed one included: the next run starts with
+		// the decisions checked least recently.
+		if err := c.store.MarkChecked(ctx, d); err != nil {
+			c.logger.Warn("material change: mark checked", "finding_id", d.FindingID, "error", err)
 		}
 	}
 	return acted, nil
+}
+
+// check looks at one standing decision; it reports whether it changed it.
+func (c *ApprovalMaterialChangeController) check(ctx context.Context, policies map[shared.ID]approvalpolicy.Policy, d vulnerability.StandingDecision) bool {
+	if d.Baseline == nil {
+		// A decision made before the check existed: today's facts are its
+		// baseline; no action.
+		if err := c.store.SetBaseline(ctx, d, d.Current); err != nil {
+			c.logger.Warn("material change: set baseline", "finding_id", d.FindingID, "error", err)
+		}
+		return false
+	}
+	p, ok := policies[d.TenantID]
+	if !ok {
+		var err error
+		if p, err = c.policies.EffectiveApprovalPolicy(ctx, d.TenantID); err != nil {
+			c.logger.Warn("material change: policy", "tenant_id", d.TenantID, "error", err)
+			return false
+		}
+		policies[d.TenantID] = p
+	}
+	return c.apply(ctx, p, d)
 }
 
 // apply decides and writes one decision; it reports whether it changed it.
