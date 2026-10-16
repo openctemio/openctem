@@ -1074,5 +1074,9 @@
   "findings.ticketLinks.unlinkTitle": "Bỏ liên kết {key}?",
   "findings.ticketLinks.unlinkDescription": "Phát hiện ngừng đồng bộ với issue này. Bản thân issue không thay đổi.",
   "findings.ticketLinks.unlink": "Bỏ liên kết",
-  "findings.ticketLinks.unlinkFailed": "Không bỏ liên kết được issue"
+  "findings.ticketLinks.unlinkFailed": "Không bỏ liên kết được issue",
+  "findings.approvals.progress": "{collected} / {required} phê duyệt",
+  "findings.approvals.toast.signed": "Đã ghi nhận phê duyệt của bạn",
+  "findings.approvals.toast.signedDesc": "Cần thêm {count} phê duyệt trước khi trạng thái thay đổi.",
+  "findings.approvals.col.tier": "Phê duyệt"
 }
