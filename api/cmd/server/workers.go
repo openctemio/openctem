@@ -144,6 +144,11 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 		m.Register(controller.NewPurgeController("invitation-purge", cfg.Worker.InvitationPurgeInterval,
 			svc.Tenant.CleanupExpiredInvitations, log.With("controller", "invitation-purge")))
 	}
+	if svc.AccountDeletion != nil {
+		// Accounts whose deletion grace period ended are erased (RFC-104).
+		m.Register(controller.NewPurgeController("account-erase", cfg.Worker.InvitationPurgeInterval,
+			svc.AccountDeletion.EraseDue, log.With("controller", "account-erase")))
+	}
 	if repos.AdminConsole != nil {
 		console := repos.AdminConsole
 		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,

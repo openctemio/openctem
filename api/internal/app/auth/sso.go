@@ -74,6 +74,8 @@ const ssoMaxRedirectURILength = 2000
 
 // SSOService handles per-tenant SSO authentication.
 type SSOService struct {
+	// onSignIn runs after a sign-in created a session (signin_hook.go).
+	onSignIn SignInHook
 	// audit records each sign-in (auth.login), as the password sign-in does.
 	audit            *auditapp.AuditService
 	ipRepo           identityproviderdom.Repository
@@ -1730,6 +1732,7 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("save session: %w", err)
 	}
+	runSignInHook(ctx, s.onSignIn, u.ID())
 	s.stampProviderAuthentication(ctx, newSession, fed.authTime)
 
 	refreshTokenEntity, err := sessiondom.NewRefreshToken(

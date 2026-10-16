@@ -372,3 +372,69 @@ func pausedSummary(r *tenantdom.DisableResult) string {
 	}
 	return strings.Join(parts, ", ")
 }
+
+// ErrSoleOwnerCannotLeave: the only owner transfers ownership (or deletes
+// the organization) before leaving.
+var ErrSoleOwnerCannotLeave = fmt.Errorf("%w: you are the only owner; transfer ownership or delete the organization first", shared.ErrConflict)
+
+// ErrLeaveNeedsReassignment: the person still owns work an administrator
+// must hand to someone else; they are offboarded by an administrator.
+var ErrLeaveNeedsReassignment = fmt.Errorf("%w: you still own work in this organization; ask an administrator to offboard you", shared.ErrConflict)
+
+// LeaveOrganization lets a member leave the organization of their own
+// credential (docs/rfcs/RFC-104): the same offboarding an administrator
+// runs (keys revoked, groups, grants and roles stripped, a tombstone kept),
+// started by the person. An owner may leave only while another active owner
+// remains; a member who still owns assignable work is told to ask an
+// administrator (nothing is reassigned without one).
+func (s *TenantService) LeaveOrganization(ctx context.Context, tenantID, userID shared.ID, actx auditapp.AuditContext) error {
+	if s.lifecycle == nil {
+		return fmt.Errorf("member lifecycle is not configured")
+	}
+	membership, err := s.repo.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		return err
+	}
+	if membership.IsOffboarded() {
+		return shared.ErrNotFound
+	}
+	if membership.IsOwner() {
+		owners, err := s.lifecycle.ActiveAdminIDs(ctx, tenantID)
+		if err != nil {
+			return err
+		}
+		other := false
+		for _, id := range owners {
+			if id.Equals(userID) {
+				continue
+			}
+			if m, merr := s.repo.GetMembership(ctx, id, tenantID); merr == nil && m.IsOwner() && m.IsActive() {
+				other = true
+				break
+			}
+		}
+		if !other {
+			return ErrSoleOwnerCannotLeave
+		}
+	}
+	result, err := s.lifecycle.Offboard(ctx, membership, &userID, tenantdom.OffboardPlan{})
+	if err != nil {
+		if _, ok := tenantdom.AsReassignmentError(err); ok {
+			return ErrLeaveNeedsReassignment
+		}
+		return err
+	}
+	s.cutAccess(ctx, tenantID.String(), userID.String())
+	if !membership.IsExternal() {
+		s.homeAccessEnded(ctx, tenantID, userID)
+	}
+	actx.TenantID = tenantID.String()
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionMemberLeft, audit.ResourceTypeMembership, membership.ID().String()).
+		WithSeverity(audit.SeverityMedium).
+		WithMessage("Member left the organization").
+		WithMetadata("user_id", userID.String()).
+		WithMetadata("revoked_keys", result.RevokedKeys))
+	s.notifyAdmins(ctx, tenantID, "A member left the organization",
+		fmt.Sprintf("%s left the organization.", actx.ActorEmail), notificationdom.SeverityInfo)
+	return nil
+}
