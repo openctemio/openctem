@@ -107,9 +107,9 @@ type Service struct {
 	optOut   SharedSensorsOptOut
 	log      *logger.Logger
 
-	// managed is MANAGED_SERVICE: it changes the defaults of the proof
-	// requirement and of internal zones on shared sensors, never a stored
-	// value (docs/rfcs/RFC-100-shared-sensors.md §6).
+	// managed is MANAGED_SERVICE: it changes the default of the proof
+	// requirement, never a stored value (docs/rfcs/RFC-100-shared-sensors.md
+	// §6).
 	managed bool
 	// counter keeps the per-organization daily anomaly counters of
 	// shared sensor use (nil: signals off).
@@ -142,9 +142,8 @@ func NewService(repo Repository, audit AuditWriter, admins AdminLister, mail Mai
 }
 
 // SetManagedService sets MANAGED_SERVICE (read at start-up). It changes only
-// what applies while nothing is stored: the proof requirement defaults on and
-// internal zones on shared sensors default off. A stored console value always
-// wins.
+// what applies while nothing is stored: the proof requirement defaults on. A
+// stored console value always wins.
 func (s *Service) SetManagedService(managed bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

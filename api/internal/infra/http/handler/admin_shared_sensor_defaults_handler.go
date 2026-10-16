@@ -25,9 +25,12 @@ type SharedSensorInternalZonesResponse struct {
 	// Allowed: shared sensors may scan instance scan zones the administrator
 	// assigns to organizations. False: public targets only.
 	Allowed bool `json:"allowed"`
-	// Default is the value while nothing is stored: false on a hosted
-	// service (MANAGED_SERVICE), true otherwise.
+	// Default is the value while nothing is stored: false on every
+	// deployment.
 	Default bool `json:"default"`
+	// Enforced is false while nothing reads the setting yet (instance scan
+	// zones and their signed ranges have not landed): it is stored only.
+	Enforced bool `json:"enforced"`
 	// Version to send back on PUT (0: nothing stored, the default applies).
 	Version int `json:"version"`
 }
@@ -62,7 +65,7 @@ type UpdateSharedSensorAnomalyRequest struct {
 
 // GetSharedSensorInternalZones returns the setting.
 // @Summary      Shared sensors may scan internal zones
-// @Description  Whether shared sensors may scan instance scan zones assigned to organizations (otherwise public targets only). Until a value is stored the deployment default applies: on for a self-hosted install, off when MANAGED_SERVICE is set. Any administrator.
+// @Description  Whether shared sensors may scan instance scan zones assigned to organizations (otherwise public targets only). Default off on every deployment. enforced is false while nothing reads the setting yet. Any administrator.
 // @Tags         Admin System
 // @Produce      json
 // @Success      200  {object}  SharedSensorInternalZonesResponse
@@ -74,7 +77,8 @@ func (h *AdminScanPolicyHandler) GetSharedSensorInternalZones(w http.ResponseWri
 		apierror.InternalServerError("could not read the setting").WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, SharedSensorInternalZonesResponse{Allowed: v, Default: h.svc.InternalZonesDefault(), Version: ver})
+	writeJSON(w, http.StatusOK, SharedSensorInternalZonesResponse{Allowed: v, Default: h.svc.InternalZonesDefault(),
+		Enforced: scanpolicy.InternalZonesEnforced(), Version: ver})
 }
 
 // UpdateSharedSensorInternalZones changes the setting.
@@ -101,7 +105,8 @@ func (h *AdminScanPolicyHandler) UpdateSharedSensorInternalZones(w http.Response
 		h.writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, SharedSensorInternalZonesResponse{Allowed: *req.Allowed, Default: h.svc.InternalZonesDefault(), Version: v})
+	writeJSON(w, http.StatusOK, SharedSensorInternalZonesResponse{Allowed: *req.Allowed, Default: h.svc.InternalZonesDefault(),
+		Enforced: scanpolicy.InternalZonesEnforced(), Version: v})
 }
 
 // GetSharedSensorAnomaly returns the anomaly thresholds.

@@ -109,6 +109,7 @@ export default function PlatformScanningPage() {
             required={zones.data.allowed}
             stored={(zones.data.version ?? 0) > 0}
             defaultValue={zones.data.default}
+            enforced={zones.data.enforced}
             canEdit={canEdit}
             onSave={async (allowed, reason, code) => {
               const z = zones.data

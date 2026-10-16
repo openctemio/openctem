@@ -1,10 +1,7 @@
 ### Security: hosted-service defaults and anomaly alerts for shared sensors
 
-- New environment setting `MANAGED_SERVICE` (default `false`), for a hosted multi-tenant service only. It changes two defaults, never a feature or a stored value (RFC-100 §6):
-  - "Require a verified domain before platform sensors scan a target" defaults on (off on a self-hosted install);
-  - the new setting "Shared sensors may scan internal zones" defaults off (on on a self-hosted install).
-  A value saved in the admin console always wins. An unreadable stored value fails closed (proof required, internal zones refused).
-- Admin console, System > Platform scanning: a card for "Shared sensors may scan internal zones" (`GET/PUT /api/v1/admin/settings/shared-sensor-internal-zones`). Each on/off card says which deployment default applies until a value is saved; `GET /api/v1/admin/settings/platform-sensor-proof` returns `default` too. Turning internal zones on assigns no zone.
+- New environment setting `MANAGED_SERVICE` (default `false`), for a hosted multi-tenant service only. It changes defaults, never a feature or a stored value (RFC-100 §6): "Require a verified domain before platform sensors scan a target" defaults on (off on a self-hosted install). A value saved in the admin console always wins. An unreadable stored value fails closed (proof required).
+- Admin console, System > Platform scanning: a card for the new setting "Shared sensors may scan internal zones" (`GET/PUT /api/v1/admin/settings/shared-sensor-internal-zones`). It defaults off on every deployment and is **not enforced yet** (`enforced: false`, labelled in the console) until instance scan zones and their signed ranges land. Each on/off card says which default applies until a value is saved; `GET /api/v1/admin/settings/platform-sensor-proof` returns `default` too.
 - Anomaly alerts on shared sensor use (RFC-100 §9). Three counts per organization per UTC day: distinct registrable domains sent to shared sensors, failed shared jobs, deny-list hits. The first time a count reaches its threshold that day:
   - the metric `shared_sensor_anomalies_total{signal}` goes up;
   - an admin audit row `organization.shared_sensor_anomaly` (severity high) names the organization;
