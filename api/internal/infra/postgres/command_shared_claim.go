@@ -124,7 +124,7 @@ func (r *CommandRepository) ClaimManyShared(ctx context.Context, sensorID shared
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	byTenant, tenants, err := sharedJobTenants(ctx, tx, want)
+	byTenant, tenants, err := sharedJobTenantsForPlatform(ctx, tx, want)
 	if err != nil {
 		return nil, err
 	}
@@ -182,10 +182,10 @@ func (r *CommandRepository) ClaimManyShared(ctx context.Context, sensorID shared
 	return out, nil
 }
 
-// sharedJobTenants groups the shared jobs among ids by organization, each
+// sharedJobTenantsForPlatform groups the shared jobs among ids by organization, each
 // group in the order of ids, and lists the organizations sorted by id (the
 // one lock order of every shared claim, so two claims never deadlock).
-func sharedJobTenants(ctx context.Context, tx *sql.Tx, ids []string) (map[shared.ID][]string, []shared.ID, error) {
+func sharedJobTenantsForPlatform(ctx context.Context, tx *sql.Tx, ids []string) (map[shared.ID][]string, []shared.ID, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id::text, tenant_id FROM commands WHERE id = ANY($1::uuid[]) AND is_platform_job = TRUE`, pq.Array(ids))
 	if err != nil {
@@ -245,11 +245,11 @@ func (r *CommandRepository) CountHeldSharedScans(ctx context.Context, sensorID s
 	return n, nil
 }
 
-// HeldSharedJobs returns, by organization, the ids among ids of the shared
+// HeldSharedJobsForPlatform returns, by organization, the ids among ids of the shared
 // jobs the shared sensor holds (acknowledged or running). The organization
 // is read from each command; ids that are not well-formed, not shared jobs
 // or not held by the sensor are left out.
-func (r *CommandRepository) HeldSharedJobs(ctx context.Context, sensorID shared.ID, ids []string) (map[shared.ID][]string, error) {
+func (r *CommandRepository) HeldSharedJobsForPlatform(ctx context.Context, sensorID shared.ID, ids []string) (map[shared.ID][]string, error) {
 	valid := validIDs(ids)
 	if len(valid) == 0 {
 		return map[shared.ID][]string{}, nil
@@ -276,9 +276,9 @@ func (r *CommandRepository) HeldSharedJobs(ctx context.Context, sensorID shared.
 	return out, rows.Err()
 }
 
-// RenewSharedLeases extends the leases of the shared jobs among ids that the
+// RenewSharedLeasesForPlatform extends the leases of the shared jobs among ids that the
 // shared sensor holds (acknowledged or running), in whatever organization.
-func (r *CommandRepository) RenewSharedLeases(ctx context.Context, sensorID shared.ID, ids []string) (int64, error) {
+func (r *CommandRepository) RenewSharedLeasesForPlatform(ctx context.Context, sensorID shared.ID, ids []string) (int64, error) {
 	valid := validIDs(ids)
 	if len(valid) == 0 {
 		return 0, nil
@@ -314,9 +314,9 @@ func (r *CommandRepository) SharedCommandsToCancel(ctx context.Context, sensorID
 		ORDER BY r.id`, sensorID.String(), pq.Array(valid))
 }
 
-// SharedCommandsToStop is CommandsToStop for a shared sensor: the shared
+// SharedCommandsToStopForPlatform is CommandsToStop for a shared sensor: the shared
 // jobs among ids it holds, running and stop-requested.
-func (r *CommandRepository) SharedCommandsToStop(ctx context.Context, sensorID shared.ID, ids []string) ([]string, error) {
+func (r *CommandRepository) SharedCommandsToStopForPlatform(ctx context.Context, sensorID shared.ID, ids []string) ([]string, error) {
 	valid := validIDs(ids)
 	if len(valid) == 0 {
 		return nil, nil

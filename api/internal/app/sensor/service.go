@@ -229,7 +229,7 @@ func (s *SensorService) CommandsToStop(ctx context.Context, a *sensordom.Sensor,
 	f, ok := s.cancels.(commanddom.StopFinder)
 	switch holds, shared := s.leases.(SharedHoldings); {
 	case a.IsShared() && shared:
-		ids, err = holds.SharedCommandsToStop(ctx, a.ID, running)
+		ids, err = holds.SharedCommandsToStopForPlatform(ctx, a.ID, running)
 	case a.IsShared(), !ok, a.TenantID == nil:
 		return nil
 	default:
@@ -1007,7 +1007,7 @@ func (s *SensorService) renewLeases(ctx context.Context, a *sensordom.Sensor, da
 		// A shared sensor renews only the shared jobs it lists and holds:
 		// it has no tenant, and an unlisted job's lease runs out.
 		if holds, ok := s.leases.(SharedHoldings); ok {
-			if _, err := holds.RenewSharedLeases(ctx, a.ID, ids); err != nil {
+			if _, err := holds.RenewSharedLeasesForPlatform(ctx, a.ID, ids); err != nil {
 				s.logger.Warn("shared job leases not renewed", "sensor_id", a.ID.String(), "error", err)
 			}
 		}
@@ -1044,10 +1044,10 @@ func (s *SensorService) recordProgress(ctx context.Context, a *sensordom.Sensor,
 // SharedHoldings is the command store's side of a shared sensor's heartbeat
 // (CommandRepository): the shared jobs it holds, in any organization.
 type SharedHoldings interface {
-	RenewSharedLeases(ctx context.Context, sensorID shared.ID, ids []string) (int64, error)
+	RenewSharedLeasesForPlatform(ctx context.Context, sensorID shared.ID, ids []string) (int64, error)
 	SharedCommandsToCancel(ctx context.Context, sensorID shared.ID, ids []string) ([]string, error)
-	SharedCommandsToStop(ctx context.Context, sensorID shared.ID, ids []string) ([]string, error)
-	HeldSharedJobs(ctx context.Context, sensorID shared.ID, ids []string) (map[shared.ID][]string, error)
+	SharedCommandsToStopForPlatform(ctx context.Context, sensorID shared.ID, ids []string) ([]string, error)
+	HeldSharedJobsForPlatform(ctx context.Context, sensorID shared.ID, ids []string) (map[shared.ID][]string, error)
 }
 
 // recordSharedProgress records a shared sensor's progress per organization
@@ -1064,7 +1064,7 @@ func (s *SensorService) recordSharedProgress(ctx context.Context, a *sensordom.S
 		ids = append(ids, id)
 		keyOf[strings.ToLower(id)] = id
 	}
-	byTenant, err := holds.HeldSharedJobs(ctx, a.ID, ids)
+	byTenant, err := holds.HeldSharedJobsForPlatform(ctx, a.ID, ids)
 	if err != nil {
 		s.logger.Warn("shared job progress not recorded", "sensor_id", a.ID.String(), "error", err)
 		return
