@@ -144,7 +144,7 @@ export function TransformEditor({
                     <thead className="bg-muted/50 text-xs text-muted-foreground">
                       <tr>
                         <th className="p-2 text-start">
-                          {t('ticketMapping.transform.openctemValue', 'OpenCTEM value')}
+                          {t('ticketMapping.transform.openctemValue', '{product} value')}
                         </th>
                         <th className="p-2 text-start">
                           {t('ticketMapping.transform.jiraValue', 'Jira value')}
@@ -181,7 +181,7 @@ export function TransformEditor({
                     <Input
                       value={newKey}
                       maxLength={128}
-                      placeholder={t('ticketMapping.transform.newValue', 'OpenCTEM value')}
+                      placeholder={t('ticketMapping.transform.newValue', '{product} value')}
                       onChange={(e) => setNewKey(e.target.value)}
                     />
                     <Button
@@ -224,7 +224,7 @@ export function TransformEditor({
                 <p className="text-xs text-muted-foreground">
                   {t(
                     'ticketMapping.transform.fallbackHint',
-                    'Used when the OpenCTEM user has no Jira account. Empty leaves the issue unassigned.'
+                    'Used when the {product} user has no Jira account. Empty leaves the issue unassigned.'
                   )}
                 </p>
               </div>
