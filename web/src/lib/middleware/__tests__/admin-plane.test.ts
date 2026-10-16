@@ -40,4 +40,28 @@ describe('admin plane gating', () => {
     // Any other value than "admin" is the main site.
     expect(decidePlane(path, 'Admin', true)).toBe(want)
   })
+
+  it.each([
+    ['/api/v1//admin/tenants', 'not-found'],
+    ['//admin', 'not-found'],
+    ['/x/../admin', 'not-found'],
+    ['/admin/', 'not-found'],
+    ['/%61dmin', 'not-found'],
+    ['/api/v1%2Fadmin/tenants', 'not-found'],
+    ['/api/v1/admin/../findings', 'allow'],
+  ])('the main site reads %s the way the router does: %s', (path, want) => {
+    expect(decidePlane(path, null, true)).toBe(want)
+  })
+
+  it.each([
+    ['/admin//organizations', 'allow'],
+    ['/admin/./login', 'allow'],
+    ['/admin/../login', 'not-found'],
+    ['/api/v1/admin/../findings', 'not-found'],
+    ['/api/v1/admin/..%2f..%2ffindings', 'not-found'],
+    ['/admin/%2e%2e/login', 'not-found'],
+    ['//', 'to-console'],
+  ])('the console site reads %s the way the router does: %s', (path, want) => {
+    expect(decidePlane(path, 'admin', true)).toBe(want)
+  })
 })

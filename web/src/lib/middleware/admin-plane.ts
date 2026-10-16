@@ -22,6 +22,35 @@ function under(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(prefix + '/')
 }
 
+/** Repeated slashes collapsed, "." and ".." resolved, no trailing slash. */
+function cleanPath(p: string): string {
+  const out: string[] = []
+  for (const seg of p.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') out.pop()
+    else out.push(seg)
+  }
+  return '/' + out.join('/')
+}
+
+/**
+ * The ways a request path can be read (as written, and percent-decoded),
+ * each cleaned, and whether it carries an encoded separator ("%2f", "%2e",
+ * "%5c", a backslash): spelling the path differently must not cross a plane.
+ */
+function readings(pathname: string): { forms: string[]; encodedSeparator: boolean } {
+  let encodedSeparator = /%2f|%2e|%5c/i.test(pathname) || pathname.includes('\\')
+  let decoded = pathname
+  try {
+    decoded = decodeURIComponent(pathname)
+  } catch {
+    encodedSeparator = true
+  }
+  return { forms: [cleanPath(pathname), cleanPath(decoded)], encodedSeparator }
+}
+
+const isConsolePath = (p: string) => under(p, '/admin') || under(p, '/api/v1/admin')
+
 /** Whether the console has its own origin (OPENCTEM_ADMIN_PLANE=separate). */
 export function adminPlaneSeparate(value: string | undefined = process.env.OPENCTEM_ADMIN_PLANE) {
   return value === 'separate'
@@ -34,11 +63,15 @@ export function decidePlane(
   separate: boolean = adminPlaneSeparate()
 ): PlaneDecision {
   if (!separate) return 'allow'
-  const isConsole = under(pathname, '/admin') || under(pathname, '/api/v1/admin')
+  const { forms, encodedSeparator } = readings(pathname)
   if (plane === 'admin') {
-    if (isConsole || pathname === '/api/health') return 'allow'
-    if (pathname === '/') return 'to-console'
+    // Only the console: every reading of the path, with no encoded separator.
+    if (!encodedSeparator && forms.every(isConsolePath)) return 'allow'
+    if (!encodedSeparator && forms.every((f) => f === '/api/health')) return 'allow'
+    if (forms[0] === '/' && forms[1] === '/') return 'to-console'
     return 'not-found'
   }
-  return isConsole ? 'not-found' : 'allow'
+  // Never the console: any reading of the path that reaches it.
+  const maybeConsole = forms.some(isConsolePath) || (encodedSeparator && /admin/i.test(pathname))
+  return maybeConsole ? 'not-found' : 'allow'
 }
