@@ -84,7 +84,9 @@ export function fixSteps(spec: Record<string, unknown> | undefined, key: string)
 }
 
 /** Groups task findings by asset (findings without one last), keeping order. */
-export function groupByAsset(members: TaskMember[]): { key: string; label: string; items: TaskMember[] }[] {
+export function groupByAsset(
+  members: TaskMember[]
+): { key: string; label: string; items: TaskMember[] }[] {
   const groups = new Map<string, { key: string; label: string; items: TaskMember[] }>()
   for (const m of members) {
     const key = m.asset_id ?? ''
@@ -99,7 +101,9 @@ export function groupByAsset(members: TaskMember[]): { key: string; label: strin
 }
 
 /** A suggestion's risk parts as a short list ("P0 2 · P1 9"). */
-export function riskPartsList(s: Pick<RemediationSuggestion, 'risk_parts'>): { label: string; count: number }[] {
+export function riskPartsList(
+  s: Pick<RemediationSuggestion, 'risk_parts'>
+): { label: string; count: number }[] {
   const p = s.risk_parts
   if (!p) return []
   return [

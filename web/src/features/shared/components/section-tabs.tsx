@@ -7,13 +7,10 @@ import { TAB_CLASS, TAB_STRIP_CLASS, TabsCount, useTabStripScroll } from '@/comp
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 
-/** The i18n key of a tab label, the same as the sidebar's ("Fix plan" -> nav.item.fix-plan). */
-export function sectionTabKey(label: string): string {
-  return `nav.item.${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
-}
-
 export interface SectionTab {
   label: string
+  /** i18n key of the label; `label` is the English fallback. */
+  labelKey?: string
   href: string
   /** Optional icon shown before the label. */
   icon?: React.ElementType
@@ -74,7 +71,7 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
             className={TAB_CLASS}
           >
             {Icon && <Icon aria-hidden />}
-            {t(sectionTabKey(tab.label), tab.label)}
+            {tab.labelKey ? t(tab.labelKey, tab.label) : tab.label}
             {counts?.[tab.href] ? <TabsCount value={counts[tab.href]} /> : null}
           </Link>
         )

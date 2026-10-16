@@ -55,11 +55,11 @@ export const EXPOSURES_SECTION_TABS: readonly SectionTab[] = [
  * suggestions replace them.
  */
 export const REMEDIATION_SECTION_TABS: readonly SectionTab[] = [
-  { label: 'Fix plan', href: '/remediation' },
-  { label: 'Suggestions', href: '/remediation/suggestions' },
-  { label: 'Tasks', href: '/remediation/tasks' },
-  { label: 'Campaigns', href: '/remediation/campaigns' },
-  { label: 'Solution families', href: '/remediations' },
+  { label: 'Fix plan', labelKey: 'nav.item.fix-plan', href: '/remediation' },
+  { label: 'Suggestions', labelKey: 'nav.item.suggestions', href: '/remediation/suggestions' },
+  { label: 'Tasks', labelKey: 'nav.item.tasks', href: '/remediation/tasks' },
+  { label: 'Campaigns', labelKey: 'nav.item.campaigns', href: '/remediation/campaigns' },
+  { label: 'Solution families', labelKey: 'nav.item.solution-families', href: '/remediations' },
 ]
 
 /**
