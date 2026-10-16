@@ -40,10 +40,10 @@ func TestOAuthSignupAdmission(t *testing.T) {
 		{"admin_only, no lookup wired", adminOnly, config.AuthConfig{}, nil, false, ""},
 		{"self_service, stranger", selfService, config.AuthConfig{}, fakeInvitations{}, true, ""},
 		// The console policy wins over the environment.
-		{"console admin_only over env self_service", adminOnly, config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService}, fakeInvitations{}, false, ""},
+		{"console admin_only over env self_service", adminOnly, config.AuthConfig{SignupMode: config.SignupModeOpen}, fakeInvitations{}, false, ""},
 		// Without the console policy wired, the environment seed decides.
 		{"no policy wired, env admin_only", nil, config.AuthConfig{}, fakeInvitations{}, false, ""},
-		{"no policy wired, env self_service", nil, config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService}, fakeInvitations{}, true, ""},
+		{"no policy wired, env self_service", nil, config.AuthConfig{SignupMode: config.SignupModeOpen}, fakeInvitations{}, true, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

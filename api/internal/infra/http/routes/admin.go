@@ -70,6 +70,8 @@ import (
 //	                                            TOTP code (audited, both logs)
 //	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
 //	                                            code (audited with the reason)
+//	/admin/content-catalog    any admin         import: super_admin + reason + fresh
+//	                                            TOTP code (audited with the reason)
 //	/admin/program-feed       any admin         local bundle switch: super_admin +
 //	                                            reason + fresh TOTP code (audited)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
@@ -290,6 +292,17 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/program-feed", func(r Router) {
 			r.GET("/", f.Status)
 			r.PUT("/local-bundle", f.SetLocalBundle, requireSuper, stepUp("program_feed.local_bundle"))
+		}, adminMiddlewares...)
+	}
+
+	if h.AdminContentCatalog != nil {
+		// Import: super_admin here; the handler adds the reason, a fresh
+		// console authenticator code and its own high admin audit row.
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		c := h.AdminContentCatalog
+		router.Group("/api/v1/admin/content-catalog", func(r Router) {
+			r.GET("/", c.Status)
+			r.POST("/import", c.Import, requireSuper, stepUp("content_catalog.change"))
 		}, adminMiddlewares...)
 	}
 
