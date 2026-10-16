@@ -347,6 +347,11 @@ type ApproveRuleRequest struct {
 	// ReviewedUpdatedAt is the rule's updated_at exactly as the approver last
 	// loaded it. The approval is refused (409) if the rule changed since.
 	ReviewedUpdatedAt string `json:"reviewed_updated_at"`
+	// SelfApprovalReason and TOTPCode: the owner approves their own rule
+	// because no other approver exists; both are required then, and the
+	// code must be fresh from the owner's authenticator app.
+	SelfApprovalReason string `json:"self_approval_reason,omitempty"`
+	TOTPCode           string `json:"totp_code,omitempty"`
 }
 
 // ApproveRule handles POST /api/v1/suppressions/{id}/approve
@@ -383,10 +388,16 @@ func (h *SuppressionHandler) ApproveRule(w http.ResponseWriter, r *http.Request)
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
+	if len(req.SelfApprovalReason) > 1000 || len(req.TOTPCode) > 16 {
+		apierror.BadRequest("self_approval_reason is at most 1000 characters").WriteJSON(w)
+		return
+	}
 	input := suppression.ApproveRuleInput{
-		TenantID:   tenantUUID,
-		RuleID:     ruleUUID,
-		ApprovedBy: userUUID,
+		TenantID:           tenantUUID,
+		RuleID:             ruleUUID,
+		ApprovedBy:         userUUID,
+		SelfApprovalReason: req.SelfApprovalReason,
+		TOTPCode:           req.TOTPCode,
 	}
 	if req.ReviewedUpdatedAt != "" {
 		reviewed, err := time.Parse(time.RFC3339Nano, req.ReviewedUpdatedAt)
@@ -399,6 +410,9 @@ func (h *SuppressionHandler) ApproveRule(w http.ResponseWriter, r *http.Request)
 
 	result, err := h.service.ApproveRule(r.Context(), input)
 	if err != nil {
+		if suppression.IsSelfApprovalRefusal(err) {
+			h.auditSelfApprovalRefused(r, ruleID, err)
+		}
 		h.handleServiceError(w, err)
 		return
 	}
@@ -493,7 +507,7 @@ func (h *SuppressionHandler) auditApproval(r *http.Request, result *suppression.
 	action, msg := auditdom.ActionSuppressionRuleApproved, "Suppression rule approved"
 	if result.SelfApproved {
 		action = auditdom.ActionSuppressionRuleSelfApproved
-		msg = "Suppression rule approved by its own requester (the owner, the only eligible approver)"
+		msg = "Suppression rule approved by its own requester (the owner, the only eligible approver) with a fresh authenticator code"
 	}
 	actx := auditapp.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
@@ -573,6 +587,29 @@ func (h *SuppressionHandler) MarkReviewed(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toSuppressionRuleResponse(rule))
+}
+
+// auditSelfApprovalRefused records a refused own approval at High: the
+// signal of someone trying to bypass the second approver.
+func (h *SuppressionHandler) auditSelfApprovalRefused(r *http.Request, ruleID string, cause error) {
+	if h.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	action := auditdom.ActionSuppressionRuleSelfApprovalRefused
+	event := auditapp.NewFailureEvent(action, auditdom.ResourceTypeSuppressionRule, ruleID, cause).
+		WithMessage("Own approval of a suppression rule refused").
+		WithSeverity(auditdom.SeverityForAction(action))
+	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
+		h.logger.Warn("failed to audit refused suppression self-approval", "error", err)
+	}
 }
 
 // RejectRuleRequest represents a request to reject a rule.

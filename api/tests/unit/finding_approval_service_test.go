@@ -25,6 +25,7 @@ type mockApprovalRepository struct {
 	approvals map[shared.ID]*vulnerability.Approval
 	createErr error
 	updateErr error
+	findings  *mockFindingRepository
 }
 
 func newMockApprovalRepository() *mockApprovalRepository {
@@ -102,6 +103,29 @@ func (m *mockApprovalRepository) ListExpiredApproved(_ context.Context, limit in
 		}
 	}
 	return result, nil
+}
+
+// ApproveAndApply applies the status through the linked finding mock (the
+// database writes both in one transaction).
+func (m *mockApprovalRepository) ApproveAndApply(ctx context.Context, approval *vulnerability.Approval, _ *vulnerability.FindingActivity) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	if m.findings != nil {
+		var err error
+		status := vulnerability.FindingStatus(approval.RequestedStatus)
+		if status == vulnerability.FindingStatusAccepted {
+			err = m.findings.AcceptUntil(ctx, approval.TenantID, approval.FindingID, *approval.ExpiresAt, approval.ApprovedBy, approval.ClosureReason)
+		} else {
+			err = m.findings.UpdateStatusBatch(ctx, approval.TenantID, []shared.ID{approval.FindingID}, status, "", approval.ApprovedBy,
+				vulnerability.Closure{Reason: approval.ClosureReason, Verification: vulnerability.VerificationSecurityReview})
+		}
+		if err != nil {
+			return err
+		}
+	}
+	m.approvals[approval.ID] = approval
+	return nil
 }
 
 func (m *mockApprovalRepository) Update(_ context.Context, approval *vulnerability.Approval) error {
@@ -324,6 +348,7 @@ func newApprovalTestService(
 	vulnRepo := &mockVulnerabilityRepository{}
 	log := logger.NewNop()
 	svc := finding.NewVulnerabilityService(vulnRepo, findingRepo, log)
+	approvalRepo.findings = findingRepo
 	svc.SetApprovalRepository(approvalRepo)
 	return svc
 }
@@ -628,7 +653,7 @@ func TestFindingApprovalService_ApproveStatus_Expired(t *testing.T) {
 
 	assert.Error(t, err, "should not be able to approve an expired approval")
 	assert.Nil(t, approval)
-	assert.Contains(t, err.Error(), "expired")
+	assert.Contains(t, err.Error(), "acceptance end has passed")
 }
 
 func TestFindingApprovalService_ApproveStatus_SelfApproval(t *testing.T) {
@@ -689,9 +714,9 @@ func TestFindingApprovalService_RejectApproval_Expired(t *testing.T) {
 	})
 	require.NoError(t, err)
 	past := time.Now().Add(-1 * time.Hour)
-	approvalRepo.approvals[created.ID].ExpiresAt = &past
+	approvalRepo.approvals[created.ID].DecideBy = &past
 
-	// Try to reject the expired approval
+	// Try to reject a request past its decide-by time
 	approval, err := svc.RejectApproval(context.Background(), finding.RejectApprovalInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
@@ -699,9 +724,8 @@ func TestFindingApprovalService_RejectApproval_Expired(t *testing.T) {
 		Reason:     "Test rejection",
 	})
 
-	assert.Error(t, err, "should not be able to reject an expired approval")
+	assert.ErrorIs(t, err, vulnerability.ErrDecisionOverdue, "a request past its decide-by time cannot be decided")
 	assert.Nil(t, approval)
-	assert.Contains(t, err.Error(), "expired")
 }
 
 func TestFindingApprovalService_RejectApproval_Success(t *testing.T) {
