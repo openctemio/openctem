@@ -286,13 +286,14 @@ has an account or an organization exists:
 
 | Endpoint | Unknown and known answer the same way |
 |---|---|
-| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal |
+| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal. With Turnstile keys, after 3 failed sign-ins from one client address in 15 minutes the next attempt from it answers 403 `CAPTCHA_REQUIRED` until a passing `captcha_token` is sent (counted per address, never per account; Redis across replicas) |
 | `POST /auth/register` | 201 with the same body for a new and an existing email: no account id, the verification rule a new account would get, one message; the password policy is checked first for both; the verification email is sent after the response |
 | `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response |
 | `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
 | `GET /auth/sso/{provider}/authorize?org=` | 404 "SSO provider not configured" for an unknown organization and a missing provider alike |
 | `GET /auth/saml/{org}/metadata` | SP metadata for any well-formed slug (it is built from the slug and the deployment URL only) |
-| `POST /auth/discover` | `{"next","org"}` for every email; `sso` + the slug only for a domain an organization proved it owns and signs in to by SSO (sso-authentication.md, "Email-first sign-in") |
+| `POST /auth/discover` | `{"next","org"}` for every email; `sso` + an opaque, expiring organization reference (never the slug) only for a domain an organization proved it owns and signs in to by SSO (sso-authentication.md, "Email-first sign-in") |
+| `POST /auth/create-first-team`, `POST /tenants` | a taken and a reserved organization URL get one "this URL is not available" answer that does not echo the slug |
 | `GET /auth/saml/{org}/login`, `POST …/acs` | every failure redirects to `/login?error=saml` |
 
 Tests: `tests/unit/auth_anti_enumeration_test.go`.
