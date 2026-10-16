@@ -26,6 +26,37 @@ type IssueIdentifier interface {
 	IssueIdentity(ctx context.Context, issueKey string) (id, key string, err error)
 }
 
+// ErrProjectNotConfigured: the issue is in a project the organization has not
+// configured for ticketing, so the platform must not act on it.
+var ErrProjectNotConfigured = fmt.Errorf("%w: the issue is in a Jira project that is not configured for ticketing (the default project, a routing rule or a field mapping)", shared.ErrValidation)
+
+// allowedProjects is the set of projects the integration is configured for:
+// its default project, its routing rules' projects and its mapping profiles.
+// Linking (and so syncing) is limited to them: the integration's account may
+// see many more projects than security work belongs in.
+func (s *SyncService) allowedProjects(ctx context.Context, tenantID, integrationID shared.ID) (map[string]bool, error) {
+	allowed := map[string]bool{}
+	m := s.resolveMapping(ctx, tenantID)
+	if m.DefaultProjectKey != "" {
+		allowed[strings.ToUpper(m.DefaultProjectKey)] = true
+	}
+	for _, r := range m.Routing {
+		if r.ProjectKey != "" {
+			allowed[strings.ToUpper(r.ProjectKey)] = true
+		}
+	}
+	if s.profiles != nil {
+		keys, err := s.profiles.ProjectKeys(ctx, tenantID, integrationID)
+		if err != nil {
+			return nil, err
+		}
+		for _, k := range keys {
+			allowed[strings.ToUpper(k)] = true
+		}
+	}
+	return allowed, nil
+}
+
 // SetLinkStore wires the ticket link records.
 func (s *SyncService) SetLinkStore(r ticketlink.Repository) { s.links = r }
 
@@ -70,21 +101,35 @@ func (s *SyncService) LinkExistingIssue(ctx context.Context, tenantID, findingID
 	if ticketlink.ValidKey(current) {
 		key = current // a moved issue answers with its new key
 	}
+	allowed, err := s.allowedProjects(ctx, tenantID, ii.IntegrationID())
+	if err != nil {
+		return nil, err
+	}
+	if !allowed[ticketlink.ProjectOf(key)] {
+		return nil, ErrProjectNotConfigured
+	}
 	l, err := ticketlink.New(tenantID, ii.IntegrationID(), &findingID, nil, key, id,
 		ii.SiteURL(), ticketlink.BrowseURL(ii.SiteURL(), key), ticketlink.RoleOwn, ticketlink.SourcePerson, by)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.links.Create(ctx, l); err != nil {
-		return nil, err
-	}
 	// The URL list stays the display copy (and the status sync's source until
-	// it reads the links).
-	if !containsFold(finding.WorkItemURIs(), l.URL) {
+	// it reads the links): it is written first, and put back if the link
+	// cannot be recorded, so the two never disagree.
+	before := append([]string(nil), finding.WorkItemURIs()...)
+	if !containsFold(before, l.URL) {
 		finding.AddWorkItemURI(l.URL)
 		if err := s.findingRepo.UpdateWorkItemURIs(ctx, tenantID, findingID, finding.WorkItemURIs()); err != nil {
-			s.logger.Error("link issue: failed to update the finding's ticket list", "error", err)
+			return nil, fmt.Errorf("record the issue on the finding: %w", err)
 		}
+	}
+	if err := s.links.Create(ctx, l); err != nil {
+		if !containsFold(before, l.URL) {
+			if rerr := s.findingRepo.UpdateWorkItemURIs(ctx, tenantID, findingID, before); rerr != nil {
+				s.logger.Error("link issue: failed to restore the finding's ticket list", "error", rerr)
+			}
+		}
+		return nil, err
 	}
 	return l, nil
 }
