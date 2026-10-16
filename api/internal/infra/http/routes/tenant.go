@@ -307,6 +307,13 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 			r.POST("/reject", tenantH.DeclineOwnershipTransfer, middleware.Require(permission.TeamRead))
 		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 	}
+	if tenantH != nil {
+		// Leaving the organization of the credential (RFC-104): any member,
+		// for themselves only.
+		router.Group("/api/v1/organization/leave", func(r Router) {
+			r.POST("/", tenantH.LeaveOrganization, middleware.Require(permission.TeamRead), requireStepUp())
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
 	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {
 		if localAuth != nil {
 			r.DELETE("/mfa", localAuth.ResetMemberMFA, middleware.RequireAdmin(), requireStepUp())
