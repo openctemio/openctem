@@ -259,7 +259,7 @@ without an administrator). Audited `member.left`; administrators notified.
 ### Delete my account
 
 `DELETE /api/v1/me/account` (step-up) schedules the deletion
-(`account_deletions`, migration 002570):
+(`account_deletions`, migration 002716):
 
 - refused (409 `SOLE_OWNER`, naming the organizations to the caller only)
   while the caller is the only active owner of an organization, and for a
