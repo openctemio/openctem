@@ -311,7 +311,10 @@ func TestImport(t *testing.T) {
 // redirect chains.
 func TestClientRedirectPolicy(t *testing.T) {
 	c := newClient("https://example.com/feed.json")
-	req := func(u string) *http.Request { r, _ := http.NewRequest(http.MethodGet, u, nil); return r }
+	req := func(u string) *http.Request {
+		r, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		return r
+	}
 	if err := c.CheckRedirect(req("http://example.com/x"), []*http.Request{req("https://example.com/feed.json")}); err == nil {
 		t.Fatal("followed a redirect to http")
 	}
