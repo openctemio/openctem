@@ -127,6 +127,9 @@ ingest_reports
 integrations
 ioc_matches
 iocs
+lifecycle_scheme_versions
+lifecycle_schemes
+lifecycle_sub_statuses
 mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
