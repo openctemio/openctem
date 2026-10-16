@@ -1074,5 +1074,15 @@
   "findings.ticketLinks.unlinkTitle": "Bỏ liên kết {key}?",
   "findings.ticketLinks.unlinkDescription": "Phát hiện ngừng đồng bộ với issue này. Bản thân issue không thay đổi.",
   "findings.ticketLinks.unlink": "Bỏ liên kết",
-  "findings.ticketLinks.unlinkFailed": "Không bỏ liên kết được issue"
+  "findings.ticketLinks.unlinkFailed": "Không bỏ liên kết được issue",
+  "findings.transitionReason.not_in_lifecycle": "Không phải bước chuyển trong vòng đời của tổ chức bạn",
+  "findings.transitionReason.same_sub_status": "Đã ở trạng thái này",
+  "findings.transitionReason.closure_reason_change": "Đổi lý do đóng là một quyết định mới, không phải đổi nhãn",
+  "findings.transitionReason.platform_sub_status": "Do nền tảng đặt, không phải do người dùng",
+  "findings.transitionReason.lifecycle_permission": "Tổ chức của bạn yêu cầu một trong các quyền: {any_of}",
+  "findings.transitionReason.actor_kind_denied": "Tổ chức của bạn chỉ cho người dùng thực hiện bước này",
+  "findings.transitionReason.fields_required": "Cần {fields}: hãy đổi từng phát hiện một",
+  "findings.transitionReason.note_too_short": "Cần ghi chú ít nhất {n} ký tự",
+  "findings.statusSelect.needsNote": "ghi chú từ {n} ký tự",
+  "findings.statusSelect.needs": "cần {what}"
 }
