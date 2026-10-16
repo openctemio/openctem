@@ -584,6 +584,7 @@
   "admin.auditChain.brokenBody": "{count} mục không hợp lệ. Hãy xử lý như một sự cố bảo mật: đối chiếu với bản sao nhật ký lưu ở nơi khác.",
   "admin.sharedSensorEnroll.title": "Đăng ký sensor dùng chung",
   "admin.sharedSensorEnroll.desc": "Tạo một mã đăng ký dùng một lần. Khởi động sensor với SENSOR_INSTANCE_ENROLLMENT_TOKEN bằng mã này: sensor ghép đôi bằng khóa của chính nó và trở thành sensor dùng chung của hệ thống, không thuộc tổ chức nào và chỉ có quyền tối thiểu.",
+  "admin.sharedSensorEnroll.mintRightBefore": "Hãy tạo mã ngay trước khi khởi động sensor: mã chỉ dùng được một lần và hết hạn trong vòng một giờ.",
   "admin.sharedSensorEnroll.name": "Tên sensor (không bắt buộc)",
   "admin.sharedSensorEnroll.namePlaceholder": "Để trống sẽ dùng tên máy",
   "admin.sharedSensorEnroll.ttl": "Hiệu lực (phút, từ 5 đến 60)",
