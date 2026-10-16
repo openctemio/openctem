@@ -365,5 +365,7 @@
   "settings.mcp.connectDescription": "Thêm máy chủ này vào ứng dụng MCP của bạn. Lần dùng đầu tiên, nó mở {product} trong trình duyệt: bạn đăng nhập, chọn những gì nó được đọc và phê duyệt. Không cần sao chép khóa; bạn có thể ngắt kết nối bất cứ lúc nào trong Tài khoản của tôi, Ứng dụng đã kết nối.",
   "settings.mcp.otherHost": "Nếu API {product} của bạn ở một máy chủ khác, hãy thay URL cho phù hợp.",
   "settings.mcp.consentTitle": "Kết nối {client} với {product}?",
-  "settings.mcp.consentConfirmEach": "Mỗi thay đổi vẫn cần bạn xác nhận trong {product}."
+  "settings.mcp.consentConfirmEach": "Mỗi thay đổi vẫn cần bạn xác nhận trong {product}.",
+  "settings.item.finding-approvals": "Phê duyệt phát hiện",
+  "settings.desc.finding-approvals": "Ai quyết định dương tính giả và rủi ro được chấp nhận, và ai được thông báo."
 }
