@@ -139,7 +139,7 @@ export default function AdminSignInPage() {
                 </p>
               </>
             )}
-            <form onSubmit={submit} className="space-y-3" noValidate>
+            <form method="post" onSubmit={submit} className="space-y-3" noValidate>
               <div className="space-y-1.5">
                 <Label htmlFor={emailId}>{t('admin.login.email', 'Email')}</Label>
                 <Input

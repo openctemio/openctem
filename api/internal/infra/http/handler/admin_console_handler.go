@@ -187,9 +187,9 @@ func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if h.loginFailures != nil && key != "" {
-		_ = h.loginFailures.Reset(r.Context(), key)
-	}
+	// The failure counter is not cleared on success: a success must not reset
+	// the count an attacker is building against the address (the entries decay
+	// with LoginFailureWindow).
 	h.setCookie(w, middleware.AdminMFACookie, res.PendingToken, adminAuthPath, int(admin.PendingMFATTL.Seconds()), true)
 	writeJSON(w, http.StatusOK, AdminLoginResponse{Status: string(res.Status), OTPAuthURI: res.OTPAuthURI, Secret: res.Secret})
 }
