@@ -52,6 +52,10 @@ type Session struct {
 	// StepUpAt is when this session last confirmed a protected action with a
 	// fresh code; nil when it never did.
 	StepUpAt *time.Time
+	// EnrollmentRequired is computed on each request, never stored: "require
+	// WebAuthn" is on and this administrator has not registered enough
+	// authenticators and recovery codes yet, so the session may only enroll.
+	EnrollmentRequired bool
 }
 
 // SteppedUp reports whether the session confirmed a protected action within

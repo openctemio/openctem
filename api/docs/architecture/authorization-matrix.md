@@ -895,6 +895,38 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 
+#### Console security keys and recovery codes (RFC-078)
+
+- **Relying party = the console origin** (`ADMIN_PUBLIC_URL`, default the
+  origin of `APP_URL`). The RP ID is its host and it is the only accepted
+  origin, so an assertion made on the tenant site or a look-alike domain is
+  refused. Off (endpoints answer 403 `WEBAUTHN_UNAVAILABLE`) when no origin is
+  configured.
+- **Second factor.** The sign-in response lists `methods` (`webauthn`, `totp`,
+  `recovery_code`, in that order). `POST /auth/webauthn/session/options` +
+  `POST /auth/webauthn/session` and `POST /auth/recovery` complete a pending
+  session (admin_mfa cookie) like `/auth/mfa`, with the same login rate limit
+  and lockout counting. User verification is required; attestation is not
+  requested; a counter that goes back refuses the assertion and is audited.
+- **Step-up.** `POST /auth/step-up/webauthn/options` + `POST /auth/step-up/webauthn`
+  open the session's five-minute step-up window; the protected action is then
+  retried without a code (route-level and handler-level step-ups both honour
+  the window).
+- **Own factors only.** `GET /auth/factors`; register (`POST
+  /auth/webauthn/credentials/options` takes the route-level step-up, the finish
+  call completes that single-use ceremony), rename, remove (step-up) and new
+  recovery codes (step-up). Every query is keyed on the caller's administrator
+  id. A super admin's reset-credentials removes keys and codes too.
+- **Policy "require security keys"** (`/admin/settings/console-mfa`, super
+  admin + step-up). Turning it on needs a configured relying party and an
+  actor with at least two keys and unused recovery codes. Under the policy an
+  administrator holding a key cannot use TOTP (sign-in or step-up: 403
+  `WEBAUTHN_REQUIRED`), a trusted platform-IdP MFA no longer skips the
+  console factor, the last two keys cannot be removed, and a session of an
+  administrator with fewer than two keys or no recovery codes reaches only the
+  enrollment routes (403 `FACTOR_ENROLLMENT_REQUIRED`). Break-glass
+  administrators keep TOTP.
+
 #### Break-glass administrators and the platform IdP (RFC-022 revision 4)
 
 - **Platform IdP** (`platform_identity_provider`, one OIDC provider, not
