@@ -95,7 +95,7 @@ used by this client.
 
 ## State
 
-One row in `version_check_state` (migration `002600`): the last verified feed,
+One row in `version_check_state` (migration `002630`): the last verified feed,
 its origin, the applied sequence and key set version, the last attempt, the
 last failure code, the consecutive failure count and the next check time.
 API replicas share it; a conditional update elects the one replica that
