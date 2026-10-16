@@ -161,7 +161,7 @@ export function FieldMapper({
         <section aria-labelledby="tm-attrs" className="min-w-0 rounded-lg border">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
             <h3 id="tm-attrs" className="text-sm font-semibold">
-              {t('ticketMapping.fields.openctem', 'OpenCTEM attributes')}
+              {t('ticketMapping.fields.openctem', '{product} attributes')}
             </h3>
             <Input
               value={attrQuery}
@@ -174,7 +174,7 @@ export function FieldMapper({
           <ul
             className="max-h-80 overflow-y-auto p-2"
             role="listbox"
-            aria-label={t('ticketMapping.fields.openctem', 'OpenCTEM attributes')}
+            aria-label={t('ticketMapping.fields.openctem', '{product} attributes')}
           >
             {shownAttrs.map((a) => (
               <li key={a.path}>
@@ -680,7 +680,7 @@ function MappingRowCard({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="openctem">
-                {t('ticketMapping.winner.openctem', 'OpenCTEM wins')}
+                {t('ticketMapping.winner.openctem', '{product} wins')}
               </SelectItem>
               <SelectItem value="tracker">
                 {t('ticketMapping.winner.tracker', 'Jira wins')}

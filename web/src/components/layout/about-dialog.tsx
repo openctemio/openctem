@@ -1,5 +1,6 @@
 'use client'
 
+import { useDocsHref } from '@/context/brand-provider'
 import { ExternalLink } from 'lucide-react'
 import {
   Dialog,
@@ -32,6 +33,7 @@ interface AboutDialogProps {
  * be determined says "unavailable" and the dialog still renders.
  */
 export function AboutDialog({ open, onOpenChange, shell = 'app' }: AboutDialogProps) {
+  const docsHref = useDocsHref()
   const { t } = useTranslation()
   const { web, api } = useBuildVersions(shell, open)
 
@@ -39,7 +41,7 @@ export function AboutDialog({ open, onOpenChange, shell = 'app' }: AboutDialogPr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>{t('help.about', 'About OpenCTEM')}</DialogTitle>
+          <DialogTitle>{t('help.about', 'About {product}')}</DialogTitle>
           <DialogDescription>
             {t('help.about.description', 'Continuous threat exposure management platform.')}
           </DialogDescription>
@@ -54,7 +56,7 @@ export function AboutDialog({ open, onOpenChange, shell = 'app' }: AboutDialogPr
             <VersionRow label={t('help.about.api', 'API')} info={api} testId="about-api-version" />
           </dl>
           <a
-            href={DOCS_URL}
+            href={docsHref(DOCS_URL)}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"

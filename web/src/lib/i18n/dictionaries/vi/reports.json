@@ -1,4 +1,5 @@
 {
   "reports.schedulesHint": "Bản tóm tắt phát hiện gửi qua email cho người nhận theo lịch.",
-  "reports.executiveHint": "Rủi ro, phát hiện, SLA và MTTR cấp chương trình trong khoảng thời gian đã chọn."
+  "reports.executiveHint": "Rủi ro, phát hiện, SLA và MTTR cấp chương trình trong khoảng thời gian đã chọn.",
+  "reports.schedule.newDescription": "Theo chu kỳ đã chọn, {product} tạo bản tóm tắt phát hiện và gửi email cho những người nhận bên dưới. Không lưu tệp để tải xuống."
 }
