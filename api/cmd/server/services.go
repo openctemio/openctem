@@ -72,6 +72,7 @@ import (
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
+	findinglifecycleapp "github.com/openctemio/openctem/api/internal/app/findinglifecycle"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
@@ -841,6 +842,9 @@ type Services struct {
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
 	IdleWorkspaces *lifecycleapp.Service
+	// FindingLifecycle manages the organization's finding sub-statuses and
+	// lifecycle schemes (RFC-110).
+	FindingLifecycle *findinglifecycleapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -941,6 +945,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	} {
 		r.SetPlanLimits(s.Entitlement)
 	}
+	s.FindingLifecycle = findinglifecycleapp.NewService(repos.LifecycleSubStatus, repos.LifecycleScheme, s.Entitlement, s.Audit, log)
 
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)

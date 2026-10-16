@@ -37,12 +37,31 @@ Rules the database enforces on its own, whatever the code does:
 - Metrics never read the sub-status: `TestMetricQueriesNeverReadSubStatus` fails when a dashboard, metric,
   SLA or risk repository mentions it.
 
+### Definitions API
+
+| Piece | Where |
+|---|---|
+| Permission `findings:lifecycles:write` (owner and admin) | `pkg/domain/permission`, migration `finding_lifecycles_permission` |
+| Routes `/api/v1/lifecycle-sub-statuses`, `/api/v1/lifecycles` | `internal/infra/http/routes/finding_lifecycles.go`, `handler/finding_lifecycle_handler.go` |
+| Service: catalog, schemes, drafts, validation, publish, roll back | `internal/app/findinglifecycle/service.go` |
+| Schemes and versions | `pkg/domain/findinglifecycle/scheme.go`, `internal/infra/postgres/lifecycle_scheme_repository.go` |
+| Plan limits `lifecycle_sub_statuses` (Free 3), `lifecycle_schemes` (Free 0, Pro 1) | `pkg/domain/plan/plan.go` |
+
+- A draft is edited with `If-Match: <spec_hash>`, so two editors never overwrite each other; the answer
+  carries the validation against the current catalog.
+- Publishing compiles the draft (an invalid one answers 422 with the issues), needs a recent sign-in
+  (step-up), supersedes the version in force and is audited (`lifecycle.published`, high, with the old and
+  new spec hashes). Publishing an older version copies it into a new version and publishes that (a roll
+  back); history stays linear.
+- A sub-status a published lifecycle uses cannot be archived. Archiving a lifecycle stops it applying.
+- The definitions exist, but nothing evaluates them yet: the status paths still use the platform engine
+  alone until the next step wires the tenant layer in.
+
 ## Planned (RFC-110 §11)
 
-- The pure engine layer (scheme spec, validator, guards, context selection) and its property test.
-- The catalog API with the `findings:lifecycles:write` permission and plan limits; the finding resource
-  and list filter.
-- Schemes and versions (validate, simulate, publish with step-up, rollback), and the tenant layer on every
-  status path.
+- The pure engine layer (scheme spec, validator, guards, context selection) and its property test (in
+  review).
+- The tenant layer on every status path: sub-status changes only as engine-decided, audited moves;
+  `PATCH /status` with `sub_status_id` and `fields`; the finding resource and list filter; simulate.
 - Settings → Findings → Lifecycle, and sub-statuses in the finding drawer, list and bulk actions.
 - Templates, extra approval steps, ticket mapping by sub-status, the flow report.
