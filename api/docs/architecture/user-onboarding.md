@@ -305,6 +305,18 @@ one person owns at most the Free plan's `free_teams_per_user` (1 by default):
 another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 `docs/architecture/plans-and-limits.md`.
 
+## Data region (RFC-104)
+
+`DEPLOYMENT_REGION` names the data region of the deployment (1-32 lowercase
+letters, digits or hyphens; validated at start). Every organization created
+here gets it in `tenants.region` (migration 002571), at insert, and keeps it
+for its life: no update writes the column, and a later change of
+`DEPLOYMENT_REGION` never moves an existing organization. Organizations from
+before have no region. The region is shown on the create form
+(`deployment_region` on `GET /auth/providers`) and in the organization's
+settings (`region` on the organization). With a second region, each region
+runs its own deployment; the selector appears only then.
+
 ## Organization access policy (Settings → Organization → Security, owner only)
 
 ### Who may be invited (`security.invitees`, RFC-095)

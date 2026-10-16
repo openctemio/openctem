@@ -115,6 +115,11 @@ const (
 	SuppressionsDelete  Permission = "findings:suppressions:delete"
 	SuppressionsApprove Permission = "findings:suppressions:approve"
 
+	// FindingsLifecyclesWrite manages the organization's finding lifecycles:
+	// sub-statuses and lifecycle schemes (RFC-110). Reading them needs
+	// findings:read; publishing also needs a recent sign-in (step-up).
+	FindingsLifecyclesWrite Permission = "findings:lifecycles:write"
+
 	// Vulnerability permissions (findings:vulnerabilities:*)
 	VulnerabilitiesRead Permission = "findings:vulnerabilities:read"
 
@@ -464,6 +469,7 @@ func AllPermissions() []Permission {
 		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
+		FindingsLifecyclesWrite,
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
