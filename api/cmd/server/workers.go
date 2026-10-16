@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
@@ -570,6 +571,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewAssetIdentityBackfillController(
 		ingest.NewIdentityBackfill(repos.AssetIdentityBackfill, repos.AssetIdentifier, repos.AssetDedup,
 			log.With("controller", "asset-identity-backfill")),
+	))
+
+	// Detected technologies (RFC-112): fill them for assets that predate
+	// them and drop the component links ingest no longer creates.
+	w.ControllerManager.Register(controller.NewAssetTechnologyBackfillController(
+		assettechapp.NewBackfill(repos.AssetTechnologyBackfill, repos.AssetTechnology,
+			log.With("controller", "asset-technology-backfill")),
 	))
 
 	w.ControllerManager.Register(controller.NewScopeReconciliationController(
