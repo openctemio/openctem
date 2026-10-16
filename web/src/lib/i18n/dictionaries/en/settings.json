@@ -358,5 +358,7 @@
   "settings.item.ticket-field-mapping": "Ticket field mapping",
   "settings.desc.ticket-field-mapping": "Which fields and statuses sync with Jira, per project.",
   "settings.item.finding-approvals": "Finding approvals",
-  "settings.desc.finding-approvals": "Who decides false positives and accepted risks, and who is told."
+  "settings.desc.finding-approvals": "Who decides false positives and accepted risks, and who is told.",
+  "settings.item.content": "Content catalog",
+  "settings.desc.content": "Signed rules, templates and other packages: install, update and approve."
 }

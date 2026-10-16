@@ -358,5 +358,7 @@
   "settings.item.ticket-field-mapping": "Ánh xạ trường ticket",
   "settings.desc.ticket-field-mapping": "Các trường và trạng thái đồng bộ với Jira, theo từng dự án.",
   "settings.item.finding-approvals": "Phê duyệt phát hiện",
-  "settings.desc.finding-approvals": "Ai quyết định dương tính giả và rủi ro được chấp nhận, và ai được thông báo."
+  "settings.desc.finding-approvals": "Ai quyết định dương tính giả và rủi ro được chấp nhận, và ai được thông báo.",
+  "settings.item.content": "Danh mục nội dung",
+  "settings.desc.content": "Quy tắc, mẫu và các gói đã ký khác: cài đặt, cập nhật và phê duyệt."
 }
