@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -272,19 +270,18 @@ func (h *AdminContentCatalogHandler) Publish(w http.ResponseWriter, r *http.Requ
 
 // RevokeInstancePackageRequest revokes an instance package version.
 type RevokeInstancePackageRequest struct {
-	Reason   string `json:"reason"`
-	TOTPCode string `json:"totp_code"`
+	PackageID string `json:"package_id"`
+	Version   string `json:"version"`
+	Reason    string `json:"reason"`
+	TOTPCode  string `json:"totp_code"`
 }
 
-// Revoke handles POST /api/v1/admin/content-catalog/packages/{namespace}/{name}/{version}/revoke
+// Revoke handles POST /api/v1/admin/content-catalog/packages/revoke
 // @Summary      Revoke an instance content package version
 // @Description  Every installation of the version becomes revoked. Super admin with a reason and a fresh console authenticator code; audited.
 // @Tags         Admin Content Catalog
 // @Accept       json
 // @Produce      json
-// @Param        namespace  path      string                        true  "Namespace"
-// @Param        name       path      string                        true  "Name"
-// @Param        version    path      string                        true  "Version"
 // @Param        body       body      RevokeInstancePackageRequest  true  "Reason and code"
 // @Success      200        {object}  ContentPackageVersionResponse
 // @Failure      400        {object}  apierror.Error
@@ -293,7 +290,7 @@ type RevokeInstancePackageRequest struct {
 // @Failure      404        {object}  apierror.Error
 // @Failure      409        {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /admin/content-catalog/packages/{namespace}/{name}/{version}/revoke [post]
+// @Router       /admin/content-catalog/packages/revoke [post]
 func (h *AdminContentCatalogHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	var req RevokeInstancePackageRequest
 	if !decodeContentBody(w, r, &req) {
@@ -307,9 +304,8 @@ func (h *AdminContentCatalogHandler) Revoke(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	actor := middleware.GetAdminUser(r.Context())
-	id := packageIDParam(r) + "@" + chi.URLParam(r, "version")
-	body := map[string]any{formReason: reason, "package": id}
-	p, err := h.service.RevokeInstance(r.Context(), packageIDParam(r), chi.URLParam(r, "version"), reason)
+	body := map[string]any{formReason: reason, "package": req.PackageID + "@" + req.Version}
+	p, err := h.service.RevokeInstance(r.Context(), req.PackageID, req.Version, reason)
 	if err != nil {
 		rec := httptest.NewRecorder()
 		(&ContentCatalogHandler{logger: h.logger}).handleError(rec, err)

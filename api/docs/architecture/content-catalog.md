@@ -105,7 +105,7 @@ Routes and gates: [authorization matrix](authorization-matrix.md#content-catalog
 | Visible to | that organization only | every organization of the instance |
 | Artifact | becomes one of the organization's content packs (lint, credential scan) | becomes a platform content pack; refused when lint leaves a file out |
 | Statement | signed with the organization's content key | signed with the platform content key |
-| Revoke | `POST /api/v1/content/private-packages/{ns}/{name}/{version}/revoke` | `POST /api/v1/admin/content-catalog/packages/{ns}/{name}/{version}/revoke` |
+| Revoke | `POST /api/v1/content/private-packages/{ns}/{name}/{version}/revoke` | `POST /api/v1/admin/content-catalog/packages/revoke` (`package_id`, `version` in the body) |
 
 - Types: rules, templates and wordlists (the types delivered as packs). The others need their importers first.
 - The declared tier must be at least the tier lint finds; a private package never asks for credentials or data
