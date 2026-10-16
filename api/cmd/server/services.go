@@ -2445,6 +2445,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 	// Four-eyes on approvals (owner decision B16) reads who may approve.
 	s.Suppression.SetApproverDirectory(repos.Suppression)
+	// Rules follow the approval policy (RFC-111): tier by the worst finding
+	// they match, security pool, asset owners excluded, sign-offs.
+	if s.Vulnerability != nil {
+		s.Suppression.SetApprovalPolicy(finding.NewRulePolicyEvaluator(s.Vulnerability, repos.Suppression))
+	}
 	// An asset-bound rule names an asset of the tenant the requester may see
 	// (RFC-050 W8, 21b M-10).
 	s.Suppression.SetAssetRefChecker(s.DataScope)

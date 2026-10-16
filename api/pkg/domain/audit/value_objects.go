@@ -467,6 +467,11 @@ const (
 	// no end date) and cleared the flag.
 	ActionSuppressionRuleReviewed Action = "suppression_rule.reviewed"
 
+	// Approval policy on rules (RFC-111): one approval of a rule that needs
+	// more (it stays pending), and an approver the policy refused.
+	ActionSuppressionRuleSigned          Action = "suppression_rule.signed"
+	ActionSuppressionRuleApprovalRefused Action = "suppression_rule.approval_refused"
+
 	// Four-eyes dispositions of high and critical exposures.
 	ActionExposureDispositionRequested    Action = "exposure.disposition_requested"
 	ActionExposureDispositionApproved     Action = "exposure.disposition_approved"
@@ -755,7 +760,7 @@ func (a Action) IsValid() bool {
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
-		ActionSuppressionRuleReviewed,
+		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -886,7 +891,7 @@ func (a Action) Category() string {
 		return "scope"
 	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
 		return "suppression"
-	case ActionSuppressionRuleReviewed:
+	case ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused:
 		return "suppression"
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused:
@@ -1167,7 +1172,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionSuppressionRuleApproved,
 		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
-		ActionSuppressionRuleReviewed,
+		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
