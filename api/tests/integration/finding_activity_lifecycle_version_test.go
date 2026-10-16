@@ -56,6 +56,17 @@ func TestFindingActivityLifecycleVersion(t *testing.T) {
 		VALUES ($1, $2, 'comment_added', 'user', '{"comment_id": "x"}', 'api')`, tenant, finding); err != nil {
 		t.Fatal(err)
 	}
+	// A writer naming its own version: kept when it fits; an over-long one
+	// (the column holds 64) falls back to the platform version instead of
+	// failing the insert and with it the status change.
+	if _, err := db.Exec(`INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, changes, source)
+		VALUES ($1, $2, 'status_changed', 'user', jsonb_build_object('old_status', 'confirmed', 'new_status', 'in_progress', 'lifecycle_version', 'tenant:7'), 'named')`, tenant, finding); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, changes, source)
+		VALUES ($1, $2, 'status_changed', 'user', jsonb_build_object('old_status', 'in_progress', 'new_status', 'confirmed', 'lifecycle_version', repeat('x', 65)), 'overlong')`, tenant, finding); err != nil {
+		t.Fatalf("an over-long version failed the insert: %v", err)
+	}
 	// A platform move: the timeline trigger writes the entry.
 	tx, err := db.Begin()
 	if err != nil {
@@ -85,8 +96,11 @@ func TestFindingActivityLifecycleVersion(t *testing.T) {
 		}
 		seen++
 		want := vulnerability.PlatformLifecycleVersion
-		if typ == "comment_added" {
+		switch {
+		case typ == "comment_added":
 			want = ""
+		case source == "named":
+			want = "tenant:7"
 		}
 		if col != want || inChanges != want {
 			t.Errorf("%s/%s: lifecycle_version %q, changes %q; want %q", typ, source, col, inChanges, want)
@@ -95,7 +109,7 @@ func TestFindingActivityLifecycleVersion(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if seen != 3 {
-		t.Fatalf("entries = %d, want 3 (person move, comment, platform move)", seen)
+	if seen != 5 {
+		t.Fatalf("entries = %d, want 5 (person move, comment, named, over-long, platform move)", seen)
 	}
 }
