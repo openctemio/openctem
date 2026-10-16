@@ -104,6 +104,10 @@ func (in OffboardMemberInput) plan() (tenantdom.OffboardPlan, error) {
 // stripped, and the membership kept as a tombstone so history and foreign
 // keys stay valid. A re-invite later starts from zero.
 func (s *TenantService) OffboardMember(ctx context.Context, membershipID string, input OffboardMemberInput, actx auditapp.AuditContext) (*tenantdom.OffboardResult, error) {
+	return s.offboardMember(ctx, membershipID, input, actx, false)
+}
+
+func (s *TenantService) offboardMember(ctx context.Context, membershipID string, input OffboardMemberInput, actx auditapp.AuditContext, allowOwner bool) (*tenantdom.OffboardResult, error) {
 	if s.lifecycle == nil {
 		return nil, fmt.Errorf("member lifecycle is not configured")
 	}
@@ -111,7 +115,7 @@ func (s *TenantService) OffboardMember(ctx context.Context, membershipID string,
 	if err != nil {
 		return nil, err
 	}
-	if membership.IsOwner() {
+	if membership.IsOwner() && !allowOwner {
 		return nil, fmt.Errorf("%w: cannot offboard the owner", shared.ErrValidation)
 	}
 	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
@@ -180,10 +184,23 @@ func (s *TenantService) OffboardMember(ctx context.Context, membershipID string,
 // they do, they are disabled (access cut at once) and the administrators are
 // asked to finish the offboarding with a reassignment.
 func (s *TenantService) DeprovisionMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
+	return s.deprovisionMember(ctx, membershipID, actx, false)
+}
+
+// DeprovisionMemberForAccountErasure is DeprovisionMember for an account
+// being erased (RFC-104): an owner is offboarded too, because the erasure
+// runs only while the organization has another active owner (checked by the
+// caller). Work that needs a new owner leaves the membership disabled and the
+// administrators asked to reassign it, as for any deprovisioning.
+func (s *TenantService) DeprovisionMemberForAccountErasure(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
+	return s.deprovisionMember(ctx, membershipID, actx, true)
+}
+
+func (s *TenantService) deprovisionMember(ctx context.Context, membershipID string, actx auditapp.AuditContext, allowOwner bool) error {
 	if s.lifecycle == nil {
 		return s.SuspendMember(ctx, membershipID, actx)
 	}
-	_, err := s.OffboardMember(ctx, membershipID, OffboardMemberInput{}, actx)
+	_, err := s.offboardMember(ctx, membershipID, OffboardMemberInput{}, actx, allowOwner)
 	if err == nil {
 		return nil
 	}
@@ -371,4 +388,70 @@ func pausedSummary(r *tenantdom.DisableResult) string {
 		parts = append(parts, fmt.Sprintf("%d workflow(s)", n))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// ErrSoleOwnerCannotLeave: the only owner transfers ownership (or deletes
+// the organization) before leaving.
+var ErrSoleOwnerCannotLeave = fmt.Errorf("%w: you are the only owner; transfer ownership or delete the organization first", shared.ErrConflict)
+
+// ErrLeaveNeedsReassignment: the person still owns work an administrator
+// must hand to someone else; they are offboarded by an administrator.
+var ErrLeaveNeedsReassignment = fmt.Errorf("%w: you still own work in this organization; ask an administrator to offboard you", shared.ErrConflict)
+
+// LeaveOrganization lets a member leave the organization of their own
+// credential (docs/rfcs/RFC-104): the same offboarding an administrator
+// runs (keys revoked, groups, grants and roles stripped, a tombstone kept),
+// started by the person. An owner may leave only while another active owner
+// remains; a member who still owns assignable work is told to ask an
+// administrator (nothing is reassigned without one).
+func (s *TenantService) LeaveOrganization(ctx context.Context, tenantID, userID shared.ID, actx auditapp.AuditContext) error {
+	if s.lifecycle == nil {
+		return fmt.Errorf("member lifecycle is not configured")
+	}
+	membership, err := s.repo.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		return err
+	}
+	if membership.IsOffboarded() {
+		return shared.ErrNotFound
+	}
+	if membership.IsOwner() {
+		owners, err := s.lifecycle.ActiveAdminIDs(ctx, tenantID)
+		if err != nil {
+			return err
+		}
+		other := false
+		for _, id := range owners {
+			if id.Equals(userID) {
+				continue
+			}
+			if m, merr := s.repo.GetMembership(ctx, id, tenantID); merr == nil && m.IsOwner() && m.IsActive() {
+				other = true
+				break
+			}
+		}
+		if !other {
+			return ErrSoleOwnerCannotLeave
+		}
+	}
+	result, err := s.lifecycle.Offboard(ctx, membership, &userID, tenantdom.OffboardPlan{})
+	if err != nil {
+		if _, ok := tenantdom.AsReassignmentError(err); ok {
+			return ErrLeaveNeedsReassignment
+		}
+		return err
+	}
+	s.cutAccess(ctx, tenantID.String(), userID.String())
+	if !membership.IsExternal() {
+		s.homeAccessEnded(ctx, tenantID, userID)
+	}
+	actx.TenantID = tenantID.String()
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionMemberLeft, audit.ResourceTypeMembership, membership.ID().String()).
+		WithSeverity(audit.SeverityMedium).
+		WithMessage("Member left the organization").
+		WithMetadata("user_id", userID.String()).
+		WithMetadata("revoked_keys", result.RevokedKeys))
+	s.notifyAdmins(ctx, tenantID, "A member left the organization",
+		fmt.Sprintf("%s left the organization.", actx.ActorEmail), notificationdom.SeverityInfo)
+	return nil
 }
