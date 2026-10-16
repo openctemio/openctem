@@ -180,7 +180,9 @@ call POST /api/v1/auth/logout '{}'
 
 ACCESS_TOKEN=
 JAR="$WORK/member-cookies"
-call POST /api/v1/auth/register "{\"email\":\"$MEMBER_EMAIL\",\"password\":\"$MEMBER_PASSWORD\",\"name\":\"E2E Member\"}"
+# Registering with the invitation token is the way in when public sign-up is
+# off (SIGNUP_MODE=disabled, the default); it also proves the address.
+call POST /api/v1/auth/register "{\"email\":\"$MEMBER_EMAIL\",\"password\":\"$MEMBER_PASSWORD\",\"name\":\"E2E Member\",\"invitation_token\":\"$INVITE_TOKEN\"}"
 call POST /api/v1/auth/login "{\"email\":\"$MEMBER_EMAIL\",\"password\":\"$MEMBER_PASSWORD\"}"
 call POST /api/v1/invitations/accept-with-refresh "{\"token\":\"$INVITE_TOKEN\",\"refresh_token\":\"$(jq -r '.refresh_token // empty' <<<"$BODY")\"}"
 call POST /api/v1/auth/logout '{}'
