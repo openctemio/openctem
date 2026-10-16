@@ -45,7 +45,7 @@ type evaluateBody struct {
 func TestFindingTransitions_DB(t *testing.T) {
 	h := newGroupScopeHarness(t)
 	fa := h.findingA.String()
-	h.exec(`UPDATE findings SET status = 'fix_applied' WHERE id = $1`, fa)
+	h.exec(`UPDATE findings SET status = 'fix_applied', severity = 'medium' WHERE id = $1`, fa)
 	readOnly := []string{permission.FindingsRead.String()}
 
 	get := func(user shared.ID, perms []string, id string) (int, transitionsBody, string) {
@@ -81,6 +81,15 @@ func TestFindingTransitions_DB(t *testing.T) {
 	if ok, blocked, requires := move(verifier, "resolved"); !ok || len(blocked) != 0 || len(requires) != 1 || requires[0] != "note" {
 		t.Errorf("verifier resolve = %v %v %v, want allowed with a note", ok, blocked, requires)
 	}
+	// A high finding needs the verification checklist first: the verifier
+	// sees why, instead of a resolve that fails on submit.
+	h.exec(`UPDATE findings SET severity = 'high' WHERE id = $1`, fa)
+	_, high, _ := get(h.memberA, rgVerifierPerms(), fa)
+	if ok, blocked, _ := move(high, "resolved"); ok || len(blocked) != 1 || blocked[0] != "checklist_required:" {
+		t.Errorf("verifier resolve of a high finding = %v %v, want blocked by checklist_required", ok, blocked)
+	}
+	h.exec(`UPDATE findings SET severity = 'medium' WHERE id = $1`, fa)
+
 	// A read-only caller may ask; every move says what it lacks.
 	_, ro, _ := get(h.memberA, readOnly, fa)
 	if ok, blocked, _ := move(ro, "in_progress"); ok || len(blocked) == 0 {
