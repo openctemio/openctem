@@ -725,7 +725,7 @@ const runFindingColumns = `f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(
 				WHERE s.finding_id = f.id AND sr.status = 'approved'
 				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())),
 			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at,
-			f.secret_valid, COALESCE(f.secret_type, ''), COALESCE(f.type_details->'secret'->>'fingerprint', '')`
+			NULL::boolean, COALESCE(f.secret_type, ''), COALESCE(f.type_details->'secret'->>'fingerprint', '')`
 
 // RunFindings returns the findings on the run's asset that the run recorded.
 //
@@ -765,6 +765,10 @@ func (r *CIRunRepository) FindingsByFingerprints(ctx context.Context, tenantID, 
 	return scanRunFindings(rows)
 }
 
+// The gate never reads findings.secret_valid: that column was written from
+// the uploaded report, and a fork pull request could report a live secret as
+// dead. The query selects NULL in its place until the platform records its own
+// validation result.
 func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 	defer func() { _ = rows.Close() }()
 	out := []cirun.RunFinding{}

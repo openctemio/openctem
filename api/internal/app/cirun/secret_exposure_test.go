@@ -22,6 +22,9 @@ type fakeRotationTasks struct {
 	byKey   map[string]*remediation.Task
 	created []*remediation.NewTaskRecord
 	joined  map[shared.ID][]shared.ID
+	// raceWinner, when set, is a task another run opens between our lookup
+	// and our insert: CreateTask refuses with ErrActiveTaskExists.
+	raceWinner *remediation.Task
 }
 
 func newFakeRotationTasks() *fakeRotationTasks {
@@ -33,6 +36,12 @@ func (t *fakeRotationTasks) ActiveTaskByActionKey(_ context.Context, _ shared.ID
 }
 
 func (t *fakeRotationTasks) CreateTask(_ context.Context, rec *remediation.NewTaskRecord) error {
+	if t.raceWinner != nil {
+		w := t.raceWinner
+		t.raceWinner = nil
+		t.byKey[rec.Action.Key] = w
+		return remediation.ErrActiveTaskExists
+	}
 	t.created = append(t.created, rec)
 	task := rec.Task
 	task.Version = 1
@@ -126,5 +135,19 @@ func TestRotationTitleIsCleanedAndCapped(t *testing.T) {
 	got := RotationTitle("aws\nkey\x00 " + strings.Repeat("x", 500))
 	if strings.ContainsAny(got, "\n\x00") || len(got) > len("Rotate ")+60 {
 		t.Fatalf("title not cleaned: %q", got)
+	}
+}
+
+// Two runs find the same secret at once: the loser's insert is refused by the
+// one-active-task-per-action index and it joins the winner's task.
+func TestSecretExposure_LosingTheCreateRaceJoinsTheExistingTask(t *testing.T) {
+	pr, tasks := &fakePromoter{}, newFakeRotationTasks()
+	winner := &remediation.Task{ID: shared.NewID(), Title: "Rotate aws_access_key", Version: 1}
+	tasks.raceWinner = winner
+	run := &cirun.Run{ID: shared.NewID(), TenantID: shared.NewID(), RepositoryAssetID: shared.NewID()}
+	f := secretFinding("aws-access-token", hexFP, nil)
+	out := NewSecretExposure(pr, tasks, logger.NewNop()).Raise(context.Background(), run, []cirun.RunFinding{f})
+	if len(out) != 1 || out[0].Created || out[0].TaskID != winner.ID || len(tasks.joined[winner.ID]) != 1 {
+		t.Fatalf("loser did not join the winner: out=%+v joined=%v", out, tasks.joined)
 	}
 }
