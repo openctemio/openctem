@@ -224,22 +224,28 @@ func TestAssetTechnologyBackfill_ReportOnlyAndGuards(t *testing.T) {
 	}
 
 	// The delete statement refuses versioned and CPE-backed links.
-	rows, err := g.r.db.QueryContext(ctx, `
+	protected := func() []shared.ID {
+		rows, err := g.r.db.QueryContext(ctx, `
 		SELECT s.id FROM asset_software s JOIN software_products p ON p.id = s.product_id
 		 WHERE s.tenant_id = $1 AND p.name IN ('cloudflare', 'openssl')`, g.tn.tenant.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var protected []shared.ID
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
+		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := shared.IDFromString(s)
-		protected = append(protected, id)
-	}
-	rows.Close()
+		defer rows.Close()
+		var ids []shared.ID
+		for rows.Next() {
+			var s string
+			if err := rows.Scan(&s); err != nil {
+				t.Fatal(err)
+			}
+			id, _ := shared.IDFromString(s)
+			ids = append(ids, id)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return ids
+	}()
 	if n, err := repo.DeleteLinks(ctx, g.tn.tenant, protected); err != nil || n != 0 {
 		t.Fatalf("DeleteLinks of a versioned and a CPE-backed link = %d, %v; want 0", n, err)
 	}
