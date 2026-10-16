@@ -64,6 +64,9 @@ type Members interface {
 type Tenants interface {
 	AcceptInvitationByID(ctx context.Context, tenantID, invitationID, userID shared.ID, userEmail string, emailVerified bool, actx auditapp.AuditContext) (*tenantdom.Membership, error)
 	AddMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error)
+	// AddMemberApprovingJoinRequest adds the member and approves the join
+	// request in one transaction.
+	AddMemberApprovingJoinRequest(ctx context.Context, tenantID string, input AddMemberInput, approver, requestID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error)
 	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string)
 }
 
@@ -305,9 +308,17 @@ func (s *Service) ListRequests(ctx context.Context, tenantID shared.ID) ([]*join
 	return s.requests.ListPending(ctx, tenantID, s.now(), 200)
 }
 
+// ErrNoLongerJoinable is returned when the requester's address no longer
+// qualifies: unverified, or the organization's claim on the domain lapsed,
+// changed hands, is in conflict or stopped allowing joins.
+var ErrNoLongerJoinable = fmt.Errorf("%w: the requester's domain no longer lets them join this organization", shared.ErrConflict)
+
 // Approve approves a waiting request of the organization with role (viewer
 // or member: nobody becomes an administrator by request) and creates the
-// membership. Tenant-scoped: another organization's request is not found.
+// membership, in one transaction. The requester's address is checked again
+// now: still verified, and still on a domain this organization holds
+// (verified, unambiguous) with joining allowed. Tenant-scoped: another
+// organization's request is not found.
 func (s *Service) Approve(ctx context.Context, tenantID, requestID, by shared.ID, role string, actx auditapp.AuditContext) error {
 	if !joinrequest.ValidRole(role) {
 		return joinrequest.ErrInvalidRole
@@ -319,11 +330,18 @@ func (s *Service) Approve(ctx context.Context, tenantID, requestID, by shared.ID
 	if !jr.Pending(s.now()) {
 		return joinrequest.ErrNotPending
 	}
-	if err := s.requests.Decide(ctx, tenantID, requestID, joinrequest.StatusApproved, role, by, s.now()); err != nil {
+	if !jr.EmailVerified || s.domains == nil {
+		return ErrNoLongerJoinable
+	}
+	ep, ok, err := s.domains.SignupPolicyForEmail(ctx, jr.Email)
+	if err != nil {
 		return err
 	}
+	if !ok || !ep.OrganizationID.Equals(tenantID) || !ep.Joinable() {
+		return ErrNoLongerJoinable
+	}
 	actx.TenantID = tenantID.String()
-	if _, err := s.tenants.AddMember(ctx, tenantID.String(), AddMemberInput{UserID: jr.UserID, Role: role}, by, actx); err != nil {
+	if _, err := s.tenants.AddMemberApprovingJoinRequest(ctx, tenantID.String(), AddMemberInput{UserID: jr.UserID, Role: role}, by, requestID, actx); err != nil {
 		return err
 	}
 	s.recordRequest(ctx, actx, audit.ActionJoinRequestApproved, jr, role)
