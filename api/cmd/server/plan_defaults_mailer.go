@@ -29,7 +29,7 @@ func (m planDefaultsMailer) NotifyPlanDefaultsChanged(_ context.Context, adminEm
 	}
 	name := m.appName
 	if name == "" {
-		name = "OpenCTEM"
+		name = defaultAppName
 	}
 	who := strings.NewReplacer("\r", "", "\n", "").Replace(adminEmail)
 	subject := fmt.Sprintf("[%s] Plan limits changed by %s", name, who)
