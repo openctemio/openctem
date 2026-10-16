@@ -71,7 +71,7 @@ func TestOutboxRoutes_ChannelManagersOnly(t *testing.T) {
 		// Nil services: a request that passes the gate panics in the
 		// handler, which is how "reached" is observed.
 		registerOutboxRoutes(router, handler.NewOutboxHandler(nil, logger.NewNop()), auth, nil)
-		registerIntegrationRoutes(router, handler.NewIntegrationHandler(nil, validator.New(), logger.NewNop()), nil, nil, auth, nil, passThrough, nil, nil)
+		registerIntegrationRoutes(router, handler.NewIntegrationHandler(nil, validator.New(), logger.NewNop()), nil, nil, auth, nil, passThrough, nil, nil, nil)
 		mux := router.(interface{ Handler() http.Handler }).Handler()
 
 		for _, rt := range routes {
