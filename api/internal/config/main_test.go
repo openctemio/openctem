@@ -17,5 +17,6 @@ func TestMain(m *testing.M) {
 	}
 	setDefault("APP_ENV", envDevelopment)
 	setDefault("AUTH_JWT_SECRET", "config-package-test-secret-0123456789abcdef0123456789abcdef0123")
+	setDefault("FINGERPRINT_KEY", "config-package-fingerprint-key-0123456789abcdef0123456789abcdef")
 	os.Exit(m.Run())
 }

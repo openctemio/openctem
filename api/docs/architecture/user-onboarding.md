@@ -220,7 +220,7 @@ Settings > Members; owners set the domain policy on Settings > Domains (admins
 read it). A sign-up refused with `SSO_REQUIRED` sends the person to email-first
 sign-in, which routes the address to the organization's SSO.
 
-Join requests (`organization_join_requests`, migration 002782): one pending
+Join requests (`organization_join_requests`, migration 002830): one pending
 per person and organization, at most 5 per person per day, expire after 30
 days; decided and expired rows are purged 30 days later
 (`join-request-purge` controller). The organization's inbox:
@@ -404,6 +404,53 @@ An organization a person creates themselves starts on the **Free** plan, and
 one person owns at most the Free plan's `free_teams_per_user` (1 by default):
 another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 `docs/architecture/plans-and-limits.md`.
+
+## Leaving and deleting (RFC-104)
+
+### Leave an organization
+
+`POST /api/v1/organization/leave` (any member, step-up, the organization of
+the credential) runs the same offboarding an administrator runs: API keys
+revoked, groups, grants, engagements and roles stripped, the membership kept
+as a tombstone. The only active owner is refused (transfer ownership or
+delete the organization first); someone who still owns assignable work is
+refused with "ask an administrator to offboard you" (nothing is reassigned
+without an administrator). Audited `member.left`; administrators notified.
+
+### Delete my account
+
+`DELETE /api/v1/me/account` (step-up) schedules the deletion
+(`account_deletions`, migration 002812):
+
+- refused (409 `SOLE_OWNER`, naming the organizations to the caller only)
+  while the caller is the only active owner of an organization, and for a
+  platform administrator account;
+- every session ends and the account's API keys are revoked at once (keys do
+  not come back on cancel);
+- **signing in again within 14 days cancels it** (password, social or SSO
+  sign-in; `account.deletion_canceled`);
+- after 14 days the `account-erase` controller offboards every membership
+  (best effort: an owner among several, or someone who still owns work, keeps
+  a disabled membership and the administrators are asked to reassign), then
+  anonymises the account in one transaction: name "Deleted user #<hash>",
+  an undeliverable unique email, password, second factor, federated
+  identities, sessions, refresh tokens and API keys removed or revoked. The
+  users row and every foreign key stay, so history remains readable.
+
+The erasure claims the request first (`claimed_at`): a sign-in after the
+claim no longer cancels it, and one before leaves nothing to claim. A failed
+offboarding stops that account's erasure and the next run retries; a failed
+session revoke at request time fails the request and undoes it. An owner
+among several is offboarded too (the erasure runs only while another active
+owner remains).
+
+**What stays.** Audit rows keep the actor's name and email as they were
+recorded (the audit trail is evidence; it is not rewritten). The users row
+keeps its id so foreign keys and history stay valid.
+
+`GET /api/v1/me/account/deletion` reports whether a deletion is pending.
+Audited: `account.deletion_requested`, `account.deletion_canceled`,
+`account.erased`.
 
 ## Data region (RFC-104)
 

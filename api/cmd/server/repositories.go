@@ -155,7 +155,10 @@ type Repositories struct {
 	// Scan zones (RFC-023)
 	ScanZone *postgres.ScanZoneRepository
 	// Scan window policies, overrides and the assets behind targets (RFC-067)
-	ScanWindowPolicy   *postgres.ScanWindowPolicyRepository
+	ScanWindowPolicy *postgres.ScanWindowPolicyRepository
+	// Finding lifecycles (RFC-110): the sub-status catalog and the schemes.
+	LifecycleSubStatus *postgres.LifecycleSubStatusRepository
+	LifecycleScheme    *postgres.LifecycleSchemeRepository
 	ScanWindowOverride *postgres.ScanWindowOverrideRepository
 	ScanWindowAsset    *postgres.ScanWindowAssetRepository
 	// Content packs (RFC-061)
@@ -221,6 +224,8 @@ type Repositories struct {
 	Admin        *postgres.AdminRepository
 	SignupPolicy *postgres.SignupPolicyRepository
 	JoinRequest  *postgres.JoinRequestRepository
+	// AccountDeletion: self-service account deletions (RFC-104).
+	AccountDeletion *postgres.AccountDeletionRepository
 	// PlatformSetting stores the other console settings (RFC-079).
 	PlatformSetting *postgres.PlatformSettingRepository
 	ScanPolicy      *postgres.ScanPolicyRepository
@@ -465,6 +470,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Scan zones (RFC-023)
 		ScanZone:            postgres.NewScanZoneRepository(db),
 		ScanWindowPolicy:    postgres.NewScanWindowPolicyRepository(db),
+		LifecycleSubStatus:  postgres.NewLifecycleSubStatusRepository(db),
+		LifecycleScheme:     postgres.NewLifecycleSchemeRepository(db),
 		ScanWindowOverride:  postgres.NewScanWindowOverrideRepository(db),
 		ScanWindowAsset:     postgres.NewScanWindowAssetRepository(db),
 		ContentPack:         postgres.NewContentPackRepository(db),
@@ -521,6 +528,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Admin:           postgres.NewAdminRepository(db),
 		SignupPolicy:    postgres.NewSignupPolicyRepository(db),
 		JoinRequest:     postgres.NewJoinRequestRepository(db),
+		AccountDeletion: postgres.NewAccountDeletionRepository(db),
 		PlatformSetting: postgres.NewPlatformSettingRepository(db),
 		ScanPolicy:      postgres.NewScanPolicyRepository(db),
 		ScanApproval:    postgres.NewScanApprovalRepository(db),

@@ -175,6 +175,27 @@ scope: `GET /assets?under=<root>` for a wildcard and
 name, sample). The run resolves under the scan actor's act scope, so the
 numbers are what the caller can see now, not a promise.
 
+### Quick Scan
+
+A Quick Scan stores the typed targets on the ad-hoc scan's target list and
+nowhere else (a client-supplied `targets` or `target` key in its scanner
+settings is dropped), so wildcards and ranges are expanded by the run like
+those of a saved scan. `POST /scans/quick/preview` (`scans:write` and
+`scans:execute`) shows, before the start, what each typed target becomes:
+
+- the number of known assets a wildcard or inventory-mode range covers;
+- how many names the run would scan, and how many it leaves out by reason
+  (exclusions and deny list, data scope, unconfirmed ownership, tier ceiling,
+  internal addresses outside the zones, scanner type, archived), the matching
+  exclusion rules, and up to five sample names;
+- for a wildcard with no known name, an offer to run subdomain discovery on
+  its apex when an active discovery tool exists.
+
+It calls the run's own resolution (`resolveScanTargets`) as the caller, so the
+tenant pin, the caller's data scope, the deny list and the selector cap apply
+unchanged. Free text no scope entry covers is rejected before it is resolved.
+Output is bounded to 20 targets and 5 sample names each. It creates nothing.
+
 ## Tests
 
 - `tests/unit/scan_wildcard_targets_test.go`: expansion, re-resolution,
