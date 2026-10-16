@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
 import { usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
 import { PasswordPolicyHint } from '@/features/auth/components/password-policy-hint'
 import { passwordPolicyIssue } from '@/features/auth/lib/password-policy'
@@ -50,7 +49,8 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
     try {
       await adminChangePassword(current, next)
       toast.success('Password changed. Sign in again with your new password.')
-      await localLogoutAction(`/login?redirect=${encodeURIComponent('/admin')}`)
+      // Every session of the account ended: sign in to the console again.
+      window.location.replace('/admin/login')
     } catch (err) {
       setError(adminErrorMessage(err, 'The password could not be changed'))
       setBusy(false)

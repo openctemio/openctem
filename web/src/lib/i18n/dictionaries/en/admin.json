@@ -555,5 +555,18 @@
   "admin.ops.fleet.advisories": "security advisory: {v}",
   "admin.stepUp.confirm": "Confirm",
   "admin.stepUp.description": "This action changes who can sign in or what they may do. Enter a fresh code from your authenticator. One code covers the next five minutes of such actions.",
-  "admin.stepUp.title": "Confirm it is you"
+  "admin.stepUp.title": "Confirm it is you",
+  "admin.login.title": "Platform administration",
+  "admin.login.description": "Sign in to administer this installation.",
+  "admin.login.enroll": "Set up two-step verification. It is required for every administrator.",
+  "admin.login.code": "Enter the 6-digit code from your authenticator app to continue.",
+  "admin.login.or": "or sign in with your password",
+  "admin.login.email": "Email",
+  "admin.login.password": "Password",
+  "admin.login.submit": "Continue",
+  "admin.login.wrongCredentials": "Wrong email or password.",
+  "admin.login.idpRequired": "Administrators sign in with the identity provider. Password sign-in is for break-glass accounts only.",
+  "admin.login.unreachable": "The console could not be reached.",
+  "admin.login.breakGlassNote": "Password sign-in is for break-glass (emergency) accounts when the identity provider is required.",
+  "admin.shell.signOutFailed": "Sign-out failed; the session will still expire on its own."
 }

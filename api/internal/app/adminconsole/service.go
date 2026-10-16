@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/brand"
@@ -96,24 +97,25 @@ type Service struct {
 	notifier BreakGlassNotifier
 }
 
-// SignedInUser is the user behind a normal (/login) sign-in session.
+// SignedInUser is the account whose password the console just checked.
 type SignedInUser struct {
 	UserID shared.ID
 	Email  string
 	Name   string
 	// Active is false for suspended or deactivated user accounts.
 	Active bool
-	// PasswordSignIn is true when the session came from the local email and
-	// password form, not from SSO, SAML or a social provider.
-	PasswordSignIn bool
 }
 
 // AccountDirectory is the tenant-user side the console needs: who is signed in
 // behind a refresh token, and creating an account for a new administrator.
 // Implemented over the auth service in the composition root.
 type AccountDirectory interface {
-	// SignedInUser validates a refresh token (without rotating it).
-	SignedInUser(ctx context.Context, refreshToken string) (*SignedInUser, error)
+	// VerifyPassword checks an account's email and password as a sign-in
+	// does (lockout, enumeration-safe), without opening a /login session. A
+	// wrong password or an unknown email is admin.ErrInvalidCredentials; a
+	// locked account admin.ErrAccountLocked. Only a local password account
+	// can pass: an organization's SSO never authenticates an administrator.
+	VerifyPassword(ctx context.Context, email, password string, client ClientInfo) (*SignedInUser, error)
 	// CreateAccount creates a new local account with a temporary password. It
 	// returns admin.ErrEmailHasAccount when the email already has an account:
 	// an existing account is never linked, because whoever registered it (with
@@ -125,8 +127,6 @@ type AccountDirectory interface {
 	// ChangePassword changes the account's password after checking the current
 	// one, and ends all of its /login sessions.
 	ChangePassword(ctx context.Context, userID shared.ID, current, next string) error
-	// EndSignIn revokes the /login session behind a refresh token.
-	EndSignIn(ctx context.Context, refreshToken string) error
 }
 
 // NewService creates the console authentication service.
@@ -166,27 +166,31 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Start opens the TOTP step of a console session for the user signed in behind
-// refreshToken (their normal /login session). It succeeds only when that
-// session came from the password form and the user is linked to an active,
-// unlocked administrator. On first use it issues a fresh TOTP secret to
+// Start opens the TOTP step of a console session from the account's own email
+// and password, entered on the console's sign-in page (its own origin; the
+// tenant /login session plays no part). It succeeds only for a local password
+// account linked to an active, unlocked administrator; a wrong password and an
+// unknown email answer the same. On first use it issues a fresh TOTP secret to
 // enroll; the secret becomes active only once a code from it is verified.
-func (s *Service) Start(ctx context.Context, refreshToken string, client ClientInfo) (*LoginResult, error) {
+func (s *Service) Start(ctx context.Context, email, password string, client ClientInfo) (*LoginResult, error) {
 	// Sessions carry an absolute expiry; sweep dead rows here (an indexed delete)
 	// instead of running a dedicated background job for a low-volume table.
 	if _, err := s.console.DeleteExpiredSessions(ctx, s.now()); err != nil {
 		s.log.Warn("purge expired admin sessions", "error", err)
 	}
 
-	if refreshToken == "" {
-		return nil, admin.ErrNotSignedIn
+	if strings.TrimSpace(email) == "" || password == "" {
+		return nil, admin.ErrInvalidCredentials
 	}
-	u, err := s.accounts.SignedInUser(ctx, refreshToken)
+	u, err := s.accounts.VerifyPassword(ctx, email, password, client)
 	if err != nil {
-		return nil, admin.ErrNotSignedIn
+		if errors.Is(err, admin.ErrAccountLocked) {
+			return nil, err
+		}
+		return nil, admin.ErrInvalidCredentials
 	}
 	if !u.Active {
-		return nil, admin.ErrNotSignedIn
+		return nil, admin.ErrInvalidCredentials
 	}
 	a, err := s.admins.GetByUserID(ctx, u.UserID)
 	if err != nil {
@@ -194,12 +198,6 @@ func (s *Service) Start(ctx context.Context, refreshToken string, client ClientI
 			return nil, admin.ErrNotPlatformAdmin
 		}
 		return nil, fmt.Errorf("start console session: %w", err)
-	}
-	if !u.PasswordSignIn {
-		// An organization's IdP must never be able to authenticate a platform
-		// administrator.
-		s.record(ctx, a, ActionLoginFailed, client, "not a password sign-in")
-		return nil, admin.ErrPasswordSignInRequired
 	}
 	if !a.IsActive() || a.IsLocked() {
 		s.record(ctx, a, ActionLoginFailed, client, "inactive or locked")
@@ -515,15 +513,9 @@ func (s *Service) ChangePassword(ctx context.Context, a *admin.AdminUser, curren
 	return nil
 }
 
-// Logout ends the console session behind token and, when refreshToken is set,
-// the /login session it was opened from, so signing out of the console signs
-// the administrator out completely. Unknown tokens are ignored.
-func (s *Service) Logout(ctx context.Context, token, refreshToken string, client ClientInfo) error {
-	if refreshToken != "" {
-		if err := s.accounts.EndSignIn(ctx, refreshToken); err != nil {
-			s.log.Debug("end sign-in on console logout", "error", err)
-		}
-	}
+// Logout ends the console session behind token. The console has its own
+// sign-in, so no other session is touched. Unknown tokens are ignored.
+func (s *Service) Logout(ctx context.Context, token string, client ClientInfo) error {
 	if token == "" {
 		return nil
 	}

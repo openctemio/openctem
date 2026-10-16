@@ -27,24 +27,22 @@ const (
 
 // AdminConsoleHandler serves platform admin console login (RFC-022).
 type AdminConsoleHandler struct {
-	svc                *adminconsole.Service
-	cookieSecure       bool
-	refreshTokenCookie string
-	logger             *logger.Logger
+	svc          *adminconsole.Service
+	cookieSecure bool
+	logger       *logger.Logger
 }
 
 // NewAdminConsoleHandler creates the handler. cookieSecure mirrors
 // AUTH_COOKIE_SECURE (true in production, behind HTTPS).
-// refreshTokenCookie is the name of the normal sign-in refresh-token cookie
-// (refresh_token): the console session starts from it.
-func NewAdminConsoleHandler(svc *adminconsole.Service, cookieSecure bool, refreshTokenCookie string, log *logger.Logger) *AdminConsoleHandler {
-	if refreshTokenCookie == "" {
-		refreshTokenCookie = "refresh_token"
-	}
-	return &AdminConsoleHandler{
-		svc: svc, cookieSecure: cookieSecure, refreshTokenCookie: refreshTokenCookie,
-		logger: log.With("handler", "admin_console"),
-	}
+func NewAdminConsoleHandler(svc *adminconsole.Service, cookieSecure bool, log *logger.Logger) *AdminConsoleHandler {
+	return &AdminConsoleHandler{svc: svc, cookieSecure: cookieSecure, logger: log.With("handler", "admin_console")}
+}
+
+// AdminConsoleLoginRequest is the console's own first factor: the account's
+// email and password.
+type AdminConsoleLoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 // AdminLoginResponse tells the client which second step follows.
@@ -112,37 +110,39 @@ func (h *AdminConsoleHandler) clearCookie(w http.ResponseWriter, name, path stri
 	h.setCookie(w, name, "", path, -1, httpOnly)
 }
 
-// StartSession handles POST /api/v1/admin/auth/session. The caller has
-// already signed in on the normal /login page; their refresh-token cookie
-// identifies them. It answers which TOTP step follows and sets the pending
-// admin_mfa cookie.
-// @Summary Open the platform admin console (after /login)
-// @Description Starts a console session for the user signed in on the normal /login page (refresh-token cookie). Only a password sign-in by a user linked to an active platform administrator qualifies; the response says whether to enter a TOTP code or enroll an authenticator first.
+// Login handles POST /api/v1/admin/auth/login: the console's own sign-in,
+// on the console's origin. It answers which TOTP step follows and sets the
+// pending admin_mfa cookie.
+// @Summary Sign in to the platform admin console
+// @Description The administrator's account email and password (the same account and password policy as everywhere, checked with the same lockout), then the console's own second factor. Independent of any tenant sign-in. A wrong password and an unknown email answer the same 401.
 // @Tags Admin Auth
+// @Accept json
 // @Produce json
+// @Param request body AdminConsoleLoginRequest true "Email and password"
 // @Success 200 {object} AdminLoginResponse
-// @Failure 401 {object} apierror.Error "Not signed in"
-// @Failure 403 {object} apierror.Error "Not a platform administrator, or not a password sign-in"
-// @Router /admin/auth/session [post]
-func (h *AdminConsoleHandler) StartSession(w http.ResponseWriter, r *http.Request) {
-	refresh := ""
-	if c, err := r.Cookie(h.refreshTokenCookie); err == nil {
-		refresh = c.Value
+// @Failure 401 {object} apierror.Error "Wrong email or password"
+// @Failure 403 {object} apierror.Error "Not an active platform administrator, locked, or the identity provider is required"
+// @Router /admin/auth/login [post]
+func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
+	var req AdminConsoleLoginRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
 	}
-	res, err := h.svc.Start(r.Context(), refresh, clientInfo(r))
+	res, err := h.svc.Start(r.Context(), req.Email, req.Password, clientInfo(r))
 	if err != nil {
 		switch {
-		case errors.Is(err, admin.ErrNotSignedIn):
-			apierror.Unauthorized("Sign in first").WriteJSON(w)
-		case errors.Is(err, admin.ErrPasswordSignInRequired):
-			apierror.Forbidden("Platform administrators sign in with their password, not single sign-on").WriteJSON(w)
+		case errors.Is(err, admin.ErrInvalidCredentials):
+			apierror.Unauthorized("Wrong email or password").WriteJSON(w)
+		case errors.Is(err, admin.ErrAccountLocked):
+			apierror.New(http.StatusForbidden, codeAccountLocked, "Too many failed attempts; try again later").WriteJSON(w)
 		case errors.Is(err, admin.ErrIdPSignInRequired):
 			apierror.New(http.StatusForbidden, codeIdPSignInRequired,
 				"Sign in to the admin console with the identity provider").WriteJSON(w)
 		case errors.Is(err, admin.ErrNotPlatformAdmin):
 			apierror.Forbidden("This account is not a platform administrator").WriteJSON(w)
 		default:
-			h.logger.Error("admin console start", "error", err)
+			h.logger.Error("admin console sign-in", "error", err)
 			apierror.InternalError(err).WriteJSON(w)
 		}
 		return
@@ -292,19 +292,16 @@ func (h *AdminConsoleHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) 
 
 // Logout handles POST /api/v1/admin/auth/logout.
 // @Summary Admin console logout
-// @Description Ends the caller's console session and the /login session it was opened from (refresh-token cookie), and clears the admin cookies.
+// @Description Ends the caller's console session and clears the admin cookies. No other session is touched.
 // @Tags Admin Auth
 // @Success 204 "No Content"
 // @Router /admin/auth/logout [post]
 func (h *AdminConsoleHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	session, refresh := "", ""
+	session := ""
 	if c, err := r.Cookie(middleware.AdminSessionCookie); err == nil {
 		session = c.Value
 	}
-	if c, err := r.Cookie(h.refreshTokenCookie); err == nil {
-		refresh = c.Value
-	}
-	if err := h.svc.Logout(r.Context(), session, refresh, clientInfo(r)); err != nil {
+	if err := h.svc.Logout(r.Context(), session, clientInfo(r)); err != nil {
 		h.logger.Warn("admin console logout", "error", err)
 	}
 	h.clearCookie(w, middleware.AdminSessionCookie, adminAPIPath, true)

@@ -39,7 +39,7 @@ var adminWriteInventory = map[string]struct {
 	why   string
 }{
 	// Sign-in steps: before a console session exists.
-	"POST /api/v1/admin/auth/session":      {signIn, "first step of the console sign-in"},
+	"POST /api/v1/admin/auth/login":        {signIn, "first step of the console sign-in"},
 	"POST /api/v1/admin/auth/mfa":          {signIn, "the TOTP step of the sign-in"},
 	"POST /api/v1/admin/auth/logout":       {signIn, "ends the caller's own session"},
 	"POST /api/v1/admin/auth/password":     {signIn, "needs the current password"},

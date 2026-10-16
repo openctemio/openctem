@@ -73,7 +73,7 @@ func TestSessionCookieAttributes(t *testing.T) {
 // double-submit token, Secure follows the flag and SameSite is always Strict.
 func TestAdminConsoleCookieAttributes(t *testing.T) {
 	for _, secure := range []bool{true, false} {
-		h := NewAdminConsoleHandler(nil, secure, "", logger.NewNop())
+		h := NewAdminConsoleHandler(nil, secure, logger.NewNop())
 		rec := httptest.NewRecorder()
 		h.setCookie(rec, middleware.AdminSessionCookie, "s", "/api/v1/admin", 60, false)
 		h.setCookie(rec, middleware.AdminMFACookie, "m", "/api/v1/admin/auth", 60, true)
