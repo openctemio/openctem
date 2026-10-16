@@ -8,7 +8,9 @@ package scanpolicy
 //     fresh authenticator code, reason; off by default everywhere);
 //  2. the instance administrator's decision for the organization (allow or
 //     deny, tenants.shared_sensors_access), or, without one, the instance
-//     default shared_sensors.new_orgs (on by default); a deny wins;
+//     default shared_sensors.new_orgs, which the administrator must choose
+//     (allow or deny) in the same action that turns the switch on; unset,
+//     an organization without a decision is refused; a deny wins;
 //  3. the organization owner's choice (opt out; default: use them).
 //
 // Above all three sits the rollout gate: until the shared claim path and
@@ -75,14 +77,23 @@ type SharedSensorsSetting struct {
 	// Enabled is the instance switch (default false).
 	Enabled bool `json:"enabled"`
 	// NewOrgs is whether an organization without an administrator's
-	// decision may use shared sensors (default true).
-	NewOrgs bool `json:"new_orgs"`
+	// decision may use shared sensors. nil (unset, the default) refuses
+	// such an organization: turning the switch on alone never grants
+	// shared sensors to every organization, the administrator chooses
+	// allow or deny in the same action (ErrNewOrgsChoiceRequired).
+	NewOrgs *bool `json:"new_orgs"`
 }
 
-// DefaultSharedSensorsSetting is the setting before anything is stored.
+// DefaultSharedSensorsSetting is the setting before anything is stored: off,
+// no default for organizations.
 func DefaultSharedSensorsSetting() SharedSensorsSetting {
-	return SharedSensorsSetting{Enabled: false, NewOrgs: true}
+	return SharedSensorsSetting{Enabled: false}
 }
+
+// ErrNewOrgsChoiceRequired refuses turning the switch on without choosing,
+// in the same action, whether organizations without a decision may use
+// shared sensors.
+var ErrNewOrgsChoiceRequired = fmt.Errorf("%w: turning shared sensors on needs an explicit choice for organizations without a decision (new_orgs true or false)", shared.ErrValidation)
 
 // SharedSensorsStore persists the instance setting (platform_settings) and
 // the per-organization decision (tenants.shared_sensors_access).
@@ -175,7 +186,7 @@ func (s *Service) sharedSensorsPolicy(ctx context.Context, tenantID shared.ID) (
 		return false, ReasonSharedSensorsNotEnabled
 	case SharedSensorsAllow:
 	case "":
-		if !setting.NewOrgs {
+		if setting.NewOrgs == nil || !*setting.NewOrgs {
 			return false, ReasonSharedSensorsNotEnabled
 		}
 	default:
@@ -201,6 +212,9 @@ func (s *Service) sharedSensorsPolicy(ctx context.Context, tenantID shared.ID) (
 func (s *Service) UpdateSharedSensors(ctx context.Context, next SharedSensorsSetting, expectedVersion int, c Change) (int, error) {
 	if err := c.check(); err != nil {
 		return 0, err
+	}
+	if next.Enabled && next.NewOrgs == nil {
+		return 0, ErrNewOrgsChoiceRequired
 	}
 	if next.Enabled && !sharedSensorsReady {
 		return 0, ErrSharedSensorsNotReady

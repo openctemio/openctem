@@ -18,8 +18,9 @@ import (
 // Shared sensor access through the console (docs/rfcs/RFC-100-shared-sensors.md
 // §5, §11): any administrator reads; only a super admin changes the instance
 // setting or an organization's decision, with a reason and a fresh code;
-// turning the switch on is refused while shared sensors are not ready, before
-// the code is spent; no tenant token reaches the console routes.
+// turning the switch on needs an explicit choice for organizations without a
+// decision (no implicit default) and is refused while shared sensors are not
+// ready; no tenant token reaches the console routes.
 func TestAdminSharedSensors_Routes_DB(t *testing.T) {
 	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, console *adminconsole.Service) {
 		log := logger.NewNop()
@@ -33,7 +34,7 @@ func TestAdminSharedSensors_Routes_DB(t *testing.T) {
 	reader := h.newAdmin(admin.AdminRoleReadonly)
 	reader.verify()
 	code, body := reader.do(http.MethodGet, path, nil, true)
-	if code != http.StatusOK || !jsonHasBool(body, "enabled", false) || !jsonHasBool(body, "new_orgs", true) ||
+	if code != http.StatusOK || !jsonHasBool(body, "enabled", false) || !strings.Contains(body, `"new_orgs":null`) ||
 		!jsonHasBool(body, "ready", scanpolicy.SharedSensorsReady()) {
 		t.Fatalf("defaults: %d %s", code, body)
 	}
@@ -44,9 +45,17 @@ func TestAdminSharedSensors_Routes_DB(t *testing.T) {
 
 	root := h.newAdmin(admin.AdminRoleSuperAdmin)
 	root.verify()
+	// Turning the switch on without choosing new_orgs in the same request is
+	// refused (400), and nothing is stored.
+	code, body = root.do(http.MethodPut, path,
+		map[string]any{"enabled": true, "reason": "go live", "totp_code": root.freshCode(true)}, true)
+	if code != http.StatusBadRequest || !strings.Contains(body, "NEW_ORGS_CHOICE_REQUIRED") {
+		t.Fatalf("switch on without a choice: %d %s", code, body)
+	}
 	if !scanpolicy.SharedSensorsReady() {
 		// The switch cannot be turned on yet, whatever the code and reason;
-		// the code is not spent and nothing is stored.
+		// nothing is stored.
+		root.resetReplayGuard()
 		onCode := root.freshCode(true)
 		code, body := root.do(http.MethodPut, path,
 			map[string]any{"enabled": true, "new_orgs": true, "reason": "go live", "totp_code": onCode}, true)
@@ -58,11 +67,12 @@ func TestAdminSharedSensors_Routes_DB(t *testing.T) {
 		if err := h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM platform_settings WHERE key = 'shared_sensors'`).Scan(&n); err != nil || n != 0 {
 			t.Fatalf("refused switch-on stored a setting: %d %v", n, err)
 		}
-		// The same code still works for an allowed change.
+		// An allowed change, with a fresh code.
+		root.resetReplayGuard()
 		code, body = root.do(http.MethodPut, path,
-			map[string]any{"enabled": false, "new_orgs": false, "version": 0, "reason": "per organization", "totp_code": onCode}, true)
+			map[string]any{"enabled": false, "new_orgs": false, "version": 0, "reason": "per organization", "totp_code": root.freshCode(true)}, true)
 		if code != http.StatusOK || !jsonHasBool(body, "new_orgs", false) {
-			t.Fatalf("new_orgs off with the unspent code: %d %s", code, body)
+			t.Fatalf("new_orgs off: %d %s", code, body)
 		}
 	}
 	var n int
@@ -81,7 +91,13 @@ func TestAdminSharedSensors_Routes_DB(t *testing.T) {
 		map[string]any{"access": "deny", "reason": "x", "totp_code": reader.freshCode(false)}, true); code != http.StatusForbidden {
 		t.Fatalf("a read-only administrator set a decision: %d", code)
 	}
-	if code, _ := root.do(http.MethodPut, orgPath, map[string]any{"access": "maybe", "reason": "x", "totp_code": "000000"}, true); code != http.StatusBadRequest {
+	// The route confirms the code first: a bad code is 401, an invalid
+	// decision with a good code is 400.
+	if code, _ := root.do(http.MethodPut, orgPath, map[string]any{"access": "deny", "reason": "x", "totp_code": "000000"}, true); code != http.StatusUnauthorized {
+		t.Fatalf("bad code: %d", code)
+	}
+	root.resetReplayGuard()
+	if code, _ := root.do(http.MethodPut, orgPath, map[string]any{"access": "maybe", "reason": "x", "totp_code": root.freshCode(false)}, true); code != http.StatusBadRequest {
 		t.Fatalf("invalid decision: %d", code)
 	}
 	root.resetReplayGuard()
