@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band. Designed: the My Work tasks tab |
+| Status | Accepted (2026-10-15). Implemented: the task model (actions, tasks, primary and related membership, derived state, task deadline, timeline, API with data scope); the suggestions engine (deterministic keys, owner partitions, ranking, lifecycle, dismissal memory, daily cap, digest); accept flows (as is, edited, bulk) and the auto-join rule; moves, split, merge and detach; task-level mark fixed and regression tasks; the Remediation console (Fix plan, Suggestions, Tasks, Campaigns, task detail); the finding drawer band; the My Work tasks tab |
 | Scope | api, web |
 | Related | RFC-015 (remediation groups: the candidate keys), RFC-006 (ticketing), RFC-039 (retest and SLA restart), RFC-097 (ticket field and status mapping) |
 
@@ -222,3 +222,4 @@ Reads need `findings:remediation:read` (members also `findings:read`); changes n
 | 5 | Task-level mark fixed and regression tasks | Implemented |
 | 6 | Console: Fix plan, Suggestions, Tasks, Campaigns, My queue; task detail; Move palette | Implemented |
 | 7 | Finding drawer band: the task a finding is tracked in, its state and deadline | Implemented |
+| 8 | My Work tasks tab: my open tasks (mine or my groups), earliest deadline first | Implemented |
