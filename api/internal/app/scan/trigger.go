@@ -801,6 +801,9 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		if err := cmd.SetPlatformJob(initialPriority); err != nil {
 			return err
 		}
+		if err := s.stampInstanceZone(ctx, cmd, targets); err != nil {
+			return err
+		}
 	}
 
 	if err := s.commandRepo.Create(ctx, cmd); err != nil {
@@ -1186,10 +1189,22 @@ func (s *Service) mayUseShared(ctx context.Context, tenantID shared.ID) bool {
 // when the targets may go to shared sensors); err is a failed lookup, which
 // callers treat as a refusal (fail closed).
 func (s *Service) platformTargetRefusal(ctx context.Context, tenantID shared.ID, targets []string, assetGroup bool) (refusal, err error) {
-	if assetGroup || hasInternalTarget(targets) {
+	return s.sharedTargetRefusal(ctx, tenantID, targets, assetGroup, false)
+}
+
+// sharedTargetRefusal is platformTargetRefusal; with allowZone (a single
+// scan at the trigger) internal targets pass when one instance scan zone
+// assigned to the organization contains them all (instance_zones.go).
+func (s *Service) sharedTargetRefusal(ctx context.Context, tenantID shared.ID, targets []string, assetGroup, allowZone bool) (refusal, err error) {
+	if assetGroup || (hasInternalTarget(targets) && !allowZone) {
 		return shared.NewDomainError(codePlatformRefused,
 			"shared platform sensors never scan asset groups or internal targets; scan them on your own sensors, or scan only public targets",
 			shared.ErrValidation), nil
+	}
+	if hasInternalTarget(targets) {
+		if refusal, err := s.zoneRefusal(ctx, tenantID, targets); refusal != nil || err != nil {
+			return refusal, err
+		}
 	}
 	// A name that resolves inside is an internal target too. The resolved
 	// addresses are not named: on a multi-tenant install they may come from
@@ -1248,7 +1263,7 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	if sc.RunOnTenantRunner || sc.SensorPreference == scan.SensorPreferenceTenant {
 		return false, nil
 	}
-	refusal, err := s.platformTargetRefusal(ctx, sc.TenantID, targets, sc.HasAssetGroup())
+	refusal, err := s.sharedTargetRefusal(ctx, sc.TenantID, targets, sc.HasAssetGroup(), true)
 	if err != nil {
 		return false, err
 	}

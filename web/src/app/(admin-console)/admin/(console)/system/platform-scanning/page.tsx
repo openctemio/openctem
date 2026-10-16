@@ -17,6 +17,8 @@ import {
 } from '@/features/admin-console/api/use-scan-policy'
 import { PlatformSensorProofForm } from '@/features/admin-console/components/platform-sensor-proof-form'
 import { SharedSensorAnomalyForm } from '@/features/admin-console/components/shared-sensor-anomaly-form'
+import { InstanceScanZonesCard } from '@/features/admin-console/components/instance-scan-zones-card'
+import { useInstanceScanZones } from '@/features/admin-console/api/use-instance-scan-zones'
 import { SharedSensorsForm } from '@/features/admin-console/components/shared-sensors-form'
 import { adminCan } from '@/features/admin-console/types'
 
@@ -36,6 +38,7 @@ export default function PlatformScanningPage() {
   const shared = useSharedSensorsSetting()
   const zones = useSharedSensorInternalZones()
   const anomaly = useSharedSensorAnomaly()
+  const instanceZones = useInstanceScanZones()
   const canEdit = adminCan(me.role, 'super_admin')
 
   return (
@@ -122,6 +125,21 @@ export default function PlatformScanningPage() {
               })
               await zones.mutate()
             }}
+          />
+        )}
+        {instanceZones.error ? (
+          <ErrorState
+            title={t('admin.instanceZones.errorTitle')}
+            error={instanceZones.error}
+            onRetry={() => void instanceZones.mutate()}
+          />
+        ) : instanceZones.isLoading || !instanceZones.data ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (
+          <InstanceScanZonesCard
+            zones={instanceZones.data.items ?? []}
+            canEdit={canEdit}
+            onChanged={() => instanceZones.mutate()}
           />
         )}
         {anomaly.error ? (

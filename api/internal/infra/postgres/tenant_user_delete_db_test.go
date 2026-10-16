@@ -214,6 +214,10 @@ type schemaSeeder struct {
 // CHECK constraints and formats. Keep it small; everything else is derived
 // from the catalog so new tables are covered without touching this test.
 var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
+	// An instance scan zone (global) needs at least one private range.
+	"instance_scan_zones": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "seed zone", "ranges": "{10.0.0.0/8}"}
+	},
 	// Inserting the asset already queued it (trigger); clear that row so the
 	// seeder's own insert is the one row of the table.
 	"asset_risk_queue": func(s *schemaSeeder) map[string]any {

@@ -152,6 +152,10 @@ func (s *Service) Sign(raw []byte) ([]byte, *refusal) {
 			ref = refuse(http.StatusTooManyRequests, ReasonSensorRate, "sensor signing ceiling reached")
 		}
 	}
+	// The zone a shared job names is checked in every ledger mode.
+	if ref == nil {
+		ref = s.ledger.CheckZone(st)
+	}
 	var audit *refusal
 	if ref == nil {
 		ref, audit = s.checkLedger(st, now)
@@ -247,6 +251,7 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc(jobsign.LedgerPath, s.handleLedgerStatus)
 	mux.HandleFunc(jobsign.LedgerApplyPath, s.handleLedgerApply)
 	mux.HandleFunc(jobsign.LedgerSyncPath, s.handleLedgerSync)
+	mux.HandleFunc(jobsign.LedgerZonesPath, s.handleLedgerZones)
 	return mux
 }
 

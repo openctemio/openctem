@@ -131,7 +131,7 @@ sensors for your organization") and never mentions an edition.
 | Shared sensors exist | the service's regional pools | none until the administrator enrolls one; the bundled compose/Helm sensor enrolls at instance scope |
 | Organizations without a decision | chosen explicitly when the switch is turned on (unset refuses) | chosen explicitly when the switch is turned on (unset refuses) |
 | Domain proof before shared sensors scan (RFC-054 §8.1) | **on** | off |
-| Shared sensors may scan internal zones (§6.1) | **off** (public targets only) | off until instance scan zones and their signed ranges land (S10); the self-hosted default is decided then (only zones the administrator assigns) |
+| Shared sensors may scan internal zones (§6.1) | **off** (public targets only) | off; the administrator turns it on and assigns zones (only zones assigned to an organization) |
 | Limits | written by the control plane per organization | none unless the administrator sets them |
 | Credentials on shared sensors | never | off; the administrator may allow them per sensor, by reference only (RFC-040 §5.9) |
 
@@ -146,8 +146,7 @@ the platform scanning policy (`scanpolicy.Service.SetManagedService`). The
 proof setting (`platform_sensor_proof`) answers the deployment default while
 nothing is stored and the stored value afterwards; the console shows which
 applies. The internal-zones setting (`shared_sensor_internal_zones`) defaults
-off on every deployment and is stored but not enforced until S10 wires it to
-the signed zone ranges (the console labels it "Not enforced yet").
+off on every deployment; S10 enforces it through instance scan zones.
 An unreadable stored value fails closed (proof required, internal zones
 refused). Both are changed only by a super admin with a reason and a fresh
 authenticator code, audited, the other administrators emailed.
@@ -164,6 +163,22 @@ apart by the zone. The sensor-local policy (RFC-040 §5.7) lists the zone
 ranges, so the sensor refuses anything else even if the platform were
 compromised. Credentials stay off unless the administrator allows them per
 sensor.
+
+Implementation (S10): instance scan zones are created, changed, given shared
+sensors and assigned to organizations in the console (super admin, step-up,
+reason, critical admin audit), and every change goes to the job signer's
+**zone ledger** before the database. A single scan's internal addresses and
+ranges go to shared sensors only inside one zone assigned to the
+organization, while "shared sensors may scan internal zones" is on; the job
+is stamped with the zone and its id and ranges travel only in the signed
+statement (`zone`). The signer signs it only for a zone in its ledger that is
+assigned to the job's organization and served by the claiming sensor, with
+exactly that zone's ranges, and lets internal targets through only inside
+them. The sensor (sdk-go) takes the zone ranges only from the verified
+statement. Internal names and workflow steps keep the public-only rule. The
+internal-zones setting stays off by default on self-hosted installs as well:
+an administrator turns it on explicitly; a self-hosted "on" default can be
+reconsidered once sensors that apply the signed zone ranges are released.
 
 ## 7. Enrollment
 
@@ -269,7 +284,7 @@ needs them.
 | S7 | limits enforced at trigger and claim | designed |
 | S8 | console "Shared sensors" fleet page, audited job view with a reason | designed |
 | S9 | tenant view rename, egress addresses, organization opt-out | designed |
-| S10 | instance scan zones assigned to organizations | designed |
+| S10 | instance scan zones assigned to organizations; zone ledger in the signer; zone in the signed statement | in review |
 | S11 | per-job isolation and private-range egress drop in sdk-go, used by the sensor | designed |
 | S12 | `MANAGED_SERVICE` defaults, anomaly alerts, scanner identity | in review |
 | G8 | API-side name resolution for shared jobs, sensor re-check | designed |
