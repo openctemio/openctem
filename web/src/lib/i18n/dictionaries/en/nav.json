@@ -109,5 +109,9 @@
   "nav.item.threat-model": "Threat model",
   "nav.item.scope": "Scope",
   "nav.item.programs": "Programs",
-  "nav.item.approvals": "Approvals"
+  "nav.item.approvals": "Approvals",
+  "nav.item.fix-plan": "Fix plan",
+  "nav.item.suggestions": "Suggestions",
+  "nav.item.tasks": "Tasks",
+  "nav.item.solution-families": "Solution families"
 }
