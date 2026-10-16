@@ -155,6 +155,8 @@
   "remediationHub.owner.assetOwner": "Chủ sở hữu tài sản",
   "remediationHub.owner.defaultQueue": "Hàng đợi mặc định",
   "remediationHub.owner.unassigned": "Chưa giao",
+  "remediationHub.ownerAccept.action": "Chấp nhận với tư cách chủ sở hữu",
+  "remediationHub.ownerAccept.hint": "Bạn sở hữu các tài sản này: chấp nhận nguyên trạng để đưa các phát hiện vào công việc của bạn. Sửa hoặc bỏ qua cần quyền ghi khắc phục.",
   "remediationHub.pageOf": "Trang {page}/{pages}",
   "remediationHub.plan.description": "Các bản sửa loại bỏ nhiều rủi ro nhất, dưới dạng công việc hoặc đề xuất cần xem.",
   "remediationHub.plan.emptyDescription": "Công việc và đề xuất xuất hiện ở đây sau khi quét phát hiện vấn đề mà một bản sửa có thể đóng.",

@@ -10,6 +10,9 @@ import userEvent from '@testing-library/user-event'
 import type { RemediationSuggestion } from '../api/types'
 
 const approve = vi.fn()
+// Permissions the mocked member holds; the default is everything.
+const granted = { write: true }
+const items = { join: false }
 const suggestion = (id: string, title: string): RemediationSuggestion => ({
   id,
   kind: 'new_group',
@@ -34,7 +37,9 @@ const suggestion = (id: string, title: string): RemediationSuggestion => ({
 })
 
 vi.mock('@/context/permission-provider', () => ({
-  usePermissions: () => ({ hasPermission: () => true }),
+  usePermissions: () => ({
+    hasPermission: (p: string) => granted.write || !p.endsWith(':write'),
+  }),
 }))
 vi.mock('../api/use-owner-names', () => ({
   useOwnerNames: () => ({ users: [], groups: [], user: () => undefined, group: () => undefined }),
@@ -42,7 +47,12 @@ vi.mock('../api/use-owner-names', () => ({
 vi.mock('../api/use-remediation-hub', () => ({
   useSuggestions: () => ({
     data: {
-      data: [suggestion('one', 'First fix'), suggestion('two', 'Second fix')],
+      data: [
+        suggestion('one', 'First fix'),
+        items.join
+          ? { ...suggestion('two', 'Second fix'), kind: 'join', target_task_id: 't1' }
+          : suggestion('two', 'Second fix'),
+      ],
       total: 2,
       page: 1,
       per_page: 25,
@@ -67,6 +77,8 @@ import { SuggestionsInbox } from '../components/suggestions-inbox'
 
 describe('SuggestionsInbox keyboard review', () => {
   beforeEach(() => {
+    granted.write = true
+    items.join = false
     approve.mockReset()
     approve.mockResolvedValue({
       suggestion_id: 'two',
@@ -100,5 +112,22 @@ describe('SuggestionsInbox keyboard review', () => {
     await user.click(screen.getByRole('textbox', { name: 'Search suggestions' }))
     await user.keyboard('a')
     expect(approve).not.toHaveBeenCalled()
+  })
+
+  it('offers an asset owner without write access only "Accept as owner" on a join', async () => {
+    granted.write = false
+    items.join = true
+    render(<SuggestionsInbox />)
+    const buttons = screen.getAllByRole('button', { name: 'Accept as owner' })
+    expect(buttons).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    // The keyboard follows the same rule: a on the new fix does nothing, on the join it accepts.
+    const user = userEvent.setup()
+    await user.keyboard('a')
+    expect(approve).not.toHaveBeenCalled()
+    await user.keyboard('j')
+    await user.keyboard('a')
+    await waitFor(() => expect(approve).toHaveBeenCalledWith('two', { version: 7 }))
   })
 })

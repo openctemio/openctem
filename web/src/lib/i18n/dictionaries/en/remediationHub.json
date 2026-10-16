@@ -155,6 +155,8 @@
   "remediationHub.owner.assetOwner": "Asset owner",
   "remediationHub.owner.defaultQueue": "Default queue",
   "remediationHub.owner.unassigned": "Unassigned",
+  "remediationHub.ownerAccept.action": "Accept as owner",
+  "remediationHub.ownerAccept.hint": "You own these assets: accept this as it is to put the findings in your task. Editing or dismissing needs remediation write access.",
   "remediationHub.pageOf": "Page {page} of {pages}",
   "remediationHub.plan.description": "The fixes that remove the most risk, as tasks or as suggestions to review.",
   "remediationHub.plan.emptyDescription": "Tasks and suggestions appear here after scans find issues that one fix can close.",
