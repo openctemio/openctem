@@ -33,7 +33,7 @@ func (s *stubIngester) Ingest(_ context.Context, agt *sensor.Sensor, input Input
 // activeSensors answers every lookup with an active sensor of the tenant.
 type activeSensors struct{}
 
-func (activeSensors) QueuedWorkSensor(_ context.Context, tenantID shared.ID, sensorID *shared.ID, _ string) (*sensor.Sensor, *DroppedJob, error) {
+func (activeSensors) QueuedWorkSensor(_ context.Context, tenantID shared.ID, sensorID, _ *shared.ID, _ string) (*sensor.Sensor, *DroppedJob, error) {
 	return &sensor.Sensor{ID: *sensorID, TenantID: &tenantID, Status: sensor.SensorStatusActive}, nil, nil
 }
 
