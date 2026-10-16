@@ -6,8 +6,11 @@ package handler
 import (
 	"net/http"
 
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -267,4 +270,67 @@ func (h *RemediationTaskHandler) Merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toRemediationTaskResp(t))
+}
+
+// ResolveRemediationTaskRequest marks a task fixed.
+type ResolveRemediationTaskRequest struct {
+	Version  int    `json:"version"`
+	Note     string `json:"note"`
+	Approved bool   `json:"approved,omitempty"`
+}
+
+// RemediationMarkFixedResponse is the outcome per finding and the task.
+type RemediationMarkFixedResponse struct {
+	Updated           int                     `json:"updated"`
+	Skipped           int                     `json:"skipped"`
+	Failed            int                     `json:"failed"`
+	ValidationsQueued int                     `json:"validations_queued"`
+	Rows              []finding.BulkRowResult `json:"rows"`
+	Task              RemediationTaskResponse `json:"task"`
+}
+
+// Resolve marks a task fixed: every open finding is claimed fixed and
+// re-checked on its own.
+// @Summary      Mark a remediation task fixed
+// @Description  A fix claim on every open finding of the task: each goes to fix_applied through the legal steps (a note is required; findings:fix_apply; a person's own findings only) and a proof-of-fix re-check is queued per finding. Nothing closes here: a finding closes on its own evidence; the task is done when every finding is closed and at least one was verified fixed. Rows name each finding not updated and why. The caller must see every finding of the task.
+// @Tags         Remediation
+// @Accept       json
+// @Produce      json
+// @Param        task_id  path  string                         true  "Task ID"
+// @Param        request  body  ResolveRemediationTaskRequest  true  "Version and note"
+// @Success      200  {object}  RemediationMarkFixedResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /remediation/tasks/{task_id}/resolve [post]
+func (h *RemediationTaskHandler) Resolve(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := pathTaskID(w, r)
+	if !ok {
+		return
+	}
+	var req ResolveRemediationTaskRequest
+	if err := decodeTaskBody(w, r, &req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	res, err := h.service.MarkFixed(r.Context(), remediationapp.MarkFixedInput{
+		TenantID: tid, TaskID: id, Version: req.Version, Note: req.Note, ActorID: callerID(r), Approved: req.Approved,
+		HasFixApplyPermission: middleware.HasPermission(r.Context(), string(permission.FindingsFixApply)),
+	}, h.auditContext(r))
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	rows := res.Rows
+	if rows == nil {
+		rows = []finding.BulkRowResult{}
+	}
+	writeJSON(w, http.StatusOK, RemediationMarkFixedResponse{Updated: res.Updated, Skipped: res.Skipped, Failed: res.Failed,
+		ValidationsQueued: res.ValidationsQueued, Rows: rows, Task: toRemediationTaskResp(res.Task)})
 }

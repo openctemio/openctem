@@ -349,3 +349,44 @@ func (r *RemediationTaskRepository) CountActivePrimary(ctx context.Context, tena
 	}
 	return n, nil
 }
+
+// OpenPrimaryIDs lists the task's active primary members that are not
+// closed.
+func (r *RemediationTaskRepository) OpenPrimaryIDs(ctx context.Context, tenantID, taskID shared.ID) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT tm.finding_id FROM remediation_task_members tm
+		JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
+		WHERE tm.tenant_id = $1 AND tm.task_id = $2 AND tm.left_at IS NULL AND tm.role = 'primary'
+		  AND f.status <> ALL($3::text[])
+		ORDER BY tm.finding_id`, tenantID.String(), taskID.String(), closedStatusArray())
+	if err != nil {
+		return nil, fmt.Errorf("list open task members: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("list open task members: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// RecordFixClaim writes the "fix claimed" timeline entry and recomputes the
+// task in one transaction.
+func (r *RemediationTaskRepository) RecordFixClaim(ctx context.Context, tenantID, taskID shared.ID, actor *shared.ID, data map[string]any) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin fix claim: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := bumpTaskInTx(ctx, tx, tenantID, taskID, remediation.TaskEventFixClaimed, actor, data); err != nil {
+		return err
+	}
+	if err := r.recomputeInTx(ctx, tx, tenantID, []shared.ID{taskID}, actor); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
