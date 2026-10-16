@@ -288,20 +288,20 @@ func TestBranchOnly_ExpiredWhenNoBranchShowsIt(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("expired %d (%v), want 1", n, err)
 	}
-	if st, at, _ := findingStatus(ctx, t, f.db, gone); st != "not_observed" || at.Valid {
-		t.Fatalf("gone: status %s resolved_at %v, want not_observed, never resolved", st, at)
+	if st, at, _ := findingStatus(ctx, t, f.db, gone); st != "new" || at.Valid || findingObservation(ctx, t, f.db, gone) != "stale" {
+		t.Fatalf("gone: status %s resolved_at %v, want new (unchanged), stale, never resolved", st, at)
 	}
 	for _, id := range []shared.ID{live, recent, counting} {
 		if st, _, _ := findingStatus(ctx, t, f.db, id); st != "new" {
 			t.Fatalf("finding %s moved to %s", id, st)
 		}
 	}
+	// Going stale is not a status move: no status_changed entry.
 	var acts int
 	if err := f.db.QueryRowContext(ctx, `SELECT count(*) FROM finding_activities
-		WHERE tenant_id = $1 AND finding_id = $2 AND activity_type = 'status_changed'
-		  AND changes->>'reason' = 'branch_only_expired' AND changes->>'old_status' = 'new'`,
-		f.tenant.String(), gone.String()).Scan(&acts); err != nil || acts != 1 {
-		t.Fatalf("expiry activity rows = %d (%v), want 1", acts, err)
+		WHERE tenant_id = $1 AND finding_id = $2 AND activity_type = 'status_changed'`,
+		f.tenant.String(), gone.String()).Scan(&acts); err != nil || acts != 0 {
+		t.Fatalf("expiry activity rows = %d (%v), want 0", acts, err)
 	}
 
 	// A deleted branch takes its occurrences: the finding expires once unseen.

@@ -190,7 +190,12 @@ func TestVulnMatching_AdvisoryUpdatedAndStale(t *testing.T) {
 	assert.Equal(t, "detection_error/source_reported", got[0].Method)
 	got = e.findings(stale)
 	require.Len(t, got, 1)
-	assert.Equal(t, "not_observed", got[0].Status)
+	// Not seen lately is stale, not fixed: the status stays open.
+	assert.NotEqual(t, "resolved", got[0].Status)
+	var observation string
+	require.NoError(t, e.pdb.QueryRow(`SELECT observation_state FROM findings WHERE tenant_id = $1 AND tool_name = 'version-match' AND cve_id = $2`,
+		stale.String(), e.cveID).Scan(&observation))
+	assert.Equal(t, "stale", observation)
 }
 
 // A CVE a scanner already reported on the asset gets no second finding,
