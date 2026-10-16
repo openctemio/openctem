@@ -168,11 +168,11 @@ export function FindingProperties({
         <>
           <Row label={t('findings.properties.status', 'Status')}>
             <StatusSelect
+              findingId={finding.id}
               value={triage.status}
               onChange={triage.changeStatus}
               loading={triage.statusBusy}
               disabled={locked}
-              source={finding.source}
             />
           </Row>
           <Row label={t('findings.properties.severity', 'Severity')}>
@@ -318,6 +318,20 @@ export function FindingProperties({
         {finding.resolvedAt && (
           <Row label={t('findings.properties.resolved', 'Resolved')}>
             <span className="tabular-nums">{formatDate(finding.resolvedAt)}</span>
+          </Row>
+        )}
+        {finding.observation === 'stale' && (
+          <Row label={t('findings.properties.observation', 'Observation')}>
+            <span>{t('findings.observation.stale', 'Stale: not reported lately, not fixed')}</span>
+          </Row>
+        )}
+        {finding.validation && (
+          <Row label={t('findings.properties.validation', 'Validation')}>
+            <span>
+              {finding.validation === 'not_reproducible'
+                ? t('findings.validation.not_reproducible', 'Not reproducible')
+                : t('findings.validation.reproducible', 'Reproducible')}
+            </span>
           </Row>
         )}
         {finding.closureReason && (
