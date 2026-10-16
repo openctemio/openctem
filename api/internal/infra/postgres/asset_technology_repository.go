@@ -75,6 +75,24 @@ func (r *AssetTechnologyRepository) Upsert(ctx context.Context, tenantID shared.
 	if err != nil {
 		return fmt.Errorf("upsert asset technologies: %w", err)
 	}
+	return r.trimOverCap(ctx, tenantID, ids)
+}
+
+// trimOverCap enforces assettech.MaxPerAsset on what is stored, not only on
+// what one report may send: rows past the cap are deleted for the assets just
+// written, the oldest last_seen first. It runs whether or not set
+// reconciliation is wired, so accumulated sightings cannot grow without bound.
+func (r *AssetTechnologyRepository) trimOverCap(ctx context.Context, tenantID shared.ID, assetIDs []string) error {
+	if _, err := r.db.ExecContext(ctx, `
+		DELETE FROM asset_technologies t
+		 USING (SELECT asset_id, name_key,
+		               row_number() OVER (PARTITION BY asset_id ORDER BY last_seen DESC, name_key) AS rn
+		          FROM asset_technologies
+		         WHERE tenant_id = $1 AND asset_id = ANY($2::uuid[])) x
+		 WHERE t.tenant_id = $1 AND t.asset_id = x.asset_id AND t.name_key = x.name_key AND x.rn > $3`,
+		tenantID.String(), pq.Array(assetIDs), assettech.MaxPerAsset); err != nil {
+		return fmt.Errorf("trim asset technologies: %w", err)
+	}
 	return nil
 }
 
