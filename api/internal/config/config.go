@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"regexp"
 	"strings"
 	"time"
 
@@ -295,6 +296,10 @@ type AppConfig struct {
 	Name string
 	Env  string
 	URL  string // Public app URL (used as fallback for sensor config base URL)
+	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
+	// to every organization created here and never changed (empty: not
+	// named).
+	Region string
 }
 
 // SensorConfigConfig holds the sensor config template service settings.
@@ -1210,6 +1215,7 @@ func Load() (*Config, error) {
 			Name: getEnv("APP_NAME", "openctem"),
 			Env:  appEnv(),
 			URL:  getEnv("APP_URL", ""),
+			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
@@ -1599,6 +1605,9 @@ func deriveSSORedirectAllowList(cfg *Config) []string {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
+	if c.App.Region != "" && !deploymentRegionRE.MatchString(c.App.Region) {
+		return fmt.Errorf("DEPLOYMENT_REGION=%q must be 1-32 lowercase letters, digits or hyphens (e.g. eu-central)", c.App.Region)
+	}
 	if err := c.validateBasic(); err != nil {
 		return err
 	}
@@ -2482,3 +2491,7 @@ func feedURLs(primary, mirrors string) []string {
 	}
 	return out
 }
+
+// deploymentRegionRE is the shape of DEPLOYMENT_REGION (the tenants.region
+// check in the database is the same).
+var deploymentRegionRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
