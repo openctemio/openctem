@@ -3,6 +3,7 @@ package sensor
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -72,5 +73,42 @@ func TestPlatformScanning_StoreError(t *testing.T) {
 	svc := NewPlatformScanningService(&fakePlatformStore{err: errors.New("db down")}, allow(true))
 	if _, err := svc.Get(context.Background(), shared.NewID()); err == nil {
 		t.Fatal("a store error was swallowed")
+	}
+}
+
+// The published egress addresses are shown only to an organization that may
+// use shared sensors, global list first, then regions in label order; an
+// organization that may not use them learns nothing, not even the list.
+func TestPlatformScanning_Egress(t *testing.T) {
+	store := &fakePlatformStore{sum: &sensordom.PlatformScanningSummary{
+		Regions: []sensordom.PlatformRegionState{{Region: "eu", Online: true, FreeSlot: true}}}}
+	reads := 0
+	src := func(context.Context) ([]PlatformEgress, error) {
+		reads++
+		return EgressFromLists([]string{"203.0.113.0/24"}, map[string][]string{"us": {"198.51.100.2"}, "eu": {"198.51.100.1"}, "none": {}}), nil
+	}
+	got, err := NewPlatformScanningService(store, allow(true)).WithEgress(src).Get(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []PlatformEgress{{Addresses: []string{"203.0.113.0/24"}}, {Region: "eu", Addresses: []string{"198.51.100.1"}}, {Region: "us", Addresses: []string{"198.51.100.2"}}}
+	if !reflect.DeepEqual(got.Egress, want) {
+		t.Fatalf("egress: %+v", got.Egress)
+	}
+	reads = 0
+	off, err := NewPlatformScanningService(store, allow(false)).WithEgress(src).Get(context.Background(), shared.NewID())
+	if err != nil || off.Egress == nil || len(off.Egress) != 0 || reads != 0 {
+		t.Fatalf("not offered: %+v %v reads=%d", off, err, reads)
+	}
+	// None published: an empty list, never null.
+	empty, _ := NewPlatformScanningService(store, allow(true)).WithEgress(func(context.Context) ([]PlatformEgress, error) { return nil, nil }).
+		Get(context.Background(), shared.NewID())
+	if empty.Egress == nil || len(empty.Egress) != 0 {
+		t.Fatalf("none published: %+v", empty.Egress)
+	}
+	if _, err := NewPlatformScanningService(store, allow(true)).WithEgress(func(context.Context) ([]PlatformEgress, error) {
+		return nil, errors.New("db down")
+	}).Get(context.Background(), shared.NewID()); err == nil {
+		t.Fatal("an egress read error was swallowed")
 	}
 }

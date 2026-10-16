@@ -116,7 +116,8 @@ export const SCOPE_REFUSAL_TEXT = {
   },
   program_platform: {
     label: 'Program target',
-    message: 'Platform sensors never probe bug-bounty program targets; use your own sensors.',
+    message:
+      "Shared sensors never probe bug-bounty program targets; use your organization's sensors.",
   },
   constrained: {
     label: 'Limited entry',

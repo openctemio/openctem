@@ -122,7 +122,7 @@
   "confirm.discardCloseDesc": "You have changes that are not saved. Closing now discards them.",
   "confirm.discardLeaveDesc": "You have changes that are not saved. Leaving now discards them.",
   "confirm.discardTitle": "Discard your changes?",
-  "confirm.domainProof.removeDesc": "Entries under it stop showing as verified. Platform sensors and intrusive checks then refuse names under it.",
+  "confirm.domainProof.removeDesc": "Entries under it stop showing as verified. Shared sensors and intrusive checks then refuse names under it.",
   "confirm.domainProof.removeTitle": "Remove the domain {domain}?",
   "confirm.evidence.deleteDesc": "The file is permanently deleted. This cannot be undone.",
   "confirm.evidence.deleteTitle": "Delete the evidence file \"{name}\"?",

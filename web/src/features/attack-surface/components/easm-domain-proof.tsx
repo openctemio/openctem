@@ -167,7 +167,7 @@ export function EASMDomainProofPanel() {
         })}
         desc={t(
           'confirm.domainProof.removeDesc',
-          'Entries under it stop showing as verified. Platform sensors and intrusive checks then refuse names under it.'
+          'Entries under it stop showing as verified. Shared sensors and intrusive checks then refuse names under it.'
         )}
         confirmText={t('confirm.remove', 'Remove')}
         destructive

@@ -599,7 +599,7 @@ export function ScopeEntryDialog({
                           )
                         : t(
                             'scope.entry.proofPlatform',
-                            'Platform sensors also need proof that you control {domain}; your own sensors need this entry only.',
+                            "Shared sensors also need proof that you control {domain}; your organization's sensors need this entry only.",
                             { domain: proofRoot }
                           )}
                     </p>

@@ -48,7 +48,7 @@ describe('OptionsStep', () => {
     const onChange = vi.fn()
     render(<OptionsStep data={DEFAULT_NEW_SCAN} onChange={onChange} />)
     expect(screen.queryByLabelText(/Platform/)).toBeNull()
-    await userEvent.click(screen.getByRole('radio', { name: /Your sensors/ }))
+    await userEvent.click(screen.getByRole('radio', { name: /Organization sensors/ }))
     expect(onChange).toHaveBeenCalledWith({ sensorPreference: 'tenant' })
   })
 

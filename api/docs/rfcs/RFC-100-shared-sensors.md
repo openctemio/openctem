@@ -213,9 +213,13 @@ sensor must not trust any tenant's key set. Design:
   per-organization kill switch (the deny of §5) and anomaly alerts (many
   distinct registrable domains, failure spikes, deny-list hits).
 - **Egress addresses are published to tenants** (G11): the console stores the
-  egress addresses (or ranges) of each region or shared sensor; organization
-  members see them in the shared sensors card so they can allowlist the
-  scanners. No sensor id, name, version or load is shown.
+  egress addresses (or ranges) for every region and per region
+  (`/api/v1/admin/settings/shared-sensors/egress`, super admin, step-up,
+  reason, audited); only public addresses are accepted (ctis `addrscope`
+  refuses every internal range, so the list never discloses the operator's
+  network). Organization members that may use shared sensors see them in the
+  shared sensors card (`egress` in `GET /api/v1/platform/scanning`) so they
+  can allowlist the scanners. No sensor id, name, version or load is shown.
 
 ## 10. Limits
 
@@ -243,7 +247,7 @@ needs them.
 | S6 | instance key set and shared-job envelope | designed |
 | S7 | limits enforced at trigger and claim | designed |
 | S8 | console "Shared sensors" fleet page, audited job view with a reason | designed |
-| S9 | tenant view rename, egress addresses, organization opt-out | designed |
+| S9 | tenant view renamed "Shared sensors" / "Organization sensors", egress addresses (console + tenant view), opt-out linked from the card | in review |
 | S10 | instance scan zones assigned to organizations | designed |
 | S11 | per-job isolation and private-range egress drop in sdk-go, used by the sensor | designed |
 | S12 | `MANAGED_SERVICE` defaults, anomaly alerts, scanner identity | designed |

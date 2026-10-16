@@ -51,13 +51,13 @@ export const SENSOR_PREFERENCE_CONFIG: Record<
     icon: 'sparkles',
   },
   tenant: {
-    label: 'Your sensors',
+    label: 'Organization sensors',
     description: "Use only your organization's deployed sensors",
     icon: 'server',
   },
   platform: {
-    label: 'Platform scanning',
-    description: "Use the platform's shared scanning (public targets only)",
+    label: 'Shared sensors',
+    description: 'Use the shared sensors of this instance (public targets only)',
     icon: 'cloud',
   },
 }

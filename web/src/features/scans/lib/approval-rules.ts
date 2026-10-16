@@ -144,7 +144,7 @@ export function conditionLabel(
     case 'sensor_placement':
       return c.sensor_placement === 'tenant'
         ? t('scans.ruleEditor.chip.placementTenant', 'Own sensors only')
-        : t('scans.ruleEditor.chip.placementPlatform', 'Platform sensors may run it')
+        : t('scans.ruleEditor.chip.placementPlatform', 'Shared sensors may run it')
     case 'zone_ids':
       return t('scans.ruleEditor.chip.zones', 'Zones: {value}', {
         value: list(named(c.zone_ids)),

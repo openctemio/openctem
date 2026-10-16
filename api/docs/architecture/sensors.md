@@ -458,14 +458,29 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   404 before the handler runs, reads and writes alike, today's routes and any
   added later. `platform_sensor_tenant_plane_db_test.go` walks the router and
   checks each one.
-- **Platform scanning.** `GET /api/v1/platform/scanning` (sensors:read or
-  scans:read) shows the service, not the sensors: whether the organization may
-  use it (`offered`, the scan trigger's own shared sensor access rule;
-  false says nothing else), each region's state (`available`, `busy`,
-  `unavailable`), the tools online platform sensors run, the organization's
-  own queued and running platform jobs, and the queue limit. No sensor id,
-  name, host, address, version, node count, capacity or other organization's
-  load.
+- **Shared sensors view.** `GET /api/v1/platform/scanning` (sensors:read or
+  scans:read; the "Shared sensors" card on the Sensors page) shows the
+  service, not the sensors: whether the organization may use it (`offered`,
+  the scan trigger's own shared sensor access rule; false says nothing else,
+  not even the egress addresses), each region's state (`available`, `busy`,
+  `unavailable`), the tools online shared sensors run, the organization's own
+  queued and running shared jobs, the queue limit, and the **egress
+  addresses** to allowlist (`egress`: the list for every region first, then
+  one per region). No sensor id, name, host, address, version, node count,
+  capacity or other organization's load. The card links administrators to
+  the owner's opt-out.
+- **Egress addresses.** Console > System > Platform scanning, "Egress
+  addresses" (`GET/PUT /api/v1/admin/settings/shared-sensors/egress`,
+  `platform_settings['shared_sensors_egress']`): IP addresses or CIDR ranges
+  for every region and per region label (sensor region tokens, at most 32
+  regions and 64 entries per list). Only public addresses: any entry that is,
+  or overlaps, an internal range of ctis `addrscope` (private, loopback,
+  link-local, metadata, CGNAT, multicast, IPv6 forms that carry such an IPv4
+  address) is refused with 400, so the list never discloses the operator's
+  internal network. Any administrator reads; a super admin replaces the list
+  with a reason and a route-level step-up (critical admin audit row
+  `platform.shared_sensors_egress_changed`, other administrators emailed).
+  The list is normalized (host bits cleared, duplicates removed, sorted).
 - **Platform jobs.** A command, run task or run stage of a platform job never
   carries a sensor id or name (`platform: true` instead). Text the platform
   sensor wrote (command logs, error message, result, run task error) is read

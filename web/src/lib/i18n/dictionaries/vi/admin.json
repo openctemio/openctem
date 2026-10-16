@@ -581,5 +581,21 @@
   "admin.auditChain.okTitle": "Nhật ký kiểm toán nguyên vẹn",
   "admin.auditChain.okBody": "Cả {count} mục đều hợp lệ: không mục nào bị sửa hay xóa kể từ khi ghi.",
   "admin.auditChain.brokenTitle": "Nhật ký kiểm toán đã bị can thiệp",
-  "admin.auditChain.brokenBody": "{count} mục không hợp lệ. Hãy xử lý như một sự cố bảo mật: đối chiếu với bản sao nhật ký lưu ở nơi khác."
+  "admin.auditChain.brokenBody": "{count} mục không hợp lệ. Hãy xử lý như một sự cố bảo mật: đối chiếu với bản sao nhật ký lưu ở nơi khác.",
+  "admin.sharedEgress.title": "Địa chỉ đi ra",
+  "admin.sharedEgress.desc": "Các địa chỉ mà sensor dùng chung gửi lưu lượng đi. Tổ chức được dùng sensor dùng chung sẽ thấy chúng để đưa các máy quét vào danh sách cho phép của tường lửa và hệ thống phát hiện xâm nhập.",
+  "admin.sharedEgress.globalLabel": "Mọi khu vực",
+  "admin.sharedEgress.placeholder": "Mỗi dòng một địa chỉ IP hoặc dải CIDR, ví dụ 203.0.113.10 hoặc 198.51.100.0/24",
+  "admin.sharedEgress.publicOnly": "Chỉ địa chỉ công khai: các dải riêng, loopback, link-local, metadata đám mây và NAT cấp nhà mạng bị từ chối.",
+  "admin.sharedEgress.regionLabel": "Khu vực",
+  "admin.sharedEgress.regionAddresses": "Địa chỉ của khu vực {region}",
+  "admin.sharedEgress.removeRegion": "Xoá khu vực {region}",
+  "admin.sharedEgress.addRegion": "Thêm khu vực",
+  "admin.sharedEgress.duplicateRegion": "Mỗi khu vực chỉ được liệt kê một lần.",
+  "admin.sharedEgress.unnamed": "Hãy đặt tên cho mọi khu vực có địa chỉ.",
+  "admin.sharedEgress.confirmTitle": "Thay đổi địa chỉ đi ra?",
+  "admin.sharedEgress.confirmDesc": "Mọi tổ chức được dùng sensor dùng chung sẽ thấy danh sách mới. Thay đổi được ghi vào nhật ký kiểm toán quản trị; các quản trị viên khác nhận email.",
+  "admin.sharedEgress.saved": "Đã lưu địa chỉ đi ra",
+  "admin.sharedEgress.saveFailed": "Không lưu được địa chỉ đi ra",
+  "admin.sharedEgress.errorTitle": "địa chỉ đi ra"
 }

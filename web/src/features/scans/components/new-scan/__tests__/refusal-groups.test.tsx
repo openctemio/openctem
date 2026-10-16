@@ -43,7 +43,7 @@ describe('RefusalGroups', () => {
     render(<RefusalGroups results={results} onRemove={vi.fn()} onRecheck={vi.fn()} />)
     const proofGroup = screen.getByTestId('refusal-group-proof')
     expect(
-      within(proofGroup).getByText('12 need a verified domain for platform sensors')
+      within(proofGroup).getByText('12 need a verified domain for shared sensors')
     ).toBeInTheDocument()
     expect(within(proofGroup).getAllByRole('listitem')).toHaveLength(GROUP_EXAMPLES)
     await user.click(within(proofGroup).getByRole('button', { name: 'Show all 12' }))
@@ -130,7 +130,7 @@ describe('RoutingNote', () => {
     )
     expect(
       screen.getByText(
-        /runs on your sensor sensor-docker-01, because platform sensors need a verified domain/
+        /runs on your sensor sensor-docker-01, because shared sensors need a verified domain/
       )
     ).toBeInTheDocument()
   })
