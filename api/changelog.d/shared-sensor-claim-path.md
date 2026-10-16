@@ -9,5 +9,5 @@
 
 ### Removed: `get_next_platform_job` and `commands.platform_sensor_id`
 
-- The unused queue function `get_next_platform_job`, its Go wrapper and the column `commands.platform_sensor_id` (set only by that function) are removed; the holder of a shared job is `commands.sensor_id` (migration `002650_shared_claim`).
+- The unused queue function `get_next_platform_job`, its Go wrapper and the column `commands.platform_sensor_id` (set only by that function) are removed; the holder of a shared job is `commands.sensor_id` (migration `002660_shared_claim`).
 - **Upgrade note:** the migration drops a column the previous API version reads. Stop the API during the deploy, run the migrations, then start the new API.
