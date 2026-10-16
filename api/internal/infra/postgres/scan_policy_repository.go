@@ -190,3 +190,89 @@ func (r *ScanPolicyRepository) SetProofRequired(ctx context.Context, required bo
 	}
 	return version, nil
 }
+
+var _ scanpolicy.SharedSensorsStore = (*ScanPolicyRepository)(nil)
+
+// GetSharedSensors returns the instance shared sensor setting, or
+// scanpolicy.ErrNotFound when nothing is stored.
+func (r *ScanPolicyRepository) GetSharedSensors(ctx context.Context) (scanpolicy.SharedSensorsSetting, int, error) {
+	var raw []byte
+	var version int
+	err := r.db.QueryRowContext(ctx, `SELECT value, version FROM platform_settings WHERE key = $1`,
+		scanpolicy.SharedSensorsSettingKey).Scan(&raw, &version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return scanpolicy.SharedSensorsSetting{}, 0, scanpolicy.ErrNotFound
+	}
+	if err != nil {
+		return scanpolicy.SharedSensorsSetting{}, 0, fmt.Errorf("get shared sensor setting: %w", err)
+	}
+	var v struct {
+		Enabled *bool `json:"enabled"`
+		NewOrgs *bool `json:"new_orgs"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil || v.Enabled == nil || v.NewOrgs == nil {
+		return scanpolicy.SharedSensorsSetting{}, 0, fmt.Errorf("decode shared sensor setting: invalid value")
+	}
+	return scanpolicy.SharedSensorsSetting{Enabled: *v.Enabled, NewOrgs: *v.NewOrgs}, version, nil
+}
+
+// SetSharedSensors stores the setting when the stored version is
+// expectedVersion (0: nothing stored yet), and returns the new version.
+func (r *ScanPolicyRepository) SetSharedSensors(ctx context.Context, v scanpolicy.SharedSensorsSetting, expectedVersion int, by string, at time.Time) (int, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return 0, err
+	}
+	var version int
+	if expectedVersion == 0 {
+		err = r.db.QueryRowContext(ctx, `
+			INSERT INTO platform_settings (key, value, version, source, updated_by, updated_at)
+			VALUES ($1, $2, 1, 'console', $3, $4)
+			ON CONFLICT (key) DO NOTHING
+			RETURNING version`, scanpolicy.SharedSensorsSettingKey, raw, by, at).Scan(&version)
+	} else {
+		err = r.db.QueryRowContext(ctx, `
+			UPDATE platform_settings
+			   SET value = $2, version = version + 1, source = 'console', updated_by = $3, updated_at = $4
+			 WHERE key = $1 AND version = $5
+			RETURNING version`, scanpolicy.SharedSensorsSettingKey, raw, by, at, expectedVersion).Scan(&version)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, scanpolicy.ErrVersionConflict
+	}
+	if err != nil {
+		return 0, fmt.Errorf("set shared sensor setting: %w", err)
+	}
+	return version, nil
+}
+
+// GetSharedSensorsAccess returns the instance administrator's decision for
+// the organization ("" when none).
+func (r *ScanPolicyRepository) GetSharedSensorsAccess(ctx context.Context, tenantID shared.ID) (string, error) {
+	var v sql.NullString
+	err := r.db.QueryRowContext(ctx, `SELECT shared_sensors_access FROM tenants WHERE id = $1`, tenantID.String()).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", shared.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get organization shared sensor access: %w", err)
+	}
+	return v.String, nil
+}
+
+// SetSharedSensorsAccess sets ("" removes) the decision for the organization.
+func (r *ScanPolicyRepository) SetSharedSensorsAccess(ctx context.Context, tenantID shared.ID, decision string) error {
+	var v any
+	if decision != "" {
+		v = decision
+	}
+	res, err := r.db.ExecContext(ctx, `UPDATE tenants SET shared_sensors_access = $2, updated_at = now() WHERE id = $1`,
+		tenantID.String(), v)
+	if err != nil {
+		return fmt.Errorf("set organization shared sensor access: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}

@@ -76,6 +76,8 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 			scopePolicyMailer{email: svc.Email, log: log}, svc.Scope, log)
 		if svc.Tenant != nil {
 			svc.ScanPolicy.SetSettings(svc.Tenant)
+			// The organization owner's shared sensor opt-out (RFC-100 §5).
+			svc.ScanPolicy.SetSharedSensorsOptOut(svc.Tenant)
 		}
 		svc.Scope.SetGovernance(svc.ScanPolicy)
 		// Verified domain before platform sensors scan (RFC-054 §8.1): a

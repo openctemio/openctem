@@ -417,6 +417,30 @@ Rows that refer to a sensor through `(tenant_id, sensor_id)`:
 A shared sensor has no "home" organization. Managing shared sensors belongs to
 the platform admin console (RFC-022); on the tenant plane they do not exist:
 
+- **Access.** One rule decides whether an organization may send scans to
+  shared sensors (`scanpolicy.Service.SharedSensorsAllowed`; the scan
+  trigger, the pipeline and the platform scanning view all call it). Every
+  layer must allow, and any unreadable layer refuses:
+  1. the instance switch, `platform_settings['shared_sensors'].enabled`
+     (default off);
+  2. the instance administrator's decision for the organization,
+     `tenants.shared_sensors_access` (`allow`, `deny`), or, without one,
+     `platform_settings['shared_sensors'].new_orgs` (default on). A deny
+     always wins;
+  3. the owner's opt-out, the organization setting `shared_sensors.opt_out`.
+
+  Console > System > Platform scanning (`/api/v1/admin/settings/shared-sensors`)
+  and `/api/v1/admin/tenants/{id}/shared-sensors`: any administrator reads,
+  and a super admin changes either with a reason and a fresh authenticator
+  code (critical admin audit row, other administrators emailed). The owner's
+  choice is at `/api/v1/organization/settings/shared-sensors`: the owner or
+  an administrator reads it, only the owner changes it, and the change gets a
+  tenant audit row. The refusal reason names the layer that refused.
+  Above the three layers sits the rollout gate (`sharedSensorsReady` in
+  `internal/app/scanpolicy/shared_sensors.go`, RFC-100 §11). While it is
+  closed, every organization is refused with "shared sensors are not
+  available yet", and the console refuses to turn the switch on (409
+  `SHARED_SENSORS_NOT_READY`) before it spends the code.
 - **Lookups.** `GetByTenantAndID`, the list filter, the dispatch finders
   (`FindAvailable*`, `HasSensorFor*`), tool and capability availability, grant
   summaries and manifests all add `scope = 'organization'` (besides
@@ -435,7 +459,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   checks each one.
 - **Platform scanning.** `GET /api/v1/platform/scanning` (sensors:read or
   scans:read) shows the service, not the sensors: whether the organization may
-  use it (`offered`, the scan trigger's own `PlatformSensorsAllowed` rule;
+  use it (`offered`, the scan trigger's own shared sensor access rule;
   false says nothing else), each region's state (`available`, `busy`,
   `unavailable`), the tools online platform sensors run, the organization's
   own queued and running platform jobs, and the queue limit. No sensor id,

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15); S0 in review (#2308), S2 in review, the rest designed |
+| Status | Accepted (2026-10-15); S0 in review (#2308), S2 in review (#2325), S3 in review, the rest designed |
 | Scope | api (schema, access policy, claim, enrollment, signer, quotas, console), web (console fleet page, tenant view), sdk-go (per-job isolation, target re-check), sensor (instance enrollment, isolation profile), helm-charts and compose (bundled sensor) |
 | Architecture | [sensors.md](../architecture/sensors.md#shared-sensors-on-the-tenant-plane) |
 | Amends | RFC-023 D14 (public targets only becomes a deployment default), RFC-022 (console owns the shared fleet), RFC-090 W11/W12 (shared-pool lanes replace `get_next_platform_job`) |
@@ -109,6 +109,10 @@ Three layers, all of which must allow:
 3. **Organization opt-out**: the organization owner may say "never send our
    scans to shared sensors" (data residency, allowlists, policy). Default:
    use them when available.
+
+"Default for new organizations" applies to every organization without an
+administrator's decision. An organization does not keep a copy of the
+default from the day it was created.
 
 `PlatformSensorsAllowed` becomes this policy. Its refusal names the real
 reason ("shared sensors are turned off on this instance", "your
@@ -226,8 +230,8 @@ needs them.
 |---|---|---|
 | S0 | tenant claims skip shared jobs; least-privilege grant clamp; the trigger's target check on every workflow step | in review (#2308) |
 | S1 | this RFC | this PR |
-| S2 | `sensors.scope`, nullable `tenant_id`, drop `is_platform_sensor`; scope fixed at creation; a shared sensor's grant limited to scan, validate and retest | in review |
-| S3 | access policy (§5) with the instance switch off everywhere | designed |
+| S2 | `sensors.scope`, nullable `tenant_id`, drop `is_platform_sensor`; scope fixed at creation; a shared sensor's grant limited to scan, validate and retest | in review (#2325) |
+| S3 | access policy (§5) with the instance switch off everywhere: instance setting, per-organization allow or deny, owner opt-out, rollout gate in code | in review |
 | S4 | instance enrollment token, bundled sensor at instance scope | designed |
 | S5 | shared claim path (lanes, fair share, region, untagged switch, approved-only); remove `get_next_platform_job` | designed |
 | S6 | instance key set and shared-job envelope | designed |

@@ -552,5 +552,17 @@
   "admin.legal.title": "Thông tin pháp lý",
   "admin.legal.websiteUrl": "Trang web (https)",
   "admin.nav.legal": "Pháp lý",
-  "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}"
+  "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}",
+  "admin.sharedSensors.title": "Cảm biến dùng chung",
+  "admin.sharedSensors.desc": "Các cảm biến thuộc về hệ thống này và quét cho những tổ chức bạn cho phép. Không tổ chức nào thấy chúng là cảm biến của mình.",
+  "admin.sharedSensors.notReady": "Cảm biến dùng chung chưa sẵn sàng: chỉ có thể bật khi hàng đợi tác vụ dùng chung và cơ chế cô lập từng tác vụ đã có.",
+  "admin.sharedSensors.enabledLabel": "Bật cảm biến dùng chung",
+  "admin.sharedSensors.enabledHint": "Tắt (mặc định): không tổ chức nào gửi lượt quét tới cảm biến dùng chung.",
+  "admin.sharedSensors.newOrgsLabel": "Cho phép các tổ chức chưa có quyết định",
+  "admin.sharedSensors.newOrgsHint": "Bật (mặc định): mọi tổ chức được dùng cảm biến dùng chung trừ khi bạn từ chối. Tắt: chỉ các tổ chức bạn cho phép. Chủ sở hữu tổ chức vẫn có thể từ chối sử dụng.",
+  "admin.sharedSensors.confirmTitle": "Thay đổi thiết lập cảm biến dùng chung?",
+  "admin.sharedSensors.confirmDesc": "Thay đổi được ghi vào nhật ký kiểm tra quản trị; các quản trị viên khác sẽ nhận email.",
+  "admin.sharedSensors.saved": "Đã lưu thiết lập cảm biến dùng chung",
+  "admin.sharedSensors.saveFailed": "Không lưu được thiết lập",
+  "admin.sharedSensors.errorTitle": "thiết lập cảm biến dùng chung"
 }
