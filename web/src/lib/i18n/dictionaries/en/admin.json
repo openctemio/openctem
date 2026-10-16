@@ -612,5 +612,15 @@
   "admin.versionCheck.state.update": "Update available",
   "admin.versionCheck.statusTitle": "This instance",
   "admin.versionCheck.validUntil": "Valid until",
-  "admin.versionCheck.error.conflict": "Another release feed with the same sequence is already applied."
+  "admin.versionCheck.error.conflict": "Another release feed with the same sequence is already applied.",
+  "admin.elevation.active": "Acting as {role} until {until}.",
+  "admin.elevation.end": "End now",
+  "admin.elevation.endFailed": "The elevation could not be ended. Try again.",
+  "admin.elevation.readonly": "You are acting as read-only. Elevate for a while to change anything.",
+  "admin.elevation.elevate": "Elevate",
+  "admin.elevation.title": "Elevate for a while",
+  "admin.elevation.description": "Your session acts with the chosen role until the time is up, then read-only again. Every elevation is in the administrator audit log.",
+  "admin.elevation.role": "Role",
+  "admin.elevation.duration": "For",
+  "admin.elevation.minutes": "{n} minutes"
 }

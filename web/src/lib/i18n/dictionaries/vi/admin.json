@@ -612,5 +612,15 @@
   "admin.versionCheck.state.update": "Có bản cập nhật",
   "admin.versionCheck.statusTitle": "Phiên bản đang chạy",
   "admin.versionCheck.validUntil": "Hiệu lực đến",
-  "admin.versionCheck.error.conflict": "Đã áp dụng một nguồn phát hành khác có cùng số thứ tự."
+  "admin.versionCheck.error.conflict": "Đã áp dụng một nguồn phát hành khác có cùng số thứ tự.",
+  "admin.elevation.active": "Đang hoạt động với vai trò {role} đến {until}.",
+  "admin.elevation.end": "Kết thúc ngay",
+  "admin.elevation.endFailed": "Không thể kết thúc nâng quyền. Hãy thử lại.",
+  "admin.elevation.readonly": "Bạn đang ở chế độ chỉ xem. Hãy nâng quyền trong một khoảng thời gian để thay đổi.",
+  "admin.elevation.elevate": "Nâng quyền",
+  "admin.elevation.title": "Nâng quyền tạm thời",
+  "admin.elevation.description": "Phiên của bạn dùng vai trò đã chọn cho đến khi hết giờ, sau đó trở lại chỉ xem. Mọi lần nâng quyền đều được ghi vào nhật ký kiểm toán quản trị.",
+  "admin.elevation.role": "Vai trò",
+  "admin.elevation.duration": "Trong",
+  "admin.elevation.minutes": "{n} phút"
 }
