@@ -1436,6 +1436,10 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	if svc.Outbox != nil {
 		ob = svc.Outbox
 	}
+	ciAlerts := cirunapp.NewAdminAlerts(admins, inApp, ob, log)
+	if repos.MemberLifecycle != nil && svc.Email != nil {
+		ciAlerts.SetEmail(repos.MemberLifecycle, svc.Email)
+	}
 	ciSvc := cirunapp.NewService(cirunapp.Deps{
 		Repo:     repos.CIRun,
 		Verifier: verifier,
@@ -1445,7 +1449,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 		Ingester: svc.Ingest,
 		Units:    repos.CIRun,
 		Audit:    audit,
-		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
+		Alerts:   ciAlerts,
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
