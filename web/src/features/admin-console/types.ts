@@ -447,3 +447,55 @@ export interface ThreatIntelFeed {
   records_synced: number
   next_sync_at?: string
 }
+
+/** A release in the signed release feed. */
+export interface ReleaseFeedRelease {
+  version: string
+  published_at: string
+  notes_url?: string
+}
+
+/** A security advisory in the signed release feed. */
+export interface ReleaseFeedAdvisory {
+  id: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  title: string
+  introduced?: string
+  fixed_in: string
+  published_at: string
+  url?: string
+}
+
+/** Error codes of the last online check or of a refused import. */
+export type VersionCheckErrorCode =
+  | 'unreachable'
+  | 'http_status'
+  | 'too_large'
+  | 'invalid'
+  | 'rollback'
+  | 'conflict'
+  | 'expired'
+  | 'no_root'
+
+/** GET /admin/version-check/: what the release feed says about this instance. */
+export interface VersionCheckStatus {
+  enabled: boolean
+  configured: boolean
+  feed_url: string
+  source?: 'online' | 'import'
+  applied_at?: string
+  feed_issued_at?: string
+  feed_expires_at?: string
+  last_attempt_at?: string
+  last_error?: VersionCheckErrorCode
+  next_check_at?: string
+  running: string
+  comparable: boolean
+  latest?: string
+  update_available: boolean
+  newer: ReleaseFeedRelease[]
+  advisories: ReleaseFeedAdvisory[]
+  severity?: ReleaseFeedAdvisory['severity']
+  fixed_in?: string
+  stale: boolean
+}

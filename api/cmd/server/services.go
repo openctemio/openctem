@@ -63,6 +63,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -682,6 +683,8 @@ type Services struct {
 	ContentPacks *contentpackapp.Service
 	// PlatformContentPacks are the platform's packs and channels (RFC-061).
 	PlatformContentPacks *contentpackapp.PlatformService
+	// ContentCatalog is the content catalog (RFC-099).
+	ContentCatalog *catalogapp.Service
 
 	// Workflows
 	Workflow           *automation.WorkflowService
@@ -1598,10 +1601,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
 	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
+	// own findings, proof-of-fix queued) behind the abuse guard.
+	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
+	s.RemediationSuggest.SetTasks(s.RemediationTask)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -1883,6 +1890,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Platform packs: their own storage namespace (not a tenant id, so an
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
+	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -2674,6 +2682,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Wire in-app notification service to pentest service
 	s.Pentest.SetUserNotificationService(s.Notification)
+
+	// The content catalog tells owners and administrators when install
+	// approval is being switched off (RFC-099).
+	s.ContentCatalog.SetNotifier(s.Notification)
 
 	// Change detection: an asset an ingest newly created (not a re-scan merge,
 	// not a manual create) fires the `asset_discovered` workflow trigger and,
