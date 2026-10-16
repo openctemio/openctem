@@ -83,7 +83,7 @@ func TestSuppressionRule_AssetTenantAndScope_DB(t *testing.T) {
 		c = context.WithValue(c, middleware.IsAdminKey, isAdmin)
 		aid := shared.MustIDFromString(asset)
 		_, err := svc.CreateRule(c, suppression.CreateRuleInput{
-			TenantID: tid, Name: "sup " + shared.NewID().String(), SuppressionType: suppression.SuppressionTypeFalsePositive,
+			TenantID: tid, Name: "sup " + shared.NewID().String(), SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 			ToolName: "semgrep", AssetID: &aid, RequestedBy: shared.MustIDFromString(user),
 		})
 		return err

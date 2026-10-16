@@ -273,6 +273,25 @@ func (r *SuppressionRepository) Approve(
 		return res, suppression.ErrRuleChangedSinceReview
 	}
 
+	res, err = r.approveLockedInTx(ctx, tx, rule, actorID, details, limit)
+	if err != nil {
+		return res, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return res, fmt.Errorf("commit transaction: %w", err)
+	}
+	observeSuppressionHits("approval", res.Applied)
+	return res, nil
+}
+
+// approveLockedInTx saves the approved rule (locked and checked by the
+// caller), gives the open findings it matches its disposition and records
+// the audit entry, inside tx.
+func (r *SuppressionRepository) approveLockedInTx(ctx context.Context, tx *sql.Tx, rule *suppression.Rule,
+	actorID shared.ID, details map[string]any, limit int,
+) (suppression.ApplyResult, error) {
+	var res suppression.ApplyResult
 	if err := r.saveInTx(ctx, tx, rule); err != nil {
 		return res, err
 	}
@@ -308,10 +327,6 @@ func (r *SuppressionRepository) Approve(
 		return res, err
 	}
 
-	if err := tx.Commit(); err != nil {
-		return res, fmt.Errorf("commit transaction: %w", err)
-	}
-	observeSuppressionHits("approval", res.Applied)
 	return res, nil
 }
 

@@ -19,6 +19,8 @@ type Service struct {
 	scope     ScopeFilter
 	assetRefs AssetRefChecker
 	totp      TOTPVerifier
+	policy    PolicySource
+	stepUp    shared.RecentAuthGate
 }
 
 // TOTPVerifier checks a fresh code from the user's authenticator app. It
@@ -55,12 +57,10 @@ func (s *Service) SetAssetRefChecker(c AssetRefChecker) {
 // ApproverDirectory answers the two questions the four-eyes rule needs
 // (owner decision B16). Implemented by *postgres.SuppressionRepository.
 type ApproverDirectory interface {
-	// CountEligibleApprovers counts the tenant's active members who may
-	// approve suppression rules (owners, admins and holders of a role with
-	// findings:suppressions:approve).
-	CountEligibleApprovers(ctx context.Context, tenantID shared.ID) (int, error)
-	// IsTenantOwner reports whether the user is the tenant's active owner.
-	IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	// IsSoleActiveOwner reports whether the user is an owner and the only
+	// active person of the tenant (service accounts do not count; a member
+	// without the approve permission does).
+	IsSoleActiveOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 	// RecentMemberRemoval answers the latest member suspension, removal,
 	// offboarding or membership expiry in the tenant after since (nil: none).
 	RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error)
@@ -94,6 +94,9 @@ type CreateRuleInput struct {
 	AssetID         *shared.ID // Optional asset filter
 	RequestedBy     shared.ID
 	ExpiresAt       *string // ISO8601 format
+	// ReasonCode is the structured reason (closure reason catalog of the
+	// rule's type), required alongside the description (the note).
+	ReasonCode string
 }
 
 // CreateRule creates a new suppression rule.
@@ -128,6 +131,15 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 	if err := rule.Validate(); err != nil {
 		return nil, err
 	}
+	// A rule says why, with a code and a note.
+	code, err := ParseReasonCode(input.SuppressionType, input.ReasonCode)
+	if err != nil {
+		return nil, err
+	}
+	rule.SetReasonCode(code)
+	if strings.TrimSpace(input.Description) == "" {
+		return nil, fmt.Errorf("%w: description is required: say why the rule is safe", shared.ErrValidation)
+	}
 
 	// Every rule ends: the default when none is asked, at most a year ahead.
 	var requested *time.Time
@@ -143,6 +155,9 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 		return nil, err
 	}
 	rule.SetExpiresAt(&end)
+	if err := s.stampPolicy(ctx, rule); err != nil {
+		return nil, err
+	}
 
 	// Save the rule and its audit entry atomically.
 	if err := s.repo.SaveWithAudit(ctx, rule, "created", &input.RequestedBy, map[string]any{
@@ -151,6 +166,8 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 		"rule_id":          input.RuleID,
 		"tool_name":        input.ToolName,
 		"path_pattern":     input.PathPattern,
+		"reason_code":      code,
+		"tier":             rule.Tier(),
 	}); err != nil {
 		return nil, err
 	}
@@ -192,6 +209,11 @@ type ApproveResult struct {
 	// MaxFindingsAppliedOnApprove.
 	AppliedFindings int
 	Capped          bool
+	// Pending: the approval was recorded and the rule needs more approvals
+	// (ApprovalsCollected of ApprovalsRequired) under the approval policy.
+	Pending            bool
+	ApprovalsCollected int
+	ApprovalsRequired  int
 }
 
 // PreviewSampleSize is the number of findings a preview lists.
@@ -271,12 +293,23 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 	}
 
 	selfApproved := false
-	if !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.ApprovedBy {
-		allowed, err := s.mayApproveOwnRule(ctx, input.TenantID, input.ApprovedBy)
+	selfRequest := !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.ApprovedBy
+	if s.policy != nil && !selfRequest {
+		return s.approveUnderPolicy(ctx, rule, input)
+	}
+	if selfRequest {
+		// The only one-person path is the sole active person of the
+		// organization (an owner, with a reason and a fresh code). Anyone
+		// else approving their own rule is judged by the policy, which
+		// excludes the requester.
+		sole, err := s.isSoleActiveOwner(ctx, input.TenantID, input.ApprovedBy)
 		if err != nil {
 			return nil, err
 		}
-		if !allowed {
+		if !sole {
+			if s.policy != nil {
+				return s.approveUnderPolicy(ctx, rule, input)
+			}
 			return nil, ErrSelfApproval
 		}
 		if err := s.verifySelfApproval(ctx, input); err != nil {
@@ -339,20 +372,15 @@ func IsSelfApprovalRefusal(err error) bool {
 		errors.Is(err, ErrSelfApprovalNeedsTOTP) || errors.Is(err, ErrSelfApprovalBadCode)
 }
 
-// mayApproveOwnRule: only when the requester is the owner and nobody else in
-// the organization can approve.
-func (s *Service) mayApproveOwnRule(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+// isSoleActiveOwner: the user is an owner and the only active person of the
+// organization, read now. Members who lost the approve permission still
+// count as people, so taking the permission from the others does not open
+// the path.
+func (s *Service) isSoleActiveOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
 	if s.approvers == nil {
 		return false, nil
 	}
-	n, err := s.approvers.CountEligibleApprovers(ctx, tenantID)
-	if err != nil {
-		return false, fmt.Errorf("count eligible approvers: %w", err)
-	}
-	if n >= 2 {
-		return false, nil
-	}
-	return s.approvers.IsTenantOwner(ctx, tenantID, userID)
+	return s.approvers.IsSoleActiveOwner(ctx, tenantID, userID)
 }
 
 // RejectRuleInput contains input for rejecting a rule.
@@ -463,6 +491,14 @@ func (s *Service) UpdateRule(ctx context.Context, input UpdateRuleInput) (*Rule,
 	if err := rule.Validate(); err != nil {
 		return nil, err
 	}
+	// The criteria may match other findings now: evaluate the tier again
+	// (sign-offs made before this change no longer count).
+	if rule.Status() == RuleStatusPending && len(changes) > 0 {
+		if err := s.stampPolicy(ctx, rule); err != nil {
+			return nil, err
+		}
+		changes["tier"] = rule.Tier()
+	}
 
 	// Save the rule and its audit entry atomically.
 	if err := s.repo.SaveWithAudit(ctx, rule, "updated", &input.UpdatedBy, changes); err != nil {
@@ -497,7 +533,7 @@ func (s *Service) MarkReviewed(ctx context.Context, input MarkReviewedInput) (*R
 	// flag only on the sole-approver path (the owner, nobody else can
 	// approve, a reason and a fresh authenticator code), like approving it.
 	if !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.By {
-		allowed, err := s.mayApproveOwnRule(ctx, input.TenantID, input.By)
+		allowed, err := s.isSoleActiveOwner(ctx, input.TenantID, input.By)
 		if err != nil {
 			return nil, nil, "", err
 		}

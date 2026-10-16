@@ -258,7 +258,8 @@ func (r *FindingApprovalRepository) selectQuery() string {
 			self_approved, COALESCE(self_approval_reason, ''), single_person,
 			COALESCE(tier, ''), COALESCE(risk_class, ''), COALESCE(required_approvals, -1), policy_eval, decision_facts,
 			(SELECT COUNT(*) FROM approval_signoffs s
-			 WHERE s.tenant_id = a.tenant_id AND s.subject_type = 'finding_approval' AND s.subject_id = a.id)
+			 WHERE s.tenant_id = a.tenant_id AND s.subject_type = 'finding_approval' AND s.subject_id = a.id),
+			a.batch_id
 		FROM finding_status_approvals a
 	`
 }
@@ -285,6 +286,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		decideBy        *time.Time
 		closureReason   sql.NullString
 		required        int
+		batchID         sql.NullString
 	)
 
 	err := scanner.Scan(
@@ -292,7 +294,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		&a.Justification, &approvedBy, &approvedAt, &rejectedBy, &rejectedAt,
 		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor, &decideBy, &closureReason,
 		&a.SelfApproved, &a.SelfApprovalReason, &a.SinglePerson,
-		&a.Tier, &a.RiskClass, &required, &a.PolicyEval, &a.DecisionFacts, &a.ApprovalsCollected,
+		&a.Tier, &a.RiskClass, &required, &a.PolicyEval, &a.DecisionFacts, &a.ApprovalsCollected, &batchID,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -315,6 +317,11 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 	a.ExpiresAt = expiresAt
 	a.DecideBy = decideBy
 	a.RequiredApprovals = legacyRequired(required)
+	if batchID.Valid {
+		if bid, err := shared.IDFromString(batchID.String); err == nil {
+			a.BatchID = &bid
+		}
+	}
 
 	if approvedBy != nil {
 		aid, _ := shared.IDFromString(*approvedBy)
@@ -507,7 +514,12 @@ func (r *FindingApprovalRepository) ExpireOverdueRequests(ctx context.Context) (
 	if err != nil {
 		return 0, fmt.Errorf("expire overdue approval requests: %w", err)
 	}
-	return n, nil
+	// Group exceptions past their decision deadline expire with them.
+	nb, err := r.ExpireOverdueBatches(ctx)
+	if err != nil {
+		return n, err
+	}
+	return n + nb, nil
 }
 
 // MarkReminded records a reminder for a pending request when the last one is

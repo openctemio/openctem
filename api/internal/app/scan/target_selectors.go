@@ -215,6 +215,7 @@ func (s *Service) expandSelectors(ctx context.Context, sc *scan.Scan) (*selector
 			}
 			out.Members = append(out.Members, groupScanMember{
 				ID:          m.ID,
+				Selector:    t,
 				Name:        m.Name,
 				MatchValues: scope.AssetExclusionValues(m.Type, m.Name, m.Properties),
 				Type:        asset.TypeRef{Type: asset.AssetType(m.Type), SubType: m.SubType},
