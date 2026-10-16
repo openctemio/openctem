@@ -568,11 +568,42 @@ func TestService_ApproveRule_FourEyes(t *testing.T) {
 			t.Fatalf("self-approval with a second approver = %v, want ErrSelfApproval (forbidden)", err)
 		}
 	})
-	t.Run("lone owner may approve, flagged", func(t *testing.T) {
+	t.Run("lone owner without reason or fresh code is refused", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester})
+		svc.SetTOTPVerifier(fakeTOTP{good: "123456"})
+		rule := newPending(svc)
+		if _, err := approveOwn(svc, rule); !errors.Is(err, ErrSelfApprovalNeedsReason) {
+			t.Fatalf("no reason = %v, want ErrSelfApprovalNeedsReason", err)
+		}
+		for _, code := range []string{"", "000000"} {
+			_, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester,
+				ReviewedUpdatedAt: reviewedAt(rule), SelfApprovalReason: "alone", TOTPCode: code})
+			if !errors.Is(err, ErrSelfApprovalBadCode) || !IsSelfApprovalRefusal(err) {
+				t.Fatalf("code %q = %v, want ErrSelfApprovalBadCode", code, err)
+			}
+		}
+		if rule.Status() != RuleStatusPending {
+			t.Fatalf("refused self-approval changed the rule: %s", rule.Status())
+		}
+	})
+	t.Run("lone owner without a verifier fails closed", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester})
+		rule := newPending(svc)
+		if _, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester,
+			ReviewedUpdatedAt: reviewedAt(rule), SelfApprovalReason: "alone", TOTPCode: "123456"}); !errors.Is(err, ErrSelfApprovalBadCode) {
+			t.Fatalf("no verifier = %v, want ErrSelfApprovalBadCode", err)
+		}
+	})
+	t.Run("lone owner may approve with reason and fresh code, flagged", func(t *testing.T) {
 		repo := newMockRepository()
 		svc := NewService(repo, nil)
 		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester})
-		res, err := approveOwn(svc, newPending(svc))
+		svc.SetTOTPVerifier(fakeTOTP{good: "123456"})
+		rule := newPending(svc)
+		res, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester,
+			ReviewedUpdatedAt: reviewedAt(rule), SelfApprovalReason: "only member", TOTPCode: "123456"})
 		if err != nil {
 			t.Fatalf("lone owner self-approval: %v", err)
 		}
@@ -597,6 +628,16 @@ func TestService_ApproveRule_FourEyes(t *testing.T) {
 			t.Fatalf("self-approval without a directory = %v, want ErrSelfApproval", err)
 		}
 	})
+}
+
+// fakeTOTP accepts one code.
+type fakeTOTP struct{ good string }
+
+func (f fakeTOTP) VerifyFreshTOTP(_ context.Context, _, code string) error {
+	if code != f.good {
+		return ErrSelfApprovalBadCode
+	}
+	return nil
 }
 
 // The approval pins the version the approver reviewed.
