@@ -128,7 +128,7 @@ export function MovePalette({
               : t('remediationHub.move.confirmDetach', undefined, { n: findingIds.length })}
           </p>
           {pending.warnings.length > 0 && (
-            <ul className="space-y-1 text-sm text-amber-700 dark:text-amber-400">
+            <ul className="space-y-1 text-sm text-warning">
               {pending.warnings.map((w) => (
                 <li key={w} className="flex items-center gap-2">
                   <AlertTriangle className="size-4 shrink-0" aria-hidden />
