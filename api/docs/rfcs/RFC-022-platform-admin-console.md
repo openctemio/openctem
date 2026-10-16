@@ -718,6 +718,22 @@ no console authenticator, so protected actions answer
 `403 STEP_UP_UNAVAILABLE` until one is enrolled (WebAuthn for the console
 lifts this).
 
+### Time-boxed elevation
+
+Administrators act as read-only until they elevate (owner decision D8,
+`ADMIN_ELEVATION=required`, the default). `POST /api/v1/admin/auth/elevate
+{role, minutes, reason}` (step-up) makes the console session act as
+`ops_admin` or `super_admin`, never above the administrator's own role, for 15
+to 60 minutes (never past the session), audited at high severity
+(`console.elevated`); `DELETE /api/v1/admin/auth/elevate` ends it at once.
+The elevation lives on the session (`admin_sessions.elevated_role`,
+`elevated_until`, migration 002740), so another session of the same
+administrator stays read-only. Authorization uses the acting role
+(`AdminUser.EffectiveRole`); the persisted role is the ceiling and is never
+changed by acting. `GET /admin/auth/validate` returns `role` (acting),
+`max_role` and `elevated_until`; the console shows a bar to elevate or end.
+Approval of an elevation by another super admin is a later step.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/

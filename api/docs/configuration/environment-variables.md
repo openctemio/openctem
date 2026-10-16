@@ -361,6 +361,17 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `ADMIN_AUDIT_RETENTION_BATCH_SIZE` | int | `10000` |  |  | Rows per delete transaction. |
+
+### Admin console
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ADMIN_ELEVATION` | string | `required` |  |  | `required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in. |
+
+### Audit log retention
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
 | `ADMIN_AUDIT_RETENTION_DAYS` | int | `365` |  |  | Age threshold. At least 30 when deletion is enabled. |
 | `ADMIN_AUDIT_RETENTION_DRY_RUN` | bool | `true` |  |  | Report what would be deleted instead of deleting. Set `false` to enforce retention (irreversible). |
 | `ADMIN_AUDIT_RETENTION_ENABLED` | bool | `true` |  |  | Run the platform admin audit-log retention controller. |

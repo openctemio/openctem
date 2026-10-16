@@ -60,6 +60,11 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AdminElevationRequired: platform administrators act as read-only until
+	// they elevate their console session for a while (ADMIN_ELEVATION=
+	// required, the default; off = act as their own role at once).
+	AdminElevationRequired bool
+
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
 	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
 	AssetChangeRetentionDays int
@@ -1509,6 +1514,7 @@ func Load() (*Config, error) {
 			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
+		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
 			// Default TRUE: never start deleting audit history on upgrade.
