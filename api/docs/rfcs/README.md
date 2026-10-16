@@ -120,6 +120,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-105](RFC-105-version-check-and-usage-telemetry.md) | Version check and usage telemetry | Accepted (2026-10-16). |
 | [RFC-110](RFC-110-tenant-lifecycles.md) | Tenant lifecycles (sub-statuses and lifecycle schemes for findings) | Accepted (2026-10-16). |
 | [RFC-111](RFC-111-approval-policy.md) | Approval policy (one evaluator for false positives, accepted risks, suppressions and group exceptions) | Accepted (2026-10-16). |
+| [RFC-112](RFC-112-asset-technologies.md) | Asset technologies (detected technology fingerprint per asset) | Accepted (2026-10-16). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

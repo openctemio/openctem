@@ -610,3 +610,28 @@ func (r *MemberLifecycleRepository) ActiveAdminIDs(ctx context.Context, tenantID
 	}
 	return out, rows.Err()
 }
+
+// ActiveAdminEmails returns the e-mail addresses of the tenant's active owners
+// and administrators (the same people as ActiveAdminIDs).
+func (r *MemberLifecycleRepository) ActiveAdminEmails(ctx context.Context, tenantID shared.ID) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT u.email
+		FROM tenant_members m
+		JOIN users u ON u.id = m.user_id AND u.status = 'active'
+		JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.tenant_id = $1 AND m.status = 'active' AND ver.role IN ('owner', 'admin') AND u.email <> ''`,
+		tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list active admin e-mails: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err != nil {
+			return nil, fmt.Errorf("scan admin e-mail: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
