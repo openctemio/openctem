@@ -263,6 +263,29 @@ func (h *AdminAuditHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+// VerifyChain handles GET /api/v1/admin/audit-logs/chain.
+// @Summary Verify the administrators' audit chain
+// @Description Any admin. Recomputes every online row of the append-only, hash-chained administrators' audit log and reports the rows that do not verify (changed, unlinked, or missing before). Infrastructure facts only: positions and row ids, no row content.
+// @Tags Admin Audit Logs
+// @Produce json
+// @Success 200 {object} admin.AuditChainReport
+// @Failure 401 {object} apierror.Error "Unauthorized"
+// @Failure 500 {object} apierror.Error "Internal Server Error"
+// @Router /admin/audit-logs/chain [get]
+func (h *AdminAuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) {
+	report, err := h.repo.VerifyChain(r.Context())
+	if err != nil {
+		h.logger.Error("verify admin audit chain", "error", err)
+		apierror.InternalServerError("could not verify the audit chain").WriteJSON(w)
+		return
+	}
+	if !report.OK() {
+		h.logger.Warn("admin audit chain does not verify", "breaks", len(report.Breaks), "truncated", report.Truncated)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(report)
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================
