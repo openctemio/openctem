@@ -371,6 +371,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		return nil, err
 	}
 	tenantID := *agt.TenantID
+	// A shared sensor writes only the results of a shared job it holds,
+	// into that job's tenant (RFC-040 §11.2, RFC-100 §8): never unsolicited.
+	if agt.IsShared() && (input.Options.Binding.Kind != BindingCommand || input.Options.Binding.CommandID == nil) {
+		return nil, shared.NewDomainError("FORBIDDEN", "a shared sensor reports only for a job it holds", shared.ErrForbidden)
+	}
 
 	report := input.Report
 	if report == nil {
