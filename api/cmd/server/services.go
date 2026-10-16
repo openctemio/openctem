@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -62,6 +64,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -237,6 +240,24 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 	}
 	id := u.ID()
 	return &id, nil
+}
+
+// ticketStatusApplier adapts the finding service's inbound ticket path to
+// the Jira sync service.
+type ticketStatusApplier struct{ vuln *finding.VulnerabilityService }
+
+func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
+) ([]shared.ID, []jira.InboundRefusal, error) {
+	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
+	if err != nil {
+		return nil, nil, err
+	}
+	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
+	for _, r := range out.Refused {
+		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
+	}
+	return out.Applied, refused, nil
 }
 
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
@@ -649,6 +670,8 @@ type Services struct {
 	ContentPacks *contentpackapp.Service
 	// PlatformContentPacks are the platform's packs and channels (RFC-061).
 	PlatformContentPacks *contentpackapp.PlatformService
+	// ContentCatalog is the content catalog (RFC-099).
+	ContentCatalog *catalogapp.Service
 
 	// Workflows
 	Workflow           *automation.WorkflowService
@@ -1567,10 +1590,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
 	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
+	// own findings, proof-of-fix queued) behind the abuse guard.
+	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
+	s.RemediationSuggest.SetTasks(s.RemediationTask)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -1668,6 +1695,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound status changes are recorded with the integration as the actor.
 	s.JiraSync.SetActivityRecorder(s.FindingActivity)
+	// Inbound status changes go through the finding service rules (transition
+	// map, gates, "mark fixed" with proof of fix) for every finding linked to
+	// the issue; refusals are commented back once per window (all replicas).
+	s.JiraSync.SetInboundApplier(ticketStatusApplier{vuln: s.Vulnerability})
+	s.JiraSync.SetWorkItemFindingLister(repos.Finding)
+	if deps.RedisClient != nil {
+		s.JiraSync.SetRefusalCommentGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
+	// Ticket links: create-ticket records its link; people link existing issues.
+	if repos.TicketLink != nil {
+		s.JiraSync.SetLinkStore(repos.TicketLink)
+	}
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
@@ -1688,8 +1727,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// here (JiraSync is created after the campaign service above).
 	if s.RemediationCampaign != nil {
 		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
-		// Inbound: a Jira webhook moving the campaign's epic to Done completes
-		// the campaign (the reverse of the outbound transition above).
+		// Inbound: a Jira webhook moving the campaign's epic to Done marks the
+		// campaign's findings fixed (a fix claim; verification closes them).
 		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
 	}
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
@@ -1840,6 +1879,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Platform packs: their own storage namespace (not a tenant id, so an
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
+	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -2632,6 +2672,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire in-app notification service to pentest service
 	s.Pentest.SetUserNotificationService(s.Notification)
 
+	// The content catalog tells owners and administrators when install
+	// approval is being switched off (RFC-099).
+	s.ContentCatalog.SetNotifier(s.Notification)
+
 	// Change detection: an asset an ingest newly created (not a re-scan merge,
 	// not a manual create) fires the `asset_discovered` workflow trigger and,
 	// when it is internet-facing, a throttled tenant notification. Wired here
@@ -2801,6 +2845,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// domain (domainverify.Service.OwnerOfDomain).
 	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
 		s.SSO.SetDomainOwnerLookup(owners)
+		// Discovery hands out opaque organization references, signed with
+		// a key derived from the session secret under its own label.
+		dk := hmac.New(sha256.New, []byte(cfg.Auth.JWTSecret))
+		dk.Write([]byte("openctem/sso-discovery/v1"))
+		s.SSO.SetDiscoveryKey(dk.Sum(nil))
 	} else {
 		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
 	}
