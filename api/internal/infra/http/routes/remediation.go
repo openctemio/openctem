@@ -55,6 +55,9 @@ func registerRemediationTaskRoutes(
 		r.GET("/{task_id}/timeline", h.Timeline, middleware.Require(permission.RemediationRead))
 		r.POST("/{task_id}/splits", h.Split, middleware.Require(permission.RemediationWrite))
 		r.POST("/{task_id}/merges", h.Merge, middleware.Require(permission.RemediationWrite))
+		// Marking the task fixed is a fix claim on each of its findings: the
+		// task write plus findings:fix_apply.
+		r.POST("/{task_id}/resolve", h.Resolve, middleware.RequireAll(permission.RemediationWrite, permission.FindingsFixApply))
 	}, tenantMiddlewares...)
 
 	// Moves of findings between tasks (or out of any task).
