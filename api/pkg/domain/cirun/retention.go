@@ -44,3 +44,15 @@ type RetentionRepository interface {
 	// same exceptions.
 	PurgeRuns(ctx context.Context, tenantID shared.ID, before time.Time, limit int) (int64, error)
 }
+
+// UnjudgedRun is a run that is still running past its pipeline window.
+type UnjudgedRun struct {
+	ID            shared.ID
+	PipelineID    *shared.ID
+	Repository    string
+	ExternalRunID string
+	// FindingsCount is the count the verdict is guarded by (SaveVerdict).
+	FindingsCount int
+	// OverCap: the run is marked over the findings cap.
+	OverCap bool
+}

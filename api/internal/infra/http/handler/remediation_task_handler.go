@@ -704,8 +704,10 @@ func (h *RemediationTaskHandler) auditContext(r *http.Request) audit.AuditContex
 func (h *RemediationTaskHandler) handleError(w http.ResponseWriter, err error) {
 	var mc *remediation.MoveNeedsConfirmationError
 	if errors.As(err, &mc) {
+		ws := warningStrings(mc.Warnings)
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"code": "MOVE_NEEDS_CONFIRMATION", "message": mc.Error(), "warnings": warningStrings(mc.Warnings),
+			"code": "MOVE_NEEDS_CONFIRMATION", "message": mc.Error(), "warnings": ws,
+			"details": map[string]any{"warnings": ws},
 		})
 		return
 	}
@@ -716,6 +718,7 @@ func (h *RemediationTaskHandler) handleError(w http.ResponseWriter, err error) {
 		}
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"code": "FINDINGS_IN_OTHER_TASK", "message": e.Error(), "finding_ids": ids,
+			"details": map[string]any{"finding_ids": ids},
 		})
 		return
 	}
