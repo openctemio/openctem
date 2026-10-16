@@ -378,7 +378,8 @@ func (s *Service) UpdateSelfServiceDefaults(ctx context.Context, actor *admin.Ad
 	if err := d.Validate(); err != nil {
 		return 0, err
 	}
-	v, err := s.repo.SaveSelfServiceDefaults(ctx, d, expectedVersion, actor.ID(), s.now().UTC())
+	id := actor.ID()
+	v, err := s.repo.SaveSelfServiceDefaults(ctx, d, expectedVersion, &id, s.now().UTC())
 	if err != nil {
 		return 0, err
 	}

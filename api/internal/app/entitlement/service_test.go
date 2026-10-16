@@ -32,7 +32,7 @@ func (m *memRepo) GetSelfServiceDefaults(context.Context) (limits.Limits, int, e
 	}
 	return m.defaults, m.defaultsVersion, nil
 }
-func (m *memRepo) SaveSelfServiceDefaults(_ context.Context, l limits.Limits, v int, _ shared.ID, _ time.Time) (int, error) {
+func (m *memRepo) SaveSelfServiceDefaults(_ context.Context, l limits.Limits, v int, _ *shared.ID, _ time.Time) (int, error) {
 	if v != m.defaultsVersion {
 		return 0, shared.ErrConflict
 	}

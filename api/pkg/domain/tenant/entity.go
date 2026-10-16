@@ -21,11 +21,11 @@ type Tenant struct {
 	logoURL     string
 	settings    map[string]any
 	createdBy   string // Keycloak user ID
-	// initialLimits are written with the organization when it is created
-	// (the instance's self-service defaults); never loaded back.
-	initialLimits []limits.Limit
-	createdAt     time.Time
-	updatedAt     time.Time
+	// initial are the limits, feature denies and idle policy written with the
+	// organization when it is created; never loaded back.
+	initial   InitialEntitlements
+	createdAt time.Time
+	updatedAt time.Time
 }
 
 // NewTenant creates a new Tenant entity.
@@ -111,14 +111,30 @@ func (t *Tenant) LogoURL() string {
 	return t.logoURL
 }
 
+// InitialEntitlements are written in the transaction that creates the
+// organization, so it never exists without them: the instance's
+// self-service defaults, or what the control plane provisioned.
+type InitialEntitlements struct {
+	Limits []limits.Limit
+	Denies []limits.FeatureDeny
+	// IdlePolicy turns the idle policy on, with IdleReason.
+	IdlePolicy bool
+	IdleReason string
+}
+
 // InitialLimits returns the limits written with the organization when it is
 // created.
-func (t *Tenant) InitialLimits() []limits.Limit { return t.initialLimits }
+func (t *Tenant) InitialLimits() []limits.Limit { return t.initial.Limits }
 
-// SetInitialLimits sets the limits the organization starts with (the
-// instance's self-service defaults), written in the transaction that creates
-// it.
-func (t *Tenant) SetInitialLimits(l []limits.Limit) { t.initialLimits = l }
+// Initial returns everything written with the organization when it is
+// created.
+func (t *Tenant) Initial() InitialEntitlements { return t.initial }
+
+// SetInitialLimits sets the limits the organization starts with.
+func (t *Tenant) SetInitialLimits(l []limits.Limit) { t.initial.Limits = l }
+
+// SetInitial sets everything the organization starts with.
+func (t *Tenant) SetInitial(in InitialEntitlements) { t.initial = in }
 
 // Settings returns the tenant settings.
 func (t *Tenant) Settings() map[string]any {

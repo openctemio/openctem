@@ -45,18 +45,18 @@ func TestLimitsRepository(t *testing.T) {
 		t.Fatalf("empty defaults: %v", err)
 	}
 	d := limits.Limits{limits.Seats: 5}
-	v, err := r.SaveSelfServiceDefaults(ctx, d, 0, owner, now)
+	v, err := r.SaveSelfServiceDefaults(ctx, d, 0, &owner, now)
 	if err != nil || v != 1 {
 		t.Fatalf("first save v=%d err=%v", v, err)
 	}
-	if _, err := r.SaveSelfServiceDefaults(ctx, d, 0, owner, now); !errors.Is(err, shared.ErrConflict) {
+	if _, err := r.SaveSelfServiceDefaults(ctx, d, 0, &owner, now); !errors.Is(err, shared.ErrConflict) {
 		t.Fatalf("second insert must conflict: %v", err)
 	}
 	d[limits.OrgsPerUser] = 1
-	if v, err = r.SaveSelfServiceDefaults(ctx, d, 1, owner, now); err != nil || v != 2 {
+	if v, err = r.SaveSelfServiceDefaults(ctx, d, 1, &owner, now); err != nil || v != 2 {
 		t.Fatalf("update v=%d err=%v", v, err)
 	}
-	if _, err := r.SaveSelfServiceDefaults(ctx, d, 1, owner, now); !errors.Is(err, shared.ErrConflict) {
+	if _, err := r.SaveSelfServiceDefaults(ctx, d, 1, &owner, now); !errors.Is(err, shared.ErrConflict) {
 		t.Fatalf("stale version must conflict: %v", err)
 	}
 	got, gv, err := r.GetSelfServiceDefaults(ctx)

@@ -48,6 +48,32 @@ describe('OrganizationLimitsUsage', () => {
     expect(screen.getByText(/Read-only until/)).toBeInTheDocument()
   })
 
+  it('links the service account page only when configured and https', () => {
+    mockLimits({
+      applies: true,
+      over_limit: false,
+      limits: [{ key: 'seats', limit: 5, used: 1, over_limit: false }],
+      denied_features: [],
+      account_portal_url: 'https://account.example.com',
+    })
+    const { unmount } = render(<OrganizationLimitsUsage />)
+    const link = screen.getByRole('link', { name: /Manage your service account/ })
+    expect(link).toHaveAttribute('href', 'https://account.example.com')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    unmount()
+    mockLimits({
+      applies: true,
+      over_limit: false,
+      limits: [{ key: 'seats', limit: 5, used: 1, over_limit: false }],
+      denied_features: [],
+      account_portal_url: 'javascript:alert(1)',
+    })
+    render(<OrganizationLimitsUsage />)
+    expect(
+      screen.queryByRole('link', { name: /Manage your service account/ })
+    ).not.toBeInTheDocument()
+  })
+
   it('uses neutral wording: no plan, tier or upgrade', () => {
     mockLimits({
       applies: true,

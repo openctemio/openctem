@@ -117,17 +117,23 @@ const SelfServiceDefaultsKey = "self_service_default_limits"
 // organization starts with.
 const SelfServiceReason = "instance default for self-service organizations"
 
+// Rows returns one row per per-organization key of lims that is not
+// Unlimited, for the organization, origin and reason given.
+func Rows(tenantID shared.ID, origin Origin, reason string, lims Limits, at time.Time) []Limit {
+	out := []Limit{}
+	for _, k := range Keys {
+		if v, ok := lims[k]; ok && k.PerOrganization() && v != Unlimited {
+			out = append(out, Limit{TenantID: tenantID, Key: k, Value: v, Origin: origin, Reason: reason, SetAt: at})
+		}
+	}
+	return out
+}
+
 // SelfServiceRows returns the operator rows a new self-service organization
 // starts with: one per per-organization key of the defaults that is not
 // Unlimited (none for empty defaults).
 func SelfServiceRows(tenantID shared.ID, defaults Limits, at time.Time) []Limit {
-	out := []Limit{}
-	for _, k := range Keys {
-		if v, ok := defaults[k]; ok && k.PerOrganization() && v != Unlimited {
-			out = append(out, Limit{TenantID: tenantID, Key: k, Value: v, Origin: OriginOperator, Reason: SelfServiceReason, SetAt: at})
-		}
-	}
-	return out
+	return Rows(tenantID, OriginOperator, SelfServiceReason, defaults, at)
 }
 
 // Origin says who set a limit or a deny.

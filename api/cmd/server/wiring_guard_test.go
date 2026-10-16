@@ -296,14 +296,8 @@ func TestServices_EachServiceConstructedOnce(t *testing.T) {
 // must be wired: the services nil-guard their collaborators, so an unwired
 // setter is a feature that silently never runs.
 var optionalServiceSetters = map[string]string{
-	// Plan seam: the entitlement layer (plans with SSO) is not built yet;
-	// until it is, every plan may trust another organization.
-	"OrgTrust.SetSSOEntitlement": "plan entitlements not built yet (trusts allowed on every plan)",
-	"VEX.SetClock":               "test seam: replaces the clock; production uses time.Now",
-	// Self-hosted runs with no source beyond the operator's own limits; the
-	// control-plane source is configured only with the internal API.
-	"Entitlement.SetSources": "no source by default; the internal API configures the control-plane source",
-	"WebEvidence.SetClock":   "test seam: replaces the clock; production uses time.Now",
+	"VEX.SetClock":         "test seam: replaces the clock; production uses time.Now",
+	"WebEvidence.SetClock": "test seam: replaces the clock; production uses time.Now",
 
 	// Business operations named Set*, not collaborator seams.
 	"ProgramFeedSettings.SetLocalBundle": "business operation (the admin console switch of the local program bundle), not a collaborator seam",
