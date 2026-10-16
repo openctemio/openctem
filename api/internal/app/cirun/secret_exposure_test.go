@@ -139,7 +139,7 @@ func TestRotationTitleIsCleanedAndCapped(t *testing.T) {
 }
 
 // Two runs find the same secret at once: the loser's insert is refused by the
-// one-active-task-per-action index and it joins the winner's task.
+// create refusing a second active task and it joins the winner's task.
 func TestSecretExposure_LosingTheCreateRaceJoinsTheExistingTask(t *testing.T) {
 	pr, tasks := &fakePromoter{}, newFakeRotationTasks()
 	winner := &remediation.Task{ID: shared.NewID(), Title: "Rotate aws_access_key", Version: 1}
