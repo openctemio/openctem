@@ -92,7 +92,7 @@ type OAuthService struct {
 	// its state, until the callback consumes it.
 	pkceStore PKCEVerifierStore
 	// signupPolicy decides whether a social sign-in may create an account
-	// (signup.Admit). Nil: TENANT_CREATION_MODE from the config.
+	// (signup.Admit). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
 	// invitations answers whether a pending invitation is addressed to an
 	// email (an invited person may sign up with Google/GitHub/Microsoft).
