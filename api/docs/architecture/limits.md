@@ -179,14 +179,18 @@ self-hosted install leaves it off (the default) and never needs it.
 **Transport and trust**
 
 - A separate listener, `INTERNAL_API_ADDR` (empty: off). Expose it on a
-  private network only, never through the public gateway.
+  private network only, never through the public gateway. The API refuses
+  to start with an every-interface address (`:9443`, `0.0.0.0`, `::`) unless
+  `INTERNAL_API_ALLOW_ALL_INTERFACES=true` (for a container network with no
+  published port).
 - mTLS, TLS 1.3 only: a client certificate chaining to
   `INTERNAL_API_CLIENT_CA` is required in the handshake.
 - Plus `Authorization: Bearer <token>` on every request: `EdDSA` (Ed25519)
   signed by a key in `INTERNAL_API_JWT_PUBLIC_KEYS` (two during rotation),
   `iss` = `INTERNAL_API_JWT_ISSUER`, `aud` = `openctem-core`, lifetime at most
-  5 minutes, not issued in the future, a single-use `jti` (shared across
-  replicas through Redis), a `sub` naming the calling service, and `scope`
+  5 minutes, not issued in the future, a single-use `jti` (remembered in
+  Redis so every replica refuses a replay; the API does not start without
+  Redis), a `sub` naming the calling service, and `scope`
   with `limits:write`, `orgs:provision` or `usage:read`.
 - Any failure answers 401 with no detail (the reason is logged). A missing
   scope is 403. 20 requests a second per calling service. Bodies are capped
@@ -208,7 +212,7 @@ self-hosted install leaves it off (the default) and never needs it.
 | `PUT /organizations/{id}/entitlements` `{limits, denied_features, reason}` | `limits:write` | replaces every control-plane limit and deny of the organization in one transaction; newly denied modules start the read-only grace |
 | `PUT /organizations/{id}/idle-policy` `{enabled, reason}` | `limits:write` | turns the idle policy on or off |
 | `PUT /self-service-limits` `{limits, reason}` | `limits:write` | replaces the self-service default limits (and `orgs_per_user`), so organizations people create themselves start with them |
-| `POST /organizations` `{name, slug, owner_email, owner_name?, limits, denied_features, idle_policy, reason}` | `orgs:provision` | creates the organization, its owner (an existing account, or a new one that gets the set-password email), and the limits, denies and idle policy in the same transaction; 409 when the slug is taken |
+| `POST /organizations` `{name, slug, owner_email, owner_name?, limits, denied_features, idle_policy, reason}` | `orgs:provision` | creates the organization, its owner (a new account that gets the set-password email), and the limits, denies and idle policy in the same transaction; 409 `CONFLICT` when the slug is taken; 409 `OWNER_ACCOUNT_EXISTS` when the email already has an account (nobody becomes an owner on someone else's request: that person signs in and creates the organization, which starts with the self-service limits) |
 | `GET /organizations/{id}/usage[?include=findings]` | `usage:read` | aggregate counts |
 | `GET /usage?after=<id>&limit=<1..500>` | `usage:read` | every organization in id order with `created_at` and its counts; `next` pages |
 

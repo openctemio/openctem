@@ -376,11 +376,13 @@ type ProvisionRequest struct {
 }
 
 // ProvisionResponse carries ids and the owner's state only; never a setup
-// link or token.
+// link or token. An owner email that already has an account is refused
+// (409 OWNER_ACCOUNT_EXISTS): that person creates the organization after
+// signing in, so nobody becomes an owner without consenting.
 type ProvisionResponse struct {
 	OrganizationID string `json:"organization_id"`
-	// OwnerAccount is "existing" or "created" (a new account gets its
-	// set-password email from the core).
+	// OwnerAccount is "created": the new account gets its set-password email
+	// from the core.
 	OwnerAccount   string `json:"owner_account"`
 	SetupEmailSent bool   `json:"setup_email_sent"`
 }
@@ -402,13 +404,15 @@ func (h *Handler) provision(w http.ResponseWriter, r *http.Request) {
 	call := h.call(r, req.Reason)
 	created, err := h.d.Provisioner.Create(r.Context(), tenantapp.CreateOrganizationInput{
 		Name: strings.TrimSpace(req.Name), Slug: strings.ToLower(strings.TrimSpace(req.Slug)),
-		OwnerEmail: req.OwnerEmail, OwnerName: req.OwnerName,
+		OwnerEmail: req.OwnerEmail, OwnerName: req.OwnerName, NewOwnerOnly: true,
 		Provisioned: &tenantapp.ProvisionedEntitlements{
 			Limits: lims, DeniedFeatures: req.DeniedFeatures, IdlePolicy: req.IdlePolicy, Reason: strings.TrimSpace(req.Reason),
 		},
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, tenantapp.ErrOwnerAccountExists):
+			writeError(w, http.StatusConflict, "OWNER_ACCOUNT_EXISTS", "")
 		case shared.IsValidation(err):
 			if strings.Contains(err.Error(), "already taken") {
 				writeError(w, http.StatusConflict, "CONFLICT", "")
