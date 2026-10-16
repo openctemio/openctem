@@ -137,6 +137,7 @@ Besides the Go runtime and process metrics:
 | `openctem_log_records_total` | level (warn, error), component | Log records written, before sampling. |
 | `openctem_auth_login_failures_total` | reason (invalid_credentials, locked, suspended, other) | Refused password sign-ins. |
 | `openctem_automation_runs_total`, `openctem_automations_auto_paused_total` | status | Finished automation runs; automations paused after repeated failures. |
+| `openctem_suppression_rule_hits_total` | applied_by (ingest, approval, other) | Findings decided by an approved suppression rule: new findings a rule matched as they arrived, and open findings it closed when approved. Counted once per finding; no tenant or rule label (the per-rule breakdown is the `finding_suppressions` table). A sudden rise from `ingest` is a noisy rule. |
 | `openctem_web_client_errors_total` | kind | Errors reported by browsers (when the web reporter is enabled). |
 | `openctem_sensors`, `openctem_sensors_config_health`, `openctem_sensors_sdk` | kind (platform, tenant), health / config_health / status | Active sensors, platform-wide counts. |
 | `openctem_sensors_unhardened` | kind (policy_none, pin_none, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |

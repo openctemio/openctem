@@ -1,6 +1,8 @@
 package unit
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -54,8 +56,40 @@ func TestLogin_CaptchaAfterRepeatedFailures(t *testing.T) {
 	if rec := postLogin(h, attacker, `{"email":"known@example.com","password":"Str0ngPassw0rd!","captcha_token":"ok-token"}`); rec.Code != http.StatusOK {
 		t.Fatalf("a passing CAPTCHA lets the sign-in through, got %d %s", rec.Code, rec.Body.String())
 	}
-	// A success clears the count.
-	if rec := postLogin(h, attacker, `{"email":"known@example.com","password":"Str0ngPassw0rd!"}`); rec.Code != http.StatusOK {
-		t.Fatalf("after a success no CAPTCHA is asked, got %d %s", rec.Code, rec.Body.String())
+	// A success does not clear the address's count: a sprayer who signs in
+	// to their own account between attempts still meets the CAPTCHA.
+	if rec := postLogin(h, attacker, `{"email":"known@example.com","password":"Str0ngPassw0rd!"}`); rec.Code != http.StatusForbidden ||
+		!strings.Contains(rec.Body.String(), "CAPTCHA_REQUIRED") {
+		t.Fatalf("a success must not reset the address's count, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+type brokenCounter struct{}
+
+func (brokenCounter) Failures(context.Context, string) (int, error) {
+	return 0, errors.New("redis down")
+}
+func (brokenCounter) Record(context.Context, string) error { return errors.New("redis down") }
+
+// When the failure counter cannot be read, the CAPTCHA is asked (fail
+// closed); with a passing token the sign-in proceeds.
+func TestLogin_CaptchaWhenCounterUnreadable(t *testing.T) {
+	svc, deps := newTestAuthService()
+	sess := auth.NewSessionService(deps.sessionRepo, deps.rtRepo, logger.NewNop())
+	h := handler.NewLocalAuthHandler(svc, sess, nil, nil, deps.cfg, logger.NewNop())
+	if rec := postJSON(t, h.Register, map[string]string{"email": "known@example.com", "password": "Str0ngPassw0rd!", "name": "K"}); rec.Code != http.StatusCreated {
+		t.Fatalf("seed: %d", rec.Code)
+	}
+	for _, u := range deps.userRepo.users {
+		u.VerifyEmail()
+	}
+	h.SetCaptcha(fakeCaptcha{good: "ok-token"})
+	h.SetLoginFailureCounter(brokenCounter{})
+	rec := postLogin(h, "203.0.113.20", `{"email":"known@example.com","password":"Str0ngPassw0rd!"}`)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "CAPTCHA_REQUIRED") {
+		t.Fatalf("an unreadable counter must ask for the CAPTCHA, got %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := postLogin(h, "203.0.113.20", `{"email":"known@example.com","password":"Str0ngPassw0rd!","captcha_token":"ok-token"}`); rec.Code != http.StatusOK {
+		t.Fatalf("with a passing token the sign-in proceeds, got %d %s", rec.Code, rec.Body.String())
 	}
 }
