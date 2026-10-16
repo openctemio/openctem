@@ -92,6 +92,15 @@ func TestAssetTechnologyBackfill(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// ...and the retired property the copy migration reads.
+	// The converter also copied each technology into the tags.
+	for id, list := range map[shared.ID]string{a: `["HSTS", "Vercel", "nginx", "Next.js:13.4.1"]`, b: `["HSTS"]`} {
+		if _, err := g.r.db.ExecContext(ctx, `UPDATE assets SET properties = jsonb_set(COALESCE(properties, '{}'), '{technologies}', $2::jsonb),
+		       tags = ARRAY['prod', 'HSTS', 'Next.js:13.4.1', 'vercel'] WHERE id = $1`,
+			id.String(), list); err != nil {
+			t.Fatal(err)
+		}
+	}
 	insertTechLink(t, g, g.tn.tenant, a, "hsts", "")
 	insertTechLink(t, g, g.tn.tenant, a, "vercel", "")
 	insertTechLink(t, g, g.tn.tenant, a, "nginx", "")
@@ -124,6 +133,21 @@ func TestAssetTechnologyBackfill(t *testing.T) {
 	}
 	if stats.LinksRemoved != 4 || stats.Technologies != 4 || stats.Classified != 4 {
 		t.Fatalf("stats = %+v, want 4 technologies classified, 4 links removed", stats)
+	}
+	var tags string
+	if err := g.r.db.QueryRowContext(ctx, `SELECT array_to_string(tags, ',') FROM assets WHERE id = $1`, a.String()).Scan(&tags); err != nil {
+		t.Fatal(err)
+	}
+	if tags != "prod,vercel" { // a person's "vercel" differs from "Vercel": kept
+		t.Fatalf("tags = %q, want the technology copies removed", tags)
+	}
+	if stats.PropertiesDropped != 1 {
+		t.Fatalf("properties dropped = %d, want 1", stats.PropertiesDropped)
+	}
+	var left int
+	if err := g.r.db.QueryRowContext(ctx, `SELECT count(*) FROM assets WHERE tenant_id = $1 AND properties ? 'technologies'`,
+		g.tn.tenant.String()).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("assets still holding the retired key: %d %v", left, err)
 	}
 	if got := techLinkNames(t, g, g.tn.tenant); len(got) != 1 || !got["next.js"] {
 		t.Fatalf("links left = %v, want only next.js", got)

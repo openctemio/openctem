@@ -119,6 +119,26 @@ func TestAssetTechnologies_Ingest(t *testing.T) {
 	if got["next.js"].Version != "13.4.2" {
 		t.Errorf("version not updated: %+v", got["next.js"])
 	}
+
+	// The technologies live only in asset_technologies: the asset keeps no
+	// properties.technologies.
+	var has bool
+	if err := g.r.db.QueryRowContext(context.Background(), `SELECT properties ? 'technologies' FROM assets WHERE id = $1`,
+		g.assetID(g.tn, name).String()).Scan(&has); err != nil {
+		t.Fatal(err)
+	}
+	if has {
+		t.Fatal("the asset still stores properties.technologies")
+	}
+
+	// Another fingerprinting tool reports an older nginx: one technology,
+	// the better version.
+	g.send(g.tn, "httpx", now.Add(-5*time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
+		Technologies: []ctis.Technology{{Name: "nginx", Version: "1.25.3", Confidence: 80}, {Name: "HSTS"}, {Name: "Next.js", Version: "13.4.2"}}})
+	got = g.technologies(g.tn, name)
+	if len(got) != 3 || got["nginx"].Version != "1.25.3" || got["nginx"].Confidence != 80 {
+		t.Fatalf("after the typed report: %+v", got)
+	}
 }
 
 func TestAssetTechnologies_TenantIsolation(t *testing.T) {
@@ -131,19 +151,19 @@ func TestAssetTechnologies_TenantIsolation(t *testing.T) {
 	repo := postgres.NewAssetTechnologyRepository(&postgres.DB{DB: g.r.db})
 	ctx := context.Background()
 
-	// Tenant B naming tenant A's asset writes nothing and reads nothing.
-	tech, _ := assettech.Observation(id, "Evil", "1.0", nil, 0, "x", time.Now())
-	if err := repo.Upsert(ctx, other.tenant, []assettech.Technology{tech}); err != nil {
+	// Tenant B naming tenant A's asset changes nothing and reads nothing.
+	tech, _ := assettech.Observation(id, "nginx", "", []string{"CDN"}, 99, "evil", time.Now())
+	if err := repo.Enrich(ctx, other.tenant, []assettech.Technology{tech}); err != nil {
 		t.Fatal(err)
 	}
 	if list, err := repo.ListByAsset(ctx, other.tenant, id); err != nil || len(list) != 0 {
 		t.Fatalf("tenant B reads tenant A's technologies: %v %v", list, err)
 	}
-	if shown, err := repo.ShownKeys(ctx, other.tenant, []shared.ID{id}); err != nil || len(shown) != 0 {
-		t.Fatalf("tenant B reads tenant A's shown set: %v %v", shown, err)
+	if m, err := repo.ListByAssets(ctx, other.tenant, []shared.ID{id}, 10); err != nil || len(m) != 0 {
+		t.Fatalf("tenant B lists tenant A's technologies: %v %v", m, err)
 	}
 	got := g.technologies(g.tn, name)
-	if len(got) != 1 || got["nginx"].Version != "1.25.3" {
+	if len(got) != 1 || got["nginx"].Version != "1.25.3" || got["nginx"].Source != "httpx" || got["nginx"].Confidence != 0 {
 		t.Fatalf("tenant A's technologies changed: %+v", got)
 	}
 }

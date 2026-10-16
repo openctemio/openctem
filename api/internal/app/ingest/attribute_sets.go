@@ -72,7 +72,8 @@ func setCoverageFor(attr asset.SetAttribute, kind asset.SourceKind, tool string,
 
 // technologiesOf is the technologies a report asset states, or nil when it
 // states none (not reporting is not "none"): the typed technologies as
-// "Name:version" elements, and the loose properties.technologies list.
+// "Name:version" elements, and the report asset's loose
+// properties.technologies list (sensor input; never stored as a property).
 func technologiesOf(a *ctis.Asset) ([]string, bool) {
 	var out []string
 	found := len(a.Technologies) > 0
@@ -218,9 +219,9 @@ func createdPortElements(scope *alterScope) map[string][]string {
 }
 
 // keepReconciledSets keeps, in props merged from a report into an existing
-// asset, the existing asset's IP addresses and technologies: the report's
-// values are recorded as its source's observation and the asset shows what
-// set reconciliation resolves, not what the latest report said.
+// asset, the existing asset's IP addresses: the report's values are
+// recorded as its source's observation and the asset shows what set
+// reconciliation resolves, not what the latest report said.
 func keepReconciledSets(existing, merged map[string]any) {
 	if ips := asset.IPAddresses(existing); len(ips) > 0 {
 		list := make([]any, 0, len(ips))
@@ -231,9 +232,6 @@ func keepReconciledSets(existing, merged map[string]any) {
 	} else {
 		delete(merged, asset.PropKeyIPAddresses)
 	}
-	if v, ok := existing["technologies"]; ok {
-		merged["technologies"] = v
-	} else {
-		delete(merged, "technologies")
-	}
+	// Technologies are not a property: they live in asset_technologies.
+	delete(merged, asset.RetiredPropTechnologies)
 }
