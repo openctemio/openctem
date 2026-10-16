@@ -164,6 +164,18 @@ Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
 
+## Lifecycle version on the timeline
+
+Every timeline entry of a status change records the version of the rules it
+was decided under: `finding_activities.lifecycle_version` (and
+`changes.lifecycle_version`). Today that is `platform:1`
+(`vulnerability.PlatformLifecycleVersion`, the SQL function
+`finding_lifecycle_version()`, pinned by a test). A BEFORE INSERT trigger
+(`trg_finding_activities_lifecycle_version`, migration
+`finding_activity_lifecycle_version`) sets it on every entry whose changes name
+a new status, so no writer can forget it. Entries written before the column
+existed stay empty.
+
 ## What counts as a regression
 
 `is_regression`, `reopen_count` and `last_reopened_at` are set by the trigger
