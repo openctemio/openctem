@@ -180,7 +180,7 @@ func (s *Service) previewQuickTarget(ctx context.Context, tenantID shared.ID, in
 		Targets:     accepted,
 		CreatedBy:   userIDPtr(in.UserID),
 	}
-	resolved, err := s.resolveScanTargets(ctx, sc)
+	resolved, err := s.resolveScanTargets(context.WithValue(ctx, hideOutOfDataScopeKey{}, true), sc)
 	if err != nil {
 		var de *shared.DomainError
 		if errors.As(err, &de) {
