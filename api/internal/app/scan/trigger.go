@@ -828,9 +828,9 @@ func (s *Service) scannerPayload(
 	scannerConfig map[string]any, runContext map[string]any,
 	targets []string, templates []EmbeddedTemplate,
 ) map[string]any {
-	// A "targets" list in the scan's settings (a quick scan mirrors its
-	// typed targets there) becomes the job's gated targets: as typed it
-	// would carry what the gate left out, excluded names and whole ranges
+	// A "targets" list in the scan's settings (older scans stored a quick
+	// scan's typed targets there) becomes the job's gated targets: as typed
+	// it would carry what the gate left out, excluded names and whole ranges
 	// included.
 	if len(targets) > 0 {
 		scannerConfig = batchScannerConfig(scannerConfig, targets)
