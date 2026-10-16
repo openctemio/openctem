@@ -98,4 +98,5 @@ kept asset's row for a name. `asset_technology_backfill` records the tenants the
 
 | PR | Content | State |
 |---|---|---|
-| 1 | model, ingest, read endpoint | open |
+| 1 | model, ingest, read endpoint | #2413 |
+| 2 | backfill and cleanup of non-software component links | open |
