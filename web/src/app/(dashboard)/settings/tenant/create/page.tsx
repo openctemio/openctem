@@ -4,7 +4,7 @@
  * Create Team Page
  *
  * Page for creating a new team/tenant. When only the platform administrator
- * creates organizations (TENANT_CREATION_MODE=admin_only), it says so instead
+ * creates organizations (the admin_only sign-up policy), it says so instead
  * of showing a form the server would refuse.
  */
 
