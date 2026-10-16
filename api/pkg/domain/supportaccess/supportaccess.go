@@ -183,6 +183,7 @@ var (
 	ErrNoLiveSession      = fmt.Errorf("%w: no active support grant for this access", shared.ErrForbidden)
 	ErrGrantRequired      = fmt.Errorf("%w: no active support grant names you for this organization", shared.ErrForbidden)
 	ErrNotSupportAdmin    = fmt.Errorf("%w: no platform support administrator has this email", shared.ErrValidation)
+	ErrNotOwner           = fmt.Errorf("%w: only an owner of the organization grants support access", shared.ErrForbidden)
 	ErrScopeNotGranted    = fmt.Errorf("%w: the grant does not include this data", shared.ErrForbidden)
 	ErrAuditUnavailable   = fmt.Errorf("support access could not be audited")
 	ErrInvalidDuration    = fmt.Errorf("%w: duration is 1 to 72 hours", shared.ErrValidation)

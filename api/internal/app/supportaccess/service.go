@@ -134,6 +134,11 @@ func (s *Service) CreateGrant(ctx context.Context, in CreateGrantInput, client C
 	if duration < dom.MinDuration || duration > dom.MaxDuration {
 		return nil, dom.ErrInvalidDuration
 	}
+	// The route checked the owner role in the token; the grant re-checks it
+	// in the database, so an owner demoted a minute ago cannot grant.
+	if !s.isActiveOwner(ctx, in.TenantID, in.GrantedBy) {
+		return nil, dom.ErrNotOwner
+	}
 	email := strings.ToLower(strings.TrimSpace(in.AdminEmail))
 	if email == "" || len(email) > 254 {
 		return nil, dom.ErrNotSupportAdmin
@@ -395,6 +400,23 @@ func (s *Service) adminEvent(ctx context.Context, a *admin.AdminUser, action str
 		return err
 	}
 	return nil
+}
+
+func (s *Service) isActiveOwner(ctx context.Context, tenantID, userID shared.ID) bool {
+	if s.owners == nil {
+		return false
+	}
+	owners, err := s.owners.ListActiveOwners(ctx, tenantID)
+	if err != nil {
+		s.log.Error("support access: list owners", "tenant_id", tenantID.String(), "error", err)
+		return false
+	}
+	for _, o := range owners {
+		if o.UserID == userID {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) tenantName(ctx context.Context, tenantID shared.ID) string {
