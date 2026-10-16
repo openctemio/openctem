@@ -49,6 +49,10 @@ func New(rawURL, token string) (Sink, error) {
 		if u.Host == "" {
 			return nil, errors.New("ADMIN_AUDIT_SINK: an https URL needs a host")
 		}
+		// Not httpsec.SafeHTTPClient: the operator sets this URL in the
+		// server's environment (no tenant or request input reaches it) and
+		// it is usually a collector on a private network, which the SSRF
+		// dialer refuses. Allow-listed in scripts/security-lint.sh.
 		return &webhookSink{url: u.String(), token: token, client: &http.Client{
 			Timeout: 10 * time.Second,
 			// Never follow a redirect: the events go where the operator said.
