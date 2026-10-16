@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/pkg/brand"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -352,6 +353,76 @@ func (s *RemediationCampaignService) getVisible(ctx context.Context, tenantID, i
 	return campaign, nil
 }
 
+// ErrCampaignOutsideScope refuses a change to a campaign that a restricted
+// caller can see but that also covers findings outside their scope.
+var ErrCampaignOutsideScope = fmt.Errorf("%w: this campaign also covers findings outside your data scope; only someone who can see all of them may change it", shared.ErrForbidden)
+
+// getWritable loads a campaign the caller may change. Seeing a campaign needs
+// one of its findings in scope (getVisible); changing it needs all of them,
+// so one shared finding never gives a restricted member control of another
+// team's campaign (owner decision 2026-10-15). A restricted caller may change
+// a campaign only when its asset (if any) and every one of its findings are
+// in their scope; an empty campaign only when they created it.
+func (s *RemediationCampaignService) getWritable(ctx context.Context, tenantID, id shared.ID) (*remediation.Campaign, error) {
+	campaign, err := s.getVisible(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireAllInScope(ctx, campaign); err != nil {
+		return nil, err
+	}
+	return campaign, nil
+}
+
+// requireAllInScope refuses (ErrCampaignOutsideScope) a restricted caller
+// unless the campaign's asset (if any) and every one of its findings are in
+// their scope, or it has no finding and they created it. It is checked on the
+// stored campaign before a change, and on a new or changed filter before it
+// is saved, so a restricted member can neither change another team's
+// campaign nor point one at another team's assets or CVEs. Callers with no
+// scope pass.
+func (s *RemediationCampaignService) requireAllInScope(ctx context.Context, campaign *remediation.Campaign) error {
+	if s.dataScope == nil {
+		return nil
+	}
+	scope, err := s.dataScope.Resolve(ctx, campaign.TenantID())
+	if err != nil {
+		return fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope == nil {
+		return nil
+	}
+	if assetID := firstString(campaign.FindingFilter(), "asset_id"); assetID != "" {
+		id, perr := shared.IDFromString(assetID)
+		in := false
+		if perr == nil {
+			if in, perr = s.dataScope.InScope(ctx, scope, id); perr != nil {
+				return fmt.Errorf("campaign asset scope: %w", perr)
+			}
+		}
+		if !in {
+			return ErrCampaignOutsideScope
+		}
+	}
+	all, _, _, err := s.countProgress(ctx, campaign, nil)
+	if err != nil {
+		return fmt.Errorf("campaign scope: %w", err)
+	}
+	mine, _, _, err := s.countProgress(ctx, campaign, scope)
+	if err != nil {
+		return fmt.Errorf("campaign scope: %w", err)
+	}
+	if mine < all {
+		return ErrCampaignOutsideScope
+	}
+	if all == 0 {
+		if by := campaign.CreatedBy(); by == nil || by.String() != s.dataScope.CallerUserID(ctx) {
+			return ErrCampaignOutsideScope
+		}
+	}
+	return nil
+}
+
 // visibleIn reports whether a campaign touches the scope (nil = everything).
 func (s *RemediationCampaignService) visibleIn(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) (bool, error) {
 	if scope == nil {
@@ -652,6 +723,10 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		actorID, _ := shared.IDFromString(input.ActorID)
 		campaign.SetCreatedBy(actorID)
 	}
+	// A restricted member may create a campaign only over their own scope.
+	if err := s.requireAllInScope(ctx, campaign); err != nil {
+		return nil, err
+	}
 	if input.AssignedTo != "" || input.AssignedTeam != "" {
 		var toPtr, teamPtr *shared.ID
 		if input.AssignedTo != "" {
@@ -772,7 +847,7 @@ func optionalCampaignDate(field, s string, endOfDay bool) (*time.Time, error) {
 // A caller restricted by data scope gets only the campaigns that touch their
 // scope (getVisible); the page and the total are computed over those. The
 // visibility of a campaign depends on its findings, so the filtering runs
-// here over at most maxScopedCampaignScan campaigns of the tenant.
+// here over every campaign of the tenant.
 func (s *RemediationCampaignService) ListCampaigns(ctx context.Context, tenantID string, filter remediation.CampaignFilter, page pagination.Pagination) (pagination.Result[*remediation.Campaign], error) {
 	tid, _ := shared.IDFromString(tenantID)
 	filter.TenantID = &tid
@@ -788,7 +863,9 @@ func (s *RemediationCampaignService) ListCampaigns(ctx context.Context, tenantID
 	}
 	visible := make([]*remediation.Campaign, 0)
 	const batch = 100
-	for p := 1; (p-1)*batch < maxScopedCampaignScan; p++ {
+	// Every campaign of the tenant is examined, page by page: a cap would
+	// silently leave later campaigns out of the caller's list.
+	for p := 1; ; p++ {
 		res, lerr := s.repo.List(ctx, filter, pagination.New(p, batch))
 		if lerr != nil {
 			return pagination.Result[*remediation.Campaign]{}, lerr
@@ -810,10 +887,6 @@ func (s *RemediationCampaignService) ListCampaigns(ctx context.Context, tenantID
 	end := min(start+page.PerPage, len(visible))
 	return pagination.NewResult(visible[start:end], int64(len(visible)), page), nil
 }
-
-// maxScopedCampaignScan bounds how many of a tenant's campaigns a restricted
-// caller's list examines.
-const maxScopedCampaignScan = 1000
 
 // UpdateRemediationCampaignInput holds fields for partial campaign update.
 type UpdateRemediationCampaignInput struct {
@@ -865,7 +938,7 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 	tid, _ := shared.IDFromString(tenantID)
 	cid, _ := shared.IDFromString(campaignID)
 
-	campaign, err := s.getVisible(ctx, tid, cid)
+	campaign, err := s.getWritable(ctx, tid, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -919,6 +992,11 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 			return nil, err
 		}
 		campaign.SetFindingFilter(input.FindingFilter)
+		// The new scope must be the caller's too: a restricted member may not
+		// point a campaign at another team's assets or CVEs.
+		if err := s.requireAllInScope(ctx, campaign); err != nil {
+			return nil, err
+		}
 		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
 			s.logger.Warn("recompute after re-scope failed", "id", sanitizeLogValue(campaignID), "error", logger.SanitizeError(rerr))
 		}
@@ -990,7 +1068,7 @@ func (s *RemediationCampaignService) UpdateCampaignStatusAt(ctx context.Context,
 	tid, _ := shared.IDFromString(tenantID)
 	cid, _ := shared.IDFromString(campaignID)
 
-	campaign, err := s.getVisible(ctx, tid, cid)
+	campaign, err := s.getWritable(ctx, tid, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -1073,7 +1151,7 @@ func (s *RemediationCampaignService) syncEpicOnCompletion(ctx context.Context, t
 	if err != nil {
 		return // not linked (or lookup failed) — nothing to sync
 	}
-	comment := fmt.Sprintf("OpenCTEM marked remediation campaign %q complete.", campaignName)
+	comment := fmt.Sprintf("%s marked remediation campaign %q complete.", brand.Name(), campaignName)
 	if terr := s.epicCreator.TransitionEpic(ctx, tenantID, link.IssueKey(), epicDoneStatus, comment); terr != nil {
 		s.logger.Warn("failed to sync campaign completion to epic",
 			"campaign_id", campaignID.String(), "issue_key", link.IssueKey(), "error", terr)
@@ -1151,7 +1229,7 @@ func (s *RemediationCampaignService) DeleteCampaign(ctx context.Context, tenantI
 	tid, _ := shared.IDFromString(tenantID)
 	cid, _ := shared.IDFromString(campaignID)
 	// Read first (tenant-scoped) so the audit row can name what was deleted.
-	campaign, err := s.getVisible(ctx, tid, cid)
+	campaign, err := s.getWritable(ctx, tid, cid)
 	if err != nil {
 		return err
 	}
@@ -1175,7 +1253,7 @@ func (s *RemediationCampaignService) RefreshCampaignProgress(ctx context.Context
 	tid, _ := shared.IDFromString(tenantID)
 	cid, _ := shared.IDFromString(campaignID)
 
-	campaign, err := s.getVisible(ctx, tid, cid)
+	campaign, err := s.getWritable(ctx, tid, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -1321,15 +1399,15 @@ func campaignFilterToFindingFilter(tenantID shared.ID, raw map[string]any) vulne
 // own nothing (count 0) and must never resolve. Keyed campaigns are handled on a
 // separate path and always have scope.
 //
-// A status alone is not scope: "every new finding" is the whole organization.
+// Scope needs a real dimension that names what is fixed: an asset, CVEs,
+// linked findings or a tool (a fix key goes through the keyed path).
+// Severity, source, status and free-text search only narrow it: "every
+// critical finding" or "every new finding" is the whole organization.
 func findingFilterHasScope(f vulnerability.FindingFilter) bool {
-	return len(f.Severities) > 0 ||
-		len(f.Sources) > 0 ||
-		len(f.CVEIDs) > 0 ||
+	return len(f.CVEIDs) > 0 ||
 		len(f.FindingIDs) > 0 ||
 		f.AssetID != nil ||
-		f.ToolName != nil ||
-		f.Search != nil
+		f.ToolName != nil
 }
 
 // filterFindingIDs collects the explicit finding ids of a stored filter
@@ -1394,7 +1472,7 @@ func (s *RemediationCampaignService) CreateTicket(ctx context.Context, tenantID,
 	}
 
 	// Ensure the campaign exists and is tenant-scoped before touching Jira.
-	campaign, err := s.getVisible(ctx, tid, cid)
+	campaign, err := s.getWritable(ctx, tid, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -1488,7 +1566,7 @@ func buildEpicDescription(c *remediation.Campaign) string {
 	if desc == "" {
 		desc = "(no description)"
 	}
-	body := fmt.Sprintf("Remediation campaign tracked by OpenCTEM.\n\n%s\n\nProgress: %d/%d findings resolved (%.0f%%).",
+	body := fmt.Sprintf("Remediation campaign tracked by %s.\n\n%s\n\nProgress: %d/%d findings resolved (%.0f%%).", brand.Name(),
 		desc, c.ResolvedCount(), c.FindingCount(), c.Progress())
 	if due := c.DueDate(); due != nil {
 		body += fmt.Sprintf("\nDue: %s", due.Format("2006-01-02"))
