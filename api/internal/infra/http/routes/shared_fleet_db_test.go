@@ -110,7 +110,7 @@ func TestAdminSharedFleet_Routes_DB(t *testing.T) {
 	if code, _ := reader.do(http.MethodPost, viewPath, map[string]any{"reason": "x"}, true); code != http.StatusForbidden {
 		t.Fatalf("a read-only administrator viewed a job: %d", code)
 	}
-	for _, a := range []string{"pause", "resume", "retire"} {
+	for _, a := range []string{"disable", "enable", "revoke"} {
 		if code, _ := reader.do(http.MethodPost, "/api/v1/admin/shared-sensors/"+shared+"/"+a,
 			map[string]any{"reason": "x", "totp_code": reader.freshCode(true)}, true); code != http.StatusForbidden {
 			t.Fatalf("a read-only administrator could %s: %d", a, code)
@@ -154,7 +154,7 @@ func TestAdminSharedFleet_Routes_DB(t *testing.T) {
 		t.Fatalf("an organization job through the shared view: %d", code)
 	}
 	// An operations administrator may not act.
-	if code, _ := ops.do(http.MethodPost, "/api/v1/admin/shared-sensors/"+shared+"/pause",
+	if code, _ := ops.do(http.MethodPost, "/api/v1/admin/shared-sensors/"+shared+"/disable",
 		map[string]any{"reason": "x", "totp_code": ops.freshCode(true)}, true); code != http.StatusForbidden {
 		t.Fatalf("an ops administrator paused a shared sensor: %d", code)
 	}
@@ -168,14 +168,15 @@ func TestAdminSharedFleet_Routes_DB(t *testing.T) {
 		}
 		return s
 	}
+	verb := map[string]string{"pause": "disable", "resume": "enable", "retire": "revoke"}
 	act := func(id, action string) int {
 		root.resetReplayGuard()
-		code, _ := root.do(http.MethodPost, "/api/v1/admin/shared-sensors/"+id+"/"+action,
+		code, _ := root.do(http.MethodPost, "/api/v1/admin/shared-sensors/"+id+"/"+verb[action],
 			map[string]any{"reason": "maintenance", "totp_code": root.freshCode(false)}, true)
 		return code
 	}
 	// The step-up is enforced on the route.
-	if code, _ := root.do(http.MethodPost, "/api/v1/admin/shared-sensors/"+shared+"/pause",
+	if code, _ := root.do(http.MethodPost, "/api/v1/admin/shared-sensors/"+shared+"/disable",
 		map[string]any{"reason": "x", "totp_code": "000000"}, true); code != http.StatusUnauthorized {
 		t.Fatalf("pause with a bad code: %d", code)
 	}
@@ -205,7 +206,7 @@ func TestAdminSharedFleet_Routes_DB(t *testing.T) {
 	tok := h.tenantToken(orgA, "owner")
 	for _, rt := range [][2]string{
 		{http.MethodGet, "/api/v1/admin/shared-sensors"}, {http.MethodGet, "/api/v1/admin/shared-sensors/jobs"},
-		{http.MethodPost, viewPath}, {http.MethodPost, "/api/v1/admin/shared-sensors/" + shared + "/resume"},
+		{http.MethodPost, viewPath}, {http.MethodPost, "/api/v1/admin/shared-sensors/" + shared + "/enable"},
 	} {
 		code, _ := bearerDo(t, h.srv.URL+rt[1], tok, rt[0], `{"reason":"x"}`)
 		if code != http.StatusUnauthorized && code != http.StatusForbidden {

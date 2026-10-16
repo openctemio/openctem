@@ -245,8 +245,8 @@ func (r *SharedFleetRepository) GetSharedJob(ctx context.Context, id shared.ID) 
 	return j, payload, nil
 }
 
-// GetSharedSensorState returns an instance sensor's name and status.
-func (r *SharedFleetRepository) GetSharedSensorState(ctx context.Context, id shared.ID) (string, string, error) {
+// GetSharedSensorStateForPlatform returns an instance sensor's name and status.
+func (r *SharedFleetRepository) GetSharedSensorStateForPlatform(ctx context.Context, id shared.ID) (string, string, error) {
 	var name, status string
 	err := r.db.QueryRowContext(ctx, `SELECT name, status FROM sensors WHERE id = $1 AND scope = 'instance'`, id.String()).Scan(&name, &status)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -258,9 +258,9 @@ func (r *SharedFleetRepository) GetSharedSensorState(ctx context.Context, id sha
 	return name, status, nil
 }
 
-// SetSharedSensorStatus sets an instance sensor's status unless it is
-// retired.
-func (r *SharedFleetRepository) SetSharedSensorStatus(ctx context.Context, id shared.ID, status, message string) error {
+// SetSharedSensorStatusForPlatform sets an instance sensor's status unless it is
+// retired. Shared sensors have no tenant: the guard is scope = 'instance'.
+func (r *SharedFleetRepository) SetSharedSensorStatusForPlatform(ctx context.Context, id shared.ID, status, message string) error {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE sensors SET status = $2, status_message = $3, updated_at = $4
 		WHERE id = $1 AND scope = 'instance' AND status <> 'revoked'`, id.String(), status, message, time.Now().UTC())

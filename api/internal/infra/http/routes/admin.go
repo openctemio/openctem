@@ -280,9 +280,9 @@ func registerAdminRoutes(
 			r.GET("/queue", f.Queue)
 			r.GET("/jobs", f.Jobs)
 			r.POST("/jobs/{job_id}/view", f.ViewJob, view...)
-			r.POST("/{sensor_id}/pause", f.Pause, requireSuper, stepUp("shared_sensor.pause"))
-			r.POST("/{sensor_id}/resume", f.Resume, requireSuper, stepUp("shared_sensor.resume"))
-			r.POST("/{sensor_id}/retire", f.Retire, requireSuper, stepUp("shared_sensor.retire"))
+			r.POST("/{sensor_id}/disable", f.Pause, requireSuper, stepUp("shared_sensor.pause"))
+			r.POST("/{sensor_id}/enable", f.Resume, requireSuper, stepUp("shared_sensor.resume"))
+			r.POST("/{sensor_id}/revoke", f.Retire, requireSuper, stepUp("shared_sensor.retire"))
 		}, adminMiddlewares...)
 	}
 
