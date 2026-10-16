@@ -221,6 +221,13 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 			t.Errorf("console role was allowed: %s", q)
 		}
 	}
+	// Without admin_user (a rollback to a release before the console role)
+	// the script gives the app its write back.
+	if out, err := run("app_user="+appRole, "migrator_user="+migRole); err != nil {
+		t.Fatalf("bootstrap without admin_user: %v\n%s", err, out)
+	}
+	exec1(ctx, t, app, `INSERT INTO admin_users (user_id) VALUES (NULL)`)
+	exec1(ctx, t, app, `DELETE FROM admin_sessions`)
 	if out, err := run("app_user="+appRole, "migrator_user="+migRole, "admin_user="+appRole); err == nil {
 		t.Errorf("bootstrap accepted the app role as admin_user:\n%s", out)
 	}
