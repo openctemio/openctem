@@ -555,5 +555,19 @@
   "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}",
   "admin.stepUp.confirm": "Xác nhận",
   "admin.stepUp.description": "Thao tác này thay đổi ai có thể đăng nhập hoặc được làm gì. Nhập một mã mới từ ứng dụng xác thực. Một mã có hiệu lực cho các thao tác như vậy trong năm phút tiếp theo.",
-  "admin.stepUp.title": "Xác nhận đó là bạn"
+  "admin.stepUp.title": "Xác nhận đó là bạn",
+  "admin.sharedSensors.title": "Đăng ký sensor dùng chung",
+  "admin.sharedSensors.desc": "Tạo một mã đăng ký dùng một lần. Khởi động sensor với SENSOR_INSTANCE_ENROLLMENT_TOKEN bằng mã này: sensor ghép đôi bằng khóa của chính nó và trở thành sensor dùng chung của hệ thống, không thuộc tổ chức nào và chỉ có quyền tối thiểu.",
+  "admin.sharedSensors.name": "Tên sensor (không bắt buộc)",
+  "admin.sharedSensors.namePlaceholder": "Để trống sẽ dùng tên máy",
+  "admin.sharedSensors.ttl": "Hiệu lực (phút, từ 5 đến 60)",
+  "admin.sharedSensors.issue": "Tạo mã",
+  "admin.sharedSensors.issuing": "Đang tạo...",
+  "admin.sharedSensors.issueFailed": "Không tạo được mã",
+  "admin.sharedSensors.confirmTitle": "Tạo mã đăng ký sensor dùng chung?",
+  "admin.sharedSensors.confirmDesc": "Sensor đầu tiên dùng mã này sẽ trở thành sensor dùng chung. Mã chỉ dùng được một lần, chỉ hiển thị một lần và được ghi vào nhật ký kiểm toán quản trị kèm lý do của bạn.",
+  "admin.sharedSensors.shownOnce": "Hãy sao chép mã ngay: mã sẽ không hiển thị lại.",
+  "admin.sharedSensors.copy": "Sao chép mã đăng ký",
+  "admin.sharedSensors.expires": "Có hiệu lực đến {time}, cho một sensor.",
+  "admin.sharedSensors.done": "Xong"
 }

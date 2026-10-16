@@ -44,6 +44,9 @@
 //	# linked) to a sign-in account, keeping its role and authenticator
 //	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com -link
 //
+//	# A single-use enrollment token for the bundled shared sensor (sensor_token.go)
+//	./bootstrap-admin sensor-token -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN
+//
 //	# Copy the server file storage between local and S3 (storage_migrate.go)
 //	./bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments -dry-run
 //
@@ -82,6 +85,11 @@ func main() {
 	// between local and S3 (storage_migrate.go).
 	if len(os.Args) > 1 && os.Args[1] == "storage" {
 		os.Exit(runStorage(os.Args[2:]))
+	}
+	// `bootstrap-admin sensor-token ...`: a single-use enrollment token for
+	// the install's bundled shared sensor (sensor_token.go).
+	if len(os.Args) > 1 && os.Args[1] == "sensor-token" {
+		os.Exit(runSensorToken(os.Args[2:]))
 	}
 	dbURL := flag.String("db", "", "Database URL (or set DATABASE_URL env)")
 	email := flag.String("email", "", "Admin email (or set ADMIN_EMAIL env)")

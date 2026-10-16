@@ -555,5 +555,19 @@
   "admin.ops.fleet.advisories": "security advisory: {v}",
   "admin.stepUp.confirm": "Confirm",
   "admin.stepUp.description": "This action changes who can sign in or what they may do. Enter a fresh code from your authenticator. One code covers the next five minutes of such actions.",
-  "admin.stepUp.title": "Confirm it is you"
+  "admin.stepUp.title": "Confirm it is you",
+  "admin.sharedSensors.title": "Enroll a shared sensor",
+  "admin.sharedSensors.desc": "Issue a single-use enrollment token. Start the sensor with SENSOR_INSTANCE_ENROLLMENT_TOKEN set to it: the sensor pairs with its own key and becomes a shared sensor of this instance, with no organization and the least-privilege grant.",
+  "admin.sharedSensors.name": "Sensor name (optional)",
+  "admin.sharedSensors.namePlaceholder": "Its host name when empty",
+  "admin.sharedSensors.ttl": "Valid for (minutes, 5 to 60)",
+  "admin.sharedSensors.issue": "Issue token",
+  "admin.sharedSensors.issuing": "Issuing...",
+  "admin.sharedSensors.issueFailed": "Could not issue the token",
+  "admin.sharedSensors.confirmTitle": "Issue a shared sensor enrollment token?",
+  "admin.sharedSensors.confirmDesc": "The first sensor that presents the token becomes a shared sensor. The token works once, is shown once, and is recorded in the admin audit log with your reason.",
+  "admin.sharedSensors.shownOnce": "Copy the token now: it is not shown again.",
+  "admin.sharedSensors.copy": "Copy the enrollment token",
+  "admin.sharedSensors.expires": "Valid until {time}, for one sensor.",
+  "admin.sharedSensors.done": "Done"
 }

@@ -277,6 +277,8 @@ type Handlers struct {
 	// AdminScanPolicy: the platform policy for scan approval
 	// (RFC-073), platform default and per organization.
 	AdminScanPolicy *handler.AdminScanPolicyHandler
+	// AdminSharedSensor: shared sensor enrollment tokens (RFC-100).
+	AdminSharedSensor *handler.AdminSharedSensorHandler
 	// ScanGovernance: the organization's scan approval settings (RFC-073).
 	ScanGovernance *handler.ScanGovernanceHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
