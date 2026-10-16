@@ -40,6 +40,11 @@ const (
 	// findings is costly on a large table, so their usage is counted only
 	// while a findings limit applies.
 	Findings Key = "findings"
+	// LifecycleSubStatuses caps an organization's finding sub-statuses
+	// (live ones; RFC-110).
+	LifecycleSubStatuses Key = "lifecycle_sub_statuses"
+	// LifecycleSchemes caps its finding lifecycle schemes (live ones).
+	LifecycleSchemes Key = "lifecycle_schemes"
 	// OrgsPerUser caps how many organizations one person may own when they
 	// create one themselves (self-service). It is an instance setting (the
 	// self-service defaults), never a per-organization limit.
@@ -47,7 +52,7 @@ const (
 )
 
 // Keys lists every limit key in display order.
-var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, OrgsPerUser}
+var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, LifecycleSubStatuses, LifecycleSchemes, OrgsPerUser}
 
 // IsValid reports whether k is a known key.
 func (k Key) IsValid() bool {

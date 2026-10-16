@@ -231,7 +231,7 @@ func (r *LimitsRepository) ReplaceOrigin(ctx context.Context, tenantID shared.ID
 // findings limit applies: the count runs over the largest table, so an
 // organization without that limit never pays for it.
 func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFindings bool) (map[limits.Key]int, error) {
-	var seats, assets, sensors, keys, trusts, invites int
+	var seats, assets, sensors, keys, trusts, invites, subStatuses, schemes int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
 		  (SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND status <> 'offboarded'),
@@ -239,14 +239,17 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND is_platform_sensor = false AND status <> 'revoked'),
 		  (SELECT count(*) FROM api_keys WHERE tenant_id = $1 AND status = 'active'),
 		  (SELECT count(*) FROM ci_trust_configs WHERE tenant_id = $1),
-		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND created_at > now() - interval '24 hours')`,
-		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &invites)
+		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND created_at > now() - interval '24 hours'),
+		  (SELECT count(*) FROM lifecycle_sub_statuses WHERE tenant_id = $1 AND archived_at IS NULL),
+		  (SELECT count(*) FROM lifecycle_schemes WHERE tenant_id = $1 AND archived_at IS NULL)`,
+		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &invites, &subStatuses, &schemes)
 	if err != nil {
 		return nil, fmt.Errorf("count usage: %w", err)
 	}
 	usage := map[limits.Key]int{
 		limits.Seats: seats, limits.Assets: assets, limits.Sensors: sensors,
 		limits.APIKeys: keys, limits.CITrusts: trusts, limits.InvitesPerDay: invites,
+		limits.LifecycleSubStatuses: subStatuses, limits.LifecycleSchemes: schemes,
 	}
 	if withFindings {
 		var n int

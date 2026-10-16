@@ -98,6 +98,8 @@ type AuthService struct {
 	// selfServiceLimits gives a self-service organization the instance's
 	// self-service default limits (none unless an operator set some).
 	selfServiceLimits SelfServiceLimits
+	// onSignIn runs after a sign-in created a session (signin_hook.go).
+	onSignIn SignInHook
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -794,6 +796,7 @@ func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddr
 	if err := s.sessionRepo.Create(ctx, sess); err != nil {
 		return nil, fmt.Errorf("failed to save session: %w", err)
 	}
+	runSignInHook(ctx, s.onSignIn, u.ID())
 
 	// Store refresh token in database
 	refreshToken, err := sessiondom.NewRefreshToken(
