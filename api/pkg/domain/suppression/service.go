@@ -389,6 +389,33 @@ func (s *Service) UpdateRule(ctx context.Context, input UpdateRuleInput) (*Rule,
 	return rule, nil
 }
 
+// MarkReviewed clears the review flag of a rule (an approver looked at a
+// rule the platform gave an end it did not have). It changes nothing else:
+// the rule keeps its end. Recorded in the rule's own trail with the flag it
+// cleared. Returns the flag's time and reason before the change.
+func (s *Service) MarkReviewed(ctx context.Context, tenantID, ruleID, by shared.ID) (*Rule, *time.Time, string, error) {
+	rule, err := s.repo.FindByID(ctx, tenantID, ruleID)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if rule == nil {
+		return nil, nil, "", ErrRuleNotFound
+	}
+	flaggedAt, reason := rule.ReviewFlaggedAt(), rule.ReviewReason()
+	if flaggedAt == nil {
+		return nil, nil, "", ErrRuleNotFlagged
+	}
+	rule.ClearReview()
+	if err := s.repo.SaveWithAudit(ctx, rule, "updated", &by, map[string]any{
+		"review_cleared":    true,
+		"review_flagged_at": flaggedAt.UTC().Format(time.RFC3339),
+		"review_reason":     reason,
+	}); err != nil {
+		return nil, nil, "", err
+	}
+	return rule, flaggedAt, reason, nil
+}
+
 // GetRule retrieves a suppression rule by ID.
 func (s *Service) GetRule(ctx context.Context, tenantID, ruleID shared.ID) (*Rule, error) {
 	rule, err := s.repo.FindByID(ctx, tenantID, ruleID)
