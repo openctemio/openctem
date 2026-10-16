@@ -29,9 +29,31 @@ func (c *linkClient) IssueIdentity(_ context.Context, key string) (string, strin
 	return v[0], v[1], nil
 }
 
-type memLinks struct{ rows []*ticketlink.Link }
+type memLinks struct {
+	rows      []*ticketlink.Link
+	createErr error
+}
+
+type fixedMapping MappingConfig
+
+func (m fixedMapping) ResolveMapping(context.Context, shared.ID) (MappingConfig, error) {
+	return MappingConfig(m), nil
+}
+
+// configured wires the projects the integration is set up for: SEC as the
+// default, NEW through a routing rule and MAP through a mapping profile.
+func configured(s *SyncService) {
+	m := DefaultMappingConfig()
+	m.DefaultProjectKey = "SEC"
+	m.Routing = []RoutingRule{{Severity: []string{"critical"}, ProjectKey: "new"}}
+	s.SetMappingResolver(fixedMapping(m))
+	s.SetProfileSource(&stubProfiles{projects: []string{"MAP"}})
+}
 
 func (m *memLinks) Create(_ context.Context, l *ticketlink.Link) error {
+	if m.createErr != nil {
+		return m.createErr
+	}
 	for _, r := range m.rows {
 		if r.State == ticketlink.StateActive && r.ExternalKey == l.ExternalKey && *r.FindingID == *l.FindingID {
 			return ticketlink.ErrAlreadyLinked
@@ -76,6 +98,7 @@ func TestLinkExistingIssue(t *testing.T) {
 	links := &memLinks{}
 	s := newSync(repo, c)
 	s.SetLinkStore(links)
+	configured(s)
 	tid, fid := shared.NewID(), shared.NewID()
 	by := shared.NewID()
 
@@ -155,5 +178,61 @@ func TestCreateTicket_RecordsThePlatformLink(t *testing.T) {
 	}
 	if len(links.rows) != 1 || links.rows[0].Source != ticketlink.SourcePlatform || links.rows[0].ExternalKey != "PROJ-999" {
 		t.Fatalf("links: %+v", links.rows)
+	}
+}
+
+func TestLinkExistingIssue_OnlyConfiguredProjects(t *testing.T) {
+	c := &linkClient{intg: shared.NewID(), issues: map[string][2]string{
+		"HR-7": {"7", "HR-7"}, "MAP-1": {"8", "MAP-1"}, "NEW-2": {"9", "NEW-2"}, "SEC-3": {"10", "HR-4"},
+	}}
+	s := newSync(&stubFindingRepo{finding: buildFinding(t)}, c)
+	links := &memLinks{}
+	s.SetLinkStore(links)
+	configured(s)
+	tid, fid := shared.NewID(), shared.NewID()
+
+	// A project the organization never configured: refused, nothing recorded.
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "HR-7", nil); !errors.Is(err, ErrProjectNotConfigured) || !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("HR-7: %v", err)
+	}
+	// An issue moved out of a configured project is judged by where it is now.
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "SEC-3", nil); !errors.Is(err, ErrProjectNotConfigured) {
+		t.Fatalf("moved to HR: %v", err)
+	}
+	if len(links.rows) != 0 {
+		t.Fatalf("recorded %d links for refused issues", len(links.rows))
+	}
+	// Mapping-profile and routing projects are allowed.
+	for _, k := range []string{"MAP-1", "NEW-2"} {
+		if _, err := s.LinkExistingIssue(context.Background(), tid, fid, k, nil); err != nil {
+			t.Fatalf("%s: %v", k, err)
+		}
+	}
+}
+
+func TestLinkExistingIssue_ListAndLinkStayTogether(t *testing.T) {
+	c := &linkClient{intg: shared.NewID(), issues: map[string][2]string{"SEC-1": {"1", "SEC-1"}}}
+	tid, fid := shared.NewID(), shared.NewID()
+
+	// The finding's ticket list cannot be written: no link either.
+	repo := &stubFindingRepo{finding: buildFinding(t), updateErr: errors.New("db down")}
+	links := &memLinks{}
+	s := newSync(repo, c)
+	s.SetLinkStore(links)
+	configured(s)
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "SEC-1", nil); err == nil || len(links.rows) != 0 {
+		t.Fatalf("err %v, links %d", err, len(links.rows))
+	}
+
+	// The link cannot be recorded: the list is put back.
+	repo = &stubFindingRepo{finding: buildFinding(t, "https://other.example/x")}
+	s = newSync(repo, c)
+	s.SetLinkStore(&memLinks{createErr: errors.New("db down")})
+	configured(s)
+	if _, err := s.LinkExistingIssue(context.Background(), tid, fid, "SEC-1", nil); err == nil {
+		t.Fatal("expected the link error")
+	}
+	if len(repo.updatedURIs) != 1 || repo.updatedURIs[0] != "https://other.example/x" {
+		t.Fatalf("list not restored: %v", repo.updatedURIs)
 	}
 }
