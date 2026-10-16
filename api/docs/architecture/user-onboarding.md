@@ -220,7 +220,7 @@ Settings > Members; owners set the domain policy on Settings > Domains (admins
 read it). A sign-up refused with `SSO_REQUIRED` sends the person to email-first
 sign-in, which routes the address to the organization's SSO.
 
-Join requests (`organization_join_requests`, migration 002521): one pending
+Join requests (`organization_join_requests`, migration 002762): one pending
 per person and organization, at most 5 per person per day, expire after 30
 days; decided and expired rows are purged 30 days later
 (`join-request-purge` controller). The organization's inbox:
