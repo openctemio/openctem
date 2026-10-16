@@ -28,13 +28,13 @@ func (f *fakeFleet) GetSharedJob(context.Context, shared.ID) (SharedJob, json.Ra
 	f.reads++
 	return f.job, json.RawMessage(`{"targets":["t.example"],"result":"secret"}`), nil
 }
-func (f *fakeFleet) GetSharedSensorState(context.Context, shared.ID) (string, string, error) {
+func (f *fakeFleet) GetSharedSensorStateForPlatform(context.Context, shared.ID) (string, string, error) {
 	if f.status == "" {
 		return "s", "active", nil
 	}
 	return "s", f.status, nil
 }
-func (f *fakeFleet) SetSharedSensorStatus(context.Context, shared.ID, string, string) error {
+func (f *fakeFleet) SetSharedSensorStatusForPlatform(context.Context, shared.ID, string, string) error {
 	f.writes++
 	return nil
 }

@@ -77,6 +77,13 @@ export interface SharedJobDetail {
 
 export type SharedSensorAction = 'pause' | 'resume' | 'retire'
 
+/** The API's verbs: pause disables, resume enables, retire revokes. */
+const ACTION_PATH: Record<SharedSensorAction, string> = {
+  pause: 'disable',
+  resume: 'enable',
+  retire: 'revoke',
+}
+
 /** The fleet (any administrator). */
 export function useSharedFleet() {
   return useSWR<{ sensors: SharedFleetSensor[] }>('/shared-sensors', adminFetcher, {
@@ -110,7 +117,7 @@ export function actOnSharedSensor(
   action: SharedSensorAction,
   proof: { reason: string; totp_code?: string }
 ) {
-  return adminFetch<void>(`/shared-sensors/${encodeURIComponent(id)}/${action}`, {
+  return adminFetch<void>(`/shared-sensors/${encodeURIComponent(id)}/${ACTION_PATH[action]}`, {
     method: 'POST',
     body: proof,
   })

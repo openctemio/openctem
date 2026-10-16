@@ -291,7 +291,7 @@ func (h *AdminSharedFleetHandler) ViewJob(w http.ResponseWriter, r *http.Request
 // @Success      204
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
-// @Router       /admin/shared-sensors/{sensor_id}/pause [post]
+// @Router       /admin/shared-sensors/{sensor_id}/disable [post]
 func (h *AdminSharedFleetHandler) Pause(w http.ResponseWriter, r *http.Request) {
 	h.act(w, r, h.svc.Pause)
 }
@@ -306,7 +306,7 @@ func (h *AdminSharedFleetHandler) Pause(w http.ResponseWriter, r *http.Request) 
 // @Success      204
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
-// @Router       /admin/shared-sensors/{sensor_id}/resume [post]
+// @Router       /admin/shared-sensors/{sensor_id}/enable [post]
 func (h *AdminSharedFleetHandler) Resume(w http.ResponseWriter, r *http.Request) {
 	h.act(w, r, h.svc.Resume)
 }
@@ -321,7 +321,7 @@ func (h *AdminSharedFleetHandler) Resume(w http.ResponseWriter, r *http.Request)
 // @Success      204
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
-// @Router       /admin/shared-sensors/{sensor_id}/retire [post]
+// @Router       /admin/shared-sensors/{sensor_id}/revoke [post]
 func (h *AdminSharedFleetHandler) Retire(w http.ResponseWriter, r *http.Request) {
 	h.act(w, r, h.svc.Retire)
 }
