@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -188,6 +189,10 @@ type SyncService struct {
 
 	// activity records inbound status changes with the integration as actor.
 	activity StatusActivityRecorder
+
+	// profiles renders published ticket mapping profiles (nil → built-in
+	// fields and status sync only).
+	profiles ProfileSource
 
 	// campaignSink receives inbound epic status changes so a linked remediation
 	// campaign can be completed (epic Done → campaign completed). nil → inbound
@@ -415,6 +420,13 @@ func firstJiraIssueKey(uris []string) string {
 // On a workflow with no transition to the target, it falls back to a comment so
 // the change is visible to a human rather than failing.
 func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, findingID shared.ID, mapping MappingConfig) error {
+	// A published mapping profile for the issue's project decides the move
+	// itself (its status map is the explicit opt-in for that destination).
+	if s.profiles != nil {
+		if handled, err := s.syncWithProfile(ctx, tenantID, findingID); handled {
+			return err
+		}
+	}
 	if !mapping.SyncEnabled {
 		return nil // outbound sync is opt-in per integration (default off)
 	}
@@ -444,12 +456,12 @@ func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, f
 		return nil
 	}
 
-	comment := fmt.Sprintf("OpenCTEM set this finding to %q.", finding.Status())
+	comment := fmt.Sprintf("%s set this finding to %q.", brand.Name(), finding.Status())
 	if err := client.TransitionToStatus(ctx, issueKey, target, comment); err != nil {
 		if errors.Is(err, ErrNoMatchingTransition) {
 			// Workflow can't reach the target from its current status — leave a
 			// note instead of failing so a human can move the card.
-			body := fmt.Sprintf("OpenCTEM marked this finding %q, but no Jira transition to %q is available from its current status — please move it manually.",
+			body := fmt.Sprintf("%s marked this finding %q, but no Jira transition to %q is available from its current status — please move it manually.", brand.Name(),
 				finding.Status(), target)
 			if cErr := client.AddComment(ctx, issueKey, body); cErr != nil {
 				return fmt.Errorf("comment fallback after no transition: %w", cErr)
@@ -559,17 +571,23 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		issueType = "Bug"
 	}
 
-	result, err := jiraClient.CreateIssue(ctx, CreateIssueInput{
-		ProjectKey:  projectKey,
-		Summary:     ticketSummary(finding),
-		Description: ticketDescription(finding),
-		IssueType:   issueType,
-		Priority:    priority,
-		Labels:      []string{"openctem", "security", string(finding.Severity())},
-		ParentKey:   strings.TrimSpace(input.ParentKey),
-	})
+	result, handled, err := s.createFromProfile(ctx, jiraClient, tenantID, findingID, projectKey, issueType, strings.TrimSpace(input.ParentKey))
 	if err != nil {
-		return nil, fmt.Errorf("create jira ticket: %w", err)
+		return nil, err
+	}
+	if !handled {
+		result, err = jiraClient.CreateIssue(ctx, CreateIssueInput{
+			ProjectKey:  projectKey,
+			Summary:     ticketSummary(finding),
+			Description: ticketDescription(finding),
+			IssueType:   issueType,
+			Priority:    priority,
+			Labels:      []string{"openctem", "security", string(finding.Severity())},
+			ParentKey:   strings.TrimSpace(input.ParentKey),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create jira ticket: %w", err)
+		}
 	}
 
 	// Auto-link the created ticket to the finding
@@ -590,6 +608,24 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		TicketURL: result.BrowseURL,
 		LinkedAt:  time.Now().UTC(),
 	}, nil
+}
+
+// syncWithProfile loads the finding's linked issue and lets a published
+// profile move it. handled is false when there is no profile to apply.
+func (s *SyncService) syncWithProfile(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return false, nil //nolint:nilerr // the built-in path reports the lookup error
+	}
+	issueKey := firstJiraIssueKey(finding.WorkItemURIs())
+	if issueKey == "" {
+		return false, nil
+	}
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return false, nil //nolint:nilerr // the built-in path reports a missing integration
+	}
+	return s.syncStatusFromProfile(ctx, client, tenantID, findingID, issueKey)
 }
 
 // CreateEpic creates a Jira epic for the given tenant and returns its key and
@@ -642,7 +678,7 @@ func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, is
 
 	if terr := client.TransitionToStatus(ctx, issueKey, targetStatus, comment); terr != nil {
 		if errors.Is(terr, ErrNoMatchingTransition) {
-			body := fmt.Sprintf("OpenCTEM wanted to move this epic to %q but no transition is available from its current status — please move it manually.", targetStatus)
+			body := fmt.Sprintf("%s wanted to move this epic to %q but no transition is available from its current status — please move it manually.", brand.Name(), targetStatus)
 			if cerr := client.AddComment(ctx, issueKey, body); cerr != nil {
 				return fmt.Errorf("comment fallback after no transition: %w", cerr)
 			}

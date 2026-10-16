@@ -182,7 +182,10 @@ type Handlers struct {
 	FindingEvidenceItems *handler.FindingEvidenceItemsHandler
 
 	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
-	JiraWebhook   *handler.JiraWebhookHandler   // nil if not initialized (no database)
+	JiraWebhook *handler.JiraWebhookHandler // nil if not initialized (no database)
+	// TicketMapping serves the ticket field and status mapping editor (nil
+	// without a database).
+	TicketMapping *handler.TicketMappingHandler
 	GitHubWebhook *handler.GitHubWebhookHandler // nil if not initialized (no database)
 
 	// Pentest Campaign Management handlers
@@ -279,6 +282,9 @@ type Handlers struct {
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
+	// AdminStepUp confirms protected console actions (route-level step-up).
+	// Nil refuses every protected route.
+	AdminStepUp middleware.AdminStepUpConfirmer
 
 	// Admin Audit middleware (audit logging for admin operations)
 	AdminAuditMiddleware *middleware.AuditMiddleware
@@ -806,7 +812,7 @@ func Register(
 	// Integration routes (tenant from JWT token)
 	if h.Integration != nil {
 		registerIntegrationRoutes(router, h.Integration, h.JiraWebhook, h.DefectDojo, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleIntegrations),
-			h.Scan, h.ModuleGate.RequireModule(moduledom.ModuleScans))
+			h.Scan, h.ModuleGate.RequireModule(moduledom.ModuleScans), h.TicketMapping)
 	}
 
 	// Asset Group routes (tenant from JWT token)

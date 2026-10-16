@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/oidc"
@@ -46,7 +47,7 @@ func (m breakGlassMailer) NotifyBreakGlassSignIn(_ context.Context, a adminconso
 	}
 	name := m.appName
 	if name == "" {
-		name = "OpenCTEM"
+		name = brand.DefaultName
 	}
 	who := strings.NewReplacer("\r", "", "\n", "").Replace(a.AdminEmail)
 	subject := fmt.Sprintf("[%s] Break-glass administrator sign-in: %s", name, who)
