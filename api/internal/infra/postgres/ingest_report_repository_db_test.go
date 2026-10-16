@@ -80,18 +80,24 @@ func TestIngestReportRepository_Lifecycle(t *testing.T) {
 	if _, err := repo.Get(ctx, shared.NewID(), sensorID, reportID); !errors.Is(err, ingestreport.ErrNotFound) {
 		t.Fatalf("cross-tenant get: %v", err)
 	}
-	// A report of this tenant's sensor cannot be filed under another tenant:
-	// the sensor key is the composite (tenant_id, sensor_id). Checked in the
-	// catalog rather than by provoking a violation, so the run leaves no
-	// errors in the server log.
+	// A report of this tenant's sensor cannot be filed under another tenant,
+	// and a shared sensor's report only under the tenant of a shared job it
+	// holds: trigger_ingest_reports_sensor_binding (migration
+	// ingest_reports_shared_sensor) with the plain FK on sensor_id. Checked
+	// in the catalog rather than by provoking a violation, so the run leaves
+	// no errors in the server log (the behavior is covered by
+	// TestSharedResults_DatabaseRefusesUnboundReport).
 	var fkCols string
+	var triggers int
 	if err := db.QueryRowContext(ctx, `
-		SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+		SELECT COALESCE(string_agg(a.attname, ',' ORDER BY k.ord), ''),
+		       (SELECT count(*) FROM pg_trigger WHERE tgname = 'trigger_ingest_reports_sensor_binding' AND NOT tgisinternal)
 		FROM pg_constraint c
 		CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
 		JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
-		WHERE c.conname = 'fk_ingest_reports_sensor' AND c.contype = 'f'`).Scan(&fkCols); err != nil || fkCols != "tenant_id,sensor_id" {
-		t.Fatalf("composite same-tenant FK: %q %v", fkCols, err)
+		WHERE c.conname = 'fk_ingest_reports_sensor_id' AND c.contype = 'f'`).Scan(&fkCols, &triggers); err != nil ||
+		fkCols != "sensor_id" || triggers != 1 {
+		t.Fatalf("sensor FK %q, binding triggers %d: %v", fkCols, triggers, err)
 	}
 
 	if n, err := repo.CountOpen(ctx, sensorID, now); err != nil || n != 1 {

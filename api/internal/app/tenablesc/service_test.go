@@ -276,7 +276,7 @@ func TestRequestSync_CrossTenantAndRefusals(t *testing.T) {
 	})
 	t.Run("a platform sensor is refused", func(t *testing.T) {
 		e := newEnv(t)
-		e.sensors.rows[e.sensorID].IsPlatformSensor = true
+		e.sensors.rows[e.sensorID].Scope = sensordom.ScopeInstance
 		_, err := e.svc.RequestSync(ctx, e.tenant, e.intg.ID(), TriggerManual, nil)
 		if !errors.Is(err, ErrPlatformSensor) || len(e.cmds.rows) != 0 {
 			t.Fatalf("got %v", err)
@@ -322,7 +322,7 @@ func TestValidateConnector(t *testing.T) {
 	if err := e.svc.ValidateConnector(ctx, shared.NewID(), e.intg.Config()); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("other tenant: %v", err)
 	}
-	e.sensors.rows[e.sensorID].IsPlatformSensor = true
+	e.sensors.rows[e.sensorID].Scope = sensordom.ScopeInstance
 	if err := e.svc.ValidateConnector(ctx, e.tenant, e.intg.Config()); !errors.Is(err, ErrPlatformSensor) {
 		t.Fatalf("platform sensor: %v", err)
 	}
