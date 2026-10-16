@@ -24,17 +24,15 @@ func requireSelfServiceStartLimits(ctx context.Context, cfg *config.Config, svc 
 	}
 	selfService := cfg.Auth.SignupOpen()
 	if svc.Signup != nil {
-		if cfg.Auth.SignupOpen() {
-			// Fail closed: an unreadable policy must not skip the check,
-			// because the stored policy may be self_service.
-			st, err := svc.Signup.Get(ctx)
-			if err != nil {
-				return fmt.Errorf("read the sign-up policy to check the starting limits: %w", err)
-			}
-			selfService = svc.Signup.Effective(st.Policy).Mode == signupdom.ModeSelfService
-		} else {
-			selfService = svc.Signup.Current(ctx).Mode == signupdom.ModeSelfService
+		// Fail closed whatever SIGNUP_MODE says: an unreadable policy must
+		// not skip the check, because the stored policy may be self_service
+		// (the ceiling only clamps it, and Current would answer admin_only
+		// for an error, which hides exactly that).
+		st, err := svc.Signup.Get(ctx)
+		if err != nil {
+			return fmt.Errorf("read the sign-up policy to check the starting limits: %w", err)
 		}
+		selfService = svc.Signup.Effective(st.Policy).Mode == signupdom.ModeSelfService
 	}
 	// A hosted service's control plane sets the starting limits through the
 	// internal API.

@@ -367,3 +367,50 @@ func TestServices_EverySetterWiredOrExplicitlyOptional(t *testing.T) {
 		}
 	}
 }
+
+// The finding-lifecycle service checks the organization's limits only through
+// the checker passed to its constructor, and a nil checker means "no limits":
+// dropping the argument builds, vets and runs, and the sub-status and scheme
+// caps silently stop applying. Assert the composition root passes the
+// entitlement service.
+func TestFindingLifecycleLimitCheckerIsWired(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read cmd/server: %v", err)
+	}
+	fset := token.NewFileSet()
+	found := false
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "NewService" {
+				return true
+			}
+			if pkg, ok := sel.X.(*ast.Ident); !ok || pkg.Name != "findinglifecycleapp" {
+				return true
+			}
+			found = true
+			var buf bytes.Buffer
+			if len(call.Args) < 3 || printer.Fprint(&buf, fset, call.Args[2]) != nil || !strings.HasSuffix(buf.String(), ".Entitlement") {
+				t.Errorf("%s: findinglifecycleapp.NewService must be given the entitlement service as its limit checker (3rd argument), got %q",
+					name, buf.String())
+			}
+			return true
+		})
+	}
+	if !found {
+		t.Fatal("findinglifecycleapp.NewService is not constructed in cmd/server; the guard guards nothing")
+	}
+}
