@@ -135,3 +135,61 @@ func TestAdminConsoleConsumeSessionStepUp_DB(t *testing.T) {
 		t.Fatal("consuming must clear the window too")
 	}
 }
+
+// A verified session stores and clears its elevation; a pending session never
+// holds one. Requires DATABASE_URL.
+func TestAdminConsoleSessionElevation_DB(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set")
+	}
+	raw, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	if err := raw.Ping(); err != nil {
+		testdb.Skipf(t, "cannot reach DATABASE_URL: %v", err)
+	}
+	ctx := context.Background()
+	repo := NewAdminConsoleRepository(&DB{DB: raw})
+	adminID := uuid.NewString()
+	if _, err := raw.ExecContext(ctx, `INSERT INTO admin_users (id, email, name, role) VALUES ($1, $2, 'Elevation IT', 'super_admin')`,
+		adminID, "elev-"+adminID[:8]+"@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = raw.ExecContext(ctx, `DELETE FROM admin_sessions WHERE admin_id = $1`, adminID)
+		_, _ = raw.ExecContext(ctx, `DELETE FROM admin_users WHERE id = $1`, adminID)
+	})
+	aid, _ := shared.IDFromString(adminID)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	mk := func(verified bool) *admin.Session {
+		s := &admin.Session{ID: shared.NewID(), AdminID: aid, TokenHash: uuid.NewString(), MFAVerified: verified,
+			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastSeenAt: now, AuthMethod: admin.AuthMethodPassword}
+		if err := repo.CreateSession(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	s := mk(true)
+	until := now.Add(30 * time.Minute)
+	if err := repo.SetSessionElevation(ctx, s.ID, admin.AdminRoleOpsAdmin, &until, "Support case 4411"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := repo.GetSessionByTokenHash(ctx, s.TokenHash)
+	if got.ElevatedRole != admin.AdminRoleOpsAdmin || got.ElevatedUntil == nil || !got.ElevatedUntil.Equal(until) || got.ActingRole(now) != admin.AdminRoleOpsAdmin {
+		t.Fatalf("elevated: %+v", got)
+	}
+	if err := repo.SetSessionElevation(ctx, s.ID, "", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = repo.GetSessionByTokenHash(ctx, s.TokenHash)
+	if got.ElevatedRole != "" || got.ElevatedUntil != nil || got.ActingRole(now) != admin.AdminRoleReadonly {
+		t.Fatalf("ended: %+v", got)
+	}
+	p := mk(false)
+	if err := repo.SetSessionElevation(ctx, p.ID, admin.AdminRoleSuperAdmin, &until, "x"); !errors.Is(err, admin.ErrSessionNotFound) {
+		t.Fatalf("pending session elevated: %v", err)
+	}
+}

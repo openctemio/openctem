@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -141,7 +142,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	// Dynamic selectors (wildcard domains, inventory-mode CIDRs) are
 	// expanded from the inventory as it is now; what they add is dispatched
 	// by asset id, like a group member, and gated like one.
-	exp, err := s.expandSelectors(ctx, sc)
+	exp, err := s.expandForResolve(ctx, sc)
 	if err != nil {
 		return nil, err
 	}
@@ -412,4 +413,53 @@ func splitWarnings(split []SplitTarget) []string {
 			sp.Target, sp.Removed, len(sp.Pieces)))
 	}
 	return out
+}
+
+// dropOutOfDataScopeMembers removes from the expansion the members the
+// actor may not act on, and from each selector's matched count.
+func (s *Service) dropOutOfDataScopeMembers(ctx context.Context, sc *scan.Scan, exp *selectorExpansion) error {
+	if len(exp.Members) == 0 {
+		return nil
+	}
+	if s.actScope == nil {
+		return ErrActScopeUnavailable
+	}
+	ids := make([]shared.ID, 0, len(exp.Members))
+	for _, m := range exp.Members {
+		ids = append(ids, m.ID)
+	}
+	d, err := s.actScope.Check(ctx, actscope.Input{TenantID: sc.TenantID, FallbackUser: sc.CreatedBy, AssetIDs: ids})
+	if err != nil {
+		return fmt.Errorf("act-scope check failed: %w", err)
+	}
+	kept := exp.Members[:0]
+	for _, m := range exp.Members {
+		if !d.RefusedAssets[m.ID] {
+			kept = append(kept, m)
+			continue
+		}
+		for i := range exp.Report {
+			if exp.Report[i].Selector == m.Selector && exp.Report[i].Matched > 0 {
+				exp.Report[i].Matched--
+				break
+			}
+		}
+	}
+	exp.Members = kept
+	return nil
+}
+
+// hideOutOfDataScopeKey marks a context whose resolution must drop the
+// inventory names the actor may not act on before anything is counted: a
+// preview never reveals how many names exist beyond the actor's data scope.
+type hideOutOfDataScopeKey struct{}
+
+// expandForResolve expands the selectors, then (hide marked) drops the
+// members the actor may not act on.
+func (s *Service) expandForResolve(ctx context.Context, sc *scan.Scan) (*selectorExpansion, error) {
+	exp, err := s.expandSelectors(ctx, sc)
+	if hide, _ := ctx.Value(hideOutOfDataScopeKey{}).(bool); err != nil || !hide {
+		return exp, err
+	}
+	return exp, s.dropOutOfDataScopeMembers(ctx, sc, exp)
 }

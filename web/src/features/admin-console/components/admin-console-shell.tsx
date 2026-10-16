@@ -13,6 +13,7 @@ import { SearchProvider } from '@/context/search-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AdminStepUpPrompt } from './admin-step-up-prompt'
+import { AdminElevationBar } from './admin-elevation-bar'
 import { AdminConsoleSidebar } from './admin-console-sidebar'
 import { ChangePasswordGate } from './change-password-gate'
 import { FactorEnrollmentGate } from './factor-enrollment-gate'
@@ -145,6 +146,7 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
                 </div>
               )}
               <VersionCheckBanner />
+              <AdminElevationBar admin={admin} onChanged={() => void mutate()} />
               {children}
             </div>
             <AdminStepUpPrompt />
