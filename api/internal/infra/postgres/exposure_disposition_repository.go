@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -160,6 +161,30 @@ func (r *ExposureDispositionRepository) IsTenantOwner(ctx context.Context, tenan
 		return false, fmt.Errorf("check tenant owner: %w", err)
 	}
 	return ok, nil
+}
+
+// RecentMemberRemoval answers the latest time after since at which a member
+// of the tenant was suspended, offboarded or removed, or whose membership
+// expired (nil: none). A removed member's row is gone, so the audit log
+// counts too. Only this tenant's rows are read.
+func (r *ExposureDispositionRepository) RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error) {
+	var at sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		SELECT max(t) FROM (
+			SELECT suspended_at AS t FROM tenant_members WHERE tenant_id = $1 AND suspended_at > $2
+			UNION ALL SELECT offboarded_at FROM tenant_members WHERE tenant_id = $1 AND offboarded_at > $2
+			UNION ALL SELECT expires_at FROM tenant_members WHERE tenant_id = $1 AND expires_at > $2 AND expires_at <= now()
+			UNION ALL SELECT logged_at FROM audit_logs WHERE tenant_id = $1 AND logged_at > $2
+				AND action IN ('member.removed', 'member.suspended', 'member.offboarded')
+		) recent`, tenantID.String(), since).Scan(&at)
+	if err != nil {
+		return nil, fmt.Errorf("recent member removal: %w", err)
+	}
+	if !at.Valid {
+		return nil, nil
+	}
+	t := at.Time
+	return &t, nil
 }
 
 func scanDisposition(s interface{ Scan(dest ...any) error }) (*exposure.DispositionRequest, error) {

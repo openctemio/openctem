@@ -33,11 +33,10 @@ type TicketStatusOutcome struct {
 // ticketOpenStatuses are the statuses an inbound ticket may move a finding
 // between (and the only ones it may move a finding from).
 var ticketOpenStatuses = map[vulnerability.FindingStatus]bool{
-	vulnerability.FindingStatusNew:         true,
-	vulnerability.FindingStatusConfirmed:   true,
-	vulnerability.FindingStatusInProgress:  true,
-	vulnerability.FindingStatusFixApplied:  true,
-	vulnerability.FindingStatusNotObserved: true,
+	vulnerability.FindingStatusNew:        true,
+	vulnerability.FindingStatusConfirmed:  true,
+	vulnerability.FindingStatusInProgress: true,
+	vulnerability.FindingStatusFixApplied: true,
 }
 
 // TicketPath returns the legal steps from one open status to an inbound
