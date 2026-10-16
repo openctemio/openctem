@@ -573,11 +573,16 @@ func TestRequireIdPRefusesLocalPathExceptBreakGlass(t *testing.T) {
 	if _, err := b.svc.Authenticate(context.Background(), token); err == nil {
 		t.Fatal("turning on require-IdP must end non-break-glass password sessions")
 	}
+	resetsBefore := b.accounts.resets
 	if _, err := b.svc.Start(context.Background(), refresh, password, client); !errors.Is(err, admin.ErrIdPSignInRequired) {
 		t.Fatalf("local path must be refused, got %v", err)
 	}
 	if !b.audit.has(ActionLoginFailed) {
 		t.Fatal("the refusal is audited")
+	}
+	// The refusal counts as a failure and never clears the lockout counter.
+	if b.accounts.resets != resetsBefore || b.accounts.failures != 1 {
+		t.Fatalf("idp_required refusal: resets %d -> %d, failures=%d, want no reset and 1 failure", resetsBefore, b.accounts.resets, b.accounts.failures)
 	}
 	if _, err := b.signIn(t, bgRefresh); err != nil {
 		t.Fatalf("break-glass must still sign in locally: %v", err)
