@@ -183,7 +183,7 @@ The rebaseline also appears in the audit log itself: filter on action
 
 `admin_audit_logs` (platform administrators' actions) has its own, single
 chain, built differently from the tenant chain: the database computes it
-(migration 002470), so every writer is covered, the API, the console service
+(migration 002545), so every writer is covered, the API, the console service
 and the `bootstrap-admin` CLI alike.
 
 | Piece | Where |

@@ -1,7 +1,7 @@
 package main
 
 // `bootstrap-admin verify-audit` checks the administrators' audit log: the
-// append-only, hash-chained admin_audit_logs table (migration 002470). It
+// append-only, hash-chained admin_audit_logs table (migration 002545). It
 // recomputes every online row with the database's own hash function and
 // checks the links from the newest retention anchor to the tail. Exit 0 when
 // every row verifies, 1 when one does not, 2 on a usage or connection error.
