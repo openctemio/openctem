@@ -157,6 +157,7 @@ type Action struct {
 	Title     string
 	FixSpec   map[string]any
 	Origin    ActionOrigin
+	AutoJoin  bool
 	CreatedBy *shared.ID
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -313,6 +314,12 @@ const (
 	TaskEventMembersRemoved = "members_removed"
 	TaskEventUpdated        = "updated"
 	TaskEventStateChanged   = "state_changed"
+	// TaskEventFixClaimed: a person marked the task fixed (each open
+	// finding claimed fixed, each verified on its own).
+	TaskEventFixClaimed = "fix_claimed"
+	// TaskEventRegressed: findings of a done task reopened and moved to a
+	// new linked task.
+	TaskEventRegressed = "regressed"
 )
 
 // Errors.
