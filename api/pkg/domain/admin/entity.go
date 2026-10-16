@@ -95,10 +95,12 @@ func (r AdminRole) CanCancelJobs() bool {
 // users account and opens the console with a TOTP code. Administrators have no
 // API keys.
 type AdminUser struct {
-	id         shared.ID
-	email      string
-	name       string
-	role       AdminRole
+	id    shared.ID
+	email string
+	name  string
+	role  AdminRole
+	// acting is the role this request acts as (ActAs); empty = role.
+	acting     AdminRole
 	isActive   bool
 	userID     *shared.ID // the linked users account the administrator signs in with
 	lastUsedAt *time.Time
@@ -272,6 +274,44 @@ func (a *AdminUser) Name() string { return a.name }
 // Role returns the admin user's role.
 func (a *AdminUser) Role() AdminRole { return a.role }
 
+// MaxRole is the administrator's own role: the most it may act as.
+func (a *AdminUser) MaxRole() AdminRole { return a.role }
+
+// EffectiveRole is the role this request acts as: the elevated or read-only
+// role set by ActAs, else the administrator's own. Every authorization check
+// uses it; Role (persisted) is the ceiling.
+func (a *AdminUser) EffectiveRole() AdminRole {
+	if a.acting != "" {
+		return a.acting
+	}
+	return a.role
+}
+
+// ActAs restricts this request to role, which never exceeds the
+// administrator's own (a higher one is capped at it). It is not persisted.
+func (a *AdminUser) ActAs(role AdminRole) {
+	if !role.IsValid() || roleRank(role) > roleRank(a.role) {
+		role = a.role
+	}
+	a.acting = role
+}
+
+// roleRank orders the roles: readonly < ops_admin < super_admin.
+func roleRank(r AdminRole) int {
+	switch r {
+	case AdminRoleSuperAdmin:
+		return 3
+	case AdminRoleOpsAdmin:
+		return 2
+	case AdminRoleReadonly:
+		return 1
+	}
+	return 0
+}
+
+// RoleAtMost reports whether r is not above max.
+func RoleAtMost(r, max AdminRole) bool { return r.IsValid() && roleRank(r) <= roleRank(max) }
+
 // IsActive returns whether the admin user is active.
 func (a *AdminUser) IsActive() bool { return a.isActive }
 
@@ -396,29 +436,29 @@ func (a *AdminUser) HasPermission(action string) bool {
 	switch action {
 	// Admin management
 	case "admin:create", "admin:update", "admin:delete", "admin:list":
-		return a.role.CanManageAdmins()
+		return a.EffectiveRole().CanManageAdmins()
 
 	// Sensor management
 	case "sensor:create", "sensor:update", "sensor:delete", "sensor:disable", "sensor:enable":
-		return a.role.CanManageSensors()
+		return a.EffectiveRole().CanManageSensors()
 	case "sensor:list", "sensor:get", "sensor:stats":
 		return true // All roles can view
 
 	// Token management
 	case "token:create", "token:revoke", "token:delete":
-		return a.role.CanManageTokens()
+		return a.EffectiveRole().CanManageTokens()
 	case "token:list", "token:get":
 		return true // All roles can view
 
 	// Job management
 	case "job:cancel":
-		return a.role.CanCancelJobs()
+		return a.EffectiveRole().CanCancelJobs()
 	case "job:list", "job:get", "job:stats":
 		return true // All roles can view
 
 	// Audit logs
 	case "audit:list", "audit:get":
-		return a.role.CanViewAuditLogs()
+		return a.EffectiveRole().CanViewAuditLogs()
 
 	default:
 		return false
