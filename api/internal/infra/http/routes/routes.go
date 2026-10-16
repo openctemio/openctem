@@ -207,8 +207,10 @@ type Handlers struct {
 	ThreatActor *handler.ThreatActorHandler // nil if not initialized (no database)
 
 	// Remediation Campaigns
-	RemediationCampaign *handler.RemediationCampaignHandler // nil if not initialized
-	ReportSchedule      *handler.ReportScheduleHandler      // nil if not initialized
+	RemediationCampaign *handler.RemediationCampaignHandler   // nil if not initialized
+	RemediationTask     *handler.RemediationTaskHandler       // nil if not initialized
+	RemediationSuggest  *handler.RemediationSuggestionHandler // nil if not initialized
+	ReportSchedule      *handler.ReportScheduleHandler        // nil if not initialized
 
 	// Business Units
 	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
@@ -282,6 +284,9 @@ type Handlers struct {
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
+	// AdminStepUp confirms protected console actions (route-level step-up).
+	// Nil refuses every protected route.
+	AdminStepUp middleware.AdminStepUpConfirmer
 
 	// Admin Audit middleware (audit logging for admin operations)
 	AdminAuditMiddleware *middleware.AuditMiddleware
@@ -616,6 +621,7 @@ func Register(
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerSharedSensorsSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
@@ -751,6 +757,12 @@ func Register(
 	// Remediation Campaign routes
 	if h.RemediationCampaign != nil {
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+	}
+	if h.RemediationTask != nil {
+		registerRemediationTaskRoutes(router, h.RemediationTask, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+	}
+	if h.RemediationSuggest != nil {
+		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.ReportSchedule != nil {
 		registerReportScheduleRoutes(router, h.ReportSchedule, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleReports))

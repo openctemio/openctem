@@ -5,6 +5,7 @@ import (
 
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,7 +18,6 @@ import (
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -52,6 +52,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
@@ -253,9 +254,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
-	}
-	if svc.Entitlement != nil {
-		tenantHandler.SetFreePlan(svc.Entitlement)
 	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
@@ -573,6 +571,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Remediation Campaigns
 		RemediationCampaign: handler.NewRemediationCampaignHandler(svc.RemediationCampaign, log),
+		RemediationTask:     handler.NewRemediationTaskHandler(svc.RemediationTask, log),
+		RemediationSuggest:  handler.NewRemediationSuggestionHandler(svc.RemediationSuggest, log),
 
 		// Business Units
 		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),
@@ -636,6 +636,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
 		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
+			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
+			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
+				log.Error("console step-up", "purpose", purpose, "error", err)
+			}
+			return err
+		}),
 
 		// Admin Audit middleware (audit logging for admin operations)
 		AdminAuditMiddleware: middleware.NewAuditMiddleware(repos.AdminAuditLog, log),
@@ -663,7 +670,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Platform scanning: the shared platform sensors as a service the
 		// tenant may use, never the sensors themselves.
 		PlatformScanning: handler.NewPlatformScanningHandler(
-			sensor.NewPlatformScanningService(repos.Sensor, app.PlatformSensorsAllowed), log),
+			sensor.NewPlatformScanningService(repos.Sensor, svc.SharedSensorsAllowed), log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),

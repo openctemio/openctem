@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/scm"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -315,7 +316,7 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 		if masked := finding.SecretMaskedValue(); masked != "" {
 			fmt.Fprintf(&b, "**Masked value:** %s\n\n", safetext.MarkdownInline(masked, safetext.MaxInlineRunes))
 		}
-		b.WriteString("Open the finding in the OpenCTEM platform for full details.\n")
+		b.WriteString("Open the finding in " + brand.Name() + " for full details.\n")
 		appendMobilizationBrief(&b, finding)
 		return b.String()
 	}
@@ -406,8 +407,13 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 		return fmt.Errorf("lookup finding by issue url: %w", err)
 	}
 
-	// A ticket never closes a finding (see IsTicketInboundTarget).
-	if !target.IsTicketInboundTarget() {
+	// A ticket never closes a finding: the transition engine allows a ticket
+	// work-state moves only (IsTicketInboundTarget), along the lifecycle.
+	ticket := vulnerability.TransitionActor{Kind: vulnerability.TransitionActorTicket}
+	facts := vulnerability.TransitionFacts{Status: finding.Status(), Source: finding.Source(), Severity: finding.Severity()}
+	if d := vulnerability.EvaluateTransition(facts, ticket, target); !d.Allowed {
+		s.logger.Warn("github webhook: the transition engine refused the move",
+			"finding_id", finding.ID().String(), "current", finding.Status(), "target", target, "error", d.Err())
 		return nil
 	}
 	oldStatus := finding.Status()

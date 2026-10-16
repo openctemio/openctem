@@ -27,7 +27,7 @@ func v2ProblemOf(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return p.Type
 }
 
-// A sensor without a tenant (a platform sensor) may not report on v2: 403
+// A sensor without a tenant (a shared sensor) may not report on v2: 403
 // scope-denied. Reached before any repository is used.
 func TestSensorResultsV2_ScopeDenied(t *testing.T) {
 	recv := ingest.NewV2Receiver(nil, nil, nil, nil, protov2.DefaultLimits(), 0, logger.NewNop())
@@ -37,7 +37,7 @@ func TestSensorResultsV2_ScopeDenied(t *testing.T) {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("report_id", "0192a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b")
 	ctx := context.WithValue(r.Context(), chi.RouteCtxKey, rctx)
-	ctx = context.WithValue(ctx, sensorContextKey, &sensor.Sensor{ID: shared.NewID(), IsPlatformSensor: true})
+	ctx = context.WithValue(ctx, sensorContextKey, &sensor.Sensor{ID: shared.NewID(), Scope: sensor.ScopeInstance})
 	ctx = middleware.WithV2Body(ctx, &middleware.V2Body{Decoded: []byte(`{}`), Digest: "sha-256=:x:"})
 	rec := httptest.NewRecorder()
 	h.PutReport(rec, r.WithContext(ctx))

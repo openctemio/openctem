@@ -29,6 +29,10 @@
 > setting, no longer only an environment variable (see
 > [Revision 10](#revision-10-the-sign-up-policy-is-a-console-setting)).
 
+> **Revision 20** (2026-10-15): the console becomes a hardened plane of its
+> own: route-level step-up on every protected action first (see
+> [Revision 20](#revision-20-the-admin-plane)).
+
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*: the system administrator is an account
 > with a system-level role and a different menu (Organizations, Users, Scanning,
@@ -663,6 +667,57 @@ it.
   `/api/v1/admin/threat-intel/sync` routes (ops_admin+ for changes,
   audited).
 
+## Revision 20: the admin plane
+
+The console runs in the API process, on the API's listener and the web app's
+origin, with the API's database role. Revision 20 hardens it step by step
+into a separate plane of the same codebase and image. Threat model: a stolen
+console session (malware, a stolen cookie, a phishing proxy relaying TOTP), a
+script on the tenant origin riding the console, and a tenant-side SQL
+injection reaching the admin tables. Each step below ships on its own.
+
+### Step-up on protected actions
+
+A console session alone no longer changes who may sign in or what they may
+do. Every protected action takes a route-level step-up
+(`middleware.RequireAdminStepUp`): a fresh authenticator code in the
+`X-Admin-Step-Up` header. One confirmation opens a five-minute window on the
+same console session (`admin_sessions.step_up_at`, migration 002472); another
+session, another administrator or a pending session never rides it. Without
+a code or window the API answers `401 ADMIN_STEP_UP_REQUIRED`; the console's
+one step-up dialog asks for the code and retries the same request. A wrong
+code counts toward the sign-in lockout; each confirmation is audited
+(`console.step_up`, with the action as its purpose).
+
+Protected actions: every console write except the routine ones. Identity
+and privilege: provisioning, changing, deleting or resetting an administrator,
+a break-glass test, unbinding an administrator from the platform identity
+provider, replacing or removing that provider, ending another administrator's
+session, and the account support actions on a user (revoke sessions, unlock,
+password reset, verification e-mail). Organizations: creating one, approving
+an access request (it creates an organization and its owner), creating or
+recovering an owner, every SSO write (SAML, identity providers, verified
+domains, SSO enforcement), module grants, the scan-approval policy and the
+audit-chain rebaseline. Platform settings and trust: sign-up mode, e-mail,
+legal pages, default limits and modules, the scan-approval default, platform
+sensor domain proof, content packs and the program feed. The handlers that
+read a code from the request body check it with the same helper, which
+accepts the route's confirmation, so a form that already asked for a code
+sends it once (`adminFetch` puts a body `totp_code` in the header).
+
+The routine writes, each with its reason in `adminWriteInventory`: an
+organization's limits and idle exemption, rejecting an access request, the
+e-mail test (to the caller's own address), announcements, threat-intel sync,
+blocking or unblocking an AI client, and scanner target mappings. CI fails on
+a console write that is not classified, on a listed route that does not
+exist, on a step-up route that reaches its handler without a code, and on a
+routine route that asks for one.
+
+An administrator who signs in only through the platform identity provider has
+no console authenticator, so protected actions answer
+`403 STEP_UP_UNAVAILABLE` until one is enrolled (WebAuthn for the console
+lifts this).
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
@@ -696,10 +751,28 @@ it.
 
 - The admin session cookie is scoped to `/api/v1/admin`, so it is never sent to
   tenant routes, and the tenant JWT never authenticates admin routes.
+- The CSRF token is HttpOnly on `/api/v1/admin` as well (`admin_csrf`); the
+  console's pages read a copy scoped to `/admin` (`admin_csrf_ui`) to echo it
+  in the `X-CSRF-Token` header, and the older readable copy at `/` is cleared
+  on every sign-in. A script on a tenant page no longer finds the token in
+  `document.cookie`. **Residual risk until the console has its own origin:**
+  paths are not a security boundary inside one origin. A script running on the
+  tenant origin (an XSS past the nonce CSP, or a compromised dependency of the
+  shared bundle) can still send console reads with the session cookie, and can
+  open a console page in a same-origin frame to read the token and send
+  writes, while an administrator has a live console session in that browser
+  (30 minutes idle). Protected writes still need a fresh authenticator code.
+  The admin listener and the console's own origin remove this.
 - Server-side sessions: deactivating an admin or resetting credentials deletes
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes
-  are written to `admin_audit_logs`.
+  are written to `admin_audit_logs`. That log is append-only and hash-chained
+  (migration 002545): the database chains every insert, refuses updates,
+  deletes and truncation, and removes only the oldest prefix older than a
+  year through `admin_audit_prune`, anchoring the chain where it stopped.
+  `GET /api/v1/admin/audit-logs/chain` (any admin; shown on Security >
+  Activity) and `bootstrap-admin verify-audit` report every row that does not
+  verify. See `docs/architecture/audit-hash-chain.md`.
 - Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
   code from the console authenticator, single use (the sign-in replay guard),
   counted toward lockout when wrong, audited as `console.step_up` /
