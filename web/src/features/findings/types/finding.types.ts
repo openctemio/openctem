@@ -1253,6 +1253,17 @@ export interface ApiApproval {
   /** The latest moment a pending request can be decided; it expires after. */
   decide_by?: string
   created_at: string
+  /**
+   * The sole member of the organization approved their own request
+   * (authenticator code and a reason), not a second person.
+   */
+  self_approved?: boolean
+  self_approval_reason?: string
+  /**
+   * One person decided this false positive alone under the organization's
+   * false-positive approval level.
+   */
+  single_person?: boolean
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'
