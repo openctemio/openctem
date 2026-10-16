@@ -91,20 +91,57 @@ func (r *FindingAcceptanceExpiryRepository) ListDue(ctx context.Context, limit i
 //   - one acceptance_expired timeline entry, and one sla_restarted entry when
 //     the clock restarted.
 func (r *FindingAcceptanceExpiryRepository) Expire(ctx context.Context, due vulnerability.AcceptanceDue, newDeadline *time.Time, now time.Time) (bool, error) {
+	return r.endAcceptance(ctx, due, newDeadline, now, acceptanceEnding{
+		reason:  "acceptance_expired",
+		message: "Risk acceptance ended: the finding is open again",
+		dueOnly: true,
+	})
+}
+
+// acceptanceEnding says why an acceptance ends: its end passed (dueOnly:
+// only while the end has passed), or its finding changed (extra carries the
+// signals, audit names the audit action written in the same transaction).
+type acceptanceEnding struct {
+	reason  string
+	message string
+	dueOnly bool
+	extra   map[string]any
+	audit   string
+	// approvalID, when set, is the approved request the ending acts on: the
+	// row is locked first and the ending stops when it is no longer approved
+	// or the finding holds a newer approved request (a decision made after the
+	// change was seen must not be undone by it).
+	approvalID string
+}
+
+// endAcceptance reopens one accepted finding in one transaction (see Expire).
+func (r *FindingAcceptanceExpiryRepository) endAcceptance(ctx context.Context, due vulnerability.AcceptanceDue, newDeadline *time.Time, now time.Time, why acceptanceEnding) (bool, error) {
 	wrote := false
 	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
-		var expiresAt time.Time
+		if why.approvalID != "" {
+			if ok, err := lockApprovedRequest(ctx, tx, due.TenantID, why.approvalID); err != nil || !ok {
+				return err
+			}
+		}
+		var expiresAt sql.NullTime
 		err := tx.QueryRowContext(ctx, `
 			SELECT acceptance_expires_at FROM findings
 			WHERE tenant_id = $1 AND id = $2 AND status = 'accepted'
-			  AND acceptance_expires_at IS NOT NULL AND acceptance_expires_at <= $3
+			  AND (NOT $4 OR (acceptance_expires_at IS NOT NULL AND acceptance_expires_at <= $3))
 			FOR UPDATE`,
-			due.TenantID.String(), due.FindingID.String(), now).Scan(&expiresAt)
+			due.TenantID.String(), due.FindingID.String(), now, why.dueOnly).Scan(&expiresAt)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("lock ended acceptance: %w", err)
+		}
+		if why.approvalID != "" {
+			// The finding is locked now, so a request approved a moment ago
+			// is visible.
+			if newer, err := hasNewerApprovedRequest(ctx, tx, due.TenantID, why.approvalID); err != nil || newer {
+				return err
+			}
 		}
 
 		if newDeadline != nil {
@@ -132,19 +169,23 @@ func (r *FindingAcceptanceExpiryRepository) Expire(ctx context.Context, due vuln
 		changes := map[string]any{
 			"old_status":   string(vulnerability.FindingStatusAccepted),
 			"new_status":   string(vulnerability.FindingStatusConfirmed),
-			"reason":       "acceptance_expired",
-			"expired_at":   expiresAt.UTC().Format(time.RFC3339),
+			"reason":       why.reason,
 			"approval_ids": approvalIDs,
 		}
-		if err := insertSystemActivity(ctx, tx, due, vulnerability.ActivityAcceptanceExpired, changes,
-			"Risk acceptance ended: the finding is open again", now); err != nil {
+		if expiresAt.Valid {
+			changes["expired_at"] = expiresAt.Time.UTC().Format(time.RFC3339)
+		}
+		for k, v := range why.extra {
+			changes[k] = v
+		}
+		if err := insertSystemActivity(ctx, tx, due, vulnerability.ActivityAcceptanceExpired, changes, why.message, now); err != nil {
 			return err
 		}
 
 		if newDeadline != nil {
 			sla := map[string]any{
-				"reason":              "acceptance_expired",
-				"trigger":             "acceptance_expired",
+				"reason":              why.reason,
+				"trigger":             why.reason,
 				"sla_deadline":        newDeadline.UTC().Format(time.RFC3339),
 				"restarted_at":        now.UTC().Format(time.RFC3339),
 				"previous_sla_status": due.SLAStatus,
@@ -154,6 +195,11 @@ func (r *FindingAcceptanceExpiryRepository) Expire(ctx context.Context, due vuln
 			}
 			if err := insertSystemActivity(ctx, tx, due, vulnerability.ActivitySLARestarted, sla,
 				"A new SLA clock started at the reopen", now); err != nil {
+				return err
+			}
+		}
+		if why.audit != "" {
+			if err := insertDecisionAudit(ctx, tx, due.TenantID, due.FindingID, why.audit, "high", why.message, changes); err != nil {
 				return err
 			}
 		}

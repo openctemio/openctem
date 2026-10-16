@@ -576,6 +576,40 @@ server, when it is made and again when someone approves it
   answers the evaluation for the caller as requester (tier, reasons,
   approvers, step-up, cap, deadline, `satisfiable`).
 
+### Material change of standing decisions
+
+A decision is valid for the facts it was made on. The approval row keeps
+`decision_facts` (when decided) and `facts_baseline` (the facts last checked).
+The `approval-material-change` controller (every 10 minutes, 200 per run,
+`internal/infra/controller/approval_material_change.go`,
+`internal/infra/postgres/finding_material_change.go`) takes the latest
+approved request of each accepted finding, and of each false positive one
+person decided (`single_person` or the sole member's), whose finding moved up
+since the baseline: severity or priority up, KEV added, EPSS higher, an
+exploit newly validated, the asset newly internet exposed or a crown jewel.
+For each, under the organization's policy (`approvalpolicy.MaterialChange`):
+
+| Decision | Floor | `on_material_change` option |
+|---|---|---|
+| accepted risk | **ends** when the tier the finding needs now is above the decided tier, or its cap now ends before the decided end; otherwise a review flag `material_change_accepted` (the decision stands) | `end_on_any_change`: any signal ends it |
+| one-person false positive | review flag `material_change_single_person` | `revoke`: withdrawn, the finding is `confirmed` again |
+
+- **Ending** is the expiry path (above) with reason `material_change` and the
+  signals: `confirmed`, a new SLA clock, the request `expired`, the timeline
+  entry `acceptance_expired`, in one transaction.
+- **Withdrawing** writes the status with a platform transition (timeline
+  `status_changed`, reason `material_change`), a new SLA clock, the request
+  `expired`.
+- Every action is audited (`finding_approval.material_change_ended`,
+  `..._flagged`, `..._revoked`) and the requester and the approvers of the
+  decision get an in-app notification (title and the change, no
+  justification).
+- An EPSS rise that stays below the threshold only moves the baseline. A
+  decision made before the baseline existed gets today's facts on the first
+  run and no action.
+- The triggers of the single-person flag (severity, KEV, new evidence, above)
+  stay; the controller adds the other signals and the `revoke` option.
+
 ### False-positive approval level
 
 `settings.finding_approvals.fp_approval` decides who decides a false positive
