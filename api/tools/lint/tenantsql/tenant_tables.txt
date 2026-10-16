@@ -147,8 +147,15 @@ pentest_retests
 priority_class_audit_log
 priority_override_rules
 relationship_suggestions
+remediation_actions
 remediation_campaign_tickets
 remediation_campaigns
+remediation_key_exclusions
+remediation_suggestion_runs
+remediation_suggestions
+remediation_task_events
+remediation_task_members
+remediation_tasks
 report_schedules
 risk_snapshots
 roles
@@ -218,6 +225,7 @@ tenant_tool_settings
 threat_actors
 threat_model_threats
 threat_models
+ticket_links
 ticket_mapping_profiles
 ticket_mapping_versions
 tool_categories

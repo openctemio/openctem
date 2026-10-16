@@ -81,8 +81,9 @@ interface UseAssetGroupsReturn {
 export function useAssetGroups(options: UseAssetGroupsOptions = {}): UseAssetGroupsReturn {
   const { filters, enabled = true } = options
 
-  // API call (only if USE_REAL_API is true)
-  const apiResult = useAssetGroupsApi(USE_REAL_API && enabled ? filters : undefined, {
+  // API call (only if USE_REAL_API is true). Disabled passes null, which
+  // sends nothing; undefined would fetch the whole unfiltered list.
+  const apiResult = useAssetGroupsApi(USE_REAL_API && enabled ? filters : null, {
     revalidateOnFocus: false,
   })
 

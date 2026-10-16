@@ -77,7 +77,7 @@ var adminWriteInventory = map[string]struct {
 	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny":       {stepUpRoute, "module entitlement"},
 	"PUT /api/v1/admin/tenants/{tenantId}/limits/{key}":                      {routine, "limits only; audited by the service"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/limits/{key}":                   {routine, "limits only; audited by the service"},
-	"PUT /api/v1/admin/tenants/{tenantId}/idle/policy":                       {routine, "idle policy on or off; audited by the service"},
+	"PUT /api/v1/admin/tenants/{tenantId}/idle/policy":                       {routine, "idle policy on or off (read-only at worst, deletes nothing); reason required, audited by the service"},
 	"POST /api/v1/admin/access-requests/{id}/reject":                         {routine, "refuses a request; nothing is created"},
 
 	// Platform settings and trust.
