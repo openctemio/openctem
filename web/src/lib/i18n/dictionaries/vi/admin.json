@@ -552,5 +552,7 @@
   "admin.legal.title": "Thông tin pháp lý",
   "admin.legal.websiteUrl": "Trang web (https)",
   "admin.nav.legal": "Pháp lý",
-  "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}"
+  "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}",
+  "admin.org.ownerCount": "{count} chủ sở hữu",
+  "admin.org.users.redacted": "Vai trò quản trị của bạn chỉ xem được số lượng thành viên, không xem được họ là ai. Tổng cộng {count} thành viên."
 }

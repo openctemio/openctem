@@ -121,11 +121,12 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 		// limit and a panic (500) included. Operator alerts read these.
 		middleware.Metrics(),
 		middleware.ConcurrencyLimit(cfg.Server.MaxConcurrentRequests), // Limit concurrent requests
-		middleware.RequestID(),                                 // Add request ID early
-		middleware.ContextLogger(log),                          // Inject request-scoped logger into context
-		middleware.SecurityHeadersWithConfig(securityCfg),      // Security headers with HSTS
-		middleware.CORSWithEnvironment(&cfg.CORS, cfg.App.Env), // CORS with environment-aware config
-		middleware.BodyLimit(cfg.Server.MaxBodySize),           // Limit request body size (10MB default)
+		middleware.RequestID(), // Add request ID early
+		middleware.AdminNetworkGate(cfg.AdminPlane.AllowedPrefixes(), log), // Console only from ADMIN_ALLOWED_CIDRS
+		middleware.ContextLogger(log),                                      // Inject request-scoped logger into context
+		middleware.SecurityHeadersWithConfig(securityCfg),                  // Security headers with HSTS
+		middleware.CORSWithEnvironment(&cfg.CORS, cfg.App.Env),             // CORS with environment-aware config
+		middleware.BodyLimit(cfg.Server.MaxBodySize),                       // Limit request body size (10MB default)
 		rateLimitMw, // Rate limiting
 		middleware.TimeoutWithLogger(cfg.Server.RequestTimeout, log), // Per-request timeout (+ panic recovery inside its goroutine)
 		middleware.LoggerWithConfig(log, middleware.LoggerConfig{
@@ -134,6 +135,12 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 			SlowRequestThreshold: time.Duration(cfg.Log.SlowRequestSeconds) * time.Second,
 		}), // Request logging with configurable skip paths
 	)
+
+	if cfg.AdminPlane.AllowsEveryNetwork() {
+		log.Warn("the platform admin console is reachable from every network (ADMIN_ALLOWED_CIDRS)")
+	} else {
+		log.Info("the platform admin console answers only to ADMIN_ALLOWED_CIDRS", "cidrs", cfg.AdminPlane.AllowedCIDRs)
+	}
 
 	s.httpServer = &http.Server{
 		Addr:         cfg.Server.Addr(),

@@ -333,7 +333,9 @@ func registerAdminRoutes(
 			// organization that has none (RFC-022 rev. 5). The platform
 			// administrator never adds users to an organization that has an
 			// owner (409); the owner and its administrators do that.
-			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, read...)
+			// The member list is personal data: every view is audited, and a
+			// read-only administrator gets counts only (the handler redacts).
+			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, with(read, audit("organization.users_view"))...)
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
 				with([]Middleware{opsWrite, scope}, audit("organization.user_create"))...)
 
@@ -426,9 +428,12 @@ func registerAdminRoutes(
 			}
 			return out
 		}
+		// Finding people by email is personal data: ops_admin+ (a read-only
+		// administrator sees counts elsewhere, never accounts).
+		opsRead := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
 		router.Group("/api/v1/admin/platform-users", func(r Router) {
-			r.GET("/", h.AdminPlatformUser.Search)
-			r.GET("/{user_id}", h.AdminPlatformUser.Get, audited("platform_user.view", nil)...)
+			r.GET("/", h.AdminPlatformUser.Search, opsRead...)
+			r.GET("/{user_id}", h.AdminPlatformUser.Get, append(cloneMW(opsRead), audited("platform_user.view", nil)...)...)
 			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
 			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
 			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)

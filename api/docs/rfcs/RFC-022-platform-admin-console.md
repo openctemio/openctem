@@ -722,3 +722,19 @@ it.
 - An administrator cannot deactivate, demote or delete themselves, so the
   super admin making a change always remains: the platform is never left
   without an active super admin.
+- The console answers only to the client networks in `ADMIN_ALLOWED_CIDRS`
+  (default: loopback, RFC 1918 and IPv6 unique local addresses); any other
+  network gets 403 `ADMIN_NETWORK_NOT_ALLOWED` on every `/api/v1/admin` route,
+  the sign-in steps included. The client address is the TCP peer, or
+  `X-Forwarded-For` from `SERVER_TRUSTED_PROXIES` only. An internet-facing
+  console is an explicit choice (`0.0.0.0/0,::/0`, logged as a warning at
+  start).
+- A verified console sign-in from another address than the administrator's
+  last one is audited (`console.new_network_sign_in`, high) and emailed to
+  every administrator (the system SMTP sender; a WARN line with
+  `alert=new_network_sign_in` otherwise).
+- A read-only administrator sees counts, not people: an organization's member
+  list returns counts by role only (`redacted: true`), organizations show the
+  owner count without owner emails, and the account search
+  (`/platform-users`) is ops_admin+. Every member-list view is audited
+  (`organization.users_view`).
