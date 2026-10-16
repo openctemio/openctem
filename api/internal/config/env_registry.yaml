@@ -1467,7 +1467,13 @@ vars:
     component: api
     group: "Internal entitlements API"
     type: string
-    description: "Listen address of the internal entitlements API, for example `:9443`. Empty (the default) turns it off. It is for the control plane of a hosted service only: expose it on a private network, never through the public gateway. When set, every other `INTERNAL_API_` variable is required."
+    description: "Listen address of the internal entitlements API, for example `10.0.0.5:9443` (a private address; an every-interface address needs `INTERNAL_API_ALLOW_ALL_INTERFACES=true`). Empty (the default) turns it off. It is for the control plane of a hosted service only: expose it on a private network, never through the public gateway. When set, every other `INTERNAL_API_` variable is required."
+  - name: INTERNAL_API_ALLOW_ALL_INTERFACES
+    component: api
+    group: "Internal entitlements API"
+    type: bool
+    default: "false"
+    description: "`true` lets `INTERNAL_API_ADDR` listen on every interface (`:9443`, `0.0.0.0:9443`, `[::]:9443`). Off: the API refuses to start with such an address, so the listener binds a private address (for example `10.0.0.5:9443`). Set it only when the network itself keeps the port private, such as a container network with no published port."
   - name: INTERNAL_API_TLS_CERT
     component: api
     group: "Internal entitlements API"

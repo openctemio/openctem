@@ -123,11 +123,15 @@ func (f fakeOrgs) Page(_ context.Context, _ *shared.ID, limit int) ([]Organizati
 }
 
 type fakeProvisioner struct {
-	got tenantapp.CreateOrganizationInput
+	got      tenantapp.CreateOrganizationInput
+	existing string
 }
 
 func (f *fakeProvisioner) Create(_ context.Context, in tenantapp.CreateOrganizationInput) (*tenantapp.CreatedOrganization, error) {
 	f.got = in
+	if in.NewOwnerOnly && in.OwnerEmail == f.existing {
+		return nil, tenantapp.ErrOwnerAccountExists
+	}
 	t, err := tenantdom.NewTenant(in.Name, in.Slug, shared.NewID().String())
 	if err != nil {
 		return nil, err
@@ -300,8 +304,14 @@ func TestInternalAPIWrites(t *testing.T) {
 	if code != http.StatusCreated || strings.Contains(body, "secret-setup-token") || !strings.Contains(body, `"owner_account":"created"`) {
 		t.Fatalf("provision: %d %s", code, body)
 	}
-	if p := h.prov.got.Provisioned; p == nil || p.Limits[limits.Seats] != 5 || !p.IdlePolicy || len(p.DeniedFeatures) != 1 {
+	if p := h.prov.got.Provisioned; p == nil || p.Limits[limits.Seats] != 5 || !p.IdlePolicy || len(p.DeniedFeatures) != 1 || !h.prov.got.NewOwnerOnly {
 		t.Fatalf("provisioned entitlements: %+v", h.prov.got)
+	}
+	// An existing account is never made owner by the control plane.
+	h.prov.existing = "someone@example.com"
+	code, body = w(http.MethodPost, "/internal/v1/organizations", `{"name":"Other","slug":"other-it","owner_email":"someone@example.com","reason":"sign-up"}`)
+	if code != http.StatusConflict || !strings.Contains(body, "OWNER_ACCOUNT_EXISTS") {
+		t.Fatalf("existing owner account: %d %s", code, body)
 	}
 
 	code, body = w(http.MethodGet, "/internal/v1/usage?limit=1", "")
