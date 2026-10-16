@@ -255,7 +255,8 @@ func (h *AdminContentCatalogHandler) Publish(w http.ResponseWriter, r *http.Requ
 		id := actor.ID()
 		actorID = &id
 	}
-	body := map[string]any{formReason: reason, "manifest_digest": contentpkg.Digest(in.ManifestRaw), "artifact_digest": contentpkg.Digest(in.Artifact)}
+	body := map[string]any{formReason: reason, "manifest_digest": contentpkg.Digest(in.ManifestRaw),
+		"artifact_digest": contentpkg.Digest(in.Artifact), "acknowledge_secrets": in.AcknowledgeSecrets}
 	p, err := h.service.PublishInstance(r.Context(), in, actorID)
 	if err != nil {
 		rec := httptest.NewRecorder()

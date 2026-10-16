@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/storage"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
+	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
 	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -178,6 +179,14 @@ func TestContentCatalogPrivate_DB(t *testing.T) {
 			if code, _ := h.do(u.user, u.tenant, ccAllPerms, http.MethodGet, "/packages/corp/words", nil); code != http.StatusOK {
 				t.Fatalf("instance package not visible: %d", code)
 			}
+		}
+		// The instance cannot shadow an organization's package, nor publish
+		// into an organization's namespace.
+		if _, err := h.svc.PublishInstance(ctx, catalogapp.PublishInput{ManifestRaw: wordlistManifest(idA, "9.0.0", art2), Artifact: art2}, nil); !errors.Is(err, dom.ErrIDTaken) {
+			t.Fatalf("instance package with an organization's id: %v", err)
+		}
+		if _, err := h.svc.PublishInstance(ctx, catalogapp.PublishInput{ManifestRaw: wordlistManifest(slugA+"/other", "1.0.0", art2), Artifact: art2}, nil); !errors.Is(err, dom.ErrNamespaceTaken) {
+			t.Fatalf("instance package in an organization's namespace: %v", err)
 		}
 		// A signed bundle cannot take an id the instance owns.
 		taken := extraRulesCC(h.now)

@@ -768,15 +768,29 @@ func (r *ContentCatalogRepository) CreatePrivate(ctx context.Context, p *dom.Pac
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('content_package:' || $1))`, p.PackageID); err != nil {
 		return fmt.Errorf("create private content package: %w", err)
 	}
+	// An organization package must not share an id with the instance view;
+	// an instance package (visible to everyone) must not share one with any
+	// organization's package, nor use a namespace that is an organization's
+	// slug (the namespace of its private packages).
 	var taken bool
 	if err := tx.QueryRowContext(ctx, `
 		SELECT EXISTS (SELECT 1 FROM content_packages
-			WHERE package_id = $1 AND origin <> $2 AND (tenant_id IS NULL OR tenant_id = $3))`,
+			WHERE package_id = $1 AND origin <> $2
+			  AND ($3::uuid IS NULL OR tenant_id IS NULL OR tenant_id = $3))`,
 		p.PackageID, p.Origin, nullableID(p.TenantID)).Scan(&taken); err != nil {
 		return fmt.Errorf("create private content package: %w", err)
 	}
 	if taken {
 		return dom.ErrIDTaken
+	}
+	if p.TenantID == nil {
+		ns, _, _ := strings.Cut(p.PackageID, "/")
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE lower(slug) = $1)`, ns).Scan(&taken); err != nil {
+			return fmt.Errorf("create private content package: %w", err)
+		}
+		if taken {
+			return dom.ErrNamespaceTaken
+		}
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO content_packages (id, tenant_id, package_id, version, type, origin, title, manifest, manifest_raw,

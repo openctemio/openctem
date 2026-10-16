@@ -160,7 +160,8 @@ func (s *Service) PublishOrganization(ctx context.Context, tenantID shared.ID, i
 	}
 	s.logAudit(ctx, actx, s.event(auditdom.ActionContentPackagePublished, m.ID, p).
 		WithMessage(fmt.Sprintf("Published private content package %s@%s", m.ID, m.Version)).
-		WithMetadata("pack_digest", pack.Digest).WithMetadata("tier", string(pack.Tier)))
+		WithMetadata("pack_digest", pack.Digest).WithMetadata("tier", string(pack.Tier)).
+		WithMetadata("acknowledge_secrets", in.AcknowledgeSecrets))
 	return p, nil
 }
 
