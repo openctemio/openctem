@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import { adminFetch, adminFetcher, AdminApiError } from './admin-client'
 import type {
+  AdminRole,
   AdminIdPCallbackResult,
   AdminIdPInfo,
   AdminIdentity,
@@ -75,4 +76,21 @@ export function adminChangePassword(currentPassword: string, newPassword: string
     method: 'POST',
     body: { current_password: currentPassword, new_password: newPassword },
   })
+}
+
+/**
+ * Elevates the console session to `role` (not above the administrator's own)
+ * for `minutes` (15-60), with a reason. The route asks for a fresh code
+ * (adminFetch's step-up dialog).
+ */
+export function adminElevate(role: AdminRole, minutes: number, reason: string) {
+  return adminFetch<{ role: AdminRole; elevated_until: string }>('/auth/elevate', {
+    method: 'POST',
+    body: { role, minutes, reason },
+  })
+}
+
+/** Ends the session's elevation: read-only again at once. */
+export function adminEndElevation() {
+  return adminFetch<void>('/auth/elevate', { method: 'DELETE' })
 }
