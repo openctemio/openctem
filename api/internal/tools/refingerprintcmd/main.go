@@ -30,7 +30,7 @@
 //	                                   fingerprint); dry run prints per-kind
 //	                                   counts before/after and added, changed,
 //	                                   removed; idempotent, one tenant at a time
-//	refingerprint -clear-legacy-secret-fingerprints [-before <time>] [-tenant <id>] [-apply]
+//	refingerprint -clear-legacy-secret-fingerprints [-before <time> [-force]] [-tenant <id>] [-apply]
 //	                                   clear the secret fingerprints written
 //	                                   before the keyed fingerprint (computed
 //	                                   from the tenant id alone, unverifiable);
@@ -52,6 +52,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net/url"
@@ -90,6 +91,7 @@ func Main() {
 	remediationKeys := flag.Bool("remediation-keys", false, "re-derive remediation group keys instead of re-keying identities")
 	clearLegacy := flag.Bool("clear-legacy-secret-fingerprints", false, "clear the unverifiable secret fingerprints written before the keyed fingerprint (the next sighting rewrites them)")
 	before := flag.String("before", "", "with -clear-legacy-secret-fingerprints: clear fingerprints of findings created before this RFC 3339 time (default: when the keyed fingerprint was introduced)")
+	force := flag.Bool("force", false, "with -clear-legacy-secret-fingerprints: allow a -before later than the keyed-fingerprint cutoff (clears fingerprints that are already keyed and verifiable)")
 	foldRules := flag.String("fold-dast-rules", "", "comma-separated DAST rules whose fixed request paths are one issue per origin (with -dast-repair)")
 	flag.Parse()
 
@@ -118,7 +120,7 @@ func Main() {
 	svc := refingerprint.NewService(store)
 
 	if *clearLegacy {
-		os.Exit(runClearLegacySecretFingerprints(ctx, sqlDB, *tenantFlag, *before, *apply, *batch))
+		os.Exit(runClearLegacySecretFingerprints(ctx, sqlDB, *tenantFlag, *before, *force, *apply, *batch))
 	}
 	if *remediationKeys {
 		os.Exit(runRemediationKeys(ctx, sqlDB, *tenantFlag, *apply, *asJSON, *batch))
@@ -323,15 +325,29 @@ func runCorrelate(ctx context.Context, db *sql.DB, tenantFlag string, apply, asJ
 	return code
 }
 
+// legacyCutoff resolves -before. A cutoff later than the moment the keyed
+// fingerprint was introduced would also clear fingerprints that are already
+// keyed and verifiable, so it needs -force.
+func legacyCutoff(before string, force bool) (time.Time, error) {
+	if before == "" {
+		return postgres.LegacySecretFingerprintCutoff, nil
+	}
+	t, err := time.Parse(time.RFC3339, before)
+	if err != nil {
+		return time.Time{}, errors.New("-before: not an RFC 3339 time")
+	}
+	if t.After(postgres.LegacySecretFingerprintCutoff) && !force {
+		return time.Time{}, fmt.Errorf("-before %s is later than %s, when the keyed fingerprint was introduced: it would clear keyed fingerprints too; add -force to do that on purpose",
+			t.Format(time.RFC3339), postgres.LegacySecretFingerprintCutoff.Format(time.RFC3339))
+	}
+	return t, nil
+}
+
 // runClearLegacySecretFingerprints clears the legacy secret fingerprints.
-func runClearLegacySecretFingerprints(ctx context.Context, db *sql.DB, tenantFlag, before string, apply bool, batch int) int {
-	cutoff := postgres.LegacySecretFingerprintCutoff
-	if before != "" {
-		t, err := time.Parse(time.RFC3339, before)
-		if err != nil {
-			fail(2, "-before: not an RFC 3339 time")
-		}
-		cutoff = t
+func runClearLegacySecretFingerprints(ctx context.Context, db *sql.DB, tenantFlag, before string, force, apply bool, batch int) int {
+	cutoff, err := legacyCutoff(before, force)
+	if err != nil {
+		fail(2, err.Error())
 	}
 	var tenant *shared.ID
 	if tenantFlag != "" {

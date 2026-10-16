@@ -179,8 +179,9 @@ refingerprint -clear-legacy-secret-fingerprints -apply
 
 - It clears `type_details.secret.fingerprint` of the findings created before
   the keyed fingerprint was introduced (`-before <RFC 3339 time>` moves the
-  cutoff to when your install first ran the keyed version; `-tenant <id>`
-  limits it to one organization). Nothing else on the finding changes.
+  cutoff to when your install first ran the keyed version; a `-before` later
+  than the built-in cutoff would clear keyed fingerprints too and is refused
+  without `-force`; `-tenant <id>` limits it to one organization). Nothing else on the finding changes.
 - It works in batches (`-batch`, default 500), each a short statement that
   skips rows another transaction holds, so it takes no long lock. Run it again
   if it reports rows still held; it is safe to repeat.
@@ -192,4 +193,5 @@ refingerprint -clear-legacy-secret-fingerprints -apply
   (for example when the same secret is found in a second repository). Resolve
   the older finding once it is no longer seen.
 - Run `refingerprint -remediation-keys -apply` afterwards, so the remediation
-  groups of secrets follow the new fingerprints.
+  groups of secrets follow the new fingerprints. Run only that: do not run an
+  identity re-key (`refingerprint` without a mode flag) for this.
