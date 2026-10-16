@@ -661,15 +661,25 @@ func (s *AuthService) authenticatePassword(ctx context.Context, rawEmail, passwo
 // VerifyConsolePassword is the platform console's own first factor (RFC-022
 // revision 20): the account's password, checked like a sign-in (lockout,
 // enumeration-safe), without opening a /login session or asking the
-// account's own second factor; the console asks its own next. A correct
-// password resets the failed-sign-in counter.
+// account's own second factor; the console asks its own next. It does not
+// reset the failed-sign-in counter: the caller does that with
+// RecordConsolePasswordSuccess only once the account is known to be an active,
+// unlocked administrator, so a tenant password cannot clear the lockout
+// through the console.
 func (s *AuthService) VerifyConsolePassword(ctx context.Context, email, password, ipAddress, userAgent string) (*userdom.User, error) {
 	u, err := s.authenticatePassword(ctx, email, password, ipAddress, userAgent)
 	if err != nil {
 		return nil, err
 	}
-	s.recordLoginSuccess(ctx, u)
 	return u, nil
+}
+
+// RecordConsolePasswordSuccess resets the failed-sign-in counter of an account
+// the console has accepted as an active, unlocked administrator.
+func (s *AuthService) RecordConsolePasswordSuccess(ctx context.Context, userID shared.ID) {
+	if err := s.userRepo.RecordSuccessfulLogin(ctx, userID); err != nil {
+		s.logger.Error("failed to reset failed login attempts", "error", err)
+	}
 }
 
 // Login authenticates a user and creates a session.

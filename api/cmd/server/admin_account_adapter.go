@@ -36,6 +36,10 @@ func (d adminAccountDirectory) VerifyPassword(ctx context.Context, email, passwo
 	return &adminconsole.SignedInUser{UserID: u.ID(), Email: u.Email(), Name: u.Name(), Active: u.CanLogin()}, nil
 }
 
+func (d adminAccountDirectory) RecordPasswordSuccess(ctx context.Context, userID shared.ID) {
+	d.auth.RecordConsolePasswordSuccess(ctx, userID)
+}
+
 func (d adminAccountDirectory) CreateAccount(ctx context.Context, email, name string) (shared.ID, string, error) {
 	acc, err := d.auth.CreateLocalAccount(ctx, email, name)
 	if err != nil {
