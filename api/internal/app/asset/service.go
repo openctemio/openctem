@@ -53,6 +53,7 @@ type AssetService struct {
 	assetGroupRepo    assetgroupdom.Repository // For recalculating group stats
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
 	dataScope         *datascope.Enforcer      // Layer 2 enforcement on bulk-by-id paths (nil = unrestricted)
+	techFacets        TechnologyFacetReader    // Technology filter options (RFC-112); nil = unavailable
 	scoringProvider   assetdom.ScoringConfigProvider
 	riskQueue         assetdom.RiskQueueRepository // rescore queue (risk_freshness.go)
 	riskReader        AssetBatchReader
@@ -1349,6 +1350,11 @@ type ListAssetsInput struct {
 	// Freshness: stale (an attribute class past its TTL) or never (a passive
 	// class that applies was never observed); docs/architecture/asset-freshness.md.
 	Freshness string `validate:"omitempty,oneof=stale never"`
+	// Technologies: assets using any of these technologies (normalised
+	// names); TechnologyCategories: assets with a technology in any of these
+	// categories (RFC-112).
+	Technologies         []string `validate:"max=20,dive,min=1,max=128"`
+	TechnologyCategories []string `validate:"max=10,dive,oneof=web_server framework language js_library cdn hosting waf analytics security_header other"`
 
 	Sort    string `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page    int    `validate:"min=0"`
@@ -1525,6 +1531,8 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	}
 	filter.ProgramAssets = input.ProgramAssets
 	filter.Freshness = input.Freshness
+	filter.Technologies = input.Technologies
+	filter.TechnologyCategories = input.TechnologyCategories
 	if len(input.DataClassifications) > 0 {
 		filter = filter.WithDataClassifications(input.DataClassifications...)
 	}
