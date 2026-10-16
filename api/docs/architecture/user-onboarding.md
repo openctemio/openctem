@@ -211,6 +211,15 @@ refused, rate limited):
   admins notified), or creates a **join request** (`approval`). A stale or
   foreign reference answers 409 `OFFER_UNAVAILABLE`.
 
+Web: `/onboarding/create-team` shows this fork (invitations, the
+organization of the verified domain with Join / Ask to join and a "waiting for
+approval" state, then the create form when allowed). Joining selects the new
+organization at once (the accept answer carries `organization_id` for the
+account's own new membership). Owners and admins see waiting requests on
+Settings > Members; owners set the domain policy on Settings > Domains (admins
+read it). A sign-up refused with `SSO_REQUIRED` sends the person to email-first
+sign-in, which routes the address to the organization's SSO.
+
 Join requests (`organization_join_requests`, migration 002521): one pending
 per person and organization, at most 5 per person per day, expire after 30
 days; decided and expired rows are purged 30 days later
