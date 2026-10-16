@@ -553,6 +553,9 @@
   "admin.legal.websiteUrl": "Website (https)",
   "admin.nav.legal": "Legal",
   "admin.ops.fleet.advisories": "security advisory: {v}",
+  "admin.stepUp.confirm": "Confirm",
+  "admin.stepUp.description": "This action changes who can sign in or what they may do. Enter a fresh code from your authenticator. One code covers the next five minutes of such actions.",
+  "admin.stepUp.title": "Confirm it is you",
   "admin.org.ownerCount": "{count} owner(s)",
   "admin.org.users.redacted": "Your console role sees how many members there are, not who they are. {count} member(s) in total."
 }

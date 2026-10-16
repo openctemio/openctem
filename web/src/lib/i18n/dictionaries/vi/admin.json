@@ -553,6 +553,9 @@
   "admin.legal.websiteUrl": "Trang web (https)",
   "admin.nav.legal": "Pháp lý",
   "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}",
+  "admin.stepUp.confirm": "Xác nhận",
+  "admin.stepUp.description": "Thao tác này thay đổi ai có thể đăng nhập hoặc được làm gì. Nhập một mã mới từ ứng dụng xác thực. Một mã có hiệu lực cho các thao tác như vậy trong năm phút tiếp theo.",
+  "admin.stepUp.title": "Xác nhận đó là bạn",
   "admin.org.ownerCount": "{count} chủ sở hữu",
   "admin.org.users.redacted": "Vai trò quản trị của bạn chỉ xem được số lượng thành viên, không xem được họ là ai. Tổng cộng {count} thành viên."
 }
