@@ -10,6 +10,9 @@ import (
 	"net"
 	"time"
 
+	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
@@ -56,6 +59,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	accountdeletionapp "github.com/openctemio/openctem/api/internal/app/accountdeletion"
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	assetfreshnessapp "github.com/openctemio/openctem/api/internal/app/assetfreshness"
@@ -276,6 +280,30 @@ func (a ticketStatusApplier) RequestTicketDisposition(ctx context.Context, tenan
 		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
 	}
 	return out.Requested, out.Pending, refused, nil
+}
+
+// taskIssueReader is the platform's read of remediation tasks for their
+// tracker issues (no caller scope: the background sync and the inbound
+// webhook act for the organization).
+type taskIssueReader struct {
+	repo *postgres.RemediationTaskRepository
+}
+
+func (r taskIssueReader) GetTask(ctx context.Context, tenantID, taskID shared.ID) (*remediationdom.Task, error) {
+	return r.repo.GetTask(ctx, tenantID, taskID)
+}
+
+func (r taskIssueReader) OpenMemberIDs(ctx context.Context, tenantID, taskID shared.ID, limit int) ([]shared.ID, error) {
+	res, err := r.repo.ListMembers(ctx, tenantID, taskID,
+		remediationdom.MemberFilter{Role: remediationdom.MemberRolePrimary, Status: "open"}, pagination.New(1, limit))
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]shared.ID, 0, len(res.Data))
+	for _, m := range res.Data {
+		ids = append(ids, m.FindingID)
+	}
+	return ids, nil
 }
 
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
@@ -847,6 +875,8 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// AccountDeletion: self-service account deletion with a grace period.
+	AccountDeletion *accountdeletionapp.Service
 	// PlatformEmail is the platform's SMTP settings, set in the admin console
 	// (RFC-079); its Sender backs Email.
 	PlatformEmail *platformemail.Service
@@ -1733,6 +1763,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.TicketLink != nil {
 		s.JiraSync.SetLinkStore(repos.TicketLink)
 	}
+	// Task issues: a person creates a task's issue (a change of the task, in
+	// their data scope); the platform keeps its status in step.
+	s.JiraSync.SetTaskSources(s.RemediationTask, taskIssueReader{repo: repos.RemediationTask})
+	s.JiraSync.SetWebBaseURL(cfg.SMTP.BaseURL)
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
@@ -2789,6 +2823,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	// Self-service account deletion: signing in again within the grace
+	// period cancels it.
+	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
+		s.Audit, tenantapp.ErasedUserLabel, log)
+	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2849,6 +2888,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
+	if s.AccountDeletion != nil {
+		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
@@ -2929,6 +2971,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// admits it (self-service, or a pending invitation for the email).
 		if s.Signup != nil {
 			s.OAuth.SetSignupPolicy(s.Signup)
+			if s.AccountDeletion != nil {
+				s.OAuth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
