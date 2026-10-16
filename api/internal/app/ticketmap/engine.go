@@ -122,3 +122,14 @@ func (s *Service) ProjectKeys(ctx context.Context, tenantID, integrationID share
 	}
 	return out, nil
 }
+
+// InboundStatusMap returns the status map of the published profile of a
+// project for an object kind, or nil without one.
+func (s *Service) InboundStatusMap(ctx context.Context, tenantID, integrationID shared.ID, kind ticketmapdom.ObjectKind, projectKey string) (*ticketmapdom.StatusMap, error) {
+	p, v, err := s.published(ctx, tenantID, integrationID, kind, projectKey, "")
+	if err != nil || p == nil {
+		return nil, err
+	}
+	sm := v.Spec.Status
+	return &sm, nil
+}

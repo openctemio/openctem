@@ -25,7 +25,11 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   routing rules, mapping profiles); the issue's current project is checked
   after the tracker resolves the key, so a moved issue cannot slip through.
 - **Inbound** (`POST /hooks/jira-integrations/{integration_id}`): a Jira status
-  change updates the finding status (and can trigger a verification scan). The
+  change updates the finding status (and can trigger a verification scan).
+  With a published mapping profile for the issue's project, its inbound
+  rules decide (RFC-097): Done is a fix claim, "Won't Do" opens a pending
+  risk-acceptance request (four-eyes, requested by the `ticket` actor), and
+  nothing from a ticket ever closes a finding. The
   URL names one Jira integration (one tenant); the delivery must carry Jira's
   `X-Hub-Signature: sha256=<HMAC-SHA256 of the raw body>` under that
   integration's own secret (stored encrypted in the integration metadata,

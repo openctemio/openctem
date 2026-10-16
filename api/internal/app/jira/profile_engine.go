@@ -48,6 +48,9 @@ type ProfileSource interface {
 	// ProjectKeys lists the projects that have a mapping profile on the
 	// integration; linking an existing issue is limited to configured projects.
 	ProjectKeys(ctx context.Context, tenantID, integrationID shared.ID) ([]string, error)
+	// InboundStatusMap returns the status map of the published profile of a
+	// project for an object kind, or nil without one.
+	InboundStatusMap(ctx context.Context, tenantID, integrationID shared.ID, kind ticketmap.ObjectKind, projectKey string) (*ticketmap.StatusMap, error)
 }
 
 // ProfileClient is what the engine needs from a tracker client beyond Client.
