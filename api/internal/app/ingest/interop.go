@@ -149,13 +149,6 @@ type vexApplier interface {
 	ApplyVEXNotAffected(ctx context.Context, tenantID shared.ID, tool string, items []vulnerability.VEXNotAffected, dryRun bool) ([]shared.ID, error)
 }
 
-// VEXRequestNotifier tells the approvers about the false-positive requests
-// one report's VEX statements made (*finding.VulnerabilityService).
-// Optional: without it nobody is told until they open the inbox.
-type VEXRequestNotifier interface {
-	NotifyVEXRequests(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID)
-}
-
 // storeInterop writes each sighting's interop data. Best effort: a failure
 // is logged and never fails the ingest.
 func (p *FindingProcessor) storeInterop(ctx context.Context, tenantID shared.ID, updates []vulnerability.InteropUpdate) {
@@ -252,9 +245,6 @@ func (p *FindingProcessor) applyVEX(ctx context.Context, tenantID shared.ID, rep
 	output.VEXMode = mode
 	if mode == SourceResolveEnforce {
 		output.FindingsVEXRequested += len(ids)
-		if p.vexNotifier != nil && len(ids) > 0 {
-			p.vexNotifier.NotifyVEXRequests(ctx, tenantID, ids)
-		}
 	} else {
 		output.FindingsVEXWouldClose += len(ids)
 	}
