@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -746,6 +748,8 @@ type Services struct {
 
 	// Remediation Campaigns
 	RemediationCampaign *exposure.RemediationCampaignService
+	RemediationTask     *remediation.TaskService
+	RemediationSuggest  *remediation.SuggestionService
 	RemediationGroup    *remediation.GroupService
 
 	// Business Units
@@ -1559,6 +1563,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(remediation.NewCampaignFilterResolver(s.Vulnerability, s.BulkGuard))
+	// Remediation tasks (RFC-098): who fixes an action and by when; state,
+	// deadline and counters derived from the member findings.
+	s.RemediationTask = remediation.NewTaskService(repos.RemediationTask, log)
+	s.RemediationTask.SetDataScope(s.DataScope)
+	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
+	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Remediation suggestions: algorithms propose, a person accepts.
+	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
+	s.RemediationSuggest.SetDataScope(s.DataScope)
+	s.RemediationSuggest.SetAuditLogger(s.Audit)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -1656,6 +1670,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound status changes are recorded with the integration as the actor.
 	s.JiraSync.SetActivityRecorder(s.FindingActivity)
+	// Ticket links: create-ticket records its link; people link existing issues.
+	if repos.TicketLink != nil {
+		s.JiraSync.SetLinkStore(repos.TicketLink)
+	}
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
@@ -2786,6 +2804,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// domain (domainverify.Service.OwnerOfDomain).
 	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
 		s.SSO.SetDomainOwnerLookup(owners)
+		// Discovery hands out opaque organization references, signed with
+		// a key derived from the session secret under its own label.
+		dk := hmac.New(sha256.New, []byte(cfg.Auth.JWTSecret))
+		dk.Write([]byte("openctem/sso-discovery/v1"))
+		s.SSO.SetDiscoveryKey(dk.Sum(nil))
 	} else {
 		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
 	}

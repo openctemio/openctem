@@ -74,7 +74,7 @@ const contentPackageColumns = `p.id, p.tenant_id, p.package_id, p.version, p.typ
 // visibleTo is the predicate of the rows an organization sees ($1 = tenant).
 const visibleTo = `(p.tenant_id IS NULL OR p.tenant_id = $1)`
 
-func optID(ns sql.NullString) *shared.ID {
+func optContentID(ns sql.NullString) *shared.ID {
 	if !ns.Valid {
 		return nil
 	}
@@ -98,7 +98,7 @@ func scanContentPackage(row interface{ Scan(...any) error }) (*dom.Package, erro
 		return nil, err
 	}
 	p.Type = contentpkg.Type(typ)
-	p.TenantID, p.CreatedBy = optID(tenant), optID(author)
+	p.TenantID, p.CreatedBy = optContentID(tenant), optContentID(author)
 	p.PublisherIdentity, p.PublisherIssuer = identity.String, issuer.String
 	p.PublisherSignedAt, p.RevokedAt = nullTimeValue(signedAt), nullTimeValue(revokedAt)
 	p.RevokeReason, p.RevokeSeverity = reason.String, sev.String
@@ -447,7 +447,7 @@ func scanContentInstall(row interface{ Scan(...any) error }) (*dom.Install, erro
 		return nil, err
 	}
 	in.Status = dom.InstallStatus(status)
-	in.PreviousRowID, in.InstalledBy, in.UpdatedBy = optID(prev), optID(by), optID(updatedBy)
+	in.PreviousRowID, in.InstalledBy, in.UpdatedBy = optContentID(prev), optContentID(by), optContentID(updatedBy)
 	return &in, nil
 }
 
@@ -602,7 +602,7 @@ func scanContentRequest(row interface{ Scan(...any) error }) (*dom.Request, erro
 		return nil, err
 	}
 	q.Action, q.Status = dom.RequestAction(action), dom.RequestStatus(status)
-	q.TargetRowID, q.RequestedBy, q.DecidedBy = optID(target), optID(by), optID(decided)
+	q.TargetRowID, q.RequestedBy, q.DecidedBy = optContentID(target), optContentID(by), optContentID(decided)
 	q.DecidedAt = nullTimeValue(decidedAt)
 	return &q, nil
 }
@@ -716,7 +716,7 @@ func (r *ContentCatalogRepository) GetSettings(ctx context.Context, tenantID sha
 	if err != nil {
 		return nil, fmt.Errorf("get content catalog settings: %w", err)
 	}
-	s.UpdatedBy, s.UpdatedAt, s.ApprovalOffAt = optID(by), nullTimeValue(at), nullTimeValue(off)
+	s.UpdatedBy, s.UpdatedAt, s.ApprovalOffAt = optContentID(by), nullTimeValue(at), nullTimeValue(off)
 	return s, nil
 }
 
