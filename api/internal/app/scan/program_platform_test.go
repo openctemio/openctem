@@ -40,7 +40,7 @@ func TestPlatformSensors_ProgramTargets(t *testing.T) {
 	gate := programGate{only: []string{"www.acme.example"}}
 	for _, on := range []bool{false, true} {
 		mode := map[bool]string{false: "proof off", true: "proof on"}[on]
-		svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(), zoneResolver: publicResolver{}, attributionGate: gate, proofPolicy: StaticProofPolicy(on)}
+		svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(), zoneResolver: publicResolver{}, sharedLimits: noLimits{}, attributionGate: gate, proofPolicy: StaticProofPolicy(on)}
 		if on {
 			// Proof is not what refuses here: mark everything proven.
 			svc.attributionGate = provenProgramGate{gate}
@@ -73,7 +73,7 @@ func TestPlatformSensors_ProgramTargets(t *testing.T) {
 
 	// A failed lookup keeps an auto job on tenant sensors and refuses an
 	// explicit platform preference.
-	svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(), zoneResolver: publicResolver{}, attributionGate: programGate{err: errors.New("db down")}}
+	svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(), zoneResolver: publicResolver{}, sharedLimits: noLimits{}, attributionGate: programGate{err: errors.New("db down")}}
 	sc := testScan("nuclei")
 	sc.SensorPreference = scan.SensorPreferencePlatform
 	if _, err := svc.shouldUsePlatformSensor(ctx, sc, []string{"x.example"}); err == nil {
