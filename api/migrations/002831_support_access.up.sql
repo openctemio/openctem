@@ -14,7 +14,8 @@ CREATE TABLE support_grants (
     scopes      text[] NOT NULL CHECK (cardinality(scopes) > 0 AND scopes <@ ARRAY['findings', 'assets']::text[]),
     reason      text NOT NULL CHECK (length(btrim(reason)) BETWEEN 10 AND 500),
     case_ref    varchar(64),
-    granted_by  uuid NOT NULL REFERENCES users (id),
+    -- The grant stays in the organization's history when its granter leaves.
+    granted_by  uuid REFERENCES users (id) ON DELETE SET NULL,
     starts_at   timestamptz NOT NULL,
     expires_at  timestamptz NOT NULL,
     revoked_at  timestamptz,
