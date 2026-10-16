@@ -385,6 +385,41 @@ class, the tenant with the fewest platform jobs in flight goes first
 (migration 000461, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
 
+## Shared sensor enrollment
+
+A shared sensor is enrolled with a **single-use instance enrollment token**
+([RFC-100](../rfcs/RFC-100-shared-sensors.md) §7), never a long-lived
+registration secret:
+
+1. A super administrator issues it in the console
+   (`POST /api/v1/admin/shared-sensors/enrollment-tokens`: super admin, the
+   route-level step-up, a reason), or an install registers the value it
+   generated for its bundled sensor (`bootstrap-admin sensor-token
+   -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN`). The token is `octe_` plus 49
+   letters or digits, lives 5 to 60 minutes (the table refuses more than an
+   hour), is shown once and stored only as an HMAC-SHA256 with the sensor-key
+   pepper (`instance_enrollment_tokens`). Each issue writes a console audit
+   row (high) with the reason.
+2. The sensor starts an ordinary pairing (RFC-052, its own Ed25519 key, the
+   request signed with it) and puts the token in `enrollment_token`. The
+   platform spends the token and inserts the request bound to it
+   (`sensor_pairings.instance_token_id`) in one transaction; the first key
+   that presents it wins. A malformed, unknown, expired or used token gets the
+   same `401`, and nothing is written; the start route keeps its per-address
+   and platform-wide rate limits.
+3. When the sensor reveals its nonce, the request is approved as a shared
+   sensor in one transaction: `scope = 'instance'`, no tenant, trust level
+   `trusted` and the least-privilege grant from the insert trigger, and its
+   pending key without a tenant. The sensor confirms its identity
+   (`identity.scope = "instance"`, empty tenant in the signed transcript) and
+   the key becomes active.
+
+Such a request has no tenant ever (`chk_sensor_pairings_instance_no_tenant`):
+no organization can look it up, approve or deny it. Redemption, approval and
+confirmation each write a console audit row; nothing reaches an
+organization's audit log or timeline. Transport v3 certificates are not
+issued to a shared sensor yet: it speaks the signed HTTPS protocol.
+
 ## Shared sensors on the tenant plane
 
 Platform sensors become **shared sensors** (instance scope) in every edition;
@@ -425,8 +460,9 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   never into an organization: the v2 authenticator sets no tenant context,
   and every tenant-bound sensor route answers 403 `scope-denied`
   (`sensorForV2`, the results receiver). A signed request resolves the key's
-  sensor within the key's tenant, which a shared sensor's key does not have,
-  so it is refused (`shared_sensor_auth_db_test.go`).
+  sensor within the key's tenant; a key without a tenant resolves only to a
+  shared sensor (`SensorService.keyOwner`), which then has no tenant context
+  either (`shared_sensor_auth_db_test.go`, `instance_db_test.go`).
 - **One guard for every route on one sensor.** Every `/api/v1/sensors/{id}...`
   route ends with `SensorHandler.OwnSensor`: a sensor that is not one of the
   organization's own (another organization's, or a shared sensor) answers

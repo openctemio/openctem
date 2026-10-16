@@ -91,6 +91,7 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/scan-approval-policy/":          {stepUpRoute, "scan governance default"},
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":         {stepUpRoute, "platform sensor domain proof"},
 	"PUT /api/v1/admin/program-feed/local-bundle":               {stepUpRoute, "program feed source"},
+	"POST /api/v1/admin/shared-sensors/enrollment-tokens":       {stepUpRoute, "shared sensor enrollment token"},
 	"POST /api/v1/admin/content-packs/":                         {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/import":                   {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/{id}/revoke":              {stepUpRoute, "platform content pack"},
