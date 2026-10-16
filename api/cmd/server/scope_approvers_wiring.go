@@ -205,7 +205,7 @@ func (m findingApprovalMailer) SendFindingApprovalMail(_ context.Context, tenant
 
 // wireFindingApprovers tells the members who may approve a finding
 // false-positive or accepted-risk request about it (in-app and email).
-func wireFindingApprovers(svc *Services, dir *postgres.ScopeActorRepository, webBaseURL string, log *logger.Logger) {
+func wireFindingApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeActorRepository, webBaseURL string, log *logger.Logger) {
 	if svc.Vulnerability == nil || dir == nil {
 		return
 	}
@@ -218,6 +218,10 @@ func wireFindingApprovers(svc *Services, dir *postgres.ScopeActorRepository, web
 		mail = findingApprovalMailer{email: svc.Email, log: log}
 	}
 	svc.Vulnerability.SetApprovalNotifier(dir, inApp, mail, webBaseURL)
+	// Muting the digest notification type opts a member out of the digest.
+	if repos != nil && repos.Notification != nil {
+		svc.Vulnerability.SetApprovalDigestPreferences(repos.Notification)
+	}
 	// The sole member's own approval: the owner check, a fresh authenticator
 	// code, and the backup contact from the organization's settings.
 	var totp finding.ApprovalTOTPVerifier
