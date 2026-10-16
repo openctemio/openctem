@@ -223,6 +223,9 @@ type AcceptResult struct {
 	Status string `json:"status"`
 	// OrganizationName of the offer.
 	OrganizationName string `json:"organization_name"`
+	// OrganizationID is set when the account joined: the account is a member
+	// now, so it may select the organization.
+	OrganizationID string `json:"organization_id,omitempty"`
 }
 
 // Accept takes an offer: accepts an invitation, joins by domain (auto) or
@@ -245,7 +248,7 @@ func (s *Service) Accept(ctx context.Context, u *userdom.User, ref string, actx 
 		if _, err := s.tenants.AcceptInvitationByID(ctx, tenantID, targetID, u.ID(), u.Email(), true, actx); err != nil {
 			return nil, err
 		}
-		return &AcceptResult{Status: "joined", OrganizationName: t.Name()}, nil
+		return &AcceptResult{Status: "joined", OrganizationName: t.Name(), OrganizationID: t.ID().String()}, nil
 	case kindDomain:
 		return s.joinByDomain(ctx, u, t, targetID, actx)
 	}
@@ -274,7 +277,7 @@ func (s *Service) joinByDomain(ctx context.Context, u *userdom.User, t *tenantdo
 		s.record(ctx, actx, audit.ActionMemberJoinedByDomain, t.ID(), u, "Joined by verified email domain "+ep.Domain, role)
 		s.tenants.NotifyAdmins(ctx, t.ID(), "A colleague joined by email domain",
 			fmt.Sprintf("%s joined as %s through the verified domain %s.", u.Email(), role, ep.Domain), "info")
-		return &AcceptResult{Status: "joined", OrganizationName: t.Name()}, nil
+		return &AcceptResult{Status: "joined", OrganizationName: t.Name(), OrganizationID: t.ID().String()}, nil
 	}
 
 	since := s.now().Add(-24 * time.Hour)
