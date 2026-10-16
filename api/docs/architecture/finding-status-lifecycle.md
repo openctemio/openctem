@@ -395,6 +395,11 @@ its by-filter form all answer the same):
   preview with the code `evidence_required` (critical) or
   `checklist_required` (high), so the web disables it with the reason instead
   of failing on submit. `PATCH /status` answers 400 with the same reason.
+- Evidence must be newer than the finding's last reopen and its last
+  sighting (`GREATEST(last_reopened_at, last_seen_at)`): a retest or a
+  checklist completed before a regression, or before a scan saw the finding
+  again, no longer counts, so a critical finding that came back is not closed
+  by one person on the proof of the previous fix.
 - A covered scan that no longer sees the finding, and a retest with
   `retest.auto_resolve`, close it without a person and are not affected.
 - The by-filter verify evaluates each matching finding (up to 1000 per call)
@@ -415,6 +420,11 @@ instead).
   too; the requester asks again with a shorter end. The finding response
   carries `max_acceptance_days`, and the approval dialog limits its date
   picker to it.
+- **Suppression rules too.** An accepted-risk rule keeps its own end (at
+  most a year), but each finding it accepts, on approval, on a re-link or
+  when ingest links a new finding, ends at the rule's end or the cap of that
+  finding's priority, whichever is sooner (`acceptanceCappedSQL`, using
+  `finding_max_acceptance_days`).
 - **Existing acceptances over the cap are flagged, not cut.** Migration
   `002541_acceptance_cap_review` opens a decision review
   (`acceptance_exceeds_cap`) with a timeline entry for every accepted finding
