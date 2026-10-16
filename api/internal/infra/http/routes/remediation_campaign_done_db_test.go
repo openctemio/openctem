@@ -3,7 +3,7 @@ package routes
 // A remediation campaign is done only when its findings say so (research 156
 // B13, owner decision D3): every finding closed AND at least one verified
 // fixed (resolved). Completing anything less needs an explicit, audited
-// override; a closed Jira epic never completes an unfinished campaign. A
+// override; a closed Jira epic never completes a campaign (it is a fix claim). A
 // completed campaign can be reopened, and a failed validation returns it to
 // active. A campaign deadline only tightens.
 
@@ -12,8 +12,11 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func TestRemediationCampaign_DoneMeansFixed_DB(t *testing.T) {
@@ -42,11 +45,15 @@ func TestRemediationCampaign_DoneMeansFixed_DB(t *testing.T) {
 		t.Fatalf("manual complete of an unfinished campaign = %d, want 400", code)
 	}
 
-	// A closed Jira epic is a claim, not evidence.
+	// A closed Jira epic is a claim, not evidence: it marks the campaign's
+	// open findings fixed (here none is open) and never completes it.
+	db := &postgres.DB{DB: e.h.db}
+	vuln := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), postgres.NewFindingRepository(db), logger.NewNop())
+	e.svc.SetFindingResolver(appremediation.NewCampaignFilterResolver(vuln, nil))
 	e.svc.SetTicketing(postgres.NewRemediationCampaignTicketRepository(&postgres.DB{DB: e.h.db}), nil)
 	e.h.exec(`INSERT INTO remediation_campaign_tickets (id, tenant_id, campaign_id, provider, issue_key, issue_url)
 		VALUES ($1, $2, $3, 'jira', 'SEC-1', 'https://jira.example.test/browse/SEC-1')`, shared.NewID().String(), e.h.tenant.String(), id.String())
-	if err := e.svc.HandleEpicStatusChange(ctx, e.h.tenant, "SEC-1", "Done"); err != nil {
+	if _, _, err := e.svc.HandleEpicStatusChange(ctx, e.h.tenant, "SEC-1", "Done", ""); err != nil {
 		t.Fatal(err)
 	}
 	if r := e.row(t, id); r.status != "active" {
@@ -72,21 +79,24 @@ func TestRemediationCampaign_DoneMeansFixed_DB(t *testing.T) {
 		t.Fatalf("validating -> active = %d %v", code, got["status"])
 	}
 
-	// One verified fix and everything closed: done, the reconciler and the
-	// epic both complete it.
+	// One verified fix and everything closed: done. A Jira epic Done is only a
+	// fix claim and never completes a campaign; the reconciler does, from the
+	// findings.
 	setStatuses("resolved", "false_positive")
-	if err := e.svc.HandleEpicStatusChange(ctx, e.h.tenant, "SEC-1", "Done"); err != nil {
+	if _, _, err := e.svc.HandleEpicStatusChange(ctx, e.h.tenant, "SEC-1", "Done", ""); err != nil {
 		t.Fatal(err)
 	}
-	if r := e.row(t, id); r.status != "completed" {
-		t.Fatalf("epic Done on a finished campaign: status %s", r.status)
+	if r := e.row(t, id); r.status != "active" {
+		t.Fatalf("epic Done completed the campaign: status %s", r.status)
 	}
 	other := e.campaign("active")
 	if _, err := e.svc.ReconcileProgress(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if r := e.row(t, other); r.status != "completed" {
-		t.Fatalf("auto-complete with a verified fix: status %s", r.status)
+	for _, c := range []shared.ID{id, other} {
+		if r := e.row(t, c); r.status != "completed" {
+			t.Fatalf("auto-complete with a verified fix: status %s", r.status)
+		}
 	}
 }
 
