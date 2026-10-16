@@ -24,13 +24,17 @@ const (
 // AdminAuthMethodSession is the only way an admin request is authenticated.
 const AdminAuthMethodSession = "session"
 
-// Console (RFC-022) cookie names. The session cookie is scoped to the admin API
-// path so it is never sent to tenant routes. The CSRF cookie is separate from
-// the tenant csrf_token so the two shells can be open in one browser.
+// Console (RFC-022) cookie names. The session and CSRF cookies are HttpOnly and
+// scoped to the admin API path, so they are never sent to tenant routes. The
+// CSRF token is separate from the tenant csrf_token so the two shells can be
+// open in one browser.
 const (
 	AdminSessionCookie = "admin_session"
 	AdminMFACookie     = "admin_mfa"
 	AdminCSRFCookie    = "admin_csrf"
+	// AdminCSRFPageCookie is the readable copy of admin_csrf for the console's
+	// pages (path /admin); admin_csrf itself is HttpOnly on /api/v1/admin.
+	AdminCSRFPageCookie = "admin_csrf_ui"
 )
 
 // AdminSessionAuthenticator resolves a console session token to its admin.
