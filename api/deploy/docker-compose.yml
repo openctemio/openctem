@@ -304,6 +304,9 @@ services:
       APP_TEMPLATE_SIGNING_KEY: ${APP_TEMPLATE_SIGNING_KEY:-}
       # Master of the content pack signing keys (unset: derived from APP_ENCRYPTION_KEY).
       APP_CONTENT_SIGNING_KEY: ${APP_CONTENT_SIGNING_KEY:-}
+      # Key of the secret-finding fingerprint (never rotated with APP_ENCRYPTION_KEY;
+      # unset in development uses APP_ENCRYPTION_KEY).
+      FINGERPRINT_KEY: ${FINGERPRINT_KEY:-}
       # Sign-up ceiling (no API can change it): disabled (default; accounts and
       # organizations come from the platform administrator, invitations or
       # SSO), domain (sign-up for an organization's verified domain, joins

@@ -61,6 +61,10 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AdminElevationRequired: platform administrators act as read-only until
+	// they elevate their console session for a while (ADMIN_ELEVATION=
+	// required, the default; off = act as their own role at once).
+	AdminElevationRequired bool
 	// AdminAuditSink streams the administrators' audit log off the box.
 	AdminAuditSink AdminAuditSinkConfig
 
@@ -1143,6 +1147,14 @@ type EncryptionConfig struct {
 	// Env var: APP_CONTENT_SIGNING_KEY
 	ContentSigningKey string
 
+	// FingerprintKey is the server secret the fingerprint of every reported
+	// secret finding (and the key CI producers hash raw secrets with) is
+	// derived from. It never rotates with APP_ENCRYPTION_KEY: changing it
+	// changes every secret's identity, so a secret seen again would open a
+	// second finding. Empty is allowed only in development, where Key is used.
+	// At least 32 characters. Env var: FINGERPRINT_KEY
+	FingerprintKey string
+
 	// ContentTrustRootKeyIDs are extra content catalog roots (key ids,
 	// "SHA256:<hex>") trusted beside the ones pinned in the release, for an
 	// operator's own catalog source (RFC-099). Env var:
@@ -1153,6 +1165,18 @@ type EncryptionConfig struct {
 	// replaces the one embedded in the release for publisher signatures.
 	// Env var: CONTENT_SIGSTORE_TRUSTED_ROOT.
 	ContentSigstoreTrustedRoot string
+}
+
+// FingerprintSecret is the server secret the secret-finding fingerprint is
+// keyed from: FingerprintKey, or Key in development only. Never log it.
+func (c *Config) FingerprintSecret() string {
+	if c.Encryption.FingerprintKey != "" {
+		return c.Encryption.FingerprintKey
+	}
+	if c.IsDevelopment() {
+		return c.Encryption.Key
+	}
+	return ""
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1524,6 +1548,7 @@ func Load() (*Config, error) {
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
+			FingerprintKey:     getEnv("FINGERPRINT_KEY", ""),
 
 			ContentTrustRootKeyIDs:     getEnvSlice("CONTENT_TRUST_ROOT_KEY_IDS", nil),
 			ContentSigstoreTrustedRoot: getEnv("CONTENT_SIGSTORE_TRUSTED_ROOT", ""),
@@ -1572,6 +1597,7 @@ func Load() (*Config, error) {
 			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
+		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
 		AdminAuditSink: AdminAuditSinkConfig{
 			URL:          getEnv("ADMIN_AUDIT_SINK", ""),
 			Token:        getEnv("ADMIN_AUDIT_SINK_TOKEN", ""),
@@ -1888,6 +1914,15 @@ func (c *Config) validateEncryption() error {
 		}
 	}
 
+	// The fingerprint key is its own secret so rotating the encryption key
+	// never changes the identity of a stored secret finding.
+	if k := c.Encryption.FingerprintKey; k != "" && len(k) < 32 {
+		return fmt.Errorf("FINGERPRINT_KEY must be at least 32 characters, got %d; generate one with `openssl rand -hex 32`", len(k))
+	}
+	if c.Encryption.FingerprintKey == "" && !c.IsDevelopment() {
+		return fmt.Errorf("FINGERPRINT_KEY is required when APP_ENV=%q (only APP_ENV=development may omit it); generate one with `openssl rand -hex 32`, and on an existing install set it to the current APP_ENCRYPTION_KEY value so stored secret fingerprints stay valid", c.App.Env)
+	}
+
 	// Encryption key is optional only in development. Any other APP_ENV
 	// (production, staging, preview, etc.) stores real tenant credentials
 	// and MUST have a key — otherwise integration tokens sit in plaintext.
@@ -2014,6 +2049,12 @@ func (c *Config) validateAuth() error {
 		return fmt.Errorf("APP_ENCRYPTION_KEY is the docker-compose default and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
 	}
 
+	// The example FINGERPRINT_KEY values are public: refuse them outside
+	// development.
+	if !c.IsDevelopment() && isDevDefaultFingerprintKey(c.Encryption.FingerprintKey) {
+		return fmt.Errorf("FINGERPRINT_KEY is an example value from the repository and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
+	}
+
 	// A dedicated sensor-key pepper must be a real secret: at least 32
 	// characters (openssl rand -hex 32 gives 64).
 	if p := c.SensorConfig.KeyPepper; p != "" && len(p) < 32 {
@@ -2038,6 +2079,7 @@ func (c *Config) validatePlaceholders() error {
 		{"APP_ENCRYPTION_KEY", c.Encryption.Key},
 		{"APP_TEMPLATE_SIGNING_KEY", c.Encryption.TemplateSigningKey},
 		{"APP_CONTENT_SIGNING_KEY", c.Encryption.ContentSigningKey},
+		{"FINGERPRINT_KEY", c.Encryption.FingerprintKey},
 		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
 		{"DB_PASSWORD", c.Database.Password},
 		{"REDIS_PASSWORD", c.Redis.Password},
@@ -2091,6 +2133,18 @@ var devDefaultJWTSecrets = []string{
 
 func isDevDefaultJWTSecret(s string) bool {
 	return slices.Contains(devDefaultJWTSecrets, s)
+}
+
+// devDefaultFingerprintKeys is the closed set of FINGERPRINT_KEY values that
+// ship in .env.example, the registry example and the compose fallback.
+// Update it whenever a new example is introduced.
+var devDefaultFingerprintKeys = []string{
+	"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+}
+
+func isDevDefaultFingerprintKey(s string) bool {
+	return s != "" && slices.Contains(devDefaultFingerprintKeys, s)
 }
 
 // isDevDefaultEncryptionKey flags the repeating-hex-digit AES-256 key

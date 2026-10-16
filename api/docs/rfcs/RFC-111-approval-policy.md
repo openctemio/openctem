@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-16). Being implemented in small PRs; §13 lists what has shipped |
+| Status | Accepted (2026-10-16). Being implemented in small PRs; §13 lists their state |
 | Scope | api (pure evaluator, finding approvals, suppression rules, remediation task exceptions, material-change controller, settings API), web (Settings → Findings → Approvals, request dialog, approvals inbox, task exception dialog) |
 | Related | the finding status lifecycle and its approvals (`docs/architecture/finding-status-lifecycle.md`), RFC-098 (remediation tasks), RFC-110 (tenant lifecycles), step-up re-authentication (`docs/architecture/step-up-reauth.md`) |
 
@@ -68,7 +68,10 @@ most needs more than accepting it elsewhere.
 
 The **sole member** of an organization (exactly one active person) keeps the existing own-approval path
 (fresh authenticator code, reason, halved acceptance caps, alerts). It is the only way a person approves
-their own request, and it is not a tier: it is refused while a second eligible person exists.
+their own request, and it is not a tier: it is refused while a second active person exists, whether or not
+that person holds the approve permission (taking the permission from the others does not open it). This holds
+for suppression rules too. A rule that matches more open findings than the approval cap is refused as too
+broad: its tier and the asset owners are read from every finding it matches, never a sample.
 
 ### 3.1 Floors and defaults
 
@@ -271,13 +274,17 @@ and validated in a separate migration, so no step holds a long lock on a populat
 
 | Step | Content | State |
 |---|---|---|
-| 1 | This RFC | in review |
-| 2 | Pure evaluator with floors, defaults, tenant policy, risk class, exclusions, sign-off rule, material-change decision; policy matrix and property tests | designed |
-| 3 | Finding requests and approvals use the evaluator: tiers, security pool, asset-owner exclusion, two approvers (sign-offs), step-up, caps; settings API for the policy | designed |
-| 4 | Suppression rules: reason code, evaluated tier, sign-offs | designed |
-| 5 | Material-change controller | designed |
-| 6 | Group exception on remediation tasks | designed |
-| 7 | Web: approvals settings, request dialog, inbox, task exception | designed |
+| 1 | This RFC | merged (#2401) |
+| 2 | Pure evaluator with floors, defaults, tenant policy, risk class, exclusions, sign-off rule, material-change decision; policy matrix and property tests | in review (#2404) |
+| 3 | Finding requests and approvals use the evaluator: tiers, security pool, asset-owner exclusion, two approvers (sign-offs), step-up, caps; settings API for the policy | in review (#2411) |
+| 4 | Suppression rules: reason code, evaluated tier, sign-offs | in review (#2416) |
+| 5 | Material-change controller | in review (#2419) |
+| 6 | Group exception on remediation tasks | in review (#2422) |
+| 7 | Web: approvals settings, request dialog, inbox (#2421); task exception dialog and group exceptions in the inbox | in review / in progress |
+
+Follow-ups: the approvals list does not yet say whether the viewer may decide a request (the web shows the
+reason only after Approve); an exception rule that covers future findings above its approved tier (§3.1,
+rules) is evaluated at approval only.
 
 ## 14. Not in scope
 
