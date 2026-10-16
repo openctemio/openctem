@@ -52,7 +52,7 @@ const NOT_A_SCALE = new Map<string, string>([
     'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
   ],
   [
-    'app/(dashboard)/(mobilization)/remediation/[id]/page.tsx|critical,high,medium,low',
+    'app/(dashboard)/(mobilization)/remediation/campaigns/[id]/page.tsx|critical,high,medium,low',
     'remediation campaign priority (pkg/domain/remediation CampaignPriority)',
   ],
   [
