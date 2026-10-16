@@ -96,7 +96,9 @@ func registerRemediationSuggestionRoutes(
 		r.GET("/{id}/members", h.Members, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))
 		r.POST("/{id}/reject", h.Dismiss, middleware.Require(permission.RemediationWrite))
 		r.POST("/{id}/reopen", h.Reopen, middleware.Require(permission.RemediationWrite))
-		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.RemediationWrite))
+		// Read is enough to reach it: without write the service lets an asset
+		// owner accept only their own join or task route, as it is.
+		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.RemediationRead))
 		r.POST("/approve", h.BulkApprove, middleware.Require(permission.RemediationWrite))
 	}, tenantMiddlewares...)
 

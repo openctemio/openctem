@@ -106,4 +106,66 @@ describe('FindingApprovalSettingsForm — false-positive level', () => {
     await userEvent.type(input, '55')
     expect(input).toHaveValue(10)
   })
+
+  it('cancels a waiting level lowering with one click', async () => {
+    update.mockResolvedValue({ backup_contact_email: '', fp_approval: 'all' })
+    const onSaved = vi.fn()
+    render(
+      <FindingApprovalSettingsForm
+        settings={{
+          backup_contact_email: '',
+          fp_approval: 'all',
+          pending_fp_approval: 'off',
+          pending_fp_approval_at: '2026-10-16T12:00:00Z',
+        }}
+        canEdit
+        onSaved={onSaved}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /cancel the change/i }))
+    expect(update).toHaveBeenCalledWith({ fp_approval: 'all' })
+    expect(onSaved).toHaveBeenCalled()
+  })
+
+  it('shows a waiting second-look decrease with its time and cancels it', async () => {
+    update.mockResolvedValue({
+      backup_contact_email: '',
+      fp_approval: 'off',
+      second_look_percent: 5,
+    })
+    render(
+      <FindingApprovalSettingsForm
+        settings={{
+          backup_contact_email: '',
+          fp_approval: 'off',
+          second_look_percent: 5,
+          pending_second_look_percent: 0,
+          pending_second_look_at: '2026-10-16T12:00:00Z',
+        }}
+        canEdit
+      />
+    )
+    expect(screen.getByText(/a lower second-look share is waiting/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/second look/i)).toHaveValue(0)
+    await userEvent.click(screen.getByRole('button', { name: /cancel the change/i }))
+    expect(update).toHaveBeenCalledWith({ second_look_percent: 5 })
+  })
+
+  it('hides the cancel button without settings:write', () => {
+    render(
+      <FindingApprovalSettingsForm
+        settings={{
+          backup_contact_email: '',
+          fp_approval: 'all',
+          pending_fp_approval: 'off',
+          pending_fp_approval_at: '2026-10-16T12:00:00Z',
+          second_look_percent: 5,
+          pending_second_look_percent: 0,
+          pending_second_look_at: '2026-10-16T12:00:00Z',
+        }}
+        canEdit={false}
+      />
+    )
+    expect(screen.queryByRole('button', { name: /cancel the change/i })).not.toBeInTheDocument()
+  })
 })
