@@ -126,25 +126,47 @@ func TestHandleJiraWebhook_ClosingMappingNeverApplied(t *testing.T) {
 	}
 }
 
-// The safe path still works, uses the tenant overlay, and records the
-// integration as the actor.
-func TestHandleJiraWebhook_FixAppliedRecordsIntegrationActor(t *testing.T) {
+type applierStub struct {
+	ids    []shared.ID
+	target vulnerability.FindingStatus
+	ref    string
+}
+
+func (a *applierStub) ApplyTicketStatus(_ context.Context, _ shared.ID, ids []shared.ID, target vulnerability.FindingStatus, _, ref, _ string) ([]shared.ID, []InboundRefusal, error) {
+	a.ids, a.target, a.ref = ids, target, ref
+	return ids, nil, nil
+}
+
+// The safe path goes through the finding service (the applier), with the
+// tenant overlay's target, and never writes the finding row itself.
+func TestHandleJiraWebhook_GoesThroughTheServicePath(t *testing.T) {
 	repo := &inboundRepo{finding: inProgressFinding(t)}
-	act := &activityStub{}
 	s := NewSyncService(repo, nil, logger.NewNop())
 	m := DefaultMappingConfig()
 	m.StatusInbound["done"] = vulnerability.FindingStatusFixApplied
 	s.SetMappingResolver(stubMappingResolver{mapping: m})
-	s.SetActivityRecorder(act)
+	app := &applierStub{}
+	s.SetInboundApplier(app)
 
 	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), doneWebhook()); err != nil {
 		t.Fatal(err)
 	}
-	if st := repo.finding.Status(); st != vulnerability.FindingStatusFixApplied || repo.updates != 1 {
-		t.Fatalf("status = %s (%d updates), want fix_applied", st, repo.updates)
+	if app.target != vulnerability.FindingStatusFixApplied || len(app.ids) != 1 || app.ids[0] != repo.finding.ID() || app.ref != "SEC-1" {
+		t.Fatalf("applier got %+v, want the linked finding claimed fix_applied from SEC-1", app)
 	}
-	want := recordedChange{"in_progress", "fix_applied", "jira", "SEC-1"}
-	if len(act.got) != 1 || act.got[0] != want {
-		t.Fatalf("activity = %+v, want %+v", act.got, want)
+	if repo.updates != 0 {
+		t.Fatalf("the sync service wrote the finding row itself (%d updates)", repo.updates)
+	}
+}
+
+// Without the service path wired, nothing is applied (fail closed).
+func TestHandleJiraWebhook_NoApplierAppliesNothing(t *testing.T) {
+	repo := &inboundRepo{finding: inProgressFinding(t)}
+	s := NewSyncService(repo, nil, logger.NewNop())
+	if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), doneWebhook()); err != nil {
+		t.Fatal(err)
+	}
+	if repo.finding.Status() != vulnerability.FindingStatusInProgress || repo.updates != 0 {
+		t.Fatalf("status = %s (%d updates), want unchanged", repo.finding.Status(), repo.updates)
 	}
 }
