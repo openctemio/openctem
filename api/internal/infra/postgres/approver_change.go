@@ -18,15 +18,22 @@ import (
 )
 
 // approverChangeAuditActions are the audit actions that can take the right
-// to approve away from a member: removing, suspending or offboarding them,
-// changing their membership role (owner/admin to member or viewer), changing
-// their custom roles, or changing or deleting a role (which can strip
-// findings:approve from everyone holding it).
+// to approve away from a member: removing, suspending or offboarding them
+// (from the organization or from a team: member.removed), changing their
+// membership or team role (owner/admin to member or viewer), changing their
+// custom roles or a team's role bindings (role.unassigned), changing or
+// deleting a role (which can strip the approve permission from everyone
+// holding it), deleting or changing a team (its members lose the roles bound
+// to it), changing a permission set, or changing the SCIM group-to-role
+// mappings.
 var approverChangeAuditActions = []string{ //nolint:gochecknoglobals // static list
 	"member.removed", "member.suspended", "member.offboarded",
 	"member.role_changed",
 	"role.unassigned", "user.roles_updated",
 	"role.updated", "role.deleted",
+	"group.updated", "group.deleted",
+	"permission_set.updated", "permission_set.deleted", "permission_set.unassigned",
+	"scim.group_mappings_updated",
 }
 
 // recentApproverChange answers the latest time after since at which the
