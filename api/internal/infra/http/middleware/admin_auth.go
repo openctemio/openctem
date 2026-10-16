@@ -34,7 +34,7 @@ const (
 	AdminCSRFCookie    = "admin_csrf"
 	// AdminCSRFPageCookie is the readable copy of admin_csrf for the console's
 	// pages (path /admin); admin_csrf itself is HttpOnly on /api/v1/admin.
-	AdminCSRFPageCookie = "admin_csrf_page"
+	AdminCSRFPageCookie = "admin_csrf_ui"
 )
 
 // AdminSessionAuthenticator resolves a console session token to its admin.
