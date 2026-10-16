@@ -241,6 +241,8 @@ func (h *TenantHandler) decideJoinRequest(w http.ResponseWriter, r *http.Request
 		apierror.NotFound("Request not found").WriteJSON(w)
 	case errors.Is(err, joinrequest.ErrNotPending):
 		apierror.Conflict("The request is no longer waiting").WriteJSON(w)
+	case errors.Is(err, onboarding.ErrNoLongerJoinable):
+		apierror.Conflict("This person's email domain no longer lets them join; invite them instead").WriteJSON(w)
 	case errors.Is(err, joinrequest.ErrInvalidRole):
 		apierror.BadRequest("role must be viewer or member").WriteJSON(w)
 	case errors.Is(err, tenantdom.ErrPlatformAdminMembership), errors.Is(err, shared.ErrValidation):
