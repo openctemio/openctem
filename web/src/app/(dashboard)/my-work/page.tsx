@@ -19,7 +19,7 @@ import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
@@ -200,11 +200,7 @@ function MyWorkContent() {
             <TabsTrigger value="findings">{t('myWork.tabs.findings')}</TabsTrigger>
             <TabsTrigger value="tasks">
               {t('myWork.tabs.tasks')}
-              {taskCount ? (
-                <Badge variant="secondary" className="ms-2 px-1.5 tabular-nums">
-                  {taskCount.toLocaleString()}
-                </Badge>
-              ) : null}
+              {taskCount ? <TabsCount value={taskCount} /> : null}
             </TabsTrigger>
           </TabsList>
         </Tabs>
