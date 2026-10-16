@@ -135,7 +135,7 @@ type Dispatcher interface {
 }
 
 // Policy answers the tenant's retest policy: whether a confirmed fix
-// resolves a finding (true) or moves it to validated_fixed for a person to
+// resolves a finding (true) or only stamps it not reproducible for a person to
 // confirm (false, the default).
 type Policy interface {
 	AutoResolve(ctx context.Context, tenantID shared.ID) bool
