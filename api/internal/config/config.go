@@ -1670,9 +1670,8 @@ func (c *Config) validateBasic() error {
 	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
 		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
 	}
-	if vu, err := url.Parse(c.Worker.VersionCheckURL); c.Worker.VersionCheckURL != "" && (err != nil ||
-		(vu.Scheme != "https" && vu.Scheme != "http") || vu.Host == "" || vu.User != nil || vu.Fragment != "") {
-		return errors.New("VERSION_CHECK_URL must be an http or https URL without credentials or fragment")
+	if c.Worker.VersionCheckURL != "" && parsePublicURL(c.Worker.VersionCheckURL) == nil {
+		return errors.New("VERSION_CHECK_URL must be an http or https URL without credentials, query or fragment")
 	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)
