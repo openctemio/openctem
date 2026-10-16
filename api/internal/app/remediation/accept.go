@@ -51,6 +51,9 @@ type AcceptInput struct {
 	Deadline *time.Time
 	// AutoJoin turns the auto-join rule on for the action.
 	AutoJoin bool
+	// AsOwner: the caller has no remediation write access and accepts as
+	// the asset owner (owner_accept.go).
+	AsOwner bool
 }
 
 // ErrAutoJoinNeedsFullScope: the auto-join rule acts on findings the caller
@@ -65,6 +68,11 @@ func (s *SuggestionService) Accept(ctx context.Context, in AcceptInput, actx aud
 	}
 	if !sg.State.IsOpen() || sg.Version != in.Version {
 		return nil, remediationdom.ErrSuggestionDecided
+	}
+	if in.AsOwner {
+		if err := s.checkOwnerAccept(ctx, in, sg); err != nil {
+			return nil, err
+		}
 	}
 	members := map[shared.ID]bool{}
 	for _, id := range sg.FindingIDs {
@@ -115,7 +123,7 @@ func (s *SuggestionService) Accept(ctx context.Context, in AcceptInput, actx aud
 		WithMetadata("kind", string(sg.Kind)).WithMetadata("action_id", res.ActionID.String()).
 		WithMetadata("tasks", len(res.TaskIDs)).WithMetadata("removed", len(excluded)).
 		WithMetadata("edited", in.Title != nil || len(excluded) > 0 || len(in.Owners) > 0 || in.Deadline != nil).
-		WithMetadata("auto_join", in.AutoJoin))
+		WithMetadata("auto_join", in.AutoJoin).WithMetadata("as_owner", in.AsOwner))
 	return res, nil
 }
 
