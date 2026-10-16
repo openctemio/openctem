@@ -68,11 +68,27 @@ configured key" until the value is re-entered, re-keyed (old key back in
 encrypted with `cmd/encrypt-credentials`. A Jira webhook secret that does not
 open verifies no webhook until it is rotated.
 
-Not re-keyed: `findings.type_details.secret.fingerprint`, the keyed fingerprint
-of a secret finding. Its key is derived from `APP_ENCRYPTION_KEY`, and the
-secret itself is never stored, so it cannot be recomputed. After a rotation a
-secret seen again gets a fingerprint under the new key; findings fingerprinted
-before the rotation keep the old value, and the two do not compare equal.
+Not re-keyed, and not affected: `findings.type_details.secret.fingerprint`,
+the keyed fingerprint of a secret finding. Its key comes from its own variable,
+`FINGERPRINT_KEY` (required outside development), so rotating
+`APP_ENCRYPTION_KEY` never changes a secret's identity. **Never rotate
+`FINGERPRINT_KEY`**: the secret itself is never stored, so the fingerprints
+cannot be recomputed, and a secret seen again would open a second finding.
+Back it up with the database.
+
+Generate it with `openssl rand -hex 32` and keep it in the same mode-600 `.env`
+as the other secrets. Never print it or pass it as an argument.
+
+**Existing installs.** Fingerprints written since the keyed fingerprint was
+introduced were made with the value `APP_ENCRYPTION_KEY` had then. Set
+`FINGERPRINT_KEY` to the current `APP_ENCRYPTION_KEY` value (the same string)
+before the first start with this version: every stored fingerprint stays
+valid and nothing is duplicated. After that the two keys are independent, and
+the encryption key may be rotated by the runbook below. If the encryption key
+was already rotated since secret findings were stored, set `FINGERPRINT_KEY` to
+the value in force when they were fingerprinted if you still have it; otherwise
+the old fingerprints cannot be verified and a secret seen again may open one
+new finding.
 
 ## Runbook
 
