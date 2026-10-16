@@ -288,33 +288,6 @@ func (s *VulnerabilityService) RequestTicketDisposition(ctx context.Context, ten
 	for _, f := range findings {
 		byID[f.ID()] = f
 	}
-	// Work on an in-progress finding stopped: it goes back to confirmed (a
-	// work-state move a ticket may report), where a disposition can be
-	// requested. A finding the move is refused for keeps its status.
-	current := make(map[shared.ID]vulnerability.FindingStatus, len(findings))
-	var working []shared.ID
-	for _, f := range findings {
-		current[f.ID()] = f.Status()
-		if f.Status() == vulnerability.FindingStatusInProgress {
-			working = append(working, f.ID())
-		}
-	}
-	skip := map[shared.ID]bool{}
-	if len(working) > 0 {
-		back, err := s.ApplyTicketStatus(ctx, tenantID, working, vulnerability.FindingStatusConfirmed, integration, ref, externalActor)
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range back.Refused {
-			id, _ := shared.IDFromString(r.FindingID)
-			skip[id] = true
-			out.Refused = append(out.Refused, r)
-		}
-		for _, id := range append(back.Applied, back.Unchanged...) {
-			current[id] = vulnerability.FindingStatusConfirmed
-		}
-	}
-
 	justification := ticketRequestJustification(integration, ref, externalActor, target)
 	for _, id := range findingIDs {
 		f, ok := byID[id]
@@ -322,12 +295,16 @@ func (s *VulnerabilityService) RequestTicketDisposition(ctx context.Context, ten
 			out.Refused = append(out.Refused, BulkRowResult{FindingID: id.String(), Outcome: BulkRowFailed, Reason: "not found"})
 			continue
 		}
-		if skip[id] {
-			continue
+		// Work on an in-progress finding stopped: it goes back to confirmed
+		// (a work-state move a ticket may report), where the disposition can
+		// be requested. It moves only once its request exists.
+		from := f.Status()
+		if from == vulnerability.FindingStatusInProgress {
+			from = vulnerability.FindingStatusConfirmed
 		}
-		if f.Source() == vulnerability.FindingSourcePentest || !current[id].CanTransitionTo(target) {
+		if f.Source() == vulnerability.FindingSourcePentest || !from.CanTransitionTo(target) {
 			out.Refused = append(out.Refused, BulkRowResult{FindingID: id.String(), Outcome: BulkRowFailed,
-				Reason: fmt.Sprintf("the finding is %s; a request for %s cannot be made for it", current[id], target)})
+				Reason: fmt.Sprintf("the finding is %s; a request for %s cannot be made for it", f.Status(), target)})
 			continue
 		}
 		existing, err := s.approvalRepo.ListByFinding(ctx, tenantID, id)
@@ -361,10 +338,37 @@ func (s *VulnerabilityService) RequestTicketDisposition(ctx context.Context, ten
 			}
 			return nil, err
 		}
+		if f.Status() == vulnerability.FindingStatusInProgress {
+			if reason, moved := s.stopWorkForRequest(ctx, tenantID, id, integration, ref, externalActor); !moved {
+				// The finding stays where it is, and so does no request.
+				if cerr := approval.Cancel(); cerr == nil {
+					if uerr := s.approvalRepo.Update(ctx, approval); uerr != nil {
+						return nil, fmt.Errorf("withdraw the request of a finding that could not move: %w", uerr)
+					}
+				}
+				out.Refused = append(out.Refused, BulkRowResult{FindingID: id.String(), Outcome: BulkRowFailed, Reason: reason})
+				continue
+			}
+		}
 		out.Requested = append(out.Requested, id)
 		s.recordTicketRequest(ctx, tenantID, id, approval, integration, ref)
 	}
 	return out, nil
+}
+
+// stopWorkForRequest moves an in-progress finding back to confirmed after
+// its request was created. It reports the refusal reason when the move did
+// not happen.
+func (s *VulnerabilityService) stopWorkForRequest(ctx context.Context, tenantID, id shared.ID, integration, ref, externalActor string) (string, bool) {
+	back, err := s.ApplyTicketStatus(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusConfirmed, integration, ref, externalActor)
+	if err != nil {
+		s.logger.Warn("ticket request: moving the finding back to confirmed failed", "finding_id", id.String(), "error", err)
+		return "the finding could not be moved back to confirmed; try again", false
+	}
+	if len(back.Refused) > 0 {
+		return back.Refused[0].Reason, false
+	}
+	return "", true
 }
 
 // recordTicketRequest writes the timeline entry and the approvers'

@@ -857,6 +857,15 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		}
 	}
 
+	// Only issues in projects configured for ticketing move findings.
+	if ok, err := s.inboundProjectAllowed(ctx, tenantID, payload.Issue.Key); err != nil {
+		return fmt.Errorf("check the issue's project: %w", err)
+	} else if !ok {
+		s.logger.Warn("jira webhook: issue outside the projects configured for ticketing; ignored",
+			"issue_key", logger.SanitizeValue(payload.Issue.Key))
+		return nil
+	}
+
 	// A published mapping profile for the issue's project decides what the
 	// status means (an intent); without one the built-in map applies.
 	if handled, err := s.handleProfileIntent(ctx, tenantID, payload, newJiraStatus); handled {

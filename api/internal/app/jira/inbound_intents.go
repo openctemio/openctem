@@ -150,3 +150,23 @@ func statusEvent(p WebhookPayload) ticketmap.StatusEvent {
 	}
 	return ev
 }
+
+// inboundProjectAllowed reports whether the issue is in a project configured
+// for ticketing (the same rule as linking an existing issue): a change of an
+// issue elsewhere in the integration's Jira moves nothing, even when a
+// finding still names that issue by URL.
+func (s *SyncService) inboundProjectAllowed(ctx context.Context, tenantID shared.ID, issueKey string) (bool, error) {
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return true, nil //nolint:nilerr // no client: the applier path reports it; nothing reaches the tracker
+	}
+	ii, ok := client.(IssueIdentifier)
+	if !ok {
+		return true, nil
+	}
+	allowed, err := s.allowedProjects(ctx, tenantID, ii.IntegrationID())
+	if err != nil {
+		return false, err
+	}
+	return allowed[ticketlink.ProjectOf(strings.ToUpper(issueKey))], nil
+}

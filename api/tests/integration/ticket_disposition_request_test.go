@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
@@ -10,6 +11,15 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
+
+// failingApprovals refuses to create a request.
+type failingApprovals struct {
+	vulnerability.ApprovalRepository
+}
+
+func (failingApprovals) Create(context.Context, *vulnerability.Approval) error {
+	return errors.New("db down")
+}
 
 // TestTicketDispositionRequest: a linked ticket closed as "Won't Do" opens a
 // pending risk-acceptance request made by the ticket actor (no person), never
@@ -105,6 +115,32 @@ func TestTicketDispositionRequest(t *testing.T) {
 	if _, err := svc.RequestTicketDisposition(ctx, tenant, []shared.ID{open}, vulnerability.FindingStatusAccepted, "vex", "SEC-1", ""); err == nil {
 		t.Fatal("an unknown integration made a request")
 	}
+
+	// An in-progress finding that already has a pending request stays in
+	// progress: nothing is requested, so nothing moves.
+	busy := newFinding("in_progress")
+	if _, err := svc.RequestTicketDisposition(ctx, tenant, []shared.ID{busy}, vulnerability.FindingStatusFalsePositive, "jira", "SEC-2", ""); err != nil {
+		t.Fatal(err)
+	}
+	exec(`UPDATE findings SET status = 'in_progress' WHERE id = $1`, busy.String())
+	out, err = svc.RequestTicketDisposition(ctx, tenant, []shared.ID{busy}, vulnerability.FindingStatusAccepted, "jira", "SEC-2", "")
+	if err != nil || len(out.Pending) != 1 {
+		t.Fatalf("pending: %+v %v", out, err)
+	}
+	if s := status(busy); s != "in_progress" {
+		t.Fatalf("a finding with a pending request moved to %s", s)
+	}
+
+	// The request cannot be created: the finding stays in progress.
+	failing := newFinding("in_progress")
+	svc.SetApprovalRepository(failingApprovals{approvals})
+	if _, err := svc.RequestTicketDisposition(ctx, tenant, []shared.ID{failing}, vulnerability.FindingStatusAccepted, "jira", "SEC-3", ""); err == nil {
+		t.Fatal("want the create error")
+	}
+	if s := status(failing); s != "in_progress" {
+		t.Fatalf("a finding whose request failed moved to %s", s)
+	}
+	svc.SetApprovalRepository(approvals)
 
 	// A person approves it (any approver: it was requested by nobody).
 	list, err := approvals.ListByFinding(ctx, tenant, open)
