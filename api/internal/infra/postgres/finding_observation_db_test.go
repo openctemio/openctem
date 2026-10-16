@@ -8,10 +8,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// not_observed (research 18, owner decision O2): feature-branch expiry marks a
-// finding not_observed (stale, not fixed), a sighting reopens it, migration
-// 000640 relabels only rows whose provenance is certain, and the status CHECK
-// refuses unknown values.
+// Stale, not fixed (research 18, owner decision O2): feature-branch expiry
+// marks a finding stale (observation_state) and keeps its status, a sighting
+// makes it present again, and nothing counts it as fixed.
 
 func insertBranchFinding(ctx context.Context, t *testing.T, q interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -42,7 +41,16 @@ func findingStatus(ctx context.Context, t *testing.T, q interface {
 	return status, resolvedAt, regression
 }
 
-func TestExpireFeatureBranchFindings_MarksNotObservedAndASightingReopens(t *testing.T) {
+func findingObservation(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) string {
+	t.Helper()
+	var o string
+	if err := db.QueryRowContext(ctx, `SELECT observation_state FROM findings WHERE id = $1`, id.String()).Scan(&o); err != nil {
+		t.Fatal(err)
+	}
+	return o
+}
+
+func TestExpireFeatureBranchFindings_MarksStaleAndASightingMakesItPresent(t *testing.T) {
 	ctx := context.Background()
 	db := openGroupsDB(t)
 	tenant := seedTestTenant(ctx, t, db)
@@ -70,24 +78,27 @@ func TestExpireFeatureBranchFindings_MarksNotObservedAndASightingReopens(t *test
 	if err != nil || n != 1 {
 		t.Fatalf("expired %d (%v), want 1", n, err)
 	}
-	if st, at, _ := findingStatus(ctx, t, db, stale); st != "not_observed" || at.Valid {
-		t.Fatalf("stale feature-branch finding: status %s resolved_at %v, want not_observed and no resolved_at (never fixed)", st, at)
+	if st, at, _ := findingStatus(ctx, t, db, stale); st != "new" || at.Valid || findingObservation(ctx, t, db, stale) != "stale" {
+		t.Fatalf("stale feature-branch finding: status %s resolved_at %v, want new (unchanged), stale, never resolved", st, at)
 	}
 	for _, id := range []shared.ID{fresh, onMain} {
-		if st, _, _ := findingStatus(ctx, t, db, id); st != "new" {
-			t.Fatalf("finding %s changed to %s", id, st)
+		if st, _, _ := findingStatus(ctx, t, db, id); st != "new" || findingObservation(ctx, t, db, id) != "present" {
+			t.Fatalf("finding %s changed: %s", id, st)
 		}
 	}
+	// Marking again changes nothing (already stale).
+	if n, err := repo.ExpireFeatureBranchFindings(ctx, tenant, 30); err != nil || n != 0 {
+		t.Fatalf("second expiry marked %d (%v), want 0", n, err)
+	}
 
-	// Seen again: back to an open state, and not counted as a regression.
+	// Seen again: present, the status untouched and no regression.
 	var fp string
 	_ = db.QueryRowContext(ctx, `SELECT fingerprint FROM findings WHERE id = $1`, stale.String()).Scan(&fp)
-	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenant, []string{fp})
-	if err != nil || len(reopened) != 1 || reopened[fp].PreviousStatus != "not_observed" {
-		t.Fatalf("reopen = %+v (%v)", reopened, err)
+	if _, err := repo.UpdateScanIDBatchByFingerprints(ctx, tenant, []string{fp}, "scan-2", "semgrep"); err != nil {
+		t.Fatal(err)
 	}
-	if st, _, reg := findingStatus(ctx, t, db, stale); st != "confirmed" || reg {
-		t.Fatalf("after a sighting: status %s regression %v, want confirmed and no regression", st, reg)
+	if st, _, reg := findingStatus(ctx, t, db, stale); st != "new" || reg || findingObservation(ctx, t, db, stale) != "present" {
+		t.Fatalf("after a sighting: status %s regression %v, want new, present, no regression", st, reg)
 	}
 
 	// Another tenant's run touches nothing here (tenant-scoped).
@@ -96,7 +107,7 @@ func TestExpireFeatureBranchFindings_MarksNotObservedAndASightingReopens(t *test
 	if n, err := repo.ExpireFeatureBranchFindings(ctx, other, 30); err != nil || n != 0 {
 		t.Fatalf("another tenant's expiry changed %d rows (%v)", n, err)
 	}
-	if st, _, _ := findingStatus(ctx, t, db, again); st != "new" {
-		t.Fatalf("cross-tenant expiry moved the finding to %s", st)
+	if findingObservation(ctx, t, db, again) != "present" {
+		t.Fatal("another tenant's expiry marked this tenant's finding stale")
 	}
 }
