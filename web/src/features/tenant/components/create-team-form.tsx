@@ -9,6 +9,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { devLog } from '@/lib/logger'
 import { useAppHost } from '@/hooks/use-app-origin'
 import { useRouter } from 'next/navigation'
@@ -39,6 +40,7 @@ import {
   type ModulePreset,
 } from '@/features/organization/api/use-tenant-modules'
 import { OnboardingBundlePicker } from './onboarding-bundle-picker'
+import { NewOrganizationRegion } from './region-note'
 
 interface CreateTeamFormProps {
   /** Whether to show cancel button (hide when shown in TenantGate) */
@@ -93,6 +95,7 @@ const EMPTY_TEAM: CreateTenantInput = { name: '', slug: '', description: '' }
 // ============================================
 
 function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
+  const { t } = useTranslation()
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { bundles, isLoadingBundles, selected, toggle } = useBundleSelection()
@@ -161,7 +164,7 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
       }
     } catch (error) {
       console.error('Failed to create team:', error)
-      handleFormError(error, form)
+      handleFormError(error, form, t('org.createTeam.urlNotAvailable'))
     } finally {
       setIsSubmitting(false)
     }
@@ -193,6 +196,7 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
 // ============================================
 
 function CreateAdditionalTeamFormInner({ showCancel }: { showCancel: boolean }) {
+  const { t } = useTranslation()
   const router = useRouter()
   const { trigger, isMutating } = useCreateTenant()
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false)
@@ -272,7 +276,7 @@ function CreateAdditionalTeamFormInner({ showCancel }: { showCancel: boolean }) 
       }
     } catch (error) {
       console.error('Failed to create team:', error)
-      handleFormError(error, form)
+      handleFormError(error, form, t('org.createTeam.urlNotAvailable'))
     } finally {
       setIsSubmitting(false)
     }
@@ -342,6 +346,7 @@ function CreateTeamFormUI({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <NewOrganizationRegion />
         {/* Team Name */}
         <FormField
           control={form.control}
@@ -491,17 +496,22 @@ async function applySelectedPreset(tenantIdOrSlug: string, presetId: string | un
   }
 }
 
-function handleFormError(error: unknown, form: UseFormReturn<CreateTenantInput>) {
+function handleFormError(
+  error: unknown,
+  form: UseFormReturn<CreateTenantInput>,
+  urlNotAvailable: string
+) {
   const errorMessage = getErrorMessage(error, 'An unexpected error occurred. Please try again.')
 
+  // The API answers one "not available" for a taken and a reserved URL.
   if (
     errorMessage.includes('slug') ||
-    errorMessage.includes('already exists') ||
-    errorMessage.includes('already taken')
+    errorMessage.includes('URL is not available') ||
+    errorMessage.includes('already exists')
   ) {
     form.setError('slug', {
       type: 'manual',
-      message: 'This URL is already taken. Please choose another one.',
+      message: urlNotAvailable,
     })
   } else {
     toast.error(getErrorMessage(error, 'Failed to create team'))

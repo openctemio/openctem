@@ -52,6 +52,7 @@ import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
 
 import { useDisplayUser } from '@/hooks/use-display-user'
+import { refreshPendingApprovalCount } from '@/hooks/use-dynamic-badges'
 import {
   useApprovals,
   useApproveStatus,
@@ -100,6 +101,7 @@ const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
 const APPROVAL_ACTOR_LABELS: Record<string, string> = {
   ai_triage: 'AI triage',
   vex: 'VEX statement',
+  ticket: 'Linked ticket',
 }
 
 const APPROVAL_TABS: readonly string[] = ['all', ...APPROVAL_STATUSES]
@@ -216,10 +218,16 @@ export default function ApprovalsPage() {
   const [selfApproveTarget, setSelfApproveTarget] = useState<ApiApproval | null>(null)
 
   // One server page of the active tab; the counts cover every status.
-  const { data, isLoading, error, mutate } = useApprovals(
-    list.page,
-    list.perPage,
-    activeTab === 'all' ? undefined : activeTab
+  const {
+    data,
+    isLoading,
+    error,
+    mutate: mutateList,
+  } = useApprovals(list.page, list.perPage, activeTab === 'all' ? undefined : activeTab)
+  // A decision changes the list and the sidebar's Approvals badge.
+  const mutate = useCallback(
+    () => Promise.all([mutateList(), refreshPendingApprovalCount()]),
+    [mutateList]
   )
 
   // Action hooks

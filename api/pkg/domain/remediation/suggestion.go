@@ -155,6 +155,9 @@ type AcceptedAction struct {
 	Key   string
 	Title string
 	Tasks []ActionTask
+	// AutoJoin: a person opted in to new findings with this key joining
+	// the owner's live task without a suggestion.
+	AutoJoin bool
 }
 
 // ActionTask is a live (non-terminal) task of an accepted action.
@@ -526,6 +529,7 @@ type RunStats struct {
 	Surfaced   int `json:"surfaced"`
 	Held       int `json:"held"` // dismissed and not materially changed
 	Woken      int `json:"woken"`
+	AutoJoined int `json:"auto_joined"`
 }
 
 // ErrRunTooSoon: a refresh asked for right after another run.
@@ -556,4 +560,74 @@ type SuggestionRepository interface {
 	SuggestionMembers(ctx context.Context, tenantID, id shared.ID, scope *shared.DataScope, page pagination.Pagination) (pagination.Result[TaskMember], error)
 	DecideSuggestion(ctx context.Context, tenantID, id shared.ID, version int, d SuggestionDecision) (*Suggestion, error)
 	CountSuggestions(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (SuggestionCounts, error)
+	AcceptSuggestion(ctx context.Context, plan AcceptPlan) (*AcceptResult, error)
+	AutoJoin(ctx context.Context, tenantID, actionID, taskID shared.ID, findingIDs []shared.ID) (int, error)
+	SetAutoJoin(ctx context.Context, tenantID, actionID shared.ID, on bool, actor *shared.ID) (*Action, error)
+	// IsGroupMember reports whether the user belongs to the tenant's group.
+	IsGroupMember(ctx context.Context, tenantID, groupID, userID shared.ID) (bool, error)
+	// OwnsFindingAssets reports whether every finding is on an asset the
+	// user owns (primary or secondary), directly or through a group.
+	OwnsFindingAssets(ctx context.Context, tenantID, userID shared.ID, findingIDs []shared.ID) (bool, error)
 }
+
+// Accept limits.
+const (
+	// AutoJoinDailyCap bounds the findings one action auto-joins per day;
+	// beyond it, joins fall back to suggestions.
+	AutoJoinDailyCap = 200
+	// MaxBulkAccept bounds one bulk accept.
+	MaxBulkAccept = 50
+	// MaxBulkAcceptFindings bounds the findings of one bulk accept.
+	MaxBulkAcceptFindings = 5000
+)
+
+// AutoJoinAllowed reports whether a key kind may auto-join: exact identities
+// only (a package upgrade or one secret), never text matches.
+func AutoJoinAllowed(kind string) bool { return kind == KindUpgrade || kind == KindRotate }
+
+// CanAutoJoinInto reports whether auto-join may add findings to a task in
+// this state: an open or in-progress task only. A verifying, held or closed
+// task gets a suggestion instead.
+func CanAutoJoinInto(s TaskState) bool { return s == TaskStateOpen || s == TaskStateInProgress }
+
+// AcceptPlanTask is one task an accept creates.
+type AcceptPlanTask struct {
+	Title      string
+	Owner      Owner
+	FindingIDs []shared.ID
+	Deadline   *time.Time
+}
+
+// AcceptPlan is what accepting a suggestion stores, in one transaction.
+type AcceptPlan struct {
+	TenantID     shared.ID
+	SuggestionID shared.ID
+	Version      int
+	Kind         SuggestionKind
+	// NewAction is set for a new group; ActionID for join and task_route.
+	NewAction *Action
+	ActionID  *shared.ID
+	// TargetTaskID: the task a join adds to.
+	TargetTaskID *shared.ID
+	JoinIDs      []shared.ID
+	Tasks        []AcceptPlanTask
+	// Excluded are the findings the person removed: remembered for the key.
+	Excluded []shared.ID
+	AutoJoin bool
+	ActorID  *shared.ID
+}
+
+// AcceptResult is what an accept created.
+type AcceptResult struct {
+	SuggestionID shared.ID   `json:"suggestion_id"`
+	ActionID     shared.ID   `json:"action_id"`
+	TaskIDs      []shared.ID `json:"task_ids"`
+	Joined       int         `json:"joined"`
+	// Dropped are findings that closed or joined another task since the
+	// suggestion was made; they were left out.
+	Dropped []shared.ID `json:"dropped"`
+}
+
+// ErrNothingToAccept: every finding of the suggestion was removed, closed or
+// taken by another task.
+var ErrNothingToAccept = fmt.Errorf("%w: no finding is left to accept", shared.ErrValidation)

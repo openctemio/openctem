@@ -46,6 +46,9 @@ type TaskService struct {
 	dataScope *datascope.Enforcer
 	assignees TaskAssigneeChecker
 	audit     TaskAuditLogger
+	claimer   TaskFixClaimer
+	guard     TaskBulkGuard
+	moves     TaskMoveNotifier
 	logger    *logger.Logger
 }
 
