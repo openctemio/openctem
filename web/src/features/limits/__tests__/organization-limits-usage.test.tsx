@@ -58,7 +58,7 @@ describe('OrganizationLimitsUsage', () => {
     })
     const { unmount } = render(<OrganizationLimitsUsage />)
     const link = screen.getByRole('link', { name: /Manage your service account/ })
-    expect(link).toHaveAttribute('href', 'https://account.example.com')
+    expect(link).toHaveAttribute('href', 'https://account.example.com/')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
     unmount()
     mockLimits({
