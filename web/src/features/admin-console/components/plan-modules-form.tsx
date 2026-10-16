@@ -22,6 +22,7 @@ import { PLAN_LABEL, PLAN_NAMES, type PlanName } from '@/features/plans/lib/plan
 import type { PlanModulesResponse } from '@/lib/api/generated'
 import { AdminApiError } from '../api/admin-client'
 import { savePlanModules } from '../api/use-plans'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 /** "*" in a plan's list: every module, including ones added later. */
 export const ALL_MODULES = '*'
@@ -75,6 +76,7 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
   const [sel, setSel] = useState<Selection>(initial)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const codeId = useId()
@@ -239,7 +241,7 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
             )}
           </p>
         }
-        disabled={code.trim().length < 6}
+        disabled={!stepUpCodeReady(code, codeOptional)}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -264,6 +266,7 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
             maxLength={8}
             aria-invalid={!!codeError}
           />
+          <StepUpCodeHint optional={codeOptional} />
           {codeError && <p className="text-sm text-destructive">{codeError}</p>}
         </div>
       </ConfirmDialog>

@@ -26,6 +26,7 @@ import { AdminApiError } from '../api/admin-client'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
 import { importContentPack, uploadContentPack } from '../api/use-content-packs'
 import { ContentLintReportView, asLintReport } from './content-lint-report'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 export const KNOWN_KINDS = ['nuclei-templates', 'semgrep-rules', 'wordlist'] as const
 const NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/
@@ -88,8 +89,11 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
   const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const proofOk =
-    reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX && /^\d{6}$/.test(code)
+    reason.trim().length >= REASON_MIN &&
+    reason.trim().length <= REASON_MAX &&
+    stepUpCodeReady(code, codeOptional)
 
   const problem = contentPackFormProblem({ mode, name, version, kind, file, url, digest })
   const blockedBySecrets = secretsFound && !ack
@@ -297,6 +301,7 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
                     autoComplete="one-time-code"
                     className="w-36 font-mono tracking-widest"
                   />
+                  <StepUpCodeHint optional={codeOptional} />
                 </div>
               </div>
               {error && (

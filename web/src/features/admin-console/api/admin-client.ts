@@ -11,26 +11,56 @@ const ADMIN_CSRF_COOKIE = 'admin_csrf_ui'
 
 /**
  * Protected console actions (identity, privilege and platform-trust changes)
- * need a fresh authenticator code in this header, unless the console session
- * confirmed one in the last few minutes. The API answers
- * ADMIN_STEP_UP_REQUIRED (401) and the console asks for a code and retries.
+ * need a fresh confirmation: an authenticator code in this header, or a
+ * security-key step-up that opens the session's five-minute window (the action
+ * is then retried without a code). The API answers ADMIN_STEP_UP_REQUIRED
+ * (401, route level), STEP_UP_REQUIRED (401, actions whose form carries the
+ * code) or WEBAUTHN_REQUIRED (403, only a security key is accepted), and the
+ * console asks and retries.
  */
 export const ADMIN_STEP_UP_HEADER = 'X-Admin-Step-Up'
 export const ADMIN_STEP_UP_REQUIRED = 'ADMIN_STEP_UP_REQUIRED'
-/** Codes asked for one action before giving up. */
+export const ADMIN_FORM_STEP_UP_REQUIRED = 'STEP_UP_REQUIRED'
+export const WEBAUTHN_REQUIRED = 'WEBAUTHN_REQUIRED'
+export const FACTOR_ENROLLMENT_REQUIRED = 'FACTOR_ENROLLMENT_REQUIRED'
+/** Confirmations asked for one action before giving up. */
 const STEP_UP_ATTEMPTS = 3
 
-/**
- * Asks the administrator for a fresh code. `problem` is the API's refusal of
- * the previous code, if any. Resolves to null when the administrator cancels.
- */
-export type AdminStepUpPrompt = (problem?: string) => Promise<string | null>
+/** What the step-up dialog is asked for. */
+export interface AdminStepUpRequest {
+  /** Only a security key is accepted (403 WEBAUTHN_REQUIRED). */
+  keyOnly: boolean
+  /**
+   * The code belongs in the form (STEP_UP_REQUIRED): the dialog offers only a
+   * security key, and gives up at once when the administrator has none.
+   */
+  formCode: boolean
+  /** The API's refusal of the previous code, if any. */
+  problem?: string
+}
+
+/** A code to send in the header, or a security-key step-up that already passed. */
+export type AdminStepUpAnswer = { kind: 'code'; code: string } | { kind: 'key' }
+
+/** Asks the administrator to confirm. Resolves to null when they cancel. */
+export type AdminStepUpPrompt = (request: AdminStepUpRequest) => Promise<AdminStepUpAnswer | null>
 
 let stepUpPrompt: AdminStepUpPrompt | null = null
 
 /** Registers the console's step-up dialog (one per console shell). */
 export function setAdminStepUpPrompt(prompt: AdminStepUpPrompt | null) {
   stepUpPrompt = prompt
+}
+
+let enrollmentListener: (() => void) | null = null
+
+/**
+ * Registers the shell's reaction to 403 FACTOR_ENROLLMENT_REQUIRED: the
+ * console requires security keys and this administrator has not registered
+ * them, so only the enrollment page can work.
+ */
+export function setAdminEnrollmentListener(listener: (() => void) | null) {
+  enrollmentListener = listener
 }
 
 export class AdminApiError extends Error {
@@ -80,24 +110,64 @@ function bodyStepUpCode(body: unknown): string | undefined {
   return undefined
 }
 
+/** Second steps of a sign-in: a refusal there is the answer, not a step-up. */
+const SIGN_IN_PATHS = new Set(['/auth/session', '/auth/mfa', '/auth/recovery'])
+
+/** The body without the form's code, for a retry inside a key step-up window. */
+function withoutBodyCode(body: unknown): unknown {
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    if (!body.has('totp_code')) return body
+    const copy = new FormData()
+    body.forEach((v, k) => {
+      if (k !== 'totp_code') copy.append(k, v)
+    })
+    return copy
+  }
+  if (body && typeof body === 'object' && !Array.isArray(body) && 'totp_code' in body) {
+    const { totp_code: _drop, ...rest } = body as Record<string, unknown>
+    void _drop
+    return rest
+  }
+  return body
+}
+
+/** The step-up the refusal asks for, or null when it is not one. */
+function stepUpRequest(err: unknown, sentCode: boolean): AdminStepUpRequest | null {
+  if (!(err instanceof AdminApiError)) return null
+  if (err.code === ADMIN_STEP_UP_REQUIRED)
+    return { keyOnly: false, formCode: false, problem: sentCode ? err.message : undefined }
+  if (err.code === WEBAUTHN_REQUIRED && err.status === 403)
+    return { keyOnly: true, formCode: false }
+  if (err.code === ADMIN_FORM_STEP_UP_REQUIRED && err.status === 401 && !sentCode)
+    return { keyOnly: true, formCode: true }
+  return null
+}
+
 export async function adminFetch<T>(path: string, init: AdminFetchInit = {}): Promise<T> {
+  let request = init
   let code = init.stepUpCode ?? bodyStepUpCode(init.body)
+  // The sign-in steps and the key step-up itself never ask for a step-up.
+  const canPrompt =
+    !SIGN_IN_PATHS.has(path) &&
+    !path.startsWith('/auth/step-up/') &&
+    !path.startsWith('/auth/webauthn/session')
   for (let attempt = 1; ; attempt++) {
     try {
-      return await adminRequest<T>(path, init, code)
+      return await adminRequest<T>(path, request, code)
     } catch (err) {
       const prompt = stepUpPrompt
-      const retry =
-        err instanceof AdminApiError &&
-        err.code === ADMIN_STEP_UP_REQUIRED &&
-        prompt !== null &&
-        attempt <= STEP_UP_ATTEMPTS
-      if (!retry) throw err
-      // The first refusal only means "confirm"; a later one names the problem
-      // with the code that was typed (wrong or already used).
-      const next = await prompt(code ? err.message : undefined)
-      if (!next) throw err
-      code = next
+      const ask = canPrompt && attempt <= STEP_UP_ATTEMPTS ? stepUpRequest(err, !!code) : null
+      if (!ask || !prompt) throw err
+      const answer = await prompt(ask)
+      if (!answer) throw err
+      if (answer.kind === 'code') {
+        code = answer.code
+      } else {
+        // The key opened this session's step-up window: the same request,
+        // without any code, now passes.
+        code = undefined
+        request = { ...request, stepUpCode: undefined, body: withoutBodyCode(request.body) }
+      }
     }
   }
 }
@@ -148,6 +218,7 @@ async function adminRequest<T>(
       code?: string
       details?: unknown
     }
+    if (res.status === 403 && body.code === FACTOR_ENROLLMENT_REQUIRED) enrollmentListener?.()
     throw new AdminApiError(
       body.message || body.error || res.statusText,
       res.status,

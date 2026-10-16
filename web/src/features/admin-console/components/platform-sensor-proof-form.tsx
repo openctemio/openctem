@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '../api/admin-client'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 export interface PlatformSensorProofFormProps {
   required: boolean
@@ -40,6 +41,7 @@ export function PlatformSensorProofForm({
   const [value, setValue] = useState(required)
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -112,7 +114,7 @@ export function PlatformSensorProofForm({
         }}
         title={value ? t('admin.proof.confirmOnTitle') : t('admin.proof.confirmOffTitle')}
         desc={<p>{value ? t('admin.proof.confirmOnDesc') : t('admin.proof.confirmOffDesc')}</p>}
-        disabled={code.trim().length < 6 || !reason.trim()}
+        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim()}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -148,6 +150,7 @@ export function PlatformSensorProofForm({
               maxLength={8}
               aria-invalid={!!codeError}
             />
+            <StepUpCodeHint optional={codeOptional} />
             {codeError && <p className="text-sm text-destructive">{codeError}</p>}
           </div>
         </div>

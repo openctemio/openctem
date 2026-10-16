@@ -16,6 +16,7 @@ import { RelativeTime } from '@/features/shared'
 import type { SignupPolicyResponse } from '@/lib/api/generated'
 import { AdminApiError } from '../api/admin-client'
 import { saveSignupPolicy } from '../api/use-signup-policy'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 type Mode = 'admin_only' | 'self_service'
 
@@ -60,6 +61,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
   const [requestAccess, setRequestAccess] = useState(!!policy.request_access)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const codeId = useId()
@@ -231,7 +233,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
             <p>{t('admin.signup.confirmBody')}</p>
           </div>
         }
-        disabled={code.trim().length < 6}
+        disabled={!stepUpCodeReady(code, codeOptional)}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -256,6 +258,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
             maxLength={8}
             aria-invalid={!!codeError}
           />
+          <StepUpCodeHint optional={codeOptional} />
           {codeError && <p className="text-sm text-destructive">{codeError}</p>}
         </div>
       </ConfirmDialog>

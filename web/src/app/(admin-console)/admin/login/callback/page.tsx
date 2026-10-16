@@ -8,14 +8,18 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { adminIdPCallback } from '@/features/admin-console/api/use-admin-session'
 import {
-  TotpStepForm,
   adminErrorMessage,
   type TotpStep,
 } from '@/features/admin-console/components/totp-step-form'
+import { SecondFactorStep } from '@/features/admin-console/components/second-factor-step'
+import { useTranslation } from '@/context/i18n-provider'
 import { takeRememberedNext } from '@/features/admin-console/lib/console-navigation'
 
 type Phase =
-  { kind: 'working' } | { kind: 'code'; step: TotpStep } | { kind: 'failed'; message: string }
+  | { kind: 'working' }
+  | { kind: 'code'; step: TotpStep }
+  /** message: the API's refusal; empty shows the generic text. */
+  | { kind: 'failed'; message: string; cancelled?: boolean }
 
 /**
  * Where the administrators' identity provider sends the browser back to
@@ -25,6 +29,7 @@ type Phase =
  * own TOTP step follows.
  */
 export default function AdminIdPCallbackPage() {
+  const { t } = useTranslation()
   const [phase, setPhase] = useState<Phase>({ kind: 'working' })
   const [next, setNext] = useState('/admin')
   const ran = useRef(false)
@@ -44,7 +49,7 @@ export default function AdminIdPCallbackPage() {
     setNext(target)
 
     if (idpError || !code || !state) {
-      setPhase({ kind: 'failed', message: 'Single sign-on was cancelled or failed.' })
+      setPhase({ kind: 'failed', message: '', cancelled: true })
       return
     }
     adminIdPCallback(code, state)
@@ -58,9 +63,7 @@ export default function AdminIdPCallbackPage() {
           step: { status: res.status, otpauth_uri: res.otpauth_uri, secret: res.secret },
         })
       })
-      .catch((e) =>
-        setPhase({ kind: 'failed', message: adminErrorMessage(e, 'Single sign-on failed') })
-      )
+      .catch((e) => setPhase({ kind: 'failed', message: adminErrorMessage(e, '') }))
   }, [])
 
   const enrolling = phase.kind === 'code' && phase.step.status === 'mfa_enrollment_required'
@@ -70,36 +73,48 @@ export default function AdminIdPCallbackPage() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-xl">
           <ShieldCheck className="size-5 text-muted-foreground" />
-          Platform administration
+          {t('admin.shell.title', 'Platform administration')}
         </CardTitle>
         <CardDescription>
           {phase.kind === 'code'
             ? enrolling
-              ? 'Set up two-step verification. It is required for every administrator.'
-              : 'Enter the 6-digit code from your authenticator app to continue.'
+              ? t(
+                  'admin.login.enrollDescription',
+                  'Set up two-step verification. It is required for every administrator.'
+                )
+              : t('admin.login.secondStep', 'Confirm it is you to continue.')
             : phase.kind === 'failed'
-              ? 'The sign-in did not complete.'
-              : 'Completing single sign-on...'}
+              ? t('admin.login.ssoIncomplete', 'The sign-in did not complete.')
+              : t('admin.login.ssoWorking', 'Completing single sign-on...')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         {phase.kind === 'working' && (
-          <div className="flex justify-center py-6" role="status" aria-label="Completing sign-in">
+          <div
+            className="flex justify-center py-6"
+            role="status"
+            aria-label={t('admin.login.completing', 'Completing sign-in')}
+          >
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         )}
         {phase.kind === 'failed' && (
           <div className="space-y-4">
             <Alert variant="destructive">
-              <AlertDescription>{phase.message}</AlertDescription>
+              <AlertDescription>
+                {phase.message ||
+                  (phase.cancelled
+                    ? t('admin.login.ssoCancelled', 'Single sign-on was cancelled or failed.')
+                    : t('admin.login.ssoFailed', 'Single sign-on failed'))}
+              </AlertDescription>
             </Alert>
             <Button asChild className="w-full">
-              <Link href="/admin/login">Back to sign-in</Link>
+              <Link href="/admin/login">{t('admin.login.back', 'Back to sign-in')}</Link>
             </Button>
           </div>
         )}
         {phase.kind === 'code' && (
-          <TotpStepForm
+          <SecondFactorStep
             step={phase.step}
             onVerified={() => {
               window.location.href = next
