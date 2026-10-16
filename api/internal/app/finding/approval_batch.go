@@ -35,7 +35,7 @@ type batchStore interface {
 	PendingFindingIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]bool, error)
 	CreateBatch(ctx context.Context, b *vulnerability.ApprovalBatch, members []*vulnerability.Approval) error
 	GetBatch(ctx context.Context, tenantID, id shared.ID) (*vulnerability.ApprovalBatch, error)
-	ListBatches(ctx context.Context, tenantID shared.ID, status string, scope *shared.DataScope, page pagination.Pagination) (pagination.Result[*vulnerability.ApprovalBatch], error)
+	ListBatches(ctx context.Context, tenantID shared.ID, status string, source *shared.ID, scope *shared.DataScope, page pagination.Pagination) (pagination.Result[*vulnerability.ApprovalBatch], error)
 	BatchMembers(ctx context.Context, tenantID, batchID shared.ID) ([]vulnerability.ApprovalBatchMember, error)
 	BatchSignoffs(ctx context.Context, tenantID, batchID shared.ID) ([]approvalpolicy.Signoff, error)
 	SignOffBatch(ctx context.Context, tenantID, batchID, signer shared.ID, rec SignoffRecord,
@@ -180,7 +180,7 @@ func (s *VulnerabilityService) planGroupException(ctx context.Context, in GroupE
 			preview.Members = append(preview.Members, m)
 			continue
 		}
-		ev, err := s.evaluateFindingRequest(ctx, f, kind, in.RequestedBy, false, in.RequestedBy)
+		ev, err := s.evaluateFindingRequest(ctx, f, kind, in.RequestedBy, false, false, in.RequestedBy)
 		if err != nil {
 			return nil, nil, "", err
 		}
@@ -383,7 +383,7 @@ func (s *VulnerabilityService) ApproveGroupException(ctx context.Context, tenant
 	var org orgPolicy
 	shortened := 0
 	for _, f := range findings {
-		ev, err := s.evaluateFindingRequest(ctx, f, kind, b.RequestedBy, false, known...)
+		ev, err := s.evaluateFindingRequest(ctx, f, kind, b.RequestedBy, false, false, known...)
 		if err != nil {
 			return nil, err
 		}
@@ -510,8 +510,9 @@ func (s *VulnerabilityService) GetGroupException(ctx context.Context, tenantID, 
 	return b, members, nil
 }
 
-// ListGroupExceptions lists the tenant's group exceptions the caller may see.
-func (s *VulnerabilityService) ListGroupExceptions(ctx context.Context, tenantID shared.ID, status string, page pagination.Pagination) (pagination.Result[*vulnerability.ApprovalBatch], error) {
+// ListGroupExceptions lists the tenant's group exceptions the caller may see,
+// optionally of one source (a remediation task id).
+func (s *VulnerabilityService) ListGroupExceptions(ctx context.Context, tenantID shared.ID, status, sourceID string, page pagination.Pagination) (pagination.Result[*vulnerability.ApprovalBatch], error) {
 	store, err := s.batches()
 	if err != nil {
 		return pagination.Result[*vulnerability.ApprovalBatch]{}, err
@@ -521,9 +522,17 @@ func (s *VulnerabilityService) ListGroupExceptions(ctx context.Context, tenantID
 			return pagination.Result[*vulnerability.ApprovalBatch]{}, fmt.Errorf("%w: invalid status %q", shared.ErrValidation, status)
 		}
 	}
+	var source *shared.ID
+	if sourceID != "" {
+		id, err := shared.IDFromString(sourceID)
+		if err != nil {
+			return pagination.Result[*vulnerability.ApprovalBatch]{}, fmt.Errorf("%w: source_id must be an id", shared.ErrValidation)
+		}
+		source = &id
+	}
 	scope, err := s.dataScope.Resolve(ctx, tenantID)
 	if err != nil {
 		return pagination.Result[*vulnerability.ApprovalBatch]{}, fmt.Errorf("failed to resolve data scope: %w", err)
 	}
-	return store.ListBatches(ctx, tenantID, status, scope, page)
+	return store.ListBatches(ctx, tenantID, status, source, scope, page)
 }

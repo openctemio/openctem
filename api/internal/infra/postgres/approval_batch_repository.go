@@ -188,9 +188,9 @@ func (r *FindingApprovalRepository) GetBatch(ctx context.Context, tenantID, id s
 }
 
 // ListBatches lists the tenant's group exceptions, newest first, filtered by
-// status (empty: all). A restricted caller sees only exceptions whose every
+// status (empty: all) and source id (nil: all). A restricted caller sees only exceptions whose every
 // member finding is in their data scope.
-func (r *FindingApprovalRepository) ListBatches(ctx context.Context, tenantID shared.ID, status string, scope *shared.DataScope,
+func (r *FindingApprovalRepository) ListBatches(ctx context.Context, tenantID shared.ID, status string, source *shared.ID, scope *shared.DataScope,
 	page pagination.Pagination,
 ) (pagination.Result[*vulnerability.ApprovalBatch], error) {
 	where := "b.tenant_id = $1"
@@ -198,6 +198,10 @@ func (r *FindingApprovalRepository) ListBatches(ctx context.Context, tenantID sh
 	if status != "" {
 		args = append(args, status)
 		where += fmt.Sprintf(" AND b.status = $%d", len(args))
+	}
+	if source != nil {
+		args = append(args, source.String())
+		where += fmt.Sprintf(" AND b.source_id = $%d", len(args))
 	}
 	if scope != nil {
 		cond, scopeArgs := dataScopeCondAt("f.asset_id", scope, len(args)+1)
@@ -341,12 +345,11 @@ func (r *FindingApprovalRepository) SignOffBatch(ctx context.Context, tenantID, 
 // inside tx, each under a savepoint so one member that cannot move is
 // canceled without undoing the others.
 func (r *FindingApprovalRepository) applyBatchMembersTx(ctx context.Context, tx *sql.Tx, tenantID, batchID shared.ID, finish BatchMemberFinish) (int, []shared.ID, error) {
-	members, err := r.lockBatchMembersTx(ctx, tx, tenantID, batchID)
+	members, canceled, err := r.lockBatchMembersTx(ctx, tx, tenantID, batchID)
 	if err != nil {
 		return 0, nil, err
 	}
 	applied := 0
-	var canceled []shared.ID
 	for _, a := range members {
 		ok, err := applyBatchMemberTx(ctx, tx, a, finish)
 		if err != nil {
@@ -361,26 +364,77 @@ func (r *FindingApprovalRepository) applyBatchMembersTx(ctx context.Context, tx 
 	return applied, canceled, nil
 }
 
-// lockBatchMembersTx locks and reads the pending member requests of a batch.
-func (r *FindingApprovalRepository) lockBatchMembersTx(ctx context.Context, tx *sql.Tx, tenantID, batchID shared.ID) ([]*vulnerability.Approval, error) {
+// lockBatchMembersTx locks and reads the pending member requests of a batch
+// that still stand: a member whose finding is no longer an active primary
+// member of the batch's task (it left or moved to another task after the
+// request was made) is canceled here, with a timeline entry, and its finding
+// id returned in the second result: approving the batch must not decide a
+// finding that is no longer part of what was asked about.
+func (r *FindingApprovalRepository) lockBatchMembersTx(ctx context.Context, tx *sql.Tx, tenantID, batchID shared.ID) ([]*vulnerability.Approval, []shared.ID, error) {
 	rows, err := tx.QueryContext(ctx, r.selectQuery()+` WHERE a.tenant_id = $1 AND a.batch_id = $2 AND a.status = 'pending'
 		ORDER BY a.created_at, a.id FOR UPDATE OF a`, tenantID.String(), batchID.String())
 	if err != nil {
-		return nil, fmt.Errorf("lock group exception members: %w", err)
+		return nil, nil, fmt.Errorf("lock group exception members: %w", err)
 	}
 	defer rows.Close()
-	var members []*vulnerability.Approval
+	var pending []*vulnerability.Approval
 	for rows.Next() {
 		a, err := r.scanApprovalFromRows(rows)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		members = append(members, a)
+		pending = append(pending, a)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("lock group exception members: %w", err)
+		return nil, nil, fmt.Errorf("lock group exception members: %w", err)
 	}
-	return members, nil
+	if len(pending) == 0 {
+		return nil, nil, nil
+	}
+	onTask, err := batchTaskMembersTx(ctx, tx, tenantID, batchID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var kept []*vulnerability.Approval
+	var canceled []shared.ID
+	for _, a := range pending {
+		if onTask[a.FindingID] {
+			kept = append(kept, a)
+			continue
+		}
+		if err := cancelBatchMemberTx(ctx, tx, a, "finding_left_task",
+			"The group exception was approved but this finding is no longer part of the task"); err != nil {
+			return nil, nil, err
+		}
+		canceled = append(canceled, a.FindingID)
+	}
+	return kept, canceled, nil
+}
+
+// batchTaskMembersTx lists the findings that are active primary members of
+// the task the batch was requested on.
+func batchTaskMembersTx(ctx context.Context, tx *sql.Tx, tenantID, batchID shared.ID) (map[shared.ID]bool, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT tm.finding_id::text
+		FROM approval_batches b
+		JOIN remediation_task_members tm ON tm.tenant_id = b.tenant_id AND tm.task_id = b.source_id
+		WHERE b.tenant_id = $1 AND b.id = $2 AND b.source_type = 'remediation_task'
+		  AND tm.left_at IS NULL AND tm.role = 'primary'`, tenantID.String(), batchID.String())
+	if err != nil {
+		return nil, fmt.Errorf("read the task members of a group exception: %w", err)
+	}
+	defer rows.Close()
+	out := map[shared.ID]bool{}
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("read the task members of a group exception: %w", err)
+		}
+		if id, err := shared.IDFromString(s); err == nil {
+			out[id] = true
+		}
+	}
+	return out, rows.Err()
 }
 
 // applyBatchMemberTx applies one member under a savepoint; a member whose
@@ -415,22 +469,31 @@ func applyBatchMemberTx(ctx context.Context, tx *sql.Tx, a *vulnerability.Approv
 		}
 	}
 	// The finding cannot take the decision any more: cancel this member.
-	if _, err := tx.ExecContext(ctx, `UPDATE finding_status_approvals SET status = 'canceled', version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'`, a.TenantID.String(), a.ID.String()); err != nil {
-		return false, fmt.Errorf("cancel member: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
-		VALUES ($1, $2, 'approval_canceled', 'system', 'system: group exception', jsonb_build_object('approval_id', $3::text,
-			'approval_status', 'canceled', 'reason', 'finding_moved', 'batch_id', $4::text), 'auto',
-			'The group exception was approved but this finding had moved and could not take it')`,
-		a.TenantID.String(), a.FindingID.String(), a.ID.String(), a.BatchID.String()); err != nil {
-		return false, fmt.Errorf("record canceled member: %w", err)
+	if err := cancelBatchMemberTx(ctx, tx, a, "finding_moved",
+		"The group exception was approved but this finding had moved and could not take it"); err != nil {
+		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `RELEASE SAVEPOINT batch_member`); err != nil {
 		return false, fmt.Errorf("release savepoint: %w", err)
 	}
 	return false, nil
+}
+
+// cancelBatchMemberTx cancels one pending member request of a batch and
+// records why on its finding's timeline.
+func cancelBatchMemberTx(ctx context.Context, tx *sql.Tx, a *vulnerability.Approval, reason, message string) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE finding_status_approvals SET status = 'canceled', version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'`, a.TenantID.String(), a.ID.String()); err != nil {
+		return fmt.Errorf("cancel member: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
+		VALUES ($1, $2, 'approval_canceled', 'system', 'system: group exception', jsonb_build_object('approval_id', $3::text,
+			'approval_status', 'canceled', 'reason', $5::text, 'batch_id', $4::text), 'auto', $6)`,
+		a.TenantID.String(), a.FindingID.String(), a.ID.String(), a.BatchID.String(), reason, message); err != nil {
+		return fmt.Errorf("record canceled member: %w", err)
+	}
+	return nil
 }
 
 // CloseBatch rejects or cancels a pending group exception and its pending
