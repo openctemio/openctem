@@ -356,5 +356,14 @@
   "settings.jiraWebhook.copyFailed": "Could not copy",
   "settings.jiraWebhook.close": "Close",
   "settings.item.ticket-field-mapping": "Ticket field mapping",
-  "settings.desc.ticket-field-mapping": "Which fields and statuses sync with Jira, per project."
+  "settings.desc.ticket-field-mapping": "Which fields and statuses sync with Jira, per project.",
+  "settings.accountDelete.title": "Delete account",
+  "settings.accountDelete.desc": "Ends every session and revokes your API keys at once. Signing in again within 14 days cancels the deletion; after that your account leaves every organization and your personal data is erased.",
+  "settings.accountDelete.button": "Delete my account",
+  "settings.accountDelete.confirmTitle": "Delete your account?",
+  "settings.accountDelete.confirmDesc": "Type your email address to confirm. You will be signed out everywhere.",
+  "settings.accountDelete.scheduled": "Your account will be deleted in 14 days. Sign in again before then to cancel.",
+  "settings.accountDelete.pending": "Your account is scheduled for deletion on {date}. Signing in cancels it.",
+  "settings.accountDelete.soleOwner": "You are the only owner of: {orgs}. Transfer ownership or delete the organization first.",
+  "settings.accountDelete.failed": "Could not delete the account"
 }

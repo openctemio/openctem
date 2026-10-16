@@ -243,6 +243,42 @@ one person owns at most the Free plan's `free_teams_per_user` (1 by default):
 another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 `docs/architecture/plans-and-limits.md`.
 
+## Leaving and deleting (RFC-104)
+
+### Leave an organization
+
+`POST /api/v1/organization/leave` (any member, the organization of the
+credential) runs the same offboarding an administrator runs: API keys
+revoked, groups, grants, engagements and roles stripped, the membership kept
+as a tombstone. The only active owner is refused (transfer ownership or
+delete the organization first); someone who still owns assignable work is
+refused with "ask an administrator to offboard you" (nothing is reassigned
+without an administrator). Audited `member.left`; administrators notified.
+
+### Delete my account
+
+`DELETE /api/v1/me/account` (step-up) schedules the deletion
+(`account_deletions`, migration 002570):
+
+- refused (409 `SOLE_OWNER`, naming the organizations to the caller only)
+  while the caller is the only active owner of an organization, and for a
+  platform administrator account;
+- every session ends and the account's API keys are revoked at once (keys do
+  not come back on cancel);
+- **signing in again within 14 days cancels it** (password, social or SSO
+  sign-in; `account.deletion_canceled`);
+- after 14 days the `account-erase` controller offboards every membership
+  (best effort: an owner among several, or someone who still owns work, keeps
+  a disabled membership and the administrators are asked to reassign), then
+  anonymises the account in one transaction: name "Deleted user #<hash>",
+  an undeliverable unique email, password, second factor, federated
+  identities, sessions, refresh tokens and API keys removed or revoked. The
+  users row and every foreign key stay, so history remains readable.
+
+`GET /api/v1/me/account/deletion` reports whether a deletion is pending.
+Audited: `account.deletion_requested`, `account.deletion_canceled`,
+`account.erased`.
+
 ## Organization access policy (Settings → Organization → Security, owner only)
 
 ### Who may be invited (`security.invitees`, RFC-095)
