@@ -58,14 +58,16 @@ func (c AdminPlaneConfig) AllowsEveryNetwork() bool {
 }
 
 // ParseAdminAllowedCIDRs parses CIDRs or single addresses (taken as /32 or
-// /128). An empty list is an error: it would lock the console out for good.
+// /128), separated by commas or spaces. An empty list is an error: it would lock the console out for good.
 func ParseAdminAllowedCIDRs(entries []string) ([]netip.Prefix, error) {
 	out := make([]netip.Prefix, 0, len(entries))
+	// Commas or spaces: the gateway's OPENCTEM_ADMIN_ALLOWED_CIDRS is
+	// space-separated, so one value can feed both.
+	var fields []string
 	for _, e := range entries {
-		e = strings.TrimSpace(e)
-		if e == "" {
-			continue
-		}
+		fields = append(fields, strings.Fields(e)...)
+	}
+	for _, e := range fields {
 		if p, err := netip.ParsePrefix(e); err == nil {
 			out = append(out, p.Masked())
 			continue

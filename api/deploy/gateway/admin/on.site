@@ -1,0 +1,63 @@
+# The platform administration console's own site (OPENCTEM_ADMIN_SITE=port
+# or host): https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT> or
+# https://<OPENCTEM_ADMIN_HOST>, set by the entrypoint as
+# OPENCTEM_ADMIN_ADDRESS. Only clients in OPENCTEM_ADMIN_ALLOWED_CIDRS (default
+# private networks) get past the gate; everyone else gets 403. Every request
+# goes to the web console marked X-OpenCTEM-Plane: admin, which then serves
+# only the console's pages and its API proxy (the console API is on the API's
+# admin listener). The main site answers 404 for the console (admin/on.tenant).
+{$OPENCTEM_ADMIN_ADDRESS} {
+	import ../modes/{$OPENCTEM_TLS_MODE}.admin
+
+	request_body {
+		max_size {$GATEWAY_MAX_BODY_SIZE:256MB}
+	}
+
+	log {
+		output stdout
+		format filter {
+			wrap console {
+				level_format upper
+			}
+			fields {
+				request>headers>X-Csrf-Token delete
+				request>headers>X-Admin-Step-Up delete
+			}
+		}
+	}
+
+	header {
+		-Server
+		-Via
+		?X-Content-Type-Options nosniff
+		?X-Frame-Options DENY
+		?Referrer-Policy same-origin
+		?Strict-Transport-Security "max-age=31536000"
+	}
+
+	# Private networks only by default: the console is not part of the
+	# internet-facing surface unless the operator opts in.
+	@outside not client_ip {$OPENCTEM_ADMIN_ALLOWED_CIDRS:127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7}
+	handle @outside {
+		respond "The platform console is not reachable from this network." 403
+	}
+
+	# Never public here either.
+	@internal path /metrics /ready /debug /debug/*
+	handle @internal {
+		respond 404
+	}
+
+	handle {
+		reverse_proxy {$OPENCTEM_WEB_UPSTREAM:web:3000} {
+			# The same client address hand-off as (forwarded), plus the plane
+			# marker. `set` replaces any value a client sent.
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Real-IP {client_ip}
+			header_up -Cf-Connecting-Ip
+			header_up -True-Client-Ip
+			header_up X-OpenCTEM-Plane admin
+			flush_interval -1
+		}
+	}
+}

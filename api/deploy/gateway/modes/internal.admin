@@ -1,0 +1,2 @@
+# TLS mode `internal` for the admin site: a certificate from the same internal CA.
+tls internal

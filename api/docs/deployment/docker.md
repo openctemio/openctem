@@ -104,6 +104,30 @@ the API refuses to start. Recovery is in the
 [runbook](safe-deploy-and-migrations.md#dirty-migration-recovery). Never set
 `SKIP_SCHEMA_CHECK=true` in production.
 
+### Platform console
+
+The platform administration console has its own site and its own API
+listener, reachable only from private networks by default (RFC-022
+revision 20):
+
+- the gateway serves it on `https://<OPENCTEM_HOSTNAME>:8444` (`OPENCTEM_ADMIN_SITE=port`,
+  the default) or on its own DNS name (`OPENCTEM_ADMIN_SITE=host`,
+  `OPENCTEM_ADMIN_HOST=admin.example.com`: the stronger choice, since the browser
+  then isolates the console from the main site entirely);
+- only clients in `OPENCTEM_ADMIN_ALLOWED_CIDRS` (space-separated; default
+  loopback, RFC 1918 and IPv6 ULA) get past it; the API checks the same list
+  (`ADMIN_ALLOWED_CIDRS`); set `0.0.0.0/0 ::/0` only for a console you want on
+  the internet;
+- the main site answers 404 for `/admin` and `/api/v1/admin`; the web console
+  (`OPENCTEM_ADMIN_PLANE=separate`) serves only the console on the console site
+  and never on the main one; the API serves the console API only on its
+  internal listener (`ADMIN_LISTEN_ADDR=:8081`, never published), reached by the
+  web console through `ADMIN_API_URL`.
+
+From a VPS, use an SSH tunnel: `ssh -L 8444:127.0.0.1:8444 you@server`, then
+open `https://localhost:8444/admin`. `./setup.sh <host> --admin-host <name>` puts
+the console on its own host name; `--admin-public` opens it to every network.
+
 ### Gateway user
 
 The gateway runs as uid/gid 1000 (as in the Helm chart), not as root, from the
