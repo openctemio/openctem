@@ -139,3 +139,27 @@ func TestStatusEvent_ChangeWinsOverSnapshot(t *testing.T) {
 		t.Fatalf("%+v", ev)
 	}
 }
+
+// An issue outside the projects configured for ticketing moves nothing, even
+// when a finding still names it by URL; a configured project's issue does.
+func TestInbound_OnlyConfiguredProjects(t *testing.T) {
+	for _, tc := range []struct {
+		key  string
+		want bool
+	}{{"HR-7", false}, {"SEC-1", true}} {
+		repo := &inboundRepo{finding: inProgressFinding(t)}
+		c := &linkClient{intg: shared.NewID()}
+		s := NewSyncService(repo, c, logger.NewNop())
+		configured(s)
+		app := &applierStub{}
+		s.SetInboundApplier(app)
+		p := doneWebhook()
+		p.Issue.Key = tc.key
+		if err := s.HandleJiraWebhook(context.Background(), shared.NewID(), p); err != nil {
+			t.Fatal(err)
+		}
+		if got := len(app.ids) > 0; got != tc.want {
+			t.Errorf("%s: applied=%v, want %v", tc.key, got, tc.want)
+		}
+	}
+}
