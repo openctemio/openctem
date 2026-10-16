@@ -105,5 +105,8 @@
   "exceptions.form.endsHint": "Mọi quy tắc đều có hạn: mặc định 90 ngày, tối đa 365 ngày. Muốn tiếp tục ẩn sau thời điểm đó, hãy gửi một quy tắc mới để phê duyệt.",
   "exceptions.detail.reviewTitle": "Cần xem lại quy tắc này",
   "exceptions.detail.reviewBody": "Quy tắc này trước đây không có ngày kết thúc và đã được đặt một ngày ({when}). Hãy kiểm tra xem nó còn nên ẩn phát hiện không; muốn giữ sau ngày đó, hãy gửi một quy tắc mới.",
-  "exceptions.page.reviewBadge": "Xem lại"
+  "exceptions.page.reviewBadge": "Xem lại",
+  "exceptions.detail.markReviewed": "Đánh dấu đã xem lại",
+  "exceptions.page.reviewed": "Đã đánh dấu đã xem lại",
+  "exceptions.page.reviewFailed": "Không thể đánh dấu quy tắc là đã xem lại"
 }
