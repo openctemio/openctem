@@ -60,7 +60,15 @@ type ApproverDirectory interface {
 	CountEligibleApprovers(ctx context.Context, tenantID shared.ID) (int, error)
 	// IsTenantOwner reports whether the user is the tenant's active owner.
 	IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	// RecentMemberRemoval answers the latest member suspension, removal,
+	// offboarding or membership expiry in the tenant after since (nil: none).
+	RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error)
 }
+
+// SelfApprovalRemovalCooldown: an owner may not approve their own rule
+// within this long after any member was suspended or removed (removing the
+// only other approver must not open the own-approval path at once).
+const SelfApprovalRemovalCooldown = 7 * 24 * time.Hour
 
 // SetApproverDirectory wires the directory the four-eyes rule reads. Without
 // it a requester can never approve their own rule (fail closed).
@@ -282,8 +290,17 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 }
 
 // verifySelfApproval requires the reason and a fresh authenticator code of
-// an owner approving their own rule.
+// an owner approving their own rule, and no member suspended or removed in
+// the last SelfApprovalRemovalCooldown.
 func (s *Service) verifySelfApproval(ctx context.Context, input ApproveRuleInput) error {
+	at, err := s.approvers.RecentMemberRemoval(ctx, input.TenantID, time.Now().Add(-SelfApprovalRemovalCooldown))
+	if err != nil {
+		return err
+	}
+	if at != nil {
+		return fmt.Errorf("%w; approving your own rule is possible again from %s",
+			ErrSelfApprovalAfterRemoval, at.Add(SelfApprovalRemovalCooldown).UTC().Format(time.RFC3339))
+	}
 	if strings.TrimSpace(input.SelfApprovalReason) == "" {
 		return ErrSelfApprovalNeedsReason
 	}
@@ -297,7 +314,7 @@ func (s *Service) verifySelfApproval(ctx context.Context, input ApproveRuleInput
 // IsSelfApprovalRefusal reports whether err refused an own approval (to be
 // audited by the caller).
 func IsSelfApprovalRefusal(err error) bool {
-	return errors.Is(err, ErrSelfApproval) || errors.Is(err, ErrSelfApprovalNeedsReason) ||
+	return errors.Is(err, ErrSelfApproval) || errors.Is(err, ErrSelfApprovalNeedsReason) || errors.Is(err, ErrSelfApprovalAfterRemoval) ||
 		errors.Is(err, ErrSelfApprovalNeedsTOTP) || errors.Is(err, ErrSelfApprovalBadCode)
 }
 
