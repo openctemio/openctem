@@ -466,6 +466,10 @@ const (
 	// authenticator code) is recorded too, at High.
 	ActionSuppressionRuleSelfApprovalRefused Action = "suppression_rule.self_approval_refused"
 
+	// An approver looked at a rule the platform flagged for review (it had
+	// no end date) and cleared the flag.
+	ActionSuppressionRuleReviewed Action = "suppression_rule.reviewed"
+
 	// Four-eyes dispositions of high and critical exposures.
 	ActionExposureDispositionRequested    Action = "exposure.disposition_requested"
 	ActionExposureDispositionApproved     Action = "exposure.disposition_approved"
@@ -755,6 +759,7 @@ func (a Action) IsValid() bool {
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
+		ActionSuppressionRuleReviewed,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -884,6 +889,8 @@ func (a Action) Category() string {
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
 	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
+		return "suppression"
+	case ActionSuppressionRuleReviewed:
 		return "suppression"
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused:
@@ -1034,7 +1041,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
 		ResourceTypeFindingApproval:
 		return true
 	}
@@ -1164,6 +1171,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionSuppressionRuleApproved,
 		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
+		ActionSuppressionRuleReviewed,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
