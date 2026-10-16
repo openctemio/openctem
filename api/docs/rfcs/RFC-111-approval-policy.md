@@ -124,7 +124,9 @@ relaxation.
 - **Security pool.** The members of `security_pool_group_id` within the approver pool. When the
   organization has none, or nobody in it is eligible after the exclusions, the request falls back to the
   approver pool; the decision records `pool_fallback` and the inbox says so. `security_pool_strict` turns
-  the fallback off.
+  the fallback off. A person counts as a pool member only 24 hours after joining the group (the pool is
+  read live when someone signs, so an account added a moment ago must not sign as the pool), and adding or
+  removing a member of the pool group, or deleting it, needs a recent re-authentication.
 - **Excluded (floor):** the requester (except the sole member); the owners of the finding's asset (user
   owners, and members of owner groups, ownership `primary` or `secondary`): a person never approves the
   hiding of a risk on an asset they own. For a rule bound to an asset, that asset's owners; for a task
@@ -134,6 +136,9 @@ relaxation.
   in, in the same transaction as the status change. A person signs once. The last sign-off must come from
   the security pool when none of the earlier ones did. Sign-offs collected before the facts changed count
   only if the signer still qualifies for the tier computed now.
+- **Requests made by an actor** (AI triage, VEX, a linked ticket) have no person behind them, and the
+  account that moved a ticket is not known as a member, so they need one sign-off more than the tier asks
+  (peer: two, dual: three). A ticket's proposed end is within the organization's cap for the finding.
 - **Nobody eligible.** The evaluator says so (`no_eligible_approver`, with the reason) and the request
   stays pending; nothing approves on a timeout.
 
@@ -243,6 +248,7 @@ and validated in a separate migration, so no step holds a long lock on a populat
 | T7 | A decision outliving the facts | material-change controller ends or flags | controller tests per signal |
 | T8 | A group exception smuggling a critical finding | the batch takes the highest member tier and per-member caps | mixed-batch test |
 | T9 | Cross-tenant or out-of-scope approval | every read and write is by `(tenant_id, id)`; the pool is per tenant and data scope; the security pool group must be the tenant's | two-tenant negatives |
+| T11 | The person who moved a ticket approving the request their ticket made, or an accomplice added to the security pool in the same sitting | actor requests need one extra sign-off; pool members count after 24 hours; edits of the pool group need step-up | actor sign-off, fresh pool member and pool edit tests |
 | T10 | Request text used to steer the approver | the note is untrusted plain text; the code is from a closed list | |
 
 ## 12. UI

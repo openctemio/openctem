@@ -22,6 +22,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -75,7 +77,9 @@ func (h *approvalPolicyHarness) group(tenantID string, members ...policyUser) st
 		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM groups WHERE id = $1`, id)
 	})
 	for _, m := range members {
-		h.exec(`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)`, id, m.id)
+		// Long-standing members: a person added less than a day ago does not
+		// count as the pool's.
+		h.exec(`INSERT INTO group_members (group_id, user_id, joined_at) VALUES ($1, $2, now() - interval '48 hours')`, id, m.id)
 	}
 	return id
 }
@@ -423,13 +427,63 @@ func TestApprovalPolicy_Bypasses_DB(t *testing.T) {
 	h.exec(`INSERT INTO finding_status_approvals (id, tenant_id, finding_id, requested_status, requested_by_actor, justification, status, closure_reason)
 	        VALUES ($1, $2, $3, 'false_positive', 'vex', 'vendor statement: not affected', 'pending', 'component_not_present')`, vexID, org, crit)
 	setFPLevel(h.findingApprovalHarness, org, `{"policy":{"tiers":{"false_positive.critical":"dual"}}}`)
+	// An actor-made request needs one sign-off more than the tier asks:
+	// dual (2) + 1.
+	a4 := h.member(org, "admin")
 	if out, _ := h.approve(a2, vexID, http.StatusOK); out.Status != "pending" || out.Collected != 1 {
 		t.Fatalf("one approval applied a dual VEX request: %+v", out)
 	}
-	if out, _ := h.approve(a3, vexID, http.StatusOK); out.Status != "approved" {
-		t.Fatal("two approvals did not apply the VEX request")
+	if out, _ := h.approve(a3, vexID, http.StatusOK); out.Status != "pending" || out.Collected != 2 {
+		t.Fatalf("two approvals applied an actor-made dual request: %+v", out)
+	}
+	if out, _ := h.approve(a4, vexID, http.StatusOK); out.Status != "approved" {
+		t.Fatal("three approvals did not apply the VEX request")
 	}
 	_ = admin
+}
+
+// A request a ticket (or VEX, or AI triage) makes has no person behind it, so
+// the person who moved the ticket could otherwise approve it alone: it needs
+// one sign-off more than the same request made by a person (peer: two).
+func TestApprovalPolicy_ActorRequestNeedsAnExtraSignoff_DB(t *testing.T) {
+	h := newApprovalPolicyHarness(t)
+	org := h.tenantWithFindings()
+	a1, a2 := h.member(org, "admin"), h.member(org, "admin")
+	medium, _ := h.findingOnAsset(org, "medium")
+	id := uuid.NewString()
+	h.exec(`INSERT INTO finding_status_approvals (id, tenant_id, finding_id, requested_status, requested_by_actor, justification, status, closure_reason, expires_at)
+	        VALUES ($1, $2, $3, 'accepted', 'ticket', 'jira SEC-1 was closed without a fix', 'pending', 'risk_accepted', now() + interval '30 days')`, id, org, medium)
+	if out, _ := h.approve(a1, id, http.StatusOK); out.Status != "pending" || out.Required != 2 {
+		t.Fatalf("one approver completed a ticket's request: %+v", out)
+	}
+	if out, _ := h.approve(a2, id, http.StatusOK); out.Status != "approved" {
+		t.Fatal("two approvers did not apply the ticket's request")
+	}
+}
+
+// Pool membership is read when someone signs: a person added to the security
+// pool group less than 24 hours ago does not count as the pool's. With a
+// strict pool nobody else may stand in, so the request waits.
+func TestApprovalPolicy_FreshPoolMemberDoesNotCount_DB(t *testing.T) {
+	h := newApprovalPolicyHarness(t)
+	org := h.tenantWithFindings()
+	owner := h.member(org, "owner")
+	requester, sec := h.member(org, "admin"), h.member(org, "admin")
+	g := h.group(org)
+	h.exec(`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)`, g, sec.id) // joined now
+	h.expect(owner, http.MethodPut, "/api/v1/organization/settings/finding-approvals/",
+		`{"policy":{"security_pool_group_id":"`+g+`","security_pool_strict":true}}`, http.StatusOK)
+
+	high, _ := h.findingOnAsset(org, "high")
+	req := h.requestAccept(requester, high)
+	_, body := h.approve(sec, req.ID, http.StatusConflict)
+	if code, _ := refusalReason(t, body); code != "NO_ELIGIBLE_APPROVER" {
+		t.Fatalf("a pool member added a moment ago signed: %s", body)
+	}
+	h.exec(`UPDATE group_members SET joined_at = now() - interval '25 hours' WHERE group_id = $1 AND user_id = $2`, g, sec.id)
+	if out, _ := h.approve(sec, req.ID, http.StatusOK); out.Status != "approved" {
+		t.Fatal("a pool member of more than a day could not sign")
+	}
 }
 
 // Two approvers signing a dual request at the same moment: the request row
@@ -470,5 +524,34 @@ func TestApprovalPolicy_ConcurrentSignoffs_DB(t *testing.T) {
 		if n := h.countRows(`SELECT COUNT(*) FROM approval_signoffs WHERE subject_id = $1`, req.ID); n != 2 {
 			t.Fatalf("round %d: %d sign-offs", i, n)
 		}
+	}
+}
+
+// A ticket's request to accept a risk ends within the organization's cap for
+// the finding, not only the platform's: with 7 days set for standard
+// findings, the proposed end is at most 7 days away.
+func TestApprovalPolicy_TicketRequestEndFollowsTheOrganizationCap_DB(t *testing.T) {
+	h := newApprovalPolicyHarness(t)
+	org := h.tenantWithFindings()
+	owner := h.member(org, "owner")
+	h.expect(owner, http.MethodPut, "/api/v1/organization/settings/finding-approvals/",
+		`{"policy":{"max_acceptance_days":{"standard":7}}}`, http.StatusOK)
+	low, _ := h.findingOnAsset(org, "low")
+	tid, err := shared.IDFromString(org)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fid, _ := shared.IDFromString(low)
+	out, err := h.svc.RequestTicketDisposition(context.Background(), tid, []shared.ID{fid}, vulnerability.FindingStatusAccepted, "jira", "SEC-9", "acct-1")
+	if err != nil || len(out.Requested) != 1 {
+		t.Fatalf("request: %v %+v", err, out)
+	}
+	var days float64
+	if err := h.db.QueryRowContext(context.Background(),
+		`SELECT EXTRACT(EPOCH FROM (expires_at - now())) / 86400 FROM finding_status_approvals WHERE finding_id = $1`, low).Scan(&days); err != nil {
+		t.Fatal(err)
+	}
+	if days > 7.01 || days < 6 {
+		t.Fatalf("the proposed end is %.2f days away; the organization's cap is 7", days)
 	}
 }
