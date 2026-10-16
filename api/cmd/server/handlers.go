@@ -185,7 +185,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
-	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, log)
+	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, deps.RedisClient, log)
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
@@ -425,7 +425,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Core
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
-		User:   handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log),
+		User:   newUserHandler(svc, repos, v, log),
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
@@ -502,17 +502,18 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		DefectDojo: handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
-		Command:         commandHandler,
-		Sensor:          sensorHandler,
-		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
-		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
-		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		ScanWindow:      newScanWindowHandler(svc, log),
-		Ingest:          ingestHandler,
-		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
-		SensorPairing:   newSensorPairingHandler(svc, log),
-		IOC:             newIOCHandlerWithFindingCheck(deps, log),
-		Validation:      validationHandler,
+		Command:          commandHandler,
+		Sensor:           sensorHandler,
+		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
+		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
+		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		ScanWindow:       newScanWindowHandler(svc, log),
+		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
+		Ingest:           ingestHandler,
+		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
+		SensorPairing:    newSensorPairingHandler(svc, log),
+		IOC:              newIOCHandlerWithFindingCheck(deps, log),
+		Validation:       validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
@@ -537,6 +538,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
 		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
 			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
+		AdminVersionCheck: handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
+
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
@@ -700,7 +703,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
-	wireFindingApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
+	wireFindingApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).
 	wireScanWindowTOTP(svc)
@@ -1411,7 +1414,7 @@ func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.Suppressi
 // newCIHandlers builds the CI run service and its two handlers (RFC-051).
 // The CI providers' discovery and JWKS documents are fetched through the
 // SSRF-safe client: a self-managed GitLab issuer is configured by a tenant.
-func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
+func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redisClient *redis.Client, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
 	if repos.CIRun == nil || svc.Ingest == nil {
 		return nil, nil
 	}
@@ -1491,12 +1494,16 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
-	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)); fp != nil {
+	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())); fp != nil {
 		runner.SetSecretKeys(fp)
 	}
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
 	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
+	// Idempotency-Key on uploads needs the shared store; without Redis the header is ignored.
+	if redisClient != nil {
+		runner.SetIdempotencyStore(redisClient)
+	}
 	return admin, runner
 }
 
@@ -1687,4 +1694,13 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 		return svc.DataScope
 	}
 	return findingAccessGuard{DataScopeAsserter: svc.DataScope, findings: svc.Vulnerability}
+}
+
+// newUserHandler builds the user handler with self-service account deletion.
+func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
+	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	if svc.AccountDeletion != nil {
+		h.SetAccountDeletion(svc.AccountDeletion)
+	}
+	return h
 }
