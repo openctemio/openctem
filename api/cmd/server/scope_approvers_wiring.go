@@ -218,11 +218,6 @@ func wireFindingApprovers(svc *Services, repos *Repositories, dir *postgres.Scop
 		mail = findingApprovalMailer{email: svc.Email, log: log}
 	}
 	svc.Vulnerability.SetApprovalNotifier(dir, inApp, mail, webBaseURL)
-	// Requests VEX statements in scan reports make are announced too,
-	// batched per report and approver.
-	if svc.Ingest != nil {
-		svc.Ingest.SetVEXRequestNotifier(svc.Vulnerability)
-	}
 	// Muting the digest notification type opts a member out of the digest.
 	if repos != nil && repos.Notification != nil {
 		svc.Vulnerability.SetApprovalDigestPreferences(repos.Notification)

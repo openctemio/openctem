@@ -366,11 +366,12 @@ func (s *VulnerabilityService) NotifyVEXRequests(ctx context.Context, tenantID s
 	}
 }
 
-// findingsVisibleTo keeps the findings in the user's data scope (all of them
-// without a data-scope enforcer).
+// findingsVisibleTo keeps the findings in the user's data scope. Without a
+// data-scope enforcer none is visible (fail closed): a notice must never
+// name a finding nobody checked the recipient may see.
 func (s *VulnerabilityService) findingsVisibleTo(ctx context.Context, tenantID, userID shared.ID, ids []shared.ID) []shared.ID {
 	if s.dataScope == nil {
-		return ids
+		return nil
 	}
 	scope, err := s.dataScope.ForUser(ctx, tenantID, userID)
 	if err != nil {
@@ -406,4 +407,31 @@ func (s *VulnerabilityService) vexMailBody(n int, titles []string) string {
 	return fmt.Sprintf(`<p>VEX statements in a scan report requested %d false positive(s) you may decide.</p>%s
 <p>A person must approve or reject each one. Review them: <a href="%s">%s</a> (sign-in required).</p>`,
 		n, list, html.EscapeString(link), html.EscapeString(link))
+}
+
+// vexNoticeOutbox claims the VEX requests nobody was told about yet
+// (*postgres.FindingApprovalRepository).
+type vexNoticeOutbox interface {
+	ClaimUnnotifiedVEXRequests(ctx context.Context, limit int) (map[shared.ID][]shared.ID, error)
+}
+
+// DispatchVEXRequestNotices sends the batched notices for the requests VEX
+// statements made since the last run: one per tenant and approver. Called by
+// a background job, never on the ingest path. It answers how many requests
+// it announced.
+func (s *VulnerabilityService) DispatchVEXRequestNotices(ctx context.Context) (int, error) {
+	outbox, ok := s.approvalRepo.(vexNoticeOutbox)
+	if !ok || s.approverDir == nil {
+		return 0, nil
+	}
+	byTenant, err := outbox.ClaimUnnotifiedVEXRequests(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for tid, ids := range byTenant {
+		s.NotifyVEXRequests(ctx, tid, ids)
+		n += len(ids)
+	}
+	return n, nil
 }

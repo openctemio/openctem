@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_finding_status_approvals_actor_unnotified;
+ALTER TABLE finding_status_approvals DROP COLUMN IF EXISTS approvers_notified_at;

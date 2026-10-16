@@ -75,9 +75,6 @@ type FindingProcessor struct {
 	// vexStatements applies the organization's VEX statements to the
 	// findings of the batch (sticky statements). Nil: not applied.
 	vexStatements VEXStatementApplier
-	// vexNotifier tells approvers about requests VEX statements made
-	// (nil: nobody is told).
-	vexNotifier VEXRequestNotifier
 
 	// exposureBridge promotes secret-scan findings into the exposure/credential
 	// store (labeled discovery_source=secret_scan). Runs POST-insert (needs the
@@ -210,12 +207,6 @@ func (p *FindingProcessor) SetAssignmentApplier(applier AssignmentApplier) {
 // SetVEXStatementApplier wires the organization's VEX statements.
 func (p *FindingProcessor) SetVEXStatementApplier(a VEXStatementApplier) {
 	p.vexStatements = a
-}
-
-// SetVEXRequestNotifier wires the batched notice to approvers about
-// false-positive requests made by VEX statements in a report.
-func (p *FindingProcessor) SetVEXRequestNotifier(n VEXRequestNotifier) {
-	p.vexNotifier = n
 }
 
 // SetRemediationKeyApplier wires remediation-group key derivation (RFC-015).
