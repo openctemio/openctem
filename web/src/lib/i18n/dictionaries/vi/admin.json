@@ -578,7 +578,7 @@
   "admin.versionCheck.error.expired": "Nguồn phát hành đã hết hạn; hãy lấy bản mới.",
   "admin.versionCheck.error.http_status": "Máy chủ chứa nguồn phát hành trả về lỗi.",
   "admin.versionCheck.error.invalid": "Không phải nguồn phát hành có chữ ký hợp lệ.",
-  "admin.versionCheck.error.no_root": "Bản dựng này chưa ghim khóa của nguồn phát hành.",
+  "admin.versionCheck.error.no_key": "Bản dựng này chưa ghim khóa của nguồn phát hành.",
   "admin.versionCheck.error.rollback": "Cũ hơn thông tin phát hành đã áp dụng.",
   "admin.versionCheck.error.too_large": "Tệp lớn hơn giới hạn của nguồn phát hành.",
   "admin.versionCheck.error.unreachable": "Không kết nối được đến nguồn phát hành (không có internet?).",

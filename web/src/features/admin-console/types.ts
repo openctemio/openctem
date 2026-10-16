@@ -475,7 +475,7 @@ export type VersionCheckErrorCode =
   | 'rollback'
   | 'conflict'
   | 'expired'
-  | 'no_root'
+  | 'no_key'
 
 /** GET /admin/version-check/: what the release feed says about this instance. */
 export interface VersionCheckStatus {
