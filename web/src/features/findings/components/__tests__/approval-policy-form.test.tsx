@@ -158,7 +158,7 @@ describe('ApprovalPolicyForm — relaxation', () => {
     expect(screen.getByRole('switch', { name: /exclude the assignee/i })).not.toBeChecked()
   })
 
-  it('cancels a waiting relaxation by saving the policy in force', async () => {
+  it('cancels a waiting relaxation with the explicit cancel_pending flag', async () => {
     const inForce = { ...basePolicy, exclude_assignee: true }
     update.mockResolvedValue(settings({ policy: inForce }))
     render(
@@ -172,7 +172,7 @@ describe('ApprovalPolicyForm — relaxation', () => {
       />
     )
     await userEvent.click(screen.getByRole('button', { name: /cancel the change/i }))
-    expect(update).toHaveBeenCalledWith({ policy: inForce })
+    expect(update).toHaveBeenCalledWith({ cancel_pending: true })
   })
 
   it('is read-only without settings:write', () => {
