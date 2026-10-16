@@ -84,7 +84,9 @@ introduced were made with the value `APP_ENCRYPTION_KEY` had then. Set
 `FINGERPRINT_KEY` to the current `APP_ENCRYPTION_KEY` value (the same string)
 before the first start with this version: every stored fingerprint stays
 valid and nothing is duplicated. After that the two keys are independent, and
-the encryption key may be rotated by the runbook below. If the encryption key
+the encryption key may be rotated by the runbook below. A retired encryption
+key value that is reused as `FINGERPRINT_KEY` stays a live secret: keep it as
+protected as the current keys. If the encryption key
 was already rotated since secret findings were stored, set `FINGERPRINT_KEY` to
 the value in force when they were fingerprinted if you still have it; otherwise
 the old fingerprints cannot be verified and a secret seen again may open one
