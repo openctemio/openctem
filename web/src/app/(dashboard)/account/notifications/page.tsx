@@ -25,6 +25,7 @@ import {
 } from '@/features/notifications/api/use-notification-api'
 import { NOTIFICATION_TYPES } from '@/features/notifications/lib/notification-types'
 import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** Threshold wording per level (the list runs least severe first). */
 const MIN_SEVERITY_LABELS: Record<SeverityLevel, string> = {
@@ -48,6 +49,7 @@ const MIN_SEVERITY_LABELS: Record<SeverityLevel, string> = {
  * Settings > Integrations > Notification channels.
  */
 export default function NotificationsSettingsPage() {
+  const { t } = useTranslation()
   const [isSaving, setIsSaving] = useState(false)
   const { data: preferences, isLoading, error, mutate } = useNotificationPreferencesApi()
 
@@ -180,9 +182,11 @@ export default function NotificationsSettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5" />
-            Notification types
+            {t('notificationTypes.title', 'Notification types')}
           </CardTitle>
-          <CardDescription>Turn individual kinds of notification on or off.</CardDescription>
+          <CardDescription>
+            {t('notificationTypes.subtitle', 'Turn individual kinds of notification on or off.')}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -193,14 +197,20 @@ export default function NotificationsSettingsPage() {
                   {index > 0 && <Separator className="mb-4" />}
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <Label htmlFor={`type-${notifType.id}`}>{notifType.name}</Label>
-                      <p className="text-sm text-muted-foreground">{notifType.description}</p>
+                      <Label htmlFor={`type-${notifType.id}`}>
+                        {t(`notificationTypes.${notifType.id}.name`, notifType.name)}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        {t(`notificationTypes.${notifType.id}.description`, notifType.description)}
+                      </p>
                     </div>
                     <Switch
                       id={`type-${notifType.id}`}
                       checked={!isMuted}
                       onCheckedChange={() => toggleMutedType(notifType.id)}
-                      disabled={!inAppEnabled}
+                      // The digest also comes by email, so it can be muted with
+                      // in-app notifications off.
+                      disabled={!inAppEnabled && notifType.id !== 'finding_approval_digest'}
                     />
                   </div>
                 </div>
