@@ -552,5 +552,8 @@
   "admin.legal.title": "Thông tin pháp lý",
   "admin.legal.websiteUrl": "Trang web (https)",
   "admin.nav.legal": "Pháp lý",
-  "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}"
+  "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}",
+  "admin.stepUp.confirm": "Xác nhận",
+  "admin.stepUp.description": "Thao tác này thay đổi ai có thể đăng nhập hoặc được làm gì. Nhập một mã mới từ ứng dụng xác thực. Một mã có hiệu lực cho các thao tác như vậy trong năm phút tiếp theo.",
+  "admin.stepUp.title": "Xác nhận đó là bạn"
 }
