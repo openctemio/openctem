@@ -1623,6 +1623,9 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, rc
 	if rc != nil {
 		s.SetOnceStore(redis.NewWebhookDeliveryStore(rc))
 	}
+	if repos.RepoIdentity != nil {
+		s.SetRepositoryLifecycle(repos.RepoIdentity)
+	}
 	if svc.Encryptor != nil {
 		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
 	}
