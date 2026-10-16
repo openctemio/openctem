@@ -147,3 +147,10 @@ jobs:
           bash .github/scripts/release/gh-retry.sh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
           python3 .github/scripts/release/sanitize-notes.py notes.md
           bash .github/scripts/release/gh-retry.sh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+
+  release-feed:
+    name: Release feed
+    needs: [release]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-feed.yml
