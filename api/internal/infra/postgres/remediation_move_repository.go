@@ -284,11 +284,12 @@ func (r *RemediationTaskRepository) SplitTask(ctx context.Context, sp remediatio
 
 // MergeTasks moves every finding of the source tasks into the target, in
 // one transaction; the emptied sources are archived with a note. All tasks
-// must be of the same action (the caller checked; this checks again).
-func (r *RemediationTaskRepository) MergeTasks(ctx context.Context, mg remediation.MergeRequest) (int, error) {
+// must be of the same action (the caller checked; this checks again). It
+// returns how many findings came from each source.
+func (r *RemediationTaskRepository) MergeTasks(ctx context.Context, mg remediation.MergeRequest) (map[shared.ID]int, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("begin merge: %w", err)
+		return nil, fmt.Errorf("begin merge: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	versions := map[shared.ID]int{mg.TargetID: mg.TargetVersion}
@@ -297,19 +298,19 @@ func (r *RemediationTaskRepository) MergeTasks(ctx context.Context, mg remediati
 	}
 	tasks, err := lockTasksInOrder(ctx, tx, mg.TenantID, versions)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	target := tasks[mg.TargetID]
-	moved := 0
+	moved := make(map[shared.ID]int, len(mg.Sources))
 	for id := range mg.Sources {
 		src := tasks[id]
 		if src.ActionID != target.ActionID {
-			return 0, remediation.ErrMergeDifferentFix
+			return nil, remediation.ErrMergeDifferentFix
 		}
 		ids, err := queryIDsInTx(ctx, tx, `SELECT finding_id FROM remediation_task_members
 			WHERE tenant_id = $1 AND task_id = $2 AND left_at IS NULL AND role = 'primary'`, mg.TenantID.String(), id.String())
 		if err != nil {
-			return 0, fmt.Errorf("read merge members: %w", err)
+			return nil, fmt.Errorf("read merge members: %w", err)
 		}
 		if len(ids) == 0 {
 			continue
@@ -320,19 +321,19 @@ func (r *RemediationTaskRepository) MergeTasks(ctx context.Context, mg remediati
 			var v int
 			if err := tx.QueryRowContext(ctx, `SELECT version FROM remediation_tasks WHERE tenant_id = $1 AND id = $2`,
 				mg.TenantID.String(), tid.String()).Scan(&v); err != nil {
-				return 0, fmt.Errorf("read task version: %w", err)
+				return nil, fmt.Errorf("read task version: %w", err)
 			}
 			cur[tid] = v
 		}
 		target := mg.TargetID
 		if _, err := r.moveInTx(ctx, tx, remediation.MoveRequest{TenantID: mg.TenantID, FromTaskID: id, FromVersion: cur[id],
 			ToTaskID: &target, ToVersion: cur[target], FindingIDs: ids, Reason: remediation.LeftReasonMerged, ActorID: mg.ActorID}); err != nil {
-			return 0, err
+			return nil, err
 		}
-		moved += len(ids)
+		moved[id] = len(ids)
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit merge: %w", err)
+		return nil, fmt.Errorf("commit merge: %w", err)
 	}
 	return moved, nil
 }

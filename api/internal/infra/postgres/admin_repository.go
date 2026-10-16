@@ -394,6 +394,8 @@ func scanAdminRow(scanner interface{ Scan(dest ...any) error }) (*admin.AdminUse
 // AuditLogRepository implements admin.AuditLogRepository using PostgreSQL.
 type AuditLogRepository struct {
 	db *DB
+	// afterCreate receives each row as written (SetAfterCreate).
+	afterCreate func(admin.AuditChainEntry)
 }
 
 // NewAuditLogRepository creates a new AuditLogRepository.
@@ -419,6 +421,7 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 			ip_address, user_agent, success, error_message, created_at, severity
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		RETURNING chain_position, prev_hash, hash
 	`
 
 	requestBody, err := json.Marshal(log.RequestBody)
@@ -426,7 +429,8 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 		requestBody = []byte("{}")
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
+	var entry admin.AuditChainEntry
+	err = r.db.QueryRowContext(ctx, query,
 		log.ID.String(),
 		nullIDString(log.AdminID),
 		log.AdminEmail,
@@ -444,13 +448,33 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 		nullString(log.ErrorMessage),
 		log.CreatedAt,
 		auditSeverity(log.Severity),
-	)
+	).Scan(&entry.Position, &entry.PrevHash, &entry.Hash)
 
 	if err != nil {
 		return fmt.Errorf("failed to create audit log: %w", err)
 	}
-
+	if r.afterCreate != nil {
+		entry.Log = log
+		r.afterCreate(entry)
+	}
 	return nil
+}
+
+// SetAfterCreate registers fn to receive every row as written, with its chain
+// position and hash (the off-box audit sink). fn must not block.
+func (r *AuditLogRepository) SetAfterCreate(fn func(admin.AuditChainEntry)) {
+	r.afterCreate = fn
+}
+
+// ChainHead returns the chain's newest position and hash: the newest row,
+// else the newest retention anchor, else 0 and "".
+func (r *AuditLogRepository) ChainHead(ctx context.Context) (int64, string, error) {
+	var pos int64
+	var hash string
+	if err := r.db.QueryRowContext(ctx, `SELECT tail_position, tail_hash FROM admin_audit_chain_tail()`).Scan(&pos, &hash); err != nil {
+		return 0, "", fmt.Errorf("read admin audit chain head: %w", err)
+	}
+	return pos, hash, nil
 }
 
 // GetByID retrieves an audit log by ID.

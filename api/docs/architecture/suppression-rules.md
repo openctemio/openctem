@@ -17,7 +17,7 @@ routes in `registerSuppressionRoutes` (`internal/infra/http/routes/scanning.go`)
 | Step | Who | What happens |
 |---|---|---|
 | Request | `findings:suppressions:write` | A pending rule. An asset-bound rule must name an asset the requester may see. The rule has an end (`expires_at`): 90 days when none is given, at most 365 days ahead; the end cannot be removed. Renewal is a new rule, reviewed and approved again. |
-| Preview | `findings:suppressions:approve` | `GET /api/v1/suppressions/{id}/preview` returns `{matching_open_findings, capped, limit}`: the open findings an approval would close now. |
+| Preview | `findings:suppressions:approve` | `GET /api/v1/suppressions/{id}/preview` returns `{matching_open_findings, capped, limit, in_scope_findings, sample}`: the open findings an approval would close now, how many of them are on assets the caller's data scope covers, and the first 10 of those (title, severity, asset, path; never evidence). The sample is empty unless the caller also holds `findings:read`, and a secret finding has no title in it (rule id and path only). |
 | Approve | `findings:suppressions:approve` | Four-eyes: the approver is not the requester, unless the owner is the only eligible approver and sends `self_approval_reason` and a fresh `totp_code` from their authenticator app (audited Critical; a refused own approval is audited High as `suppression_rule.self_approval_refused`). The request names the `reviewed_updated_at` it approves; a rule edited since is refused (409). The approval closes the open findings the rule matches (below). |
 | Reject | `findings:suppressions:approve` | The rule never applies. |
 | Expire / delete | data-expiration controller / `findings:suppressions:delete` | The rule's suppressions are lifted (below). |
@@ -99,9 +99,14 @@ A finding someone has moved since is left alone.
 - Tenant: every query carries the rule's `tenant_id`; the rule is loaded by
   tenant and id, so another organization's rule is 404 for both the preview and
   the approval. Tests: `suppression_apply_db_test.go` (cross-tenant negative).
-- Data scope: approval acts organization-wide, so the preview count is
+- Data scope: approval acts organization-wide, so `matching_open_findings` is
   organization-wide too. It is a number, never a finding, and only people who
-  may approve see it (`authorization-matrix.md`).
+  may approve see it (`authorization-matrix.md`). The sample and
+  `in_scope_findings` are limited to the caller's data scope (the same
+  `FilterForCaller` as every by-id read): a finding on an asset the caller
+  cannot see is counted in the organization total and never listed. Without a
+  scope filter wired the sample is empty (fail closed). Tests:
+  `suppression_preview_sample_db_test.go` (scope and cross-tenant negatives).
 - Separation of duties: the requester cannot approve their own rule while
   someone else can; a lone owner approves their own rule only with a reason
   and a fresh authenticator code, never as a side effect of a plain approve,

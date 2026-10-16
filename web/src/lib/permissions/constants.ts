@@ -132,6 +132,9 @@ export const Permission = {
   SuppressionsDelete: 'findings:suppressions:delete',
   SuppressionsApprove: 'findings:suppressions:approve',
 
+  // Finding lifecycles (sub-statuses and schemes)
+  FindingsLifecyclesWrite: 'findings:lifecycles:write',
+
   // Vulnerabilities (findings:vulnerabilities:*)
   VulnerabilitiesRead: 'findings:vulnerabilities:read',
 
@@ -547,6 +550,7 @@ export const PermissionGroups = {
     Permission.FindingsDelete,
     Permission.ExposuresDelete,
     Permission.SuppressionsDelete,
+    Permission.FindingsLifecyclesWrite,
     Permission.ScansDelete,
     Permission.ScanProfilesDelete,
     Permission.SourcesDelete,
@@ -646,6 +650,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.SuppressionsWrite]: 'Manage Suppressions',
   [Permission.SuppressionsDelete]: 'Delete Suppressions',
   [Permission.SuppressionsApprove]: 'Approve Suppressions',
+  [Permission.FindingsLifecyclesWrite]: 'Manage Finding Lifecycles',
   [Permission.VulnerabilitiesRead]: 'View Vulnerabilities',
   [Permission.CredentialsRead]: 'View Credentials',
   [Permission.CredentialsWrite]: 'Manage Credentials',
@@ -854,6 +859,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsRead,
     Permission.SuppressionsWrite,
     Permission.SuppressionsDelete,
+    Permission.FindingsLifecyclesWrite,
     Permission.SuppressionsApprove,
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
@@ -1022,6 +1028,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsRead,
     Permission.SuppressionsWrite,
     Permission.SuppressionsDelete,
+    Permission.FindingsLifecyclesWrite,
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
     Permission.CredentialsWrite,
