@@ -13,19 +13,21 @@ import (
 // TestAIFalsePositiveProposal: AI triage proposes a false positive only for a
 // medium or low finding, only as a pending request with no person as
 // requester, never twice, never after a person rejected it, never across
-// tenants; a person approves it.
+// tenants; two distinct people approve it (an actor request needs one more sign-off).
 func TestAIFalsePositiveProposal(t *testing.T) {
 	db := setupTestDB(t)
 	pdb := &postgres.DB{DB: db}
 	ctx := context.Background()
 	tenant := createTestTenant(t, db, "ai-fp")
 	other := createTestTenant(t, db, "ai-fp-other")
-	approver := shared.NewID()
+	approver, approver2 := shared.NewID(), shared.NewID()
 	t.Cleanup(func() {
 		for _, id := range []shared.ID{tenant, other} {
 			_, _ = db.Exec(`DELETE FROM tenants WHERE id = $1`, id.String())
 		}
-		_, _ = db.Exec(`DELETE FROM users WHERE id = $1`, approver.String())
+		for _, id := range []shared.ID{approver, approver2} {
+			_, _ = db.Exec(`DELETE FROM users WHERE id = $1`, id.String())
+		}
 		_ = db.Close()
 	})
 	exec := func(q string, args ...any) {
@@ -34,7 +36,9 @@ func TestAIFalsePositiveProposal(t *testing.T) {
 			t.Fatalf("%v\n%s", err, q)
 		}
 	}
-	exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'approver')`, approver.String(), approver.String()+"@example.com")
+	for _, id := range []shared.ID{approver, approver2} {
+		exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'approver')`, id.String(), id.String()+"@example.com")
+	}
 	newFinding := func(severity string) shared.ID {
 		id := shared.NewID()
 		exec(`INSERT INTO findings (id, tenant_id, source, tool_name, message, severity, fingerprint, status)
@@ -60,6 +64,7 @@ func TestAIFalsePositiveProposal(t *testing.T) {
 	svc := finding.NewVulnerabilityService(nil, postgres.NewFindingRepository(pdb), logger.NewNop())
 	approvals := postgres.NewFindingApprovalRepository(pdb)
 	svc.SetApprovalRepository(approvals)
+	svc.SetApprovalNotifier(staticApprovers{approver, approver2}, nil, nil, "")
 
 	medium := newFinding("medium")
 	ok, err := svc.ProposeFalsePositiveFromAI(ctx, tenant, medium, 0.95, "the flagged value is a test fixture")
@@ -108,14 +113,10 @@ func TestAIFalsePositiveProposal(t *testing.T) {
 		t.Fatal("another tenant approved the proposal")
 	}
 
-	// A person approves it (any approver: it was requested by nobody).
-	if _, err := svc.ApproveStatus(ctx, finding.ApproveStatusInput{TenantID: tenant.String(),
-		ApprovalID: list[0].ID.String(), ApprovedBy: approver.String()}); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-	if s := status(medium); s != "false_positive" {
-		t.Fatalf("after approval: %s", s)
-	}
+	// A request made by an actor needs one more sign-off than the tier: one
+	// approver is not enough, two distinct eligible approvers are.
+	requireTwoSignoffs(t, svc, tenant, list[0].ID.String(), approver, approver2,
+		func() string { return status(medium) }, "confirmed", "false_positive")
 
 	// Rejected once, never proposed again.
 	if ok, err := svc.ProposeFalsePositiveFromAI(ctx, tenant, low, 0.95, "x"); err != nil || !ok {
