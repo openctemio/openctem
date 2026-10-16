@@ -1482,6 +1482,9 @@ type groupScanMember struct {
 	MatchValues []string
 	// Type is the stored (type, sub_type) the scanner type gate reads.
 	Type asset.TypeRef
+	// Selector is the typed selector that expanded to this member, for
+	// selector members.
+	Selector string
 }
 
 // groupScanMemberPage is the keyset page size for group members; the
