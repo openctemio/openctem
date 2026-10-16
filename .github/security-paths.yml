@@ -218,8 +218,9 @@ finding-lifecycle:
   - api/internal/infra/postgres/finding_correlation_repository.go
   - api/internal/infra/postgres/finding_sla_restart_repository.go
   - api/internal/infra/postgres/sla_repository.go
-  - api/internal/infra/postgres/suppression_apply.go
-  - api/internal/infra/postgres/suppression_repository.go
+  - api/internal/infra/postgres/suppression_*.go
+  - api/pkg/domain/suppression/**
+  - api/internal/infra/http/handler/suppression_handler.go
   - api/internal/infra/postgres/exposure_disposition_repository.go
   - api/internal/infra/postgres/asset_merge_findings.go
   - api/internal/infra/http/handler/vulnerability_handler.go
