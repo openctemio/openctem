@@ -34,7 +34,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StagePrioritization, StageMobilization},
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
-			"registerFindingImportRoutes", "registerFindingRetestRoutes", "registerFindingSourceRoutes",
+			"registerFindingImportRoutes", "registerFindingRetestRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes",
 			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},

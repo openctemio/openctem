@@ -586,6 +586,48 @@ func recheckSinglePersonFP(ctx context.Context, tx *sql.Tx, tenantID, findingID 
 	return nil
 }
 
+// PendingForDigest lists the pending requests of every tenant, oldest
+// first, at most limit (the daily approver digest; a background job: each
+// row carries its tenant and every later read is scoped by it).
+func (r *FindingApprovalRepository) PendingForDigest(ctx context.Context, limit int) ([]*vulnerability.Approval, error) {
+	if limit <= 0 {
+		limit = 5000
+	}
+	rows, err := r.db.QueryContext(ctx, r.selectQuery()+` WHERE status = 'pending' ORDER BY tenant_id, created_at LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pending requests for the digest: %w", err)
+	}
+	defer rows.Close()
+	out := make([]*vulnerability.Approval, 0)
+	for rows.Next() {
+		a, err := r.scanApprovalFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// MarkDigestSent records that the user got the digest now, when the last
+// one is at least minInterval old (atomic: two workers send it once). It
+// answers whether the digest may be sent.
+func (r *FindingApprovalRepository) MarkDigestSent(ctx context.Context, tenantID, userID shared.ID, minInterval time.Duration) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `
+		INSERT INTO finding_approval_digest_sent (tenant_id, user_id, sent_at) VALUES ($1, $2, now())
+		ON CONFLICT (tenant_id, user_id) DO UPDATE SET sent_at = now()
+		WHERE finding_approval_digest_sent.sent_at <= now() - $3::interval
+		RETURNING true`, tenantID.String(), userID.String(), fmt.Sprintf("%d seconds", int64(minInterval.Seconds()))).Scan(&ok)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("mark approval digest sent: %w", err)
+	}
+	return ok, nil
+}
+
 // ClaimUnnotifiedVEXRequests marks up to limit pending requests made by VEX
 // statements that no approver was told about yet as notified, and answers
 // them by tenant (the notice outbox; a background job across tenants, each
