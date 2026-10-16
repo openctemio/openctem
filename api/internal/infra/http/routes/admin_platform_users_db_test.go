@@ -161,6 +161,9 @@ func TestAdminPlatformUsers_Actions(t *testing.T) {
 	})
 
 	c := newPlatformUsersHarness(t).newAdmin(admin.AdminRoleOpsAdmin)
+	// Every support action takes step-up; these subtests are about the
+	// action itself.
+	c.autoStepUp = true
 	c.verify()
 
 	t.Run("a reason is required", func(t *testing.T) {

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 )
 
@@ -459,7 +460,7 @@ func ExplainCheck(c sensordom.ConfigCheck) CheckExplanation {
 		})
 	}
 	out := CheckExplanation{Known: true, Group: entry.entry.Group, Title: plain(entry.entry.Title),
-		Why: plain(entry.entry.Why), Fix: map[string]string{}, DocsURL: entry.entry.Docs}
+		Why: plain(entry.entry.Why), Fix: map[string]string{}, DocsURL: brand.Instance().DocsLink(entry.entry.Docs)}
 	for format, tmpl := range entry.fix {
 		if s, ok := renderFix(tmpl, format, text); ok {
 			out.Fix[format] = s
