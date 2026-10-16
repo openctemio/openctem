@@ -3,6 +3,7 @@ package finding
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,7 +30,15 @@ func (r *methodStubRepo) UpdateStatusBatch(ctx context.Context, tid shared.ID, i
 
 func fixAppliedFinding(t *testing.T, tenantID shared.ID) *vulnerability.Finding {
 	t.Helper()
-	f := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	return fixAppliedFindingOf(t, tenantID, vulnerability.SeverityMedium)
+}
+
+func fixAppliedFindingOf(t *testing.T, tenantID shared.ID, sev vulnerability.Severity) *vulnerability.Finding {
+	t.Helper()
+	f, err := vulnerability.NewFinding(tenantID, shared.NewID(), vulnerability.FindingSourceDAST, "nuclei", sev, "test finding")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, st := range []vulnerability.FindingStatus{
 		vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied,
 	} {
@@ -124,20 +133,35 @@ func TestBulkFixApplied_WithoutVerify_StillAllowed(t *testing.T) {
 	}
 }
 
-func TestAuthorizeHumanResolve(t *testing.T) {
-	for _, st := range vulnerability.AllFindingStatuses() {
-		err := authorizeHumanResolve(st, false)
-		if st == vulnerability.FindingStatusResolved {
-			if !errors.Is(err, shared.ErrForbidden) {
-				t.Errorf("resolved without verify: %v, want ErrForbidden", err)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("%s without verify: %v, want allowed", st, err)
-		}
+// The evidence a person's resolve needs grows with risk: a medium
+// finding may be attested with a note, a high one needs the verification
+// checklist, a critical one a retest or a second verifier. With no evidence
+// recorded, the bulk resolve refuses the high and critical rows and closes
+// the medium one.
+func TestBulkResolve_EvidenceByRisk(t *testing.T) {
+	tenantID := shared.NewID()
+	medium := fixAppliedFindingOf(t, tenantID, vulnerability.SeverityMedium)
+	high := fixAppliedFindingOf(t, tenantID, vulnerability.SeverityHigh)
+	critical := fixAppliedFindingOf(t, tenantID, vulnerability.SeverityCritical)
+	repo := &methodStubRepo{bulkStubRepo: bulkStubRepo{byID: map[string]*vulnerability.Finding{
+		medium.ID().String(): medium, high.ID().String(): high, critical.ID().String(): critical,
+	}}}
+	res, err := newBulkTestService(repo).BulkUpdateFindingsStatus(context.Background(), tenantID.String(), BulkUpdateStatusInput{
+		FindingIDs: []string{medium.ID().String(), high.ID().String(), critical.ID().String()},
+		Status:     vulnerability.FindingStatusResolved.String(), Resolution: "patched",
+		ActorID: shared.NewID().String(), HasVerifyPermission: true,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := authorizeHumanResolve(vulnerability.FindingStatusResolved, true); err != nil {
-		t.Errorf("resolved with verify: %v", err)
+	if res.Updated != 1 || res.Failed != 2 {
+		t.Fatalf("result = %+v, want the medium one closed and the high and critical ones refused", res)
+	}
+	reasons := map[string]string{}
+	for _, r := range res.Rows {
+		reasons[r.FindingID] = r.Reason
+	}
+	if !strings.Contains(reasons[high.ID().String()], "checklist") || !strings.Contains(reasons[critical.ID().String()], "retest") {
+		t.Errorf("reasons = %v", reasons)
 	}
 }
