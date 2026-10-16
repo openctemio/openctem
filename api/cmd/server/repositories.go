@@ -229,6 +229,8 @@ type Repositories struct {
 	AdminOrg        *postgres.AdminOrganizationRepository
 	AdminConsole    *postgres.AdminConsoleRepository
 	PlatformIdP     *postgres.PlatformIdPRepository
+	// AdminDB is the pool of the console's identity tables (UseAdminDB).
+	AdminDB *postgres.DB
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -605,4 +607,23 @@ func newRepositories(db *postgres.DB) *Repositories {
 func (r *Repositories) InitIntegrationExtensions(db *postgres.DB) {
 	r.IntegrationSCMExt = postgres.NewIntegrationSCMExtensionRepository(db, r.Integration)
 	r.IntegrationNotificationExt = postgres.NewIntegrationNotificationExtensionRepository(db, r.Integration)
+}
+
+// UseAdminDB moves the repositories of the platform console's identity tables
+// (admin_users, admin_credentials, admin_sessions, the platform identity
+// provider and its login states) to adminDB, the DB_ADMIN_USER pool. With one
+// pool it is the same database handle.
+func (r *Repositories) UseAdminDB(adminDB *postgres.DB) {
+	r.AdminDB = adminDB
+	r.Admin = postgres.NewAdminRepository(adminDB)
+	r.AdminConsole = postgres.NewAdminConsoleRepository(adminDB)
+	r.PlatformIdP = postgres.NewPlatformIdPRepository(adminDB)
+}
+
+// adminDBOf is the console identity pool, or db when none was set up.
+func adminDBOf(r *Repositories, db *postgres.DB) *postgres.DB {
+	if r != nil && r.AdminDB != nil {
+		return r.AdminDB
+	}
+	return db
 }

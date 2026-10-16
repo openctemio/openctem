@@ -267,3 +267,81 @@ END
 $$;
 
 \echo 'least-privilege roles: OK (' :migrator_user ' owns the schema, ' :app_user ' has DML only)'
+
+-- -----------------------------------------------------------------------------
+-- 8. Optional: the platform console's identity tables get their own role
+--    (admin_user / admin_password; the API's DB_ADMIN_USER). The API opens a
+--    second pool with it for administrators, console sessions and the
+--    platform identity provider, and the app role keeps no write on those
+--    tables (and no read but of admin_users, which the membership trigger and
+--    the platform-admin checks need). A SQL injection anywhere in the tenant
+--    plane then cannot add an administrator or a console session.
+-- -----------------------------------------------------------------------------
+\if :{?admin_user}
+\if :{?admin_password}
+\else
+  \set admin_password ''
+\endif
+SELECT set_config('openctem.admin_user', :'admin_user', false);
+DO $$
+BEGIN
+    IF current_setting('openctem.admin_user') IN (current_setting('openctem.app_user'), current_setting('openctem.migrator_user'), current_user) THEN
+        RAISE EXCEPTION 'admin_user must differ from app_user, migrator_user and the superuser';
+    END IF;
+END
+$$;
+SELECT format('CREATE ROLE %I LOGIN', :'admin_user')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'admin_user') \gexec
+SELECT format('ALTER ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT', :'admin_user') \gexec
+SELECT format('ALTER ROLE %I PASSWORD %L', :'admin_user', :'admin_password')
+WHERE :'admin_password' <> '' \gexec
+SELECT format('REVOKE %I FROM %I', g.rolname, m.rolname)
+FROM pg_auth_members am JOIN pg_roles g ON g.oid = am.roleid JOIN pg_roles m ON m.oid = am.member
+WHERE m.rolname = :'admin_user' \gexec
+
+SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'admin_user') \gexec
+SELECT format('GRANT USAGE ON SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
+SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
+-- The console's repositories also read users and memberships (linking an
+-- administrator to an account in no organization): same row access as the
+-- app for now; narrowing it to the console's own tables is a later step.
+SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
+SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations FROM %I', :'admin_user') \gexec
+SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.%I FROM %I', t, :'admin_user')
+FROM unnest(ARRAY['admin_audit_logs', 'admin_audit_chain_anchors']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
+SELECT format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', :'migrator_user', :'admin_user') \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migrator_user', :'admin_user') \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS TO %I', :'migrator_user', :'admin_user') \gexec
+
+-- The app keeps reading admin_users, nothing else of the console's identity.
+SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('REVOKE SELECT ON public.%I FROM %I', t, :'app_user')
+FROM unnest(ARRAY['admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+
+DO $$
+DECLARE
+    adm text := current_setting('openctem.admin_user');
+    app text := current_setting('openctem.app_user');
+    r record;
+BEGIN
+    FOR r IN SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls FROM pg_roles WHERE rolname = adm LOOP
+        IF r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls THEN
+            RAISE EXCEPTION 'role % still has a privileged attribute', adm;
+        END IF;
+    END LOOP;
+    IF to_regclass('public.admin_users') IS NOT NULL AND
+       (has_table_privilege(app, 'public.admin_users', 'INSERT') OR has_table_privilege(app, 'public.admin_users', 'UPDATE')
+        OR has_table_privilege(app, 'public.admin_users', 'DELETE')
+        OR NOT has_table_privilege(adm, 'public.admin_users', 'INSERT')) THEN
+        RAISE EXCEPTION 'admin_users is not written by % alone', adm;
+    END IF;
+END
+$$;
+\echo 'least-privilege roles: ' :admin_user ' writes the console identity tables; ' :app_user ' no longer does'
+\endif

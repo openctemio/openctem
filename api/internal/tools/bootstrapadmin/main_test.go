@@ -41,3 +41,23 @@ func TestDatabaseURLFromIPv6Host(t *testing.T) {
 		t.Fatalf("ipv6 host: %v %+v", err, u)
 	}
 }
+
+// With a console role configured the CLI connects as it: the app role cannot
+// write admin_users then.
+func TestDatabaseURLFromPrefersConsoleRole(t *testing.T) {
+	env := map[string]string{
+		"DB_HOST": "h", "DB_USER": "app", "DB_PASSWORD": "p", "DB_NAME": "n",
+		"DB_ADMIN_USER": "console", "DB_ADMIN_PASSWORD": "c",
+	}
+	u, err := url.Parse(databaseURLFrom(func(k string) string { return env[k] }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := u.User.Password(); u.User.Username() != "console" || got != "c" {
+		t.Fatalf("credentials = %q / %q", u.User.Username(), got)
+	}
+	delete(env, "DB_ADMIN_PASSWORD")
+	if got := databaseURLFrom(func(k string) string { return env[k] }); got != "" {
+		t.Fatalf("want empty without DB_ADMIN_PASSWORD, got %q", got)
+	}
+}
