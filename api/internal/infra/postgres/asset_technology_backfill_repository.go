@@ -5,18 +5,17 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/lib/pq"
 
 	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
+	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// AssetTechnologyBackfillRepository reads assets and component links for
-// the backfill, a batch at a time.
+// AssetTechnologyBackfillRepository reads technologies and component links
+// for the backfill, a batch at a time.
 type AssetTechnologyBackfillRepository struct {
 	db *DB
 }
@@ -27,6 +26,8 @@ func NewAssetTechnologyBackfillRepository(db *DB) *AssetTechnologyBackfillReposi
 }
 
 var _ assettechapp.BackfillStore = (*AssetTechnologyBackfillRepository)(nil)
+
+const zeroUUID = "00000000-0000-0000-0000-000000000000"
 
 // PendingTenants returns tenants with assets not backfilled at version.
 func (r *AssetTechnologyBackfillRepository) PendingTenants(ctx context.Context, version int) ([]shared.ID, error) {
@@ -52,98 +53,66 @@ func (r *AssetTechnologyBackfillRepository) PendingTenants(ctx context.Context, 
 	return out, rows.Err()
 }
 
-// ScanAssets returns the tenant's next assets with stored technologies,
-// after afterID in id order, with what set reconciliation recorded about
-// each element.
-func (r *AssetTechnologyBackfillRepository) ScanAssets(ctx context.Context, tenantID shared.ID, afterID string, limit int) ([]assettechapp.BackfillAsset, error) {
-	if afterID == "" {
-		afterID = "00000000-0000-0000-0000-000000000000"
+// ScanUnclassified returns the tenant's next technologies in category
+// other, in (asset_id, name_key) order after the given position.
+func (r *AssetTechnologyBackfillRepository) ScanUnclassified(ctx context.Context, tenantID shared.ID, afterAsset, afterKey string, limit int) ([]assettechapp.BackfillRow, error) {
+	if afterAsset == "" {
+		afterAsset = zeroUUID
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.id, a.properties -> 'technologies', a.first_seen, a.last_seen,
-		       COALESCE((SELECT jsonb_agg(jsonb_build_object('e', e.element, 'f', e.first_seen, 'l', e.last_seen, 's', e.source_name)
-		                                  ORDER BY e.last_seen)
-		                   FROM asset_attribute_set_elements e
-		                  WHERE e.tenant_id = a.tenant_id AND e.asset_id = a.id
-		                    AND e.attribute = 'technologies' AND e.removed_at IS NULL), '[]'::jsonb)
-		  FROM assets a
-		 WHERE a.tenant_id = $1 AND a.id > $2::uuid
-		   AND jsonb_typeof(a.properties -> 'technologies') = 'array'
-		 ORDER BY a.id
-		 LIMIT $3`, tenantID.String(), afterID, limit)
+		SELECT asset_id, name_key FROM asset_technologies
+		 WHERE tenant_id = $1 AND category = 'other' AND (asset_id, name_key) > ($2::uuid, $3::text)
+		 ORDER BY asset_id, name_key
+		 LIMIT $4`, tenantID.String(), afterAsset, afterKey, limit)
 	if err != nil {
-		return nil, fmt.Errorf("scan assets for technology backfill: %w", err)
+		return nil, fmt.Errorf("scan unclassified technologies: %w", err)
 	}
 	defer rows.Close()
-	var out []assettechapp.BackfillAsset
+	var out []assettechapp.BackfillRow
 	for rows.Next() {
 		var id string
-		var techRaw, seenRaw []byte
-		var first, last time.Time
-		if err := rows.Scan(&id, &techRaw, &first, &last, &seenRaw); err != nil {
-			return nil, fmt.Errorf("scan asset for technology backfill: %w", err)
+		var row assettechapp.BackfillRow
+		if err := rows.Scan(&id, &row.Key); err != nil {
+			return nil, fmt.Errorf("scan unclassified technology: %w", err)
 		}
-		aid, err := shared.IDFromString(id)
-		if err != nil {
+		if row.AssetID, err = shared.IDFromString(id); err != nil {
 			continue
 		}
-		a := assettechapp.BackfillAsset{ID: aid, FirstSeen: first, LastSeen: last, Elements: technologyElementsOf(techRaw)}
-		var seen []struct {
-			E string    `json:"e"`
-			F time.Time `json:"f"`
-			L time.Time `json:"l"`
-			S string    `json:"s"`
-		}
-		if json.Unmarshal(seenRaw, &seen) == nil && len(seen) > 0 {
-			a.Seen = make(map[string]assettechapp.BackfillElement, len(seen))
-			for _, s := range seen {
-				prev, ok := a.Seen[s.E]
-				el := assettechapp.BackfillElement{Element: s.E, FirstSeen: s.F, LastSeen: s.L, Source: s.S}
-				if ok && prev.FirstSeen.Before(el.FirstSeen) {
-					el.FirstSeen = prev.FirstSeen
-				}
-				a.Seen[s.E] = el // ordered by last_seen: the latest source wins
-			}
-		}
-		out = append(out, a)
+		out = append(out, row)
 	}
 	return out, rows.Err()
 }
 
-// technologyElementsOf reads properties.technologies as "Name:version"
-// strings (a list of strings or of {name, version} objects).
-func technologyElementsOf(raw []byte) []string {
-	var list []json.RawMessage
-	if json.Unmarshal(raw, &list) != nil {
+// SetCategories sets the category of the tenant's technologies that are
+// still in category other.
+func (r *AssetTechnologyBackfillRepository) SetCategories(ctx context.Context, tenantID shared.ID, rows []assettechapp.BackfillRow, cats []assettech.Category) error {
+	if len(rows) == 0 || len(rows) != len(cats) {
 		return nil
 	}
-	out := make([]string, 0, len(list))
-	for _, item := range list {
-		var s string
-		if json.Unmarshal(item, &s) == nil {
-			out = append(out, s)
+	ids, keys, cs := make([]string, 0, len(rows)), make([]string, 0, len(rows)), make([]string, 0, len(rows))
+	for i, row := range rows {
+		if !cats[i].IsValid() {
 			continue
 		}
-		var obj struct {
-			Name    string `json:"name"`
-			Version string `json:"version"`
-		}
-		if json.Unmarshal(item, &obj) == nil && obj.Name != "" {
-			if obj.Version != "" {
-				out = append(out, obj.Name+":"+obj.Version)
-			} else {
-				out = append(out, obj.Name)
-			}
-		}
+		ids = append(ids, row.AssetID.String())
+		keys = append(keys, row.Key)
+		cs = append(cs, string(cats[i]))
 	}
-	return out
+	if _, err := r.db.ExecContext(ctx, `
+		UPDATE asset_technologies t SET category = v.category, updated_at = now()
+		  FROM unnest($2::uuid[], $3::text[], $4::text[]) AS v(asset_id, name_key, category)
+		 WHERE t.tenant_id = $1 AND t.asset_id = v.asset_id AND t.name_key = v.name_key AND t.category = 'other'`,
+		tenantID.String(), pq.Array(ids), pq.Array(keys), pq.Array(cs)); err != nil {
+		return fmt.Errorf("set technology categories: %w", err)
+	}
+	return nil
 }
 
 // ScanTechnologyLinks returns the tenant's next component links whose
 // source is a technology detection, after afterID in id order.
 func (r *AssetTechnologyBackfillRepository) ScanTechnologyLinks(ctx context.Context, tenantID shared.ID, afterID string, limit int) ([]assettechapp.BackfillLink, error) {
 	if afterID == "" {
-		afterID = "00000000-0000-0000-0000-000000000000"
+		afterID = zeroUUID
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT s.id, p.name, v.raw, p.cpe_vendor IS NOT NULL
@@ -196,13 +165,13 @@ func (r *AssetTechnologyBackfillRepository) DeleteLinks(ctx context.Context, ten
 // MarkBackfilled records that a tenant was backfilled at version.
 func (r *AssetTechnologyBackfillRepository) MarkBackfilled(ctx context.Context, tenantID shared.ID, version int, stats assettechapp.BackfillStats) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO asset_technology_backfill (tenant_id, version, assets_scanned, technologies, links_removed, completed_at)
+		INSERT INTO asset_technology_backfill (tenant_id, version, technologies, classified, links_removed, completed_at)
 		VALUES ($1, $2, $3, $4, $5, now())
 		ON CONFLICT (tenant_id) DO UPDATE SET
-		       version = EXCLUDED.version, assets_scanned = EXCLUDED.assets_scanned,
-		       technologies = EXCLUDED.technologies, links_removed = EXCLUDED.links_removed,
+		       version = EXCLUDED.version, technologies = EXCLUDED.technologies,
+		       classified = EXCLUDED.classified, links_removed = EXCLUDED.links_removed,
 		       completed_at = EXCLUDED.completed_at`,
-		tenantID.String(), version, stats.AssetsScanned, stats.Technologies, stats.LinksRemoved)
+		tenantID.String(), version, stats.Technologies, stats.Classified, stats.LinksRemoved)
 	if err != nil {
 		return fmt.Errorf("mark technology backfill: %w", err)
 	}
