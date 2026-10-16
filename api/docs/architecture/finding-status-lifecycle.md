@@ -4,6 +4,11 @@ Every finding, whatever its source (scanner, import, CI, pentest), takes one
 status from one set, and every write of `findings.status` follows one
 lifecycle.
 
+
+An organization's own labels and rules on top of these statuses (sub-statuses and lifecycle schemes) are
+described in [finding-lifecycles.md](finding-lifecycles.md): they can only add constraints, never relax one
+of the rules below.
+
 ## The status set
 
 | Status | Category | Meaning |
