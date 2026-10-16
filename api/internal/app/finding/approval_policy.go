@@ -50,9 +50,15 @@ type policyFactsReader interface {
 // group (*postgres.FindingApprovalRepository). A group of another tenant has
 // no members here.
 type securityPoolReader interface {
-	GroupMemberIDs(ctx context.Context, tenantID, groupID shared.ID) ([]shared.ID, error)
+	GroupMemberIDs(ctx context.Context, tenantID, groupID shared.ID, addedBefore time.Time) ([]shared.ID, error)
 	GroupInTenant(ctx context.Context, tenantID, groupID shared.ID) (bool, error)
 }
+
+// SecurityPoolMinAge is how long a person must have been in the security
+// pool group before a sign-off counts as the pool's. The pool is read live
+// when someone signs, so without it an administrator could add a colluding
+// account to the group and have it sign in the same sitting.
+const SecurityPoolMinAge = 24 * time.Hour
 
 // SignoffRecord is one approval given to a request.
 type SignoffRecord struct {
@@ -202,7 +208,7 @@ func (s *VulnerabilityService) securityPoolMembers(ctx context.Context, tid shar
 	if err != nil {
 		return nil, fmt.Errorf("the organization's security pool group id is invalid: %w", err)
 	}
-	members, err := r.GroupMemberIDs(ctx, tid, gid)
+	members, err := r.GroupMemberIDs(ctx, tid, gid, time.Now().Add(-SecurityPoolMinAge))
 	if err != nil {
 		return nil, err
 	}
@@ -220,10 +226,10 @@ type policyEvaluation struct {
 }
 
 // evaluateFindingRequest evaluates a request of kind on f by requester
-// (zero for an actor). known are people who certainly hold the approve
+// (zero for an actor; actorMade then asks for the extra sign-off). known are people who certainly hold the approve
 // permission (the caller of an approve), used only without a directory.
 func (s *VulnerabilityService) evaluateFindingRequest(ctx context.Context, f *vulnerability.Finding, kind approvalpolicy.Kind,
-	requester shared.ID, requesterCanApprove bool, known ...shared.ID,
+	requester shared.ID, actorMade, requesterCanApprove bool, known ...shared.ID,
 ) (policyEvaluation, error) {
 	op, err := s.orgApprovalPolicy(ctx, f.TenantID())
 	if err != nil {
@@ -238,7 +244,7 @@ func (s *VulnerabilityService) evaluateFindingRequest(ctx context.Context, f *vu
 		return policyEvaluation{}, err
 	}
 	res := approvalpolicy.Evaluate(op.policy, approvalpolicy.Request{
-		Kind: kind, Facts: pf.Facts, RequesterID: requester, RequesterCanApprove: requesterCanApprove,
+		Kind: kind, Facts: pf.Facts, RequesterID: requester, ActorMade: actorMade, RequesterCanApprove: requesterCanApprove,
 		FPLevel: op.fpLevel, AssetOwners: pf.AssetOwners, AssigneeID: pf.AssigneeID,
 		Approvers: cands, SecurityPoolConfigured: op.poolConfigured,
 	})
@@ -323,7 +329,7 @@ func (s *VulnerabilityService) FindingApprovalPolicy(ctx context.Context, tenant
 	if err := s.assertFindingScope(ctx, f); err != nil {
 		return nil, err
 	}
-	ev, err := s.evaluateFindingRequest(ctx, f, kind, caller, callerCanApprove, caller)
+	ev, err := s.evaluateFindingRequest(ctx, f, kind, caller, false, callerCanApprove, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +400,7 @@ func (s *VulnerabilityService) signOffApproval(ctx context.Context, approval *vu
 	for _, p := range prior {
 		known = append(known, p.UserID)
 	}
-	ev, err := s.evaluateFindingRequest(ctx, f, kind, approval.RequestedBy, false, known...)
+	ev, err := s.evaluateFindingRequest(ctx, f, kind, approval.RequestedBy, approval.IsActorRequest(), false, known...)
 	if err != nil {
 		return false, err
 	}

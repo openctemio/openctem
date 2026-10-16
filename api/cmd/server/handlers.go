@@ -1036,6 +1036,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if svc.Suppression != nil {
 		svc.Suppression.SetStepUpGate(gate)
 	}
+	if svc.Group != nil {
+		// Edits of the approval policy's security pool group.
+		svc.Group.SetStepUpGate(gate)
+	}
 	if svc.Sensor != nil {
 		svc.Sensor.SetStepUpGate(gate)
 	}
