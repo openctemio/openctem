@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og'
+import { brandFaviconResponse } from '@/lib/brand-settings'
 
 /**
  * Apple touch icon for iOS PWA / "Add to Home Screen". Same mark as
@@ -11,7 +12,10 @@ export const size = {
 }
 export const contentType = 'image/png'
 
-export default function AppleIcon() {
+export default async function AppleIcon() {
+  // The brand's own favicon when it has one; the built-in mark otherwise.
+  const branded = await brandFaviconResponse()
+  if (branded) return branded
   return new ImageResponse(
     <div
       style={{
