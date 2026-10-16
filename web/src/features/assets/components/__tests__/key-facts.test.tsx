@@ -57,8 +57,9 @@ describe('KeyFactsSection', () => {
     expect(screen.getByText('lb.edge.example.net', { selector: 'dd' })).toBeInTheDocument()
     expect(screen.getByText('AS64500 · Example Hosting Ltd')).toBeInTheDocument()
     expect(screen.getByText('TLS 1.2')).toBeInTheDocument()
-    expect(screen.getByText('nginx')).toBeInTheDocument()
-    expect(screen.getByText('1.24.0')).toBeInTheDocument()
+    // Technologies have their own section, not a key fact row.
+    expect(screen.queryByText('nginx')).not.toBeInTheDocument()
+    expect(screen.queryByText('1.24.0')).not.toBeInTheDocument()
     const table = screen.getByRole('table')
     expect(within(table).getAllByRole('row')).toHaveLength(3)
     // No "+N" anywhere: every value is listed.
