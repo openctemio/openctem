@@ -768,7 +768,8 @@ Platform admin routes are for OpenCTEM operators, NOT tenant users. They
 authenticate **only** with a **console session** (RFC-022: `/login` password
 sign-in + mandatory TOTP, server-side session in the `admin_session` cookie,
 scoped to `/api/v1/admin`; cookie-authenticated writes must pass the
-`admin_csrf` double-submit check). There are **no admin API keys**: an
+`admin_csrf` double-submit check: `admin_csrf` is HttpOnly on `/api/v1/admin`,
+the console pages echo its copy `admin_csrf_ui`, scoped to `/admin`). There are **no admin API keys**: an
 `X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
 so every admin action has passed TOTP. The session resolves to an
 `admin_users` row with a platform role: `super_admin` > `ops_admin` >
@@ -834,6 +835,7 @@ is still accepted and checked the same way).
 | `PATCH /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
 | `DELETE /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
 | `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
+| `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
 | `GET /api/v1/admin/tenants/{tenantId}/audit-chain` | any admin (classifies the organization's audit hash-chain; read-only) |
@@ -1424,6 +1426,8 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
 | `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
 | `POST /remediation/campaigns/{id}/resolve` (gate and filter) | `findings:remediation:write` alone could mark findings fixed; an unparseable condition was dropped and a status-only filter counted as scope, widening a resolve to the organization | `RequireAll(findings:remediation:write, findings:fix_apply)`; the filter is parsed strictly (400 on save, 400 on resolve of an old unparseable one), a status alone is not scope, only `active`/`validating` campaigns resolve |
+| `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision needs every finding in scope |
+| `/remediation/tasks*` (new, RFC-098) | — | a task is listed and read through its in-scope findings only (counters, deadline and risk over those; `hidden_members` counts the rest; none visible = 404); a change needs every finding in scope; named findings must be in scope (404 otherwise) |
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |

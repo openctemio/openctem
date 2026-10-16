@@ -70,6 +70,9 @@ type mcpFindingReader interface {
 	// admin-wide GetFindingStats.
 	GetFindingStatsWithScope(ctx context.Context, input finding.GetFindingStatsInput) (*vulnerability.FindingStats, error)
 	ListActiveCVEs(ctx context.Context, in finding.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error)
+	// ListFindingTransitions is the transition engine's allowed moves (also
+	// data-scoped).
+	ListFindingTransitions(ctx context.Context, tenantID, findingID, actorID string, perms finding.TransitionPermissions) ([]vulnerability.TransitionDecision, vulnerability.FindingStatus, error)
 }
 
 type mcpPriorityExplainer interface {

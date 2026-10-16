@@ -60,11 +60,11 @@ looks at them again. An edit of the rule clears the flag.
 
 - Open work only: `vulnerability.SuppressionApplyFromStatuses(disposition)`,
   the active statuses the platform may move to that disposition. A
-  false-positive rule closes `new`, `confirmed`, `in_progress`, `fix_applied`
-  and `not_observed`; an accepted-risk rule closes `new`, `confirmed` and
-  `not_observed` and leaves work in progress alone (someone decided to fix it).
+  false-positive rule closes `new`, `confirmed`, `in_progress` and
+  `fix_applied`; an accepted-risk rule closes `new` and `confirmed` and leaves
+  work in progress alone (someone decided to fix it).
 - Never: findings already `false_positive`, `accepted`, `duplicate`,
-  `resolved` or `validated_fixed`; findings a person reported (sources
+  or `resolved`; findings a person reported (sources
   `pentest`, `manual`, `bug_bounty`, `red_team`); other organizations'
   findings; findings of other assets when the rule is asset-bound; findings
   without a file path when the rule has a path condition.
@@ -99,7 +99,8 @@ A finding someone has moved since is left alone.
   may approve see it (`authorization-matrix.md`).
 - Separation of duties: the requester cannot approve their own rule while
   someone else can; a lone owner approves their own rule only with a reason
-  and a fresh authenticator code, never as a side effect of a plain approve; the approval pins the reviewed version, so a rule widened
+  and a fresh authenticator code, never as a side effect of a plain approve,
+  and not within 7 days of any member being suspended, offboarded or removed; the approval pins the reviewed version, so a rule widened
   after review cannot be approved by mistake.
 - Abuse: a broad rule (for example rule id `*`) closes at most
   the cap per approval, and every change is attributable (activity per finding,

@@ -592,6 +592,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Remediation Campaigns
 		RemediationCampaign: handler.NewRemediationCampaignHandler(svc.RemediationCampaign, log),
+		RemediationTask:     handler.NewRemediationTaskHandler(svc.RemediationTask, log),
+		RemediationSuggest:  handler.NewRemediationSuggestionHandler(svc.RemediationSuggest, log),
 
 		// Business Units
 		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),

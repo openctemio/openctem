@@ -60,6 +60,15 @@ func (f *fakeFindingReader) GetFindingStatsWithScope(_ context.Context, in findi
 	}
 	return &vulnerability.FindingStats{}, nil
 }
+func (f *fakeFindingReader) ListFindingTransitions(_ context.Context, tenantID, _, actorID string, perms findingapp.TransitionPermissions) ([]vulnerability.TransitionDecision, vulnerability.FindingStatus, error) {
+	f.gotTenant, f.gotScopeUser = tenantID, actorID
+	if f.scopeErr != nil {
+		return nil, "", f.scopeErr
+	}
+	d := vulnerability.EvaluateTransition(vulnerability.TransitionFacts{Status: vulnerability.FindingStatusConfirmed},
+		vulnerability.TransitionActor{Kind: vulnerability.TransitionActorPerson, CanStatus: perms.Status}, vulnerability.FindingStatusInProgress)
+	return []vulnerability.TransitionDecision{d}, vulnerability.FindingStatusConfirmed, nil
+}
 func (f *fakeFindingReader) ListActiveCVEs(_ context.Context, _ findingapp.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.NewResult([]vulnerability.ActiveCVE{}, 0, pagination.Pagination{Page: 1, PerPage: 25}), nil
 }
