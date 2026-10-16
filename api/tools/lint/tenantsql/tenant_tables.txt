@@ -136,6 +136,7 @@ notification_outbox
 notification_preferences
 notification_state
 notifications
+organization_join_requests
 pentest_campaign_checklist_items
 pentest_campaign_checklists
 pentest_campaign_members
