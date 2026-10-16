@@ -11,7 +11,8 @@ import (
 // catalog and the lifecycle schemes with their versions. Tenant from the
 // token. Reading needs findings:read (sub-status names show on findings
 // anyway); every change needs findings:lifecycles:write, and publishing a
-// version also needs a recent sign-in.
+// version, changing or archiving a scheme and archiving a sub-status also
+// need a recent sign-in.
 func registerFindingLifecycleRoutes(router Router, h *handler.FindingLifecycleHandler, authMiddleware, userSyncMiddleware Middleware) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
@@ -19,7 +20,7 @@ func registerFindingLifecycleRoutes(router Router, h *handler.FindingLifecycleHa
 		r.GET("/", h.ListSubStatuses, middleware.Require(permission.FindingsRead))
 		r.POST("/", h.CreateSubStatus, middleware.Require(permission.FindingsLifecyclesWrite))
 		r.PATCH("/{id}", h.UpdateSubStatus, middleware.Require(permission.FindingsLifecyclesWrite))
-		r.DELETE("/{id}", h.ArchiveSubStatus, middleware.Require(permission.FindingsLifecyclesWrite))
+		r.DELETE("/{id}", h.ArchiveSubStatus, middleware.Require(permission.FindingsLifecyclesWrite), requireStepUp())
 		r.POST("/{id}/reactivate", h.ReactivateSubStatus, middleware.Require(permission.FindingsLifecyclesWrite))
 	}, tenantMiddlewares...)
 
@@ -29,8 +30,8 @@ func registerFindingLifecycleRoutes(router Router, h *handler.FindingLifecycleHa
 		r.GET("/{id}/versions", h.ListLifecycleVersions, middleware.Require(permission.FindingsRead))
 		r.GET("/{id}/versions/{version_id}", h.GetLifecycleVersion, middleware.Require(permission.FindingsRead))
 		r.POST("/", h.CreateLifecycle, middleware.Require(permission.FindingsLifecyclesWrite))
-		r.PATCH("/{id}", h.UpdateLifecycle, middleware.Require(permission.FindingsLifecyclesWrite))
-		r.DELETE("/{id}", h.ArchiveLifecycle, middleware.Require(permission.FindingsLifecyclesWrite))
+		r.PATCH("/{id}", h.UpdateLifecycle, middleware.Require(permission.FindingsLifecyclesWrite), requireStepUp())
+		r.DELETE("/{id}", h.ArchiveLifecycle, middleware.Require(permission.FindingsLifecyclesWrite), requireStepUp())
 		r.POST("/{id}/versions", h.CreateLifecycleDraft, middleware.Require(permission.FindingsLifecyclesWrite))
 		r.PUT("/{id}/versions/{version_id}", h.UpdateLifecycleDraft, middleware.Require(permission.FindingsLifecyclesWrite))
 		r.POST("/{id}/versions/{version_id}/test", h.TestLifecycleVersion, middleware.Require(permission.FindingsLifecyclesWrite))
