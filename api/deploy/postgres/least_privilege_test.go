@@ -175,6 +175,8 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`CREATE TABLE admin_sessions (id bigserial PRIMARY KEY)`,
 		`CREATE TABLE platform_identity_provider (id int PRIMARY KEY)`,
 		`CREATE TABLE admin_idp_login_states (state_hash text PRIMARY KEY)`,
+		`CREATE TABLE users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text)`,
+		`CREATE TABLE tenant_members (user_id uuid)`,
 	} {
 		exec1(ctx, t, mig, q)
 	}
@@ -208,8 +210,33 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	exec1(ctx, t, adm, `INSERT INTO admin_credentials VALUES (1)`)
 	exec1(ctx, t, adm, `INSERT INTO platform_identity_provider VALUES (1)`)
 	exec1(ctx, t, adm, `INSERT INTO admin_idp_login_states VALUES ('x')`)
-	exec1(ctx, t, adm, `SELECT count(*) FROM tenants`)
 	exec1(ctx, t, adm, `INSERT INTO admin_audit_logs (action) VALUES ('console')`)
+	exec1(ctx, t, adm, `SELECT count(*) FROM admin_audit_logs`)
+	exec1(ctx, t, adm, `SELECT count(*) FROM admin_audit_chain_anchors`)
+	exec1(ctx, t, adm, `SELECT count(*) FROM users`)
+	exec1(ctx, t, adm, `UPDATE users SET name = name`)
+	exec1(ctx, t, adm, `SELECT count(*) FROM tenant_members`)
+	exec1(ctx, t, adm, `DELETE FROM admin_sessions`)
+	// The console role reaches nothing else: no tenant data, no write beyond
+	// its tables, the users and memberships it only links against.
+	for _, q := range []string{
+		`SELECT count(*) FROM tenants`,
+		`SELECT count(*) FROM findings`,
+		`UPDATE findings SET tenant_id = tenant_id`,
+		`INSERT INTO findings (tenant_id) VALUES (NULL)`,
+		`SELECT count(*) FROM schema_migrations`,
+		`INSERT INTO users (name) VALUES ('x')`,
+		`DELETE FROM users`,
+		`INSERT INTO tenant_members (user_id) VALUES (NULL)`,
+		`UPDATE tenant_members SET user_id = user_id`,
+		`DELETE FROM tenant_members`,
+		`INSERT INTO admin_audit_chain_anchors DEFAULT VALUES`,
+		`TRUNCATE admin_sessions`,
+	} {
+		if _, err := adm.ExecContext(ctx, q); err == nil {
+			t.Errorf("console role was allowed outside its tables: %s", q)
+		}
+	}
 	for _, q := range []string{
 		`UPDATE admin_audit_logs SET action = 'forged'`,
 		`DELETE FROM admin_audit_logs`,
