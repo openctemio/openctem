@@ -169,7 +169,7 @@ func (r *PlanRepository) DeleteOverride(ctx context.Context, tenantID shared.ID,
 // findings limit applies: the count runs over the largest table, so an
 // organization without that limit never pays for it.
 func (r *PlanRepository) Usage(ctx context.Context, tenantID shared.ID, withFindings bool) (map[plan.Key]int, error) {
-	var seats, assets, sensors, keys, trusts, invites int
+	var seats, assets, sensors, keys, trusts, invites, subStatuses, schemes int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
 		  (SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND status <> 'offboarded'),
@@ -177,14 +177,17 @@ func (r *PlanRepository) Usage(ctx context.Context, tenantID shared.ID, withFind
 		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND scope = 'organization' AND status <> 'revoked'),
 		  (SELECT count(*) FROM api_keys WHERE tenant_id = $1 AND status = 'active'),
 		  (SELECT count(*) FROM ci_trust_configs WHERE tenant_id = $1),
-		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND created_at > now() - interval '24 hours')`,
-		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &invites)
+		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND created_at > now() - interval '24 hours'),
+		  (SELECT count(*) FROM lifecycle_sub_statuses WHERE tenant_id = $1 AND archived_at IS NULL),
+		  (SELECT count(*) FROM lifecycle_schemes WHERE tenant_id = $1 AND archived_at IS NULL)`,
+		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &invites, &subStatuses, &schemes)
 	if err != nil {
 		return nil, fmt.Errorf("count plan usage: %w", err)
 	}
 	usage := map[plan.Key]int{
 		plan.Seats: seats, plan.Assets: assets, plan.Sensors: sensors,
 		plan.APIKeys: keys, plan.CITrusts: trusts, plan.InvitesPerDay: invites,
+		plan.LifecycleSubStatuses: subStatuses, plan.LifecycleSchemes: schemes,
 	}
 	// Shared-sensor scans started today (UTC): one per run (a run's chunks
 	// count once), or per command outside a run.
