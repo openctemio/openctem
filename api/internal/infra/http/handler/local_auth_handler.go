@@ -344,9 +344,10 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.handleAuthError(w, err)
 		return
 	}
-	if h.loginFailures != nil {
-		_ = h.loginFailures.Reset(r.Context(), ipAddress)
-	}
+	// A success does not clear the address's count: one sprayer signing in
+	// to their own account between attempts must not escape the CAPTCHA.
+	// The count decays with LoginFailureWindow; the account's own failure
+	// state (lockout) is reset by the sign-in itself.
 
 	// Password was right but a second factor is needed: answer with the
 	// challenge only. No cookie is set and no session exists yet.
