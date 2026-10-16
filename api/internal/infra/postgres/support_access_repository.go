@@ -220,17 +220,29 @@ func (r *SupportAccessRepository) GetGrantForAdmin(ctx context.Context, adminID,
 	return g, nil
 }
 
-// CreateSession stores a new support session.
+// CreateSession stores a new support session. An earlier open session of
+// the same administrator under the same grant ends first (superseded), so
+// one administrator holds at most one open session per grant.
 func (r *SupportAccessRepository) CreateSession(ctx context.Context, s *supportaccess.Session) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO support_sessions (id, tenant_id, grant_id, admin_id, console_session_id, reason, started_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		s.ID.String(), s.TenantID.String(), s.GrantID.String(), s.AdminID.String(),
-		s.ConsoleSessionID.String(), s.Reason, s.StartedAt)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("create support session: %w", err)
 	}
-	return nil
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE support_sessions SET ended_at = $4, end_reason = 'superseded'
+		WHERE tenant_id = $1 AND grant_id = $2 AND admin_id = $3 AND ended_at IS NULL`,
+		s.TenantID.String(), s.GrantID.String(), s.AdminID.String(), s.StartedAt); err != nil {
+		return fmt.Errorf("end superseded support sessions: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO support_sessions (id, tenant_id, grant_id, admin_id, console_session_id, reason, started_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		s.ID.String(), s.TenantID.String(), s.GrantID.String(), s.AdminID.String(),
+		s.ConsoleSessionID.String(), s.Reason, s.StartedAt); err != nil {
+		return fmt.Errorf("create support session: %w", err)
+	}
+	return tx.Commit()
 }
 
 // LiveSession resolves a session for one request (no cache): open, opened by

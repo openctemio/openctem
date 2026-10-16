@@ -257,6 +257,15 @@ func TestSupportAccessSessions_DB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
+	// Opening another session under the same grant supersedes the first.
+	first := sess
+	sess, _, err = f.svc.StartSession(ctx, f.support, console, g.ID, "", client)
+	if err != nil {
+		t.Fatalf("second start: %v", err)
+	}
+	if _, err := f.svc.Access(ctx, f.support, supportaccess.AccessInput{SessionID: first.ID, ConsoleSessionID: console, Method: "GET", Route: "overview"}, client); !errors.Is(err, dom.ErrNoLiveSession) {
+		t.Fatalf("superseded session: %v", err)
+	}
 	access := func(a *admin.AdminUser, cs shared.ID, scope string) (*dom.LiveSession, error) {
 		return f.svc.Access(ctx, a, supportaccess.AccessInput{SessionID: sess.ID, ConsoleSessionID: cs, Scope: scope,
 			Method: "GET", Route: "findings"}, client)
@@ -329,8 +338,8 @@ func TestSupportAccessSessions_DB(t *testing.T) {
 	if n := f.count(t, `SELECT count(*) FROM admin_audit_logs WHERE admin_id = $1 AND action = 'support.accessed'`, f.support.ID().String()); n != 1 {
 		t.Fatalf("admin audit reads: %d, want 1", n)
 	}
-	if n := f.count(t, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'support.session_started'`, f.tenant.String()); n != 2 {
-		t.Fatalf("tenant audit sessions: %d, want 2", n)
+	if n := f.count(t, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'support.session_started'`, f.tenant.String()); n != 3 {
+		t.Fatalf("tenant audit sessions: %d, want 3", n)
 	}
 	if n := f.count(t, `SELECT count(*) FROM admin_audit_logs WHERE admin_id = $1 AND action = 'support.refused'`, f.support.ID().String()); n < 4 {
 		t.Fatalf("admin audit refusals: %d, want >= 4", n)
