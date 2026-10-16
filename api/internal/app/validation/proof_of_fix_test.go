@@ -142,10 +142,10 @@ func atConfirmed(t *testing.T) *vulnerability.Finding {
 }
 
 // RFC-011.2 §3: a not_reproducible verdict on a still-open CONFIRMED finding
-// DOWNGRADES it to validated_fixed — de-prioritized but NOT auto-closed. The
-// finding must never jump straight to resolved: that edge requires
-// findings:verify and this automated path must not bypass it. A human still
-// closes validated_fixed. `stood` (proof-of-fix stood → resolved) stays false.
+// DOWNGRADES it (its validation says not reproducible) but never moves it: the
+// finding must never jump to resolved, which requires findings:verify, and the
+// status keeps the next human action. `stood` (proof-of-fix stood → resolved)
+// stays false.
 func TestRetest_NotDetected_DowngradesConfirmed(t *testing.T) {
 	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "nuclei", RawMeta: map[string]any{"reachable": true}}}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
@@ -162,8 +162,8 @@ func TestRetest_NotDetected_DowngradesConfirmed(t *testing.T) {
 	if repo.current.Status() == vulnerability.FindingStatusResolved {
 		t.Fatal("a confirmed finding must not be auto-resolved (bypasses findings:verify)")
 	}
-	if repo.current.Status() != vulnerability.FindingStatusValidatedFixed {
-		t.Fatalf("confirmed finding should downgrade to validated_fixed, got %s", repo.current.Status())
+	if repo.current.Status() != vulnerability.FindingStatusConfirmed {
+		t.Fatalf("a downgrade keeps the status; got %s", repo.current.Status())
 	}
 }
 
