@@ -516,6 +516,65 @@ func (h *SuppressionHandler) auditApproval(r *http.Request, result *suppression.
 	}
 }
 
+// MarkReviewed handles POST /api/v1/suppressions/{id}/reviewed: an approver
+// clears the review flag of a rule the platform gave an end it did not have.
+// The rule keeps its end. Audited with the flag before and after.
+// @Summary      Clear a suppression rule's review flag
+// @Description  An approver confirms they reviewed a rule flagged because it had no end date. The rule keeps its end; 409 when the rule is not flagged. Needs findings:suppressions:approve.
+// @Tags         Suppressions
+// @Produce      json
+// @Param        id   path      string  true  "Suppression rule ID"
+// @Success      200  {object}  SuppressionRuleResponse
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /suppressions/{id}/reviewed [post]
+func (h *SuppressionHandler) MarkReviewed(w http.ResponseWriter, r *http.Request) {
+	tenantUUID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	ruleUUID, err := shared.IDFromString(r.PathValue("id"))
+	if err != nil {
+		apierror.BadRequest("Invalid rule ID").WriteJSON(w)
+		return
+	}
+	userUUID, err := shared.IDFromString(middleware.GetUserID(r.Context()))
+	if err != nil {
+		apierror.BadRequest("Invalid user ID").WriteJSON(w)
+		return
+	}
+	rule, flaggedAt, reason, err := h.service.MarkReviewed(r.Context(), tenantUUID, ruleUUID, userUUID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if h.auditService != nil {
+		actx := auditapp.AuditContext{
+			TenantID:   tenantUUID.String(),
+			ActorID:    userUUID.String(),
+			ActorEmail: auditActorEmail(r.Context()),
+			ActorIP:    getClientIP(r),
+			UserAgent:  r.UserAgent(),
+			RequestID:  r.Header.Get("X-Request-ID"),
+		}
+		changes := auditdom.NewChanges().
+			Set("review_flagged_at", flaggedAt.UTC().Format(time.RFC3339), nil).
+			Set("review_reason", reason, "")
+		event := auditapp.NewSuccessEvent(auditdom.ActionSuppressionRuleReviewed, auditdom.ResourceTypeSuppressionRule, rule.ID().String()).
+			WithResourceName(rule.Name()).
+			WithChanges(changes).
+			WithMessage("Suppression rule review flag cleared").
+			WithSeverity(auditdom.SeverityForAction(auditdom.ActionSuppressionRuleReviewed))
+		if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
+			h.logger.Warn("failed to audit suppression review", "error", err)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toSuppressionRuleResponse(rule))
+}
+
 // RejectRuleRequest represents a request to reject a rule.
 type RejectRuleRequest struct {
 	Reason string `json:"reason"`

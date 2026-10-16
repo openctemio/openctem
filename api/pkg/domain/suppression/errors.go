@@ -19,6 +19,8 @@ var (
 	// ErrSelfApproval: the requester tried to approve their own rule while
 	// another person could approve it (owner decision B16).
 	ErrSelfApproval = fmt.Errorf("%w: a suppression rule must be approved by someone other than its requester", shared.ErrForbidden)
+	// ErrRuleNotFlagged: the rule has no review flag to clear.
+	ErrRuleNotFlagged = fmt.Errorf("%w: the rule is not flagged for review", shared.ErrConflict)
 	// ErrRuleChangedSinceReview: the rule was edited after the approver
 	// loaded it; the approver must review the current version.
 	ErrRuleChangedSinceReview = fmt.Errorf("%w: the rule changed since you reviewed it; review it again", shared.ErrConflict)
