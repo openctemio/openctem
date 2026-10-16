@@ -173,6 +173,28 @@ describe('GroupExceptionDialog', () => {
     expect(props.onPendingConflict).toHaveBeenCalled()
   })
 
+  it('asks to confirm a group above the bulk ceiling, then resends it with approved: true', async () => {
+    const user = userEvent.setup()
+    api.request
+      .mockRejectedValueOnce(new ApiClientError('bulk', 'BULK_TOO_LARGE', 400))
+      .mockResolvedValueOnce({ id: 'b-1', member_count: 600, tier: 'security' })
+    const props = renderDialog()
+    await chooseReason(user, 'Risk accepted')
+    await screen.findByTestId('approval-evaluation')
+    await user.type(screen.getByLabelText('Justification'), 'A long enough justification here')
+    await user.click(screen.getByRole('button', { name: 'Request exception' }))
+
+    expect(await screen.findByTestId('group-exception-bulk-confirm')).toBeInTheDocument()
+    expect(api.request.mock.calls[0][1].approved).toBeUndefined()
+    expect(props.onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(toast.error).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Confirm and request' }))
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2))
+    expect(api.request.mock.calls[1][1].approved).toBe(true)
+    expect(props.onCreated).toHaveBeenCalled()
+  })
+
   it('a false positive offers its own reasons and sends no end date', async () => {
     const user = userEvent.setup()
     api.preview.mockResolvedValue({
