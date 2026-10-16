@@ -56,10 +56,15 @@ The sign-in page does not need `?org=`: once the typed email looks complete,
 it asks `POST /api/v1/auth/discover {"email"}` (public, its own 20/min budget,
 the email in the body). The answer always has the same two fields:
 
-- `{"next":"sso","org":"<slug>"}` when the email's domain is claimed (DNS
+- `{"next":"sso","org":"<reference>"}` when the email's domain is claimed (DNS
   proof, exclusive; see below) by an organization that has an active SSO
-  provider. The page then shows that organization's SSO buttons, exactly as
-  `?org=` does.
+  provider. The reference is opaque: the organization id and a 30-minute
+  expiry under an HMAC (key derived from the session secret under its own
+  label), never the slug. `GET /auth/sso/providers?org=` and
+  `GET /auth/sso/{provider}/authorize?org=` accept it wherever a slug is
+  accepted (`SSOService.ResolveOrg`); an altered or expired one matches no
+  organization. The page then shows that organization's SSO buttons, exactly
+  as `?org=` does.
 - `{"next":"password","org":""}` for everything else: an unclaimed, consumer
   or invalid domain, a claimed domain without SSO, a claim conflict, or any
   error.
