@@ -854,6 +854,8 @@ is still accepted and checked the same way).
 | `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
+| `GET /api/v1/admin/version-check/` | any admin (release feed status: newer releases, advisories affecting the running version; instance-level, no tenant data; `docs/architecture/version-check.md`) |
+| `POST /api/v1/admin/version-check/import` | **super_admin** + **step-up** (offline import of the signed release feed file, verified like a fetched one; audited high) |
 | `GET /api/v1/admin/tenants/{tenantId}/audit-chain` | any admin (classifies the organization's audit hash-chain; read-only) |
 | `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` | **super_admin** + a fresh console TOTP code in the body (step-up; a wrong code counts toward lockout). Refused 409 when a break is unexplained or the chain changed since the reviewed classification. Audited high in `admin_audit_logs` and as `audit.chain_rebaselined` in the organization's log |
 
