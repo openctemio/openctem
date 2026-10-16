@@ -358,5 +358,8 @@
   "settings.item.ticket-field-mapping": "Ánh xạ trường ticket",
   "settings.desc.ticket-field-mapping": "Các trường và trạng thái đồng bộ với Jira, theo từng dự án.",
   "settings.item.finding-approvals": "Phê duyệt phát hiện",
-  "settings.desc.finding-approvals": "Ai quyết định dương tính giả và rủi ro được chấp nhận, và ai được thông báo."
+  "settings.desc.finding-approvals": "Ai quyết định dương tính giả và rủi ro được chấp nhận, và ai được thông báo.",
+  "settings.item.finding-lifecycle": "Vòng đời phát hiện",
+  "settings.desc.finding-lifecycle": "Trạng thái con, bước chuyển và yêu cầu của từng bước theo cách của tổ chức bạn.",
+  "settings.group.findings": "Phát hiện"
 }
