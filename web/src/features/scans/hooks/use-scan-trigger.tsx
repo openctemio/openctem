@@ -103,11 +103,17 @@ async function activeRunOf(scanId: string): Promise<ScanRun | null> {
 export interface UseScanTriggerOptions {
   /** Called after a run was started. */
   onTriggered?: (scan: TriggerableScan) => void
+  /**
+   * Called after every answer of the trigger, started or refused: the API
+   * records a refused trigger (no sensor online, targets out of scope...) as
+   * a blocked run, so a run history must refresh either way.
+   */
+  onSettled?: (scan: TriggerableScan) => void
   /** Offered in the "already running" dialog to open the active run. */
   onViewRun?: (runId: string) => void
 }
 
-export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions = {}) {
+export function useScanTrigger({ onTriggered, onSettled, onViewRun }: UseScanTriggerOptions = {}) {
   const { t } = useTranslation()
   const busy = useSyncExternalStore(subscribe, getSnapshot, () => '')
   const [pending, setPending] = useState<{ scan: TriggerableScan; run: ScanRun } | null>(null)
@@ -131,8 +137,12 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
           toast.success(t('scans.trigger.triggered', undefined, { name: scan.name }))
         }
         onTriggered?.(scan)
+        onSettled?.(scan)
         await invalidateScanConfigsCache()
       } catch (error) {
+        // The refusal is on record as a blocked run: show it in the lists.
+        onSettled?.(scan)
+        void invalidateScanConfigsCache()
         const refused = refusedFromError(error)
         if (refused.length > 0) {
           setRefusal({ scan, refused })
@@ -153,7 +163,7 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
       }
       setInFlight(scan.id, false)
     },
-    [onTriggered, t]
+    [onTriggered, onSettled, t]
   )
 
   const trigger = useCallback(
