@@ -326,7 +326,7 @@ export default function CampaignDetailPage() {
             <p className="text-muted-foreground mt-2">
               The campaign with ID &quot;{id}&quot; does not exist.
             </p>
-            <Button className="mt-4" onClick={() => router.push('/remediation')}>
+            <Button className="mt-4" onClick={() => router.push('/remediation/campaigns')}>
               Return to Remediation
             </Button>
           </div>
@@ -351,7 +351,11 @@ export default function CampaignDetailPage() {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => router.push('/remediation')}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => router.push('/remediation/campaigns')}
+            >
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className="min-w-0">
