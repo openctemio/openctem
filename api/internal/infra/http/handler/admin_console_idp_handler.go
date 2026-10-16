@@ -25,9 +25,6 @@ const AdminIdPCookie = "admin_idp"
 
 const codeIdPSignInRequired apierror.Code = "IDP_SIGN_IN_REQUIRED"
 
-// codeAccountLocked: the account is locked after too many failed attempts.
-const codeAccountLocked apierror.Code = "ACCOUNT_LOCKED"
-
 // AdminIdPInfoResponse is what the console sign-in page may know.
 type AdminIdPInfoResponse struct {
 	Enabled     bool   `json:"enabled"`
