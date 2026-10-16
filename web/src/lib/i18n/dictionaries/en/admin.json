@@ -584,6 +584,7 @@
   "admin.auditChain.brokenBody": "{count} entries do not verify. Treat this as a security incident: compare with your off-site copy of the log.",
   "admin.sharedSensorEnroll.title": "Enroll a shared sensor",
   "admin.sharedSensorEnroll.desc": "Issue a single-use enrollment token. Start the sensor with SENSOR_INSTANCE_ENROLLMENT_TOKEN set to it: the sensor pairs with its own key and becomes a shared sensor of this instance, with no organization and the least-privilege grant.",
+  "admin.sharedSensorEnroll.mintRightBefore": "Issue it right before you start the sensor: it works once and expires within the hour.",
   "admin.sharedSensorEnroll.name": "Sensor name (optional)",
   "admin.sharedSensorEnroll.namePlaceholder": "Its host name when empty",
   "admin.sharedSensorEnroll.ttl": "Valid for (minutes, 5 to 60)",
