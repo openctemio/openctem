@@ -14,9 +14,9 @@ moves the platform allows.
 
 | Piece | Where |
 |---|---|
-| Tables `lifecycle_sub_statuses`, `lifecycle_schemes`, `lifecycle_scheme_versions` | migration `002712_lifecycle_catalog` |
-| `findings.sub_status_id` and the composite foreign key `(tenant_id, sub_status_id, status)` | migrations `002712`, `002713_findings_sub_status_fk` (`NOT VALID`), `002714_findings_sub_status_fk_validate` |
-| Partial index on findings that carry a sub-status | `002715_findings_sub_status_index` (built concurrently) |
+| Tables `lifecycle_sub_statuses`, `lifecycle_schemes`, `lifecycle_scheme_versions` | migration `002767_lifecycle_catalog` |
+| `findings.sub_status_id` and the composite foreign key `(tenant_id, sub_status_id, status)` | migrations `002767`, `002768_findings_sub_status_fk` (`NOT VALID`), `002769_findings_sub_status_fk_validate` |
+| Partial index on findings that carry a sub-status | `002770_findings_sub_status_index` (built concurrently) |
 | Domain: `SubStatus`, validation, catalog repository interface | `pkg/domain/findinglifecycle/substatus.go` |
 | Repository | `internal/infra/postgres/lifecycle_sub_status_repository.go` |
 
