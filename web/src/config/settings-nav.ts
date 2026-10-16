@@ -47,6 +47,7 @@ import {
   Lock,
   LockKeyhole,
   MessageSquare,
+  Package,
   Puzzle,
   Scale,
   ServerCog,
@@ -214,6 +215,17 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: FileBadge,
         permission: Permission.SettingsRead,
         keywords: ['license', 'spdx', 'copyleft', 'gpl', 'sbom', 'compliance'],
+      },
+      {
+        // Signed content packages from the catalog (api RFC-099): read with
+        // content:read; installs and approvals need content:install.
+        id: 'content',
+        title: 'Content catalog',
+        description: 'Signed rules, templates and other packages: install, update and approve.',
+        url: '/settings/content',
+        icon: Package,
+        permission: Permission.ContentRead,
+        keywords: ['content', 'packages', 'catalog', 'install', 'rules', 'templates', 'signed'],
       },
     ],
   },

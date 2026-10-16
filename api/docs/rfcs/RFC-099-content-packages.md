@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-15). Implemented: the package format (`package.yaml`, JSON schema, validator); signatures and trust, the signed index and revocation list, the offline bundle reader and verifier (`pkg/contentpkg`); the content catalog (offline import, install, update, pin, rollback, uninstall, approval option, audit; [architecture](../architecture/content-catalog.md)). Designed: private catalogs, first-party packages, the console |
+| Status | Proposed (2026-10-15). Implemented: the package format (`package.yaml`, JSON schema, validator); signatures and trust, the signed index and revocation list, the offline bundle reader and verifier (`pkg/contentpkg`); the content catalog (offline import, install, update, pin, rollback, uninstall, approval option, audit; [architecture](../architecture/content-catalog.md)); the console Content page. Designed: private catalogs, first-party packages |
 | Scope | api, web |
 | Related | RFC-061 (content packs), RFC-040 (mutual distrust, signed jobs), RFC-037 (versions and the sensor product catalog), RFC-072 (chunked feed transfer), RFC-094 (contracts only) |
 | Schema | [`api/pkg/contentpkg/schema/package.v1.schema.json`](../../pkg/contentpkg/schema/package.v1.schema.json) |
