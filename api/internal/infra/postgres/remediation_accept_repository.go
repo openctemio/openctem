@@ -357,3 +357,61 @@ func (r *RemediationSuggestionRepository) SetAutoJoin(ctx context.Context, tenan
 	}
 	return (&RemediationTaskRepository{db: r.db}).GetAction(ctx, tenantID, actionID)
 }
+
+// IsGroupMember reports whether the user belongs to the group, and the group
+// to the tenant.
+func (r *RemediationSuggestionRepository) IsGroupMember(ctx context.Context, tenantID, groupID, userID shared.ID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM group_members gm
+			JOIN groups g ON g.id = gm.group_id AND g.tenant_id = $1
+			WHERE gm.group_id = $2 AND gm.user_id = $3)`,
+		tenantID.String(), groupID.String(), userID.String()).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("check group member: %w", err)
+	}
+	return ok, nil
+}
+
+// OwnsFindingAssets reports whether every finding exists in the tenant and is
+// on an asset the user owns as primary or secondary owner, directly or
+// through a group of the tenant they belong to. A finding without an asset is
+// not owned.
+func (r *RemediationSuggestionRepository) OwnsFindingAssets(ctx context.Context, tenantID, userID shared.ID, findingIDs []shared.ID) (bool, error) {
+	if len(findingIDs) == 0 {
+		return false, nil
+	}
+	ids := rtIDStrings(findingIDs)
+	var owned, total int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT count(*) FILTER (WHERE EXISTS (
+		           SELECT 1 FROM asset_owners ao
+		           JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = $1
+		           WHERE ao.asset_id = f.asset_id
+		             AND ao.ownership_type IN ('primary', 'secondary')
+		             AND (ao.user_id = $2 OR ao.group_id IN (
+		                 SELECT gm.group_id FROM group_members gm
+		                 JOIN groups g ON g.id = gm.group_id AND g.tenant_id = $1
+		                 WHERE gm.user_id = $2)))),
+		       count(*)
+		FROM findings f
+		WHERE f.tenant_id = $1 AND f.id = ANY($3::uuid[])`,
+		tenantID.String(), userID.String(), pq.Array(ids)).Scan(&owned, &total)
+	if err != nil {
+		return false, fmt.Errorf("check finding asset owners: %w", err)
+	}
+	return total == len(dedupeStrings(ids)) && owned == total, nil
+}
+
+func dedupeStrings(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
