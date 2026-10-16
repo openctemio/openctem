@@ -8,27 +8,71 @@ import { useAdmin } from '@/features/admin-console/components/admin-console-shel
 import {
   createSharedSensorEnrollmentToken,
   savePlatformSensorProof,
+  saveSharedSensorsSetting,
   usePlatformSensorProof,
+  useSharedSensorsSetting,
 } from '@/features/admin-console/api/use-scan-policy'
 import { PlatformSensorProofForm } from '@/features/admin-console/components/platform-sensor-proof-form'
 import { SharedSensorEnrollCard } from '@/features/admin-console/components/shared-sensor-enroll-card'
+import { SharedSensorsForm } from '@/features/admin-console/components/shared-sensors-form'
 import { adminCan } from '@/features/admin-console/types'
 
 /**
- * System -> Platform scanning: whether platform sensors need a verified
- * domain before they scan a target (RFC-054 §8.1). Any administrator sees
- * it; super admins change it. Super admins also issue the single-use token
- * that enrolls a shared sensor (RFC-100 §7).
+ * System -> Platform scanning: shared sensors on this instance (RFC-100 §5)
+ * and whether platform sensors need a verified domain before they scan a
+ * target (RFC-054 §8.1). Any administrator sees them; super admins change
+ * them, and issue the single-use token that enrolls a shared sensor
+ * (RFC-100 §7).
  */
 export default function PlatformScanningPage() {
   const { t } = useTranslation()
   const me = useAdmin()
   const { data, error, isLoading, mutate } = usePlatformSensorProof()
+  const shared = useSharedSensorsSetting()
 
   return (
     <Main>
       <PageHeader title={t('admin.proof.pageTitle')} description={t('admin.proof.pageDesc')} />
       <div className="mt-5 space-y-5">
+        {shared.error ? (
+          <ErrorState
+            title={t('admin.sharedSensors.errorTitle')}
+            error={shared.error}
+            onRetry={() => void shared.mutate()}
+          />
+        ) : shared.isLoading || !shared.data ? (
+          <Skeleton className="h-56 w-full" />
+        ) : (
+          <SharedSensorsForm
+            enabled={shared.data.enabled}
+            newOrgs={shared.data.new_orgs}
+            ready={shared.data.ready}
+            canEdit={adminCan(me.role, 'super_admin')}
+            onSave={async (enabled, newOrgs, reason, code) => {
+              const s = shared.data
+              if (!s) return
+              await saveSharedSensorsSetting({
+                enabled,
+                new_orgs: newOrgs,
+                version: s.version ?? 0,
+                reason,
+                totp_code: code,
+              })
+              await shared.mutate()
+            }}
+          />
+        )}
+        <SharedSensorEnrollCard
+          canEdit={adminCan(me.role, 'super_admin')}
+          onIssue={({ name, ttlMinutes, reason, code }) =>
+            createSharedSensorEnrollmentToken({
+              name,
+              ttl_minutes: ttlMinutes,
+              reason,
+              totp_code: code,
+            })
+          }
+        />
         {error ? (
           <ErrorState
             title={t('admin.proof.errorTitle')}
@@ -52,17 +96,6 @@ export default function PlatformScanningPage() {
             }}
           />
         )}
-        <SharedSensorEnrollCard
-          canEdit={adminCan(me.role, 'super_admin')}
-          onIssue={({ name, ttlMinutes, reason, code }) =>
-            createSharedSensorEnrollmentToken({
-              name,
-              ttl_minutes: ttlMinutes,
-              reason,
-              totp_code: code,
-            })
-          }
-        />
       </div>
     </Main>
   )
