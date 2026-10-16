@@ -186,11 +186,6 @@ func (h *AdminAuditChainHandler) Rebaseline(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("fingerprint is required: classify the chain first").WriteJSON(w)
 		return
 	}
-	if req.TOTPCode == "" {
-		apierror.New(http.StatusUnauthorized, codeStepUpRequired,
-			"Enter a code from your authenticator to confirm the rebaseline").WriteJSON(w)
-		return
-	}
 
 	orgName := ""
 	if o, err := h.orgs.GetOrganization(r.Context(), id); err == nil {
@@ -216,18 +211,8 @@ func (h *AdminAuditChainHandler) Rebaseline(w http.ResponseWriter, r *http.Reque
 
 	// Step-up before anything touches the tenant: a wrong code must not leave
 	// a refused-rebaseline event on the organization's chain.
-	if err := h.stepUp.StepUp(r.Context(), actor, req.TOTPCode, stepUpPurposeRebaseline, clientInfo(r)); err != nil {
-		// StepUp writes its own console.step_up_failed record.
-		switch {
-		case errors.Is(err, admin.ErrStepUpUnavailable):
-			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
-				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
-		case errors.Is(err, admin.ErrInvalidMFACode):
-			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
-		default:
-			h.logger.Error("audit chain rebaseline step-up", "error", err)
-			apierror.InternalServerError("could not verify the code").WriteJSON(w)
-		}
+	// The route's step-up (or a body code, checked the same way) confirms it.
+	if !confirmAdminStepUp(w, r, h.stepUp, req.TOTPCode, stepUpPurposeRebaseline, h.logger) {
 		return
 	}
 
