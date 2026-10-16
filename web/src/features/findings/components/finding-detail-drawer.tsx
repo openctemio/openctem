@@ -220,6 +220,8 @@ export function FindingDetailDrawer({
                 <StatusSelect
                   findingId={detail.id}
                   value={triage.status}
+                  subStatusId={triage.subStatusId}
+                  allowSubStatusMoves
                   onChange={triage.changeStatus}
                   loading={triage.statusBusy}
                   showCheck
