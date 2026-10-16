@@ -236,12 +236,14 @@ has an account or an organization exists:
 
 Tests: `tests/unit/auth_anti_enumeration_test.go`.
 
-### Plan of a self-service organization
+### Limits of a self-service organization
 
-An organization a person creates themselves starts on the **Free** plan, and
-one person owns at most the Free plan's `free_teams_per_user` (1 by default):
-another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
-`docs/architecture/limits.md`.
+An organization a person creates themselves starts with the instance's
+self-service default limits, which are empty (no limits) unless a super
+admin sets them in Console > System > Limits. The same setting can cap how
+many organizations one person may own (`orgs_per_user`, unlimited by
+default); over it, `POST /api/v1/tenants` is refused with 403
+`LIMIT_REACHED`. See `docs/architecture/limits.md`.
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 
@@ -274,7 +276,7 @@ removed when the list changes.
 | Preview | `POST /api/v1/organization/invitations/preview {email, role_ids}` (owner or administrator with `members:invite`, the same requirements as creating one; the route takes the organization from the token) says, before sending, whether the policy allows it (reason code), whether the person is outside or personal, whether the roles need the inviter's step-up and the member's two-factor, whether an end of access is required, and whether they are already a member or invited. Nothing about other organizations |
 | Resend | rotates the token; at most once every 10 minutes and 5 times per invitation (429 `INVITATION_RESEND_TOO_SOON`) |
 | Cancel and decline | the row is kept as revoked (`revoked_at`): the token, the pending list and resend stop working; purged after 30 days. Removing a member revokes their pending invitations the same way |
-| Daily plan limit | counts every invitation created in the last 24 hours, revoked ones included |
+| Daily invitation limit | counts every invitation created in the last 24 hours, revoked ones included |
 | Per inviter | at most 50 invitations an hour (429 `INVITATIONS_RATE_LIMITED`) |
 | Seats | checked when the invitation is created (members plus pending invitations) and again at acceptance |
 | Pending list | shows `member_kind` (internal or external at creation), `privileged` (two-factor will be required), the end of access, the last send and the resend count |

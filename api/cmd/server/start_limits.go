@@ -26,7 +26,9 @@ func requireSelfServiceStartLimits(ctx context.Context, cfg *config.Config, svc 
 	if svc.Signup != nil {
 		selfService = svc.Signup.Current(ctx).Mode == signupdom.ModeSelfService
 	}
-	if !selfService {
+	// A hosted service's control plane sets the starting limits through the
+	// internal API.
+	if !selfService || cfg.InternalAPI.Enabled() {
 		return nil
 	}
 	ok, err := svc.Entitlement.StartLimitsConfigured(ctx)

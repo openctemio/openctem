@@ -21,7 +21,7 @@
 # Retired and removed names live in config.go (retiredEnv, removedEnv).
 
 # Prefixes the API owns: any variable under them must be listed here.
-prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_, SELF_SERVICE_]
+prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_, SELF_SERVICE_, INTERNAL_API_, ACCOUNT_PORTAL_]
 
 vars:
   - name: APP_ENV
@@ -1458,6 +1458,43 @@ vars:
     group: "Integrations"
     type: string
     description: "Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says."
+  - name: ACCOUNT_PORTAL_URL
+    component: api
+    group: "Internal entitlements API"
+    type: url
+    description: "A hosted service's account page (absolute https URL). When set, Settings > Usage & limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link."
+  - name: INTERNAL_API_ADDR
+    component: api
+    group: "Internal entitlements API"
+    type: string
+    description: "Listen address of the internal entitlements API, for example `:9443`. Empty (the default) turns it off. It is for the control plane of a hosted service only: expose it on a private network, never through the public gateway. When set, every other `INTERNAL_API_` variable is required."
+  - name: INTERNAL_API_TLS_CERT
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    description: "PEM server certificate of the internal API (TLS 1.3 only)."
+  - name: INTERNAL_API_TLS_KEY
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    secret: true
+    description: "PEM private key of the internal API server certificate."
+  - name: INTERNAL_API_CLIENT_CA
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    description: "PEM CA bundle the control plane's client certificate must chain to. A connection without a valid client certificate is refused during the handshake."
+  - name: INTERNAL_API_JWT_PUBLIC_KEYS
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    description: "PEM file with one or more Ed25519 public keys. Every request carries a token signed by one of the matching private keys (`EdDSA`), audience `openctem-core`, at most 5 minutes long, single use (`jti`), with scopes `limits:write`, `orgs:provision` or `usage:read`. List two keys while rotating."
+  - name: INTERNAL_API_JWT_ISSUER
+    component: api
+    group: "Internal entitlements API"
+    type: string
+    default: "openctem-cloud"
+    description: "The `iss` claim the internal API accepts."
   - name: SELF_SERVICE_START_LIMITS
     component: api
     group: "Organizations"

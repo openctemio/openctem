@@ -4,7 +4,7 @@
 |---|---|
 | Status | Proposed (decisions SU1–SU10 recommended; delegated to the platform team, 2026-10-08) |
 | Authors | Platform team |
-| Related | RFC-022 (platform admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-058 (external members), plans and limits (`docs/architecture/limits.md`) |
+| Related | RFC-022 (platform admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-058 (external members), limits (`docs/architecture/limits.md`) |
 | Code | none yet |
 
 ## 1. Summary
@@ -60,8 +60,8 @@ Settings > Security > Support access (owner only, step-up):
   step-up is enough, and the grant is flagged in the audit log.
 - **The page lists** the active grant, any open support sessions (who, since
   when) and the history. **Revoke** ends the grant and its sessions at once.
-- **Entitlement:** the feature is on the Enterprise plan in SaaS. Self-hosted
-  organizations are Enterprise (no stored plan), so they have it.
+- **Entitlement:** available to every organization unless denied for it
+  (docs/architecture/limits.md); a self-hosted install denies nothing.
 
 Table `support_grants`:
 
@@ -139,7 +139,7 @@ The roles never get:
 - secrets, credentials, API keys and integration credentials;
 - members, invitations, roles and groups changes;
 - SSO, SCIM, MFA and security settings;
-- plan, billing and deletion;
+- limits and deletion;
 - sensor keys and pairing;
 - support grants themselves.
 

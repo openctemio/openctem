@@ -14,8 +14,8 @@ import (
 // nothing, the per-person Free cap is dropped, and plans are gone.
 func TestLimitsReplacePlansMigration_DB(t *testing.T) {
 	dir := "../../../migrations"
-	db := testdb.PrivateDatabase(t, "limits_replace_plans", dir)
-	v := testdb.MigrationVersion(t, dir, "limits_replace_plans")
+	db := testdb.PrivateDatabase(t, "per_organization_limits", dir)
+	v := testdb.MigrationVersion(t, dir, "per_organization_limits")
 	testdb.Migrate(t, db, dir, v, v, true) // back to plans
 
 	free, overridden, pro, none := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()

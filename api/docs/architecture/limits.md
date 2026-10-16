@@ -1,7 +1,6 @@
 # Limits and feature denies
 
-The core knows no plans. Every organization is **unlimited and may use every
-feature** unless someone set a limit or a feature deny for that organization:
+Every organization is **unlimited and may use every feature** unless someone set a limit or a feature deny for that organization:
 
 - the **instance operator** (a platform administrator of this installation),
   in the console;
@@ -41,8 +40,8 @@ Limits and denies come from the operator's own rows plus the configured
 | Source | Where | Status |
 |--------|-------|--------|
 | none | every self-hosted install (default) | shipped |
-| control plane | rows of origin `control_plane`, written through the internal API of a hosted service | shipped (enabled only with the internal API) |
-| signed licence file | see "Future: self-hosted licensing" | design only |
+| control plane | rows of origin `control_plane`, written through the [internal API](#internal-entitlements-api) of a hosted service | shipped (enabled only with the internal API) |
+| signed limits file | see "Future: offline signed limits" | design only |
 
 For a key, the **operator's** limit wins over a source's. A deny from any of
 them denies. Rows are stored per organization and origin in `tenant_limits`
@@ -54,7 +53,7 @@ rows.
 `limits.AllowAddition(limit, used, delta)` is the only over-limit rule:
 
 - A limit refuses **new additions** only. Lowering it (by the operator, the
-  control plane or, later, a licence) never deletes, disables or signs out
+  control plane or, later, a license) never deletes, disables or signs out
   anything, and never stops work already running. The organization is flagged
   `over_limit` and additions of that kind are refused until usage is under
   the limit again.
@@ -166,29 +165,77 @@ not a security boundary; that overshoot is accepted.
 | `PUT/DELETE /api/v1/admin/tenants/{id}/modules/{module}/deny` | **ops_admin+** + reason + a fresh authenticator code, audited high |
 | `GET /api/v1/organization/limits` | the organization's owners and admins: only the limits that apply and the unavailable features, without operator notes; `applies: false` when nothing applies |
 
+A hosted service can set `ACCOUNT_PORTAL_URL` (an absolute https URL): when a limit or deny applies, `GET /api/v1/organization/limits` returns it as `account_portal_url` and Usage & limits links to it. Unset (the default) there is no link anywhere.
+
 The operator can only edit rows of origin `operator`. Rows of origin
 `control_plane` are shown in the console as set by the service operator.
 
-## Future: self-hosted licensing (design only, not built)
+## Internal entitlements API
 
-Self-hosted gets every feature today, and the owner wants selling a
-self-hosted edition later to stay easy. The design keeps that a third source,
-with no change to any check:
+A hosted service runs a private control plane that decides each
+organization's limits. It talks to the core only through this API. A
+self-hosted install leaves it off (the default) and never needs it.
 
-- A **signed offline licence file** (Ed25519; the verifying public key
+**Transport and trust**
+
+- A separate listener, `INTERNAL_API_ADDR` (empty: off). Expose it on a
+  private network only, never through the public gateway.
+- mTLS, TLS 1.3 only: a client certificate chaining to
+  `INTERNAL_API_CLIENT_CA` is required in the handshake.
+- Plus `Authorization: Bearer <token>` on every request: `EdDSA` (Ed25519)
+  signed by a key in `INTERNAL_API_JWT_PUBLIC_KEYS` (two during rotation),
+  `iss` = `INTERNAL_API_JWT_ISSUER`, `aud` = `openctem-core`, lifetime at most
+  5 minutes, not issued in the future, a single-use `jti` (shared across
+  replicas through Redis), a `sub` naming the calling service, and `scope`
+  with `limits:write`, `orgs:provision` or `usage:read`.
+- Any failure answers 401 with no detail (the reason is logged). A missing
+  scope is 403. 20 requests a second per calling service. Bodies are capped
+  at 64 KiB and unknown JSON fields are refused.
+- Every write is in the platform audit log as actor `control-plane`, with the
+  `sub`, the `jti` and the reason. Idle policy changes also go to the
+  organization's own log.
+- Least privilege: there is no endpoint for findings, assets, members or
+  any other organization content. Usage is aggregate counts, and
+  provisioning returns ids only (never a set-password link).
+- Turning the API on also turns on the control-plane source. Without it,
+  rows of origin `control_plane` are ignored.
+
+**Endpoints** (base `/internal/v1`)
+
+| Endpoint | Scope | Does |
+|----------|-------|------|
+| `GET /catalog` | any | the limit keys and deniable features |
+| `PUT /organizations/{id}/entitlements` `{limits, denied_features, reason}` | `limits:write` | replaces every control-plane limit and deny of the organization in one transaction; newly denied modules start the read-only grace |
+| `PUT /organizations/{id}/idle-policy` `{enabled, reason}` | `limits:write` | turns the idle policy on or off |
+| `PUT /self-service-limits` `{limits, reason}` | `limits:write` | replaces the self-service default limits (and `orgs_per_user`), so organizations people create themselves start with them |
+| `POST /organizations` `{name, slug, owner_email, owner_name?, limits, denied_features, idle_policy, reason}` | `orgs:provision` | creates the organization, its owner (an existing account, or a new one that gets the set-password email), and the limits, denies and idle policy in the same transaction; 409 when the slug is taken |
+| `GET /organizations/{id}/usage[?include=findings]` | `usage:read` | aggregate counts |
+| `GET /usage?after=<id>&limit=<1..500>` | `usage:read` | every organization in id order with `created_at` and its counts; `next` pages |
+
+The control plane can only set limits, set denies and turn on the idle
+policy. Every one of these blocks additions or makes data read-only: nothing
+it can call deletes an organization or its data.
+
+## Future: offline signed limits (design only, not built)
+
+A self-hosted install gets every feature, and nothing here changes that.
+Limits that arrive as a signed file instead of through the console or the
+internal API fit as a third source, with no change to any check:
+
+- A **signed offline license file** (Ed25519; the verifying public key
   compiled into the core; no activation and no phone-home, so air-gapped
   installs work).
 - Its payload is limits and denies: per instance (applied to every
   organization) and, optionally, per organization id, plus an expiry.
-- A `licenceSource` implements `limits.Source`: it verifies the signature at
+- A `licenseSource` implements `limits.Source`: it verifies the signature at
   start and on reload, and yields rows like any other source. An invalid or
   missing file yields nothing (the default unlimited behaviour), never a
   crash.
-- Expiry reuses the over-limit rule: the licence's limits and denies stay in
+- Expiry reuses the over-limit rule: the license's limits and denies stay in
   force (no new additions over them, denied features in read-only grace),
   nothing is deleted, and running work continues.
 - Every check already goes through the entitlement service with named keys,
-  so a licence needs no new seam. The guard test keeps it that way.
+  so a license needs no new seam. The guard test keeps it that way.
 
 ## Code map
 
@@ -200,8 +247,12 @@ with no change to any check:
   every query scoped by `tenant_id`; `limits_check.go`: the insert seam.
 - `internal/infra/http/handler/limits_handler.go`: console and organization
   endpoints; `WriteLimitError` (403 `LIMIT_REACHED`).
-- Migration `limits_replace_plans` (002441): moved every organization's plan
-  limits and plan-excluded modules to operator rows, then dropped plans.
+- `internal/infra/http/internalapi`: the internal API (token verifier,
+  replay cache, listener and endpoints); `cmd/server/internal_api.go` wires
+  it.
+- Migration `per_organization_limits` (002441): moved every organization's
+  earlier limits and excluded modules to operator rows, then dropped the old
+  tables.
 
 Modules and their grace are described in [modules.md](modules.md) and
 [RFC-064](../rfcs/RFC-064-modules-entitlements-preferences.md); the idle
