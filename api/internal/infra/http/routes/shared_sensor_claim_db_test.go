@@ -9,6 +9,7 @@ package routes
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"strconv"
 	"testing"
@@ -17,10 +18,13 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -37,6 +41,33 @@ func (l testSharedLimits) Limit(_ context.Context, tenantID shared.ID, key plan.
 		return v, nil
 	}
 	return 0, nil
+}
+
+// sharedHarness is the control-plane harness with the shared claim wired as
+// the server wires it: the grant reader, the limits and the access policy
+// (limits.allowed unless an option replaces it).
+func sharedHarness(t *testing.T, limits testSharedLimits, opts ...command.Option) *ctlHarness {
+	t.Helper()
+	db := openSharedTestDB(t)
+	base := []command.Option{
+		command.WithGrants(postgres.NewSensorGrantRepository(db), nil),
+		command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed),
+	}
+	return newCtlHarness(t, append(base, opts...)...)
+}
+
+func openSharedTestDB(t *testing.T) *postgres.DB {
+	t.Helper()
+	url := testdb.URL()
+	if url == "" {
+		t.Skip("DATABASE_URL not set; skipping the shared claim test")
+	}
+	sqldb, err := sql.Open("postgres", url)
+	if err != nil {
+		t.Skipf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqldb.Close() })
+	return &postgres.DB{DB: sqldb}
 }
 
 // allowed is the access policy of the test: its own organizations only,
@@ -90,7 +121,7 @@ func idsOf(l wireCommandList) map[string]wireCommand {
 
 func TestSharedClaim_V2ClaimsSharedJobsOfEveryOrganization(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
+	h := sharedHarness(t, limits)
 	tenantX, tenantY := h.tenantID, h.newTenant()
 	limits[tenantX], limits[tenantY] = -1, -1
 	tool := uniqueTool()
@@ -131,7 +162,7 @@ func TestSharedClaim_V2ClaimsSharedJobsOfEveryOrganization(t *testing.T) {
 
 func TestSharedClaim_V2NoIsolationNoJobs(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
+	h := sharedHarness(t, limits)
 	tenant := h.tenantID
 	limits[tenant] = -1
 	tool := uniqueTool()
@@ -152,7 +183,7 @@ func TestSharedClaim_V2NoIsolationNoJobs(t *testing.T) {
 
 func TestSharedClaim_V2OrganizationAtItsLimitOrWithoutAccessWaits(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
+	h := sharedHarness(t, limits)
 	full, open, off := h.tenantID, h.newTenant(), h.newTenant()
 	limits[full], limits[open], limits[off] = 0, -1, denied
 	tool := uniqueTool()
@@ -176,7 +207,7 @@ func TestSharedClaim_V2OrganizationAtItsLimitOrWithoutAccessWaits(t *testing.T) 
 
 func TestSharedClaim_V2StepsOnlyForHeldJobsInTheirOrganization(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
+	h := sharedHarness(t, limits)
 	tenantX, tenantY := h.tenantID, h.newTenant()
 	limits[tenantX], limits[tenantY] = -1, -1
 	tool := uniqueTool()
@@ -240,7 +271,7 @@ func TestSharedClaim_V2StepsOnlyForHeldJobsInTheirOrganization(t *testing.T) {
 
 func TestSharedClaim_V2HeartbeatRenewsOnlyHeldSharedLeases(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
+	h := sharedHarness(t, limits)
 	limits[h.tenantID] = -1
 	h.sensors.SetLeaseRenewer(postgres.NewCommandRepository(&postgres.DB{DB: h.db}))
 	tool := uniqueTool()
@@ -295,7 +326,7 @@ func TestSharedClaim_V2HeartbeatRenewsOnlyHeldSharedLeases(t *testing.T) {
 func TestSharedClaim_V2ClaimsAreSignedForTheCommandsOrganization(t *testing.T) {
 	client, pub := realSigner(t)
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithJobSigner(client), command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
+	h := sharedHarness(t, limits, command.WithJobSigner(client))
 	tenantX, tenantY := h.tenantID, h.newTenant()
 	limits[tenantX], limits[tenantY] = -1, -1
 	// verifySignedJob expects the semgrep job of a scope-ledger test; the
@@ -319,13 +350,17 @@ func TestSharedClaim_V2ClaimsAreSignedForTheCommandsOrganization(t *testing.T) {
 	}
 }
 
-func uniqueTool() string { return "tool-" + shared.NewID().String() }
+// sharedTestTool is a passive tool a shared sensor's default grant admits
+// (tier within its ceiling). The limits keep each test to its own
+// organizations, so the tool needs no unique name.
+func uniqueTool() string { return "subfinder" }
 
 // Without the access policy wired (and, on a deployment, while the access
 // gate is closed) the shared claim hands out nothing.
 func TestSharedClaim_V2NoAccessPolicyNoJobs(t *testing.T) {
 	limits := testSharedLimits{}
-	h := newCtlHarness(t, command.WithSharedLimits(limits))
+	h := newCtlHarness(t, command.WithGrants(postgres.NewSensorGrantRepository(openSharedTestDB(t)), nil),
+		command.WithSharedLimits(limits))
 	limits[h.tenantID] = -1
 	tool := uniqueTool()
 	a := h.newSharedSensor("shared-a")
@@ -336,5 +371,89 @@ func TestSharedClaim_V2NoAccessPolicyNoJobs(t *testing.T) {
 	}
 	if status, _, _ := h.commandState(job); status != "pending" {
 		t.Fatalf("job is %s", status)
+	}
+}
+
+// Without a reader for a shared sensor's grant nothing is claimed (fail
+// closed: a shared sensor never gets work its grant was not checked for).
+func TestSharedClaim_V2NoGrantReaderNoJobs(t *testing.T) {
+	limits := testSharedLimits{}
+	h := newCtlHarness(t, command.WithSharedLimits(limits), command.WithSharedAccess(limits.allowed))
+	limits[h.tenantID] = -1
+	tool := uniqueTool()
+	a := h.newSharedSensor("shared-a")
+	h.isolate(a, tool)
+	job := h.pendingSharedJob(h.tenantID, tool)
+	if got := idsOf(h.sharedClaim(a.key)); len(got) != 0 {
+		t.Fatalf("claimed %v without a grant reader", got)
+	}
+	if status, _, _ := h.commandState(job); status != "pending" {
+		t.Fatalf("job is %s", status)
+	}
+}
+
+// accessTestStore is the scan policy store with the instance setting kept in
+// memory (switch on, new organizations allowed), so the test never changes
+// the instance-wide row other tests read; organization decisions are the
+// real rows.
+type accessTestStore struct{ *postgres.ScanPolicyRepository }
+
+func (accessTestStore) GetSharedSensors(context.Context) (scanpolicy.SharedSensorsSetting, int, error) {
+	on := true
+	return scanpolicy.SharedSensorsSetting{Enabled: true, NewOrgs: &on}, 1, nil
+}
+
+type optOutMap map[string]bool
+
+func (m optOutMap) SharedSensorsOptedOut(_ context.Context, tenantID shared.ID) (bool, error) {
+	return m[tenantID.String()], nil
+}
+
+// The access policy is applied at claim time: a job queued while its
+// organization could use shared sensors is not claimed once the
+// administrator denies the organization, or once its owner opts out; another
+// organization's job still is. Runs the real access layers (the rollout
+// gate aside) over the organizations' stored decisions.
+func TestSharedClaim_V2AccessRevokedAfterQueueingWaits(t *testing.T) {
+	db := openSharedTestDB(t)
+	repo := postgres.NewScanPolicyRepository(db)
+	policy := scanpolicy.NewService(accessTestStore{repo}, nil, nil, nil, nil, logger.NewNop())
+	optOut := optOutMap{}
+	policy.SetSharedSensorsOptOut(optOut)
+
+	limits := testSharedLimits{}
+	h := sharedHarness(t, limits, command.WithSharedAccess(policy.SharedSensorsAccessLayers))
+	allowed, denied, optedOut := h.tenantID, h.newTenant(), h.newTenant()
+	limits[allowed], limits[denied], limits[optedOut] = -1, -1, -1
+	tool := uniqueTool()
+	a := h.newSharedSensor("shared-a")
+	h.isolate(a, tool)
+
+	keep := h.pendingSharedJob(allowed, tool)
+	waitDeny := h.pendingSharedJob(denied, tool)
+	waitOptOut := h.pendingSharedJob(optedOut, tool)
+	for _, tenant := range []string{allowed, denied, optedOut} {
+		if ok, why := policy.SharedSensorsAccessLayers(context.Background(), shared.MustIDFromString(tenant)); !ok {
+			t.Fatalf("organization not allowed before the change: %s", why)
+		}
+	}
+	// After the jobs were queued: the administrator denies one
+	// organization, the owner of another opts out.
+	if err := repo.SetSharedSensorsAccess(context.Background(), shared.MustIDFromString(denied), scanpolicy.SharedSensorsDeny); err != nil {
+		t.Fatal(err)
+	}
+	optOut[optedOut] = true
+
+	got := idsOf(h.sharedClaim(a.key))
+	if _, ok := got[keep]; !ok {
+		t.Fatalf("the allowed organization's job was not claimed: %v", got)
+	}
+	for name, id := range map[string]string{"denied": waitDeny, "opted out": waitOptOut} {
+		if _, ok := got[id]; ok {
+			t.Fatalf("the %s organization's queued job was claimed", name)
+		}
+		if status, holder, _ := h.commandState(id); status != "pending" || holder != nil {
+			t.Fatalf("the %s organization's job is %s held by %v", name, status, holder)
+		}
 	}
 }
