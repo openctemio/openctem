@@ -212,7 +212,7 @@ export function ApprovalRuleEditor({ open, rule, onOpenChange, onSave }: Approva
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="platform">
-                {t('scans.ruleEditor.chip.placementPlatform', 'Platform sensors may run it')}
+                {t('scans.ruleEditor.chip.placementPlatform', 'Shared sensors may run it')}
               </SelectItem>
               <SelectItem value="tenant">
                 {t('scans.ruleEditor.chip.placementTenant', 'Own sensors only')}
