@@ -5,14 +5,21 @@ import './globals.css'
 import { Providers } from './providers'
 import { getDirFromLocale, defaultLocale, isSupportedLocale } from '@/lib/i18n'
 import { NavProgressBar } from '@/components/layout/nav-progress'
+import { brandSettings } from '@/lib/brand-settings'
 
-const appName = process.env.NEXT_PUBLIC_APP_NAME || 'OpenCTEM'
 const appDescription =
   process.env.NEXT_PUBLIC_APP_DESCRIPTION || 'Continuous Threat Exposure Management Platform'
 
-export const metadata: Metadata = {
-  title: appName,
-  description: `${appName} - ${appDescription}`,
+/**
+ * The page title comes from the instance brand (src/lib/brand.ts); the icon
+ * routes (icon.tsx, apple-icon.tsx) serve the brand's favicon when it has one.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = await brandSettings()
+  return {
+    title: brand.name,
+    description: `${brand.name} - ${appDescription}`,
+  }
 }
 
 // const geistSans = Geist({
@@ -39,14 +46,19 @@ export default async function RootLayout({
   // Per-request CSP nonce from src/proxy.ts, for the inline script next-themes
   // writes (the policy has no 'unsafe-inline').
   const nonce = h.get('x-nonce') ?? undefined
+  const brand = await brandSettings()
+  // The brand color replaces the theme's primary color (validated #rrggbb).
+  const brandStyle = brand.primaryColor
+    ? ({ '--primary': brand.primaryColor } as React.CSSProperties)
+    : undefined
   return (
-    <html lang={locale} dir={dir} suppressHydrationWarning>
+    <html lang={locale} dir={dir} style={brandStyle} suppressHydrationWarning>
       <body
         // className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         className="antialiased"
         suppressHydrationWarning
       >
-        <Providers dir={dir} locale={locale} nonce={nonce}>
+        <Providers dir={dir} locale={locale} nonce={nonce} brand={brand}>
           {children}
         </Providers>
         {/* Page-wide navigation progress bar, shown while a nav link waits for
