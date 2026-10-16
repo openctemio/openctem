@@ -9,6 +9,12 @@
 --
 -- admin_audit_logs is small (one row per administrator action), so the
 -- one-time backfill below runs in this transaction.
+--
+-- expand-contract-ok: SET NOT NULL is on the new chain columns, which the BEFORE INSERT trigger fills for every writer (old app versions included), so no write can leave them NULL; TRUNCATE appears only in the trigger that refuses it.
+--
+-- A NEW COLUMN on admin_audit_logs must be added to admin_audit_row_payload
+-- (in a new migration), or it is not covered by the hash:
+-- TestAdminAuditChainCoversEveryColumn_DB fails until it is.
 
 -- The administrator a row names is history: deleting the administrator must
 -- not rewrite the row (the foreign key's ON DELETE SET NULL did).
@@ -244,6 +250,10 @@ BEGIN
     END LOOP;
 END
 $$;
+
+-- Retention runs as the API role (granted EXECUTE by the least-privilege
+-- bootstrap) or the owner; nobody else.
+REVOKE EXECUTE ON FUNCTION admin_audit_prune(timestamptz, integer) FROM PUBLIC;
 
 COMMENT ON TABLE admin_audit_logs IS
     'Platform administrator actions. Append-only (trigger) and hash-chained (chain_position, prev_hash, hash); retention only through admin_audit_prune.';

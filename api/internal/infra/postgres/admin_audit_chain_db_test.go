@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// The administrators' audit log (migration 002470) is append-only and
+// The administrators' audit log (migration 002545) is append-only and
 // hash-chained: every insert extends the chain whatever the writer sends,
 // updates, deletes and truncation are refused, a tampered row is reported by
 // VerifyChain, and retention removes only the oldest prefix older than a
@@ -149,19 +151,7 @@ func TestAdminAuditChainMigrationBackfill_DB(t *testing.T) {
 	}
 	testdb.Migrate(t, db, dir, v, v, false)
 
-	var got []string
-	rows, err := db.QueryContext(ctx, `SELECT action FROM admin_audit_logs ORDER BY chain_position`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for rows.Next() {
-		var a string
-		if err := rows.Scan(&a); err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, a)
-	}
-	_ = rows.Close()
+	got := queryStrings(t, db, `SELECT action FROM admin_audit_logs ORDER BY chain_position`)
 	if strings.Join(got, ",") != "first,second,third" {
 		t.Fatalf("backfilled order: %v", got)
 	}
@@ -181,5 +171,59 @@ func TestAdminAuditChainMigrationBackfill_DB(t *testing.T) {
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE admin_audit_logs SET action = action`); err != nil {
 		t.Fatalf("after down the table is writable again: %v", err)
+	}
+}
+
+// queryStrings runs a one-column query and returns its values.
+func queryStrings(t *testing.T, db *sql.DB, q string) []string {
+	t.Helper()
+	rows, err := db.QueryContext(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// adminAuditHashedColumns are the admin_audit_logs columns
+// admin_audit_row_payload hashes, in its order. A column added to the table
+// must be added to that function (in a new migration) and here: until then
+// TestAdminAuditChainCoversEveryColumn_DB fails, because a column outside the
+// hash could be edited without breaking the chain.
+var adminAuditHashedColumns = []string{
+	"id", "admin_id", "admin_email", "action", "resource_type", "resource_id",
+	"resource_name", "request_method", "request_path", "request_body",
+	"response_status", "ip_address", "user_agent", "success", "error_message",
+	"severity", "created_at",
+}
+
+// Every column of admin_audit_logs except the chain's own is in the hash,
+// and the payload function names each of them.
+func TestAdminAuditChainCoversEveryColumn_DB(t *testing.T) {
+	db := testdb.PrivateDatabase(t, "admin_audit_cols", "../../../migrations")
+	cols := queryStrings(t, db, `SELECT column_name FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'admin_audit_logs'
+		  AND column_name NOT IN ('chain_position', 'prev_hash', 'hash') ORDER BY column_name`)
+	want := append([]string(nil), adminAuditHashedColumns...)
+	sort.Strings(want)
+	if strings.Join(cols, ",") != strings.Join(want, ",") {
+		t.Fatalf("admin_audit_logs columns %v, hashed %v: add the new column to admin_audit_row_payload and adminAuditHashedColumns", cols, want)
+	}
+	def := queryStrings(t, db, `SELECT pg_get_functiondef('admin_audit_row_payload(admin_audit_logs)'::regprocedure)`)
+	for _, c := range adminAuditHashedColumns {
+		if !strings.Contains(def[0], "r."+c) {
+			t.Errorf("admin_audit_row_payload does not hash %s", c)
+		}
 	}
 }
