@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"encoding/json"
+	"html"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/brand"
 )
 
 // DocsHandler handles API documentation endpoints
@@ -100,9 +104,17 @@ func (h *DocsHandler) ServeConsoleDocsUI(w http.ResponseWriter, r *http.Request)
 // same-origin path (never built from the Host header), and the page carries
 // its own CSP: the pinned script only, requests to this origin only.
 func serveDocsPage(w http.ResponseWriter, specPath, cacheControl string) {
-	html := strings.ReplaceAll(scalarHTML, "{{SPEC_URL}}", specPath)
-	html = strings.ReplaceAll(html, "{{SCRIPT_URL}}", scalarScriptURL)
-	html = strings.ReplaceAll(html, "{{SCRIPT_INTEGRITY}}", scalarScriptIntegrity)
+	// The brand name is escaped for HTML text, and JSON-encoded then
+	// HTML-escaped where it sits inside the configuration attribute.
+	name := brand.Name()
+	nameJSON, _ := json.Marshal(name + " API")
+	page := strings.NewReplacer(
+		"{{SPEC_URL}}", specPath,
+		"{{PRODUCT}}", html.EscapeString(name),
+		`"{{PRODUCT_API_JSON}}"`, html.EscapeString(string(nameJSON)),
+	).Replace(scalarHTML)
+	page = strings.ReplaceAll(page, "{{SCRIPT_URL}}", scalarScriptURL)
+	page = strings.ReplaceAll(page, "{{SCRIPT_INTEGRITY}}", scalarScriptIntegrity)
 
 	csp := "default-src 'self'; " +
 		"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
@@ -113,9 +125,9 @@ func serveDocsPage(w http.ResponseWriter, specPath, cacheControl string) {
 		"frame-ancestors 'none'"
 
 	w.Header().Set("Content-Security-Policy", csp)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Type", "text/page; charset=utf-8")
 	w.Header().Set("Cache-Control", cacheControl)
-	_, _ = w.Write([]byte(html))
+	_, _ = w.Write([]byte(page))
 }
 
 const scalarHTML = `<!DOCTYPE html>
@@ -123,8 +135,8 @@ const scalarHTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenCTEM API Documentation</title>
-  <meta name="description" content="OpenCTEM Security Platform API Documentation">
+  <title>{{PRODUCT}} API Documentation</title>
+  <meta name="description" content="{{PRODUCT}} API Documentation">
   <style>
     body {
       margin: 0;
@@ -152,7 +164,7 @@ const scalarHTML = `<!DOCTYPE html>
         "url": "{{SPEC_URL}}"
       },
       "metaData": {
-        "title": "OpenCTEM API",
+        "title": "{{PRODUCT_API_JSON}}",
         "description": "Security Platform API"
       }
     }'

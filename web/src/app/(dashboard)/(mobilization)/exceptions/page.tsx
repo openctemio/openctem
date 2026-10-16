@@ -66,6 +66,8 @@ import {
   type SuppressionStatus,
 } from '@/features/exceptions'
 import { useTranslation } from '@/context/i18n-provider'
+import { useAuthStore } from '@/stores/auth-store'
+import { SelfApproveDialog } from '@/features/shared/components/self-approve-dialog'
 
 // Approve action accent in the row menu. There is no success token, so the
 // palette-drift gate is told to allow it here.
@@ -114,6 +116,8 @@ export default function ExceptionsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editRule, setEditRule] = useState<SuppressionRule | null>(null)
   const [approveOpen, setApproveOpen] = useState(false)
+  const [selfApproveOpen, setSelfApproveOpen] = useState(false)
+  const userId = useAuthStore((s) => s.user?.id)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
@@ -160,10 +164,31 @@ export default function ExceptionsPage() {
     setFormOpen(true)
   }, [])
 
-  const openApprove = useCallback((rule: SuppressionRule) => {
-    setSelectedRule(rule)
-    setApproveOpen(true)
-  }, [])
+  // Your own rule: only an owner with no other approver may approve it, with
+  // a reason and a fresh authenticator code (the API decides and audits).
+  const openApprove = useCallback(
+    (rule: SuppressionRule) => {
+      setSelectedRule(rule)
+      if (userId && rule.requested_by === userId) {
+        setSelfApproveOpen(true)
+      } else {
+        setApproveOpen(true)
+      }
+    },
+    [userId]
+  )
+
+  const confirmSelfApprove = async (reason: string, code: string) => {
+    if (!selectedRule) return
+    await triggerApprove({
+      reviewed_updated_at: selectedRule.updated_at,
+      self_approval_reason: reason,
+      totp_code: code,
+    })
+    toast.success(t('confirm.suppression.approved', 'Rule approved.'))
+    setDetailOpen(false)
+    await mutate()
+  }
 
   const openReject = useCallback((rule: SuppressionRule) => {
     setSelectedRule(rule)
@@ -572,6 +597,13 @@ export default function ExceptionsPage() {
       >
         <SuppressionApprovePreview ruleId={approveOpen ? selectedRule?.id : undefined} />
       </ConfirmDialog>
+
+      <SelfApproveDialog
+        open={selfApproveOpen}
+        onOpenChange={setSelfApproveOpen}
+        subject={selectedRule?.name ?? ''}
+        onSubmit={confirmSelfApprove}
+      />
 
       {/* Reject dialog */}
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
