@@ -22,10 +22,9 @@ import (
 
 // Bounds.
 const (
-	MaxKeySetValidity = 365 * 24 * time.Hour
-	MaxKeySetBytes    = 64 << 10
-	MaxKeySetKeys     = 8
-	MaxClockSkew      = 5 * time.Minute
+	MaxKeySetBytes = 64 << 10
+	MaxKeySetKeys  = 8
+	MaxClockSkew   = 5 * time.Minute
 )
 
 // ErrKeySetRollback: a key set older than one applied before (a rollback
@@ -43,10 +42,13 @@ type KeySet struct {
 	RootPublicKey string              `json:"root_public_key"`
 }
 
-// KeySetType names a feed's key set: its payload type and kind.
+// KeySetType names a feed's key set: its payload type and kind, and the
+// longest validity (not_after - issued_at) a key set of this feed may have.
+// MaxValidity must be set: a zero value refuses every key set.
 type KeySetType struct {
 	PayloadType string
 	Kind        string
+	MaxValidity time.Duration
 }
 
 // VerifyKeySet checks a key set envelope: signed by its root, the root is
@@ -70,7 +72,7 @@ func VerifyKeySet(envelope []byte, typ KeySetType, pinnedRoot string, minVersion
 		return nil, fmt.Errorf("key set: version %d is below %d: %w", ks.Version, minVersion, ErrKeySetRollback)
 	case pinnedRoot == "" || ks.RootKeyID != pinnedRoot:
 		return nil, fmt.Errorf("key set: signed by root %s, the pinned root is %q", ks.RootKeyID, pinnedRoot)
-	case ks.IssuedAt.IsZero() || !ks.NotAfter.After(ks.IssuedAt) || ks.NotAfter.Sub(ks.IssuedAt) > MaxKeySetValidity:
+	case ks.IssuedAt.IsZero() || !ks.NotAfter.After(ks.IssuedAt) || ks.NotAfter.Sub(ks.IssuedAt) > typ.MaxValidity:
 		return nil, errors.New("key set: validity")
 	case ks.IssuedAt.After(now.Add(MaxClockSkew)) || !ks.NotAfter.After(now.Add(-MaxClockSkew)):
 		return nil, fmt.Errorf("key set: not valid at %s", now.UTC().Format(time.RFC3339))

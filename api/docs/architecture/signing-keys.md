@@ -10,8 +10,9 @@ every key below lives with the maintainers.
 
 | Key | Where it lives | What it signs | What the instance pins |
 |---|---|---|---|
-| **Online key** | the GitHub secret `RELEASE_FEED_SIGNING_KEY` of the `release-feed` environment (restricted to `main` and `v*` tags); one encrypted backup | the release feed, directly; the content catalog's index, statements and revocations | its public key, hex, in `releasefeed.PinnedKeys` (at most two entries); and, through the catalog key set, in the catalog trust |
-| **Catalog root key** | offline (encrypted stick or password manager attachment, two copies); never in CI | only the catalog **key set**: the list of online keys the catalog accepts, valid at most 365 days | its key id in `contentpkg.PinnedRoots` |
+| **Release feed key** | the GitHub secret `RELEASE_FEED_SIGNING_KEY` of the `release-feed` environment (restricted to `main` and `v*` tags); one encrypted backup | only the release feed | its public key, hex, in `releasefeed.PinnedKeys` (at most two entries) |
+| **Catalog online key** | the GitHub secret `CONTENT_CATALOG_SIGNING_KEY` of the `content-catalog` environment (restricted to `main` and `v*` tags like `release-feed`); one encrypted backup | the content catalog's index, statements and revocations | its public key, through the catalog key set, in the catalog trust |
+| **Catalog root key** | offline (encrypted stick or password manager attachment, two copies); never in CI | only the catalog **key set**: the list of catalog online keys the catalog accepts, valid at most 365 days | its key id in `contentpkg.PinnedRoots` |
 
 The release feed has no key set and no root: it is display-only (bounded
 fields, links under our own hosts, nothing downloaded or run because of it),
@@ -19,11 +20,17 @@ so one pinned online key is enough. The catalog can install content, so it
 keeps the second tier: a stolen online key is revoked by signing a new key set
 without it, and the root never touches CI.
 
-The same online key signs both, safely: each document type has its own DSSE
-payload type (`application/vnd.openctem.release-feed+json` for the feed,
+The two online keys are different keys, kept in different GitHub
+environments, and the catalog key set never lists the release feed key: a key
+that signs information must not be able to ship code, and the reverse. A
+signature also covers the DSSE payload type
+(`application/vnd.openctem.release-feed+json` for the feed,
 `...catalog-keyset+json`, `...package-index+json` and so on for the catalog),
-and a signature covers the payload type, so a signature made for one is never
-valid as another.
+so a signature made for one document type is never valid as another, even
+under a key both would trust.
+
+Key set validity is per feed: the content catalog's is at most 365 days; the
+program feed's and the vulnerability bundle's are at most 180 days.
 
 ## First setup (once, by the owner, on the owner's own machine)
 
@@ -31,17 +38,20 @@ valid as another.
 scripts/signing/init-keys.sh            # or: scripts/signing/init-keys.sh /path/to/keys
 ```
 
-It creates the root key, the online key and the signed key set in a directory
+It creates the root key, the release feed key, the catalog online key and the signed key set (which lists the catalog online key only) in a directory
 (default `./openctem-signing-keys`, mode 0700, keys 0600), refuses to
 overwrite existing keys, and prints only public material: the key ids, the
-online public key, the file to commit (`keyset.dsse.json`) and the exact
-`gh secret set RELEASE_FEED_SIGNING_KEY --env release-feed ...` command, which
-reads the key from the file and never prints it. Then:
+two online public keys, the file to commit (`keyset.dsse.json`) and the exact
+`gh secret set` commands (`RELEASE_FEED_SIGNING_KEY` in `release-feed`,
+`CONTENT_CATALOG_SIGNING_KEY` in `content-catalog`), which read each key from
+its file and never print it. Then:
 
-1. Pin the online public key in `releasefeed.PinnedKeys` and the root key id
+1. Pin the release feed public key in `releasefeed.PinnedKeys` and the root key id
    in `contentpkg.PinnedRoots`, and commit the key set, in one reviewed pull
    request.
-2. Run the printed `gh secret set` command.
+2. Create the `content-catalog` GitHub environment (restricted to `main`
+   and `v*` tags, like `release-feed`) and run the printed `gh secret set`
+   commands.
 3. Move `catalog-root.key` offline (two copies) and remove it from the
    machine.
 
@@ -60,21 +70,24 @@ one as `keyset.dsse.json.prev`, and prints the file to commit and publish. The
 release feed needs nothing: its freshness is the weekly re-sign (feeds expire
 after 45 days).
 
-## Rotating the online key
+## Rotating an online key
+
+The steps below are for the release feed key; the catalog online key rotates
+through the key set alone (steps 3 and 4 with the `content-catalog` secret).
 
 Without compromise, with an overlap so no instance is left behind:
 
 1. Create a new key pair (`go run ./cmd/release-feed keygen -out new-online.key`
    in `api/`).
 2. Ship a release that pins **both** public keys in `releasefeed.PinnedKeys`.
-3. Re-sign the catalog key set listing both online keys
-   (`ONLINE_PUBS=<old>,<new> scripts/signing/rotate-keyset.sh`).
+3. For the catalog online key: re-sign the catalog key set listing both
+   catalog online keys (`ONLINE_PUBS=<old>,<new> scripts/signing/rotate-keyset.sh`).
 4. After instances have upgraded, switch the `RELEASE_FEED_SIGNING_KEY` secret
    to the new key.
 5. In a later release, drop the old key from `PinnedKeys`, and re-sign the key
    set with the new key only.
 
-## If the online key is compromised
+## If an online key is compromised
 
 1. Rotate the secret to a new key at once (the old one still verifies on
    instances until step 3, which the feed's display-only limits make

@@ -18,7 +18,7 @@ built.
 ```
 offline catalog root ──signs──► key set (version, ≤ 365 days, ≤ 8 online keys)
                                    │
-                    online key ────┴──► statements · index (sequence, expiry) · revocation list (sequence, expiry)
+        catalog online key ────────┴──► statements · index (sequence, expiry) · revocation list (sequence, expiry)
 publisher (Sigstore keyless) ─────────► artifact
 ```
 
