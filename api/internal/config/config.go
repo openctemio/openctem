@@ -1515,6 +1515,7 @@ func Load() (*Config, error) {
 		},
 		AdminPlane: AdminPlaneConfig{
 			AllowedCIDRs: getEnvSlice("ADMIN_ALLOWED_CIDRS", DefaultAdminAllowedCIDRs),
+			ListenAddr:   getEnv("ADMIN_LISTEN_ADDR", ""),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
