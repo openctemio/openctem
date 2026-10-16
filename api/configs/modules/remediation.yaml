@@ -12,5 +12,9 @@
     - {id: findings, kind: hard, reason: "remediation closes findings"}
   routes:
     - /api/v1/remediation/campaigns
+    - /api/v1/remediation/tasks
+    - /api/v1/remediation/suggestions
   jobs:
     - RemediationProgressController
+    - RemediationTaskController
+    - RemediationSuggestionController

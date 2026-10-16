@@ -187,6 +187,12 @@ SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'app_us
 SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
 -- The migration tracker is read (the startup schema check), never written.
 SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations FROM %I', :'app_user') \gexec
+-- The administrators' audit log is append-only: insert and read only. Its
+-- retention anchors are written by admin_audit_prune (the owner) alone.
+SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.admin_audit_logs FROM %I', :'app_user')
+WHERE to_regclass('public.admin_audit_logs') IS NOT NULL \gexec
+SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.admin_audit_chain_anchors FROM %I', :'app_user')
+WHERE to_regclass('public.admin_audit_chain_anchors') IS NOT NULL \gexec
 -- The EPSS and KEV feeds replace their whole global catalog with TRUNCATE.
 SELECT format('GRANT TRUNCATE ON public.%I TO %I', t, :'app_user')
 FROM unnest(ARRAY['epss_scores', 'kev_catalog']) AS t
