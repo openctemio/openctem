@@ -24,19 +24,21 @@ func (failingApprovals) Create(context.Context, *vulnerability.Approval) error {
 // TestTicketDispositionRequest: a linked ticket closed as "Won't Do" opens a
 // pending risk-acceptance request made by the ticket actor (no person), never
 // a close (an in-progress finding goes back to confirmed); never twice while one is pending; never for a closed
-// finding or across tenants; a person approves it (four-eyes).
+// finding or across tenants; two distinct people approve it (an actor request needs one more sign-off).
 func TestTicketDispositionRequest(t *testing.T) {
 	db := setupTestDB(t)
 	pdb := &postgres.DB{DB: db}
 	ctx := context.Background()
 	tenant := createTestTenant(t, db, "ticket-req")
 	other := createTestTenant(t, db, "ticket-req-other")
-	approver := shared.NewID()
+	approver, approver2 := shared.NewID(), shared.NewID()
 	t.Cleanup(func() {
 		for _, id := range []shared.ID{tenant, other} {
 			_, _ = db.Exec(`DELETE FROM tenants WHERE id = $1`, id.String())
 		}
-		_, _ = db.Exec(`DELETE FROM users WHERE id = $1`, approver.String())
+		for _, id := range []shared.ID{approver, approver2} {
+			_, _ = db.Exec(`DELETE FROM users WHERE id = $1`, id.String())
+		}
 		_ = db.Close()
 	})
 	exec := func(q string, args ...any) {
@@ -45,7 +47,9 @@ func TestTicketDispositionRequest(t *testing.T) {
 			t.Fatalf("%v\n%s", err, q)
 		}
 	}
-	exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'approver')`, approver.String(), approver.String()+"@example.com")
+	for _, id := range []shared.ID{approver, approver2} {
+		exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'approver')`, id.String(), id.String()+"@example.com")
+	}
 	newFinding := func(status string) shared.ID {
 		id := shared.NewID()
 		exec(`INSERT INTO findings (id, tenant_id, source, tool_name, message, severity, fingerprint, status)
@@ -72,6 +76,7 @@ func TestTicketDispositionRequest(t *testing.T) {
 	svc := finding.NewVulnerabilityService(nil, postgres.NewFindingRepository(pdb), logger.NewNop())
 	approvals := postgres.NewFindingApprovalRepository(pdb)
 	svc.SetApprovalRepository(approvals)
+	svc.SetApprovalNotifier(staticApprovers{approver, approver2}, nil, nil, "")
 
 	open := newFinding("in_progress")
 	closed := newFinding("resolved")
@@ -142,16 +147,12 @@ func TestTicketDispositionRequest(t *testing.T) {
 	}
 	svc.SetApprovalRepository(approvals)
 
-	// A person approves it (any approver: it was requested by nobody).
+	// A request made by the ticket actor needs one more sign-off than the tier:
+	// one approver is not enough, two distinct eligible approvers are.
 	list, err := approvals.ListByFinding(ctx, tenant, open)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("list: %v %d", err, len(list))
 	}
-	if _, err := svc.ApproveStatus(ctx, finding.ApproveStatusInput{TenantID: tenant.String(),
-		ApprovalID: list[0].ID.String(), ApprovedBy: approver.String()}); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-	if s := status(open); s != "accepted" {
-		t.Fatalf("after approval: %s", s)
-	}
+	requireTwoSignoffs(t, svc, tenant, list[0].ID.String(), approver, approver2,
+		func() string { return status(open) }, "confirmed", "accepted")
 }
