@@ -160,6 +160,15 @@ type AuditLogRepository interface {
 	VerifyChain(ctx context.Context) (*AuditChainReport, error)
 }
 
+// AuditChainEntry is an audit row as written, with its place in the hash
+// chain (the database computes it on insert).
+type AuditChainEntry struct {
+	Log      *AuditLog
+	Position int64
+	PrevHash string
+	Hash     string
+}
+
 // AuditChainBreakLimit bounds the breaks one verification reports.
 const AuditChainBreakLimit = 100
 

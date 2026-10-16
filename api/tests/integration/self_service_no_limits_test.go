@@ -34,7 +34,7 @@ func TestSelfServiceOrganizationsHaveNoLimits(t *testing.T) {
 	ctx := context.Background()
 	log := logger.NewNop()
 
-	svc := orgAuthService(db, config.TenantCreationSelfService)
+	svc := orgAuthService(db, config.SignupModeOpen)
 	email, refresh := orgSelfServiceUser(t, db, svc)
 	slug := "ss-" + uuid.NewString()[:8]
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM tenants WHERE slug = $1`, slug) })
