@@ -133,6 +133,21 @@ export function useApproveSuppression(id: string) {
 }
 
 /**
+ * Clear the review flag of a rule the platform gave an end it did not have.
+ * `POST /api/v1/suppressions/{id}/reviewed` (approvers). The rule keeps its
+ * end; 409 when it is not flagged. The rule's own requester may clear it only
+ * as the sole approver, with a reason and an authenticator code.
+ */
+export function useMarkSuppressionReviewed(id: string) {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant && id ? `${SUPPRESSIONS_URL}/${id}/reviewed` : null,
+    (url: string, { arg }: { arg?: { self_approval_reason: string; totp_code: string } } = {}) =>
+      post<SuppressionRule>(url, arg ?? {})
+  )
+}
+
+/**
  * How many open findings approving the rule would close now.
  * `GET /api/v1/suppressions/{id}/preview` (needs the approve permission).
  * Pass an id only while the approve dialog is open: the count is computed on
