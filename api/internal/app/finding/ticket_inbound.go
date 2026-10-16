@@ -2,10 +2,17 @@ package finding
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // Inbound ticket status changes (a linked Jira issue moved, a GitHub issue
@@ -236,4 +243,178 @@ func idStrings(ids []shared.ID) []string {
 		out[i] = id.String()
 	}
 	return out
+}
+
+// TicketRequestOutcome is the result of a ticket asking for a disposition.
+type TicketRequestOutcome struct {
+	// Requested are the findings that now have a pending request.
+	Requested []shared.ID
+	// Pending are the findings that already had a pending request (the
+	// ticket's ask is covered by it).
+	Pending []shared.ID
+	// Refused are the findings a request cannot be made for, with the reason.
+	Refused []BulkRowResult
+}
+
+// RequestTicketDisposition records a linked ticket's ask to accept the risk
+// of, or mark false positive, the findings linked to it (a Jira issue moved
+// to "Won't Do"). It never closes a finding: an in-progress finding goes
+// back to confirmed (the work stopped), and each request is pending, made
+// by the ticket actor (no person, so any approver may decide it), and a
+// person with findings:approve decides. A finding that already has a pending
+// request keeps it; a closed finding, a pentest finding or a move the
+// lifecycle does not allow is refused with the reason.
+func (s *VulnerabilityService) RequestTicketDisposition(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
+) (*TicketRequestOutcome, error) {
+	if !vulnerability.IsTicketInboundSource(integration) {
+		return nil, fmt.Errorf("%w: unknown ticket integration", shared.ErrValidation)
+	}
+	if target != vulnerability.FindingStatusAccepted && target != vulnerability.FindingStatusFalsePositive {
+		return nil, fmt.Errorf("%w: a ticket requests a risk acceptance or a false positive only", shared.ErrValidation)
+	}
+	if s.approvalRepo == nil {
+		return nil, fmt.Errorf("%w: approval workflow not configured", shared.ErrValidation)
+	}
+	out := &TicketRequestOutcome{}
+	if len(findingIDs) == 0 {
+		return out, nil
+	}
+	findings, err := s.findingRepo.GetByIDs(ctx, tenantID, findingIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load linked findings: %w", err)
+	}
+	byID := make(map[shared.ID]*vulnerability.Finding, len(findings))
+	for _, f := range findings {
+		byID[f.ID()] = f
+	}
+	// Work on an in-progress finding stopped: it goes back to confirmed (a
+	// work-state move a ticket may report), where a disposition can be
+	// requested. A finding the move is refused for keeps its status.
+	current := make(map[shared.ID]vulnerability.FindingStatus, len(findings))
+	var working []shared.ID
+	for _, f := range findings {
+		current[f.ID()] = f.Status()
+		if f.Status() == vulnerability.FindingStatusInProgress {
+			working = append(working, f.ID())
+		}
+	}
+	skip := map[shared.ID]bool{}
+	if len(working) > 0 {
+		back, err := s.ApplyTicketStatus(ctx, tenantID, working, vulnerability.FindingStatusConfirmed, integration, ref, externalActor)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range back.Refused {
+			id, _ := shared.IDFromString(r.FindingID)
+			skip[id] = true
+			out.Refused = append(out.Refused, r)
+		}
+		for _, id := range append(back.Applied, back.Unchanged...) {
+			current[id] = vulnerability.FindingStatusConfirmed
+		}
+	}
+
+	justification := ticketRequestJustification(integration, ref, externalActor, target)
+	for _, id := range findingIDs {
+		f, ok := byID[id]
+		if !ok {
+			out.Refused = append(out.Refused, BulkRowResult{FindingID: id.String(), Outcome: BulkRowFailed, Reason: "not found"})
+			continue
+		}
+		if skip[id] {
+			continue
+		}
+		if f.Source() == vulnerability.FindingSourcePentest || !current[id].CanTransitionTo(target) {
+			out.Refused = append(out.Refused, BulkRowResult{FindingID: id.String(), Outcome: BulkRowFailed,
+				Reason: fmt.Sprintf("the finding is %s; a request for %s cannot be made for it", current[id], target)})
+			continue
+		}
+		existing, err := s.approvalRepo.ListByFinding(ctx, tenantID, id)
+		if err != nil {
+			return nil, err
+		}
+		pending := false
+		for _, a := range existing {
+			if a.IsPending() {
+				pending = true
+				break
+			}
+		}
+		if pending {
+			out.Pending = append(out.Pending, id)
+			continue
+		}
+		approval, err := vulnerability.NewActorApproval(tenantID, id, vulnerability.ApprovalActorTicket, string(target), justification)
+		if err != nil {
+			return nil, err
+		}
+		if target == vulnerability.FindingStatusAccepted {
+			// An accepted risk always ends: the default for the finding's
+			// priority (the approver sees it and may reject instead).
+			approval.ExpiresAt, _ = vulnerability.AcceptanceEnd(nil, time.Now(), priorityClassString(f), f.IsInKEV())
+		}
+		if err := s.approvalRepo.Create(ctx, approval); err != nil {
+			if errors.Is(err, shared.ErrConflict) {
+				out.Pending = append(out.Pending, id) // another delivery asked first
+				continue
+			}
+			return nil, err
+		}
+		out.Requested = append(out.Requested, id)
+		s.recordTicketRequest(ctx, tenantID, id, approval, integration, ref)
+	}
+	return out, nil
+}
+
+// recordTicketRequest writes the timeline entry and the approvers'
+// notification of a ticket's request. Best effort: the request stands.
+func (s *VulnerabilityService) recordTicketRequest(ctx context.Context, tenantID, findingID shared.ID, approval *vulnerability.Approval, integration, ref string) {
+	if s.activityService != nil {
+		if _, err := s.activityService.RecordActivity(ctx, activity.RecordActivityInput{
+			TenantID:     tenantID.String(),
+			FindingID:    findingID.String(),
+			ActivityType: string(vulnerability.ActivityApprovalRequested),
+			ActorType:    string(vulnerability.ActorTypeIntegration),
+			Changes: map[string]interface{}{
+				"requested_status": approval.RequestedStatus,
+				"requested_by":     vulnerability.ApprovalActorTicket,
+				"approval_id":      approval.ID.String(),
+				"integration":      integration,
+				"ticket":           ref,
+			},
+			Source: string(vulnerability.SourceWebhook),
+		}); err != nil {
+			s.logger.Warn("failed to record ticket request activity", "error", err)
+		}
+	}
+	if s.notificationService != nil {
+		approvalUUID, _ := uuid.Parse(approval.ID.String())
+		if err := s.notificationService.Enqueue(ctx, outbox.EnqueueParams{
+			TenantID:      tenantID,
+			EventType:     "approval_requested",
+			AggregateType: "approval",
+			AggregateID:   &approvalUUID,
+			Title:         "A linked ticket requests: " + approval.RequestedStatus,
+			Body:          "A linked ticket was closed without a fix. A person must approve or reject the request.",
+			Severity:      "low",
+		}); err != nil {
+			s.logger.Warn("failed to enqueue ticket request notification", "error", err)
+		}
+	}
+}
+
+// ticketRequestJustification is the request's justification: which ticket
+// asked, and who moved it. Ticket text is never copied in (it is not the
+// platform's to trust); the approver opens the ticket.
+func ticketRequestJustification(integration, ref, externalActor string, target vulnerability.FindingStatus) string {
+	what := "a risk acceptance"
+	if target == vulnerability.FindingStatusFalsePositive {
+		what = "a false positive"
+	}
+	j := fmt.Sprintf("%s %s was closed without a fix; it requests %s.", integration, safetext.SingleLine(ref, 64), what)
+	if externalActor != "" {
+		j += fmt.Sprintf(" Moved by %s account %s.", integration, safetext.SingleLine(externalActor, 128))
+	}
+	return j + " Check the finding and the ticket before you decide."
 }
