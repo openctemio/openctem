@@ -408,7 +408,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
       </div>
 
       {task.hidden_members > 0 && (
-        <p className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
+        <p className="flex items-center gap-2 text-sm text-warning">
           <EyeOff className="size-4" aria-hidden />
           {t('remediationHub.detail.hidden', undefined, { n: task.hidden_members })}
         </p>
@@ -656,7 +656,7 @@ function MemberRow({
       </span>
       {m.verified && (
         <CheckCheck
-          className="size-4 text-emerald-600"
+          className="size-4 text-success"
           aria-label={t('remediationHub.detail.verified')}
         />
       )}

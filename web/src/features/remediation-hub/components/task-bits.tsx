@@ -84,9 +84,9 @@ export function TaskProgress({
         aria-label={summary}
         title={summary}
       >
-        <span className="bg-emerald-500 dark:bg-emerald-400" style={{ width: pct(p.verified) }} />
-        <span className="bg-slate-400 dark:bg-slate-500" style={{ width: pct(p.closed) }} />
-        <span className="bg-sky-500 dark:bg-sky-400" style={{ width: pct(p.claimed) }} />
+        <span className="bg-success" style={{ width: pct(p.verified) }} />
+        <span className="bg-muted-foreground/50" style={{ width: pct(p.closed) }} />
+        <span className="bg-info" style={{ width: pct(p.claimed) }} />
       </div>
     </div>
   )

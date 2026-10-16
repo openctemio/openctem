@@ -139,7 +139,7 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
               </ul>
             )}
             {(blocked || s.truncated > 0) && (
-              <ul className="mt-2 space-y-1 text-xs text-amber-700 dark:text-amber-400">
+              <ul className="mt-2 space-y-1 text-xs text-warning">
                 {blocked && (
                   <li className="flex items-center gap-1">
                     <EyeOff className="size-3" aria-hidden />
