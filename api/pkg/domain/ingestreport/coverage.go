@@ -46,6 +46,6 @@ type CoverageQuery struct {
 	// run scanned with (tool.properties.content, nuclei-templates); "" when
 	// none was reported or the reports disagree. A candidate whose last
 	// sighting recorded another release is not proven fixed (research/18
-	// O6): it becomes not_observed instead.
+	// O6): it becomes stale (observation) instead.
 	TemplatesDigest string
 }
