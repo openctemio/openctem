@@ -54,7 +54,7 @@ func TestRetestDB_TemplateDigestDriftIsInconclusive(t *testing.T) {
 		wantStatus  string
 		wantReason  string
 	}{
-		{"same digest, no match: confirmed fixed", digestA, "not_detected", retestdom.OutcomeConfirmedFixed, "validated_fixed", ""},
+		{"same digest, no match: confirmed fixed", digestA, "not_detected", retestdom.OutcomeConfirmedFixed, "confirmed", ""},
 		{"other digest, no match: inconclusive", digestB, "not_detected", retestdom.OutcomeInconclusive, "confirmed", "template changed"},
 		{"no digest reported: inconclusive", "", "not_detected", retestdom.OutcomeInconclusive, "confirmed", "no template digest"},
 		{"garbage digest counts as none", "md5:abc", "not_detected", retestdom.OutcomeInconclusive, "confirmed", "no template digest"},

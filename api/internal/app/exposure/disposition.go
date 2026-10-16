@@ -171,6 +171,14 @@ func (g *DispositionGate) checkSelfApproval(ctx context.Context, in DispositionI
 	if !ok {
 		return exposuredom.ErrDispositionSelfApprovalNotAllowed
 	}
+	at, err := g.repo.RecentMemberRemoval(ctx, in.TenantID, time.Now().Add(-exposuredom.SelfApprovalRemovalCooldown))
+	if err != nil {
+		return err
+	}
+	if at != nil {
+		return fmt.Errorf("%w; approving your own request is possible again from %s",
+			exposuredom.ErrDispositionSelfApprovalAfterRemoval, at.Add(exposuredom.SelfApprovalRemovalCooldown).UTC().Format(time.RFC3339))
+	}
 	if strings.TrimSpace(in.Reason) == "" {
 		return exposuredom.ErrDispositionSelfApprovalNeedsReason
 	}

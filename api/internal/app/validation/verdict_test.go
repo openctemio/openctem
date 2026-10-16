@@ -50,7 +50,7 @@ func ingestFor(f *vulnerability.Finding) (*EvidenceIngestService, *fakeFindingRe
 // --- verdict table (RFC-011.2 §3) -------------------------------------------
 
 // not_reproducible on an OPEN finding (new/confirmed/in_progress) → downgrade to
-// validated_fixed + stamp not_reproducible + set downgraded_at (feeds metric).
+// status held + stamp not_reproducible + set downgraded_at (feeds metric).
 func TestVerdict_NotReproducible_OpenDowngrades(t *testing.T) {
 	for _, start := range []vulnerability.FindingStatus{
 		vulnerability.FindingStatusNew,
@@ -71,8 +71,8 @@ func TestVerdict_NotReproducible_OpenDowngrades(t *testing.T) {
 			if res.StatusChanged {
 				t.Fatal("a downgrade is not a proof-of-fix resolve; StatusChanged must be false")
 			}
-			if repo.current.Status() != vulnerability.FindingStatusValidatedFixed {
-				t.Fatalf("status = %s, want validated_fixed", repo.current.Status())
+			if repo.current.Status() != start {
+				t.Fatalf("status = %s, want %s (a downgrade keeps the status)", repo.current.Status(), start)
 			}
 			if rec.lastVerdict != VerdictNotReproducible {
 				t.Fatalf("verdict = %s, want not_reproducible", rec.lastVerdict)
@@ -152,18 +152,19 @@ func TestVerdict_Reproducible_FixAppliedReopens(t *testing.T) {
 	}
 }
 
-// reproducible after a prior downgrade (validated_fixed) → re-open to confirmed.
-func TestVerdict_Reproducible_AfterDowngradeReopens(t *testing.T) {
+// reproducible after a prior downgrade: the newer verdict replaces it; the
+// status never moved.
+func TestVerdict_Reproducible_AfterDowngradeRefutes(t *testing.T) {
 	f := atStatus(t, vulnerability.FindingStatusConfirmed)
-	svc, repo, _ := ingestFor(f)
+	svc, repo, rec := ingestFor(f)
 	// First: downgrade it.
 	if _, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
 		ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
 	}); err != nil {
 		t.Fatalf("ingest downgrade: %v", err)
 	}
-	if repo.current.Status() != vulnerability.FindingStatusValidatedFixed {
-		t.Fatalf("precondition: want validated_fixed, got %s", repo.current.Status())
+	if rec.lastVerdict != VerdictNotReproducible || repo.current.Status() != vulnerability.FindingStatusConfirmed {
+		t.Fatalf("precondition: verdict %s, status %s", rec.lastVerdict, repo.current.Status())
 	}
 	// Then: it reproduces again.
 	if _, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
@@ -171,8 +172,8 @@ func TestVerdict_Reproducible_AfterDowngradeReopens(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ingest reproduce: %v", err)
 	}
-	if repo.current.Status() != vulnerability.FindingStatusConfirmed {
-		t.Fatalf("status = %s, want confirmed (re-opened after refuted downgrade)", repo.current.Status())
+	if rec.lastVerdict != VerdictReproducible || repo.current.Status() != vulnerability.FindingStatusConfirmed {
+		t.Fatalf("verdict %s, status %s; want reproducible, confirmed", rec.lastVerdict, repo.current.Status())
 	}
 }
 
@@ -212,8 +213,8 @@ func TestVerdict_BackCompat_NilRecorderTolerated(t *testing.T) {
 	if !res.Downgraded {
 		t.Fatal("downgrade transition must still happen without a recorder")
 	}
-	if repo.current.Status() != vulnerability.FindingStatusValidatedFixed {
-		t.Fatalf("status = %s, want validated_fixed", repo.current.Status())
+	if repo.current.Status() != vulnerability.FindingStatusConfirmed {
+		t.Fatalf("status = %s, want confirmed (a downgrade keeps the status)", repo.current.Status())
 	}
 }
 
