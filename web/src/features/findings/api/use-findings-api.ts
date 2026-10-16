@@ -690,10 +690,14 @@ export interface FindingApprovalSettings {
   defaults?: Record<string, string>
 }
 
-/** PUT body: any of the plain fields, or the whole approval policy. */
+/**
+ * PUT body: any of the plain fields, or the whole approval policy.
+ * `cancel_pending` drops every waiting lowering (level, second-look share,
+ * relaxing policy) and keeps the values in force.
+ */
 export type FindingApprovalSettingsUpdate = Partial<
   Pick<FindingApprovalSettings, 'backup_contact_email' | 'fp_approval' | 'second_look_percent'>
-> & { policy?: ApprovalPolicy }
+> & { policy?: ApprovalPolicy; cancel_pending?: boolean }
 
 const FINDING_APPROVAL_SETTINGS_URL = '/api/v1/organization/settings/finding-approvals'
 
