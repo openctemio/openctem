@@ -67,15 +67,20 @@ func (c *profileClient) Transition(_ context.Context, _, id string, fields map[s
 }
 
 type stubProfiles struct {
-	create *ProfileCreate
-	status *ProfileStatus
-	gotInt shared.ID
+	create   *ProfileCreate
+	status   *ProfileStatus
+	gotInt   shared.ID
+	projects []string
 }
 
 func (p *stubProfiles) RenderFindingCreate(_ context.Context, _, integrationID shared.ID, _, _ string, _ shared.ID) (*ProfileCreate, error) {
 	p.gotInt = integrationID
 	return p.create, nil
 }
+func (p *stubProfiles) ProjectKeys(context.Context, shared.ID, shared.ID) ([]string, error) {
+	return p.projects, nil
+}
+
 func (p *stubProfiles) FindingStatusTarget(_ context.Context, _, integrationID shared.ID, _ string, _ shared.ID) (*ProfileStatus, error) {
 	p.gotInt = integrationID
 	return p.status, nil
