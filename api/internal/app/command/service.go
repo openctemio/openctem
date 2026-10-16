@@ -21,6 +21,7 @@ import (
 
 // Service handles command-related business operations.
 type Service struct {
+	instanceZones  InstanceZoneSource
 	sharedFailures SharedFailureObserver
 	repo           commanddom.Repository
 	sensors        SensorLookup

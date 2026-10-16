@@ -390,6 +390,10 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *sc
 					s.cancelCreated(ctx, created)
 					return err
 				}
+				if err := s.stampInstanceZone(ctx, cmd, b.Targets); err != nil {
+					s.cancelCreated(ctx, created)
+					return err
+				}
 			}
 		}
 		if err := s.commandRepo.Create(ctx, cmd); err != nil {

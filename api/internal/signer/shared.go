@@ -11,7 +11,13 @@ package signer
 //   - every target is public: an address or range is checked against the
 //     list sensors use (ctis addrscope); a name must not carry an internal
 //     suffix. Names are resolved by the API and again by the sensor, which
-//     pins the address it checked.
+//     pins the address it checked;
+//   - except inside an instance scan zone (RFC-100 §6.1): a statement that
+//     names a zone may carry internal addresses and ranges that lie wholly
+//     inside the zone's signed ranges (private ranges only), and nothing
+//     else internal. Which zone, with which ranges, for which organization
+//     and sensor is checked against the signer's own zone ledger
+//     (zones.go), not taken from the API.
 
 import (
 	"net"
@@ -31,6 +37,7 @@ const (
 	ReasonSharedJobType   = "shared_job_type"
 	ReasonSharedTemplates = "shared_templates"
 	ReasonSharedInternal  = "shared_internal_target"
+	ReasonBadZone         = "bad_zone"
 )
 
 // sharedJobTypes are the command types a shared sensor may be signed.
@@ -41,6 +48,9 @@ var sharedJobTypes = map[string]bool{"scan": true, "validate": true, "retest": t
 func checkShared(st *jobsign.Statement) *refusal {
 	switch st.SensorScope {
 	case "":
+		if st.Zone != nil {
+			return refuse(http.StatusBadRequest, ReasonBadZone, "zone is only for a shared sensor's job")
+		}
 		return nil
 	case jobsign.SensorScopeInstance:
 	default:
@@ -52,12 +62,64 @@ func checkShared(st *jobsign.Statement) *refusal {
 	if len(st.Templates) > 0 {
 		return refuse(http.StatusForbidden, ReasonSharedTemplates, "a shared sensor runs no custom templates")
 	}
-	for i, t := range st.Targets {
-		if internalTarget(t) {
-			return refuse(http.StatusForbidden, ReasonSharedInternal, "target %d is internal; a shared sensor scans public targets only", i)
+	var zoneRanges []string
+	if st.Zone != nil {
+		ranges, err := jobsign.CanonicalZoneRanges(st.Zone.Ranges)
+		if err != nil || canonicalID(st.Zone.ID) == "" || !sameStrings(ranges, st.Zone.Ranges) {
+			return refuse(http.StatusBadRequest, ReasonBadZone, "zone must name an id and its canonical private ranges")
 		}
+		zoneRanges = ranges
+	}
+	for i, t := range st.Targets {
+		if !internalTarget(t) {
+			continue
+		}
+		if p, ok := targetPrefix(t); ok && zoneRanges != nil && jobsign.ZoneContains(zoneRanges, p) {
+			continue
+		}
+		if zoneRanges != nil {
+			return refuse(http.StatusForbidden, ReasonSharedInternal, "target %d is internal and outside the job's zone ranges", i)
+		}
+		return refuse(http.StatusForbidden, ReasonSharedInternal, "target %d is internal; a shared sensor scans public targets only", i)
 	}
 	return nil
+}
+
+// targetPrefix reads an address or range target (a bare address, a CIDR,
+// or a URL or host:port whose host is an address) as a prefix. Names are
+// not prefixes: an internal name never passes inside a zone.
+func targetPrefix(target string) (netip.Prefix, bool) {
+	host := strings.TrimSpace(target)
+	if p, err := netip.ParsePrefix(host); err == nil {
+		return p, true
+	}
+	if strings.Contains(host, "://") {
+		u, err := url.Parse(host)
+		if err != nil {
+			return netip.Prefix{}, false
+		}
+		host = u.Hostname()
+	} else if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	a, err := netip.ParseAddr(host)
+	if err != nil || a.Zone() != "" {
+		return netip.Prefix{}, false
+	}
+	return netip.PrefixFrom(a, a.BitLen()), true
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // internalTarget reports whether a target is an internal address or range,
