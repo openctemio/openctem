@@ -151,7 +151,7 @@ type AuthProvidersResponse struct {
 	// Microsoft Entra ID SSO fallback is usable (SSO_ENTRA_* configured).
 	SSOEnvEntraEnabled bool `json:"sso_env_entra_enabled"`
 	// TenantCreationMode is "self_service" or "admin_only": the console
-	// sign-up policy (seeded from TENANT_CREATION_MODE).
+	// sign-up policy in force (clamped to the deployment's SIGNUP_MODE).
 	TenantCreationMode string `json:"tenant_creation_mode"`
 	// RegistrationEnabled reports whether anyone may self-register: true in
 	// the self_service sign-up mode. When false the UI hides sign-up; an
@@ -202,8 +202,8 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Reque
 	resp.DeploymentRegion = h.deploymentRegion
 	// Report what the server enforces: anything but an explicit self_service
 	// is admin-only.
-	if resp.TenantCreationMode != config.TenantCreationSelfService {
-		resp.TenantCreationMode = config.TenantCreationAdminOnly
+	if resp.TenantCreationMode != string(signupdom.ModeSelfService) {
+		resp.TenantCreationMode = string(signupdom.ModeAdminOnly)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
