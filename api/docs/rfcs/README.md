@@ -114,7 +114,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-096](RFC-096-ci-per-repository-settings.md) | CI gate settings per repository | Proposed (2026-10-15). |
 | [RFC-097](RFC-097-ticket-field-mapping.md) | Ticket field and status mapping | Proposed (2026-10-15). |
 | [RFC-099](RFC-099-content-packages.md) | Content packages, signatures, revocation and the content catalog | Proposed (2026-10-15). |
-| [RFC-100](RFC-100-shared-sensors.md) | Shared sensors | Accepted (2026-10-15); S0 in review (#2308), S2 in review, the rest designed |
+| [RFC-100](RFC-100-shared-sensors.md) | Shared sensors | Accepted (2026-10-15); S0 in review (#2308), S2 in review (#2325), S3 in review, the rest designed |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

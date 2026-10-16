@@ -230,15 +230,24 @@ func (h *AdminScanPolicyHandler) decodeAndStepUp(w http.ResponseWriter, r *http.
 		return nil, false
 	}
 	reason, code := fields()
+	if !h.stepUpChange(w, r, actor, purpose, reason, code) {
+		return nil, false
+	}
+	return actor, true
+}
+
+// stepUpChange checks the reason and spends the fresh authenticator code of
+// a change; it writes the refusal and returns false when either fails.
+func (h *AdminScanPolicyHandler) stepUpChange(w http.ResponseWriter, r *http.Request, actor *admin.AdminUser, purpose, reason, code string) bool {
 	if strings.TrimSpace(reason) == "" || len(reason) > 1000 {
 		apierror.BadRequest("a reason (at most 1000 characters) is required").WriteJSON(w)
-		return nil, false
+		return false
 	}
 	code = strings.TrimSpace(code)
 	if code == "" {
 		apierror.New(http.StatusUnauthorized, codeStepUpRequired,
 			"Enter a code from your authenticator to confirm the change").WriteJSON(w)
-		return nil, false
+		return false
 	}
 	if err := h.stepUp.StepUp(r.Context(), actor, code, purpose, clientInfo(r)); err != nil {
 		switch {
@@ -251,9 +260,9 @@ func (h *AdminScanPolicyHandler) decodeAndStepUp(w http.ResponseWriter, r *http.
 			h.logger.Error("scan policy step-up", "error", err)
 			apierror.InternalServerError("could not verify the code").WriteJSON(w)
 		}
-		return nil, false
+		return false
 	}
-	return actor, true
+	return true
 }
 
 func (h *AdminScanPolicyHandler) change(r *http.Request, actor *admin.AdminUser, reason string) scanpolicy.Change {
