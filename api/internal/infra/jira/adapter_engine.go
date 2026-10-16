@@ -72,3 +72,12 @@ func mapUpstream(err error) error {
 	}
 	return err
 }
+
+// IssueIdentity reads an issue's id and current key.
+func (a clientAdapter) IssueIdentity(ctx context.Context, issueKey string) (string, string, error) {
+	id, key, err := a.c.GetIssueIdentity(ctx, issueKey)
+	if errors.Is(err, ErrIssueNotVisible) {
+		return "", "", appjira.ErrIssueNotVisible
+	}
+	return id, key, mapUpstream(err)
+}

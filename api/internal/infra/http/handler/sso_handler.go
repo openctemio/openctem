@@ -70,6 +70,9 @@ func (h *SSOHandler) ListTenantProviders(w http.ResponseWriter, r *http.Request)
 		apierror.BadRequest("org parameter is required").WriteJSON(w)
 		return
 	}
+	// A discovery reference stands for the organization; an invalid one
+	// matches nothing (the same empty answer as an unknown slug).
+	orgSlug = h.ssoService.ResolveOrg(r.Context(), orgSlug)
 
 	providers, err := h.ssoService.GetProvidersForTenant(r.Context(), orgSlug)
 	if err != nil {
@@ -91,7 +94,7 @@ type DiscoverRequest struct {
 
 // Discover answers where an email signs in (email-first sign-in).
 // @Summary      Email-first sign-in discovery (public)
-// @Description  Returns {"next":"sso","org":slug} when the email's domain is claimed (DNS-verified, exclusive) by an organization with an active SSO provider, else {"next":"password","org":""}. The same shape for every email; it never says whether the email has an account.
+// @Description  Returns {"next":"sso","org":ref} (an opaque, expiring organization reference accepted by the providers and authorize routes) when the email's domain is claimed (DNS-verified, exclusive) by an organization with an active SSO provider, else {"next":"password","org":""}. The same shape for every email; it never says whether the email has an account.
 // @Tags         SSO
 // @Accept       json
 // @Produce      json
@@ -125,6 +128,8 @@ func (h *SSOHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("org parameter is required").WriteJSON(w)
 		return
 	}
+
+	orgSlug = h.ssoService.ResolveOrg(r.Context(), orgSlug)
 
 	redirectURI := r.URL.Query().Get("redirect_uri")
 	if redirectURI == "" {

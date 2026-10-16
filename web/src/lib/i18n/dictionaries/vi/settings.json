@@ -357,6 +357,8 @@
   "settings.jiraWebhook.close": "Đóng",
   "settings.item.ticket-field-mapping": "Ánh xạ trường ticket",
   "settings.desc.ticket-field-mapping": "Các trường và trạng thái đồng bộ với Jira, theo từng dự án.",
+  "settings.item.finding-approvals": "Phê duyệt phát hiện",
+  "settings.desc.finding-approvals": "Ai quyết định dương tính giả và rủi ro được chấp nhận, và ai được thông báo.",
   "settings.accountDelete.title": "Xóa tài khoản",
   "settings.accountDelete.desc": "Kết thúc mọi phiên đăng nhập và thu hồi khóa API của bạn ngay lập tức. Đăng nhập lại trong vòng 14 ngày sẽ hủy việc xóa; sau đó tài khoản rời khỏi mọi tổ chức và dữ liệu cá nhân của bạn bị xóa.",
   "settings.accountDelete.button": "Xóa tài khoản của tôi",

@@ -1,4 +1,4 @@
-package main
+package bootstrapadmin
 
 import (
 	"net/url"
