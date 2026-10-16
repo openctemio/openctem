@@ -53,6 +53,10 @@ func (m *MockSuppressionRepository) CountMatchingOpenFindings(_ context.Context,
 	return min(m.matching, limit+1), nil
 }
 
+func (m *MockSuppressionRepository) SampleMatchingOpenFindings(_ context.Context, _ *suppression.Rule, _ suppression.ScopeFilter, limit, _ int) (int, []suppression.SampleFinding, error) {
+	return min(m.matching, limit+1), nil, nil
+}
+
 func (m *MockSuppressionRepository) FindByID(_ context.Context, tenantID, ruleID shared.ID) (*suppression.Rule, error) {
 	rule, ok := m.rules[ruleID]
 	if !ok || rule.TenantID() != tenantID {

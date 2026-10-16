@@ -455,13 +455,31 @@ type SuppressionRulePreviewResponse struct {
 	// Capped: more than Limit match; an approval closes Limit of them.
 	Capped bool `json:"capped"`
 	Limit  int  `json:"limit"`
+	// InScopeFindings is how many of those are on assets the caller's data
+	// scope covers (at most Limit); Sample lists the first few of them.
+	// Findings outside the caller's scope are only in MatchingOpenFindings.
+	InScopeFindings int                             `json:"in_scope_findings"`
+	Sample          []SuppressionPreviewFindingResp `json:"sample"`
+}
+
+// SuppressionPreviewFindingResp is one finding of a preview sample.
+type SuppressionPreviewFindingResp struct {
+	ID        string `json:"id"`
+	AssetID   string `json:"asset_id"`
+	AssetName string `json:"asset_name,omitempty"`
+	RuleID    string `json:"rule_id,omitempty"`
+	FilePath  string `json:"file_path,omitempty"`
+	Title     string `json:"title"`
+	Severity  string `json:"severity"`
+	Status    string `json:"status"`
 }
 
 // PreviewRule handles GET /api/v1/suppressions/{id}/preview: the number of
 // open findings an approval would close. The count is organization-wide, as
-// the approval is, so the route is gated like the approval itself.
+// the approval is, so the route is gated like the approval itself; the sample
+// and the in-scope count only cover the caller's data scope.
 // @Summary      Preview a suppression rule's approval
-// @Description  The number of the organization's open findings the rule matches and an approval would close now (at most limit; capped when more match). Organization-wide, like the approval; needs findings:suppressions:approve.
+// @Description  The number of the organization's open findings the rule matches and an approval would close now (at most limit; capped when more match). Organization-wide, like the approval; needs findings:suppressions:approve. in_scope_findings and sample cover only the findings on assets the caller's data scope admits.
 // @Tags         Suppressions
 // @Produce      json
 // @Param        id   path      string  true  "Suppression rule ID"
@@ -490,10 +508,19 @@ func (h *SuppressionHandler) PreviewRule(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	sample := make([]SuppressionPreviewFindingResp, 0, len(preview.Sample))
+	for _, f := range preview.Sample {
+		sample = append(sample, SuppressionPreviewFindingResp{
+			ID: f.ID.String(), AssetID: f.AssetID.String(), AssetName: f.AssetName, RuleID: f.RuleID,
+			FilePath: f.FilePath, Title: f.Title, Severity: f.Severity, Status: f.Status,
+		})
+	}
 	json.NewEncoder(w).Encode(SuppressionRulePreviewResponse{
 		MatchingOpenFindings: preview.MatchingOpenFindings,
 		Capped:               preview.Capped,
 		Limit:                preview.Limit,
+		InScopeFindings:      preview.InScopeFindings,
+		Sample:               sample,
 	})
 }
 
