@@ -108,10 +108,39 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   action per day); a `verifying`, held or closed task gets a `join` suggestion instead. It never changes a
   finding's status.
 
+## Moves, split, merge, detach
+
+| Route | Gate | Does |
+|---|---|---|
+| `POST /api/v1/remediation/moves/preview` | `findings:remediation:write` | the warnings of a move, nothing changes |
+| `POST /api/v1/remediation/moves` | `findings:remediation:write` | moves findings (`confirm` for warnings; no target = detach) |
+| `POST /api/v1/remediation/tasks/{task_id}/splits` | `findings:remediation:write` | new task of the same fix from some findings |
+| `POST /api/v1/remediation/tasks/{task_id}/merges` | `findings:remediation:write` | moves all findings of same-fix tasks here |
+
+- Refused: another tenant (404), a terminal task on either side, a task with findings outside the caller's
+  scope, a finding outside it. Warned (409 `MOVE_NEEDS_CONFIRMATION` until `confirm`): different fix, different
+  owner, target or source verifying, emptying the source.
+- One transaction: both tasks locked in id order at the caller's versions, findings locked in id order, both
+  sides recomputed; an emptied source is archived with a note naming the target; one timeline entry per task and
+  a `remediation_task_changed` entry on every finding (left and joined). Findings not in the source are skipped
+  and reported. A detach records `remediation_key_exclusions` (reason `detached`) for the source's key.
+- Undo = the reverse move with the versions the response returns.
+
+## Mark fixed and regressions
+
+- `POST /api/v1/remediation/tasks/{task_id}/resolve` (`findings:remediation:write` + `findings:fix_apply`),
+  body `version`, `note`: every open finding of the task goes to `fix_applied` through the finding bulk path
+  (`WalkToFixApplied`: new/confirmed walk through in_progress; the asset owner's claim only; the bulk abuse
+  guard; a proof-of-fix re-check queued per finding). The response lists each finding not updated with the
+  reason; the task records a `fix_claimed` timeline entry. Nothing closes: each finding closes on its own
+  evidence.
+- A finding of a `done` or `closed_unverified` task that reopens is moved, at the next recompute, into a new
+  task `Regression: <title>` with the same fix, owner, campaign and manual deadline and `regression_of` set;
+  the closed task keeps its state (`regressed` timeline entry) and its history.
+
 ## Shipped and planned
 
-Shipped: everything above. Planned (RFC-098 §7–§8): moves, split, merge and detach, task-level mark fixed and
-regression tasks, the new Remediation console.
+Shipped: everything above. Planned: the new Remediation console.
 
 ## Key files
 
