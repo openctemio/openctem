@@ -104,6 +104,37 @@ func change(t *testing.T) Change {
 
 // Organization A cannot use organization B's zone, even when both zones
 // cover the same private range: the zone tells them apart.
+// A zone is never written without a job signer, and the signed statement only
+// names a zone while internal zones are allowed.
+func TestNoSignerNoWrite_StatementZoneRechecksPolicy(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepo()
+	c := change(t)
+	noSigner := NewService(repo, nil, policy(true), nil, nil)
+	if _, err := noSigner.Create(ctx, "HQ", "", []string{"192.168.0.0/16"}, c); !errors.Is(err, ErrSignerRefused) {
+		t.Fatalf("create without a signer: %v", err)
+	}
+	if len(repo.zones) != 0 {
+		t.Fatal("zone stored without a signer")
+	}
+
+	on := NewService(repo, &memLedger{}, policy(true), nil, nil)
+	z, err := on.Create(ctx, "HQ", "", []string{"192.168.0.0/16"}, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := on.StatementZone(ctx, z.ID); err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	off := NewService(repo, &memLedger{}, policy(false), nil, nil)
+	if _, err := off.StatementZone(ctx, z.ID); !errors.Is(err, ErrInternalZonesNotAllowed) {
+		t.Fatalf("setting off at signing: %v", err)
+	}
+	if _, err := NewService(repo, &memLedger{}, nil, nil, nil).StatementZone(ctx, z.ID); !errors.Is(err, ErrInternalZonesNotAllowed) {
+		t.Fatalf("no policy: %v", err)
+	}
+}
+
 func TestZoneFor_CrossOrganizationAndOverlap(t *testing.T) {
 	ctx := context.Background()
 	repo, ledger := newRepo(), &memLedger{}
@@ -179,7 +210,7 @@ func TestChangesGoToTheSignerFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ledger.changes) != 1 || ledger.changes[0].Put == nil || ledger.changes[0].Requester != "root@example.com" {
+	if len(ledger.changes) != 1 || ledger.changes[0].Put == nil || ledger.changes[0].Requester != c.Actor.ID().String() {
 		t.Fatalf("signer changes = %+v", ledger.changes)
 	}
 	org := shared.NewID()
