@@ -268,5 +268,7 @@
   "org.joinRequests.approved": "Đã duyệt yêu cầu",
   "org.joinRequests.rejected": "Đã từ chối yêu cầu",
   "org.joinRequests.failed": "Không xử lý được yêu cầu",
-  "org.joinRequests.expiry": "Yêu cầu hết hạn sau 30 ngày."
+  "org.joinRequests.expiry": "Yêu cầu hết hạn sau 30 ngày.",
+  "org.region.new": "Vùng dữ liệu: {region}. Vùng này cố định sau khi tổ chức được tạo.",
+  "org.region.current": "Vùng dữ liệu: {region} (cố định)"
 }

@@ -121,6 +121,11 @@ check_http_client() {
         # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
         # the request host, so no network destination exists to guard.
         'api/internal/infra/signer/client.go'
+        # Admin audit sink (ADMIN_AUDIT_SINK): the URL comes only from the
+        # server's environment, never from a tenant or a request, and is
+        # usually a log collector on a private network, which SafeHTTPClient
+        # refuses. https only, TLS 1.2+, no redirects.
+        'api/internal/infra/auditsink/sink.go'
     )
 
     local hits
@@ -487,6 +492,11 @@ check_client_ip_headers() {
         # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
         # the request host, so no network destination exists to guard.
         'api/internal/infra/signer/client.go'
+        # Admin audit sink (ADMIN_AUDIT_SINK): the URL comes only from the
+        # server's environment, never from a tenant or a request, and is
+        # usually a log collector on a private network, which SafeHTTPClient
+        # refuses. https only, TLS 1.2+, no redirects.
+        'api/internal/infra/auditsink/sink.go'
     )
 
     local hits
