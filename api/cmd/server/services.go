@@ -1876,6 +1876,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Entitlement != nil {
 		cmdOpts = append(cmdOpts, command.WithSharedLimits(s.Entitlement))
 	}
+	// RFC-100 §5: the access policy again at claim time (an organization
+	// that lost access or opted out keeps its queued shared jobs waiting).
+	cmdOpts = append(cmdOpts, command.WithSharedAccess(s.SharedSensorsAllowed))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
