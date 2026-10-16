@@ -1,194 +1,358 @@
+// Package auditsink streams the platform administrators' audit log off the
+// box (RFC-022).
+//
+// admin_audit_logs is append-only and hash-chained inside the database, but a
+// database administrator (or anyone who restores an older backup) can still
+// rewrite the whole chain consistently. A copy that lives somewhere the
+// database operator cannot write closes that gap: the sink holds every row
+// and the chain head (position and hash) as it was when sent, so a rewrite
+// shows up as a head that no longer matches.
+//
+// The forwarder is an exclusive controller. Each run it reads the rows after
+// a durable cursor in bounded batches, sends each batch to the sink, and
+// moves the cursor only after the sink accepted it: delivery is at-least-once,
+// so a receiver must treat a repeated chain position as a duplicate (the batch
+// id names the range). Failures back off exponentially. When nothing is new
+// it still sends the chain head every HeadInterval, so a silent sink is
+// itself an alarm. It verifies the chain on a timer and carries the result
+// (an honest "verified" flag: false until a verification ran, and again
+// after one failed to run) in every export, in metrics and in an error log.
+//
+// Destinations (ADMIN_AUDIT_SINK):
+//
+//	https://collector.example/path   one signed JSON batch per POST
+//	syslog+tls://host:6514           RFC 5424 over TLS (RFC 5425), optional mTLS
+//	file:///var/log/openctem/admin-audit.jsonl   one JSON batch per line
+//
+// The destination is an operator setting (environment only), never something
+// a console user can change. The webhook secret is never logged.
 package auditsink
 
 import (
 	"context"
-	"encoding/json"
-	"sync/atomic"
+	"errors"
+	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// Event types sent to the sink.
+// Row is one admin_audit_logs row as shipped: the audit entry and its place
+// in the hash chain. The shipped columns are explicit (see rowEvent); the
+// request body and user agent are withheld.
+type Row = admin.AuditChainEntry
+
+// Head is the chain tail: the newest position and its hash.
+type Head struct {
+	Position int64  `json:"position"`
+	Hash     string `json:"hash"`
+}
+
+// Cursor is the last acknowledged row.
+type Cursor struct {
+	Position int64
+	Hash     string
+}
+
+// Store is the database side.
+type Store interface {
+	// ReadForwardRows returns up to limit chain rows after position, oldest first.
+	ReadForwardRows(ctx context.Context, after int64, limit int) ([]Row, error)
+	// ChainHead returns the chain's newest position and hash.
+	ChainHead(ctx context.Context) (int64, string, error)
+	LoadForwardCursor(ctx context.Context) (Cursor, error)
+	// SaveForwardCursor only moves the cursor forward.
+	SaveForwardCursor(ctx context.Context, c Cursor) error
+}
+
+// Verifier is the chain verification (AuditLogRepository.VerifyChain).
+type Verifier interface {
+	VerifyChain(ctx context.Context) (*admin.AuditChainReport, error)
+}
+
+// ChainStatus is the verification result carried in every export.
+type ChainStatus struct {
+	// Verified is false until the first verification ran.
+	Verified   bool       `json:"verified"`
+	OK         bool       `json:"ok"`
+	Breaks     int        `json:"breaks"`
+	Truncated  bool       `json:"truncated,omitempty"`
+	VerifiedAt *time.Time `json:"verified_at,omitempty"`
+}
+
+// Batch is one delivery: rows (possibly none, for a head-only export), the
+// chain head and the verification state.
+type Batch struct {
+	SentAt time.Time
+	Rows   []Row
+	Head   Head
+	Chain  ChainStatus
+}
+
+// ID names the range, for the receiver's de-duplication.
+func (b Batch) ID() string {
+	if len(b.Rows) == 0 {
+		return fmt.Sprintf("head-%d", b.Head.Position)
+	}
+	return fmt.Sprintf("%d-%d", b.Rows[0].Position, b.Rows[len(b.Rows)-1].Position)
+}
+
+// Sink delivers a batch; nil means the sink accepted it.
+type Sink interface {
+	Name() string
+	Send(ctx context.Context, b Batch) error
+	Close() error
+}
+
+// Config tunes the forwarder.
+type Config struct {
+	Interval       time.Duration // run period and base retry delay (default 15s)
+	BatchSize      int           // rows per delivery (default 500, max 5000)
+	MaxBatchesRun  int           // deliveries per run (default 10)
+	HeadInterval   time.Duration // head export when idle (default 1h)
+	VerifyInterval time.Duration // chain verification period (default 1h)
+	LagAlert       time.Duration // oldest unsent row age that raises the alarm (default 10m)
+	MaxBackoff     time.Duration // retry delay cap (default 15m)
+	Logger         *logger.Logger
+}
+
 const (
-	EventAuditRow  = "admin_audit"
-	EventChainHead = "admin_audit_chain_head"
+	maxBatchSize = 5000
+	// verifyRetry is how soon a verification that could not run is retried.
+	verifyRetry = 5 * time.Minute
 )
 
-// QueueSize bounds the events waiting for the sink. A full queue drops the
-// newest event (logged and counted): the database keeps every row and the
-// next chain head covers it, and an unreachable collector must never slow the
-// console down.
-const QueueSize = 1000
-
-// sendAttempts per event, with backoff, before it is dropped.
-const sendAttempts = 3
-
-// rowEvent is one administrators' audit row and its place in the chain. The
-// request body is not sent (it may name things a collector need not hold);
-// the hash covers it, so the database row can still be checked against it.
-type rowEvent struct {
-	Type         string    `json:"type"`
-	Position     int64     `json:"position"`
-	PrevHash     string    `json:"prev_hash"`
-	Hash         string    `json:"hash"`
-	ID           string    `json:"id"`
-	At           time.Time `json:"at"`
-	AdminID      string    `json:"admin_id,omitempty"`
-	AdminEmail   string    `json:"admin_email"`
-	Action       string    `json:"action"`
-	ResourceType string    `json:"resource_type,omitempty"`
-	ResourceID   string    `json:"resource_id,omitempty"`
-	ResourceName string    `json:"resource_name,omitempty"`
-	Method       string    `json:"method,omitempty"`
-	Path         string    `json:"path,omitempty"`
-	Status       int       `json:"status,omitempty"`
-	IP           string    `json:"ip,omitempty"`
-	Success      bool      `json:"success"`
-	Error        string    `json:"error,omitempty"`
-	Severity     string    `json:"severity"`
+func (c *Config) defaults() {
+	if c.Interval <= 0 {
+		c.Interval = 15 * time.Second
+	}
+	if c.BatchSize <= 0 {
+		c.BatchSize = 500
+	}
+	if c.BatchSize > maxBatchSize {
+		c.BatchSize = maxBatchSize
+	}
+	if c.MaxBatchesRun <= 0 {
+		c.MaxBatchesRun = 10
+	}
+	if c.HeadInterval <= 0 {
+		c.HeadInterval = time.Hour
+	}
+	if c.VerifyInterval <= 0 {
+		c.VerifyInterval = time.Hour
+	}
+	if c.LagAlert <= 0 {
+		c.LagAlert = 10 * time.Minute
+	}
+	if c.MaxBackoff <= 0 {
+		c.MaxBackoff = 15 * time.Minute
+	}
+	if c.Logger == nil {
+		c.Logger = logger.NewNop()
+	}
 }
 
-// headEvent is where the chain stood: a later re-signing of the chain cannot
-// match a head already sent.
-type headEvent struct {
-	Type     string    `json:"type"`
-	Position int64     `json:"position"`
-	Hash     string    `json:"hash"`
-	At       time.Time `json:"at"`
-}
-
-// ChainHeadReader returns the chain's newest position and hash.
-type ChainHeadReader func(ctx context.Context) (int64, string, error)
-
-// Forwarder queues events and delivers them to the sink in order.
+// Forwarder is the controller. Reconcile runs serially (one controller lease
+// holder at a time), so its state needs no lock.
 type Forwarder struct {
-	sink    Sink
-	queue   chan []byte
-	log     *logger.Logger
-	dropped atomic.Int64
-	sent    atomic.Int64
-	backoff time.Duration
+	store    Store
+	verifier Verifier
+	sink     Sink
+	cfg      Config
+	log      *logger.Logger
+	now      func() time.Time
+
+	failures    int
+	nextAttempt time.Time
+	lastHead    time.Time
+	nextVerify  time.Time
+	chain       ChainStatus
+	lagAlerted  bool
+	chainAlert  bool
 }
 
-// NewForwarder wraps sink.
-func NewForwarder(sink Sink, log *logger.Logger) *Forwarder {
-	return &Forwarder{sink: sink, queue: make(chan []byte, QueueSize), log: log.With("component", "admin_audit_sink"), backoff: time.Second}
+// NewForwarder builds the forwarder.
+func NewForwarder(store Store, verifier Verifier, sink Sink, cfg Config) (*Forwarder, error) {
+	if store == nil || verifier == nil {
+		return nil, errors.New("auditsink: store and verifier are required")
+	}
+	if sink == nil {
+		return nil, errors.New("auditsink: no sink configured")
+	}
+	cfg.defaults()
+	return &Forwarder{store: store, verifier: verifier, sink: sink, cfg: cfg,
+		log: cfg.Logger.With("controller", "admin-audit-sink"), now: time.Now}, nil
 }
 
-// Dropped and Sent are counters for metrics and tests.
-func (f *Forwarder) Dropped() int64 { return f.dropped.Load() }
-func (f *Forwarder) Sent() int64    { return f.sent.Load() }
+// Name implements controller.Controller.
+func (f *Forwarder) Name() string { return "admin-audit-sink" }
 
-// Row queues an audit row (the repository calls it after each insert). It
-// never blocks.
-func (f *Forwarder) Row(e admin.AuditChainEntry) {
-	l := e.Log
-	if l == nil {
-		return
-	}
-	ev := rowEvent{
-		Type: EventAuditRow, Position: e.Position, PrevHash: e.PrevHash, Hash: e.Hash,
-		ID: l.ID.String(), At: l.CreatedAt.UTC(), AdminEmail: l.AdminEmail, Action: l.Action,
-		ResourceType: l.ResourceType, ResourceName: l.ResourceName, Method: l.RequestMethod, Path: l.RequestPath,
-		Status: l.ResponseStatus, IP: l.IPAddress, Success: l.Success, Error: l.ErrorMessage, Severity: l.Severity,
-	}
-	if l.AdminID != nil {
-		ev.AdminID = l.AdminID.String()
-	}
-	if l.ResourceID != nil {
-		ev.ResourceID = l.ResourceID.String()
-	}
-	f.enqueue(ev)
-}
+// Interval implements controller.Controller.
+func (f *Forwarder) Interval() time.Duration { return f.cfg.Interval }
 
-func (f *Forwarder) enqueue(ev any) {
-	b, err := json.Marshal(ev)
+// Exclusive makes the manager run one replica at a time, so two replicas do
+// not race on the cursor.
+func (f *Forwarder) Exclusive() bool { return true }
+
+// Reconcile ships what is new. It returns the number of rows delivered.
+func (f *Forwarder) Reconcile(ctx context.Context) (int, error) {
+	now := f.now()
+	if now.Before(f.nextAttempt) {
+		return 0, nil
+	}
+	f.verifyIfDue(ctx, now)
+
+	cur, err := f.store.LoadForwardCursor(ctx)
 	if err != nil {
-		f.log.Error("encode admin audit event", "error", err)
+		return 0, f.fail(now, "", fmt.Errorf("load cursor: %w", err))
+	}
+	sent := 0
+	for i := 0; i < f.cfg.MaxBatchesRun; i++ {
+		rows, err := f.store.ReadForwardRows(ctx, cur.Position, f.cfg.BatchSize)
+		if err != nil {
+			return sent, f.fail(now, "", fmt.Errorf("read rows: %w", err))
+		}
+		if len(rows) == 0 {
+			break
+		}
+		head, err := f.chainHead(ctx)
+		if err != nil {
+			return sent, f.fail(now, "", err)
+		}
+		if name, err := f.deliver(ctx, Batch{SentAt: f.now(), Rows: rows, Head: head, Chain: f.chain}); err != nil {
+			return sent, f.fail(now, name, err)
+		}
+		last := rows[len(rows)-1]
+		cur = Cursor{Position: last.Position, Hash: last.Hash}
+		sent += len(rows)
+		f.lastHead = now
+		metrics.AdminAuditForwardRows.Add(float64(len(rows)))
+		if err := f.store.SaveForwardCursor(ctx, cur); err != nil {
+			// The rows are delivered; the next run re-sends them (at-least-once).
+			return sent, f.fail(now, "", fmt.Errorf("save cursor: %w", err))
+		}
+	}
+
+	head, err := f.chainHead(ctx)
+	if err != nil {
+		return sent, f.fail(now, "", err)
+	}
+	pending, err := f.store.ReadForwardRows(ctx, cur.Position, 1)
+	if err != nil {
+		return sent, f.fail(now, "", fmt.Errorf("read rows: %w", err))
+	}
+	if len(pending) == 0 && now.Sub(f.lastHead) >= f.cfg.HeadInterval {
+		if name, err := f.deliver(ctx, Batch{SentAt: f.now(), Head: head, Chain: f.chain}); err != nil {
+			return sent, f.fail(now, name, err)
+		}
+		f.lastHead = now
+	}
+	f.succeed(now, head, cur, pending)
+	return sent, nil
+}
+
+func (f *Forwarder) chainHead(ctx context.Context) (Head, error) {
+	pos, hash, err := f.store.ChainHead(ctx)
+	if err != nil {
+		return Head{}, fmt.Errorf("read chain head: %w", err)
+	}
+	return Head{Position: pos, Hash: hash}, nil
+}
+
+// deliver sends the batch with a bounded wait; it names the sink on failure.
+func (f *Forwarder) deliver(ctx context.Context, b Batch) (string, error) {
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := f.sink.Send(sctx, b); err != nil {
+		return f.sink.Name(), err
+	}
+	return "", nil
+}
+
+// Close releases the sink's connection (called when the process stops).
+func (f *Forwarder) Close() error { return f.sink.Close() }
+
+func (f *Forwarder) fail(now time.Time, sink string, err error) error {
+	f.failures++
+	delay := f.cfg.Interval
+	for i := 1; i < f.failures && delay < f.cfg.MaxBackoff; i++ {
+		delay *= 2
+	}
+	if delay > f.cfg.MaxBackoff {
+		delay = f.cfg.MaxBackoff
+	}
+	f.nextAttempt = now.Add(delay)
+	if sink == "" {
+		sink = "store"
+	}
+	metrics.AdminAuditForwardFailures.WithLabelValues(sink).Inc()
+	metrics.AdminAuditForwardConsecutiveFailures.Set(float64(f.failures))
+	// err comes from the sink, which strips the URL and never include the secret.
+	f.log.Error("admin audit forward failed", "sink", sink, "consecutive_failures", f.failures,
+		"retry_in", delay.String(), "error", err.Error())
+	return err
+}
+
+func (f *Forwarder) succeed(now time.Time, head Head, cur Cursor, pending []Row) {
+	f.failures = 0
+	f.nextAttempt = time.Time{}
+	metrics.AdminAuditForwardConsecutiveFailures.Set(0)
+	metrics.AdminAuditForwardLastSuccess.Set(float64(now.Unix()))
+
+	lagRows := head.Position - cur.Position
+	if lagRows < 0 {
+		lagRows = 0
+	}
+	var lag time.Duration
+	if len(pending) > 0 {
+		lag = now.Sub(pending[0].Log.CreatedAt)
+	}
+	metrics.AdminAuditForwardLagRows.Set(float64(lagRows))
+	metrics.AdminAuditForwardLagSeconds.Set(lag.Seconds())
+	switch {
+	case lag > f.cfg.LagAlert && !f.lagAlerted:
+		f.lagAlerted = true
+		f.log.Error("admin audit forwarder is lagging", "lag_rows", lagRows, "oldest_unsent_age", lag.String())
+	case lag <= f.cfg.LagAlert:
+		f.lagAlerted = false
+	}
+}
+
+func (f *Forwarder) verifyIfDue(ctx context.Context, now time.Time) {
+	if now.Before(f.nextVerify) {
 		return
 	}
-	select {
-	case f.queue <- b:
-	default:
-		f.dropped.Add(1)
-		f.log.Warn("admin audit sink queue full: event dropped (the database keeps the row)")
+	rep, err := f.verifier.VerifyChain(ctx)
+	if err != nil {
+		metrics.AdminAuditChainVerifyErrors.Inc()
+		f.log.Error("admin audit chain verification could not run", "error", err.Error())
+		// A result from before the failure must not keep vouching for the
+		// chain: the export says it is not verified. The run is retried
+		// within minutes, not on every run.
+		f.chain = ChainStatus{Verified: false}
+		retry := verifyRetry
+		if f.cfg.VerifyInterval < retry {
+			retry = f.cfg.VerifyInterval
+		}
+		f.nextVerify = now.Add(retry)
+		return
 	}
-}
-
-// Run delivers queued events until ctx ends, then drains what is left for a
-// few seconds.
-func (f *Forwarder) Run(ctx context.Context) {
-	for {
-		select {
-		case b := <-f.queue:
-			f.deliver(ctx, b)
-		case <-ctx.Done():
-			f.drain()
-			return
-		}
+	f.nextVerify = now.Add(f.cfg.VerifyInterval)
+	at := rep.VerifiedAt
+	f.chain = ChainStatus{Verified: true, OK: rep.OK(), Breaks: len(rep.Breaks), Truncated: rep.Truncated, VerifiedAt: &at}
+	if rep.OK() {
+		metrics.AdminAuditChainOK.Set(1)
+		f.chainAlert = false
+		return
 	}
-}
-
-// drain delivers what is still queued, for at most a few seconds, then
-// closes the sink.
-func (f *Forwarder) drain() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	defer func() { _ = f.sink.Close() }()
-	for {
-		select {
-		case b := <-f.queue:
-			f.deliver(ctx, b)
-		default:
-			return
-		}
+	metrics.AdminAuditChainOK.Set(0)
+	if !f.chainAlert {
+		metrics.AdminAuditChainBreaks.Add(float64(len(rep.Breaks)))
 	}
-}
-
-func (f *Forwarder) deliver(ctx context.Context, b []byte) {
-	wait := f.backoff
-	for attempt := 1; attempt <= sendAttempts; attempt++ {
-		sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		err := f.sink.Send(sctx, b)
-		cancel()
-		if err == nil {
-			f.sent.Add(1)
-			return
-		}
-		if attempt == sendAttempts || ctx.Err() != nil {
-			f.dropped.Add(1)
-			f.log.Error("admin audit sink: event not delivered", "error", err, "attempts", attempt)
-			return
-		}
-		select {
-		case <-time.After(wait):
-		case <-ctx.Done():
-		}
-		wait *= 2
-	}
-}
-
-// ExportHead sends the chain head now and then every interval until ctx ends.
-func (f *Forwarder) ExportHead(ctx context.Context, head ChainHeadReader, interval time.Duration) {
-	send := func() {
-		pos, hash, err := head(ctx)
-		if err != nil {
-			f.log.Error("read the admin audit chain head", "error", err)
-			return
-		}
-		f.enqueue(headEvent{Type: EventChainHead, Position: pos, Hash: hash, At: time.Now().UTC()})
-	}
-	send()
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	for {
-		select {
-		case <-t.C:
-			send()
-		case <-ctx.Done():
-			return
-		}
-	}
+	f.chainAlert = true
+	first := rep.Breaks[0]
+	f.log.Error("admin_audit_chain_break: the administrators' audit chain does not verify",
+		"breaks", len(rep.Breaks), "first_position", first.Position, "first_reason", first.Reason)
 }

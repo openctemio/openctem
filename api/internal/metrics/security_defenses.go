@@ -93,3 +93,55 @@ var (
 		[]string{},
 	)
 )
+
+// -----------------------------------------------------------------
+// Admin audit sink (off-box copy of admin_audit_logs)
+// -----------------------------------------------------------------
+
+var (
+	// AdminAuditForwardRows counts rows the sinks acknowledged.
+	AdminAuditForwardRows = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "openctem_admin_audit_forward_rows_total",
+		Help: "Admin audit rows acknowledged by the off-box sinks",
+	})
+	// AdminAuditForwardFailures counts failed deliveries by sink.
+	AdminAuditForwardFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "openctem_admin_audit_forward_failures_total",
+		Help: "Failed admin audit forward attempts by sink (webhook, syslog, file, store)",
+	}, []string{"sink"})
+	// AdminAuditForwardConsecutiveFailures is the current failure streak; alert when above 0 for several minutes.
+	AdminAuditForwardConsecutiveFailures = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "openctem_admin_audit_forward_consecutive_failures",
+		Help: "Consecutive failed admin audit forward runs (0 when healthy)",
+	})
+	// AdminAuditForwardLagRows is chain head minus the acknowledged cursor.
+	AdminAuditForwardLagRows = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "openctem_admin_audit_forward_lag_rows",
+		Help: "Admin audit rows written but not yet acknowledged by the sinks",
+	})
+	// AdminAuditForwardLagSeconds is the age of the oldest unsent row.
+	AdminAuditForwardLagSeconds = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "openctem_admin_audit_forward_lag_seconds",
+		Help: "Age of the oldest admin audit row not yet acknowledged by the sinks",
+	})
+	// AdminAuditForwardLastSuccess is a unix time; alert when it stops moving.
+	AdminAuditForwardLastSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "openctem_admin_audit_forward_last_success_timestamp_seconds",
+		Help: "Unix time of the last admin audit forward run that finished without error",
+	})
+	// AdminAuditChainOK is 1 while the last verification passed, 0 on a break.
+	AdminAuditChainOK = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "openctem_admin_audit_chain_ok",
+		Help: "1 when the last admin audit chain verification passed, 0 when it found a break",
+	})
+	// AdminAuditChainBreaks counts breaks when a verification first fails.
+	AdminAuditChainBreaks = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "openctem_admin_audit_chain_breaks_total",
+		Help: "Admin audit chain breaks found by the forwarder's verification",
+	})
+	// AdminAuditChainVerifyErrors counts verifications that could not run.
+	AdminAuditChainVerifyErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "openctem_admin_audit_chain_verify_errors_total",
+		Help: "Admin audit chain verifications that failed to run",
+	})
+)
