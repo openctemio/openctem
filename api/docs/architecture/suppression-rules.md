@@ -60,11 +60,11 @@ looks at them again. An edit of the rule clears the flag.
 
 - Open work only: `vulnerability.SuppressionApplyFromStatuses(disposition)`,
   the active statuses the platform may move to that disposition. A
-  false-positive rule closes `new`, `confirmed`, `in_progress`, `fix_applied`
-  and `not_observed`; an accepted-risk rule closes `new`, `confirmed` and
-  `not_observed` and leaves work in progress alone (someone decided to fix it).
+  false-positive rule closes `new`, `confirmed`, `in_progress` and
+  `fix_applied`; an accepted-risk rule closes `new` and `confirmed` and leaves
+  work in progress alone (someone decided to fix it).
 - Never: findings already `false_positive`, `accepted`, `duplicate`,
-  `resolved` or `validated_fixed`; findings a person reported (sources
+  or `resolved`; findings a person reported (sources
   `pentest`, `manual`, `bug_bounty`, `red_team`); other organizations'
   findings; findings of other assets when the rule is asset-bound; findings
   without a file path when the rule has a path condition.
