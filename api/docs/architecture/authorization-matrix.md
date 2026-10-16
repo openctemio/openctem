@@ -116,10 +116,13 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `PATCH /api/v1/tenants/{tenant}/settings/security`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
 - `DELETE /api/v1/tenants/{tenant}`
+- `DELETE /api/v1/me/account`
+- `POST /api/v1/organization/leave`
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
 - `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
 - `PATCH /api/v1/attachments/storage-config`
+- `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` (finding lifecycles, RFC-110)
 
 Some changes need it only in one case, decided by the service through the
 same check (`shared.RecentAuthGate`): making someone an administrator or an
@@ -217,6 +220,22 @@ and SBOM import write it.
 > self-verify their own fix (AUTHZ B1, api#505). Migration `000217` backfilled the
 > four granular perms onto every role that already held `findings:write`, so the
 > tightening is honest-not-breaking: nobody lost an action they could perform before.
+
+#### Finding lifecycles (`/api/v1/lifecycle-sub-statuses`, `/api/v1/lifecycles`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/lifecycle-sub-statuses`, `GET /api/v1/lifecycles` · `/{id}` · `/{id}/versions` · `/{id}/versions/{version_id}` | `findings:read` |
+| `POST /api/v1/lifecycle-sub-statuses` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/reactivate` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/versions` · `PUT /{id}/versions/{version_id}` · `POST /{id}/versions/{version_id}/test` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up |
+
+> Organization configuration (no finding data), tenant from the token; another
+> organization's sub-status, lifecycle or version is 404. A lifecycle can only
+> add constraints to the status moves the platform allows
+> ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)); `findings:lifecycles:write`
+> is granted to owners and administrators by default (migration
+> `finding_lifecycles_permission`).
 
 #### Exposures (`/api/v1/exposures`)
 
@@ -355,7 +374,7 @@ create's target validator, exclusions, zone routing) in one call.
 | `POST /private-packages` · `POST /private-packages/{ns}/{name}/{version}/revoke` | `content:publish` + a recent sign-in |
 
 Another organization's installation or request answers 404. Owners and administrators hold all three content
-permissions; members and viewers hold `content:read` (migrations `002571`, `002777`). `/api/v1/admin/content-catalog`: any
+permissions; members and viewers hold `content:read` (migrations `002571`, `002838`). `/api/v1/admin/content-catalog`: any
 platform administrator reads the trust status; `POST /import` needs a super admin, a reason and a fresh console
 authenticator code, and is audited.
 
@@ -662,6 +681,8 @@ These routes require the tenant ID in the URL path and use database-based member
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
 | `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
+| `POST /api/v1/organization/leave` | any member (`team:read`) + **step-up**, for themselves in the credential's organization; refused for the only owner (RFC-104) |
+| `DELETE /api/v1/me/account` | the caller's own account + **step-up**; refused while the caller is the only owner of an organization (RFC-104) |
 
 > **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
 > B3). Changing the role of, suspending, reactivating or removing a member who

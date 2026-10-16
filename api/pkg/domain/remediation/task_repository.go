@@ -67,7 +67,7 @@ type TaskRepository interface {
 	StaleTasksForPlatform(ctx context.Context, limit int) ([]StaleTaskRef, error)
 	MoveMembers(ctx context.Context, m MoveRequest) (*MoveResult, error)
 	SplitTask(ctx context.Context, sp SplitRequest) (shared.ID, *MoveResult, error)
-	MergeTasks(ctx context.Context, mg MergeRequest) (int, error)
+	MergeTasks(ctx context.Context, mg MergeRequest) (map[shared.ID]int, error)
 	CountActivePrimary(ctx context.Context, tenantID, taskID shared.ID, ids []shared.ID) (int, error)
 	OpenPrimaryIDs(ctx context.Context, tenantID, taskID shared.ID) ([]shared.ID, error)
 	RecordFixClaim(ctx context.Context, tenantID, taskID shared.ID, actor *shared.ID, data map[string]any) error

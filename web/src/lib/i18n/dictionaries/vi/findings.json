@@ -1035,6 +1035,7 @@
   "findings.approvals.requesterFormer": "Cựu thành viên",
   "findings.approvals.actor.ai_triage": "AI phân loại",
   "findings.approvals.actor.vex": "Tuyên bố VEX",
+  "findings.approvals.actor.ticket": "Phiếu liên kết",
   "findings.approvals.action.approve": "Phê duyệt",
   "findings.approvals.action.reject": "Từ chối",
   "findings.approvals.action.cancel": "Hủy yêu cầu",
