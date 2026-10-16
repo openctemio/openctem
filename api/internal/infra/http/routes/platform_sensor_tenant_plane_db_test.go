@@ -111,8 +111,8 @@ func (h *platformPlaneHarness) platformJob(tenantID, sensorID, status, errMsg st
 	if sensorID != "" {
 		sid = sensorID
 	}
-	h.exec(`INSERT INTO commands (id, tenant_id, type, payload, status, is_platform_job, sensor_id, platform_sensor_id, error_message, result)
-	        VALUES ($1, $2, 'scan', '{}'::jsonb, $3, TRUE, $4, $4, $5,
+	h.exec(`INSERT INTO commands (id, tenant_id, type, payload, status, is_platform_job, sensor_id, error_message, result)
+	        VALUES ($1, $2, 'scan', '{}'::jsonb, $3, TRUE, $4, $5,
 	                '{"metadata":{"workdir":"/opt/sensor/work/x","peer":"10.9.8.7:443","target":"93.184.216.34"}}'::jsonb)`,
 		id, tenantID, status, sid, errMsg)
 	return id
