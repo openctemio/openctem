@@ -3,7 +3,7 @@
   "help.documentation": "Documentation",
   "help.shortcuts": "Keyboard shortcuts",
   "help.reportIssue": "Report an issue",
-  "help.about": "About OpenCTEM",
+  "help.about": "About {product}",
   "help.opensInNewTab": "(opens in a new tab)",
   "help.shortcuts.description": "Work faster without leaving the keyboard.",
   "help.shortcutGroup.general": "General",

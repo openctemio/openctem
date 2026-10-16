@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og'
+import { brandFaviconResponse } from '@/lib/brand-settings'
 
 /**
  * Dynamic favicon — Next.js 16 generates this at build time and serves
@@ -18,7 +19,10 @@ export const size = {
 export const contentType = 'image/png'
 
 // Image generation
-export default function Icon() {
+export default async function Icon() {
+  // The brand's own favicon when it has one; the built-in mark otherwise.
+  const branded = await brandFaviconResponse()
+  if (branded) return branded
   return new ImageResponse(
     // ImageResponse expects JSX-as-CSS — we render a 32×32 box that
     // contains the mark SVG inline.

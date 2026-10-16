@@ -18,6 +18,44 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
 | Self-registration (email, or the first Google/GitHub/Microsoft sign-in) | `POST /api/v1/auth/register`, `/api/v1/auth/oauth/*` | the sign-up policy is `self_service`, or a pending invitation for the email ([Admission](#admission-one-rule-for-every-path)) |
 
+## Sign-up ceiling
+
+The deployment's server configuration sets a **ceiling** that no API can
+change ([RFC-104](../rfcs/RFC-104-signup-modes-and-joining.md)):
+
+| `SIGNUP_MODE` | Meaning |
+|---------------|---------|
+| `disabled` (default) | No public account creation of any kind. Accounts come from a platform administrator, an invitation or an organization's SSO; organizations from a platform administrator. |
+| `domain` | Public sign-up only for addresses on an organization's verified domain; such a person joins that organization and never creates one. |
+| `open` | Anyone may sign up and create an organization (the hosted service), within the console policy and the limits. |
+
+The console policy below is a runtime switch **under** the ceiling. The
+policy in force is the stored policy clamped to the ceiling
+(`signup.Ceiling.Clamp`): with `disabled` or `domain`, a stored
+`self_service` acts as `admin_only`, and `PUT /api/v1/admin/settings/signup`
+with `self_service` answers 409 `SIGNUP_LOCKED_BY_DEPLOYMENT` before the
+authenticator code is checked. Opening sign-up therefore needs two keys: the
+server configuration and a super admin with a fresh authenticator code. A
+stolen console session cannot open registration on a closed deployment.
+Lowering `SIGNUP_MODE` closes sign-up at the next start with no console change.
+
+Start-up refuses to run when:
+
+- `SIGNUP_MODE` is not `disabled`, `domain` or `open`;
+- `SIGNUP_MODE=domain` or `open` and the platform e-mail (System > E-mail) is
+  not set: every self-registered address must be verified. Set it with
+  `bootstrap-admin` (`BOOTSTRAP_SMTP_*`), or start with `disabled`, set it in
+  the console and restart. While running, public sign-up is also closed
+  whenever the e-mail settings stop working;
+- `SIGNUP_MODE=domain` or `open` with `AUTH_PROVIDER=oidc` (no local accounts);
+- `SIGNUP_MODE=open` with `APP_ENV=production` and no
+  `CAPTCHA_TURNSTILE_SECRET`/`CAPTCHA_TURNSTILE_SITE_KEY`, unless
+  `SIGNUP_CAPTCHA=off-i-understand` accepts open sign-up without a CAPTCHA;
+- the retired `TENANT_CREATION_MODE` is still set (`admin_only` is
+  `SIGNUP_MODE=disabled`, `self_service` is `SIGNUP_MODE=open`).
+
+A deployment with `domain` or `open` logs a WARN line at every start.
+
 ## Sign-up policy (Console > System > Sign-up)
 
 Who may create an organization on this deployment is **one platform setting**,
@@ -37,9 +75,15 @@ organization (the request queue follows in its own change).
   "create organization") read it per request (`signup.Service.Current`,
   cached 15 s per replica).
 - **Fail-closed.** Nothing stored or a read error means `admin_only`.
-- **Seeding.** `TENANT_CREATION_MODE` seeds the first value at start-up when
-  no row exists (`source: environment`). After that the stored value wins and
-  the environment is ignored; the console shows where the value came from.
+- **Ceiling.** The value in force is clamped to `SIGNUP_MODE` (see
+  [Sign-up ceiling](#sign-up-ceiling)). `GET` reports the stored
+  `mode`, the `deployment_mode`, `self_service_locked` and the
+  `effective_mode`; the console shows the self-service choice locked with the
+  reason.
+- **Seeding.** `SIGNUP_MODE` seeds the first value at start-up when no row
+  exists (`source: environment`): `open` seeds `self_service`, anything else
+  `admin_only`. After that the stored value wins (still clamped); the console
+  shows where the value came from.
 - **Changing it.** `PUT /api/v1/admin/settings/signup` with the version that
   was read (409 when another administrator saved since) needs a **super admin**
   and a **fresh authenticator code** (`STEP_UP_REQUIRED` / 401 without or with
@@ -70,10 +114,8 @@ isn't set up yet"), whatever the reason, and the web sends the person to
 `/not-set-up` (en/vi), which names no organization. An account that already
 exists signs in as before: a mode change never locks anyone out.
 
-`AUTH_ALLOW_REGISTRATION` is retired: it could contradict
-`TENANT_CREATION_MODE` (with `admin_only` and registration on, a social
-sign-in created an account that could never get an organization). Startup
-logs a warning when it is still set.
+`AUTH_ALLOW_REGISTRATION` and `TENANT_CREATION_MODE` are retired: start-up
+refuses to run while either is set and names `SIGNUP_MODE` instead.
 
 ### Request access
 
@@ -381,7 +423,8 @@ UPDATE tenants
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `TENANT_CREATION_MODE` | `admin_only` | **Seeds** the sign-up policy on the first start only (see [Sign-up policy](#sign-up-policy-console--system--sign-up)); afterwards the console value applies. Anything but `admin_only`/`self_service` fails startup. |
+| `SIGNUP_MODE` | `disabled` | The sign-up **ceiling** (see [Sign-up ceiling](#sign-up-ceiling)): `disabled`, `domain` or `open`. Seeds the console policy on the first start; the policy in force never exceeds it. Anything else fails startup. |
+| `SIGNUP_CAPTCHA` | — | `off-i-understand` accepts `SIGNUP_MODE=open` in production without Turnstile keys. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password#token=`). |
 | `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). Pin the proxies' addresses; a range wider than 16 addresses is warned about at startup. |
