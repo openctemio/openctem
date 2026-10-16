@@ -218,11 +218,6 @@ func wireFindingApprovers(svc *Services, dir *postgres.ScopeActorRepository, web
 		mail = findingApprovalMailer{email: svc.Email, log: log}
 	}
 	svc.Vulnerability.SetApprovalNotifier(dir, inApp, mail, webBaseURL)
-	// Requests VEX statements in scan reports make are announced too,
-	// batched per report and approver.
-	if svc.Ingest != nil {
-		svc.Ingest.SetVEXRequestNotifier(svc.Vulnerability)
-	}
 	// The sole member's own approval: the owner check, a fresh authenticator
 	// code, and the backup contact from the organization's settings.
 	var totp finding.ApprovalTOTPVerifier
