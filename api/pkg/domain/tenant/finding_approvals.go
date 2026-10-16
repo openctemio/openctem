@@ -146,6 +146,18 @@ func (s *FindingApprovalSettings) SetFPApproval(level string, now time.Time) err
 	return nil
 }
 
+// CancelPending drops every waiting lowering (false-positive level, second
+// look share, relaxing policy) so the values in force at now stay. A change
+// whose time has already come is in force and stays.
+func (s *FindingApprovalSettings) CancelPending(now time.Time) {
+	s.FPApproval = s.EffectiveFPApproval(now)
+	s.SecondLookPercent = s.EffectiveSecondLookPercent(now)
+	s.Policy = s.EffectivePolicy(now)
+	s.PendingFPApproval, s.PendingFPApprovalAt = "", nil
+	s.PendingSecondLookPercent, s.PendingSecondLookAt = nil, nil
+	s.PendingPolicy, s.PendingPolicyAt = nil, nil
+}
+
 // Normalized validates s and returns the cleaned copy.
 func (s FindingApprovalSettings) Normalized() (FindingApprovalSettings, error) {
 	s.BackupContactEmail = strings.ToLower(strings.TrimSpace(s.BackupContactEmail))
