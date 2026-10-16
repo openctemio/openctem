@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
+	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -54,6 +55,7 @@ type Service struct {
 	now       func() time.Time
 	release   func() string
 	importMu  sync.Mutex
+	notifier  Notifier
 }
 
 // NewService creates the service. roots are the key ids of the catalog
@@ -241,7 +243,19 @@ func (s *Service) GetSettings(ctx context.Context, tenantID shared.ID) (*dom.Set
 	return s.repo.GetSettings(ctx, tenantID)
 }
 
-// PutSettings changes the approval option (audited high).
+// Notifier delivers in-app notifications (*integration.NotificationService).
+type Notifier interface {
+	Notify(ctx context.Context, params notificationdom.NotificationParams) error
+}
+
+// SetNotifier enables the notice to the organization's owners and
+// administrators when approval is switched off.
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// PutSettings changes the approval option (audited high). Turning it on is
+// immediate and cancels a pending switch-off; turning it off takes effect
+// ApprovalOffDelay later, and the owners and administrators are told, so
+// they can turn it back on before it applies.
 func (s *Service) PutSettings(ctx context.Context, tenantID shared.ID, requireApproval bool, actx auditapp.AuditContext) (*dom.Settings, error) {
 	before, err := s.repo.GetSettings(ctx, tenantID)
 	if err != nil {
@@ -249,13 +263,61 @@ func (s *Service) PutSettings(ctx context.Context, tenantID shared.ID, requireAp
 	}
 	now := s.now().UTC()
 	st := &dom.Settings{RequireApproval: requireApproval, UpdatedBy: actorID(actx), UpdatedAt: &now}
+	switch {
+	case requireApproval:
+		// on: immediate, no pending switch-off
+	case before.ApprovalRequired(now) && before.ApprovalOffAt != nil:
+		// already switching off: keep the earlier time
+		st.RequireApproval, st.ApprovalOffAt = true, before.ApprovalOffAt
+	case before.ApprovalRequired(now):
+		at := now.Add(dom.ApprovalOffDelay)
+		st.RequireApproval, st.ApprovalOffAt = true, &at
+	}
 	if err := s.repo.PutSettings(ctx, tenantID, st); err != nil {
 		return nil, err
 	}
-	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionContentCatalogSettings, auditdom.ResourceTypeContentPackage, tenantID.String()).
-		WithMessage(fmt.Sprintf("Content catalog approval changed from %t to %t", before.RequireApproval, requireApproval)).
-		WithMetadata("require_approval", requireApproval))
+	ev := auditapp.NewSuccessEvent(auditdom.ActionContentCatalogSettings, auditdom.ResourceTypeContentPackage, tenantID.String()).
+		WithMetadata("require_approval", requireApproval).WithMetadata("before", before.ApprovalRequired(now))
+	if st.ApprovalOffAt != nil {
+		ev = ev.WithMessage("Content catalog approval switched off from "+st.ApprovalOffAt.Format(time.RFC3339)).
+			WithMetadata("approval_off_at", st.ApprovalOffAt.Format(time.RFC3339))
+		if before.ApprovalOffAt == nil {
+			s.noticeApprovalOff(ctx, tenantID, actorID(actx), *st.ApprovalOffAt)
+		}
+	} else {
+		ev = ev.WithMessage(fmt.Sprintf("Content catalog approval set to %t", requireApproval))
+	}
+	s.logAudit(ctx, actx, ev)
 	return st, nil
+}
+
+// noticeApprovalOff tells the organization's owners and administrators
+// (except the actor) that approval goes off at a time.
+func (s *Service) noticeApprovalOff(ctx context.Context, tenantID shared.ID, actor *shared.ID, at time.Time) {
+	if s.notifier == nil {
+		return
+	}
+	admins, err := s.repo.ListAdmins(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("content approval notice: list administrators", "error", err)
+		return
+	}
+	for _, uid := range admins {
+		if actor != nil && uid == *actor {
+			continue
+		}
+		u := uid
+		if err := s.notifier.Notify(ctx, notificationdom.NotificationParams{
+			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &u,
+			NotificationType: notificationdom.TypeSystemAlert, Severity: notificationdom.SeverityHigh,
+			Title: "Content install approval is being switched off",
+			Body: "Installs, updates, rollbacks and uninstalls of content will no longer need a second person from " +
+				at.Format(time.RFC3339) + ". Turn approval back on before then to cancel.",
+			ResourceType: "settings", URL: "/settings/content", ActorID: actor,
+		}); err != nil {
+			s.logger.Warn("content approval notice", "error", err)
+		}
+	}
 }
 
 // Change is an install, update or rollback.
@@ -317,7 +379,7 @@ func (s *Service) submit(ctx context.Context, tenantID shared.ID, action dom.Req
 	if err != nil {
 		return nil, err
 	}
-	if !settings.RequireApproval {
+	if !settings.ApprovalRequired(s.now()) {
 		in, err := s.apply(ctx, tenantID, plan, actorID(actx), actx)
 		if err != nil {
 			return nil, err
@@ -472,8 +534,19 @@ func (s *Service) checkDependents(ctx context.Context, tenantID shared.ID, packa
 	return nil
 }
 
-// apply carries out a checked action.
+// apply carries out a checked action and audits it.
 func (s *Service) apply(ctx context.Context, tenantID shared.ID, p *plan, by *shared.ID, actx auditapp.AuditContext) (*dom.Install, error) {
+	in, ev, err := s.applyTo(ctx, s.repo, tenantID, p, by)
+	if err != nil {
+		return nil, err
+	}
+	s.logAudit(ctx, actx, ev)
+	return in, nil
+}
+
+// applyTo writes a checked action through repo (which may be a
+// transaction) and returns the audit event to record once it is committed.
+func (s *Service) applyTo(ctx context.Context, repo dom.Repository, tenantID shared.ID, p *plan, by *shared.ID) (*dom.Install, auditapp.AuditEvent, error) {
 	now := s.now().UTC()
 	var (
 		in     *dom.Install
@@ -485,8 +558,8 @@ func (s *Service) apply(ctx context.Context, tenantID shared.ID, p *plan, by *sh
 		in = &dom.Install{ID: shared.NewID(), TenantID: tenantID, PackageID: p.target.PackageID, PackageRowID: p.target.ID,
 			Pinned: p.pinned, Status: dom.InstallActive, LicenseAcknowledged: p.ack, InstalledBy: by, UpdatedBy: by,
 			CreatedAt: now, UpdatedAt: now, Package: p.target}
-		if err := s.repo.CreateInstall(ctx, in); err != nil {
-			return nil, err
+		if err := repo.CreateInstall(ctx, in); err != nil {
+			return nil, auditapp.AuditEvent{}, err
 		}
 		action, msg = auditdom.ActionContentPackageInstalled, "Installed content package %s@%s"
 	case dom.ActionUpdate, dom.ActionRollback:
@@ -496,20 +569,19 @@ func (s *Service) apply(ctx context.Context, tenantID shared.ID, p *plan, by *sh
 		in.PackageRowID, in.Package = p.target.ID, p.target
 		in.Pinned, in.Status, in.UpdatedBy, in.UpdatedAt = p.pinned, dom.InstallActive, by, now
 		in.LicenseAcknowledged = in.LicenseAcknowledged || p.ack
-		if err := s.repo.UpdateInstall(ctx, in); err != nil {
-			return nil, err
+		if err := repo.UpdateInstall(ctx, in); err != nil {
+			return nil, auditapp.AuditEvent{}, err
 		}
 		action, msg = auditdom.ActionContentPackageUpdated, "Updated content package %s to %s"
 		if p.action == dom.ActionRollback {
 			action, msg = auditdom.ActionContentPackageRolledBack, "Rolled content package %s back to %s"
 		}
 	case dom.ActionUninstall:
-		if err := s.repo.DeleteInstall(ctx, tenantID, p.current.PackageID); err != nil {
-			return nil, err
+		if err := repo.DeleteInstall(ctx, tenantID, p.current.PackageID); err != nil {
+			return nil, auditapp.AuditEvent{}, err
 		}
-		s.logAudit(ctx, actx, s.event(auditdom.ActionContentPackageUninstalled, p.current.PackageID, p.current.Package).
-			WithMessage(fmt.Sprintf("Uninstalled content package %s", p.current.PackageID)))
-		return nil, nil
+		return nil, s.event(auditdom.ActionContentPackageUninstalled, p.current.PackageID, p.current.Package).
+			WithMessage(fmt.Sprintf("Uninstalled content package %s", p.current.PackageID)), nil
 	}
 	ev := s.event(action, p.target.PackageID, p.target).WithMessage(fmt.Sprintf(msg, p.target.PackageID, p.target.Version))
 	if p.ack && !p.target.ServiceUse {
@@ -518,8 +590,7 @@ func (s *Service) apply(ctx context.Context, tenantID shared.ID, p *plan, by *sh
 	if p.target.Tier == "T2" || p.target.Type.IsExecutable() {
 		ev = ev.WithSeverity(auditdom.SeverityHigh)
 	}
-	s.logAudit(ctx, actx, ev)
-	return in, nil
+	return in, ev, nil
 }
 
 // Pin pins or unpins an installation (no approval: it only stops or allows
@@ -559,12 +630,25 @@ func (s *Service) Approve(ctx context.Context, tenantID, requestID shared.ID, re
 	now := s.now().UTC()
 	p, err := s.plan(ctx, tenantID, q.Action, c)
 	if err == nil {
-		// Claim the request before acting, so two approvers cannot both run it.
-		if err := s.repo.DecideRequest(ctx, tenantID, q.ID, dom.RequestApproved, actorID(actx), strings.TrimSpace(reason), now); err != nil {
+		// The decision and the change commit together: two approvers cannot
+		// both run it, and a failed change never leaves an approved request.
+		var (
+			in *dom.Install
+			ev auditapp.AuditEvent
+		)
+		err = s.repo.InTx(ctx, func(tx dom.Repository) error {
+			if derr := tx.DecideRequest(ctx, tenantID, q.ID, dom.RequestApproved, actorID(actx), strings.TrimSpace(reason), now); derr != nil {
+				return derr
+			}
+			var aerr error
+			in, ev, aerr = s.applyTo(ctx, tx, tenantID, p, q.RequestedBy)
+			return aerr
+		})
+		if errors.Is(err, dom.ErrRequestDecided) || errors.Is(err, dom.ErrRequestNotFound) {
 			return nil, nil, err
 		}
-		var in *dom.Install
-		if in, err = s.apply(ctx, tenantID, p, q.RequestedBy, actx); err == nil {
+		if err == nil {
+			s.logAudit(ctx, actx, ev)
 			s.logAudit(ctx, actx, s.event(auditdom.ActionContentPackageRequestApprove, q.PackageID, q.Target).
 				WithMessage(fmt.Sprintf("Approved %s of content package %s", q.Action, q.PackageID)).
 				WithMetadata("request_id", q.ID.String()))
@@ -658,7 +742,7 @@ func (s *Service) follow(ctx context.Context, packageIDs []string) int {
 
 func (s *Service) followOne(ctx context.Context, in *dom.Install) bool {
 	st, err := s.repo.GetSettings(ctx, in.TenantID)
-	if err != nil || st.RequireApproval {
+	if err != nil || st.ApprovalRequired(s.now()) {
 		return false
 	}
 	cur, err := s.repo.GetInstall(ctx, in.TenantID, in.PackageID)

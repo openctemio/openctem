@@ -2621,6 +2621,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire in-app notification service to pentest service
 	s.Pentest.SetUserNotificationService(s.Notification)
 
+	// The content catalog tells owners and administrators when install
+	// approval is being switched off (RFC-099).
+	s.ContentCatalog.SetNotifier(s.Notification)
+
 	// Change detection: an asset an ingest newly created (not a re-scan merge,
 	// not a manual create) fires the `asset_discovered` workflow trigger and,
 	// when it is internet-facing, a throttled tenant notification. Wired here

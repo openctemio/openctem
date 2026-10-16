@@ -137,6 +137,9 @@ CREATE INDEX idx_content_install_requests_tenant ON content_install_requests (te
 CREATE TABLE content_catalog_settings (
     tenant_id        uuid PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
     require_approval boolean NOT NULL DEFAULT false,
+    -- Turning approval off takes effect at this time (24 hours later), so a
+    -- stolen session cannot switch four eyes off unnoticed.
+    approval_off_at  timestamptz,
     updated_by       uuid REFERENCES users(id) ON DELETE SET NULL,
     updated_at       timestamptz NOT NULL DEFAULT now()
 );
