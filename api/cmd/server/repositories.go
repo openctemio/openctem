@@ -230,7 +230,9 @@ type Repositories struct {
 	AdminAuditLog   *postgres.AuditLogRepository
 	AdminOrg        *postgres.AdminOrganizationRepository
 	AdminConsole    *postgres.AdminConsoleRepository
-	PlatformIdP     *postgres.PlatformIdPRepository
+	// AdminFactor stores console security keys and recovery codes (RFC-078).
+	AdminFactor *postgres.AdminFactorRepository
+	PlatformIdP *postgres.PlatformIdPRepository
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -528,6 +530,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AdminAuditLog:   postgres.NewAuditLogRepository(db),
 		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:    postgres.NewAdminConsoleRepository(db),
+		AdminFactor:     postgres.NewAdminFactorRepository(db),
 		PlatformIdP:     postgres.NewPlatformIdPRepository(db),
 
 		// Target Mappings

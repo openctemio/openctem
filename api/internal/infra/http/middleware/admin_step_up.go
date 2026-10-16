@@ -27,6 +27,9 @@ const AdminStepUpHeader = "X-Admin-Step-Up"
 const (
 	CodeAdminStepUpRequired    apierror.Code = "ADMIN_STEP_UP_REQUIRED"
 	CodeAdminStepUpUnavailable apierror.Code = "STEP_UP_UNAVAILABLE"
+	// CodeAdminStepUpWebAuthn: the console requires security keys; confirm
+	// through the WebAuthn step-up and retry inside its window.
+	CodeAdminStepUpWebAuthn apierror.Code = "WEBAUTHN_REQUIRED"
 )
 
 // adminSteppedUpKey marks a request whose route-level step-up passed.
@@ -85,6 +88,9 @@ func RequireAdminStepUp(c AdminStepUpConfirmer, purpose string) func(http.Handle
 			case errors.Is(err, admin.ErrStepUpUnavailable):
 				apierror.New(http.StatusForbidden, CodeAdminStepUpUnavailable,
 					"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
+			case errors.Is(err, admin.ErrWebAuthnRequired):
+				apierror.New(http.StatusForbidden, CodeAdminStepUpWebAuthn,
+					"Confirm this action with your security key or passkey").WriteJSON(w)
 			case errors.Is(err, admin.ErrInvalidMFACode):
 				apierror.New(http.StatusUnauthorized, CodeAdminStepUpRequired,
 					"Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
