@@ -116,7 +116,7 @@ func (r *RemediationSuggestionRepository) AcceptedActions(ctx context.Context, t
 		return out, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.id, a.action_key, a.title, t.id, t.assignee_user_id, t.assignee_group_id, t.state
+		SELECT a.id, a.action_key, a.title, a.auto_join, t.id, t.assignee_user_id, t.assignee_group_id, t.state
 		FROM remediation_actions a
 		LEFT JOIN remediation_tasks t ON t.action_id = a.id AND t.tenant_id = a.tenant_id
 		     AND t.state NOT IN ('done', 'closed_unverified', 'canceled', 'archived')
@@ -132,7 +132,7 @@ func (r *RemediationSuggestionRepository) AcceptedActions(ctx context.Context, t
 			taskID, user, group sql.NullString
 			state               sql.NullString
 		)
-		if err := rows.Scan(&a.ID, &a.Key, &a.Title, &taskID, &user, &group, &state); err != nil {
+		if err := rows.Scan(&a.ID, &a.Key, &a.Title, &a.AutoJoin, &taskID, &user, &group, &state); err != nil {
 			return nil, fmt.Errorf("read accepted actions: %w", err)
 		}
 		cur, ok := out[a.Key]
