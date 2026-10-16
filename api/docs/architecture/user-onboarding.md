@@ -211,7 +211,7 @@ refused, rate limited):
   admins notified), or creates a **join request** (`approval`). A stale or
   foreign reference answers 409 `OFFER_UNAVAILABLE`.
 
-Join requests (`organization_join_requests`, migration 002761): one pending
+Join requests (`organization_join_requests`, migration 002782): one pending
 per person and organization, at most 5 per person per day, expire after 30
 days; decided and expired rows are purged 30 days later
 (`join-request-purge` controller). The organization's inbox:
