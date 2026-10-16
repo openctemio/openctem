@@ -148,6 +148,9 @@ func writeAssetTechnologiesTx(ctx context.Context, tx *sql.Tx, tenantID, assetID
 		if k == "" {
 			continue
 		}
+		if len(keys) >= assettech.MaxPerAsset {
+			break // the cap holds on what is stored, not only per report
+		}
 		keys = append(keys, k)
 		names = append(names, name)
 		versions = append(versions, version)

@@ -42,42 +42,57 @@ type BackfillStats struct {
 	LinksRemoved int
 	// PropertiesDropped: assets the retired key was removed from.
 	PropertiesDropped int
+	// LinksReported: links a report-only run found removable and left alone.
+	LinksReported int
 }
+
+// reportSample is how many removable links a report-only run names in the log.
+const reportSample = 20
 
 // BackfillStore is the backfill's view of the database. Every method is
 // tenant-scoped.
 type BackfillStore interface {
-	PendingTenants(ctx context.Context, version int) ([]shared.ID, error)
+	// PendingTenants returns the tenants not done at version. A tenant that
+	// only had a report-only run is pending again when enforce is true.
+	PendingTenants(ctx context.Context, version int, enforce bool) ([]shared.ID, error)
 	// ScanUnclassified returns the tenant's next technologies in category
 	// other, after (afterAsset, afterKey).
 	ScanUnclassified(ctx context.Context, tenantID shared.ID, afterAsset, afterKey string, limit int) ([]BackfillRow, error)
 	// SetCategories sets the category of the tenant's technologies.
 	SetCategories(ctx context.Context, tenantID shared.ID, rows []BackfillRow, cats []assettech.Category) error
 	ScanTechnologyLinks(ctx context.Context, tenantID shared.ID, afterID string, limit int) ([]BackfillLink, error)
+	// DeleteLinks deletes the tenant's technology links by id, only those
+	// without a usable version and without a CPE, and records each one.
 	DeleteLinks(ctx context.Context, tenantID shared.ID, ids []shared.ID) (int, error)
 	// DropRetiredProperty removes properties.technologies from at most
-	// limit of the tenant's assets and returns how many it changed.
+	// limit of the tenant's assets and returns how many it changed. Tags are
+	// never touched: nothing marks a tag as one the converter added.
 	DropRetiredProperty(ctx context.Context, tenantID shared.ID, limit int) (int, error)
-	MarkBackfilled(ctx context.Context, tenantID shared.ID, version int, stats BackfillStats) error
+	MarkBackfilled(ctx context.Context, tenantID shared.ID, version int, enforced bool, stats BackfillStats) error
 }
 
 // Backfill classifies the technologies the copy migration filled (category
 // other: the curated list lives in code), and removes the component links
-// ingest no longer creates (a technology without a version or CPE, or one
-// that is not software).
+// ingest no longer creates: only a link with no usable version and no CPE.
+// A versioned or CPE-backed link is never removed, whatever its category.
+//
+// With reportOnly (the default for the first run) nothing is deleted: the
+// run counts the removable links and logs a sample, so an operator can check
+// the list before enabling removal.
 type Backfill struct {
-	store BackfillStore
-	log   *logger.Logger
+	store      BackfillStore
+	log        *logger.Logger
+	reportOnly bool
 }
 
-// NewBackfill creates the backfill.
-func NewBackfill(store BackfillStore, log *logger.Logger) *Backfill {
-	return &Backfill{store: store, log: log}
+// NewBackfill creates the backfill. reportOnly leaves every link in place.
+func NewBackfill(store BackfillStore, log *logger.Logger, reportOnly bool) *Backfill {
+	return &Backfill{store: store, log: log, reportOnly: reportOnly}
 }
 
 // Run backfills every pending tenant and returns how many it finished.
 func (b *Backfill) Run(ctx context.Context) (int, error) {
-	tenants, err := b.store.PendingTenants(ctx, BackfillVersion)
+	tenants, err := b.store.PendingTenants(ctx, BackfillVersion, !b.reportOnly)
 	if err != nil {
 		return 0, err
 	}
@@ -91,11 +106,12 @@ func (b *Backfill) Run(ctx context.Context) (int, error) {
 			b.log.Warn("asset technology backfill failed", "tenant_id", t.String(), "error", logger.SanitizeError(err))
 			continue
 		}
-		if err := b.store.MarkBackfilled(ctx, t, BackfillVersion, stats); err != nil {
+		if err := b.store.MarkBackfilled(ctx, t, BackfillVersion, !b.reportOnly, stats); err != nil {
 			return done, err
 		}
 		b.log.Info("asset technology backfill done", "tenant_id", t.String(),
-			"technologies", stats.Technologies, "classified", stats.Classified, "links_removed", stats.LinksRemoved)
+			"technologies", stats.Technologies, "classified", stats.Classified, "links_removed", stats.LinksRemoved,
+			"links_reported", stats.LinksReported, "report_only", b.reportOnly)
 		done++
 	}
 	return done, nil
@@ -145,11 +161,18 @@ func (b *Backfill) RunTenant(ctx context.Context, tenantID shared.ID) (BackfillS
 		}
 		var drop []shared.ID
 		for _, l := range links {
-			if !linkStillSoftware(l) {
-				drop = append(drop, l.ID)
+			if !linkRemovable(l) {
+				continue
+			}
+			drop = append(drop, l.ID)
+			if b.reportOnly && stats.LinksReported+len(drop) <= reportSample {
+				b.log.Info("asset technology backfill would remove link", "tenant_id", tenantID.String(),
+					"product", l.Product, "version", l.Version)
 			}
 		}
-		if len(drop) > 0 {
+		if b.reportOnly {
+			stats.LinksReported += len(drop)
+		} else if len(drop) > 0 {
 			n, err := b.store.DeleteLinks(ctx, tenantID, drop)
 			if err != nil {
 				return stats, err
@@ -175,12 +198,9 @@ func (b *Backfill) RunTenant(ctx context.Context, tenantID shared.ID) (BackfillS
 	return stats, nil
 }
 
-// linkStillSoftware reports whether ingest would still create the link
-// today.
-func linkStillSoftware(l BackfillLink) bool {
-	cpe := ""
-	if l.HasCPE {
-		cpe = "cpe"
-	}
-	return assettech.IsSoftwareCandidate(l.Product, l.Version, cpe, nil)
+// linkRemovable reports whether the backfill may delete the link: it has no
+// usable version and no CPE. The delete statement repeats this rule, so a
+// link that is versioned or CPE-backed survives even if a caller asks for it.
+func linkRemovable(l BackfillLink) bool {
+	return assettech.CleanVersion(l.Version) == "" && !l.HasCPE
 }

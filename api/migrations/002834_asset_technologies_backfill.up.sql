@@ -42,13 +42,36 @@ SELECT DISTINCT ON (tenant_id, asset_id, name_key)
 ON CONFLICT ON CONSTRAINT pk_asset_technologies DO NOTHING;
 
 -- Tenants the asset-technology-backfill controller has done, by version.
+-- enforced = false: the run only reported the links it would remove (the
+-- default first run); an enforcing run later picks those tenants up again.
 CREATE TABLE asset_technology_backfill (
-    tenant_id     UUID        NOT NULL PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
-    version       INTEGER     NOT NULL,
-    technologies  INTEGER     NOT NULL DEFAULT 0,
-    classified    INTEGER     NOT NULL DEFAULT 0,
-    links_removed INTEGER     NOT NULL DEFAULT 0,
-    completed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    tenant_id      UUID        NOT NULL PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+    version        INTEGER     NOT NULL,
+    technologies   INTEGER     NOT NULL DEFAULT 0,
+    classified     INTEGER     NOT NULL DEFAULT 0,
+    links_removed  INTEGER     NOT NULL DEFAULT 0,
+    links_reported INTEGER     NOT NULL DEFAULT 0,
+    enforced       BOOLEAN     NOT NULL DEFAULT false,
+    completed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 COMMENT ON TABLE asset_technology_backfill IS
-    'RFC-112: tenants whose technologies the backfill classified and whose non-software component links it removed.';
+    'RFC-112: tenants whose technologies the backfill classified and whose non-software component links it removed (or, while enforced is false, only reported).';
+
+-- Every component link the backfill deleted, kept so a removal can be audited
+-- or re-created. Only a link without a usable version and without a CPE is
+-- ever deleted.
+CREATE TABLE asset_technology_backfill_removed (
+    id         BIGSERIAL   PRIMARY KEY,
+    tenant_id  UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    asset_id   UUID        NOT NULL,
+    link_id    UUID        NOT NULL,
+    product    TEXT        NOT NULL,
+    version    TEXT        NOT NULL DEFAULT '',
+    confidence SMALLINT    NOT NULL,
+    first_seen TIMESTAMPTZ NOT NULL,
+    last_seen  TIMESTAMPTZ NOT NULL,
+    removed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_asset_technology_backfill_removed_tenant ON asset_technology_backfill_removed (tenant_id, removed_at);
+COMMENT ON TABLE asset_technology_backfill_removed IS
+    'RFC-112: the component links the technology backfill deleted (no version, no CPE).';
