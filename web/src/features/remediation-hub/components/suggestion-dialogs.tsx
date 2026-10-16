@@ -5,6 +5,7 @@
  * edits (title, findings to leave out, owners, a deadline, auto-join).
  */
 
+import type React from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,7 @@ import type { Severity } from '@/features/shared'
 import { DISMISS_REASONS, type DismissReason, type RemediationSuggestion } from '../api/types'
 import { type ApproveBody, useSuggestionMembers } from '../api/use-remediation-hub'
 import { useOwnerNames } from '../api/use-owner-names'
+import { isTypingTarget } from '../lib/hub'
 
 export function DismissDialog({
   suggestion,
@@ -58,9 +60,18 @@ export function DismissDialog({
     }
   }, [open])
   const needsNote = reason === 'other' && note.trim() === ''
+  // Number keys pick a reason (1 = the first), unless the person is typing.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (isTypingTarget(e.target)) return
+    const n = Number(e.key)
+    if (Number.isInteger(n) && n >= 1 && n <= DISMISS_REASONS.length) {
+      setReason(DISMISS_REASONS[n - 1])
+      e.preventDefault()
+    }
+  }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="md">
+      <DialogContent size="md" onKeyDown={onKeyDown}>
         <DialogHeader>
           <DialogTitle>{t('remediationHub.dismiss.title')}</DialogTitle>
           <DialogDescription>

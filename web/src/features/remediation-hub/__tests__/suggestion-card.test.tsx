@@ -23,7 +23,9 @@ const base: RemediationSuggestion = {
   action_key: 'upgrade:pypi:django:4.2.30',
   key_kind: 'upgrade',
   title: 'Upgrade django to 4.2.30',
-  partitions: [{ owner_user_id: 'u1', owner_rule: 'asset_owner', finding_ids: ['a', 'b'], risk_points: 6 }],
+  partitions: [
+    { owner_user_id: 'u1', owner_rule: 'asset_owner', finding_ids: ['a', 'b'], risk_points: 6 },
+  ],
   member_count: 2,
   hidden_members: 0,
   truncated: 0,
@@ -56,7 +58,9 @@ describe('SuggestionCard', () => {
   it('explains why it was grouped, with the command to copy', async () => {
     renderCard()
     await userEvent.setup().click(screen.getByRole('button', { name: /Why\?/ }))
-    expect(screen.getByTestId('suggestion-explain')).toHaveTextContent('same package to the same version')
+    expect(screen.getByTestId('suggestion-explain')).toHaveTextContent(
+      'same package to the same version'
+    )
     expect(screen.getByTestId('fix-steps')).toHaveTextContent('pip install "django>=4.2.30"')
   })
 

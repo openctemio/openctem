@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { RemediationSuggestion } from '../api/types'
 
@@ -41,7 +41,12 @@ vi.mock('../api/use-owner-names', () => ({
 }))
 vi.mock('../api/use-remediation-hub', () => ({
   useSuggestions: () => ({
-    data: { data: [suggestion('one', 'First fix'), suggestion('two', 'Second fix')], total: 2, page: 1, per_page: 25 },
+    data: {
+      data: [suggestion('one', 'First fix'), suggestion('two', 'Second fix')],
+      total: 2,
+      page: 1,
+      per_page: 25,
+    },
     error: undefined,
     isLoading: false,
     mutate: vi.fn(),
@@ -63,7 +68,13 @@ import { SuggestionsInbox } from '../components/suggestions-inbox'
 describe('SuggestionsInbox keyboard review', () => {
   beforeEach(() => {
     approve.mockReset()
-    approve.mockResolvedValue({ suggestion_id: 'two', action_id: 'a', task_ids: ['t'], joined: 0, dropped: [] })
+    approve.mockResolvedValue({
+      suggestion_id: 'two',
+      action_id: 'a',
+      task_ids: ['t'],
+      joined: 0,
+      dropped: [],
+    })
   })
 
   it('moves with j and accepts the active suggestion with a', async () => {
@@ -77,7 +88,10 @@ describe('SuggestionsInbox keyboard review', () => {
   it('opens the dismiss dialog with d', async () => {
     render(<SuggestionsInbox />)
     await userEvent.setup().keyboard('d')
-    expect(await screen.findByRole('dialog')).toHaveTextContent('Dismiss suggestion')
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Dismiss suggestion')
+    fireEvent.keyDown(dialog, { key: '4' })
+    expect(screen.getByRole('radio', { name: /Wrong owner/ })).toBeChecked()
   })
 
   it('ignores keys typed in the search field', async () => {
