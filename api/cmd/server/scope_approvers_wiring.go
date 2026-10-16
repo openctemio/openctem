@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
 	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
@@ -17,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -177,6 +179,57 @@ func wireScanGovernance(svc *Services, repos *Repositories, log *logger.Logger) 
 		svc.ScanGovernance.SetScanLister(svc.Scan)
 		svc.Scan.SetApprovalGate(svc.ScanGovernance, repos.ScanApproval)
 	}
+}
+
+// findingApprovalMailer emails finding approval requests through the
+// organization's SMTP (or the system's), asynchronously.
+type findingApprovalMailer struct {
+	email *auth.EmailService
+	log   *logger.Logger
+}
+
+var _ finding.FindingApprovalMailer = findingApprovalMailer{}
+
+func (m findingApprovalMailer) SendFindingApprovalMail(_ context.Context, tenantID string, to []string, subject, htmlBody string) {
+	if m.email == nil || len(to) == 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := m.email.SendReport(ctx, tenantID, to, subject, htmlBody); err != nil {
+			m.log.Warn("finding approval email failed", "error", logger.SanitizeError(err))
+		}
+	}()
+}
+
+// wireFindingApprovers tells the members who may approve a finding
+// false-positive or accepted-risk request about it (in-app and email).
+func wireFindingApprovers(svc *Services, dir *postgres.ScopeActorRepository, webBaseURL string, log *logger.Logger) {
+	if svc.Vulnerability == nil || dir == nil {
+		return
+	}
+	var inApp finding.ApprovalInApp
+	if svc.Notification != nil {
+		inApp = svc.Notification
+	}
+	var mail finding.FindingApprovalMailer
+	if svc.Email != nil {
+		mail = findingApprovalMailer{email: svc.Email, log: log}
+	}
+	svc.Vulnerability.SetApprovalNotifier(dir, inApp, mail, webBaseURL)
+	// The sole member's own approval: the owner check, a fresh authenticator
+	// code, and the backup contact from the organization's settings.
+	var totp finding.ApprovalTOTPVerifier
+	if svc.Auth != nil {
+		totp = freshTOTP{auth: svc.Auth,
+			notEnrolled: vulnerability.ErrSoloApprovalNeedsTOTP, badCode: vulnerability.ErrSoloApprovalBadCode}
+	}
+	var settings finding.ApprovalSettingsReader
+	if svc.Tenant != nil {
+		settings = svc.Tenant
+	}
+	svc.Vulnerability.SetSoloApproval(dir, totp, settings)
 }
 
 // freshTOTP is the fresh authenticator check of an owner's own approval of

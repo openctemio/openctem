@@ -356,5 +356,7 @@
   "settings.jiraWebhook.copyFailed": "Could not copy",
   "settings.jiraWebhook.close": "Close",
   "settings.item.ticket-field-mapping": "Ticket field mapping",
-  "settings.desc.ticket-field-mapping": "Which fields and statuses sync with Jira, per project."
+  "settings.desc.ticket-field-mapping": "Which fields and statuses sync with Jira, per project.",
+  "settings.item.finding-approvals": "Finding approvals",
+  "settings.desc.finding-approvals": "Who decides false positives and accepted risks, and who is told."
 }

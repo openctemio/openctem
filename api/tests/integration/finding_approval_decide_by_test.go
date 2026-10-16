@@ -360,6 +360,14 @@ func TestMigrationFindingApprovalPendingDedupe(t *testing.T) {
 	testdb.Migrate(t, db, dir, v, idx, false)
 }
 
+// closureFor is a valid closure reason for a requested status.
+func closureFor(status string) string {
+	if status == "accepted" {
+		return "risk_accepted"
+	}
+	return "detection_error"
+}
+
 // The database enforces the decide-by time too: an approve or a reject of a
 // request past it claims nothing even when the caller's check was skipped,
 // and a row written without a decide-by time gets the default window.
@@ -397,12 +405,4 @@ func TestFindingApproval_DecideByEnforcedInTheDatabase(t *testing.T) {
 		AND decide_by BETWEEN now() + interval '13 days' AND now() + interval '15 days'`, other.String()); n != 1 {
 		t.Fatal("a row without decide_by did not get the default window")
 	}
-}
-
-// closureFor is a valid closure reason for a requested status.
-func closureFor(status string) string {
-	if status == "accepted" {
-		return "risk_accepted"
-	}
-	return "detection_error"
 }

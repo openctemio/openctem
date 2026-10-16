@@ -464,6 +464,66 @@ instead).
   decide-by; never the justification text). A refused attempt to approve one's
   own request is recorded as `finding_approval.self_approval_refused` (denied,
   medium), so the attempts can be reviewed.
+- **Who is told.** A new request (a person's or an AI triage proposal)
+  notifies the members who may decide it, in-app (`finding_approval`) and by
+  email: owners, admins and roles holding `findings:approve`
+  (`ScopeActorRepository.FindingApprovers`), filtered to those whose data scope
+  holds the finding (`datascope.AssertFindingForUser`), never the requester
+  (`internal/app/finding/approval_notify.go`). The email carries the finding
+  title, requested status and dates, never the justification; the link opens
+  the inbox, sign-in required. `POST /api/v1/approvals/{id}/remind`
+  (`findings:write`) repeats it at most once an hour per request
+  (`reminded_at`, atomic), audited `finding_approval.reminded`. VEX requests
+  from a scan report are not notified one by one.
+- **Sole member.** An organization with one person has nobody to ask. Its
+  owner may approve their own pending request
+  (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while
+  the organization has exactly one active person (an active, unexpired
+  membership of an active `person` account; checked in the database at
+  decision time, `ScopeActorRepository.IsSoleActiveOwner`) and no member was
+  suspended, offboarded, deleted, expired or demoted, and no role changed, in
+  the last 7 days (`recentApproverChange`, memberships and audit log), with a fresh
+  authenticator code (`VerifyFreshTOTP`, single use) and a reason. An accepted
+  risk then ends within `vulnerability.SoloAcceptanceLimit` (7 days for P0 or
+  KEV, 45 for P1, 90 otherwise). The request carries `self_approved` and the
+  reason; the audit row is `finding_approval.self_approved` (high); every
+  refusal is `finding_approval.self_approval_refused`; the organization's
+  channels get a security alert and the backup contact
+  (`settings.finding_approvals.backup_contact_email`) is emailed
+  (`internal/app/finding/approval_solo.go`). The settings route
+  (`/api/v1/organization/settings/finding-approvals`) needs `settings:write`
+  and a recent re-authentication; changes are audited with before/after and
+  the approvers are told.
+
+### False-positive approval level
+
+`settings.finding_approvals.fp_approval` decides who decides a false positive
+(`internal/app/finding/approval_fp_policy.go`):
+
+| Level | A second person is needed for |
+|---|---|
+| `all` (default) | every false positive |
+| `high_and_above` | a material finding: critical or high, KEV, P0/P1, a validated exploit (`validation_outcome = reproducible`), a crown-jewel or internet-exposed asset (`vulnerability.FPFacts.Material`) |
+| `off` | none |
+
+An accepted risk always needs a second person. When the level lets one person
+decide, a requester holding `findings:approve` (with the finding in their
+data scope) gets the false positive applied at once: the request row is
+written approved with `single_person`, the status, closure reason and timeline
+entry in one transaction (`FindingApprovalRepository.CreateApplied`), audited
+`finding_approval.single_person_decided`. A member without `findings:approve`
+still files a pending request. Safeguards: a later severity rise, KEV listing
+or new evidence on a false positive one person decided raises the
+`material_change_single_person` review flag (triggers
+`trg_findings_single_person_fp_review`, `trg_finding_evidence_single_person_fp_review`,
+function `flag_single_person_fp_review`); `second_look_percent` (0-10) flags a
+random share (`second_look_sample`, crypto/rand). Changing the level needs
+`settings:write` and a recent re-authentication, is audited with before/after
+and the approvers are told; a lower level takes effect 24 hours later
+(`pending_fp_approval_at`), a higher one at once.
+`GET /api/v1/findings/{id}/approvals/policy` tells the request dialog how a
+false positive on that finding is decided now. Not built yet: a digest of
+single-person decisions (they are in the audit log and the approvals list).
 - **On the finding, on every accept path.** Approving `accepted` stores the
   end in `findings.acceptance_expires_at` in the same statement as the status
   (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix

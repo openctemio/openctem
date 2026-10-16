@@ -272,6 +272,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
 	vulnHandler.SetAuditService(svc.Audit)
+	if svc.Tenant != nil {
+		vulnHandler.SetFindingApprovalSettings(svc.Tenant)
+	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
 	if svc.BulkGuard != nil {
@@ -695,6 +698,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	wireFindingApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).
 	wireScanWindowTOTP(svc)
