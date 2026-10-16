@@ -20,6 +20,7 @@ import { useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -39,6 +40,8 @@ export interface PlatformSensorProofFormProps {
   stored?: boolean
   /** The deployment default (shown while nothing is stored). */
   defaultValue?: boolean
+  /** False when the setting is stored but has no effect yet. */
+  enforced?: boolean
 }
 
 export function PlatformSensorProofForm({
@@ -48,6 +51,7 @@ export function PlatformSensorProofForm({
   prefix = 'admin.proof',
   stored = true,
   defaultValue,
+  enforced = true,
 }: PlatformSensorProofFormProps) {
   const { t } = useTranslation()
   const k = (name: string) => `${prefix}.${name}`
@@ -88,7 +92,10 @@ export function PlatformSensorProofForm({
     <>
       <Card>
         <CardHeader>
-          <CardTitle>{t(k('title'))}</CardTitle>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            {t(k('title'))}
+            {!enforced && <Badge variant="outline">{t('admin.platformDefault.notEnforced')}</Badge>}
+          </CardTitle>
           <CardDescription>{t(k('desc'))}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -106,6 +113,11 @@ export function PlatformSensorProofForm({
               disabled={!canEdit || busy}
             />
           </div>
+          {!enforced && (
+            <p className="text-sm text-muted-foreground">
+              {t('admin.platformDefault.notEnforcedHint')}
+            </p>
+          )}
           {!stored && defaultValue !== undefined && (
             <p className="text-sm text-muted-foreground">
               {defaultValue
