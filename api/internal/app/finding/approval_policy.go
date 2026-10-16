@@ -151,20 +151,9 @@ func (s *VulnerabilityService) findingPolicyFacts(ctx context.Context, f *vulner
 // wiring) the known signers stand in: they passed the route's permission
 // check and the data scope check.
 func (s *VulnerabilityService) approverCandidates(ctx context.Context, tid, findingID shared.ID, op orgPolicy, known ...shared.ID) ([]approvalpolicy.Candidate, error) {
-	inPool := map[shared.ID]bool{}
-	if op.poolConfigured {
-		if r, ok := s.approvalRepo.(securityPoolReader); ok {
-			gid, err := shared.IDFromString(op.policy.SecurityPoolGroupID)
-			if err == nil {
-				members, err := r.GroupMemberIDs(ctx, tid, gid)
-				if err != nil {
-					return nil, err
-				}
-				for _, id := range members {
-					inPool[id] = true
-				}
-			}
-		}
+	inPool, err := s.securityPoolMembers(ctx, tid, op)
+	if err != nil {
+		return nil, err
 	}
 	if s.approverDir == nil {
 		out := make([]approvalpolicy.Candidate, 0, len(known))
@@ -196,6 +185,31 @@ func (s *VulnerabilityService) approverCandidates(ctx context.Context, tid, find
 		out = append(out, approvalpolicy.Candidate{UserID: uid, InSecurityPool: inPool[uid]})
 	}
 	return out, nil
+}
+
+// securityPoolMembers are the members of the organization's security pool
+// group (none when no pool is configured or the group is not the tenant's).
+func (s *VulnerabilityService) securityPoolMembers(ctx context.Context, tid shared.ID, op orgPolicy) (map[shared.ID]bool, error) {
+	inPool := map[shared.ID]bool{}
+	if !op.poolConfigured {
+		return inPool, nil
+	}
+	r, ok := s.approvalRepo.(securityPoolReader)
+	if !ok {
+		return inPool, nil
+	}
+	gid, err := shared.IDFromString(op.policy.SecurityPoolGroupID)
+	if err != nil {
+		return nil, fmt.Errorf("the organization's security pool group id is invalid: %w", err)
+	}
+	members, err := r.GroupMemberIDs(ctx, tid, gid)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range members {
+		inPool[id] = true
+	}
+	return inPool, nil
 }
 
 // policyEvaluation is one evaluation with the facts it used.

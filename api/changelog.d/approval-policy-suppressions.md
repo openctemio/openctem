@@ -1,0 +1,6 @@
+### Behaviour change: suppression rules need a reason code and follow the approval policy
+
+- `POST /api/v1/suppressions` requires `reason_code` (a false-positive justification for `false_positive` rules, an accepted-risk reason for `accepted_risk` and `wont_fix`) and a `description`. Responses carry `reason_code`, `tier`, `approvals_required` and `approvals_collected`. RFC-111.
+- A rule's tier comes from the worst open finding it matches: a false-positive rule over high or critical findings, or an accepted-risk rule over high findings, needs an approver from the security pool with a recent re-authentication; an accepted-risk rule over critical findings needs two approvers. Owners of the matched findings' assets cannot approve.
+- `POST /api/v1/suppressions/{id}/approve` can answer 200 with the rule still `pending` (more approvals needed), 403 `APPROVER_NOT_ELIGIBLE`, 409 `NO_ELIGIBLE_APPROVER` or 403 `STEP_UP_REQUIRED`. Editing a pending rule voids earlier approvals.
+- Migrations `002784_suppression_rule_policy` (+ `002785` validate): nullable columns and NOT VALID checks; the rule audit trail accepts `signed`.
