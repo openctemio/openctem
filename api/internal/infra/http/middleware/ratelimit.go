@@ -754,6 +754,7 @@ func (afl *AuthFailureLimiter) GetStats() (trackedIPs int, bannedIPs int) {
 type TriggerRateLimiter struct {
 	scanLimiter      *RateLimiter // Per-tenant scan triggers
 	quickScanLimiter *RateLimiter // Per-tenant quick scan triggers (stricter)
+	previewLimiter   *RateLimiter // Per-tenant quick scan previews (looser: read-only)
 	log              *logger.Logger
 }
 
@@ -765,6 +766,10 @@ type TriggerRateLimitConfig struct {
 	// QuickScanTriggersPerMin is the max quick scan triggers per minute per tenant.
 	// Default: 10 (stricter as quick scans can be resource-intensive)
 	QuickScanTriggersPerMin int
+	// QuickScanPreviewsPerMin is the max quick scan previews per minute per
+	// tenant. A preview reads the inventory but starts nothing.
+	// Default: 60
+	QuickScanPreviewsPerMin int
 	// CleanupInterval for visitor entries.
 	// Default: 1 minute
 	CleanupInterval time.Duration
@@ -775,6 +780,7 @@ func DefaultTriggerRateLimitConfig() TriggerRateLimitConfig {
 	return TriggerRateLimitConfig{
 		ScanTriggersPerMin:      20,
 		QuickScanTriggersPerMin: 10,
+		QuickScanPreviewsPerMin: 60,
 		CleanupInterval:         time.Minute,
 	}
 }
@@ -786,6 +792,9 @@ func NewTriggerRateLimiter(cfg TriggerRateLimitConfig, log *logger.Logger) *Trig
 	}
 	if cfg.QuickScanTriggersPerMin == 0 {
 		cfg.QuickScanTriggersPerMin = 10
+	}
+	if cfg.QuickScanPreviewsPerMin == 0 {
+		cfg.QuickScanPreviewsPerMin = 60
 	}
 	if cfg.CleanupInterval == 0 {
 		cfg.CleanupInterval = time.Minute
@@ -808,12 +817,19 @@ func NewTriggerRateLimiter(cfg TriggerRateLimitConfig, log *logger.Logger) *Trig
 			Burst:           cfg.QuickScanTriggersPerMin,
 			CleanupInterval: cfg.CleanupInterval,
 		}, log),
+		previewLimiter: NewRateLimiter(&config.RateLimitConfig{
+			Enabled:         true,
+			RequestsPerSec:  float64(cfg.QuickScanPreviewsPerMin) / 60.0,
+			Burst:           cfg.QuickScanPreviewsPerMin,
+			CleanupInterval: cfg.CleanupInterval,
+		}, log),
 		log: log,
 	}
 }
 
 // Stop gracefully shuts down all rate limiters.
 func (t *TriggerRateLimiter) Stop() {
+	t.previewLimiter.Stop()
 	t.scanLimiter.Stop()
 	t.quickScanLimiter.Stop()
 }
@@ -828,6 +844,12 @@ func (t *TriggerRateLimiter) ScanMiddleware() func(http.Handler) http.Handler {
 // Uses tenant ID as the rate limit key for per-tenant limiting.
 func (t *TriggerRateLimiter) QuickScanMiddleware() func(http.Handler) http.Handler {
 	return t.wrapWithTenantKey(t.quickScanLimiter)
+}
+
+// QuickScanPreviewMiddleware returns middleware for the quick scan preview,
+// which reads the inventory on every call. Per-tenant, looser than a trigger.
+func (t *TriggerRateLimiter) QuickScanPreviewMiddleware() func(http.Handler) http.Handler {
+	return t.wrapWithTenantKey(t.previewLimiter)
 }
 
 // =============================================================================

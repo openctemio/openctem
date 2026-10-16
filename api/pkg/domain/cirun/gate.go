@@ -43,7 +43,10 @@ const (
 	ReasonOverride          = "override"
 	// ReasonNoResults: no scan results were uploaded to the run, so it
 	// cannot be judged (fail closed).
-	ReasonNoResults  = "no_results"
+	ReasonNoResults = "no_results"
+	// ReasonNotJudged: the pipeline run never asked for a verdict (its gate
+	// job did not run), so the sweeper concluded it as a failure.
+	ReasonNotJudged  = "not_judged"
 	ReasonNoBaseline = "no_baseline"
 	// ReasonBaselineEstablished notes that this run recorded the
 	// repository's first gate baseline: its open findings stopped blocking.
