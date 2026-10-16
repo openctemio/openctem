@@ -9,7 +9,7 @@ built.
 | Signatures, signed index and revocation list, offline bundle reader and verifier (`pkg/contentpkg`) | shipped |
 | Catalog: tables, offline import, install / update / pin / rollback / uninstall, approval option, audit | shipped |
 | Private catalogs (organization and instance publishing) | designed |
-| First-party packages and the bundle generator | designed |
+| First-party packages and the bundle generator (`pkg/contentpkg/firstparty`, `cmd/content-bundle`) | shipped |
 | Console page (Settings > Content catalog, `/settings/content`) | shipped |
 | Installed packs delivered to sensors (desired state) | designed |
 
