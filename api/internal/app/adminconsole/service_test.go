@@ -170,6 +170,18 @@ func (f *fakeConsole) MarkSessionStepUp(_ context.Context, id shared.ID, at time
 	return admin.ErrSessionNotFound
 }
 
+func (f *fakeConsole) ConsumeSessionStepUp(_ context.Context, id shared.ID, notBefore time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, s := range f.sessions {
+		if s.ID == id && s.MFAVerified && s.StepUpAt != nil && !s.StepUpAt.Before(notBefore) {
+			s.StepUpAt = nil
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (f *fakeConsole) TouchSession(_ context.Context, id shared.ID, at time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

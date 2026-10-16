@@ -161,6 +161,23 @@ func (r *AdminConsoleRepository) MarkSessionStepUp(ctx context.Context, id share
 	return nil
 }
 
+// ConsumeSessionStepUp clears the session's step-up mark and reports whether
+// it was set no earlier than notBefore. One statement, so two concurrent
+// fresh actions cannot both spend the same confirmation.
+func (r *AdminConsoleRepository) ConsumeSessionStepUp(ctx context.Context, id shared.ID, notBefore time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE admin_sessions SET step_up_at = NULL
+		  WHERE id = $1 AND mfa_verified AND step_up_at IS NOT NULL AND step_up_at >= $2`, id.String(), notBefore)
+	if err != nil {
+		return false, fmt.Errorf("consume admin session step-up: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("consume admin session step-up: %w", err)
+	}
+	return n == 1, nil
+}
+
 // TouchSession records that a session was just used.
 func (r *AdminConsoleRepository) TouchSession(ctx context.Context, id shared.ID, at time.Time) error {
 	if _, err := r.db.ExecContext(ctx, `UPDATE admin_sessions SET last_seen_at = $2 WHERE id = $1`, id.String(), at); err != nil {

@@ -65,6 +65,18 @@ func (f AdminStepUpFunc) ConfirmProtected(ctx context.Context, a *admin.AdminUse
 // Authenticate and the role guard. A nil confirmer refuses every request: a
 // protected action never runs unconfirmed.
 func RequireAdminStepUp(c AdminStepUpConfirmer, purpose string) func(http.Handler) http.Handler {
+	return requireStepUp(c, purpose, false)
+}
+
+// RequireAdminFreshStepUp gates an action that adds or replaces a sign-in
+// factor, or turns the factor policy: it never rides the session's step-up
+// window. It accepts a fresh authenticator code, or a security-key
+// confirmation given within admin.FreshStepUpWindow that this action spends.
+func RequireAdminFreshStepUp(c AdminStepUpConfirmer, purpose string) func(http.Handler) http.Handler {
+	return requireStepUp(c, purpose, true)
+}
+
+func requireStepUp(c AdminStepUpConfirmer, purpose string, fresh bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			actor := GetAdminUser(r.Context())
@@ -78,7 +90,11 @@ func RequireAdminStepUp(c AdminStepUpConfirmer, purpose string) func(http.Handle
 			}
 			code := strings.TrimSpace(r.Header.Get(AdminStepUpHeader))
 			client := AdminStepUpClient{IP: ClientIP(r), UserAgent: r.UserAgent()}
-			err := c.ConfirmProtected(r.Context(), actor, GetAdminSession(r.Context()), code, purpose, client)
+			ctx := r.Context()
+			if fresh {
+				ctx = admin.WithFreshStepUp(ctx)
+			}
+			err := c.ConfirmProtected(ctx, actor, GetAdminSession(r.Context()), code, purpose, client)
 			switch {
 			case err == nil:
 				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), adminSteppedUpKey, true)))
