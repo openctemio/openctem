@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -61,6 +63,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -124,6 +127,7 @@ import (
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -236,6 +240,24 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 	}
 	id := u.ID()
 	return &id, nil
+}
+
+// ticketStatusApplier adapts the finding service's inbound ticket path to
+// the Jira sync service.
+type ticketStatusApplier struct{ vuln *finding.VulnerabilityService }
+
+func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
+) ([]shared.ID, []jira.InboundRefusal, error) {
+	out, err := a.vuln.ApplyTicketStatus(ctx, tenantID, ids, target, integration, ref, externalActor)
+	if err != nil {
+		return nil, nil, err
+	}
+	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
+	for _, r := range out.Refused {
+		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
+	}
+	return out.Applied, refused, nil
 }
 
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
@@ -648,6 +670,8 @@ type Services struct {
 	ContentPacks *contentpackapp.Service
 	// PlatformContentPacks are the platform's packs and channels (RFC-061).
 	PlatformContentPacks *contentpackapp.PlatformService
+	// ContentCatalog is the content catalog (RFC-099).
+	ContentCatalog *catalogapp.Service
 
 	// Workflows
 	Workflow           *automation.WorkflowService
@@ -1564,10 +1588,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
 	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
+	// own findings, proof-of-fix queued) behind the abuse guard.
+	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
 	s.RemediationSuggest.SetAuditLogger(s.Audit)
+	s.RemediationSuggest.SetTasks(s.RemediationTask)
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -1665,6 +1693,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound status changes are recorded with the integration as the actor.
 	s.JiraSync.SetActivityRecorder(s.FindingActivity)
+	// Inbound status changes go through the finding service rules (transition
+	// map, gates, "mark fixed" with proof of fix) for every finding linked to
+	// the issue; refusals are commented back once per window (all replicas).
+	s.JiraSync.SetInboundApplier(ticketStatusApplier{vuln: s.Vulnerability})
+	s.JiraSync.SetWorkItemFindingLister(repos.Finding)
+	if deps.RedisClient != nil {
+		s.JiraSync.SetRefusalCommentGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 	// Ticket links: create-ticket records its link; people link existing issues.
 	if repos.TicketLink != nil {
 		s.JiraSync.SetLinkStore(repos.TicketLink)
@@ -1689,8 +1725,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// here (JiraSync is created after the campaign service above).
 	if s.RemediationCampaign != nil {
 		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
-		// Inbound: a Jira webhook moving the campaign's epic to Done completes
-		// the campaign (the reverse of the outbound transition above).
+		// Inbound: a Jira webhook moving the campaign's epic to Done marks the
+		// campaign's findings fixed (a fix claim; verification closes them).
 		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
 	}
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
@@ -1841,6 +1877,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Platform packs: their own storage namespace (not a tenant id, so an
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
+	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -2143,7 +2180,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// The scope check names the private address a refused hostname
 		// resolves to, unless that answer may come from the platform's own
 		// DNS in a self-service (multi-tenant) install.
-		scan.WithRevealResolved(cfg.Scope.ZoneResolver != config.ScanZoneResolverSystem || !cfg.Auth.SelfServiceTenantCreation()),
+		scan.WithRevealResolved(cfg.Scope.ZoneResolver != config.ScanZoneResolverSystem || !cfg.Auth.SignupOpen()),
 		// Scan windows (RFC-067): never-opening targets refuse the run, a
 		// scheduled run with nothing open is deferred to the next opening.
 		scan.WithScanWindows(s.ScanWindowResolver),
@@ -2633,6 +2670,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire in-app notification service to pentest service
 	s.Pentest.SetUserNotificationService(s.Notification)
 
+	// The content catalog tells owners and administrators when install
+	// approval is being switched off (RFC-099).
+	s.ContentCatalog.SetNotifier(s.Notification)
+
 	// Change detection: an asset an ingest newly created (not a re-scan merge,
 	// not a manual create) fires the `asset_discovered` workflow trigger and,
 	// when it is internet-facing, a throttled tenant notification. Wired here
@@ -2708,10 +2749,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
-	// The sign-up policy (Console > System > Sign-up). TENANT_CREATION_MODE
-	// seeds it on the first start only; afterwards the console value wins.
+	// The sign-up policy (Console > System > Sign-up), a runtime switch below
+	// the deployment ceiling SIGNUP_MODE. The ceiling seeds it on the first
+	// start only; afterwards the console value wins, clamped to the ceiling.
 	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
-	if err := s.Signup.Seed(context.Background(), cfg.Auth.TenantCreationMode); err != nil {
+	s.Signup.SetCeiling(signupdom.Ceiling(cfg.Auth.SignupMode))
+	if err := s.Signup.Seed(context.Background()); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
@@ -2794,6 +2837,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// domain (domainverify.Service.OwnerOfDomain).
 	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
 		s.SSO.SetDomainOwnerLookup(owners)
+		// Discovery hands out opaque organization references, signed with
+		// a key derived from the session secret under its own label.
+		dk := hmac.New(sha256.New, []byte(cfg.Auth.JWTSecret))
+		dk.Write([]byte("openctem/sso-discovery/v1"))
+		s.SSO.SetDiscoveryKey(dk.Sum(nil))
 	} else {
 		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
 	}
@@ -2935,6 +2983,27 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 	if !s.Email.IsConfigured() {
 		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
 	}
+	return s.guardPublicSignupMail(cfg, log)
+}
+
+// guardPublicSignupMail refuses to start a deployment that allows public
+// sign-up (SIGNUP_MODE=domain or open) without working platform e-mail: every
+// self-registered address must be verified, and an address that cannot be
+// verified must never become an account that joins or is invited by domain.
+// While running, the sign-up policy also closes public sign-up whenever the
+// e-mail settings stop working (signup.Service.Effective).
+func (s *Services) guardPublicSignupMail(cfg *config.Config, log *logger.Logger) error {
+	if !cfg.Auth.PublicSignup() {
+		return nil
+	}
+	if s.Email == nil || !s.Email.IsConfigured() {
+		return fmt.Errorf("SIGNUP_MODE=%s needs the platform e-mail to verify sign-ups: set it with bootstrap-admin (BOOTSTRAP_SMTP_*) or start with SIGNUP_MODE=disabled, set it in the admin console (System > E-mail) and restart", cfg.Auth.SignupMode)
+	}
+	if s.Signup != nil {
+		email := s.Email
+		s.Signup.SetMailReady(email.IsConfigured)
+	}
+	log.Warn("public sign-up is allowed by this deployment's configuration", "signup_mode", cfg.Auth.SignupMode)
 	return nil
 }
 

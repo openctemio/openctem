@@ -59,6 +59,7 @@ import (
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -251,7 +252,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// constructed. The handler returns 503 from the dry-run
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
-	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
+	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SignupOpen())
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
@@ -272,6 +273,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
 	vulnHandler.SetAuditService(svc.Audit)
+	if svc.Tenant != nil {
+		vulnHandler.SetFindingApprovalSettings(svc.Tenant)
+	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
 	if svc.BulkGuard != nil {
@@ -529,6 +533,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
+		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
 		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
 			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
@@ -695,6 +701,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	wireFindingApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).
 	wireScanWindowTOTP(svc)
@@ -1501,7 +1508,8 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 
 // bootstrapSession wires the session parts of GET /me/bootstrap to the same
 // code that serves /users/me, /users/me/tenants, /notifications/unread-count,
-// /easm/candidates and the organization policy of /auth/providers.
+// /easm/candidates, the pending count of /approvals and the organization
+// policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
 	s := handler.BootstrapSession{}
 	if h.User != nil {
@@ -1517,7 +1525,20 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.Announcement != nil {
 		s.Announcements = h.Announcement.ActiveResponses
 	}
-	mode := cfg.Auth.TenantCreationMode
+	if svc.Vulnerability != nil {
+		vulns := svc.Vulnerability
+		s.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
+			page, err := vulns.ListApprovals(ctx, tenantID.String(), string(vulnerability.ApprovalStatusPending), 1, 1)
+			if err != nil {
+				return 0, err
+			}
+			return int(page.StatusCounts[vulnerability.ApprovalStatusPending]), nil
+		}
+	}
+	mode := string(signupdom.Default().Mode)
+	if cfg.Auth.SignupOpen() {
+		mode = string(signupdom.ModeSelfService)
+	}
 	signup := svc.Signup
 	s.TenantCreationMode = func(ctx context.Context) string {
 		if signup != nil {
