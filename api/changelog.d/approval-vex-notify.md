@@ -10,5 +10,5 @@
 - The requests table is the outbox: ingest only writes the request, the job
   claims unannounced rows (`approvers_notified_at`, `FOR UPDATE SKIP LOCKED`)
   so a large report never slows the ingest and nothing is announced twice.
-  Migration `002701` (`finding_approval_actor_notified`): a nullable column and
+  Migration `002763` (`finding_approval_actor_notified`): a nullable column and
   a partial index.
