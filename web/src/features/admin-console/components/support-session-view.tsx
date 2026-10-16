@@ -162,25 +162,32 @@ function OverviewTab({ session, onEnded }: { session: SupportSessionState; onEnd
           </dt>
           <dd className="font-medium break-words">{data.tenant_name}</dd>
         </div>
-        <div className="rounded-md border p-3">
-          <dt className="text-xs text-muted-foreground">{t('admin.support.assets', 'Assets')}</dt>
-          <dd className="text-xl font-semibold tabular-nums">{data.asset_count ?? 0}</dd>
-        </div>
-        <div className="rounded-md border p-3">
-          <dt className="text-xs text-muted-foreground">
-            {t('admin.support.openFindings', 'Open findings')}
-          </dt>
-          <dd className="text-xl font-semibold tabular-nums">{data.open_finding_count ?? 0}</dd>
-        </div>
+        {/* A part the grant does not open is absent, not zero. */}
+        {data.asset_count !== undefined && (
+          <div className="rounded-md border p-3">
+            <dt className="text-xs text-muted-foreground">{t('admin.support.assets', 'Assets')}</dt>
+            <dd className="text-xl font-semibold tabular-nums">{data.asset_count}</dd>
+          </div>
+        )}
+        {data.open_finding_count !== undefined && (
+          <div className="rounded-md border p-3">
+            <dt className="text-xs text-muted-foreground">
+              {t('admin.support.openFindings', 'Open findings')}
+            </dt>
+            <dd className="text-xl font-semibold tabular-nums">{data.open_finding_count}</dd>
+          </div>
+        )}
       </dl>
-      <div className="flex flex-wrap gap-2">
-        {SEVERITIES.map((sev) => (
-          <span key={sev} className="flex items-center gap-1.5 text-sm">
-            <SeverityBadge severity={sev} />
-            <span className="tabular-nums">{bySev[sev] ?? 0}</span>
-          </span>
-        ))}
-      </div>
+      {data.open_finding_count !== undefined && (
+        <div className="flex flex-wrap gap-2">
+          {SEVERITIES.map((sev) => (
+            <span key={sev} className="flex items-center gap-1.5 text-sm">
+              <SeverityBadge severity={sev} />
+              <span className="tabular-nums">{bySev[sev] ?? 0}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
