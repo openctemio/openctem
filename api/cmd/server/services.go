@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -2802,6 +2804,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// domain (domainverify.Service.OwnerOfDomain).
 	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
 		s.SSO.SetDomainOwnerLookup(owners)
+		// Discovery hands out opaque organization references, signed with
+		// a key derived from the session secret under its own label.
+		dk := hmac.New(sha256.New, []byte(cfg.Auth.JWTSecret))
+		dk.Write([]byte("openctem/sso-discovery/v1"))
+		s.SSO.SetDiscoveryKey(dk.Sum(nil))
 	} else {
 		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
 	}
