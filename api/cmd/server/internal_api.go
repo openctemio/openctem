@@ -63,10 +63,12 @@ func startInternalAPI(cfg *config.Config, repos *Repositories, svc *Services, re
 	if err != nil {
 		return nil, err
 	}
-	var replay internalapi.ReplayCache = internalapi.NewMemoryReplayCache()
-	if redisClient != nil {
-		replay = internalapi.NewRedisReplayCache(redisClient)
+	// Single-use tokens must be remembered across every replica: the replay
+	// cache lives in Redis, and the API does not start without it.
+	if redisClient == nil {
+		return nil, errors.New("internal API: Redis is required (token replay cache shared by every replica)")
 	}
+	replay := internalapi.NewRedisReplayCache(redisClient)
 	verifier, err := internalapi.NewVerifier(keys, ic.JWTIssuer, replay)
 	if err != nil {
 		return nil, err
