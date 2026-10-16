@@ -10,7 +10,7 @@
 
 import useSWR, { type SWRConfiguration } from 'swr'
 import useSWRMutation from 'swr/mutation'
-import { get, post, patch } from '@/lib/api/client'
+import { get, post, patch, put } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import type {
@@ -556,9 +556,36 @@ export function useRequestApproval(findingId: string) {
         }
       }
     ) => {
-      const response = await post(url, arg)
+      // Usually a pending request; an approved one (single_person) when the
+      // organization lets the requester decide this false positive alone.
+      const response = await post<ApiApproval>(url, arg)
       return response
     }
+  )
+}
+
+/** How a false positive on one finding is decided now. */
+export interface FalsePositivePolicy {
+  fp_approval: FPApprovalLevel
+  /** One person holding findings:approve may decide it alone. */
+  single_person: boolean
+  /** ...and the caller is such a person: it applies at once. */
+  can_decide_alone: boolean
+  /** The finding is material (always four-eyes under high_and_above). */
+  material: boolean
+  pending_fp_approval?: FPApprovalLevel
+  pending_fp_approval_at?: string
+}
+
+/** GET /api/v1/findings/{id}/approvals/policy, only while `enabled`. */
+export function useFalsePositivePolicy(findingId: string, enabled: boolean) {
+  const { currentTenant } = useTenant()
+  return useSWR<FalsePositivePolicy>(
+    currentTenant && enabled && findingId
+      ? `/api/v1/findings/${encodeURIComponent(findingId)}/approvals/policy`
+      : null,
+    get,
+    defaultConfig
   )
 }
 
@@ -600,6 +627,66 @@ export interface ApprovalListResponse {
   per_page: number
   /** Count per status under the caller's data scope, zero included. */
   status_counts: Record<ApprovalStatus, number>
+  /**
+   * The viewer is the organization's only active person and its owner: they
+   * may approve their own pending requests with an authenticator code.
+   */
+  self_approval_available?: boolean
+}
+
+/** The approved request after a sole member's own approval. */
+export interface SelfApproveResponse extends ApiApproval {
+  /** The acceptance end asked for was brought forward to the self-approval limit. */
+  end_shortened: boolean
+}
+
+/**
+ * The sole member of the organization approves their own pending request
+ * (POST /api/v1/approvals/{id}/self-approve) with a reason and a fresh code
+ * from their authenticator app. The server decides whether it is allowed.
+ */
+export function selfApproveFindingApproval(id: string, input: { reason: string; code: string }) {
+  return post<SelfApproveResponse>(
+    `/api/v1/approvals/${encodeURIComponent(id)}/self-approve`,
+    input
+  )
+}
+
+/** The organization's finding approval settings. */
+/** Who decides a false positive (accepted risk always needs a second person). */
+export type FPApprovalLevel = 'all' | 'high_and_above' | 'off'
+
+export interface FindingApprovalSettings {
+  /** Emailed when the sole member approves their own request. */
+  backup_contact_email: string
+  /** The false-positive approval level in force. */
+  fp_approval?: FPApprovalLevel
+  /** A lower level chosen less than 24 hours ago, in force at pending_fp_approval_at. */
+  pending_fp_approval?: FPApprovalLevel
+  pending_fp_approval_at?: string
+  /** Share (0-10 %) of single-person false positives flagged for a second look. */
+  second_look_percent?: number
+}
+
+const FINDING_APPROVAL_SETTINGS_URL = '/api/v1/organization/settings/finding-approvals'
+
+/** Read the organization's finding approval settings. */
+export function useFindingApprovalSettings() {
+  const { currentTenant } = useTenant()
+  return useSWR<FindingApprovalSettings>(
+    currentTenant ? FINDING_APPROVAL_SETTINGS_URL : null,
+    get,
+    defaultConfig
+  )
+}
+
+/**
+ * Save the organization's finding approval settings (settings:write and a
+ * recent sign-in; the API client asks for re-authentication when needed).
+ * Fields left out keep their value.
+ */
+export function updateFindingApprovalSettings(input: Partial<FindingApprovalSettings>) {
+  return put<FindingApprovalSettings>(FINDING_APPROVAL_SETTINGS_URL, input)
 }
 
 /**
