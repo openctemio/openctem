@@ -234,7 +234,7 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.IsBreakGlass != nil {
-		if *req.IsBreakGlass && adminUser.Role() != admin.AdminRoleSuperAdmin {
+		if *req.IsBreakGlass && adminUser.EffectiveRole() != admin.AdminRoleSuperAdmin {
 			apierror.BadRequest("a break-glass administrator must be a super admin").WriteJSON(w)
 			return
 		}
