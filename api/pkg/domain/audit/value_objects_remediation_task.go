@@ -6,6 +6,9 @@ const (
 	ActionRemediationTaskUpdated      Action = "remediation_task.updated"
 	ActionRemediationTaskMembersAdded Action = "remediation_task.members_added"
 	ActionRemediationTaskStateChanged Action = "remediation_task.state_changed"
+	ActionRemediationTaskMembersMoved Action = "remediation_task.members_moved"
+	ActionRemediationTaskSplit        Action = "remediation_task.split"
+	ActionRemediationTaskMerged       Action = "remediation_task.merged"
 )
 
 // ResourceTypeRemediationTask is a remediation task (table remediation_tasks).
@@ -17,6 +20,9 @@ var _ = registerActions("remediation_task", map[Action]Severity{
 	ActionRemediationTaskMembersAdded: SeverityLow,
 	// Canceling or holding a task stops work on its findings.
 	ActionRemediationTaskStateChanged: SeverityMedium,
+	ActionRemediationTaskMembersMoved: SeverityLow,
+	ActionRemediationTaskSplit:        SeverityLow,
+	ActionRemediationTaskMerged:       SeverityLow,
 })
 
 // Remediation suggestion decisions (RFC-098 §5). The generator itself writes
