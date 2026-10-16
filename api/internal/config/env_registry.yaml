@@ -1476,6 +1476,23 @@ vars:
     type: int
     default: "10000"
     description: "Rows per delete transaction."
+  - name: ADMIN_AUDIT_SINK
+    component: api
+    group: "Audit log retention"
+    type: string
+    description: "Streams the platform administrators' audit log off the box: every row with its hash-chain position and hash (no request body), and the chain head every `ADMIN_AUDIT_SINK_HEAD_INTERVAL`. `https://collector/path` (one JSON object per POST, `Authorization: Bearer ADMIN_AUDIT_SINK_TOKEN`, no redirects), `syslog+tls://host:6514`, `syslog+tcp://host:514`, `syslog+udp://host:514` (RFC 5424) or `file:///path` (JSON lines, 0600). A destination that cannot be used stops the start-up. Empty: off."
+  - name: ADMIN_AUDIT_SINK_TOKEN
+    component: api
+    group: "Audit log retention"
+    type: string
+    secret: true
+    description: "Bearer token sent to an `https://` `ADMIN_AUDIT_SINK`."
+  - name: ADMIN_AUDIT_SINK_HEAD_INTERVAL
+    component: api
+    group: "Audit log retention"
+    type: duration
+    default: "15m"
+    description: "How often the administrators' audit chain head (position and hash) is sent to `ADMIN_AUDIT_SINK`. A later re-signing of the chain cannot match a head already sent."
   - name: ADMIN_AUDIT_RETENTION_DAYS
     component: api
     group: "Audit log retention"
