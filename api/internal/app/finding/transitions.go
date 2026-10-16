@@ -34,6 +34,12 @@ func transitionActor(ctx context.Context, actorID string, p TransitionPermission
 		Kind:      vulnerability.TransitionActorAPIKey,
 		CanStatus: p.Status, CanVerify: p.Verify, CanFixApply: p.FixApply, CanTriage: p.Triage, CanWrite: p.Write,
 	}
+	// A verified Jira/GitHub webhook is the ticket actor: the engine lets it
+	// report work state only (never a close).
+	if _, ok := vulnerability.TicketInboundFrom(ctx); ok {
+		a.Kind = vulnerability.TransitionActorTicket
+		return a
+	}
 	if isSystemMove(ctx) {
 		a.Kind = vulnerability.TransitionActorWorkflow
 		return a
