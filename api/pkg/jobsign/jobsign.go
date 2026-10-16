@@ -29,6 +29,9 @@ const PayloadType = "application/vnd.openctem.job.v1+json"
 // Kind is the statement kind (v1).
 const Kind = "openctem.job/v1"
 
+// SensorScopeInstance marks a statement for a shared (instance) sensor.
+const SensorScopeInstance = "instance"
+
 // Algorithm is the signature algorithm of every key the signer holds.
 const Algorithm = "ed25519"
 
@@ -58,6 +61,14 @@ type Statement struct {
 	Kind        string `json:"kind"`
 	TenantID    string `json:"tenant_id"`
 	SensorID    string `json:"sensor_id"`
+	// SensorScope is SensorScopeInstance for a job of a shared sensor (one
+	// that serves several organizations), absent for an organization's own
+	// sensor. A shared sensor runs only statements that carry it, binds the
+	// job's results to TenantID, and refuses any whose SensorID is not its
+	// own; an organization's sensor refuses statements that carry it (an
+	// older one refuses the unknown field). The signer signs a shared job
+	// only within the shared-job rules (internal/signer/shared.go).
+	SensorScope string `json:"sensor_scope,omitempty"`
 	CommandID   string `json:"command_id"`
 	CommandType string `json:"command_type"`
 	// Tool is the tool the command names (payload "scanner", else
