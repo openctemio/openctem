@@ -31,3 +31,52 @@ func registerRemediationCampaignRoutes(
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.RemediationWrite))
 	}, tenantMiddlewares...)
 }
+
+// registerRemediationTaskRoutes registers remediation task routes
+// (docs/rfcs/RFC-098-remediation-tasks.md). The service adds the data scope:
+// a restricted member sees a task through its in-scope findings only and
+// changes only a task whose findings are all in their scope.
+func registerRemediationTaskRoutes(
+	router Router,
+	h *handler.RemediationTaskHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+
+	router.Group("/api/v1/remediation/tasks", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.RemediationRead))
+		r.POST("/", h.Create, middleware.Require(permission.RemediationWrite))
+		r.GET("/{task_id}", h.Get, middleware.Require(permission.RemediationRead))
+		r.PATCH("/{task_id}", h.Update, middleware.Require(permission.RemediationWrite))
+		r.GET("/{task_id}/members", h.ListMembers, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))
+		r.POST("/{task_id}/members", h.AddMembers, middleware.Require(permission.RemediationWrite))
+		r.GET("/{task_id}/timeline", h.Timeline, middleware.Require(permission.RemediationRead))
+	}, tenantMiddlewares...)
+}
+
+// registerRemediationSuggestionRoutes registers remediation suggestion
+// routes (docs/rfcs/RFC-098-remediation-tasks.md §5). Suggestions only
+// propose; the service hides findings outside the caller's data scope and
+// refuses a decision on a suggestion with such findings.
+func registerRemediationSuggestionRoutes(
+	router Router,
+	h *handler.RemediationSuggestionHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+
+	router.Group("/api/v1/remediation/suggestions", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.RemediationRead))
+		r.GET("/stats", h.Summary, middleware.Require(permission.RemediationRead))
+		r.POST("/run", h.Refresh, middleware.Require(permission.RemediationWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.RemediationRead))
+		r.PATCH("/{id}", h.Snooze, middleware.Require(permission.RemediationWrite))
+		r.GET("/{id}/members", h.Members, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))
+		r.POST("/{id}/reject", h.Dismiss, middleware.Require(permission.RemediationWrite))
+		r.POST("/{id}/reopen", h.Reopen, middleware.Require(permission.RemediationWrite))
+	}, tenantMiddlewares...)
+}
