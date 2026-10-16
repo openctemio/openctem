@@ -333,7 +333,7 @@ func (c *Command) CanBeAcknowledged() bool {
 // registry rules license does not allow providing them as a service.
 // Platform scans run static analysis with opengrep and the OpenCTEM rules
 // pack (research/132).
-var ErrRegistryRulesOnPlatform = fmt.Errorf("%w: platform scans run static analysis with opengrep and the OpenCTEM rules pack; semgrep would fetch registry rules", shared.ErrValidation)
+var ErrRegistryRulesOnPlatform = fmt.Errorf("%w: platform scans run static analysis with opengrep and the built-in rules pack; semgrep would fetch registry rules", shared.ErrValidation)
 
 // registryRuleTools are the tools that fetch registry rules when a sensor
 // has no managed rules: semgrep defaults to --config auto. opengrep runs

@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -393,6 +394,10 @@ func imageTag(image string) string {
 // templateFuncs are the functions exposed to templates.
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
+		// product and docs name the instance brand in comments
+		// (docs/architecture/brand.md).
+		"product": brand.Name,
+		"docs":    func() string { return brand.Instance().Docs() },
 		// toScannerName maps a tool name to its scanner name
 		// (e.g., "trivy" -> "trivy-fs").
 		"toScannerName": normalizeToolName,

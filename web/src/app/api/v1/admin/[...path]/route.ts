@@ -33,7 +33,8 @@ const REFRESH_PATHS = new Set(['auth/session', 'auth/logout'])
 export const dynamic = 'force-dynamic'
 
 const ADMIN_COOKIES = ['admin_session', 'admin_mfa', 'admin_csrf', 'admin_idp'] as const
-const FORWARD_HEADERS = ['x-csrf-token', 'x-request-id', 'user-agent'] as const
+/** x-admin-step-up: the fresh authenticator code of a protected action. */
+const FORWARD_HEADERS = ['x-csrf-token', 'x-admin-step-up', 'x-request-id', 'user-agent'] as const
 const MAX_BODY_BYTES = 1024 * 1024
 /**
  * A platform content pack upload (POST /content-packs, multipart): the API
