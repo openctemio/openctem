@@ -467,6 +467,7 @@ export const REASON_LABEL: Record<string, string> = {
   too_many_findings: 'Too many findings to judge',
   baseline_established: 'Baseline recorded',
   no_results: 'No results',
+  not_judged: 'Never judged (the gate job did not run)',
 }
 
 /** Reason codes that inform and never block (listed apart from the blocking ones). */
