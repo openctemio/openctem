@@ -52,6 +52,9 @@ const (
 // not made.
 var ErrSignerRefused = fmt.Errorf("%w: the job signer did not record the zone change; nothing was changed", shared.ErrConflict)
 
+// ErrInternalZonesNotAllowed: shared sensors may not scan internal zones now.
+var ErrInternalZonesNotAllowed = fmt.Errorf("%w: shared sensors may not scan internal zones", shared.ErrForbidden)
+
 // ZoneLedger records zone changes with the job signer (*signer.Client).
 type ZoneLedger interface {
 	ApplyZone(ctx context.Context, ch jobsign.ZoneChange) (jobsign.ZoneChangeResult, error)
@@ -96,9 +99,9 @@ type Service struct {
 	log    *logger.Logger
 }
 
-// NewService creates the service. Without a ledger (no job signer) zones
-// can be stored, but no shared job is ever signed for them; without a
-// policy the lookup answers nothing.
+// NewService creates the service. Without a ledger (no job signer) every zone
+// write is refused (reads still work); without a policy the lookup answers
+// nothing.
 func NewService(repo zonedom.Repository, ledger ZoneLedger, policy InternalZonesPolicy, audit AuditWriter, log *logger.Logger) *Service {
 	if log == nil {
 		log = logger.NewNop()
@@ -225,13 +228,15 @@ func (s *Service) setMembers(ctx context.Context, id shared.ID, c Change, action
 	return z, nil
 }
 
-// record sends a change to the signer's zone ledger. Without a signer the
-// change is stored only (no shared job is signed without one).
+// record sends a change to the signer's zone ledger. Without a signer no zone
+// is written: a zone the signer never recorded could not be checked against the
+// signed statement, so the write is refused. The requester is the
+// administrator's id, which stays stable when an email is changed or reused.
 func (s *Service) record(ctx context.Context, c Change, ch jobsign.ZoneChange) error {
 	if s.ledger == nil {
-		return nil
+		return ErrSignerRefused
 	}
-	ch.Requester = c.Actor.Email()
+	ch.Requester = c.Actor.ID().String()
 	if _, err := s.ledger.ApplyZone(ctx, ch); err != nil {
 		s.log.Warn("job signer did not record the zone change", "error", logger.SanitizeError(err))
 		return ErrSignerRefused
@@ -294,7 +299,14 @@ func (s *Service) ZoneFor(ctx context.Context, tenantID shared.ID, internalTarge
 
 // StatementZone returns the zone a shared job's signed statement names
 // (id and ranges), or an error when the zone is gone.
+//
+// It re-checks that shared sensors may scan internal zones at signing time, not
+// only when the zone was looked up: the setting may have been turned off since
+// the job was queued, and a job must then not be signed with the zone's ranges.
 func (s *Service) StatementZone(ctx context.Context, id shared.ID) (*jobsign.StatementZone, error) {
+	if s.policy == nil || !s.policy.SharedSensorsInternalZonesAllowed(ctx) {
+		return nil, ErrInternalZonesNotAllowed
+	}
 	z, err := s.repo.Get(ctx, id)
 	if errors.Is(err, zonedom.ErrNotFound) {
 		return nil, fmt.Errorf("instance scan zone %s no longer exists", id)

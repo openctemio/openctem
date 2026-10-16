@@ -14,8 +14,16 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
+
+// recordingLedger stands in for the job signer: every change is recorded.
+type recordingLedger struct{}
+
+func (recordingLedger) ApplyZone(context.Context, jobsign.ZoneChange) (jobsign.ZoneChangeResult, error) {
+	return jobsign.ZoneChangeResult{}, nil
+}
 
 type allowInternalZones struct{}
 
@@ -31,7 +39,7 @@ func TestAdminInstanceScanZones_Routes_DB(t *testing.T) {
 	var svc *instancezone.Service
 	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, console *adminconsole.Service) {
 		log := logger.NewNop()
-		svc = instancezone.NewService(postgres.NewInstanceScanZoneRepository(db), nil, allowInternalZones{}, postgres.NewAuditLogRepository(db), log)
+		svc = instancezone.NewService(postgres.NewInstanceScanZoneRepository(db), recordingLedger{}, allowInternalZones{}, postgres.NewAuditLogRepository(db), log)
 		hs.AdminInstanceScanZone = handler.NewAdminInstanceScanZoneHandler(svc, console, log)
 	})
 	const path = "/api/v1/admin/instance-scan-zones"
