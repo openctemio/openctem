@@ -552,5 +552,7 @@
   "admin.legal.title": "Legal information",
   "admin.legal.websiteUrl": "Website (https)",
   "admin.nav.legal": "Legal",
-  "admin.ops.fleet.advisories": "security advisory: {v}"
+  "admin.ops.fleet.advisories": "security advisory: {v}",
+  "admin.org.ownerCount": "{count} owner(s)",
+  "admin.org.users.redacted": "Your console role sees how many members there are, not who they are. {count} member(s) in total."
 }

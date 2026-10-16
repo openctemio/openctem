@@ -1400,6 +1400,12 @@ vars:
     type: int
     default: "10000"
     description: "Rows per delete transaction."
+  - name: ADMIN_ALLOWED_CIDRS
+    component: api
+    group: "Admin console"
+    type: list
+    default: "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    description: "Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address."
   - name: ADMIN_AUDIT_RETENTION_DAYS
     component: api
     group: "Audit log retention"
