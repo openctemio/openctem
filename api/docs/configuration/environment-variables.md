@@ -74,6 +74,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `DB_MAX_IDLE_CONNS` | int | `5` |  |  | Maximum idle connections kept in the pool. |
 | `DB_MAX_OPEN_CONNS` | int | `25` |  |  | Maximum open connections in the API's pool. |
 | `DB_NAME` | string | `openctem` |  |  | Database name. |
+| `DB_ADMIN_PASSWORD` | string | empty |  | yes | Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`. |
+| `DB_ADMIN_USER` | string | empty |  |  | Role the platform console's identity tables (administrators, console sessions and credentials, the platform identity provider) are written with, through a second small pool. The least-privilege bootstrap (`admin_user`) creates it and takes write on those tables away from `DB_USER`. Unset: one role, as before. |
 | `DB_PASSWORD` | string | empty | yes | yes | Password of `DB_USER`. Required outside `APP_ENV=development`; there is no default. |
 | `DB_PORT` | int | `5432` |  |  | PostgreSQL port. |
 | `DB_SSLMODE` | string | `disable` | production |  | libpq `sslmode`. Production refuses `disable`: use `require`, `verify-ca` or `verify-full`. |

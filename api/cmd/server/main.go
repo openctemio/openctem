@@ -152,6 +152,23 @@ func run() int {
 	defer closeWithLog(db, "database", log)
 	log.Info("database connected")
 
+	// The platform console's identity tables (administrators, console
+	// sessions, the platform identity provider) through their own role
+	// (DB_ADMIN_USER) when one is set: the API's DB_USER then cannot write
+	// them, so a SQL injection anywhere in the tenant plane cannot add an
+	// administrator or a console session.
+	adminDB := db
+	if acfg := cfg.Database.AdminConfig(); acfg != nil {
+		adminDB, err = postgres.New(acfg)
+		if err != nil {
+			log.Error("failed to connect to the database as DB_ADMIN_USER", "error", err)
+			return 1
+		}
+		defer closeWithLog(adminDB, "console database pool", log)
+		log.Info("console identity tables use their own database role", "role", cfg.Database.AdminUser)
+		warnIfAppRoleWritesConsoleTables(ctx, db.DB, log)
+	}
+
 	// Fail fast if the DB schema is behind the migrations shipped with this
 	// binary — otherwise every request touching a not-yet-migrated column 500s
 	// (a silent, total outage). Refuse to start with an actionable message
@@ -204,6 +221,7 @@ func run() int {
 	// Repositories
 	// ==========================================================================
 	repos := NewRepositories(db)
+	repos.UseAdminDB(adminDB)
 	// New organizations get the deployment's region, fixed for their life.
 	repos.Tenant.SetDefaultRegion(cfg.App.Region)
 	repos.InitIntegrationExtensions(db)

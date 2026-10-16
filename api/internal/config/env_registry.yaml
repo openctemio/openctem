@@ -230,6 +230,17 @@ vars:
     type: string
     default: "openctem"
     description: "Database name."
+  - name: DB_ADMIN_PASSWORD
+    component: api
+    group: "Database (PostgreSQL)"
+    type: string
+    secret: true
+    description: "Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`."
+  - name: DB_ADMIN_USER
+    component: api
+    group: "Database (PostgreSQL)"
+    type: string
+    description: "Role the platform console's identity tables (administrators, console sessions and credentials, the platform identity provider) are written with, through a second small pool. The least-privilege bootstrap (`admin_user`) creates it and takes write on those tables away from `DB_USER`. Unset: one role, as before."
   - name: DB_PASSWORD
     component: api
     group: "Database (PostgreSQL)"
