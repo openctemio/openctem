@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
+import { safeHref } from '@/lib/safe-href'
 import { EmptyState, ErrorState } from '@/features/shared'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { useOrganizationLimits } from '../api/use-organization-limits'
@@ -66,7 +67,9 @@ export function OrganizationLimitsUsage() {
   const denied = data.denied_features ?? []
   // The service operator's account page (ACCOUNT_PORTAL_URL), sent only when
   // configured and a limit applies; only an https link is rendered.
-  const portalURL = data.account_portal_url?.startsWith('https://') ? data.account_portal_url : ''
+  const portalURL = data.account_portal_url?.startsWith('https://')
+    ? (safeHref(data.account_portal_url, { allowRelative: false }) ?? '')
+    : ''
 
   return (
     <div className="space-y-5">
