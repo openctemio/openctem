@@ -131,7 +131,6 @@ tenant, kind, canonical status, closure reason or key;
 `lifecycle_scheme_version_guard()` (trigger
 `trg_lifecycle_scheme_versions_immutable`) keeps a published or superseded
 lifecycle version unchanged.
-||||||| 2b746737c
 
 ## Finding decision review functions
 
