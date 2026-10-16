@@ -241,7 +241,7 @@
   "org.onboarding.invitedBy": "{name} mời bạn với vai trò {role}",
   "org.onboarding.invitedAs": "Được mời với vai trò {role}",
   "org.onboarding.accept": "Chấp nhận",
-  "org.onboarding.yourCompany": "Công ty của bạn trên OpenCTEM",
+  "org.onboarding.yourCompany": "Công ty của bạn trên {product}",
   "org.onboarding.yourCompanyDesc": "Tổ chức này đã xác minh tên miền email của bạn và cho phép đồng nghiệp tham gia.",
   "org.onboarding.join": "Tham gia",
   "org.onboarding.askToJoin": "Xin tham gia",
