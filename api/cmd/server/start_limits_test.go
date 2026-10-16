@@ -94,4 +94,9 @@ func TestRequireSelfServiceStartLimits_WithSignupService(t *testing.T) {
 	if err := run(config.SignupModeOpen, signupdom.CeilingOpen, broken); err == nil {
 		t.Fatal("an unreadable sign-up policy under open must refuse to start")
 	}
+	// Fail closed both ways: with sign-up not open the stored policy is
+	// still read, and an unreadable one refuses the start too.
+	if err := run(config.SignupModeDisabled, signupdom.CeilingDisabled, broken); err == nil {
+		t.Fatal("an unreadable sign-up policy under a non-open mode must refuse to start")
+	}
 }
