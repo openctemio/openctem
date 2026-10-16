@@ -268,5 +268,7 @@
   "org.joinRequests.approved": "Request approved",
   "org.joinRequests.rejected": "Request rejected",
   "org.joinRequests.failed": "Could not decide the request",
-  "org.joinRequests.expiry": "Requests expire after 30 days."
+  "org.joinRequests.expiry": "Requests expire after 30 days.",
+  "org.region.new": "Data region: {region}. It is fixed for the organization once created.",
+  "org.region.current": "Data region: {region} (fixed)"
 }
