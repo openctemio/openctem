@@ -41,6 +41,9 @@ var (
 	// sign-up policy does not admit (signup.Admit). The caller has written
 	// nothing; the answer is the same whatever the reason.
 	ErrSignupNotAvailable = errors.New("sign-up is not available")
+	// ErrTeamURLNotAvailable: the organization URL (slug) cannot be used,
+	// whether another organization has it or it is reserved.
+	ErrTeamURLNotAvailable = fmt.Errorf("%w: this team URL is not available; choose another", shared.ErrValidation)
 	// ErrTenantCreationDisabled: the admin_only sign-up policy is in force, so only the
 	// platform administrator creates organizations (RFC-022).
 	ErrTenantCreationDisabled   = errors.New("organization creation is reserved for the application administrator")
@@ -1873,7 +1876,9 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to check slug existence: %w", err)
 	}
 	if slugExists {
-		return nil, fmt.Errorf("%w: team URL '%s' is already taken", shared.ErrValidation, input.TeamSlug)
+		// One answer for a taken and a reserved URL: it says nothing about
+		// which organizations exist.
+		return nil, ErrTeamURLNotAvailable
 	}
 
 	// Create tenant
