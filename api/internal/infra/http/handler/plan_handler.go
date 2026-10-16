@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -130,26 +129,8 @@ func (h *PlanHandler) UpdateDefaults(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toPlanDefaultsResponse(d, v))
 }
 
-func (h *PlanHandler) confirmStepUp(w http.ResponseWriter, r *http.Request, actor *admin.AdminUser, code, purpose string) bool {
-	code = strings.TrimSpace(code)
-	if code == "" {
-		apierror.New(http.StatusUnauthorized, codeStepUpRequired, "Enter a code from your authenticator to confirm the change").WriteJSON(w)
-		return false
-	}
-	if err := h.stepUp.StepUp(r.Context(), actor, code, purpose, clientInfo(r)); err != nil {
-		switch {
-		case errors.Is(err, admin.ErrStepUpUnavailable):
-			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
-				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
-		case errors.Is(err, admin.ErrInvalidMFACode):
-			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
-		default:
-			h.logger.Error("plan step-up", "error", err)
-			apierror.InternalServerError("could not verify the code").WriteJSON(w)
-		}
-		return false
-	}
-	return true
+func (h *PlanHandler) confirmStepUp(w http.ResponseWriter, r *http.Request, _ *admin.AdminUser, code, purpose string) bool {
+	return confirmAdminStepUp(w, r, h.stepUp, code, purpose, h.logger)
 }
 
 // PlanSummaryResponse is an organization's plan, limits and usage.
@@ -336,6 +317,7 @@ func PlanLimitMessage(lim *plan.ErrLimitReached) string {
 		plan.Seats: "seats", plan.Assets: "assets", plan.Sensors: "sensors", plan.APIKeys: "API keys",
 		plan.CITrusts: "CI trust configurations", plan.InvitesPerDay: "invitations a day",
 		plan.FreeTeamsPerUser: "Free organizations per person", plan.Findings: "findings",
+		plan.PlatformScansPerDay: "shared sensor scans a day", plan.PlatformScansConcurrent: "shared sensor jobs at a time",
 	}[lim.Key]
 	if label == "" {
 		label = string(lim.Key)

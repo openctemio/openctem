@@ -270,7 +270,7 @@ func TestShouldUsePlatformSensor(t *testing.T) {
 		{"explicit platform, allowed, public: platform", stubSelector{false, true}, scan.SensorPreferencePlatform, false, public, true, false},
 	}
 	for _, tc := range cases {
-		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop(), zoneResolver: publicResolver{}}
+		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop(), zoneResolver: publicResolver{}, sharedLimits: noLimits{}}
 		sc := testScan("nuclei")
 		sc.SensorPreference = tc.pref
 		if tc.group {
@@ -402,7 +402,7 @@ func TestDecideSensorRouting(t *testing.T) {
 		{"tenant", stubSelector{false, true}, scan.SensorPreferenceTenant, false, []string{"a.example.com"}, sensorRoutingTenant, false, false},
 	}
 	for _, tc := range cases {
-		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop(), zoneResolver: publicResolver{}}
+		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop(), zoneResolver: publicResolver{}, sharedLimits: noLimits{}}
 		sc := testScan("nuclei")
 		sc.SensorPreference = tc.pref
 		if tc.group {
