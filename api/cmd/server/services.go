@@ -1566,6 +1566,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationTask.SetDataScope(s.DataScope)
 	s.RemediationTask.SetAssigneeChecker(repos.AccessControl)
 	s.RemediationTask.SetAuditLogger(s.Audit)
+	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
+	// own findings, proof-of-fix queued) behind the abuse guard.
+	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
