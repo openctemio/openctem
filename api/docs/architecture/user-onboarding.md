@@ -247,8 +247,8 @@ another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 
 ### Leave an organization
 
-`POST /api/v1/organization/leave` (any member, the organization of the
-credential) runs the same offboarding an administrator runs: API keys
+`POST /api/v1/organization/leave` (any member, step-up, the organization of
+the credential) runs the same offboarding an administrator runs: API keys
 revoked, groups, grants, engagements and roles stripped, the membership kept
 as a tombstone. The only active owner is refused (transfer ownership or
 delete the organization first); someone who still owns assignable work is
@@ -274,6 +274,17 @@ without an administrator). Audited `member.left`; administrators notified.
   an undeliverable unique email, password, second factor, federated
   identities, sessions, refresh tokens and API keys removed or revoked. The
   users row and every foreign key stay, so history remains readable.
+
+The erasure claims the request first (`claimed_at`): a sign-in after the
+claim no longer cancels it, and one before leaves nothing to claim. A failed
+offboarding stops that account's erasure and the next run retries; a failed
+session revoke at request time fails the request and undoes it. An owner
+among several is offboarded too (the erasure runs only while another active
+owner remains).
+
+**What stays.** Audit rows keep the actor's name and email as they were
+recorded (the audit trail is evidence; it is not rewritten). The users row
+keeps its id so foreign keys and history stay valid.
 
 `GET /api/v1/me/account/deletion` reports whether a deletion is pending.
 Audited: `account.deletion_requested`, `account.deletion_canceled`,

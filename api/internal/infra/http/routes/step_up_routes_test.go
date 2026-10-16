@@ -87,6 +87,7 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/tenants/acme",
 	// Deleting one's own account (RFC-104).
 	"DELETE /api/v1/me/account",
+	"POST /api/v1/organization/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
 	"POST /api/v1/organization/members/{id}/erase",

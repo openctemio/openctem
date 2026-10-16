@@ -138,6 +138,62 @@ func TestAccountDeletionAndLeave(t *testing.T) {
 		t.Fatal("the request is removed once the account is erased")
 	}
 
+	// Cancel vs erase: a sign-in after the erasure claimed the request does
+	// not cancel it; a sign-in before leaves nothing to claim.
+	co := createTestUser(t, db, "co-"+stamp+"@acctdel.example", "Co")
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM users WHERE id = $1`, co.String()) })
+	join(org, co, tenantdom.RoleOwner) // a second owner: may delete their account
+	if _, err := svc.Request(ctx, co, auditapp.AuditContext{}); err != nil {
+		t.Fatalf("a co-owner may delete their account: %v", err)
+	}
+	_, _ = db.Exec(`UPDATE account_deletions SET erase_after = NOW() - interval '1 minute' WHERE user_id = $1`, co.String())
+	if ok, err := deletions.Claim(ctx, co, time.Now()); err != nil || !ok {
+		t.Fatalf("claim: %v %v", ok, err)
+	}
+	svc.CancelOnSignIn(ctx, co)
+	if _, err := svc.Status(ctx, co); err != nil {
+		t.Fatalf("a claimed request is not canceled by signing in: %v", err)
+	}
+
+	// A failed offboarding stops that account's erasure; the next run
+	// retries and finishes it (the owner among several is offboarded too).
+	failing := accountdeletion.NewService(deletions, failingOffboarder{}, sessions, nil, tenant.ErasedUserLabel, logger.NewNop())
+	if n, _ := failing.EraseDue(ctx); n != 0 {
+		t.Fatalf("a failed offboarding must not erase, erased %d", n)
+	}
+	var coEmail string
+	_ = db.QueryRow(`SELECT email FROM users WHERE id = $1`, co.String()).Scan(&coEmail)
+	if strings.HasSuffix(coEmail, "@erased.invalid") {
+		t.Fatal("the account must not be erased after a failed offboarding")
+	}
+	if n, err := svc.EraseDue(ctx); err != nil || n != 1 {
+		t.Fatalf("the next run erases: %d %v", n, err)
+	}
+	if m, _ := repo.GetMembership(ctx, co, org); !m.IsOffboarded() {
+		t.Fatal("the co-owner's membership is offboarded")
+	}
+
+	// A sign-in before the claim cancels; the erasure then has nothing.
+	early := createTestUser(t, db, "early-"+stamp+"@acctdel.example", "Early")
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM users WHERE id = $1`, early.String()) })
+	if _, err := svc.Request(ctx, early, auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Exec(`UPDATE account_deletions SET erase_after = NOW() - interval '1 minute' WHERE user_id = $1`, early.String())
+	svc.CancelOnSignIn(ctx, early)
+	if n, _ := svc.EraseDue(ctx); n != 0 {
+		t.Fatalf("a canceled request is never erased, erased %d", n)
+	}
+
+	// A failed session revoke fails the request, which is undone.
+	broken := accountdeletion.NewService(deletions, tsvc, failingSessions{}, nil, tenant.ErasedUserLabel, logger.NewNop())
+	if _, err := broken.Request(ctx, early, auditapp.AuditContext{}); err == nil {
+		t.Fatal("a failed session revoke must fail the request")
+	}
+	if _, err := svc.Status(ctx, early); !errors.Is(err, accountdeletion.ErrNotScheduled) {
+		t.Fatal("a failed request leaves no deletion pending")
+	}
+
 	// A member leaves on their own: offboarded, the owner stays.
 	if err := tsvc.LeaveOrganization(ctx, org, leaver, auditapp.AuditContext{ActorEmail: "leaver"}); err != nil {
 		t.Fatalf("leave: %v", err)
@@ -148,4 +204,16 @@ func TestAccountDeletionAndLeave(t *testing.T) {
 	if err := tsvc.LeaveOrganization(ctx, other, leaver, auditapp.AuditContext{}); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("leaving an organization one is not in answers not found, got %v", err)
 	}
+}
+
+type failingOffboarder struct{}
+
+func (failingOffboarder) DeprovisionMemberForAccountErasure(context.Context, string, auditapp.AuditContext) error {
+	return errors.New("offboarding failed")
+}
+
+type failingSessions struct{}
+
+func (failingSessions) RevokeAllSessions(context.Context, string, string) error {
+	return errors.New("session store down")
 }
