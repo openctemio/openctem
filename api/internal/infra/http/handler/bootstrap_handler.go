@@ -105,6 +105,10 @@ type BootstrapBadges struct {
 	// EASMReview is the external-surface review queue (needs review and
 	// candidates), as GET /easm/candidates reports in `total`.
 	EASMReview *int `json:"easm_review,omitempty"`
+	// PendingApprovals is the finding approval requests waiting for a
+	// decision under the caller's data scope, as GET /approvals reports in
+	// `status_counts.pending`. Only for approvers (findings:approve).
+	PendingApprovals *int `json:"pending_approvals,omitempty"`
 }
 
 // BootstrapSession supplies the session parts of the bootstrap. Each source
@@ -119,6 +123,10 @@ type BootstrapSession struct {
 	// EASMReviewCount is EASMHandler.ReviewCount (nil when the review queue
 	// is not wired).
 	EASMReviewCount func(ctx context.Context, tenantID shared.ID) (int, error)
+	// PendingApprovalCount is the pending count of GET /approvals for the
+	// request's caller (data scope from ctx); nil when approvals are not
+	// wired.
+	PendingApprovalCount func(ctx context.Context, tenantID shared.ID) (int, error)
 	// TenantCreationMode reports the current organization policy (the sign-up
 	// policy when it is configured, else the configured mode).
 	TenantCreationMode func(ctx context.Context) string
@@ -467,6 +475,26 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			}
 			mu.Lock()
 			resp.LimitsApply = applies
+			mu.Unlock()
+		})
+	}
+	// Only approvers see the inbox badge (the web asks for it only with
+	// findings:approve), and only with the findings module on. The count
+	// comes from the same service call as GET /approvals, with this
+	// request's context, so a restricted member counts only approvals for
+	// findings in their data scope.
+	if h.session.PendingApprovalCount != nil &&
+		middleware.HasPermission(ctx, permission.FindingsApprove.String()) &&
+		resp.Modules != nil && slices.Contains(resp.Modules.ModuleIDs, module.ModuleFindings) {
+		run(func() {
+			n, err := h.session.PendingApprovalCount(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: pending approval count unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			badges.PendingApprovals = &n
+			hasBadg = true
 			mu.Unlock()
 		})
 	}
