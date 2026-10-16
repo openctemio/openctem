@@ -161,3 +161,59 @@ func TestFindingApprovals_NotifyEligibleApprovers_DB(t *testing.T) {
 		t.Fatalf("AI proposal recipients %v, want %v", got, want)
 	}
 }
+
+// Requests made by VEX statements in one report are announced once per
+// approver: the count and titles cover only the findings in that approver's
+// data scope, an approver who can see none of them is not told, and another
+// organization's members never are.
+func TestFindingApprovals_VEXRequestsBatchedPerApprover_DB(t *testing.T) {
+	rec := &approvalNoticeRecorder{}
+	h := newFindingApprovalHarness(t, withDataScope, func(svc *finding.VulnerabilityService, _ *handler.VulnerabilityHandler, db *postgres.DB) {
+		svc.SetApprovalNotifier(postgres.NewScopeActorRepository(db), rec, rec, "https://console.example.com")
+	})
+	org, other := h.tenantWithFindings(), h.tenantWithFindings()
+	owner := h.member(org, "owner")
+	scoped, blind := h.member(org, "member"), h.member(org, "member")
+	otherOwner := h.member(other, "owner")
+	h.customRoleMember(scoped, org, permission.FindingsApprove, permission.FindingsRead)
+	h.customRoleMember(blind, org, permission.FindingsApprove, permission.FindingsRead)
+	f1, a1 := h.scopedFinding(org)
+	f2, _ := h.scopedFinding(org)
+	f3, _ := h.scopedFinding(org)
+	h.exec(`UPDATE findings SET title = 'finding ' || id::text WHERE tenant_id = $1`, org)
+	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`, scoped.id, org, a1)
+
+	ids := []shared.ID{shared.MustIDFromString(f1), shared.MustIDFromString(f2), shared.MustIDFromString(f3)}
+	h.svc.NotifyVEXRequests(context.Background(), shared.MustIDFromString(org), ids)
+
+	got := map[string]string{}
+	for _, p := range rec.inApp {
+		got[p.AudienceID.String()] = p.Title
+		if p.TenantID.String() != org || p.URL != "/findings/approvals" {
+			t.Fatalf("notice: %+v", p)
+		}
+	}
+	if len(rec.inApp) != 2 {
+		t.Fatalf("notices %d, want 2 (owner, in-scope approver): %v", len(rec.inApp), got)
+	}
+	if !strings.HasPrefix(got[owner.id], "3 ") || !strings.HasPrefix(got[scoped.id], "1 ") {
+		t.Fatalf("counts per approver: %v", got)
+	}
+	if _, told := got[blind.id]; told {
+		t.Fatal("an approver who can see none of the findings was told")
+	}
+	if _, told := got[otherOwner.id]; told {
+		t.Fatal("another organization's owner was told")
+	}
+	// The in-scope approver's email names only their finding.
+	for i, to := range rec.emails {
+		if len(to) == 1 && to[0] == emailOf(scoped) {
+			if !strings.Contains(rec.bodies[i], f1) || strings.Contains(rec.bodies[i], f2) || strings.Contains(rec.bodies[i], f3) {
+				t.Fatalf("in-scope approver's email: %s", rec.bodies[i])
+			}
+		}
+	}
+	if len(rec.emails) != 2 {
+		t.Fatalf("emails %d, want one per told approver", len(rec.emails))
+	}
+}
