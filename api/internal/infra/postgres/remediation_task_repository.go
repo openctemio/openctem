@@ -164,7 +164,7 @@ func (r *RemediationTaskRepository) GetTask(ctx context.Context, tenantID, taskI
 
 // GetAction returns an action of the tenant.
 func (r *RemediationTaskRepository) GetAction(ctx context.Context, tenantID, actionID shared.ID) (*remediation.Action, error) {
-	const q = `SELECT id, tenant_id, action_key, kind, title, fix_spec, origin, created_by, created_at, updated_at
+	const q = `SELECT id, tenant_id, action_key, kind, title, fix_spec, origin, auto_join, created_by, created_at, updated_at
 		FROM remediation_actions WHERE tenant_id = $1 AND id = $2`
 	var (
 		a               remediation.Action
@@ -173,7 +173,7 @@ func (r *RemediationTaskRepository) GetAction(ctx context.Context, tenantID, act
 		createdBy       sql.NullString
 	)
 	err := r.db.QueryRowContext(ctx, q, tenantID.String(), actionID.String()).Scan(
-		&id, &tid, &a.Key, &a.Kind, &a.Title, &spec, &origin, &createdBy, &a.CreatedAt, &a.UpdatedAt)
+		&id, &tid, &a.Key, &a.Kind, &a.Title, &spec, &origin, &a.AutoJoin, &createdBy, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: remediation action not found", shared.ErrNotFound)
 	}
