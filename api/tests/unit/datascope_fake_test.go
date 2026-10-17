@@ -61,3 +61,50 @@ func (tenantAssets) AssetIDsVisible(_ context.Context, _, _ shared.ID, ids []sha
 func (tenantAssets) FindingIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	return ids, nil
 }
+
+// scopeRowsFromMock is a datascope.Repository whose scope rows come from a
+// mockAccessControlRepo: an asset is in scope when the mock's CanAccessAsset
+// says so (one call per check). It has no full-data roles and hides nothing.
+type scopeRowsFromMock struct{ ac *mockAccessControlRepo }
+
+func (m scopeRowsFromMock) AssetIDsInScope(ctx context.Context, _ shared.ID, userID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	var out []shared.ID
+	for _, id := range ids {
+		ok, err := m.ac.CanAccessAsset(ctx, userID, id)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+func (scopeRowsFromMock) FindingAssetID(context.Context, shared.ID, shared.ID) (shared.ID, error) {
+	return shared.ID{}, shared.ErrNotFound
+}
+
+func (scopeRowsFromMock) HasFullDataRole(context.Context, shared.ID, shared.ID) (bool, error) {
+	return false, nil
+}
+
+func (scopeRowsFromMock) FindingIDsInScope(context.Context, shared.ID, shared.ID, []shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+
+func (scopeRowsFromMock) AssetIDsInTenant(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}
+
+func (scopeRowsFromMock) HasHiddenAssets(context.Context, shared.ID, shared.ID) (bool, error) {
+	return false, nil
+}
+
+func (scopeRowsFromMock) AssetIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}
+
+func (scopeRowsFromMock) FindingIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, nil
+}

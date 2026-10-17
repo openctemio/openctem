@@ -427,13 +427,30 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 	return result, nil
 }
 
+// dashboardScope returns the SQL predicate builder and extra arguments of a
+// dashboard query that numbers its own placeholders: in(col) is "col is in the
+// caller's data scope" (TRUE without a scope), args follow the query's own
+// arguments, first is the first free $N. The scope uses $first and $first+1.
+func dashboardScope(scope *shared.DataScope, first int) (in func(col string) string, args []any) {
+	if scope == nil {
+		return func(string) string { return "TRUE" }, nil
+	}
+	_, args = dataScopeCondAt("x", scope, first)
+	return func(col string) string {
+		c, _ := dataScopeCondAt(col, scope, first)
+		return c
+	}, args
+}
+
 // GetRiskVelocity returns new vs resolved findings per week for trending analysis.
 // A fix counts in the week of its resolved_at, never of a later edit (updated_at).
 // Positive velocity = losing ground, negative = improving.
-func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]module.RiskVelocityPoint, error) {
+func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, weeks int) ([]module.RiskVelocityPoint, error) {
 	if weeks < 1 {
 		weeks = 12
 	}
+	// A non-nil scope counts only findings on the viewer's in-scope assets.
+	inScope, scopeArgs := dashboardScope(scope, 3)
 	query := `WITH weeks AS (
 		SELECT generate_series(
 			date_trunc('week', NOW() - ($2::int || ' weeks')::interval),
@@ -447,11 +464,11 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 		COALESCE(SUM(CASE WHEN f.resolved_at >= w.week_start AND f.resolved_at < w.week_start + '1 week'::interval
 			AND ` + vulnerability.RemediatedSQL("f") + ` THEN 1 ELSE 0 END), 0) as resolved_count
 	FROM weeks w
-	LEFT JOIN findings f ON f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + `
+	LEFT JOIN findings f ON f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + inScope("f.asset_id") + `
 	GROUP BY w.week_start
 	ORDER BY w.week_start`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), weeks)
+	rows, err := r.db.QueryContext(ctx, query, append([]any{tenantID.String(), weeks}, scopeArgs...)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get risk velocity: %w", err)
 	}
@@ -610,7 +627,16 @@ func attachScoringChanges(points []module.RiskTrendPoint, changes []module.Scori
 
 // GetDataQualityScorecard computes data quality metrics for a tenant.
 // Uses a single CTE query for efficiency.
-func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*module.DataQualityScorecard, error) {
+func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*module.DataQualityScorecard, error) {
+	// A non-nil scope scores only the viewer's in-scope assets and their
+	// findings; the merge log is not asset-scoped, so a scoped viewer's
+	// deduplication rate is not reported (0).
+	inScope, scopeArgs := dashboardScope(scope, 2)
+	dedupSQL := `SELECT COUNT(*) AS merge_count
+			FROM asset_merge_log WHERE tenant_id = $1`
+	if scope != nil {
+		dedupSQL = `SELECT 0::bigint AS merge_count`
+	}
 	query := `
 		WITH asset_stats AS (
 			SELECT
@@ -628,17 +654,16 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 					ORDER BY EXTRACT(epoch FROM NOW() - last_seen) / 3600.0
 				) FILTER(WHERE last_seen IS NOT NULL), 0) AS median_last_seen_age_hours,
 				COUNT(*) FILTER(WHERE last_seen IS NOT NULL AND last_seen < NOW() - INTERVAL '30 days') AS stale_count
-			FROM assets WHERE deleted_at IS NULL AND tenant_id = $1` + programAssetExcl(ctx, "") + `
+			FROM assets WHERE deleted_at IS NULL AND tenant_id = $1` + programAssetExcl(ctx, "") + ` AND ` + inScope("assets.id") + `
 		),
 		finding_stats AS (
 			SELECT
 				COUNT(*) AS total,
 				COUNT(*) FILTER(WHERE metadata IS NOT NULL AND metadata != '{}'::jsonb) AS with_evidence
-			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
 		),
 		dedup_stats AS (
-			SELECT COUNT(*) AS merge_count
-			FROM asset_merge_log WHERE tenant_id = $1
+			` + dedupSQL + `
 		)
 		SELECT
 			CASE WHEN a.total > 0 THEN a.with_owner * 100.0 / a.total ELSE 0 END,
@@ -654,7 +679,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 
 	var sc module.DataQualityScorecard
 	var assetTotal, findingTotal int
-	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	err := r.db.QueryRowContext(ctx, query, append([]any{tenantID.String()}, scopeArgs...)...).Scan(
 		&sc.AssetOwnershipPct,
 		&sc.FindingEvidencePct,
 		&sc.MedianLastSeenDays,
@@ -674,9 +699,17 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 }
 
 // GetExecutiveSummary returns executive-level metrics for a time period using CTEs.
-func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*module.ExecutiveSummary, error) {
+func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*module.ExecutiveSummary, error) {
 	if days <= 0 || days > 365 {
 		days = 30
+	}
+	// A non-nil scope counts only findings on the viewer's in-scope assets, and
+	// the assets themselves; the stored risk history is tenant-wide, so a
+	// scoped viewer gets no score change.
+	inScope, scopeArgs := dashboardScope(scope, 3)
+	prevRisk := ""
+	if scope != nil {
+		prevRisk = " AND FALSE"
 	}
 
 	query := `
@@ -691,41 +724,41 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 				COUNT(*) FILTER (WHERE priority_class = 'P1') AS p1,
 				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached
 			FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + vulnerability.OpenStatusSQL("status") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.OpenStatusSQL("status") + `
 		),
 		resolved_in_period AS (
 			SELECT severity, priority_class, resolved_at, first_detected_at
 			FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
 				AND ` + vulnerability.RemediatedSQL("") + `
 				AND resolved_at >= NOW() - ($2::int || ' days')::interval
 		),
 		total_resolved AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + vulnerability.RemediatedSQL("") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.RemediatedSQL("") + `
 		),
 		regressions AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND is_regression = true
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND is_regression = true
 			  AND last_reopened_at >= NOW() - ($2::int || ' days')::interval
 		),
 		new_in_period AS (
 			SELECT id FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND created_at >= NOW() - ($2::int || ' days')::interval
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND created_at >= NOW() - ($2::int || ' days')::interval
 		),
 		risk_score AS (
 			-- Average over SCORED assets only (risk_score > 0), matching the
 			-- risk-trend risk_score_avg (risk_snapshots) so the executive hero
 			-- number equals the trend's latest point. prev_risk below reads that
 			-- same filtered snapshot average, keeping risk_score_change consistent.
-			SELECT COALESCE(AVG(risk_score) FILTER (WHERE risk_score > 0), 0) AS current_score FROM assets WHERE deleted_at IS NULL AND tenant_id = $1` + programAssetExcl(ctx, "") + `
+			SELECT COALESCE(AVG(risk_score) FILTER (WHERE risk_score > 0), 0) AS current_score FROM assets WHERE deleted_at IS NULL AND tenant_id = $1` + programAssetExcl(ctx, "") + ` AND ` + inScope("assets.id") + `
 		),
 		prev_risk AS (
 			-- Oldest risk_snapshots row within the window; used to compute
 			-- risk_score_change (current asset-avg risk vs start-of-period snapshot).
 			SELECT risk_score_avg AS prev_score
 			FROM risk_snapshots
-			WHERE tenant_id = $1
+			WHERE tenant_id = $1` + prevRisk + `
 				AND snapshot_date >= (CURRENT_DATE - ($2::int || ' days')::interval)::date
 			ORDER BY snapshot_date ASC
 			LIMIT 1
@@ -733,7 +766,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		crown_jewels AS (
 			SELECT COUNT(DISTINCT a.id) AS cnt
 			FROM assets a
-			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + `
+			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + inScope("f.asset_id") + `
 				AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
@@ -774,7 +807,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	}
 
 	var totalResolved int
-	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
+	err := r.db.QueryRowContext(ctx, query, append([]any{tenantID.String(), days}, scopeArgs...)...).Scan(
 		&summary.RiskScoreCurrent,
 		&summary.RiskScoreChange,
 		&summary.FindingsTotal,
@@ -804,18 +837,19 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	// Top 5 risks: open findings ordered by priority class, EPSS score.
 	// title is nullable (most scanner findings only carry a message); scanning
 	// a NULL into a string failed the whole summary with a 500.
+	topIn, topArgs := dashboardScope(scope, 2)
 	topQuery := `
 		SELECT f.id::text, COALESCE(f.title, '') AS title, f.severity, COALESCE(f.priority_class, 'P3') AS priority_class,
 			COALESCE(f.asset_id::text, '') AS asset_id,
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
-		WHERE f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		WHERE f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + topIn("f.asset_id") + ` AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		ORDER BY f.priority_class ASC NULLS LAST, f.epss_score DESC NULLS LAST
 		LIMIT 5
 	`
 
-	rows, err := r.db.QueryContext(ctx, topQuery, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, topQuery, append([]any{tenantID.String()}, topArgs...)...)
 	if err != nil {
 		return nil, fmt.Errorf("executive summary top risks: %w", err)
 	}
@@ -919,10 +953,12 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 }
 
 // GetProcessMetrics computes process efficiency metrics for a tenant.
-func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*module.ProcessMetrics, error) {
+func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*module.ProcessMetrics, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
+	// A non-nil scope measures only the viewer's in-scope assets and findings.
+	inScope, scopeArgs := dashboardScope(scope, 3)
 	query := `
 		WITH approval_stats AS (
 			SELECT
@@ -931,18 +967,19 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 			FROM finding_status_approvals
 			WHERE tenant_id = $1 AND status IN ('approved','rejected')
 			AND created_at >= NOW() - ($2 || ' days')::interval
+			AND EXISTS (SELECT 1 FROM findings sf WHERE sf.tenant_id = $1 AND sf.id = finding_status_approvals.finding_id AND ` + inScope("sf.asset_id") + `)
 		),
 		stale_stats AS (
 			SELECT
 				COUNT(*) FILTER(WHERE last_seen < NOW() - INTERVAL '7 days') AS stale,
 				COUNT(*) AS total
-			FROM assets WHERE deleted_at IS NULL AND tenant_id = $1` + programAssetExcl(ctx, "") + ` AND status != 'archived'
+			FROM assets WHERE deleted_at IS NULL AND tenant_id = $1` + programAssetExcl(ctx, "") + ` AND status != 'archived' AND ` + inScope("assets.id") + `
 		),
 		assign_stats AS (
 			SELECT
 				COUNT(*) FILTER(WHERE assigned_to IS NULL AND ` + vulnerability.OpenStatusSQL("status") + `) AS unassigned,
 				COALESCE(AVG(EXTRACT(epoch FROM assigned_at - created_at) / 3600) FILTER(WHERE assigned_at IS NOT NULL), 0) AS avg_assign_hours
-			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + `
 			AND created_at >= NOW() - ($2 || ' days')::interval
 		)
 		SELECT
@@ -955,7 +992,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 		FROM approval_stats a, stale_stats s, assign_stats as2
 	`
 	var m module.ProcessMetrics
-	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
+	err := r.db.QueryRowContext(ctx, query, append([]any{tenantID.String(), days}, scopeArgs...)...).Scan(
 		&m.ApprovalAvgHours, &m.ApprovalCount,
 		&m.RetestAvgHours, &m.RetestCount,
 		&m.StaleAssets, &m.StaleAssetsPct,
