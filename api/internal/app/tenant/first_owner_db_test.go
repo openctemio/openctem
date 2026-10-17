@@ -304,9 +304,24 @@ func TestCreateFirstOwner_SuspendedOwnerByRoleBlocksBootstrap(t *testing.T) {
 		VALUES ($1, $2, $3, 'admin', 'suspended', now())`, uuid.NewString(), u.ID().String(), org); err != nil {
 		t.Fatalf("seed member: %v", err)
 	}
-	if _, err := e.db.Exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, '00000000-0000-0000-0000-000000000001')`,
+	// An owner role row without the owner membership can no longer be
+	// written (database trigger); plant it the way old data has it.
+	admin := testdb.OpenAdmin(t)
+	tx, err := admin.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`SET LOCAL session_replication_role = replica`); err != nil {
+		_ = tx.Rollback()
+		t.Skipf("cannot bypass triggers (needs a superuser): %v", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, '00000000-0000-0000-0000-000000000001')`,
 		u.ID().String(), org); err != nil {
+		_ = tx.Rollback()
 		t.Fatalf("seed owner role: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
 	}
 	_, err = svc.CreateFirstOwner(context.Background(), org, e.email(), "", platformAdminActor)
 	if !errors.Is(err, tenantdom.ErrOrganizationHasOwner) {

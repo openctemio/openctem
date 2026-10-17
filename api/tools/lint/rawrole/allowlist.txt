@@ -1,0 +1,9 @@
+# SQL that reads tenant_members.role, the raw membership label, on purpose.
+# Format: path:Func  reason (path relative to the api module)
+#
+# Authorization decisions (who is an owner, an admin, an approver, a
+# recipient) read v_user_effective_role instead. This list only shrinks:
+# TestNoRawMembershipRoleReads fails on a new raw read AND on an entry that no
+# longer matches anything.
+internal/infra/postgres/ownership_transfer_repository.go:checkSingleOwner  invariant check after a transfer: compares the label and the owner role row on purpose, so a leftover mismatch refuses the transfer instead of passing
+internal/infra/controller/role_sync.go:RoleSyncController.Reconcile  repairs the owner role row from the owner label (the label is the writer side); it is the only place that goes label to role
