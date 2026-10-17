@@ -16,10 +16,12 @@ export default function ConnectedAppsPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Your AI applications</CardTitle>
+        <CardTitle>{t('mcp.myConnections.title', 'Your AI applications')}</CardTitle>
         <CardDescription>
-          Applications you allowed to read data in this organization as you. They lose access when
-          you disconnect them or when your own access changes.
+          {t(
+            'mcp.myConnections.description',
+            'Applications you allowed to work with this organization’s data as you. They lose access when you disconnect them or when your own access changes.'
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -27,9 +29,9 @@ export default function ConnectedAppsPage() {
           connections={data?.data}
           isLoading={isLoading}
           onRevoke={revokeMyConnection}
-          emptyTitle="No connected applications"
+          emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}
           emptyDescription={t(
-            'settings.connectedApps.empty',
+            'mcp.myConnections.empty',
             'When you connect an AI assistant to {product}, it appears here.'
           )}
         />
