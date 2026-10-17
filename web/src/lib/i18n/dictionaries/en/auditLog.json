@@ -1,0 +1,4 @@
+{
+  "auditLog.needsFullData.title": "Full data access required",
+  "auditLog.needsFullData.description": "The organization audit log names assets and findings, so it needs full data access. Ask an administrator to widen your data access."
+}

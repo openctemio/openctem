@@ -51,6 +51,8 @@ import { toast } from 'sonner'
 import { canonicalAuditMetadataKey, canonicalAuditResourceType } from '@/lib/api/audit-types'
 import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { useTranslation } from '@/context/i18n-provider'
+import { ApiClientError } from '@/lib/api/error-handler'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
@@ -105,6 +107,7 @@ function ResultBadge({ result }: { result: AuditResult }) {
 }
 
 export default function AuditLogPage() {
+  const { t } = useTranslation()
   // Permission check
   const hasAuditPermission = useHasPermission(Permission.AuditRead)
 
@@ -162,7 +165,15 @@ export default function AuditLogPage() {
   const { logs, total, isLoading, isError, error, mutate } = useAuditLogs(
     hasAuditPermission ? activeFilters : undefined
   )
-  const { stats, isLoading: statsLoading } = useAuditStats()
+  // A restricted data scope may read only its own activity: the API answers 403
+  // with details.required. Show that as an access state, not a load failure, and
+  // skip the stats call (it would be refused the same way).
+  const needsFullData =
+    isError &&
+    error instanceof ApiClientError &&
+    error.statusCode === 403 &&
+    !!error.details?.required
+  const { stats, isLoading: statsLoading } = useAuditStats(!needsFullData)
 
   const columns = useMemo<ColumnDef<AuditLog>[]>(
     () => [
@@ -359,33 +370,41 @@ export default function AuditLogPage() {
       <Main>
         <PageHeader title="Audit log" description="Activity history and security events." />
 
-        <MetricStrip
-          className="mt-5"
-          loading={statsLoading}
-          items={[
-            { key: 'total', label: 'Events (7 days)', value: stats?.total_logs ?? 0 },
-            {
-              key: 'success',
-              label: 'Successful',
-              value: stats?.logs_by_result?.success ?? 0,
-            },
-            {
-              key: 'failure',
-              label: 'Failed',
-              value: stats?.logs_by_result?.failure ?? 0,
-              tone: 'danger',
-            },
-            {
-              key: 'denied',
-              label: 'Denied',
-              value: stats?.logs_by_result?.denied ?? 0,
-              tone: 'danger',
-            },
-          ]}
-        />
+        {!needsFullData && (
+          <MetricStrip
+            className="mt-5"
+            loading={statsLoading}
+            items={[
+              { key: 'total', label: 'Events (7 days)', value: stats?.total_logs ?? 0 },
+              {
+                key: 'success',
+                label: 'Successful',
+                value: stats?.logs_by_result?.success ?? 0,
+              },
+              {
+                key: 'failure',
+                label: 'Failed',
+                value: stats?.logs_by_result?.failure ?? 0,
+                tone: 'danger',
+              },
+              {
+                key: 'denied',
+                label: 'Denied',
+                value: stats?.logs_by_result?.denied ?? 0,
+                tone: 'danger',
+              },
+            ]}
+          />
+        )}
 
         <div className="mt-5">
-          {isError && !isLoading ? (
+          {needsFullData ? (
+            <EmptyState
+              icon={ShieldX}
+              title={t('auditLog.needsFullData.title')}
+              description={t('auditLog.needsFullData.description')}
+            />
+          ) : isError && !isLoading ? (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Failed to load audit logs</AlertTitle>
