@@ -463,11 +463,29 @@ func (r *TenantRepository) GetMembership(ctx context.Context, userID shared.ID, 
 		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by,
 		       m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.expiry_reason, m.suspended_reason
 		FROM tenant_members m
-		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		INNER JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1 AND m.tenant_id = $2
 	`
 
 	return r.scanMembership(r.db.QueryRowContext(ctx, query, userID.String(), tenantID.String()))
+}
+
+// MembershipLabel returns the raw tenant_members.role label of a member. Only
+// the owner-role drift check uses it: every other decision reads the effective
+// role (tools/lint/rawrole).
+func (r *TenantRepository) MembershipLabel(ctx context.Context, tenantID, userID shared.ID) (string, error) {
+	var label string
+	err := r.db.QueryRowContext(ctx,
+		"SELECT role FROM tenant_members WHERE tenant_id = $1 AND user_id = $2",
+		tenantID.String(), userID.String(),
+	).Scan(&label)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", shared.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("read membership label: %w", err)
+	}
+	return label, nil
 }
 
 // GetMembershipByID retrieves a membership by ID.
@@ -684,7 +702,7 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 		       m.status, m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.suspended_reason
 		FROM tenants t
 		INNER JOIN tenant_members m ON t.id = m.tenant_id
-		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		INNER JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1 AND m.status <> 'offboarded'
 		ORDER BY m.joined_at DESC
 	`
@@ -1196,10 +1214,10 @@ func (r *TenantRepository) GetUserSuspendedMemberships(ctx context.Context, user
 			t.id,
 			t.slug,
 			t.name,
-			COALESCE(ver.role, m.role) as effective_role
+			ver.role as effective_role
 		FROM tenant_members m
 		INNER JOIN tenants t ON t.id = m.tenant_id
-		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		INNER JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1
 		  AND m.status = 'suspended'
 		ORDER BY m.suspended_at DESC NULLS LAST, m.joined_at DESC
@@ -1245,11 +1263,11 @@ func (r *TenantRepository) GetUserMembershipsWithStatus(
 			t.id,
 			t.slug,
 			t.name,
-			COALESCE(ver.role, m.role) as effective_role,
+			ver.role as effective_role,
 			COALESCE(m.status, 'active') as status
 		FROM tenant_members m
 		INNER JOIN tenants t ON t.id = m.tenant_id
-		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		INNER JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1
 		ORDER BY
 		    CASE WHEN m.status = 'suspended' THEN m.suspended_at ELSE m.joined_at END DESC NULLS LAST
@@ -1299,10 +1317,10 @@ func (r *TenantRepository) GetUserMemberships(ctx context.Context, userID shared
 			t.id,
 			t.slug,
 			t.name,
-			COALESCE(ver.role, m.role) as effective_role
+			ver.role as effective_role
 		FROM tenant_members m
 		INNER JOIN tenants t ON t.id = m.tenant_id
-		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		INNER JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1
 		  AND m.status = 'active'
 		ORDER BY m.joined_at DESC

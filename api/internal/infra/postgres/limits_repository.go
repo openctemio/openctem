@@ -276,7 +276,9 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 func (r *LimitsRepository) CountOwnedTenants(ctx context.Context, userID shared.ID) (int, error) {
 	var n int
 	err := r.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM tenant_members WHERE user_id = $1 AND role = 'owner' AND status = 'active'`,
+		SELECT count(*) FROM tenant_members m
+		JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.user_id = $1 AND ver.role = 'owner' AND m.status = 'active'`,
 		userID.String()).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("count owned organizations: %w", err)

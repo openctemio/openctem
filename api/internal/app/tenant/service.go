@@ -824,9 +824,19 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, err
 	}
 
-	// Prevent changing owner role
+	// Prevent changing owner role. The one exception is an owner role row held
+	// without the owner membership (planted before system roles were limited to
+	// the membership routes): the real owner may remove it (drift).
+	drift := false
 	if membership.IsOwner() {
-		return nil, fmt.Errorf("%w: the owner's role changes only by a transfer: use Transfer ownership on the Members page", shared.ErrValidation)
+		var derr error
+		drift, derr = s.authorizeOwnerDriftRemoval(ctx, membership, actx)
+		if derr != nil {
+			return nil, derr
+		}
+		if !drift {
+			return nil, fmt.Errorf("%w: the owner's role changes only by a transfer: use Transfer ownership on the Members page", shared.ErrValidation)
+		}
 	}
 	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
 		return nil, err
@@ -877,8 +887,17 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, err
 	}
 
+	// UpdateMembership swaps the member's system role rows (the drifted owner
+	// row included) and the label in one transaction.
 	if err := s.repo.UpdateMembership(ctx, membership); err != nil {
 		return nil, fmt.Errorf("failed to update member role: %w", err)
+	}
+	if drift {
+		s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionOwnerRoleDriftRemoved, audit.ResourceTypeMembership, membershipID).
+			WithChanges(audit.NewChanges().Set("role", oldRole, input.Role)).
+			WithSeverity(audit.SeverityCritical).
+			WithMetadata("user_id", membership.UserID().String()).
+			WithMessage(fmt.Sprintf("Owner role without the owner membership removed; member is now %s", input.Role)))
 	}
 
 	// The change swaps the user's system role in user_roles: drop the cached

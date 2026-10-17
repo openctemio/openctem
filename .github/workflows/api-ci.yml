@@ -206,6 +206,11 @@ jobs:
       - name: Security Gates (tenantless SQL guard)
         run: go test ./tools/lint/tenantsql/... -count=1
 
+      # No new SQL that decides from the raw tenant_members.role label: read
+      # v_user_effective_role (shrink-only allowlist).
+      - name: Security Gates (raw membership role guard)
+        run: go test ./tools/lint/rawrole/... -count=1
+
       - name: Security Gates (sensor vocabulary guard)
         run: go test ./tools/lint/sensorvocab/... -count=1
 

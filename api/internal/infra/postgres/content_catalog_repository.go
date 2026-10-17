@@ -855,7 +855,9 @@ func (r *ContentCatalogRepository) RevokePrivate(ctx context.Context, tenantID *
 // ListAdmins returns the organization's active owners and administrators.
 func (r *ContentCatalogRepository) ListAdmins(ctx context.Context, tenantID shared.ID) ([]shared.ID, error) {
 	rows, err := r.q.QueryContext(ctx, `
-		SELECT user_id FROM tenant_members WHERE tenant_id = $1 AND role IN ('owner', 'admin') AND status = 'active' ORDER BY user_id LIMIT 200`, tenantID)
+		SELECT m.user_id FROM tenant_members m
+		JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.tenant_id = $1 AND ver.role IN ('owner', 'admin') AND m.status = 'active' ORDER BY m.user_id LIMIT 200`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list content catalog administrators: %w", err)
 	}
