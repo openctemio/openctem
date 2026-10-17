@@ -68,12 +68,12 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 			status, error_message,
 			created_at, expires_at, acknowledged_at, started_at, completed_at,
 			result, scheduled_at, schedule_id, scan_run_step_id,
-			is_platform_job, platform_sensor_id,
+			is_platform_job,
 			auth_token_hash, auth_token_prefix, auth_token_expires_at,
 			queue_priority, queued_at, dispatch_attempts, scan_zone_id,
 			host_keys, dispatch_gate
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -95,7 +95,6 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 		nullIDString(cmd.ScheduleID),
 		nullIDString(cmd.StepRunID),
 		cmd.IsPlatformJob,
-		nullIDString(cmd.PlatformSensorID),
 		nullString(cmd.AuthTokenHash),
 		nullString(cmd.AuthTokenPrefix),
 		nullTime(cmd.AuthTokenExpiresAt),
@@ -121,6 +120,17 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 func (r *CommandRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*command.Command, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
+	return r.scanCommand(row)
+}
+
+// GetHeldSharedJobForPlatform returns the shared job (is_platform_job) commandID that
+// sensorID holds (commands.sensor_id), in whatever tenant it belongs to: a
+// shared sensor has no tenant, so the tenant is read from the command row
+// and never supplied by the caller. Not found for a tenant job, a job held by
+// another sensor, or an unknown id (docs/rfcs/RFC-100-shared-sensors.md §8).
+func (r *CommandRepository) GetHeldSharedJobForPlatform(ctx context.Context, sensorID, commandID shared.ID) (*command.Command, error) {
+	query := r.selectQuery() + " WHERE id = $1 AND sensor_id = $2 AND is_platform_job = TRUE"
+	row := r.db.QueryRowContext(ctx, query, commandID.String(), sensorID.String())
 	return r.scanCommand(row)
 }
 
@@ -240,11 +250,20 @@ func fairPendingQuery(selectSQL, where string, limit int) string {
 }
 
 // pendingReadyPredicate keeps a command that is waiting and due: pending, not
-// expired, and not scheduled for later.
+// expired, not scheduled for later, and queued for the organization's own
+// sensors (tenantJobPredicate).
 const pendingReadyPredicate = `commands.status = 'pending'
 		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
+		AND ` + tenantJobPredicate + `
 		AND ` + scheduledDuePredicate + `
 		AND ` + hostFreePredicate
+
+// tenantJobPredicate keeps a command that an organization's own sensor may
+// take: never one queued for shared sensors (is_platform_job). The routing
+// decision that sent a job to shared sensors is final; the tenant poll, the
+// doorbell, the batch claim and the claim by id must not override it, and a
+// sensor row of the tenant flagged as shared is no exception here.
+const tenantJobPredicate = `NOT COALESCE(commands.is_platform_job, FALSE)`
 
 // scheduledDuePredicate keeps a command that is not scheduled for later: a
 // job deferred to its scan window's next opening (window_hold.go) is not
@@ -525,6 +544,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		    lease_expires_at = NOW() + make_interval(secs => $4)
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 		  AND (sensor_id IS NULL OR sensor_id = $3)
+		  AND ` + tenantJobPredicate + `
 		  AND ` + zoneClaimPredicate("$3") + `
 		  AND ` + toolClaimPredicate("$3") + `
 		  AND ` + capabilityClaimPredicate(claimSensorCapabilities) + `
@@ -726,10 +746,10 @@ func (r *CommandRepository) Update(ctx context.Context, cmd *command.Command) er
 		    status = $6, error_message = $7,
 		    expires_at = $8, acknowledged_at = $9, started_at = $10, completed_at = $11,
 		    result = $12, scheduled_at = $13, schedule_id = $14,
-		    is_platform_job = $15, platform_sensor_id = $16,
-		    auth_token_hash = $17, auth_token_prefix = $18, auth_token_expires_at = $19,
-		    queue_priority = $20, queued_at = $21, dispatch_attempts = $22
-		WHERE id = $1 AND tenant_id = $23
+		    is_platform_job = $15,
+		    auth_token_hash = $16, auth_token_prefix = $17, auth_token_expires_at = $18,
+		    queue_priority = $19, queued_at = $20, dispatch_attempts = $21
+		WHERE id = $1 AND tenant_id = $22
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -748,7 +768,6 @@ func (r *CommandRepository) Update(ctx context.Context, cmd *command.Command) er
 		nullTime(cmd.ScheduledAt),
 		nullIDString(cmd.ScheduleID),
 		cmd.IsPlatformJob,
-		nullIDString(cmd.PlatformSensorID),
 		nullString(cmd.AuthTokenHash),
 		nullString(cmd.AuthTokenPrefix),
 		nullTime(cmd.AuthTokenExpiresAt),
@@ -793,7 +812,7 @@ func (r *CommandRepository) selectQuery() string {
 		       status, error_message,
 		       created_at, expires_at, acknowledged_at, started_at, completed_at,
 		       result, scheduled_at, schedule_id, scan_run_step_id,
-		       is_platform_job, platform_sensor_id,
+		       is_platform_job,
 		       auth_token_hash, auth_token_prefix, auth_token_expires_at,
 		       queue_priority, queued_at, dispatch_attempts, scan_zone_id,
 		       lease_epoch, lease_expires_at, dispatch_gate
@@ -836,9 +855,6 @@ func (r *CommandRepository) buildWhereClause(filter command.Filter) (string, []a
 		conditions = append(conditions, fmt.Sprintf("is_platform_job = $%d", len(args)))
 	}
 
-	// OSS Edition: PlatformSensorID filter not supported
-	// if filter.PlatformSensorID != nil { ... }
-
 	if len(conditions) == 0 {
 		return "", nil
 	}
@@ -866,7 +882,6 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		scheduleID         sql.NullString
 		stepRunID          sql.NullString
 		isPlatformJob      bool
-		platformSensorID   sql.NullString
 		authTokenHash      sql.NullString
 		authTokenPrefix    sql.NullString
 		authTokenExpiresAt sql.NullTime
@@ -899,7 +914,6 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		&scheduleID,
 		&stepRunID,
 		&isPlatformJob,
-		&platformSensorID,
 		&authTokenHash,
 		&authTokenPrefix,
 		&authTokenExpiresAt,
@@ -969,11 +983,6 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		cmd.StepRunID = &srid
 	}
 
-	if platformSensorID.Valid {
-		paid, _ := shared.IDFromString(platformSensorID.String)
-		cmd.PlatformSensorID = &paid
-	}
-
 	if authTokenHash.Valid {
 		cmd.AuthTokenHash = authTokenHash.String
 	}
@@ -1022,7 +1031,6 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		scheduleID         sql.NullString
 		stepRunID          sql.NullString
 		isPlatformJob      bool
-		platformSensorID   sql.NullString
 		authTokenHash      sql.NullString
 		authTokenPrefix    sql.NullString
 		authTokenExpiresAt sql.NullTime
@@ -1055,7 +1063,6 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		&scheduleID,
 		&stepRunID,
 		&isPlatformJob,
-		&platformSensorID,
 		&authTokenHash,
 		&authTokenPrefix,
 		&authTokenExpiresAt,
@@ -1120,11 +1127,6 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 	if stepRunID.Valid {
 		srid, _ := shared.IDFromString(stepRunID.String)
 		cmd.StepRunID = &srid
-	}
-
-	if platformSensorID.Valid {
-		paid, _ := shared.IDFromString(platformSensorID.String)
-		cmd.PlatformSensorID = &paid
 	}
 
 	if authTokenHash.Valid {
@@ -1246,7 +1248,6 @@ func (r *CommandRepository) CountQueuedPlatformJobsByTenant(ctx context.Context,
 		WHERE tenant_id = $1
 		AND is_platform_job = TRUE
 		AND status = 'pending'
-		AND platform_sensor_id IS NULL
 	`
 	var count int
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count)
@@ -1263,7 +1264,6 @@ func (r *CommandRepository) CountQueuedPlatformJobs(ctx context.Context) (int, e
 		FROM commands
 		WHERE is_platform_job = TRUE
 		AND status = 'pending'
-		AND platform_sensor_id IS NULL
 	`
 	var count int
 	err := r.db.QueryRowContext(ctx, query).Scan(&count)
@@ -1278,7 +1278,6 @@ func (r *CommandRepository) GetQueuedPlatformJobs(ctx context.Context, limit int
 	query := r.selectQuery() + `
 		WHERE is_platform_job = TRUE
 		AND status = 'pending'
-		AND platform_sensor_id IS NULL
 		ORDER BY queue_priority DESC, queued_at ASC
 		LIMIT $1
 	`
@@ -1304,51 +1303,6 @@ func (r *CommandRepository) GetQueuedPlatformJobs(ctx context.Context, limit int
 	return commands, nil
 }
 
-// GetNextPlatformJob atomically claims the next job from the queue for a sensor.
-// Uses database function get_next_platform_job for atomic operation with FOR UPDATE SKIP LOCKED.
-func (r *CommandRepository) GetNextPlatformJob(ctx context.Context, sensorID shared.ID, capabilities []string, tools []string) (*command.Command, error) {
-	query := `SELECT * FROM get_next_platform_job($1, $2, $3)`
-
-	var (
-		commandID    sql.NullString
-		tenantID     sql.NullString
-		commandType  sql.NullString
-		payload      []byte
-		queuedAt     sql.NullTime
-		authTokenPfx sql.NullString
-	)
-
-	err := r.db.QueryRowContext(ctx, query,
-		sensorID.String(),
-		capabilities,
-		tools,
-	).Scan(&commandID, &tenantID, &commandType, &payload, &queuedAt, &authTokenPfx)
-
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // No job available
-		}
-		return nil, fmt.Errorf("failed to get next platform job: %w", err)
-	}
-
-	// If no job found, database function returns NULL
-	if !commandID.Valid {
-		return nil, nil
-	}
-
-	// Fetch the full command object, in the tenant the queue function claimed
-	// it for (commands.tenant_id is NOT NULL).
-	id, err := shared.IDFromString(commandID.String)
-	if err != nil {
-		return nil, fmt.Errorf("platform job returned an invalid command id: %w", err)
-	}
-	tid, err := shared.IDFromString(tenantID.String)
-	if err != nil {
-		return nil, fmt.Errorf("platform job %s returned an invalid tenant id: %w", id, err)
-	}
-	return r.GetByTenantAndID(ctx, tid, id)
-}
-
 // UpdateQueuePriorities recalculates queue priorities for all pending platform jobs.
 func (r *CommandRepository) UpdateQueuePriorities(ctx context.Context) (int64, error) {
 	query := `
@@ -1356,7 +1310,6 @@ func (r *CommandRepository) UpdateQueuePriorities(ctx context.Context) (int64, e
 		SET queue_priority = calculate_queue_priority(priority, queued_at, tenant_id)
 		WHERE is_platform_job = TRUE
 		AND status = 'pending'
-		AND platform_sensor_id IS NULL
 	`
 
 	result, err := r.db.ExecContext(ctx, query)
@@ -1407,6 +1360,12 @@ func (r *CommandRepository) FindQueueExpiredPlatformJobs(ctx context.Context, ma
 		AND status = 'pending'
 		AND queued_at IS NOT NULL
 		AND queued_at < NOW() - ($1 || ' minutes')::INTERVAL
+		-- A shared job a lease loss, a release or a refusal put back waits
+		-- the limit again from then (its last 'requeued' event).
+		AND NOT EXISTS (
+			SELECT 1 FROM command_events e
+			WHERE e.command_id = commands.id AND e.event = 'requeued'
+			  AND e.created_at >= NOW() - ($1 || ' minutes')::INTERVAL)
 		ORDER BY queued_at ASC
 		LIMIT 100
 	`
@@ -1445,13 +1404,11 @@ func (r *CommandRepository) ExpireIfUnchanged(ctx context.Context, cmd *command.
 		WHERE id = $1 AND tenant_id = $2
 		  AND status = $4
 		  AND sensor_id IS NOT DISTINCT FROM $5
-		  AND platform_sensor_id IS NOT DISTINCT FROM $6
-		  AND expires_at IS NOT DISTINCT FROM $7
-		  AND queued_at IS NOT DISTINCT FROM $8`,
+		  AND expires_at IS NOT DISTINCT FROM $6
+		  AND queued_at IS NOT DISTINCT FROM $7`,
 		cmd.ID.String(), cmd.TenantID.String(), errorMessage,
 		string(cmd.Status),
 		nullIDString(cmd.SensorID),
-		nullIDString(cmd.PlatformSensorID),
 		nullTime(cmd.ExpiresAt),
 		nullTime(cmd.QueuedAt),
 	)
@@ -1474,14 +1431,12 @@ func (r *CommandRepository) GetQueuePosition(ctx context.Context, commandID shar
 			FROM commands
 			WHERE is_platform_job = TRUE
 			AND status = 'pending'
-			AND platform_sensor_id IS NULL
 		),
 		total AS (
 			SELECT COUNT(*) as total_count
 			FROM commands
 			WHERE is_platform_job = TRUE
 			AND status = 'pending'
-			AND platform_sensor_id IS NULL
 		)
 		SELECT r.position, t.total_count, r.queue_priority
 		FROM ranked r, total t
@@ -1553,7 +1508,7 @@ func (r *CommandRepository) ListPlatformJobsAdmin(ctx context.Context, sensorID,
 
 	if sensorID != nil {
 		args = append(args, sensorID.String())
-		conditions = append(conditions, fmt.Sprintf("platform_sensor_id = $%d", len(args)))
+		conditions = append(conditions, fmt.Sprintf("sensor_id = $%d", len(args)))
 	}
 
 	if tenantID != nil {
@@ -1604,7 +1559,7 @@ func (r *CommandRepository) ListPlatformJobsAdmin(ctx context.Context, sensorID,
 
 // GetPlatformJobsBySensor lists platform jobs assigned to a sensor.
 func (r *CommandRepository) GetPlatformJobsBySensor(ctx context.Context, sensorID shared.ID, status *command.CommandStatus) ([]*command.Command, error) {
-	query := r.selectQuery() + " WHERE platform_sensor_id = $1 AND is_platform_job = TRUE"
+	query := r.selectQuery() + " WHERE sensor_id = $1 AND is_platform_job = TRUE"
 	args := []any{sensorID.String()}
 
 	if status != nil {

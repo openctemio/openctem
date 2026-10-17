@@ -312,6 +312,11 @@ type Handlers struct {
 	// SSOChange lists and decides admin-console SSO changes that wait for an
 	// owner's approval (RFC-022). nil if SAML/SSO is not initialized.
 	SSOChange *handler.SSOChangeHandler
+	// SupportAccess is the organization side of support access (RFC-063):
+	// grants, revocation, the active list. nil if not initialized.
+	SupportAccess *handler.SupportAccessHandler
+	// AdminSupport is the console side of support access (RFC-063).
+	AdminSupport *handler.AdminSupportHandler
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
@@ -628,9 +633,11 @@ func Register(
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerSharedSensorsSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
+	registerOrganizationSupportAccessRoutes(router, h.SupportAccess, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
@@ -765,7 +772,7 @@ func Register(
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationTask != nil {
-		registerRemediationTaskRoutes(router, h.RemediationTask, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationSuggest != nil {
 		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
@@ -1322,6 +1329,9 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	if dataScopeGuardMiddleware != nil {
 		middlewares = append(middlewares, dataScopeGuardMiddleware)
 	}
+	// The caller's fresh permissions for rules decided in services (a
+	// finding lifecycle move that needs a permission).
+	middlewares = append(middlewares, middleware.PermissionCheckContext())
 	return middlewares
 }
 

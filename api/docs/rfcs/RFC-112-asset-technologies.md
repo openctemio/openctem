@@ -58,10 +58,16 @@ fixed list the console can group and filter on.
    header needs a probe that reports response headers and a rule; neither exists yet, and a technology
    probe that does not mention a header is not evidence that it is missing.
 7. **Existing data.** A migration copies each asset's `properties.technologies` into
-   `asset_technologies` (one `INSERT ... SELECT`, no lock on `assets`). A backfill controller then,
-   tenant by tenant in batches of 500: classifies the copied rows, removes component links that ingest
-   no longer creates (technology links without a version or CPE, and non-software categories), and
-   removes the retired key with the tags that were exact copies of its values.
+   `asset_technologies` (one `INSERT ... SELECT`, no lock on `assets`). A backfill controller then
+   classifies the copied rows, removes the retired key (tags are left alone: a tag carries no origin, so
+   a person's tag cannot be told from one the old converter added; new reports no longer create them)
+   and removes component links that ingest no longer creates, tenant by tenant in batches of 500, without long locks. Only a technology link with no usable version (`CleanVersion` is
+   empty) and no CPE is ever removed; a versioned or CPE-backed link stays whatever its category, and
+   the delete statement repeats that rule. A link that is an end of a dependency edge is skipped. Every
+   deleted link is recorded in `asset_technology_backfill_removed`. The first run is report-only
+   (`ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY`, default `true`): it logs the count and a sample of the links
+   it would remove and deletes nothing; an operator sets it to `false` to enforce, and tenants that
+   were only reported are processed again.
 
 ## 4. API
 
@@ -94,7 +100,7 @@ fixed list the console can group and filter on.
 `asset_technologies (tenant_id, asset_id, name_key, name, version, category, confidence, source,
 first_seen, last_seen)`, primary key `(tenant_id, asset_id, name_key)`, foreign key to the asset
 (cascade), indexes on `(tenant_id, name_key)` and `(tenant_id, category)`. An asset merge keeps the
-kept asset's row for a name. `asset_technology_backfill` records the tenants the backfill has done.
+kept asset's row for a name. `asset_technology_backfill` records the tenants the backfill has done (and whether removal was enforced); `asset_technology_backfill_removed` records each deleted link.
 
 ## 7. Console
 

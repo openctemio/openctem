@@ -225,6 +225,9 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin        *postgres.AdminRepository
 	SignupPolicy *postgres.SignupPolicyRepository
+	JoinRequest  *postgres.JoinRequestRepository
+	// AccountDeletion: self-service account deletions (RFC-104).
+	AccountDeletion *postgres.AccountDeletionRepository
 	// PlatformSetting stores the other console settings (RFC-079).
 	PlatformSetting *postgres.PlatformSettingRepository
 	ScanPolicy      *postgres.ScanPolicyRepository
@@ -233,9 +236,15 @@ type Repositories struct {
 	Plan            *postgres.PlanRepository
 	IdleLifecycle   *postgres.IdleLifecycleRepository
 	AdminAuditLog   *postgres.AuditLogRepository
-	AdminOrg        *postgres.AdminOrganizationRepository
-	AdminConsole    *postgres.AdminConsoleRepository
-	PlatformIdP     *postgres.PlatformIdPRepository
+	// SupportAccess stores support grants and sessions; SupportRead is the
+	// read model a support session sees (RFC-063).
+	SupportAccess *postgres.SupportAccessRepository
+	SupportRead   *postgres.SupportReadRepository
+	AdminOrg      *postgres.AdminOrganizationRepository
+	AdminConsole  *postgres.AdminConsoleRepository
+	PlatformIdP   *postgres.PlatformIdPRepository
+	// AdminDB is the pool of the console's identity tables (UseAdminDB).
+	AdminDB *postgres.DB
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -308,6 +317,9 @@ type Repositories struct {
 	FindingEvidence         *postgres.FindingEvidenceRepository
 	FindingSLARestart       *postgres.FindingSLARestartRepository
 	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
+	// FindingMaterialChange: standing decisions for the material-change
+	// controller (RFC-111).
+	FindingMaterialChange *postgres.FindingMaterialChangeRepository
 
 	// Runtime-telemetry reads for Stage-4 detection correlation
 	// (migration 000203)
@@ -528,6 +540,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:           postgres.NewAdminRepository(db),
 		SignupPolicy:    postgres.NewSignupPolicyRepository(db),
+		JoinRequest:     postgres.NewJoinRequestRepository(db),
+		AccountDeletion: postgres.NewAccountDeletionRepository(db),
 		PlatformSetting: postgres.NewPlatformSettingRepository(db),
 		ScanPolicy:      postgres.NewScanPolicyRepository(db),
 		ScanApproval:    postgres.NewScanApprovalRepository(db),
@@ -535,6 +549,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Plan:            postgres.NewPlanRepository(db),
 		IdleLifecycle:   postgres.NewIdleLifecycleRepository(db),
 		AdminAuditLog:   postgres.NewAuditLogRepository(db),
+		SupportAccess:   postgres.NewSupportAccessRepository(db),
+		SupportRead:     postgres.NewSupportReadRepository(db),
 		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:    postgres.NewAdminConsoleRepository(db),
 		PlatformIdP:     postgres.NewPlatformIdPRepository(db),
@@ -594,6 +610,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
 		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
 		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),
+		FindingMaterialChange:   postgres.NewFindingMaterialChangeRepository(db),
 
 		// Runtime-telemetry reads for detection correlation (migration 000203).
 		TelemetryProbe: postgres.NewTelemetryProbeRepository(db),
@@ -617,4 +634,23 @@ func newRepositories(db *postgres.DB) *Repositories {
 func (r *Repositories) InitIntegrationExtensions(db *postgres.DB) {
 	r.IntegrationSCMExt = postgres.NewIntegrationSCMExtensionRepository(db, r.Integration)
 	r.IntegrationNotificationExt = postgres.NewIntegrationNotificationExtensionRepository(db, r.Integration)
+}
+
+// UseAdminDB moves the repositories of the platform console's identity tables
+// (admin_users, admin_credentials, admin_sessions, the platform identity
+// provider and its login states) to adminDB, the DB_ADMIN_USER pool. With one
+// pool it is the same database handle.
+func (r *Repositories) UseAdminDB(adminDB *postgres.DB) {
+	r.AdminDB = adminDB
+	r.Admin = postgres.NewAdminRepository(adminDB)
+	r.AdminConsole = postgres.NewAdminConsoleRepository(adminDB)
+	r.PlatformIdP = postgres.NewPlatformIdPRepository(adminDB)
+}
+
+// adminDBOf is the console identity pool, or db when none was set up.
+func adminDBOf(r *Repositories, db *postgres.DB) *postgres.DB {
+	if r != nil && r.AdminDB != nil {
+		return r.AdminDB
+	}
+	return db
 }

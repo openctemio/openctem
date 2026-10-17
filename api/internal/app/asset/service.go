@@ -1963,7 +1963,7 @@ func (s *AssetService) CreateRepositoryAssetWithOutcome(ctx context.Context, inp
 		return nil, nil, none, fmt.Errorf("%w: repository extension repository not configured", shared.ErrInternal)
 	}
 
-	s.logger.Info("creating repository asset", "name", input.Name, "fullName", input.FullName)
+	s.logger.Info("creating repository asset", "name", logger.SanitizeValue(input.Name), "fullName", logger.SanitizeValue(input.FullName))
 
 	criticality, err := assetdom.ParseCriticality(input.Criticality)
 	if err != nil {
@@ -2656,7 +2656,7 @@ func (s *AssetService) updateExistingRepositoryAsset(
 	s.logger.Info("updated existing repository asset with SCM data",
 		"asset_id", existingAsset.ID().String(),
 		"name", logger.SanitizeValue(existingAsset.Name()),
-		"fullName", input.FullName,
+		"fullName", logger.SanitizeValue(input.FullName),
 	)
 
 	return existingAsset, repoExt, nil

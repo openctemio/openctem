@@ -69,9 +69,11 @@ if [[ -n "$acme_email" ]]; then
 fi
 set_value DB_SUPERUSER_PASSWORD "$(secret 24)"
 set_value DB_MIGRATE_PASSWORD "$(secret 24)"
+set_value DB_ADMIN_PASSWORD "$(secret 24)"
 set_value DB_PASSWORD "$(secret 24)"
 set_value REDIS_PASSWORD "$(secret 24)"
 set_value APP_ENCRYPTION_KEY "$(secret 32)"
+set_value FINGERPRINT_KEY "$(secret 32)"
 set_value METRICS_TOKEN "$(secret 32)"
 
 chmod 600 "$tmp"

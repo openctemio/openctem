@@ -28,12 +28,16 @@ const SEEDED: SignupPolicyResponse = {
   deployment_mode: 'open',
   self_service_locked: false,
   effective_mode: 'admin_only',
+  accounts: 'closed',
+  max_accounts: 'open',
+  effective_accounts: 'closed',
 }
 
 const LOCKED: SignupPolicyResponse = {
   ...SEEDED,
   deployment_mode: 'disabled',
   self_service_locked: true,
+  max_accounts: 'closed',
 }
 
 describe('SignupPolicyForm', () => {
@@ -50,7 +54,7 @@ describe('SignupPolicyForm', () => {
     render(<SignupPolicyForm policy={LOCKED} canEdit onSaved={vi.fn()} />)
     expect(screen.getByText(/SIGNUP_MODE: disabled/)).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /anyone who signs up/i })).toBeDisabled()
-    expect(screen.getByText(/locked by the server configuration/i)).toBeInTheDocument()
+    expect(screen.getByText(/set SIGNUP_MODE=open on the server/i)).toBeInTheDocument()
   })
 
   it('a stored policy above the ceiling shows what is in force', () => {
@@ -62,6 +66,26 @@ describe('SignupPolicyForm', () => {
       />
     )
     expect(screen.getByText(/limited by the server configuration/i)).toBeInTheDocument()
+  })
+
+  it('domain sign-up is offered up to the ceiling, and organizations need open sign-up', async () => {
+    const user = userEvent.setup()
+    render(
+      <SignupPolicyForm
+        policy={{
+          ...SEEDED,
+          deployment_mode: 'domain',
+          max_accounts: 'domain',
+          self_service_locked: true,
+        }}
+        canEdit
+        onSaved={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('radio', { name: /^anyone(?! who)/i })).toBeDisabled()
+    await user.click(screen.getByRole('radio', { name: /verified domain/i }))
+    expect(screen.getByRole('radio', { name: /anyone who signs up/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
   })
 
   it('a read-only administrator cannot change it', () => {
@@ -77,6 +101,7 @@ describe('SignupPolicyForm', () => {
     vi.mocked(saveSignupPolicy).mockResolvedValue({ ...SEEDED, mode: 'self_service', version: 2 })
     render(<SignupPolicyForm policy={SEEDED} canEdit onSaved={onSaved} />)
 
+    await user.click(screen.getByRole('radio', { name: /^anyone(?! who)/i }))
     await user.click(screen.getByRole('radio', { name: /anyone who signs up/i }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
     const confirm = screen.getByRole('button', { name: 'Confirm' })
@@ -87,6 +112,7 @@ describe('SignupPolicyForm', () => {
     await waitFor(() =>
       expect(saveSignupPolicy).toHaveBeenCalledWith({
         mode: 'self_service',
+        accounts: 'open',
         request_access: false,
         version: 1,
         totp_code: '123456',

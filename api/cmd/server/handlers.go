@@ -14,11 +14,11 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
+	"github.com/openctemio/openctem/api/internal/app/supportaccess"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -61,6 +61,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -258,6 +259,27 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
+	if svc.DomainVerify != nil {
+		tenantHandler.SetSignupDomainPolicy(svc.DomainVerify)
+		tenantHandler.SetDomainSignupPolicy(svc.DomainVerify, svc.Audit)
+		if svc.Onboarding != nil {
+			tenantHandler.SetJoinRequests(svc.Onboarding)
+		}
+		if svc.Email != nil {
+			domains, email, users := svc.DomainVerify, svc.Email, repos.User
+			tenantHandler.SetDomainCapture(func(ctx context.Context, vd *verifieddomain.VerifiedDomain) {
+				// Told once, in the background: the owner's save never waits
+				// on mail delivery.
+				go func() {
+					bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+					defer cancel()
+					if _, err := domains.NotifyCapture(bg, vd, users, email.SendDomainManagedEmail); err != nil {
+						log.Warn("domain capture notice", "error", err)
+					}
+				}()
+			})
+		}
+	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}
@@ -427,7 +449,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Core
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
-		User:   handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log),
+		User:   newUserHandler(svc, repos, v, log),
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
@@ -644,11 +666,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			log),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
-		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
+		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
-		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
+		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
-		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
 			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
@@ -683,7 +705,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Platform scanning: the shared platform sensors as a service the
 		// tenant may use, never the sensors themselves.
 		PlatformScanning: handler.NewPlatformScanningHandler(
-			sensor.NewPlatformScanningService(repos.Sensor, app.PlatformSensorsAllowed), log),
+			sensor.NewPlatformScanningService(repos.Sensor, svc.SharedSensorsAllowed).
+				WithEgress(svc.SharedSensorsEgress), log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
@@ -706,7 +729,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
-	wireFindingApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
+	wireFindingApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).
 	wireScanWindowTOTP(svc)
@@ -760,6 +783,19 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	if svc.SSOChange != nil {
 		handlers.SSOChange = handler.NewSSOChangeHandler(svc.SSOChange, svc.Audit, log)
+	}
+
+	// Support access (RFC-063): owners grant, the named administrator reads
+	// through a live support session; both audit logs, owner emails.
+	if repos.SupportAccess != nil && repos.SupportRead != nil && svc.Audit != nil {
+		var mailer supportaccess.Mailer
+		if svc.Email != nil {
+			mailer = svc.Email
+		}
+		supportSvc := supportaccess.NewService(repos.SupportAccess, repos.SupportRead, repos.Admin, svc.Audit,
+			repos.AdminAuditLog, repos.Tenant, tenantNames{repo: repos.Tenant}, mailer, log)
+		handlers.SupportAccess = handler.NewSupportAccessHandler(supportSvc, log)
+		handlers.AdminSupport = handler.NewAdminSupportHandler(supportSvc, log)
 	}
 
 	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil
@@ -996,6 +1032,9 @@ func InitLocalAuthHandler(
 		log.Info("local auth handler initialized")
 		if svc.Signup != nil {
 			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
+			if svc.Onboarding != nil {
+				handlers.LocalAuth.SetOnboarding(svc.Onboarding)
+			}
 		}
 		// The same CAPTCHA as the request-access form, on registration.
 		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
@@ -1030,6 +1069,17 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 	if svc.Scope != nil {
 		svc.Scope.SetStepUpGate(gate)
+	}
+	if svc.Vulnerability != nil {
+		// Approvals whose policy tier needs a recent re-authentication.
+		svc.Vulnerability.SetStepUpGate(gate)
+	}
+	if svc.Suppression != nil {
+		svc.Suppression.SetStepUpGate(gate)
+	}
+	if svc.Group != nil {
+		// Edits of the approval policy's security pool group.
+		svc.Group.SetStepUpGate(gate)
 	}
 	if svc.Sensor != nil {
 		svc.Sensor.SetStepUpGate(gate)
@@ -1439,6 +1489,10 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	if svc.Outbox != nil {
 		ob = svc.Outbox
 	}
+	ciAlerts := cirunapp.NewAdminAlerts(admins, inApp, ob, log)
+	if repos.MemberLifecycle != nil && svc.Email != nil {
+		ciAlerts.SetEmail(repos.MemberLifecycle, svc.Email)
+	}
 	ciSvc := cirunapp.NewService(cirunapp.Deps{
 		Repo:     repos.CIRun,
 		Verifier: verifier,
@@ -1448,7 +1502,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 		Ingester: svc.Ingest,
 		Units:    repos.CIRun,
 		Audit:    audit,
-		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
+		Alerts:   ciAlerts,
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
@@ -1463,6 +1517,11 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	}
 	if repos.RepoIdentity != nil {
 		ciSvc.SetRepositoryIdentity(repos.RepoIdentity)
+	}
+	// A secret a run finds on a non-fork branch is an organization finding
+	// with a "Rotate <secret type>" task.
+	if repos.RemediationTask != nil {
+		ciSvc.SetSecretExposure(cirunapp.NewSecretExposure(repos.CIRun, repos.RemediationTask, log))
 	}
 	// A GitLab merge request run's baseline is its target branch as GitLab
 	// reports it through the organization's connection.
@@ -1493,7 +1552,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
-	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)); fp != nil {
+	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())); fp != nil {
 		runner.SetSecretKeys(fp)
 	}
 	// VEX documents a run uploads: stored on the run repository's findings,
@@ -1620,6 +1679,9 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, rc
 	if rc != nil {
 		s.SetOnceStore(redis.NewWebhookDeliveryStore(rc))
 	}
+	if repos.RepoIdentity != nil {
+		s.SetRepositoryLifecycle(repos.RepoIdentity)
+	}
 	if svc.Encryptor != nil {
 		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
 	}
@@ -1693,4 +1755,13 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 		return svc.DataScope
 	}
 	return findingAccessGuard{DataScopeAsserter: svc.DataScope, findings: svc.Vulnerability}
+}
+
+// newUserHandler builds the user handler with self-service account deletion.
+func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
+	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	if svc.AccountDeletion != nil {
+		h.SetAccountDeletion(svc.AccountDeletion)
+	}
+	return h
 }

@@ -125,18 +125,57 @@ func (h *SensorControlV2Handler) Content() *SensorContentV2Handler { return h.co
 func (h *SensorControlV2Handler) HasSuppressions() bool { return h.suppressions != nil }
 
 // sensorForV2 returns the authenticated tenant sensor, or writes 401 / 403
-// scope-denied (a tenant-less platform sensor, RFC-026 §10.1) and returns nil.
+// scope-denied (a shared sensor, which has no tenant, RFC-026 §10.1) and
+// returns nil.
 func sensorForV2(w http.ResponseWriter, r *http.Request) *sensor.Sensor {
 	s := SensorFromContext(r.Context())
 	if s == nil {
 		protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
 		return nil
 	}
-	if s.TenantID == nil {
+	if s.TenantID == nil || s.IsShared() {
 		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
 		return nil
 	}
 	return s
+}
+
+// controlSensorForV2 returns the authenticated sensor for the routes a
+// shared sensor uses too (heartbeat, command claim and transitions, logs):
+// an organization sensor with its tenant, or a shared sensor (scope
+// instance, no tenant). Anything else writes 401 / 403 and returns nil.
+func controlSensorForV2(w http.ResponseWriter, r *http.Request) *sensor.Sensor {
+	s := SensorFromContext(r.Context())
+	if s == nil {
+		protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
+		return nil
+	}
+	if s.IsShared() != (s.TenantID == nil) {
+		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
+		return nil
+	}
+	return s
+}
+
+// commandTenant is the tenant a command route of sensor s runs in: an
+// organization sensor's own tenant, or, for a shared sensor, the tenant of
+// the shared job commandID it holds (read from the command; nothing the
+// sensor sends names it). A shared sensor that does not hold the command
+// gets 404 command-not-found, and ok is false.
+func (h *SensorControlV2Handler) commandTenant(w http.ResponseWriter, r *http.Request, s *sensor.Sensor, commandID string) (string, bool) {
+	if !s.IsShared() {
+		return s.TenantID.String(), true
+	}
+	cmd, err := h.commands.service.HeldSharedJob(r.Context(), s, commandID)
+	if err != nil {
+		if !errors.Is(err, shared.ErrNotFound) {
+			h.internal(w, "shared_job", err)
+			return "", false
+		}
+		protov2.NewProblem(protov2.ProblemCommandNotFound).Write(w)
+		return "", false
+	}
+	return cmd.TenantID.String(), true
 }
 
 // decodeControl reads a control-plane JSON body of at most maxBytes into v.
@@ -191,7 +230,7 @@ func (h *SensorControlV2Handler) internal(w http.ResponseWriter, route string, e
 // here only on this route (the v2 authenticator lets it through as paused)
 // and is told to pause; nothing is written for it.
 func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Request) {
-	s := sensorForV2(w, r)
+	s := controlSensorForV2(w, r)
 	if s == nil {
 		return
 	}
@@ -218,8 +257,13 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	// A shared sensor has no tenant: the answer names none.
+	var tenantID string
+	if s.TenantID != nil {
+		tenantID = s.TenantID.String()
+	}
 	resp := protov2.HeartbeatResponse{
-		SensorID: s.ID.String(), TenantID: s.TenantID.String(),
+		SensorID: s.ID.String(), TenantID: tenantID,
 		Status: protov2.HeartbeatStatusOK, Actions: []string{}, CancelCommandIDs: []string{},
 	}
 	if id.Paused {
@@ -512,7 +556,7 @@ const maxManifestDigestLen = 71
 // sensor may claim now, by the v1 poll's predicate, in the fair dispatch
 // order. With the capacity feature they come back already claimed (claim-N).
 func (h *SensorControlV2Handler) PollCommands(w http.ResponseWriter, r *http.Request) {
-	s := sensorForV2(w, r)
+	s := controlSensorForV2(w, r)
 	if s == nil {
 		return
 	}
@@ -521,14 +565,27 @@ func (h *SensorControlV2Handler) PollCommands(w http.ResponseWriter, r *http.Req
 		cmds []*commanddom.Command
 		err  error
 	)
-	if protov2.HasFeature(r.Header.Values(protov2.HeaderSensorFeatures), protov2.FeatureCapacity) {
+	capacity := protov2.HasFeature(r.Header.Values(protov2.HeaderSensorFeatures), protov2.FeatureCapacity)
+	switch {
+	case s.IsShared() && !capacity:
+		// A shared sensor only claims (claim-N): it is never shown the
+		// organizations' queued work without taking it.
+		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
+		return
+	case s.IsShared():
+		// The shared claim path: shared jobs of every organization, by the
+		// authenticated shared sensor's identity only (shared_claim.go).
+		cmds, err = h.commands.service.ClaimShared(r.Context(), command.SharedClaimInput{
+			Sensor: s, Limit: limit, ReportedFree: freeSlotsNow(s),
+		})
+	case capacity:
 		// Claim-N: the listed commands are claimed for this sensor.
 		cmds, err = h.commands.service.Claim(r.Context(), command.ClaimInput{
 			TenantID: s.TenantID.String(), SensorID: s.ID.String(),
 			Capabilities: s.EffectiveCapabilities(), Limit: limit,
 			MaxJobs: s.EffectiveMaxConcurrentJobs(), ReportedFree: freeSlotsNow(s),
 		})
-	} else {
+	default:
 		cmds, err = h.commands.service.Poll(r.Context(), command.PollInput{
 			TenantID: s.TenantID.String(), SensorID: s.ID.String(),
 			Capabilities: s.EffectiveCapabilities(), Limit: limit,
@@ -568,7 +625,7 @@ func (h *SensorControlV2Handler) CompleteCommand(w http.ResponseWriter, r *http.
 // not finish. A repeat of a release that already happened answers the
 // command as it is now.
 func (h *SensorControlV2Handler) ReleaseCommand(w http.ResponseWriter, r *http.Request) {
-	s := sensorForV2(w, r)
+	s := controlSensorForV2(w, r)
 	if s == nil {
 		return
 	}
@@ -577,12 +634,16 @@ func (h *SensorControlV2Handler) ReleaseCommand(w http.ResponseWriter, r *http.R
 		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
 		return
 	}
+	tenantID, ok := h.commandTenant(w, r, s, commandID)
+	if !ok {
+		return
+	}
 	var req protov2.ReleaseRequest
 	if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &req) {
 		return
 	}
 	res, err := h.commands.service.Release(r.Context(), command.ReleaseInput{
-		TenantID: s.TenantID.String(), SensorID: s.ID.String(), CommandID: commandID, Reason: req.Reason,
+		TenantID: tenantID, SensorID: s.ID.String(), CommandID: commandID, Reason: req.Reason,
 	})
 	if err != nil {
 		h.transitionFailed(w, "release", err)
@@ -597,7 +658,7 @@ func (h *SensorControlV2Handler) FailCommand(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Request, t command.Transition) {
-	s := sensorForV2(w, r)
+	s := controlSensorForV2(w, r)
 	if s == nil {
 		return
 	}
@@ -606,7 +667,17 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
 		return
 	}
-	in := command.TransitionInput{TenantID: s.TenantID.String(), SensorID: s.ID.String(), CommandID: commandID,
+	// A shared sensor ends a job only under the lease epoch it holds it
+	// under: it states it (results binding, RFC-100 §8).
+	if s.IsShared() && (t == command.TransitionComplete || t == command.TransitionFail) && leaseEpochHeader(r) == nil {
+		protov2.NewProblem(protov2.ProblemCommandNotFound).Write(w)
+		return
+	}
+	tenantID, ok := h.commandTenant(w, r, s, commandID)
+	if !ok {
+		return
+	}
+	in := command.TransitionInput{TenantID: tenantID, SensorID: s.ID.String(), CommandID: commandID,
 		LeaseEpoch: leaseEpochHeader(r)}
 	failCode := scanrundom.FailureCommandFailed
 	switch t {

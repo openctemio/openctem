@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -26,6 +27,8 @@ type MockSuppressionRepository struct {
 	rules map[shared.ID]*suppression.Rule
 	// matching is the number of open findings a rule matches.
 	matching int
+	// sample is what the preview lists.
+	sample []suppression.SampleFinding
 }
 
 func NewMockSuppressionRepository() *MockSuppressionRepository {
@@ -51,6 +54,10 @@ func (m *MockSuppressionRepository) Approve(_ context.Context, rule *suppression
 
 func (m *MockSuppressionRepository) CountMatchingOpenFindings(_ context.Context, _ *suppression.Rule, limit int) (int, error) {
 	return min(m.matching, limit+1), nil
+}
+
+func (m *MockSuppressionRepository) SampleMatchingOpenFindings(_ context.Context, _ *suppression.Rule, _ suppression.ScopeFilter, limit, _ int) (int, []suppression.SampleFinding, error) {
+	return min(m.matching, limit+1), m.sample, nil
 }
 
 func (m *MockSuppressionRepository) FindByID(_ context.Context, tenantID, ruleID shared.ID) (*suppression.Rule, error) {
@@ -152,6 +159,7 @@ func TestSuppressionHandler_CreateRule(t *testing.T) {
 			"name": "Test Rule",
 			"description": "Test description",
 			"suppression_type": "false_positive",
+			"reason_code": "test_or_example_code",
 			"rule_id": "sql-injection",
 			"tool_name": "semgrep"
 		}`
@@ -229,9 +237,9 @@ func TestSuppressionHandler_ListRules(t *testing.T) {
 		input := suppression.CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: suppression.SuppressionTypeFalsePositive,
-			RuleID:          "test-*",
-			RequestedBy:     userID,
+			SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-*",
+			RequestedBy: userID,
 		}
 		svc.CreateRule(context.Background(), input)
 	}
@@ -272,9 +280,9 @@ func TestSuppressionHandler_ApproveRule(t *testing.T) {
 	input := suppression.CreateRuleInput{
 		TenantID:        tenantID,
 		Name:            "Test Rule",
-		SuppressionType: suppression.SuppressionTypeFalsePositive,
-		RuleID:          "test-rule",
-		RequestedBy:     userID,
+		SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+		RuleID:      "test-rule",
+		RequestedBy: userID,
 	}
 	rule, _ := svc.CreateRule(context.Background(), input)
 	repo.matching = 2
@@ -336,9 +344,9 @@ func TestSuppressionHandler_RejectRule(t *testing.T) {
 	input := suppression.CreateRuleInput{
 		TenantID:        tenantID,
 		Name:            "Test Rule",
-		SuppressionType: suppression.SuppressionTypeFalsePositive,
-		RuleID:          "test-rule",
-		RequestedBy:     userID,
+		SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+		RuleID:      "test-rule",
+		RequestedBy: userID,
 	}
 	rule, _ := svc.CreateRule(context.Background(), input)
 
@@ -384,9 +392,9 @@ func TestSuppressionHandler_UpdateRule(t *testing.T) {
 	input := suppression.CreateRuleInput{
 		TenantID:        tenantID,
 		Name:            "Original Name",
-		SuppressionType: suppression.SuppressionTypeFalsePositive,
-		RuleID:          "test-rule",
-		RequestedBy:     userID,
+		SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+		RuleID:      "test-rule",
+		RequestedBy: userID,
 	}
 	rule, _ := svc.CreateRule(context.Background(), input)
 
@@ -452,9 +460,9 @@ func TestSuppressionHandler_DeleteRule(t *testing.T) {
 	input := suppression.CreateRuleInput{
 		TenantID:        tenantID,
 		Name:            "Test Rule",
-		SuppressionType: suppression.SuppressionTypeFalsePositive,
-		RuleID:          "test-rule",
-		RequestedBy:     userID,
+		SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+		RuleID:      "test-rule",
+		RequestedBy: userID,
 	}
 	rule, _ := svc.CreateRule(context.Background(), input)
 
@@ -500,9 +508,9 @@ func TestSuppressionHandler_ListActiveRules(t *testing.T) {
 		input := suppression.CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: suppression.SuppressionTypeFalsePositive,
-			RuleID:          "test-*",
-			RequestedBy:     userID,
+			SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-*",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(context.Background(), input)
 
@@ -594,7 +602,7 @@ func TestSuppressionHandler_PreviewRule(t *testing.T) {
 	svc := suppression.NewService(repo, nil)
 	h := handler.NewSuppressionHandler(svc, logger.NewNop())
 	rule, err := svc.CreateRule(context.Background(), suppression.CreateRuleInput{
-		TenantID: tenantID, Name: "r", SuppressionType: suppression.SuppressionTypeFalsePositive,
+		TenantID: tenantID, Name: "r", SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 		RuleID: "semgrep.sqli", RequestedBy: shared.NewID(),
 	})
 	if err != nil {
@@ -621,6 +629,30 @@ func TestSuppressionHandler_PreviewRule(t *testing.T) {
 		if resp["matching_open_findings"] != float64(42) || resp["capped"] != false ||
 			resp["limit"] != float64(suppression.MaxFindingsAppliedOnApprove) {
 			t.Fatalf("resp = %v", resp)
+		}
+	})
+
+	t.Run("examples need findings:read", func(t *testing.T) {
+		repo.matching = 1
+		repo.sample = []suppression.SampleFinding{{ID: shared.NewID(), RuleID: "semgrep.sqli", FilePath: "a.go", Severity: "high", Status: "new"}}
+		defer func() { repo.sample = nil }()
+		call := func(perms []string) []any {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/suppressions/"+rule.ID().String()+"/preview", nil)
+			req.SetPathValue("id", rule.ID().String())
+			req = withSuppressionContext(req, tenantID, shared.NewID())
+			req = req.WithContext(context.WithValue(req.Context(), middleware.FetchedPermissionsKey, perms))
+			rr := httptest.NewRecorder()
+			h.PreviewRule(rr, req)
+			var resp map[string]any
+			_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+			l, _ := resp["sample"].([]any)
+			return l
+		}
+		if got := call([]string{"suppressions:approve"}); len(got) != 0 {
+			t.Fatalf("an approver without findings:read got examples: %v", got)
+		}
+		if got := call([]string{"suppressions:approve", "findings:read"}); len(got) != 1 {
+			t.Fatalf("an approver with findings:read got %d examples, want 1", len(got))
 		}
 	})
 

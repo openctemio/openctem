@@ -39,12 +39,19 @@ var adminWriteInventory = map[string]struct {
 	why   string
 }{
 	// Sign-in steps: before a console session exists.
-	"POST /api/v1/admin/auth/session":      {signIn, "first step of the console sign-in"},
+	"POST /api/v1/admin/auth/login":        {signIn, "first step of the console sign-in"},
 	"POST /api/v1/admin/auth/mfa":          {signIn, "the TOTP step of the sign-in"},
 	"POST /api/v1/admin/auth/logout":       {signIn, "ends the caller's own session"},
 	"POST /api/v1/admin/auth/password":     {signIn, "needs the current password"},
+	"POST /api/v1/admin/auth/elevate":      {stepUpRoute, "elevates the session's role"},
+	"DELETE /api/v1/admin/auth/elevate":    {routine, "drops the session back to read-only"},
 	"POST /api/v1/admin/auth/idp/start":    {signIn, "platform identity provider sign-in"},
 	"POST /api/v1/admin/auth/idp/callback": {signIn, "platform identity provider sign-in"},
+
+	// Support access: opening a support session reads an organization's data
+	// under its grant; ending one only reduces access.
+	"POST /api/v1/admin/support/grants/{grant_id}/sessions": {stepUpRoute, "opens read access to an organization's data (its grant)"},
+	"DELETE /api/v1/admin/support/sessions/{session_id}":    {routine, "ends the caller's own support session; audited in both logs"},
 
 	// Identity and privilege of administrators.
 	"POST /api/v1/admin/administrators/":                         {stepUpRoute, "creates an administrator"},
@@ -73,6 +80,7 @@ var adminWriteInventory = map[string]struct {
 	"PATCH /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}":       {stepUpRoute, "organization sign-in trust (JIT)"},
 	"POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline":           {stepUpRoute, "re-signs an organization's audit chain"},
 	"PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy":              {stepUpRoute, "scan governance of an organization"},
+	"PUT /api/v1/admin/tenants/{tenantId}/shared-sensors":                    {stepUpRoute, "whether an organization's scans may run on shared sensors"},
 	"PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":         {stepUpRoute, "module entitlement"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":      {stepUpRoute, "module entitlement"},
 	"PUT /api/v1/admin/tenants/{tenantId}/plan":                              {routine, "limits only; audited by the service"},
@@ -90,6 +98,8 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/plan-modules/":                  {stepUpRoute, "default modules"},
 	"PUT /api/v1/admin/settings/scan-approval-policy/":          {stepUpRoute, "scan governance default"},
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":         {stepUpRoute, "platform sensor domain proof"},
+	"PUT /api/v1/admin/settings/shared-sensors/":                {stepUpRoute, "shared sensors on or off for the instance, and the default for organizations"},
+	"PUT /api/v1/admin/settings/shared-sensors/egress":          {stepUpRoute, "egress addresses every organization is told to allowlist"},
 	"PUT /api/v1/admin/program-feed/local-bundle":               {stepUpRoute, "program feed source"},
 	"POST /api/v1/admin/version-check/import":                   {stepUpRoute, "release feed trust: what the console says about releases"},
 	"POST /api/v1/admin/content-packs/":                         {stepUpRoute, "platform content pack"},

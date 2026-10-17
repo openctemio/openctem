@@ -6,7 +6,6 @@
 - Asset responses (`GET /api/v1/assets`, `/assets/{id}`, `/assets/{id}/full`) embed `technologies`
   (name, version, category): at most 20 per asset on a list, all of them on one asset.
 - `properties.technologies` and its synonym `technology` are dropped on every asset write; the
-  `asset-technology-backfill` job removes the stored key from existing assets in batches, with the
-  tags that were exact copies of those technologies (earlier recon reports added each technology as
-  a tag).
+  `asset-technology-backfill` job removes the stored key from existing assets in batches. Tags are
+  never removed (a tag carries no origin); new reports no longer add technologies as tags.
 - Upgrade note: API clients that read `properties.technologies` read `technologies` instead.
