@@ -13,11 +13,13 @@ import (
 	"time"
 
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
+	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
+	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -54,6 +56,16 @@ func initContentCatalog(cfg *config.Config, repo contentcatalog.Repository, audi
 		pv = verifier
 	}
 	return catalogapp.NewService(repo, roots, pv, versions.PlatformRelease, audit, log)
+}
+
+// contentPublishing is the private publishing wiring, nil (publishing
+// refused) without a content signing key.
+func contentPublishing(tenants *contentpackapp.Service, platform *contentpackapp.PlatformService,
+	signer *contentpackdom.Signer, slug catalogapp.TenantSlug) *catalogapp.Publishing {
+	if signer == nil {
+		return nil
+	}
+	return &catalogapp.Publishing{TenantPacks: tenants, PlatformPacks: platform, Signer: signer, Slug: slug}
 }
 
 // recordTrustOverride logs and audits (high) an operator change of the

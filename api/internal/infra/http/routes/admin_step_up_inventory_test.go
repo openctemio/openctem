@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"reflect"
 	"sort"
 	"strings"
@@ -39,12 +40,19 @@ var adminWriteInventory = map[string]struct {
 	why   string
 }{
 	// Sign-in steps: before a console session exists.
-	"POST /api/v1/admin/auth/session":      {signIn, "first step of the console sign-in"},
+	"POST /api/v1/admin/auth/login":        {signIn, "first step of the console sign-in"},
 	"POST /api/v1/admin/auth/mfa":          {signIn, "the TOTP step of the sign-in"},
 	"POST /api/v1/admin/auth/logout":       {signIn, "ends the caller's own session"},
 	"POST /api/v1/admin/auth/password":     {signIn, "needs the current password"},
+	"POST /api/v1/admin/auth/elevate":      {stepUpRoute, "elevates the session's role"},
+	"DELETE /api/v1/admin/auth/elevate":    {routine, "drops the session back to read-only"},
 	"POST /api/v1/admin/auth/idp/start":    {signIn, "platform identity provider sign-in"},
 	"POST /api/v1/admin/auth/idp/callback": {signIn, "platform identity provider sign-in"},
+
+	// Support access: opening a support session reads an organization's data
+	// under its grant; ending one only reduces access.
+	"POST /api/v1/admin/support/grants/{grant_id}/sessions": {stepUpRoute, "opens read access to an organization's data (its grant)"},
+	"DELETE /api/v1/admin/support/sessions/{session_id}":    {routine, "ends the caller's own support session; audited in both logs"},
 
 	// Identity and privilege of administrators.
 	"POST /api/v1/admin/administrators/":                         {stepUpRoute, "creates an administrator"},
@@ -97,6 +105,8 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/instance-scan-zones/{zoneId}/sensors":       {stepUpRoute, "the shared sensors that serve an instance scan zone"},
 	"PUT /api/v1/admin/instance-scan-zones/{zoneId}/organizations": {stepUpRoute, "the organizations an instance scan zone is assigned to"},
 	"PUT /api/v1/admin/settings/shared-sensors/":                   {stepUpRoute, "shared sensors on or off for the instance, and the default for organizations"},
+	"PUT /api/v1/admin/settings/shared-sensors/egress":             {stepUpRoute, "egress addresses every organization is told to allowlist"},
+	"POST /api/v1/admin/shared-sensors/enrollment-tokens":          {stepUpRoute, "shared sensor enrollment token"},
 	"PUT /api/v1/admin/settings/shared-sensor-internal-zones/":     {stepUpRoute, "whether shared sensors may scan internal zones"},
 	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":            {stepUpRoute, "shared sensor anomaly alert thresholds"},
 	"PUT /api/v1/admin/program-feed/local-bundle":                  {stepUpRoute, "program feed source"},
@@ -105,6 +115,8 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/content-packs/import":                      {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/{id}/revoke":                 {stepUpRoute, "platform content pack"},
 	"PUT /api/v1/admin/content-packs/channels/{channel}":           {stepUpRoute, "platform content pack"},
+	"POST /api/v1/admin/content-catalog/packages":                  {stepUpRoute, "instance content package"},
+	"POST /api/v1/admin/content-catalog/packages/revoke":           {stepUpRoute, "instance content package"},
 	"POST /api/v1/admin/content-catalog/import":                    {stepUpRoute, "content catalog bundle import"},
 	"POST /api/v1/admin/announcements/":                            {routine, "banner text; reason required, audited"},
 	"POST /api/v1/admin/announcements/{announcement_id}/cancel":    {routine, "ends a banner; reason required, audited"},
@@ -142,6 +154,12 @@ func (s inventorySessions) AuthenticateSession(context.Context, string) (*admin.
 // confirmer that records the purposes it is asked about and refuses.
 func inventoryRouter(t *testing.T) (infrahttp.Router, *[]string) {
 	t.Helper()
+	return inventoryRouterWith(t, nil)
+}
+
+// inventoryRouterWith is inventoryRouter with a hook to adjust the handlers.
+func inventoryRouterWith(t *testing.T, adjust func(*Handlers)) (infrahttp.Router, *[]string) {
+	t.Helper()
 	now := time.Now()
 	a := admin.Reconstitute(shared.NewID(), "root@example.com", "Root", admin.AdminRoleSuperAdmin, true,
 		nil, nil, "", 0, nil, nil, "", now, nil, now)
@@ -163,6 +181,9 @@ func inventoryRouter(t *testing.T) (infrahttp.Router, *[]string) {
 		}
 		return admin.ErrStepUpRequired
 	})
+	if adjust != nil {
+		adjust(&h)
+	}
 	router := infrahttp.NewChiRouter()
 	registerAdminRoutes(router, h, nil)
 	return router, purposes
@@ -221,6 +242,7 @@ func TestAdminStepUpRoutesRefuseWithoutCode(t *testing.T) {
 			"{user_id}", shared.NewID().String(), "{console_session_id}", shared.NewID().String(),
 			"{announcement_id}", shared.NewID().String(), "{module_id}", "pentest",
 			"{key}", "seats", "{channel}", "stable", "{source}", "epss",
+			"{namespace}", "acme", "{name}", "words", "{version}", "1.0.0",
 		).Replace(path)
 		before := len(*purposes)
 		rec := httptest.NewRecorder()
@@ -249,5 +271,45 @@ func TestAdminStepUpRoutesRefuseWithoutCode(t *testing.T) {
 				t.Errorf("%s (%s) asked the route-level step-up: reclassify it as step-up", key, entry.class)
 			}
 		}
+	}
+}
+
+// Every console route, reads included, refuses a client outside the console
+// networks at the route itself (RequireAdminNetwork), so a path the
+// server-wide gate read differently still cannot reach a console handler.
+func TestAdminRoutesRefuseOutsideNetworks(t *testing.T) {
+	router, _ := inventoryRouterWith(t, func(h *Handlers) {
+		h.AdminNetwork = middleware.RequireAdminNetwork([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}, nil)
+	})
+	handler := router.Handler()
+	n := 0
+	_ = router.Walk(func(method, path string, _ http.Handler) error {
+		if !strings.HasPrefix(path, "/api/v1/admin") {
+			return nil
+		}
+		n++
+		p := strings.NewReplacer("{id}", shared.NewID().String(), "{tenantId}", shared.NewID().String(),
+			"{user_id}", shared.NewID().String(), "{console_session_id}", shared.NewID().String(),
+			"{announcement_id}", shared.NewID().String(), "{module_id}", "pentest", "{key}", "seats",
+			"{channel}", "stable", "{source}", "epss").Replace(path)
+		for _, raw := range []string{p, strings.Replace(p, "/api/v1/admin", "/api/v1//admin", 1)} {
+			req := httptest.NewRequest(method, raw, strings.NewReader(`{}`))
+			req.RemoteAddr = "203.0.113.9:5000"
+			req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
+			req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
+			req.Header.Set(middleware.CSRFHeaderName, "c")
+			rec := httptest.NewRecorder()
+			func() {
+				defer func() { _ = recover() }()
+				handler.ServeHTTP(rec, req)
+			}()
+			if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), string(middleware.CodeAdminNetworkNotAllowed)) {
+				t.Errorf("%s %s from outside: %d %s", method, raw, rec.Code, rec.Body.String())
+			}
+		}
+		return nil
+	})
+	if n < 60 {
+		t.Fatalf("only %d console routes walked", n)
 	}
 }

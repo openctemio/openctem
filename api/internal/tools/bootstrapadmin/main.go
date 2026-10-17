@@ -44,6 +44,9 @@
 //	# linked) to a sign-in account, keeping its role and authenticator
 //	./bootstrap-admin -db=$DATABASE_URL -email=admin@example.com -link
 //
+//	# A single-use enrollment token for the bundled shared sensor (sensor_token.go)
+//	./bootstrap-admin sensor-token -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN
+//
 //	# Copy the server file storage between local and S3 (storage_migrate.go)
 //	./bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments -dry-run
 //
@@ -86,6 +89,11 @@ func Main() {
 	// between local and S3 (storage_migrate.go).
 	if len(os.Args) > 1 && os.Args[1] == "storage" {
 		os.Exit(runStorage(os.Args[2:]))
+	}
+	// `bootstrap-admin sensor-token ...`: a single-use enrollment token for
+	// the install's bundled shared sensor (sensor_token.go).
+	if len(os.Args) > 1 && os.Args[1] == "sensor-token" {
+		os.Exit(runSensorToken(os.Args[2:]))
 	}
 	// `bootstrap-admin verify-audit`: check the administrators' audit chain
 	// (verify_audit.go).
@@ -210,6 +218,12 @@ func databaseURLFrom(getenv func(string) string) string {
 	dbHost := getenv("DB_HOST")
 	dbUser := getenv("DB_USER")
 	dbPassword := getenv("DB_PASSWORD")
+	// With a separate console role the app role cannot write admin_users, and
+	// the console role itself cannot create or delete the sign-in account in
+	// users, so the CLI connects as the schema owner (DB_MIGRATE_USER).
+	if u := getenv("DB_MIGRATE_USER"); u != "" {
+		dbUser, dbPassword = u, getenv("DB_MIGRATE_PASSWORD")
+	}
 	dbName := getenv("DB_NAME")
 	if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
 		return ""
