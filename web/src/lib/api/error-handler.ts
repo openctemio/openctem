@@ -125,7 +125,7 @@ function statusOf(error: unknown): number | undefined {
  * restarting during a deploy) and retried by SWR.
  */
 /**
- * A write refused because the organization's plan dropped the module recently:
+ * A write refused because the module became unavailable for the organization recently:
  * it is read-only (view and export) until its grace ends.
  */
 export function isReadOnlyModuleError(error: ApiClientError): boolean {

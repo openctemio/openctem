@@ -342,7 +342,7 @@ Driven by RFC-069 timeline events and set-element changes, each producing a
 ## 15. Open questions for the owner
 
 1. Default daily budget: 2 000 assets per tenant per day for passive work,
-   or plan-based (Free lower)?
+   or a per-organization limit key (unlimited by default)?
 2. Should the staleness pass (P1) refresh the existing inventory on deploy,
    or only assets created after it?
 3. Active opt-in (P1): by asset label only, or also by asset group and by

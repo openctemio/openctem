@@ -99,8 +99,8 @@ export interface AdminOrganization {
   active_identity_providers: number
   verified_domains: number
   sso_enforced: boolean
-  /** free | pro | enterprise (enterprise when created before plans). */
-  plan: string
+  /** At least one limit or module deny is set for the organization. */
+  limits_apply: boolean
 }
 
 export interface AdminOrganizationList {
