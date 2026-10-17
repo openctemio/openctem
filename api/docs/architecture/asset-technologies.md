@@ -11,13 +11,17 @@ library, CDN, hosting, WAF or security service, analytics, security header, othe
    categories, confidence) or loose (`properties.technologies`, `"Name:version"` strings, as httpx
    sends them).
 2. Set reconciliation (RFC-069, `internal/app/ingest/attribute_sets.go`) records both forms as the
-   source's observation of the `technologies` set and writes the resolved set to
-   `assets.properties.technologies`.
-3. `recordTechnologies` (`internal/app/ingest/technologies.go`) sanitises and classifies each detection
-   (`pkg/domain/assettech`) and upserts the ones the asset now shows into `asset_technologies`.
-4. When reconciliation writes a smaller set, `writeResolvedSet`
-   (`internal/infra/postgres/asset_attribute_set_repository.go`) deletes the rows no longer shown, in
-   the same transaction.
+   source's observation of the `technologies` set. `writeResolvedSet`
+   (`internal/infra/postgres/asset_attribute_set_repository.go`) collapses the resolved set to one
+   element per name (`assettech.Collapse`) and writes it as `asset_technologies` rows in the same
+   transaction: missing rows inserted (categorised by name), changed versions updated, rows no longer
+   shown deleted.
+3. `recordTechnologies` (`internal/app/ingest/technologies.go`) sanitizes and classifies each detection
+   (`pkg/domain/assettech`) and enriches the existing rows (tool category, confidence, source, last
+   seen). It never adds a row.
+4. `assets.properties.technologies` (and the synonym `technology`) is retired: `Asset.SetProperty` /
+   `SetProperties` drop it, and `tests/unit/retired_technologies_property_test.go` fails on any read in
+   the API or the web console.
 5. `recordSoftware` (`internal/app/ingest/software.go`) turns a technology into a software component
    only when `assettech.IsSoftwareCandidate` holds: software kind and a version or CPE.
 
@@ -33,6 +37,9 @@ library, CDN, hosting, WAF or security service, analytics, security header, othe
 `assettech.Classify`: curated name list, then the tool's categories, then `other`.
 
 ## Reading
+
+Asset responses embed `technologies` (name, version, category; 20 per asset on a list, all on one
+asset), read with one query per page (`ListByAssets`).
 
 `GET /api/v1/assets/{id}/technologies` (`assets:read`, tenant and data scope, 404 on a miss), ordered by
 category and name, at most 500 rows.

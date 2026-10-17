@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   DndContext,
   closestCenter,
@@ -52,8 +53,6 @@ import {
   type CreateScanWorkflowRequest,
   type UpdateScanWorkflowRequest,
   SCAN_WORKFLOW_SENSOR_PREFERENCES,
-  SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
-  SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS,
   type ScanWorkflowSensorPreference,
   DEFAULT_SCAN_WORKFLOW_SETTINGS,
 } from '@/lib/api'
@@ -434,6 +433,7 @@ export function ScanWorkflowForm({
   onCancel,
   isSubmitting,
 }: WorkflowFormProps) {
+  const { t } = useTranslation()
   const [currentStep, setCurrentStep] = useState<WizardStep>('basics')
 
   const { data: toolsData, isLoading: toolsLoading } = useToolsWithConfig()
@@ -929,19 +929,19 @@ export function ScanWorkflowForm({
                 </SelectTrigger>
                 <SelectContent>
                   {SCAN_WORKFLOW_SENSOR_PREFERENCES.filter(
-                    // Platform scanning is a choice only where the organization
+                    // Shared sensors are a choice only where the organization
                     // may use it (or the workflow already chose it).
                     (pref) =>
                       pref !== 'platform' || platformOffered || sensorPreference === 'platform'
                   ).map((pref) => (
                     <SelectItem key={pref} value={pref}>
-                      {SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS[pref]}
+                      {t(`scans.sensorPrefRun.${pref}.label`)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS[sensorPreference]}
+                {t(`scans.sensorPrefRun.${sensorPreference}.description`)}
               </p>
             </div>
           </TabsContent>

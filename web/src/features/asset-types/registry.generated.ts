@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = 'b37a916bad5f5647'
+export const ASSET_REGISTRY_VERSION = 'ec51d279ad011fda'
 
 export type AssetLens =
   | 'external_surface'
@@ -572,7 +572,6 @@ export type AssetPropertyKey =
   | 'subject_cn'
   | 'subnet_id'
   | 'target_sdk_version'
-  | 'technologies'
   | 'timeout_seconds'
   | 'title'
   | 'tls_fingerprint'
@@ -904,12 +903,6 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   subject_cn: { label: 'Subject CN', labelVi: 'CN chủ thể' },
   subnet_id: { label: 'Subnet ID', labelVi: 'ID subnet', format: 'code' },
   target_sdk_version: { label: 'Target SDK', labelVi: 'SDK mục tiêu' },
-  technologies: {
-    label: 'Technologies',
-    labelVi: 'Công nghệ',
-    synonyms: ['technology'],
-    list: true,
-  },
   timeout_seconds: { label: 'Timeout (s)', labelVi: 'Thời gian chờ (giây)' },
   title: { label: 'Page title', labelVi: 'Tiêu đề trang' },
   tls_fingerprint: {
@@ -1041,7 +1034,6 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'content_length',
     'content_type',
     'server',
-    'technologies',
     'cdn',
     'cdn_type',
     'favicon_mmh3',
@@ -1075,12 +1067,11 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'parameters',
     'forms',
   ],
-  application: ['url', 'title', 'technologies', 'server', 'framework', 'authentication', 'has_waf'],
+  application: ['url', 'title', 'server', 'framework', 'authentication', 'has_waf'],
   website: [
     'ip_addresses',
     'url',
     'title',
-    'technologies',
     'server',
     'cms',
     'framework',

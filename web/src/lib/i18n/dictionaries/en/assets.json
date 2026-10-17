@@ -943,5 +943,6 @@
   "assets.actions.copyName": "Copy name",
   "assets.scanning.tenableScan": "Scan with Tenable.sc",
   "assets.scanning.tenableScanTitle": "Scan this asset now through the organization's Tenable.sc connector",
-  "assets.repository.notScannedYet": "This repo has findings from ingest, but {product} hasn’t scanned it yet."
+  "assets.repository.notScannedYet": "This repo has findings from ingest, but {product} hasn’t scanned it yet.",
+  "assets.technologies.title": "Technologies"
 }
