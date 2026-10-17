@@ -21,10 +21,11 @@ scheme=postgres
 database_url="${scheme}://openctem:${db_password}@postgres:5432/openctem?sslmode=disable"
 jwt_secret="$(rnd 32)"
 encryption_key="$(rnd 32)"
+fingerprint_key="$(rnd 32)"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   for v in "$db_password" "$redis_password" "$owner_password" "$database_url" \
-    "$jwt_secret" "$encryption_key"; do
+    "$jwt_secret" "$encryption_key" "$fingerprint_key"; do
     echo "::add-mask::$v"
   done
 fi
@@ -42,6 +43,7 @@ E2E_DATABASE_URL=${database_url}
 E2E_OWNER_PASSWORD=${owner_password}
 AUTH_JWT_SECRET=${jwt_secret}
 APP_ENCRYPTION_KEY=${encryption_key}
+FINGERPRINT_KEY=${fingerprint_key}
 ENV
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
