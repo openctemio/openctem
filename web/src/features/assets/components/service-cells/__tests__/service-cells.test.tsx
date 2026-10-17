@@ -334,7 +334,6 @@ describe('cellsForType', () => {
 
   it('SurfaceFacts keeps the known negatives', () => {
     const { container, rerender } = render(<SurfaceFacts asset={sensorHttpServiceNoTech} />)
-    expect(screen.getByText('No technologies detected')).toBeInTheDocument()
     expect(screen.getByText('No TLS')).toBeInTheDocument()
     expect(screen.getByText('403')).toBeInTheDocument()
     expectNoUnknownChips(container)
@@ -406,6 +405,7 @@ describe('drawer: Not collected yet', () => {
   it('is omitted when nothing is missing', () => {
     const complete = {
       ...sensorHttpServiceNoTech,
+      technologies: [{ name: 'nginx', category: 'web_server' }],
       metadata: { ...sensorHttpServiceNoTech.metadata, port: 8080, protocol: 'http' },
     } as Asset
     expect(missingSurfaceFacts(complete)).toEqual([])

@@ -147,3 +147,26 @@ func TestKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestCollapse(t *testing.T) {
+	got := Collapse([]string{"nginx:1.9", "nginx:1.18.0", "NGINX", "  Next.js  ", "Next.js:13.4", "bad\x00", "HSTS", "hsts"})
+	want := []string{"HSTS", "Next.js:13.4", "nginx:1.18.0"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+	// Stable: collapsing the result changes nothing.
+	again := Collapse(got)
+	for i := range got {
+		if again[i] != got[i] {
+			t.Fatalf("not stable: %v vs %v", again, got)
+		}
+	}
+	if Element("  Next.js ", " 13.4 ") != "Next.js:13.4" || Element("x\x00", "1") != "" || Element("PHP", "") != "PHP" {
+		t.Fatal("element form")
+	}
+}
