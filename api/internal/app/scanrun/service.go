@@ -172,7 +172,20 @@ type SelectSensorResult struct {
 }
 
 // Service handles scan workflow-related business operations.
+// SharedUseObserver receives the anomaly signals of shared sensor use
+// (*scanpolicy.Service). It never refuses and never blocks.
+type SharedUseObserver interface {
+	ObserveSharedTargets(ctx context.Context, tenantID shared.ID, targets []string)
+}
+
+// SetSharedUseObserver wires the observer.
+func (s *Service) SetSharedUseObserver(o SharedUseObserver) { s.sharedUse = o }
+
 type Service struct {
+	// sharedUse receives the targets of every step job queued for shared
+	// sensors (anomaly signals, docs/rfcs/RFC-100-shared-sensors.md §9);
+	// nil: none.
+	sharedUse SharedUseObserver
 	// toolConfig checks a pinned step's tool options against the sensors'
 	// tool settings (WithToolConfigChecker).
 	toolConfig ToolConfigChecker
