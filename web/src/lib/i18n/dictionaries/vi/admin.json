@@ -684,6 +684,8 @@
   "admin.signup.saving": "Đang lưu",
   "admin.signup.confirm": "Xác nhận",
   "admin.signup.code": "Mã từ ứng dụng xác thực",
+  "admin.org.ownerCount": "{count} chủ sở hữu",
+  "admin.org.users.redacted": "Vai trò quản trị của bạn chỉ xem được số lượng thành viên, không xem được họ là ai. Tổng cộng {count} thành viên.",
   "admin.login.title": "Quản trị nền tảng",
   "admin.login.description": "Đăng nhập để quản trị hệ thống này.",
   "admin.login.enroll": "Thiết lập xác thực hai bước. Bắt buộc với mọi quản trị viên.",

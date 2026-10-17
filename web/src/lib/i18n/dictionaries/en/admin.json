@@ -684,6 +684,8 @@
   "admin.signup.saving": "Saving",
   "admin.signup.confirm": "Confirm",
   "admin.signup.code": "Code from your authenticator",
+  "admin.org.ownerCount": "{count} owner(s)",
+  "admin.org.users.redacted": "Your console role sees how many members there are, not who they are. {count} member(s) in total.",
   "admin.login.title": "Platform administration",
   "admin.login.description": "Sign in to administer this installation.",
   "admin.login.enroll": "Set up two-step verification. It is required for every administrator.",

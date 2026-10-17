@@ -107,8 +107,16 @@ func registerAdminRoutes(
 		return
 	}
 
-	// Base chain: a verified console session (any role).
-	adminMiddlewares := []Middleware{h.AdminAuthMiddleware.Authenticate}
+	// The console network check first, on every console route (the
+	// server-wide gate already ran on the raw path; this one sees what was
+	// routed here).
+	var netGate []Middleware
+	if h.AdminNetwork != nil {
+		netGate = []Middleware{h.AdminNetwork}
+	}
+
+	// Base chain: the network check, then a verified console session (any role).
+	adminMiddlewares := append(cloneMW(netGate), h.AdminAuthMiddleware.Authenticate)
 
 	// Super-admin group guard, composed onto the base chain. Built here so the
 	// authorization guarantee lives at the route layer, not in handlers.
@@ -159,7 +167,7 @@ func registerAdminRoutes(
 				r.POST("/idp/start", h.AdminConsole.IdPStart, preSession(crossSite, idpRL)...)
 				r.POST("/idp/callback", h.AdminConsole.IdPCallback, preSession(crossSite, idpRL)...)
 			}
-		})
+		}, netGate...)
 	}
 
 	// Support access (RFC-063): the administrator a grant names opens a
@@ -438,7 +446,9 @@ func registerAdminRoutes(
 			// organization that has none (RFC-022 rev. 5). The platform
 			// administrator never adds users to an organization that has an
 			// owner (409); the owner and its administrators do that.
-			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, with(read, bypass("user list", true))...)
+			// The member list is personal data: every view is audited, and a
+			// read-only administrator gets counts only (the handler redacts).
+			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, with(read, bypass("user list", true), audit("organization.users_view"))...)
 			// Creating the first owner (or recovering one) hands an
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
@@ -542,9 +552,12 @@ func registerAdminRoutes(
 			}
 			return out
 		}
+		// Finding people by email is personal data: ops_admin+ (a read-only
+		// administrator sees counts elsewhere, never accounts).
+		opsRead := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
 		router.Group("/api/v1/admin/platform-users", func(r Router) {
-			r.GET("/", h.AdminPlatformUser.Search)
-			r.GET("/{user_id}", h.AdminPlatformUser.Get, audited("platform_user.view", nil)...)
+			r.GET("/", h.AdminPlatformUser.Search, opsRead...)
+			r.GET("/{user_id}", h.AdminPlatformUser.Get, append(cloneMW(opsRead), audited("platform_user.view", nil)...)...)
 			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
 			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
 			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)

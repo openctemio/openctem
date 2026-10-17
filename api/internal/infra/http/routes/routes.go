@@ -290,6 +290,10 @@ type Handlers struct {
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
+	// AdminNetwork refuses console requests from outside ADMIN_ALLOWED_CIDRS
+	// inside the console's routes (behind the server-wide gate). Nil: no
+	// route-level check (route-shape tests).
+	AdminNetwork Middleware
 	// AdminStepUp confirms protected console actions (route-level step-up).
 	// Nil refuses every protected route.
 	AdminStepUp middleware.AdminStepUpConfirmer
@@ -1105,6 +1109,9 @@ func Register(
 	// ==========================================================================
 	// These routes are for OpenCTEM platform administrators only.
 	// They manage shared infrastructure that serves all tenants.
+	if h.AdminNetwork == nil {
+		h.AdminNetwork = middleware.RequireAdminNetwork(cfg.AdminPlane.AllowedPrefixes(), log)
+	}
 	registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
 
 	// ==========================================================================
