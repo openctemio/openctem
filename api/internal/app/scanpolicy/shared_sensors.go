@@ -165,6 +165,15 @@ func (s *Service) SharedSensorsAllowed(ctx context.Context, tenantID shared.ID) 
 	return s.sharedSensorsPolicy(ctx, tenantID)
 }
 
+// SharedSensorsAccessLayers is the three access layers of RFC-100 §5 (the
+// instance switch, the administrator's decision, the owner's opt-out)
+// WITHOUT the rollout gate. Production code uses SharedSensorsAllowed; this
+// exists so the shared claim's database tests run the real layers while the
+// rollout gate is closed.
+func (s *Service) SharedSensorsAccessLayers(ctx context.Context, tenantID shared.ID) (bool, string) {
+	return s.sharedSensorsPolicy(ctx, tenantID)
+}
+
 // sharedSensorsPolicy is the three layers of RFC-100 §5, below the rollout
 // gate. Any read error refuses.
 func (s *Service) sharedSensorsPolicy(ctx context.Context, tenantID shared.ID) (bool, string) {

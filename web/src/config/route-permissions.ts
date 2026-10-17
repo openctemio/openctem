@@ -620,6 +620,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     message: 'Only an owner can approve or reject SSO changes.',
   },
+  // Owners and admins read domain policies; changes are owner only (api RFC-104).
+  '/settings/domains': {
+    permission: Permission.TeamUpdate,
+    message: 'Only owners and admins can see domain settings.',
+  },
   // Owners and admins read trusts; changes are owner only (api RFC-058).
   '/settings/trusted-organizations': {
     permission: Permission.TeamUpdate,
@@ -778,6 +783,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // Finding approvals: settings:read to see, settings:write (+ step-up) to save.
   '/settings/finding-approvals': {
     permission: Permission.SettingsRead,
+  },
+  // Finding lifecycle (RFC-110): findings:read to see, findings:lifecycles:write
+  // to change (publishing also asks for a recent sign-in).
+  '/settings/finding-lifecycle': {
+    permission: Permission.FindingsRead,
+    module: Module.Findings,
   },
   // License policy (RFC-070): settings:read to see, settings:write to save.
   '/settings/license-policy': {
