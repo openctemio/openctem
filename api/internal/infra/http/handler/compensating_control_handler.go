@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -31,6 +32,60 @@ type CompensatingControlHandler struct {
 	// priority reflects changed protection promptly. Nil = legacy
 	// no-fan-out behaviour.
 	publisher *controller.ControlChangePublisher
+	// dataScope applies the caller's data scope to the asset and finding
+	// links: a link lowers the priority of the findings it covers, so a
+	// restricted caller may only link, change or delete what they can see.
+	// Nil leaves the links tenant-wide.
+	dataScope *datascope.Enforcer
+}
+
+// WithDataScope applies the caller's data scope to link, update, delete and
+// test of a control.
+func (h *CompensatingControlHandler) WithDataScope(e *datascope.Enforcer) *CompensatingControlHandler {
+	h.dataScope = e
+	return h
+}
+
+// requireActOnLinks refuses (403, written) a change to a control that is
+// linked to assets or findings outside the caller's data scope.
+func (h *CompensatingControlHandler) requireActOnLinks(w http.ResponseWriter, r *http.Request, tenantID, controlID string) bool {
+	if h.dataScope == nil {
+		return true
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.NotFound("compensating control not found").WriteJSON(w)
+		return false
+	}
+	assets := h.loadControlAssetIDs(r.Context(), controlID)
+	findings := h.loadControlFindingIDs(r.Context(), controlID)
+	err = h.dataScope.RequireActOnAssets(r.Context(), tid, assets)
+	if err == nil {
+		err = h.dataScope.RequireActOnFindings(r.Context(), tid, findings)
+	}
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, datascope.ErrActOutOfScope):
+		apierror.Forbidden("this control is linked to assets or findings outside your data scope").WriteJSON(w)
+	default:
+		h.logger.Error("compensating control scope check", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+	}
+	return false
+}
+
+// parseUUIDList parses UUID strings; ok is false when any is not a UUID.
+func parseUUIDList(raw []string) ([]shared.ID, bool) {
+	ids := make([]shared.ID, 0, len(raw))
+	for _, r := range raw {
+		id, err := shared.IDFromString(r)
+		if err != nil {
+			return nil, false
+		}
+		ids = append(ids, id)
+	}
+	return ids, true
 }
 
 // NewCompensatingControlHandler creates a new handler.
@@ -330,6 +385,9 @@ func (h *CompensatingControlHandler) Update(w http.ResponseWriter, r *http.Reque
 		verr.WriteJSON(w)
 		return
 	}
+	if !h.requireActOnLinks(w, r, tenantID, id) {
+		return
+	}
 
 	c, err := scanControl(h.db.QueryRowContext(r.Context(),
 		`UPDATE compensating_controls
@@ -363,6 +421,9 @@ func (h *CompensatingControlHandler) Update(w http.ResponseWriter, r *http.Reque
 func (h *CompensatingControlHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
+	if !h.requireActOnLinks(w, r, tenantID, id) {
+		return
+	}
 
 	// B2: capture the protected asset set BEFORE the cascade delete
 	// drops the link rows. Without this we'd have nothing to sweep.
@@ -421,6 +482,31 @@ func (h *CompensatingControlHandler) loadControlAssetIDs(ctx context.Context, co
 	return ids
 }
 
+// loadControlFindingIDs reads the current finding link set for a control.
+func (h *CompensatingControlHandler) loadControlFindingIDs(ctx context.Context, controlID string) []shared.ID {
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT finding_id FROM compensating_control_findings WHERE control_id = $1`,
+		controlID,
+	)
+	if err != nil {
+		h.logger.Warn("load control findings failed", "control_id", controlID, "error", err)
+		return nil
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []shared.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			continue
+		}
+		if id, err := shared.IDFromString(raw); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // RecordTest records a test result for a compensating control.
 func (h *CompensatingControlHandler) RecordTest(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -432,6 +518,9 @@ func (h *CompensatingControlHandler) RecordTest(w http.ResponseWriter, r *http.R
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if !h.requireActOnLinks(w, r, tenantID, id) {
 		return
 	}
 	// An empty or unknown test_result violates the test_result CHECK and used
@@ -505,6 +594,29 @@ func (h *CompensatingControlHandler) LinkAssets(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	assetIDs, ok := parseUUIDList(req.AssetIDs)
+	if !ok {
+		apierror.BadRequest("asset_ids must be UUIDs").WriteJSON(w)
+		return
+	}
+	// Every asset must be a live asset of the tenant that the caller may see;
+	// one refused id refuses the whole request (404, no existence oracle).
+	if h.dataScope != nil {
+		tid, _ := shared.IDFromString(tenantID)
+		admit, err := h.dataScope.FilterAssetRefs(r.Context(), tid, assetIDs)
+		if err != nil {
+			h.logger.Error("compensating control link asset scope", "error", err)
+			apierror.InternalServerError("internal error").WriteJSON(w)
+			return
+		}
+		for _, a := range assetIDs {
+			if !admit(a) {
+				apierror.NotFound("asset not found").WriteJSON(w)
+				return
+			}
+		}
+	}
+
 	// Link only assets that belong to the same tenant
 	for _, assetID := range req.AssetIDs {
 		_, err := h.db.ExecContext(r.Context(),
@@ -550,6 +662,32 @@ func (h *CompensatingControlHandler) LinkFindings(w http.ResponseWriter, r *http
 	).Scan(&exists); err != nil || !exists {
 		apierror.NotFound("compensating control not found").WriteJSON(w)
 		return
+	}
+
+	findingIDs, ok := parseUUIDList(req.FindingIDs)
+	if !ok {
+		apierror.BadRequest("finding_ids must be UUIDs").WriteJSON(w)
+		return
+	}
+	if h.dataScope != nil {
+		tid, _ := shared.IDFromString(tenantID)
+		scope, err := h.dataScope.Resolve(r.Context(), tid)
+		if err == nil {
+			var admit func(shared.ID) bool
+			if admit, err = h.dataScope.FilterFindings(r.Context(), scope, findingIDs); err == nil {
+				for _, f := range findingIDs {
+					if !admit(f) {
+						apierror.NotFound("finding not found").WriteJSON(w)
+						return
+					}
+				}
+			}
+		}
+		if err != nil {
+			h.logger.Error("compensating control link finding scope", "error", err)
+			apierror.InternalServerError("internal error").WriteJSON(w)
+			return
+		}
 	}
 
 	// Link only findings that belong to the same tenant

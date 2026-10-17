@@ -15,6 +15,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -54,6 +55,80 @@ func (h *BusinessServiceHandler) assetInScope(r *http.Request, tenantID, assetID
 	return h.dataScope.AssertAsset(r.Context(), tid, aid) == nil
 }
 
+// requireActOnLinks refuses (403, written) a change to a service that links
+// assets outside the caller's data scope: the service's criticality raises
+// that of every linked asset (owner decision A8).
+func (h *BusinessServiceHandler) requireActOnLinks(w http.ResponseWriter, r *http.Request, tenantID, serviceID string) bool {
+	if h.dataScope == nil {
+		return true
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.NotFound("business service not found").WriteJSON(w)
+		return false
+	}
+	rows, err := h.db.QueryContext(r.Context(),
+		`SELECT bsa.asset_id FROM business_service_assets bsa
+		   JOIN business_services bs ON bs.id = bsa.service_id
+		  WHERE bs.tenant_id = $1 AND bsa.service_id = $2`, tenantID, serviceID)
+	if err != nil {
+		h.logger.Error("business service link scan", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return false
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []shared.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			continue
+		}
+		if id, perr := shared.IDFromString(raw); perr == nil {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		h.logger.Error("business service link rows", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return false
+	}
+	switch err := h.dataScope.RequireActOnAssets(r.Context(), tid, ids); {
+	case err == nil:
+		return true
+	case errors.Is(err, datascope.ErrActOutOfScope):
+		apierror.Forbidden("this service links assets outside your data scope").WriteJSON(w)
+	default:
+		h.logger.Error("business service scope check", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+	}
+	return false
+}
+
+// assetCountColumn is businessServiceAssetCountColumn counting only the
+// assets in the caller's data scope; first is the next free placeholder and
+// the scope arguments are returned for the caller to append.
+func (h *BusinessServiceHandler) assetCountColumn(r *http.Request, tenantID string, first int) (string, []any, error) {
+	if h.dataScope == nil {
+		return businessServiceAssetCountColumn, nil, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return "", nil, err
+	}
+	scope, err := h.dataScope.Resolve(r.Context(), tid)
+	if err != nil {
+		return "", nil, err
+	}
+	if scope == nil {
+		return businessServiceAssetCountColumn, nil, nil
+	}
+	cond, args := filterspec.ScopeSQL("bsa.asset_id", scope, first)
+	return `(SELECT COUNT(DISTINCT bsa.asset_id)
+		   FROM business_service_assets bsa
+		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = business_services.tenant_id
+		  WHERE bsa.service_id = business_services.id AND ` + cond + `) AS asset_count`, args, nil
+}
+
 // NewBusinessServiceHandler creates a new BusinessServiceHandler.
 func NewBusinessServiceHandler(db *sql.DB, log *logger.Logger) *BusinessServiceHandler {
 	return &BusinessServiceHandler{db: db, logger: log}
@@ -78,17 +153,23 @@ func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	countCol, countArgs, err := h.assetCountColumn(r, tenantID, 4)
+	if err != nil {
+		h.logger.Error("business service list scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
 	rows, err := h.db.QueryContext(r.Context(),
 		`SELECT id, name, description, criticality, compliance_scope,
 		        handles_pii, handles_phi, handles_financial,
 		        availability_target, rpo_minutes, rto_minutes,
 		        owner_name, owner_email, created_at, updated_at,
-		        `+businessServiceAssetCountColumn+`
+		        `+countCol+`
 		   FROM business_services
 		  WHERE tenant_id = $1
 		  ORDER BY created_at DESC
 		  LIMIT $2 OFFSET $3`,
-		tenantID, page.Limit(), page.Offset(),
+		append([]any{tenantID, page.Limit(), page.Offset()}, countArgs...)...,
 	)
 	if err != nil {
 		h.logger.Error("business service list", "error", err)
@@ -121,15 +202,21 @@ func (h *BusinessServiceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
+	countCol, countArgs, err := h.assetCountColumn(r, tenantID, 3)
+	if err != nil {
+		h.logger.Error("business service get scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
 	row := h.db.QueryRowContext(r.Context(),
 		`SELECT id, name, description, criticality, compliance_scope,
 		        handles_pii, handles_phi, handles_financial,
 		        availability_target, rpo_minutes, rto_minutes,
 		        owner_name, owner_email, created_at, updated_at,
-		        `+businessServiceAssetCountColumn+`
+		        `+countCol+`
 		   FROM business_services
 		  WHERE tenant_id = $1 AND id = $2`,
-		tenantID, id,
+		append([]any{tenantID, id}, countArgs...)...,
 	)
 
 	bs, err := scanBusinessService(row)
@@ -205,6 +292,15 @@ func (h *BusinessServiceHandler) Update(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("name is required").WriteJSON(w)
 		return
 	}
+	if !h.requireActOnLinks(w, r, tenantID, id) {
+		return
+	}
+	countCol, countArgs, err := h.assetCountColumn(r, tenantID, 15)
+	if err != nil {
+		h.logger.Error("business service update scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
 
 	row := h.db.QueryRowContext(r.Context(),
 		`UPDATE business_services
@@ -225,12 +321,12 @@ func (h *BusinessServiceHandler) Update(w http.ResponseWriter, r *http.Request) 
 		           handles_pii, handles_phi, handles_financial,
 		           availability_target, rpo_minutes, rto_minutes,
 		           owner_name, owner_email, created_at, updated_at,
-		           `+businessServiceAssetCountColumn,
-		tenantID, id, req.Name, req.Description, req.Criticality,
-		pq.StringArray(req.ComplianceScope),
-		req.HandlesPII, req.HandlesPHI, req.HandlesFinancial,
-		nilFloat64(req.AvailabilityTarget), nilInt(req.RPOMinutes), nilInt(req.RTOMinutes),
-		req.OwnerName, req.OwnerEmail,
+		           `+countCol,
+		append([]any{tenantID, id, req.Name, req.Description, req.Criticality,
+			pq.StringArray(req.ComplianceScope),
+			req.HandlesPII, req.HandlesPHI, req.HandlesFinancial,
+			nilFloat64(req.AvailabilityTarget), nilInt(req.RPOMinutes), nilInt(req.RTOMinutes),
+			req.OwnerName, req.OwnerEmail}, countArgs...)...,
 	)
 
 	bs, err := scanBusinessService(row)
@@ -251,6 +347,9 @@ func (h *BusinessServiceHandler) Update(w http.ResponseWriter, r *http.Request) 
 func (h *BusinessServiceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
+	if !h.requireActOnLinks(w, r, tenantID, id) {
+		return
+	}
 
 	res, err := h.db.ExecContext(r.Context(),
 		"DELETE FROM business_services WHERE tenant_id = $1 AND id = $2",

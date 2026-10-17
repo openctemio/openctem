@@ -488,6 +488,64 @@ func (e *Enforcer) FullDataCaller(ctx context.Context, tenantID shared.ID) (bool
 	return e.FullData(ctx, tenantID, c.UserID)
 }
 
+// ErrActOutOfScope is returned by RequireActOnAssets / RequireActOnFindings
+// when the caller may not act on every asset (or finding) a shared object is
+// linked to.
+var ErrActOutOfScope = fmt.Errorf("%w: the object is linked to assets outside your data scope", shared.ErrForbidden)
+
+// RequireActOnAssets is the rule for changing or deleting an object that
+// feeds the risk of the assets it links (a business service, a compensating
+// control): a caller restricted to their scope rows needs every linked asset
+// inside it, otherwise ErrActOutOfScope. Unrestricted callers pass; a nil
+// enforcer never restricts. A lookup error also refuses.
+func (e *Enforcer) RequireActOnAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {
+	if e == nil || e.repo == nil || len(assetIDs) == 0 {
+		return nil
+	}
+	scope, err := e.Resolve(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	if !scope.Restricted() {
+		return nil
+	}
+	admit, err := e.Filter(ctx, scope, assetIDs)
+	if err != nil {
+		return err
+	}
+	for _, id := range assetIDs {
+		if !admit(id) {
+			return ErrActOutOfScope
+		}
+	}
+	return nil
+}
+
+// RequireActOnFindings is RequireActOnAssets for the findings an object is
+// linked to (the asset of each finding must be in scope).
+func (e *Enforcer) RequireActOnFindings(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) error {
+	if e == nil || e.repo == nil || len(findingIDs) == 0 {
+		return nil
+	}
+	scope, err := e.Resolve(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	if !scope.Restricted() {
+		return nil
+	}
+	admit, err := e.FilterFindings(ctx, scope, findingIDs)
+	if err != nil {
+		return err
+	}
+	for _, id := range findingIDs {
+		if !admit(id) {
+			return ErrActOutOfScope
+		}
+	}
+	return nil
+}
+
 // FilterForCaller is Filter for the request's caller.
 func (e *Enforcer) FilterForCaller(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, error) {
 	scope, err := e.Resolve(ctx, tenantID)
