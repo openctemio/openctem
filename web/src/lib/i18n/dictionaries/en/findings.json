@@ -614,8 +614,8 @@
   "findings.importResults.vexStatements": "VEX statements",
   "findings.importResults.skipped": "{count} records skipped.",
   "findings.importResults.vexMatched": "VEX: {count} matching findings",
-  "findings.importResults.vexWouldClose": ", {count} would be closed",
-  "findings.importResults.vexStored": ", stored on {stored}, {closed} closed",
+  "findings.importResults.vexWouldClose": ", {count} would be requested",
+  "findings.importResults.vexStored": ", stored on {stored}, {requested} false positive requests",
   "findings.importResults.vexUnmatchable": "; {count} statements cannot be matched (no package URL)",
   "findings.importResults.ingestSummary": "{created} findings created, {updated} updated, {assets} assets created",
   "findings.importResults.ingestSkipped": "; {count} hosts skipped (outside the assets you can change)",
@@ -1090,5 +1090,9 @@
   "findings.approvals.toast.signed": "Your approval is recorded",
   "findings.approvals.toast.signedDesc": "{count} more approval(s) needed before the status changes.",
   "findings.approvals.col.tier": "Approval",
-  "findings.metrics.totalScopedDescription": "Every finding in the scope shown above the table (an asset, a scan or a group), in every state (the All tab)."
+  "findings.metrics.totalScopedDescription": "Every finding in the scope shown above the table (an asset, a scan or a group), in every state (the All tab).",
+  "findings.importResults.vexModeEnforce": "not_affected statements request false positive approval for the matching open findings; the findings stay open until another person approves.",
+  "findings.importResults.vexModeEnforceNoApprove": "not_affected statements are stored on the matching findings; requesting false positive approval needs the approve permission.",
+  "findings.importResults.vexModeOff": "VEX statements are stored on the matching findings only.",
+  "findings.importResults.vexModeDryRun": "VEX statements are stored on the matching findings and counted; no false positive approval is requested (dry run mode)."
 }

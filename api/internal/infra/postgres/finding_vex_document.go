@@ -144,39 +144,52 @@ func (r *FindingRepository) ApplyVEXDocument(ctx context.Context, tenantID share
 		for i, id := range stored {
 			storedStrs[i] = id.String()
 		}
-		//nolint:gosec // G202: fixed SQL fragments (lifecycle lists) and numbered placeholders only
-		rows, err = tx.QueryContext(ctx, `
-			WITH ins AS (
-				INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status, closure_reason, decide_by)
-				SELECT $1::uuid, f.id, 'false_positive', '`+vulnerability.ApprovalActorVEX+`', LEFT($3, 1000), 'pending', $4,
-				       NOW() + INTERVAL '14 days' -- vulnerability.DefaultDecisionWindow
-				FROM findings f
-				WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])
-				  AND f.status IN `+vexFalsePositiveFromSQL+` AND f.source NOT IN `+coverageProtectedSources+`
-				  AND NOT EXISTS (
-					SELECT 1 FROM finding_status_approvals p
-					WHERE p.tenant_id = $1::uuid AND p.finding_id = f.id
-					  AND (p.status = 'pending' OR (p.requested_by_actor = '`+vulnerability.ApprovalActorVEX+`' AND p.status IN ('rejected', 'canceled'))))
-				ON CONFLICT DO NOTHING
-				RETURNING id, finding_id
-			), timeline AS (
-				INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
-				SELECT $1::uuid, i.finding_id, 'approval_requested', 'integration', 'system: VEX document',
-				       jsonb_build_object('requested_status', 'false_positive', 'requested_by', '`+vulnerability.ApprovalActorVEX+`', 'approval_id', i.id),
-				       'auto', 'An uploaded VEX document says the component is not affected; a person decides'
-				FROM ins i
-			)
-			SELECT finding_id::text FROM ins`,
-			tenantID.String(), pq.Array(storedStrs), reason,
-			string(vulnerability.ClosureReasonFromVEXJustification(sv.Justification)))
-		if err != nil {
-			return fmt.Errorf("request vex false positive: %w", err)
-		}
-		requested, err = scanIDs(rows)
+		requested, err = insertVEXFalsePositiveRequests(ctx, tx, tenantID, storedStrs, reason,
+			string(vulnerability.ClosureReasonFromVEXJustification(sv.Justification)),
+			"system: VEX document", "An uploaded VEX document says the component is not affected; a person decides")
 		return err
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 	return stored, requested, nil
+}
+
+// insertVEXFalsePositiveRequests opens the pending false positive request by
+// the actor "vex" for each of the tenant's findings ids that is open work and
+// not from a human source, with an approval_requested timeline entry (actorName
+// and message). A finding that already has a pending request, or whose earlier
+// VEX request a person rejected or canceled, gets none. A false positive needs
+// a second person, so no VEX path (document or statement) sets the status
+// itself. Returns the ids a request was opened for.
+func insertVEXFalsePositiveRequests(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string,
+	justification, closureReason, actorName, message string) ([]shared.ID, error) {
+	//nolint:gosec // G202: fixed SQL fragments (lifecycle lists) and numbered placeholders only
+	rows, err := tx.QueryContext(ctx, `
+		WITH ins AS (
+			INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status, closure_reason, decide_by)
+			SELECT $1::uuid, f.id, 'false_positive', '`+vulnerability.ApprovalActorVEX+`', LEFT($3, 1000), 'pending', $4,
+			       NOW() + INTERVAL '14 days' -- vulnerability.DefaultDecisionWindow
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])
+			  AND f.status IN `+vexFalsePositiveFromSQL+` AND f.source NOT IN `+coverageProtectedSources+`
+			  AND NOT EXISTS (
+				SELECT 1 FROM finding_status_approvals p
+				WHERE p.tenant_id = $1::uuid AND p.finding_id = f.id
+				  AND (p.status = 'pending' OR (p.requested_by_actor = '`+vulnerability.ApprovalActorVEX+`' AND p.status IN ('rejected', 'canceled'))))
+			ON CONFLICT DO NOTHING
+			RETURNING id, finding_id
+		), timeline AS (
+			INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
+			SELECT $1::uuid, i.finding_id, 'approval_requested', 'integration', $5,
+			       jsonb_build_object('requested_status', 'false_positive', 'requested_by', '`+vulnerability.ApprovalActorVEX+`', 'approval_id', i.id),
+			       'auto', $6
+			FROM ins i
+		)
+		SELECT finding_id::text FROM ins`,
+		tenantID.String(), pq.Array(ids), justification, closureReason, actorName, message)
+	if err != nil {
+		return nil, fmt.Errorf("request vex false positive: %w", err)
+	}
+	return scanIDs(rows)
 }

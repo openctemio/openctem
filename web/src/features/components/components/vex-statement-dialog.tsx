@@ -167,8 +167,9 @@ export function VexStatementDialog({
       toast.success(
         t(
           'components.vex.saved',
-          'Statement saved: {closed} findings closed, {reopened} reopened.',
+          'Statement saved: {requested} false positive requests, {closed} findings resolved, {reopened} reopened.',
           {
+            requested: res.applied.requested,
             closed: res.applied.closed,
             reopened: res.applied.reopened,
           }
