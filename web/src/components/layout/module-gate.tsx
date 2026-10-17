@@ -44,7 +44,7 @@ export function ModuleGate({
     )
   }
 
-  // If no modules data (OSS edition), allow access
+  // If the API reports no module list, allow access
   if (moduleIds.length === 0) {
     return <>{children}</>
   }

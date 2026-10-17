@@ -104,8 +104,11 @@ type Pipeline struct {
 	RetiredAt    *time.Time
 	RetiredBy    *shared.ID
 	RetireReason string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// RepositoryArchivedAt: the code host archived the repository (its
+	// webhook). The pipeline is archived, not stale.
+	RepositoryArchivedAt *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // IsLegacy reports whether the pipeline was backfilled without a repository
@@ -519,6 +522,9 @@ func (p *Pipeline) Assess(now time.Time, pol StatusPolicy) Assessment {
 	default:
 		a.Freshness = FreshnessFresh
 	}
+	if p.RepositoryArchivedAt != nil {
+		a.Freshness = FreshnessArchived
+	}
 	if p.LastRunAt != nil {
 		at := p.LastRunAt.Add(a.StaleAfter)
 		a.StaleAt = &at
@@ -580,6 +586,9 @@ type PipelineFilter struct {
 	RepositoryAssetID *shared.ID
 	TrustConfigID     *shared.ID
 	Provider          string
+	// HasPolicyOverride keeps only pipelines whose repository has its own
+	// enabled gate policy (RFC-096).
+	HasPolicyOverride bool
 	// DataScope limits the listing to pipelines on repositories the user may
 	// see (RFC-050).
 	DataScope *shared.DataScope

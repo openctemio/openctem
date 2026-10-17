@@ -1,0 +1,166 @@
+/**
+ * Platform admin console API proxy (RFC-022).
+ *
+ * Takes precedence over the generic /api/v1/[...path] proxy for everything
+ * under /api/v1/admin. It must stay separate from it:
+ * - The generic proxy attaches the TENANT access token as `Authorization:
+ *   Bearer`. The admin API treats a bearer value as an admin API key, so a
+ *   tenant token would fail as a bad key and hide the admin session. This proxy
+ *   never forwards tenant credentials.
+ * - Admin auth is a server-side session in the `admin_session` cookie (plus
+ *   `admin_mfa` during login, `admin_idp` during an identity-provider sign-in,
+ *   and `admin_csrf`, HttpOnly like the session). Only those cookies
+ *   are forwarded, and the backend's Set-Cookie headers are passed back so the
+ *   browser stores them under the same paths.
+ * - The console signs in on its own (POST /auth/login with the account's
+ *   email and password): no tenant credential is ever forwarded here.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+
+import { env } from '@/lib/env'
+import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
+import { proxyBackendPath } from '@/lib/api/proxy-path'
+import { csrfRejection } from '@/lib/server-auth-cookies'
+
+export const dynamic = 'force-dynamic'
+
+const ADMIN_COOKIES = ['admin_session', 'admin_mfa', 'admin_csrf', 'admin_idp'] as const
+/** x-admin-step-up: the fresh authenticator code of a protected action. */
+const FORWARD_HEADERS = ['x-csrf-token', 'x-admin-step-up', 'x-request-id', 'user-agent'] as const
+const MAX_BODY_BYTES = 1024 * 1024
+/**
+ * A platform content pack upload (POST /content-packs, multipart): the API
+ * accepts an archive of up to 128 MiB, plus room for the form fields.
+ */
+const MAX_UPLOAD_BODY_BYTES = 129 * 1024 * 1024
+
+function bodyLimit(method: string, path: string[]): number {
+  return method === 'POST' && path.length === 1 && path[0] === 'content-packs'
+    ? MAX_UPLOAD_BODY_BYTES
+    : MAX_BODY_BYTES
+}
+
+/**
+ * Response headers passed through from the API (a download names its file;
+ * the console's API reference page keeps the CSP the API gives it).
+ */
+const PASS_RESPONSE_HEADERS = [
+  'content-type',
+  'content-disposition',
+  'content-length',
+  'etag',
+  'content-security-policy',
+] as const
+
+async function proxy(request: NextRequest, path: string[]): Promise<NextResponse> {
+  // Same origin and a double-submit pair on every write, the console's sign-in
+  // steps included. The header matches `admin_csrf` once the console session
+  // exists (the API checks that pair again), the page's `csrf_token` before.
+  const csrf = csrfRejection(request, ['admin_csrf'])
+  if (csrf) return csrf
+
+  // Each segment is re-encoded below, but refuse dot segments outright too so
+  // both proxies apply the same rule.
+  if (proxyBackendPath(path) === null) {
+    return NextResponse.json(
+      { error: 'INVALID_PATH', message: 'Invalid request path' },
+      { status: 400 }
+    )
+  }
+  const url = new URL(request.url)
+  const backendUrl = `${env.api.adminUrl}/api/v1/admin/${path.map(encodeURIComponent).join('/')}${url.search}`
+
+  const headers = new Headers()
+  const contentType = request.headers.get('content-type')
+  if (contentType) headers.set('Content-Type', contentType)
+  for (const name of FORWARD_HEADERS) {
+    const value = request.headers.get(name)
+    if (value) headers.set(name, value)
+  }
+  // X-Real-IP / X-Forwarded-For are client-supplied unless a reverse proxy in
+  // front of the UI overwrites them; forwarding them blindly would let a caller
+  // write any IP into the admin audit log. They are passed through only when the
+  // operator sets TRUST_PROXY_HEADERS=true (same rule as the generic proxy).
+  applyClientIpHeaders(headers, request.headers)
+
+  const cookieParts = ADMIN_COOKIES.flatMap((name) => {
+    const value = request.cookies.get(name)?.value
+    return value ? [`${name}=${value}`] : []
+  })
+  if (cookieParts.length > 0) headers.set('Cookie', cookieParts.join('; '))
+
+  let body: BodyInit | undefined
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    const limit = bodyLimit(request.method, path)
+    const length = Number(request.headers.get('content-length') ?? '0')
+    if (length > limit) {
+      return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
+    }
+    // Bytes, not text: a multipart upload carries a binary archive, which a
+    // text round trip would corrupt.
+    const bytes = await request.arrayBuffer()
+    if (bytes.byteLength > limit) {
+      return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
+    }
+    body = bytes
+  }
+
+  let upstream: Response
+  try {
+    upstream = await fetch(backendUrl, {
+      method: request.method,
+      headers,
+      body,
+      redirect: 'manual',
+      cache: 'no-store',
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json(
+      { error: 'PROXY_ERROR', message: `Failed to connect to backend: ${message}` },
+      { status: 502 }
+    )
+  }
+
+  // The body is passed through as bytes (a pack download is a binary archive).
+  const passHeaders = new Headers()
+  for (const name of PASS_RESPONSE_HEADERS) {
+    const value = upstream.headers.get(name)
+    if (value) passHeaders.set(name, value)
+  }
+  if (!passHeaders.has('content-type')) passHeaders.set('content-type', 'application/json')
+  const response =
+    upstream.status === 204
+      ? new NextResponse(null, { status: 204 })
+      : new NextResponse(await upstream.arrayBuffer(), {
+          status: upstream.status,
+          headers: passHeaders,
+        })
+
+  // Pass session/CSRF cookies through unchanged (paths, flags and expiry are
+  // decided by the API).
+  for (const cookie of upstream.headers.getSetCookie()) {
+    response.headers.append('Set-Cookie', cookie)
+  }
+  response.headers.set('Cache-Control', 'no-store')
+  return response
+}
+
+type Params = { params: Promise<{ path: string[] }> }
+
+export async function GET(request: NextRequest, { params }: Params) {
+  return proxy(request, (await params).path)
+}
+export async function POST(request: NextRequest, { params }: Params) {
+  return proxy(request, (await params).path)
+}
+export async function PUT(request: NextRequest, { params }: Params) {
+  return proxy(request, (await params).path)
+}
+export async function PATCH(request: NextRequest, { params }: Params) {
+  return proxy(request, (await params).path)
+}
+export async function DELETE(request: NextRequest, { params }: Params) {
+  return proxy(request, (await params).path)
+}

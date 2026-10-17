@@ -28,8 +28,6 @@ export type FindingStatus =
   | 'confirmed' // Verified as real issue, needs fix
   | 'in_progress' // Being fixed
   | 'fix_applied' // Marked fixed, awaiting verification (scan, retest or security review)
-  | 'validated_fixed' // A validation re-check no longer observes it; a person closes it
-  | 'not_observed' // Not seen by recent scans, no proof the check ran: stale, NOT fixed (SLA keeps running)
   | 'resolved' // Verified fixed; how is the resolution (scan, retest, security review)
   | 'false_positive' // Not a real issue (requires approval)
   | 'accepted' // Risk accepted (requires approval, has expiration)
@@ -88,24 +86,6 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
     bgColor: 'bg-yellow-600/20',
     textColor: 'text-yellow-500',
     icon: 'wrench',
-    category: 'in_progress',
-  },
-  validated_fixed: {
-    label: 'Validated Fixed',
-    labelKey: 'findings.status.validated_fixed',
-    color: 'border-teal-500/50', // palette-ok: status scheme, like every status here
-    bgColor: 'bg-teal-500/20', // palette-ok: status scheme
-    textColor: 'text-teal-400', // palette-ok: status scheme
-    icon: 'shield-check',
-    category: 'in_progress',
-  },
-  not_observed: {
-    label: 'Not Observed',
-    labelKey: 'findings.status.not_observed',
-    color: 'border-zinc-500/50', // palette-ok: status scheme, like every status here
-    bgColor: 'bg-zinc-500/20', // palette-ok: status scheme
-    textColor: 'text-zinc-400', // palette-ok: status scheme
-    icon: 'eye-off',
     category: 'in_progress',
   },
   resolved: {
@@ -168,60 +148,9 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
 }
 
-/**
- * Status transitions workflow
- * Simplified: new → confirmed → in_progress → resolved
- *
- * Note: Transitions to false_positive and accepted require approval
- * from security team. The UI should show approval dialog for these.
- */
-export const STATUS_TRANSITIONS: Record<FindingStatus, FindingStatus[]> = {
-  // Open states
-  new: ['confirmed', 'duplicate', 'false_positive'],
-  confirmed: ['in_progress', 'resolved', 'duplicate', 'false_positive', 'accepted'],
-  // In progress
-  in_progress: ['fix_applied', 'confirmed'],
-  // Fix applied — awaiting a proof-of-fix retest or manual security review
-  fix_applied: ['resolved', 'in_progress'],
-  // Validated fixed — a validation re-check no longer observes it; a person closes or reopens it
-  validated_fixed: ['resolved', 'confirmed', 'duplicate', 'false_positive', 'accepted'],
-  // Not observed — set by the platform only; seen again, triaged, or closed with proof
-  not_observed: ['confirmed', 'in_progress', 'resolved', 'duplicate', 'false_positive', 'accepted'],
-  // Closed states (can reopen to confirmed)
-  resolved: ['confirmed'],
-  false_positive: ['confirmed'],
-  accepted: ['confirmed'],
-  duplicate: ['confirmed'],
-  // Pentest pre-publication (the pentest menu uses PENTEST_STATUS_TRANSITION_ROLES)
-  draft: ['in_review', 'confirmed', 'false_positive', 'accepted'],
-  in_review: ['confirmed', 'false_positive', 'accepted'],
-}
-
-/** Statuses valid for automated findings */
-export const AUTOMATED_STATUSES: FindingStatus[] = [
-  'new',
-  'confirmed',
-  'in_progress',
-  'fix_applied',
-  'validated_fixed',
-  'not_observed',
-  'resolved',
-  'false_positive',
-  'accepted',
-  'duplicate',
-]
-
-/** Statuses valid for pentest findings */
-export const PENTEST_STATUSES: FindingStatus[] = [
-  'draft',
-  'in_review',
-  'confirmed',
-  'in_progress',
-  'fix_applied',
-  'resolved',
-  'false_positive',
-  'accepted',
-]
+// The status moves of a finding are the API's (its transition engine):
+// GET /api/v1/findings/{id}/transitions, through useFindingTransitions. The
+// console keeps no copy of the rules.
 
 /** Every finding status, in lifecycle order. */
 export const ALL_FINDING_STATUSES: FindingStatus[] = Object.keys(
@@ -236,12 +165,6 @@ export function findingStatusesInCategory(category: StatusCategory): FindingStat
 /** True for a value the API accepts as a finding status. */
 export function isFindingStatus(value: string): value is FindingStatus {
   return Object.prototype.hasOwnProperty.call(FINDING_STATUS_CONFIG, value)
-}
-
-/** Get valid statuses for a finding based on its source */
-export function getStatusesForSource(source: string): FindingStatus[] {
-  if (source === 'pentest') return PENTEST_STATUSES
-  return AUTOMATED_STATUSES
 }
 
 /**
@@ -383,9 +306,87 @@ export interface FindingComponent {
   license?: string
   /** The version to upgrade to, picked by the API. */
   fixedIn?: string
+  /** fixedIn is on a newer major line: a likely breaking upgrade. */
+  fixedInMajor?: boolean
+  /** Every version that fixes it, one per release line. */
+  fixedVersions?: string[]
   /** direct | transitive | …; undefined when unknown. */
   dependencyType?: string
   manifestFile?: string
+  /** The package's first line in manifestFile, when the scanner reported it. */
+  manifestLine?: number
+  /** Transitive: package ids from the direct dependency to this package. */
+  dependencyPath?: string[]
+}
+
+/** A branch a finding was seen on (detail only). */
+export interface FindingBranchSighting {
+  name: string
+  isDefault: boolean
+  status: string
+  firstSeenAt: string
+  lastSeenAt: string
+  firstCommit?: string
+  lastCommit?: string
+}
+
+/** A CI run that reported a finding (detail only, scans:ci:read). */
+export interface FindingRunSighting {
+  id: string
+  provider: string
+  externalRunId?: string
+  pipelineUrl?: string
+  branch?: string
+  commitSha?: string
+  pullRequest?: string
+  isDefaultBranch: boolean
+  createdAt: string
+}
+
+/** Where and when a finding was seen. */
+export interface FindingProvenance {
+  firstDetectedBranch?: string
+  firstDetectedCommit?: string
+  lastSeenBranch?: string
+  lastSeenCommit?: string
+  lastSeenTool?: string
+  branches: FindingBranchSighting[]
+  runs: FindingRunSighting[]
+  firstRun?: FindingRunSighting
+}
+
+/** Vulnerability intelligence with sources and freshness (detail only). */
+export interface FindingIntel {
+  cvssSource?: string
+  publishedAt?: string
+  modifiedAt?: string
+  references: string[]
+  epssDate?: string
+  kevDateAdded?: string
+  kevRansomware?: boolean
+}
+
+/** One open finding of a package fix plan. */
+export interface FindingFixPlanItem {
+  id: string
+  title: string
+  severity: string
+  cveId?: string
+}
+
+/** Which upgrade of the package fixes what on this asset (detail only). */
+export interface FindingFixPlan {
+  targetVersion?: string
+  majorUpgrade: boolean
+  openFindings: number
+  resolvesCount: number
+  truncated: boolean
+  resolves: FindingFixPlanItem[]
+  remaining: FindingFixPlanItem[]
+  /** Fixes every finding with a known fix, when targetVersion does not. */
+  completeVersion?: string
+  completeMajor?: boolean
+  completeResolves?: number
 }
 
 /** The CVE record the finding is an instance of (detail page only). */
@@ -738,6 +739,18 @@ export interface Finding {
   // Timestamps
   discoveredAt: string
   resolvedAt?: string
+  /** Why it is closed (lib/closure.ts); absent while open. */
+  closureReason?: string
+  /** The organization's sub-status inside the status; absent: the status itself. */
+  subStatusId?: string
+  /** Longest risk acceptance for this finding's priority, in days (server rule). */
+  maxAcceptanceDays?: number
+  /** How a resolve was proven. */
+  verification?: string
+  /** present or stale (no longer reported, not fixed). */
+  observation?: 'present' | 'stale'
+  /** Latest re-check verdict. */
+  validation?: 'reproducible' | 'not_reproducible'
   verifiedAt?: string
   createdAt: string
   updatedAt: string
@@ -1172,6 +1185,12 @@ export interface FindingDetail extends Finding {
   sourceData?: FindingSourceData
   /** The affected package, for SCA / container findings. */
   component?: FindingComponent
+  /** Where and when it was seen: branches, commits, CI runs. */
+  provenance?: FindingProvenance
+  /** The package's upgrade plan on this asset. */
+  packageFix?: FindingFixPlan
+  /** Advisory facts and feed dates. */
+  intel?: FindingIntel
   /** The CVE record, when the finding is an instance of one. */
   advisory?: FindingAdvisory
   /** The raw finding message (the title falls back to it). */
@@ -1213,19 +1232,54 @@ export interface ApiApproval {
   /** Empty when a platform actor made the request (see requested_by_actor). */
   requested_by: string
   /**
+   * The requester's display name (approval lists); absent for an actor
+   * request and for a requester who is no longer a member.
+   */
+  requested_by_name?: string
+  /**
    * Set (`ai_triage`) when AI triage proposed the change instead of a person.
    * Its justification is model output: show it as plain text only.
    */
   requested_by_actor?: string
   justification: string
+  /** The closure reason the request applies (absent on older requests). */
+  closure_reason?: string
   approved_by?: string
   approved_at?: string
   rejected_by?: string
   rejected_at?: string
   rejection_reason?: string
   status: ApprovalStatus
+  /** End of an accepted risk (accepted-risk requests only). */
   expires_at?: string
+  /** The latest moment a pending request can be decided; it expires after. */
+  decide_by?: string
   created_at: string
+  /**
+   * The sole member of the organization approved their own request
+   * (authenticator code and a reason), not a second person.
+   */
+  self_approved?: boolean
+  self_approval_reason?: string
+  /**
+   * One person decided this false positive alone under the organization's
+   * false-positive approval level.
+   */
+  single_person?: boolean
+  /**
+   * The approval tier the policy gave the request (single, peer, security,
+   * dual); absent on a request made before the policy or by an actor.
+   */
+  tier?: 'single' | 'peer' | 'security' | 'dual'
+  risk_class?: 'standard' | 'high' | 'critical'
+  /** People other than the requester who must sign off, and how many did. */
+  approvals_required?: number
+  approvals_collected?: number
+  /**
+   * Set when the request is a member of a group exception: it is decided
+   * only with its group (approving it alone answers 409 BATCH_MEMBER).
+   */
+  batch_id?: string
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'

@@ -1374,11 +1374,11 @@ func (s *stubFindingRepository) BatchCountByAssetIDs(_ context.Context, _ shared
 }
 
 // AcceptUntil records an accept like UpdateStatusBatch does.
-func (s *stubFindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
-	return s.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+func (s *stubFindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID, _ vulnerability.ClosureReason) error {
+	return s.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, vulnerability.Closure{})
 }
 
-func (s *stubFindingRepository) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
+func (s *stubFindingRepository) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) error {
 	return nil
 }
 func (s *stubFindingRepository) DeleteByAssetID(_ context.Context, _, _ shared.ID) error {
@@ -1392,16 +1392,6 @@ func (s *stubFindingRepository) GetStats(_ context.Context, _ shared.ID, _ *shar
 }
 func (s *stubFindingRepository) CountBySeverityForScan(_ context.Context, _ shared.ID, _ string) (vulnerability.SeverityCounts, error) {
 	return vulnerability.SeverityCounts{}, nil
-}
-func (s *stubFindingRepository) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-
-func (s *stubFindingRepository) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-func (s *stubFindingRepository) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
-	return nil, nil
 }
 func (s *stubFindingRepository) ExpireFeatureBranchFindings(_ context.Context, _ shared.ID, _ int) (int64, error) {
 	return 0, nil
@@ -1418,7 +1408,7 @@ func (s *stubFindingRepository) EnrichBatchByFingerprints(_ context.Context, _ s
 func (s *stubFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
-func (s *stubFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
+func (s *stubFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) (int64, error) {
 	return 0, nil
 }
 func (s *stubFindingRepository) FindRelatedCVEs(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter) ([]vulnerability.RelatedCVE, error) {
@@ -1761,4 +1751,52 @@ func TestBuildFinding_EnumFieldsNeverViolateCheckConstraints(t *testing.T) {
 	require.Equal(t, "not_applicable", build(cf).ComplianceResult())
 	cf.Compliance.Result = "skipped"
 	require.Empty(t, build(cf).ComplianceResult())
+}
+
+// A dependency finding keeps the scanner's fixed versions on the finding
+// (trivy writes every release line comma separated), so the detail view can
+// pick the nearest fix without the shared catalog.
+func TestBuildFinding_KeepsScannerFixedVersions(t *testing.T) {
+	p := NewFindingProcessor(&stubFindingRepository{}, nil, stubAssetRepoGetByID{}, logger.NewNop())
+	assetID := shared.NewID()
+	cf := &ctis.Finding{
+		ID: "f1", Type: ctis.FindingTypeVulnerability, Title: "django: Django SQL injection",
+		Severity: ctis.SeverityCritical, RuleID: "CVE-2025-64459",
+		Vulnerability: &ctis.VulnerabilityDetails{
+			CVEID: "CVE-2025-64459", Package: "Django", PURL: "pkg:pypi/django@4.2.20",
+			AffectedVersion: "4.2.20", FixedVersion: "5.2.8, 5.1.14, 4.2.26",
+		},
+	}
+	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "scan-1"}, Tool: &ctis.Tool{Name: "trivy"}}
+	fp, base := generateFindingFingerprint(assetID, cf, report.Tool)
+	f, err := p.buildFinding(context.Background(), shared.NewID(), assetID, nil, shared.NewID(), report, cf, fp, base, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"5.2.8", "5.1.14", "4.2.26"},
+		vulnerability.MetaStrings(f.Metadata(), vulnerability.FindingMetaFixedVersions))
+}
+
+// A dependency finding keeps the advisory's references (http(s) only),
+// dates and CVSS source on the finding, since a report never writes the
+// shared catalog.
+func TestBuildFinding_KeepsAdvisoryFacts(t *testing.T) {
+	p := NewFindingProcessor(&stubFindingRepository{}, nil, stubAssetRepoGetByID{}, logger.NewNop())
+	assetID := shared.NewID()
+	pub := time.Date(2025, 11, 5, 15, 15, 41, 0, time.UTC)
+	cf := &ctis.Finding{
+		ID: "f1", Type: ctis.FindingTypeVulnerability, Title: "django: Django SQL injection",
+		Severity: ctis.SeverityCritical, RuleID: "CVE-2025-64459",
+		References: []string{"https://github.com/advisories/GHSA-frmv-pr5f-9mcr", "javascript:alert(1)"},
+		Vulnerability: &ctis.VulnerabilityDetails{
+			CVEID: "CVE-2025-64459", PublishedAt: &pub, CVSSSource: "ghsa",
+		},
+	}
+	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "scan-1"}, Tool: &ctis.Tool{Name: "trivy"}}
+	fp, base := generateFindingFingerprint(assetID, cf, report.Tool)
+	f, err := p.buildFinding(context.Background(), shared.NewID(), assetID, nil, shared.NewID(), report, cf, fp, base, nil)
+	require.NoError(t, err)
+	m := f.Metadata()
+	assert.Equal(t, []string{"https://github.com/advisories/GHSA-frmv-pr5f-9mcr"}, vulnerability.MetaStrings(m, vulnerability.FindingMetaReferences))
+	assert.Equal(t, "2025-11-05T15:15:41Z", m[vulnerability.FindingMetaPublishedAt])
+	assert.Equal(t, "ghsa", m[vulnerability.FindingMetaCVSSSource])
+	assert.Nil(t, m[vulnerability.FindingMetaModifiedAt])
 }

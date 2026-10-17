@@ -1,5 +1,7 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
+import { useBrand } from '@/context/brand-provider'
 import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -180,6 +182,8 @@ export function AddNotificationDialog({
   onOpenChange,
   onSuccess,
 }: AddNotificationDialogProps) {
+  const { t } = useTranslation()
+  const brand = useBrand()
   const [step, setStep] = useState<'provider' | 'config'>('provider')
   const [selectedProvider, setSelectedProvider] = useState<(typeof PROVIDERS)[number] | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -218,7 +222,7 @@ export function AddNotificationDialog({
       enabled_event_types: [],
       // Advanced settings defaults
       message_template: '',
-      include_details: true,
+      include_details: false,
       min_interval_minutes: 5,
       // Email defaults
       smtp_host: '',
@@ -226,7 +230,7 @@ export function AddNotificationDialog({
       smtp_username: '',
       smtp_password: '',
       from_email: '',
-      from_name: 'OpenCTEM.io',
+      from_name: brand.name,
       to_emails: '',
       use_tls: false,
       use_starttls: true,
@@ -481,7 +485,7 @@ export function AddNotificationDialog({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="from_name">From Name</Label>
-                      <Input id="from_name" placeholder="OpenCTEM.io" {...register('from_name')} />
+                      <Input id="from_name" placeholder={brand.name} {...register('from_name')} />
                     </div>
                   </div>
 
@@ -711,9 +715,12 @@ export function AddNotificationDialog({
                       onCheckedChange={(checked) => setValue('include_details', !!checked)}
                     />
                     <label htmlFor="include_details" className="text-sm font-normal cursor-pointer">
-                      Include detailed information in notifications
+                      {t('notificationTypes.includeDetails.label')}
                     </label>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('notificationTypes.includeDetails.hint')}
+                  </p>
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">

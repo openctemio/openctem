@@ -1,10 +1,13 @@
 # Feed transfer
 
-Design: [RFC-072](../rfcs/RFC-072-chunked-feed-transfer.md). Code: sdk-go
-`pkg/transfer` (fetcher) and `pkg/transfer/bundle` (format, writer,
-consumer), one Go module of their own, `github.com/openctemio/sdk-go/pkg/transfer`
-(tags `pkg/transfer/vX.Y.Z`). The api requires that module only, never the
-whole SDK, so SDK releases and their dependency graph do not reach the api.
+Design: [RFC-072](../rfcs/RFC-072-chunked-feed-transfer.md). Code: ctis
+`transfer` (fetcher) and `transfer/bundle` (format, writer, consumer), one Go
+module of their own, `github.com/openctemio/ctis/transfer` (tags
+`transfer/vX.Y.Z`). It is a contract: the feed publishers and the api share
+it, and the api depends on no sensor SDK module at all
+([RFC-094](../rfcs/RFC-094-platform-contracts-only.md)). It moved unchanged
+from `github.com/openctemio/sdk-go/pkg/transfer` v0.1.0; a golden test in ctis
+pins the published bytes to that version.
 The fetcher has no default HTTP client: the api passes `httpsec.SafeHTTPClient`.
 
 Large data crosses the platform boundary in two directions, each through one

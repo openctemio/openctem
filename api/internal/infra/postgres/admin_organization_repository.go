@@ -36,23 +36,22 @@ const adminOrganizationSelect = `
 	         WHERE m.tenant_id = t.id AND m.status = 'active'),
 	       COALESCE((SELECT array_agg(u.email ORDER BY u.email) FROM tenant_members m
 	         JOIN users u ON u.id = m.user_id
-	         WHERE m.tenant_id = t.id AND m.role = 'owner' AND m.status = 'active'), '{}'),
+	         JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+	         WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active'), '{}'),
 	       EXISTS (SELECT 1 FROM saml_providers s WHERE s.tenant_id = t.id AND s.enabled),
 	       (SELECT COUNT(*) FROM tenant_identity_providers p
 	         WHERE p.tenant_id = t.id AND p.is_active),
 	       (SELECT COUNT(*) FROM verified_domains d
 	         WHERE d.tenant_id = t.id AND d.verified_at IS NOT NULL),
 	       COALESCE((t.settings -> 'security' ->> 'sso_enforced')::boolean, FALSE),
-	       ` + adminOrganizationPlanExpr + `
+	       (EXISTS (SELECT 1 FROM tenant_limits l WHERE l.tenant_id = t.id)
+	        OR EXISTS (SELECT 1 FROM tenant_feature_denies d WHERE d.tenant_id = t.id))
 	FROM tenants t`
-
-// adminOrganizationPlanExpr is the organization's plan: the stored one, or
-// enterprise for an organization created before plans (plan.go).
-const adminOrganizationPlanExpr = `COALESCE((SELECT tp.plan FROM tenant_plans tp WHERE tp.tenant_id = t.id), 'enterprise')`
 
 // adminOrganizationActiveOwner holds when the organization has an active owner.
 const adminOrganizationActiveOwner = `EXISTS (SELECT 1 FROM tenant_members m
-	WHERE m.tenant_id = t.id AND m.role = 'owner' AND m.status = 'active')`
+	JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+	WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active')`
 
 func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, error) {
 	var (
@@ -62,7 +61,7 @@ func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, 
 	)
 	if err := sc.Scan(&id, &o.Name, &o.Slug, &o.Description, &o.CreatedAt,
 		&o.ActiveMembers, &owners, &o.SAMLEnabled, &o.ActiveIdentityProviders,
-		&o.VerifiedDomains, &o.SSOEnforced, &o.Plan); err != nil {
+		&o.VerifiedDomains, &o.SSOEnforced, &o.LimitsApply); err != nil {
 		return nil, err
 	}
 	parsed, err := shared.IDFromString(id)
@@ -88,10 +87,6 @@ func (r *AdminOrganizationRepository) ListOrganizations(ctx context.Context, f a
 		conds = append(conds, "NOT "+adminOrganizationActiveOwner)
 	case admin.OrganizationOwnerPresent:
 		conds = append(conds, adminOrganizationActiveOwner)
-	}
-	if f.Plan != "" {
-		args = append(args, f.Plan)
-		conds = append(conds, fmt.Sprintf("%s = $%d", adminOrganizationPlanExpr, len(args)))
 	}
 	if !f.IncludeSystem {
 		args = append(args, tenant.SystemTenantID)

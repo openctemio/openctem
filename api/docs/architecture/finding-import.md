@@ -86,9 +86,12 @@ matched against the tenant's findings:
 - the candidates are filtered by the uploader's data scope.
 
 Then, outside a preview, the statement is stored on every matched finding
-(the `vex_*` columns of migration 001105). A `not_affected` statement closes
-a finding (`false_positive`, `resolution_method = vex_not_affected`, the
-justification and source as the resolution) only when all of these hold:
+(the `vex_*` columns of migration 001105). A `not_affected` statement never
+sets a status itself: a false positive needs a second person, so it creates a
+pending false-positive request (the actor `vex`, the statement's justification,
+an `approval_requested` timeline entry) that the approval policy routes to
+approvers, the same as a VEX statement in a scan report. The request is made
+only when all of these hold:
 
 - `INGEST_VEX=enforce`;
 - the uploader holds `findings:approve` (the permission a false positive
@@ -96,7 +99,9 @@ justification and source as the resolution) only when all of these hold:
 - the finding is open and not from a human source (pentest, manual, bug
   bounty, red team).
 
-Otherwise the findings it would close are counted (`would_close`). One
+A finding that already has a pending request, or whose earlier VEX request a
+person rejected or canceled, gets none. Otherwise the findings it would
+request are counted (`would_close`); the count of requests made is `requested`. One
 statement touches at most 5,000 findings.
 
 ## Producer record
@@ -105,7 +110,7 @@ Every committed file gets a row in `finding_imports` (migration 001142)
 before anything is written: tenant, uploader (`actor_user_id`), format, the
 SHA-256 of the file name (the name itself is only in the audit log) and,
 when the file is done, the counts (assets and findings created and updated,
-components, VEX statements, skipped, VEX stored and closed). A preview
+components, VEX statements, skipped, VEX stored and requested; the column is `vex_closed`). A preview
 writes none. The record's id is:
 
 - the report id of the ingest, so the findings the import created or updated
@@ -122,7 +127,7 @@ record is read by `(tenant_id, id)` only.
 Every import and every preview is recorded as `asset.imported` with
 `source = finding_import`: file names (labels only), formats, counts, VEX
 counts and whether the uploader was restricted. File content is never
-logged. A VEX document that closed findings, or would have, adds an
+logged. A VEX document that requested false positives, or would have, adds an
 `ingest.vex_applied` or `ingest.vex_dry_run` record listing up to 100 of the
 finding ids.
 
@@ -136,6 +141,6 @@ finding ids.
 | Malformed encodings | UTF-8, US-ASCII and ISO-8859-1 only; invalid UTF-8 refused with its line |
 | Cross-tenant write | tenant from the request; every query `tenant_id = $1` first; `TestFindingVEXDocument_DB`, `TestFindingImport_VEXDocument_DB` |
 | Out-of-scope write by a restricted member | ingest `Actor`; VEX candidates filtered by the data scope |
-| Forged VEX closing findings | operator opt-in (`enforce`) plus `findings:approve`; human-source findings never closed; audited with ids |
+| Forged VEX closing findings | operator opt-in (`enforce`) plus `findings:approve` to make the request; the request is pending until another person approves it under the approval policy (the actor `vex` needs one more sign-off); human-source findings never requested; audited with ids |
 | Abuse of the parser | per-organization rate limit; request timeout |
 | Credentials or account names in reports | the importers skip the Nessus scan policy and login accounts and redact credentials in scanner output |

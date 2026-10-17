@@ -127,12 +127,14 @@ type Handlers struct {
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
 	ScanWindow    *handler.ScanWindowHandler    // nil if not initialized (no database)
-	ScanWorkflow  *handler.ScanWorkflowHandler  // nil if not initialized (no database)
-	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
-	Tool          *handler.ToolHandler          // nil if not initialized (no database)
-	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
-	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
-	Scan          *handler.ScanHandler          // nil if not initialized (no database)
+	// FindingLifecycle serves sub-statuses and lifecycle schemes (RFC-110); nil without a database.
+	FindingLifecycle *handler.FindingLifecycleHandler
+	ScanWorkflow     *handler.ScanWorkflowHandler // nil if not initialized (no database)
+	ScanProfile      *handler.ScanProfileHandler  // nil if not initialized (no database)
+	Tool             *handler.ToolHandler         // nil if not initialized (no database)
+	ToolCategory     *handler.ToolCategoryHandler // nil if not initialized (no database)
+	Capability       *handler.CapabilityHandler   // nil if not initialized (no database)
+	Scan             *handler.ScanHandler         // nil if not initialized (no database)
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
 	CIAdmin             *handler.CIAdminHandler
@@ -142,8 +144,11 @@ type Handlers struct {
 	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
+	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
 	AdminProgramFeed    *handler.AdminProgramFeedHandler    // program feed sources (RFC-065 §16.6)
+	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
@@ -159,6 +164,7 @@ type Handlers struct {
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
 	AssetSoftware          *handler.AssetSoftwareHandler          // RFC-066; nil if not initialized
+	AssetTechnology        *handler.AssetTechnologyHandler        // RFC-112; nil if not initialized
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
 	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
 	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
@@ -182,15 +188,11 @@ type Handlers struct {
 	FindingEvidenceItems *handler.FindingEvidenceItemsHandler
 
 	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
-	JiraWebhook   *handler.JiraWebhookHandler   // nil if not initialized (no database)
+	JiraWebhook *handler.JiraWebhookHandler // nil if not initialized (no database)
+	// TicketMapping serves the ticket field and status mapping editor (nil
+	// without a database).
+	TicketMapping *handler.TicketMappingHandler
 	GitHubWebhook *handler.GitHubWebhookHandler // nil if not initialized (no database)
-
-	// JiraWebhookSecretResolver resolves the per-tenant Jira inbound-webhook
-	// HMAC secrets (stored on each tenant's Jira integration). When non-nil,
-	// the incoming-webhook route verifies against the requesting tenant's own
-	// secrets (plus the platform fallback), closing the cross-tenant spoofing
-	// gap of a single shared secret. nil falls back to the platform secret only.
-	JiraWebhookSecretResolver JiraWebhookSecretResolver
 
 	// Pentest Campaign Management handlers
 	Pentest                *handler.PentestHandler               // nil if not initialized (no database)
@@ -211,8 +213,10 @@ type Handlers struct {
 	ThreatActor *handler.ThreatActorHandler // nil if not initialized (no database)
 
 	// Remediation Campaigns
-	RemediationCampaign *handler.RemediationCampaignHandler // nil if not initialized
-	ReportSchedule      *handler.ReportScheduleHandler      // nil if not initialized
+	RemediationCampaign *handler.RemediationCampaignHandler   // nil if not initialized
+	RemediationTask     *handler.RemediationTaskHandler       // nil if not initialized
+	RemediationSuggest  *handler.RemediationSuggestionHandler // nil if not initialized
+	ReportSchedule      *handler.ReportScheduleHandler        // nil if not initialized
 
 	// Business Units
 	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
@@ -255,6 +259,7 @@ type Handlers struct {
 	AdminPlatformUser *handler.AdminPlatformUserHandler
 	AdminSession      *handler.AdminSessionHandler
 	AdminOperations   *handler.AdminOperationsHandler
+	AdminSystem       *handler.AdminSystemHandler
 	Announcement      *handler.AnnouncementHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
@@ -262,9 +267,10 @@ type Handlers struct {
 	AdminAuditChain         *handler.AdminAuditChainHandler
 	// AccessRequest: the request-access queue (public form + console).
 	AccessRequest *handler.AccessRequestHandler
-	// Plan: plans and limits (console plan defaults, organization plans and
-	// overrides, the organization's own usage).
-	Plan *handler.PlanHandler
+	// Limits: per-organization limits and feature denies (console
+	// self-service defaults, an organization's limits and denies, the
+	// organization's own usage).
+	Limits *handler.LimitsHandler
 	// IdleWorkspace: an organization's idle lifecycle in the console.
 	IdleWorkspace *handler.IdleWorkspaceHandler
 	// IdleReadOnly refuses changes to an idle Free organization (read-only
@@ -276,14 +282,29 @@ type Handlers struct {
 	AdminEmail *handler.AdminEmailHandler
 	// AdminLegal: Console > System > Legal and the public GET /api/v1/legal (RFC-079).
 	AdminLegal *handler.AdminLegalHandler
+	// Brand: the public instance brand (GET /api/v1/brand).
+	Brand *handler.BrandHandler
 	// AdminScanPolicy: the platform policy for scan approval
 	// (RFC-073), platform default and per organization.
 	AdminScanPolicy *handler.AdminScanPolicyHandler
+	// AdminInstanceScanZone serves instance scan zones (RFC-100 §6.1).
+	AdminInstanceScanZone *handler.AdminInstanceScanZoneHandler
+	// AdminSharedFleet: the console's shared sensor fleet (RFC-100 §12).
+	AdminSharedFleet *handler.AdminSharedFleetHandler
+	// AdminSharedSensor: shared sensor enrollment tokens (RFC-100).
+	AdminSharedSensor *handler.AdminSharedSensorHandler
 	// ScanGovernance: the organization's scan approval settings (RFC-073).
 	ScanGovernance *handler.ScanGovernanceHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
+	// AdminNetwork refuses console requests from outside ADMIN_ALLOWED_CIDRS
+	// inside the console's routes (behind the server-wide gate). Nil: no
+	// route-level check (route-shape tests).
+	AdminNetwork Middleware
+	// AdminStepUp confirms protected console actions (route-level step-up).
+	// Nil refuses every protected route.
+	AdminStepUp middleware.AdminStepUpConfirmer
 
 	// Admin Audit middleware (audit logging for admin operations)
 	AdminAuditMiddleware *middleware.AuditMiddleware
@@ -303,6 +324,11 @@ type Handlers struct {
 	// SSOChange lists and decides admin-console SSO changes that wait for an
 	// owner's approval (RFC-022). nil if SAML/SSO is not initialized.
 	SSOChange *handler.SSOChangeHandler
+	// SupportAccess is the organization side of support access (RFC-063):
+	// grants, revocation, the active list. nil if not initialized.
+	SupportAccess *handler.SupportAccessHandler
+	// AdminSupport is the console side of support access (RFC-063).
+	AdminSupport *handler.AdminSupportHandler
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
@@ -513,6 +539,7 @@ func Register(
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
 	registerLegalRoute(router, h.AdminLegal)
+	registerBrandRoutes(router, h.Brand)
 	// API documentation: public outside production; in production the spec
 	// needs a signed-in user and the reference page a platform administrator.
 	if h.Docs != nil {
@@ -534,7 +561,7 @@ func Register(
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
 		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange)
-		registerOrganizationPlanRoutes(router, h.Plan, authMiddleware, userSync)
+		registerOrganizationLimitsRoutes(router, h.Limits, authMiddleware, userSync)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized
@@ -580,6 +607,7 @@ func Register(
 		registerAssetIdentifierRoutes(router, h.AssetIdentifier, authMiddleware, userSync)
 	}
 	registerAssetSoftwareRoutes(router, h.AssetSoftware, authMiddleware, userSync)
+	registerAssetTechnologyRoutes(router, h.AssetTechnology, authMiddleware, userSync)
 	if h.AssetStateHistory != nil {
 		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync)
 	}
@@ -617,9 +645,11 @@ func Register(
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerSharedSensorsSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
+	registerOrganizationSupportAccessRoutes(router, h.SupportAccess, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
@@ -632,7 +662,7 @@ func Register(
 	}
 
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
-	registerIncomingWebhookRoutes(router, h.JiraWebhook, h.JiraWebhookSecretResolver, log)
+	registerIncomingWebhookRoutes(router, h.JiraWebhook, log)
 
 	// Public GitHub webhook endpoint — verified in the handler via GitHub's
 	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
@@ -753,6 +783,12 @@ func Register(
 	if h.RemediationCampaign != nil {
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
+	if h.RemediationTask != nil {
+		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+	}
+	if h.RemediationSuggest != nil {
+		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+	}
 	if h.ReportSchedule != nil {
 		registerReportScheduleRoutes(router, h.ReportSchedule, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleReports))
 	}
@@ -810,7 +846,7 @@ func Register(
 	// Integration routes (tenant from JWT token)
 	if h.Integration != nil {
 		registerIntegrationRoutes(router, h.Integration, h.JiraWebhook, h.DefectDojo, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleIntegrations),
-			h.Scan, h.ModuleGate.RequireModule(moduledom.ModuleScans))
+			h.Scan, h.ModuleGate.RequireModule(moduledom.ModuleScans), h.TicketMapping)
 	}
 
 	// Asset Group routes (tenant from JWT token)
@@ -911,7 +947,6 @@ func Register(
 
 	// The fleet: sensors (daemon mode) and CI pipelines (runner mode) in one
 	// read model (RFC-051).
-	registerFleetRoutes(router, h.Sensor, h.CIAdmin, h.ModuleGate, authMiddleware, userSync, log)
 
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
@@ -919,6 +954,9 @@ func Register(
 	}
 	if h.ScanWindow != nil {
 		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)
+	}
+	if h.FindingLifecycle != nil {
+		registerFindingLifecycleRoutes(router, h.FindingLifecycle, authMiddleware, userSync)
 	}
 
 	// Initialize trigger rate limiter for scan workflow/scan trigger endpoints
@@ -966,6 +1004,9 @@ func Register(
 	// Template Source routes (tenant from JWT token)
 	if h.ContentPack != nil {
 		registerContentPackRoutes(router, h.ContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+	if h.ContentCatalog != nil {
+		registerContentCatalogRoutes(router, h.ContentCatalog, authMiddleware, userSync)
 	}
 	if h.PlatformContentPack != nil {
 		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
@@ -1076,7 +1117,13 @@ func Register(
 	// ==========================================================================
 	// These routes are for OpenCTEM platform administrators only.
 	// They manage shared infrastructure that serves all tenants.
-	registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
+	if h.AdminNetwork == nil {
+		h.AdminNetwork = middleware.RequireAdminNetwork(cfg.AdminPlane.AllowedPrefixes(), log)
+	}
+	// A tenant-plane process (OPENCTEM_PLANE=tenant) has no console routes.
+	if cfg.AdminPlane.ServesConsole() {
+		registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
+	}
 
 	// ==========================================================================
 	// WebSocket Routes (protected with auth)
@@ -1300,6 +1347,9 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	if dataScopeGuardMiddleware != nil {
 		middlewares = append(middlewares, dataScopeGuardMiddleware)
 	}
+	// The caller's fresh permissions for rules decided in services (a
+	// finding lifecycle move that needs a permission).
+	middlewares = append(middlewares, middleware.PermissionCheckContext())
 	return middlewares
 }
 

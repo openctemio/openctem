@@ -3,6 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html"
 	"mime"
 	"net/http"
 	"net/url"
@@ -13,6 +15,7 @@ import (
 	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -112,12 +115,12 @@ func (h *MCPOAuthHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
-// oauthErrorPage is the page shown when an authorization request cannot be
+// oauthErrorPageTemplate is the page shown when an authorization request cannot be
 // sent back to the client. Fixed text only: nothing from the request is
 // echoed.
-const oauthErrorPage = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cannot connect the application</title>
+const oauthErrorPageTemplate = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cannot connect the application</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;color:#222}@media(prefers-color-scheme:dark){body{background:#111;color:#ddd}}</style></head>
-<body><h1>Cannot connect the application</h1><p>The application asked to connect to OpenCTEM in a way that cannot be accepted (unknown application, or a return address it did not register). Nothing was shared.</p><p>Contact whoever provides the application.</p></body></html>`
+<body><h1>Cannot connect the application</h1><p>The application asked to connect to %s in a way that cannot be accepted (unknown application, or a return address it did not register). Nothing was shared.</p><p>Contact whoever provides the application.</p></body></html>`
 
 func writeOAuthErrorPage(w http.ResponseWriter, code string) {
 	hdr := w.Header()
@@ -127,7 +130,7 @@ func writeOAuthErrorPage(w http.ResponseWriter, code string) {
 	hdr.Set("X-Frame-Options", "DENY")
 	hdr.Set("X-OAuth-Error", code)
 	w.WriteHeader(http.StatusBadRequest)
-	_, _ = w.Write([]byte(oauthErrorPage))
+	_, _ = fmt.Fprintf(w, oauthErrorPageTemplate, html.EscapeString(brand.Name()))
 }
 
 // Token serves POST /oauth/token.
@@ -240,9 +243,17 @@ type consentRequestResponse struct {
 	Verified     bool   `json:"verified"`
 	// Blocked is why the organization policy refuses the application
 	// (mcp_disabled, client_not_allowed), or empty.
-	Blocked   string                 `json:"blocked,omitempty"`
-	Scopes    []consentScopeResponse `json:"scopes"`
-	ExpiresAt time.Time              `json:"expires_at"`
+	Blocked string `json:"blocked,omitempty"`
+	// Requestable: blocked only because the publisher is not approved;
+	// the member may ask an administrator (POST .../access-request).
+	Requestable bool `json:"requestable"`
+	// CanAllow: the caller may approve the publisher here (POST
+	// .../allow-publisher).
+	CanAllow bool `json:"can_allow"`
+	// AccessRequested: a request for this publisher is already waiting.
+	AccessRequested bool                   `json:"access_requested"`
+	Scopes          []consentScopeResponse `json:"scopes"`
+	ExpiresAt       time.Time              `json:"expires_at"`
 }
 
 type consentDecisionResponse struct {
@@ -289,6 +300,7 @@ func (h *MCPOAuthHandler) GetConsentRequest(w http.ResponseWriter, r *http.Reque
 		ID: view.RequestID, ClientName: view.ClientName, ClientID: view.ClientID, ClientKind: string(view.ClientKind),
 		ClientHost: view.ClientHost, RedirectHost: view.RedirectHost, RedirectURI: view.RedirectURI,
 		LoopbackOnly: view.LoopbackOnly, ExpiresAt: view.ExpiresAt, Verified: view.Verified, Blocked: view.Blocked,
+		Requestable: view.Requestable, CanAllow: view.CanAllow, AccessRequested: view.AccessRequested,
 	}
 	for _, s := range view.Scopes {
 		out.Scopes = append(out.Scopes, consentScopeResponse{Scope: string(s.Scope), Title: s.Title, Write: s.Write, Granted: s.Granted, NotAllowed: s.NotAllowed})
@@ -345,8 +357,65 @@ func (h *MCPOAuthHandler) DenyConsent(w http.ResponseWriter, r *http.Request) {
 	noStoreJSON(w, http.StatusOK, consentDecisionResponse{RedirectTo: to})
 }
 
+// RequestPublisherAccess serves POST /api/v1/oauth/requests/{id}/access-request.
+// @Summary      Ask the organization to approve an AI application
+// @Description  From the consent page of an application the organization has not approved: records a request for administrators to approve the application's publisher (the host of its client metadata document). Everything is taken from the stored authorization request; repeated requests for the same publisher are merged. At most 5 new requests per member per day and 50 waiting per organization. Administrators are notified. Browser sessions only. Audited.
+// @Tags         MCP
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Authorization request id"
+// @Success      202  {object}  MCPAccessRequestCreated
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /oauth/requests/{id}/access-request [post]
+func (h *MCPOAuthHandler) RequestPublisherAccess(w http.ResponseWriter, r *http.Request) {
+	requestID, userID, tenantID, ok := consentCaller(r)
+	if !ok {
+		apierror.NotFound("Authorization request").WriteJSON(w)
+		return
+	}
+	ar, err := h.svc.RequestAccess(r.Context(), requestID, userID, tenantID, oauthActor(r))
+	if err != nil {
+		h.consentError(w, err)
+		return
+	}
+	noStoreJSON(w, http.StatusAccepted, MCPAccessRequestCreated{ID: ar.ID.String(), Status: string(mcpoauth.AccessRequestPending)})
+}
+
+// AllowPublisher serves POST /api/v1/oauth/requests/{id}/allow-publisher.
+// @Summary      Approve an AI application's publisher from the consent page
+// @Description  For a caller who may change the organization policy: adds the publisher host of the application behind the authorization request to the organization's approved publishers, closing any waiting request for it, so the caller can continue connecting. Needs a recent sign-in. Audited.
+// @Tags         MCP
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Authorization request id"
+// @Success      204
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Router       /oauth/requests/{id}/allow-publisher [post]
+func (h *MCPOAuthHandler) AllowPublisher(w http.ResponseWriter, r *http.Request) {
+	requestID, userID, tenantID, ok := consentCaller(r)
+	if !ok {
+		apierror.NotFound("Authorization request").WriteJSON(w)
+		return
+	}
+	if err := h.svc.AllowPublisherFromConsent(r.Context(), requestID, userID, tenantID, oauthActor(r)); err != nil {
+		h.consentError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *MCPOAuthHandler) consentError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, mcpoauthapp.ErrAccessRequestLimit):
+		apierror.TooManyRequests("Too many access requests; try again later or ask an administrator directly").WriteJSON(w)
+	case errors.Is(err, mcpoauthapp.ErrAccessRequestNotPossible):
+		apierror.BadRequest("This application cannot be requested").WriteJSON(w)
+	case errors.Is(err, mcpoauthapp.ErrAccessRequestsUnavailable):
+		apierror.NotFound("Access requests").WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
 	case errors.Is(err, mcpoauthapp.ErrNothingToGrant):
 		apierror.Forbidden("You have none of the access this application asks for in this organization").WriteJSON(w)
 	case errors.Is(err, mcpoauthapp.ErrPolicy):

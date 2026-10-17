@@ -135,6 +135,105 @@ func (r *SuppressionRepository) CountMatchingOpenFindings(ctx context.Context, r
 	return len(ids), nil
 }
 
+// SampleMatchingOpenFindings is the caller's view of the approval preview:
+// the findings the rule would close on assets the scope admits (counted up to
+// limit+1) and the first sampleSize of them, in id order. It reads only;
+// the scope decides per page of candidates, so findings of assets the caller
+// cannot see are neither counted nor listed. A nil scope admits nothing.
+func (r *SuppressionRepository) SampleMatchingOpenFindings(ctx context.Context, rule *suppression.Rule,
+	scope suppression.ScopeFilter, limit, sampleSize int,
+) (int, []suppression.SampleFinding, error) {
+	from := suppressionApplyFrom[vulnerability.FindingStatus(rule.SuppressionType().Disposition())]
+	if scope == nil || len(from) == 0 || limit < 0 {
+		return 0, nil, nil
+	}
+	var exactRule, prefixRule string
+	if rid := rule.RuleID(); rid != "" {
+		if p, ok := strings.CutSuffix(rid, "*"); ok {
+			prefixRule = likeEscape(p) + "%"
+		} else {
+			exactRule = rid
+		}
+	}
+	var assetID any
+	if a := rule.AssetID(); a != nil {
+		assetID = a.String()
+	}
+	args := []any{rule.TenantID().String(), pq.Array(from), rule.ToolName(), exactRule, prefixRule,
+		assetID, rule.PathPattern() != ""}
+
+	count := 0
+	var sampleIDs []string
+	after := "00000000-0000-0000-0000-000000000000"
+	for {
+		page, err := suppressionCandidatePage(ctx, r.db, args, after)
+		if err != nil {
+			return 0, nil, err
+		}
+		assets := make([]shared.ID, 0, len(page))
+		for _, c := range page {
+			assets = append(assets, c.match.AssetID)
+		}
+		admit, err := scope(ctx, rule.TenantID(), assets)
+		if err != nil {
+			return 0, nil, fmt.Errorf("resolve data scope: %w", err)
+		}
+		for _, c := range page {
+			if !rule.MatchesCriteria(c.match) || !admit(c.match.AssetID) {
+				continue
+			}
+			count++
+			if len(sampleIDs) < sampleSize {
+				sampleIDs = append(sampleIDs, c.id)
+			}
+			if count > limit {
+				break
+			}
+		}
+		if count > limit || len(page) < suppressionApplyPage {
+			break
+		}
+		after = page[len(page)-1].id
+	}
+	sample, err := r.loadSample(ctx, rule.TenantID(), sampleIDs)
+	return count, sample, err
+}
+
+// loadSample reads the display fields of the sampled findings, tenant-scoped,
+// in the order of ids. The message of a secret finding can quote the secret,
+// so it is never read: the rule id and path identify it.
+func (r *SuppressionRepository) loadSample(ctx context.Context, tenantID shared.ID, ids []string) ([]suppression.SampleFinding, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT f.id::text, f.asset_id::text, COALESCE(a.name, ''), COALESCE(f.rule_id, ''), COALESCE(f.file_path, ''),
+		       CASE WHEN f.finding_type = 'secret' OR f.source = 'secret' THEN '' ELSE left(COALESCE(f.message, ''), 200) END, f.severity::text, f.status::text
+		FROM findings f
+		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
+		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])
+		ORDER BY f.id`, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("load preview sample: %w", err)
+	}
+	defer rows.Close()
+	var out []suppression.SampleFinding
+	for rows.Next() {
+		var f suppression.SampleFinding
+		var id, asset string
+		if err := rows.Scan(&id, &asset, &f.AssetName, &f.RuleID, &f.FilePath, &f.Title, &f.Severity, &f.Status); err != nil {
+			return nil, fmt.Errorf("scan preview sample: %w", err)
+		}
+		f.ID, _ = shared.IDFromString(id)
+		f.AssetID, _ = shared.IDFromString(asset)
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate preview sample: %w", err)
+	}
+	return out, nil
+}
+
 // Approve persists the approved rule, closes the open findings it matches and
 // records the audit entry in one transaction (see suppression.Repository).
 func (r *SuppressionRepository) Approve(
@@ -174,6 +273,25 @@ func (r *SuppressionRepository) Approve(
 		return res, suppression.ErrRuleChangedSinceReview
 	}
 
+	res, err = r.approveLockedInTx(ctx, tx, rule, actorID, details, limit)
+	if err != nil {
+		return res, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return res, fmt.Errorf("commit transaction: %w", err)
+	}
+	observeSuppressionHits("approval", res.Applied)
+	return res, nil
+}
+
+// approveLockedInTx saves the approved rule (locked and checked by the
+// caller), gives the open findings it matches its disposition and records
+// the audit entry, inside tx.
+func (r *SuppressionRepository) approveLockedInTx(ctx context.Context, tx *sql.Tx, rule *suppression.Rule,
+	actorID shared.ID, details map[string]any, limit int,
+) (suppression.ApplyResult, error) {
+	var res suppression.ApplyResult
 	if err := r.saveInTx(ctx, tx, rule); err != nil {
 		return res, err
 	}
@@ -209,9 +327,6 @@ func (r *SuppressionRepository) Approve(
 		return res, err
 	}
 
-	if err := tx.Commit(); err != nil {
-		return res, fmt.Errorf("commit transaction: %w", err)
-	}
 	return res, nil
 }
 
@@ -223,6 +338,17 @@ func (r *SuppressionRepository) Approve(
 func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Rule, actorID shared.ID, ids []string) (int, error) {
 	target := rule.SuppressionType().Disposition()
 	from := suppressionApplyFrom[vulnerability.FindingStatus(target)]
+	// Lock the candidates, then let the transition engine decide each one
+	// with the rule as the actor (the rule's own four-eyes approval is what
+	// authorizes the move). A finding someone moved since it was read, or
+	// one the engine refuses, is skipped.
+	ids, err := lockAndDecideSuppression(ctx, tx, rule, target, from, ids)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
 	rows, err := tx.QueryContext(ctx, `
 		WITH old AS (
 			SELECT id, status FROM findings
@@ -232,12 +358,14 @@ func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Ru
 			FOR UPDATE
 		)
 		UPDATE findings f SET
-			status = $4, resolution = 'suppressed', resolution_method = NULL,
-			resolved_at = NOW(), resolved_by = NULL, updated_at = NOW()
+			status = $4, resolution = 'suppressed', closure_reason = CASE WHEN $4::varchar = 'accepted' THEN 'risk_accepted' END, verification = NULL,
+			resolved_at = NOW(), resolved_by = NULL, updated_at = NOW(),
+			acceptance_expires_at = CASE WHEN $4::varchar = 'accepted' THEN `+acceptanceCappedSQL("$5::timestamptz", "f")+` END
 		FROM old
 		WHERE f.tenant_id = $1 AND f.id = old.id
 		RETURNING f.id::text, old.status`,
-		rule.TenantID().String(), pq.Array(ids), pq.Array(from), target)
+		rule.TenantID().String(), pq.Array(ids), pq.Array(from), target,
+		ruleAcceptanceEnd(rule.ExpiresAt(), time.Now()))
 	if err != nil {
 		return 0, fmt.Errorf("apply suppression disposition: %w", err)
 	}
@@ -262,6 +390,7 @@ func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Ru
 		"resolution":          "suppressed",
 		"reason":              "suppression rule approved",
 		"suppression_rule_id": rule.ID().String(),
+		"actor_kind":          string(vulnerability.TransitionActorRule),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("marshal apply activity: %w", err)
@@ -275,6 +404,40 @@ func applySuppressionChunk(ctx context.Context, tx *sql.Tx, rule *suppression.Ru
 		return 0, fmt.Errorf("record apply activity: %w", err)
 	}
 	return len(changed), nil
+}
+
+// lockAndDecideSuppression row-locks the listed open findings of the rule's
+// tenant and returns the ids the transition engine allows the rule to move
+// to target.
+func lockAndDecideSuppression(ctx context.Context, tx *sql.Tx, rule *suppression.Rule, target string, from, ids []string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id::text, status, source FROM findings
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+		  AND status = ANY($3)
+		  AND source NOT IN `+coverageProtectedSources+`
+		ORDER BY id
+		FOR UPDATE`,
+		rule.TenantID().String(), pq.Array(ids), pq.Array(from))
+	if err != nil {
+		return nil, fmt.Errorf("lock suppression candidates: %w", err)
+	}
+	defer rows.Close()
+	actor := vulnerability.TransitionActor{Kind: vulnerability.TransitionActorRule, RuleID: rule.ID()}
+	var allowed []string
+	for rows.Next() {
+		var id, status, source string
+		if err := rows.Scan(&id, &status, &source); err != nil {
+			return nil, fmt.Errorf("scan suppression candidate: %w", err)
+		}
+		facts := vulnerability.TransitionFacts{Status: vulnerability.FindingStatus(status), Source: vulnerability.FindingSource(source)}
+		if vulnerability.EvaluateTransition(facts, actor, vulnerability.FindingStatus(target)).Allowed {
+			allowed = append(allowed, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate suppression candidates: %w", err)
+	}
+	return allowed, nil
 }
 
 // scanAppliedFindings reads the (id, previous status) rows of the apply

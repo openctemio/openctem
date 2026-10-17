@@ -33,6 +33,8 @@ func registerAssetRoutes(
 		r.GET("/facets", h.GetFacets, middleware.Require(permission.AssetsRead))
 		r.GET("/overview", h.GetInventoryOverview, middleware.Require(permission.AssetsRead))
 		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
+		// Technology filter options, data-scope filtered (RFC-112).
+		r.GET("/technologies", h.ListTechnologyFacets, middleware.Require(permission.AssetsRead))
 		// The organization's recent asset changes (RFC-069 timeline).
 		r.GET("/changes", h.ListTenantChanges, middleware.Require(permission.AssetsRead))
 
@@ -64,6 +66,8 @@ func registerAssetRoutes(
 		r.GET("/{id}/freshness", h.GetFreshness, middleware.Require(permission.AssetsRead))
 		// What each capability the asset needs has done and why (RFC-093).
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
+		// Why the risk score is what it is (docs/architecture/asset-risk-score.md).
+		r.GET("/{id}/risk", h.GetRisk, middleware.Require(permission.AssetsRead))
 
 		// Status operations
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AssetsWrite))
@@ -708,6 +712,17 @@ func registerAssetSoftwareRoutes(router Router, h *handler.AssetSoftwareHandler,
 		return
 	}
 	router.Group("/api/v1/assets/{id}/software", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
+// registerAssetTechnologyRoutes registers the technologies detected on an
+// asset (RFC-112).
+func registerAssetTechnologyRoutes(router Router, h *handler.AssetTechnologyHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/assets/{id}/technologies", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

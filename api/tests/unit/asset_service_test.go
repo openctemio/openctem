@@ -240,11 +240,11 @@ func (m *MockAssetRepository) ListDistinctTags(_ context.Context, _ shared.ID, _
 	return asset.TagList{Tags: []string{}}, nil
 }
 
-func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
+func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID, _ *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
 	return make(map[string]asset.AssetTypeStats), nil
 }
 
-func (m *MockAssetRepository) GetAverageRiskScore(_ context.Context, _ shared.ID) (float64, error) {
+func (m *MockAssetRepository) GetAverageRiskScore(_ context.Context, _ shared.ID, _ *shared.DataScope) (float64, error) {
 	return 0, nil
 }
 
@@ -2180,7 +2180,7 @@ func TestAssetService_UpdateAsset_ClearTags(t *testing.T) {
 	}
 }
 
-func TestAssetService_CreateAsset_RiskScoreCalculated(t *testing.T) {
+func TestAssetService_CreateAsset_NoFindingsNoRisk(t *testing.T) {
 	svc, _ := newTestService()
 
 	a, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
@@ -2192,9 +2192,10 @@ func TestAssetService_CreateAsset_RiskScoreCalculated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// A public critical asset should have a non-zero risk score
-	if a.RiskScore() == 0 {
-		t.Error("expected non-zero risk score for public critical asset")
+	// No open finding: exposure and criticality scale risk but are not risk
+	// on their own (likelihood-impact model).
+	if a.RiskScore() != 0 {
+		t.Errorf("risk score of an asset without findings = %d, want 0", a.RiskScore())
 	}
 }
 

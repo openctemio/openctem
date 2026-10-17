@@ -59,7 +59,7 @@ const (
 	ReasonKeyExpiring        HealthReasonCode = "key_expiring"
 	ReasonIdentityCloned     HealthReasonCode = "identity_cloned"
 	ReasonVersionUnsupported HealthReasonCode = "version_unsupported"
-	ReasonSDKUnsupported     HealthReasonCode = "sdk_unsupported"
+	ReasonSDKAdvisory        HealthReasonCode = "sdk_advisory"
 	ReasonNoTools            HealthReasonCode = "no_tools"
 	ReasonErrorReported      HealthReasonCode = "error_reported"
 	ReasonHeartbeatLate      HealthReasonCode = "heartbeat_late"
@@ -111,15 +111,19 @@ type HealthPolicy struct {
 	OfflineAfter time.Duration
 	// KeyExpiryWarning: an API key expiring within this is reported.
 	KeyExpiryWarning time.Duration
-	// LatestVersion and MinVersion are the release channel
-	// (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION); empty = not configured.
-	LatestVersion string
-	MinVersion    string
-	// SDKLatestVersion and SDKMinVersion are the SDK policy
-	// (SENSOR_SDK_LATEST_VERSION, SENSOR_SDK_MIN_VERSION); empty = not
-	// configured. A heartbeating sensor below the minimum is degraded.
+	// Products maps a product token to its release line (the sensor
+	// product catalog, versions.yaml). A sensor is judged against its own
+	// product's line (BuildInfo.ProductID); a product not listed (a custom
+	// sensor) gets no version verdict.
+	Products map[string]ReleaseLine
+	// SDKLatestVersion is the newest SDK release (versions.yaml sdk.latest);
+	// empty = not configured. Informational: a sensor built with an older
+	// SDK is "outdated", with no health effect.
 	SDKLatestVersion string
-	SDKMinVersion    string
+	// SDKAdvisories are SDK releases with a published security advisory
+	// (versions.yaml sdk.advisories). A heartbeating sensor built with one
+	// is degraded with a warning.
+	SDKAdvisories []string
 	// Content is the tenant's scanner content policy (content.go); nil uses
 	// the platform default.
 	Content *ContentPolicy
@@ -146,11 +150,38 @@ func (p HealthPolicy) Normalized() HealthPolicy {
 	if p.KeyExpiryWarning <= 0 {
 		p.KeyExpiryWarning = DefaultKeyExpiryWarning
 	}
-	p.LatestVersion = releaseOrEmpty(p.LatestVersion)
-	p.MinVersion = releaseOrEmpty(p.MinVersion)
+	if len(p.Products) > 0 {
+		products := make(map[string]ReleaseLine, len(p.Products))
+		for id, l := range p.Products {
+			products[id] = ReleaseLine{Latest: releaseOrEmpty(l.Latest), Min: releaseOrEmpty(l.Min)}
+		}
+		p.Products = products
+	}
 	p.SDKLatestVersion = releaseOrEmpty(p.SDKLatestVersion)
-	p.SDKMinVersion = releaseOrEmpty(p.SDKMinVersion)
+	if len(p.SDKAdvisories) > 0 {
+		advisories := make([]string, 0, len(p.SDKAdvisories))
+		for _, v := range p.SDKAdvisories {
+			if v = releaseOrEmpty(v); v != "" {
+				advisories = append(advisories, v)
+			}
+		}
+		p.SDKAdvisories = advisories
+	}
 	return p
+}
+
+// ReleaseLine is one sensor product's release line: Latest is the newest
+// release and Min the oldest supported one; either may be empty (not set).
+type ReleaseLine struct {
+	Latest string
+	Min    string
+}
+
+// ReleaseLineFor returns a product's release line and whether the platform
+// knows the product.
+func (p HealthPolicy) ReleaseLineFor(product string) (ReleaseLine, bool) {
+	l, ok := p.Products[product]
+	return l, ok
 }
 
 func releaseOrEmpty(v string) string {
@@ -179,7 +210,14 @@ type HealthAssessment struct {
 	// matters on an offline sensor too). Never nil.
 	Reasons []HealthReason
 	// Version is the reported version in normalized form ("" if none).
-	Version       string
+	Version string
+	// Product is the sensor's product (BuildInfo.ProductID). KnownProduct
+	// is false for a product the catalog does not list (a custom sensor):
+	// it has no release line, so its VersionStatus is unknown.
+	Product      string
+	KnownProduct bool
+	// Line is the product's release line (empty for an unknown product).
+	Line          ReleaseLine
 	VersionStatus VersionStatus
 	// SDKStatus compares the SDK version with the SDK policy.
 	SDKStatus SDKStatus
@@ -190,12 +228,17 @@ type HealthAssessment struct {
 
 // AssessHealth computes the sensor's state and problems at now.
 func (a *Sensor) AssessHealth(now time.Time, p HealthPolicy) HealthAssessment {
+	product := a.Build.ProductID()
+	line, known := p.ReleaseLineFor(product)
 	out := HealthAssessment{
 		Version:       NormalizeVersion(a.Version),
-		VersionStatus: ClassifyVersion(a.Version, p.LatestVersion, p.MinVersion),
-		SDKStatus:     ClassifySDK(a.Build.SDKVersion, p.SDKLatestVersion, p.SDKMinVersion),
+		Product:       product,
+		KnownProduct:  known,
+		Line:          line,
+		VersionStatus: ClassifyVersion(a.Version, line.Latest, line.Min),
+		SDKStatus:     ClassifySDK(a.Build.SDKVersion, p.SDKLatestVersion, p.SDKAdvisories),
 	}
-	out.Reasons = a.healthReasons(now, p, out.VersionStatus, out.SDKStatus)
+	out.Reasons = a.healthReasons(now, p, line, out.VersionStatus, out.SDKStatus)
 
 	heartbeating := false
 	switch {
@@ -289,7 +332,7 @@ func (a *Sensor) convictionPending(now time.Time, pos LadderPosition, p HealthPo
 }
 
 // healthReasons lists the problems that make a heartbeating sensor degraded.
-func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus, sdk SDKStatus) []HealthReason {
+func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, line ReleaseLine, vs VersionStatus, sdk SDKStatus) []HealthReason {
 	reasons := make([]HealthReason, 0, 2)
 	add := func(code HealthReasonCode, severity, msg string) {
 		reasons = append(reasons, HealthReason{Code: code, Severity: severity, Message: msg})
@@ -332,18 +375,18 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus, 
 
 	if vs == VersionUnsupported {
 		add(ReasonVersionUnsupported, SeverityCritical, fmt.Sprintf(
-			"Version %s is older than the minimum supported version %s. Upgrade the sensor.",
-			NormalizeVersion(a.Version), p.MinVersion))
+			"Version %s is older than the minimum supported version %s of %s. Upgrade the sensor.",
+			NormalizeVersion(a.Version), line.Min, a.Build.ProductID()))
 	}
 
-	if sdk == SDKUnsupported {
+	if sdk == SDKAdvisory {
 		name := a.Build.SDKName
 		if name == "" {
 			name = "SDK"
 		}
-		add(ReasonSDKUnsupported, SeverityWarning, fmt.Sprintf(
-			"%s %s is below the minimum supported SDK version %s. Upgrade the sensor to a build with a newer SDK.",
-			name, a.Build.SDKVersion, p.SDKMinVersion))
+		add(ReasonSDKAdvisory, SeverityWarning, fmt.Sprintf(
+			"%s %s has a published security advisory. Upgrade the sensor to a build with a fixed SDK.",
+			name, a.Build.SDKVersion))
 	}
 
 	// A sensor that never connected has reported nothing yet: its state

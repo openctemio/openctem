@@ -7,8 +7,8 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// VersionStatus says how a sensor's version compares with the release channel
-// the platform is configured with (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION).
+// VersionStatus says how a sensor's version compares with the release line
+// of its product (versions.yaml, HealthPolicy.Products).
 type VersionStatus string
 
 const (

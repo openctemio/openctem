@@ -23,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -44,6 +45,7 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { JoinRequestsCard } from '@/features/organization/components/join-requests-card'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,6 +78,7 @@ import {
   UserMinus,
   Eraser,
   CalendarClock,
+  Crown,
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
@@ -84,6 +87,7 @@ import { useTenant } from '@/context/tenant-provider'
 import {
   useMembers,
   useMemberStats,
+  useUpdateMemberRole,
   useInvitations,
   type MemberWithUser,
   type MemberRole,
@@ -114,13 +118,16 @@ type MemberRolesMap = Map<string, MemberRBACRole[]>
 const MemberRolesContext = createContext<MemberRolesMap>(new Map())
 import { fetcherWithOptions } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
-import { getErrorMessage } from '@/lib/api/error-handler'
+import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
 import { MemberBadges } from '@/features/organization/components/member-badges'
 import { MemberAccessDialog } from '@/features/organization/components/member-access-dialog'
 import { suspendedReasonText } from '@/features/organization/lib/external-access'
 import { useTenantSettings } from '@/features/organization/api/use-tenant-settings'
+import { usePendingOwnershipTransfer } from '@/features/organization/api/use-ownership-transfer'
+import { TransferOwnershipDialog } from '@/features/organization/components/transfer-ownership-dialog'
+import { OwnershipTransferBanner } from '@/features/organization/components/ownership-transfer-banner'
 
 /**
  * The management actions of an administrator row, disabled for a caller who
@@ -380,6 +387,12 @@ function UserRolesDetailCard({
   )
 }
 
+// The four team roles are the member's role in the organization. They change
+// through the member's role on this page and ownership transfer; the roles
+// dialog below edits custom roles only.
+const isTeamRoleItem = (r: { slug: string; is_system: boolean }) =>
+  r.is_system && ['owner', 'admin', 'member', 'viewer'].includes(r.slug)
+
 // Dialog for editing user roles
 function EditUserRolesDialog({
   member,
@@ -401,7 +414,18 @@ function EditUserRolesDialog({
     isLoading: userRolesLoading,
     mutate: mutateUserRoles,
   } = useUserRoles(open ? member?.user_id || null : null)
-  const { roles: allRoles, isLoading: allRolesLoading } = useRoles({ skip: !open })
+  const { roles: everyRole, isLoading: allRolesLoading } = useRoles({ skip: !open })
+  const { t } = useTranslation()
+  const { currentTenant: dialogTenant } = useTenant()
+  const { updateRole, isUpdating } = useUpdateMemberRole(dialogTenant?.slug, member?.id)
+  // The team role changes through the membership (PATCH), the custom roles
+  // through the roles API.
+  const [teamRole, setTeamRole] = useState<MemberRole>('member')
+  useEffect(() => {
+    if (open && member) setTeamRole(member.role)
+  }, [open, member])
+  const teamRoleLocked = member?.role === 'owner'
+  const allRoles = useMemo(() => everyRole.filter((r) => !isTeamRoleItem(r)), [everyRole])
   const { setUserRoles, isSetting } = useSetUserRoles(open ? member?.user_id || null : null)
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([])
 
@@ -416,8 +440,9 @@ function EditUserRolesDialog({
       initialized.current = false
       return
     }
-    if (!initialized.current && !userRolesLoading && userRoles.length > 0) {
-      setSelectedRoleIds(userRoles.map((r) => r.id))
+    const custom = userRoles.filter((r) => !isTeamRoleItem(r))
+    if (!initialized.current && !userRolesLoading && custom.length > 0) {
+      setSelectedRoleIds(custom.map((r) => r.id))
       initialized.current = true
     } else if (!initialized.current && !userRolesLoading) {
       // Loaded with empty result — still mark as initialized so we don't
@@ -429,6 +454,9 @@ function EditUserRolesDialog({
 
   const handleSave = async () => {
     try {
+      if (member && !teamRoleLocked && teamRole !== member.role) {
+        await updateRole({ role: teamRole })
+      }
       await setUserRoles({ role_ids: selectedRoleIds })
       toast.success('Roles updated successfully')
       mutateUserRoles()
@@ -451,14 +479,50 @@ function EditUserRolesDialog({
 
         <DialogBody>
           <div className="py-4">
+            <div className="mb-4 space-y-1.5">
+              <Label htmlFor="member-team-role">
+                {t('org.roles.teamRole', 'Role in the organization')}
+              </Label>
+              {teamRoleLocked ? (
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    'org.roles.ownerLocked',
+                    'This person is the owner. Ownership moves with Transfer ownership.'
+                  )}
+                </p>
+              ) : (
+                <Select value={teamRole} onValueChange={(v) => setTeamRole(v as MemberRole)}>
+                  <SelectTrigger id="member-team-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(canGrantAdmin || member?.role === 'admin') && (
+                      <SelectItem
+                        value="admin"
+                        disabled={!canGrantAdmin && member?.role !== 'admin'}
+                      >
+                        {t('org.role.admin', 'Admin')}
+                      </SelectItem>
+                    )}
+                    <SelectItem value="member">{t('org.role.member', 'Member')}</SelectItem>
+                    <SelectItem value="viewer">{t('org.role.viewer', 'Viewer')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              {t(
+                'org.roles.manageNote',
+                'Custom roles add permissions on top of the role in the organization.'
+              )}
+            </p>
             <RoleChecklist
               canGrantAdmin={canGrantAdmin}
               roles={allRoles}
               selected={selectedRoleIds}
               onChange={setSelectedRoleIds}
               loading={isLoading}
-              disabled={isSetting}
-              className="max-h-[400px]"
+              disabled={isSetting || isUpdating}
             />
           </div>
         </DialogBody>
@@ -474,7 +538,7 @@ function EditUserRolesDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSetting}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isSetting || isLoading}>
+          <Button onClick={handleSave} disabled={isSetting || isUpdating || isLoading}>
             {isSetting ? (
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
@@ -493,7 +557,7 @@ export default function UsersPage() {
   const tenantSlug = currentTenant?.slug
   // Peer administrators are the owner's to manage (the API answers 403 to
   // anyone else); their rows show the actions disabled, with the reason.
-  const { isOwner, can, isAtLeast } = usePermissions()
+  const { isOwner, isAtLeast } = usePermissions()
   // Same gate as the old <Can permission={MembersManage} minRole="admin">.
   const canManageMembers = useCanMutate('PATCH /api/v1/tenants/{tenant}/members/{userId}')
   const currentUser = useDisplayUser()
@@ -611,6 +675,10 @@ export default function UsersPage() {
   const [offboardMember, setOffboardMember] = useState<MemberWithUser | null>(null)
   // Erase personal data (owner only, offboarded members): confirmation.
   const [eraseConfirmMember, setEraseConfirmMember] = useState<MemberWithUser | null>(null)
+  // Ownership transfer (RFC-095): the member the owner is asking, and the
+  // open request the caller is part of (owner or member asked).
+  const [transferMember, setTransferMember] = useState<MemberWithUser | null>(null)
+  const { transfer: pendingTransfer, mutate: mutateTransfer } = usePendingOwnershipTransfer()
   const [isErasing, setIsErasing] = useState(false)
 
   // Track if sheet is fully closed (after animation completes)
@@ -784,6 +852,21 @@ export default function UsersPage() {
                   >
                     <ShieldOff className="me-2 h-4 w-4" />
                     Reset 2FA
+                  </DropdownMenuItem>
+                </>
+              )}
+              {!isOwnerRow && !offboarded && caller.isOwner && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={!!pendingTransfer}
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      setTransferMember(member)
+                    }}
+                  >
+                    <Crown className="me-2 h-4 w-4" />
+                    {t('org.ownership.action', 'Transfer ownership...')}
                   </DropdownMenuItem>
                 </>
               )}
@@ -969,9 +1052,14 @@ export default function UsersPage() {
       await fetcherWithOptions(tenantEndpoints.resendInvitation(tenantSlug, invitation.id), {
         method: 'POST',
       })
-      toast.success('Invitation email resent')
-    } catch {
-      toast.error('Failed to resend invitation')
+      toast.success(t('org.invitations.resent'))
+      mutateInvitations()
+    } catch (err) {
+      toast.error(
+        err instanceof ApiClientError && err.code === 'INVITATION_RESEND_TOO_SOON'
+          ? t('org.invitations.resendTooSoon')
+          : t('org.invitations.resendFailed')
+      )
     }
   }
   const cancelInvite = async (invitation: Invitation) => {
@@ -993,7 +1081,26 @@ export default function UsersPage() {
       accessorKey: 'email',
       header: 'Email',
       enableSorting: false,
-      cell: ({ row }) => <span className="font-medium">{row.original.email}</span>,
+      cell: ({ row }) => (
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="font-medium">{row.original.email}</span>
+          {row.original.member_kind === 'external' && (
+            <Badge variant="outline" className="text-xs" data-testid="invitation-badge-external">
+              {t('org.invitations.external')}
+            </Badge>
+          )}
+          {row.original.privileged && (
+            <Badge
+              variant="outline"
+              className="border-warning/50 text-xs text-warning"
+              data-testid="invitation-badge-mfa"
+              title={t('org.invitations.mfaHint')}
+            >
+              {t('org.invitations.mfa')}
+            </Badge>
+          )}
+        </div>
+      ),
     },
     {
       id: 'roles',
@@ -1167,6 +1274,16 @@ export default function UsersPage() {
             </Button>
           </Can>
         </PageHeader>
+
+        <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
+
+        <OwnershipTransferBanner
+          transfer={pendingTransfer}
+          onChanged={() => {
+            void mutateTransfer()
+            refreshData()
+          }}
+        />
 
         {membersError && !membersLoading ? (
           <Alert variant="destructive" className="mt-5">
@@ -1500,6 +1617,14 @@ export default function UsersPage() {
       />
 
       {/* Offboarding wizard (RFC-050) */}
+      <TransferOwnershipDialog
+        member={transferMember}
+        onOpenChange={(open) => {
+          if (!open) setTransferMember(null)
+        }}
+        onStarted={() => void mutateTransfer()}
+      />
+
       <OffboardMemberDialog
         tenantSlug={tenantSlug}
         member={offboardMember}

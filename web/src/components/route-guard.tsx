@@ -25,6 +25,7 @@
 
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import * as React from 'react'
 import Link from '@/components/link'
 import { usePathname } from 'next/navigation'
@@ -107,9 +108,9 @@ export function RouteGuard({ children }: RouteGuardProps) {
     if (routeConfig.module) {
       if (!hasModuleAccess(routeConfig.module)) {
         // The API filters the module list by the user's permissions, so a
-        // missing module also means "you may not use this", not only "your
-        // plan does not include it". Without the route's permission, say so
-        // instead of telling the user to upgrade a plan that has the feature.
+        // missing module also means "you may not use this", not only "not
+        // available for this organization". Without the route's permission,
+        // say so instead of telling the user the feature is unavailable.
         const reason: AccessDeniedReason = can(routeConfig.permission) ? 'module' : 'permission'
         return { hasAccess: false, deniedReason: reason }
       }
@@ -138,7 +139,7 @@ export function RouteGuard({ children }: RouteGuardProps) {
         module={routeConfig.module}
         message={routeConfig.message}
         canManageModules={can(Permission.TeamUpdate)}
-        notInPlan={!!routeConfig.module && notEntitledModuleIds.includes(routeConfig.module)}
+        notAvailable={!!routeConfig.module && notEntitledModuleIds.includes(routeConfig.module)}
       />
     )
   }
@@ -168,11 +169,12 @@ function formatDate(value: string): string {
 }
 
 /**
- * Shown above a module's pages while the module is in read-only grace: the
- * organization's plan no longer includes it, data can still be read and
+ * Shown above a module's pages while the module is in read-only grace: it is
+ * no longer available for the organization, data can still be read and
  * exported, changes are refused.
  */
 export function ReadOnlyModuleBanner({ until }: { until: string }) {
+  const { t } = useTranslation()
   return (
     <div
       role="status"
@@ -180,10 +182,14 @@ export function ReadOnlyModuleBanner({ until }: { until: string }) {
     >
       <Lock className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
       <p>
-        <span className="font-medium">Read-only until {formatDate(until)}.</span>{' '}
+        <span className="font-medium">
+          {t('limits.banner.readOnlyUntil', 'Read-only until {date}.', { date: formatDate(until) })}
+        </span>{' '}
         <span className="text-muted-foreground">
-          Your organization&apos;s plan no longer includes this feature. You can still view and
-          export its data; changes are turned off. Contact your platform administrator to keep it.
+          {t(
+            'limits.banner.readOnlyBody',
+            'This feature is no longer available for this organization. You can still view and export its data; changes are turned off. Contact the administrator of this installation to keep it.'
+          )}
         </span>
       </p>
     </div>
@@ -203,8 +209,8 @@ interface AccessDeniedProps {
   message?: string
   /** Whether the user may switch modules on (Settings > Modules). */
   canManageModules?: boolean
-  /** The organization's plan does not include the module (not just switched off). */
-  notInPlan?: boolean
+  /** The module is not available for the organization (not just switched off). */
+  notAvailable?: boolean
 }
 
 function AccessDenied({
@@ -213,8 +219,9 @@ function AccessDenied({
   module,
   message,
   canManageModules = false,
-  notInPlan = false,
+  notAvailable = false,
 }: AccessDeniedProps) {
+  const { t } = useTranslation()
   const handleGoBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
       window.history.back()
@@ -230,21 +237,21 @@ function AccessDenied({
   // Determine icon and title based on reason
   const isModuleDenied = reason === 'module'
   const Icon = isModuleDenied ? Package : ShieldX
-  // A module missing for a user who holds the route's permission is switched
-  // off for the organization (by an administrator or its products), not a
-  // plan matter: plans do not gate modules.
+  // A module missing for a user who holds the route's permission is either
+  // not available for the organization (set by the administrator of this
+  // installation) or switched off by the organization itself.
   const title = !isModuleDenied
     ? 'Access Denied'
-    : notInPlan
-      ? 'Not in your plan'
+    : notAvailable
+      ? t('limits.access.unavailableTitle', 'Not available for this organization')
       : 'Turned off for your organization'
   const defaultMessage = !isModuleDenied
     ? "You don't have permission to access this page."
-    : notInPlan
-      ? "Your organization's plan does not include this feature."
+    : notAvailable
+      ? t('limits.access.unavailableBody', 'This feature is not available for this organization.')
       : 'This feature is switched off for your organization.'
   // Only an organization's own switch can be turned back on from Settings.
-  const canTurnOn = isModuleDenied && !notInPlan && canManageModules
+  const canTurnOn = isModuleDenied && !notAvailable && canManageModules
 
   // This view replaces the page header and the layout's <main>, so it is the
   // page's main landmark and the skip link's #content target itself.
@@ -279,8 +286,11 @@ function AccessDenied({
           <p className="text-center text-sm text-muted-foreground">
             {!isModuleDenied
               ? 'If you believe you should have access, please contact your administrator.'
-              : notInPlan
-                ? 'Contact your platform administrator to add it to your plan.'
+              : notAvailable
+                ? t(
+                    'limits.access.unavailableHelp',
+                    'Contact the administrator of this installation to make it available.'
+                  )
                 : canManageModules
                   ? 'You can turn it on in Settings > Modules.'
                   : 'Ask an administrator of your organization to turn it on.'}

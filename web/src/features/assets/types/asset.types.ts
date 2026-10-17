@@ -458,6 +458,26 @@ export interface AssetTriage {
   scanRefusalCode?: string
 }
 
+/** The closed set of technology categories (RFC-112). */
+export type TechnologyCategory =
+  | 'web_server'
+  | 'framework'
+  | 'language'
+  | 'js_library'
+  | 'cdn'
+  | 'hosting'
+  | 'waf'
+  | 'analytics'
+  | 'security_header'
+  | 'other'
+
+/** One technology detected on an asset, as asset responses embed it. */
+export interface AssetTechnologyBrief {
+  name: string
+  version?: string
+  category: TechnologyCategory
+}
+
 export interface Asset {
   id: string
   type: AssetType
@@ -468,6 +488,8 @@ export interface Asset {
   criticality: Criticality // Business importance level
   status: Status
   scope: AssetScope // Ownership/location classification
+  /** Technologies detected on the asset (at most 20 on a list, all on one asset). */
+  technologies?: AssetTechnologyBrief[]
   exposure: ExposureLevel // Network accessibility classification
   /**
    * Whether the asset is reachable from the internet (assets.is_internet_accessible).
@@ -501,7 +523,13 @@ export interface Asset {
   programOnly?: boolean
   /** Triage (list rows asked with_triage): attribution and what a scan would do now. */
   triage?: AssetTriage
-  riskScore: number // 0-100, calculated from criticality, exposure, and findings
+  riskScore: number // 0-100: open findings x exposure x criticality (asset-risk-score.md)
+  /** false = never scored (riskScore is not a real 0); undefined = not known by this payload. */
+  riskScored?: boolean
+  /** When the stored score was last computed. */
+  riskScoredAt?: string
+  /** An input changed and the rescore is queued. */
+  riskScorePending?: boolean
   findingCount: number
   /** Open findings per severity (assets.finding_severity_counts). */
   findingSeverityCounts?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>

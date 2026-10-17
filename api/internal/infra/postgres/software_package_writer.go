@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // SoftwarePackageWriter writes package observations: products and versions
@@ -318,11 +319,15 @@ func (w *SoftwarePackageWriter) WritePackages(ctx context.Context, tenantID shar
 				dep_scope = COALESCE(EXCLUDED.dep_scope, asset_software.dep_scope),
 				depth = COALESCE(EXCLUDED.depth, asset_software.depth),
 				licenses = CASE WHEN cardinality(EXCLUDED.licenses) > 0 THEN EXCLUDED.licenses ELSE asset_software.licenses END,
-				channel = COALESCE(EXCLUDED.channel, asset_software.channel)
+				-- A full inventory takes the link over; a partial list only
+				-- refreshes it, so the link stays with the channel that
+				-- listed it and only that channel's next report prunes it.
+				channel = CASE WHEN $13 THEN COALESCE(asset_software.channel, EXCLUDED.channel)
+					ELSE COALESCE(EXCLUDED.channel, asset_software.channel) END
 			RETURNING id, software_version_id, location`,
 			tenantID.String(), snap.AssetID.String(), channel,
 			pq.Array(lProduct), pq.Array(lVersion), pq.Array(lLocation), pq.Array(lEvidence), pq.Array(lConfidence),
-			pq.Array(lRelationship), pq.Array(lScope), pq.Array(lDepth), pq.Array(lLicenses))
+			pq.Array(lRelationship), pq.Array(lScope), pq.Array(lDepth), pq.Array(lLicenses), snap.Partial)
 		if err != nil {
 			return res, fmt.Errorf("write package links: %w", err)
 		}
@@ -339,12 +344,18 @@ func (w *SoftwarePackageWriter) WritePackages(ctx context.Context, tenantID shar
 		locList = append(locList, l)
 	}
 	if snap.Replace && len(locList) > 0 {
+		// A report prunes only the links of its own channel: another
+		// producer's inventory of the same file is not this report's to
+		// remove. Links from before channels were recorded (the legacy
+		// component table kept no producer, so none can be backfilled) are
+		// pruned only by a full inventory, never by a partial list.
 		// Rows written above carry last_seen_at = now() (the transaction start).
 		r, err := tx.ExecContext(ctx, `
 			DELETE FROM asset_software
 			WHERE tenant_id = $1 AND asset_id = $2 AND source = 'package'
-			  AND location = ANY($3) AND last_seen_at < now()`,
-			tenantID.String(), snap.AssetID.String(), pq.Array(locList))
+			  AND location = ANY($3) AND last_seen_at < now()
+			  AND (channel = $4 OR (channel IS NULL AND NOT $5))`,
+			tenantID.String(), snap.AssetID.String(), pq.Array(locList), channel, snap.Partial)
 		if err != nil {
 			return res, fmt.Errorf("prune package links: %w", err)
 		}
@@ -353,8 +364,9 @@ func (w *SoftwarePackageWriter) WritePackages(ctx context.Context, tenantID shar
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM asset_software_edges e
 			USING asset_software s
-			WHERE e.tenant_id = $1 AND e.asset_id = $2 AND s.id = e.child_id AND s.location = ANY($3)`,
-			tenantID.String(), snap.AssetID.String(), pq.Array(locList)); err != nil {
+			WHERE e.tenant_id = $1 AND e.asset_id = $2 AND s.id = e.child_id AND s.location = ANY($3)
+			  AND (s.channel = $4 OR (s.channel IS NULL AND NOT $5))`,
+			tenantID.String(), snap.AssetID.String(), pq.Array(locList), channel, snap.Partial); err != nil {
 			return res, fmt.Errorf("replace package edges: %w", err)
 		}
 	}
@@ -418,7 +430,7 @@ func refreshRepositoryComponentCounts(ctx context.Context, q pkgQueryer, tenantI
 			vulnerable_component_count = (SELECT count(DISTINCT s.software_version_id) FROM asset_software s
 				JOIN findings f ON f.tenant_id = s.tenant_id AND f.asset_id = s.asset_id
 				 AND f.component_id = s.software_version_id
-				 AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
+				 AND `+vulnerability.OpenStatusSQL("f.status")+`
 				WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.source = 'package' AND s.superseded_at IS NULL)
 		WHERE ar.asset_id = $2
 		  AND EXISTS (SELECT 1 FROM assets a WHERE a.id = $2 AND a.tenant_id = $1)`,

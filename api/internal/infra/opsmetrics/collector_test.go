@@ -31,7 +31,7 @@ func snapshot() postgres.OpsSnapshot {
 
 func TestCollectorReportsTheSnapshot(t *testing.T) {
 	c := New(func(context.Context) (postgres.OpsSnapshot, error) { return snapshot(), nil },
-		Config{ShippedSchemaVersion: 1300, SDKLatest: "v0.14.0", SDKMin: "v0.9.0"}, nil)
+		Config{ShippedSchemaVersion: 1300, SDKLatest: "v0.14.0", SDKAdvisories: []string{"v0.8.0"}}, nil)
 
 	want := `
 # HELP openctem_commands Sensor commands by state: pending (due, waiting for a sensor) and running (acknowledged or running)
@@ -86,7 +86,7 @@ openctem_sensors_config_health{config_health="other",kind="platform"} 1
 	}
 
 	m := gather(t, c, "openctem_sensors_sdk")
-	if m[`kind="tenant",status="unsupported"`] != 2 || m[`kind="tenant",status="current"`] != 3 || m[`kind="platform",status="unknown"`] != 1 {
+	if m[`kind="tenant",status="advisory"`] != 2 || m[`kind="tenant",status="current"`] != 3 || m[`kind="platform",status="unknown"`] != 1 {
 		t.Fatalf("sdk statuses = %v", m)
 	}
 }

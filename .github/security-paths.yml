@@ -37,6 +37,9 @@ authn-authz:
   - api/internal/infra/http/middleware/**
   - api/internal/infra/http/routes/auth.go
   - api/internal/infra/http/routes/admin.go
+  - api/internal/infra/http/internalapi/**
+  - api/cmd/server/internal_api.go
+  - api/internal/app/entitlement/**
   - api/internal/infra/http/routes/misc.go
   - api/internal/infra/http/routes/scim.go
   - api/internal/infra/http/routes/mcp_oauth.go
@@ -138,6 +141,14 @@ web-session-headers:
   - web/next.config.ts
   - web/server-with-ws.mjs
 
+# The platform console app (RFC-022 revision 21): its own site, proxy, CSP and
+# API client; every change to it is reviewed, as are the console API routes
+# (routes/admin.go under authn-authz) and handlers.
+platform-console:
+  - web/console/**
+  - api/internal/infra/http/handler/admin_*.go
+  - api/internal/app/adminconsole/**
+
 # File upload, storage and download handlers.
 upload-download:
   - api/internal/infra/storage/**
@@ -168,3 +179,68 @@ deploy-defaults:
   - '**/Dockerfile*'
   - api/deploy/**
   - deploy/**
+
+# Finding lifecycle: status is a security control (dispositions hide risk, the
+# CI gate honours them), so every writer of a finding's status, decision,
+# acceptance end, review flag or SLA, and their migrations, is reviewed.
+finding-lifecycle:
+  - api/pkg/domain/vulnerability/finding.go
+  - api/pkg/domain/vulnerability/status_*.go
+  - api/pkg/domain/vulnerability/approval*.go
+  - api/pkg/domain/vulnerability/duplicate.go
+  - api/pkg/domain/vulnerability/transition_evidence.go
+  - api/pkg/domain/vulnerability/finding_activity.go
+  - api/pkg/domain/vulnerability/finding_interop.go
+  - api/pkg/domain/vulnerability/finding_vex_document.go
+  - api/pkg/domain/vulnerability/taint_source.go
+  - api/internal/app/finding/vulnerability_service.go
+  - api/internal/app/finding/actions.go
+  - api/internal/app/finding/duplicate.go
+  - api/internal/app/finding/bulk_action_guard.go
+  - api/internal/app/finding/lifecycle_scheduler.go
+  - api/internal/app/vex/**
+  - api/internal/app/sla/**
+  - api/internal/app/ioc/reopen_adapter.go
+  - api/internal/app/validation/proof_of_fix.go
+  - api/internal/app/automation/action_handlers.go
+  - api/internal/app/remediation/group_service.go
+  - api/internal/app/exposure/remediation_campaign.go
+  - api/internal/app/exposure/disposition.go
+  - api/internal/app/ingest/interop.go
+  - api/internal/app/ingest/source_resolve.go
+  - api/internal/app/ingest/processor_findings.go
+  - api/internal/app/ingest/processor_suppression.go
+  - api/internal/app/ingest/coverage_autoresolve.go
+  - api/internal/infra/controller/approval_expiration.go
+  - api/internal/infra/postgres/finding_repository.go
+  - api/internal/infra/postgres/finding_status_sql.go
+  - api/internal/infra/postgres/finding_transition.go
+  - api/internal/infra/postgres/finding_approval_repository.go
+  - api/internal/infra/postgres/finding_acceptance_expiry.go
+  - api/internal/infra/postgres/finding_decision_review.go
+  - api/internal/infra/postgres/finding_taint_source.go
+  - api/internal/infra/postgres/finding_interop.go
+  - api/internal/infra/postgres/finding_vex_document.go
+  - api/internal/infra/postgres/vex_statement_repository.go
+  - api/internal/infra/postgres/finding_duplicate.go
+  - api/internal/infra/postgres/finding_pentest_duplicate.go
+  - api/internal/infra/postgres/finding_human_resolved.go
+  - api/internal/infra/postgres/finding_*coverage_autoresolve.go
+  - api/internal/infra/postgres/finding_correlation_repository.go
+  - api/internal/infra/postgres/finding_sla_restart_repository.go
+  - api/internal/infra/postgres/sla_repository.go
+  - api/internal/infra/postgres/suppression_*.go
+  - api/pkg/domain/suppression/**
+  - api/internal/infra/http/handler/suppression_handler.go
+  - api/internal/infra/postgres/exposure_disposition_repository.go
+  - api/internal/infra/postgres/asset_merge_findings.go
+  - api/internal/infra/http/handler/vulnerability_handler.go
+  - api/internal/infra/http/handler/finding_actions_handler.go
+  - api/internal/infra/http/handler/vex_statement_handler.go
+  - api/internal/infra/http/handler/remediation_group_handler.go
+  - api/internal/infra/http/handler/remediation_campaign_handler.go
+  - api/migrations/*finding*
+  - api/migrations/*approval*
+  - api/migrations/*vex*
+  - api/migrations/*sla*
+  - api/migrations/*suppression*

@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/businessunit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -186,11 +187,13 @@ func (r *BusinessUnitRepository) RecalculateCounts(ctx context.Context, tenantID
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
 				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only
+				  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			), 0),
 			critical_finding_count = COALESCE((
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
 				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only AND f.severity = 'critical'
+				  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			), 0),
 			avg_risk_score = COALESCE((
 				SELECT AVG(a.risk_score) FROM business_unit_assets bua
@@ -204,6 +207,57 @@ func (r *BusinessUnitRepository) RecalculateCounts(ctx context.Context, tenantID
 		return fmt.Errorf("recalculate business unit counts: %w", err)
 	}
 	return nil
+}
+
+// ScopedStats computes the rollup counters of the given units over the
+// assets in scope (the stored counters cover every asset of the unit).
+func (r *BusinessUnitRepository) ScopedStats(ctx context.Context, tenantID shared.ID, buIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]businessunit.Stats, error) {
+	out := make(map[shared.ID]businessunit.Stats, len(buIDs))
+	if len(buIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(buIDs))
+	for i, id := range buIDs {
+		ids[i] = id.String()
+		out[id] = businessunit.Stats{}
+	}
+	cond, scopeArgs := dataScopeCondAt("bua.asset_id", scope, 3)
+	args := append([]any{tenantID.String(), pq.Array(ids)}, scopeArgs...)
+	query := `
+		SELECT bua.business_unit_id,
+		       COUNT(DISTINCT bua.asset_id),
+		       COALESCE(AVG(a.risk_score), 0),
+		       COALESCE(SUM(fc.open_count), 0),
+		       COALESCE(SUM(fc.critical_count), 0)
+		  FROM business_unit_assets bua
+		  JOIN assets a ON a.id = bua.asset_id AND a.tenant_id = $1 AND a.deleted_at IS NULL
+		  LEFT JOIN LATERAL (
+		        SELECT COUNT(*) AS open_count,
+		               COUNT(*) FILTER (WHERE f.severity = 'critical') AS critical_count
+		          FROM findings f
+		         WHERE f.asset_id = bua.asset_id AND f.tenant_id = $1 AND NOT f.branch_only
+		           AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		  ) fc ON TRUE
+		 WHERE bua.tenant_id = $1 AND bua.business_unit_id = ANY($2::uuid[]) AND ` + cond + `
+		 GROUP BY bua.business_unit_id`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("scoped business unit stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var raw string
+		var st businessunit.Stats
+		if err := rows.Scan(&raw, &st.AssetCount, &st.AvgRiskScore, &st.FindingCount, &st.CriticalFindingCount); err != nil {
+			return nil, err
+		}
+		id, perr := shared.IDFromString(raw)
+		if perr != nil {
+			return nil, perr
+		}
+		out[id] = st
+	}
+	return out, rows.Err()
 }
 
 func (r *BusinessUnitRepository) RemoveAsset(ctx context.Context, tenantID, buID, assetID shared.ID) error {

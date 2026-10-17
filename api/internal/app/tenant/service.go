@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,9 +17,11 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -54,6 +57,9 @@ type TeamInvitationJobPayload struct {
 // Note: Tenants are displayed as "Teams" in the UI.
 type TenantService struct {
 	repo tenantdom.Repository
+	// scoringVersions stamps the scoring version a risk scoring settings
+	// change created on its audit entry (SetScoringVersions; optional).
+	scoringVersions scoring.VersionRepository
 	// stepUp requires the acting owner's recent re-authentication (SetStepUpGate).
 	stepUp shared.RecentAuthGate
 	// assetPolicy re-resolves assets after a source precedence change.
@@ -100,6 +106,12 @@ type TenantService struct {
 	// and the in-app notice to administrators. Optional.
 	lifecycle         tenantdom.LifecycleRepository
 	lifecycleNotifier LifecycleInAppNotifier
+	// invitationTeams checks and applies the teams of an invitation
+	// (invitation_teams.go).
+	invitationTeams InvitationTeams
+	// Ownership transfer store and its emails (ownership_transfer.go).
+	ownershipTransfers tenantdom.OwnershipTransferRepository
+	ownershipNotifier  OwnershipTransferNotifier
 	// classifier decides whether an invitee is internal or external
 	// (external_members.go).
 	classifier *AddressClassifier
@@ -363,11 +375,27 @@ func (s *TenantService) LogAuditEvent(ctx context.Context, actx auditapp.AuditCo
 // Tenant Operations
 // =============================================================================
 
+// ProvisionedEntitlements are what a hosted service's control plane writes
+// with an organization it provisions (validated by the caller).
+type ProvisionedEntitlements struct {
+	Limits         limits.Limits
+	DeniedFeatures []string
+	IdlePolicy     bool
+	Reason         string
+}
+
 // CreateTenantInput represents the input for creating a tenant.
 type CreateTenantInput struct {
 	Name        string `json:"name" validate:"required,min=2,max=100"`
 	Slug        string `json:"slug" validate:"required,min=3,max=100,slug"`
 	Description string `json:"description" validate:"max=500"`
+	// InitialLimits are stored with the organization (the instance's
+	// self-service defaults for an organization a person creates). Empty:
+	// no limits.
+	InitialLimits limits.Limits `json:"-"`
+	// Provisioned, when set, replaces InitialLimits: what the control plane
+	// provisions with the organization (its limits, denies and idle policy).
+	Provisioned *ProvisionedEntitlements `json:"-"`
 }
 
 // CreateTenant creates a new tenant and adds the creator as owner.
@@ -381,7 +409,7 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 		return nil, fmt.Errorf("failed to check slug existence: %w", err)
 	}
 	if exists {
-		return nil, fmt.Errorf("%w: slug '%s' is already taken", shared.ErrValidation, input.Slug)
+		return nil, fmt.Errorf("%w: this URL is not available; choose another", shared.ErrValidation)
 	}
 
 	// Create tenant (createdBy still uses string for now as it's stored separately)
@@ -392,6 +420,15 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 
 	if input.Description != "" {
 		t.UpdateDescription(input.Description)
+	}
+	if p := input.Provisioned; p != nil {
+		t.SetInitial(tenantdom.InitialEntitlements{
+			Limits:     limits.Rows(t.ID(), limits.OriginControlPlane, p.Reason, p.Limits, t.CreatedAt()),
+			Denies:     limits.DenyRows(t.ID(), limits.OriginControlPlane, p.Reason, p.DeniedFeatures, t.CreatedAt()),
+			IdlePolicy: p.IdlePolicy, IdleReason: p.Reason,
+		})
+	} else {
+		t.SetInitialLimits(limits.SelfServiceRows(t.ID(), input.InitialLimits, t.CreatedAt()))
 	}
 
 	// Build the owner membership before any write so a construction error can't
@@ -632,6 +669,31 @@ type AddMemberInput struct {
 // AddMember adds a user to a tenant.
 // inviterUserID is the local user ID of the person inviting.
 func (s *TenantService) AddMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	return s.addMember(ctx, tenantID, input, inviterUserID, actx, s.repo.CreateMembership)
+}
+
+// joinRequestMembershipCreator approves a join request and creates the
+// membership in one transaction (postgres.TenantRepository).
+type joinRequestMembershipCreator interface {
+	CreateMembershipApprovingJoinRequest(ctx context.Context, m *tenantdom.Membership, requestID, approver shared.ID, at time.Time) error
+}
+
+// AddMemberApprovingJoinRequest adds a member exactly as AddMember does
+// (every check applies) and approves the person's waiting join request in
+// the same transaction: either both happen or neither (RFC-104).
+func (s *TenantService) AddMemberApprovingJoinRequest(ctx context.Context, tenantID string, input AddMemberInput, approver, requestID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	creator, ok := s.repo.(joinRequestMembershipCreator)
+	if !ok {
+		return nil, fmt.Errorf("%w: join requests are not supported by this repository", shared.ErrInternal)
+	}
+	return s.addMember(ctx, tenantID, input, approver, actx, func(ctx context.Context, m *tenantdom.Membership) error {
+		return creator.CreateMembershipApprovingJoinRequest(ctx, m, requestID, approver, time.Now().UTC())
+	})
+}
+
+func (s *TenantService) addMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx auditapp.AuditContext,
+	create func(ctx context.Context, m *tenantdom.Membership) error,
+) (*tenantdom.Membership, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -716,7 +778,7 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		return nil, err
 	}
 
-	if err := s.repo.CreateMembership(ctx, membership); err != nil {
+	if err := create(ctx, membership); err != nil {
 		return nil, fmt.Errorf("failed to add member: %w", err)
 	}
 
@@ -762,9 +824,19 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, err
 	}
 
-	// Prevent changing owner role
+	// Prevent changing owner role. The one exception is an owner role row held
+	// without the owner membership (planted before system roles were limited to
+	// the membership routes): the real owner may remove it (drift).
+	drift := false
 	if membership.IsOwner() {
-		return nil, fmt.Errorf("%w: cannot change owner role", shared.ErrValidation)
+		var derr error
+		drift, derr = s.authorizeOwnerDriftRemoval(ctx, membership, actx)
+		if derr != nil {
+			return nil, derr
+		}
+		if !drift {
+			return nil, fmt.Errorf("%w: the owner's role changes only by a transfer: use Transfer ownership on the Members page", shared.ErrValidation)
+		}
 	}
 	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
 		return nil, err
@@ -776,26 +848,34 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
 
-	// Someone outside the organization is a viewer or a member (RFC-058),
-	// and a viewer only when the trust with their home organization says so.
+	// Someone outside the organization may hold any role but owner, unless an
+	// active trust with their home organization caps them (RFC-095 §4.2).
 	if membership.IsExternal() {
-		if role == tenantdom.RoleAdmin || role == tenantdom.RoleOwner {
+		if role == tenantdom.RoleOwner {
 			return nil, accesscontrol.ErrExternalRoleCeiling
 		}
-		if role == tenantdom.RoleMember && membership.HomeTenantID() != nil && s.trustPolicy != nil {
+		if membership.HomeTenantID() != nil && s.trustPolicy != nil {
 			ceiling, cerr := s.trustPolicy.MaxRoleFor(ctx, membership.TenantID(), *membership.HomeTenantID())
 			if cerr != nil {
 				return nil, cerr
 			}
-			if ceiling == orgtrust.MaxRoleViewer {
+			if ceiling != "" && role == tenantdom.RoleAdmin {
+				return nil, accesscontrol.ErrExternalRoleCeiling
+			}
+			if ceiling == orgtrust.MaxRoleViewer && role != tenantdom.RoleViewer {
 				return nil, accesscontrol.ErrExternalViewerCeiling
+			}
+		}
+		if role == tenantdom.RoleAdmin {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return nil, err
 			}
 		}
 	}
 
 	// Prevent promoting to owner
 	if role == tenantdom.RoleOwner {
-		return nil, fmt.Errorf("%w: cannot promote to owner", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: nobody is made the owner by a role change: the owner uses Transfer ownership on the Members page", shared.ErrValidation)
 	}
 	if role == tenantdom.RoleAdmin && membership.Role() != tenantdom.RoleAdmin {
 		if err := s.authorizeAdminPromotion(ctx, membership.TenantID(), actx); err != nil {
@@ -807,8 +887,17 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, err
 	}
 
+	// UpdateMembership swaps the member's system role rows (the drifted owner
+	// row included) and the label in one transaction.
 	if err := s.repo.UpdateMembership(ctx, membership); err != nil {
 		return nil, fmt.Errorf("failed to update member role: %w", err)
+	}
+	if drift {
+		s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionOwnerRoleDriftRemoved, audit.ResourceTypeMembership, membershipID).
+			WithChanges(audit.NewChanges().Set("role", oldRole, input.Role)).
+			WithSeverity(audit.SeverityCritical).
+			WithMetadata("user_id", membership.UserID().String()).
+			WithMessage(fmt.Sprintf("Owner role without the owner membership removed; member is now %s", input.Role)))
 	}
 
 	// The change swaps the user's system role in user_roles: drop the cached
@@ -818,7 +907,7 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	s.invalidateMembershipCache(ctx, membership.TenantID().String(), membership.UserID().String())
 	s.bumpPermissionVersion(ctx, membership.TenantID().String(), membership.UserID().String())
 
-	s.logger.Info("member role updated", "membership_id", membershipID, "new_role", role)
+	s.logger.Info("member role updated", "membership_id", logger.SanitizeValue(membershipID), "new_role", logger.SanitizeValue(string(role)))
 	if tenantdom.PrivilegeRank(role) > tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) {
 		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
 			fmt.Sprintf("membership role raised from %s to %s", oldRole, role))
@@ -1148,6 +1237,9 @@ type CreateInvitationInput struct {
 	// (defaults to 90 days); ignored for an internal invitee.
 	AccessExpiresAt *time.Time `json:"-"`
 	AccessReason    string     `json:"-"`
+	// GroupIDs: teams of the organization the invitee joins at acceptance
+	// (at most 20), each one the inviter may add a member to.
+	GroupIDs []string `json:"-"`
 }
 
 // CreateInvitation creates an invitation to join a tenant.
@@ -1187,12 +1279,14 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	// member role on top of e.g. a viewer-only invitation.
 	role := accesscontrol.MembershipRoleForRoleIDs(input.RoleIDs)
 
-	if err := s.requireAllowedEmailDomain(ctx, parsedID, input.Email); err != nil {
+	// Who may be invited is the organization's policy (RFC-095 §4.1).
+	if err := s.requireInvitable(ctx, parsedID, input.Email); err != nil {
 		return nil, err
 	}
 
-	// Someone outside the organization joins as a viewer, with an expiry
-	// when no organization manages their address.
+	// Someone outside the organization may get any role but owner; a trust
+	// with their home organization may cap it, and a privileged role needs
+	// the inviter's step-up (RFC-095 §4.2).
 	class, access, err := s.classifyInvitee(ctx, parsedID, input.Email,
 		tenantdom.ExternalAccess{ExpiresAt: input.AccessExpiresAt, Reason: input.AccessReason}, time.Now().UTC())
 	if err != nil {
@@ -1201,11 +1295,36 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	if err := s.requirePersonalAllowed(ctx, parsedID, class); err != nil {
 		return nil, err
 	}
+	groupIDs, err := normalizeTeamIDs(input.GroupIDs)
+	if err != nil {
+		return nil, err
+	}
+	privileged := false
 	if class.Kind == tenantdom.MemberKindExternal {
-		if err := requireViewerOnly(input.RoleIDs); err != nil {
+		if err := access.Validate(class, time.Now().UTC()); err != nil {
 			return nil, err
 		}
-		if err := access.Validate(class, time.Now().UTC()); err != nil {
+		if err := s.requireWithinTrustCeiling(ctx, parsedID, class, input.RoleIDs); err != nil {
+			return nil, err
+		}
+		if privileged, err = s.privilegedRoleSet(ctx, parsedID, input.RoleIDs); err != nil {
+			return nil, err
+		}
+		// A team carrying a role above member counts like the role itself.
+		teamsAbove, terr := s.checkInvitationTeams(ctx, parsedID, inviterUserID.String(), groupIDs, true, access.ExpiresAt)
+		if terr != nil {
+			return nil, terr
+		}
+		privileged = privileged || teamsAbove
+		if privileged {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if class.Kind != tenantdom.MemberKindExternal {
+		if _, err := s.checkInvitationTeams(ctx, parsedID, inviterUserID.String(), groupIDs, false, access.ExpiresAt); err != nil {
 			return nil, err
 		}
 	}
@@ -1242,6 +1361,10 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		return nil, err
 	}
 	invitation.SetAccess(access)
+	invitation.SetGroupIDs(groupIDs)
+	if err := invitation.SetInviteeInfo(tenantdom.InviteeInfo{Kind: class.Kind, Privileged: privileged}); err != nil {
+		return nil, err
+	}
 
 	// Hash-at-rest: persist only the SHA-256 hash of the token, never the raw
 	// value. The raw token is what the invitee receives (email link + the
@@ -1268,7 +1391,14 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		WithMessage(fmt.Sprintf("Invitation sent to %s with role %s", input.Email, role)).
 		WithMetadata("email", input.Email).
 		WithMetadata("role", role.String()).
-		WithMetadata("member_kind", string(class.Kind))
+		WithMetadata("member_kind", string(class.Kind)).
+		WithMetadata("privileged", privileged).
+		WithMetadata("mfa_required", privileged).
+		WithMetadata("group_ids", groupIDs)
+	if privileged {
+		// A privileged role for someone outside the organization.
+		event = event.WithSeverity(audit.SeverityHigh)
+	}
 	if access.ExpiresAt != nil {
 		event = event.WithMetadata("access_expires_at", access.ExpiresAt.Format(time.RFC3339))
 	}
@@ -1366,7 +1496,28 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	if err != nil {
 		return nil, err
 	}
+	return s.acceptInvitation(ctx, invitation, userID, userEmail, actx)
+}
 
+// AcceptInvitationByID accepts an invitation the onboarding offered to a
+// signed-in account whose email address is verified (docs/rfcs/RFC-104). The
+// verified address stands in for the emailed token: it proves the same
+// mailbox. The invitation is looked up in its organization only; every check
+// of AcceptInvitation applies.
+func (s *TenantService) AcceptInvitationByID(ctx context.Context, tenantID, invitationID, userID shared.ID, userEmail string, emailVerified bool, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	if !emailVerified {
+		return nil, fmt.Errorf("%w: verify your email address first", shared.ErrValidation)
+	}
+	invitation, err := s.repo.GetInvitationByID(ctx, tenantID, invitationID)
+	if err != nil {
+		return nil, err
+	}
+	return s.acceptInvitation(ctx, invitation, userID, userEmail, actx)
+}
+
+// acceptInvitation is the acceptance shared by the token and the onboarding
+// paths.
+func (s *TenantService) acceptInvitation(ctx context.Context, invitation *tenantdom.Invitation, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
 	// Verify the invitation is for this user's email (case-insensitive)
 	if !strings.EqualFold(invitation.Email(), userEmail) {
 		return nil, fmt.Errorf("%w: this invitation was sent to a different email address", shared.ErrValidation)
@@ -1399,9 +1550,14 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
-	// The organization may have restricted member email domains after the
+	// The organization may have restricted who may be invited after the
 	// invitation was sent.
-	if err := s.requireAllowedEmailDomain(ctx, invitation.TenantID(), invitation.Email()); err != nil {
+	if err := s.requireInvitable(ctx, invitation.TenantID(), invitation.Email()); err != nil {
+		return nil, err
+	}
+	// An invitation is a deferred grant: the inviter must still be able to
+	// grant what it offers (RFC-095 §3.2).
+	if err := s.authorizeInvitationGrant(ctx, invitation); err != nil {
 		return nil, err
 	}
 
@@ -1419,6 +1575,12 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	if err := s.ClassifyAcceptedInvitation(ctx, invitation, membership, time.Now().UTC()); err != nil {
 		return nil, err
 	}
+	// The teams are checked for the inviter with the classification just
+	// made: someone who became an outsider since the invitation was sent
+	// never gets full data access through a team.
+	if err := s.reauthorizeInvitationTeams(ctx, invitation, membership.IsExternal()); err != nil {
+		return nil, err
+	}
 
 	// Use transaction to ensure atomicity - both invitation update and membership creation succeed or fail together
 	if err := s.repo.AcceptInvitationTx(ctx, invitation, membership); err != nil {
@@ -1426,6 +1588,9 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	}
 
 	s.applyInvitationRoles(ctx, invitation, userID)
+	if teams := invitation.GroupIDs(); len(teams) > 0 && s.invitationTeams != nil {
+		s.invitationTeams.ApplyInvitationTeams(ctx, invitation.TenantID().String(), userID, teams)
+	}
 
 	// Never log the token, not even a prefix: it is a bearer credential.
 	s.logger.Info("invitation accepted", "invitation_id", invitation.ID().String(), "user_id", userID.String(),
@@ -1437,7 +1602,8 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		WithResourceName(userEmail).
 		WithMessage(fmt.Sprintf("Invitation accepted by %s", userEmail)).
 		WithMetadata("role", invitation.Role().String()).
-		WithMetadata("role_ids_count", len(invitation.RoleIDs()))
+		WithMetadata("role_ids_count", len(invitation.RoleIDs())).
+		WithMetadata("group_ids", invitation.GroupIDs())
 	s.logAudit(ctx, actx, event)
 
 	return membership, nil
@@ -1548,6 +1714,10 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 
 	if s.emailEnqueuer == nil {
 		return fmt.Errorf("%w: email service is not configured", shared.ErrValidation)
+	}
+	// At most one send every 10 minutes and five resends per invitation.
+	if err := inv.MarkResent(time.Now()); err != nil {
+		return err
 	}
 
 	// Rotate the token: only the hash is stored, so the raw token cannot be
@@ -1747,6 +1917,10 @@ type UpdateSecuritySettingsInput struct {
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
 	SSOExceptions    *[]tenantdom.SSOException `json:"sso_exceptions"`
+	// Invitees and ExternalAccessEndRequired: see tenantdom.SecuritySettings
+	// (RFC-095 §4).
+	Invitees                  *string `json:"invitees"`
+	ExternalAccessEndRequired *bool   `json:"external_access_end_required"`
 	// JITRequiresApproval: see tenantdom.SecuritySettings (RFC-058).
 	JITRequiresApproval *bool `json:"jit_requires_approval"`
 	// RequesterIP is the client IP of the tenant user saving the settings, as
@@ -1841,6 +2015,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.PersonalAccounts != nil {
 			security.PersonalAccounts = tenantdom.PersonalAccountsPolicy(*input.PersonalAccounts)
+		}
+		if input.Invitees != nil {
+			security.Invitees = tenantdom.InviteesPolicy(*input.Invitees)
+		}
+		if input.ExternalAccessEndRequired != nil {
+			security.ExternalAccessEndRequired = *input.ExternalAccessEndRequired
 		}
 		if input.SSOExceptions != nil {
 			if err := s.validateSSOExceptions(ctx, t.ID(), *input.SSOExceptions); err != nil {
@@ -2121,10 +2301,23 @@ func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID 
 		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().RiskScoring)).
 		WithMessage("Risk scoring settings updated").
 		WithMetadata("preset", rs.Preset)
+	// The scoring version the change created (scoring_changes, written by
+	// the settings trigger in the same transaction as the save).
+	if s.scoringVersions != nil {
+		if v, verr := s.scoringVersions.CurrentVersion(ctx, t.ID(), scoring.KindAssetRisk); verr == nil {
+			event = event.WithMetadata("scoring_version", v)
+		}
+	}
 	s.logAudit(ctx, actx, event)
 
 	result := t.TypedSettings()
 	return &result, nil
+}
+
+// SetScoringVersions wires the scoring version source recorded on risk
+// scoring settings audit entries.
+func (s *TenantService) SetScoringVersions(v scoring.VersionRepository) {
+	s.scoringVersions = v
 }
 
 // UpdateAssetLifecycleSettings updates only the asset-lifecycle
@@ -2520,6 +2713,40 @@ func (s *TenantService) UpdateMCPSettings(
 	s.logAudit(ctx, actx, event)
 	out := t.TypedSettings().MCP
 	return &out, nil
+}
+
+// AllowMCPClientHost adds a publisher host to the organization's MCP policy
+// (the hosts whose client metadata documents count as verified) in one
+// settings-section write, and audits the change. A host already listed is
+// left as is (no write, no audit). The host is validated like every policy
+// host; the 50-host cap applies.
+func (s *TenantService) AllowMCPClientHost(ctx context.Context, tenantID, host string, actx auditapp.AuditContext) error {
+	var before, after tenantdom.MCPSettings
+	changed := false
+	_, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionMCP, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().MCP
+		if slices.Contains(before.ClientHosts, host) {
+			changed = false
+			return nil
+		}
+		ms := before
+		ms.ClientHosts = append(slices.Clone(before.ClientHosts), host)
+		if err := t.UpdateMCPSettings(ms); err != nil {
+			return err
+		}
+		after, changed = t.TypedSettings().MCP, true
+		return nil
+	})
+	if err != nil || !changed {
+		return err
+	}
+	actx.TenantID = tenantID
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionMCPSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, after)).
+		WithMessage("AI application publisher approved: "+host).
+		WithMetadata("client_host", host).
+		WithSeverity(audit.SeverityHigh))
+	return nil
 }
 
 // GetScopeSettings returns the tenant's scope settings (RFC-054 §6.3).

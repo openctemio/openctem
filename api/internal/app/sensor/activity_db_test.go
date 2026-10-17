@@ -283,9 +283,9 @@ func TestSensorActivity_SDKFilterAndPolicy_DB(t *testing.T) {
 		t.Errorf("no filter -> %d sensors", len(got))
 	}
 
-	policy := sensordom.HealthPolicy{SDKMinVersion: "v0.8.0", SDKLatestVersion: "v0.9.0"}.Normalized()
+	policy := sensordom.HealthPolicy{SDKAdvisories: []string{"v0.7.4"}, SDKLatestVersion: "v0.9.0"}.Normalized()
 	now := time.Now()
-	for id, want := range map[shared.ID]sensordom.SDKStatus{oldSDK: sensordom.SDKUnsupported, newSDK: sensordom.SDKCurrent, none: sensordom.SDKUnknown} {
+	for id, want := range map[shared.ID]sensordom.SDKStatus{oldSDK: sensordom.SDKAdvisory, newSDK: sensordom.SDKCurrent, none: sensordom.SDKUnknown} {
 		a, _ := h.svc.GetSensor(context.Background(), tid.String(), id.String())
 		hl := a.AssessHealth(now, policy)
 		if hl.SDKStatus != want {
@@ -293,9 +293,9 @@ func TestSensorActivity_SDKFilterAndPolicy_DB(t *testing.T) {
 		}
 		hasReason := false
 		for _, r := range hl.Reasons {
-			hasReason = hasReason || r.Code == sensordom.ReasonSDKUnsupported
+			hasReason = hasReason || r.Code == sensordom.ReasonSDKAdvisory
 		}
-		if hasReason != (want == sensordom.SDKUnsupported) || (want == sensordom.SDKUnsupported && hl.State != sensordom.StateDegraded) {
+		if hasReason != (want == sensordom.SDKAdvisory) || (want == sensordom.SDKAdvisory && hl.State != sensordom.StateDegraded) {
 			t.Errorf("%s: reasons %+v state %s", a.Build.SDKVersion, hl.Reasons, hl.State)
 		}
 	}

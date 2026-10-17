@@ -46,8 +46,6 @@
   "exceptions.form.ruleId": "Rule ID",
   "exceptions.form.pathPattern": "Path pattern",
   "exceptions.form.criteriaRequired": "Provide a rule ID or a path pattern so the rule can match findings.",
-  "exceptions.form.expires": "Expires (optional)",
-  "exceptions.form.expiresHint": "Leave blank for a rule that never expires.",
   "exceptions.form.cancel": "Cancel",
   "exceptions.form.saving": "Saving...",
   "exceptions.form.creating": "Creating...",
@@ -99,5 +97,16 @@
   "exceptions.page.empty.pending": "No pending suppression rules.",
   "exceptions.page.empty.approved": "No approved suppression rules.",
   "exceptions.page.empty.rejected": "No rejected suppression rules.",
-  "exceptions.page.empty.expired": "No expired suppression rules."
+  "exceptions.page.empty.expired": "No expired suppression rules.",
+  "exceptions.form.endsAt": "Ends",
+  "exceptions.form.endMissing": "Choose when the rule ends.",
+  "exceptions.form.endPast": "The end must be in the future.",
+  "exceptions.form.endTooLate": "A rule ends within 365 days.",
+  "exceptions.form.endsHint": "Every rule ends: 90 days by default, at most 365 days. To keep suppressing after that, submit a new rule for approval.",
+  "exceptions.detail.reviewTitle": "Review this rule",
+  "exceptions.detail.reviewBody": "This rule had no end date. It was given one ({when}). Check whether it should still suppress findings; to keep it after that date, submit a new rule.",
+  "exceptions.page.reviewBadge": "Review",
+  "exceptions.detail.markReviewed": "Mark as reviewed",
+  "exceptions.page.reviewed": "Marked as reviewed",
+  "exceptions.page.reviewFailed": "Could not mark the rule as reviewed"
 }

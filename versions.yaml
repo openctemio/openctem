@@ -1,38 +1,75 @@
 # versions.yaml: the one compatibility manifest (api/docs/rfcs/RFC-037).
 #
-# Every version default in this repository is copied from here. Do not edit a
+# Every version default in this repository is read from here. Do not edit a
 # default anywhere else: change it here, then run
 #
-#   .github/scripts/release/sync-versions.sh          # rewrite the consumers
+#   .github/scripts/release/sync-versions.sh          # copy it to its consumers
 #   .github/scripts/release/sync-versions.sh --check  # what CI runs
 #
-# The consumers (Go defaults, compose defaults, .env examples) are listed in
-# sync-versions.sh. platform.release is set on the release branch (one commit
-# by cut-release.sh), so a tag's checkout defaults to its own version; develop
+# The API embeds a byte-for-byte copy (api/internal/versions/versions.yaml,
+# written by sync-versions.sh) and reads every default from it, so a version
+# bump changes YAML only, never Go. The other consumers (compose defaults,
+# .env examples, the console's CI pin) are listed in sync-versions.sh.
+# platform.release is set on the release branch (one commit by
+# cut-release.sh), so a tag's checkout defaults to its own version; develop
 # gets it when main is merged back after the tag. The sensor and sdk-go
 # release workflows open a PR that bumps their entries.
 #
 # Format: two levels, "key: value" with values unquoted or double-quoted. ""
-# means "not set" (no minimum, comparison off). Keep it that simple: the
-# scripts read it without a YAML library.
+# means "not set". Keep it that simple: the release scripts read it without a
+# YAML library, and the API's tests fail on anything else.
 
 # The newest released vX.Y.Z tag of this repository (API + web share it); on
 # release/vX.Y.Z, that vX.Y.Z.
 platform:
-  release: v0.9.7
+  release: v0.10.0
 
-# Sensor (openctemio/sensor). latest: the install snippets pin this image tag
-# and the Sensors page shows "update available" below it. min: a sensor below it
-# is degraded ("version unsupported"); "" = no minimum.
+# Sensor products: every top-level section other than platform, sdk, ci and
+# chart is one sensor product (api/docs/rfcs/RFC-037 §11). A sensor reports its
+# product in its heartbeat (sensor.name, else its User-Agent product token);
+# one that reports none is the scanning sensor, the only product before
+# products were reported. A sensor of a product listed here is judged against
+# that product's own release line; a custom product (built on sdk-go, not
+# listed) gets no version verdict.
+#   product           the product token the sensor reports
+#   latest            the newest release: the install snippets pin it, and
+#                     older sensors of this product show "update available"
+#   min               a sensor of this product below it is degraded ("version
+#                     unsupported"); "" = no minimum
+#   image             the published image repository, without a tag
+#   install           the install snippet set: the directory
+#                     api/configs/sensor-products/<install>/ of
+#                     <format>.tmpl files (docker required)
+#   release_identity  the workflow that signs the image (keyless cosign); the
+#                     certificate identity is it + "@refs/tags/<tag>"
+
+# The scanning sensor (openctemio/sensor).
 sensor:
+  product: openctemio-sensor
   latest: v0.23.0
   min: v0.9.0
+  image: ghcr.io/openctemio/sensor
+  install: sensor
+  release_identity: https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml
 
-# SDK (openctemio/sdk-go) a sensor is built with. latest: older is "outdated".
-# min: older is degraded ("SDK below minimum"); "" = no minimum.
+# The Tenable.sc connector (openctemio/connector-tenable).
+connector-tenable:
+  product: openctemio-connector-tenable
+  latest: v0.1.0
+  min: ""
+  image: ghcr.io/openctemio/connector-tenable
+  install: connector-tenable
+  release_identity: https://github.com/openctemio/connector-tenable/.github/workflows/images.yml
+
+# SDK (openctemio/sdk-go) a sensor is built with. Informational only: whether
+# a sensor works with this platform is its protocol version and the
+# capabilities it advertises, not its SDK release. latest: a sensor built with
+# an older SDK shows "outdated" (no health effect). advisories: SDK releases
+# with a published security advisory, separated by spaces; a sensor built with
+# one is degraded with a warning. "" = none.
 sdk:
   latest: v0.32.0
-  min: ""
+  advisories: ""
 
 # CI runner (openctemio/ci: the openctem-ci action, image and templates). Its
 # own release line, separate from the sensor's. latest: the console's pipeline

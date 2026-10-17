@@ -63,6 +63,9 @@ type consoleClient struct {
 	t    *testing.T
 	base string
 	http *http.Client
+	// csrf is the token the console keeps in memory, from the sign-in and
+	// validate responses (never a readable cookie).
+	csrf string
 }
 
 func (c *consoleClient) do(method, path string, body any) (*http.Response, []byte) {
@@ -73,12 +76,9 @@ func (c *consoleClient) do(method, path string, body any) (*http.Response, []byt
 	}
 	req, _ := http.NewRequestWithContext(c.t.Context(), method, c.base+path, &buf)
 	req.Header.Set("Content-Type", "application/json")
-	// Browser behavior: echo the readable admin CSRF cookie on writes.
-	u, _ := url.Parse(c.base + "/")
-	for _, ck := range c.http.Jar.Cookies(u) {
-		if ck.Name == middleware.AdminCSRFCookie && method != http.MethodGet {
-			req.Header.Set(middleware.CSRFHeaderName, ck.Value)
-		}
+	// Browser behavior: the console echoes the token it keeps in memory.
+	if c.csrf != "" && method != http.MethodGet {
+		req.Header.Set(middleware.CSRFHeaderName, c.csrf)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -87,25 +87,40 @@ func (c *consoleClient) do(method, path string, body any) (*http.Response, []byt
 	defer resp.Body.Close()
 	var out bytes.Buffer
 	_, _ = out.ReadFrom(resp.Body)
+	var withToken struct {
+		CSRFToken string `json:"csrf_token"`
+		Admin     *struct {
+			CSRFToken string `json:"csrf_token"`
+		} `json:"admin"`
+	}
+	if json.Unmarshal(out.Bytes(), &withToken) == nil {
+		if withToken.CSRFToken != "" {
+			c.csrf = withToken.CSRFToken
+		} else if withToken.Admin != nil && withToken.Admin.CSRFToken != "" {
+			c.csrf = withToken.Admin.CSRFToken
+		}
+	}
 	return resp, out.Bytes()
 }
 
 // stubSignIn resolves one refresh token to one user, standing in for the
 // normal /login session.
 type stubSignIn struct {
-	token string
-	user  adminconsole.SignedInUser
+	password string
+	user     adminconsole.SignedInUser
 }
 
-func (s stubSignIn) SignedInUser(_ context.Context, token string) (*adminconsole.SignedInUser, error) {
-	if token != s.token {
-		return nil, errors.New("invalid refresh token")
+func (s stubSignIn) VerifyPassword(_ context.Context, email, password string, _ adminconsole.ClientInfo) (*adminconsole.SignedInUser, error) {
+	if email != s.user.Email || password != s.password {
+		return nil, admin.ErrInvalidCredentials
 	}
 	u := s.user
 	return &u, nil
 }
 
-func (s stubSignIn) EndSignIn(context.Context, string) error { return nil }
+func (s stubSignIn) RecordPasswordSuccess(context.Context, shared.ID) {}
+
+func (s stubSignIn) RecordPasswordFailure(context.Context, shared.ID) {}
 
 func (s stubSignIn) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
 	return shared.ID{}, "", errors.New("not used")
@@ -161,10 +176,10 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 		t.Fatalf("GetByUserID: %v", err)
 	}
 
-	const refresh = "it-refresh-token"
-	signIn := stubSignIn{token: refresh, user: adminconsole.SignedInUser{UserID: userID, Email: email, Active: true, PasswordSignIn: true}}
+	const pw = "It-Console-Pass-1"
+	signIn := stubSignIn{password: pw, user: adminconsole.SignedInUser{UserID: userID, Email: email, Active: true}}
 	svc := adminconsole.NewService(admins, consoleRepo, auditRepo, cipher, signIn, log)
-	h := handler.NewAdminConsoleHandler(svc, false, "refresh_token", log)
+	h := handler.NewAdminConsoleHandler(svc, false, log)
 	validate := handler.NewAdminAuthHandler(log)
 	authMW := middleware.NewAdminAuthMiddleware(svc, log)
 
@@ -173,7 +188,7 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	r := chi.NewRouter()
 	r.Route("/api/v1/admin/auth", func(r chi.Router) {
 		r.With(authMW.Authenticate).Get("/validate", validate.Validate)
-		r.Post("/session", h.StartSession)
+		r.Post("/login", h.Login)
 		r.Post("/mfa", h.VerifyMFA)
 		r.Post("/logout", h.Logout)
 		r.With(authMW.Authenticate).Post("/probe", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -183,15 +198,15 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 
 	jar, _ := cookiejar.New(nil)
 	c := &consoleClient{t: t, base: srv.URL, http: &http.Client{Jar: jar}}
-	base, _ := url.Parse(srv.URL + "/")
-
-	// 1. Not signed in on /login: refused.
-	if resp, _ := c.do("POST", "/api/v1/admin/auth/session", nil); resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("session without sign-in: %d", resp.StatusCode)
+	// 1. A wrong password is refused, like an unknown email; a tenant
+	// session plays no part.
+	for _, creds := range []map[string]string{{"email": email, "password": "wrong"}, {"email": "nobody@example.com", "password": pw}} {
+		if resp, _ := c.do("POST", "/api/v1/admin/auth/login", creds); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("login %v: %d, want 401", creds, resp.StatusCode)
+		}
 	}
-	// 2. Signed in (refresh cookie from /login): first time demands enrollment.
-	jar.SetCookies(base, []*http.Cookie{{Name: "refresh_token", Value: refresh, Path: "/"}})
-	resp, body := c.do("POST", "/api/v1/admin/auth/session", nil)
+	// 2. The right email and password: first time demands enrollment.
+	resp, body := c.do("POST", "/api/v1/admin/auth/login", map[string]string{"email": email, "password": pw})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("session: %d %s", resp.StatusCode, body)
 	}
@@ -212,10 +227,24 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	if resp, body := c.do("POST", "/api/v1/admin/auth/mfa", map[string]string{"code": code}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("mfa: %d %s", resp.StatusCode, body)
 	}
-	// 4. The session cookie now authenticates, as the right admin.
+	signInToken := c.csrf
+	if signInToken == "" {
+		t.Fatal("the sign-in response carries no csrf_token")
+	}
+	// No console cookie is readable by a page script (the jar holds what a
+	// script could see only on a non-HttpOnly cookie; none at the root).
+	for _, ck := range jar.Cookies(&url.URL{Scheme: "http", Host: strings.TrimPrefix(srv.URL, "http://"), Path: "/"}) {
+		t.Errorf("cookie %s is sent to every page of the host", ck.Name)
+	}
+	// 4. The session cookie now authenticates, as the right admin, and
+	// validate hands the same token back (a reloaded console).
+	c.csrf = ""
 	resp, body = c.do("GET", "/api/v1/admin/auth/validate", nil)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), email) {
 		t.Fatalf("validate with session: %d %s", resp.StatusCode, body)
+	}
+	if c.csrf != signInToken {
+		t.Fatalf("validate csrf_token %q, want the sign-in one %q", c.csrf, signInToken)
 	}
 	// 5. A write without the CSRF header is refused; with it, allowed.
 	var sessionCookie *http.Cookie

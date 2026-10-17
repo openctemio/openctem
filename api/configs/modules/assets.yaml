@@ -13,9 +13,12 @@
     - list_assets
   jobs:
     - AssetIdentityBackfillController
+    - AssetTechnologyBackfillController
     - AssetChangeTimelineController
     - AssetLifecycleController
     - AssetPurgeController
+    - AssetRiskScoreController
+    - AssetRiskReconcileController
     - OwnerResolutionController
     - DataExpirationController
     - DomainReverifyController

@@ -1,4 +1,10 @@
-import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
+import type {
+  Sensor,
+  SensorProduct,
+  SensorRole,
+  SensorState,
+  SensorVersionStatus,
+} from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
 import type { ScanZone } from '@/lib/api/scan-zone-types'
 
@@ -7,35 +13,72 @@ import { dispatchTools, sensorCapacity } from './capabilities'
 import { canTakeJobs, sensorState, SENSOR_STATES, type FleetThresholds } from './sensor-state'
 import {
   compareSensorVersions,
+  DEFAULT_SENSOR_PRODUCT,
   normalizeSensorVersion,
+  releaseLineOf,
   sensorSdkVersion,
   sensorSdkVersionKey,
   sensorVersionStatus,
 } from './sensor-version'
 
-/** The platform's release channel (GET /sensors/stats). */
+/**
+ * What the platform judges sensor versions against (GET /sensors/stats): the
+ * sensor products, each with its own release line, and the SDK entries.
+ */
 export interface ReleaseChannel {
-  latest?: string | null
-  min?: string | null
-  /** The supported SDK range ("" / null when not configured). */
+  products?: SensorProduct[]
+  /** The newest SDK release (informational; null when not set). */
   sdkLatest?: string | null
-  sdkMin?: string | null
+  /** SDK releases with a published security advisory. */
+  sdkAdvisories?: string[]
+}
+
+/** The version status of a sensor against its own product's release line. */
+export function versionStatusIn(sensor: Sensor, channel: ReleaseChannel): SensorVersionStatus {
+  const line = releaseLineOf(sensor, channel.products)
+  return sensorVersionStatus(sensor, line.latest, line.min)
+}
+
+/** The scanning sensor's release line, for the fleet summary. */
+export function scanningSensorLine(channel: ReleaseChannel) {
+  return releaseLineOf({ product: DEFAULT_SENSOR_PRODUCT }, channel.products)
 }
 
 /** What a health reason is about, for the "Needs attention" caption. */
 export type AttentionKind =
-  'backlog' | 'key' | 'version' | 'sdk' | 'heartbeat' | 'tools' | 'content' | 'error'
+  | 'offline'
+  | 'backlog'
+  | 'key'
+  | 'version'
+  | 'sdk'
+  | 'heartbeat'
+  | 'tools'
+  | 'content'
+  | 'preflight'
+  | 'error'
 
-function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKind[] {
+/**
+ * The states of an enabled sensor that is not connected: it stopped
+ * heartbeating, or never connected after it was created. Each needs someone
+ * to look at the host ("Idle" is a one-shot sensor between runs, not a fault).
+ */
+export const NOT_CONNECTED_STATES: SensorState[] = ['stale', 'offline', 'never_connected']
+
+function attentionKindsOf(
+  sensor: Sensor,
+  channel: ReleaseChannel,
+  state: SensorState
+): AttentionKind[] {
   const kinds: AttentionKind[] = []
+  if (NOT_CONNECTED_STATES.includes(state)) kinds.push('offline')
   for (const r of sensor.health_reasons ?? []) {
     const kind: AttentionKind | null = r.code.startsWith('outbox_')
       ? 'backlog'
-      : r.code.startsWith('key_')
+      : r.code.startsWith('key_') || r.code === 'identity_cloned'
         ? 'key'
         : r.code === 'version_unsupported'
           ? 'version'
-          : r.code === 'sdk_unsupported'
+          : r.code === 'sdk_advisory'
             ? 'sdk'
             : r.code === 'heartbeat_late' || r.code === 'control_slow'
               ? 'heartbeat'
@@ -43,15 +86,17 @@ function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKin
                 ? 'tools'
                 : r.code.startsWith('content_')
                   ? 'content'
-                  : r.code === 'error_reported'
-                    ? 'error'
-                    : null
+                  : r.code.startsWith('config_')
+                    ? 'preflight'
+                    : r.code === 'error_reported'
+                      ? 'error'
+                      : null
     if (kind && !kinds.includes(kind)) kinds.push(kind)
   }
   // Older APIs send no reasons: derive what the page can see itself.
   if (!sensor.health_reasons) {
     if (sensor.outbox_warning) kinds.push('backlog')
-    if (sensorVersionStatus(sensor, channel.latest, channel.min) === 'unsupported') {
+    if (versionStatusIn(sensor, channel) === 'unsupported') {
       kinds.push('version')
     }
   }
@@ -62,16 +107,20 @@ function isEnabled(state: SensorState): boolean {
   return state !== 'disabled' && state !== 'revoked'
 }
 
-/** An enabled sensor with something to fix (the "Needs attention" metric). */
+/**
+ * An enabled sensor with something to fix (the "Needs attention" metric): not
+ * connected, a health reason the API reports (backlog, key, version, SDK
+ * advisory, heartbeat, tools, content, failed preflight, errors), or below
+ * its product's minimum.
+ */
 export function needsAttention(
   sensor: Sensor,
   now: number,
   thresholds: FleetThresholds | undefined,
   channel: ReleaseChannel
 ): boolean {
-  return (
-    isEnabled(sensorState(sensor, now, thresholds)) && attentionKindsOf(sensor, channel).length > 0
-  )
+  const state = sensorState(sensor, now, thresholds)
+  return isEnabled(state) && attentionKindsOf(sensor, channel, state).length > 0
 }
 
 export interface FleetSummary {
@@ -138,11 +187,11 @@ export function summarizeFleet(
     if (s.protocol) hasProtocolInfo = true
     if (isEnabled(state) && sensorProtocolOf(s) === 'v1') protocolV1++
     if (isEnabled(state)) {
-      const kinds = attentionKindsOf(s, channel)
+      const kinds = attentionKindsOf(s, channel, state)
       if (kinds.length) attention++
       for (const k of kinds) if (!attentionKinds.includes(k)) attentionKinds.push(k)
     }
-    const vs = sensorVersionStatus(s, channel.latest, channel.min)
+    const vs = versionStatusIn(s, channel)
     if (vs === 'update_available' || vs === 'unsupported') updates++
     if (vs === 'unsupported') unsupported++
   }
@@ -271,10 +320,7 @@ export function filterSensors(
     if (q && !searchText(s).includes(q)) return false
     if (f.roles.length && !f.roles.includes(sensorRoleOf(s.type))) return false
     if (f.states.length && !f.states.includes(sensorState(s, now, thresholds))) return false
-    if (
-      f.versions.length &&
-      !f.versions.includes(sensorVersionStatus(s, channel.latest, channel.min))
-    ) {
+    if (f.versions.length && !f.versions.includes(versionStatusIn(s, channel))) {
       return false
     }
     if (f.modes.length) {

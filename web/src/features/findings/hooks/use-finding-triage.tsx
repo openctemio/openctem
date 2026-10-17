@@ -22,6 +22,17 @@ import {
   useUpdateFindingStatusApi,
 } from '../api/use-findings-api'
 import { ApprovalDialog } from '../components/approval-dialog'
+import type { TransitionDecision } from '../api/use-finding-transitions'
+import { subStatusName, useSubStatusCatalog } from '../api/use-finding-lifecycles'
+import {
+  LifecycleMoveDialog,
+  type LifecycleMoveInput,
+} from '../components/lifecycle/lifecycle-move-dialog'
+import {
+  StatusNoteDialog,
+  needsStatusNote,
+  type NotedStatus,
+} from '../components/status-note-dialog'
 import {
   FINDING_STATUS_CONFIG,
   SEVERITY_CONFIG,
@@ -29,12 +40,18 @@ import {
   type FindingStatus,
   type FindingUser,
 } from '../types'
+import { useTranslation } from '@/context/i18n-provider'
+import { FINDINGS_CLOSED_STATUSES } from '@/features/findings/lib/list-defaults'
 
 export interface FindingTriageTarget {
   id: string
   status: FindingStatus
   severity: Severity
   assignee?: FindingUser
+  /** Longest risk acceptance the API allows for this finding, in days. */
+  maxAcceptanceDays?: number
+  /** The organization's sub-status inside the status. */
+  subStatusId?: string
 }
 
 export interface UseFindingTriageOptions {
@@ -44,10 +61,17 @@ export interface UseFindingTriageOptions {
 }
 
 export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingTriageOptions = {}) {
+  const { t, locale } = useTranslation()
   const [status, setStatus] = useState<FindingStatus>(finding.status)
+  const [subStatusId, setSubStatusId] = useState<string | undefined>(finding.subStatusId)
+  // A move the organization's lifecycle asks details for waits here.
+  const [moveTarget, setMoveTarget] = useState<TransitionDecision | null>(null)
+  const catalog = useSubStatusCatalog(!!moveTarget?.to_sub_status_id)
   const [severity, setSeverity] = useState<Severity>(finding.severity)
   const [assignee, setAssignee] = useState<FindingUser | undefined>(finding.assignee)
   const [approvalTarget, setApprovalTarget] = useState<FindingStatus | null>(null)
+  // A fix claim or a resolve waits here for its note (the API requires one).
+  const [noteTarget, setNoteTarget] = useState<NotedStatus | null>(null)
 
   // Follow the server after a revalidation or when another finding is shown.
   //
@@ -62,6 +86,9 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
   useEffect(() => {
     setStatus((prev) => (prev === finding.status ? prev : finding.status))
   }, [finding.id, finding.status])
+  useEffect(() => {
+    setSubStatusId((prev) => (prev === finding.subStatusId ? prev : finding.subStatusId))
+  }, [finding.id, finding.subStatusId])
   useEffect(() => {
     setSeverity((prev) => (prev === finding.severity ? prev : finding.severity))
   }, [finding.id, finding.severity])
@@ -78,33 +105,72 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
   const { trigger: assignUser, isMutating: assigning } = useAssignFindingApi(finding.id)
   const { trigger: unassignUser, isMutating: unassigning } = useUnassignFindingApi(finding.id)
 
-  const changeStatus = async (next: FindingStatus, isUndo = false) => {
-    if (next === status) return
+  const changeStatus = async (
+    next: FindingStatus,
+    isUndo = false,
+    note?: string,
+    move?: TransitionDecision,
+    input?: LifecycleMoveInput
+  ) => {
+    const toSub = move?.to_sub_status_id
+    // A label change inside the status is a move too (sub-status only).
+    if (next === status && (toSub ?? '') === (subStatusId ?? '')) return
     if (requiresApproval(next)) {
       setApprovalTarget(next)
       return
     }
+    // The organization's lifecycle asks for a longer note or fields: one
+    // dialog collects them (and the platform's note, when it needs one).
+    if (
+      !isUndo &&
+      !input &&
+      move &&
+      ((move.note_min_len ?? 0) > 0 || (move.fields?.length ?? 0) > 0)
+    ) {
+      setMoveTarget(move)
+      return
+    }
+    if (!isUndo && !input && note === undefined && needsStatusNote(next)) {
+      setNoteTarget(next)
+      return
+    }
     const previous = status
+    const previousSub = subStatusId
     setStatus(next)
+    setSubStatusId(toSub)
     try {
-      await updateStatus({
+      const updated = await updateStatus({
         status: next,
-        resolution: next === 'resolved' ? 'Resolved via UI' : undefined,
+        resolution: input?.note ?? note,
+        ...(toSub ? { sub_status_id: toSub } : {}),
+        ...(input?.fields ? { fields: input.fields } : {}),
       })
+      setSubStatusId(updated?.sub_status_id)
       opts.onStatusChange?.(next)
       await invalidateFindingsCache()
+      // No Undo on a closing move (resolve): reverting it is a reopen, which
+      // a person makes deliberately from the status control.
+      const closing = (FINDINGS_CLOSED_STATUSES as readonly string[]).includes(next)
       toast.success(
-        `Status updated to ${FINDING_STATUS_CONFIG[next].label}`,
-        isUndo
+        t('findings.triage.statusUpdated', 'Status updated to {status}', {
+          status: t(FINDING_STATUS_CONFIG[next].labelKey, FINDING_STATUS_CONFIG[next].label),
+        }),
+        isUndo || closing
           ? { duration: 3000 }
           : {
-              action: { label: 'Undo', onClick: () => void changeStatus(previous, true) },
+              action: {
+                label: t('findings.triage.undo', 'Undo'),
+                onClick: () => void changeStatus(previous, true),
+              },
               duration: 5000,
             }
       )
     } catch (error) {
       setStatus(previous)
-      toast.error(getErrorMessage(error, 'Failed to update status'))
+      setSubStatusId(previousSub)
+      toast.error(
+        getErrorMessage(error, t('findings.triage.statusFailed', 'Failed to update status'))
+      )
     }
   }
 
@@ -117,17 +183,24 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       opts.onSeverityChange?.(next)
       await invalidateFindingsCache()
       toast.success(
-        `Severity updated to ${SEVERITY_CONFIG[next].label}`,
+        t('findings.triage.severityUpdated', 'Severity updated to {severity}', {
+          severity: t(`severity.${next}`, SEVERITY_CONFIG[next].label),
+        }),
         isUndo
           ? { duration: 3000 }
           : {
-              action: { label: 'Undo', onClick: () => void changeSeverity(previous, true) },
+              action: {
+                label: t('findings.triage.undo', 'Undo'),
+                onClick: () => void changeSeverity(previous, true),
+              },
               duration: 5000,
             }
       )
     } catch (error) {
       setSeverity(previous)
-      toast.error(getErrorMessage(error, 'Failed to update severity'))
+      toast.error(
+        getErrorMessage(error, t('findings.triage.severityFailed', 'Failed to update severity'))
+      )
     }
   }
 
@@ -141,26 +214,82 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       opts.onAssigneeChange?.(next)
       await invalidateFindingsCache()
       toast.success(
-        next ? `Assigned to ${next.name}` : 'Unassigned',
+        next
+          ? t('findings.triage.assignedTo', 'Assigned to {name}', { name: next.name })
+          : t('findings.triage.unassigned', 'Unassigned'),
         isUndo
           ? { duration: 3000 }
           : {
-              action: { label: 'Undo', onClick: () => void changeAssignee(previous, true) },
+              action: {
+                label: t('findings.triage.undo', 'Undo'),
+                onClick: () => void changeAssignee(previous, true),
+              },
               duration: 5000,
             }
       )
     } catch (error) {
       setAssignee(previous ?? undefined)
-      toast.error(getErrorMessage(error, next ? 'Failed to assign' : 'Failed to unassign'))
+      toast.error(
+        getErrorMessage(
+          error,
+          next
+            ? t('findings.triage.assignFailed', 'Failed to assign')
+            : t('findings.triage.unassignFailed', 'Failed to unassign')
+        )
+      )
     }
   }
 
   // The dialog is mounted only while a status waits for approval, so it is
   // always open when rendered; closing it clears the pending status.
-  const dialogs: ReactNode = approvalTarget ? (
+  const noteDialog: ReactNode = noteTarget ? (
+    <StatusNoteDialog
+      status={noteTarget}
+      open
+      onOpenChange={(open) => {
+        if (!open) setNoteTarget(null)
+      }}
+      onConfirm={(note) => {
+        const target = noteTarget
+        setNoteTarget(null)
+        void changeStatus(target, false, note)
+      }}
+    />
+  ) : null
+
+  const moveSub = moveTarget?.to_sub_status_id
+    ? catalog.get(moveTarget.to_sub_status_id)
+    : undefined
+  const moveDialog: ReactNode = moveTarget ? (
+    <LifecycleMoveDialog
+      open
+      move={moveTarget}
+      targetLabel={
+        moveTarget.name ||
+        (moveSub
+          ? subStatusName(moveSub, locale)
+          : t(
+              FINDING_STATUS_CONFIG[moveTarget.to].labelKey,
+              FINDING_STATUS_CONFIG[moveTarget.to].label
+            ))
+      }
+      noteRequired={needsStatusNote(moveTarget.to)}
+      onOpenChange={(open) => {
+        if (!open) setMoveTarget(null)
+      }}
+      onConfirm={(input) => {
+        const target = moveTarget
+        setMoveTarget(null)
+        void changeStatus(target.to, false, undefined, target, input)
+      }}
+    />
+  ) : null
+
+  const approvalDialog: ReactNode = approvalTarget ? (
     <ApprovalDialog
       findingId={finding.id}
       targetStatus={approvalTarget}
+      maxAcceptanceDays={finding.maxAcceptanceDays}
       open
       onOpenChange={(open) => {
         if (!open) setApprovalTarget(null)
@@ -169,11 +298,21 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     />
   ) : null
 
+  const dialogs: ReactNode = (
+    <>
+      {approvalDialog}
+      {noteDialog}
+      {moveDialog}
+    </>
+  )
+
   return {
     status,
+    subStatusId,
     severity,
     assignee,
-    changeStatus: (s: FindingStatus) => void changeStatus(s),
+    changeStatus: (s: FindingStatus, move?: TransitionDecision) =>
+      void changeStatus(s, false, undefined, move),
     changeSeverity: (s: Severity) => void changeSeverity(s),
     changeAssignee: (u: FindingUser | null) => void changeAssignee(u),
     statusBusy,

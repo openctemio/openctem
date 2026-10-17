@@ -164,9 +164,13 @@ Unauthenticated → /login → No Tenant → /onboarding/create-team → Dashboa
 
 `/onboarding/create-team` shows the create-team form only when the API allows
 self-service organizations (`tenant_creation_mode` on `GET /auth/providers`).
-Under `TENANT_CREATION_MODE=admin_only` it tells the user to ask their
+Under the `admin_only` policy (always, with the default `SIGNUP_MODE=disabled`) it tells the user to ask their
 administrator or open their invitation link; every "Create team" button hides
-(`useCanCreateOrganization`). A platform administrator goes to `/admin` instead.
+(`useCanCreateOrganization`). A platform administrator is told to use the
+platform console, which is a separate app in `console/` (its own site and
+image; `npm run dev:console`, port 3001). The tenant app has no console route,
+never imports console code (ESLint `no-restricted-imports`, `console/src/__tests__/app-split.test.ts`)
+and refuses to proxy `/api/v1/admin`.
 
 After auth changes, use `window.location.href` (not `router.push`) to pick up cookies.
 See [auth.md](.claude/auth.md) for details.
@@ -203,7 +207,7 @@ tabs by role), `src/features/sensors`, `src/lib/api/sensor-*`, API
 ## Settings navigation
 
 Every settings page is listed once, in `src/config/settings-nav.ts` (groups My
-account, Organization, Access, Policies, Scanning, Integrations). That config
+account, Organization, Access, Findings, Policies, Scanning, Integrations). That config
 drives the settings rail (the left sidebar swaps to it on `/settings/*`,
 `/account/*` and each item's URL), the `/settings` overview and the Settings
 section of the command palette. The main sidebar's one "Settings" link is

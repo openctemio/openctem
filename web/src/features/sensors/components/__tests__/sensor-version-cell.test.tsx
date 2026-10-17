@@ -3,11 +3,23 @@ import { render, screen } from '@testing-library/react'
 
 import { SensorVersionCell, type SensorVersionFields } from '../sensor-cells'
 import { sdkVersionOptions } from '../sensor-facet-panel'
+import type { ReleaseChannel } from '../../lib/fleet'
 
-function cell(sensor: SensorVersionFields, extra: Record<string, string> = {}) {
-  const { container } = render(
-    <SensorVersionCell sensor={sensor} latest="v0.5.0" min="v0.4.0" {...extra} />
-  )
+const CHANNEL: ReleaseChannel = {
+  products: [
+    { id: 'openctemio-sensor', latest_version: 'v0.5.0', min_version: 'v0.4.0', image: '' },
+    {
+      id: 'openctemio-connector-tenable',
+      latest_version: 'v0.2.0',
+      min_version: 'v0.1.0',
+      image: '',
+    },
+  ],
+  sdkLatest: 'v0.9.0',
+}
+
+function cell(sensor: SensorVersionFields, channel: ReleaseChannel = CHANNEL) {
+  const { container } = render(<SensorVersionCell sensor={sensor} channel={channel} />)
   return container
 }
 
@@ -32,7 +44,7 @@ describe('SensorVersionCell', () => {
     expect(tip?.getAttribute('title')).toContain('Built: ')
     expect(tip?.getAttribute('title')).toContain('SDK: openctem-sdk-go v0.9.0')
     // A current SDK carries no SDK tag.
-    expect(screen.queryByText(/SDK (outdated|unsupported)/)).toBeNull()
+    expect(screen.queryByText(/SDK (outdated|advisory)/)).toBeNull()
     expect(screen.getByText('latest')).toBeInTheDocument()
   })
 
@@ -43,22 +55,46 @@ describe('SensorVersionCell', () => {
     expect(cell({ version: '', sdk_version: '' }).textContent).toBe('Not reported')
   })
 
-  it('warns when the SDK is outdated (warning) or unsupported (destructive)', () => {
-    cell(
-      { version: 'v0.5.0', sdk_version: 'v0.8.0', sdk_status: 'outdated' },
-      { sdkLatest: 'v0.9.0' }
-    )
+  it('shows an outdated SDK as information and an SDK advisory as a warning', () => {
+    cell({ version: 'v0.5.0', sdk_version: 'v0.8.0', sdk_status: 'outdated' })
     const outdated = screen.getByText('SDK outdated')
-    expect(outdated.className).toContain('text-warning')
+    expect(outdated.className).toContain('text-info')
     expect(outdated).toHaveAttribute('title', 'SDK v0.9.0 is available')
 
-    cell(
-      { version: 'v0.5.0', sdk_version: 'v0.6.0', sdk_status: 'unsupported' },
-      { sdkMin: 'v0.8.0' }
+    cell({ version: 'v0.5.0', sdk_version: 'v0.6.0', sdk_status: 'advisory' })
+    const advisory = screen.getByText('SDK advisory')
+    expect(advisory.className).toContain('text-warning')
+    expect(advisory).toHaveAttribute('title', 'This SDK release has a published security advisory')
+  })
+
+  it("judges each sensor against its own product's release line", () => {
+    // v0.1.5 is far below the scanning sensor's minimum (v0.4.0), but the
+    // connector's own line is v0.1.0..v0.2.0: an update, not unsupported.
+    cell({ version: 'v0.1.5', sensor_product: 'openctemio-connector-tenable' })
+    const update = screen.getByText('update')
+    expect(update).toHaveAttribute('title', 'v0.2.0 is available')
+    expect(screen.queryByText('unsupported')).toBeNull()
+  })
+
+  it('prefers the release line the API sent for the sensor', () => {
+    cell({
+      version: 'v0.1.0',
+      product: 'openctemio-connector-tenable',
+      product_known: true,
+      product_latest_version: 'v0.3.0',
+      product_min_version: 'v0.2.0',
+    })
+    expect(screen.getByText('unsupported')).toHaveAttribute(
+      'title',
+      'Older than the minimum supported v0.2.0'
     )
-    const unsupported = screen.getByText('SDK unsupported')
-    expect(unsupported.className).toContain('text-destructive')
-    expect(unsupported).toHaveAttribute('title', 'Older than the minimum supported SDK v0.8.0')
+  })
+
+  it('gives a custom product no update or unsupported verdict', () => {
+    const c = cell({ version: 'v0.0.1', product: 'acme-custom', product_known: false })
+    expect(c.textContent).toBe('v0.0.1')
+    const c2 = cell({ version: 'v0.0.1', sensor_product: 'acme-custom' })
+    expect(c2.textContent).toBe('v0.0.1')
   })
 })
 

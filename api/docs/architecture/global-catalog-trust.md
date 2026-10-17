@@ -101,6 +101,39 @@ so they must not decide what another tenant's view shows:
 - **Dashboard average CVSS** uses `COALESCE(f.cvss_score, v.cvss_score)`.
 - **License reports** (`GetLicenseStats`, the license-risk breakdown) read
   `asset_components.license`.
+- **Fixed versions of a finding's package**: a CI or sensor report does not
+  write the catalog, so each finding keeps the scanner's fixed versions in
+  `findings.metadata.fixed_versions` (de-duplicated, at most 20, each at most
+  64 characters; trivy's comma-separated list is split). The single-finding
+  response merges them with the catalog's, picks the nearest fix for the
+  installed version (`component.fixed_in`, same major line first,
+  `fixed_in_major` when it is not) and builds `package_fix`: the version that
+  fixes the most open findings of the same package version on the same asset,
+  which of them it fixes, and, when the installed line no longer receives
+  fixes, the lowest version that fixes all of them
+  (`vulnerability.PlanPackageFix`). The plan reads only that tenant's open
+  findings on that asset (`FindingRepository.ListPackageFixSiblings`), which the
+  caller can already see through the finding.
+- **Advisory facts of a finding**: the scanner's references (http(s) URLs with
+  a host, at most 25 of at most 512 characters), the advisory's published and
+  modified dates and the primary CVSS source stay on the finding
+  (`metadata.references`, `advisory_published_at`, `advisory_modified_at`,
+  `cvss_source`). The single-finding response returns them as `intel`, with
+  the date of the EPSS score and the CISA KEV date added (and ransomware use)
+  read from the feeds (`epss_scores`, `kev_catalog`) for the finding's CVE.
+- **How the package reaches the project**: a scanner that reports
+  `vulnerability.is_direct` and `vulnerability.dependency_path` (CTIS; trivy
+  through the CI runner or an uploaded trivy report) has them kept as
+  `metadata.dependency` = `{direct, path}`: the path runs from the direct
+  dependency to the vulnerable package, at most 32 package ids of at most 256
+  bytes, ids with control characters dropped; a longer chain keeps its first
+  entry and the entries nearest the package. Unlike the other metadata keys a
+  later sighting replaces it, since it describes the lock file as last
+  scanned. The single-finding response returns it on `component` as
+  `dependency_type` (`direct` or `transitive`, over the asset's dependency
+  list) and `dependency_path`, with `manifest_line`, the package's line in
+  the finding's lock file. It is read only through a finding the caller can
+  already see.
 
 Display-only fields (a CVE's title in a list, a component's description) still
 come from the catalog. The first reporter can choose them for a CVE or

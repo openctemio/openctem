@@ -68,7 +68,17 @@ type Service struct {
 	links      LinkReader
 	logger     *logger.Logger
 	now        func() time.Time
+	keys       RemediationKeyApplier
 }
+
+// RemediationKeyApplier keys persisted findings into remediation groups
+// (*remediation.KeyApplier). Best-effort: a failure is logged, never fatal.
+type RemediationKeyApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
+}
+
+// SetRemediationKeyApplier wires remediation-group keys for matched findings.
+func (s *Service) SetRemediationKeyApplier(k RemediationKeyApplier) { s.keys = k }
 
 // NewService creates the matcher. classifier, sla and assets are optional.
 func NewService(store softwarematch.Store, policy PolicyReader, findings FindingWriter, log *logger.Logger) *Service {
@@ -286,7 +296,9 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 		switch {
 		case !ok:
 			create = append(create, c)
-		case f.Status == string(vulnerability.FindingStatusResolved) || f.Status == string(vulnerability.FindingStatusNotObserved):
+		case f.Status == string(vulnerability.FindingStatusResolved) || (f.Stale && vulnerability.IsOpenStatus(vulnerability.FindingStatus(f.Status))):
+			// The store reopens the ones it closed as fixed and makes stale
+			// open ones present again; every other id is left alone.
 			reopen = append(reopen, f.ID)
 		}
 	}
@@ -417,6 +429,11 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 		st.Created += res.Created
 		for i, msg := range res.Errors {
 			s.logger.Warn("vulnerability matching: finding not stored", "index", i, "error", msg)
+		}
+	}
+	if s.keys != nil {
+		if err := s.keys.ApplyBatch(ctx, tenantID, findings); err != nil {
+			s.logger.Warn("vulnerability matching: remediation keys not derived", "tenant_id", tenantID.String(), "error", err)
 		}
 	}
 	return nil

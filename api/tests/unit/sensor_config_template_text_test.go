@@ -11,7 +11,7 @@ import (
 )
 
 // renderShippedTemplates renders the templates the API ships in
-// configs/sensor-templates (and, with a missing dir, the built-in fallbacks).
+// configs/sensor-products (and, with a missing dir, the built-in fallbacks).
 func renderShippedTemplates(t *testing.T, dir string) *sensorapp.RenderedTemplates {
 	t.Helper()
 	svc := sensorapp.NewSensorConfigTemplateService(dir, logger.NewNop())
@@ -33,14 +33,14 @@ func renderShippedTemplates(t *testing.T, dir string) *sensorapp.RenderedTemplat
 
 // The YAML template told operators to edit /app/configs/agent-templates/yaml.tmpl,
 // a directory the image no longer ships (RFC-023 moved it to
-// configs/sensor-templates; the old one is only a fallback).
+// configs/sensor-products; the old one is only a fallback).
 func TestSensorConfigTemplates_PointAtTheCurrentTemplateDirectory(t *testing.T) {
-	out := renderShippedTemplates(t, "../../configs/sensor-templates")
+	out := renderShippedTemplates(t, "../../configs/sensor-products")
 	if strings.Contains(out.YAML, "agent-templates") {
 		t.Errorf("yaml template still points operators at configs/agent-templates:\n%s", out.YAML)
 	}
-	if !strings.Contains(out.YAML, "configs/sensor-templates/yaml.tmpl") {
-		t.Errorf("yaml template should name the file to edit (configs/sensor-templates/yaml.tmpl):\n%s", out.YAML)
+	if !strings.Contains(out.YAML, "configs/sensor-products/sensor/yaml.tmpl") {
+		t.Errorf("yaml template should name the file to edit (configs/sensor-products/sensor/yaml.tmpl):\n%s", out.YAML)
 	}
 }
 
@@ -51,7 +51,7 @@ func TestSensorConfigTemplates_PointAtTheCurrentTemplateDirectory(t *testing.T) 
 // openctemio/agent was never published, and the old docker command ended
 // early at a commented-out line inside its backslash continuation.
 func TestSensorConfigTemplates_RenderTheReleasedSensorSettings(t *testing.T) {
-	for _, dir := range []string{"../../configs/sensor-templates", "/nonexistent-uses-builtins"} {
+	for _, dir := range []string{"../../configs/sensor-products", "/nonexistent-uses-builtins"} {
 		out := renderShippedTemplates(t, dir)
 		for _, want := range []string{"\nsensor:\n", "  sensor_id: "} {
 			if !strings.Contains(out.YAML, want) {

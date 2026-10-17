@@ -98,7 +98,9 @@ func TestAdminPlatformUsers_SearchAndView(t *testing.T) {
 	org := h.organization(0)
 	uid, email := h.supportUser(org)
 
-	c := h.newAdmin(admin.AdminRoleReadonly)
+	// Account search is ops_admin+ (a read-only administrator is refused:
+	// TestAdminReadonlySeesCountsNotPeople_DB).
+	c := h.newAdmin(admin.AdminRoleOpsAdmin)
 	c.verify()
 
 	if code, body := c.do(http.MethodGet, "/api/v1/admin/platform-users?q=su", nil, false); code != http.StatusBadRequest {
@@ -159,6 +161,9 @@ func TestAdminPlatformUsers_Actions(t *testing.T) {
 	})
 
 	c := newPlatformUsersHarness(t).newAdmin(admin.AdminRoleOpsAdmin)
+	// Every support action takes step-up; these subtests are about the
+	// action itself.
+	c.autoStepUp = true
 	c.verify()
 
 	t.Run("a reason is required", func(t *testing.T) {

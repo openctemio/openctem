@@ -34,16 +34,16 @@ type SensorHandler struct {
 	service         *sensorapp.SensorService
 	templateService *sensorapp.SensorConfigTemplateService
 	publicAPIURL    string // Public URL sensors will connect to (defaults to SENSOR_API_URL env var)
-	// sensorImage is the image the install snippets run, with its pinned
-	// tag (SENSOR_IMAGE + SENSOR_LATEST_VERSION).
-	sensorImage string
+	// products is the sensor product catalog (versions.yaml): each
+	// product's install snippets and image, with its pinned tag.
+	products []SensorInstallProduct
 	// collectorImage is the image a collector's install snippets run.
 	collectorImage string
 	// caCertFile is the platform CA the snippets install (SENSOR_CA_CERT_FILE);
 	// empty when the platform certificate is publicly trusted.
 	caCertFile string
-	// healthPolicy holds the thresholds and release channel the computed
-	// state, health reasons and version status use.
+	// healthPolicy holds the thresholds and the products' release lines the
+	// computed state, health reasons and version status use.
 	healthPolicy sensor.HealthPolicy
 	// contentPolicies supplies the tenant's scanner content policy for the
 	// content view and health (RFC-031); nil uses the platform default.
@@ -72,19 +72,25 @@ func (h *SensorHandler) SetZoneLister(z ZoneLister) {
 
 // NewSensorHandler creates a new SensorHandler.
 func NewSensorHandler(service *sensorapp.SensorService, v *validator.Validator, log *logger.Logger) *SensorHandler {
-	return &SensorHandler{
+	h := &SensorHandler{
 		service:      service,
 		healthPolicy: sensor.DefaultHealthPolicy(),
 		now:          time.Now,
 		validator:    v,
 		logger:       log.With("handler", "sensor"),
 	}
+	h.SetProducts(CatalogInstallProducts())
+	return h
 }
 
-// SetHealthPolicy sets the heartbeat windows and the sensor release channel
-// (SENSOR_LATEST_VERSION / SENSOR_MIN_VERSION) used for the computed state,
-// health reasons and version status. Unset values take the defaults.
+// SetHealthPolicy sets the heartbeat windows and the SDK entries used for the
+// computed state, health reasons and version status. Unset values take the
+// defaults; a policy without product release lines keeps the catalog's
+// (SetProducts).
 func (h *SensorHandler) SetHealthPolicy(p sensor.HealthPolicy) {
+	if p.Products == nil {
+		p.Products = h.healthPolicy.Products
+	}
 	h.healthPolicy = p.Normalized()
 }
 
@@ -126,11 +132,6 @@ func (h *SensorHandler) SetPublicAPIURL(url string) {
 // SetCollectorImage sets the image reference (with tag) a collector's
 // install snippets run.
 func (h *SensorHandler) SetCollectorImage(image string) { h.collectorImage = image }
-
-// SetSensorImage sets the image reference (with tag) the install snippets run.
-func (h *SensorHandler) SetSensorImage(image string) {
-	h.sensorImage = image
-}
 
 // SetCACertificateFile sets the platform CA file the install snippets embed
 // (SENSOR_CA_CERT_FILE). It is read on each request, so a CA the gateway
@@ -236,8 +237,18 @@ type SensorResponse struct {
 	// or lost results, an expired or expiring key, a version below the
 	// minimum, no scan tools, an error the sensor reported.
 	HealthReasons []SensorHealthReasonResponse `json:"health_reasons"`
-	// VersionStatus compares the version with the release channel.
+	// VersionStatus compares the version with the release line of the
+	// sensor's product; unknown for a product the platform does not list (a
+	// custom sensor), or a version that is not a release.
 	VersionStatus string `json:"version_status" enums:"latest,update_available,unsupported,unknown"`
+	// Product is the sensor's product: the one it reports, or the scanning
+	// sensor (openctemio-sensor) when it reports none. ProductKnown is true
+	// when the catalog lists it; ProductLatestVersion and
+	// ProductMinVersion are then its release line ("" otherwise).
+	Product              string `json:"product"`
+	ProductKnown         bool   `json:"product_known"`
+	ProductLatestVersion string `json:"product_latest_version"`
+	ProductMinVersion    string `json:"product_min_version"`
 	// KeyExpiresAt is when the current API key stops working; null = never.
 	KeyExpiresAt *string `json:"key_expires_at"`
 	// LegacyKey is true while the sensor's current key is a legacy rda_ key.
@@ -290,9 +301,10 @@ type SensorResponse struct {
 	// read from its User-Agent (older sensors). "" / null when unknown.
 	SDKName    string `json:"sdk_name"`
 	SDKVersion string `json:"sdk_version"`
-	// SDKStatus compares sdk_version with SENSOR_SDK_MIN_VERSION and
-	// SENSOR_SDK_LATEST_VERSION.
-	SDKStatus       string  `json:"sdk_status" enums:"current,outdated,unsupported,unknown"`
+	// SDKStatus compares sdk_version with the SDK entries of versions.yaml:
+	// outdated (older than the latest, informational) or advisory (a release
+	// with a published security advisory).
+	SDKStatus       string  `json:"sdk_status" enums:"current,outdated,advisory,unknown"`
 	SensorProduct   string  `json:"sensor_product"`
 	SensorCommit    string  `json:"sensor_commit"`
 	SensorBuildTime *string `json:"sensor_build_time"`
@@ -470,7 +482,7 @@ type SensorProtocolResponse struct {
 // stable (clients map it to their own wording and fix actions); message is a
 // plain-English fallback.
 type SensorHealthReasonResponse struct {
-	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_unsupported,no_tools,error_reported,content_stale,content_refresh_failed,heartbeat_late,control_slow"`
+	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_advisory,no_tools,error_reported,content_stale,content_refresh_failed,heartbeat_late,control_slow"`
 	Severity string `json:"severity" enums:"warning,critical"`
 	Message  string `json:"message"`
 }
@@ -686,7 +698,7 @@ func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 	items := make([]*SensorResponse, len(result.Data))
 	policy, now := h.policyFor(r.Context(), tenantID), h.now()
 	for i, a := range result.Data {
-		items[i] = sensorResponseAt(a, policy, now)
+		items[i] = redactSensorHost(r.Context(), sensorResponseAt(a, policy, now))
 	}
 
 	resp := map[string]any{
@@ -725,10 +737,10 @@ type SensorStatsResponse struct {
 	// sum of their max concurrent jobs.
 	JobsRunning int `json:"jobs_running"`
 	JobSlots    int `json:"job_slots"`
-	// LatestVersion and MinVersion are the release channel
-	// (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION); "" when not configured.
-	LatestVersion string `json:"latest_version"`
-	MinVersion    string `json:"min_version"`
+	// Products is the sensor product catalog: each product's release line
+	// and the image its install snippets run. A sensor of a product not
+	// listed (a custom sensor) gets no version verdict.
+	Products []SensorProductResponse `json:"products"`
 	// Each sensor is judged against its own heartbeat deadline
 	// (heartbeat_due_at; RFC-035 §5.6). OnlineWindowSeconds is how long a
 	// sensor on the idle interval stays online after a heartbeat (interval
@@ -737,10 +749,11 @@ type SensorStatsResponse struct {
 	OnlineWindowSeconds int `json:"online_window_seconds"`
 	OfflineAfterSeconds int `json:"offline_after_seconds"`
 
-	// SDKMinVersion and SDKLatestVersion are the SDK policy
-	// (SENSOR_SDK_MIN_VERSION, SENSOR_SDK_LATEST_VERSION); "" when not set.
-	SDKMinVersion    string `json:"sdk_min_version"`
-	SDKLatestVersion string `json:"sdk_latest_version"`
+	// SDKLatestVersion is the newest SDK release ("" when not set): older is
+	// "outdated", informational. SDKAdvisories are the SDK releases with a
+	// published security advisory (never null).
+	SDKLatestVersion string   `json:"sdk_latest_version"`
+	SDKAdvisories    []string `json:"sdk_advisories"`
 	// BySDKVersion counts sensors per reported SDK version ("unknown" when
 	// none); its keys are the values GET /sensors?sdk_version= accepts.
 	BySDKVersion map[string]int `json:"by_sdk_version"`
@@ -825,10 +838,9 @@ func (h *SensorHandler) addFleetSummary(resp *SensorStatsResponse, sensors []*se
 			resp.JobSlots += a.MaxConcurrentJobs
 		}
 	}
-	resp.LatestVersion = p.LatestVersion
-	resp.MinVersion = p.MinVersion
-	resp.SDKMinVersion = p.SDKMinVersion
+	resp.Products = h.productResponses()
 	resp.SDKLatestVersion = p.SDKLatestVersion
+	resp.SDKAdvisories = append(make([]string, 0, len(p.SDKAdvisories)), p.SDKAdvisories...)
 	resp.OnlineWindowSeconds = int(p.OnlineWindow / time.Second)
 	resp.OfflineAfterSeconds = int(p.OfflineAfter / time.Second)
 }
@@ -1070,7 +1082,18 @@ func ipStringPtr(ip net.IP) *string {
 // toSensorResponse converts a sensor entity to response, with the state,
 // health reasons and version status computed now under the handler's policy.
 func (h *SensorHandler) toSensorResponse(ctx context.Context, a *sensor.Sensor) *SensorResponse {
-	return sensorResponseAt(a, h.policyFor(ctx, a.TenantID.String()), h.now())
+	return redactSensorHost(ctx, sensorResponseAt(a, h.policyFor(ctx, a.TenantID.String()), h.now()))
+}
+
+// redactSensorHost drops where a sensor runs (host name and addresses) for a
+// caller who is not an administrator: those facts map the internal network
+// and are of no use to someone who only picks a sensor for a scan.
+func redactSensorHost(ctx context.Context, r *SensorResponse) *SensorResponse {
+	if middleware.IsAdmin(ctx) {
+		return r
+	}
+	r.Hostname, r.IPAddress, r.KeyLastUsedIP = "", "", nil
+	return r
 }
 
 // sensorResponseAt converts a sensor entity to response at a given time.
@@ -1110,25 +1133,29 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 		CreatedAt:     a.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:     a.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		// Computed fleet health
-		State:            string(health.State),
-		HealthReasons:    make([]SensorHealthReasonResponse, 0, len(health.Reasons)),
-		VersionStatus:    string(health.VersionStatus),
-		KeyExpiresAt:     rfc3339Ptr(keyState.ExpiresAt),
-		LegacyKey:        keyState.IsLegacy(),
-		KeyLastUsedAt:    rfc3339Ptr(a.KeyLastUsedAt),
-		KeyLastUsedIP:    ipStringPtr(a.KeyLastUsedIP),
-		InstanceID:       a.InstanceID,
-		IdentityClonedAt: rfc3339Ptr(a.IdentityClonedAt),
-		LastOfflineAt:    rfc3339Ptr(a.LastOfflineAt),
-		LastErrorAt:      rfc3339Ptr(a.LastErrorAt),
-		StartedAt:        rfc3339Ptr(a.StartedAt),
-		UptimeSeconds:    health.UptimeSeconds,
-		SDKName:          a.Build.SDKName,
-		SDKVersion:       a.Build.SDKVersion,
-		SDKStatus:        string(health.SDKStatus),
-		SensorProduct:    a.Build.Product,
-		SensorCommit:     a.Build.Commit,
-		SensorBuildTime:  rfc3339Ptr(a.Build.BuildTime),
+		State:                string(health.State),
+		HealthReasons:        make([]SensorHealthReasonResponse, 0, len(health.Reasons)),
+		VersionStatus:        string(health.VersionStatus),
+		Product:              health.Product,
+		ProductKnown:         health.KnownProduct,
+		ProductLatestVersion: health.Line.Latest,
+		ProductMinVersion:    health.Line.Min,
+		KeyExpiresAt:         rfc3339Ptr(keyState.ExpiresAt),
+		LegacyKey:            keyState.IsLegacy(),
+		KeyLastUsedAt:        rfc3339Ptr(a.KeyLastUsedAt),
+		KeyLastUsedIP:        ipStringPtr(a.KeyLastUsedIP),
+		InstanceID:           a.InstanceID,
+		IdentityClonedAt:     rfc3339Ptr(a.IdentityClonedAt),
+		LastOfflineAt:        rfc3339Ptr(a.LastOfflineAt),
+		LastErrorAt:          rfc3339Ptr(a.LastErrorAt),
+		StartedAt:            rfc3339Ptr(a.StartedAt),
+		UptimeSeconds:        health.UptimeSeconds,
+		SDKName:              a.Build.SDKName,
+		SDKVersion:           a.Build.SDKVersion,
+		SDKStatus:            string(health.SDKStatus),
+		SensorProduct:        a.Build.Product,
+		SensorCommit:         a.Build.Commit,
+		SensorBuildTime:      rfc3339Ptr(a.Build.BuildTime),
 	}
 	for _, r := range health.Reasons {
 		resp.HealthReasons = append(resp.HealthReasons, SensorHealthReasonResponse{
@@ -1280,7 +1307,7 @@ func (h *SensorHandler) handleValidationError(w http.ResponseWriter, err error) 
 
 // handleServiceError converts service errors to API errors.
 func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
-	if WritePlanLimitError(w, err) {
+	if WriteLimitError(w, err) {
 		return
 	}
 	switch {
@@ -1380,6 +1407,9 @@ type SensorConfigTemplatesResponse struct {
 	Policy string `json:"policy"`
 	// Image is the sensor image the snippets run, with its pinned tag.
 	Image string `json:"image"`
+	// Product is the sensor product the snippets install. A format the
+	// product's snippet set does not cover is "".
+	Product string `json:"product"`
 	// APIURL is the platform URL the snippets point the sensor at.
 	APIURL string `json:"api_url"`
 	// APIKeyIncluded is true when the snippets carry the key passed in
@@ -1396,25 +1426,21 @@ type SensorConfigTemplatesResponse struct {
 // is embedded in shell snippets, so anything else is refused.
 var sensorAPIKeyHeaderRegexp = regexp.MustCompile(`^[A-Za-z0-9_-]{8,256}$`)
 
-// DefaultSensorImage is the install snippets' image when none is configured.
-// Its tag is versions.yaml sensor.latest, copied by
-// .github/scripts/release/sync-versions.sh (RFC-037).
-const DefaultSensorImage = "ghcr.io/openctemio/sensor:v0.23.0"
-
 // GetConfigTemplates handles GET /api/v1/sensors/{id}/config-templates
 // Returns rendered install and configuration snippets (docker run, Compose,
 // Kubernetes, Helm, YAML, env, CLI) for a sensor.
-// Templates are loaded from configs/sensor-templates/*.tmpl on the API host
+// Templates are loaded from configs/sensor-products/<set>/<format>.tmpl on the API host
 // and can be edited without rebuilding the frontend.
 //
 // @Summary Get sensor configuration templates
-// @Description Returns the install and configuration snippets for a sensor: docker run, Compose, Kubernetes, Helm, YAML, env and CLI, pinned to the sensor image of SENSOR_LATEST_VERSION, pointed at the public platform URL, and installing the platform's private CA when SENSOR_CA_CERT_FILE is set.
+// @Description Returns the install and configuration snippets for a sensor: docker run, Compose, Kubernetes, Helm, YAML, env and CLI, for the chosen sensor product (default: the product the sensor reports, else the scanning sensor), pinned to that product's latest release in the built-in version manifest, pointed at the public platform URL, and installing the platform's private CA when SENSOR_CA_CERT_FILE is set.
 // @Tags Sensors
 // @Produce json
 // @Param id path string true "Sensor ID"
+// @Param product query string false "Sensor product whose snippets to render (a catalog id from GET /sensors/stats products); default: the product the sensor reports when known, else openctemio-sensor"
 // @Param X-Sensor-API-Key header string false "Optional API key to embed in templates (only available right after creation/regeneration). MUST be sent as header, not query parameter."
 // @Success 200 {object} SensorConfigTemplatesResponse
-// @Failure 400 {object} apierror.Error "X-Sensor-API-Key is malformed"
+// @Failure 400 {object} apierror.Error "X-Sensor-API-Key is malformed, or product is not a known sensor product"
 // @Failure 404 {object} apierror.Error
 // @Failure 500 {object} apierror.Error
 // @Failure 503 {object} apierror.Error "Template service not configured"
@@ -1452,16 +1478,21 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
 	}
-	image := h.sensorImage
-	if image == "" {
-		image = DefaultSensorImage
-	}
+	// A collector runs the asset collector (its own image and snippets);
+	// every other sensor runs a catalog product's.
+	var product SensorInstallProduct
+	image := h.collectorImage
 	if a.Type.IsCollector() {
-		// A collector runs the asset collector, not the scanner image.
-		image = h.collectorImage
 		if image == "" {
 			image = config.DefaultCollectorImage
 		}
+	} else {
+		var ok bool
+		if product, ok = h.installProduct(r.URL.Query().Get("product"), a); !ok {
+			apierror.BadRequest("product is not a known sensor product").WriteJSON(w)
+			return
+		}
+		image = product.Image
 	}
 
 	caPEM, caFingerprint, caErr := sensorapp.LoadCACertificate(h.caCertFile)
@@ -1477,6 +1508,9 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 		BaseURL: baseURL,
 		Image:   image,
 		CACert:  caPEM,
+		Install: product.Install,
+
+		ReleaseIdentity: product.ReleaseIdentity,
 	}
 	if h.zones != nil && a.TenantID != nil {
 		// Best effort: without zones the policy template asks for ranges.
@@ -1503,6 +1537,7 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 		Helm:                rendered.Helm,
 		Policy:              rendered.Policy,
 		Image:               image,
+		Product:             product.ID,
 		APIURL:              baseURL,
 		APIKeyIncluded:      apiKey != "",
 		CACertificate:       caPEM,

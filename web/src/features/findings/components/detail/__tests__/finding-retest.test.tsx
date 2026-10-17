@@ -14,13 +14,14 @@ import type { FindingRetest } from '../../../api/use-finding-retests'
 
 const mockTrigger = vi.fn()
 let mockRetests: FindingRetest[] = []
+let mockCanRetest = true
 let mockHasPermission = (_: string) => true
 
 vi.mock('../../../api/use-finding-retests', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../api/use-finding-retests')>()
   return {
     ...real,
-    useFindingRetests: () => ({ data: { data: mockRetests } }),
+    useFindingRetests: () => ({ data: { data: mockRetests, can_retest: mockCanRetest } }),
     useRequestRetest: () => ({ trigger: mockTrigger, isMutating: false }),
   }
 })
@@ -64,6 +65,7 @@ describe('FindingRetestSection', () => {
     vi.clearAllMocks()
     mockTrigger.mockResolvedValue(retest({ status: 'pending' }))
     mockRetests = []
+    mockCanRetest = true
     mockHasPermission = () => true
   })
 
@@ -72,6 +74,22 @@ describe('FindingRetestSection', () => {
     expect(screen.getByText(/Not retested yet/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Retest now/i }))
     expect(mockTrigger).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers Retest now on any tool the API says can be re-checked', async () => {
+    render(
+      <FindingRetestSection
+        finding={{ id: 'f-3', toolName: 'trivy', ruleId: 'CVE-2026-0001', status: 'confirmed' }}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /Retest now/i }))
+    expect(mockTrigger).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides Retest now when no sensor of the organization can re-check the finding', () => {
+    mockCanRetest = false
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    expect(screen.queryByRole('button', { name: /Retest now/i })).not.toBeInTheDocument()
   })
 
   it('hides Retest now without findings:verify', () => {
@@ -133,7 +151,7 @@ describe('retestMeta', () => {
 
   it('labels each outcome; only a confirmed fix reads as fixed', () => {
     expect(
-      retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'validated_fixed' })).label
+      retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'confirmed' })).label
     ).toBe('Verified fixed — awaiting confirmation')
     expect(
       retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'resolved' })).label

@@ -12,7 +12,7 @@ import (
 )
 
 // TestCIRunnerMinimumVersion: a runner that reports a version below
-// SENSOR_MIN_VERSION is refused at the exchange with RUNNER_OUTDATED
+// CI_RUNNER_MIN_VERSION is refused at the exchange with RUNNER_OUTDATED
 // (audited); a supported one, and a client that reports no sensor version,
 // are admitted.
 func TestCIRunnerMinimumVersion(t *testing.T) {

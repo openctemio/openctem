@@ -1,0 +1,6 @@
+### Security: the platform console has its own site, private networks only
+
+- The gateway serves the platform console on its own site: `https://<host>:8443` by default (`OPENCTEM_ADMIN_SITE=port`) or its own DNS name (`OPENCTEM_ADMIN_SITE=host`, `OPENCTEM_ADMIN_HOST`). Only `OPENCTEM_ADMIN_ALLOWED_CIDRS` (default: loopback, RFC 1918, IPv6 ULA) gets past it; others get 403.
+- The main site answers 404 for `/admin` and `/api/v1/admin`. The web console (`OPENCTEM_ADMIN_PLANE=separate`) serves only the console on the console site and never on the main one; it reaches the API's console listener (`ADMIN_API_URL`, `ADMIN_LISTEN_ADDR=:8081`).
+- The Compose kit turns all of this on; `setup.sh` takes `--admin-site port|host|off`, `--admin-host <name>`, `--admin-port <port>`, `--admin-cidrs "<cidrs>"` and `--admin-public`, and prints the console URL and an SSH-tunnel line.
+- **Upgrade note:** the console moves from `https://<host>/admin` to `https://<host>:8443/admin` (or your `OPENCTEM_ADMIN_HOST`), reachable only from private networks unless you set `OPENCTEM_ADMIN_ALLOWED_CIDRS`. Publish port 8443 (the Compose file does), or set `OPENCTEM_ADMIN_SITE=host` with a DNS name that points at the gateway. Administrators sign in again there. Keep the old layout with `OPENCTEM_ADMIN_SITE=off`, `OPENCTEM_ADMIN_PLANE=shared` and no `ADMIN_LISTEN_ADDR` (not recommended).

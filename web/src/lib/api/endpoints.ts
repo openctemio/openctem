@@ -110,6 +110,14 @@ export const authEndpoints = {
   createFirstTeam: () => `${API_BASE.AUTH}/create-first-team`,
 
   /**
+   * Onboarding of an account without an organization (api RFC-104): the
+   * offers (invitations, the organization of the verified domain, create)
+   * and taking one by its opaque reference. Refresh-token authenticated.
+   */
+  onboardingOptions: () => `${API_BASE.AUTH}/onboarding/options`,
+  onboardingAccept: () => `${API_BASE.AUTH}/onboarding/accept`,
+
+  /**
    * Second login step: verify a TOTP or recovery code against the challenge
    * a password login returned (mfa_token). Public, rate limited.
    */
@@ -396,6 +404,16 @@ export const tenantEndpoints = {
   approveOrgTrust: (trustId: string) => `/api/v1/organization/trusts/${trustId}/approve`,
 
   /**
+   * Support access (RFC-063): who from platform support can read this
+   * organization's data now (GET any member), the grants (GET owner/admin),
+   * a new grant (POST owner + step-up) and a revoke (DELETE owner/admin).
+   */
+  supportAccessActive: () => '/api/v1/organization/support-access/active',
+  supportAccessGrants: () => '/api/v1/organization/support-access/grants',
+  supportAccessGrant: (grantId: string) =>
+    `/api/v1/organization/support-access/grants/${encodeURIComponent(grantId)}`,
+
+  /**
    * Offboard a member with mandatory reassignment (POST, owner/admin)
    */
   offboardMember: (memberId: string) => `/api/v1/organization/members/${memberId}/offboard`,
@@ -404,6 +422,30 @@ export const tenantEndpoints = {
    * Erase an offboarded person's name and email (POST, owner only)
    */
   eraseMember: (memberId: string) => `/api/v1/organization/members/${memberId}/erase`,
+
+  /**
+   * Ownership transfer — RFC-095: GET (owner who asked or member asked),
+   * POST (owner + step-up), DELETE (owner); approve (member asked + step-up)
+   * and reject (member asked).
+   */
+  ownershipTransfer: () => '/api/v1/organization/ownership-transfer',
+
+  /**
+   * Requests to join by a verified email domain (api RFC-104): owners and
+   * admins list, approve (viewer or member) and reject.
+   */
+  joinRequests: () => '/api/v1/organization/join-requests',
+  approveJoinRequest: (id: string) => `/api/v1/organization/join-requests/${id}/approve`,
+  rejectJoinRequest: (id: string) => `/api/v1/organization/join-requests/${id}/reject`,
+
+  /**
+   * Settings > Domains (api RFC-104): what the organization's verified SSO
+   * domains do to accounts on them. Read: owner/admin; change: owner + step-up.
+   */
+  domainSignupPolicies: () => '/api/v1/organization/settings/domains',
+  domainSignupPolicy: (id: string) => `/api/v1/organization/settings/domains/${id}/signup-policy`,
+  approveOwnershipTransfer: () => '/api/v1/organization/ownership-transfer/approve',
+  rejectOwnershipTransfer: () => '/api/v1/organization/ownership-transfer/reject',
 
   // ============================================
   // SETTINGS MANAGEMENT
@@ -1691,6 +1733,11 @@ export const scanEndpoints = {
    * What a workflow scan would do before it is saved or started
    */
   workflowPreview: () => `${API_BASE.SCANS}/workflow-preview`,
+
+  /**
+   * What a quick scan of the typed targets would do before it starts
+   */
+  quickScanPreview: () => `${API_BASE.SCANS}/quick/preview`,
 
   // ============================================
   // BULK OPERATIONS

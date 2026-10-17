@@ -6,7 +6,7 @@
  * the "or continue with" divider never appears orphaned.
  */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
@@ -18,8 +18,14 @@ import { toast } from 'sonner'
 
 vi.mock('../api/use-auth-providers')
 vi.mock('@/features/sso/api/use-sso-api')
+vi.mock('./turnstile-widget', () => ({
+  TurnstileWidget: ({ onToken }: { onToken: (t: string) => void }) => {
+    queueMicrotask(() => onToken('turnstile-token'))
+    return <div data-testid="turnstile" />
+  },
+}))
 vi.mock('sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }))
 const loginAction = vi.fn()
 const verifyMfaAction = vi.fn()
@@ -104,7 +110,7 @@ describe('LoginForm platform administrator', () => {
     setAuthProviders({ google: false, github: false, microsoft: false })
   })
 
-  it('opens the admin console instead of organization onboarding', async () => {
+  it('points a platform administrator to the console site instead of onboarding', async () => {
     const href = vi.fn()
     Object.defineProperty(window, 'location', {
       configurable: true,
@@ -126,9 +132,11 @@ describe('LoginForm platform administrator', () => {
     await user.type(screen.getByLabelText('Email'), 'ops@acme.io')
     await user.type(screen.getByLabelText('Password'), 'Correct-Horse-9')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
-    await vi.waitFor(() => expect(href).toHaveBeenCalled())
-    expect(href).toHaveBeenCalledWith('/admin')
-    expect(href).not.toHaveBeenCalledWith('/onboarding/create-team')
+    // The console is a separate site: no navigation from this app, only a hint.
+    await vi.waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/platform console/i))
+    )
+    expect(href).not.toHaveBeenCalled()
     Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
   })
 })
@@ -167,6 +175,27 @@ describe('LoginForm two-factor step', () => {
     await user.click(screen.getByRole('button', { name: /sign in/i }))
     return user
   }
+
+  it('shows the security check after CAPTCHA_REQUIRED and sends its token', async () => {
+    mockUseAuthProviders.mockReturnValue({
+      data: {
+        social: { google: false, github: false, microsoft: false },
+        sso_env_entra_enabled: false,
+        captcha_site_key: 'site',
+      },
+    } as ReturnType<typeof useAuthProviders>)
+    loginAction
+      .mockResolvedValueOnce({ success: false, code: 'CAPTCHA_REQUIRED', error: 'x' })
+      .mockResolvedValueOnce({ success: false, error: 'Invalid email or password' })
+    const user = await signIn()
+    expect(await screen.findByTestId('turnstile')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+    await waitFor(() =>
+      expect(loginAction).toHaveBeenLastCalledWith(
+        expect.objectContaining({ captchaToken: 'turnstile-token' })
+      )
+    )
+  })
 
   it('asks for the authenticator code instead of navigating', async () => {
     loginAction.mockResolvedValueOnce({ success: true, mfaRequired: true, mfaPurpose: 'verify' })

@@ -230,30 +230,23 @@ func (h *AdminScanPolicyHandler) decodeAndStepUp(w http.ResponseWriter, r *http.
 		return nil, false
 	}
 	reason, code := fields()
-	if strings.TrimSpace(reason) == "" || len(reason) > 1000 {
-		apierror.BadRequest("a reason (at most 1000 characters) is required").WriteJSON(w)
-		return nil, false
-	}
-	code = strings.TrimSpace(code)
-	if code == "" {
-		apierror.New(http.StatusUnauthorized, codeStepUpRequired,
-			"Enter a code from your authenticator to confirm the change").WriteJSON(w)
-		return nil, false
-	}
-	if err := h.stepUp.StepUp(r.Context(), actor, code, purpose, clientInfo(r)); err != nil {
-		switch {
-		case errors.Is(err, admin.ErrStepUpUnavailable):
-			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
-				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
-		case errors.Is(err, admin.ErrInvalidMFACode):
-			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
-		default:
-			h.logger.Error("scan policy step-up", "error", err)
-			apierror.InternalServerError("could not verify the code").WriteJSON(w)
-		}
+	if !h.stepUpChange(w, r, actor, purpose, reason, code) {
 		return nil, false
 	}
 	return actor, true
+}
+
+// stepUpChange checks the reason and spends the fresh authenticator code of
+// a change; it writes the refusal and returns false when either fails.
+func (h *AdminScanPolicyHandler) stepUpChange(w http.ResponseWriter, r *http.Request, actor *admin.AdminUser, purpose, reason, code string) bool {
+	if strings.TrimSpace(reason) == "" || len(reason) > 1000 {
+		apierror.BadRequest("a reason (at most 1000 characters) is required").WriteJSON(w)
+		return false
+	}
+	if !confirmAdminStepUp(w, r, h.stepUp, code, purpose, h.logger) {
+		return false
+	}
+	return true
 }
 
 func (h *AdminScanPolicyHandler) change(r *http.Request, actor *admin.AdminUser, reason string) scanpolicy.Change {
@@ -279,8 +272,11 @@ func (h *AdminScanPolicyHandler) writeErr(w http.ResponseWriter, err error) {
 type PlatformSensorProofResponse struct {
 	// Required: platform sensors scan only targets at or under a verified
 	// domain of the organization, and intrusive probes need one on any
-	// sensor. Default false.
+	// sensor.
 	Required bool `json:"required"`
+	// Default is the value while nothing is stored: true on a hosted
+	// service (MANAGED_SERVICE), false otherwise.
+	Default bool `json:"default"`
 	// Version to send back on PUT (0: nothing stored, the default applies).
 	Version int `json:"version"`
 }
@@ -295,7 +291,7 @@ type UpdatePlatformSensorProofRequest struct {
 
 // GetProof returns the requirement.
 // @Summary      Verified domain before platform sensors scan
-// @Description  Whether platform sensors scan only targets at or under a verified domain of the organization (and intrusive probes need one on any sensor). Default off: the organization's scope entry is the authorization. A public multi-tenant cloud should turn it on. Any administrator.
+// @Description  Whether platform sensors scan only targets at or under a verified domain of the organization (and intrusive probes need one on any sensor). Until a value is stored the deployment default applies: off on a self-hosted install (the organization's scope entry is the authorization), on when MANAGED_SERVICE is set. Any administrator.
 // @Tags         Admin System
 // @Produce      json
 // @Success      200  {object}  PlatformSensorProofResponse
@@ -307,7 +303,7 @@ func (h *AdminScanPolicyHandler) GetProof(w http.ResponseWriter, r *http.Request
 		apierror.InternalServerError("could not read the setting").WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, PlatformSensorProofResponse{Required: v, Version: ver})
+	writeJSON(w, http.StatusOK, PlatformSensorProofResponse{Required: v, Default: h.svc.ProofDefault(), Version: ver})
 }
 
 // UpdateProof changes the requirement.
@@ -334,5 +330,5 @@ func (h *AdminScanPolicyHandler) UpdateProof(w http.ResponseWriter, r *http.Requ
 		h.writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, PlatformSensorProofResponse{Required: *req.Required, Version: v})
+	writeJSON(w, http.StatusOK, PlatformSensorProofResponse{Required: *req.Required, Default: h.svc.ProofDefault(), Version: v})
 }

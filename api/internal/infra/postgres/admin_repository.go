@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -419,6 +420,7 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 			ip_address, user_agent, success, error_message, created_at, severity
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		RETURNING chain_position, prev_hash, hash
 	`
 
 	requestBody, err := json.Marshal(log.RequestBody)
@@ -426,7 +428,9 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 		requestBody = []byte("{}")
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
+	var position int64
+	var prevHash, hash string
+	err = r.db.QueryRowContext(ctx, query,
 		log.ID.String(),
 		nullIDString(log.AdminID),
 		log.AdminEmail,
@@ -444,13 +448,23 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *admin.AuditLog) er
 		nullString(log.ErrorMessage),
 		log.CreatedAt,
 		auditSeverity(log.Severity),
-	)
+	).Scan(&position, &prevHash, &hash)
 
 	if err != nil {
 		return fmt.Errorf("failed to create audit log: %w", err)
 	}
-
 	return nil
+}
+
+// ChainHead returns the chain's newest position and hash: the newest row,
+// else the newest retention anchor, else 0 and "".
+func (r *AuditLogRepository) ChainHead(ctx context.Context) (int64, string, error) {
+	var pos int64
+	var hash string
+	if err := r.db.QueryRowContext(ctx, `SELECT tail_position, tail_hash FROM admin_audit_chain_tail()`).Scan(&pos, &hash); err != nil {
+		return 0, "", fmt.Errorf("read admin audit chain head: %w", err)
+	}
+	return pos, hash, nil
 }
 
 // GetByID retrieves an audit log by ID.
@@ -797,21 +811,112 @@ func (r *AuditLogRepository) scanAuditLogFromRows(rows *sql.Rows) (*admin.AuditL
 // Retention Management
 // =============================================================================
 
-// DeleteOlderThan deletes audit logs older than the specified time.
+// adminAuditPruneBatch bounds one prune transaction.
+const adminAuditPruneBatch = 5000
+
+// DeleteOlderThan prunes the oldest prefix of the chain written before
+// olderThan through admin_audit_prune (migration 002545), batch by batch.
+// The function itself never deletes rows newer than a year and anchors the
+// chain at the last deleted row.
 func (r *AuditLogRepository) DeleteOlderThan(ctx context.Context, olderThan time.Time) (int64, error) {
-	query := `DELETE FROM admin_audit_logs WHERE created_at < $1`
-
-	result, err := r.db.ExecContext(ctx, query, olderThan)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete old audit logs: %w", err)
+	var total int64
+	for {
+		var n int64
+		if err := r.db.QueryRowContext(ctx, `SELECT admin_audit_prune($1, $2)`, olderThan, adminAuditPruneBatch).Scan(&n); err != nil {
+			return total, fmt.Errorf("prune admin audit logs: %w", err)
+		}
+		total += n
+		if n < adminAuditPruneBatch {
+			return total, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
 	}
+}
 
-	count, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+// adminAuditVerifyBatch is how many chain rows one verification query reads.
+const adminAuditVerifyBatch = 1000
+
+// VerifyChain recomputes every online row's hash with the same database
+// function that wrote it, and checks each row links to the one before (the
+// first to the newest retention anchor) with no position missing.
+func (r *AuditLogRepository) VerifyChain(ctx context.Context) (*admin.AuditChainReport, error) {
+	report := &admin.AuditChainReport{Breaks: []admin.AuditChainBreak{}, VerifiedAt: time.Now().UTC()}
+	prevHash := ""
+	err := r.db.QueryRowContext(ctx,
+		`SELECT chain_position, hash FROM admin_audit_chain_anchors ORDER BY chain_position DESC LIMIT 1`).
+		Scan(&report.AnchorPosition, &prevHash)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("read admin audit anchor: %w", err)
 	}
+	after := report.AnchorPosition
+	expected := after + 1
+	addBreak := func(b admin.AuditChainBreak) {
+		if len(report.Breaks) >= admin.AuditChainBreakLimit {
+			report.Truncated = true
+			return
+		}
+		report.Breaks = append(report.Breaks, b)
+	}
+	for {
+		n, err := r.verifyChainBatch(ctx, &after, &expected, &prevHash, report, addBreak)
+		if err != nil {
+			return nil, err
+		}
+		if n < adminAuditVerifyBatch {
+			return report, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+}
 
-	return count, nil
+// verifyChainBatch checks the next batch of chain rows after *after and
+// advances the walk state. It returns how many rows it read.
+func (r *AuditLogRepository) verifyChainBatch(ctx context.Context, after, expected *int64, prevHash *string,
+	report *admin.AuditChainReport, addBreak func(admin.AuditChainBreak)) (int, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT l.id, l.chain_position, l.prev_hash, l.hash, admin_audit_row_hash(l.prev_hash, l)
+		  FROM admin_audit_logs l
+		 WHERE l.chain_position > $1
+		 ORDER BY l.chain_position
+		 LIMIT $2`, *after, adminAuditVerifyBatch)
+	if err != nil {
+		return 0, fmt.Errorf("walk admin audit chain: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	n := 0
+	for rows.Next() {
+		var (
+			id                     string
+			pos                    int64
+			prev, hash, recomputed string
+		)
+		if err := rows.Scan(&id, &pos, &prev, &hash, &recomputed); err != nil {
+			return n, fmt.Errorf("scan admin audit chain: %w", err)
+		}
+		n++
+		report.Entries++
+		if report.FirstPosition == 0 {
+			report.FirstPosition = pos
+		}
+		report.LastPosition = pos
+		switch {
+		case pos != *expected:
+			addBreak(admin.AuditChainBreak{Position: pos, ID: id, Reason: admin.ChainBreakGap})
+		case prev != *prevHash:
+			addBreak(admin.AuditChainBreak{Position: pos, ID: id, Reason: admin.ChainBreakLink})
+		case recomputed != hash:
+			addBreak(admin.AuditChainBreak{Position: pos, ID: id, Reason: admin.ChainBreakChanged})
+		}
+		*prevHash, *expected, *after = hash, pos+1, pos
+	}
+	if err := rows.Err(); err != nil {
+		return n, fmt.Errorf("walk admin audit chain: %w", err)
+	}
+	return n, nil
 }
 
 // CountOlderThan counts audit logs older than the specified time.
@@ -875,4 +980,94 @@ func auditSeverity(v string) string {
 		return admin.SeverityInfo
 	}
 	return v
+}
+
+// AdminAuditShippedColumns are the admin_audit_logs columns the off-box sink
+// reads and sends. AdminAuditWithheldColumns are the ones it deliberately
+// does not (the hash covers them, so the database row can still be checked).
+// Every column of the table is in exactly one list:
+// TestAdminAuditSinkColumns_DB fails when a column is added without a
+// decision, so nothing leaves the box by accident.
+var (
+	AdminAuditShippedColumns = []string{
+		"chain_position", "prev_hash", "hash", "id", "created_at", "admin_id", "admin_email",
+		"action", "resource_type", "resource_id", "resource_name", "request_method",
+		"request_path", "response_status", "ip_address", "success", "error_message", "severity",
+	}
+	AdminAuditWithheldColumns = []string{"request_body", "user_agent"}
+)
+
+// ReadForwardRows returns up to limit chain rows after position, oldest
+// first, with only the shipped columns.
+func (r *AuditLogRepository) ReadForwardRows(ctx context.Context, after int64, limit int) ([]admin.AuditChainEntry, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT `+strings.Join(AdminAuditShippedColumns, ", ")+`
+		  FROM admin_audit_logs
+		 WHERE chain_position > $1
+		 ORDER BY chain_position
+		 LIMIT $2`, after, limit)
+	if err != nil {
+		return nil, fmt.Errorf("read admin audit rows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []admin.AuditChainEntry
+	for rows.Next() {
+		var e admin.AuditChainEntry
+		var id string
+		var adminID, rtype, rid, rname, method, path, ip, errMsg sql.NullString
+		var status sql.NullInt64
+		l := &admin.AuditLog{}
+		if err := rows.Scan(&e.Position, &e.PrevHash, &e.Hash, &id, &l.CreatedAt, &adminID, &l.AdminEmail,
+			&l.Action, &rtype, &rid, &rname, &method, &path, &status, &ip, &l.Success, &errMsg, &l.Severity); err != nil {
+			return nil, fmt.Errorf("scan admin audit row: %w", err)
+		}
+		parsed, err := shared.IDFromString(id)
+		if err != nil {
+			return nil, fmt.Errorf("admin audit row %d: bad id", e.Position)
+		}
+		l.ID = parsed
+		if adminID.Valid {
+			if v, err := shared.IDFromString(adminID.String); err == nil {
+				l.AdminID = &v
+			}
+		}
+		if rid.Valid {
+			if v, err := shared.IDFromString(rid.String); err == nil {
+				l.ResourceID = &v
+			}
+		}
+		l.ResourceType, l.ResourceName, l.RequestMethod, l.RequestPath = rtype.String, rname.String, method.String, path.String
+		l.IPAddress, l.ErrorMessage, l.ResponseStatus = ip.String, errMsg.String, int(status.Int64)
+		e.Log = l
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+const adminAuditForwardCursorName = "default"
+
+// LoadForwardCursor returns the last acknowledged position (zero value when
+// nothing was sent yet).
+func (r *AuditLogRepository) LoadForwardCursor(ctx context.Context) (auditsink.Cursor, error) {
+	var c auditsink.Cursor
+	err := r.db.QueryRowContext(ctx,
+		`SELECT position, hash FROM admin_audit_forward_cursor WHERE name = $1`, adminAuditForwardCursorName).
+		Scan(&c.Position, &c.Hash)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return c, fmt.Errorf("read admin audit forward cursor: %w", err)
+	}
+	return c, nil
+}
+
+// SaveForwardCursor stores the cursor; it never moves backwards.
+func (r *AuditLogRepository) SaveForwardCursor(ctx context.Context, c auditsink.Cursor) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO admin_audit_forward_cursor (name, position, hash) VALUES ($1, $2, $3)
+		ON CONFLICT (name) DO UPDATE
+		   SET position = EXCLUDED.position, hash = EXCLUDED.hash, updated_at = now()
+		 WHERE admin_audit_forward_cursor.position < EXCLUDED.position`,
+		adminAuditForwardCursorName, c.Position, c.Hash)
+	if err != nil {
+		return fmt.Errorf("save admin audit forward cursor: %w", err)
+	}
+	return nil
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   Dialog,
@@ -15,11 +15,20 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { useRequestApproval } from '../api/use-findings-api'
+import { useFindingApprovalPolicy, useRequestApproval } from '../api/use-findings-api'
+import { ApprovalEvaluationBanner } from './approval-evaluation-banner'
 import { FINDING_STATUS_CONFIG } from '../types'
 import type { FindingStatus } from '../types'
+import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
 
 /** Days an accepted risk lasts unless the requester picks another date. */
 const DEFAULT_ACCEPTANCE_DAYS = 90
@@ -38,6 +47,12 @@ interface ApprovalDialogProps {
   targetStatus: FindingStatus
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * The longest a risk on this finding may be accepted, in days (the API's
+   * rule by priority: P0 or KEV 30, P1 90, P2 180, P3 365). The date picker
+   * stops there and the default end never passes it.
+   */
+  maxAcceptanceDays?: number
   /** Called after an approval request is submitted successfully (e.g. to refresh lists/history) */
   onSuccess?: () => void | Promise<void>
 }
@@ -48,33 +63,82 @@ export function ApprovalDialog({
   open,
   onOpenChange,
   onSuccess,
+  maxAcceptanceDays,
 }: ApprovalDialogProps) {
   const { t } = useTranslation()
+  // How a request of this status would be decided now: the tier and why, who
+  // may approve, the longest acceptance and the shortest note.
+  const isFalsePositive = targetStatus === 'false_positive'
+  const policyStatus = targetStatus === 'accepted' ? 'accepted' : 'false_positive'
+  const { data: fpPolicy } = useFindingApprovalPolicy(
+    findingId,
+    policyStatus,
+    open && (isFalsePositive || targetStatus === 'accepted')
+  )
+  const evaluation = fpPolicy?.evaluation
+  const propCap = maxAcceptanceDays && maxAcceptanceDays > 0 ? maxAcceptanceDays : 365
+  const policyCap = evaluation?.max_acceptance_days ?? 0
+  const capDays = policyCap > 0 ? Math.min(propCap, policyCap) : propCap
+  const defaultDays = Math.min(DEFAULT_ACCEPTANCE_DAYS, capDays)
+  const minNote = Math.max(0, evaluation?.min_note_length ?? 0)
   const [justification, setJustification] = useState('')
+  // Why the finding is not a risk to fix: a VEX-aligned code the server
+  // requires and stores as the closure reason.
+  const [reason, setReason] = useState('')
+  const reasons = PERSON_CLOSURE_REASONS[targetStatus] ?? []
   // An accepted risk always ends: 90 days ahead unless changed, at most a year.
-  const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(DEFAULT_ACCEPTANCE_DAYS))
+  const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(defaultDays))
   const [step, setStep] = useState<'input' | 'confirm'>('input')
   const { trigger: requestApproval, isMutating } = useRequestApproval(findingId)
+  // The organization may let a person with approval permission decide a
+  // false positive alone.
+  const decideAlone = isFalsePositive && fpPolicy?.can_decide_alone === true
+  const othersMayDecideAlone =
+    isFalsePositive && fpPolicy?.single_person === true && !fpPolicy.can_decide_alone
 
-  const statusLabel = FINDING_STATUS_CONFIG[targetStatus]?.label || targetStatus
+  const statusConfig = FINDING_STATUS_CONFIG[targetStatus]
+  const statusLabel = statusConfig ? t(statusConfig.labelKey, statusConfig.label) : targetStatus
   const showExpiryPicker = targetStatus === 'accepted'
   const minDate = acceptanceDate(1)
-  const maxDate = acceptanceDate(0, 1)
+  const maxDate = capDays >= 365 ? acceptanceDate(0, 1) : acceptanceDate(capDays)
   const expiryValid =
     !showExpiryPicker || (!!expiresAt && expiresAt >= minDate && expiresAt <= maxDate)
+  // The policy's cap may arrive after the dialog opened: keep the end within it.
+  useEffect(() => {
+    if (showExpiryPicker && expiresAt > maxDate) setExpiresAt(maxDate)
+  }, [showExpiryPicker, expiresAt, maxDate])
+  const noteLength = justification.trim().length
+  const noteTooShort = minNote > 0 && noteLength > 0 && noteLength < minNote
+  const noteTooShortText = t(
+    'findingApprovals.evaluation.noteTooShort',
+    'Write at least {count} characters for this approval.',
+    { count: minNote }
+  )
   const justificationRequired = t(
     'findings.approvalDialog.justificationRequired',
     'Justification is required'
   )
 
+  const reasonRequired = t('findings.approvalDialog.reasonRequired', 'Choose a reason')
+
   const handleNext = () => {
+    if (!reason) {
+      toast.error(reasonRequired)
+      return
+    }
     if (!justification.trim()) {
       toast.error(justificationRequired)
       return
     }
+    if (noteLength < minNote) {
+      toast.error(noteTooShortText)
+      return
+    }
     if (!expiryValid) {
       toast.error(
-        t('findings.approvalDialog.expiryInvalid', 'Choose an expiry date within the next year')
+        t('findings.approvalDialog.expiryInvalid', 'Choose an expiry date within {days} days', {
+          days: capDays,
+        })
       )
       return
     }
@@ -92,20 +156,29 @@ export function ApprovalDialog({
     }
 
     try {
-      await requestApproval({
+      const result = await requestApproval({
         requested_status: targetStatus,
         justification: justification.trim(),
+        closure_reason: reason,
         ...(showExpiryPicker && expiresAt
           ? { expires_at: new Date(`${expiresAt}T00:00:00`).toISOString() }
           : {}),
       })
+      const appliedAlone =
+        (result as { status?: string; single_person?: boolean } | undefined)?.single_person === true
       toast.success(
-        t('findings.approvalDialog.submitted', 'Approval request submitted for "{status}"', {
-          status: statusLabel,
-        })
+        appliedAlone
+          ? t(
+              'findingApprovals.single.applied',
+              'Marked a false positive. It is recorded with your name and reason.'
+            )
+          : t('findings.approvalDialog.submitted', 'Approval request submitted for "{status}"', {
+              status: statusLabel,
+            })
       )
       setJustification('')
-      setExpiresAt(acceptanceDate(DEFAULT_ACCEPTANCE_DAYS))
+      setReason('')
+      setExpiresAt(acceptanceDate(defaultDays))
       setStep('input')
       onOpenChange(false)
       await onSuccess?.()
@@ -146,6 +219,50 @@ export function ApprovalDialog({
             </DialogHeader>
             <DialogBody>
               <div className="grid gap-4 py-4">
+                {decideAlone && (
+                  <div
+                    role="status"
+                    className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
+                  >
+                    {t(
+                      'findingApprovals.single.notice',
+                      "This organization doesn't require approval for this finding: it is marked a false positive at once. Choose a reason and explain it; the decision is audited and flagged for review if the finding later becomes more serious."
+                    )}
+                  </div>
+                )}
+                {evaluation && !decideAlone && evaluation.tier !== 'single' && (
+                  <ApprovalEvaluationBanner evaluation={evaluation} />
+                )}
+                {othersMayDecideAlone && (
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      'findingApprovals.single.othersNotice',
+                      'A person with approval permission could mark this finding a false positive alone; your request waits for one of them.'
+                    )}
+                  </p>
+                )}
+                <div className="grid gap-2">
+                  <Label htmlFor="closure-reason">
+                    {t('findings.approvalDialog.reason', 'Reason')}
+                  </Label>
+                  <Select value={reason} onValueChange={setReason}>
+                    <SelectTrigger id="closure-reason">
+                      <SelectValue
+                        placeholder={t(
+                          'findings.approvalDialog.reasonPlaceholder',
+                          'Choose a reason'
+                        )}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {reasons.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {closureReasonLabel(t, r)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="grid gap-2">
                   <Label htmlFor="justification">
                     {t('findings.approvalDialog.justification', 'Justification')}
@@ -165,7 +282,16 @@ export function ApprovalDialog({
                     {t('findings.approvalDialog.characters', '{count}/2000 characters', {
                       count: justification.length,
                     })}
+                    {minNote > 0 &&
+                      ` · ${t('findingApprovals.evaluation.noteMin', 'at least {count}', {
+                        count: minNote,
+                      })}`}
                   </p>
+                  {noteTooShort && (
+                    <p className="text-xs text-destructive" role="alert">
+                      {noteTooShortText}
+                    </p>
+                  )}
                 </div>
                 {showExpiryPicker && (
                   <div className="grid gap-2">
@@ -184,7 +310,8 @@ export function ApprovalDialog({
                     <p className="text-xs text-muted-foreground">
                       {t(
                         'findings.approvalDialog.expiryHint',
-                        'The finding reopens on this date. At most one year ahead.'
+                        'The finding reopens on this date. At most {days} days ahead for its priority.',
+                        { days: capDays }
                       )}
                     </p>
                   </div>
@@ -195,7 +322,10 @@ export function ApprovalDialog({
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 {t('findings.approvalDialog.cancel', 'Cancel')}
               </Button>
-              <Button onClick={handleNext} disabled={!justification.trim() || !expiryValid}>
+              <Button
+                onClick={handleNext}
+                disabled={!reason || !justification.trim() || noteLength < minNote || !expiryValid}
+              >
                 {t('findings.approvalDialog.review', 'Review')}
               </Button>
             </DialogFooter>
@@ -221,6 +351,14 @@ export function ApprovalDialog({
                   </span>{' '}
                   <strong>{statusLabel}</strong>
                 </div>
+                {reason && (
+                  <div>
+                    <span className="font-medium text-muted-foreground">
+                      {t('findings.approvalDialog.reasonLabel', 'Reason:')}
+                    </span>{' '}
+                    {closureReasonLabel(t, reason)}
+                  </div>
+                )}
                 <div>
                   <span className="font-medium text-muted-foreground">
                     {t('findings.approvalDialog.justificationLabel', 'Justification:')}
@@ -244,7 +382,9 @@ export function ApprovalDialog({
               <Button onClick={handleSubmit} disabled={isMutating}>
                 {isMutating
                   ? t('findings.approvalDialog.submitting', 'Submitting...')
-                  : t('findings.approvalDialog.submit', 'Submit for Approval')}
+                  : decideAlone
+                    ? t('findingApprovals.single.submit', 'Mark as false positive')
+                    : t('findings.approvalDialog.submit', 'Submit for Approval')}
               </Button>
             </DialogFooter>
           </>

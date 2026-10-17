@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -33,7 +34,7 @@ func (r *interopRepo) UpdateInteropBatch(_ context.Context, tenantID shared.ID, 
 	return int64(len(u)), nil
 }
 
-func (r *interopRepo) ApplyVEXNotAffected(_ context.Context, tenantID shared.ID, items []vulnerability.VEXNotAffected, dryRun bool) ([]shared.ID, error) {
+func (r *interopRepo) ApplyVEXNotAffected(_ context.Context, tenantID shared.ID, _ string, items []vulnerability.VEXNotAffected, dryRun bool) ([]shared.ID, error) {
 	r.tenants = append(r.tenants, tenantID)
 	r.vexCalls++
 	r.vexDry = append(r.vexDry, dryRun)
@@ -136,6 +137,16 @@ func TestInteropUpdate(t *testing.T) {
 	assert.Len(t, u.Data.Scores, 2)
 }
 
+// interopHost is the asset the interop reports name ("h").
+var interopHost = shared.MustIDFromString("0190f0c4-0000-7000-8000-00000000a001")
+
+// vexScope is a trivy scan command that covers interopHost.
+func vexScope() *alterScope {
+	s := newAlterScope(Binding{Kind: BindingCommand, Tool: "trivy", CommandType: command.CommandTypeScan})
+	s.allow(interopHost)
+	return s
+}
+
 func runInterop(t *testing.T, mode VEXMode, scope *alterScope, findings []ctis.Finding, repo *interopRepo) (*Output, shared.ID) {
 	t.Helper()
 	tenantID := shared.NewID()
@@ -144,7 +155,7 @@ func runInterop(t *testing.T, mode VEXMode, scope *alterScope, findings []ctis.F
 	out := &Output{}
 	report := &ctis.Report{Version: "1.4", Tool: &ctis.Tool{Name: "trivy"}, Findings: findings}
 	err := p.processBatch(context.Background(), newTestSensor(t, tenantID), tenantID, report,
-		map[string]shared.ID{"h": shared.NewID()}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope)
+		map[string]shared.ID{"h": interopHost}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope)
 	require.NoError(t, err)
 	return out, tenantID
 }
@@ -159,12 +170,12 @@ func vexFinding(status ctis.VEXStatus, justification ctis.VEXJustification) ctis
 
 func TestVEX_DryRunIsTheDefaultAndStoresTheStatement(t *testing.T) {
 	repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
-	out, tenant := runInterop(t, "", boundScope(), []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}, repo)
+	out, tenant := runInterop(t, "", vexScope(), []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}, repo)
 	require.Equal(t, 1, repo.vexCalls)
 	assert.Equal(t, []bool{true}, repo.vexDry)
 	assert.Equal(t, 1, out.FindingsVEXNotAffected)
 	assert.Equal(t, 1, out.FindingsVEXWouldClose)
-	assert.Equal(t, 0, out.FindingsVEXClosed)
+	assert.Equal(t, 0, out.FindingsVEXRequested)
 	require.Len(t, repo.vexItems, 1)
 	assert.Contains(t, repo.vexItems[0].Resolution, "component_not_present")
 	assert.Contains(t, repo.vexItems[0].Resolution, "vex.example")
@@ -178,16 +189,16 @@ func TestVEX_DryRunIsTheDefaultAndStoresTheStatement(t *testing.T) {
 
 func TestVEX_EnforceClosesOnlyWhenCommandBound(t *testing.T) {
 	repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
-	out, _ := runInterop(t, SourceResolveEnforce, boundScope(), []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}, repo)
+	out, _ := runInterop(t, SourceResolveEnforce, vexScope(), []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}, repo)
 	assert.Equal(t, []bool{false}, repo.vexDry)
-	assert.Equal(t, 1, out.FindingsVEXClosed)
+	assert.Equal(t, 1, out.FindingsVEXRequested)
 	assert.Len(t, out.VEXIDs, 1)
 
 	// Not bound to a command, or mode off: no state change at all.
 	for _, c := range []struct {
 		mode  VEXMode
 		scope *alterScope
-	}{{SourceResolveEnforce, nil}, {SourceResolveEnforce, newAlterScope(Binding{})}, {SourceResolveOff, boundScope()}} {
+	}{{SourceResolveEnforce, nil}, {SourceResolveEnforce, newAlterScope(Binding{})}, {SourceResolveOff, vexScope()}} {
 		repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
 		out, _ := runInterop(t, c.mode, c.scope, []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}, repo)
 		assert.Equal(t, 0, repo.vexCalls, "mode %s", c.mode)
@@ -201,14 +212,59 @@ func TestVEX_OnlyNotAffectedWithAReason(t *testing.T) {
 	affected := vexFinding(ctis.VEXStatusAffected, "")
 	forged := vexFinding(ctis.VEXStatusNotAffected, "made_up")
 	repo := &interopRepo{}
-	out, _ := runInterop(t, SourceResolveEnforce, boundScope(), []ctis.Finding{bare}, repo)
+	out, _ := runInterop(t, SourceResolveEnforce, vexScope(), []ctis.Finding{bare}, repo)
 	assert.Equal(t, 0, repo.vexCalls)
 	assert.Equal(t, 0, out.FindingsVEXNotAffected)
 	for _, f := range []ctis.Finding{affected, forged} {
 		repo := &interopRepo{}
-		runInterop(t, SourceResolveEnforce, boundScope(), []ctis.Finding{f}, repo)
+		runInterop(t, SourceResolveEnforce, vexScope(), []ctis.Finding{f}, repo)
 		assert.Equal(t, 0, repo.vexCalls)
 	}
+}
+
+// A report's VEX speaks only for what its command scanned: the command's own
+// tool, on an asset the command covers. Another tool's command, or an asset
+// outside the command, closes nothing (the statement is still stored).
+func TestVEX_LimitedToTheCommandsToolAndAssets(t *testing.T) {
+	notAffected := []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}
+	otherAsset := newAlterScope(Binding{Kind: BindingCommand, Tool: "trivy", CommandType: command.CommandTypeScan})
+	otherAsset.allow(shared.NewID())
+	for name, scope := range map[string]*alterScope{
+		"another tool's command":            newAlterScope(Binding{Kind: BindingCommand, Tool: "grype", CommandType: command.CommandTypeScan}),
+		"a command naming no tool":          newAlterScope(Binding{Kind: BindingCommand, CommandType: command.CommandTypeScan}),
+		"an asset the command did not scan": otherAsset,
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
+			out, _ := runInterop(t, SourceResolveEnforce, scope, notAffected, repo)
+			assert.Equal(t, 0, repo.vexCalls)
+			assert.Equal(t, 0, out.FindingsVEXRequested)
+			assert.Len(t, repo.updates, 1, "the statement is still stored")
+		})
+	}
+	repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
+	out, _ := runInterop(t, SourceResolveEnforce, vexScope(), notAffected, repo)
+	assert.Equal(t, 1, repo.vexCalls)
+	assert.Equal(t, 1, out.FindingsVEXRequested)
+}
+
+// A connector sync has no target list: its statements count only for assets
+// the same report carries.
+func TestVEX_ConnectorSyncOnlyForItsOwnAssets(t *testing.T) {
+	notAffected := []ctis.Finding{vexFinding(ctis.VEXStatusNotAffected, ctis.VEXJustificationComponentNotPresent)}
+	sync := func(seen bool) *alterScope {
+		s := newAlterScope(Binding{Kind: BindingCommand, Tool: "trivy", CommandType: command.CommandTypeConnectorSync})
+		if seen {
+			s.seen = map[shared.ID]seenAsset{interopHost: {}}
+		}
+		return s
+	}
+	repo := &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
+	_, _ = runInterop(t, SourceResolveEnforce, sync(false), notAffected, repo)
+	assert.Equal(t, 0, repo.vexCalls, "an asset the sync did not carry")
+	repo = &interopRepo{vexMatch: []shared.ID{shared.NewID()}}
+	_, _ = runInterop(t, SourceResolveEnforce, sync(true), notAffected, repo)
+	assert.Equal(t, 1, repo.vexCalls, "an asset the sync carries")
 }
 
 func TestParseVEXMode(t *testing.T) {

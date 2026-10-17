@@ -139,8 +139,9 @@ func TestSensorToolSettings_Routes_DB(t *testing.T) {
 		h.expect(outsider, req.method, req.path, req.body, http.StatusNotFound)
 	}
 	plat := uuid.NewString()
-	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix, is_platform_sensor)
-	        VALUES ($1, $2, $3, 'worker', 'active', 'unknown', 'daemon', $4, 'octs_plt', TRUE)`, plat, tid, "plat-"+plat[:8], "hash-"+plat)
+	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix, scope)
+	        VALUES ($1, NULL, $2, 'worker', 'active', 'unknown', 'daemon', $3, 'octs_plt', 'instance')`, plat, "plat-"+plat[:8], "hash-"+plat)
+	t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, plat) })
 	h.expect(admin, http.MethodGet, "/api/v1/sensors/"+plat+"/tool-settings", "", http.StatusNotFound)
 	h.expect(admin, http.MethodPut, "/api/v1/sensors/"+plat+"/tool-settings/nuclei", body, http.StatusNotFound)
 	mustJSON(t, h.expect(admin, http.MethodGet, base, "", http.StatusOK), &list)
@@ -182,25 +183,25 @@ func TestSensorToolSettings_ClaimLayer_DB(t *testing.T) {
 	ctx := context.Background()
 	tenant, sensorID := shared.MustIDFromString(tid), shared.MustIDFromString(sid)
 
-	layer, err := svc.SensorToolSettingsLayer(ctx, tenant, sensorID, "nuclei")
+	layer, err := sensorLayerOf(ctx, svc, tenant, sensorID, "nuclei")
 	if err != nil || fmt.Sprint(layer["rate_limit"]) != "300" {
 		t.Fatalf("layer = %v, %v", layer, err)
 	}
-	if l, err := svc.SensorToolSettingsLayer(ctx, shared.MustIDFromString(other), sensorID, "nuclei"); err != nil || l != nil {
+	if l, err := sensorLayerOf(ctx, svc, shared.MustIDFromString(other), sensorID, "nuclei"); err != nil || l != nil {
 		t.Fatalf("another tenant got %v, %v", l, err)
 	}
-	if l, err := svc.SensorToolSettingsLayer(ctx, tenant, sensorID, "httpx"); err != nil || l != nil {
+	if l, err := sensorLayerOf(ctx, svc, tenant, sensorID, "httpx"); err != nil || l != nil {
 		t.Fatalf("httpx = %v, %v", l, err)
 	}
 
 	// A compatible upgrade (another digest, the value still valid).
 	installToolManifestWith(t, h, tid, sid, strings.Replace(toolSettingsConfig, `"maximum":5000`, `"maximum":4000`, 1))
-	if layer, err := svc.SensorToolSettingsLayer(ctx, tenant, sensorID, "nuclei"); err != nil || fmt.Sprint(layer["rate_limit"]) != "300" {
+	if layer, err := sensorLayerOf(ctx, svc, tenant, sensorID, "nuclei"); err != nil || fmt.Sprint(layer["rate_limit"]) != "300" {
 		t.Fatalf("after a compatible upgrade = %v, %v", layer, err)
 	}
 	// An upgrade that narrows rate_limit below the stored value.
 	installToolManifestWith(t, h, tid, sid, strings.Replace(toolSettingsConfig, `"maximum":5000`, `"maximum":200`, 1))
-	if _, err := svc.SensorToolSettingsLayer(ctx, tenant, sensorID, "nuclei"); !errors.Is(err, sensor.ErrToolSettingsInvalid) {
+	if _, err := sensorLayerOf(ctx, svc, tenant, sensorID, "nuclei"); !errors.Is(err, sensor.ErrToolSettingsInvalid) {
 		t.Fatalf("after a narrowing upgrade: %v", err)
 	}
 	// The list shows why.
@@ -211,12 +212,12 @@ func TestSensorToolSettings_ClaimLayer_DB(t *testing.T) {
 	}
 	// An upgrade that drops the settings.
 	installToolManifestWith(t, h, tid, sid, "")
-	if _, err := svc.SensorToolSettingsLayer(ctx, tenant, sensorID, "nuclei"); !errors.Is(err, sensor.ErrToolSettingsInvalid) {
+	if _, err := sensorLayerOf(ctx, svc, tenant, sensorID, "nuclei"); !errors.Is(err, sensor.ErrToolSettingsInvalid) {
 		t.Fatalf("after the settings were dropped: %v", err)
 	}
 	// Reset still works for a tool that no longer declares settings.
 	h.expect(admin, http.MethodDelete, "/api/v1/sensors/"+sid+"/tool-settings/nuclei", "", http.StatusNoContent)
-	if l, err := svc.SensorToolSettingsLayer(ctx, tenant, sensorID, "nuclei"); err != nil || l != nil {
+	if l, err := sensorLayerOf(ctx, svc, tenant, sensorID, "nuclei"); err != nil || l != nil {
 		t.Fatalf("after reset = %v, %v", l, err)
 	}
 }
@@ -299,4 +300,10 @@ func TestSensorToolSettings_CheckScanToolConfig_DB(t *testing.T) {
 	if err := svc.CheckScanToolConfig(ctx, shared.MustIDFromString(h.tenant()), "nuclei", map[string]any{"retries": float64(5)}); err != nil {
 		t.Fatalf("another tenant has no such sensor: %v", err)
 	}
+}
+
+// sensorLayerOf is the sensor layer of ToolSettingsLayers.
+func sensorLayerOf(ctx context.Context, svc *sensorapp.SensorService, tenantID, sensorID shared.ID, tool string) (map[string]any, error) {
+	_, layer, err := svc.ToolSettingsLayers(ctx, tenantID, sensorID, tool)
+	return layer, err
 }

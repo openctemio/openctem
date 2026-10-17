@@ -44,6 +44,30 @@ func (s sensorsOnline) HasRetestSensor(context.Context, shared.ID, string) (bool
 	return false, nil
 }
 
+// RetestTools: the template re-verify rung only, when online.
+func (s sensorsOnline) RetestTools(context.Context, shared.ID) ([]string, error) {
+	if !s {
+		return nil, nil
+	}
+	return []string{validation.ReverifyTool}, nil
+}
+
+// onlyToolRetest: one online sensor whose tool has a retest handler; no
+// template re-verify rung.
+type onlyToolRetest string
+
+func (onlyToolRetest) HasNucleiValidationSensor(context.Context, shared.ID) (bool, error) {
+	return false, nil
+}
+
+func (o onlyToolRetest) HasRetestSensor(_ context.Context, _ shared.ID, tool string) (bool, error) {
+	return tool == string(o), nil
+}
+
+func (o onlyToolRetest) RetestTools(context.Context, shared.ID) ([]string, error) {
+	return validation.RetestToolsOf([]string{validation.RetestCapability(string(o))}), nil
+}
+
 type fixture struct {
 	t      *testing.T
 	db     *sql.DB
@@ -182,7 +206,7 @@ func (fx *fixture) autoResolve(on bool) {
 func (fx *fixture) findingState(id shared.ID) (status, method, resolvedBy string) {
 	fx.t.Helper()
 	var m, by sql.NullString
-	if err := fx.db.QueryRow(`SELECT status, resolution_method, resolved_by::text FROM findings WHERE id = $1`, id.String()).
+	if err := fx.db.QueryRow(`SELECT status, NULLIF(COALESCE(closure_reason, '') || '/' || COALESCE(verification, ''), '/'), resolved_by::text FROM findings WHERE id = $1`, id.String()).
 		Scan(&status, &m, &by); err != nil {
 		fx.t.Fatal(err)
 	}
@@ -253,7 +277,7 @@ func TestRetestDB_QueuesTwoScopedValidateCommands(t *testing.T) {
 // RFC-057 R2: a bare "not detected" on a host that answers a TCP probe is
 // not reproduced (the finding stays); only an attempt at the finding's own
 // endpoint that got an answer is a confirmed fix, which awaits a person
-// (validated_fixed) unless the tenant auto-resolves.
+// (status kept, validation not_reproducible) unless the tenant auto-resolves.
 func TestRetestDB_NoMatchWithoutEndpointProofIsNotReproduced(t *testing.T) {
 	fx := newFixture(t)
 	svc := fx.service()
@@ -316,12 +340,17 @@ func TestRetestDB_ConfirmedFixAwaitsAPersonUnlessAutoResolve(t *testing.T) {
 	if got.SensorID == nil || *got.SensorID != sensor || got.CheckCommandID == nil {
 		t.Fatalf("retest run linkage = sensor %v command %v, want the claiming sensor and the check command", got.SensorID, got.CheckCommandID)
 	}
-	if got.Outcome != retestdom.OutcomeConfirmedFixed || got.ResultStatus != "validated_fixed" ||
+	if got.Outcome != retestdom.OutcomeConfirmedFixed || got.ResultStatus != "confirmed" ||
 		!strings.Contains(got.Reason, "https://shop.example.com/admin answered 404") {
-		t.Fatalf("retest = %+v, want confirmed_fixed → validated_fixed", got)
+		t.Fatalf("retest = %+v, want confirmed_fixed, status kept", got)
 	}
-	if status, _, _ := fx.findingState(f); status != "validated_fixed" {
-		t.Errorf("finding = %s, want validated_fixed", status)
+	if status, _, _ := fx.findingState(f); status != "confirmed" {
+		t.Errorf("finding = %s, want confirmed (kept)", status)
+	}
+	var validation string
+	if err := fx.db.QueryRow(`SELECT COALESCE(validation_outcome, '') FROM findings WHERE id = $1`, f.String()).Scan(&validation); err != nil ||
+		validation != "not_reproducible" {
+		t.Errorf("validation = %q (%v), want not_reproducible", validation, err)
 	}
 	// The attempt's proof is kept, masked, on the finding.
 	var n int
@@ -355,8 +384,8 @@ func TestRetestDB_ConfirmedFixAwaitsAPersonUnlessAutoResolve(t *testing.T) {
 	if got = settle(h, "https://auto.example.com/admin", 200); got.ResultStatus != "resolved" {
 		t.Fatalf("auto-resolve retest = %+v", got)
 	}
-	if status, method, by := fx.findingState(h); status != "resolved" || method != "retest_verified" || by != fx.user.String() {
-		t.Errorf("finding = %s/%s/%s, want resolved/retest_verified/<requester>", status, method, by)
+	if status, method, by := fx.findingState(h); status != "resolved" || method != "fixed/retest" || by != fx.user.String() {
+		t.Errorf("finding = %s/%s/%s, want resolved/fixed/retest/<requester>", status, method, by)
 	}
 }
 
@@ -587,5 +616,79 @@ func TestRetestDB_AutoRetestOffByDefault(t *testing.T) {
 	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM finding_retests WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)
 	if n != 0 {
 		t.Errorf("auto-retest queued %d retests for a tenant that never enabled it (%+v)", n, res)
+	}
+}
+
+// The auto-retest picks findings of the tools an online sensor reports it
+// can re-check, whatever the tool is called: here only a trivy retest
+// handler is online, so the trivy finding is retested and the nuclei one is
+// not (before, only nuclei findings were ever candidates). With nothing
+// online, nothing is queued.
+func TestRetestDB_AutoRetestFollowsReportedRetestTools(t *testing.T) {
+	fx := newFixture(t)
+	fx.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{retest}', '{"auto_enabled": true, "daily_cap": 5}') WHERE id = $1`,
+		fx.tenant.String())
+	nuclei := fx.newFinding(fx.asset, "confirmed", "tpl-auto-nuclei")
+	trivy := fx.newFinding(fx.newAsset("api.example.com"), "confirmed", "CVE-2026-0001")
+	fx.exec(`UPDATE findings SET tool_name = 'Trivy' WHERE id = $1`, trivy.String())
+
+	if _, err := fx.serviceWith(sensorsOnline(false)).RunAutoTick(context.Background(), fx.repo); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM finding_retests WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)
+	if n != 0 {
+		t.Fatalf("no sensor online: %d retests queued", n)
+	}
+
+	fx.exec(`UPDATE finding_retest_cursors SET next_run_at = NOW() - INTERVAL '1 minute' WHERE tenant_id = $1`, fx.tenant.String())
+	if _, err := fx.serviceWith(onlyToolRetest("trivy")).RunAutoTick(context.Background(), fx.repo); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	rows, err := fx.db.Query(`SELECT finding_id FROM finding_retests WHERE tenant_id = $1 AND trigger = 'auto'`, fx.tenant.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		got[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !got[trivy.String()] || got[nuclei.String()] || len(got) != 1 {
+		t.Fatalf("auto retests = %v, want only the trivy finding %s", got, trivy)
+	}
+}
+
+// CanRetest answers what the console offers: the same checks as a request,
+// nothing recorded.
+func TestRetestDB_CanRetest(t *testing.T) {
+	fx := newFixture(t)
+	nuclei := fx.newFinding(fx.asset, "confirmed", "tpl-can")
+	fp := fx.newFinding(fx.asset, "false_positive", "tpl-can-fp")
+	ctx := context.Background()
+	if ok, err := fx.service().CanRetest(ctx, fx.tenant, nuclei); err != nil || !ok {
+		t.Fatalf("eligible finding with the re-verify rung online: %v %v", ok, err)
+	}
+	if ok, err := fx.serviceWith(sensorsOnline(false)).CanRetest(ctx, fx.tenant, nuclei); err != nil || ok {
+		t.Fatalf("no sensor online: %v %v", ok, err)
+	}
+	if ok, err := fx.service().CanRetest(ctx, fx.tenant, fp); err != nil || ok {
+		t.Fatalf("false positive: %v %v", ok, err)
+	}
+	// Another tenant's finding is not found.
+	if ok, err := fx.service().CanRetest(ctx, shared.NewID(), nuclei); ok || err == nil {
+		t.Fatalf("cross-tenant: %v %v", ok, err)
+	}
+	var n int
+	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM finding_retests WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)
+	if n != 0 {
+		t.Fatalf("CanRetest recorded %d retests", n)
 	}
 }

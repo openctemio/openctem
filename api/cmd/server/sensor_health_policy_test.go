@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -12,38 +13,61 @@ func TestSensorHealthPolicy_FromConfig(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Worker.HeartbeatTimeout = 10 * time.Minute
 	cfg.SensorConfig.HeartbeatInterval = time.Minute
-	cfg.SensorConfig.LatestVersion = "0.4.2"
-	cfg.SensorConfig.MinVersion = "latest" // not a version: ignored with a warning
 
-	p := sensorHealthPolicy(cfg, logger.NewNop())
+	p := sensorHealthPolicy(cfg)
 	if p.OfflineAfter != 10*time.Minute {
 		t.Errorf("offline after = %s, want the heartbeat timeout", p.OfflineAfter)
 	}
 	if p.OnlineWindow != 72*time.Second {
 		t.Errorf("online window = %s, want the 1m interval plus its 12s grace", p.OnlineWindow)
 	}
-	if p.LatestVersion != "v0.4.2" || p.MinVersion != "" {
-		t.Errorf("channel = %q / %q", p.LatestVersion, p.MinVersion)
+	// Every catalog product has its own release line, from versions.yaml.
+	for _, prod := range versions.Products() {
+		if l, ok := p.ReleaseLineFor(prod.ID); !ok || l.Latest != prod.Latest || l.Min != prod.Min {
+			t.Errorf("%s: line = %+v (known %v), want %s / %q", prod.ID, l, ok, prod.Latest, prod.Min)
+		}
+	}
+	if p.SDKLatestVersion != versions.SDKLatest() {
+		t.Errorf("sdk latest = %q", p.SDKLatestVersion)
 	}
 }
 
-func TestSensorInstallImage(t *testing.T) {
-	cases := []struct{ image, latest, want string }{
-		{"ghcr.io/openctemio/sensor", "v0.4.2", "ghcr.io/openctemio/sensor:v0.4.2"},
-		{"registry.local:5000/sec/sensor", "0.5.0", "registry.local:5000/sec/sensor:v0.5.0"},
-		// A tag in SENSOR_IMAGE is replaced by the channel's.
-		{"ghcr.io/openctemio/sensor:latest", "v0.4.2", "ghcr.io/openctemio/sensor:v0.4.2"},
-		// Channel off: the compiled-in release, never "latest".
-		{"ghcr.io/openctemio/sensor", "", "ghcr.io/openctemio/sensor:" + config.DefaultSensorLatestVersion},
-		// Not an image reference (would land in a shell line): the default.
-		{"evil; rm -rf /", "v0.4.2", config.DefaultSensorImageRepository + ":v0.4.2"},
-		{"", "v0.4.2", config.DefaultSensorImageRepository + ":v0.4.2"},
-	}
-	for _, c := range cases {
+// The install snippets of every product pin its latest release; SENSOR_IMAGE
+// replaces only the scanning sensor's repository (a mirror).
+func TestSensorInstallProducts(t *testing.T) {
+	sensorImage := func(image string) (scanner, others map[string]string) {
 		cfg := &config.Config{}
-		cfg.SensorConfig.Image, cfg.SensorConfig.LatestVersion = c.image, c.latest
-		if got := sensorInstallImage(cfg, logger.NewNop()); got != c.want {
-			t.Errorf("image %q latest %q -> %q, want %q", c.image, c.latest, got, c.want)
+		cfg.SensorConfig.Image = image
+		others = map[string]string{}
+		for _, p := range sensorInstallProducts(cfg, logger.NewNop()) {
+			if p.ID == versions.DefaultProductID {
+				scanner = map[string]string{"image": p.Image}
+			} else {
+				others[p.ID] = p.Image
+			}
+		}
+		return scanner, others
+	}
+	latest := versions.SensorLatest()
+	published := versions.SensorImage() + ":" + latest
+	for image, want := range map[string]string{
+		"":                                 published,
+		versions.SensorImage():             published,
+		"registry.local:5000/sec/sensor":   "registry.local:5000/sec/sensor:" + latest,
+		"ghcr.io/openctemio/sensor:latest": "ghcr.io/openctemio/sensor:" + latest, // the tag is the release's
+		// Not an image reference (would land in a shell line): the default.
+		"evil; rm -rf /":       published,
+		"ghcr.io/x@sha256:abc": published,
+	} {
+		scanner, others := sensorImage(image)
+		if scanner["image"] != want {
+			t.Errorf("SENSOR_IMAGE %q -> %q, want %q", image, scanner["image"], want)
+		}
+		for id, img := range others {
+			p, _ := versions.LookupProduct(id)
+			if img != p.ImageRef() {
+				t.Errorf("SENSOR_IMAGE %q changed %s's image to %q", image, id, img)
+			}
 		}
 	}
 }
@@ -69,7 +93,6 @@ func TestCollectorInstallImage(t *testing.T) {
 // sensor's: the sensor minimum (v0.9.0) is above every CI runner release.
 func TestCIRunnerVersionPolicy_FromConfig(t *testing.T) {
 	cfg := &config.Config{}
-	cfg.SensorConfig.LatestVersion, cfg.SensorConfig.MinVersion = "v0.21.1", "v0.9.0"
 	cfg.SensorConfig.CIRunnerLatestVersion = "0.2.0"
 	cfg.SensorConfig.CIRunnerMinVersion = "latest" // not a version: ignored with a warning
 	p := ciRunnerVersionPolicy(cfg, logger.NewNop())

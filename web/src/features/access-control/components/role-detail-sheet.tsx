@@ -1,9 +1,15 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
+import Link from '@/components/link'
 import { csrfFetch } from '@/lib/api/client'
+import { tenantEndpoints } from '@/lib/api/endpoints'
+import { useTenant } from '@/context/tenant-provider'
+import { useMembers } from '@/features/organization'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { RoleRiskBadge, RoleSummaryLine } from './role-risk'
+import { RoleTemplateUpdate } from './role-template-update'
 import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -69,6 +75,16 @@ interface RoleDetailSheetProps {
 }
 
 type RoleTab = 'permissions' | 'features' | 'members'
+
+// The four team roles are the member's role: they change on the Members page
+// (PATCH /tenants/{tenant}/members/{id}) and by ownership transfer, never
+// through /users/{id}/roles. Taking a person out of the admin role means
+// making them a member; out of the member role, a viewer.
+const TEAM_ROLE_SLUGS = ['owner', 'admin', 'member', 'viewer']
+const TEAM_ROLE_DEMOTION: Record<string, 'member' | 'viewer' | undefined> = {
+  admin: 'member',
+  member: 'viewer',
+}
 
 // Permission types: a category, told apart by icon and label as well as colour.
 const permissionTypeConfig: Record<
@@ -147,6 +163,16 @@ export function RoleDetailSheet({
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
   const [pendingRemove, setPendingRemove] = useState<RoleMember | null>(null)
   const { t } = useTranslation()
+  const { currentTenant } = useTenant()
+  const { members: tenantMembers } = useMembers(currentTenant?.slug)
+  const isTeamRole = !!role && role.is_system && TEAM_ROLE_SLUGS.includes(role.slug)
+  const demoteTo = role && isTeamRole ? TEAM_ROLE_DEMOTION[role.slug] : undefined
+  const demoteLabel =
+    demoteTo === 'member'
+      ? t('org.role.member', 'Member')
+      : demoteTo === 'viewer'
+        ? t('org.role.viewer', 'Viewer')
+        : ''
   const [activeTab, setActiveTab] = useState<RoleTab>('permissions')
 
   // Reset state when sheet closes
@@ -177,16 +203,41 @@ export function RoleDetailSheet({
 
       setRemovingMemberId(member.id)
       try {
-        const response = await csrfFetch(`/api/v1/users/${member.user_id}/roles/${role.id}`, {
-          method: 'DELETE',
-        })
+        let response: Response
+        if (isTeamRole) {
+          // A team role changes through the membership, not the roles API.
+          const membership = tenantMembers.find((m) => m.user_id === member.user_id)
+          if (!demoteTo || !currentTenant?.slug || !membership) {
+            throw new Error(
+              t('org.roles.teamRoleUnavailable', 'This team role cannot be changed here')
+            )
+          }
+          response = await csrfFetch(
+            tenantEndpoints.updateMember(currentTenant.slug, membership.id),
+            {
+              method: 'PATCH',
+              body: JSON.stringify({ role: demoteTo }),
+            }
+          )
+        } else {
+          response = await csrfFetch(`/api/v1/users/${member.user_id}/roles/${role.id}`, {
+            method: 'DELETE',
+          })
+        }
 
         if (!response.ok) {
           const error = await response.json().catch(() => null)
           throw new Error(error?.message || `HTTP ${response.status}`)
         }
 
-        toast.success(`${member.name || member.email} removed from role`)
+        toast.success(
+          isTeamRole
+            ? t('org.roles.changed', '{name} is now {role}', {
+                name: member.name || member.email || '',
+                role: demoteLabel,
+              })
+            : `${member.name || member.email} removed from role`
+        )
         setPendingRemove(null)
         mutateMembers()
       } catch (error) {
@@ -197,7 +248,7 @@ export function RoleDetailSheet({
         setRemovingMemberId(null)
       }
     },
-    [role, mutateMembers]
+    [role, mutateMembers, isTeamRole, demoteTo, demoteLabel, tenantMembers, currentTenant, t]
   )
 
   // Group permissions by module
@@ -372,6 +423,13 @@ export function RoleDetailSheet({
             {role.description && (
               <p className="text-sm text-muted-foreground">{role.description}</p>
             )}
+            {role.summary && (
+              <div className="space-y-1">
+                <RoleRiskBadge risk={role.summary.risk} />
+                <RoleSummaryLine summary={role.summary} max={8} />
+              </div>
+            )}
+            <RoleTemplateUpdate role={role} />
 
             <DetailStatGrid aria-label="Key numbers">
               <DetailStat
@@ -523,12 +581,25 @@ export function RoleDetailSheet({
             title="Members"
             count={isLoadingMembers ? undefined : roleMembers.length}
             actions={
-              <Button size="sm" onClick={() => setAddMemberDialogOpen(true)}>
-                <UserPlus className="h-4 w-4" />
-                Add member
-              </Button>
+              isTeamRole ? undefined : (
+                <Button size="sm" onClick={() => setAddMemberDialogOpen(true)}>
+                  <UserPlus className="h-4 w-4" />
+                  Add member
+                </Button>
+              )
             }
           >
+            {isTeamRole && (
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'org.roles.teamRoleNote',
+                  'This is a team role. It is the member’s role in the organization, so it changes on the Members page, and ownership moves with Transfer ownership.'
+                )}{' '}
+                <Link href="/settings/members" className="underline underline-offset-2">
+                  {t('org.roles.openMembers', 'Open the Members page')}
+                </Link>
+              </p>
+            )}
             <div className="relative">
               <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -554,7 +625,7 @@ export function RoleDetailSheet({
                 }
                 card={false}
                 action={
-                  !memberSearchQuery ? (
+                  !memberSearchQuery && !isTeamRole ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -592,32 +663,36 @@ export function RoleDetailSheet({
                         </span>
                       )}
                       {/* Always visible: a hover-only trigger cannot be found on touch. */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 shrink-0"
-                            aria-label={`Actions for ${label}`}
-                          >
-                            {removingMemberId === member.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <MoreHorizontal className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onSelect={() => setPendingRemove(member)}
-                            disabled={removingMemberId === member.id}
-                          >
-                            <UserMinus className="h-4 w-4" />
-                            Remove from role
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {(!isTeamRole || demoteTo) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0"
+                              aria-label={`Actions for ${label}`}
+                            >
+                              {removingMemberId === member.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <MoreHorizontal className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onSelect={() => setPendingRemove(member)}
+                              disabled={removingMemberId === member.id}
+                            >
+                              <UserMinus className="h-4 w-4" />
+                              {isTeamRole
+                                ? t('org.roles.changeTo', 'Change to {role}', { role: demoteLabel })
+                                : 'Remove from role'}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </li>
                   )
                 })}
@@ -640,15 +715,31 @@ export function RoleDetailSheet({
         open={pendingRemove !== null}
         onOpenChange={(open) => !open && setPendingRemove(null)}
         destructive
-        title={t('confirm.role.removeMemberTitle', 'Remove {name} from the role {role}?', {
-          name: pendingRemove ? pendingRemove.name || pendingRemove.email || '' : '',
-          role: role.name,
-        })}
-        desc={t(
-          'confirm.role.removeMemberDesc',
-          'They lose the permissions this role grants at once, unless another role or group grants them too. You can add them back later.'
-        )}
-        confirmText={t('confirm.remove', 'Remove')}
+        title={
+          isTeamRole
+            ? t('confirm.role.demoteTitle', 'Change {name} from {role} to {to}?', {
+                name: pendingRemove ? pendingRemove.name || pendingRemove.email || '' : '',
+                role: role.name,
+                to: demoteLabel,
+              })
+            : t('confirm.role.removeMemberTitle', 'Remove {name} from the role {role}?', {
+                name: pendingRemove ? pendingRemove.name || pendingRemove.email || '' : '',
+                role: role.name,
+              })
+        }
+        desc={
+          isTeamRole
+            ? t(
+                'confirm.role.demoteDesc',
+                'This changes their role in the organization. They lose what the {role} role grants at once. You can promote them again on the Members page.',
+                { role: role.name }
+              )
+            : t(
+                'confirm.role.removeMemberDesc',
+                'They lose the permissions this role grants at once, unless another role or group grants them too. You can add them back later.'
+              )
+        }
+        confirmText={isTeamRole ? t('confirm.change', 'Change') : t('confirm.remove', 'Remove')}
         isLoading={removingMemberId !== null}
         handleConfirm={() => (pendingRemove ? handleRemoveMember(pendingRemove) : undefined)}
       />

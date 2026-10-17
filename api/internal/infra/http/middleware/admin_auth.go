@@ -5,8 +5,8 @@ package middleware
 
 import (
 	"context"
-	"crypto/subtle"
 	"net/http"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -24,9 +24,10 @@ const (
 // AdminAuthMethodSession is the only way an admin request is authenticated.
 const AdminAuthMethodSession = "session"
 
-// Console (RFC-022) cookie names. The session cookie is scoped to the admin API
-// path so it is never sent to tenant routes. The CSRF cookie is separate from
-// the tenant csrf_token so the two shells can be open in one browser.
+// Console (RFC-022) cookie names. The session and CSRF cookies are HttpOnly and
+// scoped to the admin API path, so they are never sent to tenant routes. The
+// CSRF token is separate from the tenant csrf_token so the two shells can be
+// open in one browser.
 const (
 	AdminSessionCookie = "admin_session"
 	AdminMFACookie     = "admin_mfa"
@@ -57,15 +58,43 @@ var passwordChangeAllowed = map[string]bool{
 	"POST /api/v1/admin/auth/password": true,
 }
 
+// CodeFactorEnrollmentRequired is the error code of the enrollment gate.
+const CodeFactorEnrollmentRequired apierror.Code = "FACTOR_ENROLLMENT_REQUIRED"
+
+// enrollmentAllowed lists what a session held by "require WebAuthn" may call
+// until the administrator complies: who am I, read and register security
+// keys, confirm with a code or key, and generate recovery codes.
+var enrollmentAllowed = map[string]bool{
+	"GET /api/v1/admin/auth/validate":                      true,
+	"POST /api/v1/admin/auth/password":                     true,
+	"GET /api/v1/admin/auth/factors":                       true,
+	"POST /api/v1/admin/auth/webauthn/credentials/options": true,
+	"POST /api/v1/admin/auth/webauthn/credentials":         true,
+	"POST /api/v1/admin/auth/recovery-codes":               true,
+	"POST /api/v1/admin/auth/step-up/webauthn/options":     true,
+	"POST /api/v1/admin/auth/step-up/webauthn":             true,
+}
+
 // AdminAuthMiddleware provides authentication for admin API endpoints.
 type AdminAuthMiddleware struct {
 	sessions AdminSessionAuthenticator
 	logger   *logger.Logger
+	// elevation: administrators act as read-only unless their session is
+	// elevated (ADMIN_ELEVATION=required).
+	elevation bool
+	now       func() time.Time
+}
+
+// WithElevation makes every request act as the session's acting role:
+// read-only unless the session holds a live elevation.
+func (m *AdminAuthMiddleware) WithElevation(on bool) *AdminAuthMiddleware {
+	m.elevation = on
+	return m
 }
 
 // authenticateSession accepts a verified console session cookie and, for
-// state-changing methods, requires the double-submit CSRF header to match the
-// admin CSRF cookie.
+// state-changing methods, requires the CSRF header to be that session's
+// token (AdminCSRFToken: bound to the session, whatever cookies are sent).
 func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.AdminUser, *admin.Session, bool) {
 	if m.sessions == nil {
 		return nil, nil, false
@@ -77,10 +106,7 @@ func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.Admin
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 	default:
-		csrf, err := r.Cookie(AdminCSRFCookie)
-		header := r.Header.Get(CSRFHeaderName)
-		if err != nil || csrf.Value == "" || header == "" ||
-			subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(header)) != 1 {
+		if !ValidAdminCSRF(c.Value, r.Header.Get(CSRFHeaderName)) {
 			m.logger.Debug("admin auth: session request failed CSRF check")
 			return nil, nil, false
 		}
@@ -105,6 +131,7 @@ func NewAdminAuthMiddleware(sessions AdminSessionAuthenticator, log *logger.Logg
 	return &AdminAuthMiddleware{
 		sessions: sessions,
 		logger:   log.With("middleware", "admin_auth"),
+		now:      time.Now,
 	}
 }
 
@@ -124,6 +151,18 @@ func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			apierror.New(http.StatusForbidden, CodePasswordChangeRequired,
 				"Change your temporary password before using the console").WriteJSON(w)
 			return
+		}
+		// "require WebAuthn": an administrator who has not registered enough
+		// security keys and recovery codes may only enroll.
+		if sess != nil && sess.EnrollmentRequired && !enrollmentAllowed[r.Method+" "+r.URL.Path] {
+			apierror.New(http.StatusForbidden, CodeFactorEnrollmentRequired,
+				"Register your security keys and recovery codes before using the console").WriteJSON(w)
+			return
+		}
+		// Time-boxed elevation: without a live elevation the administrator
+		// acts as read-only, whatever their own role.
+		if m.elevation {
+			adminUser.ActAs(sess.ActingRole(m.now()))
 		}
 		ctx := withAdmin(r.Context(), adminUser, AdminAuthMethodSession)
 		if sess != nil {
@@ -148,7 +187,7 @@ func (m *AdminAuthMiddleware) RequireRole(roles ...admin.AdminRole) func(http.Ha
 			// Check if admin has one of the required roles
 			hasRole := false
 			for _, role := range roles {
-				if adminUser.Role() == role {
+				if adminUser.EffectiveRole() == role {
 					hasRole = true
 					break
 				}
@@ -157,7 +196,7 @@ func (m *AdminAuthMiddleware) RequireRole(roles ...admin.AdminRole) func(http.Ha
 			if !hasRole {
 				m.logger.Debug("admin auth: insufficient role",
 					"admin_id", adminUser.ID().String(),
-					"role", adminUser.Role(),
+					"role", adminUser.EffectiveRole(),
 					"required_roles", roles)
 				apierror.Forbidden("insufficient permissions").WriteJSON(w)
 				return
@@ -183,7 +222,7 @@ func (m *AdminAuthMiddleware) RequirePermission(action string) func(http.Handler
 			if !adminUser.HasPermission(action) {
 				m.logger.Debug("admin auth: permission denied",
 					"admin_id", adminUser.ID().String(),
-					"role", adminUser.Role(),
+					"role", adminUser.EffectiveRole(),
 					"action", action)
 				apierror.Forbidden("permission denied: " + action).WriteJSON(w)
 				return
@@ -261,7 +300,7 @@ func extractIP(r *http.Request) string {
 func withAdmin(ctx context.Context, a *admin.AdminUser, method string) context.Context {
 	ctx = context.WithValue(ctx, AdminUserKey, a)
 	ctx = context.WithValue(ctx, AdminIDKey, a.ID().String())
-	ctx = context.WithValue(ctx, AdminRoleKey, string(a.Role()))
+	ctx = context.WithValue(ctx, AdminRoleKey, string(a.EffectiveRole()))
 	ctx = context.WithValue(ctx, AdminAuthMethodKey, method)
 	// Logger context for request tracing.
 	return context.WithValue(ctx, logger.ContextKeyUserID, a.ID().String())

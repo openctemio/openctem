@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -68,7 +69,14 @@ func (r *invBodyRepo) DeleteInvitation(_ context.Context, _ shared.ID, id shared
 	return nil
 }
 
-func (r *invBodyRepo) GetMembership(context.Context, shared.ID, shared.ID) (*tenantdom.Membership, error) {
+// GetMembership knows only the inviters, as owners of their organization
+// (acceptance re-authorizes the invitation as the inviter).
+func (r *invBodyRepo) GetMembership(_ context.Context, uid, tid shared.ID) (*tenantdom.Membership, error) {
+	for _, inv := range r.byHash {
+		if inv.InvitedBy() == uid && inv.TenantID() == tid {
+			return tenantdom.NewMembership(uid, tid, tenantdom.RoleOwner, nil)
+		}
+	}
 	return nil, shared.ErrNotFound
 }
 
@@ -249,5 +257,44 @@ func TestAcceptInvitationWithRefreshBody_RefusesBadToken(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("body %q: got %d, want 400", body, w.Code)
 		}
+	}
+}
+
+// TestLookupInvitation_GrantsOnlyWhilePending: what accepting gives (outside
+// status, end of access, teams, roles) is shown only while the invitation can
+// be accepted; a used token reveals none of it.
+func TestLookupInvitation_GrantsOnlyWhilePending(t *testing.T) {
+	repo, invA, _ := twoOrgs(t)
+	end := time.Now().Add(30 * 24 * time.Hour).UTC()
+	invA.SetAccess(tenantdom.ExternalAccess{ExpiresAt: &end})
+	if err := invA.SetInviteeInfo(tenantdom.InviteeInfo{Kind: tenantdom.MemberKindExternal, Privileged: true}); err != nil {
+		t.Fatal(err)
+	}
+	h := newInvBodyHandler(repo)
+	lookup := func() string {
+		w := httptest.NewRecorder()
+		h.LookupInvitation(w, postJSON(tokenBody(invTokenA)))
+		if w.Code != http.StatusOK {
+			t.Fatalf("lookup = %d: %s", w.Code, w.Body)
+		}
+		return w.Body.String()
+	}
+	pending := lookup()
+	for _, want := range []string{`"member_kind":"external"`, `"access_expires_at"`, `"mfa_required":true`} {
+		if !strings.Contains(pending, want) {
+			t.Fatalf("pending lookup lacks %s: %s", want, pending)
+		}
+	}
+	if err := invA.Accept(); err != nil {
+		t.Fatal(err)
+	}
+	used := lookup()
+	for _, leak := range []string{`"member_kind"`, `"access_expires_at"`, `"roles"`, `"teams"`, `"mfa_reason"`, `"mfa_required":true`} {
+		if strings.Contains(used, leak) {
+			t.Fatalf("used invitation still shows %s: %s", leak, used)
+		}
+	}
+	if !strings.Contains(used, `"pending":false`) {
+		t.Fatalf("used lookup = %s", used)
 	}
 }

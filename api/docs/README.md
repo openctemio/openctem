@@ -20,7 +20,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 - [Setup](development/setup.md), [coding style](development/coding-style.md), [testing](development/testing.md), [logging](development/logging.md)
 - [Migrations](development/migrations.md)
-- [CI/CD and releases](development/ci-cd.md), [versioning and releases](architecture/versioning-and-releases.md)
+- [CI/CD and releases](development/ci-cd.md), [versioning and releases](architecture/versioning-and-releases.md), [version check](architecture/version-check.md), [signing keys](architecture/signing-keys.md)
 - [Pre-commit and security tooling](development/pre-commit-security.md)
 - [Asset type registry](development/asset-type-registry.md), [relationship types](development/relationship-types.md)
 - [Makefile reference](MAKEFILE.md), [Swagger annotations](SWAGGER_GUIDE.md)
@@ -36,20 +36,20 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 **Foundations**
 - [Overview](architecture/overview.md), [clean architecture](architecture/clean-arch.md), [project structure](architecture/project-structure.md)
-- [Module coupling](architecture/module-coupling-and-decoupling.md), [plans and limits](architecture/plans-and-limits.md), [idle Free workspaces](architecture/idle-workspaces.md)
-- [Organization settings](architecture/organization-settings.md), [database notes](architecture/database-notes.md), [row-level security rollout](architecture/rls-rollout.md)
+- [Module coupling](architecture/module-coupling-and-decoupling.md), [limits and feature denies](architecture/limits.md), [idle-organization policy](architecture/idle-workspaces.md)
+- [Organization settings](architecture/organization-settings.md), [product brand](architecture/brand.md), [database notes](architecture/database-notes.md), [row-level security rollout](architecture/rls-rollout.md)
 - Decisions: [ADR-001 standard net/http](architecture/decisions/001-use-stdlib-http.md), [ADR-002 protocols](architecture/decisions/002-multi-protocol.md), [ADR-003 connectors](architecture/decisions/003-connector-pattern.md), [ADR-004 finding provenance](architecture/decisions/004-finding-provenance.md)
 
 **Identity and access**
 - [Authorization matrix](architecture/authorization-matrix.md) (the canonical authorization model), [access control rules](architecture/access-control-rules.md), [generated authorization reference](architecture/authorization-reference.md)
 - [User onboarding](architecture/user-onboarding.md), [two-factor authentication](architecture/user-two-factor-authentication.md), [step-up re-authentication](architecture/step-up-reauth.md)
 - [SSO authentication](architecture/sso-authentication.md), [multi-tenant Entra ID model](architecture/multi-tenant-entraid-model.md), [SAML SSO](architecture/saml-sso.md), [SCIM provisioning](architecture/scim-provisioning.md)
-- [Audit hash chain](architecture/audit-hash-chain.md)
+- [Platform console](architecture/platform-console.md) (its own service, site and plane), [Audit hash chain](architecture/audit-hash-chain.md)
 
 **Assets and scope**
 - [Asset inventory v2](architecture/asset-inventory-v2.md), [asset schema](architecture/asset-schema.md), [asset properties schema](asset-properties-schema.md)
 - [Asset identity resolution](architecture/asset-identity-resolution.md), [IP/hostname correlation](architecture/asset-ip-hostname-correlation.md), [deduplication](architecture/deduplication.md), [source priority](architecture/asset-source-priority.md)
-- [Asset ownership](architecture/asset-ownership.md), [asset deletion](architecture/asset-deletion.md), [asset group recalculation](architecture/asset-group-recalculation.md), [criticality propagation](architecture/criticality-propagation.md)
+- [Asset ownership](architecture/asset-ownership.md), [asset deletion](architecture/asset-deletion.md), [asset group recalculation](architecture/asset-group-recalculation.md), [criticality propagation](architecture/criticality-propagation.md), [asset risk score](architecture/asset-risk-score.md), [scoring versions](architecture/scoring-versions.md)
 - [Data provenance](architecture/data-sources.md), [component relationships](architecture/component-relationship-best-practices.md), [web surface](architecture/web-surface.md)
 - [Scoping overview](architecture/scoping-overview.md), [active-probe gate](architecture/active-probe-gate.md)
 - [EASM](architecture/easm.md), [EASM DNS checks](architecture/easm-dns-checks.md), [certificate transparency monitoring](architecture/certificate-transparency-monitoring.md), [change detection](architecture/change-detection.md)
@@ -58,16 +58,18 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Sensors](architecture/sensors.md), [sensor identity](architecture/agent-identity.md), [sensor pairing](architecture/sensor-pairing.md), [sensor ↔ platform trust](architecture/sensor-platform-trust.md), [signed jobs](architecture/job-signing.md), [result binding](architecture/sensor-result-binding.md)
 - [Scan lifecycle](architecture/scan-lifecycle.md), [scan orchestration](architecture/scan-orchestration.md), [scan stages](architecture/scan-stages.md), [scan zones](architecture/scan-zones.md), [placement](architecture/placement.md), [scan naming](architecture/scan-naming.md)
 - [Tool contract](architecture/tool-contract.md), [tool availability](architecture/tool-availability.md), [secret scanning](architecture/secret-scanning.md)
+- [Content packs](architecture/content-packs.md), [content catalog](architecture/content-catalog.md): signed content packages, offline import, installs and revocation
+- [Platform contracts](architecture/platform-contracts.md): the platform depends on contracts only, never on a sensor or the SDK
 - [CI runner identity and gate](architecture/ci-runner-identity.md), [shift-left CI scanning](architecture/shift-left-ci-scanning.md), [branch-only findings](architecture/branch-only-findings.md)
 - [Scan coverage (Tenable)](architecture/scan-coverage.md), [Tenable.sc connector](architecture/tenable-sc-connector.md)
 
 **Findings and prioritization**
-- [Vulnerability model](architecture/vulnerability-model.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md)
+- [Vulnerability model](architecture/vulnerability-model.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md)
 - [Global catalog trust](architecture/global-catalog-trust.md), [priority explainability](architecture/priority-explainability.md), [CTEM-ID catalog](architecture/ctem-id-catalog.md)
 - [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md)
 
 **Mobilization, automation and reporting**
-- [Remediation campaigns](architecture/remediation-campaigns.md), [campaign Jira sync](architecture/remediation-campaign-jira-sync.md), [ticketing (Jira)](architecture/ticketing-integration.md), [GitHub Issues ticketing](architecture/github-issue-ticketing.md)
+- [Remediation tasks](architecture/remediation-tasks.md), [remediation campaigns](architecture/remediation-campaigns.md), [campaign Jira sync](architecture/remediation-campaign-jira-sync.md), [ticketing (Jira)](architecture/ticketing-integration.md), [GitHub Issues ticketing](architecture/github-issue-ticketing.md)
 - [Automations](architecture/automations.md), [notification system](architecture/notification-system.md), [SIEM ingest](architecture/siem-ingest.md)
 - [CTEM program metrics](architecture/program-metrics.md), [CTEM definition of done](architecture/ctem-dod-checklist.md), [report PDF export](architecture/report-pdf-export.md), [pentest report templates](architecture/pentest-report-templates.md), [pentest remediation and retest](architecture/pentest-remediation.md), [pentest campaign phases, delivery and sign-off](architecture/pentest-campaign-completion.md), [pentest campaign profile](architecture/pentest-campaign-profile.md), [pentest methodology checklists](architecture/pentest-checklists.md)
 - [API ↔ CTIS decoupling](architecture/api-ctis-decoupling.md)

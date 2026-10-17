@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ApiFinding } from '../../api/finding-api.types'
 import { findingDescription, findingShortName, toFindingDetail } from '../finding-detail'
 import { riskSignals } from '../finding-signals'
-import { fixGuidance, upgradeCommands } from '../fix-guidance'
+import { dependencyVia, fixGuidance, upgradeCommands } from '../fix-guidance'
 
 /** The live reference finding: cross-spawn ReDoS on demo-web-storefront. */
 function crossSpawn(over: Partial<ApiFinding> = {}): ApiFinding {
@@ -198,6 +198,42 @@ describe('riskSignals', () => {
     expect(s.find((x) => x.key === 'epss')?.effect).toBe('raises')
   })
 
+  it('says reachability is unknown for a repository with no exposure data', () => {
+    const f = toFindingDetail(
+      crossSpawn({
+        asset: {
+          id: 'dcdc1111-0000-0000-0000-000000000002',
+          name: 'gitlab.com/acme/app',
+          type: 'repository',
+          criticality: 'medium',
+          exposure: 'unknown',
+        },
+        is_reachable: false,
+        reachable_from_count: 0,
+        is_internet_accessible: false,
+      })
+    )
+    const s = riskSignals(f)
+    expect(s.find((x) => x.key === 'reachability-unknown')).toMatchObject({
+      label: 'Reachability unknown',
+      effect: 'neutral',
+    })
+    expect(s.some((x) => x.label.toLowerCase().includes('not reachable'))).toBe(false)
+  })
+
+  it('does not call a reachable finding unknown', () => {
+    expect(
+      riskSignals(toFindingDetail(crossSpawn())).some((x) => x.key === 'reachability-unknown')
+    ).toBe(false)
+  })
+
+  it('translates the labels through the given t', () => {
+    const t = (key: string) => `[${key}]`
+    expect(riskSignals(toFindingDetail(crossSpawn()), t).map((x) => x.label)).toContain(
+      '[findings.signals.internetFacing]'
+    )
+  })
+
   it('says nothing about exploits when there is no advisory', () => {
     const f = toFindingDetail(crossSpawn({ vulnerability: undefined, cve_id: undefined }))
     expect(riskSignals(f).some((x) => x.key === 'exploit')).toBe(false)
@@ -205,6 +241,41 @@ describe('riskSignals', () => {
 })
 
 describe('fixGuidance', () => {
+  it('never uses a list of release-line fixes as the version to upgrade to', () => {
+    const g = fixGuidance(
+      toFindingDetail(
+        crossSpawn({
+          vulnerability: undefined,
+          component: { id: 'c', name: 'Django', version: '4.2.20', ecosystem: 'pypi' },
+          metadata: { fixed_version: '5.2.8, 5.1.14, 4.2.26' },
+        })
+      )
+    )
+    expect(g?.kind).not.toBe('upgrade')
+  })
+
+  it('takes other release lines from the component when there is no CVE record', () => {
+    const g = fixGuidance(
+      toFindingDetail(
+        crossSpawn({
+          vulnerability: undefined,
+          component: {
+            id: 'c',
+            name: 'Django',
+            version: '4.2.20',
+            ecosystem: 'pypi',
+            fixed_in: '4.2.26',
+            fixed_versions: ['5.2.8', '5.1.14', '4.2.26'],
+          },
+        })
+      )
+    )
+    if (g?.kind !== 'upgrade') throw new Error('expected an upgrade')
+    expect(g.to).toBe('4.2.26')
+    expect(g.otherFixedVersions).toEqual(['5.2.8', '5.1.14'])
+    expect(g.majorUpgrade).toBe(false)
+  })
+
   it('turns the reference finding into an upgrade with an npm override', () => {
     const g = fixGuidance(toFindingDetail(crossSpawn()))
     expect(g).toMatchObject({
@@ -217,6 +288,35 @@ describe('fixGuidance', () => {
     })
     if (g?.kind !== 'upgrade') throw new Error('expected an upgrade')
     expect(g.commands[0].code).toContain('"cross-spawn": "^7.0.5"')
+  })
+
+  it('keeps the chain that brings a transitive package in, without the package itself', () => {
+    expect(
+      dependencyVia(['express@4.17.1', 'body-parser@1.19.0'], 'body-parser', '1.19.0')
+    ).toEqual(['express@4.17.1'])
+    expect(dependencyVia(['lodash@4.17.20'], 'lodash', '4.17.20')).toBeUndefined()
+    expect(dependencyVia(['requests', 'urllib3'], 'urllib3', '1.26.0')).toEqual(['requests'])
+    expect(dependencyVia(undefined, 'x', '1')).toBeUndefined()
+  })
+
+  it('maps the dependency path and the lock file line from the API', () => {
+    const d = toFindingDetail({
+      ...crossSpawn(),
+      component: {
+        ...crossSpawn().component!,
+        dependency_path: ['express@4.17.1', 'cross-spawn@7.0.3'],
+        manifest_file: 'package-lock.json',
+        manifest_line: 34,
+      },
+    })
+    expect(d.component).toMatchObject({
+      dependencyPath: ['express@4.17.1', 'cross-spawn@7.0.3'],
+      manifestLine: 34,
+    })
+    const g = fixGuidance(d)
+    if (g?.kind !== 'upgrade') throw new Error('expected an upgrade')
+    expect(g.via).toEqual(['express@4.17.1'])
+    expect(g.manifestLine).toBe(34)
   })
 
   it('installs a direct npm dependency directly', () => {

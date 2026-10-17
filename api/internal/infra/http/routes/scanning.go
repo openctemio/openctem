@@ -86,6 +86,14 @@ func registerSensorManagementRoutes(
 		// Tenant-wide aggregated stats — must be registered BEFORE /{id} so
 		// chi doesn't treat "stats" as a path param.
 		r.GET("/stats", h.GetStats, middleware.Require(permission.SensorsRead))
+		// Organization tool defaults: per tool, the values every one of the
+		// organization's own sensors runs with unless it overrides a key.
+		// Before /{id}. Saving and resetting change what every sensor's scan
+		// jobs run with, so they need sensors:write (owners and
+		// administrators); changing an Impact option also needs step-up.
+		r.GET("/tool-defaults", h.ListToolDefaults, middleware.Require(permission.SensorsRead))
+		r.PUT("/tool-defaults/{tool}", h.UpdateToolDefaults, middleware.Require(permission.SensorsWrite))
+		r.DELETE("/tool-defaults/{tool}", h.ResetToolDefaults, middleware.Require(permission.SensorsWrite))
 		// Scanner content (RFC-031): the tenant policy and refresh requests.
 		// Before /{id} for the same reason. Writes queue commands for the
 		// fleet, so they need sensors:write (owners and administrators).
@@ -96,14 +104,16 @@ func registerSensorManagementRoutes(
 			r.POST("/{id}/content/refresh", content.RefreshSensor, middleware.Require(permission.SensorsWrite), own)
 		}
 		// Results without a command (RFC-040 §5.3): the tenant policy and
-		// the quarantine review. Accepting applies sensor data to the
+		// the quarantine review. The preview carries asset values and finding
+		// titles from the raw report, so reading it needs sensors:write too
+		// (owners and administrators). Accepting applies sensor data to the
 		// inventory and discarding drops it, so both, like the policy, need
 		// sensors:write (owners and administrators). Before /{id}.
 		if results != nil {
 			r.GET("/result-policy", results.GetPolicy, middleware.Require(permission.SensorsRead))
 			r.PUT("/result-policy", results.UpdatePolicy, middleware.Require(permission.SensorsWrite))
-			r.GET("/quarantined-results", results.List, middleware.Require(permission.SensorsRead))
-			r.GET("/quarantined-results/{qid}", results.Get, middleware.Require(permission.SensorsRead))
+			r.GET("/quarantined-results", results.List, middleware.Require(permission.SensorsWrite))
+			r.GET("/quarantined-results/{qid}", results.Get, middleware.Require(permission.SensorsWrite))
 			r.POST("/quarantined-results/{qid}/approve", results.Accept, middleware.Require(permission.SensorsWrite))
 			r.POST("/quarantined-results/{qid}/reject", results.Discard, middleware.Require(permission.SensorsWrite))
 		}
@@ -147,7 +157,7 @@ func registerSensorManagementRoutes(
 		r.DELETE("/{id}/tool-settings/{tool}", h.ResetToolSettings, middleware.Require(permission.SensorsWrite), own)
 		// Setup checklist (research/26): the sensor's config report, explained
 		// from the platform catalog.
-		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsRead), own)
+		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsWrite), own)
 
 		// Available capabilities for tenant (aggregated from all accessible sensors)
 		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.SensorsRead))
@@ -463,6 +473,12 @@ func registerScanRoutes(
 		r.POST("/schedule-preview", h.PreviewSchedule, middleware.Require(permission.ScansRead))
 		// What a workflow scan would do, before it is saved or started
 		r.POST("/workflow-preview", h.PreviewWorkflow, middleware.Require(permission.ScansWrite))
+		// What a quick scan of the typed targets would do (read-only)
+		if triggerRateLimiter != nil {
+			r.POST("/quick/preview", h.PreviewQuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.QuickScanPreviewMiddleware())
+		} else {
+			r.POST("/quick/preview", h.PreviewQuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
+		}
 		// Quick scan (consolidated from /quick-scan)
 		if triggerRateLimiter != nil {
 			r.POST("/quick", h.QuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.QuickScanMiddleware())
@@ -667,9 +683,9 @@ func registerSecretStoreRoutes(
 		r.GET("/{id}", h.Get, middleware.Require(permission.SecretStoreRead))
 
 		// Write operations
-		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite))
-		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite))
+		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
+		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete))
@@ -710,6 +726,9 @@ func registerSuppressionRoutes(
 		// Approval workflow (requires separate approve permission)
 		r.POST("/{id}/approve", h.ApproveRule, middleware.Require(permission.SuppressionsApprove))
 		r.POST("/{id}/reject", h.RejectRule, middleware.Require(permission.SuppressionsApprove))
+		// Clearing the review flag of a rule given an end it did not have is
+		// an approver's decision, gated like the approval.
+		r.POST("/{id}/reviewed", h.MarkReviewed, middleware.Require(permission.SuppressionsApprove))
 		// What an approval would close: an organization-wide count of open
 		// findings, so it is gated like the approval.
 		r.GET("/{id}/preview", h.PreviewRule, middleware.Require(permission.SuppressionsApprove))

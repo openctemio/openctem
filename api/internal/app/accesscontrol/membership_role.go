@@ -59,11 +59,11 @@ func ValidateGrantableRoleIDs(roleIDs []string) error {
 // inserted from the coarse membership role, so the user ends up with exactly
 // the roles they were granted and nothing more.
 func (s *RoleService) GrantExactRoles(ctx context.Context, tenantID, userID string, roleIDs []string, grantedBy string, actx auditapp.AuditContext) error {
-	return s.SetUserRoles(ctx, SetUserRolesInput{
+	return s.setUserRoles(ctx, SetUserRolesInput{
 		TenantID: tenantID,
 		UserID:   userID,
 		RoleIDs:  roleIDs,
-	}, grantedBy, actx)
+	}, grantedBy, actx, true)
 }
 
 // InvitationMembershipRole is the membership role an accepted invitation

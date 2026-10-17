@@ -32,6 +32,21 @@ const MaxDispositionReasonLength = 1000
 // ErrDispositionSelfApproval: the requester cannot confirm their own request.
 var ErrDispositionSelfApproval = fmt.Errorf("%w: a second approver must confirm this request; you cannot approve your own", shared.ErrForbidden)
 
+// ErrDispositionSelfApprovalNotAllowed: an owner may approve their own
+// request only when no second eligible approver exists.
+var ErrDispositionSelfApprovalNotAllowed = fmt.Errorf("%w: you may approve your own request only as the owner when no other approver exists", shared.ErrForbidden)
+
+// ErrDispositionSelfApprovalNeedsReason: an owner's own approval states why.
+var ErrDispositionSelfApprovalNeedsReason = fmt.Errorf("%w: approving your own request needs a reason", shared.ErrValidation)
+
+// ErrDispositionSelfApprovalNeedsTOTP: the owner has no authenticator app,
+// so their own approval cannot be proven fresh.
+var ErrDispositionSelfApprovalNeedsTOTP = fmt.Errorf("%w: approving your own request needs an authenticator app; set one up first", shared.ErrForbidden)
+
+// ErrDispositionSelfApprovalBadCode: the authenticator code is missing,
+// wrong or already used.
+var ErrDispositionSelfApprovalBadCode = fmt.Errorf("%w: the authenticator code is missing, wrong or already used", shared.ErrForbidden)
+
 // ErrDispositionConflict: another disposition is already pending.
 var ErrDispositionConflict = fmt.Errorf("%w: a different disposition is already pending for this exposure; reject it first", shared.ErrConflict)
 
@@ -39,7 +54,8 @@ var ErrDispositionConflict = fmt.Errorf("%w: a different disposition is already 
 var ErrNoPendingDisposition = fmt.Errorf("%w: no pending disposition request", shared.ErrNotFound)
 
 // NeedsSecondApprover reports whether a disposition of an exposure of this
-// severity needs a second person.
+// severity needs a second person. Callers pass ExposureEvent.PeakSeverity(),
+// not the current severity, so a re-ingest that lowers it does not lift the rule.
 func NeedsSecondApprover(s Severity) bool {
 	return s == SeverityCritical || s == SeverityHigh
 }
@@ -114,4 +130,16 @@ type DispositionRepository interface {
 	CountEligibleApprovers(ctx context.Context, tenantID shared.ID, perms []string) (int, error)
 	// IsTenantOwner reports whether the user is an active owner.
 	IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	// RecentMemberRemoval answers the latest member suspension, removal,
+	// offboarding or membership expiry in the tenant after since (nil: none).
+	RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error)
 }
+
+// SelfApprovalRemovalCooldown: an owner may not approve their own request
+// within this long after any member was suspended or removed (removing the
+// only other approver must not open the own-approval path at once).
+const SelfApprovalRemovalCooldown = 7 * 24 * time.Hour
+
+// ErrDispositionSelfApprovalAfterRemoval: a member was suspended or removed
+// within SelfApprovalRemovalCooldown.
+var ErrDispositionSelfApprovalAfterRemoval = fmt.Errorf("%w: a member of the organization was suspended or removed in the last 7 days", shared.ErrForbidden)

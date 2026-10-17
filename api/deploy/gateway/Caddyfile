@@ -34,10 +34,16 @@
 # mode is a pair of small files under modes/. Environment placeholders
 # {$NAME:default} are substituted when the file is read.
 #
+# Platform console (RFC-022 revisions 20-21): OPENCTEM_ADMIN_SITE=port serves
+# it on https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT, 8443>, =host on
+# https://<OPENCTEM_ADMIN_HOST>, only to OPENCTEM_ADMIN_ALLOWED_CIDRS (default
+# private networks), from the console service (OPENCTEM_CONSOLE_UPSTREAM) at
+# the root of that site; the main site answers 404 for its API (admin/).
+#
 # Sensor protocol v3 gRPC binding (RFC-059): with OPENCTEM_SENSOR_GATEWAY=alpn,
 # a TLS connection that offers the sensor ALPN id openctem-sensor/3 is passed
-# through at layer 4 to the API's mTLS listener on this same port
-# (sensors/alpn.wrappers); passthrough adds a dedicated sensor host name routed
+# through at layer 4 to the API's mTLS listener (api:9443) on the main HTTPS
+# port only (sensors/alpn.wrappers); passthrough adds a dedicated sensor host name routed
 # by SNI (sensors/passthrough.wrappers). Both need the gateway image with the
 # layer4 module (deploy/gateway/Dockerfile). Default off (sensors/off.wrappers).
 # =============================================================================
@@ -55,22 +61,16 @@
 		exclude admin.api
 	}
 
+	# Every listener: the protocols and the client-address rules (servers.common).
 	servers {
-		# Sensors and browsers speak HTTP/1.1 and HTTP/2; no QUIC (UDP) listener.
-		protocols h1 h2
-		# Proxies in front of this gateway whose X-Forwarded-For is believed.
-		# Default: none (127.0.0.1 never connects from outside), so a client
-		# cannot choose its own address. Set only for the `http` mode or an L4/L7
-		# load balancer in front: space-separated CIDRs.
-		trusted_proxies static {$OPENCTEM_TRUSTED_PROXIES:127.0.0.1/32}
-		client_ip_headers X-Forwarded-For
-		# Read X-Forwarded-For right to left: the client is the right-most
-		# entry that is not one of the proxies above. The default (left-most)
-		# is whatever the client typed when the front proxy appends, and
-		# {client_ip} is what this gateway writes into X-Real-IP for the API.
-		trusted_proxies_strict
-
-		# Layer-4 routing ahead of TLS (sensor protocol v3); empty when off.
+		import servers.common
+	}
+	# The main HTTPS listener also gets the layer-4 sensor routing ahead of TLS
+	# (sensor protocol v3; empty when off). Only this one: a sensor ALPN hello
+	# on any other port (the console's site) is never passed to the API, so it
+	# cannot step around that site's client-network gate.
+	servers :443 {
+		import servers.common
 		import sensors/{$OPENCTEM_SENSOR_GATEWAY:off}.wrappers
 	}
 
@@ -156,6 +156,9 @@ import planes.caddy
 		respond 404
 	}
 
+	# With the console on its own site, it does not exist on this one.
+	import admin/{$OPENCTEM_ADMIN_SITE_FILE:off}.tenant
+
 	# The planes the gateway sends straight to the API (generated).
 	import planes
 
@@ -197,13 +200,21 @@ import planes.caddy
 	}
 }
 
-# The client address for the API's audit log, rate limits and IP allowlists.
-# Caddy already sets X-Forwarded-For/-Proto/-Host and drops any a client sent;
-# X-Real-IP is not touched by Caddy, so it is overwritten here (the API reads
-# it first, and only from SERVER_TRUSTED_PROXIES peers; see
-# pkg/httpsec/clientip.go). Responses are flushed immediately (long polls, SSE, streaming).
+# The client address for the API's audit log, rate limits and IP allowlists:
+# the gateway resolves it once ({client_ip}, above) and hands the API exactly
+# that, in both headers the API reads (pkg/httpsec/clientip.go, only from
+# SERVER_TRUSTED_PROXIES peers; X-Forwarded-For first). Caddy's own
+# X-Forwarded-For keeps a trusted front proxy's list and appends that proxy's
+# address, which the API does not know: it would record the proxy (e.g. the
+# tunnel connector) as the client. So both are overwritten, and the
+# front-proxy headers the gateway may read are not passed on (a client cannot
+# hand the API a second opinion). Responses are flushed immediately (long
+# polls, SSE, streaming).
 (forwarded) {
+	header_up X-Forwarded-For {client_ip}
 	header_up X-Real-IP {client_ip}
+	header_up -Cf-Connecting-Ip
+	header_up -True-Client-Ip
 	flush_interval -1
 }
 
@@ -220,3 +231,6 @@ import planes.caddy
 }
 
 import modes/{$OPENCTEM_TLS_MODE}.site
+
+# The platform console's own site, or nothing (OPENCTEM_ADMIN_SITE).
+import admin/{$OPENCTEM_ADMIN_SITE_FILE:off}.site

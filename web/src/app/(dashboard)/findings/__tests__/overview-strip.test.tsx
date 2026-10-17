@@ -54,6 +54,7 @@ vi.mock('@/features/findings/api/use-findings-api', async (orig) => {
   const actual = await orig<typeof import('@/features/findings/api/use-findings-api')>()
   return {
     buildFindingStatsUrl: actual.buildFindingStatsUrl,
+    useFindingApi: () => ({ data: undefined }),
     useFindingsApi: (filters: Record<string, unknown>) => {
       listCalls.push(filters)
       return {

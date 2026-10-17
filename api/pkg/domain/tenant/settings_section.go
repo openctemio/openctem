@@ -65,6 +65,8 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionLicensePolicy:       &s.LicensePolicy,
 		SectionScanGovernance:      &s.ScanGovernance,
 		SectionCycles:              &s.Cycles,
+		SectionSharedSensors:       &s.SharedSensors,
+		SectionFindingApprovals:    &s.FindingApprovals,
 	}
 }
 
@@ -207,7 +209,7 @@ func SettingsFromMapChecked(m map[string]any) (Settings, map[string]error) {
 		}
 	}
 	if _, ok := m[SectionRiskScoring]; !ok {
-		settings.RiskScoring = LegacyRiskScoringSettings()
+		settings.RiskScoring = DefaultRiskScoringPreset()
 	}
 	return settings, errs
 }

@@ -3,8 +3,8 @@
 A suppression rule is an organization's decision that a class of findings is a
 false positive or an accepted risk: a tool rule id (exact, or a prefix ending
 in `*`), optionally narrowed to a tool, a file path glob (`*`, `**`) and one
-asset. It is requested by one person and approved by another, and it can
-expire. Tables: `suppression_rules`, `finding_suppressions` (which rule
+asset. It is requested by one person and approved by another, and it always
+expires. Tables: `suppression_rules`, `finding_suppressions` (which rule
 suppressed which finding), `suppression_rule_audit` (the rule's own trail).
 
 Code: `pkg/domain/suppression` (entity, matcher `Rule.Matches` /
@@ -16,11 +16,66 @@ routes in `registerSuppressionRoutes` (`internal/infra/http/routes/scanning.go`)
 
 | Step | Who | What happens |
 |---|---|---|
-| Request | `findings:suppressions:write` | A pending rule. An asset-bound rule must name an asset the requester may see. |
+| Request | `findings:suppressions:write` | A pending rule with a required `reason_code` (the finding closure reason catalog of its type: a false-positive justification for `false_positive`, an accepted-risk reason for `accepted_risk` and `wont_fix`) and a required `description` (the note; at least 20 characters for the `security` and `dual` tiers). The approval policy gives it a `tier` and `approvals_required` (below). An asset-bound rule must name an asset the requester may see. The rule has an end (`expires_at`): 90 days when none is given, at most 365 days ahead; the end cannot be removed. Renewal is a new rule, reviewed and approved again. |
 | Preview | `findings:suppressions:approve` | `GET /api/v1/suppressions/{id}/preview` returns `{matching_open_findings, capped, limit}`: the open findings an approval would close now. |
-| Approve | `findings:suppressions:approve` | Four-eyes: the approver is not the requester, unless the owner is the only eligible approver (audited Critical). The request names the `reviewed_updated_at` it approves; a rule edited since is refused (409). The approval closes the open findings the rule matches (below). |
+| Request | `findings:suppressions:write` | A pending rule. An asset-bound rule must name an asset the requester may see. The rule has an end (`expires_at`): 90 days when none is given, at most 365 days ahead; the end cannot be removed. Renewal is a new rule, reviewed and approved again. |
+| Preview | `findings:suppressions:approve` | `GET /api/v1/suppressions/{id}/preview` returns `{matching_open_findings, capped, limit, in_scope_findings, sample}`: the open findings an approval would close now, how many of them are on assets the caller's data scope covers, and the first 10 of those (title, severity, asset, path; never evidence). The sample is empty unless the caller also holds `findings:read`, and a secret finding has no title in it (rule id and path only). |
+| Approve | `findings:suppressions:approve` | Four-eyes: the approver is not the requester, unless the owner is the only eligible approver and sends `self_approval_reason` and a fresh `totp_code` from their authenticator app (audited Critical; a refused own approval is audited High as `suppression_rule.self_approval_refused`). The request names the `reviewed_updated_at` it approves; a rule edited since is refused (409). The approval closes the open findings the rule matches (below). |
 | Reject | `findings:suppressions:approve` | The rule never applies. |
 | Expire / delete | data-expiration controller / `findings:suppressions:delete` | The rule's suppressions are lifted (below). |
+
+## Approval policy
+
+Rules follow the organization's approval policy (RFC-111,
+`pkg/domain/suppression/policy.go`, `internal/app/finding/approval_rule_policy.go`):
+
+- **Tier** from the worst open finding the rule matches now (at most
+  `MaxFindingsAppliedOnApprove`): a false-positive rule is `peer` for standard
+  findings and `security` for high and critical by default (floor `peer`; a
+  rule decides future findings too, so it is never `single`); an accepted-risk
+  or won't-fix rule is `peer` / `security` / `dual` (floors `peer` /
+  `security` / `security`). The organization's policy may raise any cell.
+- **Who approves:** members with `findings:suppressions:approve` (owners and
+  admins included), never the requester (except the lone-owner path above) and
+  never an owner of the asset of a matched finding or of the rule's asset.
+  The security pool and its fallback work as for finding requests.
+- **Sign-offs:** each approval is a row in `approval_signoffs`
+  (`subject_type = suppression_rule`); the last required one approves the rule
+  and closes its findings in the same transaction (rule row locked). A partial
+  approval answers 200 with the rule still `pending` and
+  `approvals_collected` / `approvals_required`, recorded as `signed` in the
+  rule's trail and `suppression_rule.signed` in the audit log. An edit of the
+  rule voids earlier sign-offs (only sign-offs made after the rule's
+  `updated_at` count; older ones are removed at the next sign-off).
+- `security` and `dual` approvals need the approver's recent
+  re-authentication (403 `STEP_UP_REQUIRED`). Refusals answer 403
+  `APPROVER_NOT_ELIGIBLE` with `details.reason` or 409 `NO_ELIGIBLE_APPROVER`
+  and are audited `suppression_rule.approval_refused`.
+- An accepted-risk or won't-fix rule's end must be within the acceptance cap
+  of the worst finding it matches at approval (the approval is refused
+  otherwise; edit the end).
+- CI inline-ignore requests are created with `reason_code = risk_accepted`.
+
+## Every rule ends
+
+A rule hides findings from the backlog and the CI gate, so a rule that never
+ends hides them for good. The domain gives every rule an end
+(`suppression.RuleEnd`: default `DefaultRuleDuration` = 90 days, at most
+`MaxRuleDuration` = 365 days), the database refuses a row without one
+(`chk_suppression_rules_expires_at_set`, with a 90-day column default for
+writers that name none, such as CI inline-ignore requests), and the expiry job
+lifts the rule's suppressions when it passes.
+
+Rules made before the end was required were given 90 days from the upgrade by
+migration `suppression_rule_end_backfill`; the pending and approved ones carry
+a review flag (`review_flagged_at`, `review_reason = no_end_date`), shown as a
+"Review" badge in the list and a callout in the rule's detail, so an approver
+looks at them again. An edit of a pending rule clears the flag; for an approved
+rule (which cannot be edited) an approver clears it with
+`POST /api/v1/suppressions/{id}/reviewed` (`findings:suppressions:approve`,
+409 when not flagged): the rule keeps its end, the rule's trail records the
+cleared flag and the tenant audit log has `suppression_rule.reviewed` with the
+flag before and after.
 
 ## Where an active rule applies
 
@@ -44,11 +99,11 @@ routes in `registerSuppressionRoutes` (`internal/infra/http/routes/scanning.go`)
 
 - Open work only: `vulnerability.SuppressionApplyFromStatuses(disposition)`,
   the active statuses the platform may move to that disposition. A
-  false-positive rule closes `new`, `confirmed`, `in_progress`, `fix_applied`
-  and `not_observed`; an accepted-risk rule closes `new`, `confirmed` and
-  `not_observed` and leaves work in progress alone (someone decided to fix it).
+  false-positive rule closes `new`, `confirmed`, `in_progress` and
+  `fix_applied`; an accepted-risk rule closes `new` and `confirmed` and leaves
+  work in progress alone (someone decided to fix it).
 - Never: findings already `false_positive`, `accepted`, `duplicate`,
-  `resolved` or `validated_fixed`; findings a person reported (sources
+  or `resolved`; findings a person reported (sources
   `pentest`, `manual`, `bug_bounty`, `red_team`); other organizations'
   findings; findings of other assets when the rule is asset-bound; findings
   without a file path when the rule has a path condition.
@@ -78,11 +133,18 @@ A finding someone has moved since is left alone.
 - Tenant: every query carries the rule's `tenant_id`; the rule is loaded by
   tenant and id, so another organization's rule is 404 for both the preview and
   the approval. Tests: `suppression_apply_db_test.go` (cross-tenant negative).
-- Data scope: approval acts organization-wide, so the preview count is
+- Data scope: approval acts organization-wide, so `matching_open_findings` is
   organization-wide too. It is a number, never a finding, and only people who
-  may approve see it (`authorization-matrix.md`).
+  may approve see it (`authorization-matrix.md`). The sample and
+  `in_scope_findings` are limited to the caller's data scope (the same
+  `FilterForCaller` as every by-id read): a finding on an asset the caller
+  cannot see is counted in the organization total and never listed. Without a
+  scope filter wired the sample is empty (fail closed). Tests:
+  `suppression_preview_sample_db_test.go` (scope and cross-tenant negatives).
 - Separation of duties: the requester cannot approve their own rule while
-  someone else can; the approval pins the reviewed version, so a rule widened
+  someone else can; a lone owner approves their own rule only with a reason
+  and a fresh authenticator code, never as a side effect of a plain approve,
+  and not within 7 days of any member being suspended, offboarded or removed; the approval pins the reviewed version, so a rule widened
   after review cannot be approved by mistake.
 - Abuse: a broad rule (for example rule id `*`) closes at most
   the cap per approval, and every change is attributable (activity per finding,

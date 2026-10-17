@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented; repository entries and CI trusts 2026-10-15, §17: implemented); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -1425,3 +1425,77 @@ platform default must not widen.
 | a job escapes the cap through settings | the re-check reads both config maps; conflicting values are refused; the clamp's output is checked against the profile before hand-out |
 | cross-tenant | every lookup (records, assets, relations, settings, entries) is pinned to the caller's tenant; another tenant's asset is never admitted |
 | Strict organizations | forced off |
+
+## 17. Amendment 2026-10-15: repository entries and CI trusts
+
+Owner decision, 2026-10-15: when CI/CD adds a trust, the repositories it trusts join scope. Trusting
+`gitlab.com/acme` adds `gitlab.com/acme/*`. With scan approval off there is no extra step, and proof is evidence,
+not a gate. The owner also decided that self-hosted code hosts may be claimed whole.
+
+### 17.1 Repository entries
+
+- **Form.** A repository entry is `host/namespace/repo`, `host/namespace/*` (every repository below the namespace,
+  at any depth, so GitLab subgroups are included) or `host/*` (every repository on a self-hosted host). It is
+  stored in canonical form: lower case, without a scheme, credentials or `.git`. `/**` is written as `/*`.
+- **Matching** is per path segment: `gitlab.com/acme/*` covers `gitlab.com/acme` and `gitlab.com/acme/sub/app`,
+  never `gitlab.com/acme-evil/app`. Repository exclusions use the same matcher.
+- **Shared code hosts** (github.com, gitlab.com, bitbucket.org, dev.azure.com, codeberg.org and the others in
+  `pkg/domain/scope/public_code_hosts.txt`, plus the operator's `SCOPE_PUBLIC_CODE_HOSTS_EXTRA`):
+  - a whole-host entry is refused with `SHARED_CODE_HOST`;
+  - repositories there are judged by repository entries only, so a domain entry for the host (`github.com`)
+    claims nobody's repositories.
+  - On any other host, an entry for the host covers its repositories, and `host/*` is allowed.
+  - The deny list applies to code hosts.
+- **Verdict.** A repository asset gets a scope verdict, `in_scope` with the covering entry or `out_of_scope`,
+  instead of `not_applicable`.
+
+### 17.2 A CI trust's managed entries
+
+- **Which trusts.** With `manage_scope` ("Trust and add to scope"), a GitHub trust (github.com or GitHub Enterprise
+  Server) or a GitLab trust (gitlab.com or self-managed) claims `<host>/<owner>/*` per owner rule. Per repository
+  rule it claims `<host>/<repo>`, or `<host>/<prefix>/*` for a rule with a wildcard. Other providers name the code
+  host per run and claim nothing.
+- **Who and how.**
+  - Only a caller holding `attack_surface:scope:write` turns it on (`403 MANAGE_SCOPE_FORBIDDEN` otherwise). For
+    anyone else it defaults to off.
+  - Such a caller may rename or narrow a scope-managing trust, never widen it.
+  - The entries are created as that person, through the same decision as a hand-added entry (step-up, approval
+    right, approval mode). With scan approval off they are in effect at once. Under Strict, an approver's entries
+    wait for their approvals, and anyone else's are not added; the refusal is audited.
+- **Linking and lifecycle.**
+  - An equal existing entry is linked, never duplicated, and stays its owner's.
+  - Entries the trust created (origin `ci_trust`) follow it: an edit moves them, disabling or deleting the trust
+    retires them, and overlapping trusts share one entry until the last goes.
+  - A managed entry refuses tier, expiry, reason, discovery, activate, deactivate and delete through scope
+    (`409 CI_TRUST_MANAGED`). To keep one repository out, add an exclusion.
+  - An existing entry a person deletes is recorded on the link and is never created again by the trust.
+- **Evidence.** The first verified, tenant-bound pipeline run under a pattern is recorded (time, run, repository,
+  owner id) and shown on the trust and the entry. A legacy-audience run never counts. A run never creates an entry;
+  it may only link an existing equal one.
+- **Opt-in governance.** The scope setting `ci_scope_requires_proof` (default off) keeps new managed entries
+  inactive until such a run.
+- **Existing trusts** keep `manage_scope` off. An administrator turns it on per trust. `ci-trust-scope-plan` is the
+  read-only dry run of what that would do.
+- **What a repository entry authorizes.** Nothing about network probes changes. Platform code scanning
+  (RFC-091) clones only with a credential from the organization's own code-host connection; a trust or an entry
+  never yields one.
+
+### 17.3 Data
+
+Migrations `002193_ci_trust_managed_scope` (renumbered at merge as needed) add:
+- `ci_trust_configs.manage_scope`;
+- the origin `ci_trust`;
+- the table `scope_target_ci_trusts` (tenant, trust, pattern, target, evidence, `target_removed_at`), with
+  composite `(tenant_id, …)` foreign keys.
+
+### 17.4 Threats
+
+| Threat | Control |
+|---|---|
+| A whole shared host claimed (`github.com/*`), or claimed through a domain entry | `SHARED_CODE_HOST`; repository-only judging on shared hosts |
+| A look-alike namespace | Per-segment matching |
+| Scope widened through CI permissions alone | `manage_scope` needs scope write; entries are created as the caller under the normal decision |
+| Approval governance bypassed | Same decision path as a hand-added entry |
+| An entry a person deleted comes back | Recorded on the link; runs and trust changes never create it again |
+| Another organization's public namespace trusted | The entry is labelled with no verified run; opt-in proof keeps it inactive; no clone credential, no network authority |
+| Cross-tenant links or evidence | Tenant-filtered queries, composite foreign keys, evidence only from the tenant's own verified exchange |

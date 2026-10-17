@@ -24,6 +24,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -123,6 +124,8 @@ type Service struct {
 	hook     ApprovalHook
 	log      *logger.Logger
 
+	adminAudit AdminAuditWriter
+
 	platformKey ed25519.PrivateKey
 	codeKey     []byte
 	maxOpen     int
@@ -214,6 +217,11 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 	if err != nil {
 		return nil, ErrInvalid
 	}
+	// An instance enrollment token enrolls a new shared sensor: never with
+	// an expectation code or a re-pair.
+	if req.EnrollmentToken != "" && (req.Code != "" || req.SensorID != "") {
+		return nil, ErrInvalid
+	}
 	var repair *shared.ID
 	if req.SensorID != "" {
 		id, err := shared.IDFromString(req.SensorID)
@@ -249,6 +257,10 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 	}
 	userCode := ""
 	switch {
+	case req.EnrollmentToken != "":
+		if err := s.startInstance(ctx, req.EnrollmentToken, p); err != nil {
+			return nil, err
+		}
 	case code != "":
 		ok, err := s.repo.AttachToExpectationUnscoped(ctx, s.codeHash(code), p, now)
 		if err != nil {
@@ -311,25 +323,35 @@ func (s *Service) Reveal(ctx context.Context, id shared.ID, thumbprint string, r
 		return ErrInvalid
 	}
 	now := s.now()
+	if p.IsInstance() && p.Status == sensordom.PairingApproved && hmac.Equal(p.SensorNonce, nonce) {
+		return nil // a retried reveal of a request the token already approved
+	}
 	if p.Status != sensordom.PairingPending || !now.Before(p.ExpiresAt) {
 		return ErrNotFound
 	}
 	if p.Revealed() {
-		if hmac.Equal(p.SensorNonce, nonce) {
-			return nil // a retried reveal
+		if !hmac.Equal(p.SensorNonce, nonce) {
+			return ErrNotFound
 		}
-		return ErrNotFound
+		// A retried reveal (approving a token-bound request again is a
+		// no-op once it is approved).
+	} else {
+		if err := pairing.CheckCommitment(p.Commitment, nonce); err != nil {
+			return ErrInvalid
+		}
+		sas := pairing.ComputeSAS(p.PublicKey, s.PlatformPublicKey(), nonce, p.PlatformNonce).String()
+		ok, err := s.repo.RevealUnscoped(ctx, id, thumbprint, nonce, sas, now)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrNotFound
+		}
+		p.SensorNonce, p.SAS = nonce, sas
 	}
-	if err := pairing.CheckCommitment(p.Commitment, nonce); err != nil {
-		return ErrInvalid
-	}
-	sas := pairing.ComputeSAS(p.PublicKey, s.PlatformPublicKey(), nonce, p.PlatformNonce).String()
-	ok, err := s.repo.RevealUnscoped(ctx, id, thumbprint, nonce, sas, now)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return ErrNotFound
+	if p.IsInstance() {
+		// The token was the administrator's approval.
+		return s.approveInstance(ctx, p)
 	}
 	return nil
 }
@@ -351,9 +373,12 @@ func (s *Service) Status(ctx context.Context, id shared.ID, thumbprint string) (
 	case sensordom.PairingExpecting:
 		out.Status = pairing.StatusPending
 	}
-	if (p.Status == sensordom.PairingApproved || p.Status == sensordom.PairingCompleted) && p.TenantID != nil && p.SensorID != nil {
-		ident := &pairing.Identity{SensorID: p.SensorID.String(), TenantID: p.TenantID.String(), Name: p.RequestedName,
+	if (p.Status == sensordom.PairingApproved || p.Status == sensordom.PairingCompleted) && bound(p) {
+		ident := &pairing.Identity{SensorID: p.SensorID.String(), TenantID: tenantString(p), Name: p.RequestedName,
 			KeyID: p.Thumbprint, Repair: p.RepairSensorID != nil}
+		if p.IsInstance() {
+			ident.Scope = pairing.ScopeInstance
+		}
 		if p.ApprovedAt != nil {
 			ident.ApprovedAt = *p.ApprovedAt
 		}
@@ -366,14 +391,14 @@ func (s *Service) Status(ctx context.Context, id shared.ID, thumbprint string) (
 // activates the key.
 func (s *Service) Confirm(ctx context.Context, id shared.ID, thumbprint string, req pairing.ConfirmRequest) (*pairing.StatusResponse, error) {
 	p, err := s.repo.GetForKeyUnscoped(ctx, id, thumbprint)
-	if err != nil || p.TenantID == nil || p.SensorID == nil {
+	if err != nil || !bound(p) {
 		return nil, ErrNotFound
 	}
 	sig, err := pairing.DecodeFixed(req.Signature, ed25519.SignatureSize)
 	if err != nil || req.SensorID != p.SensorID.String() || req.KeyID != thumbprint {
 		return nil, ErrInvalid
 	}
-	msg := pairing.ConfirmTranscript(id.String(), p.SensorID.String(), p.TenantID.String(), thumbprint)
+	msg := pairing.ConfirmTranscript(id.String(), p.SensorID.String(), tenantString(p), thumbprint)
 	if !ed25519.Verify(ed25519.PublicKey(p.PublicKey), msg, sig) {
 		return nil, ErrInvalid
 	}
@@ -388,10 +413,30 @@ func (s *Service) Confirm(ctx context.Context, id shared.ID, thumbprint string, 
 	return s.Status(ctx, id, thumbprint)
 }
 
+// bound reports whether an approved request names its sensor and owner: a
+// tenant, or none for a shared sensor enrolled with an instance token.
+func bound(p *sensordom.Pairing) bool {
+	return p.SensorID != nil && (p.TenantID != nil) != p.IsInstance()
+}
+
+// tenantString is the tenant of the identity ("" for a shared sensor).
+func tenantString(p *sensordom.Pairing) string {
+	if p.TenantID == nil {
+		return ""
+	}
+	return p.TenantID.String()
+}
+
 func (s *Service) onCompleted(ctx context.Context, p *sensordom.Pairing) {
 	details := map[string]any{"key_fingerprint": pairing.KeyFingerprint(p.Thumbprint), "sas": p.SAS, "pairing_id": p.ID.String()}
 	if p.SourceIP != nil {
 		details["source_ip"] = p.SourceIP.String()
+	}
+	if p.IsInstance() {
+		// A shared sensor has no tenant timeline or tenant audit log.
+		s.writeAdminAudit(ctx, nil, actorSensor, admin.AuditActionSharedSensorConfirmed, admin.ResourceTypeSensor,
+			p.SensorID, p.RequestedName, ipString(p), "", details)
+		return
 	}
 	if s.events != nil {
 		s.events.RecordEvents(ctx, []sensordom.Event{sensordom.NewEvent(*p.TenantID, *p.SensorID, sensordom.EventPairingCompleted, s.now(),
@@ -699,7 +744,7 @@ func (s *Service) sensorInTenant(ctx context.Context, tenantID, id shared.ID) bo
 		return false
 	}
 	sen, err := s.sensors.GetByTenantAndID(ctx, tenantID, id)
-	return err == nil && sen != nil && !sen.IsPlatformSensor && sen.Status != sensordom.SensorStatusRevoked
+	return err == nil && sen != nil && !sen.IsShared() && sen.Status != sensordom.SensorStatusRevoked
 }
 
 func (s *Service) auditContext(a Actor) auditapp.AuditContext {

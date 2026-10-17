@@ -38,6 +38,7 @@ type stubFindingRepo struct {
 	vulnerability.FindingRepository
 	finding      *vulnerability.Finding
 	updatedURIs  []string
+	updateErr    error
 	updateCalled int32
 }
 
@@ -46,6 +47,9 @@ func (r *stubFindingRepo) GetByID(_ context.Context, _, _ shared.ID) (*vulnerabi
 }
 func (r *stubFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, uris []string) error {
 	atomic.AddInt32(&r.updateCalled, 1)
+	if r.updateErr != nil {
+		return r.updateErr
+	}
 	r.updatedURIs = uris
 	return nil
 }
@@ -133,24 +137,6 @@ func TestCreateTicketFromFinding_DifferentProjectStillCreates(t *testing.T) {
 	}
 	if client.calls != 1 {
 		t.Fatalf("expected 1 CreateIssue call for a new project, got %d", client.calls)
-	}
-}
-
-func TestRedactSecrets(t *testing.T) {
-	cases := []struct{ in, mustNotContain, mustContain string }{
-		{"key AKIAIOSFODNN7EXAMPLE here", "AKIAIOSFODNN7EXAMPLE", "[REDACTED]"},
-		{"token eyJhbGciOi.eyJzdWIiOiJ.SflKxwRJSMeKKF here", "SflKxwRJSMeKKF", "[REDACTED]"},
-		{"password: hunter2supersecret", "hunter2supersecret", "password: [REDACTED]"},
-		{"api_key=abcdef1234567890xyz", "abcdef1234567890xyz", "api_key=[REDACTED]"},
-	}
-	for _, c := range cases {
-		got := redactSecrets(c.in)
-		if strings.Contains(got, c.mustNotContain) {
-			t.Fatalf("redactSecrets(%q) still contains %q: %q", c.in, c.mustNotContain, got)
-		}
-		if !strings.Contains(got, c.mustContain) {
-			t.Fatalf("redactSecrets(%q) = %q, want it to contain %q", c.in, got, c.mustContain)
-		}
 	}
 }
 

@@ -9,12 +9,35 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-type fakeReopenRepo struct{ f *vulnerability.Finding }
+type fakeReopenRepo struct {
+	f       *vulnerability.Finding
+	updates int
+	reviews []string
+	// changed: the finding moved on after it was read (the guarded UPDATE
+	// matches nothing).
+	changed bool
+}
+
+func (r *fakeReopenRepo) ReopenResolved(_ context.Context, _, _ shared.ID) (bool, error) {
+	if r.changed || r.f.Status() != vulnerability.FindingStatusResolved {
+		return false, nil
+	}
+	r.updates++
+	return true, r.f.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil)
+}
 
 func (r *fakeReopenRepo) GetByID(_ context.Context, _, _ shared.ID) (*vulnerability.Finding, error) {
 	return r.f, nil
 }
-func (r *fakeReopenRepo) Update(_ context.Context, _ *vulnerability.Finding) error { return nil }
+func (r *fakeReopenRepo) Update(_ context.Context, _ *vulnerability.Finding) error {
+	r.updates++
+	return nil
+}
+
+func (r *fakeReopenRepo) RaiseDecisionReview(_ context.Context, _, _ shared.ID, reason string, _ map[string]any) (bool, error) {
+	r.reviews = append(r.reviews, reason)
+	return true, nil
+}
 
 type capturingAuditor struct{ last audit.AuditEvent }
 
@@ -66,5 +89,47 @@ func TestReopenForIOCMatch_AuditsTheActualNewStatus(t *testing.T) {
 	if got != string(vulnerability.FindingStatusConfirmed) {
 		t.Errorf("audit new_status = %q, want %q — the audit trail must match the "+
 			"actual transition, not a different status", got, vulnerability.FindingStatusConfirmed)
+	}
+}
+
+// A decision a person made (false positive, accepted risk, duplicate) is
+// never reversed by an IOC match: the finding keeps its status, nothing is
+// written to it, and a review flag is raised instead.
+func TestReopenForIOCMatch_DecisionsAreFlaggedNotReopened(t *testing.T) {
+	tenantID := shared.NewID()
+	for _, decided := range []vulnerability.FindingStatus{
+		vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusAccepted, vulnerability.FindingStatusDuplicate,
+	} {
+		f := vulnerability.ReconstituteFinding(vulnerability.FindingData{
+			ID: shared.NewID(), TenantID: tenantID, AssetID: shared.NewID(), Source: vulnerability.FindingSourceVA,
+			ToolName: "tool", Severity: vulnerability.SeverityHigh, Message: "msg", Status: decided,
+		})
+		repo := &fakeReopenRepo{f: f}
+		reopened, err := NewFindingReopener(repo, &capturingAuditor{}).ReopenForIOCMatch(context.Background(), tenantID, f.ID(), "ioc hit")
+		if err != nil {
+			t.Fatalf("%s: %v", decided, err)
+		}
+		if reopened || f.Status() != decided || repo.updates != 0 {
+			t.Errorf("%s: reopened=%v status=%s updates=%d, want the decision untouched", decided, reopened, f.Status(), repo.updates)
+		}
+		if len(repo.reviews) != 1 || repo.reviews[0] != "ioc_match" {
+			t.Errorf("%s: reviews = %v, want one ioc_match flag", decided, repo.reviews)
+		}
+	}
+}
+
+// A finding someone changed after the correlator read it is never
+// overwritten: the guarded reopen matches nothing and nothing is audited.
+func TestReopenForIOCMatch_LostUpdateGuard(t *testing.T) {
+	tenantID := shared.NewID()
+	f := vulnerability.ReconstituteFinding(vulnerability.FindingData{
+		ID: shared.NewID(), TenantID: tenantID, AssetID: shared.NewID(), Source: vulnerability.FindingSourceVA,
+		ToolName: "tool", Severity: vulnerability.SeverityHigh, Message: "msg", Status: vulnerability.FindingStatusResolved,
+	})
+	auditor := &capturingAuditor{}
+	repo := &fakeReopenRepo{f: f, changed: true}
+	reopened, err := NewFindingReopener(repo, auditor).ReopenForIOCMatch(context.Background(), tenantID, f.ID(), "ioc hit")
+	if err != nil || reopened || repo.updates != 0 || auditor.last.Action != "" {
+		t.Errorf("reopened=%v err=%v updates=%d audit=%q, want nothing", reopened, err, repo.updates, auditor.last.Action)
 	}
 }

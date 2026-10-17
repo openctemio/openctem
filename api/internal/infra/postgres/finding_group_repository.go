@@ -61,10 +61,14 @@ const findingSeverityRank = `CASE f.severity
 				WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5
 			END`
 
+// statusCountCols counts a group's findings per bucket. Every open status
+// lands in exactly one of open, in_progress and fix_applied: open is the open
+// set (OpenStatuses) less the two work buckets, so no open status vanishes.
 func statusCountCols() string {
 	return `
 		COUNT(*) as total,
-		COUNT(*) FILTER (WHERE f.status IN ('new','confirmed')) as open,
+		COUNT(*) FILTER (WHERE ` + vulnerability.OpenStatusSQL("f.status") + `
+			AND f.status <> 'in_progress' AND f.status <> 'fix_applied') as open,
 		COUNT(*) FILTER (WHERE f.status = 'in_progress') as in_progress,
 		COUNT(*) FILTER (WHERE f.status = 'fix_applied') as fix_applied,
 		COUNT(*) FILTER (WHERE f.status = 'resolved') as resolved,
@@ -792,13 +796,13 @@ func (r *FindingRepository) groupByField(
 func (r *FindingRepository) BulkUpdateStatusByFilter(
 	ctx context.Context, tenantID shared.ID,
 	filter vulnerability.FindingFilter, status vulnerability.FindingStatus,
-	resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod,
+	resolution string, resolvedBy *shared.ID, closure vulnerability.Closure,
 ) (int64, error) {
-	methodArg, err := resolutionMethodArg(status, method)
+	reasonArg, verificationArg, err := closureArgs(status, closure)
 	if err != nil {
 		return 0, err
 	}
-	filterWhere, filterArgs := buildFilterWhere(filter, 7)
+	filterWhere, filterArgs := buildFilterWhere(filter, 8)
 	extraWhere := ""
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
@@ -814,16 +818,16 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 
 	query := fmt.Sprintf(`
 		UPDATE findings f
-		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5, resolved_at = %s, updated_at = NOW()
-		WHERE f.tenant_id = $1 AND f.source != 'pentest' AND f.status = ANY($6) %s
+		SET status = $2, resolution = $3, resolved_by = $4, closure_reason = $5, verification = $6, resolved_at = %s, updated_at = NOW()
+		WHERE f.tenant_id = $1 AND f.source != 'pentest' AND f.status = ANY($7) %s
 	`, resolvedAt, extraWhere)
 
-	// $6: the statuses a person may move a finding from to status (the
+	// $7: the statuses a person may move a finding from to status (the
 	// lifecycle); a matching finding in any other status is left alone.
-	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg,
+	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), reasonArg, verificationArg,
 		pq.Array(statusStrings(vulnerability.UserFromStatuses(status)))}, filterArgs...)
 
-	result, err := r.db.ExecContext(ctx, query, args...)
+	result, err := r.db.execStatusWrite(ctx, query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("bulk update status by filter: %w", err)
 	}
@@ -865,7 +869,7 @@ func (r *FindingRepository) FindRelatedCVEs(
 		WHERE f.tenant_id = $1
 			AND f.cve_id != $2
 			AND f.cve_id IS NOT NULL
-			AND f.status IN ('new', 'confirmed', 'in_progress')
+			AND `+vulnerability.OpenStatusSQL("f.status")+`
 			AND f.source != 'pentest'
 			%s
 		GROUP BY f.cve_id

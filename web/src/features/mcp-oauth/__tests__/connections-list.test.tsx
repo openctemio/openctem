@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { ConnectionsList } from '../components/connections-list'
-import { parseHosts } from '../components/mcp-policy-card'
+import { normalizePublisherHost } from '../lib/use-mcp-labels'
 import type { McpConnection } from '../api/connections'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -34,7 +34,7 @@ describe('ConnectionsList', () => {
       />
     )
     expect(screen.getByText('Desk Assistant')).toBeInTheDocument()
-    expect(screen.getByText('assistant.example')).toBeInTheDocument()
+    expect(screen.getByText('Published by assistant.example')).toBeInTheDocument()
     expect(screen.getByText('Findings')).toBeInTheDocument()
     // The owner column is the organization view only.
     expect(screen.queryByText('Alice')).not.toBeInTheDocument()
@@ -75,12 +75,25 @@ describe('ConnectionsList', () => {
   })
 })
 
-describe('parseHosts', () => {
-  it('splits lines and commas and lower-cases', () => {
-    expect(parseHosts(' A.example\nb.example, c.example ,,')).toEqual([
-      'a.example',
-      'b.example',
-      'c.example',
-    ])
+describe('normalizePublisherHost', () => {
+  it('keeps a host name, lower-cased', () => {
+    expect(normalizePublisherHost(' Desk.Example.NET ')).toBe('desk.example.net')
+  })
+  it('takes the host of a pasted address', () => {
+    expect(normalizePublisherHost('https://desk.example.net/oauth/client.json')).toBe(
+      'desk.example.net'
+    )
+  })
+  it('refuses what the API refuses', () => {
+    for (const bad of [
+      '',
+      'localhost',
+      '*.example.com',
+      'a.example/x',
+      'a b.example',
+      'x'.repeat(254) + '.com',
+    ]) {
+      expect(normalizePublisherHost(bad)).toBeNull()
+    }
   })
 })

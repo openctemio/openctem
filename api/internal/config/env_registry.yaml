@@ -21,7 +21,7 @@
 # Retired and removed names live in config.go (retiredEnv, removedEnv).
 
 # Prefixes the API owns: any variable under them must be listed here.
-prefixes: [APP_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_]
+prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_, SELF_SERVICE_, INTERNAL_API_, ACCOUNT_PORTAL_, VERSION_CHECK_, SYSTEM_]
 
 vars:
   - name: APP_ENV
@@ -36,13 +36,100 @@ vars:
     group: "Application"
     type: string
     default: "openctem"
-    description: "Application name used in logs and in email templates."
+    description: "Technical name of the service in logs. The product name users see is `BRAND_NAME`."
   - name: APP_URL
     component: api
     group: "Application"
     type: string
     example: "http://localhost:8080"
     description: "Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment."
+  - name: MANAGED_SERVICE
+    component: api
+    group: "Application"
+    type: bool
+    default: "false"
+    description: "Set to  only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
+  - name: DEPLOYMENT_REGION
+    component: api
+    group: "Application"
+    type: string
+    description: "Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Unset: not named."
+  - name: BRAND_FILE
+    component: api
+    group: "Brand"
+    type: path
+    description: "Optional YAML file with the brand settings (`name`, `short_name`, `primary_color`, `docs_url`, `website_url`, `support_url`, `support_email`, `terms_url`, `privacy_url`, `email_footer`, `powered_by`, `logo_light_file`, `logo_dark_file`, `favicon_file`; image paths relative to the file). A `BRAND_*` variable wins over the file. See `docs/architecture/brand.md`."
+  - name: BRAND_NAME
+    component: api
+    group: "Brand"
+    type: string
+    description: "Default `OpenCTEM`. Product name shown in the console, emails, reports and notifications (at most 64 characters; no markup characters)."
+  - name: BRAND_SHORT_NAME
+    component: api
+    group: "Brand"
+    type: string
+    description: "Short product name for narrow places (the sidebar, the browser tab). Defaults to `BRAND_NAME`."
+  - name: BRAND_PRIMARY_COLOR
+    component: api
+    group: "Brand"
+    type: string
+    description: "Primary color as `#rrggbb`. Unset keeps the theme color."
+  - name: BRAND_DOCS_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Default `https://docs.openctem.io`. Documentation site (https). Documentation links in the console and API messages keep their path on this origin."
+  - name: BRAND_WEBSITE_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Default `https://openctem.io`. Product website (https)."
+  - name: BRAND_SUPPORT_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Support page (https). Unset hides the support link."
+  - name: BRAND_SUPPORT_EMAIL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Default `info@openctem.io`. Support email address."
+  - name: BRAND_TERMS_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Terms of service (https). The admin console legal settings win when set there."
+  - name: BRAND_PRIVACY_URL
+    component: api
+    group: "Brand"
+    type: string
+    description: "Privacy policy (https). The admin console legal settings win when set there."
+  - name: BRAND_EMAIL_FOOTER
+    component: api
+    group: "Brand"
+    type: string
+    description: "Plain-text line added to the footer of every email (at most 500 characters)."
+  - name: BRAND_POWERED_BY
+    component: api
+    group: "Brand"
+    type: bool
+    default: "true"
+    description: "Show a \"Powered by OpenCTEM\" credit next to a brand other than OpenCTEM."
+  - name: BRAND_LOGO_LIGHT_FILE
+    component: api
+    group: "Brand"
+    type: path
+    description: "Logo for light backgrounds: PNG, JPEG, WebP or SVG, at most 512 KiB. SVG is reduced to drawing elements; a file with script, external references or event handlers is refused at startup. Unset keeps the built-in logo."
+  - name: BRAND_LOGO_DARK_FILE
+    component: api
+    group: "Brand"
+    type: path
+    description: "Logo for dark backgrounds (same rules as `BRAND_LOGO_LIGHT_FILE`). Unset uses the light logo."
+  - name: BRAND_FAVICON_FILE
+    component: api
+    group: "Brand"
+    type: path
+    description: "Browser tab icon: PNG, ICO or SVG, at most 512 KiB. Unset keeps the built-in icon."
   - name: MAX_CONCURRENT_REQUESTS
     component: api
     group: "HTTP server"
@@ -149,6 +236,17 @@ vars:
     type: string
     default: "openctem"
     description: "Database name."
+  - name: DB_ADMIN_PASSWORD
+    component: api
+    group: "Database (PostgreSQL)"
+    type: string
+    secret: true
+    description: "Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`."
+  - name: DB_ADMIN_USER
+    component: api
+    group: "Database (PostgreSQL)"
+    type: string
+    description: "Role the platform console's identity tables (administrators, console sessions and credentials, the platform identity provider) are written with, through a second small pool. The least-privilege bootstrap (`admin_user`) creates it and takes write on those tables away from `DB_USER`. Unset: one role, as before."
   - name: DB_PASSWORD
     component: api
     group: "Database (PostgreSQL)"
@@ -365,6 +463,24 @@ vars:
     type: string
     secret: true
     description: "Master secret of each organization's content pack signing key (Ed25519). Same formats as `APP_ENCRYPTION_KEY` and must differ from it and from `APP_TEMPLATE_SIGNING_KEY`. Unset: derived from `APP_ENCRYPTION_KEY` under its own label."
+  - name: FINGERPRINT_KEY
+    component: api
+    group: "Encryption keys"
+    type: string
+    required: production
+    secret: true
+    example: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    description: "Server secret the fingerprint of each reported secret finding is keyed from (and the key CI jobs hash raw secrets with). At least 32 characters: `openssl rand -hex 32`. Never rotate it with `APP_ENCRYPTION_KEY`: changing it changes every secret's identity, so a secret seen again opens a second finding. On an install that already stores secret findings, set it to the current `APP_ENCRYPTION_KEY` value (the key those fingerprints were made with). Required unless `APP_ENV=development`, where `APP_ENCRYPTION_KEY` is used when it is unset. Back it up with the database."
+  - name: CONTENT_TRUST_ROOT_KEY_IDS
+    component: api
+    group: "Encryption keys"
+    type: list
+    description: "Extra content catalog roots (comma-separated key ids, `SHA256:<hex>`) trusted beside the roots pinned in the release, for an operator's own catalog source (RFC-099). Setting it writes a high-severity admin audit row at startup. Unset: only the pinned roots; with none, bundle imports are refused."
+  - name: CONTENT_SIGSTORE_TRUSTED_ROOT
+    component: api
+    group: "Encryption keys"
+    type: path
+    description: "Path of a Sigstore trusted root (JSON) that replaces the one embedded in the release for verifying publisher signatures of content packages (RFC-099). Setting it writes a high-severity admin audit row with the file's SHA-256 at startup. Unset: the embedded trusted root."
   - name: AUTH_ACCESS_TOKEN_DURATION
     component: api
     group: "Authentication"
@@ -492,6 +608,11 @@ vars:
     group: "Organizations and scope guardrails"
     type: list
     description: "Comma-separated domains and CIDRs that no organization may target, in addition to the built-in deny list (for example the platform's own names and ranges)."
+  - name: SCOPE_PUBLIC_CODE_HOSTS_EXTRA
+    component: api
+    group: "Organizations and scope guardrails"
+    type: list
+    description: "Comma-separated code hosts shared by many organizations, in addition to the built-in list (github.com, gitlab.com, bitbucket.org and others). A repository scope entry on such a host must name a namespace (host/namespace/*), never the whole host."
   - name: SCOPE_MAX_PUBLIC_CIDR_V4
     component: api
     group: "Organizations and scope guardrails"
@@ -504,12 +625,17 @@ vars:
     type: int
     default: "32"
     description: "Largest public IPv6 range one scope entry may cover."
-  - name: TENANT_CREATION_MODE
+  - name: SIGNUP_MODE
     component: api
     group: "Organizations and scope guardrails"
     type: string
-    default: "admin_only"
-    description: "`admin_only`: only a platform administrator creates organizations (admin console or `bootstrap-admin`). `self_service`: any signed-in user may create organizations. Any other value stops start-up."
+    default: "disabled"
+    description: "The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (System > E-mail) at start and verify every self-registered address; `open` in production also needs the Turnstile keys or `SIGNUP_CAPTCHA`. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`."
+  - name: SIGNUP_CAPTCHA
+    component: api
+    group: "Organizations and scope guardrails"
+    type: string
+    description: "Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: open sign-up in production refuses to start without `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`."
   - name: CAPTCHA_TURNSTILE_SECRET
     component: api
     group: "Organizations and scope guardrails"
@@ -777,6 +903,37 @@ vars:
     default: "APP_URL, else http://localhost:3000"
     example: "http://localhost:3000"
     description: "Base URL of links in e-mails. Set it only when the console is not at `APP_URL`."
+  - name: SYSTEM_STORAGE_PATHS
+    component: api
+    group: "System page"
+    type: string
+    description: "`name=path,name=path` directories whose free space the platform console System page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory."
+  - name: SYSTEM_BACKUP_STATUS_FILE
+    component: api
+    group: "System page"
+    type: path
+    description: "The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The System page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported."
+  - name: SYSTEM_TLS_CERT_FILES
+    component: api
+    group: "System page"
+    type: string
+    description: "`name=path,name=path` PEM certificate files whose expiry the System page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked."
+  - name: SYSTEM_WEB_HEALTH_URL
+    component: api
+    group: "System page"
+    type: url
+    description: "Internal health URL of the web container for the System page (one GET, no redirects). Must be http or https. Unset: not checked."
+  - name: SYSTEM_GATEWAY_HEALTH_URL
+    component: api
+    group: "System page"
+    type: url
+    description: "Internal health URL of the gateway for the System page (one GET, no redirects). Must be http or https. Unset: not checked."
+  - name: SYSTEM_WATCH_INTERVAL
+    component: api
+    group: "System page"
+    type: duration
+    default: "5m"
+    description: "How often the system watcher checks free space, backup age and certificate expiry, sets the metrics and emails the platform administrators on a worse level. Minimum 1m."
   - name: STORAGE_ACCESS_KEY
     component: api
     group: "Attachment storage"
@@ -864,13 +1021,13 @@ vars:
     component: api
     group: "Sensors"
     type: string
-    default: "the CI runner release in `versions.yaml` when the API was built (`v0.3.0`)"
+    default: "`versions.yaml` ci.latest, built into the API"
     description: "Newest CI runner release (openctemio/ci: the openctem-ci action and image). The console's pipeline snippets pin it, and a pipeline on an older runner shows an update. CI runners have their own release line; the sensor settings never apply to them. `none` or `off` turns the comparison off."
   - name: CI_RUNNER_MIN_VERSION
     component: api
     group: "Sensors"
     type: string
-    default: "the CI runner minimum in `versions.yaml` (`v0.3.0`)"
+    default: "`versions.yaml` ci.min, built into the API"
     description: "Oldest accepted CI runner release. The token exchange refuses an older runner (`RUNNER_OUTDATED`) and its pipeline is shown as degraded. Empty, `none` or `off`: no minimum."
   - name: SENSOR_COMMAND_LEASE
     component: api
@@ -882,8 +1039,14 @@ vars:
     component: api
     group: "Sensors"
     type: string
-    default: "configs/sensor-templates"
-    description: "Directory of the sensor configuration templates shown in the console."
+    default: "configs/sensor-products"
+    description: "Directory of the sensor install snippet templates shown in the console: one directory per snippet set (<set>/<format>.tmpl). A sensor product of your own adds a directory here."
+  - name: SENSOR_PRODUCTS_FILE
+    component: api
+    group: "Sensors"
+    type: string
+    default: ""
+    description: "File of extra sensor products (for example your own sensor built on the SDK), in the versions.yaml product format; added to the built-in catalog. An invalid file stops the API from starting."
   - name: SENSOR_HEALTH_SLOW_HEARTBEAT
     component: api
     group: "Sensors"
@@ -936,8 +1099,8 @@ vars:
     component: api
     group: "Sensors"
     type: string
-    default: "ghcr.io/openctemio/sensor"
-    description: "Sensor image the install snippets run. The tag is `SENSOR_LATEST_VERSION`, never `latest`."
+    default: "the scanning sensor image in `versions.yaml` (ghcr.io/openctemio/sensor)"
+    description: "Image repository the scanning sensor's install snippets run, for a mirror. The tag is the sensor's latest release in `versions.yaml`, never `latest`. Other sensor products always use their published image."
   - name: SENSOR_KEY_PEPPER
     component: api
     group: "Sensors"
@@ -967,12 +1130,6 @@ vars:
     type: duration
     default: "2160h"
     description: "Validity of a sensor API key renewed by the sensor itself. `0`: renewed keys never expire. Keys created or regenerated by an administrator never expire."
-  - name: SENSOR_LATEST_VERSION
-    component: api
-    group: "Sensors"
-    type: string
-    default: "the sensor release in `versions.yaml` when the API was built"
-    description: "Newest sensor release: older sensors show \"update available\" and the install snippets pin this tag. `none` or `off` turns the comparison off."
   - name: SENSOR_LB_CPU_WEIGHT
     component: api
     group: "Sensors"
@@ -1015,29 +1172,11 @@ vars:
     type: float
     default: "0.05"
     description: "Weight of network I/O."
-  - name: SENSOR_MIN_VERSION
-    component: api
-    group: "Sensors"
-    type: string
-    default: "the minimum in `versions.yaml` when the API was built (`v0.9.0`)"
-    description: "Oldest supported sensor release; a heartbeating sensor below it is shown as degraded. `none` or `off` turns the check off."
   - name: SENSOR_PUBLIC_API_URL
     component: api
     group: "Sensors"
     type: string
     description: "URL sensors connect to, embedded in the install snippets and configuration templates. Unset: `APP_URL`."
-  - name: SENSOR_SDK_LATEST_VERSION
-    component: api
-    group: "Sensors"
-    type: string
-    default: "the SDK release in `versions.yaml` when the API was built"
-    description: "Newest SDK release; sensors built with an older SDK are shown as outdated. `none` or `off` turns it off."
-  - name: SENSOR_SDK_MIN_VERSION
-    component: api
-    group: "Sensors"
-    type: string
-    default: "empty (no minimum)"
-    description: "Oldest supported SDK; sensors built with an older one are shown as degraded."
   - name: SENSOR_SLIM_HEARTBEAT
     component: api
     group: "Sensors"
@@ -1077,7 +1216,7 @@ vars:
     group: "Sensors"
     type: path
     default: "data/sensor-ca"
-    description: "Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume."
+    description: "Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys)."
   - name: SENSOR_MTLS_CA_KEY_FILE
     component: api
     group: "Sensors"
@@ -1093,7 +1232,7 @@ vars:
     component: api
     group: "Sensors"
     type: string
-    default: ":8443"
+    default: ":9443"
     description: "TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it."
   - name: SENSOR_MTLS_TRUSTED_PROXIES
     component: api
@@ -1164,7 +1303,7 @@ vars:
     group: "Ingest"
     type: string
     default: "dry_run"
-    description: "How a VEX `not_affected` statement acts on the matching open finding: `off`, `dry_run` or `enforce` (the finding becomes a false positive with the justification)."
+    description: "How a VEX `not_affected` statement in a scan report acts on the matching open finding: `off`, `dry_run` or `enforce`. A false positive needs four-eyes, so `enforce` requests one (a pending approval by the actor `vex`, with the justification) that a person with `findings:approve` decides; it never sets the status itself."
   - name: SENSOR_PROTOCOL_V2_RESULTS
     component: api
     group: "Ingest"
@@ -1189,6 +1328,18 @@ vars:
     type: string
     default: "https://api.certspotter.com"
     description: "Fallback CT search service when the primary fails. `off` disables the fallback."
+  - name: VERSION_CHECK_ENABLED
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: bool
+    default: "true"
+    description: "Daily version check: one anonymous download of the signed release feed (no instance id, version or counts), compared with the running version on the instance; the platform console shows newer and security releases. `false` stops the download; offline import in the console still works. See `docs/architecture/version-check.md`."
+  - name: VERSION_CHECK_URL
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: url
+    default: "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"
+    description: "Where the version check reads the signed release feed (https only). Point it at an internal mirror if needed; the signature, not the host, is trusted. A mirror on a private address also needs the private egress allowlist."
   - name: CERT_MONITOR_ENABLED
     component: api
     group: "Discovery feeds and background jobs"
@@ -1395,6 +1546,54 @@ vars:
     group: "Integrations"
     type: string
     description: "Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says."
+  - name: ACCOUNT_PORTAL_URL
+    component: api
+    group: "Internal entitlements API"
+    type: url
+    description: "A hosted service's account page (absolute https URL). When set, Settings > Usage & limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link."
+  - name: INTERNAL_API_ADDR
+    component: api
+    group: "Internal entitlements API"
+    type: string
+    description: "Listen address of the internal entitlements API, for example `10.0.0.5:9443` (a loopback or private IP; any other address, or a hostname, needs `INTERNAL_API_ALLOW_ALL_INTERFACES=true`). Empty (the default) turns it off. It is for the control plane of a hosted service only: expose it on a private network, never through the public gateway. When set, every other `INTERNAL_API_` variable is required."
+  - name: INTERNAL_API_ALLOW_ALL_INTERFACES
+    component: api
+    group: "Internal entitlements API"
+    type: bool
+    default: "false"
+    description: "`true` lets `INTERNAL_API_ADDR` be any address: every interface (`:9443`, `0.0.0.0:9443`, `[::]:9443`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port."
+  - name: INTERNAL_API_TLS_CERT
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    description: "PEM server certificate of the internal API (TLS 1.3 only)."
+  - name: INTERNAL_API_TLS_KEY
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    secret: true
+    description: "PEM private key of the internal API server certificate."
+  - name: INTERNAL_API_CLIENT_CA
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    description: "PEM CA bundle the control plane's client certificate must chain to. A connection without a valid client certificate is refused during the handshake."
+  - name: INTERNAL_API_JWT_PUBLIC_KEYS
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    description: "PEM file with one or more Ed25519 public keys. Every request carries a token signed by one of the matching private keys (`EdDSA`), audience `openctem-core`, at most 5 minutes long, single use (`jti`), with scopes `limits:write`, `orgs:provision` or `usage:read`. List two keys while rotating."
+  - name: INTERNAL_API_JWT_ISSUER
+    component: api
+    group: "Internal entitlements API"
+    type: string
+    default: "openctem-cloud"
+    description: "The `iss` claim the internal API accepts."
+  - name: SELF_SERVICE_START_LIMITS
+    component: api
+    group: "Organizations"
+    type: string
+    description: "Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > System > Limits: a JSON object of limit keys, for example `{\"seats\":5,\"assets\":500,\"orgs_per_user\":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`TENANT_CREATION_MODE=self_service`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API."
   - name: METRICS_PUBLIC
     component: api
     group: "Metrics"
@@ -1413,6 +1612,68 @@ vars:
     type: int
     default: "10000"
     description: "Rows per delete transaction."
+  - name: ADMIN_ALLOWED_CIDRS
+    component: api
+    group: "Admin console"
+    type: list
+    default: "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    description: "Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address."
+  - name: ADMIN_LISTEN_ADDR
+    component: api
+    group: "Admin console"
+    type: string
+    description: "The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener."
+  - name: OPENCTEM_PLANE
+    component: api
+    group: "Admin console"
+    type: enum
+    values: [all, tenant, admin]
+    default: "all"
+    description: "What this API process serves (RFC-022 revision 21). `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`."
+  - name: ADMIN_LISTEN_ALLOW_ALL_INTERFACES
+    component: api
+    group: "Admin console"
+    type: bool
+    default: "false"
+    description: "`true` lets `ADMIN_LISTEN_ADDR` be any address: every interface (`:8081`, `0.0.0.0:8081`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port."
+  - name: ADMIN_ELEVATION
+    component: api
+    group: "Admin console"
+    type: string
+    default: "required"
+    description: "`required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in."
+  - name: ADMIN_AUDIT_SINK
+    component: api
+    group: "Audit log retention"
+    type: string
+    description: "Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off."
+  - name: ADMIN_AUDIT_SINK_SECRET
+    component: api
+    group: "Audit log retention"
+    type: string
+    secret: true
+    description: "HMAC-SHA256 key that signs each request to an `https://` `ADMIN_AUDIT_SINK` (`X-OpenCTEM-Signature`, `X-OpenCTEM-Timestamp`, `X-OpenCTEM-Batch-Id`). At least 32 bytes, required for https, refused for other destinations. Never logged."
+  - name: ADMIN_AUDIT_SINK_SYSLOG_CA_FILE
+    component: api
+    group: "Audit log retention"
+    type: path
+    description: "PEM bundle that replaces the system roots when verifying a `syslog+tls://` `ADMIN_AUDIT_SINK`."
+  - name: ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT
+    component: api
+    group: "Audit log retention"
+    type: path
+    description: "PEM client certificate presented to a `syslog+tls://` `ADMIN_AUDIT_SINK` (mutual TLS), so the collector can accept only this sender. Set together with `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY`."
+  - name: ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY
+    component: api
+    group: "Audit log retention"
+    type: path
+    description: "PEM private key of `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT`."
+  - name: ADMIN_AUDIT_SINK_HEAD_INTERVAL
+    component: api
+    group: "Audit log retention"
+    type: duration
+    default: "15m"
+    description: "How often the administrators' audit chain head (position and hash) and the chain verification state are sent to `ADMIN_AUDIT_SINK` when no row is new. A later re-signing of the chain cannot match a head already sent."
   - name: ADMIN_AUDIT_RETENTION_DAYS
     component: api
     group: "Audit log retention"
@@ -1448,6 +1709,13 @@ vars:
     type: int
     default: "365"
     description: "Organization audit entries older than this are archived and deleted, keeping the hash chain verifiable."
+  - name: ADMIN_PUBLIC_URL
+    component: api
+    group: "Authentication"
+    type: string
+    default: "the origin of APP_URL"
+    example: "https://admin.ctem.example.com"
+    description: "Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8444` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off."
   - name: ADMIN_SESSION_PURGE_INTERVAL
     component: api
     group: "Audit log retention"
@@ -1460,6 +1728,12 @@ vars:
     type: int
     default: "400"
     description: "Days the asset change timeline keeps events. Minimum 30."
+  - name: ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY
+    component: api
+    group: "Audit log retention"
+    type: bool
+    default: "true"
+    description: "The asset technology backfill logs the component links it would remove (a count and a sample) instead of deleting them. Set `false` to delete links that have no version and no CPE; each deleted link is recorded."
   - name: INVITATION_PURGE_INTERVAL
     component: api
     group: "Audit log retention"
@@ -1616,7 +1890,7 @@ vars:
     component: tool
     group: "Administration tools"
     type: string
-    description: "`bootstrap-admin`: sender name (default OpenCTEM)."
+    description: "`bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM)."
   - name: BOOTSTRAP_SMTP_STARTTLS
     component: tool
     group: "Administration tools"
@@ -1729,7 +2003,7 @@ vars:
     component: tool
     group: "Administration tools"
     type: string
-    description: "`openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume."
+    description: "`openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys)."
   - name: SIGNER_TENANT_BURST
     component: tool
     group: "Administration tools"
@@ -1740,6 +2014,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`openctem-signer`: signatures per second allowed per organization."
+  - name: ADMIN_API_URL
+    component: web
+    group: "Web console"
+    type: string
+    description: "Platform console app only (`openctem-console`): internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. The tenant web app never reads it."
   - name: BACKEND_API_URL
     component: web
     group: "Web console"
@@ -1799,12 +2078,6 @@ vars:
     group: "Web console"
     type: string
     description: "Sentry DSN for browser and server error reporting. Unset: off."
-  - name: NEXT_PUBLIC_APP_NAME
-    component: web
-    group: "Web console"
-    type: string
-    default: "OpenCTEM"
-    description: "Product name in the page title."
   - name: NEXT_PUBLIC_APP_DESCRIPTION
     component: web
     group: "Web console"
@@ -1874,6 +2147,12 @@ vars:
     type: string
     default: "127.0.0.1/32"
     description: "Space-separated CIDRs of proxies in front of the gateway whose `X-Forwarded-For` it believes."
+  - name: OPENCTEM_CLIENT_IP_HEADERS
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "X-Forwarded-For"
+    description: "Header(s) a proxy in `OPENCTEM_TRUSTED_PROXIES` carries the client address in, tried in order: `X-Forwarded-For` (read right to left), `Cf-Connecting-Ip` (Cloudflare Tunnel) or `True-Client-Ip`. Ignored from any other peer; the gateway then sends the API only the resolved address."
   - name: GATEWAY_MAX_BODY_SIZE
     component: gateway
     group: "Gateway"
@@ -1910,6 +2189,12 @@ vars:
     type: string
     default: "web:3000"
     description: "Address of the web console."
+  - name: OPENCTEM_CONSOLE_UPSTREAM
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "console:3000"
+    description: "Address of the platform console service, which the console's site (`OPENCTEM_ADMIN_SITE`) serves at its root."
   - name: OPENCTEM_SENSOR_GATEWAY
     component: gateway
     group: "Gateway"
@@ -1926,8 +2211,32 @@ vars:
     component: gateway
     group: "Gateway"
     type: string
-    default: "api:8443"
-    description: "Address of the API's sensor listener the gateway passes sensor connections to."
+    default: "api:9443"
+    description: "Address of the API's sensor listener the gateway passes sensor connections to (internal only; sensors dial the gateway's port 443)."
+  - name: OPENCTEM_ADMIN_SITE
+    component: gateway
+    group: "Gateway"
+    type: enum
+    values: [port, host, off]
+    default: "off"
+    description: "The platform console's own site: `port` serves it on `https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT>`, `host` on `https://<OPENCTEM_ADMIN_HOST>` (recommended for production: a separate origin), `off` not at all. The Compose stack sets `port`."
+  - name: OPENCTEM_ADMIN_HOST
+    component: gateway
+    group: "Gateway"
+    type: string
+    description: "The console's own DNS name (no scheme, port or path), with `OPENCTEM_ADMIN_SITE=host`; must differ from `OPENCTEM_HOSTNAME`."
+  - name: OPENCTEM_ADMIN_PORT
+    component: gateway
+    group: "Gateway"
+    type: int
+    default: "8443"
+    description: "The console's port, with `OPENCTEM_ADMIN_SITE=port`. Not a security control: change it if it is taken on the host. Must differ from 80, 443 and `GATEWAY_HTTPS_PORT`."
+  - name: OPENCTEM_ADMIN_ALLOWED_CIDRS
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7"
+    description: "Client networks that may reach the console site, space-separated; everyone else gets 403. The Compose stack passes the same list to the API as `ADMIN_ALLOWED_CIDRS`."
   - name: OPENCTEM_HOSTNAME
     component: compose
     group: "Docker Compose stack"
@@ -1967,6 +2276,12 @@ vars:
     type: string
     default: "ghcr.io/openctemio/openctem-web"
     description: "Image repository of the web console."
+  - name: CONSOLE_IMAGE
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "ghcr.io/openctemio/openctem-console"
+    description: "Image repository of the platform console."
   - name: MIGRATIONS_IMAGE
     component: compose
     group: "Docker Compose stack"
@@ -1985,12 +2300,23 @@ vars:
     type: string
     default: "OPENCTEM_VERSION"
     description: "Per-image tag override. Leave unset."
+  - name: CONSOLE_VERSION
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "OPENCTEM_VERSION"
+    description: "Per-image tag override. Leave unset."
   - name: GATEWAY_BIND
     component: compose
     group: "Docker Compose stack"
     type: string
     default: "0.0.0.0"
     description: "Host interface the gateway port is published on."
+  - name: OPENCTEM_ADMIN_BIND
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    description: "Host interface the console port is published on, with `OPENCTEM_ADMIN_SITE=port` (default `GATEWAY_BIND`). A private or VPN address keeps the console off the public interface; a published container port is not filtered by the host firewall."
   - name: GATEWAY_HTTPS_PORT
     component: compose
     group: "Docker Compose stack"
@@ -2071,6 +2397,12 @@ vars:
     type: string
     default: "1g"
     description: "Memory limit of the `web` container."
+  - name: CONSOLE_MEMORY_LIMIT
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "512m"
+    description: "Memory limit of the `console` container."
   - name: GATEWAY_MEMORY_LIMIT
     component: compose
     group: "Docker Compose stack"

@@ -86,6 +86,9 @@ var assetMergeRefs = []mergeRef{
 	// same location is dropped.
 	{table: "asset_software", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"software_version_id", "location"}}}},
+	// Detected technologies (RFC-112): the kept asset's row for a name wins.
+	{table: "asset_technologies", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"name_key"}}}},
 	// Package dependency edges follow their links (moved just above; a
 	// duplicate link was dropped and its edges with it).
 	{table: "asset_software_edges", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid"},
@@ -110,6 +113,14 @@ var assetMergeRefs = []mergeRef{
 		keys: []mergeKey{{cols: []string{"class"}}}},
 	// One enrichment request per asset (RFC-075): the kept asset's request wins.
 	{table: "asset_enrichment_requests", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
+	// One rescore-queue row per asset: the kept asset's row wins (its score
+	// is recomputed once the merged findings move to it).
+	{table: "asset_risk_queue", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
+	// Same for the finding-priority queue: the moved findings queue the kept
+	// asset themselves (asset_id trigger).
+	{table: "finding_priority_queue", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
 	{table: "business_unit_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
@@ -138,6 +149,12 @@ var assetMergeRefs = []mergeRef{
 	// One gate policy per repository: the kept repository keeps its own,
 	// else it takes a merged one's.
 	{table: "ci_gate_policies", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{}}},
+	// One gate baseline per repository: the kept repository keeps its own
+	// (the merged one's findings, now on the kept repository, count as new
+	// until a baseline is recorded again), else it takes a merged one's
+	// (its fingerprints follow by ON UPDATE CASCADE).
+	{table: "ci_gate_baselines", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
 	// One expectation per repository: the kept repository keeps its own.
 	{table: "ci_coverage_expectations", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "ctid",
@@ -192,13 +209,14 @@ var assetMergeSpecialRefs = map[string]string{
 
 // assetMergeLeftAlone are references a merge deliberately does not move.
 var assetMergeLeftAlone = map[string]string{
-	"asset_state_history.asset_id":        "immutable audit log (UPDATE is blocked by a trigger); removed with the merged asset",
-	"asset_merge_log.kept_asset_id":       "the merge record itself",
-	"asset_merge_log.merged_asset_id":     "the merge record itself",
-	"ctem_cycle_scope_snapshots.asset_id": "historical snapshot of a closed scope",
-	"ingest_reports.touched_asset_ids":    "historical record of one report",
-	"collector_assets.asset_id":           "a collector source's authority covers only the asset it created: a merge never hands it the kept asset, so the merged asset's rows go with it",
-	"asset_wildcard_dns.asset_id":         "a merged name's wildcard-only mark goes with it; the kept name keeps its own and the next filtered resolution marks it again",
+	"asset_state_history.asset_id":               "immutable audit log (UPDATE is blocked by a trigger); removed with the merged asset",
+	"asset_merge_log.kept_asset_id":              "the merge record itself",
+	"asset_merge_log.merged_asset_id":            "the merge record itself",
+	"ctem_cycle_scope_snapshots.asset_id":        "historical snapshot of a closed scope",
+	"ingest_reports.touched_asset_ids":           "historical record of one report",
+	"collector_assets.asset_id":                  "a collector source's authority covers only the asset it created: a merge never hands it the kept asset, so the merged asset's rows go with it",
+	"asset_technology_backfill_removed.asset_id": "audit record of a link the technology backfill deleted; it describes the asset as it was and is not part of the asset's live data",
+	"asset_wildcard_dns.asset_id":                "a merged name's wildcard-only mark goes with it; the kept name keeps its own and the next filtered resolution marks it again",
 }
 
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.

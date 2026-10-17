@@ -25,7 +25,6 @@ import type {
   CIVerdictFilter,
   CIPipelineDetail,
   CIPipelineList,
-  FleetList,
   CICoverage,
   CISettings,
   SCMAppInstallation,
@@ -34,14 +33,12 @@ import type {
   SCMGitLabConnection,
   SCMGitLabConnectRequest,
   CITokenRefusal,
+  CIRepositorySettings,
+  CIGateBaseline,
 } from '../types'
-import {
-  fleetURL,
-  pipelinesURL,
-  type FleetListFilters,
-  type PipelineListFilters,
-} from '../lib/pipeline'
+import { pipelinesURL, type PipelineListFilters } from '../lib/pipeline'
 
+import { ApiClientError } from '@/lib/api/error-handler'
 import { coverageExpectationURL, coverageURL, type CoverageFilters } from '../lib/coverage'
 
 export const CI_BASE = '/api/v1/ci'
@@ -102,23 +99,6 @@ export function useCIPipeline(id: string | null) {
   return useSWR<CIPipelineDetail>(
     currentTenant && id ? `${CI_BASE}/pipelines/${encodeURIComponent(id)}` : null,
     (url: string) => get<CIPipelineDetail>(url)
-  )
-}
-
-/**
- * The fleet read model: sensors (daemon mode) and CI pipelines (runner mode)
- * in one list. The API filters each mode by its own permission and returns
- * the modes the caller may see with their counts.
- */
-export function useFleet(
-  filters: FleetListFilters,
-  { enabled = true }: { enabled?: boolean } = {}
-) {
-  const { currentTenant } = useTenant()
-  return useSWR<FleetList>(
-    currentTenant && enabled ? fleetURL(filters) : null,
-    (url: string) => get<FleetList>(url),
-    { keepPreviousData: true, refreshInterval: 30_000 }
   )
 }
 
@@ -204,8 +184,69 @@ export function useDeleteGatePolicy() {
   const { currentTenant } = useTenant()
   return useSWRMutation(
     currentTenant ? POLICIES : null,
-    async (_url: string, { arg }: { arg: string }) =>
-      del<void>(`${POLICIES}/${encodeURIComponent(arg)}`)
+    async (_url: string, { arg }: { arg: { id: string; reason?: string } }) => {
+      // A deletion that loosens a business unit or repository policy needs a
+      // reason (the API refuses it otherwise).
+      const reason = arg.reason?.trim()
+      const q = reason ? `?reason=${encodeURIComponent(reason)}` : ''
+      return del<void>(`${POLICIES}/${encodeURIComponent(arg.id)}${q}`)
+    }
+  )
+}
+
+/** URL of a repository's effective gate settings; exported for tests. */
+export function gateSettingsURL(repositoryAssetId: string): string {
+  return `${CI_BASE}/gate-settings/${encodeURIComponent(repositoryAssetId)}`
+}
+
+/** URL of a repository's gate baseline; exported for tests. */
+export function gateBaselineURL(repositoryAssetId: string): string {
+  return `${CI_BASE}/gate-baselines/${encodeURIComponent(repositoryAssetId)}`
+}
+
+/**
+ * A repository's effective gate settings: every field with its value, the
+ * layer it comes from and any lock above (scans:ci:read, data-scoped).
+ */
+export function useRepositoryGateSettings(repositoryAssetId: string | null | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWR<CIRepositorySettings>(
+    currentTenant && repositoryAssetId ? gateSettingsURL(repositoryAssetId) : null,
+    (url: string) => get<CIRepositorySettings>(url)
+  )
+}
+
+/** A repository's gate baseline; null when none is recorded (the API answers 404). */
+export function useGateBaseline(repositoryAssetId: string | null | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWR<CIGateBaseline | null>(
+    currentTenant && repositoryAssetId ? gateBaselineURL(repositoryAssetId) : null,
+    async (url: string) => {
+      try {
+        return await get<CIGateBaseline>(url)
+      } catch (e) {
+        if (e instanceof ApiClientError && e.statusCode === 404) return null
+        throw e
+      }
+    }
+  )
+}
+
+/** Record the baseline now (scans:ci:policy; the API client asks for step-up). */
+export function useRecordGateBaseline(repositoryAssetId: string | null | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant && repositoryAssetId ? gateBaselineURL(repositoryAssetId) : null,
+    async (url: string) => put<CIGateBaseline>(url, {})
+  )
+}
+
+/** Remove the baseline: every finding counts as new again. */
+export function useDeleteGateBaseline(repositoryAssetId: string | null | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant && repositoryAssetId ? gateBaselineURL(repositoryAssetId) : null,
+    async (url: string) => del<void>(url)
   )
 }
 

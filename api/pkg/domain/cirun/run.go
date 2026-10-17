@@ -109,8 +109,15 @@ type Run struct {
 	// TemplateRef the reusable workflow it ran. All are labels.
 	SensorVersion string
 	ScanFailures  *int
-	Tools         []ToolLabel
-	TemplateRef   string
+	// CarriedScanFailures are the scanner failures of the verdict before a
+	// later attempt re-opened the run; they count until a report arrives.
+	CarriedScanFailures int
+	// CarriedFailedCapabilities failed in an earlier attempt of the pipeline
+	// run; each keeps failing the run until a report of that capability
+	// arrives.
+	CarriedFailedCapabilities []string
+	Tools                     []ToolLabel
+	TemplateRef               string
 	// DecorationState is where posting the verdict to the code host stands
 	// (Decoration* constants, "" when nothing was queued); DecorationDetail
 	// a short fixed explanation (never raw code-host text).
@@ -178,6 +185,12 @@ type RunFinding struct {
 	AcceptanceExpiresAt *time.Time
 	FirstDetectedAt     *time.Time
 	LastReopenedAt      *time.Time
+	// SecretValid is the validation result of a secret finding (nil: not
+	// validated); SecretType its kind; SecretFingerprint the keyed
+	// fingerprint of the secret (the secret's identity across repositories).
+	SecretValid       *bool
+	SecretType        string
+	SecretFingerprint string
 }
 
 // IsVulnerability reports whether the finding is a vulnerability of a

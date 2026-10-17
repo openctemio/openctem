@@ -186,12 +186,11 @@ func (r *CommandRepository) RecordProgress(ctx context.Context, tenantID, sensor
 	return rows, nil
 }
 
-// stalledSQL: running tenant command c with a budget, targets left, its
+// stalledSQL: running command c (shared jobs included) with a budget, targets left, its
 // holder reporting progress or liveness, and none of its signals moved for
 // its stall window.
 func stalledSQL() string {
 	return `c.status = 'running'
-		  AND c.is_platform_job = FALSE
 		  AND c.started_at IS NOT NULL
 		  AND jsonb_typeof(c.payload->'budget') = 'object'
 		  AND c.progress_total > 0
@@ -283,7 +282,7 @@ func (r *CommandRepository) RequeueStopped(ctx context.Context, cmd *command.Com
 	return n > 0, nil
 }
 
-// RequeueStalledCommands puts back to pending every running tenant command
+// RequeueStalledCommands puts back to pending every running command
 // with a budget whose sensor reports progress (so it knows budgets: it
 // stops the task itself at its deadline, overrunSecondsSQL) that either ran
 // past that deadline plus command.OverrunGraceSeconds, or was asked
@@ -310,8 +309,7 @@ func (r *CommandRepository) RequeueStalledCommands(ctx context.Context) ([]comma
 			            THEN $1 ELSE $2 END AS msg
 			FROM commands c
 			WHERE c.status = 'running'
-			  AND c.is_platform_job = FALSE
-			  AND c.started_at IS NOT NULL
+				  AND c.started_at IS NOT NULL
 			  AND jsonb_typeof(c.payload->'budget') = 'object'
 			  AND c.progress_total > 0
 			  AND (

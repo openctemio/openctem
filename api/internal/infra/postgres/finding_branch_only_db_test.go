@@ -105,15 +105,23 @@ func TestBranchOnly_MarkedOnInsertByBranch(t *testing.T) {
 	if !f.branchOnly(ctx, t, onFeature) {
 		t.Fatal("a finding first seen on a feature branch is branch-only")
 	}
-	for name, id := range map[string]shared.ID{"default branch": onMain, "release branch": onRelease,
+	// A branch typed "release" from its name is not exposure: anyone who can
+	// push can create release/x. Only default or protected branches count.
+	if !f.branchOnly(ctx, t, onRelease) {
+		t.Fatal("a finding first seen on an unprotected release/* branch is branch-only")
+	}
+	for name, id := range map[string]shared.ID{"default branch": onMain,
 		"no branch": noBranch, "repository without a default branch": noDefault} {
 		if f.branchOnly(ctx, t, id) {
 			t.Fatalf("finding on %s must count", name)
 		}
 	}
 
-	// A protected branch counts.
+	// A protected branch counts; protecting release/1 promotes its finding.
 	f.exec(ctx, t, `UPDATE repository_branches SET is_protected = TRUE WHERE id = $1`, f.release.String())
+	if f.branchOnly(ctx, t, onRelease) {
+		t.Fatal("protecting the release branch did not promote its finding")
+	}
 	prot := shared.NewID()
 	f.branch(ctx, t, prot, f.repo, "stable", "other", false)
 	f.exec(ctx, t, `UPDATE repository_branches SET is_protected = TRUE WHERE id = $1`, prot.String())
@@ -280,20 +288,20 @@ func TestBranchOnly_ExpiredWhenNoBranchShowsIt(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("expired %d (%v), want 1", n, err)
 	}
-	if st, at, _ := findingStatus(ctx, t, f.db, gone); st != "not_observed" || at.Valid {
-		t.Fatalf("gone: status %s resolved_at %v, want not_observed, never resolved", st, at)
+	if st, at, _ := findingStatus(ctx, t, f.db, gone); st != "new" || at.Valid || findingObservation(ctx, t, f.db, gone) != "stale" {
+		t.Fatalf("gone: status %s resolved_at %v, want new (unchanged), stale, never resolved", st, at)
 	}
 	for _, id := range []shared.ID{live, recent, counting} {
 		if st, _, _ := findingStatus(ctx, t, f.db, id); st != "new" {
 			t.Fatalf("finding %s moved to %s", id, st)
 		}
 	}
+	// Going stale is not a status move: no status_changed entry.
 	var acts int
 	if err := f.db.QueryRowContext(ctx, `SELECT count(*) FROM finding_activities
-		WHERE tenant_id = $1 AND finding_id = $2 AND activity_type = 'status_changed'
-		  AND changes->>'reason' = 'branch_only_expired' AND changes->>'old_status' = 'new'`,
-		f.tenant.String(), gone.String()).Scan(&acts); err != nil || acts != 1 {
-		t.Fatalf("expiry activity rows = %d (%v), want 1", acts, err)
+		WHERE tenant_id = $1 AND finding_id = $2 AND activity_type = 'status_changed'`,
+		f.tenant.String(), gone.String()).Scan(&acts); err != nil || acts != 0 {
+		t.Fatalf("expiry activity rows = %d (%v), want 0", acts, err)
 	}
 
 	// A deleted branch takes its occurrences: the finding expires once unseen.

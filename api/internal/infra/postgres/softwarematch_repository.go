@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
 )
 
@@ -353,7 +354,7 @@ func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, lim
 // MatcherFindings (see softwarematch.Store).
 func (r *SoftwareMatchRepository) MatcherFindings(ctx context.Context, tenantID shared.ID) ([]softwarematch.MatcherFinding, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT f.id, f.asset_id, COALESCE(f.cve_id, ''), f.fingerprint, f.status,
+		SELECT f.id, f.asset_id, COALESCE(f.cve_id, ''), f.fingerprint, f.status, f.observation_state = 'stale',
 			f.metadata->'version_match'->>'product_id', f.metadata->'version_match'->>'version_id',
 			COALESCE(f.metadata->'version_match'->>'location', ''), COALESCE(r.status = 'Rejected', false)
 		FROM findings f
@@ -369,7 +370,7 @@ func (r *SoftwareMatchRepository) MatcherFindings(ctx context.Context, tenantID 
 		var f softwarematch.MatcherFinding
 		var id, asset string
 		var pid, vid sql.NullString
-		if err := rows.Scan(&id, &asset, &f.CVEID, &f.Fingerprint, &f.Status, &pid, &vid, &f.Location, &f.CVERejected); err != nil {
+		if err := rows.Scan(&id, &asset, &f.CVEID, &f.Fingerprint, &f.Status, &f.Stale, &pid, &vid, &f.Location, &f.CVERejected); err != nil {
 			return nil, fmt.Errorf("matcher findings: %w", err)
 		}
 		f.ID, f.AssetID = shared.MustIDFromString(id), shared.MustIDFromString(asset)
@@ -397,7 +398,7 @@ func (r *SoftwareMatchRepository) OpenCVEsOnAssets(ctx context.Context, tenantID
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.asset_id, upper(f.cve_id) FROM findings f
 		WHERE f.tenant_id = $1 AND f.asset_id = ANY($2::uuid[]) AND f.cve_id IS NOT NULL AND f.cve_id <> ''
-		  AND f.status IN ('new', 'confirmed', 'in_progress', 'fix_applied')`, tenantID.String(), pq.Array(ids))
+		  AND `+vulnerability.OpenStatusSQL("f.status"), tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("open cves: %w", err)
 	}
@@ -468,6 +469,10 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 	return out, nil
 }
 
+// softwarematchVerification is how a matcher close is proven: the inventory
+// (the source) reports another installed version, or the advisory changed.
+const softwarematchVerification = string(vulnerability.VerificationSourceReported)
+
 // CloseFindings (see softwarematch.Store). The status re-check in the
 // UPDATE leaves alone a finding someone triaged, or a scanner reported,
 // since it was read.
@@ -478,18 +483,22 @@ func (r *SoftwareMatchRepository) CloseFindings(ctx context.Context, tenantID sh
 	var set, from string
 	switch kind {
 	case softwarematch.CloseVersionChanged:
-		set, from = `status = 'resolved', resolution = 'auto_fixed', resolution_method = 'version_changed', resolved_at = NOW()`, autoResolveFromSQL
+		set, from = `status = 'resolved', resolution = 'auto_fixed', closure_reason = 'fixed', verification = '`+softwarematchVerification+`', resolved_at = NOW()`, autoResolveFromSQL
 	case softwarematch.CloseNotObserved:
-		set, from = `status = 'not_observed'`, staleFromSQL
+		// Not seen lately is stale, not fixed: the status stays.
+		set, from = `observation_state = 'stale'`, staleFromSQL
 	case softwarematch.CloseAdvisoryUpdated:
-		set, from = `status = 'false_positive', resolution = 'advisory_updated', resolution_method = 'advisory_updated', resolved_at = NOW()`, vexFalsePositiveFromSQL
+		set, from = `status = 'false_positive', resolution = 'advisory_updated', closure_reason = 'detection_error', verification = '`+softwarematchVerification+`', resolved_at = NOW()`, vexFalsePositiveFromSQL
 	default:
 		return nil, fmt.Errorf("unknown close kind %q", kind)
 	}
 	if autoResolvePaused(ctx, r.db, tenantID.String()) {
 		return nil, nil
 	}
-	return r.updateFindings(ctx, `
+	return r.updateFindings(ctx, findingTransition{
+		Source: "vulnmatch", Reason: string(kind), ActorName: "system: software vulnerability matcher",
+		Message: "The software vulnerability matcher re-evaluated the installed version",
+	}, `
 		UPDATE findings f SET `+set+`, updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[]) AND `+matcherOwnedSQL+`
 		  AND f.status IN `+from+`
@@ -497,39 +506,37 @@ func (r *SoftwareMatchRepository) CloseFindings(ctx context.Context, tenantID sh
 }
 
 // ReopenFindings (see softwarematch.Store): only findings the matcher itself
-// closed (not observed, or resolved because the version changed).
+// closed as fixed (the version changed) reopen; an open finding it marked
+// stale becomes present again.
 func (r *SoftwareMatchRepository) ReopenFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	return r.updateFindings(ctx, `
-		UPDATE findings f SET status = 'confirmed', resolution = NULL, resolution_method = NULL,
-			resolved_at = NULL, updated_at = NOW()
+	return r.updateFindings(ctx, findingTransition{
+		Source: "vulnmatch", Reason: "matched_again", ActorName: "system: software vulnerability matcher",
+		Message: "The software vulnerability matcher matched it again",
+	}, `
+		UPDATE findings f SET
+			status = CASE WHEN f.status IN `+regressionReopenFromSQL+` THEN 'confirmed' ELSE f.status END,
+			resolution = CASE WHEN f.status IN `+regressionReopenFromSQL+` THEN NULL ELSE f.resolution END,
+			resolved_at = CASE WHEN f.status IN `+regressionReopenFromSQL+` THEN NULL ELSE f.resolved_at END,
+			observation_state = 'present', updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[]) AND `+matcherOwnedSQL+`
-		  AND f.status IN `+regressionReopenFromSQL+`
-		  AND (f.status = 'not_observed' OR f.resolution_method = 'version_changed')
+		  AND ((f.status IN `+regressionReopenFromSQL+` AND f.closure_reason = 'fixed' AND f.verification = '`+softwarematchVerification+`')
+		       OR (f.status IN `+staleFromSQL+` AND f.observation_state = 'stale'))
 		RETURNING f.id::text`, tenantID, ids)
 }
 
-func (r *SoftwareMatchRepository) updateFindings(ctx context.Context, query string, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+func (r *SoftwareMatchRepository) updateFindings(ctx context.Context, t findingTransition, query string, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	strs := make([]string, len(ids))
 	for i, id := range ids {
 		strs[i] = id.String()
 	}
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(strs))
+	out, err := r.db.queryIDsWithTransition(ctx, t, query, tenantID.String(), pq.Array(strs))
 	if err != nil {
 		return nil, fmt.Errorf("matcher findings update: %w", err)
 	}
-	defer rows.Close()
-	var out []shared.ID
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return nil, fmt.Errorf("matcher findings update: %w", err)
-		}
-		out = append(out, shared.MustIDFromString(s))
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // EnsureDefinitions (see softwarematch.Store): a CVE nobody reported yet

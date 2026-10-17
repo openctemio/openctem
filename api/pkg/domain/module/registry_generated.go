@@ -93,7 +93,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "assets:read",
 		MCP:        []string{"list_assets"},
-		Jobs:       []string{"AssetIdentityBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
+		Jobs:       []string{"AssetIdentityBackfillController", "AssetTechnologyBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "AssetRiskScoreController", "AssetRiskReconcileController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
 	},
 	{
 		ID: ModuleFindings, Slug: "findings", Name: "Findings",
@@ -103,8 +103,8 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "findings:read",
-		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "PriorityReclassifyController", "PriorityReclassifySweepController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController", "VulnFeedImportController"},
+		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_finding_transitions", "list_remediation_groups"},
+		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "VulnMatchController", "VulnFeedImportController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -114,7 +114,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "scans:read",
-		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIDecorationController", "CIRetentionController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController"},
+		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIDecorationController", "CIRetentionController", "CISweepController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController"},
 	},
 	{
 		ID: ModuleAttackSurface, Slug: "attack-surface", Name: "Attack Surface",
@@ -495,8 +495,8 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "remediation closes findings"},
 		},
-		Routes: []string{"/api/v1/remediation/campaigns"},
-		Jobs:   []string{"RemediationProgressController"},
+		Routes: []string{"/api/v1/remediation/campaigns", "/api/v1/remediation/tasks", "/api/v1/remediation/suggestions", "/api/v1/remediation/actions", "/api/v1/remediation/moves"},
+		Jobs:   []string{"RemediationProgressController", "RemediationTaskController", "TaskTicketController", "RemediationSuggestionController"},
 	},
 	{
 		ID: ModuleSuppressions, Slug: "suppressions", Name: "Suppressions",

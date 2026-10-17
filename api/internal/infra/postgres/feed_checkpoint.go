@@ -13,7 +13,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/openctemio/sdk-go/pkg/transfer/bundle"
+	"github.com/openctemio/ctis/transfer/bundle"
 )
 
 // Feed checkpoint rows.

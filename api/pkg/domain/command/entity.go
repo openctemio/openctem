@@ -142,6 +142,12 @@ type Command struct {
 	// set, only a sensor assigned to that zone may poll or claim it, even after
 	// the reaper unpins it. Never sent on the protocol-v1 wire.
 	ScanZoneID *shared.ID
+	// InstanceScanZoneID is the instance scan zone of a shared job that
+	// reaches internal addresses (docs/rfcs/RFC-100-shared-sensors.md
+	// §6.1). Written when the command is created; the general readers do
+	// not load it: the job signer reads it back by id
+	// (CommandRepository.InstanceScanZoneID) when it signs the job.
+	InstanceScanZoneID *shared.ID
 
 	// HostKeys are the hosts the command sends traffic to (AssignHostKeys
 	// sets them on create, for every command). While the command is
@@ -167,9 +173,6 @@ type Command struct {
 
 	// IsPlatformJob indicates this job runs on a platform sensor (not tenant's own sensor)
 	IsPlatformJob bool
-
-	// PlatformSensorID is the platform sensor assigned to execute this job (auto-selected)
-	PlatformSensorID *shared.ID
 
 	// ==========================================================================
 	// Authentication Token Fields (for platform sensors)
@@ -247,6 +250,12 @@ func NewCommand(tenantID shared.ID, cmdType CommandType, priority CommandPriorit
 // SetSensorID sets the target sensor ID.
 func (c *Command) SetSensorID(sensorID shared.ID) {
 	c.SensorID = &sensorID
+}
+
+// SetInstanceScanZone stamps the instance scan zone of a shared job (after
+// SetPlatformJob).
+func (c *Command) SetInstanceScanZone(zoneID shared.ID) {
+	c.InstanceScanZoneID = &zoneID
 }
 
 // SetScanZone stamps the scan zone the command was routed to.
@@ -333,7 +342,7 @@ func (c *Command) CanBeAcknowledged() bool {
 // registry rules license does not allow providing them as a service.
 // Platform scans run static analysis with opengrep and the OpenCTEM rules
 // pack (research/132).
-var ErrRegistryRulesOnPlatform = fmt.Errorf("%w: platform scans run static analysis with opengrep and the OpenCTEM rules pack; semgrep would fetch registry rules", shared.ErrValidation)
+var ErrRegistryRulesOnPlatform = fmt.Errorf("%w: platform scans run static analysis with opengrep and the built-in rules pack; semgrep would fetch registry rules", shared.ErrValidation)
 
 // registryRuleTools are the tools that fetch registry rules when a sensor
 // has no managed rules: semgrep defaults to --config auto. opengrep runs
@@ -370,21 +379,6 @@ func (c *Command) SetPlatformJob(queuePriority int) error {
 	return nil
 }
 
-// AssignToPlatformSensor assigns this job to a specific platform sensor.
-func (c *Command) AssignToPlatformSensor(sensorID shared.ID) {
-	c.PlatformSensorID = &sensorID
-	c.DispatchAttempts++
-	now := time.Now()
-	c.LastDispatchAt = &now
-}
-
-// ReturnToQueue returns the job to the queue (e.g., if sensor went offline).
-func (c *Command) ReturnToQueue() {
-	c.PlatformSensorID = nil
-	c.Status = CommandStatusPending
-	c.AcknowledgedAt = nil
-}
-
 // UpdateQueuePriority updates the queue priority (called by scheduler).
 func (c *Command) UpdateQueuePriority(newPriority int) {
 	c.QueuePriority = newPriority
@@ -392,12 +386,7 @@ func (c *Command) UpdateQueuePriority(newPriority int) {
 
 // IsQueued checks if this job is in the queue waiting for dispatch.
 func (c *Command) IsQueued() bool {
-	return c.IsPlatformJob && c.Status == CommandStatusPending && c.PlatformSensorID == nil
-}
-
-// IsDispatchedToPlatformSensor checks if this job has been dispatched to a platform sensor.
-func (c *Command) IsDispatchedToPlatformSensor() bool {
-	return c.IsPlatformJob && c.PlatformSensorID != nil
+	return c.IsPlatformJob && c.Status == CommandStatusPending && c.SensorID == nil
 }
 
 // CanRetry checks if this job can be retried after failure.
@@ -468,32 +457,6 @@ func (c *Command) IsAuthTokenValid() bool {
 		return false
 	}
 	return time.Now().Before(*c.AuthTokenExpiresAt)
-}
-
-// CanAcceptIngest checks if this command can accept ingest data from a platform sensor.
-// The command must be running, have a valid token, and match the sensor.
-func (c *Command) CanAcceptIngest(sensorID shared.ID, token string) bool {
-	// Must be a platform job
-	if !c.IsPlatformJob {
-		return false
-	}
-
-	// Must be running
-	if c.Status != CommandStatusRunning && c.Status != CommandStatusAcknowledged {
-		return false
-	}
-
-	// Sensor must match
-	if c.PlatformSensorID == nil || *c.PlatformSensorID != sensorID {
-		return false
-	}
-
-	// Token must be valid
-	if !c.IsAuthTokenValid() || !c.VerifyAuthToken(token) {
-		return false
-	}
-
-	return true
 }
 
 // ClearAuthToken clears the auth token (call after command completes).

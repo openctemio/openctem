@@ -5,7 +5,7 @@ package routes
 // findings:write but NOT findings:verify cannot close a fix_applied finding
 // through PATCH /findings/{id}/status, POST /findings/bulk/status or
 // POST /findings/remediation-groups/{key}/resolve. A findings:verify holder
-// can, and every such close records resolution_method and resolved_by.
+// can, and every such close records its closure and resolved_by.
 
 import (
 	"bytes"
@@ -54,7 +54,7 @@ func (h *gsHarness) doPerms(user shared.ID, perms []string, method, path string,
 func (h *gsHarness) closure(id shared.ID) (status, method, by string) {
 	h.t.Helper()
 	var m, b sql.NullString
-	if err := h.db.QueryRow(`SELECT status, resolution_method, resolved_by::text FROM findings WHERE id = $1`, id.String()).
+	if err := h.db.QueryRow(`SELECT status, NULLIF(COALESCE(closure_reason, '') || '/' || COALESCE(verification, ''), '/'), resolved_by::text FROM findings WHERE id = $1`, id.String()).
 		Scan(&status, &m, &b); err != nil {
 		h.t.Fatal(err)
 	}
@@ -64,7 +64,9 @@ func (h *gsHarness) closure(id shared.ID) (status, method, by string) {
 func TestResolveGate_MemberWithoutVerifyCannotClose(t *testing.T) {
 	h := newGroupScopeHarness(t)
 	const key = "rg-test-upgrade-lib"
-	h.exec(`UPDATE findings SET status = 'fix_applied' WHERE id = $1`, h.findingA.String())
+	// Medium: a findings:verify holder closes it with a note (attested). High
+	// and critical need more evidence; TestBulkResolve_EvidenceByRisk covers it.
+	h.exec(`UPDATE findings SET status = 'fix_applied', severity = 'medium' WHERE id = $1`, h.findingA.String())
 	h.exec(`INSERT INTO finding_remediation_keys (finding_id, tenant_id, remediation_key, title) VALUES ($1, $2, $3, 'upgrade lib')`,
 		h.findingA.String(), h.tenant.String(), key)
 
@@ -74,8 +76,7 @@ func TestResolveGate_MemberWithoutVerifyCannotClose(t *testing.T) {
 		body               any
 	}{
 		{"single", http.MethodPatch, "/api/v1/findings/" + fa + "/status", map[string]any{"status": "resolved", "resolution": "fixed"}},
-		{"bulk", http.MethodPost, "/api/v1/findings/bulk/status", map[string]any{"finding_ids": []string{fa}, "status": "resolved"}},
-		{"group", http.MethodPost, "/api/v1/findings/remediation-groups/" + key + "/resolve", map[string]any{"status": "resolved"}},
+		{"bulk", http.MethodPost, "/api/v1/findings/bulk/status", map[string]any{"finding_ids": []string{fa}, "status": "resolved", "resolution": "fixed"}},
 	}
 	for _, a := range attempts {
 		status, body := h.doPerms(h.memberA, rgMemberPerms, a.method, a.path, a.body)
@@ -87,22 +88,36 @@ func TestResolveGate_MemberWithoutVerifyCannotClose(t *testing.T) {
 		}
 	}
 
-	// The member's own step (fix_applied) and the group's default stay open to them.
+	// A group resolve never closes findings, not even for a findings:verify
+	// holder: each finding is verified on its own.
+	for _, perms := range [][]string{rgMemberPerms, rgVerifierPerms()} {
+		if status, body := h.doPerms(h.memberA, perms, http.MethodPost, "/api/v1/findings/remediation-groups/"+key+"/resolve",
+			map[string]any{"status": "resolved", "resolution": "fixed"}); status != http.StatusBadRequest {
+			t.Errorf("group resolve to resolved = %d %.300s, want 400", status, body)
+		}
+		if st, _, _ := h.closure(h.findingA); st != "fix_applied" {
+			t.Fatalf("group resolve closed the finding (status %s)", st)
+		}
+	}
+
+	// The member's own step (fix_applied, on a finding assigned to them, with a
+	// note) and the group's default stay open to them.
+	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id = $1`, fa, h.memberA.String())
 	if status, body := h.doPerms(h.memberA, rgMemberPerms, http.MethodPost,
-		"/api/v1/findings/remediation-groups/"+key+"/resolve", map[string]any{}); status != http.StatusOK {
+		"/api/v1/findings/remediation-groups/"+key+"/resolve", map[string]any{"resolution": "patched"}); status != http.StatusOK {
 		t.Errorf("group resolve to the fix_applied default = %d %.300s, want 200", status, body)
 	}
 
 	// Each route, for a findings:verify holder: resolved, with method and actor.
 	for _, a := range attempts {
-		h.exec(`UPDATE findings SET status = 'fix_applied', resolution_method = NULL, resolved_by = NULL, resolved_at = NULL WHERE id = $1`, fa)
+		h.exec(`UPDATE findings SET status = 'fix_applied', resolved_by = NULL, resolved_at = NULL WHERE id = $1`, fa)
 		status, body := h.doPerms(h.memberA, rgVerifierPerms(), a.method, a.path, a.body)
 		if status != http.StatusOK {
 			t.Fatalf("%s resolve with findings:verify = %d %.300s, want 200", a.name, status, body)
 		}
 		st, method, by := h.closure(h.findingA)
-		if st != "resolved" || method != "admin_direct" || by != h.memberA.String() {
-			t.Errorf("%s: status=%s method=%q resolved_by=%q, want resolved / admin_direct / the actor", a.name, st, method, by)
+		if st != "resolved" || method != "fixed/attested" || by != h.memberA.String() {
+			t.Errorf("%s: status=%s closure=%q resolved_by=%q, want resolved / fixed/attested / the actor", a.name, st, method, by)
 		}
 	}
 

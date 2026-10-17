@@ -56,6 +56,7 @@ type gsHarness struct {
 	cveA, cveB, cveB2, cveP      string
 	componentA, componentB, camp shared.ID
 	vuln                         *finding.VulnerabilityService
+	actions                      *finding.FindingActionsService
 	views                        *savedviewapp.Service
 }
 
@@ -95,6 +96,8 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	h.vuln = vulnSvc
 
 	actionsSvc := finding.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
+	h.actions = actionsSvc
+	vulnSvc.SetFixApplierCheck(actionsSvc.FixAppliers)
 	actionsSvc.SetDataScope(enforcer)
 
 	remediationSvc := appremediation.NewGroupService(postgres.NewFindingRemediationKeyRepository(db), vulnSvc, nil, log)
@@ -373,7 +376,9 @@ func TestFindingGroups_VerificationQueueScoped(t *testing.T) {
 		t.Errorf("out-of-scope reject-fix changed FB to %s", st)
 	}
 
-	// Verify by filter naming both CVEs: only FA is resolved.
+	// Verify by filter naming both CVEs: only FA is resolved. Both are
+	// medium here so a note is enough evidence.
+	h.exec(`UPDATE findings SET severity = 'medium' WHERE id IN ($1, $2)`, h.findingA.String(), h.findingB.String())
 	status, body = h.do(h.memberA, false, http.MethodPost, "/api/v1/findings/actions/verify",
 		map[string]any{"filter": map[string]any{"cve_ids": []string{h.cveA, h.cveB}}, "note": "ok"})
 	if status != http.StatusOK || !strings.Contains(body, `"updated":1`) {

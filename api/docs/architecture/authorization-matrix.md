@@ -38,6 +38,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Pentest (granular) | 12 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write`, `pentest:checklists:manage` (RFC-087) |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
 | Reports | 2 | `reports:read/write` |
+| Content catalog | 3 | `content:read`, `content:install`, `content:publish` (RFC-099) |
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
@@ -58,6 +59,60 @@ Team roles are used for team management operations:
 | `admin` | 3 | Team admin - manage members, invitations, settings |
 | `member` | 2 | Team member - create/edit resources |
 | `viewer` | 1 | Team viewer - read-only access |
+
+### One authority for the team role
+
+A person's team role is the highest system role they hold in `user_roles`, read
+through the `v_user_effective_role` view (when they hold none, the membership
+label capped at member). The label in `tenant_members.role` is what the
+membership routes write; a trigger copies it into `user_roles`.
+
+- **System roles change only through the membership.** `owner`, `admin`,
+  `member` and `viewer` change with `PATCH /api/v1/tenants/{tenant}/members/{id}`
+  (administrator needs the owner plus a recent authentication) and, for
+  ownership, with the ownership transfer. The Roles API
+  (`POST` / `PUT /api/v1/users/{id}/roles`, `DELETE /api/v1/users/{id}/roles/{roleId}`,
+  `POST /api/v1/roles/{roleId}/members/bulk`) and team role bindings accept
+  custom roles only and answer 400 for a system role, the owner included. A
+  `PUT` replaces the user's custom roles and leaves their team role alone; an
+  empty list clears the custom roles. An invitation or an account created by an
+  administrator still carries `admin`, `member` or `viewer`, never `owner`.
+- **The database backs it up.** A trigger on `user_roles` refuses a new or moved
+  owner role row unless the person's membership label is `owner`. The label
+  change is the way in and out, so a co-owner cannot be planted.
+- **Authorization queries read the view.** Counting owners, approvers or
+  notification recipients uses `v_user_effective_role`, never the raw label.
+  `tools/lint/rawrole` fails on a new SQL literal that reads `tenant_members.role`
+  outside its allowlist (the membership writers, the post-transfer invariant
+  check and the owner-role repair controller).
+
+**Owner role without the owner membership (existing data).** Organizations that
+planted a co-owner through the old Roles API keep that row; the migration only
+checks new writes. List them and decide per organization (remove it with the
+membership route as described below, or transfer ownership):
+
+```sql
+SELECT ur.tenant_id, ur.user_id, tm.role AS membership_role
+FROM user_roles ur
+JOIN tenant_members tm ON tm.user_id = ur.user_id AND tm.tenant_id = ur.tenant_id
+WHERE ur.role_id = '00000000-0000-0000-0000-000000000001'
+  AND tm.role <> 'owner';
+```
+
+**Remediation.** The organization's real owner (owner membership label) removes
+the row with the membership role route (`PATCH /api/v1/organization/members/{id}`
+with the role the person should have). For a target whose owner role row has no
+owner membership, the service accepts the change only when the caller holds the
+owner label, is active, is not the target and passed a fresh step-up
+re-authentication; anyone else, a system path and a self change are refused. In
+one transaction the owner role row is deleted and the chosen role applied (label
+and role row together). The change is audited as `owner_role_drift_removed`
+(Critical). A member whose label is owner is not drift and still changes only by
+an ownership transfer.
+
+Until such a row is resolved, the ownership transfer of that organization is
+refused by its post-transfer check (it expects exactly one owner by membership
+and by role).
 
 ## Middleware Stack
 
@@ -114,11 +169,15 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `POST /api/v1/scim-tokens`
 - `PATCH /api/v1/tenants/{tenant}/settings/security`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
+- `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
+- `DELETE /api/v1/me/account`
+- `POST /api/v1/organization/leave`
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
 - `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
 - `PATCH /api/v1/attachments/storage-config`
+- `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` (finding lifecycles, RFC-110)
 
 Some changes need it only in one case, decided by the service through the
 same check (`shared.RecentAuthGate`): making someone an administrator or an
@@ -179,6 +238,23 @@ Details: [api-keys.md](./api-keys.md).
 > for the whole organization, so it is owner/admin only (owner decision
 > 2026-10-02); members keep creating, editing and linking assets.
 
+#### AI applications (MCP) (`/api/v1/mcp-access`, `/api/v1/oauth/requests`)
+
+API keys are refused on both prefixes; the tenant is the session's. Design: `mcp-authorization.md`.
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/oauth/requests/{id}`, `POST /{id}/approve`, `/{id}/deny` | any member, on a consent request they claimed (404 otherwise); the grant never exceeds what they hold |
+| `POST /api/v1/oauth/requests/{id}/access-request` | any active member, on a consent request they claimed and only when the application is blocked because its publisher is not approved; at most 5 new requests per member per day, 50 waiting per organization (429); audited |
+| `POST /api/v1/oauth/requests/{id}/allow-publisher` | `settings:write` + a recent sign-in; adds the publisher host of that consent request to the caller's organization policy; audited |
+| `GET`/`PUT /api/v1/mcp-access/settings` | `settings:read` / `settings:write` + a recent sign-in; audited |
+| `GET /api/v1/mcp-access/requests` | `settings:read` (the organization's waiting requests; requester name, no e-mail or IP) |
+| `POST /api/v1/mcp-access/requests/{id}/approve` | `settings:write` + a recent sign-in (loosens the policy); another organization's request is 404; audited |
+| `POST /api/v1/mcp-access/requests/{id}/deny` | `settings:write` (tightens nothing, no step-up); 404 across organizations; audited |
+| `GET`/`POST`/`DELETE /api/v1/mcp-access/clients` | `settings:read` / `settings:write` + a recent sign-in |
+| `GET`/`DELETE /api/v1/mcp-access/connections` | owner or administrator (`RequireAdmin`) |
+| `GET`/`DELETE /api/v1/mcp-access/my-connections` | any member, own connections only |
+
 #### Components (`/api/v1/components`)
 
 | Endpoint | Permission Required |
@@ -204,7 +280,7 @@ and SBOM import write it.
 | `POST /api/v1/findings` | `findings:write` |
 | `DELETE /api/v1/findings/{id}` | `findings:delete` |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
-| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; also `findings:approve` when either finding is a false positive or risk acceptance (service check). Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
+| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
@@ -216,6 +292,22 @@ and SBOM import write it.
 > self-verify their own fix (AUTHZ B1, api#505). Migration `000217` backfilled the
 > four granular perms onto every role that already held `findings:write`, so the
 > tightening is honest-not-breaking: nobody lost an action they could perform before.
+
+#### Finding lifecycles (`/api/v1/lifecycle-sub-statuses`, `/api/v1/lifecycles`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/lifecycle-sub-statuses`, `GET /api/v1/lifecycles` · `/{id}` · `/{id}/versions` · `/{id}/versions/{version_id}` | `findings:read` |
+| `POST /api/v1/lifecycle-sub-statuses` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/reactivate` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/versions` · `PUT /{id}/versions/{version_id}` · `POST /{id}/versions/{version_id}/test` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up |
+
+> Organization configuration (no finding data), tenant from the token; another
+> organization's sub-status, lifecycle or version is 404. A lifecycle can only
+> add constraints to the status moves the platform allows
+> ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)); `findings:lifecycles:write`
+> is granted to owners and administrators by default (migration
+> `finding_lifecycles_permission`).
 
 #### Exposures (`/api/v1/exposures`)
 
@@ -238,7 +330,10 @@ and SBOM import write it.
 > for the same disposition applies it, and `/{id}/disposition/reject` drops it
 > (the requester's own reject cancels). The requester never confirms their own
 > request; the owner may, only when nobody else holds the route's permissions
-> (audited Critical). Low and medium exposures keep the one-step path. See
+> (audited Critical). Low and medium exposures keep the one-step path. The
+> rule reads the **highest** severity the exposure ever had
+> (`exposure_events.peak_severity`, only raised), so re-ingesting the same
+> exposure with a lower severity does not turn it into a one-step decision. See
 > [finding-status-lifecycle.md](finding-status-lifecycle.md#four-eyes-on-exposure-dispositions).
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
@@ -343,6 +438,21 @@ create's target validator, exclusions, zone routing) in one call.
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
 
+#### Content catalog (`/api/v1/content`, RFC-099)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /packages` · `/packages/{namespace}/{name}` · `/installs` · `/requests` · `/settings` · `/trust` | `content:read` |
+| `POST /installs` · `POST /installs/{ns}/{name}/update` · `/rollback` · `DELETE /installs/{ns}/{name}` · `POST /requests/{id}/approve` · `/reject` | `content:install` + a recent sign-in; nobody approves their own request |
+| `PUT /installs/{ns}/{name}/pin` · `POST /requests/{id}/cancel` (requester only) | `content:install` |
+| `PUT /settings` (approval option) | `settings:write` + a recent sign-in |
+| `POST /private-packages` · `POST /private-packages/{ns}/{name}/{version}/revoke` | `content:publish` + a recent sign-in |
+
+Another organization's installation or request answers 404. Owners and administrators hold all three content
+permissions; members and viewers hold `content:read` (migrations `002571`, `002886`). `/api/v1/admin/content-catalog`: any
+platform administrator reads the trust status; `POST /import` needs a super admin, a reason and a fresh console
+authenticator code, and is audited.
+
 #### Scan windows (`/api/v1/scan-window-policies`, `/api/v1/scan-windows`, `/api/v1/scan-window-overrides`)
 
 | Endpoint | Permission Required |
@@ -366,7 +476,8 @@ create's target validator, exclusions, zone routing) in one call.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/{id}/config-report` (setup checklist, research/26) · `/available-capabilities` · `/content-policy` | `sensors:read` |
+| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/available-capabilities` · `/content-policy` | `sensors:read`; host name and addresses (`hostname`, `ip_address`, `key_last_used_ip`) are returned to owners and administrators only |
+| `GET /api/v1/sensors/{id}/config-report` (setup checklist, research/26) · `GET /quarantined-results` · `/quarantined-results/{qid}` (the preview carries asset values and finding titles from the raw report) | `sensors:write` (owner/admin) |
 | `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write`; creating a sensor and regenerating its key also need **step-up** (they mint a persistent key) |
 | `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
 | `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
@@ -415,8 +526,8 @@ create's target validator, exclusions, zone routing) in one call.
 
 | Endpoint | Gate |
 |----------|------|
-| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) |
-| `GET /api/v1/audit-logs/user/{id}` | `audit:read`, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
+| `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) **and** full data access: a caller whose data scope is restricted gets 403 (`details.required = "full data access"`), because audit rows carry the names, messages and change diffs of assets and findings outside their scope |
+| `GET /api/v1/audit-logs/user/{id}` | `audit:read` and full data access, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
 | `GET /api/v1/audit-logs/verify` | owner/admin (`RequireAdmin`) |
 | (no tenant rebaseline) | the audit-chain rebaseline is admin-console only: `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` |
 
@@ -436,6 +547,12 @@ create's target validator, exclusions, zone routing) in one call.
 > Keys belong to the user who minted them (`api_keys.user_id`). The list shows
 > key names, scopes and last-used IPs, so a member or viewer is filtered to
 > their own keys in the handler (`ownKeysOnly`).
+>
+> A key must have a user. A key with no user (a legacy organization key) has
+> no data scope to carry, so authentication refuses it and the data-scope
+> enforcer resolves it to a scope with no rows (a request with an API key and
+> no user is never treated as an internal call). Migration `002895` revokes the
+> remaining ones.
 
 #### SCIM tokens (`/api/v1/scim-tokens`)
 
@@ -515,11 +632,6 @@ the billing page in the UI.
 > scope). Every change, every token exchange (issued or refused after
 > verification) and every verdict is audited; no token is ever written.
 > Pipelines follow the repository data scope like runs.
->
-> `GET /api/v1/fleet` (the Sensors page) admits `sensors:read` **or**
-> `scans:ci:read`; the handler lists daemon rows only with `sensors:read` and
-> runner rows (CI pipelines) only with `scans:ci:read` and the `scans` module,
-> under the data scope. Asking for a mode without its permission is 403.
 
 #### Template sources and the secret store (`/api/v1/template-sources`, `/api/v1/secret-store`)
 
@@ -528,7 +640,9 @@ the billing page in the UI.
 | `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
 | `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete` |
+
+> Writing the credential store is owner/admin only: its one consumer, a template source, is owner/admin only, so a member could otherwise replace the credential an administrator's source authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002905`).
 
 > **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
 > leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
@@ -640,14 +754,23 @@ These routes require the tenant ID in the URL path and use database-based member
 | `GET /api/v1/tenants/{tenant}/members/{id}/access-report` | Team admin+ (`members:read`): what the member holds and owns |
 | `POST /api/v1/tenants/{tenant}/members/{id}/offboard` | Team admin+ (`members:write`); **owner only when the target is an administrator**; reassignment targets must be active members of the same organization |
 | `POST /api/v1/tenants/{tenant}/members/{id}/erase` | **Team owner only**; only after offboarding and when the person belongs to no other organization |
+| `POST /api/v1/organization/ownership-transfer` | **owner only** (`RequireOwner` + service check) + **step-up**; the new owner is an active person of the same organization with two-factor on, not managed by another organization (RFC-095 §3.5) |
+| `DELETE /api/v1/organization/ownership-transfer` | **owner only** |
+| `GET /api/v1/organization/ownership-transfer` · `POST .../approve` · `POST .../reject` | any member at the route (`team:read`); the service answers 404 unless the caller is the owner who asked (read) or the member asked (read, approve, reject); approve needs **step-up** and re-checks everything in one transaction |
 | `POST /api/v1/tenants/{tenant}/members/{id}/reset-2fa` | Team admin+; **owner only when the target is an owner or administrator**; never the caller themself; the caller needs the same authority in **every other organization** the target belongs to (the factor is account-wide). See `user-two-factor-authentication.md` › Recovery |
-| `POST /api/v1/tenants/{tenant}/invitations` | Team admin+ |
+| `POST /api/v1/tenants/{tenant}/invitations` | Team admin+; `group_ids`: only teams the inviter may add a member to (a team carrying a privileged role: owner + **step-up**), checked again for the inviter at acceptance |
 | `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
 | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
-| `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
+| `GET /api/v1/organization/limits` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (the limits that apply, usage, unavailable features; no operator notes; `docs/architecture/limits.md`) |
+| `GET /api/v1/organization/join-requests` | owner or admin (`RequireAdmin`) + `team:members:read` (the organization's own requests; RFC-104) |
+| `POST /api/v1/organization/join-requests/{request_id}/approve`, `.../reject` | owner or admin + `team:members:write`; approve grants viewer or member only; another organization's request is 404 |
+| `GET /api/v1/organization/settings/domains` | owner or admin (`RequireAdmin`) + `settings:read` (the organization's own domains only) |
+| `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy` | **owner only** (`RequireOwner`) + `settings:write` + **step-up**; a domain of another organization is 404 (RFC-104) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
+| `POST /api/v1/organization/leave` | any member (`team:read`) + **step-up**, for themselves in the credential's organization; refused for the only owner (RFC-104) |
+| `DELETE /api/v1/me/account` | the caller's own account + **step-up**; refused while the caller is the only owner of an organization (RFC-104) |
 
 > **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
 > B3). Changing the role of, suspending, reactivating or removing a member who
@@ -767,7 +890,9 @@ Platform admin routes are for OpenCTEM operators, NOT tenant users. They
 authenticate **only** with a **console session** (RFC-022: `/login` password
 sign-in + mandatory TOTP, server-side session in the `admin_session` cookie,
 scoped to `/api/v1/admin`; cookie-authenticated writes must pass the
-`admin_csrf` double-submit check). There are **no admin API keys**: an
+`admin_csrf` double-submit check: `admin_csrf` is HttpOnly on `/api/v1/admin`,
+and the console echoes the token it received in the sign-in and validate
+responses and keeps in memory). There are **no admin API keys**: an
 `X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
 so every admin action has passed TOTP. The session resolves to an
 `admin_users` row with a platform role: `super_admin` > `ops_admin` >
@@ -778,45 +903,86 @@ Authorization is enforced at the **route layer** in
 `internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
 — not in the handlers.
 
+**Acting role.** With `ADMIN_ELEVATION=required` (default) every request acts
+as `readonly` unless the console session holds a live elevation
+(`POST /api/v1/admin/auth/elevate`, step-up, 15-60 minutes, a role no higher
+than the administrator's own; `DELETE` ends it). Role checks below use that
+acting role, never the stored one.
+
+**Step-up on protected actions.** Every identity, privilege and platform-trust
+change also takes the route-level step-up (`middleware.RequireAdminStepUp`): a
+fresh console authenticator code in the `X-Admin-Step-Up` header, or the
+five-minute step-up window of the same console session (one confirmation,
+recorded in `admin_sessions.step_up_at`, covers the protected actions that
+follow). Without either the API answers `401 ADMIN_STEP_UP_REQUIRED` and the
+console asks for a code and retries; an administrator with no console
+authenticator gets `403 STEP_UP_UNAVAILABLE`. Each confirmation is audited
+(`console.step_up`, the purpose names the action), a wrong code counts toward
+the sign-in lockout. Every console write is classified in
+`adminWriteInventory` (`routes/admin_step_up_inventory_test.go`): step-up,
+routine (with the reason), or sign-in; CI fails on an unclassified write.
+Every write is step-up except the routine ones: an organization's limits and
+idle exemption, rejecting an access request, the e-mail test, announcements,
+threat-intel sync, AI-client blocks and target mappings. Where a row below
+says "a fresh authenticator code", that is this step-up (a body `totp_code`
+is still accepted and checked the same way).
+
+**Network.** Every `/api/v1/admin` route, the sign-in steps included, answers
+only to `ADMIN_ALLOWED_CIDRS` (default private networks; 403
+`ADMIN_NETWORK_NOT_ALLOWED` otherwise; `middleware.AdminNetworkGate` around the
+whole server).
+
+**Personal data.** A `readonly` administrator sees counts, not people:
+`GET /api/v1/admin/tenants/{tenantId}/users` returns `by_role` counts with an
+empty `data` and `redacted: true`, organizations carry `owner_count` with an
+empty `owner_emails`. Every member-list view is audited
+(`organization.users_view`).
+
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
-| `GET /api/v1/admin/platform-users?q=` | any admin (3+ characters; account-level facts only) |
-| `GET /api/v1/admin/platform-users/{user_id}` | any admin (audited `platform_user.view`) |
-| `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
+| `GET /api/v1/admin/platform-users?q=` | **ops_admin+** (3+ characters; account-level facts only; people's emails are not for read-only) |
+| `GET /api/v1/admin/platform-users/{user_id}` | **ops_admin+** (audited `platform_user.view`) |
+| `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
 | `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
 | `GET /api/v1/admin/operations` | any admin (build, schema, database, Redis, queues, sensor versions, controllers; no tenant content) |
+| `GET /api/v1/admin/system` | any admin, read-only, no step-up (service health, free space, backup age, certificate expiry, version; aggregates only, no paths or tenant content; RFC-114) |
 | `GET /api/v1/admin/announcements` | any admin |
 | `POST /api/v1/admin/announcements`, `POST /api/v1/admin/announcements/{announcement_id}/cancel` | **ops_admin+**, `reason` (10-500), audited `announcement.create` / `announcement.cancel` |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
-| `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
+| `POST /api/v1/admin/auth/login`, `/mfa` | public (rate-limited, cross-site guard; the account's email and password, then the console TOTP; no tenant session involved) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
 | `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (token-exchange rate limit, 20/min; state bound to the `admin_idp` cookie, single use) |
-| `POST /api/v1/admin/administrators` | **super_admin** (audited; `break_glass` audited high) |
-| `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** (audited; not self) |
-| `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |
-| `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** (audited high) |
-| `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
+| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited; `break_glass` audited high) |
+| `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** + **step-up** (audited; not self) |
+| `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** + **step-up** (audited; not the break-glass account itself) |
+| `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** + **step-up** (audited high) |
+| `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin**; writes + **step-up** (audited high; secret never returned) |
 | `GET /api/v1/admin/access-requests` | any admin |
-| `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner |
-| `GET /api/v1/admin/settings/plans` | any admin |
-| `PUT /api/v1/admin/settings/plans` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
-| `GET /api/v1/admin/tenants/{tenantId}/plan` | any admin (limits, usage, over-limit flag) |
-| `GET /api/v1/admin/tenants/{tenantId}/idle` | any admin (idle lifecycle of a Free organization) |
-| `PUT /api/v1/admin/tenants/{tenantId}/idle/exemption` | **ops_admin+** (reason required to exempt; audited high; `docs/architecture/idle-workspaces.md`) |
-| `PUT /api/v1/admin/tenants/{tenantId}/plan`, `PUT/DELETE .../plan/overrides/{key}` | **ops_admin+** (audited high; an override needs a reason, an expiry is optional) |
+| `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner and takes **step-up** |
+| `GET /api/v1/admin/settings/limits` | any admin (self-service default limits, configured sources) |
+| `PUT /api/v1/admin/settings/limits` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical** |
+| `GET /api/v1/admin/tenants/{tenantId}/limits` | any admin (limits with origin and reason, usage, denies, over-limit flag) |
+| `GET /api/v1/admin/tenants/{tenantId}/idle` | any admin (the organization's idle policy and stage) |
+| `PUT /api/v1/admin/tenants/{tenantId}/idle/policy` | **ops_admin+** (turns the idle policy on or off; reason required both ways; audited high; `docs/architecture/idle-workspaces.md`) |
+| `PUT/DELETE /api/v1/admin/tenants/{tenantId}/limits/{key}` | **ops_admin+** (audited high; a reason is required, an expiry is optional; only operator rows) |
+| `GET /api/v1/admin/tenants/{tenantId}/modules` | any admin (each module's state; a deny's origin and reason) |
+| `PUT/DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny` | **ops_admin+** + reason + a fresh authenticator code (audited high; a denied module keeps read access for 30 days) |
 | `GET /api/v1/admin/settings/signup` | any admin |
 | `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
-| `PATCH /api/v1/admin/users/{id}` | **super_admin** (audited) |
-| `DELETE /api/v1/admin/users/{id}` | **super_admin** (audited) |
+| `PATCH /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
+| `DELETE /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
 | `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
+| `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
+| `GET /api/v1/admin/version-check/` | any admin (release feed status: newer releases, advisories affecting the running version; instance-level, no tenant data; `docs/architecture/version-check.md`) |
+| `POST /api/v1/admin/version-check/import` | **super_admin** + **step-up** (offline import of the signed release feed file, verified like a fetched one; audited high) |
 | `GET /api/v1/admin/tenants/{tenantId}/audit-chain` | any admin (classifies the organization's audit hash-chain; read-only) |
 | `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` | **super_admin** + a fresh console TOTP code in the body (step-up; a wrong code counts toward lockout). Refused 409 when a break is unexplained or the chain changed since the reviewed classification. Audited high in `admin_audit_logs` and as `audit.chain_rebaselined` in the organization's log |
 
@@ -839,8 +1005,8 @@ role, however high, can reach SSO setup. The SSO **login** flow
 A platform administrator is a `users` account linked to an `admin_users` row
 (`admin_users.user_id`) that holds the role (`super_admin` > `ops_admin` >
 `readonly`), the TOTP second factor and the admin audit trail. It signs in on the
-normal `/login`, then `POST /api/v1/admin/auth/session` (refresh-token cookie)
-and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
+console's own sign-in page: `POST /api/v1/admin/auth/login` (email and
+password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
 
 - **Belongs to no organization.** A trigger on `tenant_members` rejects a
   membership for a linked account (SQLSTATE 23514, surfaced as 409), and an
@@ -860,6 +1026,68 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 
+#### Console security keys and recovery codes (RFC-078)
+
+- **Relying party = the console origin** (`ADMIN_PUBLIC_URL`, default the
+  origin of `APP_URL`). The RP ID is its host and it is the only accepted
+  origin, so an assertion made on the tenant site or a look-alike domain is
+  refused. Off (endpoints answer 403 `WEBAUTHN_UNAVAILABLE`) when no origin is
+  configured.
+- **Second factor.** The sign-in response lists `methods` (`webauthn`, `totp`,
+  `recovery_code`, in that order). `POST /auth/webauthn/session/options` +
+  `POST /auth/webauthn/session` and `POST /auth/recovery` complete a pending
+  session (admin_mfa cookie) like `/auth/mfa`, with the same login rate limit
+  and lockout counting. User verification is required; attestation is not
+  requested; a counter that goes back refuses the assertion and is audited.
+- **Step-up.** `POST /auth/step-up/webauthn/options` + `POST /auth/step-up/webauthn`
+  open the session's five-minute step-up window; the protected action is then
+  retried without a code (route-level and handler-level step-ups both honour
+  the window).
+- **Own factors only.** `GET /auth/factors`; register (`POST
+  /auth/webauthn/credentials/options` takes the route-level step-up, the finish
+  call completes that single-use ceremony), rename, remove (step-up) and new
+  recovery codes (step-up). Every query is keyed on the caller's administrator
+  id. A super admin's reset-credentials removes keys and codes too.
+- **Policy "require security keys"** (`/admin/settings/console-mfa`, super
+  admin + step-up). Turning it on needs a configured relying party and an
+  actor with at least two keys and unused recovery codes. Under the policy an
+  administrator holding a key cannot use TOTP (sign-in or step-up: 403
+  `WEBAUTHN_REQUIRED`), a trusted platform-IdP MFA no longer skips the
+  console factor, the last two keys cannot be removed, and a session of an
+  administrator with fewer than two keys or no recovery codes reaches only the
+  enrollment routes (403 `FACTOR_ENROLLMENT_REQUIRED`). Break-glass
+  administrators keep TOTP.
+
+#### Support access (RFC-063)
+
+A platform administrator never holds standing access to an organization's
+data. The only path is a **support grant**: an owner (with a recent
+re-authentication) names one active `ops_admin` or `super_admin` by email,
+for 1 to 72 hours, read-only, with a reason and the data scopes (`findings`,
+`assets`). Owners and admins list and revoke grants under
+`/api/v1/organization/support-access`; every member reads the active ones.
+
+- The named administrator opens a support session from the console
+  (`POST /api/v1/admin/support/grants/{grant_id}/sessions`, route-level
+  step-up); the session is bound to that console session.
+- Reads (`/api/v1/admin/support/sessions/{session_id}/…`) are resolved live on
+  every request: open session, same administrator and console session, grant
+  not revoked and unexpired (server clock), scope granted. Otherwise 403
+  `SUPPORT_GRANT_REQUIRED`. There is no write route.
+- Every read is written to the organization's audit log (`support.accessed`,
+  actor `support:<email>`) and to the admin audit log before data is returned;
+  if either write fails the read is refused.
+- The read model selects an explicit column allow-list (no messages,
+  snippets, descriptions, evidence, secrets or people), is scoped to the
+  grant's organization, and hides private-program assets and their findings.
+- The overview and finding rows carry only the granted scopes' parts: without
+  `assets` there is no asset count and a finding row names no asset.
+- Grant-bypass paths (RFC-063 section 11.5): the console user list, first owner
+  create or recovery and identity provider creation do not need a grant. They
+  write `admin_console.tenant_access` (actor `console:<email>`) to the
+  organization's audit log and email its owners before running; a failed audit
+  write refuses the use.
+
 #### Break-glass administrators and the platform IdP (RFC-022 revision 4)
 
 - **Platform IdP** (`platform_identity_provider`, one OIDC provider, not
@@ -868,7 +1096,7 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   first sign-in by verified email, then bound. No JIT creation. The console TOTP
   is still required after it unless a super admin trusts specific `acr`/`amr`
   values. Organization IdPs still cannot open the console.
-- **Require IdP** refuses the local password path (`/auth/session`) for every
+- **Require IdP** refuses the local password path (`/auth/login`) for every
   administrator except break-glass ones.
 - **Break-glass** administrators are local `super_admin`s that can never be
   bound to the IdP (database `CHECK`), are exempt from "require IdP", and every
@@ -900,12 +1128,12 @@ and certificates are never logged — an IdP update records
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filters `owner=none\|present`, `plan=free\|pro\|enterprise`; other values 400) |
-| `POST /api/v1/admin/tenants` | **ops_admin+** (audited; creates the owner's account when `owner_email` has none) |
-| `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
-| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) and a fresh console authenticator code in `totp_code` (step-up: 401 `STEP_UP_REQUIRED` without one, 401 for a wrong or replayed one), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
+| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filter `owner=none\|present`; other values 400; each row says whether limits apply) |
+| `POST /api/v1/admin/tenants` | **ops_admin+** + **step-up** (audited; creates the owner's account when `owner_email` has none) |
+| `GET /api/v1/admin/tenants/{tenantId}/users` | any admin; audited `organization.users_view`; `readonly` gets counts by role only (`redacted: true`) |
+| `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** + **step-up**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) (the route's step-up confirms it), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
-| `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
+| `PUT/POST/PATCH/DELETE` on those SSO resources, and `PUT .../sso/enforcement` | **super_admin** + **step-up** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/changes` | any admin (what is waiting for the owner) |
 
 Verifying an SSO domain reads other organizations' rows for the same domain
@@ -966,8 +1194,8 @@ gated (none adds a way in).
 - `PATCH /tenants/{t}/settings/security` refuses `sso_enforced` with 403.
   Enforcement is set only through `PUT /admin/tenants/{tenantId}/sso/enforcement`,
   which keeps the "usable SSO path required" guard.
-- With `TENANT_CREATION_MODE=admin_only` (the default; anything but
-  `self_service` counts), both self-service creation paths
+- With the `admin_only` sign-up policy in force (always under the default
+  `SIGNUP_MODE=disabled`, and under `domain`), both self-service creation paths
   (`POST /api/v1/tenants` and `POST /api/v1/auth/create-first-team`) return
   403. Only `POST /admin/tenants` (and `bootstrap-admin -org-*` at install)
   creates organizations. The mode is published
@@ -1125,8 +1353,34 @@ could otherwise widen anyone's scope, their own included:
 |---|---|
 | `POST /groups/{g}/assets`, `/assets/bulk` | only assets in their scope; another asset answers 404 (bulk: counted as failed) |
 | `POST /groups/{g}/members` | only when every asset the group holds is in their scope (403 otherwise); never themselves: joining a group needs full data access (admin or a `has_full_data_access` role), 403 otherwise |
+| `DELETE /groups/{g}/scope-rules/{r}` | only when every asset the group holds and every asset the rule assigned is in their scope (403 otherwise); the scope rows are rebuilt for the rule's organization only |
 | `POST/PUT /groups/{g}/scope-rules` | refused (403): a rule adds every matching asset, now and later, so it cannot be capped when it is written |
+| `PUT /groups/{g}` with `is_active` (switch a team on or off) | the whole group must be in their scope, the security pool group needs step-up (as for delete). Switching a team **on** also re-grants its bound roles, so it is treated as a grant: each bound role passes the binding ceiling, a privileged role needs the owner plus step-up, and a member cannot revive their own team unless they are the owner or hold full data access. Every flip, and a group delete, drops the members' cached permissions |
 | `/assets/{id}/access-grants`, a group owner on `/assets/{id}/owners` | already limited to assets the caller sees (route guard on `/assets/{id}`) |
+
+**Counts follow the reader.** For a caller restricted to their scope rows,
+these counts cover only the assets they can see: `asset_count` on `GET
+/groups`, `asset_count` / `finding_count` / `critical_finding_count` /
+`avg_risk_score` on business units (the stored rollups stay organization-wide
+and are replaced in the response), the asset, crown-jewel and in-business-unit
+counts of `GET /scoping/summary`, `asset_breakdown` and `risk_score` of `GET
+/attack-surface/stats`, and the exposure-chain `summary` (recomputed from the
+chains the caller may see). Counts that stay organization-wide, because they
+count configuration and expose no asset name or id: the business service,
+business unit, boundary, attacker profile, threat model and cycle totals of
+`/scoping/summary`, the attack-path `summary`, and threat-model rollups.
+
+**Team membership end dates are read at scope time.** A membership whose
+`expires_at` has passed grants no data scope even before the expiry
+controller deletes the row: the scope refresh functions skip expired
+memberships (migration `002903`), the same rule team roles already follow.
+Objects that feed the risk of the assets they link follow the same rule
+(`Enforcer.RequireActOnAssets` / `RequireActOnFindings`): linking an asset or
+finding to a **compensating control** admits only ids the caller can see (404
+for the whole request otherwise, no existence oracle); updating, deleting or
+recording a test on a control, and updating or deleting a **business service**,
+need every linked asset and finding in the caller's scope (403 otherwise). A
+business service's `asset_count` counts only the links in the caller's scope.
 
 "Restricted" is the enforcer's decision (`Enforcer.Delegable`): an admin, a
 full-data role and an internal call are unrestricted. `POST /groups/{g}/members` also refuses
@@ -1326,28 +1580,53 @@ provisioning or SSO JIT re-activates a tombstone from zero (only the new
 role). Tombstones yield no token, no tenant-switcher entry, are left out of
 the default member list (`?status=offboarded|all` shows them) and out of SCIM.
 
-### External members (RFC-058)
+### External members (RFC-058, amended by RFC-095)
 
 A member whose email domain the organization does not hold is **external**.
 The domain may belong to another organization (their home organization), be
 a personal address, or be a work domain nobody has verified.
 
+- **Who may be invited** is the organization's policy, `Security.invitees`:
+  `any` (default), `verified_domains`, or `allow_list` (verified domains plus
+  `allowed_domains`). An organization with `allowed_domains` from before reads
+  as `allow_list`. Refusals carry the codes `INVITEE_NOT_ON_VERIFIED_DOMAIN`
+  (403) and `INVITEE_DOMAIN_NOT_ALLOWED` (400).
 - They join only by accepting an invitation addressed to them. Adding an
   existing account or creating an account for them is refused
   (`ErrExternalNeedsInvitation`).
-- They join as a **viewer** with no data scope until added to a team.
-  An invitation offering more is refused.
-- They never hold the owner role (DB CHECK and triggers on `tenant_members`
-  and `user_roles`). They are never granted the admin role or a role with full
-  data access (`RoleService.capExternalTarget`, every grant path, system paths
-  included; `ErrExternalRoleCeiling`, 403).
-- Without a home organization, their access must end:
+- They may be invited to, or given, **any role but owner**. They never hold
+  the owner role (DB CHECK and triggers on `tenant_members` and `user_roles`).
+  A role "above member" (the admin role, full data access, or a privileged
+  permission the built-in member role does not carry: members, teams, roles,
+  API keys, settings; `permission.IsAboveMember`):
+  - needs the inviter's or assigner's **step-up** (`CreateInvitation`,
+    `RoleService.capExternalTarget` on every assignment path,
+    `UpdateMemberRole`); a grant carried out for someone else, such as an
+    invitation being accepted, is not asked again;
+  - makes every token mint for that member require a **second factor**
+    (`AuthService.enforceOutsidePrivilegePolicy`), including the token the
+    refresh-token acceptance mints;
+  - is refused when an active trust with their home organization caps them
+    (`max_role` viewer or member, `ErrExternalRoleCeiling`);
+  - never comes through a team: full data access reaches an outside person
+    only through a role given to them directly (`ErrExternalTeamFullData`).
+- **End of access** is optional for everyone. With
+  `Security.external_access_end_required` on, an outside person no
+  organization manages must have one:
   - 90 days by default, 365 at most;
   - `MemberAccessExpiryController` suspends the membership within a minute
     (`suspended_reason = expired`), in that organization only;
   - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
     `members:write`) sets a new end date and re-enables them;
   - a plain reactivation is refused.
+- **API keys** follow the member: allowed unless an active trust with their
+  home forbids keys, and never beyond the end of access.
+- **Acceptance re-authorizes the invitation** as the inviter: an inviter who
+  left, was suspended, or no longer holds the owner or admin role (or, for the
+  admin role, is no longer the owner), or can no longer grant one of the
+  roles, voids the invitation (`INVITATION_NO_LONGER_VALID`, 403) and nothing
+  is granted. Both acceptance paths (`/invitations/accept` and
+  `/invitations/accept-with-refresh`) run the same `TenantService.AcceptInvitation`.
 - The host sees the home organization's name only.
 - **Trusted organizations** (`/api/v1/organization/trusts`):
   - reading needs owner/admin plus `members:read`; every change needs an owner with step-up;
@@ -1379,6 +1658,13 @@ a personal address, or be a work domain nobody has verified.
 | `GET /findings/stats` under policy `nothing` when the scope lookup fails | fell through to tenant-wide counts | error (fail closed) |
 | `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
 | `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
+| `POST /remediation/campaigns/{id}/resolve` (gate and filter) | `findings:remediation:write` alone could mark findings fixed; an unparseable condition was dropped and a status-only filter counted as scope, widening a resolve to the organization | `RequireAll(findings:remediation:write, findings:fix_apply)`; the filter is parsed strictly (400 on save, 400 on resolve of an old unparseable one), a status alone is not scope, only `active`/`validating` campaigns resolve |
+| `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision or accept needs every finding in scope (a join also every finding of the target task); `POST /{id}/approve` is gated on `findings:remediation:read`: without `findings:remediation:write` only an as-is join or task route to the caller (or their group) on assets they own (primary/secondary) is accepted, 403 otherwise |
+| `GET /remediation/actions/{id}` (RFC-098) | — | a restricted member reads an action only when they can see one of its tasks; otherwise 404 |
+| `PATCH /remediation/actions/{id}` (auto-join, RFC-098) | — | needs a caller with no data-scope restriction (the rule acts on findings beyond any scope) |
+| `/remediation/moves*`, `/remediation/tasks/{id}/splits|merges` (RFC-098) | — | every task involved must have all its findings in the caller's scope, and every named finding too (404 otherwise); another tenant's task is 404 |
+| `POST /remediation/tasks/{id}/resolve` (RFC-098) | — | `RequireAll(findings:remediation:write, findings:fix_apply)`; every finding of the task in the caller's scope; each finding moves only through the bulk path's legal steps and owner check |
+| `/remediation/tasks*` (new, RFC-098) | — | a task is listed and read through its in-scope findings only (counters, deadline and risk over those; `hidden_members` counts the rest; none visible = 404); a change needs every finding in scope; named findings must be in scope (404 otherwise) |
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
@@ -1390,6 +1676,10 @@ a personal address, or be a work domain nobody has verified.
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
 | `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
 | `GET /dashboard/executive-summary` (+ export) `top_risks` | bypass | filtered |
+| `GET /dashboard/executive-summary` (+ export) totals, `/dashboard/velocity`, `/dashboard/data-quality`, `/dashboard/process-metrics` | **bypass (organization-wide totals)** | count the viewer's own scope (same rule as `/dashboard/stats`: `dashboard:aggregate` or full data access for the organization); the executive score change and the data-quality deduplication rate are not reported for a restricted viewer |
+| `GET /dashboard/risk-trend`, `GET /dashboard/program-metrics` | **bypass (organization-wide history and KPIs)** | kept for the whole organization: a restricted viewer without `dashboard:aggregate` gets an empty trend and a 403 on the program metrics |
+| `GET/PUT/POST/DELETE /suppressions...` | **bypass (rule patterns of any asset; an organization-wide rule could be approved by a restricted approver)** | an asset-bound rule needs its asset in the caller's scope to be read, edited, approved or deleted (404 otherwise) and is left out of the list; an organization-wide rule needs full data access to create, edit, approve or delete |
+| MCP `get_finding`, `explain_priority`, `list_finding_transitions`, `add_finding_comment` (by-id read, `GetFindingWithScope`) | **bypass (private program findings of a full-data role)** | the same decision as the route guard (`datascope.Enforcer`): a full-data role does not read a private bug-bounty program's findings it is not a member of; scope rows apply to everyone else |
 | `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
@@ -1719,7 +2009,7 @@ viewer (1) ┴─ Can only view resources
    session cookies (`/auth/register`, `/login`, `/mfa/*`, `/token`,
    `/refresh`, `/verify-email`, `/forgot-password`, `/reset-password`,
    `/create-first-team`, `/discover`, the OAuth and SSO callbacks, and the
-   console's `/admin/auth/session`, `/mfa`, `/logout`, `/idp/start`,
+   console's `/admin/auth/login`, `/mfa`, `/logout`, `/idp/start`,
    `/idp/callback`) refuse a write a browser sent for another site
    (`RejectCrossSiteBrowser`: an `Origin` that is neither the request's host
    nor in `CORS_ALLOWED_ORIGINS`, `Origin: null`, or no `Origin` with
@@ -1921,7 +2211,8 @@ deliberately.
     decision 2026-10-03).** `POST /api/v1/commands` with `type: "scan"`
     makes a sensor scan whatever the payload names, so it is refused (403)
     for anyone but owners and administrators, although members keep
-    `commands:write` for the other command types. For an administrator the
+    `commands:write` for `health_check`. `collect`, `config_update` and `cancel`
+    steer a sensor as well and are owner/admin only too. For an administrator the
     payload's `target`/`targets` go through the checks of a scan trigger
     (`scan.Service.GateCommandPayload`): the target validator with the
     private-range policy (internal addresses only inside a scan zone), active
@@ -1956,13 +2247,14 @@ deliberately.
 
 ## Role templates
 
-The built-in roles (`permission.SystemRoles`) are deliberately coarse.
-Least-privilege roles for the people in a CTEM program are custom roles,
-created from a **role template** (`permission.RoleTemplates`,
-`GET /api/v1/roles/templates`, `team:roles:read`). A template is a starting
-point and grants nothing. Creating a role from one is an ordinary
-`POST /api/v1/roles`: the grant ceiling, the admin-only refusal and the audit
-apply, so a template never lets anyone build a role above their own grants.
+The built-in roles (`permission.SystemRoles`) are deliberately few: **owner,
+admin, member and viewer**. Every other role is a custom role of the
+organization, usually created from a **role template**
+(`permission.RoleTemplates`, `GET /api/v1/roles/templates`, `team:roles:read`;
+design: RFC-095). A template is a starting point and grants nothing. Creating
+a role from one is an ordinary `POST /api/v1/roles` with `template_id`: the
+grant ceiling, the admin-only refusal and the audit apply, so a template never
+lets anyone build a role above their own grants.
 
 | Template | For | Full data |
 |---|---|---|
@@ -1971,13 +2263,38 @@ apply, so a template never lets anyone build a role above their own grants.
 | `vulnerability-manager` | backlog routing, assignment rules, campaigns, scan schedules, reports | no |
 | `remediation-owner` | asset owners, IT, developers: comments, remediation, fix applied | no |
 | `appsec-engineer` | code and dependency scanning, application findings, the CI gate | no |
+| `ci-integrator` | platform engineers keeping pipelines connected: CI runs and gate results, read only | no |
 | `scan-operator` | scans and scan workflows on approved scope | no |
+| `sensor-operator` | sensor health, zones and commands; pairing and keys stay with administrators | no |
 | `validation-engineer` | pentest campaigns, simulations, control tests, retests | no |
 | `external-tester` | a vendor tester: only the campaigns they are a member of | no |
+| `researcher` (v2) | bug-bounty researchers: programs, scans and findings of their programs (RFC-065); no sensor access since v2 (migration `002905` removes `sensors:read` from existing copies) | no |
+| `bounty-triager` | triages researcher reports; never approves or changes program scope | no |
 | `threat-intel-analyst` | attacker profiles, threat intel, external exposures | no |
 | `risk-approver` | GRC: approves risk acceptance and suppressions, compliance | no |
 | `auditor` | read-only evidence, the audit log and exports | yes |
 | `executive` | dashboards, cycle outcomes and reports; less than viewer | no |
+
+**Versions.** Each template has a version. A role created from a template
+records the template id, the version and the template's permissions at that
+version (`roles.template_id`, `template_version`, `template_permissions`).
+A later change to the template never changes the role. When the catalog has a
+newer version, the role's responses carry `template.update_available` and the
+difference (in `GET /api/v1/roles/{id}` and the role list); an editor applies it with
+`POST /api/v1/roles/{id}/template/apply {version}` (`team:roles:write`). The
+update adds what the template added and removes what it removed, keeps the
+role's own edits, never changes full data access, and goes through
+`UpdateRole`, so the editor ceiling and the team-binding guard apply. A
+version other than the one the editor reviewed answers 409.
+`TestRoleTemplates_VersionPinned` pins each template's version to a digest of
+its grants, so a grant change without a new version fails CI.
+
+**Summaries.** Role and template responses carry `summary`: a risk tier
+(`critical` for owner and admin; `high` for full data, people, roles, keys,
+settings or secrets; `medium` for any change, scan run or approval; `low` for
+reads), the reasons, and per product area whether the role views or changes
+it (`permission.Summarize`). The console shows these instead of a permission
+count.
 
 Unit tests (`templates_test.go`) keep the templates honest:
 - every permission is in the catalog and none is admin-only;
@@ -1989,7 +2306,9 @@ Unit tests (`templates_test.go`) keep the templates honest:
 - no template administers the organization or deletes anything;
 - only `program-lead` and `auditor` see all data;
 - `auditor` and `executive` are read-only, and `executive` is within viewer;
-- `external-tester` holds no organization-wide findings, exposures, members or scans.
+- `external-tester` holds no organization-wide findings, exposures, members or scans;
+- the CI gate policy and break-glass stay with `appsec-engineer`;
+- `researcher` comments but never re-scores or approves.
 
 `TestRoleTemplates_CreationIsBoundedByTheCreator` checks two things: the owner can create every template, and a delegated role manager can create only the templates their own grants cover.
 
@@ -2039,7 +2358,7 @@ role. A custom role created later needs them explicitly for those reads.
 `PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
 finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
 reactions (`/comments/{comment_id}/reactions*`). The migration granted both to
-every role that held `findings:write`, except that the built-in Researcher role
+every role that held `findings:write`, except that the built-in Researcher role (now the `researcher` template, RFC-095)
 gets `findings:comment` only (researchers report and discuss; triage owns
 severity). A custom role without `findings:severity`
 (the remediation-owner template) can fix and discuss a finding but not
@@ -2071,7 +2390,7 @@ report all read it.
 | Binding is a grant | `POST/DELETE /api/v1/groups/{groupId}/roles` need `team:roles:assign` and `team:groups:write`; the actor must hold every permission of the role (and full data if it has it) and, without full data access, every asset of the team (D13) |
 | Membership of a team that carries roles is a grant | adding, extending or removing someone needs the same ceiling for each bound role; nobody but the owner adds themselves |
 | Privileged roles are the owner's | a role with full data access or a permission in `permission.PrivilegedPermissions` (member, team, role, API key, secret store or settings administration) is bound, unbound, its team's membership changed, or an existing bound role made privileged, by the owner only, with a recent sign-in |
-| External members | never hold a full-data role through a team (refused on add and on bind) |
+| External members | never hold a full-data role through a team (refused on add and on bind, `ErrExternalTeamFullData`) |
 | Limits | at most 10 roles per team; a bound role cannot be deleted (409 `ROLE_IN_USE`) |
 | Freshness | every bind, unbind, add, remove, end-date change, expiry and role edit invalidates the affected members' cached permissions (role edits fan out to direct and team holders) |
 | Audit | `role.assigned` / `role.unassigned` on the team (metadata `binding=team`, the role, `privileged`, member count), High, Critical when privileged |

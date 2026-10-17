@@ -157,6 +157,9 @@ var guardedInertSeams = []struct {
 	{".AITriage", "SetWorkflowDispatcher", "AI-triage workflow events"},
 	{".Pentest", "SetTenantMemberChecker", "pentest cross-tenant member check"},
 	{".Tenant", "SetMemberStatusEmailNotifier", "member suspend/reactivate emails"},
+	{".Tenant", "SetInvitationTeams", "teams on invitations"},
+	{".Tenant", "SetOwnershipTransferNotifier", "ownership transfer emails"},
+	{".Tenant", "SetOwnershipTransferRepository", "ownership transfer"},
 	{".Module", "SetWSBroadcaster", "module.updated WebSocket push on module toggle"},
 	{".SCIMProvisioning", "SetDomainVerifier", "SCIM attaches existing accounts only on a verified domain"},
 }
@@ -293,11 +296,9 @@ func TestServices_EachServiceConstructedOnce(t *testing.T) {
 // must be wired: the services nil-guard their collaborators, so an unwired
 // setter is a feature that silently never runs.
 var optionalServiceSetters = map[string]string{
-	// Plan seam: the entitlement layer (plans with SSO) is not built yet;
-	// until it is, every plan may trust another organization.
-	"OrgTrust.SetSSOEntitlement": "plan entitlements not built yet (trusts allowed on every plan)",
-	"VEX.SetClock":               "test seam: replaces the clock; production uses time.Now",
-	"WebEvidence.SetClock":       "test seam: replaces the clock; production uses time.Now",
+	"RemediationTask.SetMoveNotifier": "tracker comments on moves: wired by the task ticket integration once tasks carry an issue; until then a move writes the task timeline only",
+	"VEX.SetClock":                    "test seam: replaces the clock; production uses time.Now",
+	"WebEvidence.SetClock":            "test seam: replaces the clock; production uses time.Now",
 
 	// Business operations named Set*, not collaborator seams.
 	"ProgramFeedSettings.SetLocalBundle": "business operation (the admin console switch of the local program bundle), not a collaborator seam",
@@ -364,5 +365,52 @@ func TestServices_EverySetterWiredOrExplicitlyOptional(t *testing.T) {
 		if called[key] {
 			t.Errorf("%s is listed as optional but is wired; remove it from optionalServiceSetters", key)
 		}
+	}
+}
+
+// The finding-lifecycle service checks the organization's limits only through
+// the checker passed to its constructor, and a nil checker means "no limits":
+// dropping the argument builds, vets and runs, and the sub-status and scheme
+// caps silently stop applying. Assert the composition root passes the
+// entitlement service.
+func TestFindingLifecycleLimitCheckerIsWired(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read cmd/server: %v", err)
+	}
+	fset := token.NewFileSet()
+	found := false
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "NewService" {
+				return true
+			}
+			if pkg, ok := sel.X.(*ast.Ident); !ok || pkg.Name != "findinglifecycleapp" {
+				return true
+			}
+			found = true
+			var buf bytes.Buffer
+			if len(call.Args) < 3 || printer.Fprint(&buf, fset, call.Args[2]) != nil || !strings.HasSuffix(buf.String(), ".Entitlement") {
+				t.Errorf("%s: findinglifecycleapp.NewService must be given the entitlement service as its limit checker (3rd argument), got %q",
+					name, buf.String())
+			}
+			return true
+		})
+	}
+	if !found {
+		t.Fatal("findinglifecycleapp.NewService is not constructed in cmd/server; the guard guards nothing")
 	}
 }

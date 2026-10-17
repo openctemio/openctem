@@ -6,7 +6,7 @@
  *
  * 1. Route protection (src/lib/middleware/auth.ts). A page that needs a session
  *    and has no session cookie of the right shape is redirected to
- *    /login?next=<page>; the admin console (RFC-022) to /admin/login?next=<page>.
+ *    /login?next=<page>.
  *    Cookie presence and shape only, no network call: the API validates the
  *    session on every call, and a stale cookie is cleared by the client on its
  *    first 401 (src/lib/auth/session-expired.ts). Public pages: PUBLIC_ROUTES.

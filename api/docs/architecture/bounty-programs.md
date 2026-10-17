@@ -50,9 +50,9 @@ paste / CSV ──► bountyprogram.ParseScope ──► items (in / out / not s
 
 ## Researcher role and data scope
 
-- Permissions `attack_surface:programs:read|write`; the built-in Researcher
-  role (`…0005`) holds them with scans, findings and read-only assets and
-  sensors. Owners and administrators hold every program permission.
+- Permissions `attack_surface:programs:read|write`; a role created from the
+  `researcher` template (RFC-095; the built-in Researcher role until then)
+  holds them with scans, findings and read-only assets and sensors. Owners and administrators hold every program permission.
 - Every program has a group (type `project`). The program assignment pass
   keeps `asset_owners` rows with `assignment_source = 'program'` for the
   assets the program's active entries cover; the `asset_owners` trigger keeps
@@ -79,8 +79,9 @@ tenant only):
 - otherwise the delivered copy carries the headers and User-Agent in
   `http_policy` and a `rate_limit` capped at the smallest program rate; the
   stored command is unchanged;
-- headers or a User-Agent go only to a sensor whose SDK is v0.19.0 or later
-  (older sensors would ignore them); a failed lookup withholds the job.
+- headers or a User-Agent go only to a sensor that reports the capability
+  `http.identity@1` (its tools send them on every request; others would
+  ignore them); a failed lookup withholds the job.
 
 The trigger refuses conflicting rules up front (`PROGRAM_RULES_CONFLICT`);
 a run outside a testing window waits, a scheduled one is deferred to the

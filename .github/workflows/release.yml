@@ -98,9 +98,10 @@ jobs:
           ## Container images (multi-arch: amd64 + arm64)
 
           \`\`\`bash
-          docker pull ghcr.io/openctemio/openctem:${TAG}      # all-in-one (API + web + gateway)
+          docker pull ghcr.io/openctemio/openctem:${TAG}      # all-in-one (API + web + console + gateway)
           docker pull ghcr.io/openctemio/openctem-api:${TAG}
           docker pull ghcr.io/openctemio/openctem-web:${TAG}
+          docker pull ghcr.io/openctemio/openctem-console:${TAG}   # platform console
           docker pull ghcr.io/openctemio/migrations:${TAG}
           docker pull ghcr.io/openctemio/seed:${TAG}
           docker pull ghcr.io/openctemio/admin-cli:${TAG}
@@ -147,3 +148,10 @@ jobs:
           bash .github/scripts/release/gh-retry.sh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
           python3 .github/scripts/release/sanitize-notes.py notes.md
           bash .github/scripts/release/gh-retry.sh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+
+  release-feed:
+    name: Release feed
+    needs: [release]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-feed.yml
