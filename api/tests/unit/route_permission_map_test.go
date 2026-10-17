@@ -282,9 +282,16 @@ func normalizeGate(g routeGate) routeGate {
 	return g
 }
 
+// consoleRoutePrefix marks the platform console's API. The tenant web app
+// bundles this map, and must not carry the console's route list.
+const consoleRoutePrefix = "/api/v1/admin/"
+
 func renderRoutePermissionMap(m map[string]routeGate) []byte {
 	keys := make([]string, 0, len(m))
 	for k := range m {
+		if _, path, ok := strings.Cut(k, " "); ok && strings.HasPrefix(path, consoleRoutePrefix) {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -303,6 +310,20 @@ func renderRoutePermissionMap(m map[string]routeGate) []byte {
 	}
 	buf.WriteString("}\n")
 	return buf.Bytes()
+}
+
+func TestRenderRoutePermissionMapOmitsConsoleRoutes(t *testing.T) {
+	out := string(renderRoutePermissionMap(map[string]routeGate{
+		"GET /api/v1/assets":           {},
+		"GET /api/v1/admin/tenants":    {},
+		"DELETE /api/v1/admin/users/1": {},
+	}))
+	if strings.Contains(out, "/api/v1/admin/") {
+		t.Errorf("console routes in the web map:\n%s", out)
+	}
+	if !strings.Contains(out, "GET /api/v1/assets") {
+		t.Errorf("tenant route missing:\n%s", out)
+	}
 }
 
 func TestRoutePermissionMap(t *testing.T) {

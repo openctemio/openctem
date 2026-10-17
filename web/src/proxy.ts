@@ -6,7 +6,7 @@
  *
  * 1. Route protection (src/lib/middleware/auth.ts). A page that needs a session
  *    and has no session cookie of the right shape is redirected to
- *    /login?next=<page>; the admin console (RFC-022) to /admin/login?next=<page>.
+ *    /login?next=<page>.
  *    Cookie presence and shape only, no network call: the API validates the
  *    session on every call, and a stale cookie is cleared by the client on its
  *    first 401 (src/lib/auth/session-expired.ts). Public pages: PUBLIC_ROUTES.
@@ -23,11 +23,6 @@
  * 4. Invitation links from before RFC-041 (/invitations/{token}) get a 307 to
  *    /invitations#token=..., so the token leaves the path
  *    (src/lib/middleware/invitation-link.ts).
- *
- * 0. The admin plane (src/lib/middleware/admin-plane.ts): with the console on
- *    its own origin, a console-site request reaches only the console and a
- *    main-site request never does (404). It also runs for API routes, which
- *    then return at once.
  *
  * 5. CSRF (src/lib/server-auth-cookies.ts). A state-changing request to a page
  *    is a Server Action (sign-in, registration, password reset, invitation,
@@ -47,23 +42,8 @@ import { detectLocale } from '@/lib/middleware/i18n'
 import { cspForRequest, generateNonce } from '@/lib/middleware/csp'
 import { handleLegacyInvitationLink } from '@/lib/middleware/invitation-link'
 import { csrfRejection, ensureCsrfCookie } from '@/lib/server-auth-cookies'
-import { ADMIN_PLANE_HEADER, decidePlane } from '@/lib/middleware/admin-plane'
 
 export function proxy(req: NextRequest) {
-  // The platform console on its own origin: each site serves only its own
-  // plane (src/lib/middleware/admin-plane.ts). First, for pages and API routes.
-  const plane = decidePlane(req.nextUrl.pathname, req.headers.get(ADMIN_PLANE_HEADER))
-  if (plane === 'not-found') return new NextResponse('Not Found', { status: 404 })
-  if (plane === 'to-console') {
-    const url = req.nextUrl.clone()
-    url.pathname = '/admin'
-    url.search = ''
-    return NextResponse.redirect(url)
-  }
-  // API routes come here only for the plane gate; they check the rest
-  // themselves (CSRF, auth) and need no page headers.
-  if (req.nextUrl.pathname.startsWith('/api/')) return NextResponse.next()
-
   // Server Actions: same origin and the double-submit pair, before anything runs.
   const csrf = csrfRejection(req)
   if (csrf) return csrf
@@ -108,7 +88,5 @@ export const config = {
         { type: 'header', key: 'purpose', value: 'prefetch' },
       ],
     },
-    // API routes, for the admin-plane gate only (proxy returns at once).
-    { source: '/api/:path*' },
   ],
 }

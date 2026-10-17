@@ -36,10 +36,14 @@ describe('GET /api/version', () => {
     expect(res.status).toBe(401)
   })
 
+  it('does not accept the console session cookie', async () => {
+    const res = await call('admin_session=s')
+    expect(res.status).toBe(401)
+  })
+
   it.each([
     ['the app session', `auth_token=${TOKEN}`],
     ['a refresh-only app session', `refresh_token=${TOKEN}`],
-    ['the admin console session', 'admin_session=s'],
   ])('answers %s with the web build', async (_, cookie) => {
     const res = await call(cookie)
     expect(res.status).toBe(200)
