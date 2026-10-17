@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/ctis/addrscope"
+
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
