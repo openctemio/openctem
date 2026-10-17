@@ -38,9 +38,12 @@ const SOURCE_REASONS = new Set([
 export function ApprovalEvaluationBanner({
   evaluation,
   className,
+  group = false,
 }: {
   evaluation: ApprovalEvaluation
   className?: string
+  /** The evaluation covers a group exception (many findings, one decision). */
+  group?: boolean
 }) {
   const { t } = useTranslation()
   const e = evaluation
@@ -111,11 +114,17 @@ export function ApprovalEvaluationBanner({
       )}
       {e.kind === 'accepted' && !!e.max_acceptance_days && (
         <p className="text-muted-foreground">
-          {t(
-            'findingApprovals.evaluation.maxDays',
-            'An acceptance of this finding lasts at most {days} days.',
-            { days: e.max_acceptance_days }
-          )}
+          {group
+            ? t(
+                'findingApprovals.group.maxDays',
+                'The strictest finding here may be accepted for at most {days} days; each finding ends at its own limit when that is earlier.',
+                { days: e.max_acceptance_days }
+              )
+            : t(
+                'findingApprovals.evaluation.maxDays',
+                'An acceptance of this finding lasts at most {days} days.',
+                { days: e.max_acceptance_days }
+              )}
         </p>
       )}
       {e.decide_within_days > 0 && (

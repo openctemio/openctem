@@ -40,9 +40,20 @@ const base: RemediationSuggestion = {
   updated_at: '2026-10-16T00:00:00Z',
 }
 
-function renderCard(over: Partial<RemediationSuggestion> = {}, canWrite = true) {
+function renderCard(
+  over: Partial<RemediationSuggestion> = {},
+  canWrite = true,
+  canOwnerAccept = false
+) {
   const handlers = { onAccept: vi.fn(), onEdit: vi.fn(), onDismiss: vi.fn(), onSnooze: vi.fn() }
-  render(<SuggestionCard suggestion={{ ...base, ...over }} canWrite={canWrite} {...handlers} />)
+  render(
+    <SuggestionCard
+      suggestion={{ ...base, ...over }}
+      canWrite={canWrite}
+      canOwnerAccept={canOwnerAccept}
+      {...handlers}
+    />
+  )
   return handlers
 }
 
@@ -80,5 +91,20 @@ describe('SuggestionCard', () => {
     renderCard({}, false)
     expect(screen.queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Why\?/ })).toBeInTheDocument()
+  })
+
+  it('lets an asset owner without write access accept as it is, nothing else', async () => {
+    const h = renderCard({ kind: 'join', target_task_id: 't1' }, false, true)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Accept as owner' }))
+    expect(h.onAccept).toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Snooze' })).not.toBeInTheDocument()
+  })
+
+  it('shows the full decisions, not the owner button, to a person with write access', () => {
+    renderCard({ kind: 'join' }, true, true)
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Accept as owner' })).not.toBeInTheDocument()
   })
 })
