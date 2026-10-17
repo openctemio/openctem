@@ -45,7 +45,37 @@ func TestMigrationAuthzPlatformLeastPrivilege(t *testing.T) {
 		t.Fatal("before: Member does not hold scans:secret_store:write")
 	}
 
+	// Notification channels that exist before the migration: one with a NULL
+	// value, one with no extension row, one that stored false, one new-style.
+	const (
+		chNull, chNone, chFalse = "c1111111-1111-4111-8111-111111111111", "c2222222-2222-4222-8222-222222222222", "c3333333-3333-4333-8333-333333333333"
+	)
+	for i, id := range []string{chNull, chNone, chFalse} {
+		exec(`INSERT INTO integrations (id, tenant_id, name, category, provider, status, auth_type)
+			VALUES ($1, $2, $3, 'notification', 'slack', 'connected', 'token')`, id, tenant, "ch"+string(rune('a'+i)))
+	}
+	exec(`ALTER TABLE integration_notification_extensions ALTER COLUMN include_details DROP NOT NULL`)
+	exec(`INSERT INTO integration_notification_extensions (integration_id, include_details) VALUES ($1, NULL), ($2, false)`, chNull, chFalse)
+
 	testdb.Migrate(t, db, dir, v, v, false)
+	details := func(id string) (bool, bool) {
+		t.Helper()
+		var d bool
+		err := db.QueryRow(`SELECT include_details FROM integration_notification_extensions WHERE integration_id = $1`, id).Scan(&d)
+		return d, err == nil
+	}
+	if d, ok := details(chNull); !ok || !d {
+		t.Errorf("up: NULL channel include_details = %v (row=%v), want true", d, ok)
+	}
+	if d, ok := details(chNone); !ok || !d {
+		t.Errorf("up: channel without a row include_details = %v (row=%v), want true", d, ok)
+	}
+	if d, ok := details(chFalse); !ok || d {
+		t.Errorf("up: channel that stored false include_details = %v (row=%v), want false", d, ok)
+	}
+	if _, err := db.Exec(`UPDATE integration_notification_extensions SET include_details = NULL WHERE integration_id = $1`, chNull); err == nil {
+		t.Errorf("up: include_details accepts NULL")
+	}
 	if has(role, "sensors:read") || !has(role, "assets:read") {
 		t.Errorf("up: Researcher copy grants wrong (sensors:read=%v)", has(role, "sensors:read"))
 	}

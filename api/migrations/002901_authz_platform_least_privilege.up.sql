@@ -24,6 +24,20 @@ WHERE role_id = '00000000-0000-0000-0000-000000000003'
   AND permission_id = 'scans:secret_store:write';
 
 -- 3. A new notification channel sends the minimal message (event type,
---    severity, link) unless it opts in to details. Existing channels keep
---    their stored choice.
+--    severity, link) unless it opts in to details. Channels that exist today
+--    keep what they send now (full details): the ones with a NULL value or no
+--    extension row yet are set to true explicitly, so only channels created
+--    after this migration default to minimal. The column becomes NOT NULL so
+--    a missing value can never read as either.
+UPDATE integration_notification_extensions SET include_details = true WHERE include_details IS NULL;
+
+-- Event types and severities are written as the values the repository already
+-- reads for a channel without a row, so the channel behaves as before.
+INSERT INTO integration_notification_extensions (integration_id, enabled_severities, enabled_event_types, include_details)
+SELECT i.id, '["critical", "high"]'::jsonb, '["new_finding", "new_exposure"]'::jsonb, true
+FROM integrations i
+WHERE i.category = 'notification'
+  AND NOT EXISTS (SELECT 1 FROM integration_notification_extensions n WHERE n.integration_id = i.id);
+
 ALTER TABLE integration_notification_extensions ALTER COLUMN include_details SET DEFAULT false;
+ALTER TABLE integration_notification_extensions ALTER COLUMN include_details SET NOT NULL;
