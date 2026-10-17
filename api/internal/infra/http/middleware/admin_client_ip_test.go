@@ -13,7 +13,7 @@ import (
 func TestExtractIP_TrustedProxyRule(t *testing.T) {
 	t.Cleanup(func() { SetTrustedProxies(nil) })
 
-	req := httptest.NewRequest("POST", "/api/v1/admin/auth/session", nil)
+	req := httptest.NewRequest("POST", "/api/v1/admin/auth/login", nil)
 	req.RemoteAddr = "203.0.113.9:4444"
 	req.Header.Set("X-Forwarded-For", "1.2.3.4")
 

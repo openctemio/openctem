@@ -29,13 +29,14 @@ var _ assettechapp.BackfillStore = (*AssetTechnologyBackfillRepository)(nil)
 
 const zeroUUID = "00000000-0000-0000-0000-000000000000"
 
-// PendingTenants returns tenants with assets not backfilled at version.
-func (r *AssetTechnologyBackfillRepository) PendingTenants(ctx context.Context, version int) ([]shared.ID, error) {
+// PendingTenants returns tenants with assets not backfilled at version. A
+// tenant that only had a report-only run is pending again when enforce.
+func (r *AssetTechnologyBackfillRepository) PendingTenants(ctx context.Context, version int, enforce bool) ([]shared.ID, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT t.id FROM tenants t
 		WHERE EXISTS (SELECT 1 FROM assets a WHERE a.tenant_id = t.id)
-		  AND NOT EXISTS (SELECT 1 FROM asset_technology_backfill b WHERE b.tenant_id = t.id AND b.version >= $1)
-		ORDER BY t.id`, version)
+		  AND NOT EXISTS (SELECT 1 FROM asset_technology_backfill b WHERE b.tenant_id = t.id AND b.version >= $1 AND (b.enforced OR NOT $2::boolean))
+		ORDER BY t.id`, version, enforce)
 	if err != nil {
 		return nil, fmt.Errorf("list tenants to backfill technologies: %w", err)
 	}
@@ -120,6 +121,7 @@ func (r *AssetTechnologyBackfillRepository) ScanTechnologyLinks(ctx context.Cont
 		  JOIN software_products p ON p.id = s.product_id
 		  JOIN software_versions v ON v.id = s.software_version_id
 		 WHERE s.tenant_id = $1 AND s.source = 'technology' AND s.id > $2::uuid
+		   AND NOT EXISTS (SELECT 1 FROM asset_software_edges e WHERE e.parent_id = s.id OR e.child_id = s.id)
 		 ORDER BY s.id
 		 LIMIT $3`, tenantID.String(), afterID, limit)
 	if err != nil {
@@ -141,8 +143,12 @@ func (r *AssetTechnologyBackfillRepository) ScanTechnologyLinks(ctx context.Cont
 	return out, rows.Err()
 }
 
-// DeleteLinks deletes the tenant's component links by id, technology links
-// only.
+// DeleteLinks deletes the tenant's technology links by id and records each
+// deleted row in asset_technology_backfill_removed, in one statement. The
+// statement repeats the backfill's rule (assettech.CleanVersion(version) is
+// empty and the product has no CPE): a versioned or CPE-backed link is never
+// deleted, whatever ids are passed. A link that is an end of a dependency
+// edge is skipped too, so the edge cascade never removes anything else.
 func (r *AssetTechnologyBackfillRepository) DeleteLinks(ctx context.Context, tenantID shared.ID, ids []shared.ID) (int, error) {
 	if len(ids) == 0 {
 		return 0, nil
@@ -152,9 +158,22 @@ func (r *AssetTechnologyBackfillRepository) DeleteLinks(ctx context.Context, ten
 		list = append(list, id.String())
 	}
 	res, err := r.db.ExecContext(ctx, `
-		DELETE FROM asset_software
-		 WHERE tenant_id = $1 AND source = 'technology' AND id = ANY($2::uuid[])`,
-		tenantID.String(), pq.Array(list))
+		WITH d AS (
+		    DELETE FROM asset_software s
+		     USING software_products p, software_versions v
+		     WHERE s.tenant_id = $1 AND s.source = 'technology' AND s.id = ANY($2::uuid[])
+		       AND p.id = s.product_id AND v.id = s.software_version_id
+		       AND p.cpe_vendor IS NULL
+		       AND (v.raw ~ '^[[:space:]]*$' OR octet_length(btrim(v.raw)) > $3 OR v.raw ~ '[[:cntrl:]]')
+		       AND NOT EXISTS (SELECT 1 FROM asset_software_edges e WHERE e.parent_id = s.id OR e.child_id = s.id)
+		    RETURNING s.tenant_id, s.asset_id, s.id AS link_id, p.name AS product, v.raw AS version,
+		              s.confidence, s.first_seen_at, s.last_seen_at
+		)
+		INSERT INTO asset_technology_backfill_removed
+		       (tenant_id, asset_id, link_id, product, version, confidence, first_seen, last_seen, removed_at)
+		SELECT tenant_id, asset_id, link_id, product, version, confidence, first_seen_at, last_seen_at, now()
+		  FROM d`,
+		tenantID.String(), pq.Array(list), assettech.MaxVersionLen)
 	if err != nil {
 		return 0, fmt.Errorf("delete technology links: %w", err)
 	}
@@ -163,17 +182,11 @@ func (r *AssetTechnologyBackfillRepository) DeleteLinks(ctx context.Context, ten
 }
 
 // DropRetiredProperty removes properties.technologies from at most limit
-// of the tenant's assets, and the tags that were copies of those
-// technologies (the recon converter used to add each one as a tag: exact
-// matches of a stored element only, so a person's own tag that differs in
-// any way stays).
+// of the tenant's assets. Tags are left alone: a tag carries no origin, so a
+// person's tag cannot be told from one the old recon converter added.
 func (r *AssetTechnologyBackfillRepository) DropRetiredProperty(ctx context.Context, tenantID shared.ID, limit int) (int, error) {
 	res, err := r.db.ExecContext(ctx, `
-		UPDATE assets SET
-		       tags = CASE WHEN jsonb_typeof(properties -> 'technologies') = 'array'
-		                   THEN ARRAY(SELECT tg FROM unnest(tags) AS tg WHERE NOT ((properties -> 'technologies') ? tg))
-		                   ELSE tags END,
-		       properties = properties - 'technologies'
+		UPDATE assets SET properties = properties - 'technologies'
 		 WHERE tenant_id = $1 AND id IN (
 		       SELECT id FROM assets WHERE tenant_id = $1 AND properties ? 'technologies' LIMIT $2)`,
 		tenantID.String(), limit)
@@ -185,15 +198,16 @@ func (r *AssetTechnologyBackfillRepository) DropRetiredProperty(ctx context.Cont
 }
 
 // MarkBackfilled records that a tenant was backfilled at version.
-func (r *AssetTechnologyBackfillRepository) MarkBackfilled(ctx context.Context, tenantID shared.ID, version int, stats assettechapp.BackfillStats) error {
+func (r *AssetTechnologyBackfillRepository) MarkBackfilled(ctx context.Context, tenantID shared.ID, version int, enforced bool, stats assettechapp.BackfillStats) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO asset_technology_backfill (tenant_id, version, technologies, classified, links_removed, completed_at)
-		VALUES ($1, $2, $3, $4, $5, now())
+		INSERT INTO asset_technology_backfill (tenant_id, version, technologies, classified, links_removed, links_reported, enforced, completed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 		ON CONFLICT (tenant_id) DO UPDATE SET
 		       version = EXCLUDED.version, technologies = EXCLUDED.technologies,
 		       classified = EXCLUDED.classified, links_removed = EXCLUDED.links_removed,
+		       links_reported = EXCLUDED.links_reported, enforced = EXCLUDED.enforced,
 		       completed_at = EXCLUDED.completed_at`,
-		tenantID.String(), version, stats.Technologies, stats.Classified, stats.LinksRemoved)
+		tenantID.String(), version, stats.Technologies, stats.Classified, stats.LinksRemoved, stats.LinksReported, enforced)
 	if err != nil {
 		return fmt.Errorf("mark technology backfill: %w", err)
 	}

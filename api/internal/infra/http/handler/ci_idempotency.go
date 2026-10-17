@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -40,8 +41,10 @@ const (
 	maxIdempotencyKeyLen = 128
 	// ciIdempotencyTTL is how long a completed answer is replayable.
 	ciIdempotencyTTL = time.Hour
-	// ciIdempotencyPendingTTL frees a key whose request died mid-flight.
-	ciIdempotencyPendingTTL = 2 * time.Minute
+	// ciIdempotencyPendingTTL is the floor of the in-flight marker: the run
+	// token's life, so a slow ingest is never replayed in parallel. The
+	// marker lasts until the request deadline when that is later.
+	ciIdempotencyPendingTTL = cirun.TokenTTL
 	// maxIdempotentResponse bounds the stored answer (it is capped at
 	// cirun.MaxKnownInResponse results; a larger one is simply not stored).
 	maxIdempotentResponse = 256 << 10
@@ -107,7 +110,7 @@ func (h *CIRunnerHandler) idempotentUpload(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 
 	pending, _ := json.Marshal(idemRecord{State: "pending", BodySHA: bodySHA})
-	won, err := h.idem.SetNX(ctx, rkey, string(pending), ciIdempotencyPendingTTL)
+	won, err := h.idem.SetNX(ctx, rkey, string(pending), pendingTTL(ctx))
 	if err != nil {
 		h.logger.Warn("ci idempotency store unavailable, uploading without it", "error", logger.SanitizeError(err))
 		upload(w, r)
@@ -118,6 +121,8 @@ func (h *CIRunnerHandler) idempotentUpload(w http.ResponseWriter, r *http.Reques
 		var rec idemRecord
 		if gerr != nil || json.Unmarshal([]byte(raw), &rec) != nil {
 			// The key expired between the two calls, or is unreadable.
+			h.logger.Warn("ci idempotency key unreadable after a lost SetNX, uploading without it",
+				"error", logger.SanitizeError(gerr))
 			upload(w, r)
 			return true
 		}
@@ -151,12 +156,40 @@ func (h *CIRunnerHandler) idempotentUpload(w http.ResponseWriter, r *http.Reques
 	// Release on anything but a stored success so the retry runs again.
 	if cw.status == http.StatusCreated && cw.body.Len() <= maxIdempotentResponse {
 		done, _ := json.Marshal(idemRecord{State: "done", BodySHA: bodySHA, Status: cw.status, Response: cw.body.String()})
-		if err := h.idem.Set(context.WithoutCancel(ctx), rkey, string(done), ciIdempotencyTTL); err == nil {
-			return true
+		if h.ownsKey(ctx, rkey, bodySHA) {
+			if err := h.idem.Set(context.WithoutCancel(ctx), rkey, string(done), ciIdempotencyTTL); err == nil {
+				return true
+			}
 		}
 	}
-	_ = h.idem.Del(context.WithoutCancel(ctx), rkey)
+	if h.ownsKey(ctx, rkey, bodySHA) {
+		_ = h.idem.Del(context.WithoutCancel(ctx), rkey)
+	}
 	return true
+}
+
+// pendingTTL is how long the in-flight marker lives: the run token's life,
+// or until the request deadline when that is later.
+func pendingTTL(ctx context.Context) time.Duration {
+	ttl := ciIdempotencyPendingTTL
+	if dl, ok := ctx.Deadline(); ok {
+		if d := time.Until(dl); d > ttl {
+			ttl = d
+		}
+	}
+	return ttl
+}
+
+// ownsKey reports whether the stored record still carries this request's
+// body hash. If the marker expired and another request took the key, this
+// request must neither overwrite nor delete that request's record.
+func (h *CIRunnerHandler) ownsKey(ctx context.Context, rkey, bodySHA string) bool {
+	raw, err := h.idem.Get(context.WithoutCancel(ctx), rkey)
+	if err != nil {
+		return false
+	}
+	var rec idemRecord
+	return json.Unmarshal([]byte(raw), &rec) == nil && rec.BodySHA == bodySHA
 }
 
 func printableASCII(s string) bool {

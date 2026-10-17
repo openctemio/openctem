@@ -7,6 +7,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -201,5 +202,26 @@ func TestAssetTechnologies_VersionedProductsAreCPEComponents(t *testing.T) {
 		if !cpe {
 			t.Errorf("%s is not resolved to a curated CPE product", n)
 		}
+	}
+}
+
+// The per-asset cap holds on what is stored: an asset whose resolved set
+// is over assettech.MaxPerAsset keeps at most that many rows.
+func TestAssetTechnologies_StoredCapPerAsset(t *testing.T) {
+	g := newTechRig(t)
+	const name = "cap.tech.example.com"
+	var techs []any
+	for i := 0; i < assettech.MaxPerAsset+30; i++ {
+		techs = append(techs, fmt.Sprintf("tool%03d:1.%d", i, i))
+	}
+	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
+		Properties: ctis.Properties{"technologies": techs}})
+	var n int
+	if err := g.r.db.QueryRowContext(context.Background(), `SELECT count(*) FROM asset_technologies WHERE tenant_id = $1 AND asset_id = $2`,
+		g.tn.tenant.String(), g.assetID(g.tn, name).String()).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n == 0 || n > assettech.MaxPerAsset {
+		t.Fatalf("stored %d technologies, want 1..%d", n, assettech.MaxPerAsset)
 	}
 }

@@ -19,7 +19,9 @@
     - list_remediation_groups
   jobs:
     - ApprovalExpirationController
+    - ApprovalMaterialChangeController
     - VEXRequestNoticeController
+    - ApprovalDigestController
     - FindingPriorityController
     - FindingPriorityReconcileController
     - PriorityAuditRetentionController

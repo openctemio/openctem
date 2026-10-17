@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -72,7 +74,7 @@ type mcpFindingReader interface {
 	ListActiveCVEs(ctx context.Context, in finding.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error)
 	// ListFindingTransitions is the transition engine's allowed moves (also
 	// data-scoped).
-	ListFindingTransitions(ctx context.Context, tenantID, findingID, actorID string, perms finding.TransitionPermissions) ([]vulnerability.TransitionDecision, vulnerability.FindingStatus, error)
+	ListFindingTransitions(ctx context.Context, tenantID, findingID, actorID string, perms finding.TransitionPermissions) ([]findinglifecycle.Decision, vulnerability.FindingStatus, error)
 }
 
 type mcpPriorityExplainer interface {
