@@ -10,7 +10,9 @@ import (
 // organization sees it (RFC-099). The tenant comes from the JWT. Reads need
 // content:read; install, update, rollback, uninstall and the decisions on
 // requests need content:install and a recent sign-in; the approval option
-// needs the organization settings permission and a recent sign-in.
+// needs the organization settings permission and a recent sign-in;
+// publishing and revoking private packages need content:publish and a
+// recent sign-in.
 func registerContentCatalogRoutes(router Router, h *handler.ContentCatalogHandler, authMiddleware, userSyncMiddleware Middleware) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/content", func(r Router) {
@@ -29,5 +31,7 @@ func registerContentCatalogRoutes(router Router, h *handler.ContentCatalogHandle
 		r.GET("/settings", h.Settings, middleware.Require(permission.ContentRead))
 		r.PUT("/settings", h.PutSettings, middleware.Require(permission.SettingsWrite), requireStepUp())
 		r.GET("/trust", h.Trust, middleware.Require(permission.ContentRead))
+		r.POST("/private-packages", h.Publish, middleware.Require(permission.ContentPublish), requireStepUp())
+		r.POST("/private-packages/{namespace}/{name}/{version}/revoke", h.RevokePrivate, middleware.Require(permission.ContentPublish), requireStepUp())
 	}, tenantMiddlewares...)
 }

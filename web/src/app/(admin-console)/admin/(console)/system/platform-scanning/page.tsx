@@ -6,6 +6,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState, PageHeader } from '@/features/shared'
 import { useAdmin } from '@/features/admin-console/components/admin-console-shell'
 import {
+  createSharedSensorEnrollmentToken,
   savePlatformSensorProof,
   saveSharedSensorAnomaly,
   saveSharedSensorInternalZones,
@@ -19,6 +20,7 @@ import {
 } from '@/features/admin-console/api/use-scan-policy'
 import { PlatformSensorProofForm } from '@/features/admin-console/components/platform-sensor-proof-form'
 import { SharedSensorAnomalyForm } from '@/features/admin-console/components/shared-sensor-anomaly-form'
+import { SharedSensorEnrollCard } from '@/features/admin-console/components/shared-sensor-enroll-card'
 import { SharedSensorsForm } from '@/features/admin-console/components/shared-sensors-form'
 import { SharedSensorsEgressForm } from '@/features/admin-console/components/shared-sensors-egress-form'
 import { adminCan } from '@/features/admin-console/types'
@@ -30,7 +32,8 @@ import { adminCan } from '@/features/admin-console/types'
  * (RFC-100 §6.1) and the anomaly alert thresholds (RFC-100 §9). Until a value
  * is stored the deployment default applies (MANAGED_SERVICE changes the
  * defaults, RFC-100 §6). Any administrator sees them; super admins change
- * them.
+ * them, and issue the single-use token that enrolls a shared sensor
+ * (RFC-100 §7).
  */
 export default function PlatformScanningPage() {
   const { t } = useTranslation()
@@ -74,6 +77,17 @@ export default function PlatformScanningPage() {
             }}
           />
         )}
+        <SharedSensorEnrollCard
+          canEdit={adminCan(me.role, 'super_admin')}
+          onIssue={({ name, ttlMinutes, reason, code }) =>
+            createSharedSensorEnrollmentToken({
+              name,
+              ttl_minutes: ttlMinutes,
+              reason,
+              totp_code: code,
+            })
+          }
+        />
         {egress.error ? (
           <ErrorState
             title={t('admin.sharedEgress.errorTitle')}

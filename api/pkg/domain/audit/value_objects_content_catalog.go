@@ -15,6 +15,8 @@ const (
 	ActionContentPackageRequestReject  Action = "content_package.request_rejected"
 	ActionContentPackageRequestCancel  Action = "content_package.request_canceled"
 	ActionContentCatalogSettings       Action = "content_catalog.settings_updated"
+	ActionContentPackagePublished      Action = "content_package.published"
+	ActionContentPackageRevoked        Action = "content_package.revoked"
 )
 
 // ResourceTypeContentPackage is a content package of the catalog.
@@ -33,6 +35,8 @@ var _ = registerActions("content_package", map[Action]Severity{
 	ActionContentPackageRequestReject:  SeverityLow,
 	ActionContentPackageRequestCancel:  SeverityLow,
 	ActionContentCatalogSettings:       SeverityHigh,
+	ActionContentPackagePublished:      SeverityMedium,
+	ActionContentPackageRevoked:        SeverityHigh,
 })
 
 func init() {

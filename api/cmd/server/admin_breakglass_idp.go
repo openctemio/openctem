@@ -71,3 +71,35 @@ func (m breakGlassMailer) NotifyBreakGlassSignIn(_ context.Context, a adminconso
 	}()
 	return nil
 }
+
+var _ adminconsole.NewNetworkNotifier = breakGlassMailer{}
+
+// NotifyNewNetworkSignIn emails every administrator when one signs in to the
+// console from another address than last time.
+func (m breakGlassMailer) NotifyNewNetworkSignIn(_ context.Context, a adminconsole.NewNetworkAlert) error {
+	if m.email == nil || !m.email.IsConfigured() {
+		m.log.Warn("new-network console sign-in: system SMTP is not configured, administrators were not emailed",
+			"alert", adminconsole.AlertNewNetworkSignIn)
+		return nil
+	}
+	name := m.appName
+	if name == "" {
+		name = defaultAppName
+	}
+	who := strings.NewReplacer("\r", "", "\n", "").Replace(a.AdminEmail)
+	subject := fmt.Sprintf("[%s] Admin console sign-in from a new network: %s", name, who)
+	body := fmt.Sprintf(`<p>The administrator <strong>%s</strong> signed in to the %s admin console from a network they did not use last time.</p>
+<ul><li>Time: %s</li><li>IP address: %s</li><li>Previous IP address: %s</li></ul>
+<p>If this was not expected, treat it as an incident: end the session on Security &gt; Sessions, deactivate the account and reset its sign-in.</p>`,
+		html.EscapeString(who), html.EscapeString(name),
+		html.EscapeString(a.At.UTC().Format(time.RFC1123)), html.EscapeString(a.IP), html.EscapeString(a.PreviousIP))
+	recipients := append([]string(nil), a.Recipients...)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := m.email.SendReport(ctx, "", recipients, subject, body); err != nil {
+			m.log.Warn("new-network sign-in email failed", "alert", adminconsole.AlertNewNetworkSignIn, "error", err)
+		}
+	}()
+	return nil
+}

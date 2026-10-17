@@ -201,6 +201,14 @@ const (
 	AuditActionSensorEnable  = "sensor.enable"
 	AuditActionSensorDisable = "sensor.disable"
 
+	// Shared sensor enrollment (RFC-100 §7): a super administrator (or the
+	// install's bootstrap tool) issues a single-use token; a sensor spends
+	// it, is enrolled at instance scope and confirms its key.
+	AuditActionInstanceTokenCreate   = "sensor.instance_enrollment_token.create"
+	AuditActionInstanceTokenRedeem   = "sensor.instance_enrollment_token.redeem"
+	AuditActionSharedSensorEnrolled  = "sensor.shared_enrolled"
+	AuditActionSharedSensorConfirmed = "sensor.shared_pairing_completed"
+
 	// Bootstrap token actions
 	AuditActionTokenCreate = "token.create"
 	AuditActionTokenRevoke = "token.revoke"
@@ -226,6 +234,8 @@ const (
 	ResourceTypeToken         = "token"
 	ResourceTypeJob           = "job"
 	ResourceTypeTargetMapping = "target_mapping"
+
+	ResourceTypeInstanceEnrollmentToken = "instance_enrollment_token"
 )
 
 // =============================================================================
