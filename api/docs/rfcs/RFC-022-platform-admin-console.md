@@ -1055,20 +1055,20 @@ Helm chart; the Ansible kit; the documentation.
   The listener speaks plain HTTP on the private network between the web
   console and the API (the gateway's console site terminates TLS for the
   browser); where that network is not trusted, TLS goes in front of it.
-- The console has its own origin. The gateway's console site
-  (`OPENCTEM_ADMIN_SITE=port`: `https://<host>:8444`, or `host`: its own DNS
-  name) answers only `OPENCTEM_ADMIN_ALLOWED_CIDRS` (private networks by
-  default) and marks what it forwards `X-OpenCTEM-Plane: admin` (the main site
-  strips that header from clients). With `OPENCTEM_ADMIN_PLANE=separate` the web
-  console serves only the console there (pages, its API proxy to the API's
-  console listener via `ADMIN_API_URL`) and 404 for everything else, and 404
-  for the console on the main site, as the gateway does too. With its own host
-  name the browser isolates the console from the main site completely
-  (cookies, scripts, storage); on a second port of the same host name cookies
-  are still shared by host, so the host-name mode is the recommended one and
-  the port mode is the default only because it needs no DNS. This closes the
-  residual risk of the path-scoped cookies (a script on the main site reaching
-  the console).
+- The console has its own origin and its own service (revision 21). The
+  gateway's console site (`OPENCTEM_ADMIN_SITE=port`: `https://<host>:8443`,
+  or `host`: its own DNS name) answers only `OPENCTEM_ADMIN_ALLOWED_CIDRS`
+  (private networks by default) and sends everything to the console service
+  (`openctem-console`, `OPENCTEM_CONSOLE_UPSTREAM`), which serves the console
+  at the root of that site and proxies its API to the API's console listener
+  (`ADMIN_API_URL`). The tenant web app has no console route and refuses to
+  proxy `/api/v1/admin` however it is spelled; the gateway's main site answers
+  404 for it too. With its own host name the browser isolates the console from
+  the main site completely (cookies, scripts, storage); on a second port of
+  the same host name the two are separate origins that share the host's
+  cookies, so no console secret is kept in a readable cookie and every console
+  write must carry the console's own `Origin`. Host mode is the recommended
+  one; port mode is the default only because it needs no DNS.
 - A verified console sign-in from another address than the administrator's
   last one is audited (`console.new_network_sign_in`, high) and emailed to
   every administrator (the system SMTP sender; a WARN line with

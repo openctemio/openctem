@@ -469,8 +469,7 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `ADMIN_API_URL` | string | empty |  |  | Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. |
-| `OPENCTEM_ADMIN_PLANE` | string | `shared` |  |  | `separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`. |
+| `ADMIN_API_URL` | string | empty |  |  | Platform console app only (`openctem-console`): internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. The tenant web app never reads it. |
 | `BACKEND_API_URL` | string | `http://localhost:8080` | yes |  | Internal URL of the API. The console proxies the browser's `/api/v1` calls and the WebSocket upgrade to it. Compose: `http://api:8080`. |
 | `SECURE_COOKIES` | string | `true` |  |  | `Secure` flag on the cookies the console sets. Only `false` turns it off (local `http://` development). |
 | `TRUST_PROXY_HEADERS` | string | `false` |  |  | Forward `X-Real-IP` / `X-Forwarded-For` to the API. Set `true` only when a proxy in front of the console overwrites those headers (the gateway does), otherwise a browser could choose its own address. |
@@ -507,6 +506,7 @@ Read by the bundled Caddy gateway (`api/deploy/gateway`).
 | `XDG_DATA_HOME` | string | `/data` |  |  | Caddy storage: certificates, ACME account, internal CA. Keep it on a volume. |
 | `OPENCTEM_API_UPSTREAM` | string | `api:8080` |  |  | Address of the API. |
 | `OPENCTEM_WEB_UPSTREAM` | string | `web:3000` |  |  | Address of the web console. |
+| `OPENCTEM_CONSOLE_UPSTREAM` | string | `console:3000` |  |  | Address of the platform console service, which the console's site (`OPENCTEM_ADMIN_SITE`) serves at its root. |
 | `OPENCTEM_SENSOR_GATEWAY` | off \| alpn \| passthrough | `off` |  |  | Sensor protocol v3 routing: `alpn` passes connections that offer the sensor ALPN id to the API's sensor listener; `passthrough` also routes a dedicated sensor host name (`SENSOR_PUBLIC_HOSTNAME`). Needs a TLS mode and the gateway image with the layer4 module. |
 | `SENSOR_PUBLIC_HOSTNAME` | string | empty |  |  | Dedicated DNS name sensors dial for protocol v3 (no port), with `OPENCTEM_SENSOR_GATEWAY=passthrough`. |
 | `SENSOR_MTLS_UPSTREAM` | string | `api:9443` |  |  | Address of the API's sensor listener the gateway passes sensor connections to (internal only; sensors dial the gateway's port 443). |
@@ -527,9 +527,11 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `OPENCTEM_PUBLIC_URL` | string | `https://<OPENCTEM_HOSTNAME>` | yes |  | Exact origin browsers use, when it is not `https://<OPENCTEM_HOSTNAME>` (a port other than 443). Passed to the API as `APP_URL`. |
 | `API_IMAGE` | string | `ghcr.io/openctemio/openctem-api` |  |  | Image repository of the API. |
 | `UI_IMAGE` | string | `ghcr.io/openctemio/openctem-web` |  |  | Image repository of the web console. |
+| `CONSOLE_IMAGE` | string | `ghcr.io/openctemio/openctem-console` |  |  | Image repository of the platform console. |
 | `MIGRATIONS_IMAGE` | string | `ghcr.io/openctemio/migrations` |  |  | Image repository of the migrations job. |
 | `API_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `UI_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
+| `CONSOLE_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `GATEWAY_BIND` | string | `0.0.0.0` |  |  | Host interface the gateway port is published on. |
 | `OPENCTEM_ADMIN_BIND` | string | empty |  |  | Host interface the console port is published on, with `OPENCTEM_ADMIN_SITE=port` (default `GATEWAY_BIND`). A private or VPN address keeps the console off the public interface; a published container port is not filtered by the host firewall. |
 | `GATEWAY_HTTPS_PORT` | string | `443` |  |  | Published HTTPS port. |
@@ -545,6 +547,7 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `DB_MIGRATE_PASSWORD` | string | `unset` |  | yes | Password of `DB_MIGRATE_USER`. |
 | `API_MEMORY_LIMIT` | string | `2g` |  |  | Memory limit of the `api` container. |
 | `WEB_MEMORY_LIMIT` | string | `1g` |  |  | Memory limit of the `web` container. |
+| `CONSOLE_MEMORY_LIMIT` | string | `512m` |  |  | Memory limit of the `console` container. |
 | `GATEWAY_MEMORY_LIMIT` | string | `512m` |  |  | Memory limit of the `gateway` container. |
 | `API_GOMEMLIMIT` | string | `1600MiB` |  |  | `GOMEMLIMIT` of the `api` container: the Go runtime collects garbage to stay below it. Keep it about 80% of `API_MEMORY_LIMIT`. |
 | `POSTGRES_MEMORY_LIMIT` | string | `4g` |  |  | Memory limit of the bundled `postgres` container; keep it above `shared_buffers` plus connections times `work_mem`. |
