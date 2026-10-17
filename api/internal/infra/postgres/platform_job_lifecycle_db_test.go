@@ -16,10 +16,10 @@ import (
 //
 //   - recover_stuck_platform_jobs required `platform_sensor_id IS NOT NULL`.
 //     Nothing sets that column: get_next_platform_job is the only writer and it
-//     has no Go caller. In practice a platform job is claimed by an ordinary
+//     has no Go caller. A platform job used to be claimed by an ordinary
 //     tenant sensor through GET /api/v2/sensor/commands — GetPendingForSensor and
-//     ClaimForSensor do not filter on is_platform_job, and platform jobs are
-//     created with sensor_id NULL — so ClaimForSensor sets sensor_id instead. The
+//     ClaimForSensor did not filter on is_platform_job (they do now,
+//     tenantJobPredicate) — so ClaimForSensor set sensor_id instead. The
 //     function matched nothing, and the controller logged "recovered stuck
 //     platform jobs: 0" forever, reading as healthy.
 //
