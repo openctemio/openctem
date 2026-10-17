@@ -101,9 +101,11 @@ describe('AssetSoftwareTab', () => {
     expect(await screen.findByText('nginx')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/api/v1/assets/a1/software')
     expect(screen.getByText('ubuntu')).toBeInTheDocument()
-    expect(screen.getByText('Unrecognised')).toBeInTheDocument()
+    // A name without a CPE match says plainly that no CVE was checked.
+    expect(screen.getByText('No CPE match: CVEs not checked')).toBeInTheDocument()
+    expect(screen.queryByText('Unrecognised')).not.toBeInTheDocument()
     expect(screen.getByText('version unknown')).toBeInTheDocument()
-    expect(screen.getByText('No CVEs')).toBeInTheDocument()
+    expect(screen.getByText('Not checked')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: /nginx/ }))
     const link = screen.getByRole('link', { name: 'CVE-2021-23017' })
@@ -120,7 +122,17 @@ describe('AssetSoftwareTab', () => {
     api.get.mockResolvedValue({ data: [] })
     wrap(<AssetSoftwareTab assetId="a1" />)
     expect(await screen.findByText('No software seen yet')).toBeInTheDocument()
-    expect(screen.getByText(/HTTP technology detection/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'SBOM uploads from CI' })).toHaveAttribute(
+      'href',
+      '/ci-cd'
+    )
+    expect(
+      screen.getByRole('link', { name: 'Service and version detection scans' })
+    ).toHaveAttribute('href', '/scans')
+    expect(screen.getByRole('link', { name: 'An endpoint sensor' })).toHaveAttribute(
+      'href',
+      '/sensors'
+    )
   })
 
   it('says it could not load instead of showing an empty list', async () => {
