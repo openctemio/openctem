@@ -68,4 +68,14 @@ describe('InventoryTable name link', () => {
     fireEvent.click(link, { metaKey: true })
     expect(screen.queryByTestId('drawer')).toBeNull()
   })
+
+  it('the row menu offers the details page as a real link', async () => {
+    renderTable()
+    fireEvent.pointerDown(screen.getByRole('button', { name: /Actions for web-01/ }), {
+      button: 0,
+      ctrlKey: false,
+    })
+    const item = await screen.findByRole('menuitem', { name: /Open details page/ })
+    expect(item).toHaveAttribute('href', `/assets/${asset.id}`)
+  })
 })
