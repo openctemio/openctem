@@ -29,6 +29,7 @@ func TestValidate_PrivateEgress(t *testing.T) {
 			c := minimalValidConfig()
 			c.App.Env = tc.env
 			c.Encryption.Key = "ab00112233445566778899aabbccddeeff00112233445566778899aabbccddee"
+			c.Encryption.FingerprintKey = c.Encryption.Key
 			err := c.validateBasic()
 			if tc.wantErr == "" {
 				if err != nil {

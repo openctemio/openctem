@@ -115,6 +115,11 @@ const (
 	SuppressionsDelete  Permission = "findings:suppressions:delete"
 	SuppressionsApprove Permission = "findings:suppressions:approve"
 
+	// FindingsLifecyclesWrite manages the organization's finding lifecycles:
+	// sub-statuses and lifecycle schemes (RFC-110). Reading them needs
+	// findings:read; publishing also needs a recent sign-in (step-up).
+	FindingsLifecyclesWrite Permission = "findings:lifecycles:write"
+
 	// Vulnerability permissions (findings:vulnerabilities:*)
 	VulnerabilitiesRead Permission = "findings:vulnerabilities:read"
 
@@ -179,6 +184,13 @@ const (
 	// Content pack permissions (scans:content:*, RFC-061)
 	ContentPacksRead  Permission = "scans:content:read"
 	ContentPacksWrite Permission = "scans:content:write"
+
+	// Content catalog permissions (content:*, RFC-099): browse, install
+	// (install, update, pin, roll back, uninstall, approve others'
+	// requests) and publish the organization's private packages.
+	ContentRead    Permission = "content:read"
+	ContentInstall Permission = "content:install"
+	ContentPublish Permission = "content:publish"
 
 	// Secret Store permissions (scans:secret_store:*)
 	SecretStoreRead   Permission = "scans:secret_store:read"
@@ -458,6 +470,7 @@ func AllPermissions() []Permission {
 		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
+		FindingsLifecyclesWrite,
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
@@ -474,6 +487,9 @@ func AllPermissions() []Permission {
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIPolicy, CIOverride,
 		ScanWindowsManage, ScanWindowsOverride,
+
+		// Content catalog
+		ContentRead, ContentInstall, ContentPublish,
 
 		// Sensors module
 		SensorsRead, SensorsWrite, SensorsDelete,

@@ -122,7 +122,7 @@
   "confirm.discardCloseDesc": "You have changes that are not saved. Closing now discards them.",
   "confirm.discardLeaveDesc": "You have changes that are not saved. Leaving now discards them.",
   "confirm.discardTitle": "Discard your changes?",
-  "confirm.domainProof.removeDesc": "Entries under it stop showing as verified. Platform sensors and intrusive checks then refuse names under it.",
+  "confirm.domainProof.removeDesc": "Entries under it stop showing as verified. Shared sensors and intrusive checks then refuse names under it.",
   "confirm.domainProof.removeTitle": "Remove the domain {domain}?",
   "confirm.evidence.deleteDesc": "The file is permanently deleted. This cannot be undone.",
   "confirm.evidence.deleteTitle": "Delete the evidence file \"{name}\"?",
@@ -348,6 +348,9 @@
   "confirm.suppression.previewMany": "This will close {count} open findings.",
   "confirm.suppression.previewNone": "No open findings match this rule now. It applies to new findings as they arrive.",
   "confirm.suppression.previewOne": "This will close 1 open finding.",
+  "confirm.suppression.previewOutOfScope": "{count} matching findings are on assets outside your access and are not listed.",
+  "confirm.suppression.previewSampleAria": "Findings this rule matches within your access",
+  "confirm.suppression.previewSampleTitle": "Examples within your access ({shown} of {count})",
   "confirm.targetMapping.activate": "Activate",
   "confirm.targetMapping.activateDesc": "It is used again when scans are filtered.",
   "confirm.targetMapping.activateTitle": "Activate the target mapping {pair}?",
@@ -379,5 +382,6 @@
   "confirm.verifiedDomain.removeTitle": "Remove the domain {domain}?",
   "confirm.workflowStep.builderDeleteDesc": "The step leaves the workflow you are editing, and steps that depended on it lose that dependency. Nothing changes until you save.",
   "confirm.workflowStep.deleteDesc": "The step leaves the draft and steps that depended on it lose that dependency. The published workflow is not changed until you publish.",
-  "confirm.workflowStep.deleteTitle": "Delete this step?"
+  "confirm.workflowStep.deleteTitle": "Delete this step?",
+  "confirm.findingApproval.approveDescMore": "Your approval is recorded. The finding moves to the requested status once {count} more approval(s) are in."
 }

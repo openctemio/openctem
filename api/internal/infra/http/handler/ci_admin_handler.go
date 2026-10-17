@@ -383,7 +383,8 @@ type CIGatePolicyRequest struct {
 	EPSSThreshold   *float64 `json:"epss_threshold,omitempty"`
 	// Modes, when present, replaces the policy's modes: {"capabilities":
 	// {"sast": "comment"}, "rules": {"<rule id>": "monitor"}}. A new secret
-	// always blocks whatever the modes say.
+	// that is not known to be dead and was not matched by a generic rule always
+	// blocks whatever the modes say.
 	Modes *cirun.PolicyModes `json:"modes,omitempty"`
 	// AllowRepoPolicy allows (default) or forbids repositories'
 	// .openctem.yml; any applicable policy forbidding it wins.

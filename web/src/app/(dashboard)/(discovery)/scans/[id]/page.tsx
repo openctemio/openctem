@@ -80,7 +80,6 @@ import {
   SCAN_CONFIG_STATUS_LABELS,
   SCAN_TYPE_LABELS,
   SCHEDULE_TYPE_LABELS,
-  SENSOR_PREFERENCE_LABELS,
   type ScanRun,
 } from '@/lib/api/scan-types'
 import { useAssetGroup } from '@/lib/api/security-hooks'
@@ -565,7 +564,7 @@ export default function ScanDetailPage() {
                   <IntensityBadge intensity={config.intensity} />
                 </DetailField>
                 <DetailField label="Sensor preference">
-                  {SENSOR_PREFERENCE_LABELS[config.sensor_preference]}
+                  {t(`scans.sensorPrefRun.${config.sensor_preference || 'auto'}.label`)}
                 </DetailField>
                 <DetailField label="Targets per job">{config.targets_per_job}</DetailField>
               </DetailFieldGrid>

@@ -104,6 +104,52 @@ the API refuses to start. Recovery is in the
 [runbook](safe-deploy-and-migrations.md#dirty-migration-recovery). Never set
 `SKIP_SCHEMA_CHECK=true` in production.
 
+### Platform console
+
+The platform administration console has its own site and its own API
+listener, reachable only from private networks by default (RFC-022
+revision 20):
+
+- the gateway serves it on `https://<OPENCTEM_HOSTNAME>:8444` (`OPENCTEM_ADMIN_SITE=port`,
+  the default) or on its own DNS name (`OPENCTEM_ADMIN_SITE=host`,
+  `OPENCTEM_ADMIN_HOST=admin.example.com`: the stronger choice, since the browser
+  then isolates the console from the main site entirely);
+- only clients in `OPENCTEM_ADMIN_ALLOWED_CIDRS` (space-separated; default
+  loopback, RFC 1918 and IPv6 ULA) get past it; the API checks the same list
+  (`ADMIN_ALLOWED_CIDRS`); set `0.0.0.0/0 ::/0` only for a console you want on
+  the internet;
+- the main site answers 404 for `/admin` and `/api/v1/admin`; the web console
+  (`OPENCTEM_ADMIN_PLANE=separate`) serves only the console on the console site
+  and never on the main one; the API serves the console API only on its
+  internal listener (`ADMIN_LISTEN_ADDR=:8081`, never published), reached by the
+  web console through `ADMIN_API_URL`.
+
+From a VPS, use an SSH tunnel: `ssh -L 8444:127.0.0.1:8444 you@server`, then
+open `https://localhost:8444/admin`. `./setup.sh <host> --admin-host <name>` puts
+the console on its own host name; `--admin-public` opens it to every network.
+
+### Outbound connection: the version check
+
+The version check is **on by default**. Once a day the API downloads one public
+file, the signed release feed, from GitHub
+(`https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`),
+and compares it with its own version on the server; the platform console then
+shows newer releases and security releases that affect the instance. The
+request sends nothing about the instance (no id, no version, no counts, no
+cookies); GitHub sees the server's IP address, as for any download.
+
+- Turn it off: `VERSION_CHECK_ENABLED=false` (in `api/deploy/.env`). No request
+  is made at all.
+- Air-gapped or no internet access: leave it on or off; without access it fails
+  silently and retries weekly. Download `openctem-releases.json` from the latest
+  release on a connected machine and import it in the console (System > Software
+  updates, super administrator). It is verified exactly like the online check.
+- Internal mirror: `VERSION_CHECK_URL=https://...` (https only). The signature,
+  not the host, is trusted; a mirror on a private address also needs the private
+  egress allowlist (`OPENCTEM_HTTPSEC_*`).
+
+Details: [version check](../architecture/version-check.md).
+
 ### Gateway user
 
 The gateway runs as uid/gid 1000 (as in the Helm chart), not as root, from the

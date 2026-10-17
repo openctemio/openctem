@@ -2,7 +2,8 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-16). Version check: designed, implementation in review. Usage ping: designed, deferred (not built) |
+| Status | Accepted (2026-10-16). Version check: implemented (API, release pipeline); console page in review. Usage ping: designed, deferred (not built) |
+| Architecture | [version-check.md](../architecture/version-check.md) |
 | Scope | api (signed release feed format, fetcher, offline import, console endpoints), web (console banner and page), release pipeline (feed builder and publishing) |
 | Related | RFC-022 (platform console), RFC-037 (versioning and release train), RFC-065 §16 and RFC-066 §5.5 (signed feeds: the shared envelope and key set), RFC-099 (content packages) |
 
@@ -16,7 +17,7 @@ customers run it on sensitive networks, some of them air-gapped.
 Decision:
 
 1. **Version check: built, on by default.** The instance downloads one public,
-   signed, static file ("the release feed"), verifies it with a root key pinned
+   signed, static file ("the release feed"), verifies it with a public key pinned
    in the binary, and compares it with its own version locally. The request
    carries no instance id, no version, no counts, no cookies. The platform
    console shows "update available" and, when an advisory affects the running
@@ -61,12 +62,12 @@ operator can decide.
 | # | Decision |
 |---|---|
 | D1 | The version check is on by default (`VERSION_CHECK_ENABLED`, default `true`). It is a server-side `GET` of one static file with no query string, no cookies, no `Referer`, and a fixed `User-Agent` (`openctem-version-check/1`) that names no version. Comparison happens on the instance. |
-| D2 | The file is signed with the shared signed-feed format (`pkg/feedsign`): an offline root key signs an expiring, versioned key set (kind `openctem.io/release-keyset/v1`, at most 180 days); an online key from that key set signs the release feed (kind `openctem.io/release-feed/v1`). Both travel in one file, `openctem-releases.json`. Payload types and kinds are the feed's own, so no signature from another feed or a content package can be replayed as a release feed. |
-| D3 | The root key ids are pinned in the binary (`releasefeed.PinnedRoots`), not configurable. A configuration override would let anyone with access to the environment make the console say anything; a fork that publishes its own releases rebuilds with its own root. Until a root is pinned, the check is inert and the console says so. |
+| D2 | The file is one DSSE envelope in the shared signed-feed format (`pkg/feedsign`), signed directly by one online Ed25519 key (kind `openctem.io/release-feed/v1`), in the file `openctem-releases.json`. There is no key set and no offline root for the feed: the feed is display-only (D9), so a second tier would add ceremony without protecting anything the first tier does not. The payload type (`application/vnd.openctem.release-feed+json`) is the feed's own (domain separation). The release feed key signs only the feed: the content catalog has its own, separate online key, because a key that signs information must not be able to ship code. |
+| D3 | The online public key is pinned in the binary (`releasefeed.PinnedKeys`, hex, at most two entries), not configurable. A configuration override would let anyone with access to the environment make the console say anything; a fork that publishes its own releases rebuilds with its own key. Rotation: a release pins the new key alongside the old one (two entries), the feed switches to the new key, and a later release drops the old one. Until a key is pinned, the check is inert and the console says so. |
 | D4 | The feed is published as an asset of the latest GitHub release of `openctemio/openctem`; the default URL is `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`. The release workflow publishes it on every release and a weekly scheduled run re-signs it (so it never expires between releases). `VERSION_CHECK_URL` points an instance at a mirror; the signature makes every host untrusted, so moving the feed to openctem.io later only changes the default. |
-| D5 | Anti-rollback and anti-freeze: the feed carries a sequence and an expiry (at most 45 days after issue). An instance refuses a feed whose sequence is below the one it applied, a key set whose version is below the one it applied, and an expired feed. A stored feed that has passed its expiry is shown as out of date with its date, never silently trusted. |
+| D5 | Anti-rollback and anti-freeze: the feed carries a sequence and an expiry (at most 45 days after issue). An instance refuses a feed whose sequence is below the one it applied, a feed with the applied sequence but other content (it stores the payload digest), and an expired feed. A stored feed that has passed its expiry is shown as out of date with its date, never silently trusted. |
 | D6 | Cadence: once a day with up to four hours of random delay; the first check runs 5 to 60 minutes after start-up. After three failed checks in a row (an offline or air-gapped instance) it checks once a week, and logs one line per check, not an error storm. Replicas share one state row; a conditional update elects the replica that fetches. |
-| D7 | Fetch limits: the SSRF-guarded client (`pkg/httpsec`), 30 s timeout, at most 256 KiB read, at most 3 redirects. The default URL is HTTPS; an override may be plain HTTP (an internal mirror) because the signature, not the transport, carries trust. An internal mirror on a private address needs the instance's private-egress allowlist like every other outbound call. |
+| D7 | Fetch limits: the SSRF-guarded client (`pkg/httpsec`), 30 s timeout, at most 256 KiB read, at most 3 redirects. The URL must be HTTPS, a mirror included: the signature carries the trust, HTTPS keeps the request private on the way, and a redirect to plain HTTP is refused. An internal mirror on a private address needs the instance's private-egress allowlist like every other outbound call. |
 | D8 | Offline import: a super administrator uploads the same file in the console (route-level step-up, audited). It goes through exactly the same verification, including rollback and expiry. No request names a path or URL. |
 | D9 | What the feed may say is bounded so even a stolen online key cannot do much: release versions are `vX.Y.Z`, advisory severities are low/medium/high/critical, texts are short plain text, links must be HTTPS under `github.com/openctemio/`, `openctem.io` or `docs.openctem.io`. The console renders text as text. The instance never downloads or runs anything because of the feed: upgrading stays the operator's action. |
 | D10 | Only platform administrators see it, in the platform console: a banner on every console page when an update or a security release applies, and a page with the status, the releases newer than the running one, the advisories that affect it and the offline import. Organization users see nothing. |
@@ -81,13 +82,11 @@ operator can decide.
 ```json
 {
   "schema": "openctem.io/release-bundle/v1",
-  "keyset": { "payloadType": "application/vnd.openctem.release-keyset+json", "payload": "…", "signatures": [ … ] },
   "feed":   { "payloadType": "application/vnd.openctem.release-feed+json",   "payload": "…", "signatures": [ … ] }
 }
 ```
 
-The key set payload is the shared feed key set (`feedsign.KeySet`). The feed
-payload:
+The feed payload:
 
 ```json
 {
@@ -114,7 +113,7 @@ payload:
 - Limits: 256 KiB file, 200 releases, 200 advisories, titles of at most 200
   characters, no control characters, unknown fields refused.
 
-The builder (`api/cmd/release-feed`) creates keys, signs key sets and builds
+The builder (`api/cmd/release-feed`) creates the key and builds
 the file from the list of published releases and the advisories file
 committed in the repository (`.github/release-feed/advisories.json`, edited
 when an advisory is published). The release workflow runs it; it skips with a
@@ -124,11 +123,11 @@ warning while the signing key secret is not set, so releases never fail on it.
 
 | Threat | Mitigation |
 |---|---|
-| Network attacker or TLS-intercepting proxy changes the answer | Ed25519 signatures chained to a root pinned in the binary; anything that does not verify is discarded and the previous state kept. |
+| Network attacker or TLS-intercepting proxy changes the answer | Ed25519 signature by a key pinned in the binary; anything that does not verify is discarded and the previous state kept. |
 | Download host or account compromised | Same: the host is untrusted. Forging needs the online key. |
-| Replay of an old feed to hide a newer release (rollback) | Sequence never below the applied one; key set version never below the applied one. |
+| Replay of an old feed to hide a newer release (rollback) | Sequence never below the applied one. |
 | Withholding updates (freeze) | Feeds expire within 45 days; the console shows the date of the information and flags it as out of date. |
-| Online signing key stolen (CI secret) | The feed is display-only (D9): bounded fields, allowlisted links, no download or execution. Recovery: the root signs a new key set version without the stolen key; instances that saw it refuse the old key set. The online key lives in a protected GitHub environment; the root stays offline. |
+| Online signing key stolen (CI secret) | The feed is display-only (D9): bounded fields, allowlisted links, no download or execution. Recovery: ship a release that pins a new key and drops the stolen one, then rotate the secret; until instances upgrade they still accept the stolen key, which the display-only limits make tolerable. The online key lives in a protected GitHub environment. See [signing keys](../architecture/signing-keys.md). |
 | Phishing banner ("security release, download here") | Links restricted to our hosts, verified signature, React text rendering, no HTML in the feed. |
 | Oversized or malicious response | 256 KiB read cap, strict JSON decoding, bounded lists and texts, timeouts, redirect cap. |
 | SSRF through the URL setting | Only the operator's environment sets it; the guarded client still refuses internal ranges unless the operator allowlisted them. No request can name a URL. |
@@ -178,13 +177,14 @@ Not built. Recorded so the decision is not reopened without these rules:
 
 ## 9. Owner actions
 
-- Create the release feed root key offline (`go run ./cmd/release-feed keygen
-  -out release-root.key` on an offline machine; the root may be the same
-  offline root as the other feeds, which the separate key set kind keeps
-  apart), and the online key the same way.
-- Sign the key set (`go run ./cmd/release-feed keyset …`), commit it as
-  `.github/release-feed/keyset.dsse.json`, and pin the root key id in
-  `api/pkg/releasefeed` (`PinnedRoots`) in the same change.
-- Store the online key seed as the `RELEASE_FEED_SIGNING_KEY` secret of a
-  `release-feed` GitHub environment limited to `main` and `v*` tags.
-- Re-sign the key set before it expires (at most every 180 days).
+- Run `scripts/signing/init-keys.sh` on your own machine (see
+  [signing keys](../architecture/signing-keys.md)); it creates the release feed key,
+  a separate catalog online key and the catalog root.
+- Pin the printed online public key in `api/pkg/releasefeed` (`PinnedKeys`)
+  in a reviewed pull request.
+- Store the release feed key seed as the `RELEASE_FEED_SIGNING_KEY` secret of a
+  `release-feed` GitHub environment limited to `main` and protected `v*` tags
+  (the publish job also refuses any other ref). The catalog online key is a
+  different key in a different environment (`content-catalog`); the release feed
+  key never signs catalog documents.
+- Once a year: `scripts/signing/rotate-keyset.sh` (the content catalog key set; the release feed has none).
