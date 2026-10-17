@@ -21,7 +21,7 @@ import type {
   SupportOverview,
 } from '@/lib/api/generated'
 
-import { AdminApiError, adminFetch, adminFetcher } from './admin-client'
+import { AdminApiError, adminFetch, adminFetcher } from '@console/lib/admin-api/client'
 
 /** The grant behind the session ended (revoked, expired, ended, or another console session). */
 export const SUPPORT_GRANT_REQUIRED = 'SUPPORT_GRANT_REQUIRED'

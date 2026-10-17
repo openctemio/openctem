@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { AdminApiError } from '../api/admin-client'
+import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorAnomalyThresholds } from '../api/use-scan-policy'
 
 const FIELDS = [
