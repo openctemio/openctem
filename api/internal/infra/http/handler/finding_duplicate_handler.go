@@ -8,7 +8,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -22,7 +21,7 @@ type AddFindingDuplicateRequest struct {
 // finding in the body is marked a duplicate of the one in the path.
 //
 //	@Summary		Mark a finding as a duplicate of this one
-//	@Description	Folds the finding named in the body into the finding in the path, the original (RFC-043 §9). Both must be in the caller's organization and data scope and on the same asset, and neither may already be a duplicate. The canonical finding keeps the stronger status and inherits the duplicate's comments, activities, retests, evidence, tickets and fingerprints; the duplicate stays as a tombstone (status duplicate, duplicate_of). Merging with a false positive or risk acceptance also requires findings:approve. Pentest findings are managed in the pentest module. Returns the canonical finding.
+//	@Description	Folds the finding named in the body into the finding in the path, the original (RFC-043 §9). Both must be in the caller's organization and data scope and on the same asset, and neither may already be a duplicate. The canonical finding keeps the stronger status and inherits the duplicate's comments, activities, retests, evidence, tickets and fingerprints; the duplicate stays as a tombstone (status duplicate, duplicate_of). A merge never carries a false positive or risk acceptance across findings: if one finding is under such a decision, the other must be under the same one (409 otherwise); request the decision on the finding itself. Pentest findings are managed in the pentest module. Returns the canonical finding.
 //	@Tags			Findings
 //	@Accept			json
 //	@Produce		json
@@ -51,12 +50,11 @@ func (h *VulnerabilityHandler) AddFindingDuplicate(w http.ResponseWriter, r *htt
 		FindingID:     req.FindingID,
 		DuplicateOfID: r.PathValue("id"),
 		ActorID:       middleware.GetUserID(ctx),
-		CanApprove:    middleware.HasPermission(ctx, string(permission.FindingsApprove)),
 		Audit:         h.buildAuditContext(r),
 	})
 	switch {
-	case errors.Is(err, vulnerability.ErrDuplicateNeedsApproval):
-		apierror.Forbidden("Merging with a false positive or risk acceptance requires findings:approve").WriteJSON(w)
+	case errors.Is(err, vulnerability.ErrDuplicateCarriesDisposition):
+		apierror.Conflict("A false positive or risk acceptance cannot be carried across findings by a merge; request the decision on the finding itself").WriteJSON(w)
 		return
 	case errors.Is(err, vulnerability.ErrDuplicateAlreadyMerged):
 		apierror.Conflict("One of the findings is already a duplicate").WriteJSON(w)

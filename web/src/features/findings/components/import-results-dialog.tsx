@@ -195,7 +195,7 @@ export function ImportResultsDialog({
                 {shown.dry_run
                   ? t('findings.importResults.previewNote', 'Preview: nothing was written.') + ' '
                   : ''}
-                {vexModeText(shown.vex_mode, shown.vex_can_close)}
+                {vexModeText(t, shown.vex_mode, shown.vex_can_close)}
               </p>
               {(shown.files ?? []).map((f, i) => (
                 <FileSummary key={`${f.name}-${i}`} file={f} dryRun={shown.dry_run ?? false} />
@@ -325,15 +325,19 @@ function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boole
                 count: file.vex.matched ?? 0,
               })}
               {dryRun
-                ? t('findings.importResults.vexWouldClose', ', {count} would be closed', {
+                ? t('findings.importResults.vexWouldClose', ', {count} would be requested', {
                     count: file.vex.would_close ?? 0,
                   })
-                : t('findings.importResults.vexStored', ', stored on {stored}, {closed} closed', {
-                    stored: file.vex.stored ?? 0,
-                    closed: file.vex.closed ?? 0,
-                  }) +
+                : t(
+                    'findings.importResults.vexStored',
+                    ', stored on {stored}, {requested} false positive requests',
+                    {
+                      stored: file.vex.stored ?? 0,
+                      requested: file.vex.requested ?? 0,
+                    }
+                  ) +
                   (file.vex.would_close
-                    ? t('findings.importResults.vexWouldClose', ', {count} would be closed', {
+                    ? t('findings.importResults.vexWouldClose', ', {count} would be requested', {
                         count: file.vex.would_close ?? 0,
                       })
                     : '')}

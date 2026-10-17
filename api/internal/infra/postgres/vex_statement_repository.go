@@ -380,16 +380,16 @@ func (r *VEXStatementRepository) FindingsByFingerprints(ctx context.Context, ten
 }
 
 // WriteEffects applies the effects in one transaction.
-func (r *VEXStatementRepository) WriteEffects(ctx context.Context, tenantID shared.ID, effects []vex.Effect) ([]shared.ID, error) {
+func (r *VEXStatementRepository) WriteEffects(ctx context.Context, tenantID shared.ID, effects []vex.Effect) (moved, requested []shared.ID, err error) {
 	if len(effects) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("begin vex effects: %w", err)
+		return nil, nil, fmt.Errorf("begin vex effects: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	moved := make([]shared.ID, 0, len(effects))
+	moved = make([]shared.ID, 0, len(effects))
 	for i := range effects {
 		e := &effects[i]
 		var (
@@ -432,9 +432,19 @@ func (r *VEXStatementRepository) WriteEffects(ctx context.Context, tenantID shar
 			tenantID.String(), e.FindingID.String(), status, just, statement, source, at, stmtID,
 			newStatus, e.Resolution, e.ClosureReason, e.OldStatus, e.Verification)
 		if err != nil {
-			return nil, fmt.Errorf("write vex effect: %w", err)
+			return nil, nil, fmt.Errorf("write vex effect: %w", err)
 		}
-		if n, _ := res.RowsAffected(); n == 0 || !e.Changes() {
+		n, _ := res.RowsAffected()
+		if n > 0 && e.RequestFalsePositive {
+			ids, err := insertVEXFalsePositiveRequests(ctx, tx, tenantID, []string{e.FindingID.String()},
+				e.Resolution, e.ClosureReason, "system: VEX statement",
+				"An organization VEX statement says the component is not affected; a person decides")
+			if err != nil {
+				return nil, nil, err
+			}
+			requested = append(requested, ids...)
+		}
+		if n == 0 || !e.Changes() {
 			continue
 		}
 		reason := "vex_statement_withdrawn"
@@ -450,14 +460,14 @@ func (r *VEXStatementRepository) WriteEffects(ctx context.Context, tenantID shar
 					'vex_statement_id', $6::text, 'closure_reason', NULLIF($7, '')),
 				'auto', NOW())`,
 			tenantID.String(), e.FindingID.String(), e.OldStatus, e.NewStatus, reason, sid, e.ClosureReason); err != nil {
-			return nil, fmt.Errorf("record vex activity: %w", err)
+			return nil, nil, fmt.Errorf("record vex activity: %w", err)
 		}
 		moved = append(moved, e.FindingID)
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit vex effects: %w", err)
+		return nil, nil, fmt.Errorf("commit vex effects: %w", err)
 	}
-	return moved, nil
+	return moved, requested, nil
 }
 
 // ResolveProduct returns the tenant's own package product, else the global one.
