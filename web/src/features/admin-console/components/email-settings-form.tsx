@@ -1,5 +1,6 @@
 'use client'
 
+import { useBrand } from '@/context/brand-provider'
 import { useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -50,6 +51,7 @@ function toForm(s: EmailSettingsResponse): FormState {
  * replaced or cleared. A save needs a fresh authenticator code.
  */
 export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsFormProps) {
+  const brand = useBrand()
   const { t } = useTranslation()
   const id = useId()
   const [form, setForm] = useState<FormState>(() => toForm(settings))
@@ -233,7 +235,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
               placeholder: 'noreply@example.com',
             })}
             {field('fromName', t('admin.email.fromName', 'Sender name'), {
-              placeholder: 'OpenCTEM',
+              placeholder: brand.name,
             })}
           </div>
 

@@ -121,3 +121,27 @@ func TestBuild_Refusals(t *testing.T) {
 		t.Fatal("unknown feed")
 	}
 }
+
+// A catalog key set is valid for up to 365 days: the default signs and
+// verifies, 366 is refused.
+func TestKeyset_ValidityUpTo365Days(t *testing.T) {
+	dir := t.TempDir()
+	root := writeKey(t, dir, "root.key")
+	online := writeKey(t, dir, "online.key")
+	onlineHex := hex.EncodeToString(online.Public().(ed25519.PublicKey))
+	ksPath := filepath.Join(dir, "keyset.dsse.json")
+	args := func(days string) []string {
+		return []string{"-root", filepath.Join(dir, "root.key"), "-online", onlineHex, "-version", "1", "-days", days, "-out", ksPath}
+	}
+	if err := keyset(args("366")); err == nil {
+		t.Fatal("a 366 day key set was signed")
+	}
+	if err := keyset(args("365")); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(ksPath)
+	rootID := contentpkg.RootKeyID(root.Public().(ed25519.PublicKey))
+	if _, err := feedsign.VerifyKeySet(raw, contentpkg.KeySetType, rootID, 1, time.Now().Add(300*24*time.Hour)); err != nil {
+		t.Fatalf("a 365 day key set did not verify: %v", err)
+	}
+}

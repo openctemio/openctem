@@ -43,6 +43,7 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
 	}
 	authProvidersHandler.WithCaptchaSiteKey(cfg.Auth.CaptchaTurnstileSiteKey)
+	authProvidersHandler.WithDeploymentRegion(cfg.App.Region)
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
@@ -118,6 +119,13 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			// First team creation - registration rate limit
 			firstTeamHandler := ChainFunc(h.LocalAuth.CreateFirstTeam, crossSite, registerRL)
 			r.POST("/create-first-team", firstTeamHandler.ServeHTTP)
+
+			// Onboarding of an account without an organization (RFC-104):
+			// refresh-token authenticated like create-first-team.
+			onboardingOptions := ChainFunc(h.LocalAuth.OnboardingOptions, crossSite, tokenExchangeRL)
+			r.POST("/onboarding/options", onboardingOptions.ServeHTTP)
+			onboardingAccept := ChainFunc(h.LocalAuth.OnboardingAccept, crossSite, registerRL)
+			r.POST("/onboarding/accept", onboardingAccept.ServeHTTP)
 
 			// Sign-out: by the refresh token when the request carries one
 			// (it outlives the access token, so an idle user's sign-out still
@@ -199,6 +207,13 @@ func registerUserRoutes(
 	if userSyncMiddleware != nil {
 		middlewares = append(middlewares, userSyncMiddleware)
 	}
+
+	// Self-service account deletion (RFC-104): step-up; signing in again
+	// within the grace period cancels it.
+	router.Group("/api/v1/me/account", func(r Router) {
+		r.DELETE("/", h.DeleteMe, requireStepUp())
+		r.GET("/deletion", h.GetMyDeletion)
+	}, middlewares...)
 
 	router.Group("/api/v1/users", func(r Router) {
 		// Current user profile
