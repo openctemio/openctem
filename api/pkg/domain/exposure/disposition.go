@@ -54,7 +54,8 @@ var ErrDispositionConflict = fmt.Errorf("%w: a different disposition is already 
 var ErrNoPendingDisposition = fmt.Errorf("%w: no pending disposition request", shared.ErrNotFound)
 
 // NeedsSecondApprover reports whether a disposition of an exposure of this
-// severity needs a second person.
+// severity needs a second person. Callers pass ExposureEvent.PeakSeverity(),
+// not the current severity, so a re-ingest that lowers it does not lift the rule.
 func NeedsSecondApprover(s Severity) bool {
 	return s == SeverityCritical || s == SeverityHigh
 }
