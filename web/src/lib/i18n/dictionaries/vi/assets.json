@@ -998,5 +998,10 @@
   "assets.software.rangeNotStated": "không nêu",
   "assets.software.reason.all_versions": "Khuyến cáo nêu mọi phiên bản, không phải một dải",
   "assets.software.reason.edition_unverified": "Khuyến cáo dành cho một phiên bản đặc thù; lượt quét không cho biết phiên bản nào đang chạy",
-  "assets.software.reason.platform_condition_unverified": "Khuyến cáo chỉ áp dụng trên một nền tảng mà tài sản chưa được thấy chạy"
+  "assets.software.reason.platform_condition_unverified": "Khuyến cáo chỉ áp dụng trên một nền tảng mà tài sản chưa được thấy chạy",
+  "assets.technologies.filter.category": "Danh mục",
+  "assets.technologies.filter.technology": "Công nghệ",
+  "assets.technologies.filter.search": "Tìm công nghệ",
+  "assets.technologies.filter.none": "Chưa phát hiện công nghệ nào",
+  "assets.technologies.filter.more": "Hiện thêm {count}"
 }

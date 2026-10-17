@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 export interface SharedSensorsEgressFormProps {
   global: string[]
@@ -67,6 +68,7 @@ export function SharedSensorsEgressForm({
   const [nextKey, setNextKey] = useState(() => Object.keys(regions).length)
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -221,7 +223,7 @@ export function SharedSensorsEgressForm({
         }}
         title={t('admin.sharedEgress.confirmTitle')}
         desc={t('admin.sharedEgress.confirmDesc')}
-        disabled={code.trim().length < 6 || !reason.trim()}
+        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim()}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -257,6 +259,7 @@ export function SharedSensorsEgressForm({
               maxLength={8}
               aria-invalid={!!codeError}
             />
+            <StepUpCodeHint optional={codeOptional} />
             {codeError && <p className="text-sm text-destructive">{codeError}</p>}
           </div>
         </div>
