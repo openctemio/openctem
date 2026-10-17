@@ -21,6 +21,7 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   ChevronRight,
+  ExternalLink,
   Globe,
   MinusCircle,
   MoreHorizontal,
@@ -495,6 +496,12 @@ export function InventoryTable({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem asChild>
+                  <Link href={assetDetailHref(asset.id)}>
+                    <ExternalLink className="me-2 h-4 w-4" />
+                    {t('assets.inv.openDetails', 'Open details page')}
+                  </Link>
+                </DropdownMenuItem>
                 {actions.map((a) => (
                   <DropdownMenuItem key={a.id} onClick={() => void a.run(asset)}>
                     <a.icon className="me-2 h-4 w-4" />
