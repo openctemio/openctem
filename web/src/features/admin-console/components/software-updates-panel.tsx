@@ -60,7 +60,7 @@ const ERROR_FALLBACK: Record<VersionCheckErrorCode, string> = {
   rollback: 'Older than the release information already applied.',
   conflict: 'Another release feed with the same sequence is already applied.',
   expired: 'The release feed has expired; get a current copy.',
-  no_root: 'This build pins no release feed key.',
+  no_key: 'This build pins no release feed key.',
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

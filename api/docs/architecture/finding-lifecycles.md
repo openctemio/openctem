@@ -54,14 +54,40 @@ Rules the database enforces on its own, whatever the code does:
   new spec hashes). Publishing an older version copies it into a new version and publishes that (a roll
   back); history stays linear.
 - A sub-status a published lifecycle uses cannot be archived. Archiving a lifecycle stops it applying.
-- The definitions exist, but nothing evaluates them yet: the status paths still use the platform engine
-  alone until the next step wires the tenant layer in.
+
+### Moves under a lifecycle
+
+Every status path decides a move with the platform engine first and then the scheme selected for the
+finding (`findinglifecycle.EvaluateMove`, `internal/app/finding/lifecycle_moves.go`):
+
+| Path | How the lifecycle applies |
+|---|---|
+| `PATCH /findings/{id}/status` | takes `sub_status_id` (the sub-status the move lands on; with the current status, a label move inside it) and `fields` (the inputs the lifecycle requires) |
+| `POST /findings/bulk/status`, remediation group and campaign resolves, Jira inbound | each finding decided on its own, landing on the target's default sub-status |
+| `/actions/fix-applied`, `/actions/verify`, `/actions/reject-fix` and the by-filter forms | the same narrowing; action routes take no fields, so a move that requires them is refused there |
+| Approval requests (false positive, accepted) | the request itself is narrowed (permission, note length, actor kind); a request that would need fields is refused until requests carry them |
+| GitHub issue webhook | decided as the ticket actor |
+| Assign to owners | starts work (confirmed → in_progress) only when the lifecycle lets it; the assignment happens either way |
+| `GET /findings/{id}/transitions`, `POST /findings/transitions/preview` | list the moves with the sub-status each lands on, the transition, the longer note and the fields it needs, and the organization's reasons for a refusal |
+
+- **A sub-status changes only through these moves**: no route writes `findings.sub_status_id` directly. Each
+  move is on the timeline with the old and new sub-status, the lifecycle version that decided it
+  (`lifecycle:<version id>@<n>`, or `platform:1` without a scheme), the transition and the field values.
+- **Platform moves** (a covered scan, a retest, a VEX statement, expiry, a regression) do not ask the
+  lifecycle and land on the default label.
+- The caller's permissions reach the service through the request context
+  (`middleware.PermissionCheckContext`, `shared.CallerHasPermission`), so `require_permission` reads the
+  same fresh permissions as the route gates; delegated actors hold none.
+- Published schemes are compiled once per version id and cached in process; each move reads which
+  versions are published (one query), so a publish or an archive applies to the next move.
+- `TestFindingLifecycle_CannotBypassTheEngine_DB` drives the real routes: listed moves never pass a platform
+  rule (verify permission, evidence matrix, fix-claim rules, four-eyes, canonical edges), the lifecycle's own
+  guards bind, and another organization's sub-status is refused.
 
 ## Planned (RFC-110 §11)
 
 - The pure engine layer (scheme spec, validator, guards, context selection) and its property test (in
   review).
-- The tenant layer on every status path: sub-status changes only as engine-decided, audited moves;
-  `PATCH /status` with `sub_status_id` and `fields`; the finding resource and list filter; simulate.
+- Sub-statuses and fields on approval requests; the list filter by sub-status; the simulator.
 - Settings → Findings → Lifecycle, and sub-statuses in the finding drawer, list and bulk actions.
 - Templates, extra approval steps, ticket mapping by sub-status, the flow report.
