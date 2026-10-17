@@ -50,6 +50,7 @@ export interface VexStatement {
 export interface VexApplyResult {
   matched: number
   closed: number
+  requested: number
   reopened: number
   finding_ids?: string[]
 }
