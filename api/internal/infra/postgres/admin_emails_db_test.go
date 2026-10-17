@@ -23,6 +23,12 @@ func TestActiveAdminEmails_DB(t *testing.T) {
 		if _, err := db.ExecContext(ctx, `INSERT INTO tenant_members (tenant_id, user_id, role, status) VALUES ($1, $2, 'member', 'active')`, tn.String(), u.String()); err != nil {
 			t.Fatal(err)
 		}
+		// The owner role requires the owner membership (database trigger).
+		if role == ownerRole {
+			if _, err := db.ExecContext(ctx, `UPDATE tenant_members SET role = 'owner' WHERE user_id = $1 AND tenant_id = $2`, u.String(), tn.String()); err != nil {
+				t.Fatal(err)
+			}
+		}
 		// A trigger gives every new member the member role: replace it.
 		if _, err := db.ExecContext(ctx, `DELETE FROM user_roles WHERE user_id = $1 AND tenant_id = $2`, u.String(), tn.String()); err != nil {
 			t.Fatal(err)
