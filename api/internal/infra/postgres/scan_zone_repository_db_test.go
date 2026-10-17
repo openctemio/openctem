@@ -44,7 +44,12 @@ func seedZoneSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID *sha
 		o.lastSeen = &now
 	}
 	id := shared.NewID()
-	tenant := tenantID.String()
+	// A shared sensor (platform) belongs to the instance: no tenant.
+	var tenant any = tenantID.String()
+	scope := "organization"
+	if o.platform {
+		tenant, scope = nil, "instance"
+	}
 	// By default the sensor also reported (verified) its tools, as a sensor
 	// on a current SDK does on every heartbeat.
 	var reported any
@@ -53,13 +58,17 @@ func seedZoneSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID *sha
 	}
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO sensors (id, tenant_id, name, type, status, health, api_key_hash, api_key_prefix,
-		                      execution_mode, max_concurrent_jobs, current_jobs, last_seen_at, is_platform_sensor,
+		                      execution_mode, max_concurrent_jobs, current_jobs, last_seen_at, scope,
 		                      reported_tool_names)
 		 VALUES ($1, $2, $3, 'worker', $4, $5, $6, $7, 'daemon', 5, 0, $8, $9, $10)`,
 		id.String(), tenant, name+" "+id.String()[:8], o.status, o.health,
-		"hash-"+id.String(), id.String()[:8], *o.lastSeen, o.platform, reported)
+		"hash-"+id.String(), id.String()[:8], *o.lastSeen, scope, reported)
 	if err != nil {
 		t.Fatalf("seed sensor %s: %v", name, err)
+	}
+	if o.platform {
+		// No tenant delete cascades to a shared sensor: remove it here.
+		t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, id.String()) })
 	}
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, id.String())

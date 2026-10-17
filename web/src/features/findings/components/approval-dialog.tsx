@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   Dialog,
@@ -24,7 +24,8 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { useFalsePositivePolicy, useRequestApproval } from '../api/use-findings-api'
+import { useFindingApprovalPolicy, useRequestApproval } from '../api/use-findings-api'
+import { ApprovalEvaluationBanner } from './approval-evaluation-banner'
 import { FINDING_STATUS_CONFIG } from '../types'
 import type { FindingStatus } from '../types'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
@@ -64,9 +65,22 @@ export function ApprovalDialog({
   onSuccess,
   maxAcceptanceDays,
 }: ApprovalDialogProps) {
-  const capDays = maxAcceptanceDays && maxAcceptanceDays > 0 ? maxAcceptanceDays : 365
-  const defaultDays = Math.min(DEFAULT_ACCEPTANCE_DAYS, capDays)
   const { t } = useTranslation()
+  // How a request of this status would be decided now: the tier and why, who
+  // may approve, the longest acceptance and the shortest note.
+  const isFalsePositive = targetStatus === 'false_positive'
+  const policyStatus = targetStatus === 'accepted' ? 'accepted' : 'false_positive'
+  const { data: fpPolicy } = useFindingApprovalPolicy(
+    findingId,
+    policyStatus,
+    open && (isFalsePositive || targetStatus === 'accepted')
+  )
+  const evaluation = fpPolicy?.evaluation
+  const propCap = maxAcceptanceDays && maxAcceptanceDays > 0 ? maxAcceptanceDays : 365
+  const policyCap = evaluation?.max_acceptance_days ?? 0
+  const capDays = policyCap > 0 ? Math.min(propCap, policyCap) : propCap
+  const defaultDays = Math.min(DEFAULT_ACCEPTANCE_DAYS, capDays)
+  const minNote = Math.max(0, evaluation?.min_note_length ?? 0)
   const [justification, setJustification] = useState('')
   // Why the finding is not a risk to fix: a VEX-aligned code the server
   // requires and stores as the closure reason.
@@ -76,10 +90,8 @@ export function ApprovalDialog({
   const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(defaultDays))
   const [step, setStep] = useState<'input' | 'confirm'>('input')
   const { trigger: requestApproval, isMutating } = useRequestApproval(findingId)
-  // How a false positive on this finding is decided now: the organization may
-  // let a person with approval permission decide it alone.
-  const isFalsePositive = targetStatus === 'false_positive'
-  const { data: fpPolicy } = useFalsePositivePolicy(findingId, open && isFalsePositive)
+  // The organization may let a person with approval permission decide a
+  // false positive alone.
   const decideAlone = isFalsePositive && fpPolicy?.can_decide_alone === true
   const othersMayDecideAlone =
     isFalsePositive && fpPolicy?.single_person === true && !fpPolicy.can_decide_alone
@@ -91,6 +103,17 @@ export function ApprovalDialog({
   const maxDate = capDays >= 365 ? acceptanceDate(0, 1) : acceptanceDate(capDays)
   const expiryValid =
     !showExpiryPicker || (!!expiresAt && expiresAt >= minDate && expiresAt <= maxDate)
+  // The policy's cap may arrive after the dialog opened: keep the end within it.
+  useEffect(() => {
+    if (showExpiryPicker && expiresAt > maxDate) setExpiresAt(maxDate)
+  }, [showExpiryPicker, expiresAt, maxDate])
+  const noteLength = justification.trim().length
+  const noteTooShort = minNote > 0 && noteLength > 0 && noteLength < minNote
+  const noteTooShortText = t(
+    'findingApprovals.evaluation.noteTooShort',
+    'Write at least {count} characters for this approval.',
+    { count: minNote }
+  )
   const justificationRequired = t(
     'findings.approvalDialog.justificationRequired',
     'Justification is required'
@@ -105,6 +128,10 @@ export function ApprovalDialog({
     }
     if (!justification.trim()) {
       toast.error(justificationRequired)
+      return
+    }
+    if (noteLength < minNote) {
+      toast.error(noteTooShortText)
       return
     }
     if (!expiryValid) {
@@ -203,6 +230,9 @@ export function ApprovalDialog({
                     )}
                   </div>
                 )}
+                {evaluation && !decideAlone && evaluation.tier !== 'single' && (
+                  <ApprovalEvaluationBanner evaluation={evaluation} />
+                )}
                 {othersMayDecideAlone && (
                   <p className="text-sm text-muted-foreground">
                     {t(
@@ -252,7 +282,16 @@ export function ApprovalDialog({
                     {t('findings.approvalDialog.characters', '{count}/2000 characters', {
                       count: justification.length,
                     })}
+                    {minNote > 0 &&
+                      ` · ${t('findingApprovals.evaluation.noteMin', 'at least {count}', {
+                        count: minNote,
+                      })}`}
                   </p>
+                  {noteTooShort && (
+                    <p className="text-xs text-destructive" role="alert">
+                      {noteTooShortText}
+                    </p>
+                  )}
                 </div>
                 {showExpiryPicker && (
                   <div className="grid gap-2">
@@ -285,7 +324,7 @@ export function ApprovalDialog({
               </Button>
               <Button
                 onClick={handleNext}
-                disabled={!reason || !justification.trim() || !expiryValid}
+                disabled={!reason || !justification.trim() || noteLength < minNote || !expiryValid}
               >
                 {t('findings.approvalDialog.review', 'Review')}
               </Button>

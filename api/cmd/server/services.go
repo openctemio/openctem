@@ -10,6 +10,9 @@ import (
 	"net"
 	"time"
 
+	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
@@ -56,6 +59,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	accountdeletionapp "github.com/openctemio/openctem/api/internal/app/accountdeletion"
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	assetfreshnessapp "github.com/openctemio/openctem/api/internal/app/assetfreshness"
@@ -77,6 +81,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
+	onboardingapp "github.com/openctemio/openctem/api/internal/app/onboarding"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
@@ -276,6 +281,30 @@ func (a ticketStatusApplier) RequestTicketDisposition(ctx context.Context, tenan
 		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
 	}
 	return out.Requested, out.Pending, refused, nil
+}
+
+// taskIssueReader is the platform's read of remediation tasks for their
+// tracker issues (no caller scope: the background sync and the inbound
+// webhook act for the organization).
+type taskIssueReader struct {
+	repo *postgres.RemediationTaskRepository
+}
+
+func (r taskIssueReader) GetTask(ctx context.Context, tenantID, taskID shared.ID) (*remediationdom.Task, error) {
+	return r.repo.GetTask(ctx, tenantID, taskID)
+}
+
+func (r taskIssueReader) OpenMemberIDs(ctx context.Context, tenantID, taskID shared.ID, limit int) ([]shared.ID, error) {
+	res, err := r.repo.ListMembers(ctx, tenantID, taskID,
+		remediationdom.MemberFilter{Role: remediationdom.MemberRolePrimary, Status: "open"}, pagination.New(1, limit))
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]shared.ID, 0, len(res.Data))
+	for _, m := range res.Data {
+		ids = append(ids, m.FindingID)
+	}
+	return ids, nil
 }
 
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
@@ -847,6 +876,11 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// Onboarding: the fork of an account without an organization and the
+	// join-request inbox (RFC-104).
+	Onboarding *onboardingapp.Service
+	// AccountDeletion: self-service account deletion with a grace period.
+	AccountDeletion *accountdeletionapp.Service
 	// PlatformEmail is the platform's SMTP settings, set in the admin console
 	// (RFC-079); its Sender backs Email.
 	PlatformEmail *platformemail.Service
@@ -1181,6 +1215,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.FindingActions.SetDataScope(s.DataScope)
 	// Every route that marks a fix applied uses the same ownership rule.
 	s.Vulnerability.SetFixApplierCheck(s.FindingActions.FixAppliers)
+	// Organization finding lifecycles (RFC-110): every status path is also
+	// decided by the scheme selected for the finding, which can only narrow
+	// the platform's decision.
+	s.Vulnerability.SetLifecycles(s.FindingLifecycle)
+	s.FindingActions.SetLifecycles(s.FindingLifecycle)
 	// A bulk fix claim (findings bulk, remediation group and campaign
 	// resolves) queues a proof-of-fix re-check per finding, like the
 	// dedicated fix-applied action.
@@ -1200,7 +1239,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
-		Roots: releasefeed.PinnedRoots, Running: version.Get().Version,
+		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
 	}, log)
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
@@ -1619,6 +1658,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
 	// own findings, proof-of-fix queued) behind the abuse guard.
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
+	// One exception over a task's open findings (RFC-111 §7).
+	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
@@ -1733,6 +1774,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.TicketLink != nil {
 		s.JiraSync.SetLinkStore(repos.TicketLink)
 	}
+	// Task issues: a person creates a task's issue (a change of the task, in
+	// their data scope); the platform keeps its status in step.
+	s.JiraSync.SetTaskSources(s.RemediationTask, taskIssueReader{repo: repos.RemediationTask})
+	s.JiraSync.SetWebBaseURL(cfg.SMTP.BaseURL)
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
@@ -1760,6 +1805,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
 	// request); resolves the tenant's GitHub integration credentials on demand.
 	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
+	s.GitHubTicket.SetLifecycles(s.FindingLifecycle)
 	s.GitHubTicket.SetActivityRecorder(s.FindingActivity)
 
 	// Initialize integration & notification services
@@ -1952,6 +1998,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	// research/122: completed scan commands teach per-target durations.
 	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
+	// RFC-100 §10: shared jobs in flight per organization, read through the
+	// entitlement service by key (platform_scans_concurrent).
+	if s.Entitlement != nil {
+		cmdOpts = append(cmdOpts, command.WithSharedLimits(s.Entitlement))
+	}
+	// RFC-100 §5: the access policy again at claim time (an organization
+	// that lost access or opted out keeps its queued shared jobs waiting).
+	cmdOpts = append(cmdOpts, command.WithSharedAccess(s.SharedSensorsAllowed))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
@@ -2041,7 +2095,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
 	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
-	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)))
+	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())))
 	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
@@ -2152,7 +2206,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
-	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector)
+	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
@@ -2207,6 +2261,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
+		// Shared-sensor scans per day (RFC-100 §10): generic limits by key;
+		// unset means unlimited.
+		scan.WithSharedScanLimits(s.Entitlement),
 		// The scope check names the private address a refused hostname
 		// resolves to, unless that answer may come from the platform's own
 		// DNS in a self-service (multi-tenant) install.
@@ -2232,7 +2289,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithToolAvailability(s.Tool),
 		// Workflow readiness: the New Scan picker, the workflow list and
 		// the refusal of a workflow no sensor here can run.
-		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor)),
+		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor, s.SharedSensorsAllowed)),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
@@ -2297,7 +2354,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scanrun package
 	pipelineAuditAdapter := app.NewScanWorkflowAuditServiceAdapter(s.Audit)
-	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector)
+	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	scanWorkflowSecurityValidatorAdapter := app.NewScanWorkflowSecurityValidatorAdapter(securityValidator)
 
 	// Initialize scan run service with security validator, audit service, transaction support, and tool repo
@@ -2466,9 +2523,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 	// Four-eyes on approvals (owner decision B16) reads who may approve.
 	s.Suppression.SetApproverDirectory(repos.Suppression)
+	// Rules follow the approval policy (RFC-111): tier by the worst finding
+	// they match, security pool, asset owners excluded, sign-offs.
+	if s.Vulnerability != nil {
+		s.Suppression.SetApprovalPolicy(finding.NewRulePolicyEvaluator(s.Vulnerability, repos.Suppression))
+	}
 	// An asset-bound rule names an asset of the tenant the requester may see
 	// (RFC-050 W8, 21b M-10).
 	s.Suppression.SetAssetRefChecker(s.DataScope)
+	// The approval preview lists only findings of assets the caller sees.
+	s.Suppression.SetScopeFilter(s.DataScope.FilterForCaller)
 
 	// Enforce approved suppression rules during ingest: a new finding matching an
 	// active (approved, non-expired) rule lands resolved+suppressed (out of the
@@ -2487,6 +2551,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		accesscontrol.WithGroupDataScope(s.DataScope),
 		accesscontrol.WithScopeDelegationCap(s.DataScope),
 	)
+
+	// Edits of the security pool group of the approval policy need a recent
+	// re-authentication (the gate is wired with the others).
+	s.Group.SetSecurityPoolGuard(func(ctx context.Context, tenantID, groupID shared.ID) (bool, error) {
+		st, err := s.Tenant.GetFindingApprovalSettings(ctx, tenantID.String())
+		if err != nil {
+			return false, err
+		}
+		if st.Policy.SecurityPoolGroupID == groupID.String() {
+			return true, nil
+		}
+		return st.PendingPolicy != nil && st.PendingPolicy.SecurityPoolGroupID == groupID.String(), nil
+	})
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
@@ -2788,6 +2865,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	// Self-service account deletion: signing in again within the grace
+	// period cancels it.
+	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
+		s.Audit, tenantapp.ErasedUserLabel, log)
+	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2848,6 +2930,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
+	if s.AccountDeletion != nil {
+		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
@@ -2889,6 +2974,19 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// managed elsewhere; proving it again restores them (RFC-058).
 	s.DomainVerify.SetClaimListener(s.Tenant)
 	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
+	// Per-domain sign-up policy (RFC-104): sso_required, join by domain and
+	// blocking new organizations for accounts on a claimed domain.
+	s.Auth.SetSignupDomainPolicy(s.DomainVerify)
+	s.Onboarding = onboardingapp.NewService(repos.Tenant, repos.Tenant, onboardingTenants{s.Tenant}, s.DomainVerify,
+		s.Signup, repos.JoinRequest, s.Audit, deriveKey(cfg.Auth.JWTSecret, "openctem/onboarding-offer/v1"), log)
+	sso := s.SSO
+	s.DomainVerify.SetSSOReadiness(func(ctx context.Context, tenantID shared.ID) (bool, error) {
+		t, err := repos.Tenant.GetByID(ctx, tenantID)
+		if err != nil {
+			return false, err
+		}
+		return sso.HasUsableSSOPath(ctx, t.Slug())
+	})
 	s.SSO.SetJITApprovalNotifier(s.Tenant)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
@@ -2928,6 +3026,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// admits it (self-service, or a pending invitation for the email).
 		if s.Signup != nil {
 			s.OAuth.SetSignupPolicy(s.Signup)
+			if s.DomainVerify != nil {
+				s.OAuth.SetSignupDomainPolicy(s.DomainVerify)
+			}
+			if s.AccountDeletion != nil {
+				s.OAuth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
@@ -3318,4 +3422,29 @@ func (a pentestJiraTicketing) CreateFindingTicket(ctx context.Context, tenantID,
 		return "", err
 	}
 	return info.TicketURL, nil
+}
+
+// SharedSensorsAllowed is the shared sensor access policy (RFC-100 §5) of
+// the scan policy service, read when called: the service is wired after the
+// scan services that hold this method. Without it every organization is
+// refused.
+func (s *Services) SharedSensorsAllowed(ctx context.Context, tenantID shared.ID) (bool, string) {
+	if s == nil || s.ScanPolicy == nil {
+		return false, scanpolicy.ReasonSharedSensorsUnavailable
+	}
+	return s.ScanPolicy.SharedSensorsAllowed(ctx, tenantID)
+}
+
+// SharedSensorsEgress is the egress addresses the instance administrator
+// published for shared sensors (RFC-100 §9): the global list first, then
+// each region, sorted. Nothing without the scan policy service.
+func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.PlatformEgress, error) {
+	if s == nil || s.ScanPolicy == nil {
+		return nil, nil
+	}
+	v, _, err := s.ScanPolicy.SharedSensorsEgress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
 }

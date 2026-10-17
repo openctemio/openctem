@@ -27,7 +27,7 @@ vi.mock('../../api/use-findings-api', () => ({
     trigger: mockRequestApproval,
     isMutating: false,
   })),
-  useFalsePositivePolicy: vi.fn(() => ({ data: mockPolicy })),
+  useFindingApprovalPolicy: vi.fn(() => ({ data: mockPolicy })),
 }))
 
 // Mock the findings types
@@ -376,5 +376,77 @@ describe('ApprovalDialog acceptance cap', () => {
     expect(days).toBeLessThan(31)
     const dflt = (Date.parse(`${expiry.value}T00:00:00`) - Date.now()) / 86_400_000
     expect(dflt).toBeLessThan(31)
+  })
+})
+
+describe('ApprovalDialog approval policy', () => {
+  const evaluation = {
+    kind: 'accepted',
+    tier: 'dual',
+    floor: 'security',
+    risk_class: 'critical',
+    approvals_required: 2,
+    reasons: ['severity_critical', 'kev', 'platform_default'],
+    security_pool: true,
+    security_pool_fallback: false,
+    step_up: true,
+    eligible_approvers: 5,
+    eligible_security_pool: 2,
+    satisfiable: true,
+    min_note_length: 20,
+    max_acceptance_days: 30,
+    decide_within_days: 7,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPolicy = undefined
+  })
+
+  it('explains the tier, the reasons and who approves', () => {
+    mockPolicy = { evaluation }
+    render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
+    const banner = screen.getByTestId('approval-evaluation')
+    expect(banner).toHaveTextContent('Two approvers: 2 approval(s) needed')
+    expect(banner).toHaveTextContent('Why: critical severity, known exploited (KEV).')
+    expect(banner).toHaveTextContent('Set by the platform default.')
+    expect(banner).toHaveTextContent('5 approvers, 2 in the security pool')
+    expect(banner).toHaveTextContent('Approvers confirm their identity before they decide.')
+    expect(banner).toHaveTextContent('at most 30 days')
+    expect(screen.queryByTestId('approval-evaluation-unsatisfiable')).not.toBeInTheDocument()
+  })
+
+  it('limits the end date to the policy cap', () => {
+    mockPolicy = { evaluation }
+    render(<ApprovalDialog {...defaultProps} targetStatus="accepted" maxAcceptanceDays={365} />)
+    const expiry = screen.getByLabelText('Acceptance expires on') as HTMLInputElement
+    const days = (Date.parse(`${expiry.max}T00:00:00`) - Date.now()) / 86_400_000
+    expect(days).toBeLessThan(31)
+  })
+
+  it('enforces the minimum note length', async () => {
+    const user = userEvent.setup()
+    mockPolicy = { evaluation: { ...evaluation, kind: 'false_positive', max_acceptance_days: 0 } }
+    render(<ApprovalDialog {...defaultProps} />)
+    await chooseReason(user, 'Test or example code')
+    await user.click(screen.getByLabelText('Justification'))
+    await user.paste('too short')
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Write at least 20 characters for this approval.'
+    )
+    expect(screen.getByRole('button', { name: 'Review' })).toBeDisabled()
+    await user.paste(' but now long enough')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Review' })).toBeEnabled()
+  })
+
+  it('warns when the organization lacks eligible approvers', () => {
+    mockPolicy = {
+      evaluation: { ...evaluation, satisfiable: false, reasons: ['not_enough_eligible_approvers'] },
+    }
+    render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
+    expect(screen.getByTestId('approval-evaluation-unsatisfiable')).toHaveTextContent(
+      'does not have enough eligible approvers'
+    )
   })
 })

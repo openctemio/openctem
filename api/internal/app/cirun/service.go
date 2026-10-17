@@ -168,6 +168,10 @@ type Service struct {
 	scope     ScopeLinker
 	gitlab    GitLabClients
 	identity  RepositoryIdentity
+	secrets   SecretExposureRaiser
+
+	renameMu   sync.Mutex
+	renameSeen map[string]time.Time
 }
 
 // SetGitLab lets the gate read a GitLab merge request's target branch through
@@ -317,6 +321,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	cfg, refusals := admit(configs, tok, claims, s.now())
 	if cfg == nil {
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
+		s.noteRenamedRepository(ctx, tenantID, issuer, claims, configs)
 		return nil, ErrExchangeRefused
 	}
 	// A repository name stays with the repository id that first reported
@@ -1072,6 +1077,7 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 	}
 	s.suggestImageLinks(ctx, run, report)
 	s.requestInlineIgnores(ctx, run, report)
+	s.raiseSecretExposure(ctx, run, report, out)
 	s.auditUpload(ctx, run, report, out)
 	return out, nil
 }
@@ -1183,4 +1189,47 @@ func CleanBaseRef(c cirun.Claims) string {
 		return ""
 	}
 	return b
+}
+
+// SecretExposureRaiser raises a run's paging secrets (SecretExposure).
+type SecretExposureRaiser interface {
+	Raise(ctx context.Context, run *cirun.Run, findings []cirun.RunFinding) []SecretRotation
+}
+
+// SetSecretExposure turns on raising the secrets a non-fork run finds as
+// organization findings with a rotation task. Without it a branch secret
+// stays as it was ingested.
+func (s *Service) SetSecretExposure(x SecretExposureRaiser) { s.secrets = x }
+
+// raiseSecretExposure raises the secret findings a report sighted. Only a
+// report that carries a secret finding costs a query.
+func (s *Service) raiseSecretExposure(ctx context.Context, run *cirun.Run, report *ctis.Report, out *ingest.Output) {
+	if s.secrets == nil || run.Fork || report == nil || out == nil || len(out.SightedFingerprints) == 0 {
+		return
+	}
+	hasSecret := false
+	for i := range report.Findings {
+		if report.Findings[i].Type == ctis.FindingTypeSecret {
+			hasSecret = true
+			break
+		}
+	}
+	if !hasSecret {
+		return
+	}
+	findings, err := s.repo.FindingsByFingerprints(ctx, run.TenantID, run.RepositoryAssetID, out.SightedFingerprints)
+	if err != nil {
+		s.log.Warn("ci run: secrets not raised", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	for _, r := range s.secrets.Raise(ctx, run, findings) {
+		if !r.Created {
+			continue
+		}
+		s.logAudit(ctx, run.TenantID, Actor{Email: ciActor(cirun.Claims{Provider: run.Provider, Actor: run.Actor})},
+			auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskCreated, auditdom.ResourceTypeRemediationTask, r.TaskID.String()).
+				WithResourceName(r.Title).
+				WithMessage(fmt.Sprintf("Rotation task %q opened for a secret CI run on %s found", r.Title, run.Repository)).
+				WithMetadata("finding_id", r.FindingID.String()).WithMetadata("source", "ci_secret"))
+	}
 }
