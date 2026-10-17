@@ -94,19 +94,21 @@ func (c *consoleClient) do(method, path string, body any) (*http.Response, []byt
 // stubSignIn resolves one refresh token to one user, standing in for the
 // normal /login session.
 type stubSignIn struct {
-	token string
-	user  adminconsole.SignedInUser
+	password string
+	user     adminconsole.SignedInUser
 }
 
-func (s stubSignIn) SignedInUser(_ context.Context, token string) (*adminconsole.SignedInUser, error) {
-	if token != s.token {
-		return nil, errors.New("invalid refresh token")
+func (s stubSignIn) VerifyPassword(_ context.Context, email, password string, _ adminconsole.ClientInfo) (*adminconsole.SignedInUser, error) {
+	if email != s.user.Email || password != s.password {
+		return nil, admin.ErrInvalidCredentials
 	}
 	u := s.user
 	return &u, nil
 }
 
-func (s stubSignIn) EndSignIn(context.Context, string) error { return nil }
+func (s stubSignIn) RecordPasswordSuccess(context.Context, shared.ID) {}
+
+func (s stubSignIn) RecordPasswordFailure(context.Context, shared.ID) {}
 
 func (s stubSignIn) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
 	return shared.ID{}, "", errors.New("not used")
@@ -162,10 +164,10 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 		t.Fatalf("GetByUserID: %v", err)
 	}
 
-	const refresh = "it-refresh-token"
-	signIn := stubSignIn{token: refresh, user: adminconsole.SignedInUser{UserID: userID, Email: email, Active: true, PasswordSignIn: true}}
+	const pw = "It-Console-Pass-1"
+	signIn := stubSignIn{password: pw, user: adminconsole.SignedInUser{UserID: userID, Email: email, Active: true}}
 	svc := adminconsole.NewService(admins, consoleRepo, auditRepo, cipher, signIn, log)
-	h := handler.NewAdminConsoleHandler(svc, false, "refresh_token", log)
+	h := handler.NewAdminConsoleHandler(svc, false, log)
 	validate := handler.NewAdminAuthHandler(log)
 	authMW := middleware.NewAdminAuthMiddleware(svc, log)
 
@@ -174,7 +176,7 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	r := chi.NewRouter()
 	r.Route("/api/v1/admin/auth", func(r chi.Router) {
 		r.With(authMW.Authenticate).Get("/validate", validate.Validate)
-		r.Post("/session", h.StartSession)
+		r.Post("/login", h.Login)
 		r.Post("/mfa", h.VerifyMFA)
 		r.Post("/logout", h.Logout)
 		r.With(authMW.Authenticate).Post("/probe", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -184,15 +186,15 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 
 	jar, _ := cookiejar.New(nil)
 	c := &consoleClient{t: t, base: srv.URL, http: &http.Client{Jar: jar}}
-	base, _ := url.Parse(srv.URL + "/")
-
-	// 1. Not signed in on /login: refused.
-	if resp, _ := c.do("POST", "/api/v1/admin/auth/session", nil); resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("session without sign-in: %d", resp.StatusCode)
+	// 1. A wrong password is refused, like an unknown email; a tenant
+	// session plays no part.
+	for _, creds := range []map[string]string{{"email": email, "password": "wrong"}, {"email": "nobody@example.com", "password": pw}} {
+		if resp, _ := c.do("POST", "/api/v1/admin/auth/login", creds); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("login %v: %d, want 401", creds, resp.StatusCode)
+		}
 	}
-	// 2. Signed in (refresh cookie from /login): first time demands enrollment.
-	jar.SetCookies(base, []*http.Cookie{{Name: "refresh_token", Value: refresh, Path: "/"}})
-	resp, body := c.do("POST", "/api/v1/admin/auth/session", nil)
+	// 2. The right email and password: first time demands enrollment.
+	resp, body := c.do("POST", "/api/v1/admin/auth/login", map[string]string{"email": email, "password": pw})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("session: %d %s", resp.StatusCode, body)
 	}

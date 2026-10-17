@@ -159,6 +159,7 @@ func TestSuppressionHandler_CreateRule(t *testing.T) {
 			"name": "Test Rule",
 			"description": "Test description",
 			"suppression_type": "false_positive",
+			"reason_code": "test_or_example_code",
 			"rule_id": "sql-injection",
 			"tool_name": "semgrep"
 		}`
@@ -236,9 +237,9 @@ func TestSuppressionHandler_ListRules(t *testing.T) {
 		input := suppression.CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: suppression.SuppressionTypeFalsePositive,
-			RuleID:          "test-*",
-			RequestedBy:     userID,
+			SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-*",
+			RequestedBy: userID,
 		}
 		svc.CreateRule(context.Background(), input)
 	}
@@ -279,9 +280,9 @@ func TestSuppressionHandler_ApproveRule(t *testing.T) {
 	input := suppression.CreateRuleInput{
 		TenantID:        tenantID,
 		Name:            "Test Rule",
-		SuppressionType: suppression.SuppressionTypeFalsePositive,
-		RuleID:          "test-rule",
-		RequestedBy:     userID,
+		SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+		RuleID:      "test-rule",
+		RequestedBy: userID,
 	}
 	rule, _ := svc.CreateRule(context.Background(), input)
 	repo.matching = 2
@@ -343,9 +344,9 @@ func TestSuppressionHandler_RejectRule(t *testing.T) {
 	input := suppression.CreateRuleInput{
 		TenantID:        tenantID,
 		Name:            "Test Rule",
-		SuppressionType: suppression.SuppressionTypeFalsePositive,
-		RuleID:          "test-rule",
-		RequestedBy:     userID,
+		SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+		RuleID:      "test-rule",
+		RequestedBy: userID,
 	}
 	rule, _ := svc.CreateRule(context.Background(), input)
 
@@ -391,9 +392,9 @@ func TestSuppressionHandler_UpdateRule(t *testing.T) {
 	input := suppression.CreateRuleInput{
 		TenantID:        tenantID,
 		Name:            "Original Name",
-		SuppressionType: suppression.SuppressionTypeFalsePositive,
-		RuleID:          "test-rule",
-		RequestedBy:     userID,
+		SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+		RuleID:      "test-rule",
+		RequestedBy: userID,
 	}
 	rule, _ := svc.CreateRule(context.Background(), input)
 
@@ -459,9 +460,9 @@ func TestSuppressionHandler_DeleteRule(t *testing.T) {
 	input := suppression.CreateRuleInput{
 		TenantID:        tenantID,
 		Name:            "Test Rule",
-		SuppressionType: suppression.SuppressionTypeFalsePositive,
-		RuleID:          "test-rule",
-		RequestedBy:     userID,
+		SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+		RuleID:      "test-rule",
+		RequestedBy: userID,
 	}
 	rule, _ := svc.CreateRule(context.Background(), input)
 
@@ -507,9 +508,9 @@ func TestSuppressionHandler_ListActiveRules(t *testing.T) {
 		input := suppression.CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: suppression.SuppressionTypeFalsePositive,
-			RuleID:          "test-*",
-			RequestedBy:     userID,
+			SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-*",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(context.Background(), input)
 
@@ -601,7 +602,7 @@ func TestSuppressionHandler_PreviewRule(t *testing.T) {
 	svc := suppression.NewService(repo, nil)
 	h := handler.NewSuppressionHandler(svc, logger.NewNop())
 	rule, err := svc.CreateRule(context.Background(), suppression.CreateRuleInput{
-		TenantID: tenantID, Name: "r", SuppressionType: suppression.SuppressionTypeFalsePositive,
+		TenantID: tenantID, Name: "r", SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 		RuleID: "semgrep.sqli", RequestedBy: shared.NewID(),
 	})
 	if err != nil {

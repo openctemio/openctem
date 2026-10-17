@@ -4,6 +4,7 @@ ai_triage_results
 api_keys
 api_spec_operations
 api_specs
+approval_batches
 approval_signoffs
 asset_access_grants
 asset_attribute_freshness
@@ -144,6 +145,7 @@ notification_outbox
 notification_preferences
 notification_state
 notifications
+organization_join_requests
 pentest_campaign_checklist_items
 pentest_campaign_checklists
 pentest_campaign_members
@@ -221,6 +223,8 @@ software_products
 software_versions
 sso_pending_changes
 storage_blob_deletions
+support_grants
+support_sessions
 suppression_rules
 template_sources
 tenant_identity_providers

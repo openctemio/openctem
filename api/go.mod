@@ -160,7 +160,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/go-webauthn/webauthn v0.18.2
-	github.com/openctemio/ctis v1.6.1-0.20261015085746-ba2f3a6e0fe9
+	github.com/openctemio/ctis v1.6.1-0.20261015213517-1d0678577c43
 	github.com/openctemio/ctis/transfer v0.0.0-20261015010154-bec927219ecf
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

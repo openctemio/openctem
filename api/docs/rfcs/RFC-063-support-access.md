@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | Proposed (decisions SU1–SU10 recommended; delegated to the platform team, 2026-10-08) |
+| Status | Partially implemented (read-only grants and console support sessions, §11, 2026-10-16); read and write, emergency access and the tenant-tab frame are Proposed |
 | Authors | Platform team |
 | Related | RFC-022 (platform admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-058 (external members), plans and limits (`docs/architecture/plans-and-limits.md`) |
-| Code | none yet |
+| Code | `internal/app/supportaccess`, `pkg/domain/supportaccess`, `internal/infra/postgres/support_*_repository.go`, `handler/support_access_handler.go`, `handler/admin_support_handler.go` |
 
 ## 1. Summary
 
@@ -213,3 +213,112 @@ Each phase ships tests for:
 | SU8 | Plan | Enterprise in SaaS; on by default self-hosted |
 | SU9 | Emergency access | Two super admins, 4 hours, read-only, owners told at once |
 | SU10 | Personal data | Member emails masked for support, except the case requester |
+
+## 11. Implementation (2026-10-16)
+
+The first delivery is read-only and differs from §3 to §5 in three places,
+each for a stated reason.
+
+### 11.1 What is built
+
+- **Grant** (`support_grants`): an owner, with a recent re-authentication,
+  names **one platform support administrator by email** (active, `ops_admin`
+  or `super_admin`; a read-only administrator can never be named), the data
+  scopes (`findings`, `assets`, default both), a duration of 1 to 72 hours
+  (default 4), a reason (10 to 500 characters) and an optional case reference.
+  The database refuses a window over 72 hours. One active grant per
+  administrator and organization.
+  - `POST /api/v1/organization/support-access/grants` (owner + step-up),
+    `GET …/grants` (owners and admins, history included),
+    `DELETE …/grants/{grant_id}` (owners and admins: revoke, ends open sessions
+    in the same transaction), `GET …/active` (every member: who, until when,
+    which data; the banner).
+- **Support session** (`support_sessions`), console side:
+  - `GET /api/v1/admin/support/grants`: the live grants naming the caller;
+  - `POST /api/v1/admin/support/grants/{grant_id}/sessions`: route-level
+    console step-up; the session is **bound to the console session** that
+    opened it;
+  - `DELETE /api/v1/admin/support/sessions/{session_id}`;
+  - reads: `…/sessions/{session_id}/overview`, `…/findings`,
+    `…/findings/{id}`, `…/assets`, `…/assets/{id}`.
+  - The group requires `ops_admin` or `super_admin`; there is no write route.
+- **Enforcement on every read**, one statement, no cache: the session is open,
+  belongs to the caller and to this console session, and its grant is not
+  revoked and inside its window (server clock). Then the scope is checked.
+- **Both audit logs before any data**: the organization's log gets
+  `support.accessed` (actor `support:<email>`, route, resource id, session id)
+  and the admin log gets `support.accessed` for the organization. If either
+  write fails the read is refused (503): no audit, no access. Session start
+  and end, grant creation and revocation are in the organization's log;
+  refusals (no grant, another console session, scope not granted) are in the
+  admin log as `support.refused`.
+- **Owners are emailed** on grant creation, revocation, and every session
+  start and end.
+- **Read model**: an explicit column allow-list. Findings: title, severity,
+  status, source, tool, rule, CVE, CWE, asset name and type, file path and
+  line, SLA status, first and last seen. Assets: name, type, criticality,
+  status, exposure, risk score, finding count, first and last seen. Never
+  selected: messages, descriptions, code snippets, secret values, evidence,
+  attachments, comments, people's names or emails. Every query is scoped to
+  the grant's organization (from the database, never the request); assets of
+  private programs and their findings stay hidden (support is no program
+  member).
+
+### 11.2 Differences from the proposal
+
+| Proposal | Built | Reason |
+|---|---|---|
+| A grant for the operator's support, used by any administrator with the `support` capability (§3, §4.1) | A grant names one administrator | the owner decides who looks, not only when; no new capability flag to manage |
+| A tenant-plane token for a synthetic principal (§4.2) | Console-plane read routes over a narrow read model | the console has its own origin and listener; a token for the tenant plane would cross origins, and a narrow allow-list is easier to prove than a role over every tenant route |
+| `support_read` / `support_read_write` roles (§5.1) | Read-only only; scopes `findings`, `assets` | read and write needs the two-owner approval of §3; not built yet |
+
+### 11.3 Threat model additions
+
+| Threat | Control |
+|---|---|
+| A stolen console cookie used from elsewhere | the support session is bound to the console session id; the console session itself has its own idle and absolute expiry |
+| A support administrator demoted to read-only or deactivated mid-session | the route group requires `ops_admin`+ and the service re-checks the administrator on every read |
+| Reads not reaching an audit log under load | both writes happen before the response; a failure refuses the read |
+| Cross-tenant ids in a support URL | the organization comes from the live grant; every query carries it (404) |
+| Secrets in findings | the read model never selects message, snippet, description or evidence |
+
+### 11.4 What a grant opens
+
+The overview and the finding rows carry only what the grant's scopes open.
+With the `findings` scope alone the overview has the open-finding counts and no
+asset count, and a finding row has no asset id, name or type (the columns are
+not selected and the assets table is not joined). With the `assets` scope alone
+the overview has the asset count and no finding counts. A part that is not
+granted is absent from the JSON, not zero.
+
+### 11.5 Grant-bypass paths
+
+Three console routes that predate support access reach an organization's data
+without a grant. They are not blocked (an operator must still be able to
+list the users of an organization, give it a first owner, recover one, and
+set up its sign-in) but each use is a recorded, announced event:
+
+| Route | What it reaches |
+|---|---|
+| `GET /api/v1/admin/tenants/{tenantId}/users` (user list) | names and emails of the organization's users |
+| `POST /api/v1/admin/tenants/{tenantId}/users` (first owner create, owner recovery) | creates the account that owns the organization |
+| `POST /api/v1/admin/tenants/{tenantId}/sso/identity-providers` (identity provider creation) | who may sign in to the organization |
+
+Before the route runs, the organization's audit log gets
+`admin_console.tenant_access` (actor `console:<email>`, route, method, request
+id) and the organization's active owners are emailed. The user list is a page
+that is refreshed and paged, so its audit row is written on every use and the
+owner email at most once per hour per administrator and organization; the
+create routes email every time. If the audit write fails the use is refused
+(503): no audit, no access. An organization with no active owner (first owner
+create, recovery of an organization whose owners are suspended) has no one to
+email; the audit row is still written. The other organization-scoped console
+routes (SSO enforcement, SAML, verified domains, plan, idle policy, audit
+chain) are organization configuration and are still reached without a grant and
+without this notice; they read no findings and no assets.
+
+### 11.6 Not built yet
+
+Read and write with two-owner approval, emergency access (§7), the tenant tab
+frame (§4.2), expiry emails, the console Security > Support sessions page for
+all administrators, and the `support` entitlement in SaaS plans.

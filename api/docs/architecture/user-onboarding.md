@@ -151,6 +151,91 @@ exists signs in as before: a mode change never locks anyone out.
 `AUTH_ALLOW_REGISTRATION` and `TENANT_CREATION_MODE` are retired: start-up
 refuses to run while either is set and names `SIGNUP_MODE` instead.
 
+### Domain sign-up policy (Settings > Domains, owner only)
+
+An organization that holds a domain **verified for SSO** (exclusive
+platform-wide, DNS TXT, set up by the platform administrator) decides what
+that claim does to accounts on the domain. Every effect is **off by default**
+and applies only while the claim is verified and unambiguous: a lapsed claim
+(DNS proof gone) or a claim in conflict stops every effect at once.
+
+| Setting | Effect |
+|---------|--------|
+| `join_policy` `off` / `approval` / `auto` | Whether a verified holder of an address on the domain may ask to join (`approval`) or joins at once (`auto`); with `accounts: domain` this is what admits a public sign-up (`domain_account`) |
+| `join_role` `viewer` / `member` | Role of people who join by domain; never an administrator |
+| `discoverable` | Show the organization to verified holders of the domain during onboarding |
+| `sso_required` | Refuse password and social sign-up for addresses on the domain (403 `SSO_REQUIRED`, nothing written); they come in through the organization's SSO. Needs a working SSO connection |
+| `block_new_workspaces` | Accounts on the domain cannot create organizations (create-first-team, `POST /tenants`) |
+| `include_subdomains` | The effects also cover `*.domain` addresses; the exact claim of a subdomain wins |
+
+- `GET /api/v1/organization/settings/domains` (owner or admin) lists the
+  organization's domains with their policy and `effective`.
+- `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
+  (owner, step-up) changes it; audited as
+  `sso.verified_domain_signup_policy_changed` (high). A domain id of another
+  organization answers 404.
+- **Existing accounts.** The first time `sso_required` or
+  `block_new_workspaces` turns on, every active account on the domain outside
+  the organization gets its own e-mail naming only the domain (once,
+  `capture_notified_at`). Nothing is moved: the account's other organizations
+  and data stay its own and are never shown to the claimant.
+- An unreadable domain policy refuses the sign-up or the organization
+  creation (fail-closed).
+
+### Onboarding fork and join requests
+
+An account with no organization (after sign-up and email verification) is
+offered, in this order:
+
+1. its **pending invitations** (only to the verified address they were sent
+   to);
+2. the organization that claims its **verified email domain**, when that
+   organization set `discoverable` and a join policy (`auto`: join; `approval`:
+   ask to join). An organization that is not discoverable is never revealed,
+   and nothing is offered by domain before the address is verified;
+3. **create an organization**, when the policy in force allows it and the
+   domain does not block it.
+
+Routes (refresh-token authenticated like create-first-team, cross-site
+refused, rate limited):
+
+- `POST /api/v1/auth/onboarding/options` returns the offers. Each carries an
+  opaque `ref`: kind, organization, target and expiry under an HMAC bound to
+  the account (30 minutes; the key is derived from the session secret under
+  its own label). No organization id or slug reaches the client.
+- `POST /api/v1/auth/onboarding/accept` with `{ref}` re-checks everything now
+  (verified address, the same claim still governing the address, still
+  discoverable and joinable, the invitation still pending) and then accepts
+  the invitation (the verified address stands in for the emailed token), joins
+  at once with the domain's role (`auto`, audited `member.joined_by_domain`,
+  admins notified), or creates a **join request** (`approval`). A stale or
+  foreign reference answers 409 `OFFER_UNAVAILABLE`.
+
+Web: `/onboarding/create-team` shows this fork (invitations, the
+organization of the verified domain with Join / Ask to join and a "waiting for
+approval" state, then the create form when allowed). Joining selects the new
+organization at once (the accept answer carries `organization_id` for the
+account's own new membership). Owners and admins see waiting requests on
+Settings > Members; owners set the domain policy on Settings > Domains (admins
+read it). A sign-up refused with `SSO_REQUIRED` sends the person to email-first
+sign-in, which routes the address to the organization's SSO.
+
+Join requests (`organization_join_requests`, migration 002830): one pending
+per person and organization, at most 5 per person per day, expire after 30
+days; decided and expired rows are purged 30 days later
+(`join-request-purge` controller). The organization's inbox:
+
+- `GET /api/v1/organization/join-requests` (owner or admin, `team:members:read`):
+  waiting requests with the requester's email, name and verification;
+- `POST .../join-requests/{id}/approve` `{role}` (owner or admin,
+  `team:members:write`): role `viewer` or `member` only (nobody becomes an
+  administrator by request), creates the membership with no data scope;
+- `POST .../join-requests/{id}/reject`: the requester is not told who decided.
+
+Every query is scoped to the organization (or to the requester); another
+organization's request id answers 404. Audited: `join_request.created`,
+`join_request.approved`, `join_request.rejected`.
+
 ### Request access
 
 When the policy is `admin_only` with `request_access` on, the "not set up"
