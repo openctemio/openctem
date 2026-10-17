@@ -3,6 +3,7 @@
 set -e
 wget -q -T 5 -O /dev/null "http://127.0.0.1:${SERVER_PORT:-8080}/health"
 wget -q -T 5 -O /dev/null http://127.0.0.1:3000/api/health
+[ "${OPENCTEM_ADMIN_SITE:-port}" = off ] || wget -q -T 5 -O /dev/null http://127.0.0.1:3001/api/health
 [ "${GATEWAY:-on}" = on ] || exit 0
 
 # The gateway's admin API (bound to 127.0.0.1:2019 by the shared Caddyfile).
