@@ -23,7 +23,7 @@ var hostBusyPredicate = `commands.status = 'pending'
 		AND ` + scheduledDuePredicate + `
 		AND commands.type = 'scan'
 		AND commands.scan_run_step_id IS NOT NULL
-		AND NOT COALESCE(commands.is_platform_job, FALSE)
+		AND ` + tenantJobPredicate + `
 		AND commands.host_splits < ` + strconv.Itoa(command.MaxHostSplits) + `
 		AND commands.host_keys IS NOT NULL
 		AND NOT ` + hostFreePredicate

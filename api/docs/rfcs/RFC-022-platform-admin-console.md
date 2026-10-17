@@ -801,8 +801,13 @@ Approval of an elevation by another super admin is a later step.
   `GET /api/v1/admin/audit-logs/chain` (any admin; shown on Security >
   Activity) and `bootstrap-admin verify-audit` report every row that does not
   verify. `ADMIN_AUDIT_SINK` streams every row (with its chain position and
-  hash) and the chain head to a syslog, HTTPS or file destination outside the
-  database, so a re-signed chain no longer matches the copy already sent.
+  hash), the chain head and the chain verification state to an HMAC-signed
+  HTTPS, syslog-over-TLS (optionally mutual TLS) or file destination outside
+  the database, so a re-signed chain no longer matches the copy already sent.
+  An exclusive controller reads rows after a durable cursor and advances it
+  only after the destination accepted the batch (at-least-once, batch id,
+  exponential backoff, lag and chain-break alerts, an idle head export every
+  `ADMIN_AUDIT_SINK_HEAD_INTERVAL`).
   See `docs/architecture/audit-hash-chain.md`.
 - Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
   code from the console authenticator, single use (the sign-in replay guard),

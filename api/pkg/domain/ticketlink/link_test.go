@@ -40,21 +40,29 @@ func TestKeyFromURL_OnlyTheIntegrationsSite(t *testing.T) {
 
 func TestNew_Rules(t *testing.T) {
 	f, c := shared.NewID(), shared.NewID()
-	if _, err := New(shared.NewID(), shared.NewID(), &f, &c, "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePerson, nil); err == nil {
+	if _, err := New(shared.NewID(), shared.NewID(), Object{FindingID: &f, CampaignID: &c}, "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePerson, nil); err == nil {
 		t.Fatal("both objects accepted")
 	}
-	if _, err := New(shared.NewID(), shared.NewID(), nil, nil, "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePerson, nil); err == nil {
+	if _, err := New(shared.NewID(), shared.NewID(), Object{}, "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePerson, nil); err == nil {
 		t.Fatal("no object accepted")
 	}
-	if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "sec 1", "", "https://x", "https://x", RoleOwn, SourcePerson, nil); err == nil {
+	if _, err := New(shared.NewID(), shared.NewID(), ForFinding(f), "sec 1", "", "https://x", "https://x", RoleOwn, SourcePerson, nil); err == nil {
 		t.Fatal("bad key accepted")
 	}
-	if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourceMigration, nil); err == nil {
+	if _, err := New(shared.NewID(), shared.NewID(), ForFinding(f), "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourceMigration, nil); err == nil {
 		t.Fatal("migration source accepted from code")
 	}
-	l, err := New(shared.NewID(), shared.NewID(), &f, nil, "sec-1", "10001", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePlatform, nil)
+	l, err := New(shared.NewID(), shared.NewID(), ForFinding(f), "sec-1", "10001", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePlatform, nil)
 	if err != nil || l.ExternalKey != "SEC-1" || l.ProjectKey != "SEC" || l.State != StateActive {
 		t.Fatalf("%+v %v", l, err)
+	}
+	task := shared.NewID()
+	if _, err := New(shared.NewID(), shared.NewID(), Object{FindingID: &f, TaskID: &task}, "SEC-1", "", "https://x", "https://x/browse/SEC-1", RoleOwn, SourcePerson, nil); err == nil {
+		t.Fatal("a finding and a task accepted")
+	}
+	l, err = New(shared.NewID(), shared.NewID(), ForTask(task), "SEC-2", "", "https://x", "https://x/browse/SEC-2", RoleOwn, SourcePerson, nil)
+	if err != nil || l.TaskID == nil || *l.TaskID != task || l.FindingID != nil {
+		t.Fatalf("task link: %+v %v", l, err)
 	}
 }
 
@@ -66,11 +74,11 @@ func TestNew_URLMustBeHTTPSOnTheSite(t *testing.T) {
 		"https://user@acme.atlassian.net/browse/SEC-1",
 		"javascript:alert(1)",
 	} {
-		if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "SEC-1", "", "https://acme.atlassian.net", u, RoleOwn, SourcePerson, nil); !errors.Is(err, shared.ErrValidation) {
+		if _, err := New(shared.NewID(), shared.NewID(), ForFinding(f), "SEC-1", "", "https://acme.atlassian.net", u, RoleOwn, SourcePerson, nil); !errors.Is(err, shared.ErrValidation) {
 			t.Errorf("%s accepted", u)
 		}
 	}
-	if _, err := New(shared.NewID(), shared.NewID(), &f, nil, "SEC-1", "", "https://acme.atlassian.net/", "https://ACME.atlassian.net/browse/SEC-1", RoleOwn, SourcePerson, nil); err != nil {
+	if _, err := New(shared.NewID(), shared.NewID(), ForFinding(f), "SEC-1", "", "https://acme.atlassian.net/", "https://ACME.atlassian.net/browse/SEC-1", RoleOwn, SourcePerson, nil); err != nil {
 		t.Fatal(err)
 	}
 }
