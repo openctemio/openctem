@@ -331,7 +331,8 @@ SMTP_BASE_URL=http://localhost:3000 GOWORK=off go run ./cmd/bootstrap-admin -db 
 
 Open the printed one-time `/set-password#token=...` link to choose the owner's
 password, then sign in at `/login`. The administrator signs in with the printed
-temporary password and opens the console at `/admin`.
+temporary password and opens the platform console at the root of its own
+site (`npm run dev:console` in `web/`, port 3001, locally).
 
 Never commit password hashes to docs or seeds, even for test accounts.
 
