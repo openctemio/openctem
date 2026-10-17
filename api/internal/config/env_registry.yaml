@@ -1201,7 +1201,7 @@ vars:
     component: api
     group: "Sensors"
     type: string
-    default: ":8443"
+    default: ":9443"
     description: "TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it."
   - name: SENSOR_MTLS_TRUSTED_PROXIES
     component: api
@@ -2180,8 +2180,32 @@ vars:
     component: gateway
     group: "Gateway"
     type: string
-    default: "api:8443"
-    description: "Address of the API's sensor listener the gateway passes sensor connections to."
+    default: "api:9443"
+    description: "Address of the API's sensor listener the gateway passes sensor connections to (internal only; sensors dial the gateway's port 443)."
+  - name: OPENCTEM_ADMIN_SITE
+    component: gateway
+    group: "Gateway"
+    type: enum
+    values: [port, host, off]
+    default: "off"
+    description: "The platform console's own site: `port` serves it on `https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT>`, `host` on `https://<OPENCTEM_ADMIN_HOST>` (recommended for production: a separate origin), `off` not at all. The Compose stack sets `port`."
+  - name: OPENCTEM_ADMIN_HOST
+    component: gateway
+    group: "Gateway"
+    type: string
+    description: "The console's own DNS name (no scheme, port or path), with `OPENCTEM_ADMIN_SITE=host`; must differ from `OPENCTEM_HOSTNAME`."
+  - name: OPENCTEM_ADMIN_PORT
+    component: gateway
+    group: "Gateway"
+    type: int
+    default: "8443"
+    description: "The console's port, with `OPENCTEM_ADMIN_SITE=port`. Not a security control: change it if it is taken on the host. Must differ from 80, 443 and `GATEWAY_HTTPS_PORT`."
+  - name: OPENCTEM_ADMIN_ALLOWED_CIDRS
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7"
+    description: "Client networks that may reach the console site, space-separated; everyone else gets 403. The Compose stack passes the same list to the API as `ADMIN_ALLOWED_CIDRS`."
   - name: OPENCTEM_HOSTNAME
     component: compose
     group: "Docker Compose stack"
@@ -2245,6 +2269,11 @@ vars:
     type: string
     default: "0.0.0.0"
     description: "Host interface the gateway port is published on."
+  - name: OPENCTEM_ADMIN_BIND
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    description: "Host interface the console port is published on, with `OPENCTEM_ADMIN_SITE=port` (default `GATEWAY_BIND`). A private or VPN address keeps the console off the public interface; a published container port is not filtered by the host firewall."
   - name: GATEWAY_HTTPS_PORT
     component: compose
     group: "Docker Compose stack"

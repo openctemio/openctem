@@ -1038,13 +1038,13 @@ type SensorTransportV3Config struct {
 	Mode string
 	// PublicHost is host[:port] sensors dial for the gRPC binding
 	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443 for a dedicated
-	// sensor host name, or 192.0.2.10:8444 for a port of its own). Empty:
+	// sensor host name, or 192.0.2.10:9443 for a port of its own). Empty:
 	// the platform's public URL host and port (SensorPublicHost), reached
 	// through the gateway's ALPN routing; advertised only while the
 	// self-probe passes either way.
 	PublicHost string
 	// MTLSListenAddr is the gRPC binding's TLS 1.3 listener
-	// (SENSOR_MTLS_LISTEN_ADDR, default :8443). The gateway passes
+	// (SENSOR_MTLS_LISTEN_ADDR, default :9443). The gateway passes
 	// connections that offer the sensor ALPN id (or name the dedicated
 	// sensor host) through to it at layer 4.
 	MTLSListenAddr string
@@ -1455,7 +1455,7 @@ func Load() (*Config, error) {
 			TransportV3: SensorTransportV3Config{
 				Mode:           strings.ToLower(strings.TrimSpace(getEnv("SENSOR_TRANSPORT_V3", TransportV3Auto))),
 				PublicHost:     getEnv("SENSOR_PUBLIC_HOST", ""),
-				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":8443"),
+				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":9443"),
 				CACertFile:     getEnv("SENSOR_MTLS_CA_CERT_FILE", ""),
 				CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
 				CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),

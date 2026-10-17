@@ -15,7 +15,7 @@ sensors need a typed, versioned protocol.
 | HTTP/REST | `:8080`, `/api/v1/*` | Web console, integrations, automation | Shipped |
 | WebSocket | `:8080`, `/api/v1/ws` (same listener) | Real-time updates in the console ([RFC-045](../../rfcs/RFC-045-websocket-auth.md)) | Shipped |
 | Sensor protocol v2 | `:8080`, `/api/v2/sensor/*` | Sensors ([sensors.md](../sensors.md)) | Shipped |
-| Sensor protocol v3 | `SENSOR_MTLS_LISTEN_ADDR` (default `:8443`), gRPC over mutual TLS | Sensors ([sensors.md](../sensors.md)) | Shipped |
+| Sensor protocol v3 | `SENSOR_MTLS_LISTEN_ADDR` (default `:9443`), gRPC over mutual TLS | Sensors ([sensors.md](../sensors.md)) | Shipped |
 
 ## Rationale
 
