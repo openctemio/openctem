@@ -123,7 +123,7 @@ describe('FindingApprovalSettingsForm — false-positive level', () => {
       />
     )
     await userEvent.click(screen.getByRole('button', { name: /cancel the change/i }))
-    expect(update).toHaveBeenCalledWith({ fp_approval: 'all' })
+    expect(update).toHaveBeenCalledWith({ cancel_pending: true })
     expect(onSaved).toHaveBeenCalled()
   })
 
@@ -148,7 +148,7 @@ describe('FindingApprovalSettingsForm — false-positive level', () => {
     expect(screen.getByText(/a lower second-look share is waiting/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/second look/i)).toHaveValue(0)
     await userEvent.click(screen.getByRole('button', { name: /cancel the change/i }))
-    expect(update).toHaveBeenCalledWith({ second_look_percent: 5 })
+    expect(update).toHaveBeenCalledWith({ cancel_pending: true })
   })
 
   it('hides the cancel button without settings:write', () => {
