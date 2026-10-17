@@ -69,6 +69,9 @@ FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine@sha256:f92b6ef800e499660581e
 ARG SWAG_VERSION=v1.16.4
 WORKDIR /app
 ENV GOWORK=off
+# swag type-checks the packages it parses, and with cgo on that compiles
+# net's cgo resolver, which needs a C compiler this image does not have.
+ENV CGO_ENABLED=0
 RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
 COPY go.mod go.sum ./
 RUN go mod download

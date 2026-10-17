@@ -455,7 +455,7 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 		return fmt.Errorf("update finding from github issue event: %w", uerr)
 	}
 	s.logger.Info("github webhook synced finding status",
-		"finding_id", finding.ID().String(), "issue_url", issueHTMLURL, "action", action, "status", target)
+		"finding_id", logger.SanitizeValue(finding.ID().String()), "issue_url", logger.SanitizeValue(issueHTMLURL), "action", logger.SanitizeValue(action), "status", logger.SanitizeValue(target.String()))
 	if s.activity != nil && oldStatus != target {
 		if aerr := s.activity.RecordIntegrationStatusChange(ctx, tenantID, finding.ID(),
 			oldStatus.String(), target.String(), "github", issueKeyFromURL(issueHTMLURL)); aerr != nil {
