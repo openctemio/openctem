@@ -232,3 +232,29 @@ func (ref *Reference) RoleName(id string) string {
 	}
 	return id
 }
+
+// ConsolePathPrefix is the platform console's API. The tenant web app bundles
+// the JSON reference, and must not carry the console's route list.
+const ConsolePathPrefix = "/api/v1/admin/"
+
+// WithoutConsoleRoutes returns the reference without the platform console's
+// routes (and the features left with none), for the tenant web app's bundle.
+// The documentation pages keep them.
+func (r *Reference) WithoutConsoleRoutes() *Reference {
+	out := *r
+	out.Features = nil
+	for _, f := range r.Features {
+		kept := make([]RouteDoc, 0, len(f.Routes))
+		for _, rt := range f.Routes {
+			if !strings.HasPrefix(rt.Path, ConsolePathPrefix) {
+				kept = append(kept, rt)
+			}
+		}
+		if len(kept) == 0 && len(f.Routes) > 0 {
+			continue
+		}
+		f.Routes = kept
+		out.Features = append(out.Features, f)
+	}
+	return &out
+}

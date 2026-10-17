@@ -24,7 +24,6 @@ vi.mock('@/hooks/use-build-versions', async (importOriginal) => {
 const get = vi.hoisted(() => vi.fn())
 const adminFetch = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/api/client', () => ({ get }))
-vi.mock('@/features/admin-console/api/admin-client', () => ({ adminFetch }))
 
 import { AboutDialog } from '../about-dialog'
 
@@ -159,14 +158,19 @@ describe('useBuildVersions', () => {
     })
   })
 
-  it('uses the console session in the admin shell', async () => {
+  it('uses the fetcher the console registers in the admin shell', async () => {
     const useBuildVersions = await useReal()
+    const { setAdminApiVersionFetcher } = await vi.importActual<
+      typeof import('@/hooks/use-build-versions')
+    >('@/hooks/use-build-versions')
     fetchMock.mockResolvedValue(new Response('{}', { status: 401 }))
     adminFetch.mockResolvedValue({ version: 'v0.9.0', commit: '01234567', channel: 'release' })
+    setAdminApiVersionFetcher(() => adminFetch('/version'))
     const { result } = renderHook(() => useBuildVersions('admin', true), { wrapper })
     await waitFor(() => expect(result.current.api).toBeTruthy())
     expect(adminFetch).toHaveBeenCalledWith('/version')
     expect(get).not.toHaveBeenCalled()
+    setAdminApiVersionFetcher(null)
   })
 
   it('resolves failures to null (or the baked-in release version), never throws', async () => {

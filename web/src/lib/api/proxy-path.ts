@@ -31,3 +31,17 @@ export function proxyBackendPath(segments: readonly string[]): string | null {
 function encodeStructural(segment: string): string {
   return segment.replace(/[%?#]/g, (c) => encodeURIComponent(c))
 }
+
+/**
+ * Whether the path names the platform console's API (`admin/...`). The
+ * console is a separate site with its own proxy (RFC-022 revision 21); this
+ * app never forwards to it, however the path is spelled (empty or `.`
+ * segments, a decoded separator, another letter case).
+ */
+export function isConsoleApiPath(segments: readonly string[]): boolean {
+  const parts = segments
+    .join('/')
+    .split(/[/\\]/)
+    .filter((p) => p !== '' && p !== '.')
+  return (parts[0] ?? '').toLowerCase() === 'admin'
+}

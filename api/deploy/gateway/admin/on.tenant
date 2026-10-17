@@ -1,6 +1,7 @@
-# With the console on its own site, the main site has no console: its pages
-# and its API answer 404 here (the web console and the API refuse them too).
-@console path /admin /admin/* /api/v1/admin /api/v1/admin/*
+# With the console on its own site, the main site has no console API: it
+# answers 404 here (the tenant web app has no console route and does not
+# proxy it, and the API serves it only on its console listener).
+@console path /api/v1/admin /api/v1/admin/*
 handle @console {
 	respond 404
 }
