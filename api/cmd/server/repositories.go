@@ -23,23 +23,25 @@ type Repositories struct {
 	AssetTypeCat            *postgres.AssetTypeCategoryRepository
 	ScopeTarget             *postgres.ScopeTargetRepository
 	ScopeExcl               *postgres.ScopeExclusionRepository
-	AssetService            *postgres.AssetServiceRepository           // CTEM: Network services on assets
-	WebEndpoint             *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
-	Software                *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
-	CVECorpus               *postgres.CVECorpusRepository              // CVE corpus for inventory matching (RFC-066)
-	SoftwareMatch           *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
-	AssetAttributeSources   *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
-	AssetFreshness          *postgres.AssetFreshnessRepository         // Last observation per attribute class (RFC-075)
-	AssetCoverage           *postgres.AssetCoverageRepository          // Coverage ledger (RFC-093)
-	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository       // Names that resolve only through a wildcard (RFC-088 A4)
-	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository // Automatic enrichment requests (RFC-075)
-	AssetChangeEvents       *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
-	APISpec                 *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
-	AssetStateHistory       *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
-	AssetRelationship       *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
-	RelationshipSuggestion  *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
-	ThreatModel             *postgres.ThreatModelRepository            // CTEM: Continuous threat models
-	AttackerProfileReader   *postgres.AttackerProfileReader            // CTEM: Attacker profiles (generation input)
+	AssetService            *postgres.AssetServiceRepository            // CTEM: Network services on assets
+	WebEndpoint             *postgres.WebEndpointRepository             // Web surface: endpoints under origin assets (RFC-056)
+	Software                *postgres.SoftwareRepository                // Software catalog and asset links (RFC-066)
+	CVECorpus               *postgres.CVECorpusRepository               // CVE corpus for inventory matching (RFC-066)
+	SoftwareMatch           *postgres.SoftwareMatchRepository           // Inventory vulnerability matcher (RFC-066)
+	AssetAttributeSources   *postgres.AssetAttributeSourceRepository    // Per-source asset attribute values (RFC-069)
+	AssetFreshness          *postgres.AssetFreshnessRepository          // Last observation per attribute class (RFC-075)
+	AssetTechnology         *postgres.AssetTechnologyRepository         // Detected technologies (RFC-112)
+	AssetTechnologyBackfill *postgres.AssetTechnologyBackfillRepository // Technology backfill (RFC-112)
+	AssetCoverage           *postgres.AssetCoverageRepository           // Coverage ledger (RFC-093)
+	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository        // Names that resolve only through a wildcard (RFC-088 A4)
+	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository  // Automatic enrichment requests (RFC-075)
+	AssetChangeEvents       *postgres.AssetChangeEventRepository        // Asset change timeline (RFC-069)
+	APISpec                 *postgres.APISpecRepository                 // API descriptions of web origins (RFC-056)
+	AssetStateHistory       *postgres.AssetStateHistoryRepository       // CTEM: State change audit log
+	AssetRelationship       *postgres.AssetRelationshipRepository       // CTEM: Asset topology graph
+	RelationshipSuggestion  *postgres.RelationshipSuggestionRepository  // CTEM: Relationship suggestions
+	ThreatModel             *postgres.ThreatModelRepository             // CTEM: Continuous threat models
+	AttackerProfileReader   *postgres.AttackerProfileReader             // CTEM: Attacker profiles (generation input)
 
 	// Vulnerabilities & Findings
 	Vulnerability    *postgres.VulnerabilityRepository
@@ -237,6 +239,8 @@ type Repositories struct {
 	AdminOrg        *postgres.AdminOrganizationRepository
 	AdminConsole    *postgres.AdminConsoleRepository
 	PlatformIdP     *postgres.PlatformIdPRepository
+	// AdminDB is the pool of the console's identity tables (UseAdminDB).
+	AdminDB *postgres.DB
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -361,6 +365,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),
+		AssetTechnology:         postgres.NewAssetTechnologyRepository(db),
+		AssetTechnologyBackfill: postgres.NewAssetTechnologyBackfillRepository(db),
 		AssetCoverage:           postgres.NewAssetCoverageRepository(db),
 		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
@@ -618,4 +624,23 @@ func newRepositories(db *postgres.DB) *Repositories {
 func (r *Repositories) InitIntegrationExtensions(db *postgres.DB) {
 	r.IntegrationSCMExt = postgres.NewIntegrationSCMExtensionRepository(db, r.Integration)
 	r.IntegrationNotificationExt = postgres.NewIntegrationNotificationExtensionRepository(db, r.Integration)
+}
+
+// UseAdminDB moves the repositories of the platform console's identity tables
+// (admin_users, admin_credentials, admin_sessions, the platform identity
+// provider and its login states) to adminDB, the DB_ADMIN_USER pool. With one
+// pool it is the same database handle.
+func (r *Repositories) UseAdminDB(adminDB *postgres.DB) {
+	r.AdminDB = adminDB
+	r.Admin = postgres.NewAdminRepository(adminDB)
+	r.AdminConsole = postgres.NewAdminConsoleRepository(adminDB)
+	r.PlatformIdP = postgres.NewPlatformIdPRepository(adminDB)
+}
+
+// adminDBOf is the console identity pool, or db when none was set up.
+func adminDBOf(r *Repositories, db *postgres.DB) *postgres.DB {
+	if r != nil && r.AdminDB != nil {
+		return r.AdminDB
+	}
+	return db
 }
