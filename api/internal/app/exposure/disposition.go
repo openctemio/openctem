@@ -93,11 +93,11 @@ type DispositionDecision struct {
 
 // Decide applies the four-eyes rule to one call.
 func (g *DispositionGate) Decide(ctx context.Context, in DispositionInput) (DispositionDecision, error) {
-	if in.Event == nil || !exposuredom.IsGatedState(in.State) || !exposuredom.NeedsSecondApprover(in.Event.Severity()) {
+	if in.Event == nil || !exposuredom.IsGatedState(in.State) || !exposuredom.NeedsSecondApprover(in.Event.PeakSeverity()) {
 		return DispositionDecision{Apply: true, Notes: in.Reason}, nil
 	}
 	if in.ActorID.IsZero() {
-		return DispositionDecision{}, fmt.Errorf("%w: a disposition of a %s exposure needs a signed-in approver", shared.ErrForbidden, in.Event.Severity())
+		return DispositionDecision{}, fmt.Errorf("%w: a disposition of a %s exposure needs a signed-in approver", shared.ErrForbidden, in.Event.PeakSeverity())
 	}
 	if len(in.Reason) > exposuredom.MaxDispositionReasonLength {
 		return DispositionDecision{}, fmt.Errorf("%w: reason is longer than %d characters", shared.ErrValidation, exposuredom.MaxDispositionReasonLength)

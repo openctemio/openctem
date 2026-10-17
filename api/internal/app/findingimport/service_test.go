@@ -321,7 +321,7 @@ func TestApplyVEX_Modes(t *testing.T) {
 					}
 				}
 			}
-			if sum.Matched != c.wantMatched || sum.Closed != c.wantClosed || sum.WouldClose != c.wantWC {
+			if sum.Matched != c.wantMatched || sum.Requested != c.wantClosed || sum.WouldClose != c.wantWC {
 				t.Fatalf("summary = %+v", sum)
 			}
 		})
@@ -371,7 +371,7 @@ func TestApplyVEX_SubcomponentsOnlyInsideTheProduct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sum.Matched != 1 || sum.Closed != 1 || len(repo.applies) != 1 || len(repo.applies[0].ids) != 1 || repo.applies[0].ids[0] != onX {
+	if sum.Matched != 1 || sum.Requested != 1 || len(repo.applies) != 1 || len(repo.applies[0].ids) != 1 || repo.applies[0].ids[0] != onX {
 		t.Fatalf("summary %+v, applies %+v", sum, repo.applies)
 	}
 	if len(repo.queries) != 1 || len(repo.queries[0].AssetNames) == 0 {

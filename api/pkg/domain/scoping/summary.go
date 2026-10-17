@@ -90,5 +90,7 @@ type ThreatModelSummary struct {
 
 // SummaryReader computes the Scoping overview for one tenant.
 type SummaryReader interface {
-	GetSummary(ctx context.Context, tenantID shared.ID) (*Summary, error)
+	// GetSummary counts what scope lets the caller see: a nil scope counts
+	// the whole tenant; a restricted one counts only assets in its rows.
+	GetSummary(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*Summary, error)
 }

@@ -204,11 +204,11 @@ func (m *HandlerMockRepository) ListDistinctTags(_ context.Context, _ shared.ID,
 	return out, nil
 }
 
-func (m *HandlerMockRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
+func (m *HandlerMockRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID, _ *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
 	return make(map[string]asset.AssetTypeStats), nil
 }
 
-func (m *HandlerMockRepository) GetAverageRiskScore(_ context.Context, _ shared.ID) (float64, error) {
+func (m *HandlerMockRepository) GetAverageRiskScore(_ context.Context, _ shared.ID, _ *shared.DataScope) (float64, error) {
 	return 0, nil
 }
 
