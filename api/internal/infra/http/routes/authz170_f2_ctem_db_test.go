@@ -1,7 +1,7 @@
 package routes
 
 // Research 170 (assets authz audit, fork 2): proofs over the dsHarness.
-// Each test states the secure behaviour; a FAIL demonstrates the bug.
+// Each test states the secure behavior; a FAIL demonstrates the bug.
 
 import (
 	"bytes"
