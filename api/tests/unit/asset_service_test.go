@@ -240,11 +240,11 @@ func (m *MockAssetRepository) ListDistinctTags(_ context.Context, _ shared.ID, _
 	return asset.TagList{Tags: []string{}}, nil
 }
 
-func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
+func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID, _ *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
 	return make(map[string]asset.AssetTypeStats), nil
 }
 
-func (m *MockAssetRepository) GetAverageRiskScore(_ context.Context, _ shared.ID) (float64, error) {
+func (m *MockAssetRepository) GetAverageRiskScore(_ context.Context, _ shared.ID, _ *shared.DataScope) (float64, error) {
 	return 0, nil
 }
 

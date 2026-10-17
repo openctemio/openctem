@@ -2336,18 +2336,25 @@ func (r *AssetRepository) BulkUpdateStatus(ctx context.Context, tenantID shared.
 }
 
 // GetAssetTypeBreakdown returns total and exposed counts per asset_type in a single query.
-func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID) (map[string]asset.AssetTypeStats, error) {
+func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
+	args := []any{tenantID.String()}
+	scopeSQL := ""
+	if scope != nil {
+		cond, scopeArgs := dataScopeCondAt("a.id", scope, 2)
+		scopeSQL = " AND " + cond
+		args = append(args, scopeArgs...)
+	}
 	query := `
 		SELECT
-			asset_type,
+			a.asset_type,
 			COUNT(*) AS total,
-			COUNT(*) FILTER (WHERE exposure = 'public') AS exposed
-		FROM assets
-		WHERE deleted_at IS NULL AND tenant_id = $1
-		GROUP BY asset_type
+			COUNT(*) FILTER (WHERE a.exposure = 'public') AS exposed
+		FROM assets a
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1` + scopeSQL + `
+		GROUP BY a.asset_type
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get asset type breakdown: %w", err)
 	}
@@ -2370,11 +2377,18 @@ func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID sh
 }
 
 // GetAverageRiskScore returns the average risk_score for all assets in a tenant.
-func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error) {
+func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (float64, error) {
 	var avg float64
+	args := []any{tenantID.String()}
+	scopeSQL := ""
+	if scope != nil {
+		cond, scopeArgs := dataScopeCondAt("a.id", scope, 2)
+		scopeSQL = " AND " + cond
+		args = append(args, scopeArgs...)
+	}
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE deleted_at IS NULL AND tenant_id = $1`,
-		tenantID.String(),
+		`SELECT COALESCE(AVG(a.risk_score), 0) FROM assets a WHERE a.deleted_at IS NULL AND a.tenant_id = $1`+scopeSQL,
+		args...,
 	).Scan(&avg)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get average risk score: %w", err)
