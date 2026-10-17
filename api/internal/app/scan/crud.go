@@ -1163,7 +1163,7 @@ func (s *Service) DisableScan(ctx context.Context, tenantID, scanID string) (*sc
 // as the system (research 21b H2, RFC-050 W2). Their act scope is checked on
 // the clone's direct targets like on a create.
 func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, actorID string) (*scan.Scan, error) {
-	s.logger.Info("cloning scan", "scan_id", scanID, "new_name", newName)
+	s.logger.Info("cloning scan", "scan_id", logger.SanitizeValue(scanID), "new_name", logger.SanitizeValue(newName))
 
 	actor, err := shared.IDFromString(actorID)
 	if err != nil || actor.IsZero() {

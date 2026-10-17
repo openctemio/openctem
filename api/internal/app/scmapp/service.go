@@ -214,7 +214,7 @@ func (s *Service) CompleteGitHubInstall(ctx context.Context, tenantID shared.ID,
 		AccountType: truncate(gh.Account.Type, 20), RepositorySelection: truncate(gh.RepositorySelection, 20), CreatedBy: createdBy}
 	if err := s.repo.Create(ctx, inst); err != nil {
 		if errors.Is(err, scmapp.ErrBoundElsewhere) {
-			s.log.Warn("github app installation bound elsewhere", "tenant_id", tenantID.String(), "installation_id", in.InstallationID)
+			s.log.Warn("github app installation bound elsewhere", "tenant_id", logger.SanitizeValue(tenantID.String()), "installation_id", in.InstallationID)
 		}
 		return nil, err
 	}

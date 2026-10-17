@@ -61,6 +61,12 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AdminPublicURL is the platform console's public origin
+	// (ADMIN_PUBLIC_URL; default the origin of APP_URL). It is the console's
+	// WebAuthn relying party: the RP ID is its host and it is the only origin
+	// an assertion may come from. Empty: console security keys are off.
+	AdminPublicURL string
+
 	// AdminPlane is where the platform administration console may be
 	// reached from.
 	AdminPlane AdminPlaneConfig
@@ -332,6 +338,12 @@ type AppConfig struct {
 	Name string
 	Env  string
 	URL  string // Public app URL (used as fallback for sensor config base URL)
+	// ManagedService (MANAGED_SERVICE, default false) marks a hosted,
+	// multi-tenant service. It changes defaults only, never features: the
+	// verified-domain requirement for platform sensors defaults on until an
+	// administrator stores a value in the console
+	// (docs/rfcs/RFC-100-shared-sensors.md §6).
+	ManagedService bool
 	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
 	// to every organization created here and never changed (empty: not
 	// named).
@@ -1353,6 +1365,8 @@ func Load() (*Config, error) {
 			Env:    appEnv(),
 			URL:    getEnv("APP_URL", ""),
 			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
+
+			ManagedService: getEnvBool("MANAGED_SERVICE", false),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
@@ -1666,6 +1680,7 @@ func Load() (*Config, error) {
 			AllowedCIDRs:             getEnvSlice("ADMIN_ALLOWED_CIDRS", DefaultAdminAllowedCIDRs),
 			ListenAddr:               getEnv("ADMIN_LISTEN_ADDR", ""),
 			ListenAllowAllInterfaces: getEnvBool("ADMIN_LISTEN_ALLOW_ALL_INTERFACES", false),
+			Plane:                    getEnv("OPENCTEM_PLANE", PlaneAll),
 		},
 		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
 		AdminAuditSink: AdminAuditSinkConfig{
@@ -1677,6 +1692,7 @@ func Load() (*Config, error) {
 			SyslogClientKey:  getEnv("ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY", ""),
 			HeadInterval:     getEnvDuration("ADMIN_AUDIT_SINK_HEAD_INTERVAL", 15*time.Minute),
 		},
+		AdminPublicURL: strings.TrimRight(strings.TrimSpace(getEnv("ADMIN_PUBLIC_URL", publicOriginOr(""))), "/"),
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
 			// Default TRUE: never start deleting audit history on upgrade.
@@ -1889,6 +1905,9 @@ func (c *Config) validateBasic() error {
 	if err := c.validateAdminAuditRetention(); err != nil {
 		return err
 	}
+	if err := c.validateAdminPublicURL(); err != nil {
+		return err
+	}
 	if err := c.validateAdminPlane(); err != nil {
 		return err
 	}
@@ -1908,8 +1927,19 @@ func (c *Config) validateBasic() error {
 // audit trail.
 const minAdminAuditRetentionDays = 30
 
-// validateAdminAuditRetention guards the destructive knobs. A zero or negative
-// retention window would push the cutoff to now-or-later and delete every row.
+// validateAdminPublicURL checks ADMIN_PUBLIC_URL is an origin: http(s),
+// a host, no path, credentials, query or fragment.
+func (c *Config) validateAdminPublicURL() error {
+	if c.AdminPublicURL == "" {
+		return nil
+	}
+	u := parsePublicURL(c.AdminPublicURL)
+	if u == nil || (u.Path != "" && u.Path != "/") {
+		return errors.New("ADMIN_PUBLIC_URL must be the console origin, scheme://host[:port] without a path, e.g. https://admin.ctem.example.com")
+	}
+	return nil
+}
+
 // validateAdminAuditSink refuses an unsafe off-box audit sink configuration at
 // boot. The destination itself (scheme, certificates) is checked when the
 // sink is built, which also stops the start-up.
@@ -1930,6 +1960,8 @@ func (c *Config) validateAdminAuditSink() error {
 	return nil
 }
 
+// validateAdminAuditRetention guards the destructive knobs. A zero or negative
+// retention window would push the cutoff to now-or-later and delete every row.
 func (c *Config) validateAdminAuditRetention() error {
 	r := c.AdminAuditRetention
 	if !r.Enabled || r.DryRun {

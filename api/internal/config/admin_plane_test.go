@@ -61,3 +61,75 @@ func TestAdminPlaneProductionNeedsSharedCSRFSecret(t *testing.T) {
 		}
 	}
 }
+
+// OPENCTEM_PLANE: a tenant process holds no console credentials and opens no
+// console listener; an admin process needs the console role and a private
+// main listener (or the explicit all-interfaces opt-in).
+func TestPlaneValidation(t *testing.T) {
+	base := func(plane string) *Config {
+		return &Config{
+			Server:     ServerConfig{Host: "10.0.0.7", Port: 8080},
+			Database:   DatabaseConfig{User: "app"},
+			AdminPlane: AdminPlaneConfig{Plane: plane, AllowedCIDRs: DefaultAdminAllowedCIDRs},
+		}
+	}
+	cases := []struct {
+		name   string
+		cfg    func() *Config
+		wantOK bool
+	}{
+		{"default is all", func() *Config { return base("") }, true},
+		{"all", func() *Config { return base(PlaneAll) }, true},
+		{"unknown", func() *Config { return base("console") }, false},
+		{"tenant", func() *Config { return base(PlaneTenant) }, true},
+		{"tenant with a console listener", func() *Config {
+			c := base(PlaneTenant)
+			c.AdminPlane.ListenAddr = "10.0.0.7:8081"
+			return c
+		}, false},
+		{"tenant with console credentials", func() *Config {
+			c := base(PlaneTenant)
+			c.Database.AdminUser, c.Database.AdminPassword = "console", "pw"
+			return c
+		}, false},
+		{"admin without the console role", func() *Config { return base(PlaneAdmin) }, false},
+		{"admin", func() *Config {
+			c := base(PlaneAdmin)
+			c.Database.AdminUser, c.Database.AdminPassword = "console", "pw"
+			return c
+		}, true},
+		{"admin with a second console listener", func() *Config {
+			c := base(PlaneAdmin)
+			c.Database.AdminUser, c.Database.AdminPassword = "console", "pw"
+			c.AdminPlane.ListenAddr = "10.0.0.7:8081"
+			return c
+		}, false},
+		{"admin on every interface", func() *Config {
+			c := base(PlaneAdmin)
+			c.Database.AdminUser, c.Database.AdminPassword = "console", "pw"
+			c.Server.Host = "0.0.0.0"
+			return c
+		}, false},
+		{"admin on every interface, opted in", func() *Config {
+			c := base(PlaneAdmin)
+			c.Database.AdminUser, c.Database.AdminPassword = "console", "pw"
+			c.Server.Host = "0.0.0.0"
+			c.AdminPlane.ListenAllowAllInterfaces = true
+			return c
+		}, true},
+	}
+	for _, tc := range cases {
+		c := tc.cfg()
+		err := c.validateAdminPlane()
+		if (err == nil) != tc.wantOK {
+			t.Errorf("%s: err=%v, want ok=%v", tc.name, err, tc.wantOK)
+		}
+	}
+	c := base("")
+	if err := c.validateAdminPlane(); err != nil || c.AdminPlane.Plane != PlaneAll || !c.AdminPlane.ServesConsole() || !c.AdminPlane.ServesTenant() {
+		t.Fatalf("default plane: %v %+v", err, c.AdminPlane)
+	}
+	if (AdminPlaneConfig{Plane: PlaneTenant}).ServesConsole() || (AdminPlaneConfig{Plane: PlaneAdmin}).ServesTenant() {
+		t.Fatal("tenant must not serve the console, admin must not serve tenants")
+	}
+}
