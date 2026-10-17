@@ -142,8 +142,8 @@ func TestFindingImport_RealFixtures_DB(t *testing.T) {
 	}
 }
 
-// An OpenVEX statement about a component inside one image closes (enforce,
-// admin) only that image's finding: not the same package's finding on
+// An OpenVEX statement about a component inside one image requests a false
+// positive (enforce, admin) only for that image's finding: not the same package's finding on
 // another asset, not another tenant's, and nothing in a preview.
 func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	ih := newImportHarness(t, ingest.SourceResolveEnforce)
@@ -204,7 +204,7 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 
 	// Without findings:approve (not admin, no permission): stored, not closed.
 	rec, resp = ih.upload(t, ih.tenantID, "", "image.vex.json", doc, false)
-	if rec.Code != http.StatusOK || resp.Files[0].VEX.Closed != 0 || resp.Files[0].VEX.Stored != 1 {
+	if rec.Code != http.StatusOK || resp.Files[0].VEX.Requested != 0 || resp.Files[0].VEX.Stored != 1 {
 		t.Fatalf("no-approve import: %s", rec.Body.String())
 	}
 	if s, v := status(web); s != "new" || v != "not_affected" {
@@ -212,11 +212,17 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	}
 
 	rec, resp = ih.upload(t, ih.tenantID, "", "image.vex.json", doc, true)
-	if rec.Code != http.StatusOK || resp.Files[0].VEX.Closed != 1 {
+	if rec.Code != http.StatusOK || resp.Files[0].VEX.Requested != 1 {
 		t.Fatalf("import: %s", rec.Body.String())
 	}
-	if s, _ := status(web); s != "false_positive" {
-		t.Fatalf("the image's finding = %s, want false_positive", s)
+	// Four-eyes: the upload requests a false positive; it does not set one.
+	if s, v := status(web); s != "new" || v != "not_affected" {
+		t.Fatalf("the image's finding = %s %s, want new / not_affected (a pending request, not a closure)", s, v)
+	}
+	var pending int
+	if err := ih.db.QueryRow(`SELECT count(*) FROM finding_status_approvals WHERE tenant_id = $1 AND finding_id = $2
+		AND requested_status = 'false_positive' AND requested_by_actor = 'vex' AND status = 'pending'`, ih.tenantID, web).Scan(&pending); err != nil || pending != 1 {
+		t.Fatalf("pending vex requests = %d %v, want 1", pending, err)
 	}
 	if s, v := status(other); s != "new" || v != "" {
 		t.Fatalf("the same package on another image changed: %s %s", s, v)

@@ -153,11 +153,11 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/priority-rules":        {classConfig, "priority rules"},
 	"/api/v1/assignment-rules":      {classConfig, "finding assignment rules"},
 	"/api/v1/attacker-profiles":     {classConfig, "attacker profiles"},
-	"/api/v1/compensating-controls": {classConfig, "compensating controls"},
+	"/api/v1/compensating-controls": {classScoped, "linking assets or findings admits only ids in the caller's scope (404 otherwise); update, delete and test need every linked asset and finding in scope (403)"},
 	"/api/v1/control-tests":         {classConfig, "compensating control tests"},
 	"/api/v1/workflows":             {classConfig, "workflow definitions"},
 	"/api/v1/compliance":            {classConfig, "framework and control catalog, assessments"},
-	"/api/v1/scoping":               {classConfig, "scoping summary (counts, tenant-wide by design)"},
+	"/api/v1/scoping":               {classPartial, "asset, crown-jewel and business-unit asset counts follow the caller's scope; configuration totals (services, units, boundary, profiles, threat models, cycles) are organization-wide counts with no ids"},
 
 	// --- scoped ------------------------------------------------------------------
 	"/api/v1/assets":                                      {classScoped, "route guard on /assets/{id}/**, list, stats and facets scoped (RFC-042 F10)"},
@@ -168,8 +168,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/verification-checklists":                     {classScoped, "route guard on the finding id"},
 	"/api/v1/comments":                                    {classScoped, "comment resolved to its finding, finding scope applies"},
 	"/api/v1/exposures":                                   {classScoped, "exposure service scope; POST / checks asset_id with AssertAssetRef (research 21b C3)"},
-	"POST /api/v1/exposures/ingest":                       {classGap, "§3 H1 of research 21b: asset_id checked (C3), but the fingerprint upsert can overwrite an out-of-scope or asset-less exposure"},
-	"GET /api/v1/exposures/stats":                         {classPartial, "counts tenant-wide (L-18)"},
+	"POST /api/v1/exposures/ingest":                       {classScoped, "each item's asset ref goes through FilterAssetRefs and asset-less items need an unrestricted caller; an out-of-scope exposure is never overwritten (TestAuthz170F3_ExposureIngest_ScopedMemberCannotTouchOutOfScope)"},
 	"/api/v1/components":                                  {classScoped, "component service scope (L-10)"},
 	"/api/v1/vex-statements":                              {classScoped, "vex service: asset-bound statements need the asset in scope, statements for every asset need full data access to write and an in-scope link to read"},
 	"/api/v1/repositories":                                {classScoped, "repository must be in scope (L-10)"},
@@ -190,14 +189,14 @@ var dataSurfaceRegistry = map[string]dataSurface{
 
 	// --- partial -------------------------------------------------------------------
 	"/api/v1/asset-groups":      {classPartial, "members, findings, adds and counts scoped (counts, risk and finding_count follow the reader, L-18); the group list is tenant configuration"},
-	"/api/v1/attack-surface":    {classPartial, "chains dropped unless every hop is in scope; summaries graph-wide"},
+	"/api/v1/attack-surface":    {classPartial, "chains dropped unless every hop is in scope; stats counts, breakdown and average risk and the chain summary follow the scope; the attack-path summary stays an organization-wide count with no ids"},
 	"/api/v1/easm":              {classPartial, "summary scoped; candidates are tenant discovery output"},
-	"/api/v1/business-services": {classPartial, "asset links scoped (L-10); the service list is tenant configuration"},
-	"/api/v1/business-units":    {classPartial, "asset links scoped (L-10); the unit list and counts are tenant-wide"},
+	"/api/v1/business-services": {classScoped, "asset links scoped (L-10); update and delete need every linked asset in scope (403); asset_count counts only in-scope links; the service list itself is tenant configuration"},
+	"/api/v1/business-units":    {classPartial, "asset links scoped (L-10); the rollup counters in the response count only the caller's in-scope assets; the unit list itself is organization configuration"},
 	"/api/v1/ctem-cycles":       {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
 	"/api/v1/approvals":         {classScoped, "approvals by id and the list: SQL data-scope condition on the finding asset; total and status counts scoped too; group exceptions (batches) are listed, read and decided only with every member finding in scope (RFC-111)"},
 	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156); tasks are seen through in-scope findings and changed only with every finding in scope (RFC-098)"},
-	"/api/v1/dashboard":         {classPartial, "activity and top risks scoped; counts and trends tenant-wide until P1-4 (D6)"},
+	"/api/v1/dashboard":         {classScoped, "counts, velocity, data quality, process metrics and the executive summary follow the viewer (countScope, D6); the risk-trend history and the program metrics are organization-wide and a restricted viewer needs dashboard:aggregate (empty / 403 otherwise)"},
 
 	// --- separate ------------------------------------------------------------------
 	"/api/v1/pentest":                     {classSeparate, "campaign membership (D5 engagement scope is P2)"},
@@ -218,9 +217,9 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scan-runs":                                  {classGap, "L-06 (run reads)"},
 	"/api/v1/workflow-runs":                              {classGap, "L-18 (trigger data)"},
 	"/api/v1/iocs":                                       {classGap, "§1.3 IOC matches (L-18)"},
-	"/api/v1/suppressions":                               {classGap, "§1.3 suppression rules"},
+	"/api/v1/suppressions":                               {classScoped, "an asset-bound rule needs its asset in the caller's scope to be read, edited, approved or deleted, and the list leaves out the others; an organization-wide rule needs full data access to create, edit, approve or delete"},
 	"GET /api/v1/suppressions/{id}/preview":              {classPartial, "organization-wide count of open findings an approval would close; the approval applies organization-wide, so only approvers (findings:suppressions:approve) see it (authorization-matrix.md)"},
-	"/api/v1/reports":                                    {classGap, "L-19 (scheduled reports; P1-4/P1-5)"},
+	"/api/v1/reports":                                    {classScoped, "scheduled reports render with the creator's data scope; recipients are limited to members and allowed domains"},
 	"/api/v1/simulations":                                {classGap, "§1.3 validation and simulation"},
 	"/api/v1/validation":                                 {classGap, "§1.3 validation coverage"},
 }
