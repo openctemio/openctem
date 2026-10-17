@@ -854,7 +854,7 @@ is still accepted and checked the same way).
 | `GET /api/v1/admin/announcements` | any admin |
 | `POST /api/v1/admin/announcements`, `POST /api/v1/admin/announcements/{announcement_id}/cancel` | **ops_admin+**, `reason` (10-500), audited `announcement.create` / `announcement.cancel` |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
-| `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
+| `POST /api/v1/admin/auth/login`, `/mfa` | public (rate-limited, cross-site guard; the account's email and password, then the console TOTP; no tenant session involved) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
@@ -906,8 +906,8 @@ role, however high, can reach SSO setup. The SSO **login** flow
 A platform administrator is a `users` account linked to an `admin_users` row
 (`admin_users.user_id`) that holds the role (`super_admin` > `ops_admin` >
 `readonly`), the TOTP second factor and the admin audit trail. It signs in on the
-normal `/login`, then `POST /api/v1/admin/auth/session` (refresh-token cookie)
-and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
+console's own sign-in page: `POST /api/v1/admin/auth/login` (email and
+password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
 
 - **Belongs to no organization.** A trigger on `tenant_members` rejects a
   membership for a linked account (SQLSTATE 23514, surfaced as 409), and an
@@ -927,6 +927,36 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 
+#### Support access (RFC-063)
+
+A platform administrator never holds standing access to an organization's
+data. The only path is a **support grant**: an owner (with a recent
+re-authentication) names one active `ops_admin` or `super_admin` by email,
+for 1 to 72 hours, read-only, with a reason and the data scopes (`findings`,
+`assets`). Owners and admins list and revoke grants under
+`/api/v1/organization/support-access`; every member reads the active ones.
+
+- The named administrator opens a support session from the console
+  (`POST /api/v1/admin/support/grants/{grant_id}/sessions`, route-level
+  step-up); the session is bound to that console session.
+- Reads (`/api/v1/admin/support/sessions/{session_id}/…`) are resolved live on
+  every request: open session, same administrator and console session, grant
+  not revoked and unexpired (server clock), scope granted. Otherwise 403
+  `SUPPORT_GRANT_REQUIRED`. There is no write route.
+- Every read is written to the organization's audit log (`support.accessed`,
+  actor `support:<email>`) and to the admin audit log before data is returned;
+  if either write fails the read is refused.
+- The read model selects an explicit column allow-list (no messages,
+  snippets, descriptions, evidence, secrets or people), is scoped to the
+  grant's organization, and hides private-program assets and their findings.
+- The overview and finding rows carry only the granted scopes' parts: without
+  `assets` there is no asset count and a finding row names no asset.
+- Grant-bypass paths (RFC-063 section 11.5): the console user list, first owner
+  create or recovery and identity provider creation do not need a grant. They
+  write `admin_console.tenant_access` (actor `console:<email>`) to the
+  organization's audit log and email its owners before running; a failed audit
+  write refuses the use.
+
 #### Break-glass administrators and the platform IdP (RFC-022 revision 4)
 
 - **Platform IdP** (`platform_identity_provider`, one OIDC provider, not
@@ -935,7 +965,7 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   first sign-in by verified email, then bound. No JIT creation. The console TOTP
   is still required after it unless a super admin trusts specific `acr`/`amr`
   values. Organization IdPs still cannot open the console.
-- **Require IdP** refuses the local password path (`/auth/session`) for every
+- **Require IdP** refuses the local password path (`/auth/login`) for every
   administrator except break-glass ones.
 - **Break-glass** administrators are local `super_admin`s that can never be
   bound to the IdP (database `CHECK`), are exempt from "require IdP", and every
@@ -1818,7 +1848,7 @@ viewer (1) ┴─ Can only view resources
    session cookies (`/auth/register`, `/login`, `/mfa/*`, `/token`,
    `/refresh`, `/verify-email`, `/forgot-password`, `/reset-password`,
    `/create-first-team`, `/discover`, the OAuth and SSO callbacks, and the
-   console's `/admin/auth/session`, `/mfa`, `/logout`, `/idp/start`,
+   console's `/admin/auth/login`, `/mfa`, `/logout`, `/idp/start`,
    `/idp/callback`) refuse a write a browser sent for another site
    (`RejectCrossSiteBrowser`: an `Origin` that is neither the request's host
    nor in `CORS_ALLOWED_ORIGINS`, `Origin: null`, or no `Origin` with

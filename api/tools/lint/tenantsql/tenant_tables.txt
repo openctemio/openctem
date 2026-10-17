@@ -223,6 +223,8 @@ software_products
 software_versions
 sso_pending_changes
 storage_blob_deletions
+support_grants
+support_sessions
 suppression_rules
 template_sources
 tenant_identity_providers

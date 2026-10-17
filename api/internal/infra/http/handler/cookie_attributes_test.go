@@ -103,7 +103,7 @@ func TestAdminConsoleCookieAttributes(t *testing.T) {
 		}
 	}
 	for _, secure := range []bool{true, false} {
-		h := NewAdminConsoleHandler(nil, secure, "", logger.NewNop())
+		h := NewAdminConsoleHandler(nil, secure, logger.NewNop())
 
 		rec := httptest.NewRecorder()
 		if err := h.issueSessionCookies(rec, "session-token"); err != nil {

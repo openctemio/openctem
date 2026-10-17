@@ -343,3 +343,20 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 		}
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
+
+// registerOrganizationSupportAccessRoutes serves support access (RFC-063)
+// under the token singleton /api/v1/organization/support-access: an owner
+// grants a named platform support administrator time-boxed, read-only access
+// (recent re-authentication); owners and administrators list and revoke;
+// every member sees the active grants (the banner).
+func registerOrganizationSupportAccessRoutes(router Router, h *handler.SupportAccessHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/support-access", func(r Router) {
+		r.GET("/active", h.Active, middleware.Require(permission.TeamRead))
+		r.GET("/grants", h.List, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+		r.POST("/grants", h.Create, middleware.RequireOwner(), requireStepUp())
+		r.DELETE("/grants/{grant_id}", h.Revoke, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}

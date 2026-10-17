@@ -3,6 +3,7 @@
 import { AlertTriangle } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { useTranslation } from '@/context/i18n-provider'
 import type { RunDispatch } from '@/lib/api/scan-types'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -35,6 +36,7 @@ function Stat({ label, value, danger }: { label: string; value: number; danger?:
  * was not scanned, with the reason (RFC-023 D5: never dropped silently).
  */
 export function RunDispatchPanel({ dispatch }: { dispatch: RunDispatch }) {
+  const { t } = useTranslation()
   const canReadSensors = useHasPermission(Permission.SensorsRead)
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const { byId: sensorsById } = useZoneSensors(canReadSensors)
@@ -70,7 +72,9 @@ export function RunDispatchPanel({ dispatch }: { dispatch: RunDispatch }) {
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {dispatch.sensor_routing && (
           <Badge variant="outline" className="font-normal">
-            {dispatch.sensor_routing === 'platform' ? 'Platform scanning' : 'Your sensors'}
+            {dispatch.sensor_routing === 'platform'
+              ? t('scans.sensorPref.platform.label')
+              : t('scans.sensorPref.tenant.label')}
           </Badge>
         )}
         {routing && (
