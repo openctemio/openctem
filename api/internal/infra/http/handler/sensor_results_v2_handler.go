@@ -126,7 +126,9 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(r.Context(), sensorContextKey, id.Sensor)
 		ctx = context.WithValue(ctx, sensorIdentityContextKey, id)
-		if id.Sensor.TenantID != nil {
+		// A shared sensor (scope instance) has no tenant and never gets a
+		// tenant context.
+		if id.Sensor.TenantID != nil && !id.Sensor.IsShared() {
 			ctx = context.WithValue(ctx, middleware.TenantIDKey, id.Sensor.TenantID.String())
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -162,7 +164,7 @@ func (h *SensorResultsV2Handler) target(w http.ResponseWriter, r *http.Request) 
 		return ingest.V2Target{}, false
 	}
 	t := ingest.V2Target{Sensor: s, ReportID: chi.URLParam(r, "report_id"), CommandID: chi.URLParam(r, "command_id"),
-		UserAgent: r.UserAgent()}
+		UserAgent: r.UserAgent(), LeaseEpoch: leaseEpochHeader(r)}
 	if protov2.ValidateUUID(t.ReportID) != nil || (t.CommandID != "" && protov2.ValidateUUID(t.CommandID) != nil) {
 		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
 		return ingest.V2Target{}, false

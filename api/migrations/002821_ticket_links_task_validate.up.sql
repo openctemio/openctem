@@ -1,0 +1,2 @@
+ALTER TABLE ticket_links VALIDATE CONSTRAINT fk_ticket_links_task_tenant;
+ALTER TABLE ticket_links VALIDATE CONSTRAINT chk_ticket_links_one_object;

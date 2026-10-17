@@ -142,7 +142,7 @@ const (
 // Sensor represents a registered sensor (runner, worker, collector, or sensor).
 type Sensor struct {
 	ID            shared.ID
-	TenantID      *shared.ID // the owning row's tenant; a platform sensor is never that tenant's own sensor
+	TenantID      *shared.ID // the owning organization; nil for a shared sensor (Scope instance)
 	Name          string
 	Type          SensorType
 	Description   string
@@ -152,12 +152,13 @@ type Sensor struct {
 	Health        SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
 	StatusMessage string
 
-	// Platform sensor flag (SaaS model): shared infrastructure the platform
-	// operator runs. It never counts towards, is listed as, or is managed as
-	// one of a tenant's sensors (the tenant plane answers 404 for it);
-	// tenants see platform scanning only as an aggregated service
-	// (GET /api/v1/platform/scanning).
-	IsPlatformSensor bool
+	// Scope: ScopeOrganization for a sensor of TenantID, ScopeInstance for a
+	// shared sensor that belongs to the instance and has no tenant. A shared
+	// sensor never counts towards, is listed as, or is managed as one of a
+	// tenant's sensors (the tenant plane answers 404 for it); tenants see
+	// shared scanning only as an aggregated service
+	// (GET /api/v1/platform/scanning). Fixed at creation.
+	Scope Scope
 
 	// Inline API key: the credential stored on the sensor row itself (the
 	// bootstrap key from creation or admin regeneration). Self-renewal under
@@ -353,7 +354,7 @@ func NewSensor(
 		// DefaultMaxConcurrentJobs. Callers that want a different number
 		// overwrite it via SetMaxConcurrentJobs.
 		MaxConcurrentJobs: DefaultMaxConcurrentJobs,
-		IsPlatformSensor:  false, // Tenant sensor
+		Scope:             ScopeOrganization,
 		Labels:            make(map[string]interface{}),
 		Config:            make(map[string]interface{}),
 		Metadata:          make(map[string]interface{}),
@@ -760,17 +761,17 @@ func (a *Sensor) HasCapacity() bool {
 	return a.FreeSlots(time.Now()) > 0
 }
 
-// SetPlatformSensor marks this sensor as a platform-managed sensor.
-// Platform sensors don't count towards tenant's sensor limit.
-func (a *Sensor) SetPlatformSensor(isPlatform bool) {
-	a.IsPlatformSensor = isPlatform
-	a.UpdatedAt = time.Now()
+// IsShared reports whether this is a shared sensor (Scope instance): it
+// belongs to the instance, has no tenant and is never one of a tenant's
+// sensors.
+func (a *Sensor) IsShared() bool {
+	return a.Scope == ScopeInstance
 }
 
 // CanExecutePlatformJob checks if this platform sensor can execute a job
 // with the given requirements.
 func (a *Sensor) CanExecutePlatformJob(capabilities []string, tool, preferredRegion string) bool {
-	if !a.IsPlatformSensor {
+	if !a.IsShared() {
 		return false
 	}
 	if !a.IsAvailable() || !a.Health.IsDispatchable() {
