@@ -3,7 +3,8 @@
 #
 # 1. migrations: `migrate up` once, before anything serves, under a
 #    non-blocking advisory lock (see migrate_locked for why not migrate's own).
-# 2. starts api, web and (GATEWAY=on) the gateway: api/deploy/gateway's own
+# 2. starts api, web, the platform console (unless OPENCTEM_ADMIN_SITE=off)
+#    and (GATEWAY=on) the gateway: api/deploy/gateway's own
 #    entrypoint.sh + Caddyfile, upstreams pointed at 127.0.0.1; every output
 #    line is prefixed [api] / [web] / [gateway] on stdout/stderr.
 # 3. fail-fast: when ANY child exits, the others are stopped and the container
@@ -136,6 +137,12 @@ trap on_signal TERM INT
 
 start api /opt/openctem/api ./server
 start web /opt/openctem/web env PORT=3000 HOSTNAME="$WEB_HOSTNAME" node server-with-ws.mjs
+# The platform console: its own app on :3001, talking to the API's console
+# listener on loopback (ADMIN_LISTEN_ADDR). None with OPENCTEM_ADMIN_SITE=off.
+if [ "${OPENCTEM_ADMIN_SITE:-port}" != off ]; then
+  start console /opt/openctem/console env PORT=3001 HOSTNAME="$WEB_HOSTNAME" \
+    ADMIN_API_URL="${ADMIN_API_URL:-http://${ADMIN_LISTEN_ADDR:-127.0.0.1:8080}}" node console/server.js
+fi
 if [ "$GATEWAY" = on ]; then
   # api/deploy/gateway/entrypoint.sh: validates OPENCTEM_TLS_MODE and its
   # inputs, exports the internal CA root to $OPENCTEM_CA_EXPORT_DIR, then runs
