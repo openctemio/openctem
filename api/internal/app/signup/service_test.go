@@ -273,6 +273,59 @@ func TestUpdate_NothingStoredStartsFromVersionZero(t *testing.T) {
 	}
 }
 
+// Self-service sign-up cannot be turned on while no starting limits are
+// configured; admin_only always can; a read error refuses too.
+func TestUpdate_SelfServiceNeedsStartLimits(t *testing.T) {
+	repo := &memRepo{}
+	actor := mustAdmin(t, "alice@op.example")
+	svc := openService(repo, nil, nil, nil)
+	ctx := context.Background()
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly}, 0, "", ""); err != nil {
+		t.Fatalf("store admin_only: %v", err)
+	}
+	configured, readErr := false, error(nil)
+	svc.SetStartLimitsCheck(func(context.Context) (bool, error) { return configured, readErr })
+
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 2, "", ""); !errors.Is(err, ErrStartLimitsRequired) {
+		t.Fatalf("no starting limits: %v", err)
+	}
+	if svc.Current(ctx).AllowsSelfService() {
+		t.Fatal("a refused update must not change the policy")
+	}
+	readErr = errors.New("db down")
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 2, "", ""); err == nil {
+		t.Fatal("an unreadable check must refuse")
+	}
+	readErr = nil
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly}, 2, "", ""); err != nil {
+		t.Fatalf("admin_only needs nothing: %v", err)
+	}
+	configured = true
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 3, "", ""); err != nil {
+		t.Fatalf("configured: %v", err)
+	}
+}
+
+// Under disabled or domain the save of self_service fails as locked by the
+// deployment, before the starting-limits check runs.
+func TestUpdate_LockedCeilingSkipsLimitsCheck(t *testing.T) {
+	actor := mustAdmin(t, "alice@op.example")
+	ctx := context.Background()
+	for _, c := range []signupdom.Ceiling{signupdom.CeilingDisabled, signupdom.CeilingDomain} {
+		svc := NewService(&memRepo{}, nil, nil, nil, nil)
+		svc.SetCeiling(c)
+		called := false
+		svc.SetStartLimitsCheck(func(context.Context) (bool, error) { called = true; return true, nil })
+		_, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 0, "", "")
+		if !errors.Is(err, signupdom.ErrLockedByDeployment) {
+			t.Fatalf("ceiling %q: expected ErrLockedByDeployment, got %v", c, err)
+		}
+		if called {
+			t.Fatalf("ceiling %q: the limits check must not run for a locked save", c)
+		}
+	}
+}
+
 // The console may open account sign-up up to the ceiling: domain under
 // domain, never open; organizations only under open.
 func TestCeiling_AccountsUnderDomain(t *testing.T) {

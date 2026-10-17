@@ -129,8 +129,8 @@ func (g *ModuleGate) InvalidateAll() {
 const (
 	// ModuleReasonDisabled: the organization switched the module off.
 	ModuleReasonDisabled = "disabled_by_admin"
-	// ModuleReasonNotEntitled: the organization's plan does not include it,
-	// or a platform administrator denied it.
+	// ModuleReasonNotEntitled: the module is not available for this
+	// organization (denied by the instance operator or a source).
 	ModuleReasonNotEntitled = "not_entitled"
 	// ModuleReasonUnavailable: the entitlement could not be read (503).
 	ModuleReasonUnavailable = "unavailable"
@@ -141,7 +141,7 @@ const (
 
 // ModuleNotEnabledDetails is the details object of a MODULE_NOT_ENABLED error:
 // which module, and why, so a client can say "turned off by your
-// organization" or "not in your plan" rather than guess. Module ids are
+// organization" or "not available for this organization" rather than guess. Module ids are
 // public product facts.
 type ModuleNotEnabledDetails struct {
 	Module string `json:"module"`
@@ -162,16 +162,16 @@ func (g *ModuleGate) RequireModule(moduleID string) func(http.Handler) http.Hand
 			case "":
 				next.ServeHTTP(w, r)
 			case ModuleReasonUnavailable:
-				apierror.ServiceUnavailable("This feature cannot be checked against your plan right now; try again shortly").
+				apierror.ServiceUnavailable("This feature cannot be checked right now; try again shortly").
 					WithDetails(ModuleNotEnabledDetails{Module: moduleID, Reason: reason}).
 					WriteJSON(w)
 			default:
 				msg := "This module is not enabled for your team"
 				switch reason {
 				case ModuleReasonNotEntitled:
-					msg = "This module is not included in your organization's plan"
+					msg = "This module is not available for this organization"
 				case ModuleReasonReadOnlyGrace:
-					msg = "Your organization's plan no longer includes this module: it is read-only for now"
+					msg = "This module is no longer available for this organization: it is read-only for now"
 				}
 				apierror.ModuleNotEnabled(msg).
 					WithDetails(ModuleNotEnabledDetails{Module: moduleID, Reason: reason}).

@@ -3,7 +3,7 @@ package scan
 // Limits of shared (platform) sensor scanning
 // (docs/rfcs/RFC-100-shared-sensors.md §10): the generic per-organization
 // limit platform_scans_per_day, read through the entitlement service by key,
-// never by plan. A self-hosted organization has no limit unless the instance
+// never by limits. A self-hosted organization has no limit unless the instance
 // administrator sets one; the hosted service's control plane writes them.
 // The concurrent limit is enforced where shared jobs are claimed.
 
@@ -12,14 +12,14 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // SharedScanLimits checks an organization's shared-sensor limits
 // (*entitlement.Service).
 type SharedScanLimits interface {
-	Check(ctx context.Context, tenantID shared.ID, key plan.Key, delta int) error
+	Check(ctx context.Context, tenantID shared.ID, key limits.Key, delta int) error
 }
 
 // WithSharedScanLimits wires the limit check. Without it no scan goes to
@@ -36,11 +36,11 @@ func (s *Service) sharedLimitRefusal(ctx context.Context, tenantID shared.ID) er
 		return shared.NewDomainError(codePlatformRefused,
 			"shared platform sensor limits cannot be checked on this instance", shared.ErrValidation)
 	}
-	err := s.sharedLimits.Check(ctx, tenantID, plan.PlatformScansPerDay, 1)
+	err := s.sharedLimits.Check(ctx, tenantID, limits.PlatformScansPerDay, 1)
 	if err == nil {
 		return nil
 	}
-	var lim *plan.ErrLimitReached
+	var lim *limits.ErrLimitReached
 	if errors.As(err, &lim) && !lim.Unavailable {
 		return shared.NewDomainError(codePlatformRefused, fmt.Sprintf(
 			"your organization has started its %d scans on shared platform sensors for today (UTC); run this scan on your own sensors or wait until tomorrow",

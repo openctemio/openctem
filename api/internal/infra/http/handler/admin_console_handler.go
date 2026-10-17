@@ -470,10 +470,9 @@ func (h *AdminConsoleHandler) ResetCredentials(w http.ResponseWriter, r *http.Re
 // clears the pending-MFA cookie, and returns the CSRF token for the response
 // body.
 func (h *AdminConsoleHandler) issueSessionCookies(w http.ResponseWriter, token string) (string, error) {
-	csrf, err := middleware.GenerateCSRFToken()
-	if err != nil {
-		return "", err
-	}
+	// Bound to the session (middleware.AdminCSRFToken); the cookie copy is
+	// what the console's web proxy double-submits, the API checks the binding.
+	csrf := middleware.AdminCSRFToken(token)
 	maxAge := int(admin.SessionTTL.Seconds())
 	h.clearCookie(w, middleware.AdminMFACookie, adminAuthPath, true)
 	h.setCookie(w, middleware.AdminSessionCookie, token, adminAPIPath, maxAge, true)

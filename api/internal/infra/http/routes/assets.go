@@ -33,6 +33,8 @@ func registerAssetRoutes(
 		r.GET("/facets", h.GetFacets, middleware.Require(permission.AssetsRead))
 		r.GET("/overview", h.GetInventoryOverview, middleware.Require(permission.AssetsRead))
 		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
+		// Technology filter options, data-scope filtered (RFC-112).
+		r.GET("/technologies", h.ListTechnologyFacets, middleware.Require(permission.AssetsRead))
 		// The organization's recent asset changes (RFC-069 timeline).
 		r.GET("/changes", h.ListTenantChanges, middleware.Require(permission.AssetsRead))
 

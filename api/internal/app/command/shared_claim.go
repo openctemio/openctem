@@ -11,7 +11,7 @@ import (
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -27,9 +27,9 @@ type SharedClaimer interface {
 
 // SharedLimitSource reads an organization's limit of a key through the
 // entitlement service, by key and never by plan (*entitlement.Service).
-// plan.Unlimited: no limit.
+// limits.Unlimited: no limit.
 type SharedLimitSource interface {
-	Limit(ctx context.Context, tenantID shared.ID, key plan.Key) (int, error)
+	Limit(ctx context.Context, tenantID shared.ID, key limits.Key) (int, error)
 }
 
 // SharedGrantReader reads a shared sensor's grant (it has no tenant).
@@ -232,7 +232,7 @@ func (s *Service) sharedInFlightLimits(ctx context.Context, cmds []*commanddom.C
 		if _, done := out[c.TenantID]; done {
 			continue
 		}
-		lim, err := s.sharedLimits.Limit(ctx, c.TenantID, plan.PlatformScansConcurrent)
+		lim, err := s.sharedLimits.Limit(ctx, c.TenantID, limits.PlatformScansConcurrent)
 		if err != nil {
 			s.logger.Warn("cannot read the organization's shared job limit; its shared jobs wait",
 				"tenant_id", c.TenantID.String(), "error", err)

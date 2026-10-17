@@ -181,7 +181,7 @@ export function LifecycleDraftEditor({
         toast.error(
           t(
             'findingLifecycle.plan.guardsUnavailable',
-            'Your plan does not include this. Ask your administrator to change the plan.'
+            'This is not available for this organization. Ask your administrator.'
           )
         )
       else

@@ -70,6 +70,19 @@ type Repository interface {
 	Enrich(ctx context.Context, tenantID shared.ID, techs []Technology) error
 }
 
+// Facet is one technology across the organization's assets, for the asset
+// list's filter: the name, its most common category and how many assets
+// (that the caller may list) use it.
+type Facet struct {
+	Key        string
+	Name       string
+	Category   Category
+	AssetCount int
+}
+
+// MaxFacets bounds one facet list.
+const MaxFacets = 100
+
 // Observation builds a technology from a producer's values: it trims,
 // rejects control characters and over-long names, drops an unusable
 // version, clamps the confidence and classifies the name. ok is false when
