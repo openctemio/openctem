@@ -47,7 +47,7 @@
 
 import * as React from 'react'
 import { createPortal } from 'react-dom'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ChevronDown, ExternalLink, Maximize2, MoreHorizontal, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'

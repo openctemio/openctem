@@ -16,7 +16,7 @@
  * the type's actions (lib/type-actions), Edit and Delete.
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
