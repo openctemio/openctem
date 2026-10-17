@@ -18,7 +18,6 @@ import (
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -427,7 +426,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Core
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
-		User:   handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log),
+		User:   newUserHandler(svc, repos, v, log),
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
@@ -644,11 +643,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			log),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
-		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
+		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
-		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
 			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
@@ -683,7 +682,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Platform scanning: the shared platform sensors as a service the
 		// tenant may use, never the sensors themselves.
 		PlatformScanning: handler.NewPlatformScanningHandler(
-			sensor.NewPlatformScanningService(repos.Sensor, app.PlatformSensorsAllowed), log),
+			sensor.NewPlatformScanningService(repos.Sensor, svc.SharedSensorsAllowed), log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
@@ -1030,6 +1029,14 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 	if svc.Scope != nil {
 		svc.Scope.SetStepUpGate(gate)
+	}
+	if svc.Vulnerability != nil {
+		// Approvals whose policy tier needs a recent re-authentication.
+		svc.Vulnerability.SetStepUpGate(gate)
+	}
+	if svc.Group != nil {
+		// Edits of the approval policy's security pool group.
+		svc.Group.SetStepUpGate(gate)
 	}
 	if svc.Sensor != nil {
 		svc.Sensor.SetStepUpGate(gate)
@@ -1439,6 +1446,10 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	if svc.Outbox != nil {
 		ob = svc.Outbox
 	}
+	ciAlerts := cirunapp.NewAdminAlerts(admins, inApp, ob, log)
+	if repos.MemberLifecycle != nil && svc.Email != nil {
+		ciAlerts.SetEmail(repos.MemberLifecycle, svc.Email)
+	}
 	ciSvc := cirunapp.NewService(cirunapp.Deps{
 		Repo:     repos.CIRun,
 		Verifier: verifier,
@@ -1448,7 +1459,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 		Ingester: svc.Ingest,
 		Units:    repos.CIRun,
 		Audit:    audit,
-		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
+		Alerts:   ciAlerts,
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
@@ -1620,6 +1631,9 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, rc
 	if rc != nil {
 		s.SetOnceStore(redis.NewWebhookDeliveryStore(rc))
 	}
+	if repos.RepoIdentity != nil {
+		s.SetRepositoryLifecycle(repos.RepoIdentity)
+	}
 	if svc.Encryptor != nil {
 		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
 	}
@@ -1693,4 +1707,13 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 		return svc.DataScope
 	}
 	return findingAccessGuard{DataScopeAsserter: svc.DataScope, findings: svc.Vulnerability}
+}
+
+// newUserHandler builds the user handler with self-service account deletion.
+func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
+	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	if svc.AccountDeletion != nil {
+		h.SetAccountDeletion(svc.AccountDeletion)
+	}
+	return h
 }

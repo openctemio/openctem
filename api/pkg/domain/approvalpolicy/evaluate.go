@@ -29,6 +29,7 @@ const (
 	ReasonPoolFallback        = "security_pool_fallback"
 	ReasonNoEligibleApprover  = "no_eligible_approver"
 	ReasonNotEnoughApprovers  = "not_enough_eligible_approvers"
+	ReasonActorExtraSignoff   = "actor_request_extra_signoff"
 )
 
 // ExcludeReason says why a member may not approve a request.
@@ -56,6 +57,11 @@ type Request struct {
 	// RequesterID is the person who asks (zero for an actor: AI triage, VEX,
 	// a ticket integration).
 	RequesterID shared.ID
+	// ActorMade: a platform actor (AI triage, VEX, a ticket integration)
+	// made the request. Nobody vouched for it, and the account that triggered
+	// an actor (the person who moved a ticket) is not known to the platform
+	// as a member, so the request needs one sign-off more than its tier asks.
+	ActorMade bool
 	// RequesterCanApprove: the requester holds the approve permission and
 	// the subject is in their data scope (only then may they decide alone).
 	RequesterCanApprove bool
@@ -173,6 +179,10 @@ func Evaluate(p Policy, r Request) Result {
 	}
 	res.Tier = tier
 	res.Required = tier.RequiredApprovals()
+	if r.ActorMade {
+		res.Required++
+		res.Reasons = append(res.Reasons, ReasonActorExtraSignoff)
+	}
 	res.SecurityPool = tier.NeedsSecurityPool()
 	res.StepUp = tier.NeedsStepUp() || (p.StepUpAllTiers && tier != TierSingle)
 	res.MinNoteLength = tier.MinNoteLength()

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-16). Being implemented in small PRs; §13 lists what has shipped |
+| Status | Accepted (2026-10-16). Being implemented in small PRs; §13 lists their state |
 | Scope | api (pure evaluator, finding approvals, suppression rules, remediation task exceptions, material-change controller, settings API), web (Settings → Findings → Approvals, request dialog, approvals inbox, task exception dialog) |
 | Related | the finding status lifecycle and its approvals (`docs/architecture/finding-status-lifecycle.md`), RFC-098 (remediation tasks), RFC-110 (tenant lifecycles), step-up re-authentication (`docs/architecture/step-up-reauth.md`) |
 
@@ -124,7 +124,9 @@ relaxation.
 - **Security pool.** The members of `security_pool_group_id` within the approver pool. When the
   organization has none, or nobody in it is eligible after the exclusions, the request falls back to the
   approver pool; the decision records `pool_fallback` and the inbox says so. `security_pool_strict` turns
-  the fallback off.
+  the fallback off. A person counts as a pool member only 24 hours after joining the group (the pool is
+  read live when someone signs, so an account added a moment ago must not sign as the pool), and adding or
+  removing a member of the pool group, or deleting it, needs a recent re-authentication.
 - **Excluded (floor):** the requester (except the sole member); the owners of the finding's asset (user
   owners, and members of owner groups, ownership `primary` or `secondary`): a person never approves the
   hiding of a risk on an asset they own. For a rule bound to an asset, that asset's owners; for a task
@@ -134,6 +136,9 @@ relaxation.
   in, in the same transaction as the status change. A person signs once. The last sign-off must come from
   the security pool when none of the earlier ones did. Sign-offs collected before the facts changed count
   only if the signer still qualifies for the tier computed now.
+- **Requests made by an actor** (AI triage, VEX, a linked ticket) have no person behind them, and the
+  account that moved a ticket is not known as a member, so they need one sign-off more than the tier asks
+  (peer: two, dual: three). A ticket's proposed end is within the organization's cap for the finding.
 - **Nobody eligible.** The evaluator says so (`no_eligible_approver`, with the reason) and the request
   stays pending; nothing approves on a timeout.
 
@@ -208,7 +213,7 @@ A request always carries a structured code and a note:
 | `POST /api/v1/findings/{id}/approvals` | evaluated; the request stores tier, class and required approvals |
 | `POST /api/v1/approvals/{id}/approve` | a sign-off; answers 200 with `approvals_collected` / `approvals_required`; applies on the last one |
 | `GET /api/v1/approvals` | each request carries tier, required and collected approvals, and `batch_id` |
-| `GET, PUT /api/v1/organization/settings/finding-approvals/` | `policy`, `pending_policy`, `pending_policy_at`, and the floors and defaults for the editor |
+| `GET, PUT /api/v1/organization/settings/finding-approvals/` | `policy`, `pending_policy`, `pending_policy_at`, and the floors and defaults for the editor; `PUT` with `cancel_pending: true` drops every waiting lowering (level, second look, policy) and keeps the values in force |
 | `POST /api/v1/suppressions/rules` | `reason_code` required; approval evaluated |
 | task exception routes | §7 |
 
@@ -243,6 +248,7 @@ and validated in a separate migration, so no step holds a long lock on a populat
 | T7 | A decision outliving the facts | material-change controller ends or flags | controller tests per signal |
 | T8 | A group exception smuggling a critical finding | the batch takes the highest member tier and per-member caps | mixed-batch test |
 | T9 | Cross-tenant or out-of-scope approval | every read and write is by `(tenant_id, id)`; the pool is per tenant and data scope; the security pool group must be the tenant's | two-tenant negatives |
+| T11 | The person who moved a ticket approving the request their ticket made, or an accomplice added to the security pool in the same sitting | actor requests need one extra sign-off; pool members count after 24 hours; edits of the pool group need step-up | actor sign-off, fresh pool member and pool edit tests |
 | T10 | Request text used to steer the approver | the note is untrusted plain text; the code is from a closed list | |
 
 ## 12. UI
@@ -261,13 +267,17 @@ and validated in a separate migration, so no step holds a long lock on a populat
 
 | Step | Content | State |
 |---|---|---|
-| 1 | This RFC | in review |
-| 2 | Pure evaluator with floors, defaults, tenant policy, risk class, exclusions, sign-off rule, material-change decision; policy matrix and property tests | designed |
-| 3 | Finding requests and approvals use the evaluator: tiers, security pool, asset-owner exclusion, two approvers (sign-offs), step-up, caps; settings API for the policy | designed |
-| 4 | Suppression rules: reason code, evaluated tier, sign-offs | designed |
-| 5 | Material-change controller | designed |
-| 6 | Group exception on remediation tasks | designed |
-| 7 | Web: approvals settings, request dialog, inbox, task exception | designed |
+| 1 | This RFC | merged (#2401) |
+| 2 | Pure evaluator with floors, defaults, tenant policy, risk class, exclusions, sign-off rule, material-change decision; policy matrix and property tests | in review (#2404) |
+| 3 | Finding requests and approvals use the evaluator: tiers, security pool, asset-owner exclusion, two approvers (sign-offs), step-up, caps; settings API for the policy | in review (#2411) |
+| 4 | Suppression rules: reason code, evaluated tier, sign-offs | in review (#2416) |
+| 5 | Material-change controller | in review (#2419) |
+| 6 | Group exception on remediation tasks | in review (#2422) |
+| 7 | Web: approvals settings, request dialog, inbox (#2421); task exception dialog and group exceptions in the inbox | in review / in progress |
+
+Follow-ups: the approvals list does not yet say whether the viewer may decide a request (the web shows the
+reason only after Approve); an exception rule that covers future findings above its approved tier (§3.1,
+rules) is evaluated at approval only.
 
 ## 14. Not in scope
 

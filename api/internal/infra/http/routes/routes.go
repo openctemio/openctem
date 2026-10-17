@@ -628,6 +628,7 @@ func Register(
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerSharedSensorsSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
@@ -765,7 +766,7 @@ func Register(
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationTask != nil {
-		registerRemediationTaskRoutes(router, h.RemediationTask, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationSuggest != nil {
 		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
@@ -1322,6 +1323,9 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	if dataScopeGuardMiddleware != nil {
 		middlewares = append(middlewares, dataScopeGuardMiddleware)
 	}
+	// The caller's fresh permissions for rules decided in services (a
+	// finding lifecycle move that needs a permission).
+	middlewares = append(middlewares, middleware.PermissionCheckContext())
 	return middlewares
 }
 

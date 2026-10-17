@@ -61,6 +61,10 @@ type Config struct {
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
 
+	// AdminElevationRequired: platform administrators act as read-only until
+	// they elevate their console session for a while (ADMIN_ELEVATION=
+	// required, the default; off = act as their own role at once).
+	AdminElevationRequired bool
 	// AdminAuditSink streams the administrators' audit log off the box.
 	AdminAuditSink AdminAuditSinkConfig
 
@@ -190,15 +194,26 @@ type AdminAuditRetentionConfig struct {
 // position and hash) and the chain head to a destination outside the
 // application database.
 type AdminAuditSinkConfig struct {
-	// URL is the destination: https://..., syslog+tls://host:port,
-	// syslog+tcp://host:port, syslog+udp://host:port or file:///path.
-	// ADMIN_AUDIT_SINK; empty = off.
-	URL string
-	// Token is the webhook's Bearer token. ADMIN_AUDIT_SINK_TOKEN.
-	Token string
-	// HeadInterval is how often the chain head is sent.
+	// URL is the destination: https://..., syslog+tls://host:port or
+	// file:///path. ADMIN_AUDIT_SINK; empty = off.
+	URL string `json:"-"`
+	// Secret is the webhook's HMAC-SHA256 key (at least 32 bytes, required
+	// for https). ADMIN_AUDIT_SINK_SECRET.
+	Secret string `json:"-"`
+	// SyslogCAFile, SyslogClientCert and SyslogClientKey are PEM paths for a
+	// syslog+tls destination: the server roots and the client certificate
+	// (mutual TLS). ADMIN_AUDIT_SINK_SYSLOG_CA_FILE, _CLIENT_CERT, _CLIENT_KEY.
+	SyslogCAFile     string
+	SyslogClientCert string
+	SyslogClientKey  string
+	// HeadInterval is how often the chain head is sent when no row is new.
 	// ADMIN_AUDIT_SINK_HEAD_INTERVAL, default 15m.
 	HeadInterval time.Duration
+}
+
+// String never prints the secret or the URL.
+func (c AdminAuditSinkConfig) String() string {
+	return fmt.Sprintf("AdminAuditSinkConfig{enabled:%t}", c.URL != "")
 }
 
 // MetricsConfig controls exposure of the Prometheus /metrics endpoint.
@@ -516,6 +531,48 @@ type DatabaseConfig struct {
 	// on a 200k-finding tenant. Disabled by default, per session, via the
 	// connection startup parameter; the server-wide setting is untouched.
 	JITEnabled bool
+	// AdminUser and AdminPassword: the database role the platform console's
+	// identity tables are written with (DB_ADMIN_USER, DB_ADMIN_PASSWORD).
+	// Set, the API opens a second, small pool with it for the administrator,
+	// console-session and platform identity-provider repositories, and the
+	// least-privilege bootstrap takes writing those tables away from DB_USER.
+	// Empty: one pool, as before.
+	AdminUser     string
+	AdminPassword string
+}
+
+// validateAdminRole: a console role needs its own password and must not be
+// the app role (the split would then protect nothing).
+func (c *DatabaseConfig) validateAdminRole() error {
+	if c.AdminUser == "" {
+		if c.AdminPassword != "" {
+			return fmt.Errorf("DB_ADMIN_PASSWORD is set but DB_ADMIN_USER is not")
+		}
+		return nil
+	}
+	if c.AdminUser == c.User {
+		return fmt.Errorf("DB_ADMIN_USER must differ from DB_USER")
+	}
+	if c.AdminPassword == "" {
+		return fmt.Errorf("DB_ADMIN_USER is set but DB_ADMIN_PASSWORD is empty")
+	}
+	if c.AdminPassword == c.Password {
+		return fmt.Errorf("DB_ADMIN_PASSWORD must differ from DB_PASSWORD")
+	}
+	return nil
+}
+
+// AdminConfig returns the database settings of the console's pool: the same
+// database as DB_USER with DB_ADMIN_USER's credentials and a small pool, or
+// nil when DB_ADMIN_USER is not set.
+func (c *DatabaseConfig) AdminConfig() *DatabaseConfig {
+	if c.AdminUser == "" {
+		return nil
+	}
+	a := *c
+	a.User, a.Password = c.AdminUser, c.AdminPassword
+	a.MaxOpenConns, a.MaxIdleConns = 5, 2
+	return &a
 }
 
 // RedisConfig holds Redis configuration.
@@ -1369,6 +1426,8 @@ func Load() (*Config, error) {
 			Port:            getEnvInt("DB_PORT", 5432),
 			User:            getEnv("DB_USER", "openctem"),
 			Password:        getEnv("DB_PASSWORD", ""),
+			AdminUser:       getEnv("DB_ADMIN_USER", ""),
+			AdminPassword:   getEnv("DB_ADMIN_PASSWORD", ""),
 			Name:            getEnv("DB_NAME", "openctem"),
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
@@ -1600,10 +1659,15 @@ func Load() (*Config, error) {
 			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
+		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
 		AdminAuditSink: AdminAuditSinkConfig{
-			URL:          getEnv("ADMIN_AUDIT_SINK", ""),
-			Token:        getEnv("ADMIN_AUDIT_SINK_TOKEN", ""),
-			HeadInterval: getEnvDuration("ADMIN_AUDIT_SINK_HEAD_INTERVAL", 15*time.Minute),
+			URL:    getEnv("ADMIN_AUDIT_SINK", ""),
+			Secret: getEnv("ADMIN_AUDIT_SINK_SECRET", ""),
+
+			SyslogCAFile:     getEnv("ADMIN_AUDIT_SINK_SYSLOG_CA_FILE", ""),
+			SyslogClientCert: getEnv("ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT", ""),
+			SyslogClientKey:  getEnv("ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY", ""),
+			HeadInterval:     getEnvDuration("ADMIN_AUDIT_SINK_HEAD_INTERVAL", 15*time.Minute),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
@@ -1802,6 +1866,9 @@ func (c *Config) validateBasic() error {
 	if err := c.validatePlaceholders(); err != nil {
 		return err
 	}
+	if err := c.Database.validateAdminRole(); err != nil {
+		return err
+	}
 	if err := c.validateAuth(); err != nil {
 		return err
 	}
@@ -1812,6 +1879,9 @@ func (c *Config) validateBasic() error {
 		return err
 	}
 	if err := c.validateAdminAuditRetention(); err != nil {
+		return err
+	}
+	if err := c.validateAdminAuditSink(); err != nil {
 		return err
 	}
 	if err := c.validateStorage(); err != nil {
@@ -1829,6 +1899,26 @@ const minAdminAuditRetentionDays = 30
 
 // validateAdminAuditRetention guards the destructive knobs. A zero or negative
 // retention window would push the cutoff to now-or-later and delete every row.
+// validateAdminAuditSink refuses an unsafe off-box audit sink configuration at
+// boot. The destination itself (scheme, certificates) is checked when the
+// sink is built, which also stops the start-up.
+func (c *Config) validateAdminAuditSink() error {
+	k := c.AdminAuditSink
+	if k.URL == "" {
+		if k.Secret != "" || k.SyslogCAFile != "" || k.SyslogClientCert != "" || k.SyslogClientKey != "" {
+			return fmt.Errorf("ADMIN_AUDIT_SINK_SECRET / ADMIN_AUDIT_SINK_SYSLOG_* are set but ADMIN_AUDIT_SINK is not")
+		}
+		return nil
+	}
+	if strings.HasPrefix(k.URL, "https:") && len(k.Secret) < 32 {
+		return fmt.Errorf("ADMIN_AUDIT_SINK_SECRET must be at least 32 bytes when ADMIN_AUDIT_SINK is an https URL (the receiver verifies the HMAC signature with it)")
+	}
+	if k.HeadInterval <= 0 {
+		return fmt.Errorf("ADMIN_AUDIT_SINK_HEAD_INTERVAL must be positive")
+	}
+	return nil
+}
+
 func (c *Config) validateAdminAuditRetention() error {
 	r := c.AdminAuditRetention
 	if !r.Enabled || r.DryRun {
@@ -2084,11 +2174,12 @@ func (c *Config) validatePlaceholders() error {
 		{"FINGERPRINT_KEY", c.Encryption.FingerprintKey},
 		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
 		{"DB_PASSWORD", c.Database.Password},
+		{"DB_ADMIN_PASSWORD", c.Database.AdminPassword},
 		{"REDIS_PASSWORD", c.Redis.Password},
 		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
 		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
 		{"METRICS_TOKEN", c.Metrics.Token},
-		{"ADMIN_AUDIT_SINK_TOKEN", c.AdminAuditSink.Token},
+		{"ADMIN_AUDIT_SINK_SECRET", c.AdminAuditSink.Secret},
 	}
 	for i, prev := range c.Encryption.PreviousKeys {
 		secrets = append(secrets, struct{ name, value string }{fmt.Sprintf("APP_ENCRYPTION_KEY_PREVIOUS entry %d", i+1), prev})
