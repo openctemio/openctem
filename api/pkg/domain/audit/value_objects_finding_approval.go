@@ -36,6 +36,12 @@ const (
 	// (asset owner, assignee, not in the security pool, signed already, or
 	// not enough eligible approvers).
 	ActionFindingApprovalRefused Action = "finding_approval.approval_refused"
+	// Group exceptions (RFC-111 §7): one approval of a group exception
+	// (pending or applied), its rejection and its cancellation.
+	ActionFindingApprovalBatchApproved Action = "finding_approval.batch_approved"
+	ActionFindingApprovalBatchSigned   Action = "finding_approval.batch_signed"
+	ActionFindingApprovalBatchRejected Action = "finding_approval.batch_rejected"
+	ActionFindingApprovalBatchCanceled Action = "finding_approval.batch_canceled"
 	// Material change (RFC-111 §6): a standing decision whose finding turned
 	// worse was ended (accepted risk), flagged for review, or withdrawn
 	// (one-person false positive). Written by the controller.
@@ -60,4 +66,8 @@ var _ = registerActions("finding_approval", map[Action]Severity{
 	ActionFindingApprovalMaterialChangeEnded:   SeverityHigh,
 	ActionFindingApprovalMaterialChangeFlagged: SeverityMedium,
 	ActionFindingApprovalMaterialChangeRevoked: SeverityHigh,
+	ActionFindingApprovalBatchApproved:         SeverityMedium,
+	ActionFindingApprovalBatchSigned:           SeverityMedium,
+	ActionFindingApprovalBatchRejected:         SeverityMedium,
+	ActionFindingApprovalBatchCanceled:         SeverityLow,
 })

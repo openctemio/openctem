@@ -121,7 +121,7 @@ var (
 
 type buildOptions struct {
 	keyFile, keyEnv, releases, advisories, repo, out string
-	days                                                     int
+	days                                             int
 }
 
 func build(args []string, out io.Writer, now time.Time) error {

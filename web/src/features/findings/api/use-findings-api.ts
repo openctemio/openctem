@@ -25,6 +25,7 @@ import type {
   AddCommentInput,
 } from './finding-api.types'
 import type { ApiApproval, ApprovalStatus } from '../types/finding.types'
+import type { ApprovalEvaluation, ApprovalPolicy } from '../lib/approval-policy'
 
 // ============================================
 // SWR CONFIGURATION
@@ -564,7 +565,7 @@ export function useRequestApproval(findingId: string) {
   )
 }
 
-/** How a false positive on one finding is decided now. */
+/** How a request of one status on one finding is decided now. */
 export interface FalsePositivePolicy {
   fp_approval: FPApprovalLevel
   /** One person holding findings:approve may decide it alone. */
@@ -575,14 +576,23 @@ export interface FalsePositivePolicy {
   material: boolean
   pending_fp_approval?: FPApprovalLevel
   pending_fp_approval_at?: string
+  /** The approval policy's evaluation: tier, why, who may approve, how long. */
+  evaluation?: ApprovalEvaluation
 }
 
-/** GET /api/v1/findings/{id}/approvals/policy, only while `enabled`. */
-export function useFalsePositivePolicy(findingId: string, enabled: boolean) {
+/**
+ * GET /api/v1/findings/{id}/approvals/policy?status=, only while `enabled`:
+ * how a request for `status` (false_positive or accepted) would be decided.
+ */
+export function useFindingApprovalPolicy(
+  findingId: string,
+  status: 'false_positive' | 'accepted',
+  enabled: boolean
+) {
   const { currentTenant } = useTenant()
   return useSWR<FalsePositivePolicy>(
     currentTenant && enabled && findingId
-      ? `/api/v1/findings/${encodeURIComponent(findingId)}/approvals/policy`
+      ? `/api/v1/findings/${encodeURIComponent(findingId)}/approvals/policy?status=${status}`
       : null,
     get,
     defaultConfig
@@ -598,8 +608,8 @@ export function useApproveStatus(approvalId: string) {
   return useSWRMutation(
     currentTenant ? `/api/v1/approvals/${approvalId}/approve` : null,
     async (url: string) => {
-      const response = await post(url, {})
-      return response
+      // 200 with status "pending" while more sign-offs are needed.
+      return post<ApiApproval>(url, {})
     }
   )
 }
@@ -669,7 +679,25 @@ export interface FindingApprovalSettings {
   /** A lower share chosen less than 24 hours ago, in force at pending_second_look_at. */
   pending_second_look_percent?: number
   pending_second_look_at?: string
+  /** The approval policy in force. */
+  policy?: ApprovalPolicy
+  /** A relaxing policy chosen less than 24 hours ago, in force at pending_policy_at. */
+  pending_policy?: ApprovalPolicy
+  pending_policy_at?: string
+  /** The platform's lowest tier per "<kind>.<class>". */
+  floors?: Record<string, string>
+  /** The platform's default tier per "<kind>.<class>". */
+  defaults?: Record<string, string>
 }
+
+/**
+ * PUT body: any of the plain fields, or the whole approval policy.
+ * `cancel_pending` drops every waiting lowering (level, second-look share,
+ * relaxing policy) and keeps the values in force.
+ */
+export type FindingApprovalSettingsUpdate = Partial<
+  Pick<FindingApprovalSettings, 'backup_contact_email' | 'fp_approval' | 'second_look_percent'>
+> & { policy?: ApprovalPolicy; cancel_pending?: boolean }
 
 const FINDING_APPROVAL_SETTINGS_URL = '/api/v1/organization/settings/finding-approvals'
 
@@ -688,7 +716,7 @@ export function useFindingApprovalSettings() {
  * recent sign-in; the API client asks for re-authentication when needed).
  * Fields left out keep their value.
  */
-export function updateFindingApprovalSettings(input: Partial<FindingApprovalSettings>) {
+export function updateFindingApprovalSettings(input: FindingApprovalSettingsUpdate) {
   return put<FindingApprovalSettings>(FINDING_APPROVAL_SETTINGS_URL, input)
 }
 
