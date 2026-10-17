@@ -22,6 +22,7 @@ import { commandFilter } from '@/lib/command-filter'
 import { adminFetcher } from '../api/admin-client'
 import { visibleAdminNav } from '../lib/admin-nav-visibility'
 import { useAdmin } from './admin-console-shell'
+import { adminCan } from '../types'
 import { PLATFORM_USER_SEARCH_MIN } from '../api/use-platform-users'
 import type { AdminOrganizationList, Paged, PlatformUser } from '../types'
 
@@ -49,8 +50,9 @@ export function AdminCommandMenu() {
       : null
   const orgs = useSWR<AdminOrganizationList>(orgPath, adminFetcher, { keepPreviousData: true })
   // Accounts across organizations (Console > Users); the API needs 3+ characters.
+  // Read-only administrators may not search people (the API refuses it).
   const userPath =
-    open && q.length >= PLATFORM_USER_SEARCH_MIN
+    open && q.length >= PLATFORM_USER_SEARCH_MIN && admin && adminCan(admin.role, 'ops_admin')
       ? `/platform-users?${new URLSearchParams({ q, page: '1', per_page: String(ORG_SEARCH_LIMIT) })}`
       : null
   const users = useSWR<Paged<PlatformUser>>(userPath, adminFetcher, { keepPreviousData: true })
