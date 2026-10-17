@@ -42,6 +42,8 @@ export type InventoryFilters = Pick<
   | 'isCrownJewel'
   | 'programAssets'
   | 'freshness'
+  | 'technologies'
+  | 'technologyCategories'
   | 'hasFindings'
   | 'lastSeenBefore'
   | 'lastSeenAfter'
@@ -86,6 +88,8 @@ const ARRAY_PARAMS = {
   attribution: 'attribution',
   scopeStatus: 'scope_status',
   discoveredBy: 'discovered_by',
+  technologies: 'technology',
+  technologyCategories: 'technology_category',
 } as const
 
 // Boolean-valued filter keys and their URL param names.

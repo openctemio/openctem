@@ -17,6 +17,7 @@ import {
   Package,
   ShieldCheck,
   Cloud,
+  Server,
   UserCog,
   UserPlus,
   UserSearch,
@@ -181,6 +182,13 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['scan', 'approval', 'governance', 'second approver', 'policy', 'scope'],
       },
       {
+        title: 'Shared sensors',
+        i18nKey: 'admin.nav.sharedSensors',
+        url: '/system/shared-sensors',
+        icon: Server,
+        keywords: ['fleet', 'shared sensors', 'pause', 'retire', 'queue', 'jobs', 'regions'],
+      },
+      {
         title: 'Platform scanning',
         i18nKey: 'admin.nav.platformScanning',
         url: '/system/platform-scanning',
@@ -196,11 +204,11 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['identity provider', 'idp', 'sso', 'oidc'],
       },
       {
-        title: 'Plans',
-        i18nKey: 'admin.nav.plans',
-        url: '/system/plans',
+        title: 'Limits',
+        i18nKey: 'admin.nav.limits',
+        url: '/system/limits',
         icon: Gauge,
-        keywords: ['limits', 'free', 'pro', 'enterprise', 'quotas'],
+        keywords: ['limits', 'quotas', 'self-service', 'seats'],
       },
       {
         title: 'Content packs',

@@ -170,15 +170,17 @@ migration on publish (which only remaps between sub-statuses of the same canonic
 
 The finding resource gains `sub_status` (`{id, key, name, color}` or null); lists filter by `sub_status`.
 
-## 7. Plans
+## 7. Limits
 
-| Plan | Sub-statuses | Schemes |
+The catalog is capped by two organization limits (`lifecycle_sub_statuses` and `lifecycle_schemes`, see `docs/architecture/limits.md`). An organization is unlimited unless an operator or the hosted control plane sets them. A hosted offer typically sets:
+
+| Tier | Sub-statuses | Schemes |
 |---|---|---|
-| Free | up to 3 labels, no guards | none (the system lifecycle) |
-| Pro | up to 30 | 1 per kind, with guards |
-| Enterprise | up to 30 | up to 10 per kind, with context selectors |
+| Entry | up to 3 labels, no guards | none (the system lifecycle) |
+| Mid | up to 30 | 1 per kind, with guards |
+| Top | up to 30 | up to 10 per kind, with context selectors |
 
-A limit caps what an organization may add: after a downgrade the published schemes keep working.
+A limit caps what an organization may add: after a lowering the published schemes keep working.
 
 ## 8. Threat model
 

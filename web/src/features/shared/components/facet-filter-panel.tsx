@@ -54,11 +54,14 @@ export function FacetSection({
   title,
   selectedCount = 0,
   defaultOpen = true,
+  onOpenChange,
   children,
 }: {
   title: string
   selectedCount?: number
   defaultOpen?: boolean
+  /** Told when the section is unfolded or folded (to load options lazily). */
+  onOpenChange?: (open: boolean) => void
   children: ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen || selectedCount > 0)
@@ -67,7 +70,11 @@ export function FacetSection({
     <section>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const next = !open
+          setOpen(next)
+          onOpenChange?.(next)
+        }}
         aria-expanded={open}
         aria-controls={contentId}
         className="flex w-full items-center gap-2 py-2.5 text-start text-sm font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

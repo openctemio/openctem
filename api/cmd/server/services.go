@@ -124,8 +124,8 @@ import (
 	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
@@ -989,15 +989,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
 
-	// Plans and limits: every creation path checks the organization limits
-	// (docs/architecture/plans-and-limits.md). Seats and invitations are
-	// checked where the rows are inserted.
-	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
+	// Limits and feature denies: every creation path checks the
+	// organization's limits (docs/architecture/limits.md). Seats and
+	// invitations are checked where the rows are inserted. No source beyond
+	// the operator's own rows unless the internal API is on.
+	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
-	for _, r := range []interface{ SetPlanLimits(plan.Checker) }{
+	for _, r := range []interface{ SetLimits(limits.Checker) }{
 		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing, repos.Finding,
 	} {
-		r.SetPlanLimits(s.Entitlement)
+		r.SetLimits(s.Entitlement)
 	}
 	s.FindingLifecycle = findinglifecycleapp.NewService(repos.LifecycleSubStatus, repos.LifecycleScheme, s.Entitlement, s.Audit, log)
 
@@ -2090,6 +2091,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)    // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)          // Software inventory capture (RFC-066)
 	s.Ingest.SetTechnologyRepository(repos.AssetTechnology) // Detected technologies (RFC-112)
+	s.Asset.SetTechnologyFacets(repos.AssetTechnology)      // Technology filter options (RFC-112)
 	s.Ingest.SetAttributeReconciler(s.Asset)                // Per-source asset values and sets, incl. open ports (RFC-069)
 	// Inventory vulnerability matching (RFC-066): told by ingest when an
 	// organization's software changes; findings go through the same
@@ -2691,7 +2693,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// inverse: legitimate roles never granted).
 	s.Tenant.SetRoleService(s.Role)
 
-	// Initialize licensing service (OSS edition - modules from database)
+	// Modules: the registry from the database, the organization's
+	// preferences and the entitlement service's denies.
 	s.Module = module.NewModuleService(repos.Module, log)
 	s.Module.SetTenantModuleRepo(repos.TenantModule)
 	s.Module.SetAuditService(s.Audit)
@@ -2699,7 +2702,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// grants decide what an organization may switch on; a change refreshes
 	// the module state everywhere.
 	if s.Entitlement != nil {
-		s.Entitlement.SetModuleRepository(repos.Plan)
 		s.Module.SetEntitlements(s.Entitlement)
 		s.Entitlement.SetModulesChangeNotifier(s.Module.NotifyEntitlementChange)
 	}
@@ -2869,11 +2871,17 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// the deployment ceiling SIGNUP_MODE. The ceiling seeds it on the first
 	// start only; afterwards the console value wins, clamped to the ceiling.
 	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
+	if s.Entitlement != nil {
+		s.Signup.SetStartLimitsCheck(s.Entitlement.StartLimitsConfigured)
+	}
 	s.Signup.SetCeiling(signupdom.Ceiling(cfg.Auth.SignupMode))
 	if err := s.Signup.Seed(context.Background()); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	if s.Entitlement != nil {
+		s.Auth.SetSelfServiceLimits(s.Entitlement)
+	}
 	// Self-service account deletion: signing in again within the grace
 	// period cancels it.
 	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
