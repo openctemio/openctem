@@ -54,6 +54,7 @@ import {
 } from '@/features/sensors/components/tool-http-policy-fields'
 import { SensorIdentityPolicySwitch } from '@/features/sensors/components/sensor-identity-policy-switch'
 import { SensorKeyBindPolicySwitch } from '@/features/sensors/components/sensor-key-bind-policy-switch'
+import { SharedSensorsOptOutSwitch } from '@/features/sensors/components/shared-sensors-opt-out-switch'
 import { safeImageSrc } from '@/lib/safe-href'
 
 const STORAGE_FORM_ID = 'storage-config-form'
@@ -779,6 +780,9 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                 <SensorIdentityPolicySwitch />
 
                 <SensorKeyBindPolicySwitch />
+
+                {/* The owner's shared sensor opt-out, saved on its own route. */}
+                <SharedSensorsOptOutSwitch />
 
                 <Separator />
 
