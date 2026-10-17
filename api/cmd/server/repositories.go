@@ -242,7 +242,9 @@ type Repositories struct {
 	SupportRead   *postgres.SupportReadRepository
 	AdminOrg      *postgres.AdminOrganizationRepository
 	AdminConsole  *postgres.AdminConsoleRepository
-	PlatformIdP   *postgres.PlatformIdPRepository
+	// AdminFactor stores console security keys and recovery codes (RFC-078).
+	AdminFactor *postgres.AdminFactorRepository
+	PlatformIdP *postgres.PlatformIdPRepository
 	// AdminDB is the pool of the console's identity tables (UseAdminDB).
 	AdminDB *postgres.DB
 
@@ -553,6 +555,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SupportRead:     postgres.NewSupportReadRepository(db),
 		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:    postgres.NewAdminConsoleRepository(db),
+		AdminFactor:     postgres.NewAdminFactorRepository(db),
 		PlatformIdP:     postgres.NewPlatformIdPRepository(db),
 
 		// Target Mappings

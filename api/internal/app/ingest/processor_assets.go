@@ -1124,7 +1124,7 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 	*discovered = append(*discovered, inserted...)
 	p.logger.Info("auto-created root domain assets for orphaned subdomains",
 		"created", created,
-		"domains", domainNames,
+		"domains", logger.SanitizeValue(strings.Join(domainNames, ",")),
 	)
 }
 
@@ -2182,9 +2182,9 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 	// Validate properties based on asset type
 	if errs := p.propsValidator.ValidateProperties(string(ctisAsset.Type), props); errs != nil {
 		p.logger.Warn("properties validation errors",
-			"asset_type", ctisAsset.Type,
-			"asset_value", ctisAsset.Value,
-			"errors", errs.Error(),
+			"asset_type", logger.SanitizeValue(string(ctisAsset.Type)),
+			"asset_value", logger.SanitizeValue(ctisAsset.Value),
+			"errors", logger.SanitizeValue(errs.Error()),
 		)
 	}
 

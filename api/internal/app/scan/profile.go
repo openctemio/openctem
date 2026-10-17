@@ -404,7 +404,7 @@ type EvaluateQualityGateInput struct {
 // EvaluateQualityGate evaluates finding counts against a scan profile's quality gate.
 // Returns the quality gate result indicating pass/fail and any breaches.
 func (s *ScanProfileService) EvaluateQualityGate(ctx context.Context, input EvaluateQualityGateInput) (*scanprofile.QualityGateResult, error) {
-	s.logger.Info("evaluating quality gate", "profile_id", input.ProfileID)
+	s.logger.Info("evaluating quality gate", "profile_id", logger.SanitizeValue(input.ProfileID))
 
 	profile, err := s.getOwnScanProfile(ctx, input.TenantID, input.ProfileID)
 	if err != nil {

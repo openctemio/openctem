@@ -2,6 +2,7 @@
 
 import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-transitions'
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
+import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
 import { useListParams } from '@/hooks/use-list-params'
 import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
@@ -216,6 +217,7 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     description: api.description || api.snippet || api.message,
     severity: api.severity as Severity,
     status: api.status as FindingStatus,
+    subStatusId: api.sub_status_id,
     cvss: api.cvss_score,
     cvssVector: api.cvss_vector,
     cve: api.cve_id,
@@ -971,7 +973,8 @@ function FindingsContent() {
       // may move are sent; the others are reported with the reason.
       const dryRun = summarizeDryRun(
         t,
-        await evaluateFindingTransitions(selectedFindingIds, status)
+        await evaluateFindingTransitions(selectedFindingIds, status),
+        { note: resolution }
       )
       const refusedText = dryRun.refused.map((r) => `${r.reason} (${r.count})`).join('; ')
       if (dryRun.allowed.length === 0) {
@@ -1334,7 +1337,12 @@ function FindingsContent() {
       {
         accessorKey: 'status',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-        cell: ({ row }) => <FindingStatusBadge status={row.getValue('status')} />,
+        cell: ({ row }) => (
+          <span className="inline-flex flex-wrap items-center gap-1">
+            <FindingStatusBadge status={row.getValue('status')} />
+            <FindingSubStatus subStatusId={row.original.subStatusId} />
+          </span>
+        ),
         filterFn: (row, id, value) => {
           return value.includes(row.getValue(id))
         },
@@ -1910,6 +1918,7 @@ function FindingsContent() {
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {f.priorityClass && <PriorityClassBadge priorityClass={f.priorityClass} />}
           <FindingStatusBadge status={f.status} />
+          <FindingSubStatus subStatusId={f.subStatusId} />
           {f.branchOnly && <BranchOnlyBadge />}
           {f.isInKev && (
             <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">

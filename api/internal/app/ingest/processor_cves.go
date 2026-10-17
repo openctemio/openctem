@@ -95,7 +95,7 @@ func (p *CVEProcessor) ProcessBatch(
 	result := make(map[string]shared.ID, len(batch))
 	for _, v := range batch {
 		if v.ID().IsZero() {
-			p.logger.Warn("upsert returned zero id", "cve_id", v.CVEID())
+			p.logger.Warn("upsert returned zero id", "cve_id", logger.SanitizeValue(v.CVEID()))
 			continue
 		}
 		result[v.CVEID()] = v.ID()
