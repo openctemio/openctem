@@ -78,7 +78,7 @@ func (s *SyncService) handleProfileIntent(ctx context.Context, tenantID shared.I
 // requestFromTicket opens pending disposition requests for the findings
 // linked to the issue and tells the issue what happened.
 func (s *SyncService) requestFromTicket(ctx context.Context, tenantID shared.ID, payload WebhookPayload, jiraStatus string, target vulnerability.FindingStatus) error {
-	ids, err := s.linkedFindings(ctx, tenantID, deriveJiraTicketURL(payload.Issue))
+	ids, err := s.linkedFindingsOf(ctx, tenantID, payload, jiraStatus)
 	if err != nil {
 		return err
 	}

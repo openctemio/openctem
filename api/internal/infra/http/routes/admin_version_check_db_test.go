@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -15,7 +16,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/releasefeed"
 )
@@ -25,15 +25,10 @@ import (
 // file is refused with its reason and nothing is stored; every import is
 // audited; no tenant token reaches the routes.
 func TestAdminVersionCheck_Routes_DB(t *testing.T) {
-	root := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{4}, 32))
 	online := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{5}, 32))
 	now := time.Now().UTC()
-	keySet, err := releasefeed.SignKeySet(root, 1, now.Add(-time.Hour), now.Add(100*24*time.Hour), online.Public().(ed25519.PublicKey))
-	if err != nil {
-		t.Fatal(err)
-	}
 	feedFile := func(seq uint64) json.RawMessage {
-		raw, err := releasefeed.Build(keySet, online, releasefeed.Feed{Sequence: seq, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(30 * 24 * time.Hour),
+		raw, err := releasefeed.Build(online, releasefeed.Feed{Sequence: seq, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(30 * 24 * time.Hour),
 			Releases:   []releasefeed.Release{{Version: "v99.0.0", PublishedAt: now}},
 			Advisories: []releasefeed.Advisory{{ID: "OCTEM-TEST-1", Severity: "critical", Title: "test", FixedIn: "v99.0.0", PublishedAt: now}}})
 		if err != nil {
@@ -44,7 +39,7 @@ func TestAdminVersionCheck_Routes_DB(t *testing.T) {
 
 	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, _ *adminconsole.Service) {
 		svc := versioncheck.New(postgres.NewVersionCheckRepository(db), versioncheck.Config{Enabled: false,
-			Roots: []string{jobsign.KeyID(root.Public().(ed25519.PublicKey))}, Running: "v1.0.0"}, logger.NewNop())
+			Keys: []string{hex.EncodeToString(online.Public().(ed25519.PublicKey))}, Running: "v1.0.0"}, logger.NewNop())
 		hs.AdminVersionCheck = handler.NewAdminVersionCheckHandler(svc, postgres.NewAuditLogRepository(db), logger.NewNop())
 	})
 	h.exec(`DELETE FROM version_check_state`)
