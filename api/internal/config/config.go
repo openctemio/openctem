@@ -1082,6 +1082,12 @@ type SensorConfig struct {
 	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
 	CertMonitorCertSpotterURL string
 
+	// AssetTechnologyBackfillReportOnly makes the asset-technology-backfill
+	// job count and log the component links it would remove instead of
+	// deleting them. ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY, default TRUE: an
+	// operator checks the report, then sets it to false to enforce.
+	AssetTechnologyBackfillReportOnly bool
+
 	// InvitationPurgeInterval is how often expired, unaccepted invitations
 	// (an email address and a token hash) are deleted. They can no longer be
 	// accepted or resent. INVITATION_PURGE_INTERVAL, default 1h.
@@ -1556,36 +1562,37 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: SensorConfig{
-			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
-			HeartbeatTimeout:            getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
-			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
-			VulnFeedRootKeyID:           getEnv("VULNFEED_ROOT_KEY_ID", ""),
-			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
-			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
-			VulnFeedMirrors:             feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
-			VersionCheckEnabled:         getEnvBool("VERSION_CHECK_ENABLED", true),
-			VersionCheckURL:             getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
-			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
-			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
-			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
-			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
-			AssetEnrichmentEnabled:      getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
-			AssetEnrichmentDailyBudget:  getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
-			AssetCoverageEnabled:        getEnvBool("ASSET_COVERAGE_ENABLED", true),
-			AssetCoverageInterval:       getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
-			AssetCoverageDailyBudget:    getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
-			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
-			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
-			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),
-			EASMDNSInterval:             getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
-			EASMDNSMaxNamesPerRun:       getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
-			CertMonitorCertSpotterURL:   getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
-			InvitationPurgeInterval:     getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
-			AdminSessionPurgeInterval:   getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
-			QuarantinePurgeInterval:     getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
-			QuarantineRetention:         getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
+			Enabled:                           getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
+			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
+			HealthCheckInterval:               getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
+			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
+			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", ""),
+			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
+			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
+			VersionCheckURL:                   getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
+			CertMonitorEnabled:                getEnvBool("CERT_MONITOR_ENABLED", true),
+			CertMonitorFeedBaseURL:            getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
+			CertMonitorInterval:               getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+			CertMonitorMaxDomainsPerRun:       getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
+			AssetEnrichmentEnabled:            getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
+			AssetEnrichmentDailyBudget:        getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
+			AssetCoverageEnabled:              getEnvBool("ASSET_COVERAGE_ENABLED", true),
+			AssetCoverageInterval:             getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
+			AssetCoverageDailyBudget:          getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
+			EASMDNSChecksEnabled:              getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
+			EASMDNSResolver:                   getEnv("EASM_DNS_RESOLVER", ""),
+			EASMDNSQPS:                        getEnvFloat("EASM_DNS_QPS", 20),
+			EASMDNSInterval:                   getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
+			EASMDNSMaxNamesPerRun:             getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
+			CertMonitorCertSpotterURL:         getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
+			AssetTechnologyBackfillReportOnly: getEnvBool("ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY", true),
+			InvitationPurgeInterval:           getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
+			AdminSessionPurgeInterval:         getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
+			QuarantinePurgeInterval:           getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
+			QuarantineRetention:               getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
