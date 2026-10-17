@@ -8,9 +8,11 @@ Design and operator guide: openctemio/openctem api/docs/development/ci-cd.md#sec
 
 Threat model. The gate routes security-sensitive changes to a deliberate human
 acknowledgement; it is not a sandbox. It never runs code from the pull request:
-the diff is read through the GitHub API as data, and the workflow runs this
-script and the path list from the base commit. It fails closed: any API error,
-an oversized pull request or an unknown merge-queue ref fails the check.
+the diff is read through the GitHub API as data (for a pull request of 3000
+files or more, whose API file list is cut off, through `git diff` of the two
+fetched commits, which are never checked out), and the workflow runs this
+script and the path list from the base commit. It fails closed: any API or git
+error or an unknown merge-queue ref fails the check.
 Labels and the review comment are written only when the token can write (same
 repository pull requests); fork pull requests get the verdict in the job
 summary and the check result.
@@ -24,11 +26,13 @@ Only the Python standard library is used.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -42,7 +46,8 @@ COMMENT_MARKER = "<!-- security-gate -->"
 # sensitive_digest). Only the comment the workflow itself wrote counts.
 DIGEST_MARKER = re.compile(r"<!-- security-gate:ack-digest=([0-9a-f]{64}) -->")
 BOT_LOGIN = "github-actions[bot]"
-MAX_FILES = 3000  # GitHub's pull request file list stops here
+MAX_FILES = 3000  # GitHub's pull request file list stops here; from this many files on the gate diffs with git
+MAX_PATCH_LINES = 20000  # a larger single-file patch counts as "no diff sent", like the API does
 CODEOWNERS_BEGIN = "# BEGIN security-paths (generated from .github/security-paths.yml; do not edit)"
 CODEOWNERS_END = "# END security-paths"
 
@@ -362,6 +367,99 @@ def pr_files(gh: GitHub, number: int) -> list[ChangedFile]:
     return [changed_file(f) for f in gh.paginate(f"pulls/{number}/files")]
 
 
+def _git(gitdir: str, *args: str, env: dict[str, str] | None = None, stderr: int = subprocess.PIPE) -> subprocess.Popen:
+    """Run git on the fetched objects without ever executing PR-controlled
+    code: no checkout happens, and external diff drivers and text conversion
+    filters are off."""
+    cmd = ["git", "-C", gitdir, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+           "--literal-pathspecs", *args]
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr,
+                            env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_EXTERNAL_DIFF": "", **(env or {})})
+
+
+def _git_out(gitdir: str, *args: str, env: dict[str, str] | None = None) -> bytes:
+    p = _git(gitdir, *args, env=env)
+    out, err = p.communicate()
+    if p.returncode != 0:
+        raise RuntimeError(f"git {args[0]} failed: {err.decode(errors='replace')[:300]}")
+    return out
+
+
+def fetch_pr_commits(gitdir: str, repo: str, server: str, token: str, base_sha: str, head_sha: str) -> None:
+    """Fetch the base and head commits (history and trees, blobs on demand)
+    into the gate's own checkout. Nothing is checked out or run."""
+    if not os.path.isdir(os.path.join(gitdir, ".git")):
+        raise RuntimeError(f"{gitdir} is not a git checkout; cannot diff a pull request of {MAX_FILES}+ files")
+    auth = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    env = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"http.{server}/.extraheader",
+           "GIT_CONFIG_VALUE_0": f"Authorization: Basic {auth}"}
+    args = ["fetch", "--no-tags", "--filter=blob:none", "--quiet"]
+    if _git_out(gitdir, "rev-parse", "--is-shallow-repository").strip() == b"true":
+        args.append("--unshallow")
+    _git_out(gitdir, *args, f"{server}/{repo}.git", head_sha, base_sha, env=env)
+
+
+def git_changed_files(gitdir: str, base_sha: str, head_sha: str, config: dict[str, list[str]]) -> list[ChangedFile]:
+    """The changed-file list of base...head from git, shaped like the API's:
+    the same file set GitHub shows (the diff against the merge base, renames
+    as a delete plus an add), with a patch (hunks only, like the API) for every
+    file a rule or a path category looks at. Other files get an empty patch:
+    nothing reads it."""
+    rng = f"{base_sha}...{head_sha}"
+    common = ("diff", "--no-renames", "--no-ext-diff", "--no-textconv", "-z")
+    raw = _git_out(gitdir, *common, "--raw", "--no-abbrev", rng).decode("utf-8", "surrogateescape").split("\0")
+    stat = _git_out(gitdir, *common, "--numstat", rng).decode("utf-8", "surrogateescape").split("\0")
+    entries = []  # (status, blob sha, path)
+    for meta, path in zip(raw[0::2], raw[1::2]):
+        fields = meta.lstrip(":").split()
+        letter = fields[4][:1]
+        entries.append(("removed" if letter == "D" else "added" if letter == "A" else "modified", fields[3], path))
+    numstat = {}
+    for rec in stat:
+        if rec:
+            added, deleted, path = rec.split("\t", 2)
+            numstat[path] = (added, deleted)
+    files: list[ChangedFile] = []
+    wanted: list[bool] = []
+    for status, blob, path in entries:
+        added, deleted = numstat.get(path, ("0", "0"))
+        probe = ChangedFile(path, status, int(deleted) if deleted.isdigit() else 0, None, None, blob)
+        files.append(probe)
+        wanted.append(added != "-" and (any(r.path.search(path) for r in RULES) or bool(classify([probe], config))))
+    # One streamed full diff; sections come in the same order as the raw list.
+    proc = _git(gitdir, "diff", "--no-renames", "--no-ext-diff", "--no-textconv", "-U3", rng, stderr=subprocess.DEVNULL)
+    section = -1
+    in_hunk = False
+    patches: dict[int, list[str]] = {}
+    for line in proc.stdout:
+        text = line.decode("utf-8", "replace").rstrip("\n")
+        if text.startswith("diff --git "):  # a content line starts with +, -, space or backslash
+            section, in_hunk = section + 1, False
+            continue
+        if section < 0 or section >= len(files) or not wanted[section]:
+            continue
+        in_hunk = in_hunk or text.startswith("@@")
+        if in_hunk:
+            lines = patches.setdefault(section, [])
+            if len(lines) <= MAX_PATCH_LINES:
+                lines.append(text)
+    proc.stdout.close()
+    if proc.wait() != 0:
+        raise RuntimeError("git diff of the pull request failed")
+    if section + 1 != len(files):
+        raise RuntimeError(f"git diff listed {section + 1} files but {len(files)} changed")
+    for i, f in enumerate(files):
+        if numstat.get(f.filename, ("0", "0"))[0] == "-":
+            f.patch = None  # binary: no diff, like the API
+        elif not wanted[i]:
+            f.patch = ""
+        elif len(patches.get(i, [])) > MAX_PATCH_LINES:
+            f.patch = None
+        else:
+            f.patch = "\n".join(patches.get(i, []))
+    return files
+
+
 def ack_state(gh: GitHub, number: int, labels: set[str], ackers: list[str]) -> tuple[bool, str]:
     if ACK_LABEL not in labels:
         return False, f"no `{ACK_LABEL}` label"
@@ -644,12 +742,15 @@ def cmd_gate() -> int:
         raise RuntimeError(f"unsupported event {event_name}")
 
     pr = gh.get(f"pulls/{number}")
-    if int(pr.get("changed_files", 0)) > MAX_FILES:
-        raise RuntimeError(f"pull request changes more than {MAX_FILES} files; split it")
     labels = {lbl["name"] for lbl in pr.get("labels", [])}
     same_repo = (pr["head"].get("repo") or {}).get("full_name") == repo
     files = release_files(gh, pr) if same_repo else None
-    if files is None:
+    if files is None and int(pr.get("changed_files", 0)) >= MAX_FILES:
+        # The API file list stops at 3000 files: diff the two commits with git.
+        gitdir = os.environ.get("GATE_DIR", "base")
+        fetch_pr_commits(gitdir, repo, server, token, pr["base"]["sha"], pr["head"]["sha"])
+        files = git_changed_files(gitdir, pr["base"]["sha"], pr["head"]["sha"], config)
+    elif files is None:
         files = pr_files(gh, number)
     # Writes need a same-repository head and a pull_request event: fork tokens are read-only.
     can_write = event_name == "pull_request" and same_repo
