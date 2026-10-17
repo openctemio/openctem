@@ -216,7 +216,7 @@ out instead of a dead end:
   application name, its client id and the requested scopes from the stored
   authorization request the member claimed; the member supplies nothing.
   One waiting request per organization and host (`mcp_access_requests`,
-  migration `002902_mcp_access_requests`): repeats bump a counter and merge
+  migration `002906_mcp_access_requests`): repeats bump a counter and merge
   scopes. At most 5 new requests per member per 24 hours and 50 waiting per
   organization (429). Owners and administrators get one in-app notification
   (`mcp_access_request`) per new request. Audited `mcp_access_request.created`.
