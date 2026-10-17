@@ -29,9 +29,21 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 const SRC_ROOT = path.resolve(__dirname, '../..')
+/** The platform console app's source (web/console/src), reported as console/... */
+const CONSOLE_ROOT = path.resolve(SRC_ROOT, '../console/src')
+
+/** Every scanned file with its reported path (tenant src, then the console). */
+function scannedFiles(): Array<[string, string]> {
+  const rel = (root: string, f: string, prefix = '') =>
+    prefix + path.relative(root, f).split(path.sep).join('/')
+  return [
+    ...walk(SRC_ROOT).map((f): [string, string] => [f, rel(SRC_ROOT, f)]),
+    ...walk(CONSOLE_ROOT).map((f): [string, string] => [f, rel(CONSOLE_ROOT, f, 'console/')]),
+  ]
+}
 
 /** Where raw fetch is the implementation, not a bypass of it. */
-const RAW_FETCH_EXEMPT_DIRS = ['lib/api/', 'app/api/']
+const RAW_FETCH_EXEMPT_DIRS = ['lib/api/', 'app/api/', 'lib/admin-api/', 'console/app/api/']
 
 /** Reviewed raw `fetch('/api/v1/…')` call sites, file → count. */
 const RAW_FETCH_BASELINE: Record<string, number> = {
@@ -63,9 +75,9 @@ const TUPLE_KEY_BASELINE: Record<string, number> = {
 const POLLING_BASELINE: Record<string, number> = {
   'app/(dashboard)/(discovery)/scans/[id]/page.tsx': 2,
   'app/(dashboard)/notifications/page.tsx': 1,
-  'features/admin-console/api/use-admin-operations.ts': 1,
-  'features/admin-console/api/use-admin-overview.ts': 1,
-  'features/admin-console/api/use-admin-sessions.ts': 1,
+  'console/features/admin-console/api/use-admin-operations.ts': 1,
+  'console/features/admin-console/api/use-admin-overview.ts': 1,
+  'console/features/admin-console/api/use-admin-sessions.ts': 1,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
   'features/ci-runners/api/use-ci.ts': 1,
   // Runs and refused exchanges are polled only while the CI setup dialog
@@ -142,8 +154,7 @@ function scan(): Counts {
   const counts: Counts = { rawFetch: {}, tupleKey: {}, polling: {} }
   const bump = (m: Record<string, number>, f: string) => (m[f] = (m[f] ?? 0) + 1)
 
-  for (const file of walk(SRC_ROOT)) {
-    const rel = path.relative(SRC_ROOT, file).split(path.sep).join('/')
+  for (const [file, rel] of scannedFiles()) {
     const text = fs.readFileSync(file, 'utf8')
     if (!/fetch\(|useSWR|refreshInterval/.test(text)) continue
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
@@ -249,8 +260,7 @@ describe('request hygiene guard', () => {
       'components/layout/sidebar-link.tsx',
     ])
     const offenders: string[] = []
-    for (const file of walk(SRC_ROOT)) {
-      const rel = path.relative(SRC_ROOT, file).split(path.sep).join('/')
+    for (const [file, rel] of scannedFiles()) {
       if (allowed.has(rel)) continue
       const text = fs.readFileSync(file, 'utf8')
       if (/^import\s+Link\b[^;]*from\s+['"]next\/link['"]/m.test(text)) offenders.push(rel)

@@ -27,9 +27,6 @@ export const PUBLIC_ROUTES = [
   // OAuth / SSO provider callbacks: the session cookie is set by these pages.
   '/auth/callback',
   '/auth/sso/callback',
-  // Platform admin console sign-in (RFC-022): the TOTP step and the platform
-  // IdP callback. The rest of /admin is ADMIN_CONSOLE_ROOT.
-  '/admin/login',
   // Metadata routes (app/icon.tsx, app/apple-icon.tsx): the sign-in page's
   // favicon must load without a session.
   '/icon',
@@ -44,13 +41,6 @@ export const PUBLIC_ROUTES = [
 ] as const
 
 export type PublicRoute = (typeof PUBLIC_ROUTES)[number]
-
-/**
- * The platform admin console (RFC-022). It has its own session, separate from
- * the tenant session, so it gets its own rule and its own sign-in page.
- */
-export const ADMIN_CONSOLE_ROOT = '/admin'
-export const ADMIN_CONSOLE_LOGIN = '/admin/login'
 
 /** The tenant app's sign-in page. */
 export const LOGIN_PATH = '/login'

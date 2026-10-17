@@ -138,6 +138,14 @@ web-session-headers:
   - web/next.config.ts
   - web/server-with-ws.mjs
 
+# The platform console app (RFC-022 revision 21): its own site, proxy, CSP and
+# API client; every change to it is reviewed, as are the console API routes
+# (routes/admin.go under authn-authz) and handlers.
+platform-console:
+  - web/console/**
+  - api/internal/infra/http/handler/admin_*.go
+  - api/internal/app/adminconsole/**
+
 # File upload, storage and download handlers.
 upload-download:
   - api/internal/infra/storage/**
