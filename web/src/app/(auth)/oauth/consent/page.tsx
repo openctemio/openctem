@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 
+import { StepUpDialogHost } from '@/components/step-up-dialog'
 import { TenantProvider } from '@/context/tenant-provider'
 import { ConsentView } from '@/features/mcp-oauth/components/consent-view'
 
@@ -23,6 +24,8 @@ export default async function ConsentPage({ searchParams }: ConsentPageProps) {
   return (
     <TenantProvider>
       <ConsentView requestId={requestId} />
+      {/* Approving a publisher from here needs a recent sign-in. */}
+      <StepUpDialogHost />
     </TenantProvider>
   )
 }

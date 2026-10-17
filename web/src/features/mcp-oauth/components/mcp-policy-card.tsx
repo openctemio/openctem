@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +17,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -26,77 +26,62 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { useProfileLabels } from '@/features/pentest/lib/use-pentest-labels'
 import { CAMPAIGN_TLPS, type CampaignTLP } from '@/features/pentest/types'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
-import { type McpPolicyUpdate, updateMcpPolicy, useMcpPolicy } from '../api/connections'
+import { type McpPolicy, type McpPolicyUpdate, patchMcpPolicy } from '../api/connections'
+import { useMcpLabels } from '../lib/use-mcp-labels'
 
 interface McpPolicyCardProps {
+  policy: McpPolicy
   canEdit: boolean
 }
 
-/** Host names, one per line or comma-separated. */
-export function parseHosts(text: string): string[] {
-  return text
-    .split(/[\s,]+/)
-    .map((h) => h.trim().toLowerCase())
-    .filter(Boolean)
+type PolicyDraft = Omit<McpPolicyUpdate, 'any_client' | 'client_hosts'>
+
+/** The draft holds the explicit selection (the server's empty list = every read scope). */
+function draftOf(p: McpPolicy): PolicyDraft {
+  return {
+    enabled: p.enabled,
+    scopes: effectiveScopes(p),
+    api_keys_allowed: p.api_keys_allowed,
+    refresh_days: p.refresh_days,
+    require_dpop: p.require_dpop,
+    max_tlp: p.max_tlp,
+  }
+}
+
+/** An empty scope list on the server means every read scope. */
+export function effectiveScopes(p: Pick<McpPolicy, 'scopes' | 'available_scopes'>): string[] {
+  return p.scopes.length ? p.scopes : p.available_scopes.filter((s) => !s.write).map((s) => s.scope)
 }
 
 /**
- * The organization's policy for AI applications (RFC-062 §8): whether MCP is
- * on, which applications may connect, which access members may grant,
- * whether API keys work on MCP, how long a connection lasts, and the
- * highest TLP of a pentest campaign AI applications may read. Saving needs a
- * recent sign-in (the shared client asks for it).
+ * What AI assistants may do in the organization and within which limits
+ * (RFC-062 §8): on or off, the access members may grant (read, and the
+ * write scope that adds person-confirmed comments), connection lifetime,
+ * proof of possession, API keys and the TLP ceiling. Which applications may
+ * connect lives on the Applications tab. Saving needs a recent sign-in (the
+ * shared client asks for it).
  */
-export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
+export function McpPolicyCard({ policy, canEdit }: McpPolicyCardProps) {
   const { t } = useTranslation()
   const { tlpLabel } = useProfileLabels()
-  const { data, isLoading, error } = useMcpPolicy(true)
-  const [draft, setDraft] = useState<McpPolicyUpdate | null>(null)
-  const [hostsText, setHostsText] = useState('')
+  const { scopeTitle } = useMcpLabels()
+  const [draft, setDraft] = useState<PolicyDraft>(() => draftOf(policy))
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!data) return
-    setDraft({
-      enabled: data.enabled,
-      any_client: data.any_client,
-      client_hosts: data.client_hosts,
-      scopes: data.scopes,
-      api_keys_allowed: data.api_keys_allowed,
-      refresh_days: data.refresh_days,
-      require_dpop: data.require_dpop,
-      max_tlp: data.max_tlp,
-    })
-    setHostsText(data.client_hosts.join('\n'))
-  }, [data])
+    setDraft(draftOf(policy))
+  }, [policy])
 
-  if (isLoading || (!draft && !error)) {
-    return (
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-5 w-1/3" />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-2/3" />
-        </CardContent>
-      </Card>
-    )
-  }
-  if (!data || !draft) {
-    return null
-  }
-
-  const readScopes = data.available_scopes.filter((s) => !s.write)
-  // An empty list on the server means every read scope.
-  const selected = new Set(draft.scopes.length ? draft.scopes : readScopes.map((s) => s.scope))
-  const set = (patch: Partial<McpPolicyUpdate>) => setDraft({ ...draft, ...patch })
+  const readScopes = policy.available_scopes.filter((s) => !s.write)
+  const writeScopes = policy.available_scopes.filter((s) => s.write)
+  const selected = new Set(draft.scopes)
+  const readCount = readScopes.filter((s) => selected.has(s.scope)).length
+  const set = (patch: Partial<PolicyDraft>) => setDraft((d) => ({ ...d, ...patch }))
   const toggleScope = (scope: string, on: boolean) => {
     const next = new Set(selected)
     if (on) next.add(scope)
@@ -107,14 +92,17 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
   const save = async () => {
     setSaving(true)
     try {
-      await updateMcpPolicy({ ...draft, client_hosts: parseHosts(hostsText) })
+      // Exactly every read scope is stored as the empty list, so read scopes
+      // added later are included too.
+      const allReads = readScopes.map((s) => s.scope).sort()
+      const chosen = [...draft.scopes].sort()
+      const scopes = chosen.join() === allReads.join() ? [] : chosen
+      await patchMcpPolicy(policy, { ...draft, scopes })
       toast.success(
-        t('settings.mcpPolicy.saved', 'Policy saved. It applies to existing connections at once.')
+        t('mcp.policy.saved', 'Policy saved. It applies to existing connections at once.')
       )
     } catch (err) {
-      toast.error(
-        getErrorMessage(err, t('settings.mcpPolicy.saveFailed', 'Could not save the policy'))
-      )
+      toast.error(getErrorMessage(err, t('mcp.policy.saveFailed', 'Could not save the policy')))
     } finally {
       setSaving(false)
     }
@@ -125,24 +113,24 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t('settings.mcpPolicy.title', 'Organization policy')}</CardTitle>
+        <CardTitle>{t('mcp.policy.title', 'Policy')}</CardTitle>
         <CardDescription>
           {t(
-            'settings.mcpPolicy.description',
-            'Which AI applications members may connect and what they may let them read. Changes apply to existing connections at once.'
+            'mcp.policy.description',
+            'What AI assistants may do in this organization. Changes apply to existing connections at once.'
           )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
+        <section className="flex items-start justify-between gap-4">
           <div>
-            <Label htmlFor="mcp-enabled">
-              {t('settings.mcpPolicy.enabled', 'AI application access')}
+            <Label htmlFor="mcp-enabled" className="text-base">
+              {t('mcp.policy.enabled', 'AI assistants')}
             </Label>
             <p className="text-muted-foreground text-sm">
               {t(
-                'settings.mcpPolicy.enabledHint',
-                'Off: no application or API key can use the MCP server.'
+                'mcp.policy.enabledHint',
+                'Off: no application or API key can use the MCP server, and existing connections stop working.'
               )}
             </p>
           </div>
@@ -152,171 +140,179 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
             onCheckedChange={(v) => set({ enabled: v })}
             disabled={disabled}
           />
-        </div>
+        </section>
 
-        <div className="flex items-start justify-between gap-4">
+        <Separator />
+
+        <section aria-labelledby="mcp-capabilities" className="space-y-4">
           <div>
-            <Label htmlFor="mcp-any-client">
-              {t('settings.mcpPolicy.anyClient', 'Allow unverified applications')}
-            </Label>
+            <h3 id="mcp-capabilities" className="text-base font-medium">
+              {t('mcp.policy.capabilities', 'What assistants may do')}
+            </h3>
             <p className="text-muted-foreground text-sm">
               {t(
-                'settings.mcpPolicy.anyClientHint',
-                'Off: only applications your organization registered or published on a trusted host below.'
+                'mcp.policy.capabilitiesHint',
+                'The most a member can let an application do. It never gets more than the member can do themselves.'
               )}
             </p>
           </div>
-          <Switch
-            id="mcp-any-client"
-            checked={draft.any_client}
-            onCheckedChange={(v) => set({ any_client: v })}
-            disabled={disabled}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="mcp-hosts">
-            {t('settings.mcpPolicy.hosts', 'Trusted application hosts')}
-          </Label>
-          <Textarea
-            id="mcp-hosts"
-            value={hostsText}
-            onChange={(e) => setHostsText(e.target.value)}
-            placeholder={'assistant.example.com\nide.example.org'}
-            rows={3}
-            disabled={disabled}
-          />
-          <p className="text-muted-foreground text-xs">
-            {t(
-              'settings.mcpPolicy.hostsHint',
-              'Host names only, one per line. Applications whose identity document is published on these hosts count as verified.'
-            )}
-          </p>
-          {data.platform_client_hosts.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1 text-xs">
-              <span className="text-muted-foreground">
-                {t('settings.mcpPolicy.platformHosts', 'Trusted by the platform:')}
-              </span>
-              {data.platform_client_hosts.map((h) => (
-                <Badge key={h} variant="outline" className="font-mono text-xs">
-                  {h}
-                </Badge>
+          <fieldset className="space-y-2">
+            <legend className="text-muted-foreground mb-1 text-xs font-medium">
+              {t('mcp.policy.read', 'Read')}
+            </legend>
+            {readScopes.map((s) => (
+              <label key={s.scope} className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={selected.has(s.scope)}
+                  onCheckedChange={(v) => toggleScope(s.scope, v === true)}
+                  disabled={disabled}
+                />
+                {scopeTitle(s.scope, s.title)}
+              </label>
+            ))}
+          </fieldset>
+          {writeScopes.length > 0 && (
+            <fieldset className="space-y-2">
+              <legend className="text-muted-foreground mb-1 text-xs font-medium">
+                {t('mcp.policy.change', 'Change')}
+              </legend>
+              {writeScopes.map((s) => (
+                <label key={s.scope} className="flex items-start gap-2 text-sm">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={selected.has(s.scope)}
+                    onCheckedChange={(v) => toggleScope(s.scope, v === true)}
+                    disabled={disabled}
+                  />
+                  <span className="space-y-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      {scopeTitle(s.scope, s.title)}
+                      <Badge variant="outline" className="gap-1 text-xs">
+                        <AlertTriangle className="h-3 w-3" aria-hidden />
+                        {t('mcp.consent.changesData', 'Changes data')}
+                      </Badge>
+                    </span>
+                    <span className="text-muted-foreground block text-xs">
+                      {t(
+                        'mcp.policy.writeHint',
+                        'Off by default. The application asks for it only when it needs it, the member approves it, and each comment waits for the member to confirm it in {product} before it is saved.'
+                      )}
+                    </span>
+                  </span>
+                </label>
               ))}
-            </div>
+            </fieldset>
           )}
-        </div>
+          {readCount === 0 && (
+            <p className="text-destructive text-xs" role="alert">
+              {t('mcp.policy.needOneRead', 'Choose at least one thing assistants may read.')}
+            </p>
+          )}
+        </section>
 
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">
-            {t('settings.mcpPolicy.scopes', 'Access members may grant')}
-          </legend>
-          {readScopes.map((s) => (
-            <label key={s.scope} className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={selected.has(s.scope)}
-                onCheckedChange={(v) => toggleScope(s.scope, v === true)}
+        <Separator />
+
+        <section aria-labelledby="mcp-limits" className="space-y-5">
+          <h3 id="mcp-limits" className="text-base font-medium">
+            {t('mcp.policy.limits', 'Limits')}
+          </h3>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="mcp-days">{t('mcp.policy.days', 'Connections last (days)')}</Label>
+              <Input
+                id="mcp-days"
+                type="number"
+                min={1}
+                max={90}
+                className="w-32"
+                value={draft.refresh_days || policy.effective_refresh_days}
+                onChange={(e) => set({ refresh_days: Number(e.target.value) || 0 })}
                 disabled={disabled}
+                aria-describedby="mcp-days-hint"
               />
-              {s.title}
-            </label>
-          ))}
-        </fieldset>
-
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <Label htmlFor="mcp-keys">
-              {t('settings.mcpPolicy.apiKeys', 'API keys on the MCP server')}
-            </Label>
-            <p className="text-muted-foreground text-sm">
-              {t(
-                'settings.mcpPolicy.apiKeysHint',
-                'For scripts without a person; they still work on the REST API.'
-              )}
-            </p>
+              <p id="mcp-days-hint" className="text-muted-foreground text-xs">
+                {t(
+                  'mcp.policy.daysHint',
+                  'After this, the person approves the application again. 1 to 90.'
+                )}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mcp-max-tlp">
+                {t('mcp.policy.maxTlp', 'Highest TLP sent to AI applications')}
+              </Label>
+              <Select
+                value={draft.max_tlp}
+                onValueChange={(v) => set({ max_tlp: v as CampaignTLP })}
+                disabled={disabled}
+              >
+                <SelectTrigger id="mcp-max-tlp" className="w-56" aria-describedby="mcp-tlp-hint">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CAMPAIGN_TLPS.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      {tlpLabel(l)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p id="mcp-tlp-hint" className="text-muted-foreground text-xs">
+                {t(
+                  'mcp.policy.maxTlpHint',
+                  'Pentest campaigns above this level are never sent to AI applications. A campaign lead can also turn AI assistants off for one campaign.'
+                )}
+              </p>
+            </div>
           </div>
-          <Switch
-            id="mcp-keys"
-            checked={draft.api_keys_allowed}
-            onCheckedChange={(v) => set({ api_keys_allowed: v })}
-            disabled={disabled}
-          />
-        </div>
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <Label htmlFor="mcp-dpop">
-              {t('settings.mcpPolicy.dpop', 'Require proof of possession (DPoP)')}
-            </Label>
-            <p className="text-muted-foreground text-sm">
-              {t(
-                'settings.mcpPolicy.dpopHint',
-                'Applications must sign every request with their own key, so a copied token is useless. Applications without DPoP support can no longer connect.'
-              )}
-            </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <Label htmlFor="mcp-dpop">
+                {t('mcp.policy.dpop', 'Require proof of possession (DPoP)')}
+              </Label>
+              <p className="text-muted-foreground text-sm">
+                {t(
+                  'mcp.policy.dpopHint',
+                  'Applications must sign every request with their own key, so a copied token is useless. Applications without DPoP support can no longer connect.'
+                )}
+              </p>
+            </div>
+            <Switch
+              id="mcp-dpop"
+              checked={draft.require_dpop}
+              onCheckedChange={(v) => set({ require_dpop: v })}
+              disabled={disabled}
+            />
           </div>
-          <Switch
-            id="mcp-dpop"
-            checked={draft.require_dpop}
-            onCheckedChange={(v) => set({ require_dpop: v })}
-            disabled={disabled}
-          />
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="mcp-days">
-            {t('settings.mcpPolicy.days', 'Connections last (days)')}
-          </Label>
-          <Input
-            id="mcp-days"
-            type="number"
-            min={1}
-            max={90}
-            className="w-32"
-            value={draft.refresh_days || data.effective_refresh_days}
-            onChange={(e) => set({ refresh_days: Number(e.target.value) || 0 })}
-            disabled={disabled}
-          />
-          <p className="text-muted-foreground text-xs">
-            {t(
-              'settings.mcpPolicy.daysHint',
-              'After this, the person approves the application again. 1 to 90.'
-            )}
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="mcp-max-tlp">
-            {t('settings.mcpPolicy.maxTlp', 'Highest TLP sent to AI applications')}
-          </Label>
-          <Select
-            value={draft.max_tlp}
-            onValueChange={(v) => set({ max_tlp: v as CampaignTLP })}
-            disabled={disabled}
-          >
-            <SelectTrigger id="mcp-max-tlp" className="w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CAMPAIGN_TLPS.map((l) => (
-                <SelectItem key={l} value={l}>
-                  {tlpLabel(l)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-muted-foreground text-xs">
-            {t(
-              'settings.mcpPolicy.maxTlpHint',
-              'Pentest campaigns above this level are never sent to AI applications: their tools and prompts refuse them, and campaign lists leave them out. A campaign lead can also turn AI assistants off for one campaign.'
-            )}
-          </p>
-        </div>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <Label htmlFor="mcp-keys">
+                {t('mcp.policy.apiKeys', 'API keys on the MCP server')}
+              </Label>
+              <p className="text-muted-foreground text-sm">
+                {t(
+                  'mcp.policy.apiKeysHint',
+                  'For scripts without a person; they still work on the REST API.'
+                )}
+              </p>
+            </div>
+            <Switch
+              id="mcp-keys"
+              checked={draft.api_keys_allowed}
+              onCheckedChange={(v) => set({ api_keys_allowed: v })}
+              disabled={disabled}
+            />
+          </div>
+        </section>
       </CardContent>
       {canEdit && (
         <CardFooter className="justify-end">
-          <Button onClick={() => void save()} disabled={saving || selected.size === 0}>
+          <Button onClick={() => void save()} disabled={saving || readCount === 0}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
-            {t('settings.mcpPolicy.save', 'Save policy')}
+            {t('mcp.policy.save', 'Save policy')}
           </Button>
         </CardFooter>
       )}

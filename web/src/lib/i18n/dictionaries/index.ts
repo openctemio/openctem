@@ -37,6 +37,7 @@ import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
 import en_notificationTypes from './en/notificationTypes.json'
 import en_lookalikes from './en/lookalikes.json'
+import en_mcp from './en/mcp.json'
 import en_nav from './en/nav.json'
 import en_networkSeeds from './en/networkSeeds.json'
 import en_org from './en/org.json'
@@ -95,6 +96,7 @@ import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_notificationTypes from './vi/notificationTypes.json'
 import vi_lookalikes from './vi/lookalikes.json'
+import vi_mcp from './vi/mcp.json'
 import vi_nav from './vi/nav.json'
 import vi_networkSeeds from './vi/networkSeeds.json'
 import vi_org from './vi/org.json'
@@ -158,6 +160,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   licensePolicy: en_licensePolicy,
   notificationTypes: en_notificationTypes,
   lookalikes: en_lookalikes,
+  mcp: en_mcp,
   nav: en_nav,
   networkSeeds: en_networkSeeds,
   org: en_org,
@@ -219,6 +222,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   licensePolicy: vi_licensePolicy,
   notificationTypes: vi_notificationTypes,
   lookalikes: vi_lookalikes,
+  mcp: vi_mcp,
   nav: vi_nav,
   networkSeeds: vi_networkSeeds,
   org: vi_org,

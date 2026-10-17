@@ -17,6 +17,8 @@
   "notificationTypes.finding_status_change.name": "Finding Status Change",
   "notificationTypes.includeDetails.hint": "Off (default): messages carry only the event type, severity and a link, with no finding or asset names. On: finding titles and descriptions are sent to this channel.",
   "notificationTypes.includeDetails.label": "Include details in notifications",
+  "notificationTypes.mcp_access_request.description": "When a member asks to connect an AI application your organization has not approved, and how your own request was decided",
+  "notificationTypes.mcp_access_request.name": "AI application requests",
   "notificationTypes.member_invited.description": "When new team members are invited",
   "notificationTypes.member_invited.name": "Member Invited",
   "notificationTypes.member_joined.description": "When invited members join the team",
