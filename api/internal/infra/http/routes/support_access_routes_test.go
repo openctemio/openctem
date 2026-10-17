@@ -119,7 +119,7 @@ func TestAdminSupportRouteGates(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "tok"})
 			req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "csrf"})
-			req.Header.Set(middleware.CSRFHeaderName, "csrf")
+			req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("tok"))
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, req)
 			return rec.Code

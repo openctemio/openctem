@@ -82,9 +82,12 @@ func (h *AdminAuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 		response.PasswordChangeRequired = adminUser.PasswordChangeRequired() && sess.AuthMethod == admin.AuthMethodPassword
 		response.FactorEnrollmentRequired = sess.EnrollmentRequired
 	}
-	if c, err := r.Cookie(middleware.AdminCSRFCookie); err == nil {
-		response.CSRFToken = c.Value
+	// The session's own CSRF token (bound to the session cookie that
+	// authenticated this request).
+	if c, err := r.Cookie(middleware.AdminSessionCookie); err == nil && c.Value != "" {
+		response.CSRFToken = middleware.AdminCSRFToken(c.Value)
 	}
+	w.Header().Set("Cache-Control", "no-store")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
