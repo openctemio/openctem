@@ -216,7 +216,7 @@ func (s *RuleService) CreateRule(ctx context.Context, input CreateRuleInput, cre
 			"assets_added", rr.added,
 		)
 	}
-	s.refreshAccessIncremental(ctx, rule.GroupID(), rule.OwnershipType(), rr.newlyAddedIDs)
+	s.refreshAccessIncremental(ctx, rule.TenantID(), rule.GroupID(), rule.OwnershipType(), rr.newlyAddedIDs)
 
 	return rule, nil
 }
@@ -368,15 +368,42 @@ func (s *RuleService) DeleteRule(ctx context.Context, tenantID, ruleID string) e
 		return err
 	}
 
+	// The rule's auto-assigned assets leave its team: a caller restricted to
+	// their scope rows may delete only a rule of a team whose assets (and the
+	// rule's own) are all in their own scope; otherwise they could strip
+	// another unit's team.
+	if s.delegation != nil {
+		held, lerr := s.acRepo.ListAssetIDsByScopeRule(ctx, tid, id)
+		if lerr != nil {
+			return fmt.Errorf("failed to list the rule's assets: %w", lerr)
+		}
+		groupAssets, lerr := s.acRepo.ListAssetsByGroup(ctx, rule.GroupID())
+		if lerr != nil {
+			return fmt.Errorf("failed to list the team's assets: %w", lerr)
+		}
+		held = append(held, groupAssets...)
+		admit, unrestricted, derr := s.delegation.Delegable(ctx, tid, held)
+		if derr != nil {
+			return derr
+		}
+		if !unrestricted {
+			for _, a := range held {
+				if !admit(a) {
+					return ErrRuleNeedsFullScope
+				}
+			}
+		}
+	}
+
 	// Atomically remove auto-assigned assets AND delete the rule in one transaction
 	removed, err := s.acRepo.DeleteScopeRuleWithCleanup(ctx, tid, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete scope rule: %w", err)
 	}
 
-	// Refresh access for affected assets (single full refresh instead of per-asset)
+	// Refresh access for the affected tenant only (one rebuild instead of per-asset)
 	if removed > 0 {
-		if err := s.acRepo.RefreshUserAccessibleAssets(ctx); err != nil {
+		if err := s.acRepo.RefreshUserAccessibleAssetsForTenant(ctx, tid); err != nil {
 			s.logger.Warn("failed to refresh access after rule deletion", "error", err)
 		}
 	}
@@ -544,8 +571,8 @@ func (s *RuleService) ReconcileGroup(ctx context.Context, tenantID, groupID stri
 	}
 
 	// Incremental refresh for added and removed assets
-	s.refreshAccessIncremental(ctx, gid, lastOwnershipType, allNewlyAdded)
-	s.refreshAccessForRemovedAssets(ctx, gid, staleIDs)
+	s.refreshAccessIncremental(ctx, tid, gid, lastOwnershipType, allNewlyAdded)
+	s.refreshAccessForRemovedAssets(ctx, tid, gid, staleIDs)
 
 	s.logger.Info("group reconciliation complete",
 		"group_id", groupID,
@@ -635,7 +662,7 @@ func (s *RuleService) EvaluateAsset(ctx context.Context, tenantID shared.ID, ass
 	}
 	// Batch refresh for all stale unassignments
 	if len(staleGroupIDs) > incrementalRefreshThreshold {
-		if err := s.acRepo.RefreshUserAccessibleAssets(ctx); err != nil {
+		if err := s.acRepo.RefreshUserAccessibleAssetsForTenant(ctx, tenantID); err != nil {
 			s.logger.Warn("failed to refresh access after stale cleanup (full)", "error", err)
 		}
 	} else {
@@ -773,13 +800,13 @@ const incrementalRefreshThreshold = 100
 
 // refreshAccessIncremental refreshes access using per-asset incremental stored procedures
 // when the number of affected assets is small, falling back to a full refresh for large batches.
-func (s *RuleService) refreshAccessIncremental(ctx context.Context, groupID shared.ID, ownershipType accesscontrol.OwnershipType, assetIDs []shared.ID) {
+func (s *RuleService) refreshAccessIncremental(ctx context.Context, tenantID, groupID shared.ID, ownershipType accesscontrol.OwnershipType, assetIDs []shared.ID) {
 	if len(assetIDs) == 0 {
 		return
 	}
 
 	if len(assetIDs) > incrementalRefreshThreshold {
-		if err := s.acRepo.RefreshUserAccessibleAssets(ctx); err != nil {
+		if err := s.acRepo.RefreshUserAccessibleAssetsForTenant(ctx, tenantID); err != nil {
 			s.logger.Warn("failed to refresh user accessible assets (full)", "error", err)
 		}
 		return
@@ -794,13 +821,13 @@ func (s *RuleService) refreshAccessIncremental(ctx context.Context, groupID shar
 }
 
 // refreshAccessForRemovedAssets refreshes access after assets are unassigned from a group.
-func (s *RuleService) refreshAccessForRemovedAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) {
+func (s *RuleService) refreshAccessForRemovedAssets(ctx context.Context, tenantID, groupID shared.ID, assetIDs []shared.ID) {
 	if len(assetIDs) == 0 {
 		return
 	}
 
 	if len(assetIDs) > incrementalRefreshThreshold {
-		if err := s.acRepo.RefreshUserAccessibleAssets(ctx); err != nil {
+		if err := s.acRepo.RefreshUserAccessibleAssetsForTenant(ctx, tenantID); err != nil {
 			s.logger.Warn("failed to refresh user accessible assets (full)", "error", err)
 		}
 		return
