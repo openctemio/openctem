@@ -80,6 +80,10 @@ func NewWatcher(c *Collector, n Notifier, interval time.Duration, log *logger.Lo
 // Name implements controller.Controller.
 func (w *Watcher) Name() string { return WatchName }
 
+// Exclusive makes the controller manager run the watcher on one replica only,
+// so administrators are not mailed once per replica.
+func (w *Watcher) Exclusive() bool { return true }
+
 // Interval implements controller.Controller.
 func (w *Watcher) Interval() time.Duration { return w.interval }
 
