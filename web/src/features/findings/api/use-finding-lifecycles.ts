@@ -7,6 +7,7 @@
  * the console only edits and renders.
  */
 
+import { useMemo } from 'react'
 import useSWR, { type SWRConfiguration } from 'swr'
 import { del, get, patch, post, put } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
@@ -237,15 +238,16 @@ export function lifecycleVersionsKey(id: string): string {
 
 /** The sub-status catalog; `archived` includes archived entries. */
 export function useLifecycleSubStatuses(
-  opts: { archived?: boolean } = {},
+  opts: { archived?: boolean; enabled?: boolean } = {},
   config?: SWRConfiguration
 ) {
   const { currentTenant } = useTenant()
+  const enabled = opts.enabled ?? true
   const url = opts.archived
     ? `${LIFECYCLE_SUB_STATUSES_URL}?include_archived=true`
     : LIFECYCLE_SUB_STATUSES_URL
   return useSWR<LifecycleSubStatusList>(
-    currentTenant ? url : null,
+    currentTenant && enabled ? url : null,
     (u: string) => get<LifecycleSubStatusList>(u),
     { revalidateOnFocus: false, ...config }
   )
@@ -331,4 +333,17 @@ export function publishLifecycleVersion(id: string, version: number, note?: stri
 /** The name of a sub-status in the reader's language. */
 export function subStatusName(s: Pick<LifecycleSubStatus, 'name' | 'labels'>, locale: string) {
   return s.labels?.[locale] || s.name
+}
+
+/**
+ * The catalog by id, archived entries included (a finding may still carry
+ * one), for showing a finding's sub-status. One request per page, shared by
+ * every caller through SWR.
+ */
+export function useSubStatusCatalog(enabled = true): Map<string, LifecycleSubStatus> {
+  const { data } = useLifecycleSubStatuses(
+    { archived: true, enabled },
+    { dedupingInterval: 60_000 }
+  )
+  return useMemo(() => new Map((data?.data ?? []).map((s) => [s.id, s])), [data])
 }

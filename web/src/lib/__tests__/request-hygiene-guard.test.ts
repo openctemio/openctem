@@ -78,6 +78,10 @@ const POLLING_BASELINE: Record<string, number> = {
   // Whether each policy is open is computed at read time.
   'features/scan-windows/api/use-scan-windows.ts': 1,
   'features/scans/components/run-detail-sheet.tsx': 1,
+  // The support-access banner (RFC-063): a console session opening or a grant
+  // running out is not pushed as an event; one small read a minute tells
+  // every member while platform support can read the organization's data.
+  'features/support-access/api/use-support-access.ts': 1,
   // The run list and its counts poll on their own clocks: fast only while a
   // listed run is live (research/81); it was one shared 30 s poll before.
   'features/scans/components/scan-runs-tab.tsx': 2,
