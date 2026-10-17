@@ -14,6 +14,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { EmailSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveEmailSettings, sendTestEmail } from '../api/use-email-settings'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 export interface EmailSettingsFormProps {
   settings: EmailSettingsResponse
@@ -59,6 +60,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
   const [clearPassword, setClearPassword] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -299,7 +301,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
           'admin.email.confirmDesc',
           'The change applies to every e-mail sent from now on and is recorded in the admin audit log (without the password).'
         )}
-        disabled={code.trim().length < 6}
+        disabled={!stepUpCodeReady(code, codeOptional)}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -326,6 +328,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
             maxLength={8}
             aria-invalid={!!codeError}
           />
+          <StepUpCodeHint optional={codeOptional} />
           {codeError && <p className="text-sm text-destructive">{codeError}</p>}
         </div>
       </ConfirmDialog>

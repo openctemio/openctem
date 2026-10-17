@@ -13,6 +13,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { LegalSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveLegalSettings } from '../api/use-legal-settings'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 type TextKey =
   | 'terms_url'
@@ -74,6 +75,7 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
   const [form, setForm] = useState<FormState>(() => toForm(settings))
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -251,7 +253,7 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
           'admin.legal.confirmDesc',
           'Visitors see the change within a minute. It is recorded in the admin audit log.'
         )}
-        disabled={code.trim().length < 6}
+        disabled={!stepUpCodeReady(code, codeOptional)}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -278,6 +280,7 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
             maxLength={8}
             aria-invalid={!!codeError}
           />
+          <StepUpCodeHint optional={codeOptional} />
           {codeError && <p className="text-sm text-destructive">{codeError}</p>}
         </div>
       </ConfirmDialog>
