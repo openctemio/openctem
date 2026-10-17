@@ -37,7 +37,6 @@ type cmdMockRepo struct {
 	countQueuedTenantErr   error
 	countQueuedAllErr      error
 	getQueuedErr           error
-	getNextErr             error
 	updatePrioritiesErr    error
 	recoverStuckErr        error
 	expirePlatformErr      error
