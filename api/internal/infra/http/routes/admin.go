@@ -70,6 +70,10 @@ import (
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed, tenant admins told)
+//	/admin/shared-sensors     any admin (fleet,  pause/resume/retire: super_admin +
+//	                          queue, job         fresh TOTP code + reason (critical
+//	                          metadata)          audit); job view: super/ops_admin +
+//	                                            reason (audited high, rate-limited)
 //	/admin/settings/shared-sensors(/egress), /admin/tenants/{id}/shared-sensors
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
@@ -341,15 +345,34 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// Shared sensor enrollment (RFC-100 §7): a super admin issues a
-	// single-use instance enrollment token with a reason and a fresh console
-	// authenticator code (checked in the handler; the service writes the
-	// console audit row).
-	if h.AdminSharedSensor != nil {
+	// Shared sensors (RFC-100). Fleet (§12): any admin reads the fleet, queue
+	// aggregates and job metadata; a job's targets and logs only through
+	// the audited view with a reason (super or ops admin, rate-limited);
+	// pause, resume and retire need a super admin, a reason and a fresh code.
+	// Enrollment (§7): a super admin issues a single-use instance enrollment
+	// token with a reason and a fresh console authenticator code (checked in
+	// the handler; the service writes the console audit row). One group:
+	// the prefix can be mounted only once.
+	if h.AdminSharedFleet != nil || h.AdminSharedSensor != nil {
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/shared-sensors", func(r Router) {
-			r.POST("/enrollment-tokens", h.AdminSharedSensor.CreateInstanceEnrollmentToken, requireSuper,
-				stepUp("shared_sensors.enrollment_token"))
+			if f := h.AdminSharedFleet; f != nil {
+				view := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+				if h.AdminSupportRateLimiter != nil {
+					view = append(view, h.AdminSupportRateLimiter.WriteMiddleware())
+				}
+				r.GET("/", f.List)
+				r.GET("/queue", f.Queue)
+				r.GET("/jobs", f.Jobs)
+				r.POST("/jobs/{job_id}/view", f.ViewJob, view...)
+				r.POST("/{sensor_id}/disable", f.Pause, requireSuper, stepUp("shared_sensor.pause"))
+				r.POST("/{sensor_id}/enable", f.Resume, requireSuper, stepUp("shared_sensor.resume"))
+				r.POST("/{sensor_id}/revoke", f.Retire, requireSuper, stepUp("shared_sensor.retire"))
+			}
+			if h.AdminSharedSensor != nil {
+				r.POST("/enrollment-tokens", h.AdminSharedSensor.CreateInstanceEnrollmentToken, requireSuper,
+					stepUp("shared_sensors.enrollment_token"))
+			}
 		}, adminMiddlewares...)
 	}
 
