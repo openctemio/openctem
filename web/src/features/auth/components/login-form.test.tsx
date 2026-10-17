@@ -25,7 +25,7 @@ vi.mock('./turnstile-widget', () => ({
   },
 }))
 vi.mock('sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }))
 const loginAction = vi.fn()
 const verifyMfaAction = vi.fn()
@@ -110,7 +110,7 @@ describe('LoginForm platform administrator', () => {
     setAuthProviders({ google: false, github: false, microsoft: false })
   })
 
-  it('opens the admin console instead of organization onboarding', async () => {
+  it('points a platform administrator to the console site instead of onboarding', async () => {
     const href = vi.fn()
     Object.defineProperty(window, 'location', {
       configurable: true,
@@ -132,9 +132,11 @@ describe('LoginForm platform administrator', () => {
     await user.type(screen.getByLabelText('Email'), 'ops@acme.io')
     await user.type(screen.getByLabelText('Password'), 'Correct-Horse-9')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
-    await vi.waitFor(() => expect(href).toHaveBeenCalled())
-    expect(href).toHaveBeenCalledWith('/admin')
-    expect(href).not.toHaveBeenCalledWith('/onboarding/create-team')
+    // The console is a separate site: no navigation from this app, only a hint.
+    await vi.waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/platform console/i))
+    )
+    expect(href).not.toHaveBeenCalled()
     Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
   })
 })

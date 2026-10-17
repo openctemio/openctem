@@ -11,13 +11,19 @@ name: CodeQL
 #   pull_request   only the side that changed (api/ -> go, web/ ->
 #                  javascript-typescript, shared files -> both; rules in
 #                  .github/scripts/changed.sh). Alerts show up on the PR.
-#   merge_group    none: the PR head was already analysed, and CodeQL never
-#                  fails a run on findings, so a second analysis of the same
-#                  code in the queue would cost a runner for no gate.
-#                  `CodeQL OK` passes with the matrix skipped.
+#   merge_group    none: the PR head was already analysed and gated, so a
+#                  second analysis of the same code in the queue would cost a
+#                  runner for no gate. `CodeQL OK` passes with the matrix skipped.
 #   push, weekly   ALWAYS both: code scanning compares each PR against the
 #                  latest analysis of every category on the base branch, so
 #                  develop/main need a fresh baseline for both languages.
+#
+# Gate: CodeQL never fails a run on findings, so on pull_request `CodeQL OK`
+# fails when the PR introduces open alerts of severity medium or higher that
+# the base branch does not have (.github/scripts/codeql-new-alerts.sh). It
+# passes when the analysed side has none, when nothing was analysed, and is a
+# no-op on merge_group. Do not replace this with a ruleset `code_scanning`
+# rule: that rule waits forever for a side this workflow skipped.
 
 on:
   push:
@@ -125,9 +131,26 @@ jobs:
     if: always()
     needs: [changes, analyze]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: read
     steps:
       - env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           ! echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null
+      # Only after a successful analysis on a PR: a skipped matrix has nothing to
+      # compare and merge_group was gated on the PR head.
+      - if: github.event_name == 'pull_request' && needs.analyze.result == 'success'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: No new medium-or-higher alerts
+        if: github.event_name == 'pull_request' && needs.analyze.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: bash .github/scripts/codeql-new-alerts.sh
