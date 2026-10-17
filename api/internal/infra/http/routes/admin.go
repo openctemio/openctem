@@ -354,11 +354,11 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/instance-scan-zones", func(r Router) {
 			r.GET("/", z.List)
 			r.POST("/", z.Create, requireSuper, stepUp("instance_scan_zone.create"))
-			r.GET("/{zoneId}", z.Get)
-			r.PUT("/{zoneId}", z.Update, requireSuper, stepUp("instance_scan_zone.update"))
-			r.DELETE("/{zoneId}", z.Delete, requireSuper, stepUp("instance_scan_zone.delete"))
-			r.PUT("/{zoneId}/sensors", z.SetSensors, requireSuper, stepUp("instance_scan_zone.sensors"))
-			r.PUT("/{zoneId}/organizations", z.SetOrganizations, requireSuper, stepUp("instance_scan_zone.organizations"))
+			r.GET("/{zone_id}", z.Get)
+			r.PUT("/{zone_id}", z.Update, requireSuper, stepUp("instance_scan_zone.update"))
+			r.DELETE("/{zone_id}", z.Delete, requireSuper, stepUp("instance_scan_zone.delete"))
+			r.PUT("/{zone_id}/sensors", z.SetSensors, requireSuper, stepUp("instance_scan_zone.sensors"))
+			r.PUT("/{zone_id}/organizations", z.SetOrganizations, requireSuper, stepUp("instance_scan_zone.organizations"))
 		}, adminMiddlewares...)
 	}
 
