@@ -23,6 +23,8 @@ export interface SuggestionCardProps {
   active?: boolean
   selected?: boolean
   canWrite: boolean
+  /** Without write access: accept as it is, as the asset owner (the API decides). */
+  canOwnerAccept?: boolean
   onSelect?: (selected: boolean) => void
   onAccept: () => void
   onEdit: () => void
@@ -40,6 +42,7 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
       active,
       selected,
       canWrite,
+      canOwnerAccept,
       onSelect,
       onAccept,
       onEdit,
@@ -155,6 +158,17 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {!canWrite && canOwnerAccept && (
+              <Button
+                size="sm"
+                onClick={onAccept}
+                disabled={blocked}
+                aria-keyshortcuts="a"
+                title={t('remediationHub.ownerAccept.hint')}
+              >
+                {t('remediationHub.ownerAccept.action')}
+              </Button>
+            )}
             {canWrite && (
               <>
                 <Button size="sm" onClick={onAccept} disabled={blocked} aria-keyshortcuts="a">

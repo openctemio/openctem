@@ -143,6 +143,7 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
         toast.success('Team created. Secure your account to continue.', {
           description: 'Sign in again to set up two-factor authentication.',
         })
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the session and team cookies are re-read
         window.location.href = '/login?mfa=setup'
         return
       }
@@ -158,6 +159,7 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
         await applySelectedPreset(result.tenant.id, [...selected][0])
 
         // Force full page reload to pick up new cookies
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the session and team cookies are re-read
         window.location.href = '/'
       } else {
         throw new Error(result.error || 'Failed to create team')
@@ -272,6 +274,7 @@ function CreateAdditionalTeamFormInner({ showCancel }: { showCancel: boolean }) 
         await applySelectedPreset(result.id, [...selected][0])
 
         // Force full page reload to pick up new cookies and refresh all state
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the session and team cookies are re-read
         window.location.href = '/'
       }
     } catch (error) {
