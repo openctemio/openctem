@@ -99,7 +99,7 @@ Checked in this order (`mcpoauth.Service.StartAuthorization`):
   absent or `none`). The name is cleaned of control and bidirectional
   characters. The stored copy is in `mcp_oauth_clients`.
 - **Organization clients** (`octc_…`): an owner or administrator registers
-  them under Settings, AI access (MCP): a name and exact redirect URIs
+  them under Settings, AI assistants (MCP), Applications: a name and exact redirect URIs
   (`https`, or loopback `http` any port). `GET/POST /api/v1/mcp-access/clients`,
   `DELETE /api/v1/mcp-access/clients/{id}` (`settings:read`; changes
   `settings:write` and a recent sign-in), audited `mcp_client.registered` /

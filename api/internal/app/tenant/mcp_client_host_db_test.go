@@ -19,7 +19,7 @@ func TestAllowMCPClientHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		if err := f.svc.AllowMCPClientHost(ctx, f.tenantID, "claude.example", noAudit()); err != nil {
+		if err := f.svc.AllowMCPClientHost(ctx, f.tenantID, "desk.example", noAudit()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -27,7 +27,7 @@ func TestAllowMCPClientHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got.ClientHosts, []string{"a.example", "claude.example"}) || got.RefreshDays != 7 {
+	if !reflect.DeepEqual(got.ClientHosts, []string{"a.example", "desk.example"}) || got.RefreshDays != 7 {
 		t.Fatalf("policy after approval: %+v", got)
 	}
 	if err := f.svc.AllowMCPClientHost(ctx, f.tenantID, "https://bad.example/x", noAudit()); !errors.Is(err, shared.ErrValidation) {
