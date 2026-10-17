@@ -19,7 +19,6 @@ export {
   requiresAuth,
   looksLikeJwt,
   hasSessionCookie,
-  hasAdminConsoleCookie,
   isAuthenticated,
   returnPath,
   decideAuth,
