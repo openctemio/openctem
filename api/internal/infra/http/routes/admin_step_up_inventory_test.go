@@ -242,7 +242,7 @@ func TestAdminStepUpRoutesRefuseWithoutCode(t *testing.T) {
 		req := httptest.NewRequest(method, path, strings.NewReader(`{}`))
 		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
 		req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
-		req.Header.Set(middleware.CSRFHeaderName, "c")
+		req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
 		func() {
 			// A zero-value handler body may panic on a non-step-up route;
 			// reaching it is the point, the panic is not.
@@ -290,7 +290,7 @@ func TestAdminRoutesRefuseOutsideNetworks(t *testing.T) {
 			req.RemoteAddr = "203.0.113.9:5000"
 			req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
 			req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
-			req.Header.Set(middleware.CSRFHeaderName, "c")
+			req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
 			rec := httptest.NewRecorder()
 			func() {
 				defer func() { _ = recover() }()
