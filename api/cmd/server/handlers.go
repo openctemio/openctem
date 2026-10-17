@@ -60,6 +60,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -255,6 +256,27 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
+	}
+	if svc.DomainVerify != nil {
+		tenantHandler.SetSignupDomainPolicy(svc.DomainVerify)
+		tenantHandler.SetDomainSignupPolicy(svc.DomainVerify, svc.Audit)
+		if svc.Onboarding != nil {
+			tenantHandler.SetJoinRequests(svc.Onboarding)
+		}
+		if svc.Email != nil {
+			domains, email, users := svc.DomainVerify, svc.Email, repos.User
+			tenantHandler.SetDomainCapture(func(ctx context.Context, vd *verifieddomain.VerifiedDomain) {
+				// Told once, in the background: the owner's save never waits
+				// on mail delivery.
+				go func() {
+					bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+					defer cancel()
+					if _, err := domains.NotifyCapture(bg, vd, users, email.SendDomainManagedEmail); err != nil {
+						log.Warn("domain capture notice", "error", err)
+					}
+				}()
+			})
+		}
 	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
@@ -994,6 +1016,9 @@ func InitLocalAuthHandler(
 		log.Info("local auth handler initialized")
 		if svc.Signup != nil {
 			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
+			if svc.Onboarding != nil {
+				handlers.LocalAuth.SetOnboarding(svc.Onboarding)
+			}
 		}
 		// The same CAPTCHA as the request-access form, on registration.
 		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {

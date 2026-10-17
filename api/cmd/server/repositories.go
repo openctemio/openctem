@@ -225,6 +225,7 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin        *postgres.AdminRepository
 	SignupPolicy *postgres.SignupPolicyRepository
+	JoinRequest  *postgres.JoinRequestRepository
 	// AccountDeletion: self-service account deletions (RFC-104).
 	AccountDeletion *postgres.AccountDeletionRepository
 	// PlatformSetting stores the other console settings (RFC-079).
@@ -532,6 +533,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:           postgres.NewAdminRepository(db),
 		SignupPolicy:    postgres.NewSignupPolicyRepository(db),
+		JoinRequest:     postgres.NewJoinRequestRepository(db),
 		AccountDeletion: postgres.NewAccountDeletionRepository(db),
 		PlatformSetting: postgres.NewPlatformSettingRepository(db),
 		ScanPolicy:      postgres.NewScanPolicyRepository(db),
