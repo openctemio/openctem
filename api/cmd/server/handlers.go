@@ -911,6 +911,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}
 		handlers.SignupPolicy = svc.Signup
 	}
+	if handlers.AdminSystem == nil {
+		var ping func(ctx context.Context) error
+		if deps.RedisClient != nil {
+			ping = deps.RedisClient.Ping
+		}
+		sys := newSystemCollector(cfg, deps.DB.DB, ping, svc.VersionCheck)
+		handlers.AdminSystem = handler.NewAdminSystemHandler(sys.Collect)
+	}
 	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
 	if handlers.AdminOperations != nil {
 		handlers.AdminOperations.SetSensorTransport(sensorTransportStatus(handlers.SensorV3))
