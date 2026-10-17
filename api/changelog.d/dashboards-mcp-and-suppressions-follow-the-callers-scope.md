@@ -14,5 +14,8 @@
 - **Suppression rules.** A rule bound to an asset is read, edited, approved and
   deleted only by a caller whose scope holds the asset, and the list leaves out
   the others. An organization-wide rule needs full data access to create, edit,
-  approve or delete (a restricted member with `findings:suppressions:approve`
-  could approve a rule that closes findings on every asset).
+  approve, delete or mark reviewed (a restricted member with
+  `findings:suppressions:approve` could approve a rule that closes findings on
+  every asset). The active-rules list of the user route (`/suppressions/active`)
+  leaves out rules bound to assets outside the caller's scope; the sensor route
+  is unchanged.
