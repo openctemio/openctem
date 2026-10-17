@@ -1,0 +1,6 @@
+### Added: shared sensor egress addresses, and the tenant view is called "Shared sensors"
+
+- The instance administrator publishes the addresses shared sensors send traffic from: Console > System > Platform scanning, "Egress addresses" (`GET/PUT /api/v1/admin/settings/shared-sensors/egress`). IP addresses or CIDR ranges for every region and per region. Only public addresses are accepted: private, loopback, link-local, cloud metadata, carrier-grade NAT and other internal ranges (ctis `addrscope`) are refused with 400. Any administrator reads; a change needs a super admin, a reason and a route-level step-up, gets a critical admin audit row (`platform.shared_sensors_egress_changed`), and the other administrators are emailed.
+- `GET /api/v1/platform/scanning` returns them as `egress` to an organization that may use shared sensors, so its members can allowlist the scanners. Nothing else about the sensors is shown, and an organization that may not use them sees no addresses.
+- Web: "Platform scanning" is now "Shared sensors" (Sensors page card, new-scan and workflow sensor choice, scan detail, run views), and the organization's own are "Organization sensors". The card lists the egress addresses with a copy button and links administrators to the owner's opt-out.
+- The API takes ctis at the commit that adds `addrscope`. No migration.

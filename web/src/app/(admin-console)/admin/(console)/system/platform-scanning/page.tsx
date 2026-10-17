@@ -8,18 +8,21 @@ import { useAdmin } from '@/features/admin-console/components/admin-console-shel
 import {
   createSharedSensorEnrollmentToken,
   savePlatformSensorProof,
+  saveSharedSensorsEgress,
   saveSharedSensorsSetting,
   usePlatformSensorProof,
+  useSharedSensorsEgress,
   useSharedSensorsSetting,
 } from '@/features/admin-console/api/use-scan-policy'
 import { PlatformSensorProofForm } from '@/features/admin-console/components/platform-sensor-proof-form'
 import { SharedSensorEnrollCard } from '@/features/admin-console/components/shared-sensor-enroll-card'
 import { SharedSensorsForm } from '@/features/admin-console/components/shared-sensors-form'
+import { SharedSensorsEgressForm } from '@/features/admin-console/components/shared-sensors-egress-form'
 import { adminCan } from '@/features/admin-console/types'
 
 /**
- * System -> Platform scanning: shared sensors on this instance (RFC-100 §5)
- * and whether platform sensors need a verified domain before they scan a
+ * System -> Platform scanning: shared sensors on this instance (RFC-100 §5),
+ * the egress addresses organizations allowlist (RFC-100 §9) and whether platform sensors need a verified domain before they scan a
  * target (RFC-054 §8.1). Any administrator sees them; super admins change
  * them, and issue the single-use token that enrolls a shared sensor
  * (RFC-100 §7).
@@ -29,6 +32,7 @@ export default function PlatformScanningPage() {
   const me = useAdmin()
   const { data, error, isLoading, mutate } = usePlatformSensorProof()
   const shared = useSharedSensorsSetting()
+  const egress = useSharedSensorsEgress()
 
   return (
     <Main>
@@ -73,6 +77,33 @@ export default function PlatformScanningPage() {
             })
           }
         />
+        {egress.error ? (
+          <ErrorState
+            title={t('admin.sharedEgress.errorTitle')}
+            error={egress.error}
+            onRetry={() => void egress.mutate()}
+          />
+        ) : egress.isLoading || !egress.data ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (
+          <SharedSensorsEgressForm
+            global={egress.data.global}
+            regions={egress.data.regions}
+            canEdit={adminCan(me.role, 'super_admin')}
+            onSave={async (global, regions, reason, code) => {
+              const e = egress.data
+              if (!e) return
+              await saveSharedSensorsEgress({
+                global,
+                regions,
+                version: e.version ?? 0,
+                reason,
+                totp_code: code,
+              })
+              await egress.mutate()
+            }}
+          />
+        )}
         {error ? (
           <ErrorState
             title={t('admin.proof.errorTitle')}
