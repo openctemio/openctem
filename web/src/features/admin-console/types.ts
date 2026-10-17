@@ -22,6 +22,8 @@ export interface AdminIdentity {
   max_role?: AdminRole
   /** When the session's elevation ends (absent: not elevated). */
   elevated_until?: string
+  /** The session's CSRF token (sign-in and validate only); kept in memory by admin-client. */
+  csrf_token?: string
 }
 
 export type AdminLoginStatus = 'mfa_required' | 'mfa_enrollment_required'
