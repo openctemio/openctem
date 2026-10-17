@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
+import { useListParams } from '@/hooks/use-list-params'
 import { DataTable, ErrorState, PageHeader, RelativeTime, StackedCell } from '@/features/shared'
 import {
   actOnSharedSensor,
@@ -67,9 +68,9 @@ export default function SharedSensorsPage() {
   const canView = adminCan(me.role, 'ops_admin')
   const fleet = useSharedFleet()
   const queue = useSharedQueue()
-  const [page, setPage] = useState(1)
-  const [status, setStatus] = useState('')
-  const jobs = useSharedJobs(page, status)
+  const list = useListParams({ pageSizes: [20], defaultPageSize: 20, filters: { status: '' } })
+  const status = list.filters.status
+  const jobs = useSharedJobs(list.page, status)
   const [acting, setActing] = useState<{
     sensor: SharedFleetSensor
     action: SharedSensorAction
@@ -389,16 +390,15 @@ export default function SharedSensorsPage() {
                 manualPagination
                 pageCount={jobs.data?.total_pages ?? 1}
                 rowCount={jobs.data?.total ?? 0}
-                pagination={{ pageIndex: page - 1, pageSize: 20 }}
-                onPaginationChange={(p) => setPage(p.pageIndex + 1)}
+                pagination={list.pagination}
+                onPaginationChange={list.setPagination}
                 pageSizeOptions={[20]}
                 mobileCards
                 toolbarStart={
                   <Select
                     value={status || ALL}
                     onValueChange={(v) => {
-                      setStatus(v === ALL ? '' : v)
-                      setPage(1)
+                      list.setFilter('status', v === ALL ? '' : v)
                     }}
                   >
                     <SelectTrigger

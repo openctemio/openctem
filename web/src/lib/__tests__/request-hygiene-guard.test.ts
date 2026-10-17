@@ -66,6 +66,9 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/admin-console/api/use-admin-operations.ts': 1,
   'features/admin-console/api/use-admin-overview.ts': 1,
   'features/admin-console/api/use-admin-sessions.ts': 1,
+  // Shared fleet health and the queue depth are read-time values no event
+  // pushes; the page is for an operator watching the fleet (30 s).
+  'features/admin-console/api/use-shared-fleet.ts': 2,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
   'features/ci-runners/api/use-ci.ts': 1,
   // Runs and refused exchanges are polled only while the CI setup dialog
