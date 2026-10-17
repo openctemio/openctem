@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 )
 
@@ -36,6 +37,10 @@ type AssetTechnologyFacetsResponse struct {
 // @Router       /assets/technologies [get]
 func (h *AssetHandler) ListTechnologyFacets(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
+	if tenantID == "" {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
 	query := r.URL.Query()
 	limit, ok := listLimit(w, r, assettech.MaxFacets, assettech.MaxFacets)
 	if !ok {
