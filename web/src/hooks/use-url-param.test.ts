@@ -214,3 +214,27 @@ describe('URL filter idempotency (no spurious re-render)', () => {
     expect(result.current[0]).toBe('critical')
   })
 })
+
+describe('writes made by someone else (the framework router)', () => {
+  beforeEach(() => setUrl(''))
+
+  // router.replace/push change the query through history.replaceState/pushState
+  // and emit no event of ours. Readers used to keep the old value until some
+  // other render, so a tab needed a second click.
+  it('re-renders readers when history.replaceState changes the query', async () => {
+    const { result } = renderHook(() => useUrlParams())
+    expect(result.current.get('tab')).toBeNull()
+    await act(async () => {
+      window.history.replaceState(null, '', '/findings?tab=policy')
+    })
+    expect(result.current.get('tab')).toBe('policy')
+  })
+
+  it('re-renders readers when history.pushState changes the query', async () => {
+    const { result } = renderHook(() => useUrlFilter('tab', 'connect'))
+    await act(async () => {
+      window.history.pushState(null, '', '/findings?tab=apps')
+    })
+    expect(result.current[0]).toBe('apps')
+  })
+})
