@@ -26,7 +26,7 @@ type DroppedJob struct {
 // queuedSensorChecker is the slice of *Service the job processors use to
 // re-check the sensor of a queued job.
 type queuedSensorChecker interface {
-	QueuedWorkSensor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, reportID string) (*sensor.Sensor, *DroppedJob, error)
+	QueuedWorkSensor(ctx context.Context, tenantID shared.ID, sensorID, commandID *shared.ID, reportID string) (*sensor.Sensor, *DroppedJob, error)
 }
 
 // QueuedWorkSensor re-reads the sensor that submitted a queued job. It
@@ -35,7 +35,12 @@ type queuedSensorChecker interface {
 // returns a DroppedJob instead and records the drop in the tenant's audit
 // log: the work of a sensor taken out of service is never processed. A
 // lookup error is returned so the worker retries the job.
-func (s *Service) QueuedWorkSensor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, reportID string) (*sensor.Sensor, *DroppedJob, error) {
+//
+// A shared sensor (scope instance) is not one of the tenant's sensors: its
+// work is processed only when the report is bound to a shared job of this
+// tenant that the sensor still holds (sharedHolder); the tenant is the
+// command's, set when the report was accepted.
+func (s *Service) QueuedWorkSensor(ctx context.Context, tenantID shared.ID, sensorID, commandID *shared.ID, reportID string) (*sensor.Sensor, *DroppedJob, error) {
 	if s.sensorRepo == nil {
 		return nil, nil, errors.New("ingest worker: no sensor repository to re-check the sensor")
 	}
@@ -45,7 +50,11 @@ func (s *Service) QueuedWorkSensor(ctx context.Context, tenantID shared.ID, sens
 		reason = "the job names no sensor"
 	} else {
 		stored, err := s.sensorRepo.GetByTenantAndID(ctx, tenantID, *sensorID)
+		if errors.Is(err, shared.ErrNotFound) {
+			stored, reason, err = s.sharedHolder(ctx, tenantID, *sensorID, commandID)
+		}
 		switch {
+		case reason != "":
 		case errors.Is(err, shared.ErrNotFound):
 			reason = "the sensor no longer exists"
 		case err != nil:
@@ -69,6 +78,40 @@ func (s *Service) QueuedWorkSensor(ctx context.Context, tenantID shared.ID, sens
 		"report_id", sanitizeIngestLogField(reportID), "reason", reason)
 	s.auditDroppedJob(ctx, tenantID, sensorID, reportID, reason)
 	return nil, &DroppedJob{ReportID: reportID, Dropped: true, Reason: reason}, nil
+}
+
+// reasonSharedNotHeld: a queued report of a shared sensor that does not
+// hold the report's shared job (or names none).
+const reasonSharedNotHeld = "a shared sensor reports only for a job it holds"
+
+// sharedHolder re-reads a sensor that is not one of tenantID's own: it is
+// returned only when it is a shared sensor (scope instance, no tenant) and
+// the report is bound to a shared job (is_platform_job) of tenantID that it
+// still holds. Otherwise reason says why the work is dropped. A shared
+// sensor never has unsolicited work processed.
+func (s *Service) sharedHolder(ctx context.Context, tenantID, sensorID shared.ID, commandID *shared.ID) (*sensor.Sensor, string, error) {
+	stored, err := s.sensorRepo.GetByID(ctx, sensorID)
+	switch {
+	case errors.Is(err, shared.ErrNotFound) || (err == nil && stored == nil):
+		return nil, "", shared.ErrNotFound
+	case err != nil:
+		return nil, "", err
+	case !stored.IsShared() || stored.TenantID != nil:
+		// Another tenant's sensor: not this tenant's, as before.
+		return nil, "", shared.ErrNotFound
+	case commandID == nil || s.commands == nil:
+		return nil, reasonSharedNotHeld, nil
+	}
+	cmd, err := s.commands.GetByTenantAndID(ctx, tenantID, *commandID)
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		return nil, reasonSharedNotHeld, nil
+	case err != nil:
+		return nil, "", err
+	case cmd == nil || !cmd.IsPlatformJob || cmd.TenantID != tenantID || cmd.SensorID == nil || *cmd.SensorID != sensorID:
+		return nil, reasonSharedNotHeld, nil
+	}
+	return stored, "", nil
 }
 
 func (s *Service) auditDroppedJob(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, reportID, reason string) {

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	toolapp "github.com/openctemio/openctem/api/internal/app/tool"
@@ -14,7 +13,7 @@ import (
 
 // readinessSources builds the sources of workflow readiness from the same
 // services the dispatch gate and the platform scanning view read.
-func readinessSources(tools *toolapp.Service, sensors *postgres.SensorRepository) (scanapp.ToolStatuses, scanapp.PlatformOffer) {
+func readinessSources(tools *toolapp.Service, sensors *postgres.SensorRepository, sharedPolicy func(context.Context, shared.ID) (bool, string)) (scanapp.ToolStatuses, scanapp.PlatformOffer) {
 	statuses := func(ctx context.Context, tenantID shared.ID) (map[string]sensordom.ToolStatus, error) {
 		res, err := tools.ToolAvailability(ctx, tenantID.String(), "")
 		if err != nil || res == nil {
@@ -28,7 +27,7 @@ func readinessSources(tools *toolapp.Service, sensors *postgres.SensorRepository
 		}
 		return out, nil
 	}
-	platform := sensorapp.NewPlatformScanningService(sensors, app.PlatformSensorsAllowed)
+	platform := sensorapp.NewPlatformScanningService(sensors, sharedPolicy)
 	offer := func(ctx context.Context, tenantID shared.ID) (bool, bool, []string, error) {
 		pf, err := platform.Get(ctx, tenantID)
 		if err != nil || pf == nil {
