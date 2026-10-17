@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
@@ -163,6 +164,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	assetSvc.SetRepositoryExtensionRepository(postgres.NewRepositoryExtensionRepository(db))
 	assetSvc.SetAttributeSources(postgres.NewAssetAttributeSourceRepository(db), tenantRepo)
 	assetSvc.SetChangeTimeline(postgres.NewAssetChangeEventRepository(db))
+	assetSvc.SetTechnologyFacets(postgres.NewAssetTechnologyRepository(db))
 
 	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
@@ -1162,5 +1164,64 @@ func TestDataScope_RelatedGroups_CountHiddenNeighbors(t *testing.T) {
 		if status, _ := h.do(h.owner, true, http.MethodGet, base+q, nil); status != http.StatusBadRequest {
 			t.Errorf("groups%s = %d, want 400", q, status)
 		}
+	}
+}
+
+// --- Technologies (RFC-112) ------------------------------------------------
+
+// The technology filter options and the technology filters see only the
+// assets the caller may list: a scoped member never learns a technology only
+// an out-of-scope asset runs, and filtering by it lists nothing.
+func TestDataScope_TechnologyFacetsAndFilters(t *testing.T) {
+	h := newDSHarness(t)
+	now := time.Now().UTC()
+	for _, row := range []struct {
+		asset     shared.ID
+		key, name string
+		category  string
+	}{
+		{h.assetA, "nginx", "nginx", "web_server"},
+		{h.assetA, "hsts", "HSTS", "security_header"},
+		{h.assetB, "dsb-secret-cms", "dsB-SECRET-CMS", "framework"},
+		{h.assetB, "nginx", "nginx", "web_server"},
+	} {
+		h.exec(`INSERT INTO asset_technologies (tenant_id, asset_id, name_key, name, category, first_seen, last_seen)
+			VALUES ($1, $2, $3, $4, $5, $6, $6)`, h.tenant.String(), row.asset.String(), row.key, row.name, row.category, now)
+	}
+
+	status, body := h.do(h.memberA, false, http.MethodGet, "/api/v1/assets/technologies", nil)
+	if status != http.StatusOK {
+		t.Fatalf("memberA facets = %d %.200s", status, body)
+	}
+	if strings.Contains(body, "dsB-SECRET") {
+		t.Fatalf("memberA sees an out-of-scope technology: %s", body)
+	}
+	if !strings.Contains(body, `"key":"nginx"`) || !strings.Contains(body, `"asset_count":1`) {
+		t.Fatalf("memberA facets: %s", body)
+	}
+	status, body = h.do(h.owner, true, http.MethodGet, "/api/v1/assets/technologies?q=SECRET", nil)
+	if status != http.StatusOK || !strings.Contains(body, "dsB-SECRET-CMS") {
+		t.Fatalf("owner facets = %d %s", status, body)
+	}
+
+	// Filters: by name and by category, scoped like the list.
+	status, body = h.do(h.memberA, false, http.MethodGet, "/api/v1/assets?technology=DSB-SECRET-CMS", nil)
+	if status != http.StatusOK || strings.Contains(body, h.assetB.String()) || !strings.Contains(body, `"total":0`) {
+		t.Fatalf("memberA filtered by an out-of-scope technology = %d %.300s", status, body)
+	}
+	status, body = h.do(h.owner, true, http.MethodGet, "/api/v1/assets?technology=dsb-secret-cms", nil)
+	if status != http.StatusOK || !strings.Contains(body, h.assetB.String()) || strings.Contains(body, h.assetA.String()) {
+		t.Fatalf("owner filtered by technology = %d %.300s", status, body)
+	}
+	status, body = h.do(h.owner, true, http.MethodGet, "/api/v1/assets?technology_category=security_header", nil)
+	if status != http.StatusOK || !strings.Contains(body, h.assetA.String()) || strings.Contains(body, h.assetB.String()) {
+		t.Fatalf("owner filtered by category = %d %.300s", status, body)
+	}
+	// An unknown category is a 400, an over-long search too.
+	if status, _ := h.do(h.owner, true, http.MethodGet, "/api/v1/assets/technologies?category=bogus", nil); status != http.StatusBadRequest {
+		t.Fatalf("bogus category = %d", status)
+	}
+	if status, _ := h.do(h.owner, true, http.MethodGet, "/api/v1/assets/technologies?q="+strings.Repeat("x", 200), nil); status != http.StatusBadRequest {
+		t.Fatalf("long search = %d", status)
 	}
 }

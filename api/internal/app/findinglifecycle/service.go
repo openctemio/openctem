@@ -14,7 +14,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -28,7 +28,7 @@ type AuditLogger interface {
 type Service struct {
 	subs    lc.SubStatusRepository
 	schemes lc.SchemeRepository
-	limits  plan.Checker
+	limits  limits.Checker
 	audit   AuditLogger
 	logger  *logger.Logger
 	now     func() time.Time
@@ -36,9 +36,9 @@ type Service struct {
 	compiled compiledCache
 }
 
-// NewService returns the service. limits and audit may be nil (no plans, no audit).
-func NewService(subs lc.SubStatusRepository, schemes lc.SchemeRepository, limits plan.Checker, audit AuditLogger, log *logger.Logger) *Service {
-	return &Service{subs: subs, schemes: schemes, limits: limits, audit: audit, logger: log.With("service", "finding_lifecycle"), now: time.Now}
+// NewService returns the service. limits and audit may be nil (no limits, no audit).
+func NewService(subs lc.SubStatusRepository, schemes lc.SchemeRepository, lim limits.Checker, audit AuditLogger, log *logger.Logger) *Service {
+	return &Service{subs: subs, schemes: schemes, limits: lim, audit: audit, logger: log.With("service", "finding_lifecycle"), now: time.Now}
 }
 
 // Actor is who changes the definitions: the user (nil for an API key) and
@@ -48,7 +48,7 @@ type Actor struct {
 	Audit  auditapp.AuditContext
 }
 
-func (s *Service) checkLimit(ctx context.Context, tenantID shared.ID, key plan.Key) error {
+func (s *Service) checkLimit(ctx context.Context, tenantID shared.ID, key limits.Key) error {
 	if s.limits == nil {
 		return nil
 	}
@@ -72,7 +72,7 @@ func (s *Service) ListSubStatuses(ctx context.Context, tenantID shared.ID, inclu
 }
 
 // CreateSubStatus adds a sub-status, within the platform's cap and the
-// plan's limit.
+// organization's limit.
 func (s *Service) CreateSubStatus(ctx context.Context, tenantID shared.ID, in lc.SubStatusInput, a Actor) (*lc.SubStatus, error) {
 	sub, err := lc.NewSubStatus(tenantID, in, a.UserID, s.now())
 	if err != nil {
@@ -100,7 +100,7 @@ func (s *Service) roomForSubStatus(ctx context.Context, tenantID shared.ID) erro
 	if n >= lc.MaxSubStatusesPerKind {
 		return lc.ErrSubStatusLimit
 	}
-	return s.checkLimit(ctx, tenantID, plan.LifecycleSubStatuses)
+	return s.checkLimit(ctx, tenantID, limits.LifecycleSubStatuses)
 }
 
 // UpdateSubStatus changes a sub-status's presentation.
@@ -231,7 +231,7 @@ func (s *Service) CreateScheme(ctx context.Context, tenantID shared.ID, in lc.Sc
 	if n >= lc.MaxSchemesPerKind {
 		return SchemeView{}, lc.ErrSchemeLimit
 	}
-	if err := s.checkLimit(ctx, tenantID, plan.LifecycleSchemes); err != nil {
+	if err := s.checkLimit(ctx, tenantID, limits.LifecycleSchemes); err != nil {
 		return SchemeView{}, err
 	}
 	if err := s.schemes.CreateScheme(ctx, sc); err != nil {
