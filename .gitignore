@@ -48,3 +48,6 @@ __pycache__/
 /api/*.out
 /web/*.txt
 /web/*.out
+
+# Runtime data written by a local API (sensor CA key, attachments, feeds). Never commit.
+/data/

@@ -93,7 +93,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-075](RFC-075-asset-freshness.md) | Asset freshness and automatic enrichment | Proposed (2026-10-11); P0 in implementation |
 | [RFC-076](RFC-076-pentest-report-templates.md) | Pentest report templates | Proposed (2026-10-11); implemented: upload, check, preview with sample data, DOCX rendering of a campaign, evidence images, tag reference, full check with fixes, three starter templates |
 | [RFC-077](RFC-077-ci-enforced-gate-and-pr-feedback.md) | CI enforced gate, pull request feedback and diff-aware runs | Implemented in part (decisions G-1..G-10 adopted 2026-10-11; open items in section 8) |
-| [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Proposed (2026-10-11) |
+| [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Partially implemented: the platform console part (§7, 2026-10-16); the user-account phases P1 and P3 are Proposed |
 | [RFC-079](RFC-079-console-platform-settings.md) | Run-time settings in the console instead of environment variables | Proposed (2026-10-11) |
 | [RFC-080](RFC-080-attack-surface-changes-and-digest.md) | Typed attack-surface changes and the weekly digest | Implemented (2026-10-11) |
 | [RFC-081](RFC-081-web-evidence-screenshots.md) | Web evidence and screenshots of web assets | Accepted (2026-10-11); platform side implemented, sensor `screenshot` tool in the sensor repository |
@@ -115,12 +115,14 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-097](RFC-097-ticket-field-mapping.md) | Ticket field and status mapping | Proposed (2026-10-15). |
 | [RFC-098](RFC-098-remediation-tasks.md) | Remediation actions, tasks and suggestions | Accepted (2026-10-15). |
 | [RFC-099](RFC-099-content-packages.md) | Content packages, signatures, revocation and the content catalog | Proposed (2026-10-15). |
-| [RFC-100](RFC-100-shared-sensors.md) | Shared sensors | Accepted (2026-10-15); S0 in review (#2308), S2 in review (#2325), S3 in review, the rest designed |
+| [RFC-100](RFC-100-shared-sensors.md) | Shared sensors | Accepted (2026-10-15); S0 in review (#2308), S2 in review (#2325), S3 in review, S4 in review, the rest designed |
 | [RFC-104](RFC-104-signup-modes-and-joining.md) | Sign-up modes and organization joining | Accepted (2026-10-15). |
 | [RFC-105](RFC-105-version-check-and-usage-telemetry.md) | Version check and usage telemetry | Accepted (2026-10-16). |
 | [RFC-110](RFC-110-tenant-lifecycles.md) | Tenant lifecycles (sub-statuses and lifecycle schemes for findings) | Accepted (2026-10-16). |
 | [RFC-111](RFC-111-approval-policy.md) | Approval policy (one evaluator for false positives, accepted risks, suppressions and group exceptions) | Accepted (2026-10-16). |
 | [RFC-112](RFC-112-asset-technologies.md) | Asset technologies (detected technology fingerprint per asset) | Accepted (2026-10-16). |
+| [RFC-113](RFC-113-sensor-tool-standard.md) | Sensor tool standard (one contract for jobs, targets and results) | Proposed (2026-10-17). |
+| [RFC-114](RFC-114-system-page.md) | System page and host operations for self-managed installs | Proposed (2026-10-17) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

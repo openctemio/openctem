@@ -391,7 +391,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	// Collectors may send sub_type, scope, etc. inside properties JSONB.
 	input = PromoteKnownProperties(input)
 
-	s.logger.Info("creating asset", "name", input.Name)
+	s.logger.Info("creating asset", "name", logger.SanitizeValue(input.Name))
 
 	// Resolve the input type (core type, alias or legacy sub-type) to the
 	// stored (type, sub_type): aliases are never stored (RFC-042 §6.3.8).
@@ -1985,8 +1985,8 @@ func (s *AssetService) CreateRepositoryAssetWithOutcome(ctx context.Context, inp
 	if existingAsset != nil {
 		s.logger.Info("found existing asset, updating with SCM data",
 			"asset_id", existingAsset.ID().String(),
-			"existing_name", existingAsset.Name(),
-			"new_fullName", input.FullName,
+			"existing_name", logger.SanitizeValue(existingAsset.Name()),
+			"new_fullName", logger.SanitizeValue(input.FullName),
 		)
 		if s.dataScope.AssertAsset(ctx, tenantID, existingAsset.ID()) != nil {
 			return nil, nil, none, errCreateConflict

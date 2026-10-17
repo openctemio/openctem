@@ -78,6 +78,7 @@ export default function SelectTenantPage() {
   useEffect(() => {
     const tenantCookie = getCookie(env.cookies.tenant)
     if (tenantCookie) {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the dashboard bootstraps with the newly set session cookies
       window.location.href = '/'
     }
   }, [])
@@ -107,6 +108,7 @@ export default function SelectTenantPage() {
         // before hard redirect. Without this, dashboard bootstrap may race with
         // cookie initialization and flash a 401 error before auto-recovering.
         await new Promise((resolve) => setTimeout(resolve, 100))
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the dashboard bootstraps with the newly set session cookies
         window.location.href = '/'
       } else {
         setSelectedId(null)
