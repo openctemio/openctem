@@ -1772,6 +1772,7 @@ func TestAuthenticate_Success(t *testing.T) {
 	tenantID := shared.NewID()
 
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
+		UserID:        shared.NewID().String(),
 		TenantID:      tenantID.String(),
 		ExpiresInDays: 90,
 		Name:          "MCP key",
@@ -1924,7 +1925,7 @@ func TestAuthenticate_TouchFailureIsNonFatal(t *testing.T) {
 	tenantID := shared.NewID()
 
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: tenantID.String(), Name: "touch-fail",
+		UserID: shared.NewID().String(), TenantID: tenantID.String(), Name: "touch-fail",
 		ExpiresInDays: 90,
 	})
 	if err != nil {
@@ -2005,19 +2006,16 @@ func TestAuthenticateWithPermissions_HolderErrorRejects(t *testing.T) {
 	}
 }
 
-// A key with no user is bounded by its scopes alone; the holder is not asked.
-func TestAuthenticateWithPermissions_UserlessKeyUsesScopes(t *testing.T) {
+// A key with no user is refused: it has no member whose data scope it could
+// carry.
+func TestAuthenticateWithPermissions_UserlessKeyRefused(t *testing.T) {
 	svc := newTestAPIKeyService(newMockAPIKeyRepo())
 	holder := &fakeHolder{}
 	svc.SetHolderPermissions(holder)
 	raw := mintForHolder(t, svc, "", "assets:read")
 
-	_, perms, err := svc.AuthenticateWithPermissions(context.Background(), raw, "")
-	if err != nil {
-		t.Fatalf("authenticate: %v", err)
-	}
-	if len(perms) != 1 || perms[0] != "assets:read" || holder.calls != 0 {
-		t.Errorf("perms = %v holder calls = %d", perms, holder.calls)
+	if _, _, err := svc.AuthenticateWithPermissions(context.Background(), raw, ""); !errors.Is(err, apikeydom.ErrAPIKeyNotFound) {
+		t.Fatalf("user-less key: err = %v, want ErrAPIKeyNotFound", err)
 	}
 }
 
@@ -2067,7 +2065,7 @@ func TestAuthenticate_PreviousPepperDuringKeyRotation(t *testing.T) {
 	repo := newMockAPIKeyRepo()
 	old := apikey.NewService(repo, "old-pepper", logger.NewNop())
 	created, err := old.Create(context.Background(), apikey.CreateInput{
-		TenantID: shared.NewID().String(), Name: "pre-rotation", Scopes: []string{"findings:read"},
+		UserID: shared.NewID().String(), TenantID: shared.NewID().String(), Name: "pre-rotation", Scopes: []string{"findings:read"},
 		ExpiresInDays: 90,
 	})
 	if err != nil {
@@ -2091,7 +2089,7 @@ func TestAuthenticate_PreviousPepperKeyIsRehashed(t *testing.T) {
 	repo := newMockAPIKeyRepo()
 	old := apikey.NewService(repo, "old-pepper", logger.NewNop())
 	created, err := old.Create(context.Background(), apikey.CreateInput{
-		TenantID: shared.NewID().String(), Name: "pre-rotation", Scopes: []string{"findings:read"},
+		UserID: shared.NewID().String(), TenantID: shared.NewID().String(), Name: "pre-rotation", Scopes: []string{"findings:read"},
 		ExpiresInDays: 90,
 	})
 	if err != nil {
