@@ -55,7 +55,7 @@ func (m *memLinks) Create(_ context.Context, l *ticketlink.Link) error {
 		return m.createErr
 	}
 	for _, r := range m.rows {
-		if r.State == ticketlink.StateActive && r.ExternalKey == l.ExternalKey && *r.FindingID == *l.FindingID {
+		if r.State == ticketlink.StateActive && r.ExternalKey == l.ExternalKey && sameID(r.FindingID, l.FindingID) && sameID(r.TaskID, l.TaskID) {
 			return ticketlink.ErrAlreadyLinked
 		}
 	}
@@ -76,8 +76,21 @@ func (m *memLinks) ListForFinding(context.Context, shared.ID, shared.ID) ([]*tic
 func (m *memLinks) ListForCampaign(context.Context, shared.ID, shared.ID) ([]*ticketlink.Link, error) {
 	return nil, nil
 }
-func (m *memLinks) FindByIssue(context.Context, shared.ID, shared.ID, string) ([]*ticketlink.Link, error) {
-	return nil, nil
+func (m *memLinks) FindByIssue(_ context.Context, _, _ shared.ID, key string) ([]*ticketlink.Link, error) {
+	var out []*ticketlink.Link
+	for _, r := range m.rows {
+		if r.State == ticketlink.StateActive && r.ExternalKey == key {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func sameID(a, b *shared.ID) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 func (m *memLinks) SetState(_ context.Context, _, id shared.ID, state string) error {
 	for _, r := range m.rows {
@@ -87,6 +100,26 @@ func (m *memLinks) SetState(_ context.Context, _, id shared.ID, state string) er
 		}
 	}
 	return ticketlink.ErrNotFound
+}
+func (m *memLinks) ListForTask(_ context.Context, _, taskID shared.ID) ([]*ticketlink.Link, error) {
+	var out []*ticketlink.Link
+	for _, r := range m.rows {
+		if r.TaskID != nil && *r.TaskID == taskID {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+func (m *memLinks) RecordPush(_ context.Context, _, id shared.ID, state, status string, at time.Time) error {
+	for _, r := range m.rows {
+		if r.ID == id {
+			r.LastPushedState, r.LastStatus, r.LastSyncedAt, r.SyncError = state, status, &at, ""
+		}
+	}
+	return nil
+}
+func (m *memLinks) TaskLinksBehindForPlatform(context.Context, int) ([]ticketlink.TaskLinkRef, error) {
+	return nil, nil
 }
 func (m *memLinks) RecordSync(context.Context, shared.ID, shared.ID, string, string, time.Time) error {
 	return nil
@@ -146,7 +179,7 @@ func TestUnlinkIssue_OnlyTheFindingsOwnLink(t *testing.T) {
 	s := newSync(repo, c)
 	s.SetLinkStore(links)
 	tid, fid := shared.NewID(), shared.NewID()
-	l, err := ticketlink.New(tid, c.intg, &fid, nil, "SEC-12", "1", "https://acme.atlassian.net", "https://acme.atlassian.net/browse/SEC-12", ticketlink.RoleOwn, ticketlink.SourcePerson, nil)
+	l, err := ticketlink.New(tid, c.intg, ticketlink.ForFinding(fid), "SEC-12", "1", "https://acme.atlassian.net", "https://acme.atlassian.net/browse/SEC-12", ticketlink.RoleOwn, ticketlink.SourcePerson, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
