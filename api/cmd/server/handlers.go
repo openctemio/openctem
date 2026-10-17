@@ -704,7 +704,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Platform scanning: the shared platform sensors as a service the
 		// tenant may use, never the sensors themselves.
 		PlatformScanning: handler.NewPlatformScanningHandler(
-			sensor.NewPlatformScanningService(repos.Sensor, svc.SharedSensorsAllowed), log),
+			sensor.NewPlatformScanningService(repos.Sensor, svc.SharedSensorsAllowed).
+				WithEgress(svc.SharedSensorsEgress), log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
