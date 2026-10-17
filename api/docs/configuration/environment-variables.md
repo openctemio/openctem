@@ -25,6 +25,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
 | `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
+| `MANAGED_SERVICE` | bool | `false` |  |  | Set to  only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
 | `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Unset: not named. |
 
 ### Brand
@@ -286,7 +287,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SENSOR_MTLS_CA_DIR` | path | `data/sensor-ca` |  |  | Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume. |
 | `SENSOR_MTLS_CA_KEY_FILE` | path | empty |  |  | Sensor CA private key (PEM). Not the job signer's key. |
 | `SENSOR_MTLS_CERT_TTL` | duration | `168h` |  |  | Lifetime of sensor client certificates, clamped to 1h..720h. |
-| `SENSOR_MTLS_LISTEN_ADDR` | string | `:8443` |  |  | TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it. |
+| `SENSOR_MTLS_LISTEN_ADDR` | string | `:9443` |  |  | TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it. |
 | `SENSOR_MTLS_TRUSTED_PROXIES` | list | empty |  |  | Comma-separated CIDRs whose PROXY protocol v2 header the sensor listener believes: the gateway that passes sensor connections through. |
 | `SENSOR_PUBLIC_HOST` | string | empty |  |  | `host[:port]` sensors dial for protocol v3, for a dedicated sensor host name or port. Unset: the host and port of `SENSOR_PUBLIC_API_URL`, else `APP_URL`. Advertised only while the self-probe passes. |
 | `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` | duration | `24h` |  |  | How often reviewed quarantined sensor results older than the retention are deleted. Pending items are never purged. |
@@ -377,6 +378,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 |---|---|---|---|---|---|
 | `ADMIN_ALLOWED_CIDRS` | list | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` |  |  | Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address. |
 | `ADMIN_LISTEN_ADDR` | string | empty |  |  | The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener. |
+| `OPENCTEM_PLANE` | all \| tenant \| admin | `all` |  |  | What this API process serves (RFC-022 revision 21). `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`. |
 | `ADMIN_LISTEN_ALLOW_ALL_INTERFACES` | bool | `false` |  |  | `true` lets `ADMIN_LISTEN_ADDR` be any address: every interface (`:8081`, `0.0.0.0:8081`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port. |
 | `ADMIN_ELEVATION` | string | `required` |  |  | `required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in. |
 
@@ -480,8 +482,7 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `ADMIN_API_URL` | string | empty |  |  | Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. |
-| `OPENCTEM_ADMIN_PLANE` | string | `shared` |  |  | `separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`. |
+| `ADMIN_API_URL` | string | empty |  |  | Platform console app only (`openctem-console`): internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. The tenant web app never reads it. |
 | `BACKEND_API_URL` | string | `http://localhost:8080` | yes |  | Internal URL of the API. The console proxies the browser's `/api/v1` calls and the WebSocket upgrade to it. Compose: `http://api:8080`. |
 | `SECURE_COOKIES` | string | `true` |  |  | `Secure` flag on the cookies the console sets. Only `false` turns it off (local `http://` development). |
 | `TRUST_PROXY_HEADERS` | string | `false` |  |  | Forward `X-Real-IP` / `X-Forwarded-For` to the API. Set `true` only when a proxy in front of the console overwrites those headers (the gateway does), otherwise a browser could choose its own address. |
@@ -518,9 +519,14 @@ Read by the bundled Caddy gateway (`api/deploy/gateway`).
 | `XDG_DATA_HOME` | string | `/data` |  |  | Caddy storage: certificates, ACME account, internal CA. Keep it on a volume. |
 | `OPENCTEM_API_UPSTREAM` | string | `api:8080` |  |  | Address of the API. |
 | `OPENCTEM_WEB_UPSTREAM` | string | `web:3000` |  |  | Address of the web console. |
+| `OPENCTEM_CONSOLE_UPSTREAM` | string | `console:3000` |  |  | Address of the platform console service, which the console's site (`OPENCTEM_ADMIN_SITE`) serves at its root. |
 | `OPENCTEM_SENSOR_GATEWAY` | off \| alpn \| passthrough | `off` |  |  | Sensor protocol v3 routing: `alpn` passes connections that offer the sensor ALPN id to the API's sensor listener; `passthrough` also routes a dedicated sensor host name (`SENSOR_PUBLIC_HOSTNAME`). Needs a TLS mode and the gateway image with the layer4 module. |
 | `SENSOR_PUBLIC_HOSTNAME` | string | empty |  |  | Dedicated DNS name sensors dial for protocol v3 (no port), with `OPENCTEM_SENSOR_GATEWAY=passthrough`. |
-| `SENSOR_MTLS_UPSTREAM` | string | `api:8443` |  |  | Address of the API's sensor listener the gateway passes sensor connections to. |
+| `SENSOR_MTLS_UPSTREAM` | string | `api:9443` |  |  | Address of the API's sensor listener the gateway passes sensor connections to (internal only; sensors dial the gateway's port 443). |
+| `OPENCTEM_ADMIN_SITE` | port \| host \| off | `off` |  |  | The platform console's own site: `port` serves it on `https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT>`, `host` on `https://<OPENCTEM_ADMIN_HOST>` (recommended for production: a separate origin), `off` not at all. The Compose stack sets `port`. |
+| `OPENCTEM_ADMIN_HOST` | string | empty |  |  | The console's own DNS name (no scheme, port or path), with `OPENCTEM_ADMIN_SITE=host`; must differ from `OPENCTEM_HOSTNAME`. |
+| `OPENCTEM_ADMIN_PORT` | int | `8443` |  |  | The console's port, with `OPENCTEM_ADMIN_SITE=port`. Not a security control: change it if it is taken on the host. Must differ from 80, 443 and `GATEWAY_HTTPS_PORT`. |
+| `OPENCTEM_ADMIN_ALLOWED_CIDRS` | string | `127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7` |  |  | Client networks that may reach the console site, space-separated; everyone else gets 403. The Compose stack passes the same list to the API as `ADMIN_ALLOWED_CIDRS`. |
 
 ## Docker Compose stack
 
@@ -534,10 +540,13 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `OPENCTEM_PUBLIC_URL` | string | `https://<OPENCTEM_HOSTNAME>` | yes |  | Exact origin browsers use, when it is not `https://<OPENCTEM_HOSTNAME>` (a port other than 443). Passed to the API as `APP_URL`. |
 | `API_IMAGE` | string | `ghcr.io/openctemio/openctem-api` |  |  | Image repository of the API. |
 | `UI_IMAGE` | string | `ghcr.io/openctemio/openctem-web` |  |  | Image repository of the web console. |
+| `CONSOLE_IMAGE` | string | `ghcr.io/openctemio/openctem-console` |  |  | Image repository of the platform console. |
 | `MIGRATIONS_IMAGE` | string | `ghcr.io/openctemio/migrations` |  |  | Image repository of the migrations job. |
 | `API_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `UI_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
+| `CONSOLE_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `GATEWAY_BIND` | string | `0.0.0.0` |  |  | Host interface the gateway port is published on. |
+| `OPENCTEM_ADMIN_BIND` | string | empty |  |  | Host interface the console port is published on, with `OPENCTEM_ADMIN_SITE=port` (default `GATEWAY_BIND`). A private or VPN address keeps the console off the public interface; a published container port is not filtered by the host firewall. |
 | `GATEWAY_HTTPS_PORT` | string | `443` |  |  | Published HTTPS port. |
 | `GATEWAY_HTTP_PORT` | string | `80` |  |  | Port published by the overlays. |
 | `TLS_CERT_DIR` | string | `./certs` |  |  | Host directory mounted at `/certs` (mode `files`). |
@@ -551,6 +560,7 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `DB_MIGRATE_PASSWORD` | string | `unset` |  | yes | Password of `DB_MIGRATE_USER`. |
 | `API_MEMORY_LIMIT` | string | `2g` |  |  | Memory limit of the `api` container. |
 | `WEB_MEMORY_LIMIT` | string | `1g` |  |  | Memory limit of the `web` container. |
+| `CONSOLE_MEMORY_LIMIT` | string | `512m` |  |  | Memory limit of the `console` container. |
 | `GATEWAY_MEMORY_LIMIT` | string | `512m` |  |  | Memory limit of the `gateway` container. |
 | `API_GOMEMLIMIT` | string | `1600MiB` |  |  | `GOMEMLIMIT` of the `api` container: the Go runtime collects garbage to stay below it. Keep it about 80% of `API_MEMORY_LIMIT`. |
 | `POSTGRES_MEMORY_LIMIT` | string | `4g` |  |  | Memory limit of the bundled `postgres` container; keep it above `shared_buffers` plus connections times `work_mem`. |

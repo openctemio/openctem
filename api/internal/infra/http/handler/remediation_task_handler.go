@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -723,6 +724,12 @@ func (h *RemediationTaskHandler) handleError(w http.ResponseWriter, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, finding.ErrBulkTooLarge):
+		// Above the bulk ceiling: the caller confirms and sends the request
+		// again with "approved": true (the web console asks first).
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "BULK_TOO_LARGE", "message": err.Error()})
+	case errors.Is(err, finding.ErrBulkBudgetExceeded):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "BULK_BUDGET_EXCEEDED", "message": err.Error()})
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound(notFoundMessage(err)).WriteJSON(w)
 	case errors.Is(err, shared.ErrConflict):

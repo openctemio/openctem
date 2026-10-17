@@ -15,6 +15,8 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/openctemio/ctis/addrscope"
+
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
@@ -370,7 +372,7 @@ func (s *Service) refuseInternalOutsideZones(ctx context.Context, in DispatchTar
 	}
 	internal := map[string]bool{}
 	for _, t := range kept {
-		if pt := scanzone.ParseTarget(t); pt.IsAddr && isInternalAddr(pt.Prefix.Addr()) {
+		if pt := scanzone.ParseTarget(t); pt.IsAddr && addrscope.IsInternalPrefix(pt.Prefix) {
 			internal[t] = true
 		}
 	}

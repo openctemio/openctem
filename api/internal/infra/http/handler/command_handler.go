@@ -1009,7 +1009,7 @@ func (h *CommandHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// sensor should treat as "not mine any more", not a server fault.
 		apierror.Conflict(conflictMessage(err)).WriteJSON(w)
 	default:
-		h.logger.Error("service error", "error", err)
+		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }

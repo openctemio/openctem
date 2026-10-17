@@ -369,7 +369,7 @@ func (h *OutboxHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("outbox entry reset for retry", "id", id, "tenant_id", tenantIDStr)
+	h.logger.Info("outbox entry reset for retry", "id", logger.SanitizeValue(id), "tenant_id", logger.SanitizeValue(tenantIDStr))
 	h.recordChange(r, h.logger, auditdom.ActionNotificationOutboxRetried, auditdom.ResourceTypeNotificationOutbox, id, "",
 		nil, nil, auditdom.SeverityLow, "Notification delivery retried")
 	h.writeEntry(w, r, tenantID, entry)
@@ -438,7 +438,7 @@ func (h *OutboxHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("outbox entry deleted", "id", id, "tenant_id", tenantIDStr)
+	h.logger.Info("outbox entry deleted", "id", logger.SanitizeValue(id), "tenant_id", logger.SanitizeValue(tenantIDStr))
 	// A deleted entry is an alert that will never be delivered.
 	h.recordChange(r, h.logger, auditdom.ActionNotificationOutboxDeleted, auditdom.ResourceTypeNotificationOutbox, id, "",
 		nil, nil, auditdom.SeverityMedium, "Pending notification deleted")

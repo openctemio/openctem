@@ -146,13 +146,7 @@ func (r *CTEMIDRepository) List(ctx context.Context, category *string, limit, of
 	}
 	defer func() { _ = rows.Close() }()
 
-	// Cap the capacity hint so an over-large limit can't drive an excessive
-	// allocation (defense-in-depth; the handler bounds limit to MaxPerPage).
-	capHint := limit
-	if capHint < 0 || capHint > 1000 {
-		capHint = 100
-	}
-	entries := make([]*ctemid.CTEMID, 0, capHint)
+	entries := make([]*ctemid.CTEMID, 0, capHint(limit))
 	for rows.Next() {
 		entry, err := scanCTEMID(rows)
 		if err != nil {
