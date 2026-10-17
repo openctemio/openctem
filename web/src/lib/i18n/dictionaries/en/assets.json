@@ -9,6 +9,7 @@
   "assets.inv.facing": "Facing",
   "assets.inv.actionsFor": "Actions for {name}",
   "assets.inv.edit": "Edit",
+  "assets.inv.openDetails": "Open details page",
   "assets.inv.delete": "Delete",
   "assets.inv.tagsUpdated": "Tags updated",
   "assets.inv.tagsUpdateFailed": "Failed to update tags",
