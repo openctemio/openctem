@@ -15,7 +15,7 @@ import (
 
 // duplicateMarker is implemented by the postgres finding repository.
 type duplicateMarker interface {
-	MarkDuplicateOf(ctx context.Context, tenantID, duplicateID, canonicalID shared.ID, actorID string, canApprove bool) error
+	MarkDuplicateOf(ctx context.Context, tenantID, duplicateID, canonicalID shared.ID, actorID string) error
 }
 
 // MarkDuplicateInput marks FindingID a duplicate of DuplicateOfID.
@@ -25,10 +25,7 @@ type MarkDuplicateInput struct {
 	DuplicateOfID string
 	// ActorID is the authenticated user.
 	ActorID string
-	// CanApprove is whether the actor holds findings:approve, needed when
-	// either finding is a false positive or a risk acceptance.
-	CanApprove bool
-	Audit      audit.AuditContext
+	Audit   audit.AuditContext
 }
 
 // MarkDuplicateOf folds a finding into the one it duplicates: both must be in
@@ -71,13 +68,13 @@ func (s *VulnerabilityService) MarkDuplicateOf(ctx context.Context, in MarkDupli
 	if err := s.assertFindingScope(ctx, canon); err != nil {
 		return nil, err
 	}
-	if err := vulnerability.CheckMarkDuplicate(duplicateCandidate(dup), duplicateCandidate(canon), in.CanApprove); err != nil {
+	if err := vulnerability.CheckMarkDuplicate(duplicateCandidate(dup), duplicateCandidate(canon)); err != nil {
 		return nil, err
 	}
 
 	// The repository locks both rows and checks the rules again before it
 	// merges, so a concurrent change cannot slip between.
-	if err := marker.MarkDuplicateOf(ctx, tenantID, dupID, canonID, in.ActorID, in.CanApprove); err != nil {
+	if err := marker.MarkDuplicateOf(ctx, tenantID, dupID, canonID, in.ActorID); err != nil {
 		return nil, err
 	}
 	s.auditDuplicateMarked(ctx, in, dup, canon)

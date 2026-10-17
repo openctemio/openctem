@@ -40,7 +40,7 @@ func (r *FindingRepository) FinishFindingImport(ctx context.Context, rec *vulner
 			components = $7, statements = $8, skipped = $9, vex_stored = $10, vex_closed = $11
 		WHERE tenant_id = $1 AND id = $2`,
 		rec.TenantID.String(), rec.ID.String(), rec.AssetsCreated, rec.AssetsUpdated, rec.FindingsCreated,
-		rec.FindingsUpdated, rec.Components, rec.Statements, rec.Skipped, rec.VEXStored, rec.VEXClosed)
+		rec.FindingsUpdated, rec.Components, rec.Statements, rec.Skipped, rec.VEXStored, rec.VEXRequested)
 	if err != nil {
 		return fmt.Errorf("finish finding import: %w", err)
 	}
@@ -63,7 +63,7 @@ func (r *FindingRepository) GetFindingImport(ctx context.Context, tenantID, id s
 		FROM finding_imports WHERE tenant_id = $1 AND id = $2`,
 		tenantID.String(), id.String()).Scan(&rid, &tenant, &actor, &rec.Format, &rec.FilenameSHA256,
 		&rec.AssetsCreated, &rec.AssetsUpdated, &rec.FindingsCreated, &rec.FindingsUpdated,
-		&rec.Components, &rec.Statements, &rec.Skipped, &rec.VEXStored, &rec.VEXClosed, &rec.CreatedAt)
+		&rec.Components, &rec.Statements, &rec.Skipped, &rec.VEXStored, &rec.VEXRequested, &rec.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, shared.ErrNotFound
 	}

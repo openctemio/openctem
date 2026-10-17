@@ -37,11 +37,11 @@ func TestMarkDuplicateOf_RepositoryRechecksUnderLock(t *testing.T) {
 		{name: "another tenant's finding", dup: b, of: foreign, approve: true, notFound: true},
 		{name: "into another tenant", dup: foreign, of: a, approve: true, notFound: true},
 		{name: "other asset", dup: b, of: away, approve: true, wantErr: vulnerability.ErrDuplicateOtherAsset},
-		{name: "approval disposition", dup: b, of: accepted, wantErr: vulnerability.ErrDuplicateNeedsApproval},
+		{name: "approval disposition", dup: b, of: accepted, wantErr: vulnerability.ErrDuplicateCarriesDisposition},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := repo.MarkDuplicateOf(ctx, f.tenant, tc.dup, tc.of, f.user.String(), tc.approve)
+			err := repo.MarkDuplicateOf(ctx, f.tenant, tc.dup, tc.of, f.user.String())
 			switch {
 			case tc.notFound && !errors.Is(err, shared.ErrNotFound):
 				t.Fatalf("got %v, want not found", err)
@@ -60,13 +60,13 @@ func TestMarkDuplicateOf_RepositoryRechecksUnderLock(t *testing.T) {
 	}
 
 	// The real merge, then a second one into the tombstone is refused.
-	if err := repo.MarkDuplicateOf(ctx, f.tenant, b, a, f.user.String(), false); err != nil {
+	if err := repo.MarkDuplicateOf(ctx, f.tenant, b, a, f.user.String()); err != nil {
 		t.Fatal(err)
 	}
 	if s := f.state(b); s.status != "duplicate" || s.duplicateOf.String != a.String() {
 		t.Fatalf("not merged: %+v", s)
 	}
-	if err := repo.MarkDuplicateOf(ctx, f.tenant, a, b, f.user.String(), true); !errors.Is(err, vulnerability.ErrDuplicateAlreadyMerged) {
+	if err := repo.MarkDuplicateOf(ctx, f.tenant, a, b, f.user.String()); !errors.Is(err, vulnerability.ErrDuplicateAlreadyMerged) {
 		t.Fatalf("folding into a tombstone: %v", err)
 	}
 }

@@ -189,20 +189,24 @@ func TestMarkDuplicate_IsolationAndRules(t *testing.T) {
 		unchanged(p, a2)
 	})
 
-	t.Run("risk acceptance needs findings:approve", func(t *testing.T) {
-		accepted := h.dupFinding(h.assetA, "sast", "accepted")
-		open := h.dupFinding(h.assetA, "sast", "new")
-		// The harness member holds triage but not approve.
-		if status, body := h.markDup(h.memberA, false, nil, open, accepted); status != http.StatusForbidden {
-			t.Fatalf("closing an open finding under a risk acceptance = %d %.200s, want 403", status, body)
-		}
-		if status, _ := h.markDup(h.memberA, false, nil, accepted, open); status != http.StatusForbidden {
-			t.Fatalf("carrying a risk acceptance onto an open finding = %d, want 403", status)
-		}
-		unchanged(open, accepted)
+	t.Run("a merge never carries or closes under a disposition, even with findings:approve", func(t *testing.T) {
 		perms := append(append([]string{}, dsMemberPerms...), permission.FindingsApprove.String())
-		if status, body := h.markDup(h.memberA, false, perms, open, accepted); status != http.StatusOK {
-			t.Fatalf("with findings:approve = %d %.200s", status, body)
+		for _, disp := range []string{"accepted", "false_positive"} {
+			dispositioned := h.dupFinding(h.assetA, "sast", disp)
+			open := h.dupFinding(h.assetA, "sast", "new")
+			for _, pair := range [][2]shared.ID{{open, dispositioned}, {dispositioned, open}} {
+				for _, p := range [][]string{nil, perms} {
+					if status, body := h.markDup(h.memberA, false, p, pair[0], pair[1]); status != http.StatusConflict {
+						t.Fatalf("%s: %s -> %s perms=%d = %d %.200s, want 409", disp, pair[0], pair[1], len(p), status, body)
+					}
+				}
+			}
+			unchanged(open, dispositioned)
+		}
+		// The same decision on both sides is a plain duplicate: nothing moves.
+		a1, a2 := h.dupFinding(h.assetA, "sast", "accepted"), h.dupFinding(h.assetA, "sast", "accepted")
+		if status, body := h.markDup(h.memberA, false, nil, a1, a2); status != http.StatusOK {
+			t.Fatalf("same decision on both = %d %.200s", status, body)
 		}
 	})
 }

@@ -162,7 +162,7 @@ type ImportVEXSummary struct {
 	Unmatchable int    `json:"unmatchable"`
 	Matched     int    `json:"matched"`
 	Stored      int    `json:"stored"`
-	Closed      int    `json:"closed"`
+	Requested   int    `json:"requested"`
 	WouldClose  int    `json:"would_close"`
 	Mode        string `json:"mode"`
 }
@@ -183,7 +183,7 @@ type ImportIngestSummary struct {
 // Import handles POST /api/v1/findings/import.
 //
 // @Summary      Import results from another tool
-// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. With dry_run=true the files are only parsed and counted. The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is auto-resolved, and a VEX not_affected statement closes findings only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part.
+// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. With dry_run=true the files are only parsed and counted. The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is auto-resolved, and a VEX not_affected statement only requests a false positive (a pending request that a second person decides under the approval policy), and only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part.
 // @Tags         Findings
 // @Accept       multipart/form-data
 // @Produce      json
@@ -443,7 +443,7 @@ func toImportFileResponse(fr *findingimport.FileResult) ImportFileResponse {
 	}
 	if v := fr.VEX; v != nil {
 		out.VEX = &ImportVEXSummary{Statements: v.Statements, Unmatchable: v.Unmatchable, Matched: v.Matched,
-			Stored: v.Stored, Closed: v.Closed, WouldClose: v.WouldClose, Mode: v.Mode}
+			Stored: v.Stored, Requested: v.Requested, WouldClose: v.WouldClose, Mode: v.Mode}
 	}
 	if o := fr.Ingest; o != nil {
 		out.Ingest = &ImportIngestSummary{
@@ -473,7 +473,7 @@ func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Re
 	importIDs := make([]string, 0, len(results))
 	names := make([]string, 0, len(results))
 	formats := make([]string, 0, len(results))
-	var assetsC, assetsU, skipped, findC, findU, failed, vexStored, vexClosed, vexWould int
+	var assetsC, assetsU, skipped, findC, findU, failed, vexStored, vexRequested, vexWould int
 	var vexIDs []string
 	for i := range results {
 		fr := &results[i]
@@ -494,7 +494,7 @@ func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Re
 		}
 		if v := fr.VEX; v != nil {
 			vexStored += v.Stored
-			vexClosed += v.Closed
+			vexRequested += v.Requested
 			vexWould += v.WouldClose
 			for _, id := range v.FindingIDs {
 				if len(vexIDs) < maxAuditedImportIDs {
@@ -523,13 +523,13 @@ func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Re
 		WithMetadata("findings_created", findC).
 		WithMetadata("findings_updated", findU).
 		WithMetadata("vex_stored", vexStored).
-		WithMetadata("vex_closed", vexClosed).
+		WithMetadata("vex_requested", vexRequested).
 		WithMetadata("vex_would_close", vexWould)
 	_ = h.audit.LogEvent(r.Context(), actx, event)
 
 	if len(vexIDs) > 0 && !req.DryRun {
 		action := auditdom.ActionIngestVEXDryRun
-		if vexClosed > 0 {
+		if vexRequested > 0 {
 			action = auditdom.ActionIngestVEXApplied
 		}
 		ve := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeIngest, req.SessionID).
@@ -538,10 +538,10 @@ func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Re
 			WithMetadata("source", "finding_import").
 			WithMetadata("import_ids", importIDs).
 			WithMetadata("mode", string(h.svc.VEXMode())).
-			WithMetadata("closed", vexClosed).
+			WithMetadata("requested", vexRequested).
 			WithMetadata("would_close", vexWould).
 			WithMetadata("finding_ids", vexIDs).
-			WithMetadata("finding_ids_truncated", vexClosed+vexWould > len(vexIDs))
+			WithMetadata("finding_ids_truncated", vexRequested+vexWould > len(vexIDs))
 		_ = h.audit.LogEvent(r.Context(), actx, ve)
 	}
 }

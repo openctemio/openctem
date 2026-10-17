@@ -226,7 +226,7 @@ and SBOM import write it.
 | `POST /api/v1/findings` | `findings:write` |
 | `DELETE /api/v1/findings/{id}` | `findings:delete` |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
-| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; also `findings:approve` when either finding is a false positive or risk acceptance (service check). Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
+| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
@@ -276,7 +276,10 @@ and SBOM import write it.
 > for the same disposition applies it, and `/{id}/disposition/reject` drops it
 > (the requester's own reject cancels). The requester never confirms their own
 > request; the owner may, only when nobody else holds the route's permissions
-> (audited Critical). Low and medium exposures keep the one-step path. See
+> (audited Critical). Low and medium exposures keep the one-step path. The
+> rule reads the **highest** severity the exposure ever had
+> (`exposure_events.peak_severity`, only raised), so re-ingesting the same
+> exposure with a lower severity does not turn it into a one-step decision. See
 > [finding-status-lifecycle.md](finding-status-lifecycle.md#four-eyes-on-exposure-dispositions).
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
@@ -1293,10 +1296,27 @@ could otherwise widen anyone's scope, their own included:
 |---|---|
 | `POST /groups/{g}/assets`, `/assets/bulk` | only assets in their scope; another asset answers 404 (bulk: counted as failed) |
 | `POST /groups/{g}/members` | only when every asset the group holds is in their scope (403 otherwise); never themselves: joining a group needs full data access (admin or a `has_full_data_access` role), 403 otherwise |
+| `DELETE /groups/{g}/scope-rules/{r}` | only when every asset the group holds and every asset the rule assigned is in their scope (403 otherwise); the scope rows are rebuilt for the rule's organization only |
 | `POST/PUT /groups/{g}/scope-rules` | refused (403): a rule adds every matching asset, now and later, so it cannot be capped when it is written |
 | `PUT /groups/{g}` with `is_active` (switch a team on or off) | the whole group must be in their scope, the security pool group needs step-up (as for delete). Switching a team **on** also re-grants its bound roles, so it is treated as a grant: each bound role passes the binding ceiling, a privileged role needs the owner plus step-up, and a member cannot revive their own team unless they are the owner or hold full data access. Every flip, and a group delete, drops the members' cached permissions |
 | `/assets/{id}/access-grants`, a group owner on `/assets/{id}/owners` | already limited to assets the caller sees (route guard on `/assets/{id}`) |
 
+**Counts follow the reader.** For a caller restricted to their scope rows,
+these counts cover only the assets they can see: `asset_count` on `GET
+/groups`, `asset_count` / `finding_count` / `critical_finding_count` /
+`avg_risk_score` on business units (the stored rollups stay organization-wide
+and are replaced in the response), the asset, crown-jewel and in-business-unit
+counts of `GET /scoping/summary`, `asset_breakdown` and `risk_score` of `GET
+/attack-surface/stats`, and the exposure-chain `summary` (recomputed from the
+chains the caller may see). Counts that stay organization-wide, because they
+count configuration and expose no asset name or id: the business service,
+business unit, boundary, attacker profile, threat model and cycle totals of
+`/scoping/summary`, the attack-path `summary`, and threat-model rollups.
+
+**Team membership end dates are read at scope time.** A membership whose
+`expires_at` has passed grants no data scope even before the expiry
+controller deletes the row: the scope refresh functions skip expired
+memberships (migration `002903`), the same rule team roles already follow.
 Objects that feed the risk of the assets they link follow the same rule
 (`Enforcer.RequireActOnAssets` / `RequireActOnFindings`): linking an asset or
 finding to a **compensating control** admits only ids the caller can see (404
@@ -1599,6 +1619,10 @@ a personal address, or be a work domain nobody has verified.
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
 | `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
 | `GET /dashboard/executive-summary` (+ export) `top_risks` | bypass | filtered |
+| `GET /dashboard/executive-summary` (+ export) totals, `/dashboard/velocity`, `/dashboard/data-quality`, `/dashboard/process-metrics` | **bypass (organization-wide totals)** | count the viewer's own scope (same rule as `/dashboard/stats`: `dashboard:aggregate` or full data access for the organization); the executive score change and the data-quality deduplication rate are not reported for a restricted viewer |
+| `GET /dashboard/risk-trend`, `GET /dashboard/program-metrics` | **bypass (organization-wide history and KPIs)** | kept for the whole organization: a restricted viewer without `dashboard:aggregate` gets an empty trend and a 403 on the program metrics |
+| `GET/PUT/POST/DELETE /suppressions...` | **bypass (rule patterns of any asset; an organization-wide rule could be approved by a restricted approver)** | an asset-bound rule needs its asset in the caller's scope to be read, edited, approved or deleted (404 otherwise) and is left out of the list; an organization-wide rule needs full data access to create, edit, approve or delete |
+| MCP `get_finding`, `explain_priority`, `list_finding_transitions`, `add_finding_comment` (by-id read, `GetFindingWithScope`) | **bypass (private program findings of a full-data role)** | the same decision as the route guard (`datascope.Enforcer`): a full-data role does not read a private bug-bounty program's findings it is not a member of; scope rows apply to everyone else |
 | `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
