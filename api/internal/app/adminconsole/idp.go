@@ -484,7 +484,7 @@ func (s *Service) CompleteIdPLogin(ctx context.Context, cookieState, state, code
 		return nil, s.failIdP(ctx, idpFailure{reason: "administrator inactive, locked or account suspended", admin: a}, client)
 	}
 
-	if note, ok := trustedIdPMFA(p, claims); ok {
+	if note, ok := trustedIdPMFA(p, claims); ok && !s.webAuthnOverridesIdPMFA(ctx, a) {
 		token, err := s.openVerifiedSession(ctx, a, admin.AuthMethodIdP, client, "identity provider; second factor by the IdP ("+note+")")
 		if err != nil {
 			return nil, err
