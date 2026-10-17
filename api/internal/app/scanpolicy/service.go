@@ -104,6 +104,7 @@ type Service struct {
 	mail     Mailer
 	tenants  TenantNotifier
 	ceilings TierCeilings
+	optOut   SharedSensorsOptOut
 	log      *logger.Logger
 
 	mu       sync.Mutex
