@@ -330,7 +330,6 @@ type TenantMembershipResponse struct {
 	Slug        string    `json:"slug"`
 	Description string    `json:"description,omitempty"`
 	LogoURL     string    `json:"logo_url,omitempty"`
-	Plan        string    `json:"plan"`
 	Role        string    `json:"role"`
 	JoinedAt    time.Time `json:"joined_at"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -389,7 +388,6 @@ func (h *UserHandler) MyTenantsResponse(ctx context.Context, userID shared.ID) (
 			Slug:            t.Tenant.Slug(),
 			Description:     t.Tenant.Description(),
 			LogoURL:         t.Tenant.LogoURL(),
-			Plan:            string(t.Tenant.Plan()),
 			Role:            t.Role.String(),
 			JoinedAt:        t.JoinedAt,
 			CreatedAt:       t.Tenant.CreatedAt(),

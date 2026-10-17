@@ -21,6 +21,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorEnrollmentToken } from '../api/use-scan-policy'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 export const SHARED_SENSOR_TOKEN_ENV = 'SENSOR_INSTANCE_ENROLLMENT_TOKEN'
 
@@ -41,6 +42,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
   const [ttl, setTtl] = useState(60)
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -159,7 +161,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
         }}
         title={t('admin.sharedSensorEnroll.confirmTitle')}
         desc={<p>{t('admin.sharedSensorEnroll.confirmDesc')}</p>}
-        disabled={code.trim().length < 6 || !reason.trim()}
+        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim()}
         isLoading={busy}
         handleConfirm={() => void issue()}
         confirmText={
@@ -195,6 +197,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
               maxLength={8}
               aria-invalid={!!codeError}
             />
+            <StepUpCodeHint optional={codeOptional} />
             {codeError && <p className="text-sm text-destructive">{codeError}</p>}
           </div>
         </div>

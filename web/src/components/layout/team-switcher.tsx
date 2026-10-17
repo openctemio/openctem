@@ -3,7 +3,7 @@
 /**
  * Organization context row (sidebar header).
  *
- * Names the current organization and its plan. Clicking it always opens the
+ * Names the current organization. Clicking it always opens the
  * organization card (org-card.tsx): role, member count, ID, the API keys link,
  * and, when there is a choice, the other organizations and "Create
  * organization". The chevron only shows when there is something to do
@@ -35,7 +35,7 @@ import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-o
 import { useMemberStats } from '@/features/organization/api/use-members'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { useDisplayUser } from '@/hooks/use-display-user'
-import { OrgCard, orgInitials, useOrgLabels, type OrgCardOrganization } from './org-card'
+import { OrgCard, orgInitials, type OrgCardOrganization } from './org-card'
 
 const CREATE_ORGANIZATION_URL = '/settings/tenant/create'
 
@@ -46,7 +46,6 @@ function isClipboardTextarea(target: EventTarget | null): boolean {
 export function TeamSwitcher() {
   const router = useRouter()
   const { t } = useTranslation()
-  const labels = useOrgLabels()
   const { canCreate } = useCanCreateOrganization()
   const { isMobile } = useSidebar()
   const { setOpenMobile } = useSidebarActions()
@@ -159,10 +158,6 @@ export function TeamSwitcher() {
   }, [closeAll, router])
 
   const currentName = currentTenant?.name || currentTenant?.slug || ''
-  // The tenant cookie carries no plan; the membership list does.
-  const currentPlan =
-    currentTenant?.plan ?? tenants.find((o) => o.id === currentTenant?.id)?.plan ?? undefined
-  const plan = labels.plan(currentPlan)
   // Something to do besides reading: another organization, or creating one.
   const hasActions = tenants.length > 1 || canCreate
 
@@ -239,11 +234,6 @@ export function TeamSwitcher() {
               <span className="min-w-0 flex-1 truncate text-start text-sm font-semibold group-data-[collapsible=icon]:hidden">
                 {currentName}
               </span>
-              {plan && (
-                <span className="shrink-0 text-xs font-normal text-muted-foreground group-data-[collapsible=icon]:hidden">
-                  {plan}
-                </span>
-              )}
               {hasActions && (
                 <ChevronsUpDown
                   className="size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden"
@@ -271,7 +261,6 @@ export function TeamSwitcher() {
               current={{
                 id: currentTenant.id,
                 name: currentName,
-                plan: currentPlan,
                 role: currentTenant.role,
               }}
               organizations={organizations}

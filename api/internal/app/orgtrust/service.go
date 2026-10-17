@@ -61,32 +61,19 @@ type Members interface {
 	TenantName(ctx context.Context, tenantID shared.ID) string
 }
 
-// SSOEntitlement reports whether an organization's plan includes single
-// sign-on features (trusts need it on the host). nil: every plan does.
-type SSOEntitlement interface {
-	HasSSO(ctx context.Context, tenantID shared.ID) (bool, error)
-}
-
-// ErrPlanLacksSSO refuses a trust on a plan without single sign-on.
-var ErrPlanLacksSSO = fmt.Errorf("%w: trusted organizations need a plan with single sign-on", shared.ErrForbidden)
-
 // Service manages trusts.
 type Service struct {
-	repo        orgtrust.Repository
-	owners      DomainOwnerLookup
-	members     Members
-	audit       *auditapp.AuditService
-	entitlement SSOEntitlement
-	logger      *logger.Logger
+	repo    orgtrust.Repository
+	owners  DomainOwnerLookup
+	members Members
+	audit   *auditapp.AuditService
+	logger  *logger.Logger
 }
 
 // NewService builds the trust service.
 func NewService(repo orgtrust.Repository, owners DomainOwnerLookup, members Members, auditSvc *auditapp.AuditService, log *logger.Logger) *Service {
 	return &Service{repo: repo, owners: owners, members: members, audit: auditSvc, logger: log.With("service", "org_trust")}
 }
-
-// SetSSOEntitlement wires the plan check.
-func (s *Service) SetSSOEntitlement(e SSOEntitlement) { s.entitlement = e }
 
 // View is a trust seen from one of its organizations.
 type View struct {
@@ -119,9 +106,6 @@ func (s *Service) List(ctx context.Context, tenantID shared.ID) ([]View, error) 
 // Request asks to trust the organization that holds homeDomain. The caller
 // is an owner of host (route) who re-authenticated (route).
 func (s *Service) Request(ctx context.Context, host shared.ID, actor shared.ID, homeDomain string, settings orgtrust.Settings, actx auditapp.AuditContext) (*View, error) {
-	if err := s.requireSSO(ctx, host); err != nil {
-		return nil, err
-	}
 	home, ok, err := s.owners.OwnerOfDomain(ctx, homeDomain)
 	if err != nil {
 		return nil, fmt.Errorf("look up the domain holder: %w", err)
@@ -225,20 +209,6 @@ func (s *Service) Revoke(ctx context.Context, tenantID, id shared.ID, actx audit
 	s.members.NotifyAdmins(ctx, other, "A trust between organizations ended",
 		fmt.Sprintf("%s ended the trust with your organization.", s.members.TenantName(ctx, tenantID)),
 		notificationdom.SeverityMedium)
-	return nil
-}
-
-func (s *Service) requireSSO(ctx context.Context, host shared.ID) error {
-	if s.entitlement == nil {
-		return nil
-	}
-	ok, err := s.entitlement.HasSSO(ctx, host)
-	if err != nil {
-		return fmt.Errorf("check the plan: %w", err)
-	}
-	if !ok {
-		return ErrPlanLacksSSO
-	}
 	return nil
 }
 
