@@ -908,8 +908,10 @@ attacker reaching the console from outside the allowed networks.
   only those (never a tenant cookie or token).
 - **CSRF.** Every state-changing request to the console proxy must carry the
   console's own origin in `Origin` (a tenant page's origin differs by host or
-  port and is refused) and the double-submit token; the API checks the pair
-  again.
+  port and is refused) and the console's token, which is bound to the session
+  (HMAC of the session secret under a server key; see Security notes). The
+  API verifies the binding, so a cookie planted by a tenant page on the same
+  host cannot satisfy it.
 - **Headers.** Console pages carry the headers listed under Isolation model;
   a tenant page cannot frame the console, keep a window handle on it, embed
   its resources or read its responses.
@@ -929,9 +931,9 @@ token is never set in a readable cookie.
 
 ### Upgrade
 
-- The console moves from `https://<host>:8444/admin` to
-  `https://<host>:8443/` (port mode) or `https://<OPENCTEM_ADMIN_HOST>/` (host
-  mode). Update bookmarks; a platform identity provider's redirect URI becomes
+- The console moves from `https://<host>/admin` to `https://<host>:8443/`
+  (port mode) or `https://<OPENCTEM_ADMIN_HOST>/` (host mode); the all-in-one
+  image publishes 8443 for it. Update bookmarks; a platform identity provider's redirect URI becomes
   `<console origin>/login/callback`.
 - A deployment that publishes or proxies the API's sensor listener directly
   (`:8443`) changes it to `:9443`, or sets `SENSOR_MTLS_LISTEN_ADDR` and
@@ -942,11 +944,14 @@ token is never set in a readable cookie.
 ### Delivery
 
 Small pull requests, in order: the gateway, Compose and configuration (port
-8443, the four settings, sensor listener 9443, this revision); the console's
-CSRF token in the response body and the shorter idle timeout (API); the
-console app and its image, with `/admin` removed from the tenant app; the
-release pipeline for `openctem-console`; `OPENCTEM_PLANE` in the API; the
-Helm chart; the Ansible kit; the documentation.
+8443, the four settings, sensor listener 9443, this revision: #2438); the
+console's CSRF token in the response body and the shorter idle timeout
+(#2439), bound to the session with no-store responses (#2447); sensor ALPN
+routing only on the main listener (#2448); the console app and its image,
+with `/admin` removed from the tenant app (#2442); the release pipeline for
+`openctem-console` and the all-in-one image (#2443); `OPENCTEM_PLANE` in the
+API (#2444); the Helm chart and the Ansible kit (their repositories); the
+documentation.
 
 ## Later phases
 
