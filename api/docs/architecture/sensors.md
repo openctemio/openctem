@@ -585,11 +585,30 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   | Verified domain before platform sensors scan (`platform_sensor_proof`) | off | on |
   | Shared sensors may scan internal zones (`shared_sensor_internal_zones`) | off | off |
 
-  The internal-zones setting is stored but **not enforced yet**: nothing
-  reads it until instance scan zones and their signed zone ranges land
-  (RFC-100 §6.1). Its GET answers `enforced: false` and the console labels
-  the card "Not enforced yet". Whether a self-hosted install defaults it on
-  is decided when it is wired.
+  The internal-zones setting is enforced by instance scan zones (below);
+  its GET answers `enforced: true`. It stays **off by default on self-hosted
+  installs too**: an administrator turns it on explicitly, after creating
+  zones, until sensors that apply the signed zone ranges are released.
+- **Instance scan zones** (RFC-100 §6.1). Tables `instance_scan_zones`
+  (name, description, `ranges cidr[]`, private only), `instance_scan_zone_sensors`
+  (a trigger accepts only `scope = 'instance'` sensors) and
+  `instance_scan_zone_tenants`; `commands.instance_scan_zone_id` (only on a
+  shared job, CHECK). Console: `/api/v1/admin/instance-scan-zones` (any
+  administrator reads; create, change, delete, set sensors and assign
+  organizations need a super admin, a reason and route step-up; critical
+  admin audit; each change goes to the job signer's zone ledger first).
+  Routing: a **single scan** at the trigger whose internal targets are
+  addresses or ranges goes to shared sensors only when the internal-zones
+  setting is on and one zone assigned to the organization (with at least one
+  sensor) contains them all; the narrowest zone wins, and the job is stamped
+  with it. The lookup reads only the organization's own assignments
+  (`ListForTenant`, filtered again in the service), so the same private range
+  assigned to two organizations never mixes. Internal names, asset groups and
+  workflow steps keep the public-only rule. When the job is claimed, the
+  zone's id and ranges go into the **signed statement** (`zone`), never into
+  the payload; the signer checks them against its zone ledger (assignment,
+  serving sensor, exact ranges) and the sensor reaches private addresses only
+  inside them. A deleted zone leaves its queued jobs unsigned.
 
   Once an administrator saves a value in Console > System > Platform
   scanning, the stored value wins. The GET routes return the value in force,
