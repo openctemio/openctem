@@ -1,3 +1,4 @@
+-- expand-contract-ok: every row is backfilled to true first and the old api always writes a bool (never NULL) for include_details, so the NOT NULL cannot reject an old pod write.
 -- Least privilege for sensor facts and the credential store.
 --
 -- 1. The Researcher role template (v2) no longer carries sensors:read: a
