@@ -25,14 +25,18 @@ sev='map(select((.rule.security_severity_level // "") | IN("medium","high","crit
 
 fetch() { # fetch <ref> -> JSON array of open alerts at medium or above
   gh api --paginate "repos/${REPO}/code-scanning/alerts?ref=${1}&state=open&per_page=100" \
-    | jq -s "add // [] | ${sev}"
+    | jq -s "add // [] | ${sev} | map({number, html_url, rule: {id: .rule.id, security_severity_level: .rule.security_severity_level}, most_recent_instance: {location: .most_recent_instance.location}})"
 }
 
-pr_json="$(fetch "refs/pull/${PR_NUMBER}/merge")"
-base_json="$(fetch "refs/heads/${BASE_REF}")"
+# The alert lists can be thousands long (a release pull request against a far-behind
+# branch), more than a command line can carry, so they go through files.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+fetch "refs/pull/${PR_NUMBER}/merge" >"$work/pr.json"
+fetch "refs/heads/${BASE_REF}" >"$work/base.json"
 
-new="$(jq -n --argjson pr "$pr_json" --argjson base "$base_json" \
-  '($base | map(.number)) as $b | $pr | map(select(.number as $n | $b | index($n) | not))')"
+new="$(jq -n --slurpfile pr "$work/pr.json" --slurpfile base "$work/base.json" \
+  '($base[0] | map(.number)) as $b | $pr[0] | map(select(.number as $n | $b | index($n) | not))')"
 count="$(jq 'length' <<<"$new")"
 
 if [[ "$count" -eq 0 ]]; then

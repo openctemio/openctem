@@ -75,6 +75,9 @@ import (
 // one wired. Kept as a helper so handlers.go stays declarative.
 func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Services) *handler.CompensatingControlHandler {
 	h := handler.NewCompensatingControlHandler(db, log)
+	if svc != nil {
+		h.WithDataScope(svc.DataScope)
+	}
 	if svc != nil && svc.ControlChangePub != nil {
 		h.SetChangePublisher(svc.ControlChangePub)
 	}
@@ -718,7 +721,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
-		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log),
+		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log).WithDataScope(svc.DataScope),
 
 		// Platform scanning: the shared platform sensors as a service the
 		// tenant may use, never the sensors themselves.

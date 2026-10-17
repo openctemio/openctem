@@ -43,9 +43,11 @@ type Repository interface {
 	// fingerprints that are about a package version.
 	FindingsByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) ([]FindingRef, error)
 	// WriteEffects applies the effects (each guarded by its OldStatus) and
-	// records a status_changed activity for each status move. Returns the
-	// ids whose status moved.
-	WriteEffects(ctx context.Context, tenantID shared.ID, effects []Effect) ([]shared.ID, error)
+	// records a status_changed activity for each status move and opens a
+	// pending false positive approval request for each RequestFalsePositive
+	// effect. Returns the ids whose status moved and the ids a request was
+	// opened for.
+	WriteEffects(ctx context.Context, tenantID shared.ID, effects []Effect) (moved, requested []shared.ID, err error)
 
 	// ResolveProduct returns the package product a tenant's statement can
 	// name for a package URL identity: the tenant's own product first, then

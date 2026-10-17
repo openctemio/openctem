@@ -155,14 +155,14 @@ describe('VEX import', () => {
         action: 'create',
       },
     ],
-    applied: { matched: 0, closed: 0, reopened: 0 },
+    applied: { matched: 0, closed: 0, requested: 0, reopened: 0 },
   }
 
   it('previews first, then imports for every asset', async () => {
     importVexDocument.mockResolvedValueOnce(preview).mockResolvedValueOnce({
       ...preview,
       dry_run: false,
-      applied: { matched: 2, closed: 2, reopened: 0 },
+      applied: { matched: 2, closed: 0, requested: 2, reopened: 0 },
     })
     const onImported = vi.fn()
     render(<VexImportDialog open onOpenChange={() => {}} onImported={onImported} />)
@@ -180,7 +180,9 @@ describe('VEX import', () => {
       expect(importVexDocument).toHaveBeenLastCalledWith({ statements: [] }, null, false)
     )
     expect(onImported).toHaveBeenCalled()
-    expect(await screen.findByText('2 findings closed, 0 reopened.')).toBeTruthy()
+    expect(
+      await screen.findByText('2 false positive requests, 0 findings resolved, 0 reopened.')
+    ).toBeTruthy()
   })
 
   it('refuses a file over the size limit without reading it', async () => {
