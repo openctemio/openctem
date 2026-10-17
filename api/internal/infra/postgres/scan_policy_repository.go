@@ -277,6 +277,100 @@ func (r *ScanPolicyRepository) SetSharedSensorsAccess(ctx context.Context, tenan
 	return nil
 }
 
+// getPlatformSetting decodes the stored value of key into dst and returns
+// its version, or scanpolicy.ErrNotFound when nothing is stored.
+func (r *ScanPolicyRepository) getPlatformSetting(ctx context.Context, key string, dst any) (int, error) {
+	var raw []byte
+	var version int
+	err := r.db.QueryRowContext(ctx, `SELECT value, version FROM platform_settings WHERE key = $1`, key).Scan(&raw, &version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, scanpolicy.ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("get platform setting %s: %w", key, err)
+	}
+	if err := json.Unmarshal(raw, dst); err != nil {
+		return 0, fmt.Errorf("decode platform setting %s: invalid value", key)
+	}
+	return version, nil
+}
+
+// putPlatformSetting stores value under key when the stored version is
+// expectedVersion (0: nothing stored yet), and returns the new version.
+func (r *ScanPolicyRepository) putPlatformSetting(ctx context.Context, key string, value any, expectedVersion int, by string, at time.Time) (int, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return 0, err
+	}
+	var version int
+	if expectedVersion == 0 {
+		err = r.db.QueryRowContext(ctx, `
+			INSERT INTO platform_settings (key, value, version, source, updated_by, updated_at)
+			VALUES ($1, $2, 1, 'console', $3, $4)
+			ON CONFLICT (key) DO NOTHING
+			RETURNING version`, key, raw, by, at).Scan(&version)
+	} else {
+		err = r.db.QueryRowContext(ctx, `
+			UPDATE platform_settings
+			   SET value = $2, version = version + 1, source = 'console', updated_by = $3, updated_at = $4
+			 WHERE key = $1 AND version = $5
+			RETURNING version`, key, raw, by, at, expectedVersion).Scan(&version)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, scanpolicy.ErrVersionConflict
+	}
+	if err != nil {
+		return 0, fmt.Errorf("set platform setting %s: %w", key, err)
+	}
+	return version, nil
+}
+
+var _ scanpolicy.InternalZonesStore = (*ScanPolicyRepository)(nil)
+
+type internalZonesValue struct {
+	Allowed *bool `json:"allowed"`
+}
+
+// GetInternalZones returns whether shared sensors may scan internal zones,
+// or scanpolicy.ErrNotFound when nothing is stored.
+func (r *ScanPolicyRepository) GetInternalZones(ctx context.Context) (bool, int, error) {
+	var v internalZonesValue
+	version, err := r.getPlatformSetting(ctx, scanpolicy.InternalZonesSettingKey, &v)
+	if err != nil {
+		return false, 0, err
+	}
+	if v.Allowed == nil {
+		return false, 0, fmt.Errorf("decode shared sensor internal zones setting: invalid value")
+	}
+	return *v.Allowed, version, nil
+}
+
+// SetInternalZones stores the setting (optimistic concurrency).
+func (r *ScanPolicyRepository) SetInternalZones(ctx context.Context, allowed bool, expectedVersion int, by string, at time.Time) (int, error) {
+	return r.putPlatformSetting(ctx, scanpolicy.InternalZonesSettingKey, internalZonesValue{Allowed: &allowed}, expectedVersion, by, at)
+}
+
+var _ scanpolicy.AnomalyThresholdsStore = (*ScanPolicyRepository)(nil)
+
+// GetAnomalyThresholds returns the shared sensor anomaly thresholds, or
+// scanpolicy.ErrNotFound when nothing is stored.
+func (r *ScanPolicyRepository) GetAnomalyThresholds(ctx context.Context) (scanpolicy.AnomalyThresholds, int, error) {
+	var v scanpolicy.AnomalyThresholds
+	version, err := r.getPlatformSetting(ctx, scanpolicy.AnomalyThresholdsSettingKey, &v)
+	if err != nil {
+		return scanpolicy.AnomalyThresholds{}, 0, err
+	}
+	if err := v.Validate(); err != nil {
+		return scanpolicy.AnomalyThresholds{}, 0, fmt.Errorf("decode shared sensor anomaly thresholds: invalid value")
+	}
+	return v, version, nil
+}
+
+// SetAnomalyThresholds stores the thresholds (optimistic concurrency).
+func (r *ScanPolicyRepository) SetAnomalyThresholds(ctx context.Context, t scanpolicy.AnomalyThresholds, expectedVersion int, by string, at time.Time) (int, error) {
+	return r.putPlatformSetting(ctx, scanpolicy.AnomalyThresholdsSettingKey, t, expectedVersion, by, at)
+}
+
 var _ scanpolicy.SharedSensorsEgressStore = (*ScanPolicyRepository)(nil)
 
 // GetSharedSensorsEgress returns the shared sensor egress list, or
