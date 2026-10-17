@@ -44,7 +44,7 @@ func (r *SharedFleetRepository) ListSharedSensors(ctx context.Context) ([]sensor
 		SELECT s.id, s.name, COALESCE(s.region, ''), s.status, COALESCE(s.health, ''), COALESCE(s.version, ''),
 		       COALESCE(`+sensorDispatchTools("s")+`, '{}'::text[]),
 		       (SELECT count(*) FROM commands ac
-		         WHERE (ac.sensor_id = s.id OR ac.platform_sensor_id = s.id)
+		         WHERE ac.sensor_id = s.id
 		           AND ac.status IN ('acknowledged', 'running'))::int,
 		       COALESCE(s.effective_max_jobs, 0), s.last_seen_at, s.created_at
 		FROM sensors s
@@ -144,15 +144,13 @@ func (r *SharedFleetRepository) SharedQueue(ctx context.Context) (sensorapp.Shar
 }
 
 const sharedJobColumns = `c.id, c.tenant_id, COALESCE(t.name, ''), c.type, ` + sharedJobTool + `, c.status,
-	COALESCE(c.platform_sensor_id, CASE WHEN s.scope = 'instance' THEN c.sensor_id END), COALESCE(ps.name, s2.name, ''),
+	CASE WHEN s.scope = 'instance' THEN c.sensor_id END, CASE WHEN s.scope = 'instance' THEN s.name ELSE '' END,
 	c.created_at, c.started_at, c.completed_at`
 
 const sharedJobFrom = `
 	FROM commands c
 	LEFT JOIN tenants t ON t.id = c.tenant_id
-	LEFT JOIN sensors s ON s.id = c.sensor_id
-	LEFT JOIN sensors ps ON ps.id = c.platform_sensor_id AND ps.scope = 'instance'
-	LEFT JOIN sensors s2 ON s2.id = c.sensor_id AND s2.scope = 'instance'`
+	LEFT JOIN sensors s ON s.id = c.sensor_id`
 
 func scanSharedJob(row interface{ Scan(...any) error }, extra ...any) (sensorapp.SharedJob, error) {
 	var (
@@ -195,7 +193,7 @@ func (r *SharedFleetRepository) ListSharedJobs(ctx context.Context, f sensorapp.
 	var args []any
 	if f.SensorID != nil {
 		args = append(args, f.SensorID.String())
-		conds = append(conds, fmt.Sprintf("(c.platform_sensor_id = $%d OR c.sensor_id = $%d)", len(args), len(args)))
+		conds = append(conds, fmt.Sprintf("c.sensor_id = $%d", len(args)))
 	}
 	if f.TenantID != nil {
 		args = append(args, f.TenantID.String())

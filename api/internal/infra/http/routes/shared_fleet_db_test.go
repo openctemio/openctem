@@ -50,7 +50,7 @@ func TestAdminSharedFleet_Routes_DB(t *testing.T) {
 	job := func(tenant, status, target string) string {
 		id := uuid.NewString()
 		payload, _ := json.Marshal(map[string]any{"scanner": "nuclei", "targets": []string{target}})
-		h.exec(`INSERT INTO commands (id, tenant_id, type, payload, status, is_platform_job, platform_sensor_id, error_message, result)
+		h.exec(`INSERT INTO commands (id, tenant_id, type, payload, status, is_platform_job, sensor_id, error_message, result)
 		        VALUES ($1, $2, 'scan', $3::jsonb, $4, TRUE, $5, 'dial secret-error.internal refused',
 		                '{"findings":[{"title":"result-secret-finding"}]}'::jsonb)`, id, tenant, string(payload), status, shared)
 		return id
