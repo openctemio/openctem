@@ -227,6 +227,61 @@ func (s *FindingActivityService) RecordStatusChange(
 	})
 }
 
+// LifecycleMove is a person's or a delegated actor's status move as the
+// timeline keeps it: the canonical statuses, the organization sub-statuses,
+// the lifecycle version and transition that decided it, and the inputs the
+// lifecycle asked for (RFC-110).
+type LifecycleMove struct {
+	TenantID, FindingID        string
+	ActorID                    *string
+	OldStatus, NewStatus       string
+	OldSubStatus, NewSubStatus *shared.ID
+	Reason, Source             string
+	LifecycleVersion           string
+	Transition                 string
+	Fields                     map[string]string
+}
+
+// RecordLifecycleMove records a status or sub-status move.
+func (s *FindingActivityService) RecordLifecycleMove(ctx context.Context, m LifecycleMove) (*vulnerability.FindingActivity, error) {
+	changes := map[string]any{
+		"old_status": m.OldStatus,
+		"new_status": m.NewStatus,
+	}
+	if m.Reason != "" {
+		changes["reason"] = m.Reason
+	}
+	if m.OldSubStatus != nil || m.NewSubStatus != nil {
+		changes["old_sub_status_id"] = idOrNil(m.OldSubStatus)
+		changes["new_sub_status_id"] = idOrNil(m.NewSubStatus)
+	}
+	if m.LifecycleVersion != "" {
+		changes["lifecycle_version"] = m.LifecycleVersion
+	}
+	if m.Transition != "" {
+		changes["transition"] = m.Transition
+	}
+	if len(m.Fields) > 0 {
+		changes["fields"] = m.Fields
+	}
+	return s.RecordActivity(ctx, RecordActivityInput{
+		TenantID:     m.TenantID,
+		FindingID:    m.FindingID,
+		ActivityType: string(vulnerability.ActivityStatusChanged),
+		ActorID:      m.ActorID,
+		ActorType:    string(vulnerability.ActorTypeUser),
+		Changes:      changes,
+		Source:       m.Source,
+	})
+}
+
+func idOrNil(id *shared.ID) any {
+	if id == nil {
+		return nil
+	}
+	return id.String()
+}
+
 // RecordIntegrationStatusChange records a status change made by an
 // integration (a Jira or GitHub webhook): actor type integration, source
 // webhook, with the integration and the ticket reference, so the history
