@@ -178,9 +178,9 @@ var Features = []Feature{
 	},
 	{
 		ID: "organization", Title: "Organization settings and audit",
-		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), plan, support access grants and the audit log.",
+		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), its limits, support access grants and the audit log.",
 		Registers: []string{
-			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationPlanRoutes", "registerOrganizationSupportAccessRoutes",
+			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes", "registerOrganizationSupportAccessRoutes",
 			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
 			"registerSharedSensorsSettingsRoutes",

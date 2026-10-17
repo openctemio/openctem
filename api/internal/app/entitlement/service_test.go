@@ -7,469 +7,461 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-type fakeRepo struct {
-	defaults  plan.Defaults
-	version   int
-	plans     map[shared.ID]plan.Plan
-	overrides map[shared.ID][]plan.Override
-	usage     map[plan.Key]int
-	ownedFree int
-	failUsage bool
-	// usageCalls records each Usage call's withFindings.
-	usageCalls []bool
-	failPlan   bool
-	saveErr    error
-	savedPlans []plan.Plan
+type memRepo struct {
+	defaults        limits.Limits
+	defaultsVersion int
+	lims            []limits.Limit
+	denies          []limits.FeatureDeny
+	grace           map[shared.ID]map[string]time.Time
+	usage           map[limits.Key]int
+	owned           int
+	err             error
+	usageCalls      int
 }
 
-func (f *fakeRepo) GetDefaults(context.Context) (plan.Defaults, int, error) {
-	if f.defaults == nil {
+func (m *memRepo) GetSelfServiceDefaults(context.Context) (limits.Limits, int, error) {
+	if m.err != nil {
+		return nil, 0, m.err
+	}
+	if m.defaults == nil {
 		return nil, 0, shared.ErrNotFound
 	}
-	return f.defaults, f.version, nil
+	return m.defaults, m.defaultsVersion, nil
 }
-
-func (f *fakeRepo) SaveDefaults(_ context.Context, d plan.Defaults, expected int, _ shared.ID, _ time.Time) (int, error) {
-	if f.saveErr != nil {
-		return 0, f.saveErr
-	}
-	if expected != f.version {
+func (m *memRepo) SaveSelfServiceDefaults(_ context.Context, l limits.Limits, v int, _ *shared.ID, _ time.Time) (int, error) {
+	if v != m.defaultsVersion {
 		return 0, shared.ErrConflict
 	}
-	f.defaults, f.version = d, f.version+1
-	return f.version, nil
+	m.defaults, m.defaultsVersion = l, v+1
+	return m.defaultsVersion, nil
 }
-
-func (f *fakeRepo) TenantPlan(_ context.Context, id shared.ID) (plan.Plan, bool, error) {
-	if f.failPlan {
-		return "", false, errors.New("db down")
+func (m *memRepo) ListLimits(_ context.Context, t shared.ID, o limits.Origin) ([]limits.Limit, error) {
+	if m.err != nil {
+		return nil, m.err
 	}
-	p, ok := f.plans[id]
-	return p, ok, nil
+	out := []limits.Limit{}
+	for _, l := range m.lims {
+		if l.TenantID == t && l.Origin == o {
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }
-
-func (f *fakeRepo) SetTenantPlan(_ context.Context, id shared.ID, p plan.Plan, _ *shared.ID, _ time.Time) error {
-	if f.plans == nil {
-		f.plans = map[shared.ID]plan.Plan{}
-	}
-	f.plans[id] = p
-	f.savedPlans = append(f.savedPlans, p)
+func (m *memRepo) SetLimit(_ context.Context, l limits.Limit) error {
+	_ = m.DeleteLimit(context.Background(), l.TenantID, l.Key, l.Origin)
+	m.lims = append(m.lims, l)
 	return nil
 }
-
-func (f *fakeRepo) ListOverrides(_ context.Context, id shared.ID) ([]plan.Override, error) {
-	return f.overrides[id], nil
-}
-
-func (f *fakeRepo) SetOverride(_ context.Context, o plan.Override) error {
-	if f.overrides == nil {
-		f.overrides = map[shared.ID][]plan.Override{}
-	}
-	f.overrides[o.TenantID] = append(f.overrides[o.TenantID], o)
-	return nil
-}
-
-func (f *fakeRepo) DeleteOverride(_ context.Context, id shared.ID, k plan.Key) error {
-	for i, o := range f.overrides[id] {
-		if o.Key == k {
-			f.overrides[id] = append(f.overrides[id][:i], f.overrides[id][i+1:]...)
+func (m *memRepo) DeleteLimit(_ context.Context, t shared.ID, k limits.Key, o limits.Origin) error {
+	for i, l := range m.lims {
+		if l.TenantID == t && l.Key == k && l.Origin == o {
+			m.lims = append(m.lims[:i], m.lims[i+1:]...)
 			return nil
 		}
 	}
 	return shared.ErrNotFound
 }
-
-func (f *fakeRepo) Usage(_ context.Context, _ shared.ID, withFindings bool) (map[plan.Key]int, error) {
-	f.usageCalls = append(f.usageCalls, withFindings)
-	if f.failUsage {
-		return nil, errors.New("db down")
+func (m *memRepo) ListDenies(_ context.Context, t shared.ID, o limits.Origin) ([]limits.FeatureDeny, error) {
+	if m.err != nil {
+		return nil, m.err
 	}
-	out := map[plan.Key]int{}
-	for k, v := range f.usage {
-		if k != plan.Findings || withFindings {
-			out[k] = v
+	out := []limits.FeatureDeny{}
+	for _, d := range m.denies {
+		if d.TenantID == t && d.Origin == o {
+			out = append(out, d)
 		}
 	}
 	return out, nil
 }
-
-func (f *fakeRepo) CountOwnedFreeTenants(context.Context, shared.ID) (int, error) {
-	return f.ownedFree, nil
+func (m *memRepo) SetDeny(_ context.Context, d limits.FeatureDeny) error {
+	_ = m.DeleteDeny(context.Background(), d.TenantID, d.Feature, d.Origin)
+	m.denies = append(m.denies, d)
+	return nil
 }
-
-type fakeAudit struct{ rows []*admin.AuditLog }
-
-func (a *fakeAudit) Create(_ context.Context, l *admin.AuditLog) error {
-	a.rows = append(a.rows, l)
+func (m *memRepo) DeleteDeny(_ context.Context, t shared.ID, f string, o limits.Origin) error {
+	for i, d := range m.denies {
+		if d.TenantID == t && d.Feature == f && d.Origin == o {
+			m.denies = append(m.denies[:i], m.denies[i+1:]...)
+			return nil
+		}
+	}
+	return shared.ErrNotFound
+}
+func (m *memRepo) ReplaceOrigin(_ context.Context, t shared.ID, o limits.Origin, ls []limits.Limit, ds []limits.FeatureDeny) error {
+	keepL := []limits.Limit{}
+	for _, l := range m.lims {
+		if l.TenantID != t || l.Origin != o {
+			keepL = append(keepL, l)
+		}
+	}
+	keepD := []limits.FeatureDeny{}
+	for _, d := range m.denies {
+		if d.TenantID != t || d.Origin != o {
+			keepD = append(keepD, d)
+		}
+	}
+	m.lims, m.denies = append(keepL, ls...), append(keepD, ds...)
+	return nil
+}
+func (m *memRepo) Usage(context.Context, shared.ID, bool) (map[limits.Key]int, error) {
+	m.usageCalls++
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.usage, nil
+}
+func (m *memRepo) CountOwnedTenants(context.Context, shared.ID) (int, error) { return m.owned, m.err }
+func (m *memRepo) ListGrace(_ context.Context, t shared.ID) (map[string]time.Time, error) {
+	return m.grace[t], nil
+}
+func (m *memRepo) StartGrace(_ context.Context, t shared.ID, fs []string, until time.Time) error {
+	if m.grace == nil {
+		m.grace = map[shared.ID]map[string]time.Time{}
+	}
+	if m.grace[t] == nil {
+		m.grace[t] = map[string]time.Time{}
+	}
+	for _, f := range fs {
+		if _, ok := m.grace[t][f]; !ok {
+			m.grace[t][f] = until
+		}
+	}
+	return nil
+}
+func (m *memRepo) EndGrace(_ context.Context, t shared.ID, fs []string) error {
+	for _, f := range fs {
+		delete(m.grace[t], f)
+	}
 	return nil
 }
 
-type fakeAdmins struct{ list []*admin.AdminUser }
+type memAudit struct{ actions []string }
 
-func (a fakeAdmins) ListActive(context.Context) ([]*admin.AdminUser, error) { return a.list, nil }
-
-type fakeNotifier struct {
-	by         string
-	recipients []string
-}
-
-func (n *fakeNotifier) NotifyPlanDefaultsChanged(_ context.Context, by string, to []string) error {
-	n.by, n.recipients = by, to
+func (a *memAudit) Create(_ context.Context, l *admin.AuditLog) error {
+	a.actions = append(a.actions, l.Action)
 	return nil
 }
 
-func newAdmin(t *testing.T, email string, role admin.AdminRole) *admin.AdminUser {
+func operator(t *testing.T) *admin.AdminUser {
 	t.Helper()
-	a, err := admin.NewAdminUser(email, "Admin", role, nil)
+	a, err := admin.NewAdminUser("ops@platform.test", "Ops", admin.AdminRoleOpsAdmin, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return a
 }
 
-func freeTenant(repo *fakeRepo) shared.ID {
-	id := shared.NewID()
-	if repo.plans == nil {
-		repo.plans = map[shared.ID]plan.Plan{}
-	}
-	repo.plans[id] = plan.Free
-	return id
-}
-
-func limitErr(t *testing.T, err error) *plan.ErrLimitReached {
-	t.Helper()
-	var lim *plan.ErrLimitReached
-	if !errors.As(err, &lim) {
-		t.Fatalf("want ErrLimitReached, got %v", err)
-	}
-	if !errors.Is(err, shared.ErrForbidden) {
-		t.Fatal("ErrLimitReached must unwrap to ErrForbidden")
-	}
-	return lim
-}
-
-func TestCheck_FreeLimitRefusesTheAdditionOverTheLimit(t *testing.T) {
-	repo := &fakeRepo{usage: map[plan.Key]int{plan.Seats: 5, plan.Assets: 499}}
-	svc := NewService(repo, nil, nil, nil, nil)
-	id := freeTenant(repo)
-
-	lim := limitErr(t, svc.Check(context.Background(), id, plan.Seats, 1))
-	if lim.Limit != 5 || lim.Used != 5 || lim.Unavailable {
-		t.Fatalf("got %+v", lim)
-	}
-	if err := svc.Check(context.Background(), id, plan.Assets, 1); err != nil {
-		t.Fatalf("500th asset must pass: %v", err)
-	}
-	limitErr(t, svc.Check(context.Background(), id, plan.Assets, 2))
-}
-
-func TestCheck_OrganizationWithoutPlanIsUnlimited(t *testing.T) {
-	repo := &fakeRepo{usage: map[plan.Key]int{plan.Seats: 1000}}
-	svc := NewService(repo, nil, nil, nil, nil)
-	if err := svc.Check(context.Background(), shared.NewID(), plan.Seats, 1); err != nil {
-		t.Fatalf("an organization created before plans must stay unlimited: %v", err)
-	}
-}
-
-func TestCheck_OverrideWinsUntilItExpires(t *testing.T) {
-	repo := &fakeRepo{usage: map[plan.Key]int{plan.Seats: 7}}
-	svc := NewService(repo, nil, nil, nil, nil)
-	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
-	svc.now = func() time.Time { return now }
-	id := freeTenant(repo)
-	future := now.Add(time.Hour)
-	repo.overrides = map[shared.ID][]plan.Override{id: {{TenantID: id, Key: plan.Seats, Value: 10, Reason: "pilot", ExpiresAt: &future}}}
-
-	if err := svc.Check(context.Background(), id, plan.Seats, 1); err != nil {
-		t.Fatalf("override of 10 must allow the 8th seat: %v", err)
-	}
-	now = now.Add(2 * time.Hour)
-	limitErr(t, svc.Check(context.Background(), id, plan.Seats, 1))
-}
-
-func TestCheck_OverrideCanLowerAndUnlimitedNeverRefuses(t *testing.T) {
-	repo := &fakeRepo{usage: map[plan.Key]int{plan.APIKeys: 0, plan.Sensors: 50}}
-	svc := NewService(repo, nil, nil, nil, nil)
-	id := freeTenant(repo)
-	repo.overrides = map[shared.ID][]plan.Override{id: {
-		{TenantID: id, Key: plan.APIKeys, Value: 0, Reason: "abuse"},
-		{TenantID: id, Key: plan.Sensors, Value: plan.Unlimited, Reason: "partner"},
-	}}
-	lim := limitErr(t, svc.Check(context.Background(), id, plan.APIKeys, 1))
-	if lim.Unavailable || lim.Limit != 0 {
-		t.Fatalf("a limit of 0 is a real limit, got %+v", lim)
-	}
-	if err := svc.Check(context.Background(), id, plan.Sensors, 1); err != nil {
-		t.Fatalf("unlimited override: %v", err)
-	}
-}
-
-func TestCheck_FailsClosed(t *testing.T) {
-	repo := &fakeRepo{failUsage: true}
-	svc := NewService(repo, nil, nil, nil, nil)
-	id := freeTenant(repo)
-	if lim := limitErr(t, svc.Check(context.Background(), id, plan.Seats, 1)); !lim.Unavailable {
-		t.Fatal("a read failure must refuse as Unavailable")
-	}
-	repo2 := &fakeRepo{failPlan: true}
-	if lim := limitErr(t, NewService(repo2, nil, nil, nil, nil).Check(context.Background(), shared.NewID(), plan.Seats, 1)); !lim.Unavailable {
-		t.Fatal("a plan read failure must refuse")
-	}
-}
-
-func TestCheck_UnknownKeyRefused(t *testing.T) {
-	svc := NewService(&fakeRepo{}, nil, nil, nil, nil)
-	if err := svc.Check(context.Background(), shared.NewID(), plan.Key("bogus"), 1); !errors.Is(err, plan.ErrInvalid) {
-		t.Fatalf("got %v", err)
-	}
-}
-
-func TestEffective_LoweringNeverRemovesAndFlagsOverLimit(t *testing.T) {
-	repo := &fakeRepo{usage: map[plan.Key]int{plan.Seats: 7}}
-	svc := NewService(repo, nil, nil, nil, nil)
-	id := freeTenant(repo)
-	sum, err := svc.Effective(context.Background(), id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !sum.OverLimit {
-		t.Fatal("7 seats on a 5-seat plan must be flagged over limit")
-	}
-	for _, e := range sum.Limits {
-		if e.Key == plan.Seats && (e.Used != 7 || !e.OverLimit || e.Source != plan.SourcePlan) {
-			t.Fatalf("seats: %+v", e)
+// A self-hosted install with no limits set: every organization is unlimited,
+// Check never counts usage and nothing applies.
+func TestNoLimitsByDefault(t *testing.T) {
+	repo := &memRepo{usage: map[limits.Key]int{limits.Seats: 10000}}
+	svc := NewService(repo, nil, nil)
+	tid := shared.NewID()
+	for _, k := range limits.Keys {
+		if !k.PerOrganization() {
+			continue
+		}
+		if err := svc.Check(context.Background(), tid, k, 1); err != nil {
+			t.Fatalf("%s: %v", k, err)
+		}
+		if room, err := svc.Headroom(context.Background(), tid, k); err != nil || room != limits.Unlimited {
+			t.Fatalf("%s headroom: %d %v", k, room, err)
 		}
 	}
-	if repo.usage[plan.Seats] != 7 {
-		t.Fatal("usage must be untouched")
+	if repo.usageCalls != 0 {
+		t.Fatal("an unlimited key must not count usage")
+	}
+	sum, err := svc.Effective(context.Background(), tid)
+	if err != nil || sum.Applies || sum.OverLimit || len(sum.Denied) != 0 {
+		t.Fatalf("nothing applies: %+v %v", sum, err)
+	}
+	if err := svc.CheckOrgsPerUser(context.Background(), shared.NewID()); err != nil {
+		t.Fatalf("no per-person cap by default: %v", err)
+	}
+	if names := svc.SourceNames(); len(names) != 1 || names[0] != "none" {
+		t.Fatalf("sources: %v", names)
 	}
 }
 
-func TestCheckFreeTeam(t *testing.T) {
-	repo := &fakeRepo{}
-	svc := NewService(repo, nil, nil, nil, nil)
-	if err := svc.CheckFreeTeam(context.Background(), shared.NewID()); err != nil {
-		t.Fatalf("first Free organization: %v", err)
+// The operator's limit wins over a source's for the same key; a source's
+// limit applies where the operator set none; another organization's rows
+// never leak in, even when a source returns them.
+func TestSourcesAndPrecedence(t *testing.T) {
+	a, b := shared.NewID(), shared.NewID()
+	repo := &memRepo{usage: map[limits.Key]int{limits.Seats: 5, limits.Assets: 99}}
+	repo.lims = []limits.Limit{
+		{TenantID: a, Key: limits.Seats, Value: 50, Origin: limits.OriginOperator, Reason: "sales"},
+		{TenantID: a, Key: limits.Seats, Value: 5, Origin: limits.OriginControlPlane, Reason: "cp"},
+		{TenantID: a, Key: limits.Assets, Value: 100, Origin: limits.OriginControlPlane, Reason: "cp"},
+		{TenantID: b, Key: limits.Assets, Value: 1, Origin: limits.OriginControlPlane, Reason: "cp"},
 	}
-	repo.ownedFree = 1
-	lim := limitErr(t, svc.CheckFreeTeam(context.Background(), shared.NewID()))
-	if lim.Key != plan.FreeTeamsPerUser || lim.Limit != 1 || lim.Used != 1 {
-		t.Fatalf("got %+v", lim)
+	svc := NewService(repo, nil, nil)
+	svc.SetSources(NewControlPlaneSource(repo), leakySource{other: b})
+	ctx := context.Background()
+
+	if err := svc.Check(ctx, a, limits.Seats, 1); err != nil {
+		t.Fatalf("operator 50 wins over control plane 5: %v", err)
+	}
+	if err := svc.Check(ctx, a, limits.Assets, 1); err != nil {
+		t.Fatalf("99+1 <= 100: %v", err)
+	}
+	var lim *limits.ErrLimitReached
+	if err := svc.Check(ctx, a, limits.Assets, 2); !errors.As(err, &lim) || lim.Limit != 100 || lim.Used != 99 {
+		t.Fatalf("99+2 > 100: %v", err)
+	}
+	sum, err := svc.Effective(ctx, a)
+	if err != nil || !sum.Applies {
+		t.Fatalf("applies: %+v %v", sum, err)
+	}
+	for _, e := range sum.Limits {
+		switch e.Key {
+		case limits.Seats:
+			if e.Limit != 50 || e.Origin != limits.OriginOperator {
+				t.Fatalf("seats: %+v", e)
+			}
+		case limits.Assets:
+			if e.Limit != 100 || e.Origin != limits.OriginControlPlane {
+				t.Fatalf("assets: %+v", e)
+			}
+		case limits.Sensors:
+			if e.Limit != limits.Unlimited || e.Origin != "" {
+				t.Fatalf("sensors: %+v", e)
+			}
+		}
 	}
 }
 
-// An organization with no stored plan is on plan.Unassigned, the value every
-// SQL reader resolves a missing row to as well.
-func TestPlanOf_UnassignedWhenNoneStored(t *testing.T) {
-	svc := NewService(&fakeRepo{}, nil, nil, nil, nil)
-	p, err := svc.PlanOf(context.Background(), shared.NewID())
-	if err != nil || p != plan.Unassigned {
-		t.Fatalf("got %q %v", p, err)
+// leakySource returns another organization's row: the service must drop it.
+type leakySource struct{ other shared.ID }
+
+func (leakySource) Name() string { return "leaky" }
+func (l leakySource) Limits(context.Context, shared.ID) ([]limits.Limit, error) {
+	return []limits.Limit{{TenantID: l.other, Key: limits.Sensors, Value: 0, Origin: limits.OriginControlPlane}}, nil
+}
+func (l leakySource) Denies(context.Context, shared.ID) ([]limits.FeatureDeny, error) {
+	return []limits.FeatureDeny{{TenantID: l.other, Feature: "pentest", Origin: limits.OriginControlPlane}}, nil
+}
+
+func TestCrossTenantSourceRowsIgnored(t *testing.T) {
+	a, b := shared.NewID(), shared.NewID()
+	repo := &memRepo{usage: map[limits.Key]int{}}
+	svc := NewService(repo, nil, nil)
+	svc.SetSources(leakySource{other: b})
+	if err := svc.Check(context.Background(), a, limits.Sensors, 1); err != nil {
+		t.Fatalf("another organization's limit applied: %v", err)
+	}
+	if ok, err := svc.Allowed(context.Background(), a, "pentest"); err != nil || !ok {
+		t.Fatalf("another organization's deny applied: %v %v", ok, err)
+	}
+	off, err := svc.NotEntitled(context.Background(), a.String())
+	if err != nil || len(off) != 0 {
+		t.Fatalf("another organization's deny applied: %v %v", off, err)
 	}
 }
 
-// A plan change records the plan it replaced, so the audit names both.
-func TestChangeTenantPlan_AuditsFromAndTo(t *testing.T) {
-	repo := &fakeRepo{}
-	audit := &fakeAudit{}
-	svc := NewService(repo, audit, nil, nil, nil)
-	id := freeTenant(repo)
-	actor := newAdmin(t, "ops@example.test", admin.AdminRoleOpsAdmin)
-	if err := svc.ChangeTenantPlan(context.Background(), actor, id, plan.Enterprise, "", ""); err != nil {
-		t.Fatal(err)
+// Fail-closed: a read error refuses the addition and reports Unavailable.
+func TestCheckFailsClosed(t *testing.T) {
+	repo := &memRepo{err: errors.New("db down")}
+	svc := NewService(repo, nil, nil)
+	var lim *limits.ErrLimitReached
+	if err := svc.Check(context.Background(), shared.NewID(), limits.Assets, 1); !errors.As(err, &lim) || !lim.Unavailable {
+		t.Fatalf("want unavailable refusal, got %v", err)
 	}
-	if repo.plans[id] != plan.Enterprise {
-		t.Fatalf("stored %q", repo.plans[id])
+	if _, err := svc.Headroom(context.Background(), shared.NewID(), limits.Assets); !errors.As(err, &lim) || !lim.Unavailable {
+		t.Fatalf("headroom: %v", err)
 	}
-	if len(audit.rows) != 1 || audit.rows[0].Action != ActionTenantPlanSet {
-		t.Fatalf("audit rows %+v", audit.rows)
+	if err := svc.CheckOrgsPerUser(context.Background(), shared.NewID()); !errors.As(err, &lim) || !lim.Unavailable {
+		t.Fatalf("orgs per user: %v", err)
 	}
-	body := audit.rows[0].RequestBody
-	if body["from"] != "free" || body["plan"] != "enterprise" {
-		t.Fatalf("audit body %v", body)
+	if _, err := svc.NotEntitled(context.Background(), shared.NewID().String()); err == nil {
+		t.Fatal("an unreadable deny list must be reported, never read as allowed")
 	}
 }
 
-func TestUpdateDefaults_AuditsCriticalAndNotifiesOthers(t *testing.T) {
-	repo := &fakeRepo{}
-	audit := &fakeAudit{}
-	actor := newAdmin(t, "root@example.test", admin.AdminRoleSuperAdmin)
-	other := newAdmin(t, "ops@example.test", admin.AdminRoleOpsAdmin)
-	notifier := &fakeNotifier{}
-	svc := NewService(repo, audit, fakeAdmins{list: []*admin.AdminUser{actor, other}}, notifier, nil)
+func TestOrgsPerUser(t *testing.T) {
+	repo := &memRepo{defaults: limits.Limits{limits.OrgsPerUser: 1}, defaultsVersion: 1, owned: 1}
+	svc := NewService(repo, nil, nil)
+	var lim *limits.ErrLimitReached
+	if err := svc.CheckOrgsPerUser(context.Background(), shared.NewID()); !errors.As(err, &lim) || lim.Key != limits.OrgsPerUser || lim.Limit != 1 || lim.Used != 1 {
+		t.Fatalf("want refusal, got %v", err)
+	}
+	if err := svc.Check(context.Background(), shared.NewID(), limits.OrgsPerUser, 1); !errors.Is(err, limits.ErrInvalid) {
+		t.Fatalf("orgs_per_user is not a per-organization key: %v", err)
+	}
+}
 
-	d := plan.BuiltinDefaults()
-	d[plan.Free][plan.Seats] = 3
-	v, err := svc.UpdateDefaults(context.Background(), actor, d, 0, "203.0.113.9", "test")
+func TestSelfServiceDefaults(t *testing.T) {
+	repo := &memRepo{}
+	audit := &memAudit{}
+	svc := NewService(repo, audit, nil)
+	ctx := context.Background()
+	d, v, err := svc.SelfServiceDefaults(ctx)
+	if err != nil || len(d) != 0 || v != 0 {
+		t.Fatalf("empty by default: %v %d %v", d, v, err)
+	}
+	tid := shared.NewID()
+	if rows := limits.SelfServiceRows(tid, d, time.Now()); len(rows) != 0 {
+		t.Fatalf("no rows for empty defaults: %v", rows)
+	}
+	if _, err := svc.UpdateSelfServiceDefaults(ctx, operator(t), limits.Limits{"bogus": 1}, 0, "", ""); !errors.Is(err, limits.ErrInvalid) {
+		t.Fatalf("unknown key: %v", err)
+	}
+	if _, err := svc.UpdateSelfServiceDefaults(ctx, nil, limits.Limits{}, 0, "", ""); err == nil {
+		t.Fatal("nil actor")
+	}
+	v, err = svc.UpdateSelfServiceDefaults(ctx, operator(t), limits.Limits{limits.Seats: 5, limits.OrgsPerUser: 1, limits.Assets: limits.Unlimited}, 0, "", "")
 	if err != nil || v != 1 {
-		t.Fatalf("v=%d err=%v", v, err)
+		t.Fatalf("save: %d %v", v, err)
 	}
-	if len(audit.rows) != 1 || audit.rows[0].Action != ActionDefaultsChanged || audit.rows[0].Severity != admin.SeverityCritical {
-		t.Fatalf("audit rows: %+v", audit.rows)
+	if len(audit.actions) != 1 || audit.actions[0] != ActionSelfServiceDefaultsChanged {
+		t.Fatalf("audit: %v", audit.actions)
 	}
-	if len(notifier.recipients) != 1 || notifier.recipients[0] != "ops@example.test" {
-		t.Fatalf("notified %v; the actor must not be told about their own change", notifier.recipients)
+	d, _, _ = svc.SelfServiceDefaults(ctx)
+	rows := limits.SelfServiceRows(tid, d, time.Now())
+	if len(rows) != 1 || rows[0].Key != limits.Seats || rows[0].Value != 5 || rows[0].Origin != limits.OriginOperator || rows[0].TenantID != tid {
+		t.Fatalf("rows: only per-organization, non-unlimited keys: %+v", rows)
 	}
-	got, _, _ := svc.Defaults(context.Background())
-	if got.For(plan.Free).Get(plan.Seats) != 3 {
-		t.Fatal("cache not refreshed")
-	}
-}
-
-func TestUpdateDefaults_Refusals(t *testing.T) {
-	actor := newAdmin(t, "root@example.test", admin.AdminRoleSuperAdmin)
-	svc := NewService(&fakeRepo{}, &fakeAudit{}, nil, nil, nil)
-	if _, err := svc.UpdateDefaults(context.Background(), nil, plan.BuiltinDefaults(), 0, "", ""); err == nil {
-		t.Fatal("nil actor must be refused")
-	}
-	bad := plan.Defaults{plan.Free: {plan.Seats: -2}}
-	if _, err := svc.UpdateDefaults(context.Background(), actor, bad, 0, "", ""); !errors.Is(err, plan.ErrInvalid) {
-		t.Fatalf("below -1: %v", err)
-	}
-	unknown := plan.Defaults{plan.Plan("gold"): {}}
-	if _, err := svc.UpdateDefaults(context.Background(), actor, unknown, 0, "", ""); !errors.Is(err, plan.ErrInvalid) {
-		t.Fatalf("unknown plan: %v", err)
-	}
-	if _, err := svc.UpdateDefaults(context.Background(), actor, plan.BuiltinDefaults(), 4, "", ""); !errors.Is(err, shared.ErrConflict) {
+	if _, err := svc.UpdateSelfServiceDefaults(ctx, operator(t), limits.Limits{}, 0, "", ""); !errors.Is(err, shared.ErrConflict) {
 		t.Fatalf("stale version: %v", err)
 	}
 }
 
-func TestPutOverride_Refusals(t *testing.T) {
-	actor := newAdmin(t, "ops@example.test", admin.AdminRoleOpsAdmin)
-	audit := &fakeAudit{}
-	svc := NewService(&fakeRepo{}, audit, nil, nil, nil)
-	now := time.Now()
-	past := now.Add(-time.Minute)
-	long := make([]rune, 501)
-	for i := range long {
-		long[i] = 'x'
-	}
-	cases := map[string]OverrideInput{
-		"unknown key": {Key: "bogus", Value: 1, Reason: "r"},
-		"below -1":    {Key: plan.Seats, Value: -2, Reason: "r"},
-		"no reason":   {Key: plan.Seats, Value: 1, Reason: "  "},
-		"long reason": {Key: plan.Seats, Value: 1, Reason: string(long)},
-		"past expiry": {Key: plan.Seats, Value: 1, Reason: "r", ExpiresAt: &past},
-	}
-	for name, in := range cases {
-		if err := svc.PutOverride(context.Background(), actor, shared.NewID(), in, "", ""); !errors.Is(err, plan.ErrInvalid) {
-			t.Errorf("%s: got %v", name, err)
-		}
-	}
-	if len(audit.rows) != 0 {
-		t.Fatal("refused overrides must not be audited as set")
-	}
-	if err := svc.PutOverride(context.Background(), actor, shared.NewID(), OverrideInput{Key: plan.Seats, Value: 9, Reason: "pilot"}, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	if len(audit.rows) != 1 || audit.rows[0].Action != ActionOverrideSet || audit.rows[0].Severity != admin.SeverityHigh {
-		t.Fatalf("audit: %+v", audit.rows)
-	}
-}
-
-func TestDeleteOverride(t *testing.T) {
-	actor := newAdmin(t, "ops@example.test", admin.AdminRoleOpsAdmin)
-	svc := NewService(&fakeRepo{}, &fakeAudit{}, nil, nil, nil)
-	if err := svc.DeleteOverride(context.Background(), actor, shared.NewID(), "bogus", "", ""); !errors.Is(err, plan.ErrInvalid) {
-		t.Fatalf("unknown key: %v", err)
-	}
-	if err := svc.DeleteOverride(context.Background(), actor, shared.NewID(), plan.Seats, "", ""); !errors.Is(err, shared.ErrNotFound) {
-		t.Fatalf("missing: %v", err)
-	}
-}
-
-func TestChangeTenantPlan_RefusesUnknownPlan(t *testing.T) {
-	actor := newAdmin(t, "ops@example.test", admin.AdminRoleOpsAdmin)
-	svc := NewService(&fakeRepo{}, &fakeAudit{}, nil, nil, nil)
-	if err := svc.ChangeTenantPlan(context.Background(), actor, shared.NewID(), "gold", "", ""); !errors.Is(err, plan.ErrInvalid) {
-		t.Fatalf("got %v", err)
-	}
-}
-
-// Findings are unlimited on every built-in plan and counting them is costly:
-// while unlimited, no usage query counts them, and Check/Headroom of an
-// unlimited key count no usage at all.
-func TestFindings_UnlimitedCountsNothing(t *testing.T) {
-	repo := &fakeRepo{usage: map[plan.Key]int{plan.Seats: 1, plan.Findings: 999}}
-	svc := NewService(repo, nil, nil, nil, nil)
-	id := freeTenant(repo)
+func TestPutAndDeleteLimit(t *testing.T) {
+	repo := &memRepo{usage: map[limits.Key]int{limits.Seats: 4}}
+	audit := &memAudit{}
+	svc := NewService(repo, audit, nil)
 	ctx := context.Background()
-
-	for _, p := range plan.All {
-		if got := plan.BuiltinDefaults().For(p).Get(plan.Findings); got != plan.Unlimited {
-			t.Fatalf("%s findings limit = %d, want unlimited by default", p, got)
+	tid := shared.NewID()
+	past := time.Now().Add(-time.Hour)
+	for _, in := range []LimitInput{
+		{Key: "bogus", Value: 1, Reason: "x"},
+		{Key: limits.OrgsPerUser, Value: 1, Reason: "x"},
+		{Key: limits.Seats, Value: -2, Reason: "x"},
+		{Key: limits.Seats, Value: 1, Reason: "  "},
+		{Key: limits.Seats, Value: 1, Reason: "x", ExpiresAt: &past},
+	} {
+		if err := svc.PutLimit(ctx, operator(t), tid, in, "", ""); !errors.Is(err, limits.ErrInvalid) {
+			t.Fatalf("%+v: %v", in, err)
 		}
 	}
-	if err := svc.Check(ctx, id, plan.Findings, 1000); err != nil {
-		t.Fatalf("unlimited findings: %v", err)
+	if err := svc.PutLimit(ctx, nil, tid, LimitInput{Key: limits.Seats, Value: 1, Reason: "x"}, "", ""); !errors.Is(err, limits.ErrInvalid) {
+		t.Fatal("nil actor")
 	}
-	if room, err := svc.Headroom(ctx, id, plan.Findings); err != nil || room != plan.Unlimited {
-		t.Fatalf("headroom = %d, %v; want unlimited", room, err)
-	}
-	if len(repo.usageCalls) != 0 {
-		t.Fatalf("an unlimited key must count no usage, got %d Usage calls", len(repo.usageCalls))
-	}
-
-	sum, err := svc.Effective(ctx, id)
-	if err != nil {
+	if err := svc.PutLimit(ctx, operator(t), tid, LimitInput{Key: limits.Seats, Value: 3, Reason: "pilot"}, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if len(repo.usageCalls) != 1 || repo.usageCalls[0] {
-		t.Fatalf("Effective must count usage once without findings, got %v", repo.usageCalls)
+	// Lowered below usage: nothing is removed, additions are refused.
+	sum, _ := svc.Effective(ctx, tid)
+	if !sum.OverLimit || !sum.Applies {
+		t.Fatalf("over limit: %+v", sum)
 	}
-	for _, e := range sum.Limits {
-		if e.Key == plan.Findings && (!e.Uncounted || e.Used != 0) {
-			t.Fatalf("unlimited findings row = %+v, want uncounted", e)
-		}
-		if e.Key == plan.Seats && e.Used != 1 {
-			t.Fatalf("seats usage = %d, want 1 (the other keys are still counted)", e.Used)
+	if err := svc.Check(ctx, tid, limits.Seats, 1); err == nil {
+		t.Fatal("an addition over the limit must be refused")
+	}
+	if err := svc.Check(ctx, tid, limits.Seats, 0); err != nil {
+		t.Fatalf("no addition, no refusal: %v", err)
+	}
+	if err := svc.DeleteLimit(ctx, operator(t), tid, limits.Seats, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteLimit(ctx, operator(t), tid, limits.Seats, "", ""); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("delete twice: %v", err)
+	}
+	if len(audit.actions) != 2 || audit.actions[0] != ActionLimitSet || audit.actions[1] != ActionLimitRemoved {
+		t.Fatalf("audit: %v", audit.actions)
+	}
+	// An expired limit no longer applies.
+	repo.lims = append(repo.lims, limits.Limit{TenantID: tid, Key: limits.Seats, Value: 1, Origin: limits.OriginOperator, Reason: "x", ExpiresAt: &past})
+	if err := svc.Check(ctx, tid, limits.Seats, 1); err != nil {
+		t.Fatalf("expired limit applied: %v", err)
+	}
+}
+
+func TestAllowAddition(t *testing.T) {
+	for _, c := range []struct {
+		limit, used, delta int
+		want               bool
+	}{
+		{limits.Unlimited, 1e6, 1, true}, {5, 4, 1, true}, {5, 5, 1, false}, {5, 9, 0, true}, {0, 0, 1, false}, {5, 9, -1, true},
+	} {
+		if got := limits.AllowAddition(c.limit, c.used, c.delta); got != c.want {
+			t.Fatalf("%+v: got %v", c, got)
 		}
 	}
 }
 
-func TestFindings_LimitCountsAndRefuses(t *testing.T) {
-	repo := &fakeRepo{usage: map[plan.Key]int{plan.Findings: 8}}
-	svc := NewService(repo, nil, nil, nil, nil)
-	id := freeTenant(repo)
+func TestStartLimits(t *testing.T) {
 	ctx := context.Background()
-	repo.overrides = map[shared.ID][]plan.Override{id: {{TenantID: id, Key: plan.Findings, Value: 10, Reason: "abuse"}}}
-
-	if room, err := svc.Headroom(ctx, id, plan.Findings); err != nil || room != 2 {
-		t.Fatalf("headroom = %d, %v; want 2", room, err)
+	repo := &memRepo{}
+	svc := NewService(repo, nil, nil)
+	if ok, err := svc.StartLimitsConfigured(ctx); err != nil || ok {
+		t.Fatalf("nothing configured: %v %v", ok, err)
 	}
-	if err := svc.Check(ctx, id, plan.Findings, 2); err != nil {
-		t.Fatalf("2 more fit: %v", err)
+	if err := svc.SetStartLimits(`{"gold":1}`); err == nil {
+		t.Fatal("unknown key must be refused")
 	}
-	lim := limitErr(t, svc.Check(ctx, id, plan.Findings, 3))
-	if lim.Limit != 10 || lim.Used != 8 {
-		t.Fatalf("got %+v", lim)
+	if err := svc.SetStartLimits(`not json`); err == nil {
+		t.Fatal("garbage must be refused")
 	}
-	sum, err := svc.Effective(ctx, id)
-	if err != nil {
+	if err := svc.SetStartLimits("unlimited"); err != nil {
 		t.Fatal(err)
 	}
-	for _, e := range sum.Limits {
-		if e.Key == plan.Findings && (e.Uncounted || e.Used != 8) {
-			t.Fatalf("limited findings row = %+v, want counted 8", e)
-		}
+	if ok, _ := svc.StartLimitsConfigured(ctx); !ok {
+		t.Fatal("explicit unlimited is configured")
 	}
-	for _, withFindings := range repo.usageCalls {
-		if !withFindings {
-			t.Fatalf("a findings limit applies: every Usage call must count findings, got %v", repo.usageCalls)
-		}
+	if d, _, _ := svc.SelfServiceDefaults(ctx); len(d) != 0 {
+		t.Fatalf("unlimited: %v", d)
 	}
+	svc2 := NewService(repo, nil, nil)
+	if err := svc2.SetStartLimits(`{"seats":5,"orgs_per_user":1}`); err != nil {
+		t.Fatal(err)
+	}
+	if d, _, _ := svc2.SelfServiceDefaults(ctx); d.Get(limits.Seats) != 5 || d.Get(limits.OrgsPerUser) != 1 {
+		t.Fatalf("environment defaults: %v", d)
+	}
+	// A console setting wins over the environment and counts as configured.
+	svc3 := NewService(&memRepo{defaults: limits.Limits{limits.Seats: 9}, defaultsVersion: 1}, nil, nil)
+	_ = svc3.SetStartLimits(`{"seats":5}`)
+	if d, _, _ := svc3.SelfServiceDefaults(ctx); d.Get(limits.Seats) != 9 {
+		t.Fatalf("console wins: %v", d)
+	}
+	svc4 := NewService(&memRepo{defaults: limits.Limits{}, defaultsVersion: 1}, nil, nil)
+	if ok, _ := svc4.StartLimitsConfigured(ctx); !ok {
+		t.Fatal("a saved console setting (even empty) is configured")
+	}
+	svc5 := NewService(repo, nil, nil)
+	svc5.SetSources(NewControlPlaneSource(repo))
+	if ok, _ := svc5.StartLimitsConfigured(ctx); !ok {
+		t.Fatal("a control-plane source is configured")
+	}
+	svc6 := NewService(&memRepo{err: errors.New("down")}, nil, nil)
+	if _, err := svc6.StartLimitsConfigured(ctx); err == nil {
+		t.Fatal("a read error is reported")
+	}
+}
 
-	repo.usage[plan.Findings] = 12 // over the limit after it was lowered
-	if room, err := svc.Headroom(ctx, id, plan.Findings); err != nil || room != 0 {
-		t.Fatalf("over the limit: headroom = %d, %v; want 0", room, err)
+func TestApplies(t *testing.T) {
+	a, b := shared.NewID(), shared.NewID()
+	repo := &memRepo{lims: []limits.Limit{
+		{TenantID: a, Key: limits.Seats, Value: 5, Origin: limits.OriginOperator, Reason: "x"},
+		{TenantID: b, Key: limits.Seats, Value: limits.Unlimited, Origin: limits.OriginOperator, Reason: "x"},
+	}}
+	svc := NewService(repo, nil, nil)
+	if ok, err := svc.Applies(context.Background(), a); err != nil || !ok {
+		t.Fatalf("a: %v %v", ok, err)
 	}
-	repo.failUsage = true
-	if _, err := svc.Headroom(ctx, id, plan.Findings); err == nil || !limitErr(t, err).Unavailable {
-		t.Fatalf("an unreadable usage must refuse (fail-closed), got %v", err)
+	if ok, _ := svc.Applies(context.Background(), b); ok {
+		t.Fatal("an unlimited row is not a limit")
+	}
+	if repo.usageCalls != 0 {
+		t.Fatal("Applies must not count usage")
+	}
+	repo.denies = []limits.FeatureDeny{{TenantID: b, Feature: "pentest", Origin: limits.OriginOperator}}
+	if ok, _ := svc.Applies(context.Background(), b); !ok {
+		t.Fatal("a deny applies")
 	}
 }

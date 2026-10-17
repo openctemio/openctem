@@ -503,32 +503,34 @@ creates the organization with the requester as owner (ops_admin+, audited).
 Details: `docs/architecture/user-onboarding.md`, "Sign-up policy" and
 "Request access".
 
-## Revision 11: plans and limits
+## Revision 11: limits
 
-Organizations are on a plan (Free, Pro, Enterprise) that caps what they may
-add:
+(Revised 2026-10-15.) Every organization is unlimited and may use every
+module unless a limit or a module deny is set for it:
 
-- System > Plans: the plan defaults; any administrator reads them, a super
-  admin changes them with a fresh authenticator code and the version read,
-  audited at critical severity and emailed to the other administrators;
-- Organizations > an organization: its plan, usage, an over-limit badge, and
-  per-organization overrides (reason required, optional expiry), ops_admin+,
-  audited;
+- System > Limits: the default limits of self-service organizations (empty
+  by default) and the per-person organization cap; any administrator reads
+  them, a super admin changes them with a fresh authenticator code and the
+  version read, audited at critical severity;
+- Organizations > an organization: its limits, usage, an over-limit badge,
+  and per-organization limits (reason required, optional expiry), ops_admin+,
+  audited; module denies need a reason and a fresh authenticator code;
+  limits set by a hosted service's control plane are shown read-only;
 - lowering a limit never removes members, assets or keys: new additions are
-  refused until usage is under it again;
-- organizations created before plans are Enterprise (unlimited); a
-  self-service organization starts on Free.
+  refused until usage is under it again.
 
-Details: `docs/architecture/plans-and-limits.md`.
+Details: `docs/architecture/limits.md`.
 
-## Revision 12: idle Free workspaces
+## Revision 12: idle-organization policy
 
-A Free organization nobody signs in to is reminded at 60 days, read-only at
-90 (changes refused, reads and exports kept), warned again at 113 and due for
-deletion at 120; a sign-in by any member undoes it at once. The platform
+(Revised 2026-10-15: off by default.) For an organization the idle policy is
+turned on for, nobody signing in leads to a reminder at 60 days, read-only at
+90 (changes refused, reads and exports kept), a second warning at 113 and
+deletion due at 120; a sign-in by any member undoes it at once. The platform
 administrators are alerted at deletion_due and delete from the console;
 nothing is deleted automatically. Organizations > an organization shows the
-stage and lets an ops_admin+ exempt it with a reason (audited).
+stage and lets an ops_admin+ turn the policy on or off with a reason
+(audited).
 
 Details: `docs/architecture/idle-workspaces.md`.
 
@@ -539,7 +541,7 @@ them:
 
 - **Navigation.** Overview · Customers (Organizations) · Scanning (Target
   mappings) · Security (Admin activity, Administrators) · System (Sign-up,
-  Admin sign-in, Plans). Later sections (Users, Requests, Plans & usage, Operations)
+  Admin sign-in, Limits). Later sections (Users, Requests, Operations)
   are added together with their pages, never ahead of them. Pages that moved
   (`/admin/system-logs` to `/admin/security/activity`, `/admin/administrators`
   to `/admin/security/administrators`) have no redirect.
@@ -563,16 +565,16 @@ them:
 ## Revision 14: organization 360
 
 Organizations > an organization opens on a summary: owners and active
-members, the plan with an over-limit badge and the limits that are over,
+members, the limits that apply with an over-limit badge,
 sign-in (SSO posture and verified domains), identifiers, and the latest
 administrator actions on it. Each card leads to its tab. The tab is in the
-URL (`?tab=overview|users|plan|sso|activity|audit-chain`), so a support link
+URL (`?tab=overview|users|limits|sso|activity|audit-chain`), so a support link
 can point at one. Activity lists every admin audit row about the
 organization (`GET /admin/audit-logs?resource_id=<id>`).
 
-The organization list shows each organization's plan and filters by owner
-(`owner=none` lists those with no active owner, which the overview links
-to) and by plan. Owner recovery gained a reason and step-up (revision 7).
+The organization list shows whether limits apply to each organization and
+filters by owner (`owner=none` lists those with no active owner, which the
+overview links to). Owner recovery gained a reason and step-up (revision 7).
 Nothing from inside an organization (findings, assets) is shown: the console
 never reads it.
 
@@ -992,6 +994,21 @@ Helm chart; the Ansible kit; the documentation.
   The older readable copies (`admin_csrf` at `/`) are cleared on every
   sign-in. A console session ends after 15 minutes without use (8 hours at
   most).
+- The CSRF token is bound to the session: HMAC-SHA256 of the session secret
+  under a server key derived from the session-signing secret
+  (`AUTH_JWT_SECRET`, shared by every replica). The API verifies that
+  binding on every console write, never cookie equality, so an `admin_csrf`
+  cookie a tenant-page script plants on the same host (cookies ignore ports,
+  and a more specific path shadows the real one) is worthless. Every console
+  response is `Cache-Control: no-store`.
+- With `OPENCTEM_ADMIN_SITE=off` the gateway serves no console site and the
+  console service is reachable only the way the operator routes it. Routing
+  it on the tenant site's origin (a path of the main host name) brings back
+  the residual risks of a shared origin: a tenant-page script could read
+  console responses and frame console pages. The network allow-list, the
+  session-bound token, step-up and the audit log still apply, but `off` is
+  meant for installations that give the console their own separate host name
+  or private network, never a shared origin.
 - Server-side sessions: deactivating an admin or resetting credentials deletes
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes

@@ -5,11 +5,6 @@
  */
 
 /**
- * Tenant plan types
- */
-export type TenantPlan = 'free' | 'paid'
-
-/**
  * User's role in a tenant
  */
 export type TenantRole = 'owner' | 'admin' | 'member' | 'viewer'
@@ -67,7 +62,6 @@ export interface TenantMembership {
   slug: string
   description?: string
   logo_url?: string
-  plan: TenantPlan
   role: TenantRole
   joined_at: string
   created_at: string

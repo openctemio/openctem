@@ -16,7 +16,7 @@ admin console and the organization settings.
 
 Read by the API server at start-up (`server`). The server refuses to start when a variable under one of its prefixes is a likely misspelling of a listed name, or when a typed value does not parse; `server -check-config` runs the same checks without starting.
 
-Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `VERSION_CHECK_`.
+Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `SELF_SERVICE_`, `INTERNAL_API_`, `ACCOUNT_PORTAL_`, `VERSION_CHECK_`.
 
 ### Application
 
@@ -358,6 +358,25 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `GITHUB_APP_WEB_URL` | url | empty |  |  | GitHub web base URL for GitHub Enterprise Server. Unset: github.com. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE` | string | `unset` |  |  | `1` opens every private range. Honored only with `APP_ENV=development`: with any other `APP_ENV` (or none) the API refuses to start, because it would open the platform's own network to every organization. Use `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` instead. Any value other than empty, `0` or `1` is refused. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
+
+### Internal entitlements API
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ACCOUNT_PORTAL_URL` | url | empty |  |  | A hosted service's account page (absolute https URL). When set, Settings > Usage & limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link. |
+| `INTERNAL_API_ADDR` | string | empty |  |  | Listen address of the internal entitlements API, for example `10.0.0.5:9443` (a loopback or private IP; any other address, or a hostname, needs `INTERNAL_API_ALLOW_ALL_INTERFACES=true`). Empty (the default) turns it off. It is for the control plane of a hosted service only: expose it on a private network, never through the public gateway. When set, every other `INTERNAL_API_` variable is required. |
+| `INTERNAL_API_ALLOW_ALL_INTERFACES` | bool | `false` |  |  | `true` lets `INTERNAL_API_ADDR` be any address: every interface (`:9443`, `0.0.0.0:9443`, `[::]:9443`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port. |
+| `INTERNAL_API_TLS_CERT` | path | empty |  |  | PEM server certificate of the internal API (TLS 1.3 only). |
+| `INTERNAL_API_TLS_KEY` | path | empty |  | yes | PEM private key of the internal API server certificate. |
+| `INTERNAL_API_CLIENT_CA` | path | empty |  |  | PEM CA bundle the control plane's client certificate must chain to. A connection without a valid client certificate is refused during the handshake. |
+| `INTERNAL_API_JWT_PUBLIC_KEYS` | path | empty |  |  | PEM file with one or more Ed25519 public keys. Every request carries a token signed by one of the matching private keys (`EdDSA`), audience `openctem-core`, at most 5 minutes long, single use (`jti`), with scopes `limits:write`, `orgs:provision` or `usage:read`. List two keys while rotating. |
+| `INTERNAL_API_JWT_ISSUER` | string | `openctem-cloud` |  |  | The `iss` claim the internal API accepts. |
+
+### Organizations
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `SELF_SERVICE_START_LIMITS` | string | empty |  |  | Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > System > Limits: a JSON object of limit keys, for example `{"seats":5,"assets":500,"orgs_per_user":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`TENANT_CREATION_MODE=self_service`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API. |
 
 ### Metrics
 

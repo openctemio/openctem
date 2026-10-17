@@ -38,6 +38,7 @@ import type { AssetStatsData } from '../../hooks/use-assets'
 import { togglePropertyFilter, type InventoryFilters } from '../../lib/inventory-url'
 import type { TypeAttribute } from '@/features/asset-types/lib/type-view'
 import { InventoryTagsFacet } from './inventory-tags-facet'
+import { InventoryTechnologiesFacet } from './inventory-technologies-facet'
 
 /** One attribute facet of the typed inventory. */
 export interface AttributeFacet {
@@ -113,6 +114,7 @@ export function InventoryFacetPanel({
       {facets.slice(0, kindCount).map(renderFacet)}
       <SignalsSection filters={filters} onChange={onChange} />
       {facets.slice(kindCount).map(renderFacet)}
+      <InventoryTechnologiesFacet filters={filters} onChange={onChange} />
       <InventoryTagsFacet filters={filters} onChange={onChange} types={tagTypes} />
     </FacetPanel>
   )

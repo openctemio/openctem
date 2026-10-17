@@ -13,7 +13,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -77,8 +76,8 @@ type AdminOrganizationResponse struct {
 	ActiveIdentityProviders int      `json:"active_identity_providers"`
 	VerifiedDomains         int      `json:"verified_domains"`
 	SSOEnforced             bool     `json:"sso_enforced"`
-	// Plan is free, pro or enterprise.
-	Plan string `json:"plan"`
+	// LimitsApply: at least one limit or feature deny is set.
+	LimitsApply bool `json:"limits_apply"`
 }
 
 // AdminOrganizationListResponse is a page of organizations.
@@ -195,7 +194,7 @@ func toAdminOrganizationResponse(o *admin.Organization, personalData bool) Admin
 		ID: o.ID.String(), Name: o.Name, Slug: o.Slug, Description: o.Description,
 		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners, OwnerCount: count,
 		SAMLEnabled: o.SAMLEnabled, ActiveIdentityProviders: o.ActiveIdentityProviders,
-		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, Plan: o.Plan,
+		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, LimitsApply: o.LimitsApply,
 	}
 }
 
@@ -229,7 +228,6 @@ func orgIDParam(r *http.Request) (shared.ID, bool) {
 // @Produce json
 // @Param search query string false "Match name or slug"
 // @Param owner query string false "none: no active owner; present: has one" Enums(none, present)
-// @Param plan query string false "Plan" Enums(free, pro, enterprise)
 // @Param include_system query bool false "Also list the internal platform system organization (left out by default)"
 // @Param page query int false "Page (default 1)"
 // @Param per_page query int false "Page size (default 50, max 100)"
@@ -261,13 +259,6 @@ func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) 
 	default:
 		apierror.BadRequest("include_system must be true or false").WriteJSON(w)
 		return
-	}
-	if p := q.Get("plan"); p != "" {
-		if !plan.Plan(p).IsValid() {
-			apierror.BadRequest("plan must be free, pro or enterprise").WriteJSON(w)
-			return
-		}
-		f.Plan = p
 	}
 	orgs, total, err := h.orgs.ListOrganizations(r.Context(), f)
 	if err != nil {
