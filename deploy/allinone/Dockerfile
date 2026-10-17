@@ -115,7 +115,7 @@ RUN ln -s server /opt/openctem/api/bootstrap-admin \
 # The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + entrypoint.sh).
 # sensors/ holds the layer-4 sensor routing the Caddyfile imports; this image's
 # Caddy has no layer4 module, so only OPENCTEM_SENSOR_GATEWAY=off applies here.
-COPY --from=gateway Caddyfile planes.caddy /etc/caddy/
+COPY --from=gateway Caddyfile planes.caddy servers.common /etc/caddy/
 COPY --from=gateway --chmod=0755 entrypoint.sh /etc/caddy/
 COPY --from=gateway modes /etc/caddy/modes
 COPY --from=gateway sensors /etc/caddy/sensors
