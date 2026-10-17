@@ -41,6 +41,7 @@ import {
   useAuditChainStatus,
 } from '../api/use-admin-audit-chain'
 import { useTranslation } from '@/context/i18n-provider'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 const CLASS_LABEL: Record<AuditChainClass, string> = {
   verifies: 'Verifies',
@@ -98,6 +99,7 @@ export function OrganizationAuditChainPanel({
   const { data, error, isLoading, isValidating, mutate } = useAuditChainStatus(tenantId)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<AdminAuditChainRebaselineResponse | null>(null)
@@ -370,7 +372,7 @@ export function OrganizationAuditChainPanel({
           )
         }
         isLoading={busy}
-        disabled={!/^\d{6}$/.test(code.trim())}
+        disabled={!stepUpCodeReady(code, codeOptional)}
         handleConfirm={() => void rebaseline()}
       >
         <div className="space-y-2">
@@ -387,6 +389,7 @@ export function OrganizationAuditChainPanel({
             aria-invalid={codeError ? true : undefined}
             aria-describedby={codeError ? `${codeId}-error` : undefined}
           />
+          <StepUpCodeHint optional={codeOptional} />
           {codeError ? (
             <p id={`${codeId}-error`} className="text-sm text-destructive">
               {codeError}

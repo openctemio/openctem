@@ -71,9 +71,9 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 			is_platform_job,
 			auth_token_hash, auth_token_prefix, auth_token_expires_at,
 			queue_priority, queued_at, dispatch_attempts, scan_zone_id,
-			host_keys, dispatch_gate
+			host_keys, dispatch_gate, instance_scan_zone_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -104,6 +104,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 		nullIDString(cmd.ScanZoneID),
 		hostKeysArg(cmd.HostKeys),
 		dispatchGateArg(cmd.DispatchGate),
+		nullIDString(cmd.InstanceScanZoneID),
 	)
 
 	if err != nil {
@@ -1944,4 +1945,27 @@ func (r *CommandRepository) UnclaimForSensor(ctx context.Context, tenantID, comm
 		return false, fmt.Errorf("failed to read rows affected: %w", err)
 	}
 	return n > 0, nil
+}
+
+// InstanceScanZoneID returns the instance scan zone of a shared job, nil
+// when it has none (docs/rfcs/RFC-100-shared-sensors.md §6.1).
+func (r *CommandRepository) InstanceScanZoneID(ctx context.Context, tenantID, commandID shared.ID) (*shared.ID, error) {
+	var zid sql.NullString
+	err := r.db.QueryRowContext(ctx,
+		`SELECT instance_scan_zone_id FROM commands WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), commandID.String()).Scan(&zid)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read instance scan zone of command: %w", err)
+	}
+	if !zid.Valid {
+		return nil, nil
+	}
+	id, err := shared.IDFromString(zid.String)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
 }

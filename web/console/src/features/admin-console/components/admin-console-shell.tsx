@@ -16,8 +16,10 @@ import { AdminStepUpPrompt } from './admin-step-up-prompt'
 import { AdminElevationBar } from './admin-elevation-bar'
 import { AdminConsoleSidebar } from './admin-console-sidebar'
 import { ChangePasswordGate } from './change-password-gate'
+import { FactorEnrollmentGate } from './factor-enrollment-gate'
 import { VersionCheckBanner } from './version-check-banner'
 import { adminLogout, useAdminSession } from '../api/use-admin-session'
+import { setAdminEnrollmentListener } from '@console/lib/admin-api/client'
 import type { AdminIdentity } from '../types'
 
 const AdminContext = createContext<AdminIdentity | null>(null)
@@ -53,6 +55,13 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`)
     }
   }, [admin, isLoading, error, pathname, router])
+
+  // Any console call refused with FACTOR_ENROLLMENT_REQUIRED re-reads the
+  // session, which then carries factor_enrollment_required and shows the gate.
+  useEffect(() => {
+    setAdminEnrollmentListener(() => void mutate())
+    return () => setAdminEnrollmentListener(null)
+  }, [mutate])
 
   const signOut = async () => {
     try {
@@ -90,6 +99,18 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
   // changed; show only the change form.
   if (admin.password_change_required) {
     return <ChangePasswordGate admin={admin} />
+  }
+
+  // "Require security keys" holds this administrator on enrollment: only the
+  // security-keys page works until they comply.
+  if (admin.factor_enrollment_required) {
+    return (
+      <FactorEnrollmentGate
+        admin={admin}
+        onChanged={() => void mutate()}
+        onSignOut={() => void signOut()}
+      />
+    )
   }
 
   return (
