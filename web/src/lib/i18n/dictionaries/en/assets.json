@@ -998,5 +998,10 @@
   "assets.software.rangeNotStated": "not stated",
   "assets.software.reason.all_versions": "The advisory names every version, not a range",
   "assets.software.reason.edition_unverified": "The advisory is for one edition; the scan did not say which one runs",
-  "assets.software.reason.platform_condition_unverified": "The advisory applies only on a platform the asset was not seen running"
+  "assets.software.reason.platform_condition_unverified": "The advisory applies only on a platform the asset was not seen running",
+  "assets.technologies.filter.category": "Category",
+  "assets.technologies.filter.technology": "Technology",
+  "assets.technologies.filter.search": "Search technologies",
+  "assets.technologies.filter.none": "No technologies detected yet",
+  "assets.technologies.filter.more": "Show {count} more"
 }

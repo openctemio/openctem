@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useMemo } from 'react'
 import { Check, Info, Sparkles } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -39,10 +40,11 @@ export function OnboardingBundlePicker({
   // sum would overstate the resolved set. We show the number of products picked
   // instead; the authoritative resolved module set is computed server-side when
   // the subscription is saved. Per-card counts still hint at each product's size.
+  const { t } = useTranslation()
   const summaryLabel = useMemo(() => {
-    if (selectedCount === 0) return 'Every module your plan includes'
+    if (selectedCount === 0) return t('limits.onboarding.everyModule', 'Every module')
     return 'Starting set selected'
-  }, [selectedCount])
+  }, [selectedCount, t])
 
   if (isLoading) {
     return <Skeleton className="h-40 w-full" />
@@ -63,8 +65,10 @@ export function OnboardingBundlePicker({
             <span className="text-muted-foreground ms-2 text-xs font-normal">Optional</span>
           </p>
           <p className="text-muted-foreground text-xs">
-            Pick what this team does first; you can switch modules on or off later in Settings &gt;
-            Modules. Leave empty to start with every module your plan includes.
+            {t(
+              'limits.onboarding.hint',
+              'Pick what this team does first; you can switch modules on or off later in Settings > Modules. Leave empty to start with every module.'
+            )}
           </p>
         </div>
         <span className="text-muted-foreground shrink-0 text-xs">{summaryLabel}</span>

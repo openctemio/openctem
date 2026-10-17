@@ -45,7 +45,7 @@ Rules the database enforces on its own, whatever the code does:
 | Routes `/api/v1/lifecycle-sub-statuses`, `/api/v1/lifecycles` | `internal/infra/http/routes/finding_lifecycles.go`, `handler/finding_lifecycle_handler.go` |
 | Service: catalog, schemes, drafts, validation, publish, roll back | `internal/app/findinglifecycle/service.go` |
 | Schemes and versions | `pkg/domain/findinglifecycle/scheme.go`, `internal/infra/postgres/lifecycle_scheme_repository.go` |
-| Plan limits `lifecycle_sub_statuses` (Free 3), `lifecycle_schemes` (Free 0, Pro 1) | `pkg/domain/plan/plan.go` |
+| Limits `lifecycle_sub_statuses` and `lifecycle_schemes` (unlimited unless set; see [limits](limits.md)) | `pkg/domain/limits/limits.go` |
 
 - A draft is edited with `If-Match: <spec_hash>`, so two editors never overwrite each other; the answer
   carries the validation against the current catalog.

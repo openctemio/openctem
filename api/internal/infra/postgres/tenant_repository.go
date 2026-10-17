@@ -12,7 +12,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/joinrequest"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
@@ -23,7 +23,7 @@ type TenantRepository struct {
 	// Seats: invitation accept, SSO JIT, SCIM, administrator-created users
 	// and direct adds all insert through CreateMembership or
 	// AcceptInvitationTx. Invitations: CreateInvitation (invites_per_day).
-	planLimits
+	limitChecks
 	// defaultRegion is DEPLOYMENT_REGION: the region new organizations get.
 	defaultRegion string
 }
@@ -84,7 +84,7 @@ func (r *TenantRepository) SetDefaultRegion(region string) { r.defaultRegion = r
 func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.Tenant, error) {
 	query := `
 		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
-		       ` + tenantPlanExpr + `, COALESCE(t.region, '')
+		       COALESCE(t.region, '')
 		FROM tenants t
 		WHERE t.id = $1
 	`
@@ -96,7 +96,7 @@ func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.T
 func (r *TenantRepository) GetBySlug(ctx context.Context, slug string) (*tenant.Tenant, error) {
 	query := `
 		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
-		       ` + tenantPlanExpr + `, COALESCE(t.region, '')
+		       COALESCE(t.region, '')
 		FROM tenants t
 		WHERE t.slug = $1
 	`
@@ -271,7 +271,7 @@ func (r *TenantRepository) ListActiveTenantIDs(ctx context.Context) ([]shared.ID
 // CreateMembership creates a new membership.
 // Inserts into tenant_members (membership record) and user_roles (role assignment).
 func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membership) error {
-	if err := r.checkLimit(ctx, m.TenantID(), plan.Seats, 1); err != nil {
+	if err := r.checkLimit(ctx, m.TenantID(), limits.Seats, 1); err != nil {
 		return err
 	}
 	return insertMembership(ctx, r.db, m)
@@ -386,14 +386,31 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 	); err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
-	// A plan chosen at creation (Free for a self-service organization) is
-	// stored in the same transaction: an organization never exists without
-	// it and so never falls back to plan.Unassigned by accident.
-	if p, ok := t.StoredPlan(); ok {
-		if _, err = tx.ExecContext(ctx,
-			`INSERT INTO tenant_plans (tenant_id, plan, updated_at) VALUES ($1, $2, $3)`,
-			t.ID().String(), string(p), t.CreatedAt()); err != nil {
-			return fmt.Errorf("failed to store the organization plan: %w", err)
+	// Limits the organization starts with (the instance's self-service
+	// defaults, when an operator set some) are stored in the same
+	// transaction: the organization is never briefly without them.
+	initial := t.Initial()
+	for _, l := range initial.Limits {
+		if l.TenantID != t.ID() {
+			return fmt.Errorf("%w: initial limit for another organization", shared.ErrValidation)
+		}
+		if _, err = tx.ExecContext(ctx, upsertLimitSQL, limitArgs(l)...); err != nil {
+			return fmt.Errorf("failed to store the organization limits: %w", err)
+		}
+	}
+	for _, d := range initial.Denies {
+		if d.TenantID != t.ID() {
+			return fmt.Errorf("%w: initial deny for another organization", shared.ErrValidation)
+		}
+		if _, err = tx.ExecContext(ctx, upsertDenySQL, denyArgs(d)...); err != nil {
+			return fmt.Errorf("failed to store the organization feature denies: %w", err)
+		}
+	}
+	if initial.IdlePolicy {
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO tenant_idle_lifecycle (tenant_id, stage, stage_changed_at, policy_enabled, policy_reason, policy_set_at)
+			VALUES ($1, 'active', $2, true, $3, $2)`, t.ID().String(), t.CreatedAt(), initial.IdleReason); err != nil {
+			return fmt.Errorf("failed to store the organization idle policy: %w", err)
 		}
 	}
 
@@ -663,7 +680,6 @@ func (r *TenantRepository) ListMembersByTenant(ctx context.Context, tenantID sha
 func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.ID) ([]*tenant.TenantWithRole, error) {
 	query := `
 		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
-		       ` + tenantPlanExpr + `,
 		       COALESCE(ver.role, 'member') as role, m.joined_at,
 		       m.status, m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.suspended_reason
 		FROM tenants t
@@ -687,7 +703,6 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 			description, logoURL sql.NullString
 			settingsJSON         []byte
 			createdAt, updatedAt time.Time
-			planStr              string
 			roleStr              string
 			joinedAt             time.Time
 			memberStatus         string
@@ -700,7 +715,7 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 
 		err := rows.Scan(
 			&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt,
-			&planStr, &roleStr, &joinedAt,
+			&roleStr, &joinedAt,
 			&memberStatus, &kind, &homeTenantID, &homeDomain, &expiresAt, &suspendedReason,
 		)
 		if err != nil {
@@ -719,9 +734,6 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 			id, name, slug, description.String, logoURL.String,
 			settings, createdBy.String, createdAt, updatedAt,
 		)
-		if err := t.SetPlan(plan.Plan(planStr)); err != nil {
-			return nil, fmt.Errorf("organization %s has an unknown plan %q", idStr, planStr)
-		}
 
 		var homeID *shared.ID
 		if homeTenantID.Valid {
@@ -1350,10 +1362,10 @@ func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Inv
 		if sentLastHour >= tenant.InvitationsPerInviterPerHour {
 			return tenant.ErrInvitationRateLimited
 		}
-		if err := r.checkLimit(ctx, inv.TenantID(), plan.InvitesPerDay, 1); err != nil {
+		if err := r.checkLimit(ctx, inv.TenantID(), limits.InvitesPerDay, 1); err != nil {
 			return err
 		}
-		if err := r.checkLimit(ctx, inv.TenantID(), plan.Seats, pending+1); err != nil {
+		if err := r.checkLimit(ctx, inv.TenantID(), limits.Seats, pending+1); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `
@@ -1578,7 +1590,7 @@ func (r *TenantRepository) DeletePendingInvitationsByUserID(
 // both happen or neither (RFC-104). joinrequest.ErrNotPending when the
 // request no longer waits.
 func (r *TenantRepository) CreateMembershipApprovingJoinRequest(ctx context.Context, m *tenant.Membership, requestID, approver shared.ID, at time.Time) error {
-	if err := r.checkLimit(ctx, m.TenantID(), plan.Seats, 1); err != nil {
+	if err := r.checkLimit(ctx, m.TenantID(), limits.Seats, 1); err != nil {
 		return err
 	}
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
@@ -1598,7 +1610,7 @@ func (r *TenantRepository) CreateMembershipApprovingJoinRequest(ctx context.Cont
 }
 
 func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.Invitation, m *tenant.Membership) error {
-	if err := r.checkLimit(ctx, inv.TenantID(), plan.Seats, 1); err != nil {
+	if err := r.checkLimit(ctx, inv.TenantID(), limits.Seats, 1); err != nil {
 		return err
 	}
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
@@ -1719,11 +1731,10 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 		description, logoURL sql.NullString
 		settingsJSON         []byte
 		createdAt, updatedAt time.Time
-		planStr              string
 		region               string
 	)
 
-	err := row.Scan(&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt, &planStr, &region)
+	err := row.Scan(&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt, &region)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -1742,9 +1753,6 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 		id, name, slug, description.String, logoURL.String,
 		settings, createdBy.String, createdAt, updatedAt,
 	)
-	if err := t.SetPlan(plan.Plan(planStr)); err != nil {
-		return nil, fmt.Errorf("organization %s has an unknown plan %q", idStr, planStr)
-	}
 	t.WithRegion(region)
 	return t, nil
 }

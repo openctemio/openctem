@@ -17,7 +17,7 @@ listener_wrappers {
 		route @sensor_alpn @sensor_host {
 			proxy {
 				proxy_protocol v2
-				upstream {$SENSOR_MTLS_UPSTREAM:api:8443}
+				upstream {$SENSOR_MTLS_UPSTREAM:api:9443}
 			}
 		}
 	}

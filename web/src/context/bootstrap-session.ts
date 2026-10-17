@@ -42,7 +42,16 @@ export interface BootstrapSessionData {
   tenant_creation_mode?: string
   badges?: BootstrapBadges
   announcements?: PlatformAnnouncement[]
+  /** A limit or module deny applies to the organization (owners and admins). */
+  limits_apply?: boolean
 }
+
+/**
+ * SWR key of the bootstrap's limits_apply: read from the cache only (no
+ * request), so the settings rail decides whether to list Usage & limits
+ * without a call on every page.
+ */
+export const LIMITS_APPLY_KEY = 'bootstrap:limits_apply'
 
 /** The platform notices the announcement banner reads. */
 export const ANNOUNCEMENTS_URL = '/api/v1/announcements'
@@ -80,6 +89,7 @@ export async function seedSessionCache(data: BootstrapSessionData): Promise<void
       status_counts: { pending: data.badges.pending_approvals },
     })
   if (Array.isArray(data.announcements)) seed(ANNOUNCEMENTS_URL, { data: data.announcements })
+  seed(LIMITS_APPLY_KEY, data.limits_apply === true)
 
   await Promise.all(writes)
 }

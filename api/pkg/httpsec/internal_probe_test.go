@@ -1,6 +1,7 @@
 package httpsec
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,7 +24,11 @@ func TestInternalProbeClient(t *testing.T) {
 	if c.Transport.(*http.Transport).Proxy != nil {
 		t.Fatal("proxy must be disabled")
 	}
-	resp, err := c.Get(redir.URL)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, redir.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

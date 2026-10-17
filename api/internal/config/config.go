@@ -57,6 +57,21 @@ type Config struct {
 	Ingest       IngestConfig
 	Metrics      MetricsConfig
 
+	// AccountPortalURL (ACCOUNT_PORTAL_URL) is the hosted service's account
+	// page, linked from Usage & limits when a limit applies. Empty: no link.
+	AccountPortalURL string
+
+	// InternalAPI is the control-plane listener (docs/architecture/limits.md):
+	// off unless INTERNAL_API_ADDR is set.
+	InternalAPI InternalAPIConfig
+
+	// SelfServiceStartLimits (SELF_SERVICE_START_LIMITS) are the limits an
+	// organization a person creates starts with when no console setting is
+	// stored: a JSON object of limit keys, or "unlimited" for an explicit
+	// choice of none. Empty: not configured; self-service sign-up then needs a
+	// console setting or the internal API.
+	SelfServiceStartLimits string
+
 	// AdminAuditRetention controls pruning of the platform-level
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
@@ -96,8 +111,6 @@ type Config struct {
 	// request comments (RFC-077). Off unless every value is set.
 	GitHubApp GitHubAppConfig
 }
-
-const schemeHTTPS = "https"
 
 // SystemConfig configures the System page (RFC-114). Everything is optional
 // and comes from the operator's environment, never from a request.
@@ -280,6 +293,74 @@ func (c AdminAuditSinkConfig) String() string {
 // (404) — metrics are effectively disabled until a token is set or Public is
 // explicitly enabled. Set METRICS_PUBLIC=true to restore the legacy open
 // endpoint (e.g. when it is already firewalled to an internal scrape network).
+// InternalAPIConfig configures the internal entitlements API: a separate
+// listener for a hosted service's control plane, never routed by the public
+// gateway. mTLS (client certificate required, verified against ClientCAFile)
+// plus a short-lived Ed25519-signed token on every request.
+type InternalAPIConfig struct {
+	// Addr is the listen address; empty turns the internal API off.
+	Addr         string
+	CertFile     string
+	KeyFile      string
+	ClientCAFile string
+	// JWTPublicKeysFile holds one or more PEM Ed25519 public keys (rotation).
+	JWTPublicKeysFile string
+	// JWTIssuer is the expected iss claim.
+	JWTIssuer string
+	// AllowAllInterfaces permits an address that listens on every interface
+	// (":9443", "0.0.0.0", "::"); off by default, so the listener binds a
+	// private address unless the operator decided otherwise.
+	AllowAllInterfaces bool
+}
+
+// schemeHTTPS is the URL scheme the configured links must use.
+const schemeHTTPS = "https"
+
+// validateAccountPortalURL accepts an empty value or an absolute https URL
+// (the link is shown to organization administrators).
+func validateAccountPortalURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != schemeHTTPS || u.Host == "" || u.User != nil {
+		return errors.New("ACCOUNT_PORTAL_URL must be an absolute https URL without credentials")
+	}
+	return nil
+}
+
+// Enabled reports whether the internal API listener is configured.
+func (c InternalAPIConfig) Enabled() bool { return c.Addr != "" }
+
+// validate refuses a half-configured internal API: every file is required
+// once the address is set (it never starts without mTLS or token keys).
+func (c InternalAPIConfig) validate() error {
+	if !c.Enabled() {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(c.Addr)
+	if err != nil {
+		return fmt.Errorf("INTERNAL_API_ADDR %q is not host:port: %w", c.Addr, err)
+	}
+	// Only a loopback or private address (10/8, 172.16/12, 192.168/16,
+	// fc00::/7) is accepted: not every interface, not a public address, not a
+	// link-local one, and not a hostname (what it resolves to cannot be
+	// checked here), unless the operator explicitly allows it.
+	if ip := net.ParseIP(host); !c.AllowAllInterfaces && (ip == nil || !(ip.IsLoopback() || ip.IsPrivate())) {
+		return fmt.Errorf("INTERNAL_API_ADDR %q is not a loopback or private IP address; bind one (for example 10.0.0.5:9443), or set INTERNAL_API_ALLOW_ALL_INTERFACES=true when only a private network reaches it", c.Addr)
+	}
+	for _, f := range []struct{ name, value string }{
+		{"INTERNAL_API_TLS_CERT", c.CertFile}, {"INTERNAL_API_TLS_KEY", c.KeyFile},
+		{"INTERNAL_API_CLIENT_CA", c.ClientCAFile}, {"INTERNAL_API_JWT_PUBLIC_KEYS", c.JWTPublicKeysFile},
+		{"INTERNAL_API_JWT_ISSUER", c.JWTIssuer},
+	} {
+		if strings.TrimSpace(f.value) == "" {
+			return fmt.Errorf("%s is required when INTERNAL_API_ADDR is set", f.name)
+		}
+	}
+	return nil
+}
+
 type MetricsConfig struct {
 	// Public leaves /metrics unauthenticated when true (legacy behavior).
 	// Default false.
@@ -996,13 +1077,13 @@ type SensorTransportV3Config struct {
 	Mode string
 	// PublicHost is host[:port] sensors dial for the gRPC binding
 	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443 for a dedicated
-	// sensor host name, or 192.0.2.10:8444 for a port of its own). Empty:
+	// sensor host name, or 192.0.2.10:9443 for a port of its own). Empty:
 	// the platform's public URL host and port (SensorPublicHost), reached
 	// through the gateway's ALPN routing; advertised only while the
 	// self-probe passes either way.
 	PublicHost string
 	// MTLSListenAddr is the gRPC binding's TLS 1.3 listener
-	// (SENSOR_MTLS_LISTEN_ADDR, default :8443). The gateway passes
+	// (SENSOR_MTLS_LISTEN_ADDR, default :9443). The gateway passes
 	// connections that offer the sensor ALPN id (or name the dedicated
 	// sensor host) through to it at layer 4.
 	MTLSListenAddr string
@@ -1413,7 +1494,7 @@ func Load() (*Config, error) {
 			TransportV3: SensorTransportV3Config{
 				Mode:           strings.ToLower(strings.TrimSpace(getEnv("SENSOR_TRANSPORT_V3", TransportV3Auto))),
 				PublicHost:     getEnv("SENSOR_PUBLIC_HOST", ""),
-				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":8443"),
+				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":9443"),
 				CACertFile:     getEnv("SENSOR_MTLS_CA_CERT_FILE", ""),
 				CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
 				CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),
@@ -1683,6 +1764,17 @@ func Load() (*Config, error) {
 			SourceResolve:         getEnv("INGEST_SOURCE_RESOLVE", "dry_run"),
 			VEX:                   getEnv("INGEST_VEX", "dry_run"),
 		},
+		AccountPortalURL: getEnv("ACCOUNT_PORTAL_URL", ""),
+		InternalAPI: InternalAPIConfig{
+			Addr:               getEnv("INTERNAL_API_ADDR", ""),
+			CertFile:           getEnv("INTERNAL_API_TLS_CERT", ""),
+			KeyFile:            getEnv("INTERNAL_API_TLS_KEY", ""),
+			ClientCAFile:       getEnv("INTERNAL_API_CLIENT_CA", ""),
+			JWTPublicKeysFile:  getEnv("INTERNAL_API_JWT_PUBLIC_KEYS", ""),
+			JWTIssuer:          getEnv("INTERNAL_API_JWT_ISSUER", "openctem-cloud"),
+			AllowAllInterfaces: getEnvBool("INTERNAL_API_ALLOW_ALL_INTERFACES", false),
+		},
+		SelfServiceStartLimits: getEnv("SELF_SERVICE_START_LIMITS", ""),
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.
 			Public: getEnvBool("METRICS_PUBLIC", false),
@@ -1838,6 +1930,12 @@ func (c *Config) Validate() error {
 	if err := c.validateBasic(); err != nil {
 		return err
 	}
+	if err := c.InternalAPI.validate(); err != nil {
+		return err
+	}
+	if err := validateAccountPortalURL(c.AccountPortalURL); err != nil {
+		return err
+	}
 	if c.App.Env == EnvProduction {
 		if err := c.validateProduction(); err != nil {
 			return err
@@ -1901,13 +1999,13 @@ func (c *Config) validateBasic() error {
 	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)
-		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+		if err != nil || pu.Scheme != schemeHTTPS || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
 			return errors.New("PROGRAMFEED_URL and PROGRAMFEED_MIRRORS must be https URLs without credentials, query or fragment")
 		}
 	}
 	for _, u := range c.Worker.VulnFeedMirrors {
 		pu, err := url.Parse(u)
-		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+		if err != nil || pu.Scheme != schemeHTTPS || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
 			return errors.New("VULNFEED_MIRRORS must be https URLs without credentials, query or fragment")
 		}
 	}
@@ -2686,7 +2784,7 @@ func deriveSecrets(cfg *Config) {
 // credentials, query or fragment, else nil.
 func parsePublicURL(raw string) *url.URL {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
+	if err != nil || (u.Scheme != schemeHTTPS && u.Scheme != "http") || u.Host == "" ||
 		u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
 		return nil
 	}
