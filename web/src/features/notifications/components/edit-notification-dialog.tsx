@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useBrand } from '@/context/brand-provider'
 import { useEffect, useState } from 'react'
 import { csrfFetch } from '@/lib/api/client'
@@ -144,6 +145,7 @@ export function EditNotificationDialog({
   integration,
   onSuccess,
 }: EditNotificationDialogProps) {
+  const { t } = useTranslation()
   const brand = useBrand()
   const ext = integration.notification_extension
   const providerConfig = PROVIDER_CONFIG[integration.provider] || PROVIDER_CONFIG.webhook
@@ -194,7 +196,7 @@ export function EditNotificationDialog({
       enabled_event_types: ext?.enabled_event_types ?? [],
       // Advanced settings
       message_template: ext?.message_template || '',
-      include_details: ext?.include_details ?? true,
+      include_details: ext?.include_details ?? false,
       min_interval_minutes: ext?.min_interval_minutes ?? 5,
       // Email defaults (leave empty - user must re-enter for security)
       smtp_host: '',
@@ -228,7 +230,7 @@ export function EditNotificationDialog({
         enabled_event_types: ext?.enabled_event_types ?? defaultEventTypes,
         // Advanced settings
         message_template: ext?.message_template || '',
-        include_details: ext?.include_details ?? true,
+        include_details: ext?.include_details ?? false,
         min_interval_minutes: ext?.min_interval_minutes ?? 5,
         // Email config from metadata (non-sensitive fields)
         smtp_host: (metadata.smtp_host as string) || '',
@@ -654,9 +656,12 @@ export function EditNotificationDialog({
                     htmlFor="edit_include_details"
                     className="text-sm font-normal cursor-pointer"
                   >
-                    Include detailed information in notifications
+                    {t('notificationTypes.includeDetails.label')}
                   </label>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('notificationTypes.includeDetails.hint')}
+                </p>
 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">

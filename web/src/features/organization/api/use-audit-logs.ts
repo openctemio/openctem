@@ -116,12 +116,12 @@ export function useAuditLogs(filters?: AuditLogFilters) {
  * Hook to fetch audit log statistics
  * Requires tenant context and audit module enabled
  */
-export function useAuditStats() {
+export function useAuditStats(enabled = true) {
   const { currentTenant } = useTenant()
   const { moduleIds, isLoading: modulesLoading } = useTenantModules()
 
   const hasAuditModule = moduleIds.includes('audit')
-  const shouldFetch = currentTenant && hasAuditModule && !modulesLoading
+  const shouldFetch = enabled && currentTenant && hasAuditModule && !modulesLoading
 
   const { data, error, isLoading, mutate } = useSWR<AuditStatsResponse>(
     shouldFetch ? auditLogEndpoints.stats() : null,

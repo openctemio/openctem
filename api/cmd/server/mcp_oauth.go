@@ -55,6 +55,17 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 	if deps.RedisClient != nil {
 		replay = redisReplayCache{client: deps.RedisClient}
 	}
+	// Access requests: approving writes the policy through the tenant
+	// service (audited there); administrators and requesters are told
+	// in-app.
+	var policyWriter mcpoauthapp.PolicyWriter
+	if svc.Tenant != nil {
+		policyWriter = svc.Tenant
+	}
+	var notifier mcpoauthapp.InAppNotifier
+	if svc.Notification != nil {
+		notifier = svc.Notification
+	}
 	var audit mcpoauthapp.AuditLogger
 	if svc.Audit != nil {
 		audit = svc.Audit
@@ -68,7 +79,10 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 		Connections: repo,
 		Clients:     repo,
 		// Write tools wait for the person's confirmation (RFC-062 §10).
-		Confirmations: repo,
+		Confirmations:  repo,
+		AccessRequests: repo,
+		PolicyWriter:   policyWriter,
+		Notifier:       notifier,
 		// Deprecated by MCP; off unless the operator turns it on.
 		DynamicRegistration: cfg.MCP.DynamicRegistration,
 		// DPoP proof ids are remembered in Redis (one use per proof).

@@ -927,7 +927,7 @@ func TestAssignRole_RoleBelongsToDifferentTenant(t *testing.T) {
 	}
 }
 
-func TestAssignRole_SystemRoleCanBeAssigned(t *testing.T) {
+func TestAssignRole_SystemRoleIsRefused(t *testing.T) {
 	svc, repo, _ := newTestRoleService()
 	tenantID := role.NewID()
 	sysRole := seedSystemRole(repo, role.MemberRoleID, "member", "Member")
@@ -940,8 +940,8 @@ func TestAssignRole_SystemRoleCanBeAssigned(t *testing.T) {
 
 	repo.actAsOwner()
 	err := svc.AssignRole(context.Background(), input, role.NewID().String(), audit.AuditContext{})
-	if err != nil {
-		t.Fatalf("system roles should be assignable, got error: %v", err)
+	if !errors.Is(err, accesscontrol.ErrSystemRoleViaRoles) {
+		t.Fatalf("a system role is the member's team role and changes through the membership, got: %v", err)
 	}
 }
 

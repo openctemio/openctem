@@ -8,6 +8,7 @@
 // key sets that differ.
 
 import en_activity from './en/activity.json'
+import en_auditLog from './en/auditLog.json'
 import en_actor from './en/actor.json'
 import en_admin from './en/admin.json'
 import en_announcements from './en/announcements.json'
@@ -66,6 +67,7 @@ import en_remediationTasks from './en/remediationTasks.json'
 import en_remediationHub from './en/remediationHub.json'
 import en_myWork from './en/myWork.json'
 import vi_activity from './vi/activity.json'
+import vi_auditLog from './vi/auditLog.json'
 import vi_actor from './vi/actor.json'
 import vi_admin from './vi/admin.json'
 import vi_announcements from './vi/announcements.json'
@@ -129,6 +131,7 @@ export type Dictionary = Record<string, string>
 /** Namespace name -> that namespace's catalog file, per locale. */
 export const enNamespaces: Record<string, Dictionary> = {
   activity: en_activity,
+  auditLog: en_auditLog,
   actor: en_actor,
   admin: en_admin,
   announcements: en_announcements,
@@ -190,6 +193,7 @@ export const enNamespaces: Record<string, Dictionary> = {
 
 export const viNamespaces: Record<string, Dictionary> = {
   activity: vi_activity,
+  auditLog: vi_auditLog,
   actor: vi_actor,
   admin: vi_admin,
   announcements: vi_announcements,

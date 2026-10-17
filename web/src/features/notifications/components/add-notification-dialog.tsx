@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useBrand } from '@/context/brand-provider'
 import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
@@ -181,6 +182,7 @@ export function AddNotificationDialog({
   onOpenChange,
   onSuccess,
 }: AddNotificationDialogProps) {
+  const { t } = useTranslation()
   const brand = useBrand()
   const [step, setStep] = useState<'provider' | 'config'>('provider')
   const [selectedProvider, setSelectedProvider] = useState<(typeof PROVIDERS)[number] | null>(null)
@@ -220,7 +222,7 @@ export function AddNotificationDialog({
       enabled_event_types: [],
       // Advanced settings defaults
       message_template: '',
-      include_details: true,
+      include_details: false,
       min_interval_minutes: 5,
       // Email defaults
       smtp_host: '',
@@ -713,9 +715,12 @@ export function AddNotificationDialog({
                       onCheckedChange={(checked) => setValue('include_details', !!checked)}
                     />
                     <label htmlFor="include_details" className="text-sm font-normal cursor-pointer">
-                      Include detailed information in notifications
+                      {t('notificationTypes.includeDetails.label')}
                     </label>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('notificationTypes.includeDetails.hint')}
+                  </p>
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">

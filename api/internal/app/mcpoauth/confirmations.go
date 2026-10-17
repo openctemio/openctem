@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // Write-tool confirmation (RFC-062 §10). A write tool called through an MCP
@@ -61,8 +63,11 @@ func (s *Service) RequestConfirmation(ctx context.Context, p *Principal, tool, d
 	if p == nil {
 		return nil, mcpoauth.ErrConfirmationRequired
 	}
+	// What the person approves must be what is stored: no bidi, zero-width or
+	// tag characters can make the page read differently from the text.
+	summary = safetext.Clean(summary)
 	if len(summary) > maxSummaryLen {
-		summary = summary[:maxSummaryLen]
+		summary = strings.ToValidUTF8(summary[:maxSummaryLen], "")
 	}
 	now := s.now()
 	c := &mcpoauth.Confirmation{
@@ -125,7 +130,10 @@ func (s *Service) GetConfirmation(ctx context.Context, tenantID, userID, id shar
 		return nil, err
 	}
 	return &ConfirmationView{
-		ID: c.ID.String(), Tool: c.Tool, Summary: c.Summary, ClientName: c.ClientName, Status: c.Status,
+		// Cleaned again on the way out: rows written before the clean on
+		// write, and the client name (a registered metadata document), are
+		// shown to the person too.
+		ID: c.ID.String(), Tool: c.Tool, Summary: safetext.Clean(c.Summary), ClientName: safetext.SingleLine(c.ClientName, 200), Status: c.Status,
 		Expired: !s.now().Before(c.ExpiresAt), ExpiresAt: c.ExpiresAt,
 	}, nil
 }

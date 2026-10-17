@@ -136,6 +136,16 @@ func (b *BusinessUnit) UpdateStats(assetCount, findingCount, criticalCount int, 
 	b.updatedAt = time.Now()
 }
 
+// ShowStats replaces the counters for display, without touching updated_at.
+// Used to present counts over a reader's data scope; never persist the unit
+// after calling it.
+func (b *BusinessUnit) ShowStats(st Stats) {
+	b.assetCount = st.AssetCount
+	b.findingCount = st.FindingCount
+	b.criticalFindingCount = st.CriticalFindingCount
+	b.avgRiskScore = st.AvgRiskScore
+}
+
 // Errors
 var ErrNotFound = fmt.Errorf("%w: business unit not found", shared.ErrNotFound)
 
@@ -159,4 +169,16 @@ type Repository interface {
 	// RecalculateCounts refreshes the cached asset/finding rollup counters
 	// for a business unit from its current membership.
 	RecalculateCounts(ctx context.Context, tenantID, buID shared.ID) error
+	// ScopedStats returns the rollup counters of the given units counted
+	// over the assets inside scope only (a unit with no in-scope asset has
+	// all-zero stats). It never writes.
+	ScopedStats(ctx context.Context, tenantID shared.ID, buIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]Stats, error)
+}
+
+// Stats are a business unit's rollup counters.
+type Stats struct {
+	AssetCount           int
+	FindingCount         int
+	CriticalFindingCount int
+	AvgRiskScore         float64
 }

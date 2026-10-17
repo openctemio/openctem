@@ -92,11 +92,11 @@ func (m *mockDashboardRepo) GetMTTRMetrics(_ context.Context, _ shared.ID, _ *sh
 	return map[string]float64{}, nil
 }
 
-func (m *mockDashboardRepo) GetRiskVelocity(_ context.Context, _ shared.ID, _ int) ([]module.RiskVelocityPoint, error) {
+func (m *mockDashboardRepo) GetRiskVelocity(_ context.Context, _ shared.ID, _ *shared.DataScope, _ int) ([]module.RiskVelocityPoint, error) {
 	return nil, nil
 }
 
-func (m *mockDashboardRepo) GetDataQualityScorecard(_ context.Context, _ shared.ID) (*module.DataQualityScorecard, error) {
+func (m *mockDashboardRepo) GetDataQualityScorecard(_ context.Context, _ shared.ID, _ *shared.DataScope) (*module.DataQualityScorecard, error) {
 	return &module.DataQualityScorecard{}, nil
 }
 
@@ -104,7 +104,7 @@ func (m *mockDashboardRepo) GetRiskTrend(_ context.Context, _ shared.ID, _ int) 
 	return nil, nil
 }
 
-func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, _ int) (*module.ExecutiveSummary, error) {
+func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, _ *shared.DataScope, _ int) (*module.ExecutiveSummary, error) {
 	return &module.ExecutiveSummary{}, nil
 }
 
@@ -112,7 +112,7 @@ func (m *mockDashboardRepo) GetMTTRAnalytics(_ context.Context, _ shared.ID, _ *
 	return &module.MTTRAnalytics{BySeverity: map[string]float64{}, ByPriorityClass: map[string]float64{}}, nil
 }
 
-func (m *mockDashboardRepo) GetProcessMetrics(_ context.Context, _ shared.ID, _ int) (*module.ProcessMetrics, error) {
+func (m *mockDashboardRepo) GetProcessMetrics(_ context.Context, _ shared.ID, _ *shared.DataScope, _ int) (*module.ProcessMetrics, error) {
 	return &module.ProcessMetrics{}, nil
 }
 

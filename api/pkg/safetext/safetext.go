@@ -32,7 +32,8 @@ const ellipsis = "…"
 // isInvisibleControl reports runes that are removed from untrusted text:
 // C0 controls except tab and newline, DEL and C1 controls, bidirectional
 // embedding/override/isolate controls and marks (Trojan Source), and
-// zero-width characters that hide content. ZWJ/ZWNJ are kept: scripts and
+// zero-width characters that hide content, and the Unicode tag characters
+// (U+E0000 to U+E007F) that encode invisible ASCII. ZWJ/ZWNJ are kept: scripts and
 // emoji need them.
 func isInvisibleControl(r rune) bool {
 	switch {
@@ -43,7 +44,11 @@ func isInvisibleControl(r rune) bool {
 	case r >= 0x202a && r <= 0x202e, // LRE RLE PDF LRO RLO
 		r >= 0x2066 && r <= 0x2069,            // LRI RLI FSI PDI
 		r == 0x200e, r == 0x200f, r == 0x061c, // LRM RLM ALM
-		r == 0x200b, r == 0x2060, r == 0xfeff: // ZWSP, word joiner, BOM
+		r == 0x200b, r == 0x2060, r == 0xfeff, // ZWSP, word joiner, BOM
+		r >= 0x2061 && r <= 0x2064,   // invisible math operators
+		r == 0x180e,                  // Mongolian vowel separator
+		r >= 0xe0000 && r <= 0xe007f, // tag characters (hidden ASCII)
+		r >= 0xe0100 && r <= 0xe01ef: // variation selectors supplement
 		return true
 	}
 	return false

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -823,9 +824,19 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, err
 	}
 
-	// Prevent changing owner role
+	// Prevent changing owner role. The one exception is an owner role row held
+	// without the owner membership (planted before system roles were limited to
+	// the membership routes): the real owner may remove it (drift).
+	drift := false
 	if membership.IsOwner() {
-		return nil, fmt.Errorf("%w: the owner's role changes only by a transfer: use Transfer ownership on the Members page", shared.ErrValidation)
+		var derr error
+		drift, derr = s.authorizeOwnerDriftRemoval(ctx, membership, actx)
+		if derr != nil {
+			return nil, derr
+		}
+		if !drift {
+			return nil, fmt.Errorf("%w: the owner's role changes only by a transfer: use Transfer ownership on the Members page", shared.ErrValidation)
+		}
 	}
 	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
 		return nil, err
@@ -876,8 +887,17 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, err
 	}
 
+	// UpdateMembership swaps the member's system role rows (the drifted owner
+	// row included) and the label in one transaction.
 	if err := s.repo.UpdateMembership(ctx, membership); err != nil {
 		return nil, fmt.Errorf("failed to update member role: %w", err)
+	}
+	if drift {
+		s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionOwnerRoleDriftRemoved, audit.ResourceTypeMembership, membershipID).
+			WithChanges(audit.NewChanges().Set("role", oldRole, input.Role)).
+			WithSeverity(audit.SeverityCritical).
+			WithMetadata("user_id", membership.UserID().String()).
+			WithMessage(fmt.Sprintf("Owner role without the owner membership removed; member is now %s", input.Role)))
 	}
 
 	// The change swaps the user's system role in user_roles: drop the cached
@@ -2693,6 +2713,40 @@ func (s *TenantService) UpdateMCPSettings(
 	s.logAudit(ctx, actx, event)
 	out := t.TypedSettings().MCP
 	return &out, nil
+}
+
+// AllowMCPClientHost adds a publisher host to the organization's MCP policy
+// (the hosts whose client metadata documents count as verified) in one
+// settings-section write, and audits the change. A host already listed is
+// left as is (no write, no audit). The host is validated like every policy
+// host; the 50-host cap applies.
+func (s *TenantService) AllowMCPClientHost(ctx context.Context, tenantID, host string, actx auditapp.AuditContext) error {
+	var before, after tenantdom.MCPSettings
+	changed := false
+	_, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionMCP, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().MCP
+		if slices.Contains(before.ClientHosts, host) {
+			changed = false
+			return nil
+		}
+		ms := before
+		ms.ClientHosts = append(slices.Clone(before.ClientHosts), host)
+		if err := t.UpdateMCPSettings(ms); err != nil {
+			return err
+		}
+		after, changed = t.TypedSettings().MCP, true
+		return nil
+	})
+	if err != nil || !changed {
+		return err
+	}
+	actx.TenantID = tenantID
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionMCPSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, after)).
+		WithMessage("AI application publisher approved: "+host).
+		WithMetadata("client_host", host).
+		WithSeverity(audit.SeverityHigh))
+	return nil
 }
 
 // GetScopeSettings returns the tenant's scope settings (RFC-054 §6.3).
