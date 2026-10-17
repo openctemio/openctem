@@ -20,11 +20,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/totp"
@@ -72,6 +76,9 @@ type LoginResult struct {
 	// OTPAuthURI and Secret are set only for StatusMFAEnrollment.
 	OTPAuthURI string
 	Secret     string
+	// Methods lists the second factors this administrator may use, WebAuthn
+	// first (MethodWebAuthn, MethodTOTP, MethodRecoveryCode).
+	Methods []string
 }
 
 // ClientInfo is recorded on sessions and audit entries.
@@ -95,6 +102,20 @@ type Service struct {
 	oidc OIDCProvider
 	// notifier tells the other administrators about a break-glass sign-in.
 	notifier BreakGlassNotifier
+
+	// Console WebAuthn (webauthn.go); nil when ADMIN_PUBLIC_URL resolves to
+	// no usable origin.
+	webauthn *webauthn.WebAuthn
+	factors  admin.FactorRepository
+	settings platformsetting.Repository
+	// grace is how long TOTP-only administrators keep TOTP after "require
+	// WebAuthn" is switched on (0: admin.DefaultWebAuthnGrace).
+	grace time.Duration
+	// factorCache memoizes the enrollment gate's FactorStatus (webauthn.go).
+	factorMu    sync.Mutex
+	factorCache map[string]factorCacheEntry
+	// factorNotifier emails an administrator about their own factor changes.
+	factorNotifier FactorChangeNotifier
 }
 
 // SignedInUser is the account whose password the console just checked.
@@ -253,12 +274,19 @@ func (s *Service) beginSecondFactor(ctx context.Context, a *admin.AdminUser, aut
 		creds = &admin.Credentials{AdminID: a.ID()}
 	}
 
+	st, err := s.FactorStatus(ctx, a)
+	if err != nil {
+		return nil, fmt.Errorf("start console session: %w", err)
+	}
+
 	pending, err := s.newSession(ctx, a.ID(), false, admin.PendingMFATTL, authMethod, client)
 	if err != nil {
 		return nil, err
 	}
-	if creds.MFAEnabled {
-		return &LoginResult{Status: StatusMFARequired, PendingToken: pending}, nil
+	// An administrator who holds an authenticator or an enrolled TOTP proves
+	// it; only one with neither is issued a TOTP secret to enroll.
+	if creds.MFAEnabled || st.WebAuthnCount > 0 {
+		return &LoginResult{Status: StatusMFARequired, PendingToken: pending, Methods: signInMethods(st)}, nil
 	}
 
 	secret, err := totp.GenerateSecret()
@@ -280,6 +308,7 @@ func (s *Service) beginSecondFactor(ctx context.Context, a *admin.AdminUser, aut
 		PendingToken: pending,
 		OTPAuthURI:   totp.URI(secret, Issuer, a.Email()),
 		Secret:       secret,
+		Methods:      []string{MethodTOTP},
 	}, nil
 }
 
@@ -287,35 +316,19 @@ func (s *Service) beginSecondFactor(ctx context.Context, a *admin.AdminUser, aut
 // session and, on success, replaces it with a verified session. Wrong codes
 // count toward the same lockout as wrong passwords.
 func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, client ClientInfo) (string, *admin.AdminUser, error) {
-	if pendingToken == "" {
-		return "", nil, admin.ErrInvalidMFACode
-	}
-	sess, err := s.console.GetSessionByTokenHash(ctx, hashToken(pendingToken))
+	sess, a, err := s.pendingSession(ctx, pendingToken)
 	if err != nil {
-		if errors.Is(err, admin.ErrSessionNotFound) {
-			return "", nil, admin.ErrInvalidMFACode
-		}
 		return "", nil, err
 	}
 	now := s.now()
-	if sess.MFAVerified || !now.Before(sess.ExpiresAt) {
-		return "", nil, admin.ErrInvalidMFACode
-	}
-	a, err := s.admins.GetByID(ctx, sess.AdminID)
+	st, err := s.FactorStatus(ctx, a)
 	if err != nil {
-		return "", nil, admin.ErrInvalidMFACode
+		return "", nil, err
 	}
-	if !a.IsActive() || a.IsLocked() {
-		_ = s.console.DeleteSession(ctx, sess.ID)
-		return "", nil, admin.ErrInvalidMFACode
-	}
-	authMethod := sessionAuthMethod(sess)
-	if authMethod == admin.AuthMethodPassword {
-		// "require IdP" may have been turned on after the password step.
-		if err := s.checkPasswordPathAllowed(ctx, a); err != nil {
-			_ = s.console.DeleteSession(ctx, sess.ID)
-			return "", nil, err
-		}
+	if !st.TOTPAllowed() {
+		// "require WebAuthn": this administrator holds an authenticator, and a
+		// TOTP code can be relayed by a phishing proxy.
+		return "", nil, admin.ErrWebAuthnRequired
 	}
 	creds, err := s.console.GetCredentials(ctx, a.ID())
 	if err != nil || creds.MFASecretEncrypted == "" {
@@ -347,19 +360,7 @@ func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, clie
 		}
 		s.record(ctx, a, ActionMFAEnrolled, client, "")
 	}
-	if a.FailedLoginCount() > 0 {
-		a.ResetFailedLogins()
-		if err := s.admins.Update(ctx, a); err != nil {
-			s.log.Warn("reset admin failed-login counter", "error", err)
-		}
-	}
-
-	_ = s.console.DeleteSession(ctx, sess.ID)
-	token, err := s.openVerifiedSession(ctx, a, authMethod, client, "")
-	if err != nil {
-		return "", nil, err
-	}
-	return token, a, nil
+	return s.completeSecondFactor(ctx, sess, a, client, "")
 }
 
 // StepUp re-confirms the signed-in administrator with a fresh code from the
@@ -371,6 +372,13 @@ func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, clie
 func (s *Service) StepUp(ctx context.Context, a *admin.AdminUser, code, purpose string, client ClientInfo) error {
 	if a == nil {
 		return admin.ErrInvalidMFACode
+	}
+	st, err := s.FactorStatus(ctx, a)
+	if err != nil {
+		return err
+	}
+	if !st.TOTPAllowed() {
+		return admin.ErrWebAuthnRequired
 	}
 	creds, err := s.console.GetCredentials(ctx, a.ID())
 	if err != nil || !creds.MFAEnabled || creds.MFASecretEncrypted == "" {
@@ -407,7 +415,19 @@ func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess
 		return admin.ErrStepUpRequired
 	}
 	now := s.now()
+	fresh := admin.FreshStepUpRequired(ctx)
 	if code == "" {
+		if fresh {
+			// A security-key confirmation given just now, spent by this action.
+			ok, err := s.console.ConsumeSessionStepUp(ctx, sess.ID, now.Add(-admin.FreshStepUpWindow))
+			if err != nil {
+				return err
+			}
+			if ok {
+				return nil
+			}
+			return admin.ErrStepUpRequired
+		}
 		if sess.SteppedUp(now) {
 			return nil
 		}
@@ -415,6 +435,9 @@ func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess
 	}
 	if err := s.StepUp(ctx, a, code, purpose, client); err != nil {
 		return err
+	}
+	if fresh {
+		return nil // a code is fresh by itself; it opens no window
 	}
 	if err := s.console.MarkSessionStepUp(ctx, sess.ID, now); err != nil {
 		// The code was valid and is spent: this action goes ahead, the next
@@ -486,6 +509,7 @@ func (s *Service) AuthenticateSession(ctx context.Context, token string) (*admin
 		}
 	}
 	sess.AuthMethod = sessionAuthMethod(sess)
+	sess.EnrollmentRequired = s.enrollmentRequired(ctx, a)
 	return a, sess, nil
 }
 
@@ -637,6 +661,12 @@ func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, 
 	}
 	if err := s.console.DeleteCredentials(ctx, target.ID()); err != nil {
 		return err
+	}
+	s.forgetFactors(target)
+	if s.factors != nil {
+		if err := s.factors.DeleteFactorsForAdmin(ctx, target.ID()); err != nil {
+			return err
+		}
 	}
 	if s.audit != nil {
 		entry := admin.NewAuditLogBuilder(actor, ActionCredentialsReset).
