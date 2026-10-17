@@ -91,7 +91,10 @@ func (s *Service) auditRefusedTargets(ctx context.Context, tenantID shared.ID, p
 
 // logRefusedTarget records why the gate refused a target. The target is
 // sanitized; the state says which rule refused it.
-func (s *Service) logRefusedTarget(_ context.Context, tenantID shared.ID, path, target string, state attribution.State) {
+func (s *Service) logRefusedTarget(ctx context.Context, tenantID shared.ID, path, target string, state attribution.State) {
+	if state == attribution.StatePlatformDenied {
+		s.observeDenyListHit(ctx, tenantID)
+	}
 	if s.logger == nil {
 		return
 	}

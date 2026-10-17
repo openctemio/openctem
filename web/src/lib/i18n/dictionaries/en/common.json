@@ -87,5 +87,6 @@
   "common.cvss.value.CIA.N": "None",
   "common.failedToLoad": "Failed to load {title}",
   "common.unexpectedError": "An unexpected error occurred",
-  "common.moreTabs": "More"
+  "common.moreTabs": "More",
+  "common.openFullPage": "Open full page"
 }
