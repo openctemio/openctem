@@ -382,5 +382,6 @@
   "confirm.verifiedDomain.removeTitle": "Remove the domain {domain}?",
   "confirm.workflowStep.builderDeleteDesc": "The step leaves the workflow you are editing, and steps that depended on it lose that dependency. Nothing changes until you save.",
   "confirm.workflowStep.deleteDesc": "The step leaves the draft and steps that depended on it lose that dependency. The published workflow is not changed until you publish.",
-  "confirm.workflowStep.deleteTitle": "Delete this step?"
+  "confirm.workflowStep.deleteTitle": "Delete this step?",
+  "confirm.findingApproval.approveDescMore": "Your approval is recorded. The finding moves to the requested status once {count} more approval(s) are in."
 }
