@@ -71,7 +71,9 @@ services:
       - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_HTTPS_PORT:-443}:443"
       # The platform console's site (OPENCTEM_ADMIN_SITE=port); it answers only
       # OPENCTEM_ADMIN_ALLOWED_CIDRS (private networks by default).
-      - "${GATEWAY_BIND:-0.0.0.0}:${OPENCTEM_ADMIN_PORT:-8444}:${OPENCTEM_ADMIN_PORT:-8444}"
+      # OPENCTEM_ADMIN_BIND puts it on one interface only (a private or VPN
+      # address): a published port is not filtered by the host firewall.
+      - "${OPENCTEM_ADMIN_BIND:-${GATEWAY_BIND:-0.0.0.0}}:${OPENCTEM_ADMIN_PORT:-8443}:${OPENCTEM_ADMIN_PORT:-8443}"
     environment:
       OPENCTEM_HOSTNAME: ${OPENCTEM_HOSTNAME:?OPENCTEM_HOSTNAME is required (DNS name or IP clients use)}
       OPENCTEM_TLS_MODE: ${OPENCTEM_TLS_MODE:-internal}
@@ -85,7 +87,10 @@ services:
       # The platform console on its own site (port | host | off).
       OPENCTEM_ADMIN_SITE: ${OPENCTEM_ADMIN_SITE:-port}
       OPENCTEM_ADMIN_HOST: ${OPENCTEM_ADMIN_HOST:-}
-      OPENCTEM_ADMIN_PORT: ${OPENCTEM_ADMIN_PORT:-8444}
+      OPENCTEM_ADMIN_PORT: ${OPENCTEM_ADMIN_PORT:-8443}
+      # The main site's published port: the entrypoint refuses a console port
+      # equal to it (both are published on this host).
+      GATEWAY_HTTPS_PORT: ${GATEWAY_HTTPS_PORT:-443}
       OPENCTEM_ADMIN_ALLOWED_CIDRS: ${OPENCTEM_ADMIN_ALLOWED_CIDRS:-}
     volumes:
       # A directory, not single files: editors replace a file's inode on save

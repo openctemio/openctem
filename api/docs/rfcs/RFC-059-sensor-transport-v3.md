@@ -63,7 +63,7 @@ mTLS the preferred path where the network allows it.
 | T2 | v3 binds the v2 resource model to RPCs: one RPC per v2 resource. The envelope is typed (ids, segment numbers, lease epochs, encodings, digests, entity tags, transport); documents whose schema another specification owns (heartbeat, commands, CTIS reports, manifest, config report, suppressions) travel as their JSON bytes, unchanged. The server serves each RPC by running it through the v2 handler chain in-process, so validation, limits, services and side effects are the same code, and one conformance suite covers both protocols. |
 | T3 | The control channel is a server stream (`Subscribe`) plus unary calls, on both bindings. A bidirectional stream does not work over HTTP/1.1, which the fallback must support; with server streaming both bindings have the same semantics. The stream carries the doorbell, never a job; jobs are claimed with `ClaimCommands`. |
 | T4 | Uploads are unary and resumable: `PutResult` sends a whole report or one segment, idempotent by report id + segment + Content-Digest (RFC-026); `GetResultStatus` tells what is missing after a disconnect. Logs are batched unary calls. Client streaming would not work over HTTP/1.1 and would add nothing to the exactly-once guarantee the segments already give. |
-| T5 | Two bindings, one handler: gRPC on the mTLS listener (`SENSOR_MTLS_LISTEN_ADDR`, default `:8443`, paths at the root); Connect (and gRPC, gRPC-Web) under `/api/v3/sensor/` on the API's normal listener, behind the RFC 9421 authenticator. Both are mounted unless `SENSOR_TRANSPORT_V3=off`. |
+| T5 | Two bindings, one handler: gRPC on the mTLS listener (`SENSOR_MTLS_LISTEN_ADDR`, default `:9443`, paths at the root); Connect (and gRPC, gRPC-Web) under `/api/v3/sensor/` on the API's normal listener, behind the RFC 9421 authenticator. Both are mounted unless `SENSOR_TRANSPORT_V3=off`. |
 | T6 | v3 requires a key-bound sensor (RFC-052). A bearer key is refused on v3; such sensors stay on v2 until they pair. |
 | T7 | The client certificate certifies the sensor's registered Ed25519 key. `IssueCertificate` takes no CSR: the caller proved possession by signing the request (HTTPS) or in the handshake (gRPC). Subject CN = sensor id, URI SAN `spiffe://openctem/tenant/<tenant id>/sensor/<sensor id>`, extended key usage clientAuth, lifetime `SENSOR_MTLS_CERT_TTL` (default 7 days, 1 hour to 30 days). The sensor renews at two thirds of the lifetime. Issuance is rate-limited per sensor and recorded on the sensor's timeline. |
 | T8 | Revocation needs no CRL: every handshake and every call resolves the certificate's key through the sensor's active keys and status (the same lookup as a signed v2 request) and checks that tenant and sensor in the certificate match the key's row. Results are cached at most 5 seconds. Streams re-check every 30 seconds and at once when the sensor's status changes. |
@@ -116,7 +116,7 @@ sensor ──TLS 1.3, client cert, ALPN [h2, openctem-sensor/3]──► <platfo
                                                                   │ offers openctem-sensor/3 (or names
                                                                   │ the dedicated sensor host, T14)
                                                                   ▼ passthrough + PROXY protocol v2
-                                                               api:8443  negotiates h2;
+                                                               api:9443  negotiates h2;
                                                                          VerifyConnection:
                                                                          chain → sensor CA,
                                                                          key → active key row,
@@ -150,10 +150,10 @@ connection, still encrypted, to an mTLS listener of the API.
 | Our gateway, stock image (no layer4) | nothing | none: HTTPS binding | The probe meets the gateway's certificate (`foreign_certificate`); nothing to configure |
 | No gateway: API exposed directly (web served elsewhere) | the API itself (T17): `SERVER_TLS_CERT_FILE`, `SERVER_TLS_KEY_FILE` | the API URL's host and port (`SENSOR_PUBLIC_API_URL`) as `grpc_alpn_endpoint` | One port for API clients and sensors; the certificate files are re-read when they change |
 | No gateway: API behind an L4 (TCP) load balancer | the API itself (T17) behind the balancer | the balancer's host and port as `grpc_alpn_endpoint` | The balancer must pass TCP unchanged. If it sends PROXY protocol v2, list its addresses in `SENSOR_MTLS_TRUSTED_PROXIES` (then also believed for API clients on that port) |
-| Own TLS proxy with ALPN-aware TCP routing (nginx `stream` + `ssl_preread`, HAProxy `mode tcp`) | the proxy: a ClientHello offering `openctem-sensor/3` goes to the API's `:8443` untouched, everything else to the HTTPS service | the proxy's host and port as `grpc_alpn_endpoint` | Example configs in the architecture doc, both tested against the mTLS listener |
-| SNI-only passthrough (e.g. a Kubernetes ingress with ssl-passthrough) | the proxy, by a dedicated sensor host name, to the API's `:8443` | `SENSOR_PUBLIC_HOST=sensors.example.com:443` as both fields | A router that reads SNI only cannot route by ALPN; give sensors their own name |
+| Own TLS proxy with ALPN-aware TCP routing (nginx `stream` + `ssl_preread`, HAProxy `mode tcp`) | the proxy: a ClientHello offering `openctem-sensor/3` goes to the API's `:9443` untouched, everything else to the HTTPS service | the proxy's host and port as `grpc_alpn_endpoint` | Example configs in the architecture doc, both tested against the mTLS listener |
+| SNI-only passthrough (e.g. a Kubernetes ingress with ssl-passthrough) | the proxy, by a dedicated sensor host name, to the API's `:9443` | `SENSOR_PUBLIC_HOST=sensors.example.com:443` as both fields | A router that reads SNI only cannot route by ALPN; give sensors their own name |
 | L7 load balancer or proxy that terminates TLS and cannot pass TCP through | nothing | none: HTTPS binding | Automatic. The `Subscribe` stream and every RPC work over the Connect protocol on HTTP/1.1 or HTTP/2; keep response buffering off |
-| Separate port (explicit) | the operator publishes the API's `:8443` | `SENSOR_PUBLIC_HOST` (e.g. `192.0.2.10:8444`) as both fields | Only when configured; no PROXY protocol unless a proxy in front sends it |
+| Separate port (explicit) | the operator publishes the API's `:9443` | `SENSOR_PUBLIC_HOST` (e.g. `192.0.2.10:9443`) as both fields | Only when configured; no PROXY protocol unless a proxy in front sends it |
 | Kubernetes | see notes | — | Expose the gateway image (or the API with T17) through a `LoadBalancer` Service for ALPN routing, use a dedicated sensor host with ssl-passthrough, or stay on the HTTPS binding through any ingress. Chart support is a follow-up (helm-charts: gateway image with layer4, `OPENCTEM_SENSOR_GATEWAY`, `SENSOR_MTLS_TRUSTED_PROXIES` for the gateway pods) |
 
 In every row the self-probe decides what hello names: it passes only when the
@@ -229,8 +229,8 @@ by the v2 code it reuses.
 | Variable | Default | Meaning |
 |---|---|---|
 | `SENSOR_TRANSPORT_V3` | `auto` | `auto`: HTTPS binding always, gRPC binding while its self-probe passes; `off`: no v3, every sensor on v2 (emergency switch). The former `SENSOR_TRANSPORT_V3_ENABLED` is refused at startup |
-| `SENSOR_PUBLIC_HOST` | host and port (default 443) of the platform URL (`SENSOR_PUBLIC_API_URL`, else `APP_URL`, https only), a name or an address | Endpoint sensors dial for gRPC. Unset: the platform's own port through the gateway's ALPN routing. Set it for a dedicated sensor host (`sensors.example.com:443`) or a port of its own (`192.0.2.10:8444`) |
-| `SENSOR_MTLS_LISTEN_ADDR` | `:8443` | mTLS listener |
+| `SENSOR_PUBLIC_HOST` | host and port (default 443) of the platform URL (`SENSOR_PUBLIC_API_URL`, else `APP_URL`, https only), a name or an address | Endpoint sensors dial for gRPC. Unset: the platform's own port through the gateway's ALPN routing. Set it for a dedicated sensor host (`sensors.example.com:443`) or a port of its own (`192.0.2.10:9443`) |
+| `SENSOR_MTLS_LISTEN_ADDR` | `:9443` | mTLS listener |
 | `SENSOR_MTLS_CA_CERT_FILE` / `SENSOR_MTLS_CA_KEY_FILE` | — | Sensor CA (PEM) |
 | `SENSOR_MTLS_CA_DIR` | `data/sensor-ca` (in the API image: `/app/data/sensor-ca`, on the `api-data` volume; in the all-in-one image: `/data/sensor-ca`, on its `/data` volume) | Where the CA is created when the files are unset |
 | `SENSOR_MTLS_CERT_TTL` | `168h` | Client certificate lifetime (1h–720h) |
@@ -244,7 +244,7 @@ layer4 module; `deploy/docker-compose.sensor-passthrough.yml`):
 |---|---|---|
 | `OPENCTEM_SENSOR_GATEWAY` | `off` (`alpn` in the override file) | `off`: no layer-4 routing; `alpn`: a ClientHello offering `openctem-sensor/3` goes to the mTLS listener; `passthrough`: that, and TLS for `SENSOR_PUBLIC_HOSTNAME` by SNI. `alpn` and `passthrough` need the layer4 image and a TLS mode; the entrypoint refuses them otherwise |
 | `SENSOR_PUBLIC_HOSTNAME` | — | Dedicated sensor host name for `passthrough` (no port; must differ from `OPENCTEM_HOSTNAME`) |
-| `SENSOR_MTLS_UPSTREAM` | `api:8443` | The API's mTLS listener |
+| `SENSOR_MTLS_UPSTREAM` | `api:9443` | The API's mTLS listener |
 
 ## 10. Rollout
 
