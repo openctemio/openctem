@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"reflect"
 	"sort"
 	"strings"
@@ -145,6 +146,12 @@ func (s inventorySessions) AuthenticateSession(context.Context, string) (*admin.
 // confirmer that records the purposes it is asked about and refuses.
 func inventoryRouter(t *testing.T) (infrahttp.Router, *[]string) {
 	t.Helper()
+	return inventoryRouterWith(t, nil)
+}
+
+// inventoryRouterWith is inventoryRouter with a hook to adjust the handlers.
+func inventoryRouterWith(t *testing.T, adjust func(*Handlers)) (infrahttp.Router, *[]string) {
+	t.Helper()
 	now := time.Now()
 	a := admin.Reconstitute(shared.NewID(), "root@example.com", "Root", admin.AdminRoleSuperAdmin, true,
 		nil, nil, "", 0, nil, nil, "", now, nil, now)
@@ -166,6 +173,9 @@ func inventoryRouter(t *testing.T) (infrahttp.Router, *[]string) {
 		}
 		return admin.ErrStepUpRequired
 	})
+	if adjust != nil {
+		adjust(&h)
+	}
 	router := infrahttp.NewChiRouter()
 	registerAdminRoutes(router, h, nil)
 	return router, purposes
@@ -253,5 +263,45 @@ func TestAdminStepUpRoutesRefuseWithoutCode(t *testing.T) {
 				t.Errorf("%s (%s) asked the route-level step-up: reclassify it as step-up", key, entry.class)
 			}
 		}
+	}
+}
+
+// Every console route, reads included, refuses a client outside the console
+// networks at the route itself (RequireAdminNetwork), so a path the
+// server-wide gate read differently still cannot reach a console handler.
+func TestAdminRoutesRefuseOutsideNetworks(t *testing.T) {
+	router, _ := inventoryRouterWith(t, func(h *Handlers) {
+		h.AdminNetwork = middleware.RequireAdminNetwork([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}, nil)
+	})
+	handler := router.Handler()
+	n := 0
+	_ = router.Walk(func(method, path string, _ http.Handler) error {
+		if !strings.HasPrefix(path, "/api/v1/admin") {
+			return nil
+		}
+		n++
+		p := strings.NewReplacer("{id}", shared.NewID().String(), "{tenantId}", shared.NewID().String(),
+			"{user_id}", shared.NewID().String(), "{console_session_id}", shared.NewID().String(),
+			"{announcement_id}", shared.NewID().String(), "{module_id}", "pentest", "{key}", "seats",
+			"{channel}", "stable", "{source}", "epss").Replace(path)
+		for _, raw := range []string{p, strings.Replace(p, "/api/v1/admin", "/api/v1//admin", 1)} {
+			req := httptest.NewRequest(method, raw, strings.NewReader(`{}`))
+			req.RemoteAddr = "203.0.113.9:5000"
+			req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
+			req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
+			req.Header.Set(middleware.CSRFHeaderName, "c")
+			rec := httptest.NewRecorder()
+			func() {
+				defer func() { _ = recover() }()
+				handler.ServeHTTP(rec, req)
+			}()
+			if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), string(middleware.CodeAdminNetworkNotAllowed)) {
+				t.Errorf("%s %s from outside: %d %s", method, raw, rec.Code, rec.Body.String())
+			}
+		}
+		return nil
+	})
+	if n < 60 {
+		t.Fatalf("only %d console routes walked", n)
 	}
 }
