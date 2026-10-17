@@ -41,6 +41,12 @@ type ValidateResponse struct {
 	MaxRole string `json:"max_role,omitempty"`
 	// ElevatedUntil is when the session's elevation ends (absent: not elevated).
 	ElevatedUntil *time.Time `json:"elevated_until,omitempty"`
+	// CSRFToken is the console session's CSRF token, for the console to echo
+	// in X-CSRF-Token. Returned only by the sign-in steps that open a session
+	// and by validate (the session's own cookie request), never in a readable
+	// cookie: on a second port of the tenant host the two sites share cookies,
+	// but a tenant page cannot read the console's responses.
+	CSRFToken string `json:"csrf_token,omitempty"`
 }
 
 // Validate validates the admin API key and returns admin info.
@@ -71,6 +77,9 @@ func (h *AdminAuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 			response.ElevatedUntil = sess.ElevatedUntil
 		}
 		response.PasswordChangeRequired = adminUser.PasswordChangeRequired() && sess.AuthMethod == admin.AuthMethodPassword
+	}
+	if c, err := r.Cookie(middleware.AdminCSRFCookie); err == nil {
+		response.CSRFToken = c.Value
 	}
 
 	w.Header().Set("Content-Type", "application/json")
