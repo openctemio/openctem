@@ -790,6 +790,21 @@ Approval of an elevation by another super admin is a later step.
   The older readable copies (`admin_csrf` at `/`) are cleared on every
   sign-in. A console session ends after 15 minutes without use (8 hours at
   most).
+- The CSRF token is bound to the session: HMAC-SHA256 of the session secret
+  under a server key derived from the session-signing secret
+  (`AUTH_JWT_SECRET`, shared by every replica). The API verifies that
+  binding on every console write, never cookie equality, so an `admin_csrf`
+  cookie a tenant-page script plants on the same host (cookies ignore ports,
+  and a more specific path shadows the real one) is worthless. Every console
+  response is `Cache-Control: no-store`.
+- With `OPENCTEM_ADMIN_SITE=off` the gateway serves no console site and the
+  console service is reachable only the way the operator routes it. Routing
+  it on the tenant site's origin (a path of the main host name) brings back
+  the residual risks of a shared origin: a tenant-page script could read
+  console responses and frame console pages. The network allow-list, the
+  session-bound token, step-up and the audit log still apply, but `off` is
+  meant for installations that give the console their own separate host name
+  or private network, never a shared origin.
 - Server-side sessions: deactivating an admin or resetting credentials deletes
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes

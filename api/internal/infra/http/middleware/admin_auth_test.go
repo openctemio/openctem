@@ -46,7 +46,7 @@ func adminRequest(method, path, session string) *http.Request {
 		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: session})
 		if method != http.MethodGet {
 			req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: testCSRF})
-			req.Header.Set(middleware.CSRFHeaderName, testCSRF)
+			req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken(session))
 		}
 	}
 	return req
@@ -185,5 +185,56 @@ func TestTargetMappingWriteGate(t *testing.T) {
 	}
 	if got := doAdmin(writeGuard, http.MethodPost, "key-super"); got != http.StatusOK {
 		t.Errorf("write super_admin: got %d, want 200", got)
+	}
+}
+
+// The console CSRF token is bound to the session: a planted admin_csrf
+// cookie with a matching header (what a tenant-page script on the same host
+// could do, since cookies ignore ports) is refused, and so is another
+// session's token. Only the session's own token passes.
+func TestAdminCSRFBoundToSession(t *testing.T) {
+	h, keys := buildAdminUsersGuard(t)
+	write := func(header string, cookie *http.Cookie) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/", http.NoBody)
+		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: keys["super"]})
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		req.Header.Set(middleware.CSRFHeaderName, header)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	planted := &http.Cookie{Name: middleware.AdminCSRFCookie, Value: "attacker-chosen"}
+	if got := write("attacker-chosen", planted); got != http.StatusUnauthorized {
+		t.Errorf("planted cookie == header: %d, want 401", got)
+	}
+	if got := write(middleware.AdminCSRFToken(keys["readonly"]), nil); got != http.StatusUnauthorized {
+		t.Errorf("another session's token: %d, want 401", got)
+	}
+	if got := write(middleware.AdminCSRFToken(keys["super"]), planted); got == http.StatusUnauthorized {
+		t.Errorf("the session's own token (with a planted cookie beside it): %d, want accepted", got)
+	}
+}
+
+func TestAdminCSRFTokenDerivation(t *testing.T) {
+	a, b := middleware.AdminCSRFToken("session-a"), middleware.AdminCSRFToken("session-b")
+	if a == "" || a == b || a != middleware.AdminCSRFToken("session-a") {
+		t.Fatalf("tokens: %q %q", a, b)
+	}
+	if !middleware.ValidAdminCSRF("session-a", a) || middleware.ValidAdminCSRF("session-b", a) ||
+		middleware.ValidAdminCSRF("", "") || middleware.ValidAdminCSRF("session-a", "") {
+		t.Fatal("validation does not follow the session")
+	}
+	// Replicas sharing the secret agree; another secret yields other tokens.
+	middleware.SetAdminCSRFSecret("replica-shared-secret-0123456789abcdef")
+	shared := middleware.AdminCSRFToken("session-a")
+	middleware.SetAdminCSRFSecret("replica-shared-secret-0123456789abcdef")
+	if middleware.AdminCSRFToken("session-a") != shared {
+		t.Fatal("the same secret must derive the same key")
+	}
+	middleware.SetAdminCSRFSecret("another-secret-0123456789abcdef-xyz")
+	if middleware.AdminCSRFToken("session-a") == shared {
+		t.Fatal("another secret must derive another key")
 	}
 }
