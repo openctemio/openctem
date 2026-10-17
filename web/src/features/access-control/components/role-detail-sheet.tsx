@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { csrfFetch } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { useTenant } from '@/context/tenant-provider'
