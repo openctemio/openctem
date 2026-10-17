@@ -103,7 +103,7 @@ func (s *CategoryService) ListAllCategories(ctx context.Context, tenantID string
 // its own custom category. Any other id is not found, so another tenant's
 // category never shows, not even its existence.
 func (s *CategoryService) GetCategory(ctx context.Context, tenantID, id string) (*tooldomcat.ToolCategory, error) {
-	s.logger.Debug("getting tool category", "id", id)
+	s.logger.Debug("getting tool category", "id", logger.SanitizeValue(id))
 
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
