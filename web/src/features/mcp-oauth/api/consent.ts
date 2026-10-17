@@ -38,6 +38,12 @@ export interface ConsentRequest {
   /** Registered by the organization or published on a host it trusts. */
   verified: boolean
   blocked?: ConsentBlocked
+  /** Blocked only because its publisher is not approved: members may ask. */
+  requestable?: boolean
+  /** The caller may approve the publisher here (settings:write). */
+  can_allow?: boolean
+  /** A request for this publisher is already waiting. */
+  access_requested?: boolean
   scopes: ConsentScope[]
   expires_at: string
 }
@@ -59,24 +65,27 @@ export function isRequestId(id: string | null | undefined): id is string {
   return !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
 }
 
-async function failure(response: Response, fallback: string): Promise<ConsentError> {
+/**
+ * The API's message (English, server generated) or "" so the page shows its
+ * own translated text.
+ */
+async function failure(response: Response): Promise<ConsentError> {
   const data = (await response.json().catch(() => ({}))) as { message?: string }
-  return new ConsentError(data.message || fallback, response.status)
+  return new ConsentError(data.message || '', response.status)
 }
 
 export async function fetchConsentRequest(id: string): Promise<ConsentRequest> {
   const response = await csrfFetch(base(id), { method: 'GET' })
-  if (!response.ok) throw await failure(response, 'This request is no longer available')
+  if (!response.ok) throw await failure(response)
   return (await response.json()) as ConsentRequest
 }
 
 async function decide(id: string, decision: 'approve' | 'deny'): Promise<string> {
   const response = await csrfFetch(`${base(id)}/${decision}`, { method: 'POST' })
-  if (!response.ok) throw await failure(response, 'This request is no longer available')
+  if (!response.ok) throw await failure(response)
   const data = (await response.json()) as { redirect_to?: string }
   const to = data.redirect_to ?? ''
-  if (!isSafeRedirect(to))
-    throw new ConsentError('The application gave an address that cannot be opened', 400)
+  if (!isSafeRedirect(to)) throw new ConsentError('', 400)
   return to
 }
 
@@ -94,24 +103,5 @@ export function isSafeRedirect(to: string): boolean {
     return u.protocol === 'https:' || u.protocol === 'http:'
   } catch {
     return false
-  }
-}
-
-/** Why the organization refuses the application, in words. */
-export function blockedMessage(b: ConsentBlocked): string {
-  return b === 'mcp_disabled'
-    ? 'Your organization has turned off AI application access.'
-    : 'Your organization only allows approved applications. Ask an administrator to allow this one.'
-}
-
-/** How a client identifies itself, in words. */
-export function clientKindLabel(r: Pick<ConsentRequest, 'client_kind' | 'client_host'>): string {
-  switch (r.client_kind) {
-    case 'metadata_document':
-      return r.client_host ? `Published by ${r.client_host}` : 'Published by its provider'
-    case 'organization':
-      return 'Registered by your organization'
-    default:
-      return 'Unverified: registered itself'
   }
 }
