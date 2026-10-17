@@ -20,6 +20,7 @@ type ExposureEvent struct {
 	assetID         *shared.ID
 	eventType       EventType
 	severity        Severity
+	peakSeverity    Severity // highest severity ever seen; empty until read from storage
 	state           State
 	title           string
 	description     string
@@ -191,6 +192,24 @@ func (e *ExposureEvent) Severity() Severity {
 	return e.severity
 }
 
+// PeakSeverity returns the highest severity this exposure has had: the higher
+// of the current severity and the stored peak. A re-ingest can lower the
+// current severity; the peak never goes down.
+func (e *ExposureEvent) PeakSeverity() Severity {
+	if e.peakSeverity.IsValid() && e.peakSeverity.Score() > e.severity.Score() {
+		return e.peakSeverity
+	}
+	return e.severity
+}
+
+// WithPeakSeverity records the stored peak when the event is read back.
+func (e *ExposureEvent) WithPeakSeverity(s Severity) *ExposureEvent {
+	if s.IsValid() {
+		e.peakSeverity = s
+	}
+	return e
+}
+
 // State returns the current state.
 func (e *ExposureEvent) State() State {
 	return e.state
@@ -283,6 +302,7 @@ func (e *ExposureEvent) UpdateSeverity(severity Severity) error {
 		return fmt.Errorf("%w: invalid severity", shared.ErrValidation)
 	}
 	e.severity = severity
+	e.peakSeverity = e.PeakSeverity()
 	e.updatedAt = time.Now().UTC()
 	return nil
 }

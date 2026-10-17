@@ -144,7 +144,10 @@ func newDSHarness(t *testing.T) *dsHarness {
 
 	enforcer := datascope.New(postgres.NewDataScopeRepository(db),
 		func(ctx context.Context) datascope.Caller {
-			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
+			// Like production, a request that names no user is an API key:
+			// the stand-in authenticator never produces an internal call.
+			uid := middleware.GetUserID(ctx)
+			return datascope.Caller{UserID: uid, IsAdmin: middleware.IsAdmin(ctx), APIKey: uid == ""}
 		}, log)
 	enforcer.SetAdminLookup(func(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
 		m, err := tenantRepo.GetMembership(ctx, userID, tenantID)

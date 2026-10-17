@@ -115,7 +115,7 @@ func TestAssetSoftDelete_InvisibleToSearchGraphGroupsIngestAndExposures(t *testi
 	}
 
 	// Averages and bulk actions ignore it.
-	if avg, err := repo.GetAverageRiskScore(ctx, tenant); err != nil || avg != 10 {
+	if avg, err := repo.GetAverageRiskScore(ctx, tenant, nil); err != nil || avg != 10 {
 		t.Errorf("average risk = %v, %v; want 10 (the live asset only)", avg, err)
 	}
 	if n, err := repo.BulkUpdateStatus(ctx, tenant, []shared.ID{victim, keep}, asset.StatusArchived); err != nil || n != 1 {

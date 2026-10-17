@@ -45,7 +45,7 @@ func TestExecutiveSummary_OpenAggregates(t *testing.T) {
 	seedExecFinding(ctx, t, db, tenantA, assetA, "false_positive", "P1", "overdue") // closed
 	seedExecFinding(ctx, t, db, tenantB, assetB, "new", "P0", "overdue")            // other tenant
 
-	s, err := repo.GetExecutiveSummary(ctx, tenantA, 30)
+	s, err := repo.GetExecutiveSummary(ctx, tenantA, nil, 30)
 	if err != nil {
 		t.Fatalf("GetExecutiveSummary: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestExecutiveSummary_OpenAggregates(t *testing.T) {
 	}
 
 	empty := seedTestTenant(ctx, t, db)
-	e, err := repo.GetExecutiveSummary(ctx, empty, 30)
+	e, err := repo.GetExecutiveSummary(ctx, empty, nil, 30)
 	if err != nil {
 		t.Fatalf("empty tenant: %v", err)
 	}
