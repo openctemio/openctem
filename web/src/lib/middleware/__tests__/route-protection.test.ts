@@ -16,7 +16,6 @@ import {
 
 // Built at runtime so secret scanners do not read a literal token.
 const JWT = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiJ1MSJ9', 'c2lnbmF0dXJl'].join('.')
-const ADMIN_NONCE = 'A'.repeat(43) + '='
 
 function jar(cookies: Record<string, string>): CookieReader {
   return (name) => cookies[name]
@@ -30,7 +29,6 @@ const COOKIE_STATES: Record<string, Record<string, string>> = {
   'malformed refresh': { refresh_token: 'not-a-token', app_tenant: '{"id":"t1"}' },
   'empty access': { auth_token: '' },
   'tenant only': { app_tenant: '{"id":"t1"}' },
-  'admin console': { admin_csrf_ui: ADMIN_NONCE },
 }
 
 const SESSION_STATES = new Set(['access', 'refresh', 'refresh+tenant'])
@@ -87,16 +85,12 @@ describe('decideAuth: routes x cookie states', () => {
         }
       })
 
-      it.each(ADMIN_PAGES)('%s needs the admin console cookie', (pathname) => {
-        const decision = decideAuth({ pathname, search: '', cookie: jar(cookies) })
-        if (state === 'admin console') {
-          expect(decision).toEqual({ type: 'allow' })
-        } else {
-          expect(decision.type).toBe('redirect')
-          if (decision.type === 'redirect') {
-            expect(decision.location).toBe(`/admin/login?next=${encodeURIComponent(pathname)}`)
-          }
-        }
+      // The console shell checks its session with the API and sends the
+      // browser to its sign-in; no page cookie stands for a console session.
+      it.each(ADMIN_PAGES)('%s is left to the console shell', (pathname) => {
+        expect(decideAuth({ pathname, search: '', cookie: jar(cookies) })).toEqual({
+          type: 'allow',
+        })
       })
     })
   }
@@ -198,15 +192,6 @@ describe('cookie shape', () => {
   it('/login and the proxy agree (hasSessionCookie is shared)', () => {
     expect(hasSessionCookie(jar({ refresh_token: 'garbage' }))).toBe(false)
     expect(hasSessionCookie(jar({ refresh_token: JWT }))).toBe(true)
-  })
-
-  it('a malformed admin console cookie does not open the console', () => {
-    const decision = decideAuth({
-      pathname: '/admin',
-      search: '',
-      cookie: jar({ admin_csrf_ui: 'x' }),
-    })
-    expect(decision.type).toBe('redirect')
   })
 })
 

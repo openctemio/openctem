@@ -564,9 +564,14 @@ func TestIdleSessionExpires(t *testing.T) {
 	ctx := context.Background()
 	_, token := h.enroll(t)
 
-	h.clock = h.clock.Add(20 * time.Minute)
+	h.clock = h.clock.Add(admin.SessionIdleTimeout - time.Minute)
 	if _, err := h.svc.Authenticate(ctx, token); err != nil {
 		t.Fatalf("active use within idle window: %v", err)
+	}
+	// Use keeps it alive past one idle window in total.
+	h.clock = h.clock.Add(admin.SessionIdleTimeout - time.Minute)
+	if _, err := h.svc.Authenticate(ctx, token); err != nil {
+		t.Fatalf("second use within idle window: %v", err)
 	}
 	h.clock = h.clock.Add(admin.SessionIdleTimeout + time.Second)
 	if _, err := h.svc.Authenticate(ctx, token); err == nil {

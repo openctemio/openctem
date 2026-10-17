@@ -187,10 +187,12 @@ func (h *AdminConsoleHandler) IdPCallback(w http.ResponseWriter, r *http.Request
 		AuthMethod: admin.AuthMethodIdP, IsBreakGlass: a.IsBreakGlass(),
 	}
 	if res.Status == adminconsole.StatusSignedIn {
-		if err := h.issueSessionCookies(w, res.SessionToken); err != nil {
+		csrf, err := h.issueSessionCookies(w, res.SessionToken)
+		if err != nil {
 			apierror.InternalError(err).WriteJSON(w)
 			return
 		}
+		who.CSRFToken = csrf
 		writeJSON(w, http.StatusOK, AdminIdPCallbackResponse{Status: string(res.Status), Admin: who})
 		return
 	}
