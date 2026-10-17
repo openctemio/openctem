@@ -85,7 +85,7 @@ func (s *Service) stampScanAttribution(ctx context.Context, agt *sensor.Sensor, 
 		ReportID:    reportID,
 		ObservedAt:  time.Now().UTC(),
 		Unsolicited: binding.Kind == BindingUnsolicited,
-		Platform:    agt.IsPlatformSensor,
+		Platform:    agt.IsShared(),
 	}
 	if err := s.scanAttribution.StampScanned(ctx, tenantID, assets, prov); err != nil {
 		s.logger.Warn("ingest: sensor-report attribution not recorded",

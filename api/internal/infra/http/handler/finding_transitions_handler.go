@@ -7,21 +7,24 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // FindingTransitionsResponse lists the moves the lifecycle has from the
 // finding's status, each with the caller's decision.
 type FindingTransitionsResponse struct {
-	Status      string                             `json:"status"`
-	Transitions []vulnerability.TransitionDecision `json:"transitions"`
+	Status      string                      `json:"status"`
+	Transitions []findinglifecycle.Decision `json:"transitions"`
 }
 
 // EvaluateTransitionsRequest is the bulk dry run's body.
 type EvaluateTransitionsRequest struct {
 	FindingIDs []string `json:"finding_ids" validate:"required,min=1,max=100,dive,uuid"`
 	To         string   `json:"to" validate:"required,max=32"`
+	// SubStatusID, when set, asks about moving to that organization
+	// sub-status of the target status (RFC-110).
+	SubStatusID string `json:"sub_status_id,omitempty" validate:"omitempty,uuid"`
 }
 
 // EvaluateTransitionsResponse is the per-finding answer of a dry run.
@@ -88,7 +91,7 @@ func (h *VulnerabilityHandler) EvaluateFindingTransitions(w http.ResponseWriter,
 	}
 	tenantID := middleware.GetTenantID(r.Context())
 	actorID := middleware.GetUserID(r.Context())
-	results, err := h.service.EvaluateFindingTransitions(r.Context(), tenantID, req.FindingIDs, req.To, actorID, callerTransitionPermissions(r))
+	results, err := h.service.EvaluateFindingTransitions(r.Context(), tenantID, req.FindingIDs, req.To, req.SubStatusID, actorID, callerTransitionPermissions(r))
 	if err != nil {
 		h.handleServiceError(w, err, "Finding")
 		return

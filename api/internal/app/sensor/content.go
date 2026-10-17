@@ -247,7 +247,7 @@ type refreshContentPayload struct {
 func (s *ContentService) queue(ctx context.Context, tenantID shared.ID, a *sensordom.Sensor, names []string, force bool,
 	policy sensordom.ContentPolicy) (*command.Command, error) {
 	sensorID := a.ID
-	policy = policy.ForSensor(a.IsPlatformSensor)
+	policy = policy.ForSensor(a.IsShared())
 	payload, err := json.Marshal(refreshContentPayload{Content: names, Force: force, Policy: &policy})
 	if err != nil {
 		return nil, fmt.Errorf("encode refresh_content payload: %w", err)

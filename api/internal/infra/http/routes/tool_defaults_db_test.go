@@ -183,8 +183,9 @@ func TestToolDefaults_ClaimLayers_DB(t *testing.T) {
 	// A shared platform sensor: never the organization's defaults, even
 	// with a manifest that declares the tool.
 	plat := uuid.NewString()
-	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix, is_platform_sensor)
-	        VALUES ($1, $2, $3, 'worker', 'active', 'unknown', 'daemon', $4, 'octs_plt', TRUE)`, plat, tid, "plat-"+plat[:8], "hash-"+plat)
+	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix, scope)
+	        VALUES ($1, NULL, $2, 'worker', 'active', 'unknown', 'daemon', $3, 'octs_plt', 'instance')`, plat, "plat-"+plat[:8], "hash-"+plat)
+	t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, plat) })
 	installToolManifestWith(t, h, tid, plat, layeredToolConfig)
 	if tl, sl, err := svc.ToolSettingsLayers(ctx, tenant, shared.MustIDFromString(plat), "nuclei"); err != nil || tl != nil || sl != nil {
 		t.Fatalf("platform sensor: %v %v %v", tl, sl, err)

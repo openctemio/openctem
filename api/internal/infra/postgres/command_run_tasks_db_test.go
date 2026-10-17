@@ -200,15 +200,12 @@ func TestListRunTasks_ForeignSensorIsNotNamed(t *testing.T) {
 	}
 }
 
-// A platform job is never pinned to a named sensor in the run view, even when
-// the platform sensor that ran it carries the same tenant as the run (its row
-// is the operator tenant), and it does not count as one of the run sensors.
+// A platform job is never pinned to a named sensor in the run view, and the
+// shared sensor that ran it (no tenant) does not count as one of the run
+// sensors.
 func TestListRunTasks_PlatformJobNeverNamesTheSensor(t *testing.T) {
 	f := newRunTasksFixture(t)
-	plat := f.sensor(t, f.tenant, "plat-node")
-	if _, err := f.db.ExecContext(f.ctx, `UPDATE sensors SET is_platform_sensor = TRUE WHERE id = $1`, plat.String()); err != nil {
-		t.Fatal(err)
-	}
+	plat := seedZoneSensor(f.ctx, t, f.db, &f.tenant, "plat-node", zoneSensorOpts{platform: true})
 	run := seedCounterRun(f.ctx, t, f.runs, f.tenant, f.scan)
 	id := f.command(t, f.tenant, run.ID, &plat, "running", map[string]any{"scanner": "nuclei"})
 	if _, err := f.db.ExecContext(f.ctx, `UPDATE commands SET is_platform_job = TRUE WHERE id = $1`, id.String()); err != nil {
