@@ -26,7 +26,7 @@ import (
 // cannot deadlock) and the duplicate rules are checked again under the lock,
 // so a concurrent change cannot slip past the checks the caller made. A
 // finding that is not in the tenant is not found.
-func (r *FindingRepository) MarkDuplicateOf(ctx context.Context, tenantID, duplicateID, canonicalID shared.ID, actorID string, canApprove bool) error {
+func (r *FindingRepository) MarkDuplicateOf(ctx context.Context, tenantID, duplicateID, canonicalID shared.ID, actorID string) error {
 	tenant := tenantID.String()
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -49,7 +49,7 @@ func (r *FindingRepository) MarkDuplicateOf(ctx context.Context, tenantID, dupli
 	if duplicateID == canonicalID {
 		canonical = dup
 	}
-	if err := vulnerability.CheckMarkDuplicate(dup, canonical, canApprove); err != nil {
+	if err := vulnerability.CheckMarkDuplicate(dup, canonical); err != nil {
 		return err
 	}
 

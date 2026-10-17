@@ -462,7 +462,14 @@ func (s *GroupService) GetGroupCounts(ctx context.Context, groups []*groupdom.Gr
 	}
 
 	if s.accessControlRepo != nil {
-		assetCounts, err := s.accessControlRepo.CountAssetsByGroups(ctx, groupIDs)
+		// A restricted reader counts only the assets they can see.
+		var scope *shared.DataScope
+		if s.delegation != nil {
+			if scope, err = s.delegation.Resolve(ctx, groups[0].TenantID()); err != nil {
+				return nil, fmt.Errorf("failed to resolve data scope: %w", err)
+			}
+		}
+		assetCounts, err := s.accessControlRepo.CountAssetsByGroups(ctx, groupIDs, scope)
 		if err != nil {
 			s.logger.Warn("failed to get asset counts", "error", err)
 		} else {

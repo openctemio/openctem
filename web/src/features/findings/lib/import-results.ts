@@ -64,7 +64,7 @@ export interface ImportTotals {
   updated: number
   skippedOutOfScope: number
   vexMatched: number
-  vexClosed: number
+  vexRequested: number
   vexWouldClose: number
 }
 
@@ -81,7 +81,7 @@ export function importTotals(files: ImportFileResponse[]): ImportTotals {
     updated: 0,
     skippedOutOfScope: 0,
     vexMatched: 0,
-    vexClosed: 0,
+    vexRequested: 0,
     vexWouldClose: 0,
   }
   for (const f of files) {
@@ -94,20 +94,38 @@ export function importTotals(files: ImportFileResponse[]): ImportTotals {
     t.updated += f.ingest?.findings_updated ?? 0
     t.skippedOutOfScope += f.ingest?.assets_skipped_out_of_scope ?? 0
     t.vexMatched += f.vex?.matched ?? 0
-    t.vexClosed += f.vex?.closed ?? 0
+    t.vexRequested += f.vex?.requested ?? 0
     t.vexWouldClose += f.vex?.would_close ?? 0
   }
   return t
 }
 
 /** Explains what a VEX not_affected statement will do on import. */
-export function vexModeText(mode: string | undefined, canClose: boolean | undefined): string {
-  if (mode === 'enforce' && canClose) {
-    return 'not_affected statements close the matching open findings (as false positives).'
+export function vexModeText(
+  t: (key: string, fallback: string) => string,
+  mode: string | undefined,
+  canRequest: boolean | undefined
+): string {
+  if (mode === 'enforce' && canRequest) {
+    return t(
+      'findings.importResults.vexModeEnforce',
+      'not_affected statements request false positive approval for the matching open findings; the findings stay open until another person approves.'
+    )
   }
   if (mode === 'enforce') {
-    return 'not_affected statements are stored on the matching findings; closing them needs the approve permission.'
+    return t(
+      'findings.importResults.vexModeEnforceNoApprove',
+      'not_affected statements are stored on the matching findings; requesting false positive approval needs the approve permission.'
+    )
   }
-  if (mode === 'off') return 'VEX statements are stored on the matching findings only.'
-  return 'VEX statements are stored on the matching findings and counted; nothing is closed (dry run mode).'
+  if (mode === 'off') {
+    return t(
+      'findings.importResults.vexModeOff',
+      'VEX statements are stored on the matching findings only.'
+    )
+  }
+  return t(
+    'findings.importResults.vexModeDryRun',
+    'VEX statements are stored on the matching findings and counted; no false positive approval is requested (dry run mode).'
+  )
 }

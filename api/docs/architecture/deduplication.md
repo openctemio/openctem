@@ -100,10 +100,13 @@ progress for 2 hours stops pausing.
 locked and the rules re-checked under the lock
 (`FindingRepository.MarkDuplicateOf`, rules in
 `vulnerability.CheckMarkDuplicate`): same tenant and data scope (404
-otherwise), same asset, neither already a duplicate, no pentest finding, and
-`findings:approve` when either finding is a false positive or risk acceptance
-(otherwise a merge would close an open finding under, or carry onto it, a
-decision that needs approval). The activity on both findings names the user;
+otherwise), same asset, neither already a duplicate, no pentest finding, and no
+false positive or risk acceptance carried across findings: if either finding
+is under such a decision, the other must be under the same one (409
+otherwise), whatever the caller's permissions. A merge writes no approval, so
+it would otherwise close an open finding under, or carry onto it, a decision
+that was approved (or not needed) for a different finding. Request the
+decision on the finding itself. The activity on both findings names the user;
 the audit log records `finding.duplicate_marked`.
 
 Known limits: the SAST occurrence index is counted within one report, so twin

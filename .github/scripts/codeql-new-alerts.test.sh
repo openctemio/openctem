@@ -42,5 +42,16 @@ expect "new critical alert fails" 1 "| critical |" "$(arr "$(alert 2 critical)")
 expect "new low alert passes" 0 "No new" "$(arr "$(alert 2 low)")" "[]"
 expect "new quality alert without security severity passes" 0 "No new" "$(arr "$(alert 2 null)")" "[]"
 expect "alert fixed by the PR passes" 0 "No new" "[]" "$(arr "$(alert 1 high)")"
+
+# Thousands of alerts on each side (a release pull request against a far-behind branch) are more
+# than one command-line argument can carry: they must go through files, and only the fields used.
+big() { # big <count> -> JSON array of that many fat alerts, numbers 1..count
+  jq -nc --argjson n "$1" '[range(1; $n + 1) | {number: ., html_url: "https://example.invalid/\(.)", state: "open",
+    rule: {id: "go/x", security_severity_level: "high", description: ("long text " * 40)},
+    tool: {name: "CodeQL"}, most_recent_instance: {location: {path: "a.go", start_line: 3}, message: {text: ("m " * 80)}}}]'
+}
+big 6000 >"$tmp/big.json"; big 6001 >"$tmp/big1.json"
+expect "thousands of alerts, none new, passes" 0 "No new" "$(cat "$tmp/big.json")" "$(cat "$tmp/big.json")"
+expect "thousands of alerts, one new, fails" 1 "[#6001]" "$(cat "$tmp/big1.json")" "$(cat "$tmp/big.json")"
 echo "$pass passed, $failed failed"
 [[ "$failed" -eq 0 ]]
