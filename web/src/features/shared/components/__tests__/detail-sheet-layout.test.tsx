@@ -38,6 +38,26 @@ function renderSheet(props: Partial<React.ComponentProps<typeof DetailHeader>> =
   return { onClose }
 }
 
+describe('DetailHeader full page link', () => {
+  it('renders an Open full page link with the right href', () => {
+    renderSheet({ fullPageHref: '/assets/abc' })
+    const link = screen.getByRole('link', { name: 'Open full page' })
+    expect(link).toHaveAttribute('href', '/assets/abc')
+  })
+
+  it('also lists it in the more menu', async () => {
+    renderSheet({ fullPageHref: '/assets/abc' })
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    const item = await screen.findByRole('menuitem', { name: 'Open full page' })
+    expect(item).toHaveAttribute('href', '/assets/abc')
+  })
+
+  it('has no link without fullPageHref', () => {
+    renderSheet()
+    expect(screen.queryByRole('link', { name: 'Open full page' })).toBeNull()
+  })
+})
+
 describe('DetailSheet + DetailHeader', () => {
   it('is a dialog named by the title, with the body as the tab panel', () => {
     renderSheet()
