@@ -1,8 +1,8 @@
 package ingest
 
-// Asset technologies (docs/rfcs/RFC-112-asset-technologies.md): every
-// technology a report says an asset was fingerprinted with is recorded with
-// its category, version, the tool's confidence and when it was seen.
+// Asset technologies (docs/rfcs/RFC-112-asset-technologies.md): set
+// reconciliation decides which technologies an asset shows; this adds what
+// the report knew about them (category, confidence, source, last seen).
 // Best-effort: a failure is logged and never fails the report.
 
 import (
@@ -22,10 +22,10 @@ func (s *Service) SetTechnologyRepository(repo assettech.Repository) {
 	s.techs = repo
 }
 
-// recordTechnologies records the technologies of the report's assets this
-// report was allowed to write. With set reconciliation wired, only the
-// technologies the asset now shows are recorded: a source the asset does
-// not trust for software adds nothing.
+// recordTechnologies adds what the report knew about the technologies of
+// the assets it was allowed to write (the tool's category, confidence and
+// the source). Set reconciliation, which ran just before, decided which
+// technologies each asset shows; this never adds one.
 func (s *Service) recordTechnologies(ctx context.Context, tenantID shared.ID, scope *alterScope,
 	src attributeSource, observedAt time.Time, report *ctis.Report, assetMap map[string]shared.ID,
 ) {
@@ -40,7 +40,6 @@ func (s *Service) recordTechnologies(ctx context.Context, tenantID shared.ID, sc
 		observedAt = time.Now()
 	}
 	var techs []assettech.Technology
-	ids := make([]shared.ID, 0, len(report.Assets))
 	for i := range report.Assets {
 		a := &report.Assets[i]
 		id, ok := assetMap[a.ID]
@@ -55,7 +54,6 @@ func (s *Service) recordTechnologies(ctx context.Context, tenantID shared.ID, sc
 			obs = obs[:room]
 		}
 		techs = append(techs, obs...)
-		ids = append(ids, id)
 		if len(techs) >= assettech.MaxPerReport {
 			break
 		}
@@ -63,28 +61,14 @@ func (s *Service) recordTechnologies(ctx context.Context, tenantID shared.ID, sc
 	if len(techs) == 0 {
 		return
 	}
-	if s.sets != nil {
-		shown, err := s.techs.ShownKeys(ctx, tenantID, ids)
-		if err != nil {
-			s.logger.Warn("asset technologies not recorded", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
-			return
-		}
-		kept := techs[:0]
-		for _, t := range techs {
-			if shown[t.AssetID][t.Key] {
-				kept = append(kept, t)
-			}
-		}
-		techs = kept
-	}
-	if err := s.techs.Upsert(ctx, tenantID, techs); err != nil {
+	if err := s.techs.Enrich(ctx, tenantID, techs); err != nil {
 		s.logger.Warn("asset technologies not recorded", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 	}
 }
 
 // technologyObservations reads the technologies a CTIS asset states: the
 // typed list (with the tool's categories and confidence) and the loose
-// properties.technologies strings ("Name:version"), at most
+// report properties.technologies strings ("Name:version"), at most
 // assettech.MaxPerAsset, each sanitized and classified.
 func technologyObservations(id shared.ID, a *ctis.Asset, source string, seen time.Time) []assettech.Technology {
 	out := make([]assettech.Technology, 0, len(a.Technologies))
