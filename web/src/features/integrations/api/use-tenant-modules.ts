@@ -71,7 +71,7 @@ export interface TenantModulesResponse {
   sub_modules?: Record<string, LicensingModule[]>
   coming_soon_module_ids?: string[]
   beta_module_ids?: string[]
-  /** Modules the organization's plan does not include (not just switched off). */
+  /** Modules not available for the organization (not just switched off). */
   not_entitled_module_ids?: string[]
   /**
    * Modules the organization lost recently, with the end of their read-only
@@ -95,7 +95,7 @@ const defaultConfig: SWRConfiguration = {
   // Bounded by WebSocket push + revalidateOnFocus for freshness.
   dedupingInterval: 5 * 60 * 1000,
   onError: (error) => {
-    // Don't log 404 errors - expected in OSS edition where modules API doesn't exist
+    // Don't log 404 errors: expected when the API has no modules endpoint
     const is404 = error?.status === 404 || error?.message?.includes('404')
     if (!is404) {
       handleApiError(error, {
@@ -138,7 +138,7 @@ export function useTenantModules() {
       try {
         return await get<TenantModulesResponse>(url)
       } catch (err: unknown) {
-        // Return empty data for 404 (OSS edition without licensing API)
+        // Return empty data for 404 (the API reports no module list)
         // For other errors, still degrade gracefully but log for debugging
         const status = (err as { status?: number })?.status
         if (status && status !== 404) {
@@ -205,8 +205,8 @@ export function useHasModule(moduleId: string) {
  * sections, widgets) and for building conditional SWR keys so a disabled
  * module's endpoint is never fetched (it would 403 with MODULE_NOT_ENABLED).
  *
- * Fail-open: when no module data is present (`moduleIds.length === 0`, e.g. the
- * OSS edition where the licensing API 404s), EVERYTHING is treated as enabled —
+ * Fail-open: when no module data is present (`moduleIds.length === 0`, e.g. when
+ * the modules endpoint 404s), EVERYTHING is treated as enabled —
  * mirroring `ModuleGate`. This intentionally errs toward showing features when
  * the platform has no opinion about modules.
  *
@@ -222,6 +222,6 @@ export function useHasModule(moduleId: string) {
  */
 export function useModuleEnabled(moduleId: string): boolean {
   const { moduleIds } = useTenantModules()
-  // Fail-open when the platform reports no modules (OSS edition / no licensing).
+  // Fail-open when the API reports no module list.
   return moduleIds.length === 0 || moduleIds.includes(moduleId)
 }

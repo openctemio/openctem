@@ -107,6 +107,8 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     isCrownJewel: f.isCrownJewel,
     programAssets: f.programAssets,
     freshness: f.freshness,
+    technologies: f.technologies,
+    technologyCategories: f.technologyCategories,
     hasFindings: f.hasFindings,
     lastSeenBefore: f.lastSeenBefore,
     lastSeenAfter: f.lastSeenAfter,
