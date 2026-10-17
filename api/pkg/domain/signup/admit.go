@@ -28,6 +28,9 @@ type Identity struct {
 	// SSO for every account on it. Password and social sign-up are refused
 	// and the person is sent to the identity provider.
 	SSORequired bool
+	// WorkspacesBlocked: the person's email is on a domain whose organization
+	// blocks new organizations for accounts on it.
+	WorkspacesBlocked bool
 	// DisposableEmail: the email is on a disposable-address service
 	// (pkg/emaildomain). Self-service sign-up refuses it; an invitation or an
 	// organization's SSO is the organization choosing the person.
@@ -64,7 +67,8 @@ func (o Outcome) Admitted() bool { return o != OutcomeNotSetUp && o != OutcomeSS
 // Admit is the one admission rule every sign-up path applies, so the paths
 // cannot drift apart (docs/architecture/user-onboarding.md, "Admission"):
 //
-//	creating an organization              → self-service policy only
+//	creating an organization              → self-service policy, and the
+//	                                         person's domain does not block it
 //	creating an account:
 //	  an organization's SSO admits it      → jit_member        (any policy)
 //	  its domain requires the org's SSO    → sso_required      (write nothing)
@@ -79,7 +83,7 @@ func (o Outcome) Admitted() bool { return o != OutcomeNotSetUp && o != OutcomeSS
 func Admit(p Policy, id Identity) Outcome {
 	switch id.Intent {
 	case IntentOrganization:
-		if p.AllowsSelfService() {
+		if p.AllowsSelfService() && !id.WorkspacesBlocked {
 			return OutcomeSelfService
 		}
 		return OutcomeNotSetUp

@@ -89,7 +89,7 @@ user is already signed in. Ceremony state never goes into a JWT.
   - the existing per-challenge attempt cap and account throttling apply.
 - **Step-up:** `POST /auth/step-up` also accepts a passkey assertion. An
   assertion with user verification satisfies "fresh" step-up.
-- **Admin console (P2):** `/admin/auth/session` asks for the user's own
+- **Admin console (P2):** `/admin/auth/login` asks for the user's own
   passkey or TOTP. Every platform administrator must enroll a user-level
   factor before P2 ships:
   - `bootstrap-admin` and the console refuse an admin without one;

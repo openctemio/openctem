@@ -39,7 +39,7 @@ var adminWriteInventory = map[string]struct {
 	why   string
 }{
 	// Sign-in steps: before a console session exists.
-	"POST /api/v1/admin/auth/session":      {signIn, "first step of the console sign-in"},
+	"POST /api/v1/admin/auth/login":        {signIn, "first step of the console sign-in"},
 	"POST /api/v1/admin/auth/mfa":          {signIn, "the TOTP step of the sign-in"},
 	"POST /api/v1/admin/auth/logout":       {signIn, "ends the caller's own session"},
 	"POST /api/v1/admin/auth/password":     {signIn, "needs the current password"},
@@ -94,6 +94,7 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/scan-approval-policy/":          {stepUpRoute, "scan governance default"},
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":         {stepUpRoute, "platform sensor domain proof"},
 	"PUT /api/v1/admin/settings/shared-sensors/":                {stepUpRoute, "shared sensors on or off for the instance, and the default for organizations"},
+	"PUT /api/v1/admin/settings/shared-sensors/egress":          {stepUpRoute, "egress addresses every organization is told to allowlist"},
 	"PUT /api/v1/admin/program-feed/local-bundle":               {stepUpRoute, "program feed source"},
 	"POST /api/v1/admin/version-check/import":                   {stepUpRoute, "release feed trust: what the console says about releases"},
 	"POST /api/v1/admin/content-packs/":                         {stepUpRoute, "platform content pack"},
