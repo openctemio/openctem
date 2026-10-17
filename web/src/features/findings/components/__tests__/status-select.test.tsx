@@ -28,6 +28,29 @@ vi.mock('../../api/use-finding-transitions', () => ({
   },
 }))
 
+const SUBS = new Map([
+  [
+    'sub-review',
+    {
+      id: 'sub-review',
+      key: 'in_review',
+      canonical_status: 'in_progress',
+      name: 'In review',
+      labels: { vi: 'Đang xem xét' },
+      description: '',
+      color: 'blue',
+      sort_order: 0,
+      archived: false,
+      created_at: '',
+      updated_at: '',
+    },
+  ],
+])
+vi.mock('../../api/use-finding-lifecycles', () => ({
+  useSubStatusCatalog: () => SUBS,
+  subStatusName: (s: { name: string }) => s.name,
+}))
+
 beforeEach(() => {
   requested.length = 0
 })
@@ -60,8 +83,8 @@ describe('StatusSelect', () => {
     const resolved = screen.getByRole('menuitem', { name: /resolved/i })
     expect(resolved.getAttribute('aria-disabled')).toBe('true')
     await userEvent.click(screen.getByRole('menuitem', { name: /in progress/i }))
-    expect(onChange).toHaveBeenCalledWith('in_progress')
-    expect(onChange).not.toHaveBeenCalledWith('resolved')
+    expect(onChange).toHaveBeenCalledWith('in_progress', expect.objectContaining({ allowed: true }))
+    expect(onChange).not.toHaveBeenCalledWith('resolved', expect.anything())
   })
 
   it('never offers Duplicate: it needs the finding it duplicates', async () => {
@@ -76,5 +99,71 @@ describe('StatusSelect', () => {
     await userEvent.click(screen.getByRole('button'))
     expect(screen.getByRole('menuitem', { name: /in progress/i })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: /duplicate/i })).toBeNull()
+  })
+
+  it('offers sub-status moves with what each needs, and hands the move to the caller', async () => {
+    mockData = {
+      status: 'confirmed',
+      transitions: [
+        { to: 'in_progress', allowed: true, mode: 'direct' },
+        {
+          to: 'in_progress',
+          allowed: true,
+          mode: 'direct',
+          to_sub_status_id: 'sub-review',
+          transition: 'send_to_review',
+          name: 'Send to review',
+          note_min_len: 20,
+          fields: ['ticket_link'],
+        },
+        {
+          to: 'false_positive',
+          allowed: true,
+          mode: 'request',
+          to_sub_status_id: 'sub-review',
+        },
+      ],
+    }
+    const onChange = vi.fn()
+    render(
+      <StatusSelect findingId="f-1" value="confirmed" onChange={onChange} allowSubStatusMoves />
+    )
+    await userEvent.click(screen.getByRole('button'))
+    const item = screen.getByRole('menuitem', { name: /send to review/i })
+    expect(item).toHaveTextContent(/note of 20\+ characters/i)
+    expect(item).toHaveTextContent(/ticket link/i)
+    // A request carries no sub-status yet: only its status move is offered.
+    expect(screen.getAllByRole('menuitem')).toHaveLength(2)
+    await userEvent.click(item)
+    expect(onChange).toHaveBeenCalledWith(
+      'in_progress',
+      expect.objectContaining({ to_sub_status_id: 'sub-review', fields: ['ticket_link'] })
+    )
+  })
+
+  it('offers only status moves where the caller cannot send a sub-status', async () => {
+    mockData = {
+      status: 'confirmed',
+      transitions: [
+        { to: 'in_progress', allowed: true, mode: 'direct' },
+        { to: 'in_progress', allowed: true, mode: 'direct', to_sub_status_id: 'sub-review' },
+      ],
+    }
+    render(<StatusSelect findingId="f-1" value="confirmed" onChange={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button'))
+    expect(screen.getAllByRole('menuitem')).toHaveLength(1)
+  })
+
+  it('shows the current sub-status next to the status', () => {
+    mockData = { status: 'in_progress', transitions: [] }
+    render(
+      <StatusSelect
+        findingId="f-1"
+        value="in_progress"
+        subStatusId="sub-review"
+        onChange={vi.fn()}
+      />
+    )
+    expect(screen.getByText('In review')).toBeInTheDocument()
   })
 })
