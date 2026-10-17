@@ -222,6 +222,14 @@ Its own rules; nothing the API sends relaxes them:
 - the organization's and the sensor's signing ceilings;
 - every target against the organization's [scope ledger](#scope-ledger), at
   the tool's tier (in `enforce` mode; `audit` signs and records the miss).
+- for a shared-sensor job (`sensor_scope` = `instance`, [RFC-100](../rfcs/RFC-100-shared-sensors.md)
+  §8.1): `command_type` is `scan`, `validate` or `retest`; no `templates`;
+  every target is public: an address or range is checked against ctis
+  `addrscope` (the list sensors use, including NAT64, 6to4 and Teredo forms
+  of internal IPv4 and any range holding internal space), and a name must not
+  end in `localhost`, `.local`, `.internal`, `.home.arpa` or a reverse-DNS
+  zone. Names are resolved by the API and again by the sensor. Any other
+  `sensor_scope` value is refused (`internal/signer/shared.go`).
 
 It does not yet check zone ranges, time windows or per-hour distinct-target
 ceilings (see "Not yet").
@@ -237,6 +245,7 @@ payload bytes it received and never re-serializes them.
 | `kind` | string | `openctem.job/v1` |
 | `tenant_id` | UUID | the organization of the command |
 | `sensor_id` | UUID | the sensor the claim handed it to |
+| `sensor_scope` | string | only for a job of a shared sensor: `instance`. Absent for an organization's sensor |
 | `command_id` | UUID | the command |
 | `command_type` | string | `scan`, `collect`, `health_check`, `config_update`, … |
 | `tool` | string | payload `scanner`, else `preferred_tool`; `""` when neither |
@@ -311,7 +320,11 @@ Before it parses anything else of the command:
    verified key set when the sensor pins a root, verifies over the PAE of
    the payload bytes;
 3. `kind` is `openctem.job/v1`;
-4. `tenant_id` and `sensor_id` are its own; `command_id` is the command's id;
+4. `tenant_id` and `sensor_id` are its own; `command_id` is the command's id.
+   A **shared** sensor instead requires `sensor_scope` = `instance` and its
+   own `sensor_id`, accepts any `tenant_id`, and tags every result and
+   outbox entry of the job with that `tenant_id` and `command_id`; an
+   organization's sensor refuses a statement that carries `sensor_scope`;
 5. `issued_at` within its clock skew; `expires_at` in the future;
 6. `nonce` not seen before (keep nonces until their `expires_at`);
 7. `seq` greater than the last accepted one (persisted; gaps allowed);
@@ -683,3 +696,9 @@ when people approved it and the signer recorded its digest in the ledger.
   ([Custom templates](#custom-templates)).
 - **K2** (KMS, Vault Transit, HSM) and a Helm chart for the signer.
 - Exporting the signing log to the SIEM and keyed audit checkpoints.
+- **Shared sensors** ([RFC-100](../rfcs/RFC-100-shared-sensors.md)): the
+  sdk-go verifier side of `sensor_scope` (point 4 of "What a sensor must
+  check"), and the server side of result binding: results of a shared job
+  are accepted only from the sensor that holds the command under its lease
+  epoch, and written into the command's organization, never the sensor's
+  (the shared claim path, S5).

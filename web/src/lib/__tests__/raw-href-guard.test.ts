@@ -81,6 +81,8 @@ const REVIEWED = new Set([
   'components/layout/org-card.tsx|Link|href={membersLink.url}',
   'components/layout/org-card.tsx|Link|href={apiKeysLink.url}',
   'features/shared/components/section-tabs.tsx|Link|href={tab.href}',
+  // Asset detail sheet: callers pass assetDetailHref(id), a same-origin /assets/{id} route builder.
+  'features/shared/components/detail-sheet-layout.tsx|Link|href={fullPageHref}',
   // Inventory overview: same-origin /assets?... paths built by buildOverview
   // (serializeInventoryFilters) and the fixed per-lens hint routes.
   'features/assets/components/overview/asset-categories-view.tsx|Link|href={href}',

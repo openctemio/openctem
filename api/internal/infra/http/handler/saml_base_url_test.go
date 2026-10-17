@@ -58,3 +58,22 @@ func TestSAMLBaseURL_TrustedProxyForwardingHonored(t *testing.T) {
 		t.Fatalf("base URL %q, malformed forwarded values must be ignored", got)
 	}
 }
+
+func TestIsSafeIdPRedirect(t *testing.T) {
+	ok := []string{"https://idp.example.com/sso?SAMLRequest=abc&RelayState=acme", "http://127.0.0.1:8080/sso"}
+	bad := []string{
+		"", "/", "//evil.example/x", "/\\evil.example", "javascript:alert(1)",
+		"data:text/html,x", "https:///nohost", "https://user:pw@idp.example.com/",
+		"https://idp.example.com/\r\nSet-Cookie: a=b", "ftp://idp.example.com/", "https:\\\\evil.example",
+	}
+	for _, u := range ok {
+		if !isSafeIdPRedirect(u) {
+			t.Errorf("%q should be allowed", u)
+		}
+	}
+	for _, u := range bad {
+		if isSafeIdPRedirect(u) {
+			t.Errorf("%q must be refused", u)
+		}
+	}
+}
