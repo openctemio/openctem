@@ -2199,7 +2199,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
-	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector)
+	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
@@ -2254,6 +2254,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
+		// Shared-sensor scans per day (RFC-100 §10): generic limits by key;
+		// unset means unlimited.
+		scan.WithSharedScanLimits(s.Entitlement),
 		// The scope check names the private address a refused hostname
 		// resolves to, unless that answer may come from the platform's own
 		// DNS in a self-service (multi-tenant) install.
@@ -2279,7 +2282,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithToolAvailability(s.Tool),
 		// Workflow readiness: the New Scan picker, the workflow list and
 		// the refusal of a workflow no sensor here can run.
-		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor)),
+		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor, s.SharedSensorsAllowed)),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
@@ -2344,7 +2347,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scanrun package
 	pipelineAuditAdapter := app.NewScanWorkflowAuditServiceAdapter(s.Audit)
-	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector)
+	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	scanWorkflowSecurityValidatorAdapter := app.NewScanWorkflowSecurityValidatorAdapter(securityValidator)
 
 	// Initialize scan run service with security validator, audit service, transaction support, and tool repo
@@ -2536,6 +2539,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		accesscontrol.WithGroupDataScope(s.DataScope),
 		accesscontrol.WithScopeDelegationCap(s.DataScope),
 	)
+
+	// Edits of the security pool group of the approval policy need a recent
+	// re-authentication (the gate is wired with the others).
+	s.Group.SetSecurityPoolGuard(func(ctx context.Context, tenantID, groupID shared.ID) (bool, error) {
+		st, err := s.Tenant.GetFindingApprovalSettings(ctx, tenantID.String())
+		if err != nil {
+			return false, err
+		}
+		if st.Policy.SecurityPoolGroupID == groupID.String() {
+			return true, nil
+		}
+		return st.PendingPolicy != nil && st.PendingPolicy.SecurityPoolGroupID == groupID.String(), nil
+	})
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
@@ -3378,4 +3394,15 @@ func (a pentestJiraTicketing) CreateFindingTicket(ctx context.Context, tenantID,
 		return "", err
 	}
 	return info.TicketURL, nil
+}
+
+// SharedSensorsAllowed is the shared sensor access policy (RFC-100 §5) of
+// the scan policy service, read when called: the service is wired after the
+// scan services that hold this method. Without it every organization is
+// refused.
+func (s *Services) SharedSensorsAllowed(ctx context.Context, tenantID shared.ID) (bool, string) {
+	if s == nil || s.ScanPolicy == nil {
+		return false, scanpolicy.ReasonSharedSensorsUnavailable
+	}
+	return s.ScanPolicy.SharedSensorsAllowed(ctx, tenantID)
 }
