@@ -53,7 +53,7 @@ var Features = []Feature{
 			"registerAssetRoutes", "registerAssetGroupRoutes", "registerAssetTypeRoutes", "registerAssetOwnerRoutes",
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
-			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
+			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerAssetTechnologyRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
 			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes",
 		},
 	},
@@ -178,11 +178,12 @@ var Features = []Feature{
 	},
 	{
 		ID: "organization", Title: "Organization settings and audit",
-		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), its limits and the audit log.",
+		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), its limits, support access grants and the audit log.",
 		Registers: []string{
-			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes",
+			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes", "registerOrganizationSupportAccessRoutes",
 			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
+			"registerSharedSensorsSettingsRoutes",
 		},
 	},
 	{

@@ -264,3 +264,27 @@ func TestPlatformAcceptanceCap(t *testing.T) {
 		}
 	}
 }
+
+// A false-positive cell equal to the platform default still raises the
+// organization's lower false-positive level after a save (Normalized keeps
+// it), and removing it is a relaxation.
+func TestNormalized_KeepsFalsePositiveCells(t *testing.T) {
+	p := Policy{Tiers: map[string]Tier{"false_positive.standard": TierPeer, "accepted.standard": TierPeer}}.Normalized()
+	if p.Tiers["false_positive.standard"] != TierPeer {
+		t.Fatalf("false-positive cell dropped: %v", p.Tiers)
+	}
+	if _, ok := p.Tiers["accepted.standard"]; ok {
+		t.Fatalf("a non-false-positive cell equal to the default was kept: %v", p.Tiers)
+	}
+	u := ids(2)
+	r := Evaluate(p, Request{Kind: KindFalsePositive, Facts: low, RequesterID: u[0], RequesterCanApprove: true, FPLevel: FPLevelOff, Approvers: pool(u)})
+	if r.Tier != TierPeer {
+		t.Fatalf("level off with an explicit peer cell: %s", r.Tier)
+	}
+	if !Relaxes(p, Policy{}) {
+		t.Fatal("removing the false-positive cell is a relaxation")
+	}
+	if Relaxes(Policy{}, p) {
+		t.Fatal("adding a false-positive cell is not a relaxation")
+	}
+}

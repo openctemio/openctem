@@ -10,6 +10,7 @@ import (
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -105,14 +106,31 @@ func (a *scanWorkflowAuditServiceAdapter) LogEvent(ctx context.Context, actx sca
 // Sensor Selector Adapter
 // =============================================================================
 
+// SharedSensorsPolicy says whether an organization may send scans to shared
+// sensors, and if not, why: the access policy of RFC-100 §5
+// (scanpolicy.Service.SharedSensorsAllowed), the one rule the scan trigger,
+// the pipeline and the organization's platform scanning view use.
+type SharedSensorsPolicy func(ctx context.Context, tenantID shared.ID) (bool, string)
+
+// allowShared applies policy, refusing when none is wired (fail closed).
+func allowShared(ctx context.Context, policy SharedSensorsPolicy, tenantID shared.ID) (bool, string) {
+	if policy == nil {
+		return false, scanpolicy.ReasonSharedSensorsUnavailable
+	}
+	return policy(ctx, tenantID)
+}
+
 // scanSensorSelectorAdapter adapts SensorSelector to scan.SensorSelector interface.
 type scanSensorSelectorAdapter struct {
 	selector *sensor.SensorSelector
+	shared   SharedSensorsPolicy
 }
 
-// NewScanSensorSelectorAdapter creates an adapter for the scan package's SensorSelector interface.
-func NewScanSensorSelectorAdapter(selector *sensor.SensorSelector) scan.SensorSelector {
-	return &scanSensorSelectorAdapter{selector: selector}
+// NewScanSensorSelectorAdapter creates an adapter for the scan package's
+// SensorSelector interface. policy decides shared sensor access (nil:
+// refused).
+func NewScanSensorSelectorAdapter(selector *sensor.SensorSelector, policy SharedSensorsPolicy) scan.SensorSelector {
+	return &scanSensorSelectorAdapter{selector: selector, shared: policy}
 }
 
 // CheckSensorAvailability implements scan.SensorSelector.
@@ -125,16 +143,9 @@ func (a *scanSensorSelectorAdapter) CheckSensorAvailability(ctx context.Context,
 	}
 }
 
-// PlatformSensorsAllowed says whether the tenant may send scans to the shared
-// platform sensors: the one rule the scan trigger, the pipeline and the
-// tenant's platform scanning view all use. In this build no tenant may.
-func PlatformSensorsAllowed(_ context.Context, _ shared.ID) (bool, string) {
-	return false, "Platform scanning is not available on this installation"
-}
-
 // CanUsePlatformSensors implements scan.SensorSelector.
 func (a *scanSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
-	return PlatformSensorsAllowed(ctx, tenantID)
+	return allowShared(ctx, a.shared, tenantID)
 }
 
 // SelectSensor implements scan.SensorSelector.
@@ -162,11 +173,14 @@ func (a *scanSensorSelectorAdapter) SelectSensor(ctx context.Context, req scan.S
 // scanRunSensorSelectorAdapter adapts SensorSelector to scanrun.SensorSelector interface.
 type scanRunSensorSelectorAdapter struct {
 	selector *sensor.SensorSelector
+	shared   SharedSensorsPolicy
 }
 
-// NewScanRunSensorSelectorAdapter creates an adapter for the scanrun package's SensorSelector interface.
-func NewScanRunSensorSelectorAdapter(selector *sensor.SensorSelector) scanrun.SensorSelector {
-	return &scanRunSensorSelectorAdapter{selector: selector}
+// NewScanRunSensorSelectorAdapter creates an adapter for the scanrun
+// package's SensorSelector interface. policy decides shared sensor access
+// (nil: refused).
+func NewScanRunSensorSelectorAdapter(selector *sensor.SensorSelector, policy SharedSensorsPolicy) scanrun.SensorSelector {
+	return &scanRunSensorSelectorAdapter{selector: selector, shared: policy}
 }
 
 // SelectSensor implements scanrun.SensorSelector.
@@ -192,7 +206,7 @@ func (a *scanRunSensorSelectorAdapter) SelectSensor(ctx context.Context, req sca
 
 // CanUsePlatformSensors implements scanrun.SensorSelector.
 func (a *scanRunSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
-	return PlatformSensorsAllowed(ctx, tenantID)
+	return allowShared(ctx, a.shared, tenantID)
 }
 
 // Template Syncer adapter lives in internal/app/template/scan_adapter.go

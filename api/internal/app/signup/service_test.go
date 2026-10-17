@@ -325,3 +325,27 @@ func TestUpdate_LockedCeilingSkipsLimitsCheck(t *testing.T) {
 		}
 	}
 }
+
+// The console may open account sign-up up to the ceiling: domain under
+// domain, never open; organizations only under open.
+func TestCeiling_AccountsUnderDomain(t *testing.T) {
+	ctx := context.Background()
+	actor := mustAdmin(t, "alice@op.example")
+	repo := &memRepo{}
+	svc := NewService(repo, nil, nil, nil, nil)
+	svc.SetCeiling(signupdom.CeilingDomain)
+	_ = svc.Seed(ctx)
+	if got := svc.Current(ctx); got.AccountSignup() != signupdom.AccountsDomain || got.AllowsSelfService() {
+		t.Fatalf("domain seeds domain sign-up without organizations: %+v", got)
+	}
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly, Accounts: signupdom.AccountsOpen}, 1, "", ""); !errors.Is(err, signupdom.ErrLockedByDeployment) {
+		t.Fatalf("open accounts under domain must be locked, got %v", err)
+	}
+	st, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly, Accounts: signupdom.AccountsClosed}, 1, "", "")
+	if err != nil || st.Policy.AccountSignup() != signupdom.AccountsClosed {
+		t.Fatalf("closing sign-up is always allowed: %+v %v", st, err)
+	}
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService, Accounts: signupdom.AccountsDomain}, 2, "", ""); !errors.Is(err, signupdom.ErrSelfServiceNeedsOpenAccounts) {
+		t.Fatalf("self_service needs open accounts, got %v", err)
+	}
+}

@@ -178,7 +178,7 @@ func TestSuppressionApprove_ClosesMatchingOpenFindings_DB(t *testing.T) {
 		t.Errorf("links = %d, want %d", got, len(closed))
 	}
 	if got := suppCount(ctx, t, db, `SELECT COUNT(*) FROM finding_activities WHERE tenant_id = $1 AND activity_type = 'status_changed'
-		AND actor_id = $2 AND changes->>'suppression_rule_id' = $3 AND changes->>'new_status' = 'false_positive' AND changes ? 'old_status'`,
+		AND actor_id = $2 AND changes->>'suppression_rule_id' = $3 AND changes->>'new_status' = 'false_positive' AND changes ? 'old_status' AND changes->>'actor_kind' = 'rule'`,
 		tenant.String(), approver.String(), rule.ID().String()); got != len(closed) {
 		t.Errorf("activities = %d, want %d", got, len(closed))
 	}

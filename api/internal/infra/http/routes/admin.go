@@ -55,10 +55,19 @@ import (
 //	                                            (critical audit, password never
 //	                                            returned); test: super_admin,
 //	                                            to the caller's address only
+//	/admin/support            own grants only   open a session: ops_admin+ named in
+//	                                            a live grant + step-up; reads only
+//	                                            through a live session (audited in
+//	                                            both logs)
 //	/admin/settings/scan-approval-policy, /admin/tenants/{id}/scan-approval-policy
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed, tenant admins told)
+//	/admin/settings/shared-sensors(/egress), /admin/tenants/{id}/shared-sensors
+//	                          any admin         super_admin + fresh TOTP code +
+//	                                            reason (critical audit, admins
+//	                                            emailed); switch-on refused until
+//	                                            shared sensors are ready
 //	/admin/tenants/{id}/audit-chain
 //	                          any admin         rebaseline: super_admin + fresh
 //	                                            TOTP code (audited, both logs)
@@ -116,9 +125,9 @@ func registerAdminRoutes(
 	}
 
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
-	// per route. /validate needs a verified console session. The console steps (RFC-022) run after the normal /login: the
-	// refresh-token cookie names the user, /session opens a pending console
-	// session and /mfa completes it. They share the tenant login's rate limits.
+	// per route. /validate needs a verified console session. The console signs
+	// in on its own: /login checks the account's email and password and opens
+	// a pending console session, /mfa completes it. No tenant session is read.
 	if h.AdminAuth != nil || h.AdminConsole != nil {
 		consoleRL := newAuthRateLimiter("console")
 		loginRL := consoleRL.LoginMiddleware()
@@ -129,10 +138,14 @@ func registerAdminRoutes(
 				r.GET("/validate", h.AdminAuth.Validate, authed)
 			}
 			if h.AdminConsole != nil {
-				r.POST("/session", h.AdminConsole.StartSession, preSession(crossSite, loginRL)...)
+				r.POST("/login", h.AdminConsole.Login, preSession(crossSite, loginRL)...)
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
 				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
+				// Time-boxed elevation: read-only until the session elevates
+				// (a fresh confirmation); ending it is always allowed.
+				r.POST("/elevate", h.AdminConsole.Elevate, authed, stepUp("console.elevate"))
+				r.DELETE("/elevate", h.AdminConsole.EndElevation, authed)
 				// Platform identity provider sign-in (RFC-022 revision 4). Not a
 				// credential-guessing surface (the IdP authenticates, the state is
 				// single use), so it uses the token-exchange bucket (20/min) rather
@@ -146,6 +159,25 @@ func registerAdminRoutes(
 				r.POST("/idp/callback", h.AdminConsole.IdPCallback, preSession(crossSite, idpRL)...)
 			}
 		})
+	}
+
+	// Support access (RFC-063): the administrator a grant names opens a
+	// support session with a step-up and reads through it. Every read is
+	// authorized live and audited in both logs by the handler; there is no
+	// write route.
+	if h.AdminSupport != nil {
+		supportChain := append(append([]Middleware{}, adminMiddlewares...),
+			h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin))
+		router.Group("/api/v1/admin/support", func(r Router) {
+			r.GET("/grants", h.AdminSupport.Grants)
+			r.POST("/grants/{grant_id}/sessions", h.AdminSupport.StartSession, stepUp("support.session_start"))
+			r.DELETE("/sessions/{session_id}", h.AdminSupport.EndSession)
+			r.GET("/sessions/{session_id}/overview", h.AdminSupport.Overview)
+			r.GET("/sessions/{session_id}/findings", h.AdminSupport.Findings)
+			r.GET("/sessions/{session_id}/findings/{id}", h.AdminSupport.Finding)
+			r.GET("/sessions/{session_id}/assets", h.AdminSupport.Assets)
+			r.GET("/sessions/{session_id}/assets/{id}", h.AdminSupport.Asset)
+		}, supportChain...)
 	}
 
 	// Build identity for the console's Help > About (any admin role).
@@ -241,6 +273,15 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/platform-sensor-proof", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetProof)
 			r.PUT("/", h.AdminScanPolicy.UpdateProof, requireSuper, stepUp("settings.platform_sensor_proof"))
+		}, adminMiddlewares...)
+		// Shared sensor access (RFC-100 §5): same gate, step-up and audit;
+		// turning the switch on is refused until shared sensors are ready.
+		router.Group("/api/v1/admin/settings/shared-sensors", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensors)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensors, requireSuper, stepUp("settings.shared_sensors"))
+			// Egress addresses organizations see to allowlist the scanners.
+			r.GET("/egress", h.AdminScanPolicy.GetSharedSensorsEgress)
+			r.PUT("/egress", h.AdminScanPolicy.UpdateSharedSensorsEgress, requireSuper, stepUp("settings.shared_sensors_egress"))
 		}, adminMiddlewares...)
 	}
 
@@ -364,6 +405,15 @@ func registerAdminRoutes(
 			return out
 		}
 		read := []Middleware{scope}
+		// Grant-bypass paths (RFC-063 section 11.5): console routes that reach
+		// the organization's data without a support grant. Never blocked; each
+		// use goes to the organization's audit log and its owners' email.
+		bypass := func(route string, repeatable bool) []Middleware {
+			if h.AdminSupport == nil {
+				return nil
+			}
+			return []Middleware{h.AdminSupport.TenantDataNotice(route, repeatable)}
+		}
 		// Organization SSO writes change who may sign in to the organization:
 		// super admin, step-up, audited.
 		ssoStepUp := stepUp("organization.sso_change")
@@ -380,11 +430,11 @@ func registerAdminRoutes(
 			// organization that has none (RFC-022 rev. 5). The platform
 			// administrator never adds users to an organization that has an
 			// owner (409); the owner and its administrators do that.
-			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, read...)
+			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, with(read, bypass("user list", true))...)
 			// Creating the first owner (or recovering one) hands an
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
-				with([]Middleware{opsWrite, stepUp("organization.owner_create"), scope}, audit("organization.user_create"))...)
+				with([]Middleware{opsWrite, stepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
 
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
@@ -403,7 +453,7 @@ func registerAdminRoutes(
 			}
 			if h.SSO != nil {
 				r.GET("/{tenantId}/sso/identity-providers", h.SSO.ListProviders, read...)
-				r.POST("/{tenantId}/sso/identity-providers", h.SSO.CreateProvider, write("organization.idp_create")...)
+				r.POST("/{tenantId}/sso/identity-providers", h.SSO.CreateProvider, with(write("organization.idp_create"), bypass("identity provider creation", false))...)
 				r.GET("/{tenantId}/sso/identity-providers/{id}", h.SSO.GetProvider, read...)
 				r.PUT("/{tenantId}/sso/identity-providers/{id}", h.SSO.UpdateProvider, write("organization.idp_update")...)
 				r.DELETE("/{tenantId}/sso/identity-providers/{id}", h.SSO.DeleteProvider, write("organization.idp_delete")...)
@@ -447,6 +497,10 @@ func registerAdminRoutes(
 			if h.AdminScanPolicy != nil {
 				r.GET("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.GetOrganization, read...)
 				r.PUT("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.UpdateOrganization, superWrite, stepUp("organization.scan_approval"), scope)
+				// Shared sensor access of the organization (RFC-100 §5):
+				// allow, deny or the instance default; same gate.
+				r.GET("/{tenantId}/shared-sensors", h.AdminScanPolicy.GetOrganizationSharedSensors, read...)
+				r.PUT("/{tenantId}/shared-sensors", h.AdminScanPolicy.UpdateOrganizationSharedSensors, superWrite, stepUp("organization.shared_sensors"), scope)
 			}
 
 			if h.VerifiedDomain != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/joinrequest"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -273,6 +274,17 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 	if err := r.checkLimit(ctx, m.TenantID(), limits.Seats, 1); err != nil {
 		return err
 	}
+	return insertMembership(ctx, r.db, m)
+}
+
+// membershipExecer runs the membership inserts on the pool or in a
+// transaction.
+type membershipExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// insertMembership inserts the membership row and its system role.
+func insertMembership(ctx context.Context, db membershipExecer, m *tenant.Membership) error {
 	// Insert into tenant_members with role. The offboarded tombstone of a
 	// person who left is reused for a re-join (member lifecycle): it is
 	// re-activated with the new id, role and inviter, and starts from zero
@@ -300,7 +312,7 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 
 	// The status comes from the membership: a new membership is active,
 	// or suspended while it waits for approval (RFC-058).
-	res, err := r.db.ExecContext(ctx, memberQuery, append([]any{
+	res, err := db.ExecContext(ctx, memberQuery, append([]any{
 		m.ID().String(),
 		m.UserID().String(),
 		m.TenantID().String(),
@@ -327,7 +339,7 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 		ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
 	`
 
-	_, err = r.db.ExecContext(ctx, userRolesQuery,
+	_, err = db.ExecContext(ctx, userRolesQuery,
 		m.UserID().String(),
 		m.TenantID().String(),
 		m.JoinedAt(),
@@ -1573,6 +1585,30 @@ func (r *TenantRepository) DeletePendingInvitationsByUserID(
 
 // AcceptInvitationTx atomically updates the invitation and creates the membership in a single transaction.
 // Creates membership in tenant_members and role assignment in user_roles.
+// CreateMembershipApprovingJoinRequest approves a waiting join request of
+// the organization and creates the membership in one transaction: either
+// both happen or neither (RFC-104). joinrequest.ErrNotPending when the
+// request no longer waits.
+func (r *TenantRepository) CreateMembershipApprovingJoinRequest(ctx context.Context, m *tenant.Membership, requestID, approver shared.ID, at time.Time) error {
+	if err := r.checkLimit(ctx, m.TenantID(), limits.Seats, 1); err != nil {
+		return err
+	}
+	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE organization_join_requests
+			   SET status = 'approved', decided_role = $4, decided_by = $5, decided_at = $6
+			 WHERE tenant_id = $1 AND id = $2 AND user_id = $3 AND status = 'pending' AND expires_at > $6`,
+			m.TenantID().String(), requestID.String(), m.UserID().String(), m.Role().String(), nullIDPtr(&approver), at)
+		if err != nil {
+			return fmt.Errorf("approve join request: %w", err)
+		}
+		if n, rerr := res.RowsAffected(); rerr != nil || n == 0 {
+			return joinrequest.ErrNotPending
+		}
+		return insertMembership(ctx, tx, m)
+	})
+}
+
 func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.Invitation, m *tenant.Membership) error {
 	if err := r.checkLimit(ctx, inv.TenantID(), limits.Seats, 1); err != nil {
 		return err

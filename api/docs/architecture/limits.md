@@ -77,8 +77,8 @@ The limit is 5 seats; 7 are in use. Remove some, or ask your administrator for m
 | `api_keys` | active API keys |
 | `ci_trusts` | CI trust configurations |
 | `invites_per_day` | invitations created in the last 24 hours |
-| `platform_scans_per_day` | platform scans started a day (stored; enforced with platform scanning) |
-| `platform_scans_concurrent` | platform scans running at once (stored; enforced with platform scanning) |
+| `platform_scans_per_day` | scans started on shared sensors since 00:00 UTC (one per run, however many chunks); enforced when a scan is triggered: an explicit shared-sensor scan over it is refused, `auto` stays on the organization's own sensors, an unreadable limit refuses (RFC-100 §10) |
+| `platform_scans_concurrent` | shared-sensor jobs queued or running at once; enforced by the shared claim path (RFC-100 S5, not built yet) |
 | `findings` | the organization's findings (a new fingerprint; a re-sighting counts nothing) |
 | `lifecycle_sub_statuses` | the organization's finding sub-statuses that are not archived ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)) |
 | `lifecycle_schemes` | its finding lifecycle schemes that are not archived |
@@ -258,7 +258,7 @@ internal API fit as a third source, with no change to any check:
 - `internal/infra/http/internalapi`: the internal API (token verifier,
   replay cache, listener and endpoints); `cmd/server/internal_api.go` wires
   it.
-- Migration `per_organization_limits` (002834): moved every organization's
+- Migration `per_organization_limits` (002890): moved every organization's
   earlier limits and excluded modules to operator rows, then dropped the old
   tables.
 

@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -32,6 +33,7 @@ type AssetHandler struct {
 	integrationService *integrationapp.IntegrationService
 	accessControlRepo  accesscontrol.Repository
 	auditService       *auditapp.AuditService
+	technologies       assettech.Repository
 	snoozeRateLimiter  *snoozeRateLimiter
 	validator          *validator.Validator
 	logger             *logger.Logger
@@ -310,7 +312,10 @@ type AssetResponse struct {
 	ProgramOnly bool `json:"program_only,omitempty"`
 	// Triage: attribution and what an active scan would do now; only with
 	// ?with_triage=true on the list (research/124).
-	Triage                *AssetTriage             `json:"triage,omitempty"`
+	Triage *AssetTriage `json:"triage,omitempty"`
+	// Technologies detected on the asset (RFC-112): at most 20 on a list,
+	// every one on a single asset. Absent when none were detected.
+	Technologies          []AssetTechnologyBrief   `json:"technologies,omitempty"`
 	ID                    string                   `json:"id"`
 	TenantID              string                   `json:"tenant_id,omitempty"`
 	ParentID              string                   `json:"parent_id,omitempty"`
@@ -747,6 +752,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 			repoPtrs[i] = &data[i].AssetResponse
 		}
 		h.addTriage(r, input.TenantID, repoPtrs, result.Data)
+		h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, repoPtrs)
 
 		response := ListResponse[AssetWithRepositoryResponse]{
 			Data:       data,
@@ -776,6 +782,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	h.addProgramFlags(r, input.TenantID, ptrs)
 	h.addTriage(r, input.TenantID, ptrs, result.Data)
+	h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, ptrs)
 
 	response := ListResponse[AssetResponse]{
 		Data:       data,
@@ -883,6 +890,7 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	resp := toAssetResponse(a)
 	h.addProgramFlags(r, tenantID, []*AssetResponse{&resp})
+	h.addTechnologies(r, tenantID, getTechnologiesPerAsset, []*AssetResponse{&resp})
 
 	// Fetch primary owner
 	if h.accessControlRepo != nil {
@@ -1329,6 +1337,7 @@ func (h *AssetHandler) GetWithRepository(w http.ResponseWriter, r *http.Request)
 		AssetResponse: toAssetResponse(a),
 		Repository:    toRepositoryExtensionResponse(ext),
 	}
+	h.addTechnologies(r, tenantID, getTechnologiesPerAsset, []*AssetResponse{&response.AssetResponse})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

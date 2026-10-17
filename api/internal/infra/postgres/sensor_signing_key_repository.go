@@ -33,8 +33,8 @@ const sensorSigningKeyColumns = `id, tenant_id, sensor_id, thumbprint, public_ke
 func scanSigningKey(row interface{ Scan(...any) error }) (*sensordom.SigningKey, error) {
 	var (
 		k                        sensordom.SigningKey
-		id, tenantID, sensorID   string
-		status                   string
+		id, sensorID, status     string
+		tenantID                 sql.NullString // NULL for a key of a shared sensor
 		activated, revoked, used sql.NullTime
 		lastIP                   sql.NullString
 	)
@@ -49,8 +49,12 @@ func scanSigningKey(row interface{ Scan(...any) error }) (*sensordom.SigningKey,
 	if k.ID, err = shared.IDFromString(id); err != nil {
 		return nil, err
 	}
-	if k.TenantID, err = shared.IDFromString(tenantID); err != nil {
-		return nil, err
+	// A shared sensor's key has no tenant: TenantID stays the zero ID, which
+	// matches no tenant's rows.
+	if tenantID.Valid {
+		if k.TenantID, err = shared.IDFromString(tenantID.String); err != nil {
+			return nil, err
+		}
 	}
 	if k.SensorID, err = shared.IDFromString(sensorID); err != nil {
 		return nil, err
@@ -140,7 +144,7 @@ func (r *SensorSigningKeyRepository) BindToBearerSensor(ctx context.Context, key
 	defer func() { _ = tx.Rollback() }()
 	res, err := tx.ExecContext(ctx, `UPDATE sensors
 		SET auth_kind = 'key_bound', api_key_hash = $3, api_key_prefix = '', key_expires_at = NULL, updated_at = $4
-		WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND NOT is_platform_sensor
+		WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND scope = 'organization'
 		  AND auth_kind IS DISTINCT FROM 'key_bound'`,
 		key.TenantID.String(), key.SensorID.String(), sensordom.KeyBoundHashPlaceholder(), at)
 	if err != nil {
