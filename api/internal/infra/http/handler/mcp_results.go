@@ -32,7 +32,7 @@ func untrustedResult(payload any, meta map[string]any) map[string]any {
 		out[k] = v
 	}
 	out["notice"] = mcpUntrustedNotice
-	out["untrusted_data"] = payload
+	out["untrusted_data"] = guardUntrusted(payload)
 	return out
 }
 
@@ -45,6 +45,7 @@ const (
 	mcpErrModuleDisabled   = "module_disabled"
 	mcpErrUnavailable      = "unavailable"
 	mcpErrInternal         = "internal_error"
+	mcpErrResultTooLarge   = "result_too_large"
 )
 
 // mcpNotFoundMessage is the one answer for an item that does not exist and
