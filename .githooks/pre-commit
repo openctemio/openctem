@@ -6,6 +6,9 @@ set -e
 top=$(git rev-parse --show-toplevel)
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
+# Private keys, key files and data/ never get committed (same check as CI).
+bash "$top/.github/scripts/check-private-keys.sh" --staged || exit 1
+
 if printf '%s\n' "$staged" | grep -q '^web/'; then
   if [ -d "$top/web/node_modules" ]; then
     (cd "$top/web" && npm run -s type-check && npx --no-install lint-staged)
