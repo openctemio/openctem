@@ -674,7 +674,7 @@ func (r *AccessControlRepository) CountAssetOwners(ctx context.Context, assetID 
 }
 
 // CountAssetsByGroups counts assets owned by multiple groups in a single query.
-func (r *AccessControlRepository) CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error) {
+func (r *AccessControlRepository) CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]int, error) {
 	if len(groupIDs) == 0 {
 		return make(map[shared.ID]int), nil
 	}
@@ -684,15 +684,22 @@ func (r *AccessControlRepository) CountAssetsByGroups(ctx context.Context, group
 		ids[i] = id.String()
 	}
 
+	args := []any{pq.Array(ids)}
+	scopeSQL := ""
+	if scope != nil {
+		cond, scopeArgs := dataScopeCondAt("ao.asset_id", scope, 2)
+		scopeSQL = " AND " + cond
+		args = append(args, scopeArgs...)
+	}
 	query := `
 		SELECT ao.group_id, COUNT(DISTINCT ao.asset_id)
 		FROM asset_owners ao
 		JOIN groups g ON g.id = ao.group_id
 		JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
-		WHERE ao.group_id = ANY($1)
+		WHERE ao.group_id = ANY($1)` + scopeSQL + `
 		GROUP BY ao.group_id`
 
-	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids))
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count assets by groups: %w", err)
 	}
@@ -1415,6 +1422,43 @@ func (r *AccessControlRepository) RefreshUserAccessibleAssets(ctx context.Contex
 	}
 
 	return nil
+}
+
+// RefreshUserAccessibleAssetsForTenant rebuilds the scope rows of one tenant
+// (the global rebuild locks and rewrites every tenant's rows).
+func (r *AccessControlRepository) RefreshUserAccessibleAssetsForTenant(ctx context.Context, tenantID shared.ID) error {
+	if _, err := r.db.ExecContext(ctx, `SELECT refresh_user_accessible_assets_for_tenant($1)`, tenantID.String()); err != nil {
+		return fmt.Errorf("failed to refresh user accessible assets for tenant: %w", err)
+	}
+	return nil
+}
+
+// ListAssetIDsByScopeRule returns the assets that rule ruleID of the tenant
+// has assigned to its group.
+func (r *AccessControlRepository) ListAssetIDsByScopeRule(ctx context.Context, tenantID, ruleID shared.ID) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT ao.asset_id
+		  FROM asset_owners ao
+		  JOIN group_asset_scope_rules sr ON sr.id = ao.scope_rule_id
+		 WHERE ao.scope_rule_id = $1 AND sr.tenant_id = $2
+		   AND ao.assignment_source = 'scope_rule'`, ruleID.String(), tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list scope rule assets: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []shared.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // =============================================================================

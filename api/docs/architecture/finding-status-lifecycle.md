@@ -134,7 +134,8 @@ a list filter; it never maps one to another.
 - `PlatformStatusTransitions`: the extra moves only the platform makes, each on
   evidence a person does not hand over: a covered scan or a source's own
   "mitigated" state closes open work (`new`/`in_progress` -> `resolved`), a VEX
-  `not_affected` statement marks it `false_positive`, an approved suppression
+  `not_affected` statement does not move it (it opens a pending false-positive
+  request), an approved suppression
   rule gives a new finding, and on approval the open findings it matches
   (`SuppressionApplyFromStatuses`), its disposition, and lifting the rule
   returns them to `new` (`suppression-rules.md`).
@@ -247,8 +248,9 @@ A false positive, an accepted risk or a duplicate is a person's decision
 
 A duplicate is a tombstone of another finding: `duplicate_of` is always set
 (CHECK `chk_findings_duplicate_has_target`, migration `002151`). It is made only
-by `POST /api/v1/findings/{id}/duplicates` (`findings:triage`, plus
-`findings:approve` when either side carries a decision), by correlation and by
+by `POST /api/v1/findings/{id}/duplicates` (`findings:triage`; refused with 409
+when exactly one side carries a false positive or risk acceptance, or the two
+carry different ones), by correlation and by
 merges. `PATCH /findings/{id}/status`, the bulk status change and the workflow
 `update_status` action refuse `duplicate` with a 400 naming that route
 (`vulnerability.ErrDuplicateNeedsCanonical`, enforced in
@@ -274,7 +276,7 @@ The engine decides:
 |---|---|---|---|
 | any | an edge of `ValidStatusTransitions`; a pentest finding belongs to the pentest module | | |
 | `false_positive`, `accepted` | `findings:write`; four-eyes approval | `request` | `closure_reason`, note (and the acceptance end) |
-| `duplicate` | `findings:triage`; the canonical picker (`/duplicates`, `CheckMarkDuplicate`) | `duplicate_picker` | `duplicate_of` |
+| `duplicate` | `findings:triage`; the canonical picker (`/duplicates`, `CheckMarkDuplicate`; never carries a decision across findings) | `duplicate_picker` | `duplicate_of` |
 | `resolved` | `findings:verify`, from every status | `direct` | a note unless the checklist is complete |
 | `fix_applied` | `findings:fix_apply`, a person, whose finding it is (assignee, assigned group, asset owner) | `direct` | a note |
 | others | `findings:status`; a `findings:verify` holder may reject a fix (`fix_applied` → `in_progress`) | `direct` | |
@@ -725,7 +727,9 @@ Key files: `internal/app/finding/vulnerability_service.go`
 Accepting the risk of, or marking a false positive, an exposure or a leaked
 credential (`/exposures/{id}/accept`, `/false-positive`, and the same routes
 under `/credentials`) is the same disposition a finding reaches only through an
-approval. For a **high or critical** item it takes two people:
+approval. For an item whose **highest severity ever** was high or critical it
+takes two people (`exposure_events.peak_severity` only goes up, so a re-ingest
+that reports the same exposure as low does not lift the rule):
 
 1. The first approver's call stores a pending request in
    `exposure_disposition_requests` (one per exposure) and answers 202 with the
