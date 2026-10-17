@@ -101,7 +101,9 @@ func TestMigrationRoleTemplateLibrary(t *testing.T) {
 		return n
 	}
 	tpl, _ := permission.RoleTemplateByID("researcher")
-	want := permission.ToStrings(tpl.Permissions)
+	// The migration copies the built-in role as it was at this version, which
+	// still held sensors:read; template v2 dropped it (later migration).
+	want := append(permission.ToStrings(tpl.Permissions), "sensors:read")
 	sort.Strings(want)
 
 	checkUp := func() {
