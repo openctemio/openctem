@@ -1075,5 +1075,9 @@
   "findings.ticketLinks.unlinkTitle": "Unlink {key}?",
   "findings.ticketLinks.unlinkDescription": "The finding stops syncing with this issue. The issue itself is not changed.",
   "findings.ticketLinks.unlink": "Unlink",
-  "findings.ticketLinks.unlinkFailed": "Could not unlink the issue"
+  "findings.ticketLinks.unlinkFailed": "Could not unlink the issue",
+  "findings.approvals.progress": "{collected} of {required} approvals",
+  "findings.approvals.toast.signed": "Your approval is recorded",
+  "findings.approvals.toast.signedDesc": "{count} more approval(s) needed before the status changes.",
+  "findings.approvals.col.tier": "Approval"
 }

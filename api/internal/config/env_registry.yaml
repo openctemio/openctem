@@ -1575,6 +1575,23 @@ vars:
     type: int
     default: "10000"
     description: "Rows per delete transaction."
+  - name: ADMIN_ALLOWED_CIDRS
+    component: api
+    group: "Admin console"
+    type: list
+    default: "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    description: "Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address."
+  - name: ADMIN_LISTEN_ADDR
+    component: api
+    group: "Admin console"
+    type: string
+    description: "The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener."
+  - name: ADMIN_LISTEN_ALLOW_ALL_INTERFACES
+    component: api
+    group: "Admin console"
+    type: bool
+    default: "false"
+    description: "`true` lets `ADMIN_LISTEN_ADDR` be any address: every interface (`:8081`, `0.0.0.0:8081`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port."
   - name: ADMIN_ELEVATION
     component: api
     group: "Admin console"
@@ -1946,6 +1963,17 @@ vars:
     group: "Administration tools"
     type: string
     description: "`openctem-signer`: signatures per second allowed per organization."
+  - name: ADMIN_API_URL
+    component: web
+    group: "Web console"
+    type: string
+    description: "Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`."
+  - name: OPENCTEM_ADMIN_PLANE
+    component: web
+    group: "Web console"
+    type: string
+    default: "shared"
+    description: "`separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`."
   - name: BACKEND_API_URL
     component: web
     group: "Web console"

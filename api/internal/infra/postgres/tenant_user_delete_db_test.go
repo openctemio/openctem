@@ -310,7 +310,7 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"content_packages": func(*schemaSeeder) map[string]any {
 		return map[string]any{"type": "rules", "origin": "organization", "tier": "T0",
 			"manifest_digest": "sha256:" + strings.Repeat("a", 64), "artifact_digest": "sha256:" + strings.Repeat("b", 64),
-			"revoked_at": nil, "revoke_reason": nil}
+			"revoked_at": nil, "revoke_reason": nil, "platform_pack_id": nil}
 	},
 	"content_install_requests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"action": "uninstall", "target_row_id": nil, "status": "pending", "decided_by": nil}

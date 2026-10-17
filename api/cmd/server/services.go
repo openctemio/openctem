@@ -1659,6 +1659,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
 	// own findings, proof-of-fix queued) behind the abuse guard.
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
+	// One exception over a task's open findings (RFC-111 §7).
+	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
@@ -1891,6 +1893,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing = sp
 		s.SensorPairing.SetAudit(s.Audit)
 		s.SensorPairing.SetEvents(s.Sensor)
+		// Shared sensor enrollment (RFC-100) has no tenant: console audit.
+		s.SensorPairing.SetAdminAudit(repos.AdminAuditLog)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
@@ -1951,6 +1955,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
 	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
+	s.ContentCatalog.SetPublishing(contentPublishing(s.ContentPacks, s.PlatformContentPacks, contentSigner,
+		func(ctx context.Context, id shared.ID) (string, error) {
+			t, err := repos.Tenant.GetByID(ctx, id)
+			if err != nil {
+				return "", err
+			}
+			return t.Slug(), nil
+		}))
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -1997,6 +2009,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	// research/122: completed scan commands teach per-target durations.
 	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
+	// RFC-100 §10: shared jobs in flight per organization, read through the
+	// entitlement service by key (platform_scans_concurrent).
+	if s.Entitlement != nil {
+		cmdOpts = append(cmdOpts, command.WithSharedLimits(s.Entitlement))
+	}
+	// RFC-100 §5: the access policy again at claim time (an organization
+	// that lost access or opted out keeps its queued shared jobs waiting).
+	cmdOpts = append(cmdOpts, command.WithSharedAccess(s.SharedSensorsAllowed))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to

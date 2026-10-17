@@ -198,7 +198,9 @@ threshold), `exploit_validated`, `exposure_raised` (the asset became internet-ex
   preview lists every member with its tier and end.
 - **One decision:** `POST /api/v1/approvals/batches/{id}/approve | reject | cancel`. Sign-offs are on the
   batch. The last sign-off applies every member in one transaction; a member that moved since is canceled
-  with the reason and listed. A member request of a batch cannot be decided alone.
+  with the reason and listed, and so is a member whose finding left the task after the request was made
+  (`finding_left_task`). `GET /api/v1/approvals/batches` takes `source_id` (the task) to list one task's
+  exceptions. A member request of a batch cannot be decided alone.
 - Afterwards each member is an ordinary decision: its own end, expiry and material-change check.
 - Findings that join the task later are not covered.
 

@@ -32,6 +32,7 @@ const ORG = {
   created_at: '2026-10-01T00:00:00Z',
   active_members: 1,
   owner_emails: ['owner@acme.test'],
+  owner_count: 1,
   saml_enabled: false,
   active_identity_providers: 0,
   verified_domains: 0,

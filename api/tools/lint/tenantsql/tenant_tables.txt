@@ -4,6 +4,7 @@ ai_triage_results
 api_keys
 api_spec_operations
 api_specs
+approval_batches
 approval_signoffs
 asset_access_grants
 asset_attribute_freshness
