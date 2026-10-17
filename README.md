@@ -67,13 +67,15 @@ make check     # what CI runs, both components
     -e DB_HOST=db.example.com -e DB_PASSWORD=... -e DB_SSLMODE=require \
     -e REDIS_HOST=redis.example.com -e REDIS_PASSWORD=... -e REDIS_TLS_ENABLED=true \
     -e APP_ENCRYPTION_KEY=... \
+    -e FINGERPRINT_KEY=... \
     ghcr.io/openctemio/openctem:vX.Y.Z
   ```
   An unset `APP_ENV` means `production`, so the container refuses to start
   until the production checks pass: `DB_SSLMODE` `require` or `verify-full`, a
   Redis password of 32+ characters with `REDIS_TLS_ENABLED=true` (plus
   `REDIS_TLS_CA_FILE` for a private CA), an `APP_ENCRYPTION_KEY` (`openssl rand
-  -hex 32`; keep it, the stored credentials need it), and no secret left at
+  -hex 32`; keep it, the stored credentials need it), a `FINGERPRINT_KEY`
+  (`openssl rand -hex 32`; keep it, never rotate it), and no secret left at
   example text. The session secret `AUTH_JWT_SECRET` is derived from
   `APP_ENCRYPTION_KEY` when unset; set it (64+ characters, `openssl rand -hex
   64`) to rotate the two independently.

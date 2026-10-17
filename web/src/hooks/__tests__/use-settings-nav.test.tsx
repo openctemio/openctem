@@ -10,6 +10,8 @@ const state = {
   perms: new Set<string>(),
   moduleIds: [] as string[],
   subModules: {} as Record<string, { slug: string; release_status?: string }[]>,
+  limitsApply: undefined as boolean | undefined,
+  fetchers: [] as unknown[],
 }
 
 vi.mock('@/lib/permissions/hooks', () => ({
@@ -27,6 +29,12 @@ vi.mock('@/context/bootstrap-provider', () => ({
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useTenantModules: () => ({ subModules: state.subModules }),
 }))
+vi.mock('swr', () => ({
+  default: (key: string, fetcher: unknown) => {
+    state.fetchers.push(fetcher)
+    return { data: key === 'bootstrap:limits_apply' ? state.limitsApply : undefined }
+  },
+}))
 vi.mock('@/context/i18n-provider', () => ({
   useTranslation: () => ({ t: (_k: string, fallback: string) => fallback }),
 }))
@@ -42,6 +50,8 @@ beforeEach(() => {
   state.perms = new Set()
   state.moduleIds = []
   state.subModules = {}
+  state.limitsApply = undefined
+  state.fetchers = []
 })
 
 describe('useSettingsNav', () => {
@@ -75,7 +85,7 @@ describe('useSettingsNav', () => {
     expect(visible.filter((i) => ['all-integrations', 'siem', 'api-keys'].includes(i))).toEqual([])
   })
 
-  it('OSS edition (no module list) shows every permitted item', () => {
+  it('no module list from the API shows every permitted item', () => {
     state.perms = new Set([Permission.IntegrationsRead, Permission.TeamUpdate])
     expect(ids()).toContain('risk-scoring')
     expect(ids()).toContain('siem')
@@ -91,5 +101,28 @@ describe('useSettingsNav', () => {
     expect(visible).toContain('all-integrations') // no sub-module key
     expect(visible).not.toContain('siem') // disabled
     expect(visible).not.toContain('ticketing') // absent
+  })
+
+  it('lists Usage & limits only while a limit applies to the organization', () => {
+    state.perms = new Set([Permission.TeamUpdate])
+    expect(ids()).not.toContain('limits') // nothing seeded: hidden
+    state.limitsApply = false
+    expect(ids()).not.toContain('limits')
+    state.limitsApply = true
+    expect(ids()).toContain('limits')
+  })
+
+  it('reads limits_apply from the bootstrap cache, never from the network', () => {
+    state.perms = new Set([Permission.TeamUpdate])
+    state.limitsApply = true
+    ids()
+    expect(state.fetchers.length).toBeGreaterThan(0)
+    expect(state.fetchers.every((f) => f === null)).toBe(true)
+  })
+
+  it('hides Usage & limits from a user who may not open it', () => {
+    state.perms = new Set([Permission.AuditRead])
+    state.limitsApply = true
+    expect(ids()).not.toContain('limits')
   })
 })

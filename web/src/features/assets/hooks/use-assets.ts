@@ -85,6 +85,10 @@ export interface AssetSearchFilters {
   programAssets?: string
   /** stale: a class past its freshness window; never: a passive class never observed (RFC-075). */
   freshness?: string
+  /** Assets using any of these technologies (normalised names, RFC-112). */
+  technologies?: string[]
+  /** Assets with a technology in any of these categories (RFC-112). */
+  technologyCategories?: string[]
 
   // CTEM inventory filter dimensions (api: all-assets-inventory).
   // All optional; multi-select where an array.
@@ -481,6 +485,9 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.programAssets) params.program_assets = filters.programAssets
   if (filters.freshness === 'stale' || filters.freshness === 'never')
     params.freshness = filters.freshness
+  if (filters.technologies?.length) params.technology = filters.technologies.join(',')
+  if (filters.technologyCategories?.length)
+    params.technology_category = filters.technologyCategories.join(',')
 
   // CTEM inventory dimensions
   if (filters.businessUnitIds?.length) params.business_unit_ids = filters.businessUnitIds.join(',')

@@ -316,11 +316,6 @@ func (s *AITriageService) RequestTriage(ctx context.Context, req TriageRequest) 
 		return nil, fmt.Errorf("%w: invalid finding id", shared.ErrValidation)
 	}
 
-	// Check plan access for AI Triage
-	if err := s.checkPlanAccess(ctx, req.TenantID, req.TriageType); err != nil {
-		return nil, err
-	}
-
 	// Get tenant to check AI settings
 	t, err := s.tenantRepo.GetByID(ctx, tenantID)
 	if err != nil {
@@ -330,11 +325,6 @@ func (s *AITriageService) RequestTriage(ctx context.Context, req TriageRequest) 
 	aiSettings := t.TypedSettings().AI
 	if aiSettings.Mode == tenant.AIModeDisabled {
 		return nil, fmt.Errorf("%w: AI is disabled for this tenant", shared.ErrForbidden)
-	}
-
-	// Check BYOK/Agent mode is available on plan
-	if err := s.checkAIModeAccess(ctx, req.TenantID, aiSettings.Mode); err != nil {
-		return nil, err
 	}
 
 	// Verify finding exists and belongs to tenant
@@ -1520,28 +1510,6 @@ func (s *AITriageService) logTokenLimitExceeded(ctx context.Context, tenantID, r
 		"tokens_used":  usedTokens,
 		"tokens_limit": limitTokens,
 	})
-}
-
-// =============================================================================
-// Plan Access Checking
-// =============================================================================
-
-// checkPlanAccess verifies the tenant has access to AI Triage based on their plan.
-// OSS Edition: Always allows access (no licensing).
-func (s *AITriageService) checkPlanAccess(_ context.Context, _, _ string) error {
-	return nil
-}
-
-// checkAIModeAccess verifies the tenant has access to the configured AI mode.
-// OSS Edition: Always allows access (no licensing).
-func (s *AITriageService) checkAIModeAccess(_ context.Context, _ string, _ tenant.AIMode) error {
-	return nil
-}
-
-// GetPlanTokenLimit returns the monthly token limit for a tenant based on their plan.
-// OSS Edition: Always returns -1 (unlimited).
-func (s *AITriageService) GetPlanTokenLimit(_ context.Context, _ string) (int64, error) {
-	return -1, nil
 }
 
 // =============================================================================
