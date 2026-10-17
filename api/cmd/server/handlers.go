@@ -874,6 +874,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
 	}
+	// Shared sensor enrollment tokens (RFC-100): super admin, console step-up.
+	if svc.SensorPairing != nil {
+		handlers.AdminSharedSensor = handler.NewAdminSharedSensorHandler(svc.SensorPairing, adminConsoleSvc, log)
+	}
 	// Scan approval governance (RFC-073): settings, requests, the inbox and
 	// the scan list badge.
 	if svc.ScanGovernance != nil {

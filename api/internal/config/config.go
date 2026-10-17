@@ -67,6 +67,9 @@ type Config struct {
 	// an assertion may come from. Empty: console security keys are off.
 	AdminPublicURL string
 
+	// AdminPlane is where the platform administration console may be
+	// reached from.
+	AdminPlane AdminPlaneConfig
 	// AdminElevationRequired: platform administrators act as read-only until
 	// they elevate their console session for a while (ADMIN_ELEVATION=
 	// required, the default; off = act as their own role at once).
@@ -1665,6 +1668,11 @@ func Load() (*Config, error) {
 			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
+		AdminPlane: AdminPlaneConfig{
+			AllowedCIDRs:             getEnvSlice("ADMIN_ALLOWED_CIDRS", DefaultAdminAllowedCIDRs),
+			ListenAddr:               getEnv("ADMIN_LISTEN_ADDR", ""),
+			ListenAllowAllInterfaces: getEnvBool("ADMIN_LISTEN_ALLOW_ALL_INTERFACES", false),
+		},
 		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
 		AdminAuditSink: AdminAuditSinkConfig{
 			URL:    getEnv("ADMIN_AUDIT_SINK", ""),
@@ -1889,6 +1897,9 @@ func (c *Config) validateBasic() error {
 		return err
 	}
 	if err := c.validateAdminPublicURL(); err != nil {
+		return err
+	}
+	if err := c.validateAdminPlane(); err != nil {
 		return err
 	}
 	if err := c.validateAdminAuditSink(); err != nil {
