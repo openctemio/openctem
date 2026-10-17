@@ -36,7 +36,8 @@ const sensorPairingColumns = `id, mode, status, tenant_id, COALESCE(code_hash, '
 	public_key, COALESCE(thumbprint, ''), commitment, sensor_nonce, platform_nonce, COALESCE(sas, ''),
 	host_facts, host(source_ip), repair_sensor_id, sensor_id,
 	COALESCE(requested_name, ''), requested_zone_ids, COALESCE(requested_profile, ''),
-	created_by, approved_by, approved_at, denied_by, denied_at, confirmed_at, created_at, expires_at`
+	created_by, approved_by, approved_at, denied_by, denied_at, confirmed_at, created_at, expires_at,
+	instance_token_id`
 
 func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error) {
 	var (
@@ -46,14 +47,15 @@ func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error
 		createdBy, approvedBy, deniedBy   sql.NullString
 		approvedAt, deniedAt, confirmedAt sql.NullTime
 		hostFacts                         []byte
-		sourceIP                          sql.NullString
+		sourceIP, instanceToken           sql.NullString
 		zones                             pq.StringArray
 	)
 	if err := row.Scan(&id, &mode, &status, &tenantID, &p.CodeHash,
 		&p.PublicKey, &p.Thumbprint, &p.Commitment, &p.SensorNonce, &p.PlatformNonce, &p.SAS,
 		&hostFacts, &sourceIP, &repairID, &sensorID,
 		&p.RequestedName, &zones, &p.RequestedProfile,
-		&createdBy, &approvedBy, &approvedAt, &deniedBy, &deniedAt, &confirmedAt, &p.CreatedAt, &p.ExpiresAt); err != nil {
+		&createdBy, &approvedBy, &approvedAt, &deniedBy, &deniedAt, &confirmedAt, &p.CreatedAt, &p.ExpiresAt,
+		&instanceToken); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sensordom.ErrPairingNotFound
 		}
@@ -67,6 +69,7 @@ func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error
 	p.TenantID, p.RepairSensorID, p.SensorID = optionalID(tenantID), optionalID(repairID), optionalID(sensorID)
 	p.CreatedBy, p.ApprovedBy, p.DeniedBy = optionalID(createdBy), optionalID(approvedBy), optionalID(deniedBy)
 	p.ApprovedAt, p.DeniedAt, p.ConfirmedAt = nullTimeValue(approvedAt), nullTimeValue(deniedAt), nullTimeValue(confirmedAt)
+	p.InstanceTokenID = optionalID(instanceToken)
 	if len(hostFacts) > 0 {
 		_ = json.Unmarshal(hostFacts, &p.HostFacts)
 	}
@@ -241,7 +244,7 @@ func (r *SensorPairingRepository) Approve(ctx context.Context, a sensordom.Pairi
 	p, err := scanPairing(tx.QueryRowContext(ctx, `SELECT `+sensorPairingColumns+`
 		FROM sensor_pairings
 		WHERE id = $1 AND status = 'pending' AND sensor_nonce IS NOT NULL AND expires_at > $2
-		  AND (tenant_id = $3 OR (tenant_id IS NULL AND code_hash = $4))
+		  AND (tenant_id = $3 OR (tenant_id IS NULL AND code_hash = $4)) AND instance_token_id IS NULL
 		FOR UPDATE`, a.PairingID.String(), a.Now, a.TenantID.String(), a.CodeHash))
 	if err != nil {
 		return nil, err
@@ -344,7 +347,7 @@ func (r *SensorPairingRepository) Deny(ctx context.Context, tenantID, id, actor 
 	row := r.db.QueryRowContext(ctx, `UPDATE sensor_pairings
 		SET status = 'denied', denied_by = $3, denied_at = $4, tenant_id = COALESCE(tenant_id, $1)
 		WHERE id = $2 AND status IN ('expecting', 'pending') AND expires_at > $4
-		  AND (tenant_id IS NULL OR tenant_id = $1)
+		  AND (tenant_id IS NULL OR tenant_id = $1) AND instance_token_id IS NULL
 		RETURNING `+sensorPairingColumns, tenantID.String(), id.String(), actor.String(), now)
 	return scanPairing(row)
 }
@@ -366,12 +369,14 @@ func (r *SensorPairingRepository) ConfirmUnscoped(ctx context.Context, id shared
 	switch {
 	case p.Status == sensordom.PairingCompleted:
 		return p, nil
-	case p.Status != sensordom.PairingApproved || !now.Before(p.ExpiresAt) || p.TenantID == nil || p.SensorID == nil:
+	case p.Status != sensordom.PairingApproved || !now.Before(p.ExpiresAt) || p.SensorID == nil ||
+		(p.TenantID == nil) != p.IsInstance():
 		return nil, sensordom.ErrPairingNotFound
 	}
+	// A shared sensor's key has no tenant (its pairing has none either).
 	res, err := tx.ExecContext(ctx, `UPDATE sensor_keys SET status = 'active', activated_at = $4
-		WHERE tenant_id = $1 AND sensor_id = $2 AND thumbprint = $3 AND status = 'pending'`,
-		p.TenantID.String(), p.SensorID.String(), thumbprint, now)
+		WHERE tenant_id IS NOT DISTINCT FROM $1::uuid AND sensor_id = $2 AND thumbprint = $3 AND status = 'pending'`,
+		idOrNull(p.TenantID), p.SensorID.String(), thumbprint, now)
 	if err != nil {
 		return nil, fmt.Errorf("activate sensor key: %w", err)
 	}
@@ -402,7 +407,7 @@ func (r *SensorPairingRepository) ExpireForPlatform(ctx context.Context, now, pu
 		SET status = 'revoked', revoked_at = $1, revoked_reason = $2
 		FROM sensor_pairings p
 		WHERE p.status = 'approved' AND p.expires_at <= $1
-		  AND k.tenant_id = p.tenant_id AND k.sensor_id = p.sensor_id AND k.thumbprint = p.thumbprint
+		  AND k.tenant_id IS NOT DISTINCT FROM p.tenant_id AND k.sensor_id = p.sensor_id AND k.thumbprint = p.thumbprint
 		  AND k.status = 'pending'`, now, sensordom.KeyRevokedUnconfirmed); err != nil {
 		return 0, fmt.Errorf("revoke unconfirmed keys: %w", err)
 	}

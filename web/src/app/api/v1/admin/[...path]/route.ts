@@ -69,7 +69,7 @@ async function proxy(request: NextRequest, path: string[]): Promise<NextResponse
     )
   }
   const url = new URL(request.url)
-  const backendUrl = `${env.api.url}/api/v1/admin/${path.map(encodeURIComponent).join('/')}${url.search}`
+  const backendUrl = `${env.api.adminUrl}/api/v1/admin/${path.map(encodeURIComponent).join('/')}${url.search}`
 
   const headers = new Headers()
   const contentType = request.headers.get('content-type')
