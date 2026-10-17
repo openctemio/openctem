@@ -634,7 +634,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 	inScope, scopeArgs := dashboardScope(scope, 2)
 	dedupSQL := `SELECT COUNT(*) AS merge_count
 			FROM asset_merge_log WHERE tenant_id = $1`
-	if scope != nil {
+	if scope.Restricted() {
 		dedupSQL = `SELECT 0::bigint AS merge_count`
 	}
 	query := `
@@ -708,7 +708,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	// scoped viewer gets no score change.
 	inScope, scopeArgs := dashboardScope(scope, 3)
 	prevRisk := ""
-	if scope != nil {
+	if scope.Restricted() {
 		prevRisk = " AND FALSE"
 	}
 
