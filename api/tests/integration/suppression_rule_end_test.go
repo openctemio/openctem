@@ -37,7 +37,7 @@ func TestSuppressionRule_EndRequired_DB(t *testing.T) {
 	svc := suppression.NewService(postgres.NewSuppressionRepository(pdb), logger.NewNop())
 	create := func(end *string) (*suppression.Rule, error) {
 		return svc.CreateRule(ctx, suppression.CreateRuleInput{TenantID: tenant, Name: "fixtures", RuleID: "go.fixture",
-			SuppressionType: suppression.SuppressionTypeFalsePositive, RequestedBy: requester, ExpiresAt: end})
+			SuppressionType: suppression.SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests", RequestedBy: requester, ExpiresAt: end})
 	}
 	rule, err := create(nil)
 	if err != nil {

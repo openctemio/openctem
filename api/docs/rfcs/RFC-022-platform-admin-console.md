@@ -89,15 +89,16 @@ used; migration 001483 dropped them:
   32-byte random token; the token itself is never stored), `mfa_verified`,
   `created_at`, `expires_at`, `last_seen_at`, `ip`, `user_agent`.
 
-**Flow.** The administrator signs in on the normal `/login` (email + password,
-the account's own lockout and password policy). Login and `GET /users/me` report
-`platform_admin` / `is_platform_admin`, and the UI sends the administrator to
-`/admin` instead of organization onboarding. Then, under `/api/v1/admin/auth`:
+**Flow** (as revised by revision 20: the console signs in on its own). Under
+`/api/v1/admin/auth`, on the console's sign-in page:
 
-1. `POST /session`: reads the `/login` refresh-token cookie (validated, not
-   rotated). Refused with 401 when not signed in, 403 when the account is not
-   linked to an active, unlocked administrator, and 403 when the sign-in came
-   from SSO, SAML or a social provider (audited). Otherwise it creates a
+1. `POST /login {email, password}`: the account's password, checked with the
+   account's own lockout and password policy and without opening a `/login`
+   session (`AuthService.VerifyConsolePassword`). A wrong password and an
+   unknown email answer the same 401; only a local password account can pass,
+   so an organization's SSO never authenticates an administrator. 403 when the
+   account is not linked to an active, unlocked administrator (audited), or
+   when the identity provider is required. Otherwise it creates a
    *pending* session (`mfa_verified=false`, 5-minute expiry) in an HttpOnly
    `admin_mfa` cookie and answers `mfa_required`, or `mfa_enrollment_required`
    with a freshly generated secret + `otpauth://` URI when MFA is not set up.
@@ -236,8 +237,8 @@ a local administrator for when SSO is unavailable.
   organization's providers (`/auth/providers`, per org slug); the platform IdP
   appears only on the console sign-in page, through
   `GET /api/v1/admin/auth/idp` (enabled + display name, nothing else). An
-  organization's IdP still cannot open the console: `/auth/session` refuses any
-  non-password `/login` session as before.
+  organization's IdP still cannot open the console: the console's own
+  sign-in (`/auth/login`) accepts only a local account's password.
 - **Flow** (authorization code + PKCE S256 + nonce + state):
   1. `POST /api/v1/admin/auth/idp/start` stores `sha256(state)`, the nonce and
      the encrypted PKCE verifier server-side (10-minute expiry, single use) and
@@ -270,7 +271,7 @@ a local administrator for when SSO is unavailable.
   Only then does a matching token open a verified session directly. The
   session records `auth_method = idp`.
 - **Require IdP.** With the IdP enabled and `require_idp` on, the local
-  password path (`/auth/session`) is refused for every administrator except
+  password path (`/auth/login`) is refused for every administrator except
   break-glass ones, and turning it on ends existing password sessions of
   non-break-glass administrators. The `/login` account itself is untouched,
   since it belongs to no organization and can open nothing without the console.
@@ -717,6 +718,17 @@ An administrator who signs in only through the platform identity provider has
 no console authenticator, so protected actions answer
 `403 STEP_UP_UNAVAILABLE` until one is enrolled (WebAuthn for the console
 lifts this).
+
+### The console signs in on its own
+
+The console no longer starts from the tenant `/login` session (owner
+decision D2): `POST /api/v1/admin/auth/session`, which read the tenant
+refresh-token cookie, is removed, and `POST /api/v1/admin/auth/login` takes
+the account's email and password (same account, password and lockout), then
+the console's own second factor. Signing out of the console ends only the
+console session. A tenant-side session bug can no longer lead into the
+console, and the console works on an origin of its own, where a host-only
+cookie of the tenant origin would never arrive anyway.
 
 ### Time-boxed elevation
 
