@@ -8,7 +8,6 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -16,10 +15,9 @@ import (
 
 type fakeTechRepo struct {
 	upserted []assettech.Technology
-	shown    map[shared.ID]map[string]bool
 }
 
-func (f *fakeTechRepo) Upsert(_ context.Context, _ shared.ID, techs []assettech.Technology) error {
+func (f *fakeTechRepo) Enrich(_ context.Context, _ shared.ID, techs []assettech.Technology) error {
 	f.upserted = append(f.upserted, techs...)
 	return nil
 }
@@ -28,17 +26,7 @@ func (f *fakeTechRepo) ListByAsset(context.Context, shared.ID, shared.ID) ([]ass
 	return nil, nil
 }
 
-func (f *fakeTechRepo) ShownKeys(_ context.Context, _ shared.ID, ids []shared.ID) (map[shared.ID]map[string]bool, error) {
-	out := map[shared.ID]map[string]bool{}
-	for _, id := range ids {
-		out[id] = f.shown[id]
-	}
-	return out, nil
-}
-
-type fakeSetReconciler struct{}
-
-func (fakeSetReconciler) ReconcileSets(context.Context, shared.ID, []asset.SetObservation) ([]asset.SetChange, error) {
+func (f *fakeTechRepo) ListByAssets(context.Context, shared.ID, []shared.ID, int) (map[shared.ID][]assettech.Technology, error) {
 	return nil, nil
 }
 
@@ -83,23 +71,6 @@ func TestRecordTechnologies_CategoriesAndScope(t *testing.T) {
 	}
 	if got["next.js"].Version != "13.4.1" || got["acme edge"].Confidence != 75 {
 		t.Errorf("version/confidence lost: %+v", got)
-	}
-}
-
-// With set reconciliation, a technology the asset does not show (an
-// untrusted source) is not recorded.
-func TestRecordTechnologies_OnlyShown(t *testing.T) {
-	id := shared.NewID()
-	repo := &fakeTechRepo{shown: map[shared.ID]map[string]bool{id: {"nginx": true}}}
-	s := &Service{logger: logger.NewNop(), sets: fakeSetReconciler{}}
-	s.SetTechnologyRepository(repo)
-	report := &ctis.Report{Assets: []ctis.Asset{
-		{ID: "a", Properties: ctis.Properties{"technologies": []any{"nginx:1.25.0", "PHP:8.1"}}},
-	}}
-	s.recordTechnologies(context.Background(), shared.NewID(), &alterScope{all: true}, attributeSource{},
-		time.Now(), report, map[string]shared.ID{"a": id})
-	if len(repo.upserted) != 1 || repo.upserted[0].Key != "nginx" {
-		t.Fatalf("got %+v", repo.upserted)
 	}
 }
 
