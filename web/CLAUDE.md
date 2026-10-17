@@ -164,7 +164,7 @@ Unauthenticated → /login → No Tenant → /onboarding/create-team → Dashboa
 
 `/onboarding/create-team` shows the create-team form only when the API allows
 self-service organizations (`tenant_creation_mode` on `GET /auth/providers`).
-Under `TENANT_CREATION_MODE=admin_only` it tells the user to ask their
+Under the `admin_only` policy (always, with the default `SIGNUP_MODE=disabled`) it tells the user to ask their
 administrator or open their invitation link; every "Create team" button hides
 (`useCanCreateOrganization`). A platform administrator goes to `/admin` instead.
 

@@ -443,14 +443,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.RemediationRead,
     module: Module.Remediation,
   },
-  '/remediations': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
-  '/remediations/**': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
   '/automations': {
     permission: Permission.WorkflowsRead,
     module: Module.Workflows,
@@ -628,6 +620,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     message: 'Only an owner can approve or reject SSO changes.',
   },
+  // Owners and admins read domain policies; changes are owner only (api RFC-104).
+  '/settings/domains': {
+    permission: Permission.TeamUpdate,
+    message: 'Only owners and admins can see domain settings.',
+  },
   // Owners and admins read trusts; changes are owner only (api RFC-058).
   '/settings/trusted-organizations': {
     permission: Permission.TeamUpdate,
@@ -796,6 +793,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // License policy (RFC-070): settings:read to see, settings:write to save.
   '/settings/license-policy': {
     permission: Permission.SettingsRead,
+  },
+  // Content catalog (RFC-099): content:read to see; the API gates every change.
+  '/settings/content': {
+    permission: Permission.ContentRead,
   },
   // Asset source precedence (RFC-069): owner/admin on the API.
   '/settings/asset-sources': {

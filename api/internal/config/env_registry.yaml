@@ -21,7 +21,7 @@
 # Retired and removed names live in config.go (retiredEnv, removedEnv).
 
 # Prefixes the API owns: any variable under them must be listed here.
-prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_]
+prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_, VERSION_CHECK_]
 
 vars:
   - name: APP_ENV
@@ -43,6 +43,11 @@ vars:
     type: string
     example: "http://localhost:8080"
     description: "Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment."
+  - name: DEPLOYMENT_REGION
+    component: api
+    group: "Application"
+    type: string
+    description: "Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Unset: not named."
   - name: BRAND_FILE
     component: api
     group: "Brand"
@@ -225,6 +230,17 @@ vars:
     type: string
     default: "openctem"
     description: "Database name."
+  - name: DB_ADMIN_PASSWORD
+    component: api
+    group: "Database (PostgreSQL)"
+    type: string
+    secret: true
+    description: "Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`."
+  - name: DB_ADMIN_USER
+    component: api
+    group: "Database (PostgreSQL)"
+    type: string
+    description: "Role the platform console's identity tables (administrators, console sessions and credentials, the platform identity provider) are written with, through a second small pool. The least-privilege bootstrap (`admin_user`) creates it and takes write on those tables away from `DB_USER`. Unset: one role, as before."
   - name: DB_PASSWORD
     component: api
     group: "Database (PostgreSQL)"
@@ -441,6 +457,14 @@ vars:
     type: string
     secret: true
     description: "Master secret of each organization's content pack signing key (Ed25519). Same formats as `APP_ENCRYPTION_KEY` and must differ from it and from `APP_TEMPLATE_SIGNING_KEY`. Unset: derived from `APP_ENCRYPTION_KEY` under its own label."
+  - name: FINGERPRINT_KEY
+    component: api
+    group: "Encryption keys"
+    type: string
+    required: production
+    secret: true
+    example: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    description: "Server secret the fingerprint of each reported secret finding is keyed from (and the key CI jobs hash raw secrets with). At least 32 characters: `openssl rand -hex 32`. Never rotate it with `APP_ENCRYPTION_KEY`: changing it changes every secret's identity, so a secret seen again opens a second finding. On an install that already stores secret findings, set it to the current `APP_ENCRYPTION_KEY` value (the key those fingerprints were made with). Required unless `APP_ENV=development`, where `APP_ENCRYPTION_KEY` is used when it is unset. Back it up with the database."
   - name: CONTENT_TRUST_ROOT_KEY_IDS
     component: api
     group: "Encryption keys"
@@ -595,12 +619,17 @@ vars:
     type: int
     default: "32"
     description: "Largest public IPv6 range one scope entry may cover."
-  - name: TENANT_CREATION_MODE
+  - name: SIGNUP_MODE
     component: api
     group: "Organizations and scope guardrails"
     type: string
-    default: "admin_only"
-    description: "`admin_only`: only a platform administrator creates organizations (admin console or `bootstrap-admin`). `self_service`: any signed-in user may create organizations. Any other value stops start-up."
+    default: "disabled"
+    description: "The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (System > E-mail) at start and verify every self-registered address; `open` in production also needs the Turnstile keys or `SIGNUP_CAPTCHA`. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`."
+  - name: SIGNUP_CAPTCHA
+    component: api
+    group: "Organizations and scope guardrails"
+    type: string
+    description: "Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: open sign-up in production refuses to start without `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`."
   - name: CAPTCHA_TURNSTILE_SECRET
     component: api
     group: "Organizations and scope guardrails"
@@ -1262,6 +1291,18 @@ vars:
     type: string
     default: "https://api.certspotter.com"
     description: "Fallback CT search service when the primary fails. `off` disables the fallback."
+  - name: VERSION_CHECK_ENABLED
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: bool
+    default: "true"
+    description: "Daily version check: one anonymous download of the signed release feed (no instance id, version or counts), compared with the running version on the instance; the platform console shows newer and security releases. `false` stops the download; offline import in the console still works. See `docs/architecture/version-check.md`."
+  - name: VERSION_CHECK_URL
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: url
+    default: "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"
+    description: "Where the version check reads the signed release feed (https only). Point it at an internal mirror if needed; the signature, not the host, is trusted. A mirror on a private address also needs the private egress allowlist."
   - name: CERT_MONITOR_ENABLED
     component: api
     group: "Discovery feeds and background jobs"
@@ -1486,6 +1527,61 @@ vars:
     type: int
     default: "10000"
     description: "Rows per delete transaction."
+  - name: ADMIN_ALLOWED_CIDRS
+    component: api
+    group: "Admin console"
+    type: list
+    default: "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    description: "Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address."
+  - name: ADMIN_LISTEN_ADDR
+    component: api
+    group: "Admin console"
+    type: string
+    description: "The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener."
+  - name: ADMIN_LISTEN_ALLOW_ALL_INTERFACES
+    component: api
+    group: "Admin console"
+    type: bool
+    default: "false"
+    description: "`true` lets `ADMIN_LISTEN_ADDR` be any address: every interface (`:8081`, `0.0.0.0:8081`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port."
+  - name: ADMIN_ELEVATION
+    component: api
+    group: "Admin console"
+    type: string
+    default: "required"
+    description: "`required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in."
+  - name: ADMIN_AUDIT_SINK
+    component: api
+    group: "Audit log retention"
+    type: string
+    description: "Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off."
+  - name: ADMIN_AUDIT_SINK_SECRET
+    component: api
+    group: "Audit log retention"
+    type: string
+    secret: true
+    description: "HMAC-SHA256 key that signs each request to an `https://` `ADMIN_AUDIT_SINK` (`X-OpenCTEM-Signature`, `X-OpenCTEM-Timestamp`, `X-OpenCTEM-Batch-Id`). At least 32 bytes, required for https, refused for other destinations. Never logged."
+  - name: ADMIN_AUDIT_SINK_SYSLOG_CA_FILE
+    component: api
+    group: "Audit log retention"
+    type: path
+    description: "PEM bundle that replaces the system roots when verifying a `syslog+tls://` `ADMIN_AUDIT_SINK`."
+  - name: ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT
+    component: api
+    group: "Audit log retention"
+    type: path
+    description: "PEM client certificate presented to a `syslog+tls://` `ADMIN_AUDIT_SINK` (mutual TLS), so the collector can accept only this sender. Set together with `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY`."
+  - name: ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY
+    component: api
+    group: "Audit log retention"
+    type: path
+    description: "PEM private key of `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT`."
+  - name: ADMIN_AUDIT_SINK_HEAD_INTERVAL
+    component: api
+    group: "Audit log retention"
+    type: duration
+    default: "15m"
+    description: "How often the administrators' audit chain head (position and hash) and the chain verification state are sent to `ADMIN_AUDIT_SINK` when no row is new. A later re-signing of the chain cannot match a head already sent."
   - name: ADMIN_AUDIT_RETENTION_DAYS
     component: api
     group: "Audit log retention"
@@ -1533,6 +1629,12 @@ vars:
     type: int
     default: "400"
     description: "Days the asset change timeline keeps events. Minimum 30."
+  - name: ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY
+    component: api
+    group: "Audit log retention"
+    type: bool
+    default: "true"
+    description: "The asset technology backfill logs the component links it would remove (a count and a sample) instead of deleting them. Set `false` to delete links that have no version and no CPE; each deleted link is recorded."
   - name: INVITATION_PURGE_INTERVAL
     component: api
     group: "Audit log retention"
@@ -1813,6 +1915,17 @@ vars:
     group: "Administration tools"
     type: string
     description: "`openctem-signer`: signatures per second allowed per organization."
+  - name: ADMIN_API_URL
+    component: web
+    group: "Web console"
+    type: string
+    description: "Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`."
+  - name: OPENCTEM_ADMIN_PLANE
+    component: web
+    group: "Web console"
+    type: string
+    default: "shared"
+    description: "`separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`."
   - name: BACKEND_API_URL
     component: web
     group: "Web console"
@@ -1872,12 +1985,6 @@ vars:
     group: "Web console"
     type: string
     description: "Sentry DSN for browser and server error reporting. Unset: off."
-  - name: NEXT_PUBLIC_APP_NAME
-    component: web
-    group: "Web console"
-    type: string
-    default: "OpenCTEM"
-    description: "Product name in the page title."
   - name: NEXT_PUBLIC_APP_DESCRIPTION
     component: web
     group: "Web console"

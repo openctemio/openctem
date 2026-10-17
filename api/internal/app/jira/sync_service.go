@@ -200,6 +200,11 @@ type SyncService struct {
 	// links stores ticket link records (nil → URL strings only).
 	links ticketlink.Repository
 
+	// taskAccess and taskReader serve task issues; webBase links back.
+	taskAccess TaskAccess
+	taskReader TaskReader
+	webBase    string
+
 	// profiles renders published ticket mapping profiles (nil → built-in
 	// fields and status sync only).
 	profiles ProfileSource
@@ -236,6 +241,11 @@ type InboundRefusal struct {
 type InboundStatusApplier interface {
 	ApplyTicketStatus(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
 		target vulnerability.FindingStatus, integration, ref, externalActor string) (applied []shared.ID, refused []InboundRefusal, err error)
+	// RequestTicketDisposition opens a pending risk-acceptance or
+	// false-positive request for each linked finding (four-eyes; never a
+	// close). pending are findings that already had a pending request.
+	RequestTicketDisposition(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
+		target vulnerability.FindingStatus, integration, ref, externalActor string) (requested, pending []shared.ID, refused []InboundRefusal, err error)
 }
 
 // WorkItemFindingLister lists every finding of the tenant linked to a ticket
@@ -804,6 +814,8 @@ type Changelog struct {
 // ChangeItem is one entry in the changelog.
 type ChangeItem struct {
 	Field      string `json:"field"`
+	From       string `json:"from"` // the status id for a status change
+	To         string `json:"to"`
 	FromString string `json:"fromString"`
 	ToString   string `json:"toString"`
 }
@@ -850,6 +862,21 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		}
 	}
 
+	// Only issues in projects configured for ticketing move findings.
+	if ok, err := s.inboundProjectAllowed(ctx, tenantID, payload.Issue.Key); err != nil {
+		return fmt.Errorf("check the issue's project: %w", err)
+	} else if !ok {
+		s.logger.Warn("jira webhook: issue outside the projects configured for ticketing; ignored",
+			"issue_key", logger.SanitizeValue(payload.Issue.Key))
+		return nil
+	}
+
+	// A published mapping profile for the issue's project decides what the
+	// status means (an intent); without one the built-in map applies.
+	if handled, err := s.handleProfileIntent(ctx, tenantID, payload, newJiraStatus); handled {
+		return err
+	}
+
 	newFindingStatus, ok := s.inboundMapping(ctx, tenantID).FindingStatusForJira(newJiraStatus)
 	if !ok {
 		s.logger.Debug("jira status has no finding mapping — ignored",
@@ -858,7 +885,13 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		)
 		return nil
 	}
+	return s.applyToLinked(ctx, tenantID, payload, newJiraStatus, newFindingStatus)
+}
 
+// applyToLinked applies a work-state status to every finding linked to the
+// issue through the finding service, queues the verification of a fix claim
+// and comments the refusals back.
+func (s *SyncService) applyToLinked(ctx context.Context, tenantID shared.ID, payload WebhookPayload, newJiraStatus string, newFindingStatus vulnerability.FindingStatus) error {
 	// Whatever the mapping says, a ticket never closes a finding (no verify
 	// gate, no approval, no person). FindingStatusForJira already refuses
 	// these; this keeps the rule if the mapping code changes.
@@ -868,8 +901,7 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		return nil
 	}
 
-	ticketURL := deriveJiraTicketURL(payload.Issue)
-	ids, err := s.linkedFindings(ctx, tenantID, ticketURL)
+	ids, err := s.linkedFindingsOf(ctx, tenantID, payload, newJiraStatus)
 	if err != nil {
 		return err
 	}
@@ -936,19 +968,6 @@ func (s *SyncService) commentRefusals(ctx context.Context, tenantID shared.ID, i
 	if len(refusals) == 0 {
 		return
 	}
-	sum := sha256.Sum256([]byte(strings.Join(refusals, "\n")))
-	key := "jira-refusal:" + tenantID.String() + ":" + issueKey + ":" + jiraStatus + ":" + hex.EncodeToString(sum[:8])
-	if s.refusalGuard != nil {
-		first, err := s.refusalGuard.FirstDelivery(ctx, key, refusalCommentWindow)
-		if err != nil || !first {
-			return
-		}
-	}
-	client, err := s.resolveClient(ctx, tenantID)
-	if err != nil {
-		s.logger.Warn("jira refusal comment: no client", "tenant_id", tenantID.String(), "error", err)
-		return
-	}
 	shown := refusals
 	if len(shown) > maxRefusalLines {
 		shown = shown[:maxRefusalLines]
@@ -958,8 +977,28 @@ func (s *SyncService) commentRefusals(ctx context.Context, tenantID shared.ID, i
 	if len(refusals) > len(shown) {
 		body += fmt.Sprintf("\n\n(and %d more)", len(refusals)-len(shown))
 	}
+	s.commentOnce(ctx, tenantID, issueKey, jiraStatus, body)
+}
+
+// commentOnce posts a comment on the issue once per issue, status and body
+// within refusalCommentWindow (all replicas), so a retried or repeated
+// delivery comments once. Best effort.
+func (s *SyncService) commentOnce(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, body string) {
+	sum := sha256.Sum256([]byte(body))
+	key := "jira-refusal:" + tenantID.String() + ":" + issueKey + ":" + jiraStatus + ":" + hex.EncodeToString(sum[:8])
+	if s.refusalGuard != nil {
+		first, err := s.refusalGuard.FirstDelivery(ctx, key, refusalCommentWindow)
+		if err != nil || !first {
+			return
+		}
+	}
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("jira comment: no client", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
 	if err := client.AddComment(ctx, issueKey, jiraCommentBody(body)); err != nil {
-		s.logger.Warn("jira refusal comment failed", "issue_key", logger.SanitizeValue(issueKey), "error", err)
+		s.logger.Warn("jira comment failed", "issue_key", logger.SanitizeValue(issueKey), "error", err)
 	}
 }
 

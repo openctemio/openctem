@@ -10,6 +10,9 @@ import (
 	"net"
 	"time"
 
+	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
@@ -56,6 +59,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	accountdeletionapp "github.com/openctemio/openctem/api/internal/app/accountdeletion"
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	assetfreshnessapp "github.com/openctemio/openctem/api/internal/app/assetfreshness"
@@ -77,6 +81,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
+	onboardingapp "github.com/openctemio/openctem/api/internal/app/onboarding"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
@@ -96,6 +101,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/app/versioncheck"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -128,6 +134,7 @@ import (
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -135,6 +142,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/releasefeed"
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 // findingMutatorAdapter adapts the postgres FindingRepository (GetByID) to the
@@ -258,6 +267,44 @@ func (a ticketStatusApplier) ApplyTicketStatus(ctx context.Context, tenantID sha
 		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
 	}
 	return out.Applied, refused, nil
+}
+
+func (a ticketStatusApplier) RequestTicketDisposition(ctx context.Context, tenantID shared.ID, ids []shared.ID,
+	target vulnerability.FindingStatus, integration, ref, externalActor string,
+) ([]shared.ID, []shared.ID, []jira.InboundRefusal, error) {
+	out, err := a.vuln.RequestTicketDisposition(ctx, tenantID, ids, target, integration, ref, externalActor)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	refused := make([]jira.InboundRefusal, 0, len(out.Refused))
+	for _, r := range out.Refused {
+		refused = append(refused, jira.InboundRefusal{FindingID: r.FindingID, Reason: r.Reason})
+	}
+	return out.Requested, out.Pending, refused, nil
+}
+
+// taskIssueReader is the platform's read of remediation tasks for their
+// tracker issues (no caller scope: the background sync and the inbound
+// webhook act for the organization).
+type taskIssueReader struct {
+	repo *postgres.RemediationTaskRepository
+}
+
+func (r taskIssueReader) GetTask(ctx context.Context, tenantID, taskID shared.ID) (*remediationdom.Task, error) {
+	return r.repo.GetTask(ctx, tenantID, taskID)
+}
+
+func (r taskIssueReader) OpenMemberIDs(ctx context.Context, tenantID, taskID shared.ID, limit int) ([]shared.ID, error) {
+	res, err := r.repo.ListMembers(ctx, tenantID, taskID,
+		remediationdom.MemberFilter{Role: remediationdom.MemberRolePrimary, Status: "open"}, pagination.New(1, limit))
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]shared.ID, 0, len(res.Data))
+	for _, m := range res.Data {
+		ids = append(ids, m.FindingID)
+	}
+	return ids, nil
 }
 
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
@@ -590,7 +637,9 @@ type Services struct {
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
 	CTEMID          *ctemidapp.Service
-	CertMonitor     *certmonitorapp.Service
+	// VersionCheck is the release feed check (RFC-105); never nil with a database.
+	VersionCheck *versioncheck.Service
+	CertMonitor  *certmonitorapp.Service
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
 	ActiveGate *easmapp.ActiveGate
 	// ScopeJoin confirms discovered names a permanent scope target or seed
@@ -827,6 +876,11 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// Onboarding: the fork of an account without an organization and the
+	// join-request inbox (RFC-104).
+	Onboarding *onboardingapp.Service
+	// AccountDeletion: self-service account deletion with a grace period.
+	AccountDeletion *accountdeletionapp.Service
 	// PlatformEmail is the platform's SMTP settings, set in the admin console
 	// (RFC-079); its Sender backs Email.
 	PlatformEmail *platformemail.Service
@@ -1183,6 +1237,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
+	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
+		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
+		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
+	}, log)
 	// EASM producers write exposures through one writer that announces new
 	// and reopened rows through the notification outbox in the same
 	// transaction (research/22 P0-7, decision E4).
@@ -1600,6 +1658,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
 	// own findings, proof-of-fix queued) behind the abuse guard.
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
+	// One exception over a task's open findings (RFC-111 §7).
+	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
@@ -1714,6 +1774,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.TicketLink != nil {
 		s.JiraSync.SetLinkStore(repos.TicketLink)
 	}
+	// Task issues: a person creates a task's issue (a change of the task, in
+	// their data scope); the platform keeps its status in step.
+	s.JiraSync.SetTaskSources(s.RemediationTask, taskIssueReader{repo: repos.RemediationTask})
+	s.JiraSync.SetWebBaseURL(cfg.SMTP.BaseURL)
 	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
@@ -1828,6 +1892,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing = sp
 		s.SensorPairing.SetAudit(s.Audit)
 		s.SensorPairing.SetEvents(s.Sensor)
+		// Shared sensor enrollment (RFC-100) has no tenant: console audit.
+		s.SensorPairing.SetAdminAudit(repos.AdminAuditLog)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
@@ -1888,6 +1954,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
 	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
+	s.ContentCatalog.SetPublishing(contentPublishing(s.ContentPacks, s.PlatformContentPacks, contentSigner,
+		func(ctx context.Context, id shared.ID) (string, error) {
+			t, err := repos.Tenant.GetByID(ctx, id)
+			if err != nil {
+				return "", err
+			}
+			return t.Slug(), nil
+		}))
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -1934,6 +2008,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	// research/122: completed scan commands teach per-target durations.
 	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
+	// RFC-100 §10: shared jobs in flight per organization, read through the
+	// entitlement service by key (platform_scans_concurrent).
+	if s.Entitlement != nil {
+		cmdOpts = append(cmdOpts, command.WithSharedLimits(s.Entitlement))
+	}
+	// RFC-100 §5: the access policy again at claim time (an organization
+	// that lost access or opted out keeps its queued shared jobs waiting).
+	cmdOpts = append(cmdOpts, command.WithSharedAccess(s.SharedSensorsAllowed))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
@@ -2001,13 +2083,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
-	s.Ingest.SetDataFlowRepository(repos.DataFlow)       // Wire data flow persistence
-	s.Ingest.SetComponentRepository(repos.Component)     // Wire component linking for SCA findings
-	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)        // License policy on every package write
-	s.Ingest.SetVEXStatementApplier(s.VEX)               // The organization's VEX statements cover new findings
-	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint) // Web endpoints under their origin asset (RFC-056)
-	s.Ingest.SetSoftwareRepository(repos.Software)       // Software inventory capture (RFC-066)
-	s.Ingest.SetAttributeReconciler(s.Asset)             // Per-source asset values and sets, incl. open ports (RFC-069)
+	s.Ingest.SetDataFlowRepository(repos.DataFlow)          // Wire data flow persistence
+	s.Ingest.SetComponentRepository(repos.Component)        // Wire component linking for SCA findings
+	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)           // License policy on every package write
+	s.Ingest.SetVEXStatementApplier(s.VEX)                  // The organization's VEX statements cover new findings
+	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)    // Web endpoints under their origin asset (RFC-056)
+	s.Ingest.SetSoftwareRepository(repos.Software)          // Software inventory capture (RFC-066)
+	s.Ingest.SetTechnologyRepository(repos.AssetTechnology) // Detected technologies (RFC-112)
+	s.Ingest.SetAttributeReconciler(s.Asset)                // Per-source asset values and sets, incl. open ports (RFC-069)
 	// Inventory vulnerability matching (RFC-066): told by ingest when an
 	// organization's software changes; findings go through the same
 	// priority and SLA enrichment as ingested ones.
@@ -2021,7 +2104,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
 	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
-	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)))
+	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())))
 	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
@@ -2132,7 +2215,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
-	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector)
+	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
@@ -2187,10 +2270,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
+		// Shared-sensor scans per day (RFC-100 §10): generic limits by key;
+		// unset means unlimited.
+		scan.WithSharedScanLimits(s.Entitlement),
 		// The scope check names the private address a refused hostname
 		// resolves to, unless that answer may come from the platform's own
 		// DNS in a self-service (multi-tenant) install.
-		scan.WithRevealResolved(cfg.Scope.ZoneResolver != config.ScanZoneResolverSystem || !cfg.Auth.SelfServiceTenantCreation()),
+		scan.WithRevealResolved(cfg.Scope.ZoneResolver != config.ScanZoneResolverSystem || !cfg.Auth.SignupOpen()),
 		// Scan windows (RFC-067): never-opening targets refuse the run, a
 		// scheduled run with nothing open is deferred to the next opening.
 		scan.WithScanWindows(s.ScanWindowResolver),
@@ -2212,7 +2298,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithToolAvailability(s.Tool),
 		// Workflow readiness: the New Scan picker, the workflow list and
 		// the refusal of a workflow no sensor here can run.
-		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor)),
+		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor, s.SharedSensorsAllowed)),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
@@ -2277,7 +2363,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for scanrun package
 	pipelineAuditAdapter := app.NewScanWorkflowAuditServiceAdapter(s.Audit)
-	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector)
+	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
 	scanWorkflowSecurityValidatorAdapter := app.NewScanWorkflowSecurityValidatorAdapter(securityValidator)
 
 	// Initialize scan run service with security validator, audit service, transaction support, and tool repo
@@ -2446,9 +2532,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 	// Four-eyes on approvals (owner decision B16) reads who may approve.
 	s.Suppression.SetApproverDirectory(repos.Suppression)
+	// Rules follow the approval policy (RFC-111): tier by the worst finding
+	// they match, security pool, asset owners excluded, sign-offs.
+	if s.Vulnerability != nil {
+		s.Suppression.SetApprovalPolicy(finding.NewRulePolicyEvaluator(s.Vulnerability, repos.Suppression))
+	}
 	// An asset-bound rule names an asset of the tenant the requester may see
 	// (RFC-050 W8, 21b M-10).
 	s.Suppression.SetAssetRefChecker(s.DataScope)
+	// The approval preview lists only findings of assets the caller sees.
+	s.Suppression.SetScopeFilter(s.DataScope.FilterForCaller)
 
 	// Enforce approved suppression rules during ingest: a new finding matching an
 	// active (approved, non-expired) rule lands resolved+suppressed (out of the
@@ -2467,6 +2560,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		accesscontrol.WithGroupDataScope(s.DataScope),
 		accesscontrol.WithScopeDelegationCap(s.DataScope),
 	)
+
+	// Edits of the security pool group of the approval policy need a recent
+	// re-authentication (the gate is wired with the others).
+	s.Group.SetSecurityPoolGuard(func(ctx context.Context, tenantID, groupID shared.ID) (bool, error) {
+		st, err := s.Tenant.GetFindingApprovalSettings(ctx, tenantID.String())
+		if err != nil {
+			return false, err
+		}
+		if st.Policy.SecurityPoolGroupID == groupID.String() {
+			return true, nil
+		}
+		return st.PendingPolicy != nil && st.PendingPolicy.SecurityPoolGroupID == groupID.String(), nil
+	})
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
@@ -2759,13 +2865,20 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
-	// The sign-up policy (Console > System > Sign-up). TENANT_CREATION_MODE
-	// seeds it on the first start only; afterwards the console value wins.
+	// The sign-up policy (Console > System > Sign-up), a runtime switch below
+	// the deployment ceiling SIGNUP_MODE. The ceiling seeds it on the first
+	// start only; afterwards the console value wins, clamped to the ceiling.
 	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
-	if err := s.Signup.Seed(context.Background(), cfg.Auth.TenantCreationMode); err != nil {
+	s.Signup.SetCeiling(signupdom.Ceiling(cfg.Auth.SignupMode))
+	if err := s.Signup.Seed(context.Background()); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	// Self-service account deletion: signing in again within the grace
+	// period cancels it.
+	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
+		s.Audit, tenantapp.ErasedUserLabel, log)
+	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2826,6 +2939,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
+	if s.AccountDeletion != nil {
+		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
@@ -2867,6 +2983,19 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// managed elsewhere; proving it again restores them (RFC-058).
 	s.DomainVerify.SetClaimListener(s.Tenant)
 	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
+	// Per-domain sign-up policy (RFC-104): sso_required, join by domain and
+	// blocking new organizations for accounts on a claimed domain.
+	s.Auth.SetSignupDomainPolicy(s.DomainVerify)
+	s.Onboarding = onboardingapp.NewService(repos.Tenant, repos.Tenant, onboardingTenants{s.Tenant}, s.DomainVerify,
+		s.Signup, repos.JoinRequest, s.Audit, deriveKey(cfg.Auth.JWTSecret, "openctem/onboarding-offer/v1"), log)
+	sso := s.SSO
+	s.DomainVerify.SetSSOReadiness(func(ctx context.Context, tenantID shared.ID) (bool, error) {
+		t, err := repos.Tenant.GetByID(ctx, tenantID)
+		if err != nil {
+			return false, err
+		}
+		return sso.HasUsableSSOPath(ctx, t.Slug())
+	})
 	s.SSO.SetJITApprovalNotifier(s.Tenant)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
@@ -2906,6 +3035,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// admits it (self-service, or a pending invitation for the email).
 		if s.Signup != nil {
 			s.OAuth.SetSignupPolicy(s.Signup)
+			if s.DomainVerify != nil {
+				s.OAuth.SetSignupDomainPolicy(s.DomainVerify)
+			}
+			if s.AccountDeletion != nil {
+				s.OAuth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
+			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
@@ -2991,6 +3126,27 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 	if !s.Email.IsConfigured() {
 		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
 	}
+	return s.guardPublicSignupMail(cfg, log)
+}
+
+// guardPublicSignupMail refuses to start a deployment that allows public
+// sign-up (SIGNUP_MODE=domain or open) without working platform e-mail: every
+// self-registered address must be verified, and an address that cannot be
+// verified must never become an account that joins or is invited by domain.
+// While running, the sign-up policy also closes public sign-up whenever the
+// e-mail settings stop working (signup.Service.Effective).
+func (s *Services) guardPublicSignupMail(cfg *config.Config, log *logger.Logger) error {
+	if !cfg.Auth.PublicSignup() {
+		return nil
+	}
+	if s.Email == nil || !s.Email.IsConfigured() {
+		return fmt.Errorf("SIGNUP_MODE=%s needs the platform e-mail to verify sign-ups: set it with bootstrap-admin (BOOTSTRAP_SMTP_*) or start with SIGNUP_MODE=disabled, set it in the admin console (System > E-mail) and restart", cfg.Auth.SignupMode)
+	}
+	if s.Signup != nil {
+		email := s.Email
+		s.Signup.SetMailReady(email.IsConfigured)
+	}
+	log.Warn("public sign-up is allowed by this deployment's configuration", "signup_mode", cfg.Auth.SignupMode)
 	return nil
 }
 
@@ -3275,4 +3431,29 @@ func (a pentestJiraTicketing) CreateFindingTicket(ctx context.Context, tenantID,
 		return "", err
 	}
 	return info.TicketURL, nil
+}
+
+// SharedSensorsAllowed is the shared sensor access policy (RFC-100 §5) of
+// the scan policy service, read when called: the service is wired after the
+// scan services that hold this method. Without it every organization is
+// refused.
+func (s *Services) SharedSensorsAllowed(ctx context.Context, tenantID shared.ID) (bool, string) {
+	if s == nil || s.ScanPolicy == nil {
+		return false, scanpolicy.ReasonSharedSensorsUnavailable
+	}
+	return s.ScanPolicy.SharedSensorsAllowed(ctx, tenantID)
+}
+
+// SharedSensorsEgress is the egress addresses the instance administrator
+// published for shared sensors (RFC-100 §9): the global list first, then
+// each region, sorted. Nothing without the scan policy service.
+func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.PlatformEgress, error) {
+	if s == nil || s.ScanPolicy == nil {
+		return nil, nil
+	}
+	v, _, err := s.ScanPolicy.SharedSensorsEgress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
 }

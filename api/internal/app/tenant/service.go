@@ -653,6 +653,31 @@ type AddMemberInput struct {
 // AddMember adds a user to a tenant.
 // inviterUserID is the local user ID of the person inviting.
 func (s *TenantService) AddMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	return s.addMember(ctx, tenantID, input, inviterUserID, actx, s.repo.CreateMembership)
+}
+
+// joinRequestMembershipCreator approves a join request and creates the
+// membership in one transaction (postgres.TenantRepository).
+type joinRequestMembershipCreator interface {
+	CreateMembershipApprovingJoinRequest(ctx context.Context, m *tenantdom.Membership, requestID, approver shared.ID, at time.Time) error
+}
+
+// AddMemberApprovingJoinRequest adds a member exactly as AddMember does
+// (every check applies) and approves the person's waiting join request in
+// the same transaction: either both happen or neither (RFC-104).
+func (s *TenantService) AddMemberApprovingJoinRequest(ctx context.Context, tenantID string, input AddMemberInput, approver, requestID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	creator, ok := s.repo.(joinRequestMembershipCreator)
+	if !ok {
+		return nil, fmt.Errorf("%w: join requests are not supported by this repository", shared.ErrInternal)
+	}
+	return s.addMember(ctx, tenantID, input, approver, actx, func(ctx context.Context, m *tenantdom.Membership) error {
+		return creator.CreateMembershipApprovingJoinRequest(ctx, m, requestID, approver, time.Now().UTC())
+	})
+}
+
+func (s *TenantService) addMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx auditapp.AuditContext,
+	create func(ctx context.Context, m *tenantdom.Membership) error,
+) (*tenantdom.Membership, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -737,7 +762,7 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		return nil, err
 	}
 
-	if err := s.repo.CreateMembership(ctx, membership); err != nil {
+	if err := create(ctx, membership); err != nil {
 		return nil, fmt.Errorf("failed to add member: %w", err)
 	}
 
@@ -1436,7 +1461,28 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	if err != nil {
 		return nil, err
 	}
+	return s.acceptInvitation(ctx, invitation, userID, userEmail, actx)
+}
 
+// AcceptInvitationByID accepts an invitation the onboarding offered to a
+// signed-in account whose email address is verified (docs/rfcs/RFC-104). The
+// verified address stands in for the emailed token: it proves the same
+// mailbox. The invitation is looked up in its organization only; every check
+// of AcceptInvitation applies.
+func (s *TenantService) AcceptInvitationByID(ctx context.Context, tenantID, invitationID, userID shared.ID, userEmail string, emailVerified bool, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	if !emailVerified {
+		return nil, fmt.Errorf("%w: verify your email address first", shared.ErrValidation)
+	}
+	invitation, err := s.repo.GetInvitationByID(ctx, tenantID, invitationID)
+	if err != nil {
+		return nil, err
+	}
+	return s.acceptInvitation(ctx, invitation, userID, userEmail, actx)
+}
+
+// acceptInvitation is the acceptance shared by the token and the onboarding
+// paths.
+func (s *TenantService) acceptInvitation(ctx context.Context, invitation *tenantdom.Invitation, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
 	// Verify the invitation is for this user's email (case-insensitive)
 	if !strings.EqualFold(invitation.Email(), userEmail) {
 		return nil, fmt.Errorf("%w: this invitation was sent to a different email address", shared.ErrValidation)
