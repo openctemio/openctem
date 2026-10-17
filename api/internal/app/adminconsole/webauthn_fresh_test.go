@@ -111,7 +111,7 @@ func TestRequireWebAuthnGraceDeadline(t *testing.T) {
 		t.Fatalf("deadline moved to %v", again.GraceUntil)
 	}
 
-	ou := &SignedInUser{UserID: shared.NewID(), Email: "two@acme.io", Name: "Two", Active: true, PasswordSignIn: true}
+	ou := &SignedInUser{UserID: shared.NewID(), Email: "two@acme.io", Name: "Two", Active: true}
 	oa := admin.Reconstitute(shared.NewID(), "two@acme.io", "Two", admin.AdminRoleOpsAdmin, true,
 		&ou.UserID, nil, "", 0, nil, nil, "", w.clock, nil, w.clock)
 	w.admins.byID[oa.ID().String()] = oa
@@ -122,7 +122,7 @@ func TestRequireWebAuthnGraceDeadline(t *testing.T) {
 	if err != nil || !st.TOTPAllowed() {
 		t.Fatalf("inside the grace: %+v %v", st, err)
 	}
-	res, err := w.svc.Start(ctx, "refresh-two", client)
+	res, err := w.svc.Start(ctx, "refresh-two", password, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestRequireWebAuthnGraceDeadline(t *testing.T) {
 	if st.TOTPAllowed() {
 		t.Fatal("TOTP must be refused after the grace deadline")
 	}
-	res, err = w.svc.Start(ctx, "refresh-two", client)
+	res, err = w.svc.Start(ctx, "refresh-two", password, client)
 	if err != nil {
 		t.Fatal(err)
 	}

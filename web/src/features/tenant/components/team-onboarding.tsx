@@ -1,11 +1,10 @@
 'use client'
 
-import { Loader2 } from 'lucide-react'
-
-import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-organization'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { CreateTeamForm } from './create-team-form'
 import { NoOrganizationNotice } from './no-organization-notice'
+import { OnboardingFork } from './onboarding-fork'
 
 interface TeamOnboardingProps {
   /** The user already has teams (came from /select-tenant). */
@@ -13,40 +12,33 @@ interface TeamOnboardingProps {
 }
 
 /**
- * Body of /onboarding/create-team: the create-team form when the installation
- * allows self-service organizations, otherwise a notice telling the user to ask
- * their administrator. The page keeps its sign-out button either way.
+ * Body of /onboarding/create-team. A first-time account sees the onboarding
+ * fork (invitations, the organization of its verified domain, create one when
+ * allowed); an account that already has teams sees the create form, or the
+ * notice when only administrators create organizations. The page keeps its
+ * sign-out button either way.
  */
 export function TeamOnboarding({ hasOtherTeams }: TeamOnboardingProps) {
-  const { canCreate, isLoading } = useCanCreateOrganization()
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center py-16" role="status" aria-label="Loading">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
-  if (!canCreate) {
-    // Sign-out is the page's top-right button (OnboardingLogout).
-    return <NoOrganizationNotice hasOtherTeams={hasOtherTeams} />
-  }
-
-  return (
+  const { t } = useTranslation()
+  const create = (
     <>
       <div className="mb-8 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
-          {hasOtherTeams ? 'Create another team' : 'Set up your first team'}
+          {hasOtherTeams ? t('org.onboarding.createAnother') : t('org.onboarding.createFirst')}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {hasOtherTeams
-            ? 'A new team is its own workspace. You can switch between teams from the sidebar at any time.'
-            : 'A team is your workspace for managing exposure across an organisation. You can invite teammates after this.'}
+            ? t('org.onboarding.createAnotherDesc')
+            : t('org.onboarding.createFirstDesc')}
         </p>
       </div>
-
       <CreateTeamForm showCancel={false} isFirstTeam={true} />
     </>
+  )
+  return (
+    <OnboardingFork
+      createSlot={create}
+      emptySlot={<NoOrganizationNotice hasOtherTeams={hasOtherTeams} />}
+    />
   )
 }

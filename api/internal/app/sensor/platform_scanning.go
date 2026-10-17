@@ -3,6 +3,7 @@ package sensor
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -14,6 +15,11 @@ import (
 // address or version, no node count, capacity or load, and nothing about
 // other tenants. Managing platform sensors belongs to the platform admin
 // console (RFC-022); on the tenant plane they are not found.
+//
+// The one operator detail it shows is the egress addresses the instance
+// administrator published for allowlisting (docs/rfcs/RFC-100-shared-sensors.md
+// §9): public addresses or ranges per region, the same for every
+// organization, never tied to a sensor.
 
 // PlatformScanningStore reads the summary (the postgres sensor repository).
 type PlatformScanningStore interface {
@@ -51,6 +57,37 @@ type PlatformJobs struct {
 	Running int `json:"running"`
 }
 
+// PlatformEgress is a set of egress addresses (IP or CIDR): Region empty
+// for every region.
+type PlatformEgress struct {
+	Region    string   `json:"region"`
+	Addresses []string `json:"addresses"`
+}
+
+// PlatformEgressSource reads the published egress addresses: the global
+// list first (Region ""), then one entry per region, sorted.
+type PlatformEgressSource func(ctx context.Context) ([]PlatformEgress, error)
+
+// EgressFromLists orders published egress lists for the view: the global
+// list first (Region ""), then each non-empty region, sorted by label.
+func EgressFromLists(global []string, regions map[string][]string) []PlatformEgress {
+	out := make([]PlatformEgress, 0, len(regions)+1)
+	if len(global) > 0 {
+		out = append(out, PlatformEgress{Addresses: global})
+	}
+	names := make([]string, 0, len(regions))
+	for r, l := range regions {
+		if len(l) > 0 {
+			names = append(names, r)
+		}
+	}
+	sort.Strings(names)
+	for _, r := range names {
+		out = append(out, PlatformEgress{Region: r, Addresses: regions[r]})
+	}
+	return out
+}
+
 // PlatformScanning is the tenant's view of platform scanning.
 type PlatformScanning struct {
 	// Offered: the organization may send scans to platform scanning and the
@@ -65,12 +102,22 @@ type PlatformScanning struct {
 	// YourJobs are the organization's own platform jobs.
 	YourJobs          PlatformJobs `json:"your_jobs"`
 	QueueLimitMinutes int          `json:"queue_limit_minutes,omitempty"`
+	// Egress are the addresses shared sensors send traffic from, to
+	// allowlist; empty when the administrator published none.
+	Egress []PlatformEgress `json:"egress"`
 }
 
 // PlatformScanningService builds the tenant's view of platform scanning.
 type PlatformScanningService struct {
 	store  PlatformScanningStore
 	policy PlatformScanningPolicy
+	egress PlatformEgressSource
+}
+
+// WithEgress sets where the published egress addresses come from.
+func (s *PlatformScanningService) WithEgress(src PlatformEgressSource) *PlatformScanningService {
+	s.egress = src
+	return s
 }
 
 // NewPlatformScanningService builds the service. A nil policy offers
@@ -81,7 +128,7 @@ func NewPlatformScanningService(store PlatformScanningStore, policy PlatformScan
 
 // Get returns the tenant's view of platform scanning.
 func (s *PlatformScanningService) Get(ctx context.Context, tenantID shared.ID) (*PlatformScanning, error) {
-	none := &PlatformScanning{Regions: []PlatformRegion{}, Tools: []string{}}
+	none := &PlatformScanning{Regions: []PlatformRegion{}, Tools: []string{}, Egress: []PlatformEgress{}}
 	if s.policy == nil {
 		return none, nil
 	}
@@ -104,6 +151,18 @@ func (s *PlatformScanningService) Get(ctx context.Context, tenantID shared.ID) (
 		Tools:             sum.Tools,
 		YourJobs:          PlatformJobs{Queued: sum.Queued, Running: sum.Running},
 		QueueLimitMinutes: PlatformQueueLimitMinutes,
+		Egress:            []PlatformEgress{},
+	}
+	if s.egress != nil {
+		eg, err := s.egress(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read the egress addresses: %w", err)
+		}
+		for _, e := range eg {
+			if len(e.Addresses) > 0 {
+				out.Egress = append(out.Egress, PlatformEgress{Region: e.Region, Addresses: append([]string(nil), e.Addresses...)})
+			}
+		}
 	}
 	if out.Tools == nil {
 		out.Tools = []string{}
