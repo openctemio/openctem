@@ -456,7 +456,7 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	coverage, covErr := h.computeValidationCoverage(r.Context(), tenantID, cycleStart.String, cycleEnd.String)
 	if covErr != nil {
 		h.logger.Warn("validation coverage query failed; allowing close",
-			"cycle_id", id, "error", covErr)
+			"cycle_id", logger.SanitizeValue(id), "error", logger.SanitizeError(covErr))
 	} else if sloErr := validation.Enforce(coverage, validation.DefaultThresholds); sloErr != nil {
 		enforce := false
 		if h.cyclePolicy != nil {

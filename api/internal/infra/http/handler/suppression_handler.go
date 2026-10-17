@@ -888,7 +888,7 @@ func (h *SuppressionHandler) handleServiceError(w http.ResponseWriter, err error
 		// e.g. approving or rejecting a rule that is no longer pending
 		apierror.Conflict(err.Error()).WriteJSON(w)
 	default:
-		h.logger.Error("suppression service error", "error", err)
+		h.logger.Error("suppression service error", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("Internal server error").WriteJSON(w)
 	}
 }
