@@ -66,7 +66,7 @@ func (r *CommandRepository) PlacementPredicates(ctx context.Context, tenantID, c
 		FROM commands
 		JOIN sensors ps ON ps.tenant_id = commands.tenant_id
 		WHERE commands.tenant_id = $1 AND commands.id = $2
-		  AND COALESCE(ps.is_platform_sensor, FALSE) = FALSE
+		  AND COALESCE(ps.scope, 'organization') = 'organization'
 		ORDER BY ps.name, ps.id
 		LIMIT $3`,
 		tenantID.String(), commandID.String(), maxSensors)

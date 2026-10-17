@@ -46,6 +46,9 @@ const (
 	// ActionTenantCyclePolicyUpdated records a change to the organization's
 	// CTEM cycle policy (whether the coverage SLO blocks closing a cycle).
 	ActionTenantCyclePolicyUpdated Action = "tenant.cycle_policy_updated"
+	// ActionTenantSharedSensorsUpdated records the owner's shared sensor
+	// opt-out changing.
+	ActionTenantSharedSensorsUpdated Action = "tenant.shared_sensors_updated"
 
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
@@ -148,6 +151,13 @@ const (
 	// ActionMemberDataErased: an offboarded person's name and email were
 	// anonymised (owner only).
 	ActionMemberDataErased Action = "member.data_erased"
+	// Self-service account deletion (RFC-104): asked, canceled by signing in
+	// again, and the account erased after the grace period.
+	ActionAccountDeletionRequested Action = "account.deletion_requested"
+	ActionAccountDeletionCanceled  Action = "account.deletion_canceled"
+	ActionAccountErased            Action = "account.erased"
+	// ActionMemberLeft: a member left the organization themselves.
+	ActionMemberLeft Action = "member.left"
 	// ActionMemberAccessChanged: the end date of an external member's access
 	// was changed (RFC-058).
 	ActionMemberAccessChanged Action = "member.access_changed"
@@ -678,6 +688,7 @@ func (a Action) IsValid() bool {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
@@ -696,6 +707,7 @@ func (a Action) IsValid() bool {
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
+		ActionAccountDeletionRequested, ActionAccountDeletionCanceled, ActionAccountErased, ActionMemberLeft,
 		ActionMemberAccessChanged,
 		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
 		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined,
