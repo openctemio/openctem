@@ -75,6 +75,9 @@ import (
 // one wired. Kept as a helper so handlers.go stays declarative.
 func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Services) *handler.CompensatingControlHandler {
 	h := handler.NewCompensatingControlHandler(db, log)
+	if svc != nil {
+		h.WithDataScope(svc.DataScope)
+	}
 	if svc != nil && svc.ControlChangePub != nil {
 		h.SetChangePublisher(svc.ControlChangePub)
 	}

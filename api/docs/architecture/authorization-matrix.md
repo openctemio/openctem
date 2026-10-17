@@ -473,6 +473,12 @@ authenticator code, and is audited.
 > Keys belong to the user who minted them (`api_keys.user_id`). The list shows
 > key names, scopes and last-used IPs, so a member or viewer is filtered to
 > their own keys in the handler (`ownKeysOnly`).
+>
+> A key must have a user. A key with no user (a legacy organization key) has
+> no data scope to carry, so authentication refuses it and the data-scope
+> enforcer resolves it to a scope with no rows (a request with an API key and
+> no user is never treated as an internal call). Migration `002895` revokes the
+> remaining ones.
 
 #### SCIM tokens (`/api/v1/scim-tokens`)
 
@@ -1274,7 +1280,16 @@ could otherwise widen anyone's scope, their own included:
 | `POST /groups/{g}/assets`, `/assets/bulk` | only assets in their scope; another asset answers 404 (bulk: counted as failed) |
 | `POST /groups/{g}/members` | only when every asset the group holds is in their scope (403 otherwise); never themselves: joining a group needs full data access (admin or a `has_full_data_access` role), 403 otherwise |
 | `POST/PUT /groups/{g}/scope-rules` | refused (403): a rule adds every matching asset, now and later, so it cannot be capped when it is written |
+| `PUT /groups/{g}` with `is_active` (switch a team on or off) | the whole group must be in their scope, the security pool group needs step-up (as for delete). Switching a team **on** also re-grants its bound roles, so it is treated as a grant: each bound role passes the binding ceiling, a privileged role needs the owner plus step-up, and a member cannot revive their own team unless they are the owner or hold full data access. Every flip, and a group delete, drops the members' cached permissions |
 | `/assets/{id}/access-grants`, a group owner on `/assets/{id}/owners` | already limited to assets the caller sees (route guard on `/assets/{id}`) |
+
+Objects that feed the risk of the assets they link follow the same rule
+(`Enforcer.RequireActOnAssets` / `RequireActOnFindings`): linking an asset or
+finding to a **compensating control** admits only ids the caller can see (404
+for the whole request otherwise, no existence oracle); updating, deleting or
+recording a test on a control, and updating or deleting a **business service**,
+need every linked asset and finding in the caller's scope (403 otherwise). A
+business service's `asset_count` counts only the links in the caller's scope.
 
 "Restricted" is the enforcer's decision (`Enforcer.Delegable`): an admin, a
 full-data role and an internal call are unrestricted. `POST /groups/{g}/members` also refuses
