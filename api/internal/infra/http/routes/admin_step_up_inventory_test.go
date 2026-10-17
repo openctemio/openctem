@@ -228,7 +228,7 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		req := httptest.NewRequest(c.method, c.path, strings.NewReader(`{}`))
 		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
 		req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
-		req.Header.Set(middleware.CSRFHeaderName, "c")
+		req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
 		handler.ServeHTTP(httptest.NewRecorder(), req)
 		got, asked := fresh[c.purpose]
 		if !asked || !got {
