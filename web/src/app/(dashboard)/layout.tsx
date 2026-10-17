@@ -14,6 +14,7 @@ import { SkipToMain } from '@/components/skip-to-main'
 import { RouteGuard } from '@/components/route-guard'
 import { StepUpDialogHost } from '@/components/step-up-dialog'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
+import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
 
 type SiteLayoutProps = {
   children?: React.ReactNode
@@ -56,6 +57,8 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                   <DashboardHeader />
                   {/* The platform operator's notices (maintenance, warnings). */}
                   <PlatformAnnouncementBanner />
+                  {/* Platform support can read this organization's data now (RFC-063). */}
+                  <SupportAccessBanner />
                   {/*
                     `flex flex-1 flex-col` propagates the flex context
                     from SidebarInset (which is `flex flex-col flex-1`)
