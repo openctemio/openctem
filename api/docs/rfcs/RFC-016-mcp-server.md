@@ -70,6 +70,17 @@ unfinished "F-9 follow-up". Phase 1 completes it.
   `permission_denied`, `module_disabled`, `unavailable`, `internal_error`) with a
   safe message; "absent" and "not readable" share one `not_found` answer, and an
   internal error returns no detail (it is logged server-side).
+- **Result guard**: every tool result and prompt data message is cleaned of hidden
+  characters (bidi, zero-width, tag characters), has secrets redacted, and is
+  capped per field and per result (`result_too_large`). See
+  `architecture/mcp-server.md`.
+- **Rule for every new tool**: use the scoped service path (tenant from context,
+  acting user, data scope); return tenant text only through `untrustedResult`;
+  fetch only through `pkg/httpsec`; never approve, accept a risk, approve a false
+  positive, delete, launch a scan or change integration configuration. A tool may
+  create an approval request through the transition engine; it never decides one.
+  A new write tool must be added to the write-tool allowlist test with its
+  security review note.
 
 ## Pentest reads
 

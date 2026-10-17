@@ -530,7 +530,8 @@ func (r *SuppressionRepository) CountEligibleApprovers(ctx context.Context, tena
 		WHERE tm.tenant_id = $1
 		  AND tm.status = 'active'
 		  AND (
-		      tm.role IN ('owner', 'admin')
+		      (SELECT ver.role FROM v_user_effective_role ver
+		        WHERE ver.tenant_id = tm.tenant_id AND ver.user_id = tm.user_id) IN ('owner', 'admin')
 		      OR EXISTS (
 		          SELECT 1 FROM v_user_role_grants ur
 		          JOIN role_permissions rp ON rp.role_id = ur.role_id
@@ -569,8 +570,9 @@ func (r *SuppressionRepository) IsTenantOwner(ctx context.Context, tenantID, use
 	var ok bool
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM tenant_members
-			WHERE tenant_id = $1 AND user_id = $2 AND role = 'owner' AND status = 'active'
+			SELECT 1 FROM tenant_members m
+			JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+			WHERE m.tenant_id = $1 AND m.user_id = $2 AND ver.role = 'owner' AND m.status = 'active'
 		)`, tenantID.String(), userID.String()).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check tenant owner: %w", err)

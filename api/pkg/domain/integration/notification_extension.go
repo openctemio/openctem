@@ -523,7 +523,7 @@ func NewNotificationExtension(integrationID ID) *NotificationExtension {
 		integrationID:      integrationID,
 		enabledSeverities:  DefaultEnabledSeverities(),
 		enabledEventTypes:  DefaultEnabledEventTypes(),
-		includeDetails:     true,
+		includeDetails:     false,
 		minIntervalMinutes: 5,
 	}
 }

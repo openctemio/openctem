@@ -698,7 +698,7 @@ func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 	items := make([]*SensorResponse, len(result.Data))
 	policy, now := h.policyFor(r.Context(), tenantID), h.now()
 	for i, a := range result.Data {
-		items[i] = sensorResponseAt(a, policy, now)
+		items[i] = redactSensorHost(r.Context(), sensorResponseAt(a, policy, now))
 	}
 
 	resp := map[string]any{
@@ -1082,7 +1082,18 @@ func ipStringPtr(ip net.IP) *string {
 // toSensorResponse converts a sensor entity to response, with the state,
 // health reasons and version status computed now under the handler's policy.
 func (h *SensorHandler) toSensorResponse(ctx context.Context, a *sensor.Sensor) *SensorResponse {
-	return sensorResponseAt(a, h.policyFor(ctx, a.TenantID.String()), h.now())
+	return redactSensorHost(ctx, sensorResponseAt(a, h.policyFor(ctx, a.TenantID.String()), h.now()))
+}
+
+// redactSensorHost drops where a sensor runs (host name and addresses) for a
+// caller who is not an administrator: those facts map the internal network
+// and are of no use to someone who only picks a sensor for a scan.
+func redactSensorHost(ctx context.Context, r *SensorResponse) *SensorResponse {
+	if middleware.IsAdmin(ctx) {
+		return r
+	}
+	r.Hostname, r.IPAddress, r.KeyLastUsedIP = "", "", nil
+	return r
 }
 
 // sensorResponseAt converts a sensor entity to response at a given time.

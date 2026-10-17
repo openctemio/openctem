@@ -252,7 +252,7 @@ var templateVersions = map[string]struct {
 	"sensor-operator":       {1, "dad7da0b5236b92c"},
 	"validation-engineer":   {1, "9c76467fedf3eac0"},
 	"external-tester":       {1, "8861f6f0f788e217"},
-	"researcher":            {1, "efe5d28a21f69cdc"},
+	"researcher":            {2, "3db22d24b0d4ef59"},
 	"bounty-triager":        {1, "3701f9612e54d123"},
 	"threat-intel-analyst":  {1, "8dc68d55c347021f"},
 	"risk-approver":         {1, "41e9f0ffdc676549"},
@@ -274,6 +274,19 @@ func TestRoleTemplates_VersionPinned(t *testing.T) {
 		}
 		if tpl.Version < 1 {
 			t.Errorf("%s: version must start at 1", tpl.ID)
+		}
+	}
+}
+
+// The Researcher persona sees programs, not the organization's sensor fleet.
+func TestResearcherTemplate_NoSensorAccess(t *testing.T) {
+	r, ok := permission.RoleTemplateByID("researcher")
+	if !ok {
+		t.Fatal("no researcher template")
+	}
+	for _, p := range r.Permissions {
+		if strings.HasPrefix(string(p), "sensors:") {
+			t.Errorf("researcher holds %s", p)
 		}
 	}
 }

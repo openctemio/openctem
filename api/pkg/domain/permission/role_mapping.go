@@ -208,7 +208,9 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ToolsRead,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead,
-		SecretStoreRead, SecretStoreWrite,
+		// Credentials: read only. Template sources, the store's one consumer,
+		// are owner/admin only, so writing or rotating one is too.
+		SecretStoreRead,
 		CIRead, // CI trust and the gate are managed by owners and admins (RFC-051)
 		// Sensors: read only. Creating sensors and minting, rotating or
 		// revoking their keys is owner/admin only.

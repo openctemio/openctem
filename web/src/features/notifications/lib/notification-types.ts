@@ -81,6 +81,12 @@ export const NOTIFICATION_TYPES = [
     description: 'When a false-positive or accepted-risk request waits for your decision',
   },
   {
+    id: 'mcp_access_request',
+    name: 'AI application requests',
+    description:
+      'When a member asks to connect an AI application your organization has not approved, and how your own request was decided',
+  },
+  {
     id: 'finding_approval_digest',
     name: 'Approvals digest',
     description:
