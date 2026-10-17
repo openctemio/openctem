@@ -508,14 +508,21 @@ export function buildFindingsExportUrl(
  * tenant-wide counts. The cache key includes the serialized filters
  * so different filter combinations don't trample each other in SWR.
  */
-export function useFindingStatsApi(filters?: FindingStatsFilters, config?: SWRConfiguration) {
+export function useFindingStatsApi(
+  filters?: FindingStatsFilters,
+  config?: SWRConfiguration & {
+    /** false = do not fetch yet (e.g. while the page's URL params are not final) */
+    enabled?: boolean
+  }
+) {
   const { currentTenant } = useTenant()
+  const { enabled = true, ...swrConfig } = config ?? {}
 
   const url = buildFindingStatsUrl(filters)
 
-  const key = currentTenant ? url : null
+  const key = currentTenant && enabled ? url : null
 
-  return useSWR<FindingStatsResponse>(key, fetchFindingStats, { ...defaultConfig, ...config })
+  return useSWR<FindingStatsResponse>(key, fetchFindingStats, { ...defaultConfig, ...swrConfig })
 }
 
 // ============================================

@@ -4,6 +4,7 @@ import * as React from 'react'
 import { X, type LucideIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 
 /**
@@ -11,19 +12,17 @@ import { toDisplayText } from '@/lib/untrusted-text'
  * "View findings", a scan run's "View all findings"), as opposed to the facets
  * the user picks in the filter panel.
  *
- * They render INLINE in the table toolbar (pass the element in `toolbarStart`,
- * after the search box), never as a row of their own above the table: a row
- * that exists only when a chip does pushes the whole table down the moment the
- * page is opened with the parameter.
+ * They render in the table's full-width row UNDER the toolbar (pass the
+ * element as the DataTable's `toolbarBelow`), never inside the toolbar row.
+ * Inside it, a chip wrapped the toolbar's start group onto a second line: the
+ * row grew taller and the controls on its end (state tabs, views, export)
+ * shifted down the moment a deep link set the parameter.
  *
  * Layout rules that keep the page still:
- * - The chips sit in the toolbar's existing row, after the search box. Where
- *   the row has room (desktop) they add no height at all. Where it has not (a
- *   phone, or a narrow table beside an open filter panel), the toolbar's own
- *   wrapping moves them to its next line, with readable chips rather than
- *   chips squeezed to nothing. Either way the chips come from the URL, so they
- *   are there from the first frame (also in the page's loading skeleton):
- *   nothing pops in after load.
+ * - The toolbar row keeps one height whatever the chips; the chips row exists
+ *   only while a chip does. The chips come from the URL, so the row is there
+ *   from the first frame (also in the page's loading skeleton): nothing pops
+ *   in after load. On a phone the chips wrap among themselves in that row.
  * - A chip whose label resolves later (an asset name fetched by id) has a FIXED
  *   label width, filled by a placeholder of exactly that width while loading,
  *   so the chip does not resize or flicker when the name arrives.
@@ -68,13 +67,18 @@ function clampLabel(label: string): string {
 }
 
 function Chip({ chip, onRemove }: { chip: ContextFilterChip; onRemove: (param: string) => void }) {
+  const { t } = useTranslation()
   const Icon = chip.icon
   // "asset filter", but "CVE filter": acronyms keep their case.
   const kindLower = chip.kind === chip.kind.toUpperCase() ? chip.kind : chip.kind.toLowerCase()
   const label = chip.loading ? '' : clampLabel(chip.label ?? '')
+  const loadingText = t('common.loading', 'Loading')
   const removeLabel = chip.loading
-    ? `Remove ${kindLower} filter`
-    : `Remove ${kindLower} filter: ${label}`
+    ? t('common.contextFilters.remove', 'Remove {kind} filter', { kind: kindLower })
+    : t('common.contextFilters.removeNamed', 'Remove {kind} filter: {label}', {
+        kind: kindLower,
+        label,
+      })
 
   const body = (
     <li
@@ -100,7 +104,7 @@ function Chip({ chip, onRemove }: { chip: ContextFilterChip; onRemove: (param: s
               className="block h-3 w-full animate-pulse rounded-sm bg-muted-foreground/20 motion-reduce:animate-none"
               aria-hidden
             />
-            <span className="sr-only">Loading</span>
+            <span className="sr-only">{loadingText}</span>
           </>
         ) : (
           label
@@ -125,27 +129,26 @@ function Chip({ chip, onRemove }: { chip: ContextFilterChip; onRemove: (param: s
     <Tooltip>
       <TooltipTrigger asChild>{body}</TooltipTrigger>
       <TooltipContent className="max-w-sm break-words">
-        {chip.kind}: {chip.loading ? 'loading…' : label}
+        {chip.kind}: {chip.loading ? loadingText : label}
       </TooltipContent>
     </Tooltip>
   )
 }
 
 /**
- * Inline, removable context-filter chips for a table toolbar. Renders nothing
- * when there are no chips.
+ * Removable context-filter chips for the row under a table toolbar. Renders
+ * nothing when there are no chips.
  */
 export function ContextFilterChips({ chips, onRemove, className }: ContextFilterChipsProps) {
+  const { t } = useTranslation()
   if (chips.length === 0) return null
   return (
     <ul
-      aria-label="Context filters"
+      aria-label={t('common.contextFilters.label', 'Context filters')}
       data-testid="context-filter-chips"
       className={cn(
-        // Natural width, never wider than the toolbar: inline in the toolbar
-        // row where it fits; where it does not, the toolbar's wrap carries the
-        // whole list to its next line (and chips wrap among themselves on a
-        // phone) instead of squeezing labels to nothing or scrolling sideways.
+        // Never wider than the row; chips wrap among themselves on a phone
+        // instead of squeezing labels to nothing or scrolling sideways.
         'flex min-w-0 max-w-full flex-wrap items-center gap-1.5',
         className
       )}

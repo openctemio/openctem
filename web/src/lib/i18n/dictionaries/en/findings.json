@@ -1089,5 +1089,6 @@
   "findings.approvals.progress": "{collected} of {required} approvals",
   "findings.approvals.toast.signed": "Your approval is recorded",
   "findings.approvals.toast.signedDesc": "{count} more approval(s) needed before the status changes.",
-  "findings.approvals.col.tier": "Approval"
+  "findings.approvals.col.tier": "Approval",
+  "findings.metrics.totalScopedDescription": "Every finding in the scope shown above the table (an asset, a scan or a group), in every state (the All tab)."
 }
