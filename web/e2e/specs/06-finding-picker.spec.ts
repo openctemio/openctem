@@ -17,7 +17,7 @@ import { firstDataRow } from '../helpers/table'
  */
 test.describe('Remediation — findings picker', () => {
   test('inline picker renders, scrolls, searches and toggles', async ({ page }) => {
-    await page.goto('/remediation')
+    await page.goto('/remediation/campaigns')
 
     // The task table. If the tenant has no remediation tasks, there is nothing
     // to open — skip rather than fail (data-dependent). The empty table's
