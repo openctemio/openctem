@@ -74,6 +74,7 @@ import { MovePalette, type MoveTarget } from './move-palette'
 import { apiMessage } from './suggestions-inbox'
 import { CancelTaskDialog, MarkFixedDialog, SplitDialog } from './task-dialogs'
 import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
+import { useTaskException } from './task-exception'
 import { VirtualRows } from './virtual-rows'
 
 const MEMBER_PAGE = 200
@@ -137,6 +138,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
 
   const writable =
     !!task && canWrite && !TERMINAL_TASK_STATES.has(task.state) && task.hidden_members === 0
+  const exception = useTaskException(taskId, writable)
 
   const doMove = useCallback(
     async (target: MoveTarget) => {
@@ -267,6 +269,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         splitOpen ||
         fixOpen ||
         cancelOpen ||
+        exception.open ||
         e.metaKey ||
         e.ctrlKey ||
         e.altKey ||
@@ -289,7 +292,17 @@ export function TaskDetail({ taskId }: { taskId: string }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [moveOpen, splitOpen, fixOpen, cancelOpen, writable, canFix, selected.size, task])
+  }, [
+    moveOpen,
+    splitOpen,
+    fixOpen,
+    cancelOpen,
+    exception.open,
+    writable,
+    canFix,
+    selected.size,
+    task,
+  ])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
   const onDragEnd = useCallback(
@@ -367,6 +380,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         </div>
         {writable && (
           <div className="flex flex-wrap items-center gap-2">
+            {exception.action}
             {canFix && (
               <Button
                 onClick={() => {
@@ -406,6 +420,8 @@ export function TaskDetail({ taskId }: { taskId: string }) {
           </div>
         )}
       </div>
+
+      {exception.banner}
 
       {task.hidden_members > 0 && (
         <p className="flex items-center gap-2 text-sm text-warning">
@@ -588,6 +604,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         busy={busy}
         result={fixResult}
       />
+      {exception.dialog}
       <CancelTaskDialog
         open={cancelOpen}
         onOpenChange={setCancelOpen}

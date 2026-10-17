@@ -227,6 +227,7 @@ type Service struct {
 	pendingScope        PendingScope
 	scopeWaitTrigger    func(context.Context, TriggerScanExecInput) (*scanrun.Run, error) // tests only; nil = TriggerScan
 	zones               ZoneDirectory                                                     // optional; nil = zone routing off (RFC-023)
+	sharedUse           SharedUseObserver                                                 // anomaly signals of shared sensor use (shared_signals.go); nil: none
 	sharedLimits        SharedScanLimits                                                  // platform_scans_per_day (shared_limits.go); nil: never shared
 	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
 	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)

@@ -1560,7 +1560,7 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 	}
 	defer rows.Close()
 
-	out := make([]vulnerability.ActiveCVE, 0, page.Limit())
+	out := make([]vulnerability.ActiveCVE, 0, capHint(page.Limit()))
 	for rows.Next() {
 		var v vulnerability.ActiveCVE
 		var cvss, epss sql.NullFloat64
@@ -1746,7 +1746,7 @@ func (r *FindingRepository) ListAffectedAssetsByVulnerabilityID(
 	}
 	defer rows.Close()
 
-	out := make([]vulnerability.VulnerabilityAffectedAsset, 0, page.Limit())
+	out := make([]vulnerability.VulnerabilityAffectedAsset, 0, capHint(page.Limit()))
 	for rows.Next() {
 		var a vulnerability.VulnerabilityAffectedAsset
 		if err := rows.Scan(

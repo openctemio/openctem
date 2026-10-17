@@ -2,11 +2,14 @@ package scanpolicy
 
 // Ownership proof before platform sensors scan (RFC-054 §8.1): a platform
 // setting, "Require a verified domain before platform sensors scan a target".
-// Default off: a self-hosted operator runs its own infrastructure and the
-// organization's scope entry is the authorization. A public multi-tenant
-// cloud turns it on as an abuse control: platform sensors send packets from
+// Default off on a self-hosted install: the operator runs its own
+// infrastructure and the organization's scope entry is the authorization.
+// Default on when MANAGED_SERVICE is set (a hosted multi-tenant service,
+// docs/rfcs/RFC-100-shared-sensors.md §6): platform sensors send packets from
 // the operator's addresses, so a tenant must prove it owns a domain before
 // they probe it, and intrusive (T2) probes need that proof on any sensor.
+// MANAGED_SERVICE changes the default only: a value stored in the console
+// always wins.
 //
 // Threat model: turning it off lets any organization point platform sensors
 // at any name its scope entries cover, so the change is the same as the scan
@@ -15,7 +18,8 @@ package scanpolicy
 // administrators emailed. No tenant route writes it. The scope gate, the
 // deny list, scan zones for private addresses, exclusions and tier ceilings
 // do not read it and stay in force either way. An unreadable stored value
-// counts as on (fail closed); a value never stored is the default, off.
+// counts as on (fail closed); a value never stored is the deployment's
+// default (ProofDefault).
 
 import (
 	"context"
@@ -46,8 +50,16 @@ func (s *Service) proofStore() (ProofStore, error) {
 	return ps, nil
 }
 
+// ProofDefault is the requirement while nothing is stored: on for a hosted
+// service (MANAGED_SERVICE), off otherwise.
+func (s *Service) ProofDefault() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.managed
+}
+
 // ProofSetting returns the stored requirement and its version (0: nothing
-// stored, the default off applies).
+// stored, ProofDefault applies).
 func (s *Service) ProofSetting(ctx context.Context) (bool, int, error) {
 	s.mu.Lock()
 	if s.proofCached != nil && time.Since(s.proofAt) < cacheTTL {
@@ -62,7 +74,7 @@ func (s *Service) ProofSetting(ctx context.Context) (bool, int, error) {
 	}
 	v, ver, err := ps.GetProofRequired(ctx)
 	if errors.Is(err, ErrNotFound) {
-		v, ver, err = false, 0, nil
+		v, ver, err = s.ProofDefault(), 0, nil
 	}
 	if err != nil {
 		return false, 0, err
