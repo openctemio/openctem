@@ -83,23 +83,19 @@ describe('technologies', () => {
     expect(parseTechnology('Foo:Bar')).toEqual({ name: 'Foo:Bar' })
   })
 
-  it('reads the schema key `technologies` (writes fold the singular into it)', () => {
+  it('reads asset.technologies from the asset API', () => {
     expect(technologies(sensorHttpService)).toEqual([
       { name: 'Nginx', version: '1.25.3' },
       { name: 'React' },
       { name: 'jQuery', version: '3.3.1' },
     ])
-    expect(technologies(withMeta({ technologies: ['React', 'Node.js'] }))).toEqual([
-      { name: 'React' },
-      { name: 'Node.js' },
-    ])
-    // A synonym is folded on write, never read.
-    expect(technologies(withMeta({ technology: 'React' }))).toBeNull()
   })
 
-  it('tells "probed, none found" from "never fingerprinted"', () => {
-    // The sensor writes technologies: null when httpx found none.
-    expect(technologies(sensorHttpServiceNoTech)).toEqual([])
+  it('never reads the retired properties.technologies', () => {
+    expect(
+      technologies({ ...withMeta({ technologies: ['React', 'Node.js'] }), technologies: undefined })
+    ).toBeNull()
+    expect(technologies(sensorHttpServiceNoTech)).toBeNull()
     expect(technologies(bareService)).toBeNull()
   })
 })

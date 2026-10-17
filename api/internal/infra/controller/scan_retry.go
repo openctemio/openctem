@@ -114,7 +114,7 @@ func (c *ScanRetryController) Reconcile(ctx context.Context) (int, error) {
 
 	candidates, err := c.runRepo.ListPendingRetries(ctx, c.config.BatchSize)
 	if err != nil {
-		c.logger.Error("failed to list retry candidates", "error", err)
+		c.logger.Error("failed to list retry candidates", "error", logger.SanitizeError(err))
 		return 0, err
 	}
 
@@ -134,14 +134,14 @@ func (c *ScanRetryController) Reconcile(ctx context.Context) (int, error) {
 					"scan_id", cand.ScanID.String(),
 					"failed_run_id", cand.RunID.String(),
 					"next_attempt", nextAttempt,
-					"error", err)
+					"error", logger.SanitizeError(err))
 				continue
 			}
 			c.logger.Error("failed to dispatch scan retry",
 				"scan_id", cand.ScanID.String(),
 				"failed_run_id", cand.RunID.String(),
 				"next_attempt", nextAttempt,
-				"error", err)
+				"error", logger.SanitizeError(err))
 			// The dispatch was claimed at LIST time (retry_dispatched_at = NOW)
 			// but created no new run. Release the claim and spend the attempt:
 			// a dispatch that keeps failing must run out of budget (and back off

@@ -227,3 +227,29 @@ func TestAdminAuditChainCoversEveryColumn_DB(t *testing.T) {
 		}
 	}
 }
+
+// ChainHead reports the newest row's position and hash, which the sink's
+// read of the rows after a cursor carries too (the off-box sink relies on both).
+func TestAdminAuditChainHeadMatchesRows_DB(t *testing.T) {
+	db := testdb.PrivateDatabase(t, "admin_audit_head", "../../../migrations")
+	ctx := context.Background()
+	repo := NewAuditLogRepository(&DB{DB: db})
+	if pos, hash, err := repo.ChainHead(ctx); err != nil || pos != 0 || hash != "" {
+		t.Fatalf("empty chain head: %d %q %v", pos, hash, err)
+	}
+	for _, action := range []string{"console.login", "admin.update"} {
+		if err := repo.Create(ctx, &admin.AuditLog{ID: shared.NewID(), AdminEmail: "root@example.com", Action: action,
+			Success: true, CreatedAt: time.Now(), Severity: "info"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen, err := repo.ReadForwardRows(ctx, 0, 10)
+	if err != nil || len(seen) != 2 || seen[0].Position != 1 || seen[1].Position != 2 || seen[1].PrevHash != seen[0].Hash ||
+		seen[0].Hash == "" || seen[1].Log.Action != "admin.update" {
+		t.Fatalf("rows %+v err=%v", seen, err)
+	}
+	pos, hash, err := repo.ChainHead(ctx)
+	if err != nil || pos != 2 || hash != seen[1].Hash {
+		t.Fatalf("head: %d %q %v; want 2 %q", pos, hash, err, seen[1].Hash)
+	}
+}
