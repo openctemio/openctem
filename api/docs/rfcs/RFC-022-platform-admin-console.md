@@ -89,15 +89,16 @@ used; migration 001483 dropped them:
   32-byte random token; the token itself is never stored), `mfa_verified`,
   `created_at`, `expires_at`, `last_seen_at`, `ip`, `user_agent`.
 
-**Flow.** The administrator signs in on the normal `/login` (email + password,
-the account's own lockout and password policy). Login and `GET /users/me` report
-`platform_admin` / `is_platform_admin`, and the UI sends the administrator to
-`/admin` instead of organization onboarding. Then, under `/api/v1/admin/auth`:
+**Flow** (as revised by revision 20: the console signs in on its own). Under
+`/api/v1/admin/auth`, on the console's sign-in page:
 
-1. `POST /session`: reads the `/login` refresh-token cookie (validated, not
-   rotated). Refused with 401 when not signed in, 403 when the account is not
-   linked to an active, unlocked administrator, and 403 when the sign-in came
-   from SSO, SAML or a social provider (audited). Otherwise it creates a
+1. `POST /login {email, password}`: the account's password, checked with the
+   account's own lockout and password policy and without opening a `/login`
+   session (`AuthService.VerifyConsolePassword`). A wrong password and an
+   unknown email answer the same 401; only a local password account can pass,
+   so an organization's SSO never authenticates an administrator. 403 when the
+   account is not linked to an active, unlocked administrator (audited), or
+   when the identity provider is required. Otherwise it creates a
    *pending* session (`mfa_verified=false`, 5-minute expiry) in an HttpOnly
    `admin_mfa` cookie and answers `mfa_required`, or `mfa_enrollment_required`
    with a freshly generated secret + `otpauth://` URI when MFA is not set up.
@@ -236,8 +237,8 @@ a local administrator for when SSO is unavailable.
   organization's providers (`/auth/providers`, per org slug); the platform IdP
   appears only on the console sign-in page, through
   `GET /api/v1/admin/auth/idp` (enabled + display name, nothing else). An
-  organization's IdP still cannot open the console: `/auth/session` refuses any
-  non-password `/login` session as before.
+  organization's IdP still cannot open the console: the console's own
+  sign-in (`/auth/login`) accepts only a local account's password.
 - **Flow** (authorization code + PKCE S256 + nonce + state):
   1. `POST /api/v1/admin/auth/idp/start` stores `sha256(state)`, the nonce and
      the encrypted PKCE verifier server-side (10-minute expiry, single use) and
@@ -270,7 +271,7 @@ a local administrator for when SSO is unavailable.
   Only then does a matching token open a verified session directly. The
   session records `auth_method = idp`.
 - **Require IdP.** With the IdP enabled and `require_idp` on, the local
-  password path (`/auth/session`) is refused for every administrator except
+  password path (`/auth/login`) is refused for every administrator except
   break-glass ones, and turning it on ends existing password sessions of
   non-break-glass administrators. The `/login` account itself is untouched,
   since it belongs to no organization and can open nothing without the console.
@@ -718,6 +719,33 @@ no console authenticator, so protected actions answer
 `403 STEP_UP_UNAVAILABLE` until one is enrolled (WebAuthn for the console
 lifts this).
 
+### The console signs in on its own
+
+The console no longer starts from the tenant `/login` session (owner
+decision D2): `POST /api/v1/admin/auth/session`, which read the tenant
+refresh-token cookie, is removed, and `POST /api/v1/admin/auth/login` takes
+the account's email and password (same account, password and lockout), then
+the console's own second factor. Signing out of the console ends only the
+console session. A tenant-side session bug can no longer lead into the
+console, and the console works on an origin of its own, where a host-only
+cookie of the tenant origin would never arrive anyway.
+
+### Time-boxed elevation
+
+Administrators act as read-only until they elevate (owner decision D8,
+`ADMIN_ELEVATION=required`, the default). `POST /api/v1/admin/auth/elevate
+{role, minutes, reason}` (step-up) makes the console session act as
+`ops_admin` or `super_admin`, never above the administrator's own role, for 15
+to 60 minutes (never past the session), audited at high severity
+(`console.elevated`); `DELETE /api/v1/admin/auth/elevate` ends it at once.
+The elevation lives on the session (`admin_sessions.elevated_role`,
+`elevated_until`, migration 002813), so another session of the same
+administrator stays read-only. Authorization uses the acting role
+(`AdminUser.EffectiveRole`); the persisted role is the ceiling and is never
+changed by acting. `GET /admin/auth/validate` returns `role` (acting),
+`max_role` and `elevated_until`; the console shows a bar to elevate or end.
+Approval of an elevation by another super admin is a later step.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
@@ -772,7 +800,15 @@ lifts this).
   year through `admin_audit_prune`, anchoring the chain where it stopped.
   `GET /api/v1/admin/audit-logs/chain` (any admin; shown on Security >
   Activity) and `bootstrap-admin verify-audit` report every row that does not
-  verify. See `docs/architecture/audit-hash-chain.md`.
+  verify. `ADMIN_AUDIT_SINK` streams every row (with its chain position and
+  hash), the chain head and the chain verification state to an HMAC-signed
+  HTTPS, syslog-over-TLS (optionally mutual TLS) or file destination outside
+  the database, so a re-signed chain no longer matches the copy already sent.
+  An exclusive controller reads rows after a durable cursor and advances it
+  only after the destination accepted the batch (at-least-once, batch id,
+  exponential backoff, lag and chain-break alerts, an idle head export every
+  `ADMIN_AUDIT_SINK_HEAD_INTERVAL`).
+  See `docs/architecture/audit-hash-chain.md`.
 - Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
   code from the console authenticator, single use (the sign-in replay guard),
   counted toward lockout when wrong, audited as `console.step_up` /
@@ -795,3 +831,49 @@ lifts this).
 - An administrator cannot deactivate, demote or delete themselves, so the
   super admin making a change always remains: the platform is never left
   without an active super admin.
+- The console answers only to the client networks in `ADMIN_ALLOWED_CIDRS`
+  (default: loopback, RFC 1918 and IPv6 unique local addresses); any other
+  network gets 403 `ADMIN_NETWORK_NOT_ALLOWED` on every `/api/v1/admin` route,
+  the sign-in steps included. The client address is the TCP peer, or
+  `X-Forwarded-For` from `SERVER_TRUSTED_PROXIES` only. An internet-facing
+  console is an explicit choice (`0.0.0.0/0,::/0`, logged as a warning at
+  start).
+- With `ADMIN_LISTEN_ADDR` set (a loopback or private IP, e.g.
+  `10.0.0.5:8081`; anything else needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`,
+  for a container network with no published port) the console API has its own
+  listener: `/api/v1/admin` is served only there and the main listener
+  answers 404 for it; the admin listener answers 404 for every other route
+  but `/health`. Both share the router and its global middleware, so the
+  console's guards are unchanged; the listener decides where it can be
+  reached (the gateway's admin site, or nowhere outside the host). Any later
+  internal-only surface (the control-plane API) gets its own listener the
+  same way. The split reads the path the way the router does (repeated slashes,
+  `.` and `..` segments, a trailing slash, percent-encoded separators), so
+  `/api/v1//admin/...` is the console on the public listener (404) and
+  `/api/v1/admin/../findings` is not the console on the admin listener (404).
+  The listener speaks plain HTTP on the private network between the web
+  console and the API (the gateway's console site terminates TLS for the
+  browser); where that network is not trusted, TLS goes in front of it.
+- The console has its own origin. The gateway's console site
+  (`OPENCTEM_ADMIN_SITE=port`: `https://<host>:8444`, or `host`: its own DNS
+  name) answers only `OPENCTEM_ADMIN_ALLOWED_CIDRS` (private networks by
+  default) and marks what it forwards `X-OpenCTEM-Plane: admin` (the main site
+  strips that header from clients). With `OPENCTEM_ADMIN_PLANE=separate` the web
+  console serves only the console there (pages, its API proxy to the API's
+  console listener via `ADMIN_API_URL`) and 404 for everything else, and 404
+  for the console on the main site, as the gateway does too. With its own host
+  name the browser isolates the console from the main site completely
+  (cookies, scripts, storage); on a second port of the same host name cookies
+  are still shared by host, so the host-name mode is the recommended one and
+  the port mode is the default only because it needs no DNS. This closes the
+  residual risk of the path-scoped cookies (a script on the main site reaching
+  the console).
+- A verified console sign-in from another address than the administrator's
+  last one is audited (`console.new_network_sign_in`, high) and emailed to
+  every administrator (the system SMTP sender; a WARN line with
+  `alert=new_network_sign_in` otherwise).
+- A read-only administrator sees counts, not people: an organization's member
+  list returns counts by role only (`redacted: true`), organizations show the
+  owner count without owner emails, and the account search
+  (`/platform-users`) is ops_admin+. Every member-list view is audited
+  (`organization.users_view`).

@@ -18,6 +18,11 @@ type NewTaskRecord struct {
 	Related []shared.ID
 	Source  JoinSource
 	ActorID *shared.ID
+	// OneActive makes the create fail with ErrActiveTaskExists when the action
+	// already has an open or in-progress task (concurrent creators of the same
+	// action are serialized on the action row). Other creators, such as a split
+	// or a route accept, may open several tasks on one action and leave it false.
+	OneActive bool
 	// EventData is stored on the "created" timeline entry.
 	EventData map[string]any
 }
@@ -67,7 +72,7 @@ type TaskRepository interface {
 	StaleTasksForPlatform(ctx context.Context, limit int) ([]StaleTaskRef, error)
 	MoveMembers(ctx context.Context, m MoveRequest) (*MoveResult, error)
 	SplitTask(ctx context.Context, sp SplitRequest) (shared.ID, *MoveResult, error)
-	MergeTasks(ctx context.Context, mg MergeRequest) (int, error)
+	MergeTasks(ctx context.Context, mg MergeRequest) (map[shared.ID]int, error)
 	CountActivePrimary(ctx context.Context, tenantID, taskID shared.ID, ids []shared.ID) (int, error)
 	OpenPrimaryIDs(ctx context.Context, tenantID, taskID shared.ID) ([]shared.ID, error)
 	RecordFixClaim(ctx context.Context, tenantID, taskID shared.ID, actor *shared.ID, data map[string]any) error

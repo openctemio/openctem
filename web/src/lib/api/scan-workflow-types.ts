@@ -122,21 +122,7 @@ export interface StepCondition {
 export const SCAN_WORKFLOW_SENSOR_PREFERENCES = ['auto', 'tenant', 'platform'] as const
 export type ScanWorkflowSensorPreference = (typeof SCAN_WORKFLOW_SENSOR_PREFERENCES)[number]
 
-export const SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS: Record<ScanWorkflowSensorPreference, string> =
-  {
-    auto: 'Auto (your sensors first, then platform scanning)',
-    tenant: 'Your sensors only',
-    platform: 'Platform scanning only',
-  }
-
-export const SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS: Record<
-  ScanWorkflowSensorPreference,
-  string
-> = {
-  auto: 'Uses your sensors when they can run the scan, otherwise platform scanning',
-  tenant: 'Only uses sensors deployed in your infrastructure',
-  platform: "Only uses the platform's shared scanning (public targets)",
-}
+// Display text: i18n keys scans.sensorPrefRun.<preference>.label / .description.
 
 // ============================================
 // SCAN_WORKFLOW SETTINGS

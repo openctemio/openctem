@@ -34,7 +34,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StagePrioritization, StageMobilization},
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
-			"registerFindingImportRoutes", "registerFindingRetestRoutes", "registerFindingSourceRoutes",
+			"registerFindingImportRoutes", "registerFindingRetestRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes",
 			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
@@ -53,7 +53,7 @@ var Features = []Feature{
 			"registerAssetRoutes", "registerAssetGroupRoutes", "registerAssetTypeRoutes", "registerAssetOwnerRoutes",
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
-			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
+			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerAssetTechnologyRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
 			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes",
 		},
 	},
@@ -104,11 +104,11 @@ var Features = []Feature{
 	},
 	{
 		ID: "scans", Title: "Scans and workflows",
-		Description: "Scans, scan runs and workflows, profiles, tools, templates, content packs, the secret store and freeze windows.",
+		Description: "Scans, scan runs and workflows, profiles, tools, templates, content packs and the content catalog, the secret store and freeze windows.",
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
 			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanApprovalRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
-			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes", "registerPlatformContentPackRoutes",
+			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},
@@ -178,11 +178,12 @@ var Features = []Feature{
 	},
 	{
 		ID: "organization", Title: "Organization settings and audit",
-		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), plan and the audit log.",
+		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), plan, support access grants and the audit log.",
 		Registers: []string{
-			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationPlanRoutes",
+			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationPlanRoutes", "registerOrganizationSupportAccessRoutes",
 			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
+			"registerSharedSensorsSettingsRoutes",
 		},
 	},
 	{

@@ -42,7 +42,10 @@ export function proxyCacheHeaders(
 }
 
 /**
- * Request headers a GET may carry to the API for conditional requests. The
- * API answers 304 when its ETag still matches; it never varies data on it.
+ * Conditional request headers forwarded to the API. If-None-Match: a GET the
+ * API answers 304 when its ETag still matches. If-Match: a write (settings
+ * sections, policies, lifecycle drafts) the API refuses with 409 or 412 when
+ * the stored version changed since it was read, so a save never overwrites
+ * someone else's change. Neither varies the data a caller may see.
  */
-export const CONDITIONAL_REQUEST_HEADERS = ['if-none-match'] as const
+export const CONDITIONAL_REQUEST_HEADERS = ['if-none-match', 'if-match'] as const

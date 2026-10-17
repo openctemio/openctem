@@ -100,7 +100,8 @@ const SURFACE_CELL_KEYS: Readonly<Record<SurfaceCell, readonly AssetPropertyKey[
   dns: ['cname_target', 'ip_addresses'],
   asn: ['asn', 'asn_org'],
   ports: ['ports'],
-  tech: ['technologies'],
+  // Technologies are not a property (asset.technologies): no column shows them.
+  tech: [],
   tls: ['has_tls', 'tls_version'],
   cert: ['not_after'],
 }

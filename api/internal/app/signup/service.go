@@ -3,6 +3,10 @@
 // change it in the console (docs/architecture/user-onboarding.md, "Sign-up
 // policy").
 //
+// The policy in force is the stored policy clamped to the deployment's
+// ceiling (SIGNUP_MODE): the console can lower what the server configuration
+// allows, never raise it.
+//
 // Reads are fail-closed: when the policy cannot be read, the answer is
 // admin_only, the mode that creates nothing.
 package signup
@@ -59,6 +63,13 @@ type Service struct {
 	notifier ChangeNotifier
 	log      *logger.Logger
 	now      func() time.Time
+	// ceiling is SIGNUP_MODE; the zero value is disabled.
+	ceiling signupdom.Ceiling
+	// mailReady reports whether the platform can send e-mail. Under a
+	// domain or open ceiling every self-registered address is verified by
+	// e-mail, so without it public sign-up is closed (fail-closed). Nil:
+	// not checked (tests).
+	mailReady func() bool
 
 	mu       sync.Mutex
 	cached   *signupdom.State
@@ -75,18 +86,24 @@ func NewService(repo signupdom.Repository, audit admin.AuditLogRepository, admin
 		log: log.With("service", "signup"), now: time.Now}
 }
 
+// SetCeiling sets the deployment ceiling (SIGNUP_MODE).
+func (s *Service) SetCeiling(c signupdom.Ceiling) { s.ceiling = c }
+
+// Ceiling returns the deployment ceiling.
+func (s *Service) Ceiling() signupdom.Ceiling { return signupdom.Ceiling(s.ceiling.String()) }
+
+// SetMailReady wires the check that the platform can send e-mail.
+func (s *Service) SetMailReady(f func() bool) { s.mailReady = f }
+
 // SetNotifier wires the notification to the other administrators (email in
 // production).
 func (s *Service) SetNotifier(n ChangeNotifier) { s.notifier = n }
 
-// Seed stores the policy from the environment when none is stored yet
-// (first start). A stored policy always wins: the environment only seeds.
-// An unknown mode seeds admin_only.
-func (s *Service) Seed(ctx context.Context, envMode string) error {
-	p := signupdom.Policy{Mode: signupdom.Mode(envMode)}
-	if !p.Mode.IsValid() {
-		p = signupdom.Default()
-	}
+// Seed stores the policy from the ceiling when none is stored yet (first
+// start): open seeds self_service, anything else admin_only. A stored policy
+// always wins: the environment only seeds, and the ceiling clamps it on read.
+func (s *Service) Seed(ctx context.Context) error {
+	p := s.ceiling.SeedPolicy()
 	created, err := s.repo.CreateIfAbsent(ctx, signupdom.State{
 		Policy: p, Version: 1, Source: signupdom.SourceEnvironment, UpdatedAt: s.now().UTC(),
 	})
@@ -94,20 +111,31 @@ func (s *Service) Seed(ctx context.Context, envMode string) error {
 		return err
 	}
 	if created {
-		s.log.Info("sign-up policy seeded from the environment", "mode", string(p.Mode))
+		s.log.Info("sign-up policy seeded from the environment", "mode", string(p.Mode), "accounts", string(p.Accounts))
 	}
 	return nil
 }
 
-// Current returns the policy in force. Fail-closed: when it cannot be read,
-// it is admin_only.
+// Current returns the policy in force: the stored policy clamped to the
+// ceiling. Fail-closed: when it cannot be read, it is admin_only.
 func (s *Service) Current(ctx context.Context) signupdom.Policy {
 	st, err := s.Get(ctx)
 	if err != nil {
 		s.log.Warn("sign-up policy unreadable; admin_only in force (fail-closed)", "error", err)
 		return signupdom.Default()
 	}
-	return st.Policy
+	return s.Effective(st.Policy)
+}
+
+// Effective clamps a stored policy to what this deployment allows now: the
+// ceiling, and, when public sign-up would need it, working e-mail.
+func (s *Service) Effective(p signupdom.Policy) signupdom.Policy {
+	p = s.ceiling.Clamp(p)
+	if p.AllowsPublicSignup() && s.mailReady != nil && !s.mailReady() {
+		s.log.Warn("platform e-mail is not configured; public sign-up is closed until it is (System > E-mail)")
+		p.Mode, p.Accounts = signupdom.ModeAdminOnly, signupdom.AccountsClosed
+	}
+	return p
 }
 
 // Get returns the stored policy (cached for cacheTTL). With nothing stored it
@@ -149,6 +177,10 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, p signupdo
 	if err := p.Validate(); err != nil {
 		return signupdom.State{}, err
 	}
+	p = p.Normalized()
+	if !s.ceiling.Permits(p) {
+		return signupdom.State{}, signupdom.ErrLockedByDeployment
+	}
 	previous, err := s.repo.Get(ctx)
 	if err != nil && !signupdom.IsNotFound(err) {
 		return signupdom.State{}, err
@@ -157,12 +189,12 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, p signupdo
 	if signupdom.IsNotFound(err) {
 		// Nothing stored (no seed ran): store version 1 first so the
 		// optimistic check below has a row to compare against.
-		previous = signupdom.State{Policy: signupdom.Default()}
+		previous = signupdom.State{Policy: s.ceiling.SeedPolicy()}
 		if expectedVersion != 0 {
 			return signupdom.State{}, signupdom.ErrVersionConflict
 		}
 		if _, cerr := s.repo.CreateIfAbsent(ctx, signupdom.State{
-			Policy: signupdom.Default(), Version: 1, Source: signupdom.SourceEnvironment, UpdatedAt: now,
+			Policy: s.ceiling.SeedPolicy(), Version: 1, Source: signupdom.SourceEnvironment, UpdatedAt: now,
 		}); cerr != nil {
 			return signupdom.State{}, cerr
 		}
@@ -190,8 +222,10 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev signu
 			Context(ip, userAgent).
 			Request("PUT", "/api/v1/admin/settings/signup", map[string]any{
 				"previous_mode":           string(prev.Mode),
+				"previous_accounts":       string(prev.AccountSignup()),
 				"previous_request_access": prev.RequestAccess,
 				"mode":                    string(next.Policy.Mode),
+				"accounts":                string(next.Policy.AccountSignup()),
 				"request_access":          next.Policy.RequestAccess,
 				"version":                 next.Version,
 			}).
@@ -220,6 +254,7 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev signu
 		"alert", AlertPolicyChanged,
 		"admin_id", actor.ID().String(),
 		"from_mode", logger.SanitizeValue(string(prev.Mode)), "to_mode", logger.SanitizeValue(string(next.Policy.Mode)),
+		"from_accounts", string(prev.AccountSignup()), "to_accounts", string(next.Policy.AccountSignup()),
 		"request_access", strconv.FormatBool(next.Policy.RequestAccess),
 		"notified", len(recipients),
 	)

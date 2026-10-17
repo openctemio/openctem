@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/joinrequest"
 	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -23,6 +24,8 @@ type TenantRepository struct {
 	// and direct adds all insert through CreateMembership or
 	// AcceptInvitationTx. Invitations: CreateInvitation (invites_per_day).
 	planLimits
+	// defaultRegion is DEPLOYMENT_REGION: the region new organizations get.
+	defaultRegion string
 }
 
 // NewTenantRepository creates a new TenantRepository.
@@ -41,9 +44,15 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 		return fmt.Errorf("failed to marshal settings: %w", err)
 	}
 
+	// The region is set once, here: the organization's own, else the
+	// deployment's (DEPLOYMENT_REGION). Update never writes it.
+	region := t.Region()
+	if region == "" {
+		region = r.defaultRegion
+	}
 	query := `
-		INSERT INTO tenants (id, name, slug, description, logo_url, settings, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO tenants (id, name, slug, description, logo_url, settings, created_by, created_at, updated_at, region)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''))
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -56,13 +65,18 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 		t.CreatedBy(),
 		t.CreatedAt(),
 		t.UpdatedAt(),
+		region,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
+	t.WithRegion(region)
 
 	return nil
 }
+
+// SetDefaultRegion sets the region new organizations get (DEPLOYMENT_REGION).
+func (r *TenantRepository) SetDefaultRegion(region string) { r.defaultRegion = region }
 
 // GetByID retrieves a tenant by ID.
 //
@@ -70,7 +84,7 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.Tenant, error) {
 	query := `
 		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
-		       ` + tenantPlanExpr + `
+		       ` + tenantPlanExpr + `, COALESCE(t.region, '')
 		FROM tenants t
 		WHERE t.id = $1
 	`
@@ -82,7 +96,7 @@ func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.T
 func (r *TenantRepository) GetBySlug(ctx context.Context, slug string) (*tenant.Tenant, error) {
 	query := `
 		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
-		       ` + tenantPlanExpr + `
+		       ` + tenantPlanExpr + `, COALESCE(t.region, '')
 		FROM tenants t
 		WHERE t.slug = $1
 	`
@@ -260,6 +274,17 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 	if err := r.checkLimit(ctx, m.TenantID(), plan.Seats, 1); err != nil {
 		return err
 	}
+	return insertMembership(ctx, r.db, m)
+}
+
+// membershipExecer runs the membership inserts on the pool or in a
+// transaction.
+type membershipExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// insertMembership inserts the membership row and its system role.
+func insertMembership(ctx context.Context, db membershipExecer, m *tenant.Membership) error {
 	// Insert into tenant_members with role. The offboarded tombstone of a
 	// person who left is reused for a re-join (member lifecycle): it is
 	// re-activated with the new id, role and inviter, and starts from zero
@@ -287,7 +312,7 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 
 	// The status comes from the membership: a new membership is active,
 	// or suspended while it waits for approval (RFC-058).
-	res, err := r.db.ExecContext(ctx, memberQuery, append([]any{
+	res, err := db.ExecContext(ctx, memberQuery, append([]any{
 		m.ID().String(),
 		m.UserID().String(),
 		m.TenantID().String(),
@@ -314,7 +339,7 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 		ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
 	`
 
-	_, err = r.db.ExecContext(ctx, userRolesQuery,
+	_, err = db.ExecContext(ctx, userRolesQuery,
 		m.UserID().String(),
 		m.TenantID().String(),
 		m.JoinedAt(),
@@ -1548,6 +1573,30 @@ func (r *TenantRepository) DeletePendingInvitationsByUserID(
 
 // AcceptInvitationTx atomically updates the invitation and creates the membership in a single transaction.
 // Creates membership in tenant_members and role assignment in user_roles.
+// CreateMembershipApprovingJoinRequest approves a waiting join request of
+// the organization and creates the membership in one transaction: either
+// both happen or neither (RFC-104). joinrequest.ErrNotPending when the
+// request no longer waits.
+func (r *TenantRepository) CreateMembershipApprovingJoinRequest(ctx context.Context, m *tenant.Membership, requestID, approver shared.ID, at time.Time) error {
+	if err := r.checkLimit(ctx, m.TenantID(), plan.Seats, 1); err != nil {
+		return err
+	}
+	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE organization_join_requests
+			   SET status = 'approved', decided_role = $4, decided_by = $5, decided_at = $6
+			 WHERE tenant_id = $1 AND id = $2 AND user_id = $3 AND status = 'pending' AND expires_at > $6`,
+			m.TenantID().String(), requestID.String(), m.UserID().String(), m.Role().String(), nullIDPtr(&approver), at)
+		if err != nil {
+			return fmt.Errorf("approve join request: %w", err)
+		}
+		if n, rerr := res.RowsAffected(); rerr != nil || n == 0 {
+			return joinrequest.ErrNotPending
+		}
+		return insertMembership(ctx, tx, m)
+	})
+}
+
 func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.Invitation, m *tenant.Membership) error {
 	if err := r.checkLimit(ctx, inv.TenantID(), plan.Seats, 1); err != nil {
 		return err
@@ -1671,9 +1720,10 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 		settingsJSON         []byte
 		createdAt, updatedAt time.Time
 		planStr              string
+		region               string
 	)
 
-	err := row.Scan(&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt, &planStr)
+	err := row.Scan(&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt, &planStr, &region)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -1695,6 +1745,7 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 	if err := t.SetPlan(plan.Plan(planStr)); err != nil {
 		return nil, fmt.Errorf("organization %s has an unknown plan %q", idStr, planStr)
 	}
+	t.WithRegion(region)
 	return t, nil
 }
 

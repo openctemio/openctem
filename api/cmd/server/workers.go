@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
@@ -32,6 +35,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -118,6 +122,19 @@ type WorkerDeps struct {
 	Services *Services
 }
 
+// adminAuditSinkForwarder builds the off-box admin audit forwarder for
+// ADMIN_AUDIT_SINK. A destination that cannot be used is an error: an operator
+// who asked for an off-box copy must not silently run without.
+func adminAuditSinkForwarder(cfg config.AdminAuditSinkConfig, repo *postgres.AuditLogRepository, log *logger.Logger) (*auditsink.Forwarder, error) {
+	sink, err := auditsink.New(cfg.URL, auditsink.Options{
+		Secret: cfg.Secret, CAFile: cfg.SyslogCAFile, ClientCert: cfg.SyslogClientCert, ClientKey: cfg.SyslogClientKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return auditsink.NewForwarder(repo, repo, sink, auditsink.Config{HeadInterval: cfg.HeadInterval, Logger: log})
+}
+
 // adminAuditRetentionConfig maps the operator-facing ADMIN_AUDIT_RETENTION_*
 // settings onto the controller config.
 //
@@ -143,6 +160,17 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 	if svc.Tenant != nil {
 		m.Register(controller.NewPurgeController("invitation-purge", cfg.Worker.InvitationPurgeInterval,
 			svc.Tenant.CleanupExpiredInvitations, log.With("controller", "invitation-purge")))
+	}
+	if svc.Onboarding != nil {
+		// Decided and expired join requests carry the requester's address:
+		// gone 30 days after (RFC-104).
+		m.Register(controller.NewPurgeController("join-request-purge", cfg.Worker.InvitationPurgeInterval,
+			svc.Onboarding.Purge, log.With("controller", "join-request-purge")))
+	}
+	if svc.AccountDeletion != nil {
+		// Accounts whose deletion grace period ended are erased (RFC-104).
+		m.Register(controller.NewPurgeController("account-erase", cfg.Worker.InvitationPurgeInterval,
+			svc.AccountDeletion.EraseDue, log.With("controller", "account-erase")))
 	}
 	if repos.AdminConsole != nil {
 		console := repos.AdminConsole
@@ -338,6 +366,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
 		w.ControllerManager.Register(controller.NewCIRetentionController(cirunapp.NewRetentionJob(repos.CIRun, log), 0))
+		// Runs whose gate job never ran are concluded as not judged (fail)
+		// after the pipeline window.
+		w.ControllerManager.Register(controller.NewCISweepController(cirunapp.NewSweepJob(repos.CIRun, auditor, log), 0))
 		// The OpenCTEM gate as a GitHub check run or GitLab commit status, and
 		// the pull or merge request comment (RFC-077).
 		if repos.SCMApp != nil {
@@ -558,12 +589,39 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		approvalExpiry.SetOverdueRequests(repos.FindingApproval)
 	}
 	w.ControllerManager.Register(approvalExpiry)
+	// The daily digest of finding requests waiting for each approver.
+	if svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewApprovalDigestController(svc.Vulnerability,
+			log.With("controller", "approval-digest")))
+	}
+	// Approver notices for requests VEX statements made, drained from the
+	// requests table (the outbox) off the ingest path.
+	if svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewVEXRequestNoticeController(svc.Vulnerability,
+			log.With("controller", "vex-request-notice")))
+	}
+
+	// A standing accepted risk or one-person false positive whose finding
+	// turned worse is ended, flagged or withdrawn under the approval policy
+	// (RFC-111 §6).
+	if repos.FindingMaterialChange != nil && svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewApprovalMaterialChangeController(
+			repos.FindingMaterialChange, svc.Vulnerability, svc.SLA, svc.Vulnerability,
+			10*time.Minute, 200, log.With("controller", "approval-material-change")))
+	}
 
 	// Asset identity model: derive identifiers for assets that predate it and
 	// queue suspected duplicates for review (never merges).
 	w.ControllerManager.Register(controller.NewAssetIdentityBackfillController(
 		ingest.NewIdentityBackfill(repos.AssetIdentityBackfill, repos.AssetIdentifier, repos.AssetDedup,
 			log.With("controller", "asset-identity-backfill")),
+	))
+
+	// Detected technologies (RFC-112): fill them for assets that predate
+	// them and drop the component links ingest no longer creates.
+	w.ControllerManager.Register(controller.NewAssetTechnologyBackfillController(
+		assettechapp.NewBackfill(repos.AssetTechnologyBackfill,
+			log.With("controller", "asset-technology-backfill"), cfg.Worker.AssetTechnologyBackfillReportOnly),
 	))
 
 	w.ControllerManager.Register(controller.NewScopeReconciliationController(
@@ -634,6 +692,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
 		svc.CTEMID,
 		log.With("controller", "ctem-id-refresh"),
+	))
+
+	// Version check (RFC-105): wakes hourly; fetches the signed release feed
+	// once a day when VERSION_CHECK_ENABLED and a root is pinned, weekly
+	// after repeated failures. One replica fetches per check.
+	w.ControllerManager.Register(controller.NewVersionCheckController(
+		svc.VersionCheck,
+		log.With("controller", "version-check"),
 	))
 
 	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data
@@ -831,6 +897,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
 		))
 	}
+	// Task issues: push each task's state to its tracker issue (move and a
+	// progress comment) when it changed since the last push.
+	if svc != nil && svc.JiraSync != nil && repos.TicketLink != nil {
+		w.ControllerManager.Register(controller.NewTaskTicketController(
+			repos.TicketLink, svc.JiraSync, time.Minute, log.With("controller", "task-tickets"),
+		))
+	}
 	// Remediation suggestions: propose groups and tasks from the remediation
 	// keys (never create them) and send the daily digest.
 	if svc != nil && svc.RemediationSuggest != nil {
@@ -994,6 +1067,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			"dry_run", arCfg.DryRun,
 			"interval", arCfg.Interval,
 		)
+	}
+
+	// Off-box copy of the administrators' audit log. Off unless a sink is
+	// configured; a bad sink fails the boot, never silently.
+	if cfg.AdminAuditSink.URL != "" {
+		fwd, err := adminAuditSinkForwarder(cfg.AdminAuditSink, repos.AdminAuditLog, log)
+		if err != nil {
+			return nil, fmt.Errorf("admin audit sink: %w", err)
+		}
+		w.ControllerManager.Register(fwd)
+		log.Info("administrators' audit log streamed off the box", "sink", redactSinkURL(cfg.AdminAuditSink.URL))
 	}
 
 	// Audit hash-chain integrity verification. The admin endpoint
@@ -1339,4 +1423,13 @@ func dnsFollowUp(s *easmdnsapp.Service) controller.EASMDNSChecker {
 		return nil
 	}
 	return s
+}
+
+// redactSinkURL keeps the scheme and host of the sink for the log line.
+func redactSinkURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(invalid)"
+	}
+	return fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 }

@@ -233,7 +233,7 @@ func (r *ScanZoneRepository) AssignSensor(ctx context.Context, tenantID, zoneID,
 		INSERT INTO scan_zone_sensors (tenant_id, zone_id, sensor_id, created_by)
 		SELECT $1, $2, s.id, $4
 		FROM sensors s
-		WHERE s.id = $3 AND s.tenant_id = $1 AND NOT s.is_platform_sensor
+		WHERE s.id = $3 AND s.tenant_id = $1 AND s.scope = 'organization'
 		ON CONFLICT (zone_id, sensor_id) DO NOTHING`,
 		tenantID.String(), zoneID.String(), sensorID.String(), nullIDString(assignedBy))
 	if err != nil {

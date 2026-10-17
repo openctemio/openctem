@@ -1264,6 +1264,15 @@ export interface ApiApproval {
    * false-positive approval level.
    */
   single_person?: boolean
+  /**
+   * The approval tier the policy gave the request (single, peer, security,
+   * dual); absent on a request made before the policy or by an actor.
+   */
+  tier?: 'single' | 'peer' | 'security' | 'dual'
+  risk_class?: 'standard' | 'high' | 'critical'
+  /** People other than the requester who must sign off, and how many did. */
+  approvals_required?: number
+  approvals_collected?: number
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'

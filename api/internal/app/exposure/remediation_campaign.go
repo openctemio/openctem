@@ -1158,61 +1158,67 @@ func (s *RemediationCampaignService) syncEpicOnCompletion(ctx context.Context, t
 	}
 }
 
-// HandleEpicStatusChange is the inbound half of campaign↔epic sync: when a
-// Jira webhook reports a campaign's linked epic moved to a done-ish status, the
-// campaign is marked completed. No-op when: ticketing is unwired, the status
-// isn't a done state, the issue isn't a campaign epic, or the campaign is
-// already terminal / not in a completable state. Idempotent and loop-safe — it
-// persists via repo.Update directly (not UpdateCampaignStatus), so it does NOT
-// re-trigger the outbound epic transition.
-func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus string) error {
-	if s.ticketRepo == nil || !isJiraDoneStatus(jiraStatus) {
-		return nil
+// HandleEpicStatusChange is the inbound half of campaign-epic sync. Jira
+// Done on a campaign's epic is a fix claim for the campaign's findings: they
+// are marked fixed through the campaign resolve ("mark fixed": legal steps,
+// proof of fix queued per finding), with the Jira integration as the recorded
+// actor. It never completes the campaign: a campaign is done when its
+// findings are verified closed. handled is false when the issue is not a
+// campaign epic; refusals list each finding the rules kept where it is.
+func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, jiraAccount string) ([]string, bool, error) {
+	if s.ticketRepo == nil {
+		return nil, false, nil
 	}
-
 	link, err := s.ticketRepo.GetByIssueKey(ctx, tenantID, "jira", issueKey)
 	if err != nil {
 		if errors.Is(err, remediation.ErrCampaignTicketNotFound) {
-			return nil // not a campaign epic — nothing to do
+			return nil, false, nil // not a campaign epic
 		}
-		return fmt.Errorf("lookup campaign by issue key: %w", err)
+		return nil, false, fmt.Errorf("lookup campaign by issue key: %w", err)
 	}
-
-	campaign, err := s.repo.GetByID(ctx, tenantID, link.CampaignID())
+	if !isJiraDoneStatus(jiraStatus) {
+		return nil, true, nil
+	}
+	changes := map[string]any{"ticket": issueKey}
+	actorName := "jira"
+	if jiraAccount != "" {
+		changes["jira_account_id"] = jiraAccount
+		actorName = "jira:" + jiraAccount
+	}
+	ctx = vulnerability.WithTicketInbound(ctx, "jira")
+	ctx = vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+		Source: "jira", Reason: "ticket_status", ActorType: "integration", ActorName: actorName, Changes: changes,
+	})
+	res, err := s.ResolveCampaignFindings(ctx, tenantID.String(), link.CampaignID().String(), CampaignResolveInput{
+		Status:                string(vulnerability.FindingStatusFixApplied),
+		Resolution:            campaignEpicNote(issueKey, jiraStatus, jiraAccount),
+		HasFixApplyPermission: true,
+	})
 	if err != nil {
-		return fmt.Errorf("load campaign for inbound epic sync: %w", err)
+		// The detail stays in the log; the ticket gets a fixed message.
+		return []string{campaignEpicClaimFailed}, true, fmt.Errorf("mark campaign findings fixed from epic: %w", err)
 	}
-	if campaign.Status() == remediation.CampaignStatusCompleted ||
-		campaign.Status() == remediation.CampaignStatusCanceled {
-		return nil // already terminal — echo-guard against the outbound loop
+	refusals := make([]string, 0, len(res.Rows))
+	for _, r := range res.Rows {
+		if r.Outcome == "failed" {
+			refusals = append(refusals, r.FindingID+": "+r.Reason)
+		}
 	}
+	s.logger.Info("campaign findings marked fixed from inbound jira epic",
+		"campaign_id", link.CampaignID().String(), "updated", res.Updated, "failed", res.Failed)
+	return refusals, true, nil
+}
 
-	// A closed epic is a claim, not evidence: the campaign completes only
-	// when its findings say it is done (all closed, at least one verified).
-	if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
-		return fmt.Errorf("count campaign findings for inbound epic sync: %w", rerr)
+// campaignEpicClaimFailed is the epic comment when the campaign's findings
+// could not be marked fixed (no internal error text leaves the platform).
+const campaignEpicClaimFailed = "the campaign's findings could not be marked fixed; see the campaign in OpenCTEM"
+
+func campaignEpicNote(issueKey, jiraStatus, account string) string {
+	note := fmt.Sprintf("jira %s (campaign epic) moved to %s", issueKey, jiraStatus)
+	if account != "" {
+		note += " by jira account " + account
 	}
-	if !campaign.IsDone() {
-		s.logger.Warn("inbound epic done but the campaign is not done; not completing",
-			"campaign_id", campaign.ID().String(), "issue_key", sanitizeLogValue(issueKey),
-			"findings", campaign.FindingCount(), "closed", campaign.ResolvedCount(), "verified", campaign.VerifiedCount())
-		return nil
-	}
-	epicFrom := campaign.Status()
-	if cerr := campaign.Complete(); cerr != nil {
-		// Complete() requires active/validating; a draft/paused campaign can't be
-		// auto-completed from an epic move. Log and skip rather than force it.
-		s.logger.Warn("inbound epic done but campaign not completable",
-			"campaign_id", campaign.ID().String(), "status", campaign.Status(), "error", cerr)
-		return nil
-	}
-	if uerr := s.repo.Update(ctx, campaign); uerr != nil {
-		return fmt.Errorf("persist campaign completion from epic: %w", uerr)
-	}
-	s.auditStatusChange(ctx, campaign, epicFrom, auditapp.AuditContext{ActorEmail: campaignAuditSystemActor}, "jira_epic")
-	s.logger.Info("remediation campaign completed from inbound jira epic",
-		"campaign_id", campaign.ID().String(), "issue_key", sanitizeLogValue(issueKey), "jira_status", sanitizeLogValue(jiraStatus))
-	return nil
+	return note
 }
 
 // isJiraDoneStatus reports whether a Jira status name represents a done state.

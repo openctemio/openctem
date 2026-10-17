@@ -187,13 +187,22 @@ const MaxCancelCommandIDs = 256
 // nothing is wired, nothing is reported, or the lookup fails (logged), so
 // the heartbeat never fails because of it.
 func (s *SensorService) CommandsToCancel(ctx context.Context, a *sensordom.Sensor, running []string) []string {
-	if s.cancels == nil || a == nil || a.TenantID == nil || len(running) == 0 {
+	if a == nil || len(running) == 0 {
 		return nil
 	}
 	if len(running) > maxRenewedCommands {
 		running = running[:maxRenewedCommands]
 	}
-	ids, err := s.cancels.CommandsToCancel(ctx, *a.TenantID, a.ID, running)
+	var ids []string
+	var err error
+	switch holds, ok := s.leases.(SharedHoldings); {
+	case a.IsShared() && ok:
+		ids, err = holds.SharedCommandsToCancel(ctx, a.ID, running)
+	case a.IsShared(), s.cancels == nil, a.TenantID == nil:
+		return nil
+	default:
+		ids, err = s.cancels.CommandsToCancel(ctx, *a.TenantID, a.ID, running)
+	}
 	if err != nil {
 		s.logger.Warn("commands to cancel not looked up", "sensor_id", a.ID.String(), "error", err)
 		return nil
@@ -209,14 +218,23 @@ func (s *SensorService) CommandsToCancel(ctx context.Context, a *sensordom.Senso
 // stalled, handing back what they finished (stop_command_ids). Best effort,
 // like CommandsToCancel; nil when the cancel finder cannot find stops.
 func (s *SensorService) CommandsToStop(ctx context.Context, a *sensordom.Sensor, running []string) []string {
-	f, ok := s.cancels.(commanddom.StopFinder)
-	if !ok || a == nil || a.TenantID == nil || len(running) == 0 {
+	if a == nil || len(running) == 0 {
 		return nil
 	}
 	if len(running) > maxRenewedCommands {
 		running = running[:maxRenewedCommands]
 	}
-	ids, err := f.CommandsToStop(ctx, *a.TenantID, a.ID, running)
+	var ids []string
+	var err error
+	f, ok := s.cancels.(commanddom.StopFinder)
+	switch holds, shared := s.leases.(SharedHoldings); {
+	case a.IsShared() && shared:
+		ids, err = holds.SharedCommandsToStopForPlatform(ctx, a.ID, running)
+	case a.IsShared(), !ok, a.TenantID == nil:
+		return nil
+	default:
+		ids, err = f.CommandsToStop(ctx, *a.TenantID, a.ID, running)
+	}
 	if err != nil {
 		s.logger.Warn("commands to stop not looked up", "sensor_id", a.ID.String(), "error", err)
 		return nil
@@ -981,12 +999,22 @@ const maxRenewedCommands = 1000
 // sensor holds. Best effort: a failure is logged; the lease then runs out
 // only if the next heartbeats fail too.
 func (s *SensorService) renewLeases(ctx context.Context, a *sensordom.Sensor, data SensorHeartbeatData) {
-	if s.leases == nil || a.TenantID == nil {
-		return
-	}
 	ids := data.Running
 	if len(ids) > maxRenewedCommands {
 		ids = ids[:maxRenewedCommands]
+	}
+	if a.IsShared() {
+		// A shared sensor renews only the shared jobs it lists and holds:
+		// it has no tenant, and an unlisted job's lease runs out.
+		if holds, ok := s.leases.(SharedHoldings); ok {
+			if _, err := holds.RenewSharedLeasesForPlatform(ctx, a.ID, ids); err != nil {
+				s.logger.Warn("shared job leases not renewed", "sensor_id", a.ID.String(), "error", err)
+			}
+		}
+		return
+	}
+	if s.leases == nil || a.TenantID == nil {
+		return
 	}
 	if _, err := s.leases.RenewLeases(ctx, *a.TenantID, a.ID, ids, !data.RunningReported); err != nil {
 		s.logger.Warn("command leases not renewed", "sensor_id", a.ID.String(), "error", err)
@@ -998,11 +1026,59 @@ func (s *SensorService) renewLeases(ctx context.Context, a *sensordom.Sensor, da
 // next heartbeat reports the progress again.
 func (s *SensorService) recordProgress(ctx context.Context, a *sensordom.Sensor, data SensorHeartbeatData) {
 	rec, ok := s.leases.(commanddom.ProgressRecorder)
-	if !ok || a.TenantID == nil || len(data.Progress) == 0 {
+	if !ok || len(data.Progress) == 0 {
+		return
+	}
+	if a.IsShared() {
+		s.recordSharedProgress(ctx, a, rec, data.Progress)
+		return
+	}
+	if a.TenantID == nil {
 		return
 	}
 	if _, err := rec.RecordProgress(ctx, *a.TenantID, a.ID, data.Progress); err != nil {
 		s.logger.Warn("command progress not recorded", "sensor_id", a.ID.String(), "error", err)
+	}
+}
+
+// SharedHoldings is the command store's side of a shared sensor's heartbeat
+// (CommandRepository): the shared jobs it holds, in any organization.
+type SharedHoldings interface {
+	RenewSharedLeasesForPlatform(ctx context.Context, sensorID shared.ID, ids []string) (int64, error)
+	SharedCommandsToCancel(ctx context.Context, sensorID shared.ID, ids []string) ([]string, error)
+	SharedCommandsToStopForPlatform(ctx context.Context, sensorID shared.ID, ids []string) ([]string, error)
+	HeldSharedJobsForPlatform(ctx context.Context, sensorID shared.ID, ids []string) (map[shared.ID][]string, error)
+}
+
+// recordSharedProgress records a shared sensor's progress per organization
+// of the shared jobs it holds (each command's own tenant); progress for
+// anything else is dropped.
+func (s *SensorService) recordSharedProgress(ctx context.Context, a *sensordom.Sensor, rec commanddom.ProgressRecorder, progress map[string]commanddom.Progress) {
+	holds, ok := s.leases.(SharedHoldings)
+	if !ok {
+		return
+	}
+	ids := make([]string, 0, len(progress))
+	keyOf := make(map[string]string, len(progress))
+	for id := range progress {
+		ids = append(ids, id)
+		keyOf[strings.ToLower(id)] = id
+	}
+	byTenant, err := holds.HeldSharedJobsForPlatform(ctx, a.ID, ids)
+	if err != nil {
+		s.logger.Warn("shared job progress not recorded", "sensor_id", a.ID.String(), "error", err)
+		return
+	}
+	for tenantID, held := range byTenant {
+		part := make(map[string]commanddom.Progress, len(held))
+		for _, id := range held {
+			if key, ok := keyOf[strings.ToLower(id)]; ok {
+				part[key] = progress[key]
+			}
+		}
+		if _, err := rec.RecordProgress(ctx, tenantID, a.ID, part); err != nil {
+			s.logger.Warn("shared job progress not recorded", "sensor_id", a.ID.String(), "error", err)
+		}
 	}
 }
 
@@ -1312,7 +1388,7 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 			return "", nil, err
 		}
 		s.logger.Info("sensor renewed its API key (overlap)",
-			"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
+			"sensor_id", fresh.ID.String(), "shared", fresh.IsShared(),
 			"presented", id.presentedKeyLabel(), "expires_at", expiresAt, "previous_keys_expire_at", retireAt)
 		s.auditKeyRenewed(ctx, fresh, expiresAt, true, id.presentedLegacy)
 		return apiKey, expiresAt, nil
@@ -1345,7 +1421,7 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 	}
 
 	s.logger.Info("sensor renewed its API key",
-		"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
+		"sensor_id", fresh.ID.String(), "shared", fresh.IsShared(),
 		"presented", id.presentedKeyLabel(), "expires_at", expiresAt)
 	s.auditKeyRenewed(ctx, fresh, expiresAt, false, id.presentedLegacy)
 	return apiKey, expiresAt, nil
@@ -1358,7 +1434,7 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 func (s *SensorService) auditKeyRenewed(ctx context.Context, a *sensordom.Sensor, expiresAt *time.Time, overlap, fromLegacy bool) {
 	if fromLegacy {
 		s.logger.Info("sensor moved from a legacy rda_ key to an octs_ key on renewal",
-			"sensor_id", a.ID.String(), "is_platform", a.IsPlatformSensor)
+			"sensor_id", a.ID.String(), "shared", a.IsShared())
 	}
 	if s.auditService == nil || a.TenantID == nil {
 		return
@@ -1389,7 +1465,7 @@ func (s *SensorService) renewalRefused(ctx context.Context, a *sensordom.Sensor,
 	}
 	reason := err.Error()
 	s.logger.Warn("sensor key renewal refused",
-		"sensor_id", a.ID.String(), "is_platform", a.IsPlatformSensor,
+		"sensor_id", a.ID.String(), "shared", a.IsShared(),
 		"presented", id.presentedKeyLabel(), "reason", reason)
 	if s.auditService != nil && a.TenantID != nil {
 		s.warnAudit(s.auditService.LogSensorKeyRenewalRefused(ctx, auditapp.AuditContext{

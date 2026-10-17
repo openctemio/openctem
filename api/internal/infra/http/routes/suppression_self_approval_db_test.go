@@ -60,7 +60,7 @@ func TestSuppressionSelfApproval_Routes_DB(t *testing.T) {
 			UpdatedAt string `json:"updated_at"`
 		}
 		body := h.expect(u, http.MethodPost, "/api/v1/suppressions",
-			`{"name":"test fixtures","suppression_type":"false_positive","rule_id":"go.test.fixture","expires_at":"`+
+			`{"name":"test fixtures","suppression_type":"false_positive","reason_code":"test_or_example_code","description":"fixtures used only by unit tests","rule_id":"go.test.fixture","expires_at":"`+
 				time.Now().UTC().Add(30*24*time.Hour).Format(time.RFC3339)+`"}`, http.StatusCreated)
 		if err := json.Unmarshal([]byte(body), &rule); err != nil || rule.ID == "" {
 			t.Fatalf("create: %s", body)
@@ -138,23 +138,22 @@ func TestSuppressionSelfApproval_Routes_DB(t *testing.T) {
 	h.exec(`UPDATE tenant_members SET suspended_at = now() - interval '8 days' WHERE user_id = $1`, suspended.id)
 	approve(recentOwner, id, ts+`","self_approval_reason":"alone now","totp_code":"135790"}`, http.StatusOK)
 
-	// Demoting the other approver (admin to viewer) makes the owner alone,
-	// but it is a recent approver change: refused for 7 days.
+	// Demoting the other approver (admin to viewer) does not make the owner
+	// the sole person: the viewer is still an active member, so the owner
+	// never approves their own rule, now or after the cooldown. Only a
+	// removal or suspension of the other person opens the path.
 	demoted := h.tenant()
 	t.Cleanup(func() { h.exec(`DELETE FROM suppression_rules WHERE tenant_id = $1`, demoted) })
 	demotedOwner := h.member(demoted, "owner")
 	demotedAdmin := h.member(demoted, "admin")
 	h.exec(`UPDATE tenant_members SET role = 'viewer' WHERE user_id = $1 AND tenant_id = $2`, demotedAdmin.id, demoted)
 	h.exec(`INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
-		VALUES (gen_random_uuid(), $1, 'member.role_changed', 'membership', $2, 'success', 'medium', 'admin to viewer', now() - interval '1 hour')`, demoted, demotedAdmin.id)
+		VALUES (gen_random_uuid(), $1, 'member.role_changed', 'membership', $2, 'success', 'medium', 'admin to viewer', now() - interval '8 days')`, demoted, demotedAdmin.id)
 	id, ts = create(demotedOwner)
-	code, body = h.do(demotedOwner, http.MethodPost, "/api/v1/suppressions/"+id+"/approve",
-		`{"reviewed_updated_at":"`+ts+`","self_approval_reason":"alone now","totp_code":"135790"}`)
-	if code != http.StatusForbidden || !strings.Contains(body, "possible again from") {
-		t.Fatalf("1 hour after demoting the other approver: %d %s", code, body)
+	approve(demotedOwner, id, ts+`","self_approval_reason":"alone now","totp_code":"135790"}`, http.StatusForbidden)
+	if s := status(id); s != "pending" {
+		t.Fatalf("an owner approved their own rule with another active member: %s", s)
 	}
-	h.exec(`UPDATE audit_logs SET logged_at = now() - interval '8 days' WHERE tenant_id = $1 AND action = 'member.role_changed'`, demoted)
-	approve(demotedOwner, id, ts+`","self_approval_reason":"alone now","totp_code":"135790"}`, http.StatusOK)
 
 	// A lone administrator who is not an owner may not.
 	id, ts = create(lonelyAdmin)

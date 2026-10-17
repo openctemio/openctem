@@ -38,9 +38,12 @@ func V2Options() Options {
 // Provenance is what the server stamps on a v2 segment (RFC-026 §5.1). None
 // of it is read from the CTIS body.
 type Provenance struct {
-	TenantID      shared.ID
-	SensorID      shared.ID
-	SensorType    string
+	TenantID   shared.ID
+	SensorID   shared.ID
+	SensorType string
+	// SharedSensor: the report came from a shared sensor (scope instance)
+	// for a shared job it held; TenantID is the command's tenant.
+	SharedSensor  bool
 	CommandID     *shared.ID
 	ScanZoneID    *shared.ID
 	ReportRef     shared.ID
@@ -107,6 +110,13 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	filtered.Findings = kept
 
 	agt := &sensor.Sensor{ID: prov.SensorID, TenantID: &prov.TenantID, Type: sensor.SensorType(prov.SensorType), Status: sensor.SensorStatusActive}
+	if prov.SharedSensor {
+		// Written into the command's tenant (prov.TenantID) for this one
+		// report; the sensor stays a shared one, so nothing records it as
+		// the tenant's (evidence says sensor:platform) and it is never a
+		// trusted collector.
+		agt.Scope = sensor.ScopeInstance
+	}
 	opts := V2Options()
 	// The job processor ran the unsolicited gate for a report without a
 	// command (V2JobProcessor.processSegment); a bound one changes only what
