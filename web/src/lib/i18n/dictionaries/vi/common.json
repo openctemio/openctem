@@ -88,5 +88,8 @@
   "common.failedToLoad": "Không tải được {title}",
   "common.unexpectedError": "Đã xảy ra lỗi không mong muốn",
   "common.moreTabs": "Thêm",
-  "common.openFullPage": "Mở trang đầy đủ"
+  "common.openFullPage": "Mở trang đầy đủ",
+  "common.contextFilters.label": "Bộ lọc ngữ cảnh",
+  "common.contextFilters.remove": "Bỏ bộ lọc {kind}",
+  "common.contextFilters.removeNamed": "Bỏ bộ lọc {kind}: {label}"
 }

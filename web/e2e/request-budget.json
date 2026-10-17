@@ -2,16 +2,19 @@
   "$comment": "API requests a hard load of each dashboard page may send (research/81). A page not listed gets defaultMax. Lower a number when a page gets cheaper; raising one needs a reviewer to agree the new request cannot come from the bootstrap, the cache or an event.",
   "defaultMax": 6,
   "routes": {
-    "/": 3,
+    "/": 4,
     "/compliance": 14,
     "/insights/reports/compliance": 14,
     "/scope": 10,
     "/sensors": 10,
-    "/assets": 9,
+    "/assets": 10,
     "/assets/changes": 5,
     "/insights/program-health": 8,
     "/attack-surface/external": 7,
-    "/validation": 7
+    "/validation": 8,
+    "/scans": 7,
+    "/settings/members": 8,
+    "/settings/scanning/scan-windows": 7
   },
   "sessionOnlyFromBootstrap": [
     "/api/v1/users/me",
@@ -24,5 +27,6 @@
   "$comment_pageUses": "A page that needs one of those endpoints for its own content, not for the shell: the change-password card reads the password policy from /auth/providers.",
   "pageUsesSessionEndpoint": {
     "/account/security": ["/api/v1/auth/providers"]
-  }
+  },
+  "$comment_supportAccess": "The support-access banner (a shell element on every page) reads /organization/support-access/active once per load, so each budget above the old one counts that request; /settings/members also loads join requests and the ownership transfer."
 }

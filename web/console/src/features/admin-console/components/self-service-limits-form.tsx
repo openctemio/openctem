@@ -23,6 +23,7 @@ import { LIMIT_KEYS, parseLimit, UNLIMITED, type LimitKey } from '@/features/lim
 import type { SelfServiceLimitsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveSelfServiceLimits } from '../api/use-limits'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 type Values = Record<LimitKey, string>
 
@@ -55,6 +56,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
   const [values, setValues] = useState<Values>(initial)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const codeId = useId()
@@ -210,7 +212,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
             )}
           </p>
         }
-        disabled={code.trim().length < 6}
+        disabled={!stepUpCodeReady(code, codeOptional)}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -235,6 +237,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
             maxLength={8}
             aria-invalid={!!codeError}
           />
+          <StepUpCodeHint optional={codeOptional} />
           {codeError && <p className="text-sm text-destructive">{codeError}</p>}
         </div>
       </ConfirmDialog>

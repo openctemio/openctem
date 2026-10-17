@@ -9,6 +9,7 @@
   "assets.inv.facing": "Hướng ra Internet",
   "assets.inv.actionsFor": "Thao tác cho {name}",
   "assets.inv.edit": "Sửa",
+  "assets.inv.openDetails": "Mở trang chi tiết",
   "assets.inv.delete": "Xóa",
   "assets.inv.tagsUpdated": "Đã cập nhật thẻ",
   "assets.inv.tagsUpdateFailed": "Không cập nhật được thẻ",

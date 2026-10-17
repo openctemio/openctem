@@ -881,6 +881,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
 	}
+	// Instance scan zones (RFC-100 §6.1): console routes, the trigger's
+	// zone lookup and the zone in a shared job's signed statement.
+	handlers.AdminInstanceScanZone = wireInstanceScanZones(svc, repos, deps.DB, adminConsoleSvc, log)
 	// Console > System > Shared sensors (RFC-100 §12): the fleet, queue
 	// aggregates, job metadata, the audited job view and remote actions.
 	handlers.AdminSharedFleet = handler.NewAdminSharedFleetHandler(sensor.NewSharedFleetService(

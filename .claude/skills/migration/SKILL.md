@@ -29,3 +29,4 @@ Full reference: `api/docs/development/migrations.md`.
 8. **Functions and comments:** follow the PostgreSQL function convention in the reference doc. A short file
    header may name the RFC; do not repeat RFC or phase tags in every comment.
 9. **Schema drift:** CI compares the migrated schema; regenerate anything it derives from the schema.
+10. **Skipped migrations:** never fix a skipped migration by renumbering it; add an idempotent repair migration above the head (see `api/docs/development/migrations.md`, "Numbers only go up").

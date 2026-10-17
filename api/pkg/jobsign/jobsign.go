@@ -69,8 +69,16 @@ type Statement struct {
 	// older one refuses the unknown field). The signer signs a shared job
 	// only within the shared-job rules (internal/signer/shared.go).
 	SensorScope string `json:"sensor_scope,omitempty"`
-	CommandID   string `json:"command_id"`
-	CommandType string `json:"command_type"`
+	// Zone is the instance scan zone of a shared job that reaches internal
+	// addresses (zone.go): its id and ranges, only with SensorScope
+	// instance. The signer signs it only for a zone in its zone ledger that
+	// is assigned to TenantID and served by SensorID, with exactly that
+	// zone's ranges, and only when every internal target lies inside them.
+	// A shared sensor reaches a private address only inside these signed
+	// ranges, never inside ranges an unsigned command field names.
+	Zone        *StatementZone `json:"zone,omitempty"`
+	CommandID   string         `json:"command_id"`
+	CommandType string         `json:"command_type"`
 	// Tool is the tool the command names (payload "scanner", else
 	// "preferred_tool"); "" for a command that names none.
 	Tool string `json:"tool"`

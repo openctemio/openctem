@@ -10,10 +10,8 @@ import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
 import { adminIdPInfo, adminSignIn } from '@console/features/admin-console/api/use-admin-session'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import {
-  TotpStepForm,
-  adminErrorMessage,
-} from '@console/features/admin-console/components/totp-step-form'
+import { adminErrorMessage } from '@console/features/admin-console/components/totp-step-form'
+import { SecondFactorStep } from '@console/features/admin-console/components/second-factor-step'
 import { IdPSignInButton } from '@console/features/admin-console/components/idp-sign-in-button'
 import { TurnstileWidget } from '@/features/auth/components/turnstile-widget'
 import { useAuthProviders } from '@/features/auth/api/use-auth-providers'
@@ -85,7 +83,11 @@ export default function AdminSignInPage() {
         )
       } else {
         setError(
-          adminErrorMessage(err, t('admin.login.unreachable', 'The console could not be reached.'))
+          adminErrorMessage(
+            err,
+            t('admin.login.unreachable', 'The console could not be reached.'),
+            t('admin.login.tooMany', 'Too many attempts. Wait a minute and try again.')
+          )
         )
       }
     } finally {
@@ -114,16 +116,13 @@ export default function AdminSignInPage() {
                   'admin.login.enroll',
                   'Set up two-step verification. It is required for every administrator.'
                 )
-              : t(
-                  'admin.login.code',
-                  'Enter the 6-digit code from your authenticator app to continue.'
-                )
+              : t('admin.login.secondStep', 'Confirm it is you to continue.')
             : t('admin.login.description', 'Sign in to administer this installation.')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         {step ? (
-          <TotpStepForm
+          <SecondFactorStep
             step={step}
             disabled={busy}
             onSwitchAccount={backToPassword}
