@@ -376,6 +376,16 @@ escapes its own markup: Slack mrkdwn (`&`, `<`, `>`, so no `<!channel>` or
 disguised links), Telegram markdown, and `html/template` for e-mail. The
 generic webhook sends JSON. See RFC-040 §5.4.
 
+### Minimal message by default
+
+A channel's `include_details` switch decides what leaves the platform. Off (the
+default for a new channel): the message carries the event type, the severity
+and a link back to the object, with no finding title, asset name or body text,
+so the provider (Slack, Teams, e-mail, a webhook receiver) learns nothing about
+the finding. On: the title and body are sent as before. The switch is applied
+when the message is built (`buildMessage`), before the channel's message
+template, so a template can only use what the channel is allowed to send.
+
 ### Rate Limiting
 
 Test notifications are rate-limited to prevent spam:

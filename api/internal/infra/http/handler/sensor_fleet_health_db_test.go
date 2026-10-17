@@ -40,6 +40,7 @@ func (f *fleetHarness) call(fn http.HandlerFunc, path, id string) map[string]jso
 	f.t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, f.tenantID)
+	ctx = context.WithValue(ctx, middleware.IsAdminKey, true) // host details are admin-only
 	if id != "" {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("id", id)
