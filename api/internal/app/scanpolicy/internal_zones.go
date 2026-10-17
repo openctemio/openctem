@@ -7,11 +7,12 @@ package scanpolicy
 // sensor inside a zone assigned to it. When off, shared sensors scan public
 // targets only.
 //
-// Default off on every deployment, MANAGED_SERVICE or not, and not enforced
-// yet: nothing routes an internal target to a shared sensor until instance
-// scan zones and their signed zone ranges are wired (InternalZonesEnforced).
-// Whether a self-hosted install gets an "on" default is decided when that
-// lands. A value stored in the console always wins.
+// Default off on every deployment, MANAGED_SERVICE or not. Instance scan
+// zones enforce it (internal/app/instancezone: the trigger's zone lookup
+// answers nothing while it is off). A self-hosted install keeps the "off"
+// default too: the administrator turns it on explicitly after creating
+// zones, until sensors that apply the signed zone ranges are released. A
+// value stored in the console always wins.
 //
 // Threat model: turning it on lets shared sensors, which serve every allowed
 // organization, reach private ranges, so the change is the same as the proof
@@ -50,10 +51,9 @@ func (s *Service) zonesStore() (InternalZonesStore, error) {
 	return st, nil
 }
 
-// internalZonesEnforced is false until instance scan zones route internal
-// targets to shared sensors with the zone ranges in the signed job: until
-// then the setting is stored but nothing reads it, and the console says so.
-const internalZonesEnforced = false
+// internalZonesEnforced: instance scan zones read the setting and carry the
+// zone ranges in the signed job.
+const internalZonesEnforced = true
 
 // InternalZonesEnforced reports whether the setting has an effect yet.
 func InternalZonesEnforced() bool { return internalZonesEnforced }
