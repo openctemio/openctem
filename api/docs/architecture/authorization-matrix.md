@@ -1289,7 +1289,7 @@ business unit, boundary, attacker profile, threat model and cycle totals of
 **Team membership end dates are read at scope time.** A membership whose
 `expires_at` has passed grants no data scope even before the expiry
 controller deletes the row: the scope refresh functions skip expired
-memberships (migration `002896`), the same rule team roles already follow.
+memberships (migration `002898`), the same rule team roles already follow.
 
 "Restricted" is the enforcer's decision (`Enforcer.Delegable`): an admin, a
 full-data role and an internal call are unrestricted. `POST /groups/{g}/members` also refuses
