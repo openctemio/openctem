@@ -4,20 +4,36 @@ name: Web E2E
 # images of the API and the web app, Postgres, Redis and the migrations, from
 # web/e2e/ci/compose.yml, seeded by web/e2e/ci/seed.sh.
 #
-# Not a required check (yet): it reports on its own and does not join the
-# `Web CI OK` aggregate. The `changes` job (.github/scripts/changed.sh) gates
-# the run, so an API-only change does not start the stack unless it touches the
-# API's HTTP layer (api/internal/infra/http/), where the web's contract comes
-# from. The suite needs the API as well, but the API has its own tests; this
-# job is about the web app.
+# The required check is `E2E OK`, never the shard jobs. It always reports:
+#   success  the suite was not needed (path filter, no label) or every shard passed
+#   failure  the build or a shard failed, or the run was cancelled
+# A job skipped by `if:` reports Success while a skipped workflow leaves a
+# required check Pending forever, so the workflow always starts and `decide`
+# (in the `changes` job) says whether the suite runs.
 #
-# When it runs. It is the slowest job (three image builds and a full stack) and
-# not a required check, so it stays out of the merge queue: there it ran once
-# per queued entry and starved the required checks of runners until queue
-# groups timed out (2026-10-11). It runs once per merge batch on develop instead.
-#   develop       on every push (when the web changed)
+# When the suite runs
+#   merge queue   when the queued PR (merge_group.base_sha..head_sha) changed
+#                 web/, api/ or anything shared (.github/, deploy/, root
+#                 Makefile, go.work): .github/scripts/changed.sh, the same
+#                 rules as the other workflows. Docs-only changes skip.
+#   develop       on every push, under the same rule
 #   pull request  only with the `run-e2e` label, or when the suite itself
-#                 (web/e2e/, this workflow) changed
+#                 (web/e2e/, this workflow) changed, and the web or the API's
+#                 HTTP layer (api/internal/infra/http/) changed
+#
+# How it stays fast
+#   build    the three images are built once per run (bake, GitHub Actions layer
+#            cache) and handed to the shards as one artifact, so no shard builds.
+#   shards   Playwright runs as a matrix of 4 (`--shard i/4`), each against its
+#            own stack, fail-fast off so every shard reports; 25 minute cap each.
+#   caches   npm (setup-node) and the Chromium download (keyed by the Playwright
+#            version).
+#   retries  1, in CI only (web/playwright.config.ts). A test that fails then
+#            passes is "flaky": the `report` job lists these in the run summary.
+#   reports  each shard writes a blob report; `report` merges them into one HTML
+#            report (artifact `playwright-report`, failures only).
+# Wall time: build 3-11 min (warm/cold layer cache), shards about 6-8 min in
+# parallel (stack start, install, a quarter of the tests), merge about 1 min.
 
 on:
   pull_request:
@@ -26,9 +42,10 @@ on:
     types: [opened, synchronize, reopened, labeled]
   push:
     branches: [develop]
+  merge_group:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -42,8 +59,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.f.outputs.web }}
+      api: ${{ steps.f.outputs.api }}
       suite: ${{ steps.suite.outputs.changed }}
       http: ${{ steps.http.outputs.changed }}
+      run: ${{ steps.decide.outputs.run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,7 +78,7 @@ jobs:
       # committed, so a change there no longer shows up as a web change; count
       # it here so the suite still runs for it.
       - id: http
-        if: github.event_name != 'push'
+        if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
@@ -89,19 +108,33 @@ jobs:
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
+      # Should the suite run? One decision, read by `build`, the shards and
+      # `E2E OK`.
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          WEB: ${{ steps.f.outputs.web }}
+          API: ${{ steps.f.outputs.api }}
+          HTTP: ${{ steps.http.outputs.changed }}
+          SUITE: ${{ steps.suite.outputs.changed }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'run-e2e') }}
+        run: |
+          run=false
+          case "$EVENT" in
+            pull_request)
+              if { [ "$WEB" = true ] || [ "$HTTP" = true ]; } && { [ "$SUITE" = true ] || [ "$LABELED" = true ]; }; then run=true; fi ;;
+            *)
+              # merge_group, push: web/, api/ or a shared file changed.
+              if [ "$WEB" = true ] || [ "$API" = true ]; then run=true; fi ;;
+          esac
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "suite runs: $run"
 
-  e2e:
-    name: Playwright e2e
+  build:
+    name: Build e2e images
     needs: changes
-    if: >-
-      (needs.changes.outputs.web == 'true' || needs.changes.outputs.http == 'true') && (
-        github.event_name != 'pull_request' ||
-        needs.changes.outputs.suite == 'true' ||
-        contains(github.event.pull_request.labels.*.name, 'run-e2e')
-      )
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
-    # Two image builds (cold cache: about 11 min) plus the suite (3 min): 15
-    # minutes cut off runs whose tests had all passed.
     timeout-minutes: 25
     env:
       API_IMAGE: local/openctem-api:e2e
@@ -125,13 +158,57 @@ jobs:
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # The three images build in parallel (web/e2e/ci/docker-bake.hcl) with
-      # the GitHub Actions layer cache: on a web-only change the API and
-      # admin-cli layers come from the cache, so the web build sets the pace.
+      # the GitHub Actions layer cache.
       - name: Build images
         uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
         with:
           source: .
           files: web/e2e/ci/docker-bake.hcl
+
+      # One archive for every shard (already compressed, so no artifact
+      # compression on top).
+      - name: Save the images
+        run: docker save "$API_IMAGE" "$WEB_IMAGE" "$ADMIN_IMAGE" | gzip -1 > e2e-images.tar.gz
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-images
+          path: e2e-images.tar.gz
+          compression-level: 0
+          retention-days: 1
+
+  e2e:
+    name: Playwright e2e (shard ${{ matrix.shard }}/4)
+    needs: [changes, build]
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    # Stack start, install and a quarter of the tests; no image build here.
+    timeout-minutes: 25
+    strategy:
+      # Every shard reports, so one red shard does not hide another.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      API_IMAGE: local/openctem-api:e2e
+      WEB_IMAGE: local/openctem-web:e2e
+      ADMIN_IMAGE: local/admin-cli:e2e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: e2e-images
+
+      - name: Load the images built in this run
+        run: gzip -dc e2e-images.tar.gz | docker load
+
+      - name: Registry login (GHCR mirror; Docker Hub when configured)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Fresh random passwords and secrets for this run (masked in the log),
       # written to web/e2e/ci/.env for compose and exported to later steps.
@@ -187,19 +264,101 @@ jobs:
           CI: 'true'
           E2E_BASE_URL: http://localhost:3000
           E2E_API_BASE_URL: http://localhost:8080
-        run: npm run e2e
+        run: npx playwright test --shard "${{ matrix.shard }}/4"
 
       - name: Stack logs
         if: failure()
         run: docker compose -f web/e2e/ci/compose.yml logs --no-color --tail 300 api web > e2e-stack.log 2>&1 || true
 
-      - name: Upload the Playwright report
-        if: failure()
+      # The blob report is what `report` merges; traces and videos of failures
+      # ride along in test-results/.
+      - name: Upload the shard's blob report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: |
+            web/blob-report/
+            web/test-results/
+            e2e-stack.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+
+  report:
+    name: Merge reports and list flaky tests
+    needs: [changes, e2e]
+    if: always() && needs.changes.outputs.run == 'true' && needs.e2e.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: blob-report-*
+          path: web/all-blobs
+          merge-multiple: true
+      - name: Merge the shards' reports
+        working-directory: web
+        run: |
+          mkdir -p blobs
+          find all-blobs -name '*.zip' -exec cp {} blobs/ \;
+          if ! ls blobs/*.zip >/dev/null 2>&1; then echo "no blob reports (a shard failed before the tests ran)"; exit 0; fi
+          npx playwright merge-reports --reporter html ./blobs
+          npx playwright merge-reports --reporter json ./blobs > report.json
+      # A test that failed and then passed on the retry is flaky: it does not
+      # fail the run, but it is listed here so it gets fixed.
+      - name: Flaky tests
+        working-directory: web
+        run: |
+          [ -f report.json ] || exit 0
+          flaky="$(jq -r '[.. | objects | select(has("specs")) | .specs[]? | select(.tests[]?.status == "flaky") | .title] | unique | .[]' report.json)"
+          if [ -n "$flaky" ]; then
+            { echo "### Flaky e2e tests (passed on retry)"; echo; while IFS= read -r t; do echo "- $t"; done <<< "$flaky"; } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::flaky e2e tests: $(echo "$flaky" | wc -l) (see the run summary)"
+          fi
+      - name: Upload the merged HTML report
+        if: needs.e2e.result != 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
-          path: |
-            web/playwright-report/
-            web/test-results/
-            e2e-stack.log
+          path: web/playwright-report/
+          if-no-files-found: ignore
           retention-days: 7
+
+  # The check to require. Always reports (see the header).
+  e2e-ok:
+    name: E2E OK
+    if: always()
+    needs: [changes, build, e2e, report]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The suite passed, or was not needed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          RUN: ${{ needs.changes.outputs.run }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
+            echo "::error::a job failed or was cancelled"; exit 1
+          fi
+          if [ "$(echo "$NEEDS" | jq -r '.changes.result')" != success ]; then
+            echo "::error::the change detection did not succeed"; exit 1
+          fi
+          if [ "$RUN" = true ]; then
+            for j in build e2e; do
+              r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
+              if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi
+            done
+          else
+            echo "suite not needed for this change"
+          fi
