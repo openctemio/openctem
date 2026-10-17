@@ -50,6 +50,8 @@ type Settings struct {
 	// FindingCorrelation switches cross-rule finding correlation
 	// (research/134 section 12). Both tiers are on unless turned off.
 	FindingCorrelation FindingCorrelationSettings `json:"finding_correlation,omitempty"`
+	// SharedSensors is the owner's shared sensor opt-out (RFC-100 §5).
+	SharedSensors SharedSensorsSettings `json:"shared_sensors,omitempty"`
 	// FindingApprovals governs finding false-positive and accepted-risk
 	// decisions.
 	FindingApprovals FindingApprovalSettings `json:"finding_approvals,omitempty"`
