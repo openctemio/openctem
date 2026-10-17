@@ -3,13 +3,9 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const changePassword = vi.fn()
-const logout = vi.fn()
 const save = vi.fn()
 vi.mock('@/features/admin-console/api/use-admin-session', () => ({
   adminChangePassword: (...a: unknown[]) => changePassword(...a),
-}))
-vi.mock('@/features/auth/actions/local-auth-actions', () => ({
-  localLogoutAction: (...a: unknown[]) => logout(...a),
 }))
 vi.mock('@/features/admin-console/api/use-platform-idp', () => ({
   savePlatformIdP: (...a: unknown[]) => save(...a),
@@ -52,16 +48,26 @@ describe('temporary password gate', () => {
     expect(changePassword).not.toHaveBeenCalled()
   })
 
-  it('changes the password and signs out so the administrator signs in again', async () => {
+  it('changes the password and sends the administrator to the console sign-in', async () => {
     changePassword.mockResolvedValueOnce(undefined)
+    const replace = vi.fn()
+    const original = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...original,
+        replace,
+      },
+    })
     const user = userEvent.setup()
     render(<ChangePasswordGate admin={admin} />)
     await user.type(screen.getByLabelText('Temporary password'), 'Temp-Pass-1!')
     await user.type(screen.getByLabelText('New password'), 'New-Pass-123')
     await user.type(screen.getByLabelText('Confirm new password'), 'New-Pass-123')
     await user.click(screen.getByRole('button', { name: 'Change password' }))
-    await vi.waitFor(() => expect(logout).toHaveBeenCalledWith('/login?redirect=%2Fadmin'))
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/admin/login'))
     expect(changePassword).toHaveBeenCalledWith('Temp-Pass-1!', 'New-Pass-123')
+    Object.defineProperty(window, 'location', { configurable: true, value: original })
   })
 })
 

@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // =============================================================================
@@ -1119,7 +1120,7 @@ func (s *Service) decideSensorRouting(ctx context.Context, sc *scan.Scan, target
 			return sensorRouting{}, err
 		}
 		s.logger.Warn("sensor selection failed; job queued for tenant sensors",
-			"error", err, "scan_id", sc.ID.String())
+			"error", logger.SanitizeError(err), "scan_id", sc.ID.String())
 		return sensorRouting{
 			Routing: sensorRoutingTenant,
 			Warning: "sensor selection failed; the job is queued for tenant sensors only",

@@ -346,6 +346,21 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 		}
 	}
 	rec.Task.ActionID = rec.Action.ID
+	if rec.OneActive {
+		// The upsert above holds the action row until this transaction ends,
+		// so a concurrent creator of the same action waits here and then sees
+		// the winner's task.
+		var active bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS (SELECT 1 FROM remediation_tasks
+			                WHERE tenant_id = $1 AND action_id = $2 AND state IN ('open', 'in_progress'))`,
+			tenant, rec.Action.ID.String()).Scan(&active); err != nil {
+			return fmt.Errorf("check active task: %w", err)
+		}
+		if active {
+			return remediation.ErrActiveTaskExists
+		}
+	}
 
 	if err := lockFindingsInTx(ctx, tx, rec.Task.TenantID, append(append([]shared.ID{}, rec.Members...), rec.Related...)); err != nil {
 		return err
@@ -386,6 +401,22 @@ func (r *RemediationTaskRepository) CreateTask(ctx context.Context, rec *remedia
 		return fmt.Errorf("commit create task: %w", err)
 	}
 	return nil
+}
+
+// ActiveTaskByActionKey returns the newest task of the action with this key
+// that still takes members (open or in progress), or nil when there is none.
+func (r *RemediationTaskRepository) ActiveTaskByActionKey(ctx context.Context, tenantID shared.ID, actionKey string) (*remediation.Task, error) {
+	q := `SELECT ` + taskSelectCols + taskFrom + `
+		WHERE t.tenant_id = $1 AND a.action_key = $2 AND t.state IN ('open', 'in_progress')
+		ORDER BY t.created_at DESC LIMIT 1`
+	t, err := scanTask(r.db.QueryRowContext(ctx, q, tenantID.String(), actionKey).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find active task by action key: %w", err)
+	}
+	return t, nil
 }
 
 // lockFindingsInTx locks the findings' rows in id order, so two operations on

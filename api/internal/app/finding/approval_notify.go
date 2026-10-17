@@ -82,10 +82,20 @@ func (s *VulnerabilityService) eligibleApprovers(ctx context.Context, a *vulnera
 	if err != nil {
 		return nil, fmt.Errorf("list finding approvers: %w", err)
 	}
+	// The owners of the finding's asset never approve its decisions
+	// (approval policy): they are not asked either.
+	owners := map[shared.ID]bool{}
+	if r, ok := s.approvalRepo.(policyFactsReader); ok {
+		if pf, err := r.PolicyFacts(ctx, a.TenantID, a.FindingID); err == nil {
+			for _, id := range pf.AssetOwners {
+				owners[id] = true
+			}
+		}
+	}
 	out := make([]FindingApprover, 0, len(all))
 	for _, ap := range all {
 		uid, err := shared.IDFromString(ap.UserID)
-		if err != nil || (!a.RequestedBy.IsZero() && uid == a.RequestedBy) {
+		if err != nil || (!a.RequestedBy.IsZero() && uid == a.RequestedBy) || owners[uid] {
 			continue
 		}
 		if s.dataScope != nil {
@@ -165,6 +175,9 @@ func (s *VulnerabilityService) RemindApprovers(ctx context.Context, tenantID, ap
 	a, err := s.approvalRepo.GetByTenantAndID(ctx, tid, aid)
 	if err != nil {
 		return nil, 0, err
+	}
+	if a.BatchID != nil {
+		return nil, 0, vulnerability.ErrBatchMember
 	}
 	if err := s.dataScope.AssertFinding(ctx, tid, a.FindingID); err != nil {
 		return nil, 0, err

@@ -54,17 +54,7 @@ export const SCAN_CONFIG_STATUS_LABELS: Record<ScanConfigStatus, string> = {
   disabled: 'Disabled',
 }
 
-export const SENSOR_PREFERENCE_LABELS: Record<SensorPreference, string> = {
-  auto: 'Auto (your sensors first, then platform scanning)',
-  tenant: 'Your sensors only',
-  platform: 'Platform scanning only',
-}
-
-export const SENSOR_PREFERENCE_DESCRIPTIONS: Record<SensorPreference, string> = {
-  auto: 'Uses your sensors when they can run the scan, otherwise platform scanning',
-  tenant: 'Only uses sensors deployed in your infrastructure',
-  platform: "Only uses the platform's shared scanning (public targets)",
-}
+// Display text: i18n keys scans.sensorPrefRun.<preference>.label / .description.
 
 /**
  * A scanner_config value the API flagged as secret-looking (api RFC-032

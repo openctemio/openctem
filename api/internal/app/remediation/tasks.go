@@ -42,14 +42,15 @@ type TaskAssigneeChecker interface {
 
 // TaskService manages remediation tasks.
 type TaskService struct {
-	repo      remediationdom.TaskRepository
-	dataScope *datascope.Enforcer
-	assignees TaskAssigneeChecker
-	audit     TaskAuditLogger
-	claimer   TaskFixClaimer
-	guard     TaskBulkGuard
-	moves     TaskMoveNotifier
-	logger    *logger.Logger
+	repo       remediationdom.TaskRepository
+	dataScope  *datascope.Enforcer
+	assignees  TaskAssigneeChecker
+	audit      TaskAuditLogger
+	claimer    TaskFixClaimer
+	guard      TaskBulkGuard
+	moves      TaskMoveNotifier
+	exceptions TaskExceptionRequester
+	logger     *logger.Logger
 }
 
 // NewTaskService creates the service. Without SetAssigneeChecker naming an
@@ -363,6 +364,13 @@ func (s *TaskService) writableTask(ctx context.Context, tenantID, taskID shared.
 		return nil, remediationdom.ErrTaskHiddenMembers
 	}
 	return t, nil
+}
+
+// TaskForChange returns a task the caller may change (visible, with no
+// member outside their scope): what an action that carries the task
+// elsewhere, such as creating its tracker issue, checks first.
+func (s *TaskService) TaskForChange(ctx context.Context, tenantID, taskID shared.ID) (*remediationdom.Task, error) {
+	return s.writableTask(ctx, tenantID, taskID)
 }
 
 // AddMembersInput adds findings to a task.

@@ -152,6 +152,33 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   task `Regression: <title>` with the same fix, owner, campaign and manual deadline and `regression_of` set;
   the closed task keeps its state (`regressed` timeline entry) and its history.
 
+## Exception on a task (group exception)
+
+"No maintenance window until 1 December" is one decision about the task's open findings (RFC-111 §7,
+`internal/app/remediation/exception.go`, `internal/app/finding/approval_batch.go`,
+`internal/infra/postgres/approval_batch_repository.go`):
+
+- `POST /api/v1/remediation/tasks/{task_id}/exception/preview` and `POST .../exception`
+  (`findings:remediation:write` + `findings:write`; every finding of the task in the caller's scope, as for any
+  change of the task), body `requested_status` (`accepted` or `false_positive`), `closure_reason`,
+  `justification` (the note), `expires_at` (accepted), `approved` (over the bulk ceiling). At most 500 open
+  findings; one pending exception per task (409).
+- The preview lists each open finding with its tier and end; findings that cannot make the move or already
+  have a pending request are left out with the reason. The exception takes the **highest member tier** (never
+  below `peer`), the union of the members' exclusions (the owners of any member's asset) and only approvers
+  eligible for every member. Each member's acceptance ends at the requested end or **its own cap** when
+  shorter (`shortened`).
+- The request is one `approval_batches` row plus one pending finding request per member (`batch_id`), in one
+  transaction; audit `remediation_task.exception_requested`; the eligible approvers are told in-app.
+- Decided once under `/api/v1/approvals/batches`: list and read (`findings:read`, every member in scope),
+  `POST /{id}/approve` and `/reject` (`findings:approve`), `/cancel` (the requester, `findings:write`). The
+  policy is evaluated again at decision time; the last required approval applies every member (each with its
+  own end, cut to its cap now if that is shorter) in one transaction; a member whose finding moved meanwhile is
+  canceled, the others still apply. A member request cannot be decided alone (409 `BATCH_MEMBER`). Pending
+  exceptions expire at their decision deadline with the hourly job.
+- Afterwards each member is an ordinary decision: its own expiry and material-change check. Findings that join
+  the task later are not covered.
+
 ## Console
 
 | Page | Shows |
@@ -167,8 +194,14 @@ Strings are in the `remediationHub` dictionary (en, vi). Write actions show only
 
 ## Shipped and planned
 
-Shipped: everything above; the solution families page is removed (the Suggestions tab replaces it). Planned:
-the finding drawer band ("tracked in task"), the My Work tasks tab.
+Shipped: everything above; the solution families page is removed (the Suggestions tab replaces it). The finding
+drawer and the finding page show a "Tracked in task" band (`FindingTaskBand`): the task the finding belongs to,
+its state and its deadline, linked to the task detail. It reads `GET /remediation/tasks?finding_id=` so the API
+data scope applies, and it renders nothing without `findings:remediation:read` or when the finding is in no task.
+My Work (`/my-work`) has a Tasks tab (`?tab=tasks`, `MyTasksQueue`) for members with `findings:remediation:read`:
+the open, in-progress, verifying and on-hold tasks assigned to the caller or to one of their groups
+(`assignee=me`), earliest deadline first, with "View all tasks" opening the Tasks "mine" view. The page's strings
+are in the `myWork` dictionary (en, vi).
 
 ## Key files
 

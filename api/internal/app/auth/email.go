@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"html"
 	"net/url"
 	"strings"
 	"time"
@@ -478,6 +479,12 @@ func (s *EmailService) NotifySSOChangePending(ctx context.Context, ownerEmail, o
 		summary+" Review it under Settings > SSO approvals. If you did not expect this change, reject it.")
 }
 
+// NotifySupportAccess tells an organization owner about support access:
+// a grant, a revocation, a support session opened or ended.
+func (s *EmailService) NotifySupportAccess(ctx context.Context, email, name, subject, message string) {
+	s.sendSecurityNotice(ctx, email, name, "", subject, message)
+}
+
 // NotifyOwnershipTransfer tells one of the two people in an ownership
 // transfer what happened (requested, canceled, declined, accepted).
 func (s *EmailService) NotifyOwnershipTransfer(ctx context.Context, email, name, subject, message string) {
@@ -512,4 +519,26 @@ func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userNa
 // \n and \r is the sanitizer CodeQL recognizes.
 func logSafe(v string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(v, "\n", ""), "\r", "")
+}
+
+// SendDomainManagedEmail tells an account that the organization which
+// verified its email domain now manages accounts on it: the next sign-in may
+// go through that organization's single sign-on, or new organizations may be
+// blocked. Nothing is moved: the account's other organizations stay its own.
+// The message names only the domain.
+func (s *EmailService) SendDomainManagedEmail(ctx context.Context, userEmail, domain string) error {
+	if !s.IsConfigured() {
+		return fmt.Errorf("email: no SMTP sender configured")
+	}
+	loginURL := fmt.Sprintf("%s/login", strings.TrimSuffix(s.config.BaseURL, "/"))
+	d := html.EscapeString(domain)
+	body := fmt.Sprintf(`<p>The organization that verified <strong>%s</strong> on %s now manages accounts on this domain.</p>
+<p>Your next sign-in with this address may go through your organization's single sign-on, and creating new organizations with it may be turned off. Your account, and any organization you already belong to, stay yours: nothing is moved or shared with that organization.</p>
+<p><a href="%s">Sign in</a></p>`, d, html.EscapeString(s.appName), html.EscapeString(loginURL))
+	return s.sender.Send(ctx, &emaildom.Message{
+		To:      []string{userEmail},
+		Subject: fmt.Sprintf("[%s] Accounts on %s are now managed by your organization", s.appName, domain),
+		Body:    body,
+		IsHTML:  true,
+	})
 }
