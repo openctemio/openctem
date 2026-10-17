@@ -41,7 +41,7 @@ type Repository interface {
 	FinishFindingImport(ctx context.Context, rec *vulnerability.FindingImport) error
 	StampAssetsImport(ctx context.Context, tenantID, importID shared.ID, ids []shared.ID) (int64, error)
 	MatchVEXDocument(ctx context.Context, tenantID shared.ID, q vulnerability.VEXDocumentQuery, limit int) ([]vulnerability.VEXCandidate, error)
-	ApplyVEXDocument(ctx context.Context, tenantID shared.ID, ids []shared.ID, v vulnerability.InteropVEX, closeNotAffected bool, reason string) (stored, closed []shared.ID, err error)
+	ApplyVEXDocument(ctx context.Context, tenantID shared.ID, ids []shared.ID, v vulnerability.InteropVEX, requestNotAffected bool, reason string) (stored, requested []shared.ID, err error)
 }
 
 // Limits of one upload. The handler enforces the body size; these bound
@@ -76,8 +76,8 @@ type Request struct {
 	ActorUserID *shared.ID
 	// DryRun parses and counts; nothing is written.
 	DryRun bool
-	// CanApprove: the uploader may set findings to false_positive
-	// (findings:approve). Without it a VEX document never closes a finding.
+	// CanApprove: the uploader holds findings:approve. Without it a VEX
+	// document never requests a false positive.
 	CanApprove bool
 	// Format forces the format of a single file (empty: detected).
 	Format importer.Format
@@ -110,7 +110,9 @@ type VEXSummary struct {
 	// Open findings a not_affected statement closed (enforce), or would
 	// close (dry_run mode, a preview, or an uploader without
 	// findings:approve).
-	Closed     int    `json:"closed"`
+	// Requested counts the pending false-positive requests the statements
+	// created (enforce mode); a person decides, nothing is closed here.
+	Requested  int    `json:"requested"`
 	WouldClose int    `json:"would_close"`
 	Mode       string `json:"mode"`
 	// Ids of the findings closed or that would be, for the audit record.
@@ -274,7 +276,7 @@ func (s *Service) finish(ctx context.Context, req Request, rec *vulnerability.Fi
 		}
 	}
 	if v := fr.VEX; v != nil {
-		rec.VEXStored, rec.VEXClosed = v.Stored, v.Closed
+		rec.VEXStored, rec.VEXRequested = v.Stored, v.Requested
 	}
 	if err := s.repo.FinishFindingImport(ctx, rec); err != nil {
 		s.logger.Warn("finding import: counts", "tenant_id", req.TenantID.String(), "error", err)
@@ -349,11 +351,13 @@ func (s *Service) ApplyVEXStatements(ctx context.Context, req Request, stmts []i
 
 // applyVEX matches each statement against the tenant's findings within the
 // uploader's scope and, outside a preview, stores it on them; a not_affected
-// statement closes them only under INGEST_VEX=enforce and only for an
-// uploader allowed to approve false positives.
+// statement requests a false positive for them (a pending request by the
+// actor "vex", decided by a person under the approval policy) only under
+// INGEST_VEX=enforce and only for an uploader allowed to approve false
+// positives. It never sets a status itself.
 func (s *Service) applyVEX(ctx context.Context, req Request, stmts []importer.VEXStatement) (*VEXSummary, error) {
 	sum := &VEXSummary{Statements: len(stmts), Mode: string(s.vexMode)}
-	closeAllowed := s.vexMode == ingest.SourceResolveEnforce && req.CanApprove
+	requestAllowed := s.vexMode == ingest.SourceResolveEnforce && req.CanApprove
 	for i := range stmts {
 		if err := ctx.Err(); err != nil {
 			return sum, err
@@ -406,14 +410,14 @@ func (s *Service) applyVEX(ctx context.Context, req Request, stmts []importer.VE
 			ids[j] = c.ID
 		}
 		reason := vulnerability.VEXResolutionText(&v)
-		stored, closed, err := s.repo.ApplyVEXDocument(ctx, req.TenantID, ids, v, closeAllowed && notAffected, reason)
+		stored, requested, err := s.repo.ApplyVEXDocument(ctx, req.TenantID, ids, v, requestAllowed && notAffected, reason)
 		if err != nil {
 			return sum, err
 		}
 		sum.Stored += len(stored)
-		if closeAllowed {
-			sum.Closed += len(closed)
-			sum.FindingIDs = append(sum.FindingIDs, closed...)
+		if requestAllowed {
+			sum.Requested += len(requested)
+			sum.FindingIDs = append(sum.FindingIDs, requested...)
 		} else if s.vexMode != ingest.SourceResolveOff {
 			sum.WouldClose += len(closable)
 			sum.FindingIDs = append(sum.FindingIDs, closable...)
