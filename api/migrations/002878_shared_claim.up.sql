@@ -101,4 +101,5 @@ BEGIN
 END;
 $$;
 
+-- expand-contract-ok: contract step; no code reads or writes commands.platform_sensor_id (only the removed get_next_platform_job ever set it, so it is NULL on every row)
 ALTER TABLE commands DROP COLUMN IF EXISTS platform_sensor_id;
