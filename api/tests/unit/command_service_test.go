@@ -37,7 +37,6 @@ type cmdMockRepo struct {
 	countQueuedTenantErr   error
 	countQueuedAllErr      error
 	getQueuedErr           error
-	getNextErr             error
 	updatePrioritiesErr    error
 	recoverStuckErr        error
 	expirePlatformErr      error
@@ -191,13 +190,6 @@ func (m *cmdMockRepo) CountQueuedPlatformJobs(_ context.Context) (int, error) {
 func (m *cmdMockRepo) GetQueuedPlatformJobs(_ context.Context, _ int) ([]*commanddom.Command, error) {
 	if m.getQueuedErr != nil {
 		return nil, m.getQueuedErr
-	}
-	return nil, nil
-}
-
-func (m *cmdMockRepo) GetNextPlatformJob(_ context.Context, _ shared.ID, _ []string, _ []string) (*commanddom.Command, error) {
-	if m.getNextErr != nil {
-		return nil, m.getNextErr
 	}
 	return nil, nil
 }

@@ -161,6 +161,12 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 		m.Register(controller.NewPurgeController("invitation-purge", cfg.Worker.InvitationPurgeInterval,
 			svc.Tenant.CleanupExpiredInvitations, log.With("controller", "invitation-purge")))
 	}
+	if svc.Onboarding != nil {
+		// Decided and expired join requests carry the requester's address:
+		// gone 30 days after (RFC-104).
+		m.Register(controller.NewPurgeController("join-request-purge", cfg.Worker.InvitationPurgeInterval,
+			svc.Onboarding.Purge, log.With("controller", "join-request-purge")))
+	}
 	if svc.AccountDeletion != nil {
 		// Accounts whose deletion grace period ended are erased (RFC-104).
 		m.Register(controller.NewPurgeController("account-erase", cfg.Worker.InvitationPurgeInterval,
@@ -593,6 +599,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc.Vulnerability != nil {
 		w.ControllerManager.Register(controller.NewVEXRequestNoticeController(svc.Vulnerability,
 			log.With("controller", "vex-request-notice")))
+	}
+
+	// A standing accepted risk or one-person false positive whose finding
+	// turned worse is ended, flagged or withdrawn under the approval policy
+	// (RFC-111 §6).
+	if repos.FindingMaterialChange != nil && svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewApprovalMaterialChangeController(
+			repos.FindingMaterialChange, svc.Vulnerability, svc.SLA, svc.Vulnerability,
+			10*time.Minute, 200, log.With("controller", "approval-material-change")))
 	}
 
 	// Asset identity model: derive identifiers for assets that predate it and
