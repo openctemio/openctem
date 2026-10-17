@@ -144,7 +144,17 @@ func (e *Enforcer) Resolve(ctx context.Context, tenantID shared.ID) (*shared.Dat
 
 // ResolveFor is Resolve for an explicit caller.
 func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, error) {
-	if e == nil || e.repo == nil || c.UserID == "" || c.IsOwner {
+	if e == nil || e.repo == nil {
+		return nil, nil
+	}
+	// An API key with no user (a legacy organization key) is not an internal
+	// call: it resolves to a scope with no rows, so it reads nothing scoped.
+	// Only a context with neither a user nor an API key is trusted as
+	// internal.
+	if c.APIKey && c.UserID == "" {
+		return &shared.DataScope{TenantID: tenantID}, nil
+	}
+	if c.UserID == "" || c.IsOwner {
 		return nil, nil
 	}
 	userID, err := shared.IDFromString(c.UserID)
@@ -469,6 +479,9 @@ func (e *Enforcer) Delegable(ctx context.Context, tenantID shared.ID, assetIDs [
 // scope (adding themselves to a group) need it.
 func (e *Enforcer) FullDataCaller(ctx context.Context, tenantID shared.ID) (bool, error) {
 	c := e.CallerOf(ctx)
+	if c.APIKey && c.UserID == "" {
+		return false, nil
+	}
 	if c.IsAdmin || c.UserID == "" {
 		return true, nil
 	}
