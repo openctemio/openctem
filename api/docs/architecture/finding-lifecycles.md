@@ -45,7 +45,7 @@ Rules the database enforces on its own, whatever the code does:
 | Routes `/api/v1/lifecycle-sub-statuses`, `/api/v1/lifecycles` | `internal/infra/http/routes/finding_lifecycles.go`, `handler/finding_lifecycle_handler.go` |
 | Service: catalog, schemes, drafts, validation, publish, roll back | `internal/app/findinglifecycle/service.go` |
 | Schemes and versions | `pkg/domain/findinglifecycle/scheme.go`, `internal/infra/postgres/lifecycle_scheme_repository.go` |
-| Plan limits `lifecycle_sub_statuses` (Free 3), `lifecycle_schemes` (Free 0, Pro 1) | `pkg/domain/plan/plan.go` |
+| Limits `lifecycle_sub_statuses` and `lifecycle_schemes` (unlimited unless set; see [limits](limits.md)) | `pkg/domain/limits/limits.go` |
 
 - A draft is edited with `If-Match: <spec_hash>`, so two editors never overwrite each other; the answer
   carries the validation against the current catalog.
@@ -106,10 +106,21 @@ finding (`findinglifecycle.EvaluateMove`, `internal/app/finding/lifecycle_moves.
 - Sub-status colours only tint a small dot (`web/src/lib/sub-status-colors.ts`); names are plain text,
   rendered escaped.
 
+### Console: findings with sub-statuses
+
+- The findings list (table and phone cards), the drawer and the finding page show the sub-status pill next
+  to the status (`FindingSubStatus`; the catalog is read once per page, archived entries included).
+- The status menu (`StatusSelect`) lists the moves `GET /findings/{id}/transitions` returns, sub-status
+  moves included, each with what it needs (a longer note, fields) and the refusal reason when blocked.
+  A move that needs a longer note or fields opens `LifecycleMoveDialog`, and the status change sends
+  `sub_status_id` and `fields`. A request (false positive, accepted risk) is offered only as its status
+  move until requests carry a sub-status.
+- Bulk status changes keep their dry run (`POST /findings/transitions/preview`); a finding whose move needs
+  fields or a longer note than the bulk note is reported as refused before anything is sent.
+
 ## Planned (RFC-110 §11)
 
 - The pure engine layer (scheme spec, validator, guards, context selection) and its property test (in
   review).
 - Sub-statuses and fields on approval requests; the list filter by sub-status; the simulator.
-- Sub-statuses in the finding drawer, list and bulk actions.
 - Templates, extra approval steps, ticket mapping by sub-status, the flow report.

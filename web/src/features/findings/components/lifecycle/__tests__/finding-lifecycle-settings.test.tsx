@@ -15,7 +15,7 @@ vi.mock('@/lib/api/client', () => {
   const get = async (url: string) => {
     fetched.push(url)
     if (url.startsWith('/api/v1/lifecycle-sub-statuses')) return { data: [], colors: ['gray'] }
-    if (url.startsWith('/api/v1/organization/plan'))
+    if (url.startsWith('/api/v1/organization/limits'))
       return {
         limits: [
           { key: 'lifecycle_sub_statuses', limit: 3, used: 3 },
@@ -42,18 +42,18 @@ describe('FindingLifecycleSettings gating', () => {
     fetched.length = 0
   })
 
-  it('shows a read-only notice and never asks for the plan without the write permission', async () => {
+  it('shows a read-only notice and never asks for the limits without the write permission', async () => {
     canWrite = false
     render(<FindingLifecycleSettings />)
     expect(await screen.findByText(/you can see the lifecycle/i)).toBeInTheDocument()
-    expect(fetched.some((u) => u.startsWith('/api/v1/organization/plan'))).toBe(false)
+    expect(fetched.some((u) => u.startsWith('/api/v1/organization/limits'))).toBe(false)
   })
 
-  it('shows the plan usage and the limit state to someone who may change it', async () => {
+  it('shows the limit usage and the limit state to someone who may change it', async () => {
     canWrite = true
     render(<FindingLifecycleSettings />)
-    expect(await screen.findByText(/3 of 3 on your plan/i)).toBeInTheDocument()
-    expect(screen.getByText(/plan allows no more sub-statuses/i)).toBeInTheDocument()
+    expect(await screen.findByText(/3 of 3 used/i)).toBeInTheDocument()
+    expect(screen.getByText(/limit of sub-statuses/i)).toBeInTheDocument()
     expect(screen.queryByText(/you can see the lifecycle/i)).not.toBeInTheDocument()
   })
 })

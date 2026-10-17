@@ -233,7 +233,7 @@ type Repositories struct {
 	ScanPolicy      *postgres.ScanPolicyRepository
 	ScanApproval    *postgres.ScanApprovalRepository
 	AccessRequest   *postgres.AccessRequestRepository
-	Plan            *postgres.PlanRepository
+	Limits          *postgres.LimitsRepository
 	IdleLifecycle   *postgres.IdleLifecycleRepository
 	AdminAuditLog   *postgres.AuditLogRepository
 	// SupportAccess stores support grants and sessions; SupportRead is the
@@ -242,7 +242,9 @@ type Repositories struct {
 	SupportRead   *postgres.SupportReadRepository
 	AdminOrg      *postgres.AdminOrganizationRepository
 	AdminConsole  *postgres.AdminConsoleRepository
-	PlatformIdP   *postgres.PlatformIdPRepository
+	// AdminFactor stores console security keys and recovery codes (RFC-078).
+	AdminFactor *postgres.AdminFactorRepository
+	PlatformIdP *postgres.PlatformIdPRepository
 	// AdminDB is the pool of the console's identity tables (UseAdminDB).
 	AdminDB *postgres.DB
 
@@ -546,13 +548,14 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ScanPolicy:      postgres.NewScanPolicyRepository(db),
 		ScanApproval:    postgres.NewScanApprovalRepository(db),
 		AccessRequest:   postgres.NewAccessRequestRepository(db),
-		Plan:            postgres.NewPlanRepository(db),
+		Limits:          postgres.NewLimitsRepository(db),
 		IdleLifecycle:   postgres.NewIdleLifecycleRepository(db),
 		AdminAuditLog:   postgres.NewAuditLogRepository(db),
 		SupportAccess:   postgres.NewSupportAccessRepository(db),
 		SupportRead:     postgres.NewSupportReadRepository(db),
 		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:    postgres.NewAdminConsoleRepository(db),
+		AdminFactor:     postgres.NewAdminFactorRepository(db),
 		PlatformIdP:     postgres.NewPlatformIdPRepository(db),
 
 		// Target Mappings
