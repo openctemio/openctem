@@ -63,12 +63,27 @@ func (c Ceiling) String() string { return string(c.normalized()) }
 // self-registered address.
 func (c Ceiling) AllowsPublicSignup() bool { return c.normalized() != CeilingDisabled }
 
-// Permits reports whether the console may store p under this ceiling.
-// Organization self-service needs the open ceiling; asking for access (which
-// creates nothing until an administrator approves) is allowed under every
-// ceiling.
+// MaxAccounts is the widest account sign-up the ceiling allows.
+func (c Ceiling) MaxAccounts() Accounts {
+	switch c.normalized() {
+	case CeilingOpen:
+		return AccountsOpen
+	case CeilingDomain:
+		return AccountsDomain
+	default:
+		return AccountsClosed
+	}
+}
+
+// Permits reports whether the console may store p under this ceiling:
+// account sign-up at or below the ceiling, organization self-service only
+// under open. Asking for access (which creates nothing until an
+// administrator approves) is allowed under every ceiling.
 func (c Ceiling) Permits(p Policy) bool {
-	if p.AllowsSelfService() {
+	if p.AccountSignup().rank() > c.MaxAccounts().rank() {
+		return false
+	}
+	if p.Mode == ModeSelfService {
 		return c.normalized() == CeilingOpen
 	}
 	return true
@@ -76,20 +91,29 @@ func (c Ceiling) Permits(p Policy) bool {
 
 // Clamp returns the policy in force: p limited to what the ceiling allows.
 // Lowering SIGNUP_MODE therefore closes sign-up at the next start without a
-// console change.
+// console change. An unknown account value is closed.
 func (c Ceiling) Clamp(p Policy) Policy {
-	if !c.Permits(p) {
+	p = p.Normalized()
+	if max := c.MaxAccounts(); p.Accounts.rank() > max.rank() {
+		p.Accounts = max
+	}
+	if !p.AllowsSelfService() {
 		p.Mode = ModeAdminOnly
 	}
 	return p
 }
 
-// SeedPolicy is the policy stored at the first start when none exists.
+// SeedPolicy is the policy stored at the first start when none exists: the
+// widest the ceiling allows.
 func (c Ceiling) SeedPolicy() Policy {
-	if c.normalized() == CeilingOpen {
-		return Policy{Mode: ModeSelfService}
+	switch c.normalized() {
+	case CeilingOpen:
+		return Policy{Mode: ModeSelfService, Accounts: AccountsOpen}
+	case CeilingDomain:
+		return Policy{Mode: ModeAdminOnly, Accounts: AccountsDomain}
+	default:
+		return Default()
 	}
-	return Default()
 }
 
 // ErrLockedByDeployment is returned when the console asks for more than the

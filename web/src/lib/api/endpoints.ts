@@ -110,6 +110,14 @@ export const authEndpoints = {
   createFirstTeam: () => `${API_BASE.AUTH}/create-first-team`,
 
   /**
+   * Onboarding of an account without an organization (api RFC-104): the
+   * offers (invitations, the organization of the verified domain, create)
+   * and taking one by its opaque reference. Refresh-token authenticated.
+   */
+  onboardingOptions: () => `${API_BASE.AUTH}/onboarding/options`,
+  onboardingAccept: () => `${API_BASE.AUTH}/onboarding/accept`,
+
+  /**
    * Second login step: verify a TOTP or recovery code against the challenge
    * a password login returned (mfa_token). Public, rate limited.
    */
@@ -411,6 +419,21 @@ export const tenantEndpoints = {
    * and reject (member asked).
    */
   ownershipTransfer: () => '/api/v1/organization/ownership-transfer',
+
+  /**
+   * Requests to join by a verified email domain (api RFC-104): owners and
+   * admins list, approve (viewer or member) and reject.
+   */
+  joinRequests: () => '/api/v1/organization/join-requests',
+  approveJoinRequest: (id: string) => `/api/v1/organization/join-requests/${id}/approve`,
+  rejectJoinRequest: (id: string) => `/api/v1/organization/join-requests/${id}/reject`,
+
+  /**
+   * Settings > Domains (api RFC-104): what the organization's verified SSO
+   * domains do to accounts on them. Read: owner/admin; change: owner + step-up.
+   */
+  domainSignupPolicies: () => '/api/v1/organization/settings/domains',
+  domainSignupPolicy: (id: string) => `/api/v1/organization/settings/domains/${id}/signup-policy`,
   approveOwnershipTransfer: () => '/api/v1/organization/ownership-transfer/approve',
   rejectOwnershipTransfer: () => '/api/v1/organization/ownership-transfer/reject',
 

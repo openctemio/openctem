@@ -25,20 +25,26 @@ function asset(type: string, metadata: Record<string, unknown>, subType?: string
   } as unknown as Asset
 }
 
-const SUBDOMAIN = asset('subdomain', {
+const SUBDOMAIN_BASE = asset('subdomain', {
   ip_addresses: ['203.0.113.21', '203.0.113.22', '203.0.113.23'],
   cname_target: 'lb.edge.example.net',
   asn: 'AS64500',
   asn_org: 'Example Hosting Ltd',
   has_tls: true,
   tls_version: 'TLS 1.2',
-  technologies: ['nginx:1.24.0', 'React'],
   dns_records: [
     { name: 'portal.example.com', ttl: 300, type: 'CNAME', value: 'lb.edge.example.net' },
     { name: 'lb.edge.example.net', ttl: 300, type: 'A', value: '203.0.113.21' },
   ],
   dns_record_count: 2,
 })
+const SUBDOMAIN = {
+  ...SUBDOMAIN_BASE,
+  technologies: [
+    { name: 'nginx', version: '1.24.0', category: 'web_server' },
+    { name: 'React', category: 'js_library' },
+  ],
+} as Asset
 
 describe('KeyFactsSection', () => {
   it('a subdomain: resolves to (every address), CNAME, hosting, TLS, stack, DNS table', () => {
@@ -51,8 +57,9 @@ describe('KeyFactsSection', () => {
     expect(screen.getByText('lb.edge.example.net', { selector: 'dd' })).toBeInTheDocument()
     expect(screen.getByText('AS64500 · Example Hosting Ltd')).toBeInTheDocument()
     expect(screen.getByText('TLS 1.2')).toBeInTheDocument()
-    expect(screen.getByText('nginx')).toBeInTheDocument()
-    expect(screen.getByText('1.24.0')).toBeInTheDocument()
+    // Technologies have their own section, not a key fact row.
+    expect(screen.queryByText('nginx')).not.toBeInTheDocument()
+    expect(screen.queryByText('1.24.0')).not.toBeInTheDocument()
     const table = screen.getByRole('table')
     expect(within(table).getAllByRole('row')).toHaveLength(3)
     // No "+N" anywhere: every value is listed.
@@ -128,17 +135,15 @@ describe('KeyFactsSection', () => {
 })
 
 describe('technologies()', () => {
-  it('accepts name:version strings and { name, version } objects', () => {
+  it('reads the technologies the asset API embeds', () => {
     const got = technologies({
-      metadata: {
-        technologies: ['nginx:1.24.0', { name: 'jQuery', version: '3.3.1' }, { name: 'React' }],
-      },
+      technologies: [
+        { name: 'nginx', version: '1.24.0', category: 'web_server' },
+        { name: 'React', category: 'js_library' },
+      ],
     })
-    expect(got).toEqual([
-      { name: 'nginx', version: '1.24.0' },
-      { name: 'jQuery', version: '3.3.1' },
-      { name: 'React', version: undefined },
-    ])
+    expect(got).toEqual([{ name: 'nginx', version: '1.24.0' }, { name: 'React' }])
+    expect(technologies({ technologies: [] })).toBeNull()
   })
 })
 

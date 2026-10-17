@@ -6,30 +6,36 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState, PageHeader } from '@/features/shared'
 import { useAdmin } from '@/features/admin-console/components/admin-console-shell'
 import {
+  createSharedSensorEnrollmentToken,
   savePlatformSensorProof,
   saveSharedSensorAnomaly,
   saveSharedSensorInternalZones,
+  saveSharedSensorsEgress,
   saveSharedSensorsSetting,
   usePlatformSensorProof,
   useSharedSensorAnomaly,
   useSharedSensorInternalZones,
+  useSharedSensorsEgress,
   useSharedSensorsSetting,
 } from '@/features/admin-console/api/use-scan-policy'
 import { PlatformSensorProofForm } from '@/features/admin-console/components/platform-sensor-proof-form'
 import { SharedSensorAnomalyForm } from '@/features/admin-console/components/shared-sensor-anomaly-form'
 import { InstanceScanZonesCard } from '@/features/admin-console/components/instance-scan-zones-card'
 import { useInstanceScanZones } from '@/features/admin-console/api/use-instance-scan-zones'
+import { SharedSensorEnrollCard } from '@/features/admin-console/components/shared-sensor-enroll-card'
 import { SharedSensorsForm } from '@/features/admin-console/components/shared-sensors-form'
+import { SharedSensorsEgressForm } from '@/features/admin-console/components/shared-sensors-egress-form'
 import { adminCan } from '@/features/admin-console/types'
 
 /**
- * System -> Platform scanning: shared sensors on this instance (RFC-100 §5)
- * and whether platform sensors need a verified domain before they scan a
+ * System -> Platform scanning: shared sensors on this instance (RFC-100 §5),
+ * the egress addresses organizations allowlist (RFC-100 §9) and whether platform sensors need a verified domain before they scan a
  * target (RFC-054 §8.1), whether shared sensors may scan internal zones
  * (RFC-100 §6.1) and the anomaly alert thresholds (RFC-100 §9). Until a value
  * is stored the deployment default applies (MANAGED_SERVICE changes the
  * defaults, RFC-100 §6). Any administrator sees them; super admins change
- * them.
+ * them, and issue the single-use token that enrolls a shared sensor
+ * (RFC-100 §7).
  */
 export default function PlatformScanningPage() {
   const { t } = useTranslation()
@@ -40,6 +46,7 @@ export default function PlatformScanningPage() {
   const anomaly = useSharedSensorAnomaly()
   const instanceZones = useInstanceScanZones()
   const canEdit = adminCan(me.role, 'super_admin')
+  const egress = useSharedSensorsEgress()
 
   return (
     <Main>
@@ -70,6 +77,44 @@ export default function PlatformScanningPage() {
                 totp_code: code,
               })
               await shared.mutate()
+            }}
+          />
+        )}
+        <SharedSensorEnrollCard
+          canEdit={adminCan(me.role, 'super_admin')}
+          onIssue={({ name, ttlMinutes, reason, code }) =>
+            createSharedSensorEnrollmentToken({
+              name,
+              ttl_minutes: ttlMinutes,
+              reason,
+              totp_code: code,
+            })
+          }
+        />
+        {egress.error ? (
+          <ErrorState
+            title={t('admin.sharedEgress.errorTitle')}
+            error={egress.error}
+            onRetry={() => void egress.mutate()}
+          />
+        ) : egress.isLoading || !egress.data ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (
+          <SharedSensorsEgressForm
+            global={egress.data.global}
+            regions={egress.data.regions}
+            canEdit={adminCan(me.role, 'super_admin')}
+            onSave={async (global, regions, reason, code) => {
+              const e = egress.data
+              if (!e) return
+              await saveSharedSensorsEgress({
+                global,
+                regions,
+                version: e.version ?? 0,
+                reason,
+                totp_code: code,
+              })
+              await egress.mutate()
             }}
           />
         )}

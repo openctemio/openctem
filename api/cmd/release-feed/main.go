@@ -1,17 +1,16 @@
-// Command release-feed creates the release feed keys, signs its key set and
-// builds the signed release feed an instance's version check reads
-// (docs/rfcs/RFC-105-version-check-and-usage-telemetry.md). The root runs on
-// an offline machine; the online key in the release pipeline; an instance
-// only verifies.
+// Command release-feed creates the release feed key and builds the signed
+// release feed an instance's version check reads
+// (docs/rfcs/RFC-105-version-check-and-usage-telemetry.md). The feed is signed
+// directly by one online key whose public key is pinned in the binary
+// (releasefeed.PinnedKeys); an instance only verifies.
 //
 // Usage (from api/):
 //
-//	go run ./cmd/release-feed keygen -out root.key        # prints the key id and public key, never the seed
-//	go run ./cmd/release-feed keyset -root root.key -online <public key hex>[,<hex>] -version 1 -days 180 -out keyset.dsse.json
+//	go run ./cmd/release-feed keygen -out online.key      # prints the key id and public key, never the seed
 //	gh release list --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > releases.json
-//	go run ./cmd/release-feed build -keyset keyset.dsse.json -key-env RELEASE_FEED_SIGNING_KEY \
+//	go run ./cmd/release-feed build -key-env RELEASE_FEED_SIGNING_KEY \
 //	    -releases releases.json -advisories advisories.json -out openctem-releases.json
-//	go run ./cmd/release-feed verify -root SHA256:<hex> openctem-releases.json
+//	go run ./cmd/release-feed verify -key <public key hex> openctem-releases.json
 //
 // A key file holds the 32-byte Ed25519 seed in hex (mode 0600).
 package main
@@ -44,13 +43,11 @@ func main() {
 
 func run(args []string, out io.Writer, now time.Time) error {
 	if len(args) == 0 {
-		return errors.New("usage: release-feed keygen|keyset|build|verify [flags]")
+		return errors.New("usage: release-feed keygen|build|verify [flags]")
 	}
 	switch args[0] {
 	case "keygen":
 		return keygen(args[1:], out)
-	case "keyset":
-		return keyset(args[1:], now)
 	case "build":
 		return build(args[1:], out, now)
 	case "verify":
@@ -104,40 +101,6 @@ func readKeyFile(path string) (ed25519.PrivateKey, error) {
 	return parseSeed(string(raw), path)
 }
 
-func keyset(args []string, now time.Time) error {
-	fs := flag.NewFlagSet("keyset", flag.ContinueOnError)
-	rootPath := fs.String("root", "", "root private key file")
-	online := fs.String("online", "", "online public keys, hex, comma separated")
-	version := fs.Uint64("version", 0, "key set version (higher than every earlier one)")
-	days := fs.Int("days", 180, "validity in days (at most 180)")
-	path := fs.String("out", "keyset.dsse.json", "output file")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	root, err := readKeyFile(*rootPath)
-	if err != nil {
-		return err
-	}
-	parts := strings.Split(*online, ",")
-	pubs := make([]ed25519.PublicKey, 0, len(parts))
-	for _, h := range parts {
-		b, err := hex.DecodeString(strings.TrimSpace(h))
-		if err != nil || len(b) != ed25519.PublicKeySize {
-			return fmt.Errorf("online key %q is not a hex Ed25519 public key", h)
-		}
-		pubs = append(pubs, b)
-	}
-	validity := time.Duration(*days) * 24 * time.Hour
-	if *version == 0 || *days < 1 || validity > feedsign.MaxKeySetValidity {
-		return errors.New("-version must be set and -days must be 1 to 180")
-	}
-	env, err := releasefeed.SignKeySet(root, *version, now, now.Add(validity), pubs...)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(*path, env, 0o644) //nolint:gosec // G306: public, signed metadata
-}
-
 // ghRelease is one row of `gh release list --json tagName,publishedAt,isDraft,isPrerelease`.
 type ghRelease struct {
 	TagName      string    `json:"tagName"`
@@ -157,14 +120,13 @@ var (
 )
 
 type buildOptions struct {
-	keySet, keyFile, keyEnv, releases, advisories, repo, out string
-	days                                                     int
+	keyFile, keyEnv, releases, advisories, repo, out string
+	days                                             int
 }
 
 func build(args []string, out io.Writer, now time.Time) error {
 	var o buildOptions
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
-	fs.StringVar(&o.keySet, "keyset", "", "signed key set file")
 	fs.StringVar(&o.keyFile, "key", "", "online private key file")
 	fs.StringVar(&o.keyEnv, "key-env", "", "environment variable holding the online key seed (hex), instead of -key")
 	fs.StringVar(&o.releases, "releases", "", "JSON from `gh release list --json tagName,publishedAt,isDraft,isPrerelease`")
@@ -209,10 +171,6 @@ func (o *buildOptions) run(now time.Time) ([]byte, error) {
 	if !repoName.MatchString(o.repo) {
 		return nil, fmt.Errorf("-repo %q", o.repo)
 	}
-	ks, err := os.ReadFile(o.keySet)
-	if err != nil {
-		return nil, err
-	}
 	key, err := o.onlineKey()
 	if err != nil {
 		return nil, err
@@ -235,7 +193,7 @@ func (o *buildOptions) run(now time.Time) ([]byte, error) {
 	if feed.Advisories == nil {
 		feed.Advisories = []releasefeed.Advisory{}
 	}
-	return releasefeed.Build(ks, key, feed)
+	return releasefeed.Build(key, feed)
 }
 
 func readReleases(path, repo string) ([]releasefeed.Release, error) {
@@ -266,26 +224,26 @@ func readReleases(path, repo string) ([]releasefeed.Release, error) {
 
 func verify(args []string, out io.Writer, now time.Time) error {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
-	root := fs.String("root", "", "pinned root key id (SHA256:<hex>); default: the roots pinned in this build")
+	key := fs.String("key", "", "pinned public key (hex); default: the keys pinned in this build")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: verify [-root SHA256:<hex>] <file>")
+		return errors.New("usage: verify [-key <public key hex>] <file>")
 	}
 	raw, err := os.ReadFile(fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	roots := releasefeed.PinnedRoots
-	if *root != "" {
-		roots = []string{*root}
+	keys := releasefeed.PinnedKeys
+	if *key != "" {
+		keys = []string{*key}
 	}
-	v, err := releasefeed.Verify(raw, releasefeed.Trust{Roots: roots}, now)
+	v, err := releasefeed.Verify(raw, releasefeed.Trust{Keys: keys}, now)
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(out, "ok: sequence %d, key set version %d, %d releases, %d advisories, expires %s\n",
-		v.Feed.Sequence, v.KeySetVersion, len(v.Feed.Releases), len(v.Feed.Advisories), v.Feed.ExpiresAt.Format(time.RFC3339))
+	_, err = fmt.Fprintf(out, "ok: sequence %d, signed by %s, %d releases, %d advisories, expires %s\n",
+		v.Feed.Sequence, v.KeyID, len(v.Feed.Releases), len(v.Feed.Advisories), v.Feed.ExpiresAt.Format(time.RFC3339))
 	return err
 }

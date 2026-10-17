@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/releasefeed"
 )
@@ -48,7 +48,7 @@ func (m *memRepo) ClaimDue(_ context.Context, now, first, next time.Time) (bool,
 func (m *memRepo) Apply(_ context.Context, v *releasefeed.Verified, origin string, now time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.st.AppliedSequence > v.Feed.Sequence || m.st.KeySetVersion > v.KeySetVersion ||
+	if m.st.AppliedSequence > v.Feed.Sequence ||
 		(m.st.AppliedSequence == v.Feed.Sequence && m.st.FeedDigest != v.Digest) {
 		return false, nil
 	}
@@ -56,7 +56,7 @@ func (m *memRepo) Apply(_ context.Context, v *releasefeed.Verified, origin strin
 	if !m.exists { // the column default
 		m.exists, m.st.NextCheckAt = true, &now
 	}
-	m.st.Feed, m.st.Origin, m.st.AppliedSequence, m.st.KeySetVersion = &f, origin, f.Sequence, v.KeySetVersion
+	m.st.Feed, m.st.Origin, m.st.AppliedSequence = &f, origin, f.Sequence
 	m.st.FeedDigest = v.Digest
 	m.st.AppliedAt, m.st.LastError, m.st.ConsecutiveFailures = &now, "", 0
 	return true, nil
@@ -73,26 +73,20 @@ func (m *memRepo) RecordFailure(_ context.Context, code string, now time.Time, n
 }
 
 type keys struct {
-	root, online ed25519.PrivateKey
-	keySet       []byte
+	online ed25519.PrivateKey
 }
 
 func newKeys(t *testing.T) keys {
 	t.Helper()
-	k := keys{root: ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, 32)), online: ed25519.NewKeyFromSeed(bytes.Repeat([]byte{2}, 32))}
-	ks, err := releasefeed.SignKeySet(k.root, 1, t0.Add(-time.Hour), t0.Add(170*24*time.Hour), k.online.Public().(ed25519.PublicKey))
-	if err != nil {
-		t.Fatal(err)
-	}
-	k.keySet = ks
-	return k
+	return keys{online: ed25519.NewKeyFromSeed(bytes.Repeat([]byte{2}, 32))}
 }
 
-func (k keys) rootID() string { return jobsign.KeyID(k.root.Public().(ed25519.PublicKey)) }
+// pinned is the hex public key a build pins for this key.
+func (k keys) pinned() string { return hex.EncodeToString(k.online.Public().(ed25519.PublicKey)) }
 
 func (k keys) feed(t *testing.T, seq uint64, issued time.Time, latest string) []byte {
 	t.Helper()
-	raw, err := releasefeed.Build(k.keySet, k.online, releasefeed.Feed{
+	raw, err := releasefeed.Build(k.online, releasefeed.Feed{
 		Sequence: seq, IssuedAt: issued, ExpiresAt: issued.Add(30 * 24 * time.Hour),
 		Releases: []releasefeed.Release{{Version: latest, PublishedAt: issued}},
 		Advisories: []releasefeed.Advisory{{ID: "OCTEM-2026-0001", Severity: "critical", Title: "t",
@@ -132,14 +126,14 @@ type clock struct{ now time.Time }
 func (c *clock) Now() time.Time { return c.now }
 
 func newService(repo Repository, roots []string, url string, c *clock, running string) *Service {
-	return New(repo, Config{Enabled: true, URL: url, Roots: roots, Running: running, Client: http.DefaultClient,
+	return New(repo, Config{Enabled: true, URL: url, Keys: roots, Running: running, Client: http.DefaultClient,
 		Now: c.Now, Jitter: func(time.Duration) time.Duration { return 0 }}, logger.NewNop())
 }
 
 func TestRunDue_FetchVerifyApply(t *testing.T) {
 	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
 	srv.body = k.feed(t, 100, t0.Add(-time.Hour), "v0.9.8")
-	svc := newService(repo, []string{k.rootID()}, srv.srv.URL+"/openctem-releases.json", c, "v0.9.7")
+	svc := newService(repo, []string{k.pinned()}, srv.srv.URL+"/openctem-releases.json", c, "v0.9.7")
 	ctx := context.Background()
 
 	// First call creates the schedule only: the first check waits a while
@@ -180,17 +174,17 @@ func TestRunDue_FetchVerifyApply(t *testing.T) {
 func TestRunDue_DisabledOrUnconfiguredSendsNothing(t *testing.T) {
 	k, srv, c := newKeys(t), newServer(t), &clock{now: t0}
 	srv.body = k.feed(t, 1, t0, "v0.9.8")
-	off := New(&memRepo{}, Config{Enabled: false, URL: srv.srv.URL, Roots: []string{k.rootID()}, Client: http.DefaultClient, Now: c.Now}, logger.NewNop())
-	noRoot := newService(&memRepo{}, nil, srv.srv.URL, c, "v0.9.7")
+	off := New(&memRepo{}, Config{Enabled: false, URL: srv.srv.URL, Keys: []string{k.pinned()}, Client: http.DefaultClient, Now: c.Now}, logger.NewNop())
+	noKey := newService(&memRepo{}, nil, srv.srv.URL, c, "v0.9.7")
 	for i := 0; i < 3; i++ {
 		c.now = c.now.Add(48 * time.Hour)
 		_ = off.RunDue(context.Background())
-		_ = noRoot.RunDue(context.Background())
+		_ = noKey.RunDue(context.Background())
 	}
 	if len(srv.headers) != 0 {
-		t.Fatalf("sent %d requests while disabled or without a root", len(srv.headers))
+		t.Fatalf("sent %d requests while disabled or without a key", len(srv.headers))
 	}
-	v, _ := noRoot.View(context.Background())
+	v, _ := noKey.View(context.Background())
 	if v.Configured || v.NextCheckAt != nil {
 		t.Fatalf("view = %+v", v)
 	}
@@ -200,7 +194,7 @@ func TestRunDue_DisabledOrUnconfiguredSendsNothing(t *testing.T) {
 // three the check backs off to weekly.
 func TestRunDue_OfflineBacksOff(t *testing.T) {
 	k, repo, c := newKeys(t), &memRepo{}, &clock{now: t0}
-	svc := newService(repo, []string{k.rootID()}, "http://127.0.0.1:1/unreachable", c, "v0.9.7")
+	svc := newService(repo, []string{k.pinned()}, "http://127.0.0.1:1/unreachable", c, "v0.9.7")
 	ctx := context.Background()
 	_ = svc.RunDue(ctx)
 	for i := 1; i <= 4; i++ {
@@ -222,24 +216,23 @@ func TestRunDue_OfflineBacksOff(t *testing.T) {
 func TestRunDue_RefusedAnswers(t *testing.T) {
 	k := newKeys(t)
 	other := newKeys(t)
-	other.root = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{7}, 32))
-	other.keySet, _ = releasefeed.SignKeySet(other.root, 1, t0.Add(-time.Hour), t0.Add(24*time.Hour), other.online.Public().(ed25519.PublicKey))
+	other.online = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{7}, 32))
 	cases := map[string]struct {
 		status int
 		body   func(t *testing.T) []byte
 		code   string
 	}{
-		"http error": {http.StatusNotFound, func(*testing.T) []byte { return nil }, ErrCodeHTTPStatus},
-		"oversize":   {http.StatusOK, func(*testing.T) []byte { return bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1) }, ErrCodeTooLarge},
-		"garbage":    {http.StatusOK, func(*testing.T) []byte { return []byte("<html>") }, ErrCodeInvalid},
-		"other root": {http.StatusOK, func(t *testing.T) []byte { return other.feed(t, 5, t0, "v0.9.8") }, ErrCodeInvalid},
-		"expired":    {http.StatusOK, func(t *testing.T) []byte { return k.feed(t, 5, t0.Add(-31*24*time.Hour), "v0.9.8") }, ErrCodeExpired},
+		"http error":   {http.StatusNotFound, func(*testing.T) []byte { return nil }, ErrCodeHTTPStatus},
+		"oversize":     {http.StatusOK, func(*testing.T) []byte { return bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1) }, ErrCodeTooLarge},
+		"garbage":      {http.StatusOK, func(*testing.T) []byte { return []byte("<html>") }, ErrCodeInvalid},
+		"unpinned key": {http.StatusOK, func(t *testing.T) []byte { return other.feed(t, 5, t0, "v0.9.8") }, ErrCodeInvalid},
+		"expired":      {http.StatusOK, func(t *testing.T) []byte { return k.feed(t, 5, t0.Add(-31*24*time.Hour), "v0.9.8") }, ErrCodeExpired},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			srv, repo, c := newServer(t), &memRepo{}, &clock{now: t0}
 			srv.status, srv.body = tc.status, tc.body(t)
-			svc := newService(repo, []string{k.rootID()}, srv.srv.URL, c, "v0.9.7")
+			svc := newService(repo, []string{k.pinned()}, srv.srv.URL, c, "v0.9.7")
 			_ = svc.RunDue(context.Background())
 			c.now = *repo.st.NextCheckAt
 			if err := svc.RunDue(context.Background()); err != nil {
@@ -255,7 +248,7 @@ func TestRunDue_RefusedAnswers(t *testing.T) {
 // An older feed never replaces a newer one, online or imported.
 func TestRollbackRefused(t *testing.T) {
 	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
-	svc := newService(repo, []string{k.rootID()}, srv.srv.URL, c, "v0.9.7")
+	svc := newService(repo, []string{k.pinned()}, srv.srv.URL, c, "v0.9.7")
 	ctx := context.Background()
 	if _, err := svc.Import(ctx, k.feed(t, 200, t0.Add(-time.Hour), "v0.9.9")); err != nil {
 		t.Fatal(err)
@@ -281,7 +274,7 @@ func TestRollbackRefused(t *testing.T) {
 // feed under an applied sequence is a replay or a signing fault.
 func TestSameSequenceOtherBytesRefused(t *testing.T) {
 	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
-	svc := newService(repo, []string{k.rootID()}, srv.srv.URL, c, "v0.9.7")
+	svc := newService(repo, []string{k.pinned()}, srv.srv.URL, c, "v0.9.7")
 	ctx := context.Background()
 	if _, err := svc.Import(ctx, k.feed(t, 300, t0.Add(-time.Hour), "v0.9.8")); err != nil {
 		t.Fatal(err)
@@ -304,10 +297,10 @@ func TestImport(t *testing.T) {
 	k, c := newKeys(t), &clock{now: t0}
 	ctx := context.Background()
 	var ie *ImportError
-	if _, err := newService(&memRepo{}, nil, "", c, "v0.9.7").Import(ctx, k.feed(t, 1, t0, "v0.9.8")); !errors.As(err, &ie) || ie.Code != ErrCodeNoRoot {
-		t.Fatalf("no root: %v", err)
+	if _, err := newService(&memRepo{}, nil, "", c, "v0.9.7").Import(ctx, k.feed(t, 1, t0, "v0.9.8")); !errors.As(err, &ie) || ie.Code != ErrCodeNoKey {
+		t.Fatalf("no key: %v", err)
 	}
-	svc := newService(&memRepo{}, []string{k.rootID()}, "", c, "v0.9.8")
+	svc := newService(&memRepo{}, []string{k.pinned()}, "", c, "v0.9.8")
 	if _, err := svc.Import(ctx, bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1)); !errors.As(err, &ie) || ie.Code != ErrCodeTooLarge {
 		t.Fatalf("oversize: %v", err)
 	}
@@ -323,7 +316,7 @@ func TestImport(t *testing.T) {
 		t.Fatalf("view = %+v", v)
 	}
 	// Offline import works with the online check disabled.
-	off := New(&memRepo{}, Config{Enabled: false, Roots: []string{k.rootID()}, Running: "v0.9.7", Now: c.Now}, logger.NewNop())
+	off := New(&memRepo{}, Config{Enabled: false, Keys: []string{k.pinned()}, Running: "v0.9.7", Now: c.Now}, logger.NewNop())
 	if _, err := off.Import(ctx, k.feed(t, 1, t0, "v0.9.8")); err != nil {
 		t.Fatal(err)
 	}

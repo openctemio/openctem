@@ -396,7 +396,7 @@ Composite FK to the asset (cascade, merge plan moves it).
 | Attribute | Element | Shown as | Class (§12 rules: trust, TTL) |
 |---|---|---|---|
 | `ip_addresses` | canonical address | `properties.ip_addresses` | identity |
-| `technologies` | `Name:version` as reported | `properties.technologies` | software |
+| `technologies` | `Name:version` as reported | `asset_technologies` rows (RFC-112; was `properties.technologies`) | software |
 | `open_ports` | `443/tcp` on an IP address asset | the address's `open_port` assets active / inactive | network |
 
 ### 13.2 Coverage

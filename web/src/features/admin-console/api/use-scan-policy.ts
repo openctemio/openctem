@@ -87,6 +87,30 @@ export function savePlatformSensorProof(input: {
 }
 
 /**
+ * A single-use shared sensor enrollment token (RFC-100 §7). The token is
+ * returned once and never shown again.
+ */
+export interface SharedSensorEnrollmentToken {
+  id: string
+  token: string
+  name: string
+  expires_at: string
+}
+
+/** Super admin, a fresh authenticator code and a reason. */
+export function createSharedSensorEnrollmentToken(input: {
+  name: string
+  ttl_minutes: number
+  reason: string
+  totp_code: string
+}) {
+  return adminFetch<SharedSensorEnrollmentToken>('/shared-sensors/enrollment-tokens', {
+    method: 'POST',
+    body: input,
+  })
+}
+
+/**
  * Shared sensors on this instance (RFC-100 §5): the instance switch (off by
  * default) and whether organizations without a decision may use them
  * (null until the administrator chooses; null refuses them; turning the
@@ -173,4 +197,34 @@ export function saveSharedSensorAnomaly(
   input: SharedSensorAnomalyThresholds & { version: number; reason: string; totp_code: string }
 ) {
   return adminFetch<SharedSensorAnomaly>(ANOMALY_KEY, { method: 'PUT', body: input })
+}
+
+/**
+ * Egress addresses of shared sensors (RFC-100 §9): public IP addresses or
+ * CIDR ranges, for every region (`global`) and per region. Organizations
+ * that may use shared sensors see them to allowlist the scanners. The API
+ * refuses private and other internal ranges.
+ */
+export interface SharedSensorsEgress {
+  global: string[]
+  regions: Record<string, string[]>
+  version: number
+}
+
+const EGRESS_KEY = '/settings/shared-sensors/egress'
+
+/** The list (any administrator reads it). */
+export function useSharedSensorsEgress() {
+  return useSWR<SharedSensorsEgress>(EGRESS_KEY, adminFetcher)
+}
+
+/** Super admin, a fresh authenticator code and a reason; replaces the list. */
+export function saveSharedSensorsEgress(input: {
+  global: string[]
+  regions: Record<string, string[]>
+  version: number
+  reason: string
+  totp_code: string
+}) {
+  return adminFetch<SharedSensorsEgress>(EGRESS_KEY, { method: 'PUT', body: input })
 }
