@@ -196,11 +196,11 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['identity provider', 'idp', 'sso', 'oidc'],
       },
       {
-        title: 'Plans',
-        i18nKey: 'admin.nav.plans',
-        url: '/admin/system/plans',
+        title: 'Limits',
+        i18nKey: 'admin.nav.limits',
+        url: '/admin/system/limits',
         icon: Gauge,
-        keywords: ['limits', 'free', 'pro', 'enterprise', 'quotas'],
+        keywords: ['limits', 'quotas', 'self-service', 'seats'],
       },
       {
         title: 'Content packs',
