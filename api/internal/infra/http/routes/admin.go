@@ -27,6 +27,7 @@ import (
 //	/admin/auth/validate      any admin         —
 //	/admin/overview           any admin         —
 //	/admin/operations         any admin         —
+//	/admin/system             any admin         —
 //	/admin/announcements      any admin         ops_admin+ + reason (audited)
 //	/admin/console-sessions   super_admin       super_admin + reason + fresh TOTP
 //	                                            code (audited high)
@@ -250,6 +251,12 @@ func registerAdminRoutes(
 	// work queues, sensor versions, controllers. Infrastructure facts only.
 	if h.AdminOperations != nil {
 		router.GET("/api/v1/admin/operations", h.AdminOperations.Get, adminMiddlewares...)
+	}
+
+	// Console > System (RFC-114): service health, free space, backup age,
+	// certificate expiry, version. Read-only, any admin role, aggregates only.
+	if h.AdminSystem != nil {
+		router.GET("/api/v1/admin/system", h.AdminSystem.Get, adminMiddlewares...)
 	}
 
 	// Default limits of self-service organizations (Console > System >

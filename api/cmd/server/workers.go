@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/app/systemstatus"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 
@@ -701,6 +702,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.VersionCheck,
 		log.With("controller", "version-check"),
 	))
+
+	// System watch (RFC-114): low disk, stale backup and expiring certificates
+	// set metrics and email the platform administrators. Read-only.
+	if deps.DB != nil {
+		sys := newSystemCollector(cfg, deps.DB, nil, svc.VersionCheck)
+		var mailer systemstatus.Notifier
+		if repos.Admin != nil && svc.Email != nil {
+			mailer = systemMailer{admins: repos.Admin, email: svc.Email, appName: cfg.Brand.DisplayName(), log: log}
+		}
+		w.ControllerManager.Register(systemstatus.NewWatcher(sys, mailer, cfg.System.WatchInterval, log))
+	}
 
 	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data
 	// external-exposure connector. Per tenant it queries crt.sh for the tenant's

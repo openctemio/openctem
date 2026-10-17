@@ -864,6 +864,7 @@ empty `owner_emails`. Every member-list view is audited
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
 | `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
 | `GET /api/v1/admin/operations` | any admin (build, schema, database, Redis, queues, sensor versions, controllers; no tenant content) |
+| `GET /api/v1/admin/system` | any admin, read-only, no step-up (service health, free space, backup age, certificate expiry, version; aggregates only, no paths or tenant content; RFC-114) |
 | `GET /api/v1/admin/announcements` | any admin |
 | `POST /api/v1/admin/announcements`, `POST /api/v1/admin/announcements/{announcement_id}/cancel` | **ops_admin+**, `reason` (10-500), audited `announcement.create` / `announcement.cancel` |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |

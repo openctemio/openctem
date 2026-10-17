@@ -16,7 +16,7 @@ admin console and the organization settings.
 
 Read by the API server at start-up (`server`). The server refuses to start when a variable under one of its prefixes is a likely misspelling of a listed name, or when a typed value does not parse; `server -check-config` runs the same checks without starting.
 
-Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `SELF_SERVICE_`, `INTERNAL_API_`, `ACCOUNT_PORTAL_`, `VERSION_CHECK_`.
+Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `SELF_SERVICE_`, `INTERNAL_API_`, `ACCOUNT_PORTAL_`, `VERSION_CHECK_`, `SYSTEM_`.
 
 ### Application
 
@@ -226,6 +226,17 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `SMTP_BASE_URL` | string | `APP_URL, else http://localhost:3000` |  |  | Base URL of links in e-mails. Set it only when the console is not at `APP_URL`. |
+
+### System page
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `SYSTEM_STORAGE_PATHS` | string | empty |  |  | `name=path,name=path` directories whose free space the platform console System page shows and the watcher alerts on (warning below 20% free, critical below 10%). Only the names are shown, never the paths. Unset: the local attachments directory and the sensor CA directory. |
+| `SYSTEM_BACKUP_STATUS_FILE` | path | empty |  |  | The backup job status file (`openctem_backup_last_success_timestamp_seconds`, as in the monitoring guide), mounted read-only into the API. The System page shows the last successful backup and the watcher warns when it is older than 26 hours. Unset: not reported. |
+| `SYSTEM_TLS_CERT_FILES` | string | empty |  |  | `name=path,name=path` PEM certificate files whose expiry the System page shows and the watcher alerts on (warning within 30 days, critical within 7). The sensor CA is always checked. |
+| `SYSTEM_WEB_HEALTH_URL` | url | empty |  |  | Internal health URL of the web container for the System page (one GET, no redirects). Must be http or https. Unset: not checked. |
+| `SYSTEM_GATEWAY_HEALTH_URL` | url | empty |  |  | Internal health URL of the gateway for the System page (one GET, no redirects). Must be http or https. Unset: not checked. |
+| `SYSTEM_WATCH_INTERVAL` | duration | `5m` |  |  | How often the system watcher checks free space, backup age and certificate expiry, sets the metrics and emails the platform administrators on a worse level. Minimum 1m. |
 
 ### Attachment storage
 
