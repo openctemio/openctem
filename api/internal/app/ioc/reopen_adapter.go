@@ -11,12 +11,21 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// FindingRepo is the narrow surface the adapter needs — load +
-// persist. *postgres.FindingRepository satisfies it structurally.
+// FindingRepo is the narrow surface the adapter needs — load, persist,
+// and flag a decision for review. *postgres.FindingRepository satisfies it
+// structurally.
 type FindingRepo interface {
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error)
 	Update(ctx context.Context, f *vulnerability.Finding) error
+	RaiseDecisionReview(ctx context.Context, tenantID, findingID shared.ID, reason string, evidence map[string]any) (bool, error)
+	// ReopenResolved moves a resolved finding to confirmed only while it is
+	// still resolved (no lost update against a concurrent change).
+	ReopenResolved(ctx context.Context, tenantID, findingID shared.ID) (bool, error)
 }
+
+// decisionReviewIOCMatch is the review reason an IOC match raises on a
+// decided finding (postgres.DecisionReviewIOCMatch).
+const decisionReviewIOCMatch = "ioc_match"
 
 // AuditLogger is the narrow surface the adapter uses to record the
 // reopen. *app.AuditService satisfies it structurally.
@@ -63,15 +72,43 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 	if !prev.IsClosed() {
 		return false, nil
 	}
-	// Domain workflow only allows closed → confirmed (back to triage).
-	// The operator triages again and re-drives through in_progress /
-	// fix_applied. Forcing all closed states through this one edge
-	// keeps the transition graph simple and auditable.
-	if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, reason, nil); err != nil {
-		return false, fmt.Errorf("transition: %w", err)
+	// A person's decision (false positive, accepted risk, duplicate) is never
+	// reversed by a correlator: the match raises a review flag, with a
+	// timeline entry, for a person with the approve permission to decide.
+	// Only a finding closed as fixed reopens (the match is evidence it is
+	// not fixed).
+	if vulnerability.IsDispositionedStatus(prev) {
+		raised, err := a.findings.RaiseDecisionReview(ctx, tenantID, findingID, decisionReviewIOCMatch,
+			map[string]any{"match": reason})
+		if err != nil {
+			return false, fmt.Errorf("flag decision for review: %w", err)
+		}
+		if raised && a.auditor != nil {
+			ev := auditsvc.NewSuccessEvent(audit.ActionFindingStatusChanged, audit.ResourceTypeFinding, findingID.String()).
+				WithMessage("decision flagged for review: "+reason).
+				WithMetadata("decision_status", string(prev)).
+				WithMetadata("source", "ioc_correlator").
+				WithSeverity(audit.SeverityHigh)
+			_ = a.auditor.LogEvent(ctx, auditsvc.AuditContext{TenantID: tenantID.String()}, ev)
+		}
+		return false, nil
 	}
-	if err := a.findings.Update(ctx, f); err != nil {
+	// Only a finding closed as fixed reopens, back to triage (confirmed). The
+	// repository re-checks the status in the UPDATE, so a finding someone
+	// changed since it was read is never overwritten; the reopen and its
+	// timeline entry commit together.
+	if prev != vulnerability.FindingStatusResolved {
+		return false, nil
+	}
+	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+		Source: "ioc_correlator", Reason: "ioc_match", ActorName: "system: IOC correlator", Message: reason,
+	})
+	moved, err := a.findings.ReopenResolved(moveCtx, tenantID, findingID)
+	if err != nil {
 		return false, fmt.Errorf("persist reopen: %w", err)
+	}
+	if !moved {
+		return false, nil
 	}
 
 	if a.auditor != nil {

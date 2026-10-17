@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,8 +23,11 @@ type EvaluateInput struct {
 	ScanFailures int
 	// RepoPolicy is the repository's .openctem.yml (nil without one).
 	RepoPolicy *cirun.RepoPolicy
-	ClientIP   string
-	UserAgent  string
+	// Capabilities is what the job reports about each capability; any
+	// capability not uploaded cleanly fails the gate.
+	Capabilities []cirun.CapabilityState
+	ClientIP     string
+	UserAgent    string
 }
 
 // Verdict is a gate verdict with its links.
@@ -43,47 +47,37 @@ type VerdictLinks struct {
 	Findings string `json:"findings"`
 }
 
-// ResolvePolicy picks the policy for a repository asset: its own, else the
-// strictest of its business units', else the tenant's, else the built-in
-// default.
+// ResolvePolicy returns the effective policy of a repository asset and the
+// most specific layer it takes a field from (repository, business_unit,
+// tenant or default).
 func (s *Service) ResolvePolicy(ctx context.Context, tenantID, assetID shared.ID) (cirun.GatePolicy, string, error) {
-	ps, err := s.repo.GatePoliciesFor(ctx, tenantID, assetID)
+	res, err := s.ResolveRepositoryPolicy(ctx, tenantID, assetID)
 	if err != nil {
-		return cirun.GatePolicy{}, "", fmt.Errorf("load gate policies: %w", err)
+		return cirun.GatePolicy{}, "", err
 	}
-	p, source := resolveFrom(ps)
-	return p, source, nil
+	return res.Policy, res.Source, nil
 }
 
-// resolveFrom picks among enabled policies that may apply to one
-// repository: its own, else the strictest business unit's, else the
-// tenant's, else the built-in default.
-func resolveFrom(ps []cirun.GatePolicy) (cirun.GatePolicy, string) {
-	var units []cirun.GatePolicy
-	var tenant *cirun.GatePolicy
-	for i := range ps {
-		switch ps[i].ScopeType {
-		case cirun.ScopeRepository:
-			return ps[i], cirun.ScopeRepository
-		case cirun.ScopeBusinessUnit:
-			units = append(units, ps[i])
-		case cirun.ScopeTenant:
-			tenant = &ps[i]
-		}
+// ResolveRepositoryPolicy returns the effective policy of a repository
+// asset with the source of every field, from the policies stored now (never
+// from anything the CI job sends).
+func (s *Service) ResolveRepositoryPolicy(ctx context.Context, tenantID, assetID shared.ID) (cirun.Resolution, error) {
+	ps, err := s.repo.GatePoliciesFor(ctx, tenantID, assetID)
+	if err != nil {
+		return cirun.Resolution{}, fmt.Errorf("load gate policies: %w", err)
 	}
-	switch {
-	case len(units) > 0:
-		return cirun.Strictest(units), cirun.ScopeBusinessUnit
-	case tenant != nil:
-		return *tenant, cirun.ScopeTenant
-	}
-	return cirun.DefaultGatePolicy(), cirun.ScopeDefault
+	return cirun.Resolve(ps, s.now().UTC()), nil
 }
 
 // Evaluate judges the run against the policy and stores the verdict.
 func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput) (*Verdict, error) {
 	if in.ScanFailures < 0 {
 		in.ScanFailures = 0
+	}
+	// A re-run of only the gate job cannot drop the failures of the scans
+	// it did not run again: they count until a later attempt reports.
+	if run.CarriedScanFailures > in.ScanFailures {
+		in.ScanFailures = run.CarriedScanFailures
 	}
 	// The first verdict is final: asking again returns it unchanged, so a job
 	// cannot turn a stored failure into a pass by evaluating again.
@@ -143,7 +137,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	// An approved rule covers findings that existed before it was approved
 	// (an exception a repository asked for), not only new ones.
 	s.applyActiveRules(ctx, run.TenantID, findings, run.RepositoryAssetID)
-	newSet, baselineBranch, known, err := s.newFindings(ctx, run, findings)
+	cmp, err := s.newFindings(ctx, run, findings, policy)
 	if err != nil {
 		return nil, err
 	}
@@ -163,9 +157,22 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, fmt.Errorf("load expected capabilities: %w", err)
 	}
+	// A run nothing was uploaded to cannot pass: there is nothing to judge.
+	noResults := run.ReportsCount == 0
+	// A capability that failed in an earlier attempt of this pipeline run
+	// keeps failing it until a report of that capability arrived, whatever
+	// the evaluating job says.
+	failedCaps := withCarriedCapabilities(cirun.FailedCapabilities(in.Capabilities), run.CarriedFailedCapabilities)
+	overCap, err := s.repo.RunFindingsOverCap(ctx, run.TenantID, run.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load run findings cap: %w", err)
+	}
 	gv := cirun.Evaluate(cirun.GateInput{
-		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: newSet,
-		BaselineBranch: baselineBranch, BaselineKnown: known, ScanFailures: in.ScanFailures,
+		NoResults: noResults,
+		Policy:    policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
+		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, BaselineEstablished: cmp.established, BaselineDueAt: cmp.dueAt, ScanFailures: in.ScanFailures,
+		FailedCapabilities:  failedCaps,
+		FindingsOverCap:     overCap,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
 		Override:            override, Now: now, FindingURL: s.findingURL,
@@ -178,7 +185,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now, run.FindingsCount); err != nil {
+	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now, run.FindingsCount, capabilityNames(failedCaps)); err != nil {
 		if errors.Is(err, cirun.ErrRunChanged) {
 			return nil, err
 		}
@@ -225,62 +232,204 @@ func gateFindingsPath(run *cirun.Run) string {
 	return p
 }
 
-// newFindings returns the fingerprints the run introduced, the branch it was
-// compared with and whether that branch had been scanned. A run on the
-// default branch introduced what it detected (or reopened) first; any other
-// run introduced what is not open on the default branch.
-func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []cirun.RunFinding) (map[string]bool, string, bool, error) {
-	set := map[string]bool{}
-	if run.IsDefaultBranch {
-		since := run.CreatedAt.Add(-time.Minute)
-		for _, f := range findings {
-			if (f.FirstDetectedAt != nil && !f.FirstDetectedAt.Before(since)) ||
-				(f.LastReopenedAt != nil && !f.LastReopenedAt.Before(since)) {
-				set[f.Fingerprint] = true
-			}
-		}
-		return set, run.Branch, true, nil
+// comparison is what a run's findings are compared with to tell new from
+// pre-existing ones.
+type comparison struct {
+	// newSet holds the new fingerprints; nil means every finding is new.
+	newSet map[string]bool
+	branch string
+	known  bool
+	// baselineAt is when the repository's gate baseline was recorded (nil:
+	// none).
+	baselineAt *time.Time
+	// established: this run recorded the repository's first baseline.
+	established bool
+	// dueAt ends the baseline's grace (nil: no end).
+	dueAt *time.Time
+}
+
+// newFindings tells which findings the run introduced.
+//
+// A default-branch run is judged against the repository's gate baseline
+// only: the findings open on the default branch when a person recorded it.
+// What earlier runs saw never counts, so running a failed default-branch run
+// again (or pushing again) cannot turn its findings into pre-existing ones.
+// With no baseline every finding is new (fail closed).
+//
+// A pull request run is compared with its target branch: a finding already
+// open there is not the change's doing. When the repository has a gate
+// baseline, a finding counts as pre-existing only if it is also in the
+// baseline, so a finding that reached the default branch after the baseline
+// (for example through a merge that ignored a failed gate) blocks pull
+// requests into the default branch too until it is fixed, accepted or
+// recorded in a new baseline. A pull request into another protected branch
+// (a release branch) is compared with that branch only.
+func (s *Service) newFindings(ctx context.Context, run *cirun.Run, findings []cirun.RunFinding, policy cirun.GatePolicy) (comparison, error) {
+	baseline, err := s.repo.GateBaseline(ctx, run.TenantID, run.RepositoryAssetID)
+	if err != nil {
+		return comparison{}, err
 	}
-	brID, base, ok := s.baselineBranch(ctx, run)
-	if !ok {
-		// The baseline branch was never scanned: no baseline, everything is
-		// new (fail closed).
-		return nil, base, false, nil
+	established := false
+	if baseline == nil && policy.BaselineOnFirstRun {
+		if baseline, err = s.firstRunBaseline(ctx, run); err != nil {
+			return comparison{}, err
+		}
+		established = baseline != nil
 	}
 	fps := make([]string, 0, len(findings))
 	for _, f := range findings {
 		fps = append(fps, f.Fingerprint)
 	}
-	open, err := s.baseline.FingerprintsOpenOnBranch(ctx, run.TenantID, brID, fps)
-	if err != nil {
-		return nil, base, false, fmt.Errorf("read baseline: %w", err)
-	}
-	onBase := make(map[string]bool, len(open))
-	for _, fp := range open {
-		onBase[fp] = true
-	}
-	for _, fp := range fps {
-		if !onBase[fp] {
-			set[fp] = true
+	var inBaseline map[string]bool
+	cmp := comparison{established: established}
+	if baseline != nil {
+		at := baseline.SetAt
+		cmp.baselineAt = &at
+		got, err := s.repo.GateBaselineFingerprints(ctx, run.TenantID, run.RepositoryAssetID, fps)
+		if err != nil {
+			return comparison{}, fmt.Errorf("read gate baseline: %w", err)
+		}
+		inBaseline = make(map[string]bool, len(got))
+		for _, fp := range got {
+			inBaseline[fp] = true
+		}
+		for _, f := range findings {
+			if !baseline.Covers(f) {
+				delete(inBaseline, f.Fingerprint)
+			}
+		}
+		// After its grace the baseline's debt blocks again.
+		if policy.BaselineGraceDays != nil {
+			due := baseline.SetAt.AddDate(0, 0, *policy.BaselineGraceDays)
+			cmp.dueAt = &due
+			if !s.now().Before(due) {
+				inBaseline = map[string]bool{}
+			}
 		}
 	}
-	return set, base, true, nil
+	if run.IsDefaultBranch {
+		cmp.branch = run.Branch
+		if baseline == nil {
+			return cmp, nil
+		}
+		cmp.known = true
+		cmp.newSet = map[string]bool{}
+		for _, fp := range fps {
+			if !inBaseline[fp] {
+				cmp.newSet[fp] = true
+			}
+		}
+		return cmp, nil
+	}
+	brID, base, ok := s.baselineBranch(ctx, run)
+	cmp.branch = base
+	if !ok {
+		// The baseline branch was never scanned: no baseline, everything is
+		// new (fail closed).
+		return cmp, nil
+	}
+	open, err := s.baseline.FingerprintsOpenOnBranch(ctx, run.TenantID, brID, fps)
+	if err != nil {
+		return comparison{}, fmt.Errorf("read baseline: %w", err)
+	}
+	onBase := make(map[string]bool, len(open))
+	// The baseline is of the default branch: it narrows a comparison with
+	// the default branch only, not with a release branch.
+	narrow := baseline != nil && base == run.DefaultBranch
+	for _, fp := range open {
+		onBase[fp] = !narrow || inBaseline[fp]
+	}
+	cmp.known = true
+	cmp.newSet = map[string]bool{}
+	for _, fp := range fps {
+		if !onBase[fp] {
+			cmp.newSet[fp] = true
+		}
+	}
+	return cmp, nil
 }
 
-// baselineBranch picks the branch a run is compared with: the pull
-// request's base branch when the repository has scanned it and it counts as
-// exposure (default, protected, main or release type), else the repository's
-// default branch. ok is false when that branch was never scanned. A base
-// branch the job reports can therefore only choose among branches whose
-// findings are real exposure; it never makes a feature branch the baseline.
+// withCarriedCapabilities adds to the capabilities the job reported failed
+// those carried from an earlier attempt that no report has cleared since.
+func withCarriedCapabilities(failed []cirun.CapabilityState, carried []string) []cirun.CapabilityState {
+	seen := make(map[string]bool, len(failed))
+	for _, c := range failed {
+		seen[c.Name] = true
+	}
+	for _, name := range carried {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		failed = append(failed, cirun.CapabilityState{Name: name, State: CapabilityCarried,
+			Reason: "failed in an earlier attempt of this pipeline run, and no report of it arrived since"})
+	}
+	return failed
+}
+
+// CapabilityCarried is the state of a capability carried from an earlier
+// attempt of the pipeline run.
+const CapabilityCarried = "failed_earlier"
+
+func capabilityNames(cs []cirun.CapabilityState) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, c.Name)
+	}
+	return out
+}
+
+// firstRunBaseline records the repository's gate baseline from its first
+// default-branch run: the findings open on the default branch now, this
+// run's included, stop blocking, and the verdict says the baseline was
+// established. Only once per repository (a baseline it has or had wins),
+// only for a run whose branch and commit the provider signed, never for a
+// fork. nil when no baseline was recorded.
+func (s *Service) firstRunBaseline(ctx context.Context, run *cirun.Run) (*cirun.GateBaseline, error) {
+	if !run.IsDefaultBranch || !run.CommitVerified || run.Fork {
+		return nil, nil //nolint:nilnil // no baseline recorded
+	}
+	b := &cirun.GateBaseline{TenantID: run.TenantID, RepositoryAssetID: run.RepositoryAssetID,
+		Source: cirun.BaselineSourceFirstRun, SetAt: s.now().UTC()}
+	if err := s.repo.SetGateBaseline(ctx, b); err != nil {
+		if errors.Is(err, cirun.ErrBaselineExists) {
+			return nil, nil //nolint:nilnil // the repository has or had one
+		}
+		return nil, fmt.Errorf("record first-run gate baseline: %w", err)
+	}
+	s.logAudit(ctx, run.TenantID, Actor{Email: "ci:" + string(run.Provider)},
+		auditapp.NewSuccessEvent(auditdom.ActionCIGateBaselineSet, auditdom.ResourceTypeCIGateBaseline, run.RepositoryAssetID.String()).
+			WithResourceName(run.Repository).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage(fmt.Sprintf("CI gate baseline established by the first default-branch run of %s: %d open findings on %s",
+				run.Repository, b.FindingsCount, nonEmpty(b.Branch, run.Branch))).
+			WithMetadata("source", b.Source).
+			WithMetadata("run_id", run.ID.String()).
+			WithMetadata("findings", b.FindingsCount))
+	aid := run.RepositoryAssetID
+	s.alertAdmins(ctx, run.TenantID, breakGlassAlert(AdminAlert{
+		Title: "CI gate baseline established: " + run.Repository,
+		Body: fmt.Sprintf("The first default-branch run of %s recorded its %d open findings as the CI gate baseline: they no longer fail default-branch runs.",
+			run.Repository, b.FindingsCount),
+		URL: RunPath(run.ID), Aggregate: "ci_gate_baseline", AggregateID: &aid,
+		Metadata: map[string]any{"action": "baseline_established", "repository": run.Repository, "findings": b.FindingsCount},
+	}))
+	return b, nil
+}
+
+// baselineBranch picks the branch a run is compared with: the pull or merge
+// request's verified base branch when the repository has scanned it and it
+// may serve as a baseline (default or protected), else the repository's
+// default branch. ok is false when that branch was never scanned. Nothing the
+// job reports chooses the baseline (cirun.Hints.BaseRef).
 func (s *Service) baselineBranch(ctx context.Context, run *cirun.Run) (shared.ID, string, bool) {
 	if s.branches == nil || s.baseline == nil {
 		return shared.ID{}, run.DefaultBranch, false
 	}
-	if run.BaseRef != "" && run.BaseRef != run.DefaultBranch {
-		if br, err := s.branches.GetByName(ctx, run.RepositoryAssetID, run.BaseRef); err == nil && br != nil {
+	if base := s.verifiedBaseRef(ctx, run); base != "" && base != run.DefaultBranch {
+		if br, err := s.branches.GetByName(ctx, run.RepositoryAssetID, base); err == nil && br != nil {
 			if counts, err := s.baseline.BranchCountsAsExposure(ctx, run.TenantID, br.ID()); err == nil && counts {
-				return br.ID(), run.BaseRef, true
+				return br.ID(), base, true
 			}
 		}
 	}
@@ -292,6 +441,49 @@ func (s *Service) baselineBranch(ctx context.Context, run *cirun.Run) (shared.ID
 		return shared.ID{}, run.DefaultBranch, false
 	}
 	return br.ID(), run.DefaultBranch, true
+}
+
+// verifiedBaseRef is a pull or merge request run's base branch from a
+// verified source, "" when there is none:
+//   - GitHub: base_ref, signed in the pull request's token (the only claim
+//     that fills Run.BaseRef: the job's hint is ignored);
+//   - GitLab: the merge request's target branch, read from GitLab through the
+//     organization's connection (the token signs none);
+//   - other providers: none, so the default branch is the baseline.
+func (s *Service) verifiedBaseRef(ctx context.Context, run *cirun.Run) string {
+	if run.PullRequest == "" || run.Fork {
+		return ""
+	}
+	switch run.Provider {
+	case cirun.ProviderGitHub:
+		return run.BaseRef
+	case cirun.ProviderGitLab:
+		return s.gitlabTargetBranch(ctx, run)
+	}
+	return ""
+}
+
+// gitlabTargetBranch reads a GitLab merge request run's target branch from
+// GitLab. Any failure gives "" (compared with the default branch).
+func (s *Service) gitlabTargetBranch(ctx context.Context, run *cirun.Run) string {
+	if s.gitlab == nil {
+		return ""
+	}
+	host, project, found := strings.Cut(strings.ToLower(run.Repository), "/")
+	iid, err := strconv.Atoi(run.PullRequest)
+	if !found || host == "" || project == "" || err != nil || iid <= 0 {
+		return ""
+	}
+	api, _, err := s.gitlab.GitLabClientFor(ctx, run.TenantID, host, project)
+	if err != nil {
+		return ""
+	}
+	mr, err := api.MergeRequest(ctx, project, iid)
+	if err != nil || mr == nil || (mr.IID != 0 && mr.IID != iid) {
+		s.log.Debug("ci gate: merge request target not read", "run_id", run.ID.String())
+		return ""
+	}
+	return cirun.CleanBranchName(mr.TargetBranch)
 }
 
 func (s *Service) webURL(path string) string {

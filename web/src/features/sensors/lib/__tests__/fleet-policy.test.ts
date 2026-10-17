@@ -4,7 +4,9 @@ import type { Sensor } from '@/lib/api/sensor-types'
 
 import { EMPTY_FLEET_FILTERS, activeFilterCount, filterSensors, sensorPolicyOf } from '../fleet'
 
-const channel = { latest: '', min: '' }
+const channel = {
+  products: [{ id: 'openctemio-sensor', latest_version: '', min_version: '', image: '' }],
+}
 
 function sensor(id: string, state?: 'enforced' | 'absent' | 'paused'): Sensor {
   return {

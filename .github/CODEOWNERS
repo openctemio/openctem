@@ -10,6 +10,8 @@
 
 # Next.js web app
 /web/                               @0xmanhnv
+# The platform console app (its own site and image; RFC-022 revision 21)
+/web/console/                       @0xmanhnv
 
 # The API contract: a spec change must regenerate the web wire types in the same PR.
 /api/api/openapi/                   @0xmanhnv
@@ -28,6 +30,9 @@
 /api/internal/infra/http/middleware/** @0xmanhnv
 /api/internal/infra/http/routes/auth.go @0xmanhnv
 /api/internal/infra/http/routes/admin.go @0xmanhnv
+/api/internal/infra/http/internalapi/** @0xmanhnv
+/api/cmd/server/internal_api.go @0xmanhnv
+/api/internal/app/entitlement/** @0xmanhnv
 /api/internal/infra/http/routes/misc.go @0xmanhnv
 /api/internal/infra/http/routes/scim.go @0xmanhnv
 /api/internal/infra/http/routes/mcp_oauth.go @0xmanhnv
@@ -111,6 +116,10 @@
 /web/src/lib/api/client-ip-headers.ts @0xmanhnv
 /web/next.config.ts @0xmanhnv
 /web/server-with-ws.mjs @0xmanhnv
+# platform-console
+/web/console/** @0xmanhnv
+/api/internal/infra/http/handler/admin_*.go @0xmanhnv
+/api/internal/app/adminconsole/** @0xmanhnv
 # upload-download
 /api/internal/infra/storage/** @0xmanhnv
 /api/internal/infra/http/handler/attachment_handler.go @0xmanhnv
@@ -132,4 +141,65 @@
 /**/Dockerfile* @0xmanhnv
 /api/deploy/** @0xmanhnv
 /deploy/** @0xmanhnv
+# finding-lifecycle
+/api/pkg/domain/vulnerability/finding.go @0xmanhnv
+/api/pkg/domain/vulnerability/status_*.go @0xmanhnv
+/api/pkg/domain/vulnerability/approval*.go @0xmanhnv
+/api/pkg/domain/vulnerability/duplicate.go @0xmanhnv
+/api/pkg/domain/vulnerability/transition_evidence.go @0xmanhnv
+/api/pkg/domain/vulnerability/finding_activity.go @0xmanhnv
+/api/pkg/domain/vulnerability/finding_interop.go @0xmanhnv
+/api/pkg/domain/vulnerability/finding_vex_document.go @0xmanhnv
+/api/pkg/domain/vulnerability/taint_source.go @0xmanhnv
+/api/internal/app/finding/vulnerability_service.go @0xmanhnv
+/api/internal/app/finding/actions.go @0xmanhnv
+/api/internal/app/finding/duplicate.go @0xmanhnv
+/api/internal/app/finding/bulk_action_guard.go @0xmanhnv
+/api/internal/app/finding/lifecycle_scheduler.go @0xmanhnv
+/api/internal/app/vex/** @0xmanhnv
+/api/internal/app/sla/** @0xmanhnv
+/api/internal/app/ioc/reopen_adapter.go @0xmanhnv
+/api/internal/app/validation/proof_of_fix.go @0xmanhnv
+/api/internal/app/automation/action_handlers.go @0xmanhnv
+/api/internal/app/remediation/group_service.go @0xmanhnv
+/api/internal/app/exposure/remediation_campaign.go @0xmanhnv
+/api/internal/app/exposure/disposition.go @0xmanhnv
+/api/internal/app/ingest/interop.go @0xmanhnv
+/api/internal/app/ingest/source_resolve.go @0xmanhnv
+/api/internal/app/ingest/processor_findings.go @0xmanhnv
+/api/internal/app/ingest/processor_suppression.go @0xmanhnv
+/api/internal/app/ingest/coverage_autoresolve.go @0xmanhnv
+/api/internal/infra/controller/approval_expiration.go @0xmanhnv
+/api/internal/infra/postgres/finding_repository.go @0xmanhnv
+/api/internal/infra/postgres/finding_status_sql.go @0xmanhnv
+/api/internal/infra/postgres/finding_transition.go @0xmanhnv
+/api/internal/infra/postgres/finding_approval_repository.go @0xmanhnv
+/api/internal/infra/postgres/finding_acceptance_expiry.go @0xmanhnv
+/api/internal/infra/postgres/finding_decision_review.go @0xmanhnv
+/api/internal/infra/postgres/finding_taint_source.go @0xmanhnv
+/api/internal/infra/postgres/finding_interop.go @0xmanhnv
+/api/internal/infra/postgres/finding_vex_document.go @0xmanhnv
+/api/internal/infra/postgres/vex_statement_repository.go @0xmanhnv
+/api/internal/infra/postgres/finding_duplicate.go @0xmanhnv
+/api/internal/infra/postgres/finding_pentest_duplicate.go @0xmanhnv
+/api/internal/infra/postgres/finding_human_resolved.go @0xmanhnv
+/api/internal/infra/postgres/finding_*coverage_autoresolve.go @0xmanhnv
+/api/internal/infra/postgres/finding_correlation_repository.go @0xmanhnv
+/api/internal/infra/postgres/finding_sla_restart_repository.go @0xmanhnv
+/api/internal/infra/postgres/sla_repository.go @0xmanhnv
+/api/internal/infra/postgres/suppression_*.go @0xmanhnv
+/api/pkg/domain/suppression/** @0xmanhnv
+/api/internal/infra/http/handler/suppression_handler.go @0xmanhnv
+/api/internal/infra/postgres/exposure_disposition_repository.go @0xmanhnv
+/api/internal/infra/postgres/asset_merge_findings.go @0xmanhnv
+/api/internal/infra/http/handler/vulnerability_handler.go @0xmanhnv
+/api/internal/infra/http/handler/finding_actions_handler.go @0xmanhnv
+/api/internal/infra/http/handler/vex_statement_handler.go @0xmanhnv
+/api/internal/infra/http/handler/remediation_group_handler.go @0xmanhnv
+/api/internal/infra/http/handler/remediation_campaign_handler.go @0xmanhnv
+/api/migrations/*finding* @0xmanhnv
+/api/migrations/*approval* @0xmanhnv
+/api/migrations/*vex* @0xmanhnv
+/api/migrations/*sla* @0xmanhnv
+/api/migrations/*suppression* @0xmanhnv
 # END security-paths

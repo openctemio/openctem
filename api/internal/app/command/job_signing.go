@@ -68,6 +68,17 @@ func DeliveryPayload(payload json.RawMessage) json.RawMessage {
 	return b
 }
 
+// InstanceZoneSource returns the instance scan zone a shared job's signed
+// statement names (nil: the job has none).
+type InstanceZoneSource interface {
+	StatementZoneFor(ctx context.Context, tenantID, commandID shared.ID) (*jobsign.StatementZone, error)
+}
+
+// SetInstanceZoneSource wires the instance scan zones of shared jobs.
+// Without it a shared job carries no zone, and the signer refuses its
+// internal targets.
+func (s *Service) SetInstanceZoneSource(z InstanceZoneSource) { s.instanceZones = z }
+
 // signJob returns a copy of c with its delivery payload and the signer's
 // envelope for sensorID, or ErrJobNotSigned.
 func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Command, limits bool) (*commanddom.Command, error) {
@@ -114,6 +125,24 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 		LeaseEpoch:    c.LeaseEpoch,
 		IssuedAt:      now,
 		ExpiresAt:     expires,
+	}
+	// A job queued for shared sensors is signed for a shared sensor: the
+	// signer applies the shared-job rules, and only a shared sensor runs it.
+	if c.IsPlatformJob {
+		st.SensorScope = jobsign.SensorScopeInstance
+		// A shared job inside an instance scan zone carries the zone's id
+		// and ranges in the signed statement, never in the payload: the
+		// signer checks them against its own zone ledger and the sensor
+		// reaches private addresses only inside them.
+		if s.instanceZones != nil {
+			zone, err := s.instanceZones.StatementZoneFor(ctx, c.TenantID, c.ID)
+			if err != nil {
+				s.logger.Warn("instance scan zone not read; shared job not handed to the sensor",
+					"command_id", c.ID.String(), "sensor_id", sensorID, "error", err)
+				return nil, fmt.Errorf("%w: instance scan zone: %w", ErrJobNotSigned, err)
+			}
+			st.Zone = zone
+		}
 	}
 	env, err := s.jobs.SignJob(ctx, st)
 	if err != nil {

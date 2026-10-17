@@ -38,10 +38,24 @@ scanner findings that name a package) goes through one writer:
 5. replace the edges of the reported locations, then recompute `depth`
    breadth-first from the direct links (cycles are tolerated).
 
-An SBOM or a sensor or CI report is a snapshot of the locations it names:
-links at those locations that it does not list are removed (with their
-edges). A scanner finding that names a package only resolves the version for
-the finding's `component_id`.
+Each link belongs to the channel that listed it (`channel`), and a report
+prunes only its own channel's links: another producer's inventory of the
+same file is never its to remove.
+
+| Channel | Lists | Writes as |
+|---|---|---|
+| `sbom_upload`, `sensor`, `integration` | every package of the locations it names | full snapshot: takes the links it names over, removes its channel's links there that it does not list (with their edges) |
+| `ci` | the vulnerable packages and the packages on their paths (trimmed by the CI runner) | partial snapshot: refreshes the links it names without taking them over, removes only CI's own links there that it no longer lists |
+| `finding_import` | the packages its findings name | add only |
+
+Links stored before channels were recorded (copied from the legacy component
+table, which kept no producer, so the channel cannot be backfilled) are
+pruned only by a full inventory, never by a partial list.
+
+So a CI run never deletes the rest of a lock file that an SBOM upload or a
+code-host connector stored, and an SBOM that later confirms a package CI
+listed first takes it over. A scanner finding that names a package only
+resolves the version for the finding's `component_id`.
 
 The repository counters (`asset_repositories.component_count`,
 `vulnerable_component_count`) are recomputed by the writer once per snapshot.
@@ -87,13 +101,15 @@ compares versions), on every asset or one asset, with an optional expiry.
   statements cover a finding the most specific governs: one asset over every
   asset, listed versions over a range over every version, then the most
   recently edited.
-- **Effect.** `not_affected` closes an open finding (new, confirmed, in
-  progress, fix applied) as `false_positive` with resolution method
-  `vex_not_affected`; `fixed` resolves it with `vex_fixed`; `affected` and
+- **Effect.** `not_affected` never sets `false_positive`: on an open finding
+  (new, confirmed, in progress, fix applied) it opens a pending false-positive
+  request by the actor `vex` (it needs one more sign-off than the tier, so the
+  person who created the statement cannot complete it alone) and the status
+  stays; `fixed` resolves it with `vex_fixed`; `affected` and
   `under_investigation` only annotate. The finding keeps the statement as
   `vex_statement_id` and its `vex_*` columns show the reason. A finding a
   person closed, and a finding from a human source (pentest, manual, bug
-  bounty, red team), is annotated, never closed.
+  bounty, red team), is annotated, never closed or requested.
 - **When it applies.** On create, edit, delete and expiry (in batches of
   1 000 findings per transaction) and to every finding an ingest writes
   later (sticky). A scan that reports a finding again does not reopen a

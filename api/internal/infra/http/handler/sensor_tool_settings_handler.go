@@ -1,9 +1,11 @@
 package handler
 
-// Per-sensor tool settings (docs/architecture/sensors.md, "Tool settings").
-// Reads need sensors:read; saving and resetting need sensors:write (owners
-// and administrators). Every route ends with OwnSensor: another
-// organization's sensor and a platform sensor answer 404.
+// Tool settings (docs/architecture/sensors.md, "Tool settings"): the
+// organization's defaults per tool and each sensor's overrides. Reads need
+// sensors:read; saving and resetting need sensors:write (owners and
+// administrators), plus step-up when an Impact option changes. Every route
+// on one sensor ends with OwnSensor: another organization's sensor and a
+// platform sensor answer 404.
 
 import (
 	"bytes"
@@ -16,10 +18,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openctemio/ctis/settings"
 
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ToolSettingsProblem is one invalid value, by JSON pointer into the values.
@@ -41,8 +45,14 @@ type SensorToolSettingsResponse struct {
 	Stored       bool                  `json:"stored"`
 	StoredDigest string                `json:"stored_digest,omitempty"`
 	Problems     []ToolSettingsProblem `json:"problems"`
-	UpdatedAt    *string               `json:"updated_at,omitempty"`
-	UpdatedBy    *string               `json:"updated_by,omitempty"`
+	// OrganizationValues are the organization's defaults for the tool: the
+	// sensor runs with them for every key it does not set itself.
+	OrganizationValues map[string]any `json:"organization_values"`
+	// OrganizationProblems are why the organization's defaults do not
+	// validate against this sensor's schema (its jobs of the tool fail).
+	OrganizationProblems []ToolSettingsProblem `json:"organization_problems"`
+	UpdatedAt            *string               `json:"updated_at,omitempty"`
+	UpdatedBy            *string               `json:"updated_by,omitempty"`
 }
 
 // SensorToolSettingsListResponse is every tool of the sensor's current
@@ -60,12 +70,55 @@ type UpdateSensorToolSettingsRequest struct {
 type EffectiveToolSettingResponse struct {
 	Key string `json:"key"`
 	// Value is null when the key has neither a default nor a stored value.
-	Value  any    `json:"value"`
-	Source string `json:"source" enums:"default,sensor,scan,"`
+	Value any `json:"value"`
+	// Source is the layer in force: the tool's default, the organization
+	// ("tenant"), the sensor or the scan.
+	Source string `json:"source" enums:"default,tenant,sensor,scan,"`
 	Flag   string `json:"flag,omitempty"`
 	Common string `json:"common,omitempty"`
 	Scope  string `json:"scope" enums:"sensor,scan"`
 	Tier   string `json:"tier,omitempty"`
+	// Chain is every layer that sets the key, lowest first; the last one is
+	// in force. An organization value the sensor overrides is listed too.
+	Chain []ToolSettingLayerValue `json:"chain"`
+}
+
+// ToolSettingLayerValue is the value one layer sets for a key.
+type ToolSettingLayerValue struct {
+	Source string `json:"source" enums:"default,tenant,sensor,scan"`
+	Value  any    `json:"value"`
+}
+
+// ToolDefaultsProblemResponse is why the organization's defaults do not
+// validate against one sensor's schema of the tool.
+type ToolDefaultsProblemResponse struct {
+	SensorID   string                `json:"sensor_id"`
+	SensorName string                `json:"sensor_name"`
+	Problems   []ToolSettingsProblem `json:"problems"`
+}
+
+// ToolDefaultsResponse is one tool's organization defaults: the reference
+// settings schema (from the most recently reported manifest that declares
+// settings for the tool; null for stored defaults of a tool no sensor
+// reports any more), the stored values, how many of the organization's own
+// sensors declare settings for the tool, and the sensors whose schema
+// refuses the values.
+type ToolDefaultsResponse struct {
+	Tool         string                        `json:"tool"`
+	SchemaDigest string                        `json:"schema_digest"`
+	Schema       json.RawMessage               `json:"schema" swaggertype:"object"`
+	Values       map[string]any                `json:"values"`
+	Stored       bool                          `json:"stored"`
+	Sensors      int                           `json:"sensors"`
+	Problems     []ToolDefaultsProblemResponse `json:"problems"`
+	UpdatedAt    *string                       `json:"updated_at,omitempty"`
+	UpdatedBy    *string                       `json:"updated_by,omitempty"`
+}
+
+// ToolDefaultsListResponse is every tool the organization's own sensors
+// declare settings for, with the organization's defaults.
+type ToolDefaultsListResponse struct {
+	Items []ToolDefaultsResponse `json:"items"`
 }
 
 // PreviewSensorToolSettingsRequest is a scan's (or a workflow step's) tool
@@ -100,9 +153,47 @@ func toSensorToolSettingsResponse(v sensorapp.ToolSettingsView) SensorToolSettin
 	out := SensorToolSettingsResponse{
 		Tool: v.Tool, SchemaDigest: v.SchemaDigest, Schema: v.Schema, Values: v.Values,
 		Stored: v.Stored, StoredDigest: v.StoredDigest, Problems: sensorToolSettingsProblems(v.Problems),
+		OrganizationValues: v.Organization, OrganizationProblems: sensorToolSettingsProblems(v.OrganizationProblems),
 	}
 	if out.Values == nil {
 		out.Values = map[string]any{}
+	}
+	if out.OrganizationValues == nil {
+		out.OrganizationValues = map[string]any{}
+	}
+	if v.UpdatedAt != nil {
+		at := v.UpdatedAt.UTC().Format(time.RFC3339)
+		out.UpdatedAt = &at
+	}
+	if v.UpdatedBy != nil {
+		by := v.UpdatedBy.String()
+		out.UpdatedBy = &by
+	}
+	return out
+}
+
+func toEffectiveToolSettingResponse(e sensor.EffectiveToolSetting) EffectiveToolSettingResponse {
+	out := EffectiveToolSettingResponse{Key: e.Key, Value: e.Value, Source: string(e.Source),
+		Flag: e.Flag, Common: e.Common, Scope: string(e.Scope), Tier: e.Tier,
+		Chain: make([]ToolSettingLayerValue, 0, len(e.Chain))}
+	for _, c := range e.Chain {
+		out.Chain = append(out.Chain, ToolSettingLayerValue{Source: string(c.Source), Value: c.Value})
+	}
+	return out
+}
+
+func toToolDefaultsResponse(v sensorapp.ToolDefaultsView) ToolDefaultsResponse {
+	out := ToolDefaultsResponse{Tool: v.Tool, SchemaDigest: v.SchemaDigest, Schema: v.Schema, Values: v.Values,
+		Stored: v.Stored, Sensors: v.Sensors, Problems: make([]ToolDefaultsProblemResponse, 0, len(v.Problems))}
+	if len(out.Schema) == 0 {
+		out.Schema = json.RawMessage("null")
+	}
+	if out.Values == nil {
+		out.Values = map[string]any{}
+	}
+	for _, p := range v.Problems {
+		out.Problems = append(out.Problems, ToolDefaultsProblemResponse{SensorID: p.SensorID.String(),
+			SensorName: p.SensorName, Problems: sensorToolSettingsProblems(p.Errors)})
 	}
 	if v.UpdatedAt != nil {
 		at := v.UpdatedAt.UTC().Format(time.RFC3339)
@@ -127,6 +218,9 @@ func sensorToolSettingsProblems(errs settings.Errors) []ToolSettingsProblem {
 // invalid values as 422 with every problem by path.
 func (h *SensorHandler) handleToolSettingsError(w http.ResponseWriter, err error) {
 	var errs settings.Errors
+	if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+		return
+	}
 	switch {
 	case errors.As(err, &errs):
 		apierror.ValidationFailed("The settings are not valid for this tool", sensorToolSettingsProblems(errs)).WriteJSON(w)
@@ -165,7 +259,7 @@ func (h *SensorHandler) ListToolSettings(w http.ResponseWriter, r *http.Request)
 
 // UpdateToolSettings handles PUT /api/v1/sensors/{id}/tool-settings/{tool}
 // @Summary      Save a tool's settings on a sensor
-// @Description  Replaces the tool's settings on the sensor. The values are validated with the tool's settings schema from the sensor's current manifest; a non-default value of a dangerous (T2) option is refused (the organization's enablement of dangerous options is not available yet). The change is audited; values of sensitive keys never appear in the audit log. The settings reach the sensor inside each signed scan job of the tool.
+// @Description  Replaces the tool's settings on the sensor: its overrides of the organization's defaults, in either direction. The values are validated with the tool's settings schema from the sensor's current manifest; a non-default value of a dangerous (T2) option is refused (the organization's enablement of dangerous options is not available yet). Setting an Impact (T1) option to a new value needs a recent re-authentication (403 STEP_UP_REQUIRED). The change is audited; values of sensitive keys never appear in the audit log. The settings reach the sensor inside each signed scan job of the tool.
 // @Tags         Sensors
 // @Accept       json
 // @Produce      json
@@ -233,7 +327,7 @@ func (h *SensorHandler) ResetToolSettings(w http.ResponseWriter, r *http.Request
 
 // EffectiveToolSettings handles GET /api/v1/sensors/{id}/tool-settings/{tool}/effective
 // @Summary      Effective tool settings of a sensor
-// @Description  Every key of the tool's settings schema with the value a scan job of this sensor runs with before the scan's own options, where it comes from (default or sensor), the tool's native flag, the common option it is, its scope and its safety tier. 422 when the stored values no longer validate.
+// @Description  Every key of the tool's settings schema with the value a scan job of this sensor runs with before the scan's own options, where it comes from (default, tenant for the organization's defaults, or sensor), the chain of every layer that sets it, the tool's native flag, the common option it is, its scope and its safety tier. 422 when the sensor's values or the organization's defaults no longer validate against this sensor's schema.
 // @Tags         Sensors
 // @Produce      json
 // @Param        id    path      string  true  "Sensor ID"
@@ -253,8 +347,7 @@ func (h *SensorHandler) EffectiveToolSettings(w http.ResponseWriter, r *http.Req
 	out := SensorEffectiveToolSettingsResponse{Tool: view.Tool, SchemaDigest: view.SchemaDigest,
 		Items: make([]EffectiveToolSettingResponse, 0, len(eff))}
 	for _, e := range eff {
-		out.Items = append(out.Items, EffectiveToolSettingResponse{Key: e.Key, Value: e.Value, Source: string(e.Source),
-			Flag: e.Flag, Common: e.Common, Scope: string(e.Scope), Tier: e.Tier})
+		out.Items = append(out.Items, toEffectiveToolSettingResponse(e))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -307,9 +400,119 @@ func (h *SensorHandler) PreviewToolSettings(w http.ResponseWriter, r *http.Reque
 		out.Ignored = []string{}
 	}
 	for _, e := range p.Effective {
-		out.Items = append(out.Items, EffectiveToolSettingResponse{Key: e.Key, Value: e.Value, Source: string(e.Source),
-			Flag: e.Flag, Common: e.Common, Scope: string(e.Scope), Tier: e.Tier})
+		out.Items = append(out.Items, toEffectiveToolSettingResponse(e))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// ListToolDefaults handles GET /api/v1/sensors/tool-defaults
+// @Summary      Organization tool defaults
+// @Description  Every tool that a current manifest of the organization's own sensors declares settings for: the reference schema (the most recently reported one), the organization's defaults, how many sensors declare settings for the tool, and the sensors whose schema refuses the defaults. Stored defaults of a tool no sensor reports any more come last, with a null schema. Shared platform sensors are never counted and never receive the defaults.
+// @Tags         Sensors
+// @Produce      json
+// @Success      200  {object}  ToolDefaultsListResponse
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /sensors/tool-defaults [get]
+func (h *SensorHandler) ListToolDefaults(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tenantFromContext(w, r)
+	if !ok {
+		return
+	}
+	views, err := h.service.ListToolDefaults(r.Context(), tid)
+	if err != nil {
+		h.handleToolSettingsError(w, err)
+		return
+	}
+	out := ToolDefaultsListResponse{Items: make([]ToolDefaultsResponse, 0, len(views))}
+	for _, v := range views {
+		out.Items = append(out.Items, toToolDefaultsResponse(v))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// UpdateToolDefaults handles PUT /api/v1/sensors/tool-defaults/{tool}
+// @Summary      Save a tool's organization defaults
+// @Description  Replaces the organization's defaults for the tool: every one of its own sensors runs the tool with them unless the sensor overrides a key. The values must validate against every settings schema the organization's sensors report for the tool (422 by path, each message naming the sensor that refuses the value); a non-default dangerous (T2) value is refused. Setting an Impact (T1) option to a new value needs a recent re-authentication (403 STEP_UP_REQUIRED). Audited (high severity for an Impact change); values of sensitive keys never appear in the audit log.
+// @Tags         Sensors
+// @Accept       json
+// @Produce      json
+// @Param        tool  path      string                           true  "Tool name"
+// @Param        body  body      UpdateSensorToolSettingsRequest  true  "Values"
+// @Success      200   {object}  ToolDefaultsResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      403   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Failure      422   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /sensors/tool-defaults/{tool} [put]
+func (h *SensorHandler) UpdateToolDefaults(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tenantFromContext(w, r)
+	if !ok {
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, sensor.MaxToolSettingsBytes+1024))
+	if err != nil {
+		apierror.BadRequest("Request body too large").WriteJSON(w)
+		return
+	}
+	var req struct {
+		Values json.RawMessage `json:"values"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	values, err := sensor.DecodeToolSettingsValues(req.Values)
+	if err != nil {
+		h.handleToolSettingsError(w, err)
+		return
+	}
+	v, err := h.service.UpdateToolDefaults(r.Context(), sensorapp.UpdateToolDefaultsInput{
+		TenantID: tid, Tool: chi.URLParam(r, "tool"), Values: values, AuditContext: h.buildAuditContext(r),
+	})
+	if err != nil {
+		h.handleToolSettingsError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toToolDefaultsResponse(*v))
+}
+
+// ResetToolDefaults handles DELETE /api/v1/sensors/tool-defaults/{tool}
+// @Summary      Reset a tool's organization defaults
+// @Description  Removes the organization's defaults for the tool: every sensor runs it with the tool's defaults again, except the keys it overrides. Audited. Works for a tool no sensor reports any more.
+// @Tags         Sensors
+// @Param        tool  path  string  true  "Tool name"
+// @Success      204   "No Content"
+// @Failure      404   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /sensors/tool-defaults/{tool} [delete]
+func (h *SensorHandler) ResetToolDefaults(w http.ResponseWriter, r *http.Request) {
+	tid, ok := h.tenantFromContext(w, r)
+	if !ok {
+		return
+	}
+	if err := h.service.ResetToolDefaults(r.Context(), tid, chi.URLParam(r, "tool"), h.buildAuditContext(r)); err != nil {
+		h.handleToolSettingsError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// tenantFromContext is the caller's organization from the authenticated
+// context (never the request).
+func (h *SensorHandler) tenantFromContext(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
+	tid, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("Tenant context required").WriteJSON(w)
+		return shared.ID{}, false
+	}
+	return tid, true
 }

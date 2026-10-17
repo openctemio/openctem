@@ -12,8 +12,10 @@ func testPolicy() HealthPolicy {
 		OnlineWindow:     90 * time.Second,
 		OfflineAfter:     5 * time.Minute,
 		KeyExpiryWarning: 7 * 24 * time.Hour,
-		LatestVersion:    "v0.4.2",
-		MinVersion:       "v0.4.0",
+		Products: map[string]ReleaseLine{
+			DefaultProduct:                 {Latest: "v0.4.2", Min: "v0.4.0"},
+			"openctemio-connector-tenable": {Latest: "v0.2.0", Min: "v0.1.0"},
+		},
 	}.Normalized()
 }
 
@@ -232,6 +234,62 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 		}
 	})
 
+	// Each product is judged against its own release line; a sensor that
+	// reports no product is the scanning sensor.
+	t.Run("a product's own release line", func(t *testing.T) {
+		for _, c := range []struct {
+			name, product, version string
+			want                   VersionStatus
+			degraded               bool
+		}{
+			{"no product reported: the scanning sensor", "", "v0.4.2", VersionLatest, false},
+			{"scanning sensor below its minimum", "openctemio-sensor", "v0.3.9", VersionUnsupported, true},
+			// v0.1.5 is far below the scanning sensor's minimum (v0.4.0),
+			// but the connector's own line is v0.1.0..v0.2.0.
+			{"connector on its own line", "openctemio-connector-tenable", "v0.1.5", VersionUpdateAvailable, false},
+			{"connector at its latest", "openctemio-connector-tenable", "v0.2.0", VersionLatest, false},
+			{"connector below its minimum", "openctemio-connector-tenable", "v0.0.9", VersionUnsupported, true},
+			// A custom product has no line: no outdated or unsupported
+			// verdict, whatever its version.
+			{"custom product, old version", "acme-custom-sensor", "v0.0.1", VersionUnknown, false},
+			{"custom product, new version", "acme-custom-sensor", "v9.0.0", VersionUnknown, false},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				s := daemon(ago(5 * time.Second))
+				s.Build.Product, s.Version = c.product, c.version
+				a := s.AssessHealth(testNow, p)
+				if a.VersionStatus != c.want || hasCode(a.Reasons, ReasonVersionUnsupported) != c.degraded ||
+					(a.State == StateDegraded) != c.degraded {
+					t.Errorf("version=%q state=%q reasons=%v", a.VersionStatus, a.State, codes(a.Reasons))
+				}
+				wantProduct := c.product
+				if wantProduct == "" {
+					wantProduct = DefaultProduct
+				}
+				if a.Product != wantProduct || a.KnownProduct != (c.product != "acme-custom-sensor") {
+					t.Errorf("product=%q known=%v", a.Product, a.KnownProduct)
+				}
+			})
+		}
+	})
+
+	t.Run("an SDK release with an advisory degrades with a warning", func(t *testing.T) {
+		ap := p
+		ap.SDKLatestVersion, ap.SDKAdvisories = "v0.9.0", []string{"v0.8.1"}
+		s := daemon(ago(5 * time.Second))
+		s.Build.SDKName, s.Build.SDKVersion = "openctem-sdk-go", "v0.8.1"
+		a := s.AssessHealth(testNow, ap)
+		if a.SDKStatus != SDKAdvisory || !hasCode(a.Reasons, ReasonSDKAdvisory) || a.State != StateDegraded {
+			t.Errorf("sdk=%q state=%q reasons=%v", a.SDKStatus, a.State, codes(a.Reasons))
+		}
+		// An older SDK without an advisory is informational only.
+		s.Build.SDKVersion = "v0.5.0"
+		a = s.AssessHealth(testNow, ap)
+		if a.SDKStatus != SDKOutdated || len(a.Reasons) != 0 || a.State != StateOnline {
+			t.Errorf("sdk=%q state=%q reasons=%v", a.SDKStatus, a.State, codes(a.Reasons))
+		}
+	})
+
 	t.Run("a scanning daemon without tools", func(t *testing.T) {
 		s := daemon(ago(5 * time.Second))
 		s.Reported = CapabilityReport{}
@@ -348,9 +406,15 @@ func TestHealthPolicy_Normalized(t *testing.T) {
 		t.Errorf("online window = %s, want clamped to 1m", p.OnlineWindow)
 	}
 	// Versions are kept in normalized form; garbage is dropped.
-	p = HealthPolicy{LatestVersion: "0.4.2", MinVersion: "not-a-version"}.Normalized()
-	if p.LatestVersion != "v0.4.2" || p.MinVersion != "" {
-		t.Errorf("versions = %q / %q", p.LatestVersion, p.MinVersion)
+	p = HealthPolicy{
+		Products:      map[string]ReleaseLine{"x": {Latest: "0.4.2", Min: "not-a-version"}},
+		SDKAdvisories: []string{"0.1.0", "junk"},
+	}.Normalized()
+	if l := p.Products["x"]; l.Latest != "v0.4.2" || l.Min != "" {
+		t.Errorf("line = %+v", l)
+	}
+	if len(p.SDKAdvisories) != 1 || p.SDKAdvisories[0] != "v0.1.0" {
+		t.Errorf("advisories = %v", p.SDKAdvisories)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -41,7 +42,13 @@ var (
 	// sign-up policy does not admit (signup.Admit). The caller has written
 	// nothing; the answer is the same whatever the reason.
 	ErrSignupNotAvailable = errors.New("sign-up is not available")
-	// ErrTenantCreationDisabled: TENANT_CREATION_MODE=admin_only, so only the
+	// ErrSignupSSORequired: the address is on a domain whose organization
+	// requires its SSO; nothing was written and the person signs in there.
+	ErrSignupSSORequired = errors.New("sign-up for this address goes through the organization's single sign-on")
+	// ErrTeamURLNotAvailable: the organization URL (slug) cannot be used,
+	// whether another organization has it or it is reserved.
+	ErrTeamURLNotAvailable = fmt.Errorf("%w: this team URL is not available; choose another", shared.ErrValidation)
+	// ErrTenantCreationDisabled: the admin_only sign-up policy is in force, so only the
 	// platform administrator creates organizations (RFC-022).
 	ErrTenantCreationDisabled   = errors.New("organization creation is reserved for the application administrator")
 	ErrEmailAlreadyExists       = errors.New("email already exists")
@@ -91,13 +98,17 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
-	// freePlan assigns the Free plan to self-service organizations. Nil: no
-	// plans (organizations unlimited).
-	freePlan FreePlan
-
+	// selfServiceLimits gives a self-service organization the instance's
+	// self-service default limits (none unless an operator set some).
+	selfServiceLimits SelfServiceLimits
+	// onSignIn runs after a sign-in created a session (signin_hook.go).
+	onSignIn SignInHook
 	// signupPolicy decides who may create an organization (the console
-	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
+	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
+	// signupDomains answers the sign-up policy of an address's claimed
+	// domain (sso_required, joinable, block new organizations). Nil: none.
+	signupDomains signupdom.DomainPolicySource
 
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
@@ -129,9 +140,10 @@ type AuthService struct {
 	// revocations records revoked session ids so their access tokens stop
 	// working immediately (nil = they expire naturally).
 	revocations SessionRevocationStore
-	// inviteeClassifier classifies an invitee at acceptance (external
-	// members join as viewers with an expiry, RFC-058).
-	inviteeClassifier InviteeClassifier
+	// invitationAcceptor accepts an invitation for the refresh-token path
+	// (TenantService.AcceptInvitation), so both acceptance paths apply the
+	// same rules.
+	invitationAcceptor InvitationAcceptor
 	// Home-realm sign-in for external members (home_realm.go, RFC-058).
 	homeTrusts TrustLookup
 	homeOwners HomeDomainOwnerLookup
@@ -149,14 +161,16 @@ type LapsedDomainChecker interface {
 // SetLapsedDomainChecker wires the lapsed-domain rule for password resets.
 func (s *AuthService) SetLapsedDomainChecker(c LapsedDomainChecker) { s.lapsedDomains = c }
 
-// InviteeClassifier classifies an invitee at acceptance and applies the outcome
-// to the new membership (TenantService.ClassifyAcceptedInvitation).
-type InviteeClassifier interface {
-	ClassifyAcceptedInvitation(ctx context.Context, inv *tenantdom.Invitation, m *tenantdom.Membership, now time.Time) error
+// InvitationAcceptor accepts an invitation for a signed-in user and returns
+// the new membership (TenantService.AcceptInvitation): who may be invited,
+// the invitee's classification, the inviter's authority now, seats, the role
+// grant and the audit.
+type InvitationAcceptor interface {
+	AcceptInvitation(ctx context.Context, token string, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error)
 }
 
-// SetInviteeClassifier wires external-member classification at acceptance.
-func (s *AuthService) SetInviteeClassifier(c InviteeClassifier) { s.inviteeClassifier = c }
+// SetInvitationAcceptor wires invitation acceptance for the refresh-token path.
+func (s *AuthService) SetInvitationAcceptor(a InvitationAcceptor) { s.invitationAcceptor = a }
 
 // SMTPAvailabilityCheck reports whether outbound email is available, either via
 // the system SMTP config or for a specific tenant. Used by smart email
@@ -302,12 +316,11 @@ func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr
 //
 // Resolution order:
 //  1. Tenant setting (if tenantID provided AND setting is "always" or "never")
-//  2. Single-tenant fallback (when tenantID is empty): if the platform has
-//     exactly one active tenant, treat it as the "default" tenant and apply
-//     its setting. Most OSS deployments are single-tenant — without this
-//     branch the admin's "never" setting was ignored at register time
-//     because the new user wasn't a member of any tenant yet.
-//  3. SMTP availability (auto mode):
+//  2. No tenant under a domain or open ceiling (SIGNUP_MODE): always. One
+//     organization's setting never decides platform-wide sign-up (there is
+//     no "the only organization is the default" rule).
+//  3. SMTP availability (auto mode; the disabled ceiling only, where only
+//     invited and administrator-created accounts exist):
 //     - tenant SMTP configured → require verification
 //     - system SMTP configured → require verification
 //     - no SMTP at all → SKIP verification (graceful, no chicken-and-egg)
@@ -326,28 +339,12 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 		}
 	}
 
-	// 2. Single-tenant fallback. When the caller has no tenant context
-	// (typically the self-registration path), look at the platform: if
-	// there's exactly one active tenant, that's almost certainly the
-	// tenant the new user is going to belong to. Use its setting so the
-	// admin's intent is respected.
-	if tenantID == "" && s.tenantRepo != nil {
-		ids, err := s.tenantRepo.ListActiveTenantIDs(ctx)
-		if err == nil && len(ids) == 1 {
-			soleID := ids[0].String()
-			if mode, ok := s.lookupTenantVerificationMode(ctx, soleID); ok {
-				switch mode {
-				case tenantdom.EmailVerificationAlways:
-					return true
-				case tenantdom.EmailVerificationNever:
-					return false
-				}
-				// auto → fall through to SMTP check below, with the
-				// resolved tenant id so HasTenantSMTP picks up any
-				// per-tenant SMTP override
-				tenantID = soleID
-			}
-		}
+	// 2. A deployment that allows public sign-up (SIGNUP_MODE=domain or open)
+	// verifies every account that is not tied to an organization: missing
+	// SMTP never skips it there (start-up refuses that configuration, and
+	// sign-up closes at run time without e-mail).
+	if tenantID == "" && s.config.PublicSignup() {
+		return true
 	}
 
 	// 3. Smart auto-detection via SMTP availability
@@ -366,6 +363,19 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 
 	// 4. Fallback to global env config
 	return s.config.RequireEmailVerification
+}
+
+// selfRegistrationMustVerify decides verification for an account created by
+// self-registration (no invitation for this address). Under a domain or open
+// ceiling it is always verified: an organization's email_verification_mode
+// governs only the accounts invited into that organization, never public
+// sign-up, and a token for another address does not make its organization's
+// setting apply. Under the disabled ceiling the platform rule applies.
+func (s *AuthService) selfRegistrationMustVerify(ctx context.Context, invitationTenantID string) bool {
+	if s.config.PublicSignup() {
+		return true
+	}
+	return s.shouldRequireEmailVerification(ctx, invitationTenantID)
 }
 
 // lookupTenantVerificationMode resolves a tenant id to its
@@ -431,9 +441,18 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// an unknown, expired or mismatched token, gets the same generic refusal so
 	// the response says nothing about the token.
 	invitationTenantID, invited := s.pendingInvitationFor(ctx, input.InvitationToken, email)
-	if !signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{
+	facts, err := signupdom.FactsForEmail(ctx, s.signupDomains, email)
+	if err != nil {
+		// A claimed domain's sso_required cannot be checked: refuse.
+		s.logger.Warn("domain sign-up policy unreadable; sign-up refused", "error", err)
+		return nil, ErrSignupNotAvailable
+	}
+	switch signupdom.Admit(s.signupPolicyNow(ctx), facts.Apply(signupdom.Identity{
 		Intent: signupdom.IntentAccount, InvitedPending: invited, DisposableEmail: disposableEmail(email),
-	}).Admitted() {
+	})) {
+	case signupdom.OutcomeSSORequired:
+		return nil, ErrSignupSSORequired
+	case signupdom.OutcomeNotSetUp:
 		return nil, ErrSignupNotAvailable
 	}
 
@@ -446,7 +465,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	}
 	requireVerification := false
 	if !invited {
-		requireVerification = s.shouldRequireEmailVerification(ctx, invitationTenantID)
+		requireVerification = s.selfRegistrationMustVerify(ctx, invitationTenantID)
 	}
 
 	// Check if email already exists
@@ -594,14 +613,14 @@ type LoginResult struct {
 	MFAChallenge *MFAChallengeInfo
 }
 
-// Login authenticates a user and creates a session.
-// Returns a global refresh token and list of tenant memberships.
-// Client should call ExchangeToken to get a tenant-scoped access token.
-func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *LoginResult, err error) {
-	defer func() { recordLoginFailure(err) }()
-
+// authenticatePassword checks an email and password the way every password
+// sign-in does: the same cost whether the account exists or not, the password
+// checked before the account state is revealed, a wrong password counted
+// toward the lockout and audited. It returns the user only when the password
+// is right and the account may sign in; it opens no session.
+func (s *AuthService) authenticatePassword(ctx context.Context, rawEmail, password, ipAddress, userAgent string) (*userdom.User, error) {
 	// Normalize email
-	email := strings.TrimSpace(strings.ToLower(input.Email))
+	email := strings.TrimSpace(strings.ToLower(rawEmail))
 
 	// Get user by email
 	u, err := s.userRepo.GetByEmailForAuth(ctx, email)
@@ -610,7 +629,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 			// Constant-time defense: run a dummy bcrypt verify so the
 			// user-not-found path costs the same as a real (wrong-password)
 			// login, preventing account enumeration via response timing.
-			_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
+			_ = s.passwordHasher.Verify(password, s.dummyPasswordHash())
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
@@ -622,10 +641,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 	// password holder learns why a correct password was refused.
 	passwordHash := u.PasswordHash()
 	if u.AuthProvider() != userdom.AuthProviderLocal || passwordHash == nil {
-		_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
+		_ = s.passwordHasher.Verify(password, s.dummyPasswordHash())
 		return nil, ErrInvalidCredentials
 	}
-	if err := s.passwordHasher.Verify(input.Password, *passwordHash); err != nil {
+	if err := s.passwordHasher.Verify(password, *passwordHash); err != nil {
 		if u.IsLocked() {
 			// Already locked: do not extend the lockout or audit each guess
 			// against it; the answer is the same as any wrong password.
@@ -637,8 +656,8 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 		// Audit failed login
 		actx := auditapp.AuditContext{
 			ActorEmail: email,
-			ActorIP:    input.IPAddress,
-			UserAgent:  input.UserAgent,
+			ActorIP:    ipAddress,
+			UserAgent:  userAgent,
 		}
 		_ = s.auditService.LogAuthFailed(ctx, actx, "invalid credentials")
 
@@ -651,6 +670,58 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 	}
 	if !u.IsActive() {
 		return nil, ErrAccountSuspended
+	}
+
+	return u, nil
+}
+
+// VerifyConsolePassword is the platform console's own first factor (RFC-022
+// revision 20): the account's password, checked like a sign-in (lockout,
+// enumeration-safe), without opening a /login session or asking the
+// account's own second factor; the console asks its own next. It does not
+// reset the failed-sign-in counter: the caller does that with
+// RecordConsolePasswordSuccess only once the account is known to be an active,
+// unlocked administrator, so a tenant password cannot clear the lockout
+// through the console.
+func (s *AuthService) VerifyConsolePassword(ctx context.Context, email, password, ipAddress, userAgent string) (*userdom.User, error) {
+	u, err := s.authenticatePassword(ctx, email, password, ipAddress, userAgent)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// RecordConsolePasswordSuccess resets the failed-sign-in counter of an account
+// the console has accepted as an active, unlocked administrator.
+func (s *AuthService) RecordConsolePasswordSuccess(ctx context.Context, userID shared.ID) {
+	if err := s.userRepo.RecordSuccessfulLogin(ctx, userID); err != nil {
+		s.logger.Error("failed to reset failed login attempts", "error", err)
+	}
+}
+
+// RecordConsolePasswordFailure counts a refused console sign-in (a correct
+// password the console still turned away) toward the account's lockout.
+func (s *AuthService) RecordConsolePasswordFailure(ctx context.Context, userID shared.ID) {
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		s.logger.Error("failed to load account to record a refused console sign-in", "error", err)
+		return
+	}
+	if u.IsLocked() {
+		return
+	}
+	s.recordPasswordFailure(ctx, u)
+}
+
+// Login authenticates a user and creates a session.
+// Returns a global refresh token and list of tenant memberships.
+// Client should call ExchangeToken to get a tenant-scoped access token.
+func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *LoginResult, err error) {
+	defer func() { recordLoginFailure(err) }()
+
+	u, err := s.authenticatePassword(ctx, input.Email, input.Password, input.IPAddress, input.UserAgent)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if email is verified.
@@ -792,6 +863,7 @@ func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddr
 	if err := s.sessionRepo.Create(ctx, sess); err != nil {
 		return nil, fmt.Errorf("failed to save session: %w", err)
 	}
+	runSignInHook(ctx, s.onSignIn, u.ID())
 
 	// Store refresh token in database
 	refreshToken, err := sessiondom.NewRefreshToken(
@@ -1102,6 +1174,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
+	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
 
 	// Rotate before minting: the presented token is spent first, and a
 	// failure to record that refuses the exchange. Marking it after minting
@@ -1398,6 +1473,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, err
 	}
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 
@@ -1775,23 +1853,26 @@ type CreateFirstTeamResult struct {
 	Tenant       TenantMembershipInfo `json:"tenant"`
 }
 
-// FreePlan is the slice of the entitlement service self-service creation uses.
-// create-first-team only assigns the plan: it serves people with no
-// organization, who own no Free one; POST /tenants checks the per-person cap.
-type FreePlan interface {
-	CheckFreeTeam(ctx context.Context, userID shared.ID) error
-	AssignFree(ctx context.Context, tenantID shared.ID) error
+// SelfServiceLimits is the slice of the entitlement service the
+// self-service creation paths use: the limits a new organization starts
+// with, and the per-person organization cap.
+type SelfServiceLimits interface {
+	SelfServiceDefaults(ctx context.Context) (limits.Limits, int, error)
+	CheckOrgsPerUser(ctx context.Context, userID shared.ID) error
 }
 
-// SetFreePlan wires the Free plan for self-service organizations.
-func (s *AuthService) SetFreePlan(p FreePlan) { s.freePlan = p }
+// SetSelfServiceLimits wires the self-service default limits.
+func (s *AuthService) SetSelfServiceLimits(l SelfServiceLimits) { s.selfServiceLimits = l }
 
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
-// signupPolicyNow is the sign-up policy in force: the console setting when
-// wired, else TENANT_CREATION_MODE from the config (admin_only unless
-// self_service).
+// SetSignupDomainPolicy wires the per-domain sign-up policy of claimed
+// domains.
+func (s *AuthService) SetSignupDomainPolicy(src signupdom.DomainPolicySource) { s.signupDomains = src }
+
+// signupPolicyNow is the sign-up policy in force: the console setting clamped
+// to SIGNUP_MODE when wired, else self_service only under SIGNUP_MODE=open.
 func (s *AuthService) signupPolicyNow(ctx context.Context) signupdom.Policy {
 	return policyOrConfig(ctx, s.signupPolicy, s.config)
 }
@@ -1801,10 +1882,22 @@ func policyOrConfig(ctx context.Context, src signupdom.PolicySource, cfg config.
 	if src != nil {
 		return src.Current(ctx)
 	}
-	if cfg.SelfServiceTenantCreation() {
+	if cfg.SignupOpen() {
 		return signupdom.Policy{Mode: signupdom.ModeSelfService}
 	}
 	return signupdom.Default()
+}
+
+// workspacesBlockedFor reports whether the organization that claims email's
+// domain blocks new organizations for accounts on it. An unreadable policy
+// is an error (the caller refuses).
+func (s *AuthService) workspacesBlockedFor(ctx context.Context, email string) (bool, error) {
+	facts, err := signupdom.FactsForEmail(ctx, s.signupDomains, email)
+	if err != nil {
+		s.logger.Warn("domain sign-up policy unreadable; organization creation refused", "error", err)
+		return false, err
+	}
+	return facts.WorkspacesBlocked, nil
 }
 
 // selfServiceTenantCreation reports whether people may create their own
@@ -1863,6 +1956,10 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
+	// The account's domain may block new organizations for accounts on it.
+	if blocked, err := s.workspacesBlockedFor(ctx, u.Email()); err != nil || blocked {
+		return nil, ErrTenantCreationDisabled
+	}
 
 	// Check if user already has tenants
 	existingMemberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
@@ -1884,13 +1981,25 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to check slug existence: %w", err)
 	}
 	if slugExists {
-		return nil, fmt.Errorf("%w: team URL '%s' is already taken", shared.ErrValidation, input.TeamSlug)
+		// One answer for a taken and a reserved URL: it says nothing about
+		// which organizations exist.
+		return nil, ErrTeamURLNotAvailable
 	}
 
 	// Create tenant
 	newTenant, err := tenantdom.NewTenant(input.TeamName, input.TeamSlug, u.ID().String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
+	}
+	// The instance's self-service default limits, stored with the
+	// organization (none unless an operator set some). Unreadable defaults
+	// refuse the creation rather than create an organization without them.
+	if s.selfServiceLimits != nil {
+		d, _, derr := s.selfServiceLimits.SelfServiceDefaults(ctx)
+		if derr != nil {
+			return nil, fmt.Errorf("read self-service default limits: %w", derr)
+		}
+		newTenant.SetInitialLimits(limits.SelfServiceRows(newTenant.ID(), d, newTenant.CreatedAt()))
 	}
 
 	// Tenant, owner membership and owner role in one transaction, the same
@@ -1901,13 +2010,6 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 	if err := s.tenantRepo.CreateWithOwner(ctx, newTenant, membership); err != nil {
 		return nil, fmt.Errorf("failed to create team: %w", err)
-	}
-
-	// A self-service organization starts on the Free plan.
-	if s.freePlan != nil {
-		if err := s.freePlan.AssignFree(ctx, newTenant.ID()); err != nil {
-			s.logger.Error("assign the Free plan to a new organization", "tenant_id", newTenant.ID().String(), "error", err)
-		}
 	}
 
 	s.logger.Info("first team created",
@@ -2064,106 +2166,46 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Get the invitation by token (stored hashed at rest — hash before lookup)
-	invitation, err := s.tenantRepo.GetInvitationByToken(ctx, crypto.HashToken(input.InvitationToken))
+	// The acceptance itself is the organization's: who may be invited, the
+	// invitee's classification, the inviter's authority now, seats and the
+	// audit (TenantService.AcceptInvitation), exactly as for a signed-in
+	// acceptance.
+	if s.invitationAcceptor == nil {
+		return nil, errors.New("invitation acceptance is not configured")
+	}
+	membership, err := s.invitationAcceptor.AcceptInvitation(ctx, input.InvitationToken, u.ID(), u.Email(),
+		auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email()})
 	if err != nil {
-		if errors.Is(err, shared.ErrNotFound) {
-			return nil, fmt.Errorf("%w: invitation not found or expired", shared.ErrNotFound)
-		}
-		return nil, fmt.Errorf("failed to get invitation: %w", err)
-	}
-
-	// Verify the invitation is for this user's email (case-insensitive)
-	if !strings.EqualFold(invitation.Email(), u.Email()) {
-		return nil, fmt.Errorf("%w: this invitation was sent to a different email address", shared.ErrValidation)
-	}
-
-	if !invitation.IsPending() {
-		if invitation.IsExpired() {
-			return nil, fmt.Errorf("%w: invitation has expired", shared.ErrValidation)
-		}
-		if invitation.IsAccepted() {
-			return nil, fmt.Errorf("%w: invitation has already been accepted", shared.ErrValidation)
-		}
-	}
-
-	// Check if user is already a member. A suspended membership cannot be
-	// bypassed via invitation accept — that would silently erase the
-	// suspension audit trail. The admin must reactivate via Members page.
-	// An offboarded tombstone is not a membership: accepting re-joins from
-	// zero (AcceptInvitationTx re-activates the row).
-	existingMembership, err := s.tenantRepo.GetMembership(ctx, u.ID(), invitation.TenantID())
-	if err == nil && !existingMembership.IsOffboarded() {
-		if existingMembership.IsSuspended() {
-			return nil, fmt.Errorf(
-				"%w: your access to this team is suspended — please contact an administrator to be reactivated",
-				shared.ErrValidation,
-			)
-		}
-		return nil, fmt.Errorf("%w: you are already a member of this team", shared.ErrValidation)
-	}
-	if err != nil && !errors.Is(err, shared.ErrNotFound) {
-		return nil, fmt.Errorf("failed to check membership: %w", err)
+		return nil, err
 	}
 
 	// Get the tenant info
-	t, err := s.tenantRepo.GetByID(ctx, invitation.TenantID())
+	t, err := s.tenantRepo.GetByID(ctx, membership.TenantID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant: %w", err)
 	}
-	// The organization may have restricted member email domains after the
-	// invitation was sent.
-	if !t.TypedSettings().Security.EmailDomainAllowed(u.Email()) {
-		return nil, fmt.Errorf("%w: email domain is not allowed for this organization", shared.ErrValidation)
-	}
 
-	// Accept the invitation
-	if err := invitation.Accept(); err != nil {
+	// The token minted below obeys the organization's sign-in policies like
+	// any other: SSO enforcement, required 2FA, personal accounts, and 2FA for
+	// a privileged outside member. When one refuses, the person has joined but
+	// gets no token yet; they meet the requirement (for example set up 2FA)
+	// and sign in to the organization.
+	if err := s.enforceSSOPolicy(ctx, sess, t.ID().String(), membership.Role().String()); err != nil {
 		return nil, err
 	}
-
-	// Create membership. The role follows the invitation's RBAC roles: a
-	// viewer-only invitation must not become a 'member' membership, which the
-	// tenant_members trigger would turn into the member role.
-	invitedBy := invitation.InvitedBy()
-	membership, err := tenantdom.NewMembership(u.ID(), invitation.TenantID(), accesscontrol.InvitationMembershipRole(invitation), &invitedBy)
-	if err != nil {
+	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), t.ID().String()); err != nil {
 		return nil, err
 	}
-	// Someone outside the organization joins as a viewer, with an expiry when
-	// no organization manages their address (RFC-058).
-	if s.inviteeClassifier != nil {
-		if err := s.inviteeClassifier.ClassifyAcceptedInvitation(ctx, invitation, membership, time.Now().UTC()); err != nil {
-			return nil, err
-		}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), t.ID().String()); err != nil {
+		return nil, err
 	}
-
-	// Use transaction to ensure atomicity
-	if err := s.tenantRepo.AcceptInvitationTx(ctx, invitation, membership); err != nil {
-		return nil, fmt.Errorf("failed to accept invitation: %w", err)
-	}
-
-	// Make the invitation's RBAC roles the user's complete role set, replacing
-	// the role the trigger copied from the membership. Best-effort: on failure
-	// the membership keeps that trigger role, which is no broader than the
-	// invitation, and an administrator can fix roles from Settings.
-	if s.roleService != nil && len(invitation.RoleIDs()) > 0 {
-		invitedByStr := invitation.InvitedBy().String()
-		invActx := auditapp.AuditContext{ActorID: invitedByStr, TenantID: invitation.TenantID().String()}
-		if err := s.roleService.GrantExactRoles(ctx, invitation.TenantID().String(), u.ID().String(),
-			invitation.RoleIDs(), invitedByStr, invActx); err != nil {
-			s.logger.Error("failed to apply invitation roles on accept",
-				"invitation_id", invitation.ID().String(),
-				"user_id", u.ID().String(),
-				"error", err)
-		}
+	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), t.ID().String()); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("invitation accepted with refresh token",
-		"invitation_id", invitation.ID().String(),
 		"user_id", u.ID().String(),
 		"tenant_id", t.ID().String(),
-		"role_count", len(invitation.RoleIDs()),
 	)
 
 	// Mark old refresh token as used (token rotation)

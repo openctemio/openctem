@@ -25,7 +25,7 @@ agent), [sdk-go](https://github.com/openctemio/sdk-go),
   `make generate` at the root to refresh them locally; Web CI type-checks the web
   against the fresh contract and posts the contract diff on the pull request.
 - **Release**: one `vX.Y.Z` tag on `main` releases API + web together (`ghcr.io/openctemio/openctem-api`,
-  `openctem-web`, all-in-one `openctem`, `migrations`, `seed`, `admin-cli`).
+  `openctem-web`, `openctem-console`, all-in-one `openctem`, `openctem-gateway`, `migrations`, `seed`, `admin-cli`).
 
 ---
 
@@ -549,7 +549,7 @@ type TenantSMTPResolver interface {
 ### User Management (Production)
 
 Public registration is **off by default**: the sign-up policy (Console >
-System > Sign-up, seeded from `TENANT_CREATION_MODE`) is `admin_only`, RFC-025. People get accounts from an administrator, an invitation, or their
+System > Sign-up, a runtime switch under the `SIGNUP_MODE` ceiling, default `disabled`) is `admin_only`, RFC-025, RFC-104. People get accounts from an administrator, an invitation, or their
 organization's SSO (JIT on verified domains). See
 `docs/architecture/user-onboarding.md`.
 
@@ -593,7 +593,7 @@ POST /api/v1/invitations/accept-with-refresh   {"token": "..."}
 | **Sensor** | Customer-side software that authenticates *to* the platform with its own key (`octs_…`; legacy `rda_…`) and heartbeat. Umbrella term; one row in `sensors`. |
 | Scanner / Agent / Collector | Sensor **roles** (RFC-023 D18). *Agent* now means only the endpoint role. |
 | `type` | Legacy v1 value (`worker`, `scanner`, `sensor`, `collector`, `runner`), kept as input and storage. |
-| Platform sensor | `is_platform_sensor = true`: shared infrastructure run by the platform operator. Never one of a tenant's sensors: every tenant route answers 404 for it, and tenants see only the aggregated platform scanning service. |
+| Shared sensor | `scope = 'instance'`, `tenant_id` NULL (RFC-100): a sensor of the instance, run by its administrator. Never one of a tenant's sensors: every tenant route answers 404 for it, it never gets a tenant context, and tenants see only the aggregated platform scanning service. An organization sensor is `scope = 'organization'`. |
 | AI agent | AI-triage mode `agent` (`AIModeAgent`, module `ai_triage.agent`) — an LLM agent, not a sensor. |
 | Protocol v1 | `/api/v1/agent/*`: retired 2026-10-05. Sensors speak protocol v2 (`/api/v2/sensor/*`) only; a sensor older than v0.9.0 must be upgraded. |
 
@@ -850,7 +850,7 @@ Smart filtering matches assets to compatible scanners based on `supported_target
 2. **At scan trigger** — `resolveScanTargets()` leaves out asset-group members the scanner cannot scan (registry `scannable_by` + active admin target mappings); nothing left → `NO_COMPATIBLE_TARGETS` (400). `filterAssetsForSingleScan()` reports the same split
 3. **At every workflow step** — `FilterStepTargets()` gates the run's typed targets for the step's tool before the sensor command is built (both dispatchers); nothing left → the step fails with `INCOMPATIBLE_TARGETS`
 
-**Design principles:** a scanner is never handed a type it cannot scan; transparent (counts and a reason per type); undecidable (unclassified, unknown type, tool without target types) = dispatched; direct targets have no stored type and are gated by their kind instead (`stage.AcceptsKind`: name, address, range, URL, service), and a network range, typed or not, reaches only port scans and network lookups (RFC-088); `target_types` in the run context never reaches a sensor.
+**Design principles:** a scanner is never handed a type it cannot scan; transparent (counts and a reason per type); undecidable (unclassified, unknown type, tool without target types) = dispatched; direct targets have no stored type and are gated by their kind instead (`stage.AcceptsKind`: name, address, range, URL, service), a network range, typed or not, reaches only port scans and network lookups (RFC-088); a repository, or any host-and-path target without a scheme, reaches only code and image scanning, never a network tool (`internal/app/scan/path_target_gate.go`); `target_types` in the run context never reaches a sensor.
 
 **Key files:** `internal/app/scan/type_gate.go`, `internal/app/scan/compatibility.go`, `internal/app/scan/filtering.go`, `internal/app/scan/targets.go`, `pkg/domain/tool/target_mapping.go`
 

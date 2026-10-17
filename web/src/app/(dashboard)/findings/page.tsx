@@ -1,5 +1,8 @@
 'use client'
 
+import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-transitions'
+import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
+import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
 import { useListParams } from '@/hooks/use-list-params'
 import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
@@ -10,16 +13,24 @@ import { useRouter } from 'next/navigation'
 import {
   DEFAULT_FINDING_LENS,
   FINDING_LENSES,
+  lensLabelKey,
+  lensDescriptionKey,
   parseFindingLens,
   type FindingLens,
 } from '@/features/findings/lib/state-lens'
 import { findingsOverview } from '@/features/findings/lib/findings-overview'
 import { mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
+  readFindingHash,
+  useDrawerKeyboardNav,
+  writeFindingHash,
+} from '@/features/findings/hooks/use-drawer-navigation'
+import {
   useUrlParams,
   useUrlParam,
   useUrlFilter,
   useUrlFilterList,
+  useUrlSettled,
   pushUrlSearch,
   replaceUrlSearch,
 } from '@/hooks/use-url-param'
@@ -131,17 +142,23 @@ import {
 } from '@/features/findings/components/finding-groups-table'
 import { AutoAssignDialog } from '@/features/findings/components/auto-assign-dialog'
 import type { GroupByDimension } from '@/features/findings/api/use-finding-groups'
-import { FindingContextChips } from '@/features/findings/components/finding-context-chips'
+import {
+  FindingContextChips,
+  hasFindingContextFilters,
+} from '@/features/findings/components/finding-context-chips'
 import { MarkFixedDialog } from '@/features/findings/components/mark-fixed-dialog'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
+import { useCanCreateTicket } from '@/features/findings/hooks/use-can-create-ticket'
 import { LinkFindingsToRemediationDialog } from '@/features/remediation/components/link-findings-dialog'
 import { VerifyGroupActions } from '@/features/findings/components/verify-group-actions'
 import { type FindingGroup } from '@/features/findings/api/use-finding-groups'
 import {
   useFindingsApi,
+  useFindingApi,
   useFindingStatsApi,
   buildFindingsExportUrl,
   invalidateFindingsCache,
+  type FindingStatsFilters,
 } from '@/features/findings/api/use-findings-api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import type { ApiFinding, FindingApiFilters } from '@/features/findings/api/finding-api.types'
@@ -162,6 +179,8 @@ import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/
 import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
 import { savedViewId, type SavedView } from '@/features/saved-views/api/use-saved-views'
 import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 
 // ============================================
 // Transform API Finding to UI Finding
@@ -203,6 +222,7 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     description: api.description || api.snippet || api.message,
     severity: api.severity as Severity,
     status: api.status as FindingStatus,
+    subStatusId: api.sub_status_id,
     cvss: api.cvss_score,
     cvssVector: api.cvss_vector,
     cve: api.cve_id,
@@ -345,19 +365,27 @@ const PRIORITY_OPTIONS = [
 /**
  * First-load placeholder shaped like the toolbar + table it stands in for. The
  * context chips render in it already (they come from the URL, not the fetch),
- * so they sit in the same toolbar row before and after the rows load.
+ * in the same row under the toolbar as the loaded table puts them, so nothing
+ * moves when the rows arrive.
  */
 function FindingsTableSkeleton({ contextChips }: { contextChips?: ReactNode }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <Skeleton className="h-9 w-24" />
           <Skeleton className="h-9 w-72" />
-          {contextChips}
         </div>
         <Skeleton className="ms-auto h-9 w-24" />
       </div>
+      {contextChips ? (
+        <div
+          data-testid="data-table-toolbar-below"
+          className="-mt-2 flex min-w-0 flex-wrap items-center gap-2"
+        >
+          {contextChips}
+        </div>
+      ) : null}
       <div className="space-y-2 rounded-md border p-3">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-10 w-full" />
@@ -412,6 +440,10 @@ export default function FindingsPage() {
 function FindingsContent() {
   const searchParams = useUrlParams()
   const router = useRouter()
+  // False for the one render a client-side navigation makes before the address
+  // bar holds this page's URL: every URL param read then is the previous
+  // page's. No request is sent until it is true (see useUrlSettled).
+  const urlSettled = useUrlSettled()
   // The page URL uses the API's own filter params (RFC-048), so a page link and
   // the API query are the same words. Old page links are rewritten once below.
   const assetIdFilter = searchParams.get('asset_id')
@@ -439,6 +471,7 @@ function FindingsContent() {
   const [severityParam, setSeverityParam] = useUrlFilterList('severity')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
+  const [bulkResolveNote, setBulkResolveNote] = useState('')
   const [findingToDelete, setFindingToDelete] = useState<Finding | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -645,7 +678,7 @@ function FindingsContent() {
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on
   // OSS where no modules are reported).
   const remediationEnabled = useModuleEnabled('remediation')
-  const integrationsEnabled = useModuleEnabled('integrations')
+  const canCreateTicket = useCanCreateTicket()
 
   // Statuses hidden from default dashboard view (pentest WIP, not ready for visibility)
   const HIDDEN_STATUSES = useMemo(() => [...FINDINGS_LIST_HIDDEN_STATUSES], [])
@@ -718,13 +751,20 @@ function FindingsContent() {
   // The filter the current page number belongs to. While a new filter waits
   // for its page reset (the effect below), the list already asks page 1:
   // asking the old page first sent the list request twice (research/81).
-  const [pagedFilterKey, setPagedFilterKey] = useState(filterKey)
-  const filterChanged = pagedFilterKey !== filterKey
+  // Recorded only once the URL is this page's: a key taken from the previous
+  // page's params would read as a filter change and reset a linked ?page=3.
+  const [pagedFilterKey, setPagedFilterKey] = useState<string | null>(null)
+  const filterChanged = pagedFilterKey !== null && pagedFilterKey !== filterKey
   useEffect(() => {
+    if (!urlSettled) return
+    if (pagedFilterKey === null) {
+      setPagedFilterKey(filterKey)
+      return
+    }
     if (!filterChanged) return
     setPagedFilterKey(filterKey)
     setPage(1)
-  }, [filterChanged, filterKey, setPage])
+  }, [urlSettled, pagedFilterKey, filterChanged, filterKey, setPage])
 
   const apiFilters = useMemo((): FindingApiFilters => {
     const filters: FindingApiFilters = {
@@ -804,22 +844,56 @@ function FindingsContent() {
     return { ...rest, state: 'all' as const }
   }, [apiFilters])
 
-  // The overview strip is page-level: every finding the caller may see (their
-  // data scope applies server-side), whatever the state tab, search or
-  // filters. Filter-aware numbers live in the tab counts and the result bar.
-  // With no filter set, the overview and tab-count requests are the same URL,
-  // so the page loads ONE stats response; neither key holds the state tab, so
+  // The overview strip describes the page's scope: every finding the caller
+  // may see (their data scope applies server-side), narrowed only by the
+  // context filters the page was opened with (an asset, a scan run, a CVE or
+  // rule group's "View", the other group drill-downs). Those are the page's
+  // scope, shown as chips above the table: "Total 114" over an asset's 3
+  // findings contradicted the list. The state tab, search and facet filters
+  // never move the strip; filter-aware numbers live in the tab counts. With no
+  // filter set, the overview and tab-count requests are the same URL, so the
+  // page loads ONE stats response; neither key holds the state tab, so
   // switching tabs sends no stats request (research/81).
   const overviewStatsFilters = useMemo(
-    () => ({ state: 'all' as const, exclude_statuses: HIDDEN_STATUSES }),
-    [HIDDEN_STATUSES]
+    (): FindingStatsFilters => ({
+      state: 'all',
+      exclude_statuses: HIDDEN_STATUSES,
+      asset_id: apiFilters.asset_id,
+      scan_id: apiFilters.scan_id,
+      cve_ids: apiFilters.cve_ids,
+      rule_id: apiFilters.rule_id,
+      families: apiFilters.families,
+      finding_types: apiFilters.finding_types,
+      component_id: apiFilters.component_id,
+      asset_owner_id: apiFilters.asset_owner_id,
+      asset_owner_unassigned: apiFilters.asset_owner_unassigned,
+    }),
+    [HIDDEN_STATUSES, apiFilters]
   )
+  // The context filters as the chips (and the strip's scope) read them.
+  const contextFilterValues = {
+    assetId: assetIdFilter,
+    scanId: scanIdFilter,
+    cveId: cveParam,
+    ruleId: ruleParam,
+    family: familyParam,
+    findingType: findingTypeParam,
+    componentId: componentParam,
+    ownerId: ownerParam,
+    ownerUnassigned,
+  }
+  const hasContextScope = hasFindingContextFilters(contextFilterValues)
+  // keepPreviousData: a filter change keeps the numbers on screen until the
+  // new ones arrive, instead of blanking the strip and the tab counts.
   const {
     data: findingStats,
     isLoading: statsLoading,
     mutate: mutateOverviewStats,
-  } = useFindingStatsApi(overviewStatsFilters)
-  const { data: lensStats, mutate: mutateLensStats } = useFindingStatsApi(lensStatsFilters)
+  } = useFindingStatsApi(overviewStatsFilters, { enabled: urlSettled, keepPreviousData: true })
+  const { data: lensStats, mutate: mutateLensStats } = useFindingStatsApi(lensStatsFilters, {
+    enabled: urlSettled,
+    keepPreviousData: true,
+  })
   const mutateStats = useCallback(
     () => Promise.all([mutateOverviewStats(), mutateLensStats()]),
     [mutateOverviewStats, mutateLensStats]
@@ -832,7 +906,10 @@ function FindingsContent() {
     error,
     isLoading: findingsLoading,
     mutate: mutateFindingsList,
-  } = useFindingsApi(apiFilters, { keepPreviousData: true, enabled: !groupBy && !verifyView })
+  } = useFindingsApi(apiFilters, {
+    keepPreviousData: true,
+    enabled: urlSettled && !groupBy && !verifyView,
+  })
   // Every refresh after a change also reloads the grouped view's groups and rows.
   const mutateFindings = useCallback(() => {
     setGroupsReloadKey((k) => k + 1)
@@ -845,7 +922,7 @@ function FindingsContent() {
   const overview = useMemo(() => findingsOverview(findingStats), [findingStats])
 
   // Initial loading state (only true when we don't have stats yet)
-  const isInitialLoading = statsLoading && !findingStats
+  const isInitialLoading = (!urlSettled || statsLoading) && !findingStats
 
   // Transform API data to UI format
   const findings = useMemo(() => {
@@ -949,16 +1026,38 @@ function FindingsContent() {
     }
   }
 
-  const handleBulkStatusChange = async (status: string) => {
-    const findingIds = selectedFindingIds
-    if (findingIds.length === 0) return
+  const handleBulkStatusChange = async (status: string, resolution?: string) => {
+    if (selectedFindingIds.length === 0) return
 
     try {
+      // Dry run first (the API's transition engine): only the findings that
+      // may move are sent; the others are reported with the reason.
+      const dryRun = summarizeDryRun(
+        t,
+        await evaluateFindingTransitions(selectedFindingIds, status),
+        { note: resolution }
+      )
+      const refusedText = dryRun.refused.map((r) => `${r.reason} (${r.count})`).join('; ')
+      if (dryRun.allowed.length === 0) {
+        toast.error(t('findings.bulk.noneCanMove', 'None of the selected findings can move'), {
+          description: refusedText,
+        })
+        return
+      }
+      if (dryRun.refused.length > 0) {
+        toast.warning(
+          t('findings.bulk.someCannotMove', '{count} of the selected findings cannot move', {
+            count: selectedFindingIds.length - dryRun.allowed.length,
+          }),
+          { description: refusedText }
+        )
+      }
+      const findingIds = dryRun.allowed
       const response = await csrfFetch('/api/v1/findings/bulk/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ finding_ids: findingIds, status }),
+        body: JSON.stringify({ finding_ids: findingIds, status, resolution }),
       })
       if (!response.ok) throw new Error('Failed to update findings')
       showBulkResult(
@@ -980,6 +1079,26 @@ function FindingsContent() {
     setSelectedFinding(finding)
     setDrawerOpen(true)
   }, [])
+
+  // j / k move through the list while the drawer is open; the open finding
+  // is in the URL hash so the address can be shared and reopens it.
+  useDrawerKeyboardNav({
+    open: drawerOpen,
+    items: findings,
+    currentId: selectedFinding?.id,
+    onSelect: setSelectedFinding,
+  })
+  const [deepLinkId] = useState(() => readFindingHash())
+  const { data: deepLinked } = useFindingApi(deepLinkId && !selectedFinding ? deepLinkId : null)
+  useEffect(() => {
+    if (deepLinked && !selectedFinding) {
+      setSelectedFinding(transformApiToUiFinding(deepLinked))
+      setDrawerOpen(true)
+    }
+  }, [deepLinked, selectedFinding])
+  useEffect(() => {
+    writeFindingHash(drawerOpen && selectedFinding ? selectedFinding.id : null)
+  }, [drawerOpen, selectedFinding])
 
   // The drawer writes status, severity and assignee itself (with its own toast
   // and Undo); the page only refreshes the list. Writing again here sent every
@@ -1030,8 +1149,7 @@ function FindingsContent() {
     // Most severe selected finding sets the priority; informational-only
     // selections get the lowest priority rather than a medium default.
     const top = highestSeverity(selected.map((f) => f.severity))
-    const priority =
-      top === 'critical' ? 'urgent' : top === undefined ? 'medium' : top === 'info' ? 'low' : top
+    const priority = top === undefined ? 'medium' : top === 'info' ? 'low' : top
     const name =
       selected.length === 1 ? `Fix: ${selected[0].title}` : `Remediate ${selected.length} findings`
     setRemedContext({ ids: selected.map((f) => f.id), name, priority })
@@ -1280,7 +1398,12 @@ function FindingsContent() {
       {
         accessorKey: 'status',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-        cell: ({ row }) => <FindingStatusBadge status={row.getValue('status')} />,
+        cell: ({ row }) => (
+          <span className="inline-flex flex-wrap items-center gap-1">
+            <FindingStatusBadge status={row.getValue('status')} />
+            <FindingSubStatus subStatusId={row.original.subStatusId} />
+          </span>
+        ),
         filterFn: (row, id, value) => {
           return value.includes(row.getValue(id))
         },
@@ -1340,10 +1463,10 @@ function FindingsContent() {
                   <CheckCircle className="me-2 h-4 w-4" />
                   Change Status
                 </DropdownMenuItem>
-                {integrationsEnabled && (
+                {canCreateTicket && (
                   <DropdownMenuItem onClick={() => handleRowAction('create_ticket', finding)}>
                     <Ticket className="me-2 h-4 w-4" />
-                    Create Jira Ticket
+                    {t('findings.header.createTicket', 'Create ticket')}
                   </DropdownMenuItem>
                 )}
                 {hasPermission('findings:remediation:write') && remediationEnabled && (
@@ -1393,7 +1516,7 @@ function FindingsContent() {
     hasPermission,
     hasAnyPriority,
     remediationEnabled,
-    integrationsEnabled,
+    canCreateTicket,
     t,
   ])
 
@@ -1485,7 +1608,12 @@ function FindingsContent() {
     {
       key: 'total',
       label: 'Total',
-      description: 'Every finding you can see, in every state (the All tab).',
+      description: hasContextScope
+        ? t(
+            'findings.metrics.totalScopedDescription',
+            'Every finding in the scope shown above the table (an asset, a scan or a group), in every state (the All tab).'
+          )
+        : 'Every finding you can see, in every state (the All tab).',
       value: overview.total,
       onClick: () => showOnly(lens === 'all' && onlyFacet('none') ? 'open' : 'all'),
       active: lens === 'all' && onlyFacet('none'),
@@ -1763,40 +1891,35 @@ function FindingsContent() {
   )
 
   // Filters that arrive from elsewhere (an asset, a scan run, a CVE or rule
-  // group) are context, not facets: always shown, inline in the toolbar so they
-  // never add a row above the table. Each chip removes only its own parameter.
+  // group) are context, not facets: always shown, in their own row under the
+  // toolbar (never inside it, where a chip made the toolbar row taller and
+  // moved its end controls). They come from the URL, so the row is there from
+  // the first frame. Each chip removes only its own parameter.
   const removeContextParam = (param: string) =>
     replaceUrlSearch(removeFilterParam(new URLSearchParams(window.location.search), param))
-  const contextFilterValues = {
-    assetId: assetIdFilter,
-    scanId: scanIdFilter,
-    cveId: cveParam,
-    ruleId: ruleParam,
-    family: familyParam,
-    findingType: findingTypeParam,
-    componentId: componentParam,
-    ownerId: ownerParam,
-    ownerUnassigned,
-  }
-  const contextChips = (
+  const contextChips = hasContextScope ? (
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
-  )
+  ) : undefined
 
   const toolbarStart = (
     <>
       {filterButtons}
       {searchBox}
-      {contextChips}
     </>
   )
 
   const lensControl = (
     <SegmentedLens<FindingLens>
-      label="Finding state"
-      countNoun="findings"
+      label={t('findings.lens.label', 'Finding state')}
+      countNoun={t('findings.lens.countNoun', 'findings')}
       value={lens}
       onChange={(next) => setLensParam(next)}
-      options={FINDING_LENSES.map((l) => ({ ...l, count: lensStats?.by_state?.[l.value] }))}
+      options={FINDING_LENSES.map((l) => ({
+        ...l,
+        label: t(lensLabelKey(l.value), l.label),
+        description: t(lensDescriptionKey(l.value), l.description),
+        count: lensStats?.by_state?.[l.value],
+      }))}
     />
   )
 
@@ -1851,6 +1974,7 @@ function FindingsContent() {
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {f.priorityClass && <PriorityClassBadge priorityClass={f.priorityClass} />}
           <FindingStatusBadge status={f.status} />
+          <FindingSubStatus subStatusId={f.subStatusId} />
           {f.branchOnly && <BranchOnlyBadge />}
           {f.isInKev && (
             <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
@@ -2007,7 +2131,11 @@ function FindingsContent() {
             </div>
 
             <div className="min-w-0 flex-1 space-y-3">
-              {verifyView ? (
+              {!urlSettled ? (
+                // The render before the address bar holds this page's URL:
+                // nothing here is real yet, and nothing is fetched.
+                <FindingsTableSkeleton />
+              ) : verifyView ? (
                 <FindingGroupsTable
                   {...groupedProps}
                   dimension="cve_id"
@@ -2038,13 +2166,8 @@ function FindingsContent() {
                   onGroupsLoaded={(groups) =>
                     setHasUnassignedGroup(groups.some((g) => g.group_key === 'unassigned'))
                   }
-                  toolbarStart={
-                    <>
-                      {filterButtons}
-                      {searchBox}
-                      {contextChips}
-                    </>
-                  }
+                  toolbarStart={toolbarStart}
+                  toolbarBelow={contextChips}
                   toolbarEnd={
                     <>
                       {lensControl}
@@ -2076,6 +2199,7 @@ function FindingsContent() {
                   showSearch={false}
                   toolbarStart={toolbarStart}
                   toolbarEnd={toolbarEnd}
+                  toolbarBelow={contextChips}
                   getRowId={(f) => f.id}
                   manualPagination
                   rowCount={total}
@@ -2259,11 +2383,31 @@ function FindingsContent() {
           'The selected findings are closed as resolved and leave the open work queues and SLA tracking.'
         )}
         confirmText={t('confirm.finding.resolve', 'Resolve')}
+        disabled={!bulkResolveNote.trim()}
         handleConfirm={async () => {
-          await handleBulkStatusChange('resolved')
+          await handleBulkStatusChange('resolved', bulkResolveNote.trim())
+          setBulkResolveNote('')
           setBulkResolveOpen(false)
         }}
-      />
+      >
+        {/* A bulk resolve reads no verification checklist: it is attested and needs a note. */}
+        <div className="space-y-2">
+          <Label htmlFor="bulk-resolve-note">
+            {t('findings.statusNote.label', 'Note (required)')}
+          </Label>
+          <Textarea
+            id="bulk-resolve-note"
+            value={bulkResolveNote}
+            maxLength={1000}
+            rows={3}
+            placeholder={t(
+              'findings.statusNote.placeholder',
+              'e.g. Upgraded the library to 4.2 in release 2026.10'
+            )}
+            onChange={(e) => setBulkResolveNote(e.target.value)}
+          />
+        </div>
+      </ConfirmDialog>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog

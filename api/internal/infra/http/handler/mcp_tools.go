@@ -171,6 +171,15 @@ func (h *MCPHandler) buildTools() []mcpTool {
 			call:         h.toolExplainPriority,
 		},
 		{
+			Name: "list_finding_transitions",
+			Description: "The status moves of a finding this key may make, from the one transition engine every " +
+				"status change uses: each move with allowed, how (direct, an approval request, the duplicate picker), " +
+				"the inputs it needs, or the reason codes why not. Read-only.",
+			InputSchema:  json.RawMessage(`{"type":"object","properties":{"finding_id":{"type":"string","format":"uuid","description":"finding UUID"}},"required":["finding_id"]}`),
+			RequiredPerm: string(permission.FindingsRead),
+			call:         h.toolListFindingTransitions,
+		},
+		{
 			Name: "get_exposure_chains",
 			Description: "Shortest attack-path hop-chains from public entry points to assets " +
 				"carrying open KEV/critical findings (crown jewels), for this tenant." + mcpUntrustedHint,
@@ -366,7 +375,38 @@ func (h *MCPHandler) toolExplainPriority(ctx context.Context, tenantID string, r
 	if err != nil {
 		return nil, toolInputError{"invalid finding id"}
 	}
-	return h.priority.ExplainFinding(ctx, tid, fid)
+	exp, err := h.priority.ExplainFinding(ctx, tid, fid)
+	if err != nil {
+		return nil, err
+	}
+	// reason and rule_name are written by people in the tenant.
+	return untrustedResult(exp, map[string]any{"finding_id": id}), nil
+}
+
+// toolListFindingTransitions lists the key owner's allowed moves of one
+// finding, resolved through the same scoped read as get_finding (out of scope
+// is not found).
+func (h *MCPHandler) toolListFindingTransitions(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
+	id, err := uuidArg(raw, "finding_id")
+	if err != nil {
+		return nil, err
+	}
+	f, err := h.findings.GetFindingWithScope(ctx, tenantID, id, actingUser(ctx), false)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
+		return nil, err
+	}
+	has := func(p permission.Permission) bool { return middleware.HasPermission(ctx, string(p)) }
+	transitions, status, err := h.findings.ListFindingTransitions(ctx, tenantID, id, actingUser(ctx), finding.TransitionPermissions{
+		Status: has(permission.FindingsStatus), Verify: has(permission.FindingsVerify), FixApply: has(permission.FindingsFixApply),
+		Triage: has(permission.FindingsTriage), Write: has(permission.FindingsWrite),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return FindingTransitionsResponse{Status: status.String(), Transitions: transitions}, nil
 }
 
 // toolExposureChains returns exposure chains narrowed to the key owner's data

@@ -37,7 +37,9 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -144,7 +146,7 @@ type interopWriter interface {
 // vexApplier closes findings a VEX not_affected statement covers
 // (postgres.FindingRepository). Optional: without it VEX is stored only.
 type vexApplier interface {
-	ApplyVEXNotAffected(ctx context.Context, tenantID shared.ID, items []vulnerability.VEXNotAffected, dryRun bool) ([]shared.ID, error)
+	ApplyVEXNotAffected(ctx context.Context, tenantID shared.ID, tool string, items []vulnerability.VEXNotAffected, dryRun bool) ([]shared.ID, error)
 }
 
 // storeInterop writes each sighting's interop data. Best effort: a failure
@@ -202,30 +204,38 @@ func vexNotAffectedItems(sightings []vexSighting) []vulnerability.VEXNotAffected
 			continue
 		}
 		out = append(out, vulnerability.VEXNotAffected{
-			Fingerprint: fm.fingerprint,
-			AssetID:     fm.assetID.String(),
-			Resolution:  vulnerability.VEXResolutionText(iv),
+			Fingerprint:   fm.fingerprint,
+			AssetID:       fm.assetID.String(),
+			Resolution:    vulnerability.VEXResolutionText(iv),
+			ClosureReason: vulnerability.ClosureReasonFromVEXJustification(iv.Justification),
 		})
 	}
 	return out
 }
 
 // applyVEX closes (enforce) or counts (dry_run) the open findings the
-// report's VEX statements say are not affected.
-func (p *FindingProcessor) applyVEX(ctx context.Context, tenantID shared.ID, items []vulnerability.VEXNotAffected, scope *alterScope, output *Output) {
+// report's VEX statements say are not affected. A report may only speak for
+// what its command scanned (vexScoped): the command's own tool, and the assets
+// the command covers; the repository then closes only findings that tool
+// reported.
+func (p *FindingProcessor) applyVEX(ctx context.Context, tenantID shared.ID, report *ctis.Report, items []vulnerability.VEXNotAffected, scope *alterScope, output *Output) {
 	if len(items) == 0 {
 		return
 	}
 	output.FindingsVEXNotAffected += len(items)
 	mode := p.vex()
-	if mode == SourceResolveOff || scope == nil || !scope.commandBound {
+	if mode == SourceResolveOff || scope == nil || !scope.commandBound || report == nil || report.Tool == nil {
+		return
+	}
+	tool := strings.ToLower(strings.TrimSpace(report.Tool.Name))
+	if items = vexScoped(scope, tool, items); len(items) == 0 {
 		return
 	}
 	repo, ok := p.repo.(vexApplier)
 	if !ok {
 		return
 	}
-	ids, err := repo.ApplyVEXNotAffected(ctx, tenantID, items, mode != SourceResolveEnforce)
+	ids, err := repo.ApplyVEXNotAffected(ctx, tenantID, tool, items, mode != SourceResolveEnforce)
 	if err != nil {
 		p.logger.Warn("vex not_affected failed", "tenant_id", tenantID.String(), "error", err)
 		addError(output, "vex not_affected failed")
@@ -234,7 +244,7 @@ func (p *FindingProcessor) applyVEX(ctx context.Context, tenantID shared.ID, ite
 	output.VEXIDs = append(output.VEXIDs, ids...)
 	output.VEXMode = mode
 	if mode == SourceResolveEnforce {
-		output.FindingsVEXClosed += len(ids)
+		output.FindingsVEXRequested += len(ids)
 	} else {
 		output.FindingsVEXWouldClose += len(ids)
 	}
@@ -242,6 +252,36 @@ func (p *FindingProcessor) applyVEX(ctx context.Context, tenantID shared.ID, ite
 		p.logger.Info("vex not_affected", "tenant_id", tenantID.String(), "mode", string(mode),
 			"findings", len(ids), "statements", len(items))
 	}
+}
+
+// vexScoped keeps the not_affected statements a command-bound report may act
+// on: the report's tool must be its command's tool, and each statement's asset
+// one the command covers. A connector sync has no target list: its statements
+// count only for assets this same report carries (persisted by this ingest),
+// and the repository then matches only findings the connector's own tool last
+// reported. A VEX statement in a report is untrusted input; it may never act
+// on an asset the command did not scan or a finding another tool reported.
+func vexScoped(scope *alterScope, tool string, items []vulnerability.VEXNotAffected) []vulnerability.VEXNotAffected {
+	if scope.commandTool == "" || !tooldom.SameTool(scope.commandTool, tool) {
+		return nil
+	}
+	kept := items[:0:0]
+	for _, it := range items {
+		id, err := shared.IDFromString(it.AssetID)
+		if err != nil {
+			continue
+		}
+		if scope.commandType == command.CommandTypeConnectorSync {
+			if _, inReport := scope.seen[id]; inReport && !scope.actorDenies(id) {
+				kept = append(kept, it)
+			}
+			continue
+		}
+		if scope.allowedAsset(id) {
+			kept = append(kept, it)
+		}
+	}
+	return kept
 }
 
 // auditVEX records, once per report, the findings a VEX statement closed

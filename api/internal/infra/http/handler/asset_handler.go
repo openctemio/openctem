@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -32,6 +33,7 @@ type AssetHandler struct {
 	integrationService *integrationapp.IntegrationService
 	accessControlRepo  accesscontrol.Repository
 	auditService       *auditapp.AuditService
+	technologies       assettech.Repository
 	snoozeRateLimiter  *snoozeRateLimiter
 	validator          *validator.Validator
 	logger             *logger.Logger
@@ -310,7 +312,10 @@ type AssetResponse struct {
 	ProgramOnly bool `json:"program_only,omitempty"`
 	// Triage: attribution and what an active scan would do now; only with
 	// ?with_triage=true on the list (research/124).
-	Triage                *AssetTriage             `json:"triage,omitempty"`
+	Triage *AssetTriage `json:"triage,omitempty"`
+	// Technologies detected on the asset (RFC-112): at most 20 on a list,
+	// every one on a single asset. Absent when none were detected.
+	Technologies          []AssetTechnologyBrief   `json:"technologies,omitempty"`
 	ID                    string                   `json:"id"`
 	TenantID              string                   `json:"tenant_id,omitempty"`
 	ParentID              string                   `json:"parent_id,omitempty"`
@@ -326,6 +331,8 @@ type AssetResponse struct {
 	Scope                 string                   `json:"scope"`
 	Exposure              string                   `json:"exposure"`
 	RiskScore             int                      `json:"risk_score"`
+	RiskScoredAt          *time.Time               `json:"risk_scored_at,omitempty"` // absent = never scored: risk_score is not a real 0
+	RiskScorePending      bool                     `json:"risk_score_pending"`       // an input changed and the rescore is queued
 	FindingCount          int                      `json:"finding_count"`
 	FindingSeverityCounts *FindingSeverityResponse `json:"finding_severity_counts,omitempty"`
 	Description           string                   `json:"description,omitempty"`
@@ -491,6 +498,8 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		LifecyclePausedUntil: a.LifecyclePausedUntil(),
 		ManualStatusOverride: a.ManualStatusOverride(),
 	}
+	resp.RiskScoredAt = a.RiskScoredAt()
+	resp.RiskScorePending = a.RiskScorePending()
 
 	// Include finding severity breakdown if available
 	if counts := a.FindingSeverityCounts(); counts != nil {
@@ -558,7 +567,7 @@ func (h *AssetHandler) handleValidationError(w http.ResponseWriter, err error) {
 
 // handleServiceError converts service errors to API errors and writes response.
 func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
-	if WritePlanLimitError(w, err) {
+	if WriteLimitError(w, err) {
 		return
 	}
 	switch {
@@ -600,6 +609,8 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        max_risk_score  query   int     false  "Maximum risk score (0-100)"
 // @Param        has_findings  query     bool    false  "Filter by whether asset has findings"
 // @Param        freshness     query     string  false  "stale: an attribute class is past its freshness TTL; never: a passive class that applies was never observed"
+// @Param        technology    query     string  false  "Assets using any of these technologies (comma-separated names, case-insensitive, at most 20)"
+// @Param        technology_category query string false "Assets with a technology in any of these categories (comma-separated): web_server, framework, language, js_library, cdn, hosting, waf, analytics, security_header, other"
 // @Param        is_crown_jewel query    bool    false  "Filter crown-jewel assets"
 // @Param        sub_type      query     string  false  "Filter by sub_type"
 // @Param        business_unit_ids     query string false "Filter by business unit membership (comma-separated UUIDs)"
@@ -689,6 +700,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		FirstSeenAfter:       parseQueryTimePtr(query.Get("first_seen_after")),
 		ProgramAssets:        query.Get("program_assets"),
 		Freshness:            query.Get("freshness"),
+		Technologies:         assettech.ParseFilterValues(query.Get("technology")),
+		TechnologyCategories: technologyCategoryStrings(query.Get("technology_category")),
 		Sort:                 query.Get("sort"),
 		Page:                 paging.Page,
 		PerPage:              paging.PerPage,
@@ -743,6 +756,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 			repoPtrs[i] = &data[i].AssetResponse
 		}
 		h.addTriage(r, input.TenantID, repoPtrs, result.Data)
+		h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, repoPtrs)
 
 		response := ListResponse[AssetWithRepositoryResponse]{
 			Data:       data,
@@ -772,6 +786,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	h.addProgramFlags(r, input.TenantID, ptrs)
 	h.addTriage(r, input.TenantID, ptrs, result.Data)
+	h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, ptrs)
 
 	response := ListResponse[AssetResponse]{
 		Data:       data,
@@ -785,6 +800,17 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// technologyCategoryStrings parses a technology_category filter, keeping
+// only valid categories.
+func technologyCategoryStrings(raw string) []string {
+	cats := assettech.ParseCategories(raw)
+	out := make([]string, 0, len(cats))
+	for _, c := range cats {
+		out = append(out, string(c))
+	}
+	return out
 }
 
 // Create handles POST /api/v1/assets
@@ -879,6 +905,7 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	resp := toAssetResponse(a)
 	h.addProgramFlags(r, tenantID, []*AssetResponse{&resp})
+	h.addTechnologies(r, tenantID, getTechnologiesPerAsset, []*AssetResponse{&resp})
 
 	// Fetch primary owner
 	if h.accessControlRepo != nil {
@@ -1325,6 +1352,7 @@ func (h *AssetHandler) GetWithRepository(w http.ResponseWriter, r *http.Request)
 		AssetResponse: toAssetResponse(a),
 		Repository:    toRepositoryExtensionResponse(ext),
 	}
+	h.addTechnologies(r, tenantID, getTechnologiesPerAsset, []*AssetResponse{&response.AssetResponse})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

@@ -33,19 +33,22 @@ const (
 	// vulnerability matching policy (RFC-066).
 	ActionTenantVulnMatchingUpdated Action = "tenant.vuln_matching_updated"
 
-	// Idle Free workspaces (docs/architecture/idle-workspaces.md).
-	ActionTenantIdleReminded         Action = "tenant.idle_reminded"
-	ActionTenantIdleReadOnly         Action = "tenant.idle_read_only"
-	ActionTenantIdleFinalWarning     Action = "tenant.idle_final_warning"
-	ActionTenantIdleDeletionDue      Action = "tenant.idle_deletion_due"
-	ActionTenantIdleReactivated      Action = "tenant.idle_reactivated"
-	ActionTenantIdleExemptionChanged Action = "tenant.idle_exemption_changed"
+	// Idle-organization policy (docs/architecture/idle-workspaces.md).
+	ActionTenantIdleReminded      Action = "tenant.idle_reminded"
+	ActionTenantIdleReadOnly      Action = "tenant.idle_read_only"
+	ActionTenantIdleFinalWarning  Action = "tenant.idle_final_warning"
+	ActionTenantIdleDeletionDue   Action = "tenant.idle_deletion_due"
+	ActionTenantIdleReactivated   Action = "tenant.idle_reactivated"
+	ActionTenantIdlePolicyChanged Action = "tenant.idle_policy_changed"
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
 	// ActionTenantCyclePolicyUpdated records a change to the organization's
 	// CTEM cycle policy (whether the coverage SLO blocks closing a cycle).
 	ActionTenantCyclePolicyUpdated Action = "tenant.cycle_policy_updated"
+	// ActionTenantSharedSensorsUpdated records the owner's shared sensor
+	// opt-out changing.
+	ActionTenantSharedSensorsUpdated Action = "tenant.shared_sensors_updated"
 
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
@@ -131,11 +134,19 @@ const (
 	ActionAssetBulkStatusChanged Action = "asset.bulk_status_changed"
 	ActionAssetCrownJewelChanged Action = "asset.crown_jewel_changed"
 	ActionAssetImported          Action = "asset.imported"
+	// ActionAssetRenamed: a repository asset took its code host's current
+	// name (found by the host's immutable repository id after a rename or
+	// transfer). Metadata: old and new name, provider, repository id, source.
+	ActionAssetRenamed Action = "asset.renamed"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
 	ActionMemberRemoved     Action = "member.removed"
 	ActionMemberRoleChanged Action = "member.role_changed"
+	// ActionOwnerRoleDriftRemoved: the owner removed an owner role row held by a
+	// member whose membership label is not owner (a co-owner planted before
+	// system roles were limited to the membership routes).
+	ActionOwnerRoleDriftRemoved Action = "owner_role_drift_removed"
 	ActionMemberSuspended   Action = "member.suspended"
 	ActionMemberReactivated Action = "member.reactivated"
 	// ActionMemberOffboarded: access stripped, owned work reassigned, the
@@ -144,9 +155,24 @@ const (
 	// ActionMemberDataErased: an offboarded person's name and email were
 	// anonymised (owner only).
 	ActionMemberDataErased Action = "member.data_erased"
+	// Self-service account deletion (RFC-104): asked, canceled by signing in
+	// again, and the account erased after the grace period.
+	ActionAccountDeletionRequested Action = "account.deletion_requested"
+	ActionAccountDeletionCanceled  Action = "account.deletion_canceled"
+	ActionAccountErased            Action = "account.erased"
+	// ActionMemberLeft: a member left the organization themselves.
+	ActionMemberLeft Action = "member.left"
 	// ActionMemberAccessChanged: the end date of an external member's access
 	// was changed (RFC-058).
 	ActionMemberAccessChanged Action = "member.access_changed"
+	// Ownership transfer (RFC-095): the owner asked a member to take the
+	// organization; the member accepted (the owner changed), declined, or
+	// the owner canceled.
+	ActionMemberOwnershipTransferRequested Action = "member.ownership_transfer_requested"
+	ActionMemberOwnershipTransferred       Action = "member.ownership_transferred"
+	ActionMemberOwnershipTransferCanceled  Action = "member.ownership_transfer_canceled"
+	ActionMemberOwnershipTransferDeclined  Action = "member.ownership_transfer_declined"
+	ActionMemberOwnershipTransferExpired   Action = "member.ownership_transfer_expired"
 
 	// Invitation actions
 	ActionInvitationCreated  Action = "invitation.created"
@@ -186,6 +212,10 @@ const (
 	// ActionFindingEvidenceDeleted records the removal of a manually-attached
 	// evidence note from a generic (non-pentest) finding.
 	ActionFindingEvidenceDeleted Action = "finding.evidence_deleted"
+	// ActionFindingTicketLinked records a person linking an existing tracker
+	// issue to a finding; ActionFindingTicketUnlinked removing a link.
+	ActionFindingTicketLinked   Action = "finding.ticket_linked"
+	ActionFindingTicketUnlinked Action = "finding.ticket_unlinked"
 	// ActionFindingEvidenceRevealed records a reveal of masked secret values
 	// in a finding's evidence: the item, the placeholders and the purpose
 	// (view, copy, copy_curl). Never the values.
@@ -387,6 +417,16 @@ const (
 	// ActionSSOVerifiedDomainJITChanged: a domain's just-in-time provisioning
 	// (on/off, role) changed (RFC-058).
 	ActionSSOVerifiedDomainJITChanged Action = "sso.verified_domain_jit_changed"
+	// ActionSSOVerifiedDomainSignupPolicyChanged: an owner changed what the
+	// domain claim does to accounts on it (join, discovery, SSO required,
+	// new organizations; RFC-104).
+	ActionSSOVerifiedDomainSignupPolicyChanged Action = "sso.verified_domain_signup_policy_changed"
+	// Joining by a verified email domain (RFC-104): a colleague joined at
+	// once (join policy auto), or asked and an administrator decided.
+	ActionMemberJoinedByDomain Action = "member.joined_by_domain"
+	ActionJoinRequestCreated   Action = "join_request.created"
+	ActionJoinRequestApproved  Action = "join_request.approved"
+	ActionJoinRequestRejected  Action = "join_request.rejected"
 	// A platform administrator's SAML / identity-provider change waits for an
 	// owner of the organization, who approves (applies) or rejects it.
 	ActionSSOChangeRequested Action = "sso.change_requested"
@@ -443,12 +483,26 @@ const (
 	// own rule because nobody else can, owner decision B16) is Critical.
 	ActionSuppressionRuleApproved     Action = "suppression_rule.approved"
 	ActionSuppressionRuleSelfApproved Action = "suppression_rule.self_approved"
+	// A refused own approval (not allowed, no reason, missing or wrong
+	// authenticator code) is recorded too, at High.
+	ActionSuppressionRuleSelfApprovalRefused Action = "suppression_rule.self_approval_refused"
+
+	// An approver looked at a rule the platform flagged for review (it had
+	// no end date) and cleared the flag.
+	ActionSuppressionRuleReviewed Action = "suppression_rule.reviewed"
+
+	// Approval policy on rules (RFC-111): one approval of a rule that needs
+	// more (it stays pending), and an approver the policy refused.
+	ActionSuppressionRuleSigned          Action = "suppression_rule.signed"
+	ActionSuppressionRuleApprovalRefused Action = "suppression_rule.approval_refused"
 
 	// Four-eyes dispositions of high and critical exposures.
 	ActionExposureDispositionRequested    Action = "exposure.disposition_requested"
 	ActionExposureDispositionApproved     Action = "exposure.disposition_approved"
 	ActionExposureDispositionSelfApproved Action = "exposure.disposition_self_approved"
 	ActionExposureDispositionRejected     Action = "exposure.disposition_rejected"
+	// A refused own approval of a disposition, at High.
+	ActionExposureDispositionSelfApprovalRefused Action = "exposure.disposition_self_approval_refused"
 
 	// Report schedule actions: a schedule mails organization posture to its
 	// recipients (members or the allowed domains, D12).
@@ -653,8 +707,9 @@ func (a Action) IsValid() bool {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
-		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
+		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,
@@ -668,10 +723,14 @@ func (a Action) IsValid() bool {
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
-		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
-		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
+		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged, ActionOwnerRoleDriftRemoved,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
+		ActionAccountDeletionRequested, ActionAccountDeletionCanceled, ActionAccountErased, ActionMemberLeft,
 		ActionMemberAccessChanged,
+		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
+		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined,
+		ActionMemberOwnershipTransferExpired,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
 		ActionComponentCreated, ActionComponentUpdated, ActionComponentDeleted,
@@ -679,6 +738,7 @@ func (a Action) IsValid() bool {
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
@@ -711,7 +771,8 @@ func (a Action) IsValid() bool {
 		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
-		ActionSSOVerifiedDomainJITChanged,
+		ActionSSOVerifiedDomainJITChanged, ActionSSOVerifiedDomainSignupPolicyChanged,
+		ActionMemberJoinedByDomain, ActionJoinRequestCreated, ActionJoinRequestApproved, ActionJoinRequestRejected,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
 		ActionSCIMGroupMappingsUpdated,
@@ -724,7 +785,9 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
-		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved,
+		ActionExposureDispositionSelfApprovalRefused,
+		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
+		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -783,9 +846,12 @@ func (a Action) Category() string {
 	case ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated:
 		return "tenant"
-	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
+	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged, ActionOwnerRoleDriftRemoved,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
-		ActionMemberAccessChanged:
+		ActionMemberAccessChanged,
+		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
+		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined,
+		ActionMemberOwnershipTransferExpired:
 		return "member"
 	case ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired:
 		return "invitation"
@@ -800,6 +866,7 @@ func (a Action) Category() string {
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
@@ -849,9 +916,12 @@ func (a Action) Category() string {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
-	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved:
+	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
 		return "suppression"
-	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected:
+	case ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused:
+		return "suppression"
+	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
+		ActionExposureDispositionSelfApprovalRefused:
 		return "exposure"
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
 		return "report_schedule"
@@ -999,7 +1069,8 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
+		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeFindingApproval, ResourceTypeSupportGrant:
 		return true
 	}
 	return isConfigResourceType(r)
@@ -1061,6 +1132,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSensorRevoked, ActionSensorDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionAuditChainRebaselined, ActionMemberDataErased, ActionSuppressionRuleSelfApproved,
+		ActionMemberOwnershipTransferred, ActionOwnerRoleDriftRemoved,
 		ActionExposureDispositionSelfApproved:
 		return SeverityCritical
 
@@ -1075,6 +1147,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthStepUpFailed,
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
+		ActionMemberOwnershipTransferRequested,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -1090,7 +1163,9 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated, ActionScannerTemplateApproved,
 		// Deleting an asset also deletes its findings.
-		ActionAssetDeleted:
+		ActionAssetDeleted,
+		// A refused own approval: someone tried to skip the second approver.
+		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused:
 		return SeverityHigh
 
 	// Medium - important changes
@@ -1104,7 +1179,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
 		ActionAssetCreateMerged,
-		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,
@@ -1124,6 +1199,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionSuppressionRuleApproved,
 		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
+		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,

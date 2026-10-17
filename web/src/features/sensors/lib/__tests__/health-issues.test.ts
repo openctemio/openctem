@@ -50,7 +50,11 @@ const failed: SensorContent = {
 function issuesOf(s: Sensor) {
   const checks = sensorHealthChecks(s, {
     now: NOW,
-    channel: { latest: 'v0.6.0', min: 'v0.4.0' },
+    channel: {
+      products: [
+        { id: 'openctemio-sensor', latest_version: 'v0.6.0', min_version: 'v0.4.0', image: '' },
+      ],
+    },
     protocolV2Version: 'v0.5.0',
     protocolV1Sunset: '2027-04-01',
   })

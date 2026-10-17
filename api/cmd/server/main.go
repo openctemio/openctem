@@ -21,6 +21,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/internal/versions"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
@@ -80,6 +82,10 @@ var (
 )
 
 func main() {
+	if tool := toolFor(os.Args[0]); tool != nil {
+		tool()
+		return
+	}
 	flag.Parse()
 	if *healthcheck {
 		os.Exit(runHealthcheck(os.Stderr))
@@ -103,6 +109,7 @@ func run() int {
 		return 1
 	}
 
+	brand.SetInstance(cfg.Brand)
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
 	for _, w := range cfg.EnvWarnings {
@@ -113,6 +120,17 @@ func run() int {
 	for _, w := range cfg.WideTrustedProxies() {
 		log.Warn("SECURITY: a trusted-proxy range covers more than 16 addresses; every host in it can set the client IP (rate limits, audit, IP allowlists)",
 			"setting", w, "remediation", "list only the gateway's and the web server's addresses")
+	}
+
+	// Sensor products the operator adds to the built-in catalog (a
+	// customer's own sensor): data only, read before anything uses the
+	// catalog. An invalid file stops the start.
+	if err := versions.LoadExtraProducts(cfg.SensorConfig.ProductsFile); err != nil {
+		log.Error("failed to load the sensor products file", "error", err)
+		return 1
+	}
+	if n := len(versions.Products()) - len(versions.Embedded().Products); n > 0 {
+		log.Info("sensor products added from SENSOR_PRODUCTS_FILE", "count", n)
 	}
 
 	if httpsec.AllowPrivate() {
@@ -133,6 +151,26 @@ func run() int {
 	}
 	defer closeWithLog(db, "database", log)
 	log.Info("database connected")
+
+	// The platform console's identity tables (administrators, console
+	// sessions, the platform identity provider) through their own role
+	// (DB_ADMIN_USER) when one is set: the API's DB_USER then cannot write
+	// them, so a SQL injection anywhere in the tenant plane cannot add an
+	// administrator or a console session.
+	adminDB := db
+	if acfg := cfg.Database.AdminConfig(); acfg != nil {
+		adminDB, err = postgres.New(acfg)
+		if err != nil {
+			log.Error("failed to connect to the database as DB_ADMIN_USER", "error", err)
+			return 1
+		}
+		defer closeWithLog(adminDB, "console database pool", log)
+		log.Info("console identity tables use their own database role", "role", cfg.Database.AdminUser)
+	}
+	if err := checkAppRoleConsoleTables(ctx, db.DB, cfg, log); err != nil {
+		log.Error("database role check failed: refusing to start", "error", err)
+		return 1
+	}
 
 	// Fail fast if the DB schema is behind the migrations shipped with this
 	// binary — otherwise every request touching a not-yet-migrated column 500s
@@ -186,6 +224,9 @@ func run() int {
 	// Repositories
 	// ==========================================================================
 	repos := NewRepositories(db)
+	repos.UseAdminDB(adminDB)
+	// New organizations get the deployment's region, fixed for their life.
+	repos.Tenant.SetDefaultRegion(cfg.App.Region)
 	repos.InitIntegrationExtensions(db)
 	log.Info("repositories initialized")
 
@@ -290,6 +331,7 @@ func run() int {
 	// Suspend/reactivate emails need the email service, built above.
 	if services.Email != nil {
 		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
+		services.Tenant.SetOwnershipTransferNotifier(services.Email)
 	}
 	// Administrator-created accounts. The set-password link is emailed
 	// when SMTP is configured, otherwise returned once to the administrator.
@@ -311,7 +353,7 @@ func run() int {
 		}
 		services.AccessRequest = accessrequestapp.NewService(repos.AccessRequest, services.Signup,
 			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
-			accessRequestMailer{email: services.Email, appName: cfg.App.Name, log: log},
+			accessRequestMailer{email: services.Email, appName: cfg.Brand.DisplayName(), log: log},
 			captcha, cfg.SMTP.BaseURL, log)
 	}
 
@@ -344,6 +386,18 @@ func run() int {
 	// Initialize local auth handler if supported
 	if cfg.Auth.Provider.SupportsLocal() {
 		InitLocalAuthHandler(&handlers, services, repos, cfg, log)
+		// The CAPTCHA after repeated failed sign-ins counts failures per
+		// client address across replicas.
+		if handlers.LocalAuth != nil && cfg.Auth.CaptchaTurnstileSecret != "" {
+			handlers.LocalAuth.SetLoginFailureCounter(newLoginFailureCounter(redisClient, log))
+		}
+	}
+	// The console sign-in gets the same CAPTCHA after repeated failures, with
+	// its own per-address counter keys.
+	if handlers.AdminConsole != nil && cfg.Auth.CaptchaTurnstileSecret != "" {
+		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
+			handlers.AdminConsole.SetLoginGuard(t, newLoginFailureCounter(redisClient, log))
+		}
 	}
 	wireStepUpGate(&handlers, services)
 
@@ -351,6 +405,7 @@ func run() int {
 	// WebSocket Hub
 	// ==========================================================================
 	// Create cancellable context for graceful shutdown
+
 	wsCtx, wsCancel := context.WithCancel(ctx)
 	defer wsCancel()
 
@@ -400,9 +455,16 @@ func run() int {
 
 	server := http.NewServer(cfg, log)
 	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache, services.PermCache, services.PermVersion)
+	// An admin-plane process (OPENCTEM_PLANE=admin) serves only the console
+	// API: no sensor binding, no background work (the tenant plane runs it).
+	servesTenant := cfg.AdminPlane.ServesTenant()
+	if !servesTenant {
+		log.Info("serving only the platform console API (OPENCTEM_PLANE=admin)")
+	}
+
 	// Sensor protocol v3 HTTPS binding (RFC-059): ahead of the router, which
 	// would cut its control stream; it carries its own guards.
-	if handlers.SensorV3 != nil {
+	if handlers.SensorV3 != nil && servesTenant {
 		server.MountPrefix(sensortransport.PathPrefix, handlers.SensorV3.HTTPSHandler(handlers.SensorResultsV2.AuthenticateV3))
 		// When the API terminates TLS itself, a ClientHello offering the
 		// sensor ALPN id is served by the gRPC binding on the same port.
@@ -422,60 +484,69 @@ func run() int {
 	}
 
 	// ==========================================================================
-	// Workers
+	// Workers (none on the admin plane)
 	// ==========================================================================
-	workers, err := NewWorkers(&WorkerDeps{
-		Config:   cfg,
-		Log:      log,
-		DB:       db.DB,
-		Repos:    repos,
-		Services: services,
-	})
-	if err != nil {
-		log.Error("failed to initialize workers", "error", err)
+	var workers *Workers
+	if servesTenant {
+		w, err := NewWorkers(&WorkerDeps{
+			Config:   cfg,
+			Log:      log,
+			DB:       db.DB,
+			Repos:    repos,
+			Services: services,
+		})
+		if err != nil {
+			log.Error("failed to initialize workers", "error", err)
+			return 1
+		}
+
+		workers = w
+		if err := workers.Start(ctx, log); err != nil {
+			log.Error("failed to start workers", "error", err)
+			return 1
+		}
+
+		// Back-wire the lifecycle worker into the tenant handler so the
+		// dry-run HTTP endpoint and the cron controller share one worker
+		// instance. Handlers are built before workers (see note above);
+		// this call closes that loop.
+		if workers.AssetLifecycleWorker != nil {
+			WireAssetLifecycleWorker(workers.AssetLifecycleWorker)
+		}
+
+		// Seal leaked-credential secrets still stored in plaintext (rows written
+		// before secrets were encrypted, or without a key). Idempotent, batched,
+		// SKIP LOCKED: safe on every start and across replicas.
+		go func() {
+			n, err := postgres.BackfillLeakedCredentialSecrets(ctx, db.DB, services.CredentialSecrets)
+			if err != nil {
+				log.Error("leaked credential secret backfill failed", "error", err, "sealed", n)
+				return
+			}
+			if n > 0 {
+				log.Info("leaked credential secrets sealed", "count", n, "aes_gcm", services.CredentialSecrets.Encrypts())
+			}
+		}()
+
+		// Host keys for commands queued before every command got them at
+		// create (research/130). Idempotent and SKIP LOCKED: safe on every
+		// start and across replicas.
+		go func() {
+			n, err := postgres.BackfillPendingHostKeys(ctx, db.DB)
+			if err != nil {
+				log.Error("pending command host key backfill failed", "error", err, "updated", n)
+				return
+			}
+			if n > 0 {
+				log.Info("pending commands given host keys", "count", n)
+			}
+		}()
+	}
+
+	if err := requireSelfServiceStartLimits(ctx, cfg, services); err != nil {
+		log.Error("refusing to start", "error", err)
 		return 1
 	}
-
-	if err := workers.Start(ctx, log); err != nil {
-		log.Error("failed to start workers", "error", err)
-		return 1
-	}
-
-	// Back-wire the lifecycle worker into the tenant handler so the
-	// dry-run HTTP endpoint and the cron controller share one worker
-	// instance. Handlers are built before workers (see note above);
-	// this call closes that loop.
-	if workers.AssetLifecycleWorker != nil {
-		WireAssetLifecycleWorker(workers.AssetLifecycleWorker)
-	}
-
-	// Seal leaked-credential secrets still stored in plaintext (rows written
-	// before secrets were encrypted, or without a key). Idempotent, batched,
-	// SKIP LOCKED: safe on every start and across replicas.
-	go func() {
-		n, err := postgres.BackfillLeakedCredentialSecrets(ctx, db.DB, services.CredentialSecrets)
-		if err != nil {
-			log.Error("leaked credential secret backfill failed", "error", err, "sealed", n)
-			return
-		}
-		if n > 0 {
-			log.Info("leaked credential secrets sealed", "count", n, "aes_gcm", services.CredentialSecrets.Encrypts())
-		}
-	}()
-
-	// Host keys for commands queued before every command got them at
-	// create (research/130). Idempotent and SKIP LOCKED: safe on every
-	// start and across replicas.
-	go func() {
-		n, err := postgres.BackfillPendingHostKeys(ctx, db.DB)
-		if err != nil {
-			log.Error("pending command host key backfill failed", "error", err, "updated", n)
-			return
-		}
-		if n > 0 {
-			log.Info("pending commands given host keys", "count", n)
-		}
-	}()
 
 	// ==========================================================================
 	// Start Server
@@ -485,10 +556,15 @@ func run() int {
 			log.Error("server error", "error", err)
 		}
 	}()
-	if handlers.SensorV3 != nil {
+	if handlers.SensorV3 != nil && servesTenant {
 		if err := handlers.SensorV3.Start(ctx); err != nil {
 			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
 		}
+	}
+	internalAPI, err := startInternalAPI(cfg, repos, services, redisClient, log)
+	if err != nil {
+		log.Error("internal API not started", "error", err)
+		return 1
 	}
 	log.Info("application started", "http_addr", cfg.Server.Addr())
 
@@ -508,8 +584,10 @@ func run() int {
 	wsCancel()
 	log.Info("websocket hub stopped")
 
-	// Stop workers
-	workers.Stop(log)
+	// Stop workers (none on the admin plane)
+	if workers != nil {
+		workers.Stop(log)
+	}
 
 	// Flush any buffered new-internet-facing-asset summary so a graceful
 	// restart does not drop it (the DB is still open here).
@@ -523,6 +601,7 @@ func run() int {
 			log.Error("sensor protocol v3 gRPC binding shutdown", "error", err)
 		}
 	}
+	stopInternalAPI(internalAPI, log)
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error("shutdown error", "error", err)
 		return 1

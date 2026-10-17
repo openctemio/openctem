@@ -264,7 +264,13 @@ export function ClassificationBadges({
   labelled = false,
 }: ClassificationBadgesProps) {
   const showExposure = exposure && exposure !== 'unknown'
-  const zone = scope ? (
+  // Every asset starts in zone "internal" (the stored default) until a person
+  // or an integration sets it, so in a header "Zone: Internal" carries no
+  // information and, next to "Exposure: Public" on a discovered website,
+  // reads as a contradiction. The header shows the zone only when it is not
+  // the default.
+  const showZone = !!scope && !(labelled && scope === 'internal')
+  const zone = showZone ? (
     <AssetScopeBadge
       scope={scope}
       showIcon={showIcons}

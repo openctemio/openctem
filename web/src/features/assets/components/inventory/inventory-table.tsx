@@ -16,10 +16,12 @@
  * the type's actions (lib/type-actions), Edit and Delete.
  */
 
+import Link from '@/components/link'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   ChevronRight,
+  ExternalLink,
   Globe,
   MinusCircle,
   MoreHorizontal,
@@ -42,17 +44,19 @@ import {
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
 import { rowActionsFor } from '../../lib/type-actions'
 import { AttributeCell } from './attribute-cell'
-import { DataTable, DataTableColumnHeader, RiskScoreBadge } from '@/features/shared'
+import { DataTable, DataTableColumnHeader, RiskScoreBadge, riskScoreState } from '@/features/shared'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
 import { AssetDetailSheet } from '../asset-detail-sheet'
 import { getAsset, updateAsset } from '../../hooks'
 import { useAssetTags } from '../../hooks/use-asset-tags'
+import { isPlainLeftClick } from '../../lib/plain-click'
 import { AssetTypeIcon } from '../../lib/asset-type-icon'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { ASSET_TYPE_LABELS, type Asset } from '../../types/asset.types'
@@ -227,7 +231,18 @@ export function InventoryTable({
               className="h-4 w-4 shrink-0 text-muted-foreground"
             />
             <div className="min-w-0">
-              <p className="truncate font-medium">{row.original.name}</p>
+              <Link
+                href={assetDetailHref(row.original.id)}
+                onClick={(e) => {
+                  // Plain click opens the drawer; ctrl/cmd/middle-click follow the link.
+                  if (!isPlainLeftClick(e)) return
+                  e.preventDefault()
+                  setSelectedAsset(row.original)
+                }}
+                className="block truncate font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {row.original.name}
+              </Link>
               {row.original.description && (
                 <p className="line-clamp-1 text-xs text-muted-foreground">
                   {row.original.description}
@@ -377,7 +392,13 @@ export function InventoryTable({
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('components.col.risk', 'Risk')} />
         ),
-        cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
+        cell: ({ row }) => (
+          <RiskScoreBadge
+            score={row.original.riskScore}
+            state={riskScoreState(row.original)}
+            size="sm"
+          />
+        ),
       },
       {
         id: 'findings',
@@ -475,6 +496,12 @@ export function InventoryTable({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem asChild>
+                  <Link href={assetDetailHref(asset.id)}>
+                    <ExternalLink className="me-2 h-4 w-4" />
+                    {t('assets.inv.openDetails', 'Open details page')}
+                  </Link>
+                </DropdownMenuItem>
                 {actions.map((a) => (
                   <DropdownMenuItem key={a.id} onClick={() => void a.run(asset)}>
                     <a.icon className="me-2 h-4 w-4" />
@@ -583,7 +610,9 @@ export function InventoryTable({
                         snoozedUntil={a.lifecyclePausedUntil}
                       />
                     )}
-                    {a.riskScore > 0 && <RiskScoreBadge score={a.riskScore} size="sm" />}
+                    {(a.riskScore > 0 || riskScoreState(a) !== 'scored') && (
+                      <RiskScoreBadge score={a.riskScore} state={riskScoreState(a)} size="sm" />
+                    )}
                   </div>
                 </div>
                 <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />

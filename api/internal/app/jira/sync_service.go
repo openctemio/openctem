@@ -2,40 +2,21 @@ package jira
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
-
-// secretPatterns are masked out of any text pushed to a third-party ticket
-// (defense-in-depth, on top of suppressing the raw description for secret
-// findings). Conservative, low-false-positive patterns only.
-var secretPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),                                                                // AWS access key id
-	regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`),                      // JWT
-	regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`), // PEM private key block
-}
-
-// secretAssignment matches `password: xxx` / `api_key=xxx` style assignments,
-// keeping the key name and redacting only the value.
-var secretAssignment = regexp.MustCompile(`(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|authorization|bearer)\b(\s*[:=]\s*|\s+)\S+`)
-
-// redactSecrets masks common secret material in free text before it leaves the
-// platform for a third-party ticketing system.
-func redactSecrets(text string) string {
-	for _, re := range secretPatterns {
-		text = re.ReplaceAllString(text, "[REDACTED]")
-	}
-	text = secretAssignment.ReplaceAllString(text, "$1$2[REDACTED]")
-	return text
-}
 
 // isSecretFinding reports whether a finding is a leaked-secret/credential
 // finding, whose raw description must never be copied verbatim into an external
@@ -59,7 +40,7 @@ func isSecretFinding(f *vulnerability.Finding) bool {
 // the ticket (RFC-040 §5.4).
 func ticketDescription(f *vulnerability.Finding) string {
 	inline := func(s string) string {
-		return safetext.JiraWikiInline(redactSecrets(s), safetext.MaxInlineRunes)
+		return safetext.JiraWikiInline(safetext.RedactSecrets(s), safetext.MaxInlineRunes)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "*Finding:* %s\n*Severity:* %s\n*Status:* %s\n",
@@ -78,7 +59,7 @@ func ticketDescription(f *vulnerability.Finding) string {
 
 	if desc := strings.TrimSpace(f.Description()); desc != "" {
 		b.WriteString("\n")
-		b.WriteString(safetext.JiraWikiBlock(redactSecrets(desc), safetext.MaxDescriptionRunes))
+		b.WriteString(safetext.JiraWikiBlock(safetext.RedactSecrets(desc), safetext.MaxDescriptionRunes))
 	}
 	return withMobilizationBrief(b.String(), f)
 }
@@ -87,21 +68,20 @@ func ticketDescription(f *vulnerability.Finding) string {
 // characters in Jira): secret-redacted, cleaned of control and bidi
 // characters, folded to one line and capped.
 func ticketSummary(f *vulnerability.Finding) string {
-	return safetext.SingleLine(redactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), f.Title())), safetext.MaxTitleRunes)
+	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), f.Title())), safetext.MaxTitleRunes)
 }
 
 // withMobilizationBrief appends the CTEM Mobilization brief (definition of done
 // + acceptable fixes) to a ticket body when the finding carries one. The brief
-// contains only operator-entered guidance — never a finding-embedded secret —
-// so it is safe to append after the (redacted) body, including for secret
-// findings. It keeps its formatting (it is written for the ticket) but loses
-// control and bidi characters.
+// is written by people with write access, so it is treated like any other
+// text that leaves the platform: secret-redacted, capped, and placed in a
+// {noformat} block so it cannot add links, mentions, images or macros.
 func withMobilizationBrief(body string, f *vulnerability.Finding) string {
-	brief := safetext.Clean(f.Remediation().MobilizationBrief())
+	brief := strings.TrimSpace(f.Remediation().MobilizationBrief())
 	if brief == "" {
 		return body
 	}
-	return body + "\n\n" + brief
+	return body + "\n\n" + safetext.JiraWikiBlock(safetext.RedactSecrets(brief), safetext.MaxBriefRunes)
 }
 
 // Client defines the interface for Jira REST API operations.
@@ -213,6 +193,22 @@ type SyncService struct {
 	// activity records inbound status changes with the integration as actor.
 	activity StatusActivityRecorder
 
+	// applier, workItems and refusalGuard serve inbound status changes.
+	applier      InboundStatusApplier
+	workItems    WorkItemFindingLister
+	refusalGuard RefusalCommentGuard
+	// links stores ticket link records (nil → URL strings only).
+	links ticketlink.Repository
+
+	// taskAccess and taskReader serve task issues; webBase links back.
+	taskAccess TaskAccess
+	taskReader TaskReader
+	webBase    string
+
+	// profiles renders published ticket mapping profiles (nil → built-in
+	// fields and status sync only).
+	profiles ProfileSource
+
 	// campaignSink receives inbound epic status changes so a linked remediation
 	// campaign can be completed (epic Done → campaign completed). nil → inbound
 	// campaign sync is inert.
@@ -224,8 +220,65 @@ type SyncService struct {
 // Implemented by *exposure.RemediationCampaignService. Declared here so the
 // jira package needs no dependency on the remediation/exposure packages.
 type CampaignEpicSink interface {
-	HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus string) error
+	// HandleEpicStatusChange reacts to the linked epic of a campaign moving
+	// in Jira. It returns the refusals to comment back on the epic (one line
+	// per finding the rules kept where it is), and handled=false when the
+	// issue is not a campaign epic.
+	HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, jiraAccount string) (refusals []string, handled bool, err error)
 }
+
+// InboundRefusal is one finding an inbound ticket change did not move, with
+// the reason.
+type InboundRefusal struct {
+	FindingID string
+	Reason    string
+}
+
+// InboundStatusApplier applies a linked ticket's status to findings through
+// the finding service rules (finding.VulnerabilityService.ApplyTicketStatus):
+// transition map, approval and pentest gates, "mark fixed" with proof of
+// fix. Never a direct repository write.
+type InboundStatusApplier interface {
+	ApplyTicketStatus(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
+		target vulnerability.FindingStatus, integration, ref, externalActor string) (applied []shared.ID, refused []InboundRefusal, err error)
+	// RequestTicketDisposition opens a pending risk-acceptance or
+	// false-positive request for each linked finding (four-eyes; never a
+	// close). pending are findings that already had a pending request.
+	RequestTicketDisposition(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID,
+		target vulnerability.FindingStatus, integration, ref, externalActor string) (requested, pending []shared.ID, refused []InboundRefusal, err error)
+}
+
+// WorkItemFindingLister lists every finding of the tenant linked to a ticket
+// URL (a ticket may track several findings).
+type WorkItemFindingLister interface {
+	ListIDsByWorkItemURI(ctx context.Context, tenantID shared.ID, uri string, limit int) ([]shared.ID, error)
+}
+
+// RefusalCommentGuard deduplicates refusal comments (FirstDelivery is true
+// once per key and window), so a retried or repeated delivery comments once.
+type RefusalCommentGuard interface {
+	FirstDelivery(ctx context.Context, key string, ttl time.Duration) (bool, error)
+}
+
+// maxInboundFindings bounds how many findings one ticket may move.
+const maxInboundFindings = 500
+
+// refusalCommentWindow is how long an identical refusal comment is not
+// repeated on the same issue.
+const refusalCommentWindow = time.Hour
+
+// maxRefusalLines bounds the refusal comment.
+const maxRefusalLines = 20
+
+// SetInboundApplier wires the finding service path for inbound changes. Without
+// it, inbound status changes are not applied (fail closed).
+func (s *SyncService) SetInboundApplier(a InboundStatusApplier) { s.applier = a }
+
+// SetWorkItemFindingLister wires the all-findings-of-a-ticket lookup.
+func (s *SyncService) SetWorkItemFindingLister(l WorkItemFindingLister) { s.workItems = l }
+
+// SetRefusalCommentGuard wires refusal-comment deduplication (all replicas).
+func (s *SyncService) SetRefusalCommentGuard(g RefusalCommentGuard) { s.refusalGuard = g }
 
 // FixAppliedHook is called when a Jira webhook transitions a finding
 // into the fix_applied state. Typical implementation: enqueue a
@@ -439,6 +492,13 @@ func firstJiraIssueKey(uris []string) string {
 // On a workflow with no transition to the target, it falls back to a comment so
 // the change is visible to a human rather than failing.
 func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, findingID shared.ID, mapping MappingConfig) error {
+	// A published mapping profile for the issue's project decides the move
+	// itself (its status map is the explicit opt-in for that destination).
+	if s.profiles != nil {
+		if handled, err := s.syncWithProfile(ctx, tenantID, findingID); handled {
+			return err
+		}
+	}
 	if !mapping.SyncEnabled {
 		return nil // outbound sync is opt-in per integration (default off)
 	}
@@ -468,12 +528,12 @@ func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, f
 		return nil
 	}
 
-	comment := fmt.Sprintf("OpenCTEM set this finding to %q.", finding.Status())
+	comment := fmt.Sprintf("%s set this finding to %q.", brand.Name(), finding.Status())
 	if err := client.TransitionToStatus(ctx, issueKey, target, comment); err != nil {
 		if errors.Is(err, ErrNoMatchingTransition) {
 			// Workflow can't reach the target from its current status — leave a
 			// note instead of failing so a human can move the card.
-			body := fmt.Sprintf("OpenCTEM marked this finding %q, but no Jira transition to %q is available from its current status — please move it manually.",
+			body := fmt.Sprintf("%s marked this finding %q, but no Jira transition to %q is available from its current status — please move it manually.", brand.Name(),
 				finding.Status(), target)
 			if cErr := client.AddComment(ctx, issueKey, body); cErr != nil {
 				return fmt.Errorf("comment fallback after no transition: %w", cErr)
@@ -583,18 +643,26 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		issueType = "Bug"
 	}
 
-	result, err := jiraClient.CreateIssue(ctx, CreateIssueInput{
-		ProjectKey:  projectKey,
-		Summary:     ticketSummary(finding),
-		Description: ticketDescription(finding),
-		IssueType:   issueType,
-		Priority:    priority,
-		Labels:      []string{"openctem", "security", string(finding.Severity())},
-		ParentKey:   strings.TrimSpace(input.ParentKey),
-	})
+	result, handled, err := s.createFromProfile(ctx, jiraClient, tenantID, findingID, projectKey, issueType, strings.TrimSpace(input.ParentKey))
 	if err != nil {
-		return nil, fmt.Errorf("create jira ticket: %w", err)
+		return nil, err
 	}
+	if !handled {
+		result, err = jiraClient.CreateIssue(ctx, CreateIssueInput{
+			ProjectKey:  projectKey,
+			Summary:     ticketSummary(finding),
+			Description: ticketDescription(finding),
+			IssueType:   issueType,
+			Priority:    priority,
+			Labels:      []string{"openctem", "security", string(finding.Severity())},
+			ParentKey:   strings.TrimSpace(input.ParentKey),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create jira ticket: %w", err)
+		}
+	}
+
+	s.recordCreatedLink(ctx, jiraClient, tenantID, findingID, result, strings.TrimSpace(input.ParentKey))
 
 	// Auto-link the created ticket to the finding
 	finding.AddWorkItemURI(result.BrowseURL)
@@ -616,6 +684,24 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	}, nil
 }
 
+// syncWithProfile loads the finding's linked issue and lets a published
+// profile move it. handled is false when there is no profile to apply.
+func (s *SyncService) syncWithProfile(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return false, nil //nolint:nilerr // the built-in path reports the lookup error
+	}
+	issueKey := firstJiraIssueKey(finding.WorkItemURIs())
+	if issueKey == "" {
+		return false, nil
+	}
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return false, nil //nolint:nilerr // the built-in path reports a missing integration
+	}
+	return s.syncStatusFromProfile(ctx, client, tenantID, findingID, issueKey)
+}
+
 // CreateEpic creates a Jira epic for the given tenant and returns its key and
 // browse URL. It is provider-plumbing only — campaign-agnostic — so the
 // remediation campaign service can own the "campaign -> epic" orchestration
@@ -633,8 +719,8 @@ func (s *SyncService) CreateEpic(ctx context.Context, tenantID shared.ID, projec
 	}
 	result, err := client.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  projectKey,
-		Summary:     safetext.SingleLine(redactSecrets(summary), safetext.MaxTitleRunes),
-		Description: safetext.Truncate(safetext.Clean(redactSecrets(description)), safetext.MaxDescriptionRunes),
+		Summary:     safetext.SingleLine(safetext.RedactSecrets(summary), safetext.MaxTitleRunes),
+		Description: safetext.JiraWikiBlock(safetext.RedactSecrets(description), safetext.MaxDescriptionRunes),
 		IssueType:   "Epic",
 		Labels:      labels,
 	})
@@ -666,7 +752,7 @@ func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, is
 
 	if terr := client.TransitionToStatus(ctx, issueKey, targetStatus, comment); terr != nil {
 		if errors.Is(terr, ErrNoMatchingTransition) {
-			body := fmt.Sprintf("OpenCTEM wanted to move this epic to %q but no transition is available from its current status — please move it manually.", targetStatus)
+			body := fmt.Sprintf("%s wanted to move this epic to %q but no transition is available from its current status — please move it manually.", brand.Name(), targetStatus)
 			if cerr := client.AddComment(ctx, issueKey, body); cerr != nil {
 				return fmt.Errorf("comment fallback after no transition: %w", cerr)
 			}
@@ -682,9 +768,35 @@ func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, is
 // WebhookPayload is the envelope sent by Jira issue-updated webhooks.
 // See https://developer.atlassian.com/cloud/jira/platform/webhooks/
 type WebhookPayload struct {
-	WebhookEvent string       `json:"webhookEvent"` // "jira:issue_updated"
-	Issue        WebhookIssue `json:"issue"`
-	Changelog    *Changelog   `json:"changelog,omitempty"`
+	WebhookEvent string `json:"webhookEvent"` // "jira:issue_updated"
+	// Timestamp is when Jira created the event, in milliseconds since the
+	// epoch (the inbound route refuses an old delivery).
+	Timestamp int64 `json:"timestamp"`
+	// User is the Jira account that made the change (accountId on Cloud,
+	// name/key on Data Center), recorded on every finding it moves.
+	User      WebhookUser  `json:"user"`
+	Issue     WebhookIssue `json:"issue"`
+	Changelog *Changelog   `json:"changelog,omitempty"`
+}
+
+// WebhookUser is the actor block of a Jira webhook payload.
+type WebhookUser struct {
+	AccountID string `json:"accountId"`
+	Name      string `json:"name"`
+	Key       string `json:"key"`
+}
+
+// ID is the account identifier to record: accountId, else name, else key,
+// cleaned and capped.
+func (u WebhookUser) ID() string {
+	id := u.AccountID
+	if id == "" {
+		id = u.Name
+	}
+	if id == "" {
+		id = u.Key
+	}
+	return safetext.SingleLine(id, 128)
 }
 
 // WebhookIssue represents the issue block inside a Jira webhook payload.
@@ -702,6 +814,8 @@ type Changelog struct {
 // ChangeItem is one entry in the changelog.
 type ChangeItem struct {
 	Field      string `json:"field"`
+	From       string `json:"from"` // the status id for a status change
+	To         string `json:"to"`
 	FromString string `json:"fromString"`
 	ToString   string `json:"toString"`
 }
@@ -734,96 +848,158 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		return nil
 	}
 
-	// Inbound campaign sync: if this issue is a campaign's linked epic, let the
-	// campaign react (epic Done → campaign completed). Best-effort and
-	// independent of the finding path below — an issue is either a finding
-	// ticket or a campaign epic, and each sink no-ops when the key isn't its own.
+	// A campaign's epic: the campaign service decides (Done claims the fix
+	// of the campaign's findings; it never completes the campaign).
 	if s.campaignSink != nil {
-		if cerr := s.campaignSink.HandleEpicStatusChange(ctx, tenantID, payload.Issue.Key, newJiraStatus); cerr != nil {
+		refusals, handled, cerr := s.campaignSink.HandleEpicStatusChange(ctx, tenantID, payload.Issue.Key, newJiraStatus, payload.User.ID())
+		if cerr != nil {
 			s.logger.Warn("jira webhook: inbound campaign epic sync failed",
-				"issue_key", payload.Issue.Key, "jira_status", newJiraStatus, "error", cerr)
+				"issue_key", logger.SanitizeValue(payload.Issue.Key), "error", cerr)
 		}
+		if handled {
+			s.commentRefusals(ctx, tenantID, payload.Issue.Key, newJiraStatus, refusals)
+			return nil
+		}
+	}
+
+	// Only issues in projects configured for ticketing move findings.
+	if ok, err := s.inboundProjectAllowed(ctx, tenantID, payload.Issue.Key); err != nil {
+		return fmt.Errorf("check the issue's project: %w", err)
+	} else if !ok {
+		s.logger.Warn("jira webhook: issue outside the projects configured for ticketing; ignored",
+			"issue_key", logger.SanitizeValue(payload.Issue.Key))
+		return nil
+	}
+
+	// A published mapping profile for the issue's project decides what the
+	// status means (an intent); without one the built-in map applies.
+	if handled, err := s.handleProfileIntent(ctx, tenantID, payload, newJiraStatus); handled {
+		return err
 	}
 
 	newFindingStatus, ok := s.inboundMapping(ctx, tenantID).FindingStatusForJira(newJiraStatus)
 	if !ok {
 		s.logger.Debug("jira status has no finding mapping — ignored",
-			"jira_status", newJiraStatus,
-			"issue_key", payload.Issue.Key,
+			"jira_status", logger.SanitizeValue(newJiraStatus),
+			"issue_key", logger.SanitizeValue(payload.Issue.Key),
 		)
 		return nil
 	}
+	return s.applyToLinked(ctx, tenantID, payload, newJiraStatus, newFindingStatus)
+}
 
-	// Derive the ticket URL from the issue self link or fallback to Atlassian browse URL.
-	ticketURL := deriveJiraTicketURL(payload.Issue)
-
-	// Look up finding by work item URI.
-	finding, err := s.findingRepo.GetByWorkItemURI(ctx, tenantID, ticketURL)
-	if err != nil {
-		if errors.Is(err, shared.ErrNotFound) {
-			// No finding linked to this ticket — silently ignore.
-			s.logger.Debug("no finding linked to jira ticket",
-				"ticket_url", ticketURL,
-				"issue_key", payload.Issue.Key,
-			)
-			return nil
-		}
-		return fmt.Errorf("lookup finding by work item URI: %w", err)
-	}
-
-	// Apply-time guard: whatever the mapping says, a ticket never closes a
-	// finding (no verify gate, no approval, no person). FindingStatusForJira
-	// already refuses these; this keeps the rule if the mapping code changes.
+// applyToLinked applies a work-state status to every finding linked to the
+// issue through the finding service, queues the verification of a fix claim
+// and comments the refusals back.
+func (s *SyncService) applyToLinked(ctx context.Context, tenantID shared.ID, payload WebhookPayload, newJiraStatus string, newFindingStatus vulnerability.FindingStatus) error {
+	// Whatever the mapping says, a ticket never closes a finding (no verify
+	// gate, no approval, no person). FindingStatusForJira already refuses
+	// these; this keeps the rule if the mapping code changes.
 	if !newFindingStatus.IsTicketInboundTarget() {
 		s.logger.Warn("jira webhook: refused a closing status from a ticket",
 			"issue_key", logger.SanitizeValue(payload.Issue.Key), "target_status", logger.SanitizeValue(string(newFindingStatus)))
 		return nil
 	}
 
-	oldStatus := finding.Status()
-	// Apply the status transition if valid.
-	if err := finding.TransitionStatus(newFindingStatus, "", nil); err != nil {
-		s.logger.Warn("jira webhook: finding status transition not allowed",
-			"finding_id", finding.ID().String(),
-			"current_status", finding.Status(),
-			"target_status", newFindingStatus,
-			"jira_status", newJiraStatus,
-			"error", err,
-		)
-		// Not a hard error — the transition might be blocked (e.g., false_positive).
+	ids, err := s.linkedFindingsOf(ctx, tenantID, payload, newJiraStatus)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		s.logger.Debug("no finding linked to jira ticket", "issue_key", logger.SanitizeValue(payload.Issue.Key))
+		return nil
+	}
+	if s.applier == nil {
+		// Fail closed: without the service path nothing is applied.
+		s.logger.Error("jira webhook: inbound status applier not wired; change not applied",
+			"issue_key", logger.SanitizeValue(payload.Issue.Key))
 		return nil
 	}
 
-	if err := s.findingRepo.Update(ctx, finding); err != nil {
-		return fmt.Errorf("update finding status from jira webhook: %w", err)
+	applied, refused, err := s.applier.ApplyTicketStatus(ctx, tenantID, ids, newFindingStatus, "jira", payload.Issue.Key, payload.User.ID())
+	if err != nil {
+		return fmt.Errorf("apply jira status to linked findings: %w", err)
 	}
+	s.logger.Info("jira webhook applied ticket status",
+		"issue_key", logger.SanitizeValue(payload.Issue.Key),
+		"finding_status", newFindingStatus, "linked", len(ids), "applied", len(applied), "refused", len(refused))
 
-	s.logger.Info("jira webhook synced finding status",
-		"finding_id", finding.ID().String(),
-		"issue_key", payload.Issue.Key,
-		"jira_status", newJiraStatus,
-		"finding_status", newFindingStatus,
-	)
-	// The actor of this change is the Jira integration, not a person: record
-	// it so the finding's history says who moved it and from which ticket.
-	if s.activity != nil && oldStatus != newFindingStatus {
-		if aerr := s.activity.RecordIntegrationStatusChange(ctx, tenantID, finding.ID(),
-			oldStatus.String(), newFindingStatus.String(), "jira", payload.Issue.Key); aerr != nil {
-			s.logger.Warn("jira webhook: failed to record activity", "finding_id", finding.ID().String(), "error", aerr)
-		}
-	}
-
-	// B3: fire the verification-scan hook on transition to
-	// fix_applied. This closes the "Jira Done → auto rescan" feedback
-	// edge. Hook errors are logged but not propagated — the Jira ACK
-	// must succeed regardless (Jira retries aggressively on non-2xx).
+	// A fix claim also asks for a verification scan of each claimed finding.
+	// Hook errors are logged, never returned: Jira retries on non-2xx.
 	if newFindingStatus == vulnerability.FindingStatusFixApplied && s.postFixHook != nil {
-		if err := s.postFixHook(ctx, tenantID, finding.ID()); err != nil {
-			s.logger.Warn("post-fix hook failed; finding status still updated",
-				"finding_id", finding.ID().String(), "error", err)
+		for _, id := range applied {
+			if err := s.postFixHook(ctx, tenantID, id); err != nil {
+				s.logger.Warn("post-fix hook failed; finding status still updated", "finding_id", id.String(), "error", err)
+			}
 		}
 	}
+
+	lines := make([]string, 0, len(refused))
+	for _, r := range refused {
+		lines = append(lines, r.FindingID+": "+r.Reason)
+	}
+	s.commentRefusals(ctx, tenantID, payload.Issue.Key, newJiraStatus, lines)
 	return nil
+}
+
+// linkedFindings returns every finding of the tenant linked to the ticket URL.
+func (s *SyncService) linkedFindings(ctx context.Context, tenantID shared.ID, ticketURL string) ([]shared.ID, error) {
+	if s.workItems != nil {
+		ids, err := s.workItems.ListIDsByWorkItemURI(ctx, tenantID, ticketURL, maxInboundFindings)
+		if err != nil {
+			return nil, fmt.Errorf("lookup findings by work item URI: %w", err)
+		}
+		return ids, nil
+	}
+	f, err := s.findingRepo.GetByWorkItemURI(ctx, tenantID, ticketURL)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("lookup finding by work item URI: %w", err)
+	}
+	return []shared.ID{f.ID()}, nil
+}
+
+// commentRefusals tells the people working the ticket which findings the
+// change did not move and why: one comment, not repeated for the same issue,
+// status and reasons within refusalCommentWindow. Best effort.
+func (s *SyncService) commentRefusals(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus string, refusals []string) {
+	if len(refusals) == 0 {
+		return
+	}
+	shown := refusals
+	if len(shown) > maxRefusalLines {
+		shown = shown[:maxRefusalLines]
+	}
+	body := fmt.Sprintf("OpenCTEM did not apply the status %q to %d linked finding(s). Findings are verified in OpenCTEM (a retest, a covered scan or a reviewer), never closed from a ticket.\n\n%s",
+		jiraStatus, len(refusals), strings.Join(shown, "\n\n"))
+	if len(refusals) > len(shown) {
+		body += fmt.Sprintf("\n\n(and %d more)", len(refusals)-len(shown))
+	}
+	s.commentOnce(ctx, tenantID, issueKey, jiraStatus, body)
+}
+
+// commentOnce posts a comment on the issue once per issue, status and body
+// within refusalCommentWindow (all replicas), so a retried or repeated
+// delivery comments once. Best effort.
+func (s *SyncService) commentOnce(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus, body string) {
+	sum := sha256.Sum256([]byte(body))
+	key := "jira-refusal:" + tenantID.String() + ":" + issueKey + ":" + jiraStatus + ":" + hex.EncodeToString(sum[:8])
+	if s.refusalGuard != nil {
+		first, err := s.refusalGuard.FirstDelivery(ctx, key, refusalCommentWindow)
+		if err != nil || !first {
+			return
+		}
+	}
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("jira comment: no client", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
+	if err := client.AddComment(ctx, issueKey, jiraCommentBody(body)); err != nil {
+		s.logger.Warn("jira comment failed", "issue_key", logger.SanitizeValue(issueKey), "error", err)
+	}
 }
 
 // inboundMapping is the tenant's inbound status map: its integration overlay

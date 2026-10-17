@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -91,14 +92,14 @@ func (c *SLAEscalationController) SetWarningPublisher(p SLAWarningPublisher) {
 // The status always changes; whether anyone is told is the governing policy's
 // escalation_enabled (column `notify`). The UPDATE repeats the status guard so
 // a row another replica already moved is not returned twice.
-const breachSelectUpdateQuery = `
+var breachSelectUpdateQuery = `
 	WITH due AS (
 		SELECT f.id, COALESCE(pol.escalation_enabled, TRUE) AS notify
 		FROM findings f` + effectivePolicyJoin + `
 		WHERE f.sla_deadline < NOW()
 		  AND f.sla_deadline IS NOT NULL
 		  AND (f.sla_status IS NULL OR f.sla_status NOT IN ('overdue', 'exceeded', 'not_applicable'))
-		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
+		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		  AND NOT f.branch_only
 	)
 	UPDATE findings SET
@@ -329,21 +330,22 @@ func breachEvent(br breachRow, now time.Time) (SLABreachEvent, bool) {
 // warningSelectUpdateQuery flags open findings once the governing policy's
 // warning_threshold_percent of their remediation window has elapsed, RETURNING
 // the rows that actually transitioned so each is notified once. The window
-// starts at first_detected_at (created_at when unset); for a regression whose
-// deadline was restarted at reopen this makes the window look longer, so the
-// warning comes earlier, never later. The `sla_status IS NULL OR = 'on_track'`
+// starts at the later of first_detected_at and last_reopened_at (created_at
+// when both are unset): a regression's restarted deadline is measured from the
+// reopen, so it does not flip to warning at once. This is the one warning
+// definition; status changes keep a warning it set (finding_sla_status_for). The `sla_status IS NULL OR = 'on_track'`
 // guard makes the transition happen exactly once.
-const warningSelectUpdateQuery = `
+var warningSelectUpdateQuery = `
 	WITH due AS (
 		SELECT f.id, COALESCE(pol.escalation_enabled, TRUE) AS notify
 		FROM findings f` + effectivePolicyJoin + `
 		WHERE f.sla_deadline IS NOT NULL
 		  AND f.sla_deadline > NOW()
 		  AND (f.sla_status IS NULL OR f.sla_status = 'on_track')
-		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
+		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		  AND NOT f.branch_only
-		  AND NOW() >= COALESCE(f.first_detected_at, f.created_at)
-		      + (f.sla_deadline - COALESCE(f.first_detected_at, f.created_at))
+		  AND NOW() >= COALESCE(GREATEST(f.first_detected_at, f.last_reopened_at), f.created_at)
+		      + (f.sla_deadline - COALESCE(GREATEST(f.first_detected_at, f.last_reopened_at), f.created_at))
 		        * (COALESCE(pol.warning_threshold_percent, 80)::float8 / 100.0)
 	)
 	UPDATE findings SET

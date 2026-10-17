@@ -43,6 +43,7 @@ tests that cover the console's most user-visible flows.
 | `16-dialog-layout.spec.ts`                  | Dialog header and actions stay put while the body scrolls  |
 | `18-pentest-finding-editor.spec.ts`         | New pentest finding: evidence, publish, closed campaign    |
 | `19-scan-lifecycle.spec.ts`                 | Scan create, edit (name, targets, duration), run, run view |
+| `20-sensor-tool-settings-drawer.spec.ts`    | Expanded tool settings stay reachable in the sensor drawer |
 
 Each spec is designed to:
 

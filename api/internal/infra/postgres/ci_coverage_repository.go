@@ -356,18 +356,26 @@ func scanIDs(rows *sql.Rows) ([]shared.ID, error) {
 	return out, rows.Err()
 }
 
-// MarkStaleSourceFindings moves the open findings only this (stale or
-// archived) pipeline reported to not_observed with the reason
-// "source_stale": not fixed, not current. A sighting reopens them.
+// MarkStaleSourceFindings marks the open findings only this (stale or
+// archived) pipeline reported stale (observation_state): not fixed, not
+// current; the status stays. A sighting makes them present again.
 func (r *CIRunRepository) MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *cirun.Pipeline) ([]shared.ID, error) {
-	rows, err := r.db.QueryContext(ctx, `UPDATE findings f SET status = 'not_observed', resolution = 'source_stale',
-		resolution_method = NULL, resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
-		WHERE `+soleSourceFindings+` AND f.status IN `+staleFromSQL+`
-		RETURNING f.id::text`, tenantID.String(), p.ID.String(), p.RepositoryAssetID.String(), p.LastRunAt)
-	if err != nil {
-		return nil, fmt.Errorf("mark stale-source findings: %w", err)
-	}
-	return scanIDs(rows)
+	var ids []shared.ID
+	err := r.db.withFindingTransition(ctx, findingTransition{
+		Source: "ci_stale", Reason: "source_stale", ActorName: "system: CI pipeline stale",
+		Message: "Not reported lately by its only CI pipeline, which went stale", Changes: map[string]any{"pipeline_id": p.ID.String()},
+	}, func(tx *sql.Tx) error {
+		//nolint:gosec // G202: fixed SQL fragments (lifecycle lists) and numbered placeholders only
+		rows, err := tx.QueryContext(ctx, `UPDATE findings f SET observation_state = 'stale', updated_at = NOW()
+			WHERE `+soleSourceFindings+` AND f.status IN `+staleFromSQL+` AND f.observation_state = 'present'
+			RETURNING f.id::text`, tenantID.String(), p.ID.String(), p.RepositoryAssetID.String(), p.LastRunAt)
+		if err != nil {
+			return fmt.Errorf("mark stale-source findings: %w", err)
+		}
+		ids, err = scanIDs(rows)
+		return err
+	})
+	return ids, err
 }
 
 // RetirePipeline retires a pipeline and closes the open findings only it
@@ -395,8 +403,18 @@ func (r *CIRunRepository) RetirePipeline(ctx context.Context, tenantID, pipeline
 		tenantID.String(), pipelineID.String(), at, nullID(by), reason); err != nil {
 		return nil, nil, err
 	}
+	actor := ""
+	if by != nil {
+		actor = by.String()
+	}
+	if err := setFindingTransition(ctx, tx, findingTransition{
+		Source: "ci_retire", Reason: "source_retired", ActorType: "user", ActorID: actor,
+		Message: "Its only CI pipeline was retired", Changes: map[string]any{"pipeline_id": pipelineID.String()},
+	}); err != nil {
+		return nil, nil, err
+	}
 	rows, err := tx.QueryContext(ctx, `UPDATE findings f SET status = 'resolved', resolution = 'source_retired',
-		resolution_method = 'source_retired', resolved_at = $5, resolved_by = $6, updated_at = NOW()
+		closure_reason = 'obsolete_source', verification = 'none', resolved_at = $5, resolved_by = $6, updated_at = NOW()
 		WHERE `+soleSourceFindings+` AND f.status IN `+sourceRetiredFromSQL+`
 		RETURNING f.id::text`, tenantID.String(), pipelineID.String(), p.RepositoryAssetID.String(), p.LastRunAt, at, nullID(by))
 	if err != nil {

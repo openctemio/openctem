@@ -204,7 +204,7 @@ export type {
 
 export { useMyTenants, getMyTenantsKey, invalidateMyTenantsCache } from './user-tenant-hooks'
 
-export type { TenantMembership, TenantPlan, TenantRole } from './user-tenant-types'
+export type { TenantMembership, TenantRole } from './user-tenant-types'
 
 export { RolePermissions, RoleLabels, RoleColors } from './user-tenant-types'
 
@@ -431,8 +431,6 @@ export {
   STEP_RUN_STATUSES,
   DEFAULT_SCAN_WORKFLOW_SETTINGS,
   SCAN_WORKFLOW_SENSOR_PREFERENCES,
-  SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
-  SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS,
 } from './scan-workflow-types'
 
 // ============================================

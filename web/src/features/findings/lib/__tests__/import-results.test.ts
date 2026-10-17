@@ -38,7 +38,7 @@ describe('import-results helpers', () => {
         name: 'a',
         stats: { findings: 2 },
         ingest: { findings_created: 2 },
-        vex: { matched: 3, closed: 1 },
+        vex: { matched: 3, requested: 1 },
       },
       { name: 'b', error: { kind: 'malformed', message: 'x' } },
     ] as never)
@@ -48,14 +48,16 @@ describe('import-results helpers', () => {
       findings: 2,
       created: 2,
       vexMatched: 3,
-      vexClosed: 1,
+      vexRequested: 1,
     })
   })
 
   it('explains each VEX mode', () => {
-    expect(vexModeText('enforce', true)).toMatch(/close/)
-    expect(vexModeText('enforce', false)).toMatch(/approve permission/)
-    expect(vexModeText('off', false)).toMatch(/stored/)
-    expect(vexModeText('dry_run', false)).toMatch(/nothing is closed/)
+    const t = (_key: string, fallback: string) => fallback
+    expect(vexModeText(t, 'enforce', true)).toMatch(/request false positive approval/)
+    expect(vexModeText(t, 'enforce', true)).not.toMatch(/close/)
+    expect(vexModeText(t, 'enforce', false)).toMatch(/approve permission/)
+    expect(vexModeText(t, 'off', false)).toMatch(/stored/)
+    expect(vexModeText(t, 'dry_run', false)).toMatch(/no false positive approval is requested/)
   })
 })

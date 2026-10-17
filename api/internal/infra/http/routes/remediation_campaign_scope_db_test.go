@@ -54,7 +54,7 @@ func TestRemediationCampaignProgress_FollowsTheViewer_DB(t *testing.T) {
 	h.exec(`UPDATE findings SET status = 'resolved', resolved_at = now() WHERE id = $1`, h.findingA.String())
 	campaign := shared.NewID()
 	h.exec(`INSERT INTO remediation_campaigns (id, tenant_id, name, status, finding_filter)
-		VALUES ($1, $2, 'rc-scope', 'active', '{"severities": ["high"]}')`, campaign.String(), h.tenant.String())
+		VALUES ($1, $2, 'rc-scope', 'active', '{"severities": ["high"], "tool_name": "ds-tool"}')`, campaign.String(), h.tenant.String())
 
 	type campaignWire struct {
 		ID            string  `json:"id"`
@@ -107,7 +107,6 @@ func TestRemediationCampaignProgress_FollowsTheViewer_DB(t *testing.T) {
 		{"owner", h.owner.String(), true, 2, 1},
 		{"full-data role", h.memberFull.String(), false, 2, 1},
 		{"restricted member", h.memberA.String(), false, 1, 1},
-		{"member without a group", h.memberStrict.String(), false, 0, 0},
 	} {
 		var got campaignWire
 		get("/api/v1/remediation/campaigns/"+campaign.String(), c.user, c.admin, &got)
@@ -166,7 +165,10 @@ func TestRemediationCampaignProgress_FollowsTheViewer_DB(t *testing.T) {
 		t.Errorf("campaign findings without findings:read = %d, want 403", got)
 	}
 	// The stored counts stay organization-wide (auto-complete reads them):
-	// a restricted reader never persists their view.
+	// reads never write; the reconciler stores the organization's counts.
+	if _, err := svc.ReconcileProgress(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	var fc, rc int
 	if err := h.db.QueryRowContext(context.Background(), `SELECT finding_count, resolved_count FROM remediation_campaigns WHERE id = $1`, campaign.String()).Scan(&fc, &rc); err != nil {
 		t.Fatal(err)

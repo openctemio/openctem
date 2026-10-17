@@ -53,3 +53,17 @@ func TestParseRoutes_ReadsEveryGateKind(t *testing.T) {
 		}
 	}
 }
+
+func TestWithoutConsoleRoutes(t *testing.T) {
+	ref := &Reference{Features: []FeatureDoc{
+		{Feature: Feature{ID: "a"}, Routes: []RouteDoc{{Method: "GET", Path: "/api/v1/assets"}, {Method: "GET", Path: "/api/v1/admin/tenants"}}},
+		{Feature: Feature{ID: "console-only"}, Routes: []RouteDoc{{Method: "GET", Path: "/api/v1/admin/users"}}},
+	}}
+	got := ref.WithoutConsoleRoutes()
+	if len(got.Features) != 1 || len(got.Features[0].Routes) != 1 || got.Features[0].Routes[0].Path != "/api/v1/assets" {
+		t.Fatalf("console routes kept: %+v", got.Features)
+	}
+	if len(ref.Features) != 2 || len(ref.Features[0].Routes) != 2 {
+		t.Fatal("the source reference was modified")
+	}
+}

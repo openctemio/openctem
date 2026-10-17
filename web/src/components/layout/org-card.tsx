@@ -4,8 +4,8 @@
  * The organization card: what opens from the sidebar's context row.
  *
  * It always opens, even with one organization and no way to create another,
- * because it is where a member finds the organization's plan, their role in
- * it, how many members it has and its ID. Top to bottom: the organization,
+ * because it is where a member finds their role in the organization, how many
+ * members it has and its ID. Top to bottom: the organization,
  * its details (role, members, ID), the API keys link, the other organizations
  * (only with more than one), "Create organization" (only when the server
  * allows self-service creation) and who is signed in.
@@ -48,7 +48,7 @@ export interface OrgCardLink {
 }
 
 export interface OrgCardProps {
-  current: { id: string; name: string; plan?: string; role?: string }
+  current: { id: string; name: string; role?: string }
   /** Every organization the user belongs to, the current one included. */
   organizations: OrgCardOrganization[]
   /** Members settings page, when the user may open it (and so read the count). */
@@ -82,13 +82,12 @@ function capitalize(value: string): string {
   return value ? value[0].toUpperCase() + value.slice(1) : value
 }
 
-/** Translated role / plan names, falling back to the raw value capitalized. */
+/** Translated role names, falling back to the raw value capitalized. */
 export function useOrgLabels() {
   const { t } = useTranslation()
   return React.useMemo(
     () => ({
       role: (role?: string) => (role ? t(`org.role.${role}`, capitalize(role)) : ''),
-      plan: (plan?: string) => (plan ? t(`org.plan.${plan}`, capitalize(plan)) : ''),
     }),
     [t]
   )
@@ -201,7 +200,6 @@ export function OrgCard({
     const q = query.trim().toLowerCase()
     return q ? organizations.filter((o) => o.name.toLowerCase().includes(q)) : organizations
   }, [organizations, query])
-  const plan = labels.plan(current.plan)
   const role = labels.role(current.role)
 
   const memberCountText =
@@ -220,12 +218,6 @@ export function OrgCard({
           <p className="truncate text-sm font-semibold" title={current.name}>
             {current.name}
           </p>
-          {plan && (
-            <Badge variant="secondary" className="mt-1" data-testid="org-card-plan">
-              <span className="sr-only">{t('org.planLabel', 'Plan')}: </span>
-              {plan}
-            </Badge>
-          )}
         </div>
       </div>
 

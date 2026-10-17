@@ -43,16 +43,19 @@ var gateFuncs = map[string]bool{
 // source, with {param} placeholders). Adding a route here is a SECURITY-
 // sensitive change — it declares a route public/self/machine-scoped.
 var routeAuthzAllowlist = map[string]string{
-	"POST /api/v1/client-errors": "public on purpose: the web console reports an error kind (fixed set, nothing else accepted or stored) for operator alerting, also before sign-in; per-address and overall rate limits",
-	"GET /api/v1/announcements":  "any signed-in user (authMiddleware): the platform operator's active notices for the banner; plain text, no tenant data",
-	"GET /api/v1/version":        "any signed-in user (authMiddleware): build identity for Help > About; no tenant data, and kept off the public /health",
-	"GET /api/v1/legal":          "public on purpose: the operator's legal links, legal page values and security.txt contact, shown to visitors before sign-in; no secret, no tenant data; written only by the admin console (RFC-079)",
+	"POST /api/v1/client-errors":      "public on purpose: the web console reports an error kind (fixed set, nothing else accepted or stored) for operator alerting, also before sign-in; per-address and overall rate limits",
+	"GET /api/v1/announcements":       "any signed-in user (authMiddleware): the platform operator's active notices for the banner; plain text, no tenant data",
+	"GET /api/v1/version":             "any signed-in user (authMiddleware): build identity for Help > About; no tenant data, and kept off the public /health",
+	"GET /api/v1/brand":               "public on purpose: the instance brand (product name, color, links, image URLs) the sign-in page shows; no secret, no tenant data; set only by server configuration",
+	"GET /api/v1/brand/images/{kind}": "public on purpose: the instance brand images, validated at startup and served with nosniff and a sandbox policy",
+	"GET /api/v1/legal":               "public on purpose: the operator's legal links, legal page values and security.txt contact, shown to visitors before sign-in; no secret, no tenant data; written only by the admin console (RFC-079)",
 	// CI runner identity (RFC-051): machine credentials, not permissions.
-	"POST /api/v1/ci/oidc/exchange":           "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
-	"POST /api/v1/ci/runs/{id}/results":       "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
-	"POST /api/v1/ci/runs/{id}/baseline-diff": "CI run token (AuthenticateRun): the run's repository only",
-	"POST /api/v1/ci/runs/{id}/evaluate":      "CI run token (AuthenticateRun): the run's own verdict",
-	"POST /api/v1/hooks/github-app":           "public: the GitHub App webhook secret (HMAC-SHA256 over the raw body) is the credential, verified before anything is read; per-IP limit; only installation status events change anything (RFC-077)",
+	"POST /api/v1/ci/oidc/exchange":                  "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
+	"POST /api/v1/ci/runs/{id}/results":              "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
+	"POST /api/v1/ci/runs/{id}/baseline-diff":        "CI run token (AuthenticateRun): the run's repository only",
+	"POST /api/v1/ci/runs/{id}/evaluate":             "CI run token (AuthenticateRun): the run's own verdict",
+	"POST /hooks/jira-integrations/{integration_id}": "public: the URL names one Jira integration and its own secret (X-Hub-Signature, HMAC-SHA256 over the raw body) is the credential, verified before anything is parsed; replayed and stale deliveries refused; per-IP and per-integration limits",
+	"POST /api/v1/hooks/github-app":                  "public: the GitHub App webhook secret (HMAC-SHA256 over the raw body) is the credential, verified before anything is read; per-IP limit; only installation status events change anything (RFC-077)",
 }
 
 // allowlistPrefixes: groups of routes authenticated by a non-permission gate
@@ -70,6 +73,8 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/scim/v2", "SCIM per-tenant bearer token auth (routes live at /scim/v2, not /api/v1)"},
 	{"/api/v1/scim", "SCIM per-tenant bearer token auth"},
 	{"/api/v1/mcp", "MCP oct_ API-key auth"},
+	{"/api/v1/mcp-access/my-connections", "self: a browser-session user lists and ends only their own MCP connections (the handler filters by the caller); API keys refused"},
+	{"/api/v1/mcp-access/confirmations", "self: the connection's own user approves or denies a write action in their browser session (the handler checks the owner); API keys refused"},
 	{"/.well-known/oauth-protected-resource", "public OAuth Protected Resource Metadata of the MCP endpoint (RFC 9728, RFC-062): static, no tenant data"},
 	{"/.well-known/oauth-authorization-server", "public OAuth authorization server metadata of the MCP endpoint (RFC 8414, RFC-062): static, no tenant data"},
 	{"/oauth/", "OAuth endpoints of the MCP authorization server (RFC-062): public by protocol; authorize only stores a request for the consent page, token and revoke are bound to a PKCE-protected code or a hashed token of the presenting client"},
@@ -406,7 +411,7 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 
 	allowed := func(p string) bool {
 		for _, ap := range allowlistPrefixes {
-			if strings.HasPrefix(p, ap.prefix) {
+			if pathHasPrefix(p, ap.prefix) {
 				return true
 			}
 		}
@@ -474,4 +479,28 @@ func moduleGateOf(e ast.Expr, vars map[string]string) string {
 		return true
 	})
 	return found
+}
+
+// pathHasPrefix matches on a path-segment boundary: "/api/v1/mcp" covers
+// "/api/v1/mcp" and "/api/v1/mcp/...", never "/api/v1/mcp-access/...".
+func pathHasPrefix(p, prefix string) bool {
+	return p == prefix || strings.HasPrefix(p, strings.TrimSuffix(prefix, "/")+"/")
+}
+
+func TestPathHasPrefix_SegmentBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		p, prefix string
+		want      bool
+	}{
+		{"/api/v1/mcp", "/api/v1/mcp", true},
+		{"/api/v1/mcp/tools", "/api/v1/mcp", true},
+		{"/api/v1/mcp-access/connections", "/api/v1/mcp", false},
+		{"/api/v1/scim-tokens", "/api/v1/scim", false},
+		{"/api/v1/scim/Users", "/api/v1/scim", true},
+		{"/api/v1/auth/login", "/api/v1/auth/", true},
+	} {
+		if got := pathHasPrefix(tc.p, tc.prefix); got != tc.want {
+			t.Errorf("pathHasPrefix(%q, %q) = %v, want %v", tc.p, tc.prefix, got, tc.want)
+		}
+	}
 }

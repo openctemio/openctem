@@ -375,7 +375,7 @@ func (e *WorkflowExecutor) executeDownstream(ctx context.Context, execCtx *Execu
 			// Check if we should skip based on condition results
 			if e.shouldSkipNode(execCtx, node) {
 				if err := e.skipNode(ctx, execCtx, node, "condition not met"); err != nil {
-					e.logger.Error("failed to skip node", "node_key", node.NodeKey, "error", err)
+					e.logger.Error("failed to skip node", "node_key", logger.SanitizeValue(node.NodeKey), "error", logger.SanitizeError(err))
 				}
 				continue
 			}
@@ -384,7 +384,7 @@ func (e *WorkflowExecutor) executeDownstream(ctx context.Context, execCtx *Execu
 				if errors.Is(err, errRunCanceled) {
 					return err
 				}
-				e.logger.Error("node execution failed", "node_key", node.NodeKey, "error", err)
+				e.logger.Error("node execution failed", "node_key", logger.SanitizeValue(node.NodeKey), "error", logger.SanitizeError(err))
 				// Continue with other nodes - don't fail the entire workflow for one node
 				// The node is already marked as failed
 			}
@@ -901,7 +901,7 @@ func (e *WorkflowExecutor) ExecuteAsyncWithTenant(runID shared.ID, tenantID shar
 
 		ctx := context.Background()
 		if err := e.ExecuteWithTenant(ctx, runID, tenantID); err != nil {
-			e.logger.Error("async workflow execution failed", "run_id", runID, "error", err)
+			e.logger.Error("async workflow execution failed", "run_id", runID, "error", logger.SanitizeError(err))
 		}
 	}()
 }

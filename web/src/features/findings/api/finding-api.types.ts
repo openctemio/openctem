@@ -105,10 +105,91 @@ export interface ApiFindingComponent {
   license?: string
   /** The version to upgrade to: the smallest fix above the installed one, same major line first. */
   fixed_in?: string
+  /** True when fixed_in is on a newer major line (a likely breaking upgrade). */
+  fixed_in_major?: boolean
+  /** Every version that fixes it, one per release line (scanner and CVE catalog). */
+  fixed_versions?: string[]
   /** How the asset uses it; absent when unknown. */
   dependency_type?: string
   manifest_file?: string
+  /** The package's first line in manifest_file. */
+  manifest_line?: number
+  /** Transitive: package ids from the direct dependency to this package (at most 32). */
+  dependency_path?: string[]
   depth?: number
+}
+
+/** A branch a finding was seen on. */
+export interface ApiFindingBranch {
+  name: string
+  is_default: boolean
+  status: string
+  first_seen_at: string
+  last_seen_at: string
+  first_commit?: string
+  last_commit?: string
+}
+
+/** A CI run that reported a finding (only for callers with scans:ci:read). */
+export interface ApiFindingRun {
+  id: string
+  provider: string
+  external_run_id?: string
+  pipeline_url?: string
+  branch?: string
+  commit_sha?: string
+  pull_request?: string
+  is_default_branch: boolean
+  event?: string
+  created_at: string
+}
+
+/** Where and when a finding was seen (GET /findings/{id}). */
+export interface ApiFindingProvenance {
+  branches?: ApiFindingBranch[]
+  runs?: ApiFindingRun[]
+  first_run?: ApiFindingRun
+}
+
+/** Vulnerability intelligence with sources and freshness (GET /findings/{id}). */
+export interface ApiFindingIntel {
+  cvss_source?: string
+  published_at?: string
+  modified_at?: string
+  /** http(s) only, at most 25. */
+  references?: string[]
+  /** YYYY-MM-DD of the EPSS score the finding carries. */
+  epss_date?: string
+  /** YYYY-MM-DD the CVE was added to CISA KEV. */
+  kev_date_added?: string
+  kev_ransomware?: boolean
+}
+
+/** One open finding in a package fix plan. */
+export interface ApiFindingFixPlanItem {
+  id: string
+  title: string
+  severity: string
+  cve_id?: string
+}
+
+/**
+ * The upgrade plan for the finding's package on its asset (GET /findings/{id}):
+ * the version to upgrade to and which open findings of that package version it
+ * resolves.
+ */
+export interface ApiFindingFixPlan {
+  target_version?: string
+  major_upgrade: boolean
+  open_findings: number
+  resolves_count: number
+  truncated: boolean
+  resolves?: ApiFindingFixPlanItem[]
+  remaining?: ApiFindingFixPlanItem[]
+  /** Fixes every open finding of the package with a known fix, when target_version does not. */
+  complete_version?: string
+  complete_major?: boolean
+  complete_resolves?: number
 }
 
 /** The CVE record embedded in GET /findings/{id}. */
@@ -161,11 +242,17 @@ export interface ApiFinding {
   component_id?: string
   /** The affected package (single-finding response only). */
   component?: ApiFindingComponent
+  /** The package's upgrade plan on this asset (single-finding response only). */
+  package_fix?: ApiFindingFixPlan
+  /** Advisory facts kept on the finding and the dates of its feed values (single-finding response only). */
+  intel?: ApiFindingIntel
   /** The CVE record the finding is an instance of (single-finding response only). */
   vulnerability?: ApiFindingVulnerability
   source: FindingSource
   tool_name: string
   tool_version?: string
+  /** The tool of the latest sighting (tool_name stays the first reporter). */
+  last_seen_tool?: string
   rule_id?: string
   rule_name?: string
   file_path?: string
@@ -210,8 +297,20 @@ export interface ApiFinding {
   owasp_ids?: string[]
   tags?: string[]
   status: FindingStatus
+  /** The organization's sub-status inside the status (Settings > Finding lifecycle); absent: the status itself. */
+  sub_status_id?: string
   is_triaged: boolean // true if status != "new"
   resolution?: string
+  /** Why a closed finding is closed (lib/closure.ts); absent while open. */
+  closure_reason?: string
+  /** Longest risk acceptance for this finding's priority, in days (server rule). */
+  max_acceptance_days?: number
+  /** How a resolve (or a platform false positive) was proven. */
+  verification?: string
+  /** present, or stale: no longer reported and no coverage proof (never fixed). */
+  observation?: 'present' | 'stale'
+  /** Latest re-check verdict; absent when never validated. */
+  validation?: 'reproducible' | 'not_reproducible'
   resolved_at?: string
   resolved_by?: string
   assigned_to?: string
@@ -228,6 +327,8 @@ export interface ApiFinding {
   first_detected_commit?: string
   last_seen_branch?: string
   last_seen_commit?: string
+  /** Where and when it was seen (single-finding response only). */
+  provenance?: ApiFindingProvenance
   scan_id?: string
   fingerprint: string
   location?: string
@@ -489,6 +590,10 @@ export interface UpdateFindingStatusInput {
   status: FindingStatus
   resolution?: string
   resolved_by?: string
+  /** The sub-status the move lands on; with the current status, a label change inside it. */
+  sub_status_id?: string
+  /** The inputs the organization's lifecycle requires for the move. */
+  fields?: Record<string, string>
 }
 
 export interface UpdateFindingSeverityInput {

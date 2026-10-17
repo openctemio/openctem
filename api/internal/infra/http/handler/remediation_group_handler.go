@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -54,22 +55,23 @@ func (h *RemediationGroupHandler) ListGroups(w http.ResponseWriter, r *http.Requ
 
 // ResolveGroupRequest is the body for resolving a remediation group.
 type ResolveGroupRequest struct {
-	// Status to move the group's findings to: "fix_applied" (default, pending
-	// rescan verification) or "resolved" (immediate close).
-	Status string `json:"status" validate:"omitempty,oneof=fix_applied resolved"`
-	// Resolution note.
+	// Status: "fix_applied" (the default and the only target). A group
+	// resolve marks its findings fixed; each one is verified on its own.
+	Status string `json:"status" validate:"omitempty,oneof=fix_applied"`
+	// Resolution is the note of the fix claim (required).
 	Resolution string `json:"resolution" validate:"max=1000"`
 	// Approved lets an over-ceiling bulk through the abuse guard.
 	Approved bool `json:"approved"`
 }
 
 // ResolveGroup handles POST /api/v1/findings/remediation-groups/{key}/resolve
-// @Summary      Resolve a remediation group
-// @Description  Transitions every open finding sharing the fix to the requested status in one action.
+// @Summary      Mark a remediation group fixed
+// @Description  Marks every open, in-scope finding sharing the fix fixed (fix_applied through the legal steps), with a note, for the caller's own findings, and queues a proof-of-fix re-check per finding. Never closes a finding. Every finding not updated is listed with the reason.
 // @Tags         Findings
 // @Security     BearerAuth
 // @Param        key  path  string  true  "Remediation group key"
-// @Success      200  {object}  map[string]int
+// @Param        body body ResolveGroupRequest true "Fix claim"
+// @Success      200  {object}  MarkFixedResponse
 // @Router       /findings/remediation-groups/{key}/resolve [post]
 func (h *RemediationGroupHandler) ResolveGroup(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
@@ -92,12 +94,13 @@ func (h *RemediationGroupHandler) ResolveGroup(w http.ResponseWriter, r *http.Re
 	}
 
 	result, err := h.service.ResolveGroup(r.Context(), tenantID, appremediation.ResolveGroupInput{
-		Key:                 key,
-		Status:              req.Status,
-		Resolution:          req.Resolution,
-		ActorID:             middleware.GetUserID(r.Context()),
-		HasVerifyPermission: middleware.HasPermission(r.Context(), string(permission.FindingsVerify)),
-		OperatorApproved:    req.Approved,
+		Key:                   key,
+		Status:                req.Status,
+		Resolution:            req.Resolution,
+		ActorID:               middleware.GetUserID(r.Context()),
+		HasVerifyPermission:   middleware.HasPermission(r.Context(), string(permission.FindingsVerify)),
+		HasFixApplyPermission: middleware.HasPermission(r.Context(), string(permission.FindingsFixApply)),
+		OperatorApproved:      req.Approved,
 	})
 	if err != nil {
 		writeGroupResolveError(w, err)
@@ -105,10 +108,33 @@ func (h *RemediationGroupHandler) ResolveGroup(w http.ResponseWriter, r *http.Re
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]int{
-		"updated": result.Updated,
-		"failed":  result.Failed,
-	})
+	_ = json.NewEncoder(w).Encode(newMarkFixedResponse(result.Updated, result.Skipped, result.Failed, result.ValidationsQueued, result.Rows))
+}
+
+// MarkFixedRow is one finding a "mark fixed" did not update, and why.
+type MarkFixedRow struct {
+	FindingID string `json:"finding_id"`
+	Outcome   string `json:"outcome"` // skipped | failed
+	Reason    string `json:"reason"`
+}
+
+// MarkFixedResponse is the outcome of marking a remediation group or a
+// campaign fixed: no failure is silent.
+type MarkFixedResponse struct {
+	Updated           int            `json:"updated"`
+	Skipped           int            `json:"skipped"`
+	Failed            int            `json:"failed"`
+	ValidationsQueued int            `json:"validations_queued"`
+	Rows              []MarkFixedRow `json:"rows"`
+}
+
+func newMarkFixedResponse(updated, skipped, failed, queued int, rows []finding.BulkRowResult) MarkFixedResponse {
+	out := MarkFixedResponse{Updated: updated, Skipped: skipped, Failed: failed, ValidationsQueued: queued,
+		Rows: make([]MarkFixedRow, 0, len(rows))}
+	for _, r := range rows {
+		out.Rows = append(out.Rows, MarkFixedRow(r))
+	}
+	return out
 }
 
 // writeGroupResolveError maps a group-resolve failure to its HTTP status:

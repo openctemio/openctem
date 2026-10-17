@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
 import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
 import { useState, useMemo, useCallback } from 'react'
@@ -688,6 +689,7 @@ function OverviewTab({
   activities: ActivityLog[]
   onScan?: () => void
 }) {
+  const { t } = useTranslation()
   const router = useRouter()
   const overdueFindingsCount = getOverdueFindingsCount(findings)
   const slaWarningsCount = getSLAWarningsCount(findings)
@@ -720,7 +722,10 @@ function OverviewTab({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">
-              This repo has findings from ingest, but OpenCTEM hasn’t scanned it yet.
+              {t(
+                'assets.repository.notScannedYet',
+                'This repo has findings from ingest, but {product} hasn’t scanned it yet.'
+              )}
             </p>
             <p className="text-muted-foreground text-xs">
               Run a scan to map its branches, build the SBOM (components), and enable per-branch
@@ -1544,7 +1549,6 @@ function FindingsTab({
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="fix_applied">Fix Applied</SelectItem>
-                  <SelectItem value="not_observed">Not Observed</SelectItem>
                   <SelectItem value="resolved">Resolved</SelectItem>
                   <SelectItem value="false_positive">False Positive</SelectItem>
                 </SelectContent>
@@ -2078,7 +2082,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
 
   // The Branches tab belongs to the `branches` module (Phase-3 gated). When the
   // tenant has it disabled its endpoint 403s, so we must not show the tab nor
-  // fetch it. Fail-open when the platform reports no modules (OSS edition).
+  // fetch it. Fail-open when the API reports no module list.
   const branchesEnabled = useModuleEnabled('branches')
   const isTabEnabled = useCallback(
     // Activity is not a tab any more: `?tab=activity` lands on Overview and

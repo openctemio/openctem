@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -345,7 +346,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			s.settleNoInputs(ctx, stepRun, step.StepKey, noInputs)
 			settledInline = true
 		default:
-			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
+			s.logger.Error("failed to queue step", "step_key", logger.SanitizeValue(step.StepKey), "error", logger.SanitizeError(err))
 			s.failQueuedStep(ctx, stepRun, step.StepKey, err)
 			settledInline = true
 		}
@@ -438,7 +439,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		stepTargets = st
 		if st != nil && st.Refused > 0 {
 			s.logger.Info("step targets the tool cannot scan were left out",
-				"run_id", run.ID.String(), "step_key", step.StepKey, "refused", st.Refused, "reason", st.Reason)
+				"run_id", run.ID.String(), "step_key", logger.SanitizeValue(step.StepKey), "refused", st.Refused, "reason", logger.SanitizeValue(st.Reason))
 		}
 	}
 
@@ -455,7 +456,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	stepTargets = kindGated
 	if stepTargets != nil && stepTargets.Refused > 0 {
 		s.logger.Info("step targets of a kind the stage does not take were left out",
-			"run_id", run.ID.String(), "step_key", step.StepKey, "refused", stepTargets.Refused, "reason", stepTargets.Reason)
+			"run_id", run.ID.String(), "step_key", logger.SanitizeValue(step.StepKey), "refused", stepTargets.Refused, "reason", logger.SanitizeValue(stepTargets.Reason))
 	}
 
 	// Subdomain discovery enumerates from the apex of a wildcard selector,
@@ -514,7 +515,8 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	zoneID := scanrun.ScanZoneFromContext(run.Context)
 	usePlatform := false
 	if zoneID == nil {
-		usePlatform = s.stepUsesPlatform(ctx, run, step, settings.SensorPreference)
+		usePlatform = s.stepUsesPlatform(ctx, run, step, settings.SensorPreference) &&
+			s.stepTargetsMayGoShared(ctx, run, step, chunkTargets(stepTargets, run.Context))
 	}
 
 	// A large step is cut into chunks of the capability's size, so every
@@ -559,6 +561,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		if err != nil {
 			s.cancelStepCommands(ctx, created)
 			return err
+		}
+		if cmd.IsPlatformJob && s.sharedUse != nil {
+			s.sharedUse.ObserveSharedTargets(ctx, run.TenantID, chunkTargets(chunk, run.Context))
 		}
 		created = append(created, cmd)
 	}
@@ -785,6 +790,47 @@ func (s *Service) stepUsesPlatform(ctx context.Context, run *scanrun.Run, step *
 	return s.routeToPlatform(ctx, run.TenantID, step.Tool, pref)
 }
 
+// PlatformTargetChecker is the shared-sensor target check of the scan
+// trigger (*scan.Service): nil only when every target may go to shared
+// platform sensors (no asset group, nothing internal, proven where the
+// operator requires proof, no bug-bounty program target).
+type PlatformTargetChecker interface {
+	PlatformTargetRefusal(ctx context.Context, tenantID shared.ID, targets []string, assetGroup bool) error
+}
+
+// stepTargetsMayGoShared applies the trigger's shared-sensor target check
+// to the targets a step is about to be queued with. It runs for every step
+// that would go to shared sensors, whatever decided that: a run started
+// from a workflow directly never had a trigger decision, and a step of any
+// run may carry targets its predecessors found after the trigger checked
+// the seeds. A refusal, a failed lookup or a target gate without the check
+// keeps the step on the tenant's own sensors (fail closed).
+func (s *Service) stepTargetsMayGoShared(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, targets []string) bool {
+	checker, ok := s.targetGate.(PlatformTargetChecker)
+	if !ok || checker == nil {
+		s.logger.Warn("no shared-sensor target check; step kept on tenant sensors",
+			"run_id", run.ID.String(), "step_key", step.StepKey)
+		return false
+	}
+	if err := checker.PlatformTargetRefusal(ctx, run.TenantID, targets, runHasAssetGroup(run.Context)); err != nil {
+		s.logger.Info("step targets may not go to shared sensors; step kept on tenant sensors",
+			"run_id", run.ID.String(), "step_key", step.StepKey, "reason", err.Error())
+		return false
+	}
+	return true
+}
+
+// runHasAssetGroup reports whether a run was started on an asset group (the
+// trigger records the scan's group, the zero id when there is none).
+func runHasAssetGroup(runContext map[string]any) bool {
+	raw, _ := runContext["asset_group_id"].(string)
+	if raw == "" {
+		return false
+	}
+	id, err := shared.IDFromString(raw)
+	return err != nil || !id.IsZero()
+}
+
 // calculateScanRunInitialPriority calculates the initial queue priority for platform jobs.
 func (s *Service) calculateScanRunInitialPriority(cmdPriority command.CommandPriority) int {
 	switch cmdPriority {
@@ -988,7 +1034,7 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 	}
 	// The run id is parsed and the step key cleaned: both come from the
 	// sensor's command result.
-	s.logger.Info("step completed", "run_id", rid.String(), "step_key", logger.SanitizeValue(stepKey),
+	s.logger.Info("step completed", "run_id", logger.SanitizeValue(rid.String()), "step_key", logger.SanitizeValue(stepKey),
 		"findings", findingsCount, "skipped_targets", p.Skipped, "coverage_gaps", p.Gaps)
 
 	// Get the run with step runs
@@ -1064,7 +1110,7 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 
 // OnStepFailed is called when a sensor reports step failure.
 func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error {
-	s.logger.Info("step failed", "run_id", runID, "step_key", stepKey, "error", errorMessage)
+	s.logger.Info("step failed", "run_id", logger.SanitizeValue(runID), "step_key", logger.SanitizeValue(stepKey), "error", logger.SanitizeValue(errorMessage))
 
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
@@ -1522,9 +1568,9 @@ func (s *Service) evaluateQualityGate(ctx context.Context, run *scanrun.Run) *sc
 	severityCounts, err := s.findingRepo.CountBySeverityForScan(ctx, run.TenantID, scanID)
 	if err != nil {
 		s.logger.Warn("failed to get finding counts for quality gate",
-			"error", err,
-			"scan_id", scanID,
-			"run_id", run.ID.String())
+			"error", logger.SanitizeError(err),
+			"scan_id", logger.SanitizeValue(scanID),
+			"run_id", logger.SanitizeValue(run.ID.String()))
 		return nil
 	}
 
@@ -2067,7 +2113,7 @@ func gateStepKinds(resolved scanapp.StepTool, st *scanapp.StepTargets, runContex
 		return st, nil
 	}
 	types := runTargetTypes(runContext)
-	kept, refused := resolved.Stage.FilterKinds(targets, func(t string) bool { _, ok := types[t]; return ok })
+	kept, refused := resolved.Stage.FilterKinds(targets, func(t string) (asset.TypeRef, bool) { ref, ok := types[t]; return ref, ok })
 	if len(refused) == 0 {
 		return st, nil
 	}
@@ -2089,17 +2135,23 @@ func gateStepKinds(resolved scanapp.StepTool, st *scanapp.StepTargets, runContex
 }
 
 // runTargetTypes reads the run's target_types (a map[string]string before
-// the run is stored, a map[string]any after a JSON round trip).
-func runTargetTypes(rc map[string]any) map[string]bool {
-	out := map[string]bool{}
+// the run is stored, a map[string]any after a JSON round trip): target ->
+// its stored pair.
+func runTargetTypes(rc map[string]any) map[string]asset.TypeRef {
+	out := map[string]asset.TypeRef{}
+	read := func(k, label string) {
+		t, sub, _ := strings.Cut(label, "/")
+		out[k] = asset.TypeRef{Type: asset.AssetType(t), SubType: sub}
+	}
 	switch m := rc[scanapp.RunContextKeyTargetTypes].(type) {
 	case map[string]string:
-		for k := range m {
-			out[k] = true
+		for k, v := range m {
+			read(k, v)
 		}
 	case map[string]any:
-		for k := range m {
-			out[k] = true
+		for k, v := range m {
+			label, _ := v.(string)
+			read(k, label)
 		}
 	}
 	return out

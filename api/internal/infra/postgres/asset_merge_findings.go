@@ -33,6 +33,8 @@ import (
 var findingMergeRefs = []mergeRef{
 	{table: "finding_comments", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "finding_activities", column: "finding_id", tenantCol: "tenant_id"},
+	// At most one pending request per finding (ux_finding_status_approvals_pending):
+	// settleLoserPendingApproval runs first, so the move cannot collide.
 	{table: "finding_status_approvals", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "validation_evidence", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "pentest_retests", column: "finding_id", tenantCol: "tenant_id"},
@@ -66,6 +68,13 @@ var findingMergeRefs = []mergeRef{
 		keys: []mergeKey{{}}},
 	{table: "finding_remediation_keys", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// Ticket links follow the finding; a loser's link to an issue the
+	// survivor already links is dropped (one link per finding and issue).
+	{table: "ticket_links", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"integration_id", "external_key"}}}},
+	// A person took the finding out of a fix: the survivor stays out of it.
+	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"action_key"}}}},
 }
 
 // findingMergeKeptRefs reference findings.id and deliberately stay on the
@@ -82,6 +91,11 @@ var findingMergeKeptRefs = map[string]string{
 	"finding_correlations.member_id":      "kept on the tombstone; re-derived for the survivor",
 	// A suspended decision is the history of the finding it was made on.
 	"finding_decision_suspensions.finding_id": "kept on the tombstone; history of that finding",
+	"finding_decision_reviews.finding_id":     "kept on the tombstone; a review flag of that finding's decision",
+	// A remediation task membership is the task's history of that finding:
+	// the tombstone closes (duplicate) inside its task; the survivor keeps
+	// its own task, or is proposed for one.
+	"remediation_task_members.finding_id": "kept on the tombstone; the duplicate closes in its task, the survivor keeps its own",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to
@@ -240,8 +254,7 @@ func findingStatusRank(status string) int {
 	switch vulnerability.FindingStatus(status) {
 	case vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusAccepted:
 		return 5
-	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied,
-		vulnerability.FindingStatusValidatedFixed:
+	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied:
 		return 4
 	case vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusInReview:
 		return 3
@@ -283,12 +296,15 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 	if findingStatusRank(loserStatus) > findingStatusRank(survivorStatus) {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE findings s SET
-				status = l.status, resolution = l.resolution, resolution_method = l.resolution_method,
+				status = l.status, resolution = l.resolution, closure_reason = l.closure_reason, verification = l.verification,
 				resolved_at = l.resolved_at, resolved_by = l.resolved_by,
-				verified_at = l.verified_at, verified_by = l.verified_by
+				verified_at = l.verified_at, verified_by = l.verified_by,
+				-- an inherited acceptance keeps its end (an accepted risk always ends)
+				acceptance_expires_at = CASE WHEN l.status = 'accepted'
+					THEN COALESCE(l.acceptance_expires_at, $4) END
 			FROM findings l
 			WHERE s.id = $1 AND s.tenant_id = $3 AND l.id = $2 AND l.tenant_id = $3`,
-			survivorID, loserID, tenantID); err != nil {
+			survivorID, loserID, tenantID, time.Now().Add(vulnerability.DefaultAcceptanceDuration)); err != nil {
 			return fmt.Errorf("inherit finding status: %w", err)
 		}
 	}
@@ -321,6 +337,9 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 	}
 
 	if err := settleLoserPendingRetest(ctx, tx, tenantID, survivorID, loserID); err != nil {
+		return err
+	}
+	if err := settleLoserPendingApproval(ctx, tx, tenantID, survivorID, loserID); err != nil {
 		return err
 	}
 
@@ -385,6 +404,21 @@ func settleLoserPendingRetest(ctx context.Context, tx *sql.Tx, tenantID, survivo
 		              WHERE tenant_id = $3 AND finding_id = $1 AND status = 'pending')`,
 		survivorID, loserID, tenantID); err != nil {
 		return fmt.Errorf("settle merged finding's pending retest: %w", err)
+	}
+	return nil
+}
+
+// settleLoserPendingApproval cancels the loser's pending status request when
+// the survivor has one too (one pending request per finding); the survivor's
+// request stands and the loser's is kept, canceled, in its history.
+func settleLoserPendingApproval(ctx context.Context, tx *sql.Tx, tenantID, survivorID, loserID string) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE finding_status_approvals SET status = 'canceled', version = version + 1
+		WHERE tenant_id = $3 AND finding_id = $2 AND status = 'pending'
+		  AND EXISTS (SELECT 1 FROM finding_status_approvals
+		              WHERE tenant_id = $3 AND finding_id = $1 AND status = 'pending')`,
+		survivorID, loserID, tenantID); err != nil {
+		return fmt.Errorf("settle merged finding's pending approval: %w", err)
 	}
 	return nil
 }

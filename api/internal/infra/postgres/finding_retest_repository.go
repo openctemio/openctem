@@ -247,6 +247,18 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 		res.PriorStatus = vulnerability.FindingStatus(current)
 		res.ResultStatus = res.PriorStatus
 
+		// A conclusive outcome is the finding's validation verdict, whether or
+		// not it moves the status; still vulnerable also means it is present.
+		if vo := retest.ValidationOutcome(in.Outcome); !findingGone && vo != "" && retest.EligibleStatus(res.PriorStatus) {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE findings SET validation_outcome = $3::text,
+					observation_state = CASE WHEN $3::text = 'reproducible' THEN 'present' ELSE observation_state END
+				WHERE tenant_id = $1 AND id = $2`,
+				in.TenantID.String(), in.FindingID.String(), vo); err != nil {
+				return fmt.Errorf("stamp retest validation: %w", err)
+			}
+		}
+
 		if !findingGone && in.Decide != nil {
 			d := in.Decide(res.PriorStatus)
 			if d.Change && d.Next != res.PriorStatus {
@@ -297,15 +309,15 @@ func moveFindingInTx(ctx context.Context, tx *sql.Tx, in retest.SettleInput, pri
 	if next == vulnerability.FindingStatusResolved {
 		_, err = tx.ExecContext(ctx, `
 			UPDATE findings
-			SET status = 'resolved', resolution = $3, resolution_method = $4,
+			SET status = 'resolved', resolution = $3, closure_reason = 'fixed', verification = $4,
 				resolved_at = NOW(), resolved_by = $5, updated_at = NOW()
 			WHERE tenant_id = $1 AND id = $2`,
 			in.TenantID.String(), in.FindingID.String(), retest.ResolutionNote(in.TemplateID),
-			string(retest.ResolutionMethodRetestVerified), nullIDPtr(in.ResolvedBy))
+			string(vulnerability.VerificationRetest), nullIDPtr(in.ResolvedBy))
 	} else {
 		_, err = tx.ExecContext(ctx, `
 			UPDATE findings
-			SET status = $3, resolution = NULL, resolution_method = NULL,
+			SET status = $3, resolution = NULL, closure_reason = NULL, verification = NULL,
 				resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
 			WHERE tenant_id = $1 AND id = $2`,
 			in.TenantID.String(), in.FindingID.String(), string(next))
@@ -432,13 +444,21 @@ func (r *FindingRetestRepository) ClaimTenantTick(ctx context.Context, tenantID 
 }
 
 // ListAutoCandidates returns up to limit findings of the tenant due for an auto
-// retest: nuclei findings with a template id, in an eligible status (resolved
+// retest: findings of one of tools (the tools an online sensor of the tenant
+// can re-check) with a rule id, in an eligible status (resolved
 // only when resolved after resolvedSince), on an active asset, with no pending
 // retest and no retest requested after retestedBefore. Never-retested and
 // least recently retested first.
-func (r *FindingRetestRepository) ListAutoCandidates(ctx context.Context, tenantID shared.ID, retestedBefore, resolvedSince time.Time, limit int) ([]shared.ID, error) {
+func (r *FindingRetestRepository) ListAutoCandidates(ctx context.Context, tenantID shared.ID, tools []string, retestedBefore, resolvedSince time.Time, limit int) ([]shared.ID, error) {
 	if limit <= 0 {
 		limit = 50
+	}
+	if len(tools) == 0 {
+		return nil, nil
+	}
+	lower := make([]string, 0, len(tools))
+	for _, t := range tools {
+		lower = append(lower, strings.ToLower(strings.TrimSpace(t)))
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.id
@@ -451,7 +471,7 @@ func (r *FindingRetestRepository) ListAutoCandidates(ctx context.Context, tenant
 			WHERE fr.tenant_id = f.tenant_id AND fr.finding_id = f.id
 		) lr ON TRUE
 		WHERE f.tenant_id = $1
-			AND f.tool_name = 'nuclei'
+			AND LOWER(f.tool_name) = ANY($6)
 			AND COALESCE(f.rule_id, '') <> ''
 			AND f.status = ANY($2)
 			AND (f.status <> 'resolved' OR f.resolved_at >= $3)
@@ -460,7 +480,7 @@ func (r *FindingRetestRepository) ListAutoCandidates(ctx context.Context, tenant
 			AND (lr.last_at IS NULL OR lr.last_at < $4)
 		ORDER BY lr.last_at NULLS FIRST, f.created_at
 		LIMIT $5`,
-		tenantID.String(), pq.Array(retest.EligibleStatuses()), resolvedSince, retestedBefore, limit)
+		tenantID.String(), pq.Array(retest.EligibleStatuses()), resolvedSince, retestedBefore, limit, pq.Array(lower))
 	if err != nil {
 		return nil, fmt.Errorf("list auto-retest candidates: %w", err)
 	}

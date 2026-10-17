@@ -14,7 +14,7 @@ import { firstDataRow } from '../helpers/table'
  * the same place.
  */
 test('the task drawer shows the new status after a transition', async ({ page }) => {
-  await page.goto('/remediation')
+  await page.goto('/remediation/campaigns')
   const row = await firstDataRow(page)
   test.skip(!row, 'no remediation tasks in this tenant')
   await row!.click()

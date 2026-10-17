@@ -47,11 +47,17 @@ func seedOpenFinding(ctx context.Context, t *testing.T, db *sql.DB, tenant share
 	case "resolved", "false_positive", "accepted", "duplicate":
 		resolvedAt = time.Now()
 	}
+	// A duplicate names its canonical finding: a resolved one, which no
+	// suppression rule touches.
+	var dupOf any
+	if s.status == "duplicate" {
+		dupOf = seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: s.asset, status: "resolved"}).String()
+	}
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, rule_id, file_path, message, severity, fingerprint, status, resolved_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'msg', 'high', $8, $9, $10)`,
+		INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, rule_id, file_path, message, severity, fingerprint, status, resolved_at, duplicate_of)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'msg', 'high', $8, $9, $10, $11)`,
 		id.String(), tenant.String(), s.asset.String(), s.source, s.tool, s.rule, path,
-		"fp-"+id.String(), s.status, resolvedAt); err != nil {
+		"fp-"+id.String(), s.status, resolvedAt, dupOf); err != nil {
 		t.Fatalf("seed finding: %v", err)
 	}
 	return id
@@ -122,14 +128,13 @@ func TestSuppressionApprove_ClosesMatchingOpenFindings_DB(t *testing.T) {
 		seedOpenFinding(ctx, t, db, tenant, match("new")),
 		seedOpenFinding(ctx, t, db, tenant, match("confirmed")),
 		seedOpenFinding(ctx, t, db, tenant, match("in_progress")),
-		seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: other, rule: "py_sqli.fmt", path: "src/x.py", status: "not_observed"}),
+		seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: other, rule: "py_sqli.fmt", path: "src/x.py", status: "fix_applied"}),
 	}
 	untouched := map[string]shared.ID{
 		"already accepted":       seedOpenFinding(ctx, t, db, tenant, match("accepted")),
 		"already false positive": seedOpenFinding(ctx, t, db, tenant, match("false_positive")),
 		"resolved":               seedOpenFinding(ctx, t, db, tenant, match("resolved")),
 		"duplicate":              seedOpenFinding(ctx, t, db, tenant, match("duplicate")),
-		"validated_fixed":        seedOpenFinding(ctx, t, db, tenant, match("validated_fixed")),
 		"pentest source":         seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: asset, source: "pentest", rule: "py_sqli.raw", path: "src/app/db.py"}),
 		"manual source":          seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: asset, source: "manual", rule: "py_sqli.raw", path: "src/app/db.py"}),
 		"path outside glob":      seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: asset, rule: "py_sqli.raw", path: "test/db.py"}),
@@ -173,7 +178,7 @@ func TestSuppressionApprove_ClosesMatchingOpenFindings_DB(t *testing.T) {
 		t.Errorf("links = %d, want %d", got, len(closed))
 	}
 	if got := suppCount(ctx, t, db, `SELECT COUNT(*) FROM finding_activities WHERE tenant_id = $1 AND activity_type = 'status_changed'
-		AND actor_id = $2 AND changes->>'suppression_rule_id' = $3 AND changes->>'new_status' = 'false_positive' AND changes ? 'old_status'`,
+		AND actor_id = $2 AND changes->>'suppression_rule_id' = $3 AND changes->>'new_status' = 'false_positive' AND changes ? 'old_status' AND changes->>'actor_kind' = 'rule'`,
 		tenant.String(), approver.String(), rule.ID().String()); got != len(closed) {
 		t.Errorf("activities = %d, want %d", got, len(closed))
 	}
@@ -289,5 +294,70 @@ func TestSuppressionApprove_CapAndReviewedVersion_DB(t *testing.T) {
 	// The rule is no longer pending: a second approval is refused.
 	if _, err := repo.Approve(ctx, rule, rule.UpdatedAt(), approver, nil, 3); !errors.Is(err, suppression.ErrRuleNotPending) {
 		t.Fatalf("second approval err = %v, want ErrRuleNotPending", err)
+	}
+}
+
+// An accepted-risk rule gives each finding it closes the rule's end, but
+// never past the cap of that finding's priority: a KEV finding 30 days, a P1
+// 90, a P3 the rule's own end. The same holds when ingest links a new
+// accepted finding to the rule.
+func TestSuppressionApprove_AcceptanceCappedByPriority_DB(t *testing.T) {
+	ctx := context.Background()
+	db := openGroupsDB(t)
+	repo := NewSuppressionRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	requester := seedGroupsUser(ctx, t, db, "supp.cap.req")
+	approver := seedGroupsUser(ctx, t, db, "supp.cap.appr")
+	asset := seedOwnedAsset(ctx, t, db, tenant, nil)
+	ruleEnd := time.Now().Add(300 * 24 * time.Hour)
+
+	rule, reviewed := newPendingRule(ctx, t, repo, tenant, requester, approver, suppression.SuppressionTypeAcceptedRisk, func(r *suppression.Rule) {
+		r.SetRuleIDPattern("CVE-2024-0777")
+		r.SetExpiresAt(&ruleEnd)
+	})
+	seed := func(priority string, kev bool) shared.ID {
+		id := seedOpenFinding(ctx, t, db, tenant, openFindingSeed{asset: asset, tool: "trivy", rule: "CVE-2024-0777"})
+		if _, err := db.ExecContext(ctx, `UPDATE findings SET priority_class = $2, is_in_kev = $3 WHERE id = $1`, id.String(), priority, kev); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	kev, p1, p3 := seed("P2", true), seed("P1", false), seed("P3", false)
+
+	if _, err := repo.Approve(ctx, rule, reviewed, approver, nil, suppression.MaxFindingsAppliedOnApprove); err != nil {
+		t.Fatal(err)
+	}
+	end := func(id shared.ID) time.Time {
+		t.Helper()
+		var e sql.NullTime
+		if err := db.QueryRowContext(ctx, `SELECT acceptance_expires_at FROM findings WHERE id = $1`, id.String()).Scan(&e); err != nil || !e.Valid {
+			t.Fatalf("acceptance end of %s: %v %v", id, e, err)
+		}
+		return e.Time
+	}
+	day := 24 * time.Hour
+	for label, c := range map[string]struct {
+		id   shared.ID
+		want time.Time
+	}{
+		"KEV": {kev, time.Now().Add(30 * day)},
+		"P1":  {p1, time.Now().Add(90 * day)},
+		"P3":  {p3, ruleEnd},
+	} {
+		if got := end(c.id); got.Sub(c.want).Abs() > time.Minute {
+			t.Errorf("%s acceptance ends %s, want %s", label, got, c.want)
+		}
+	}
+
+	// Ingest links a new accepted P1 finding to the rule.
+	linked := seed("P1", false)
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET status = 'accepted', resolved_at = NOW() WHERE id = $1`, linked.String()); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordSuppression(ctx, linked, rule.ID(), "system"); err != nil {
+		t.Fatal(err)
+	}
+	if got := end(linked); got.Sub(time.Now().Add(90*day)).Abs() > time.Minute {
+		t.Errorf("linked P1 acceptance ends %s, want 90 days", got)
 	}
 }

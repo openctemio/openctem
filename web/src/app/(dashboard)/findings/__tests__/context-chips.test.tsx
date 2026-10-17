@@ -28,6 +28,7 @@ vi.mock('swr', () => ({
 }))
 
 vi.mock('@/features/findings/api/use-findings-api', () => ({
+  useFindingApi: () => ({ data: undefined }),
   useFindingsApi: () => ({
     data: { data: [], total: 0, page: 1, per_page: 20 },
     error: undefined,
@@ -101,17 +102,26 @@ beforeEach(() => {
 })
 
 describe('Findings context chips', () => {
-  it('renders the asset chip inside the table toolbar, beside the search box', () => {
+  it('renders the asset chip in its own row under the toolbar, not inside the toolbar row', () => {
     openAt(`?asset_id=${ASSET_ID}&status=new,confirmed`)
     render(<FindingsPage />)
 
     const chip = screen.getByTestId('context-chip-asset_id')
     const search = screen.getByLabelText('Search findings')
-    // Same toolbar group as the search box: the chips list is a sibling of the
-    // search box's wrapper, not a row of its own above the table.
-    const chipList = screen.getByTestId('context-filter-chips')
-    expect(chipList.contains(chip)).toBe(true)
-    expect(chipList.parentElement).toBe(search.parentElement?.parentElement)
+    const below = screen.getByTestId('data-table-toolbar-below')
+    expect(below.contains(chip)).toBe(true)
+    // The toolbar row (search box, state tabs, views, export) holds no chip,
+    // so a chip can never make it taller or shift its end controls.
+    const toolbarRow = below.previousElementSibling as HTMLElement
+    expect(toolbarRow.contains(search)).toBe(true)
+    expect(toolbarRow.contains(screen.getByRole('radiogroup'))).toBe(true)
+    expect(toolbarRow.querySelector('[data-testid="context-filter-chips"]')).toBeNull()
+  })
+
+  it('renders no row under the toolbar without a context filter', () => {
+    openAt('?status=new')
+    render(<FindingsPage />)
+    expect(screen.queryByTestId('data-table-toolbar-below')).toBeNull()
   })
 
   it('shows the asset name, not the raw id', () => {

@@ -171,8 +171,12 @@ describe('fleet capacity', () => {
       reported: report([], 2),
       effective: { tools: [], capabilities: [], max_concurrent_jobs: 2 },
     } as Sensor
-    expect(summarizeFleet([s], NOW, undefined, { latest: 'v0.4.2', min: 'v0.4.0' }).jobSlots).toBe(
-      2
-    )
+    expect(
+      summarizeFleet([s], NOW, undefined, {
+        products: [
+          { id: 'openctemio-sensor', latest_version: 'v0.4.2', min_version: 'v0.4.0', image: '' },
+        ],
+      }).jobSlots
+    ).toBe(2)
   })
 })

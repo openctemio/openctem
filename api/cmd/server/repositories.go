@@ -14,6 +14,7 @@ type Repositories struct {
 	// Assets & Components
 	Asset                   *postgres.AssetRepository
 	RepoExt                 *postgres.RepositoryExtensionRepository
+	RepoIdentity            *postgres.RepositoryIdentityRepository
 	Component               *postgres.ComponentRepository
 	VEXStatement            *postgres.VEXStatementRepository
 	LicensePolicy           *postgres.LicensePolicyRepository
@@ -22,23 +23,25 @@ type Repositories struct {
 	AssetTypeCat            *postgres.AssetTypeCategoryRepository
 	ScopeTarget             *postgres.ScopeTargetRepository
 	ScopeExcl               *postgres.ScopeExclusionRepository
-	AssetService            *postgres.AssetServiceRepository           // CTEM: Network services on assets
-	WebEndpoint             *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
-	Software                *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
-	CVECorpus               *postgres.CVECorpusRepository              // CVE corpus for inventory matching (RFC-066)
-	SoftwareMatch           *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
-	AssetAttributeSources   *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
-	AssetFreshness          *postgres.AssetFreshnessRepository         // Last observation per attribute class (RFC-075)
-	AssetCoverage           *postgres.AssetCoverageRepository          // Coverage ledger (RFC-093)
-	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository       // Names that resolve only through a wildcard (RFC-088 A4)
-	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository // Automatic enrichment requests (RFC-075)
-	AssetChangeEvents       *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
-	APISpec                 *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
-	AssetStateHistory       *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
-	AssetRelationship       *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
-	RelationshipSuggestion  *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
-	ThreatModel             *postgres.ThreatModelRepository            // CTEM: Continuous threat models
-	AttackerProfileReader   *postgres.AttackerProfileReader            // CTEM: Attacker profiles (generation input)
+	AssetService            *postgres.AssetServiceRepository            // CTEM: Network services on assets
+	WebEndpoint             *postgres.WebEndpointRepository             // Web surface: endpoints under origin assets (RFC-056)
+	Software                *postgres.SoftwareRepository                // Software catalog and asset links (RFC-066)
+	CVECorpus               *postgres.CVECorpusRepository               // CVE corpus for inventory matching (RFC-066)
+	SoftwareMatch           *postgres.SoftwareMatchRepository           // Inventory vulnerability matcher (RFC-066)
+	AssetAttributeSources   *postgres.AssetAttributeSourceRepository    // Per-source asset attribute values (RFC-069)
+	AssetFreshness          *postgres.AssetFreshnessRepository          // Last observation per attribute class (RFC-075)
+	AssetTechnology         *postgres.AssetTechnologyRepository         // Detected technologies (RFC-112)
+	AssetTechnologyBackfill *postgres.AssetTechnologyBackfillRepository // Technology backfill (RFC-112)
+	AssetCoverage           *postgres.AssetCoverageRepository           // Coverage ledger (RFC-093)
+	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository        // Names that resolve only through a wildcard (RFC-088 A4)
+	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository  // Automatic enrichment requests (RFC-075)
+	AssetChangeEvents       *postgres.AssetChangeEventRepository        // Asset change timeline (RFC-069)
+	APISpec                 *postgres.APISpecRepository                 // API descriptions of web origins (RFC-056)
+	AssetStateHistory       *postgres.AssetStateHistoryRepository       // CTEM: State change audit log
+	AssetRelationship       *postgres.AssetRelationshipRepository       // CTEM: Asset topology graph
+	RelationshipSuggestion  *postgres.RelationshipSuggestionRepository  // CTEM: Relationship suggestions
+	ThreatModel             *postgres.ThreatModelRepository             // CTEM: Continuous threat models
+	AttackerProfileReader   *postgres.AttackerProfileReader             // CTEM: Attacker profiles (generation input)
 
 	// Vulnerabilities & Findings
 	Vulnerability    *postgres.VulnerabilityRepository
@@ -95,6 +98,10 @@ type Repositories struct {
 	// Remediation Campaigns
 	RemediationCampaign       *postgres.RemediationCampaignRepository
 	RemediationCampaignTicket *postgres.RemediationCampaignTicketRepository
+	TicketLink                *postgres.TicketLinkRepository
+	RemediationTask           *postgres.RemediationTaskRepository
+	RemediationSuggestion     *postgres.RemediationSuggestionRepository
+	TicketMapping             *postgres.TicketMappingRepository
 	FindingRemediationKey     *postgres.FindingRemediationKeyRepository
 
 	// Business Units
@@ -150,13 +157,18 @@ type Repositories struct {
 	// Scan zones (RFC-023)
 	ScanZone *postgres.ScanZoneRepository
 	// Scan window policies, overrides and the assets behind targets (RFC-067)
-	ScanWindowPolicy   *postgres.ScanWindowPolicyRepository
+	ScanWindowPolicy *postgres.ScanWindowPolicyRepository
+	// Finding lifecycles (RFC-110): the sub-status catalog and the schemes.
+	LifecycleSubStatus *postgres.LifecycleSubStatusRepository
+	LifecycleScheme    *postgres.LifecycleSchemeRepository
 	ScanWindowOverride *postgres.ScanWindowOverrideRepository
 	ScanWindowAsset    *postgres.ScanWindowAssetRepository
 	// Content packs (RFC-061)
 	ContentPack *postgres.ContentPackRepository
 	// Platform content packs and channels (RFC-061)
 	PlatformContentPack *postgres.PlatformContentPackRepository
+	// Content catalog (RFC-099)
+	ContentCatalog *postgres.ContentCatalogRepository
 
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
@@ -198,8 +210,10 @@ type Repositories struct {
 	AccessControl   *postgres.AccessControlRepository
 	DataScope       *postgres.DataScopeRepository
 	MemberLifecycle *postgres.MemberLifecycleRepository
-	Role            *postgres.RoleRepository
-	RolePermission  *postgres.PermissionRepository
+	// OwnershipTransfer: owner-to-member ownership transfer requests.
+	OwnershipTransfer *postgres.OwnershipTransferRepository
+	Role              *postgres.RoleRepository
+	RolePermission    *postgres.PermissionRepository
 
 	// Session (raw *sql.DB required)
 	Session      *postgres.SessionRepository
@@ -211,17 +225,28 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin        *postgres.AdminRepository
 	SignupPolicy *postgres.SignupPolicyRepository
+	JoinRequest  *postgres.JoinRequestRepository
+	// AccountDeletion: self-service account deletions (RFC-104).
+	AccountDeletion *postgres.AccountDeletionRepository
 	// PlatformSetting stores the other console settings (RFC-079).
 	PlatformSetting *postgres.PlatformSettingRepository
 	ScanPolicy      *postgres.ScanPolicyRepository
 	ScanApproval    *postgres.ScanApprovalRepository
 	AccessRequest   *postgres.AccessRequestRepository
-	Plan            *postgres.PlanRepository
+	Limits          *postgres.LimitsRepository
 	IdleLifecycle   *postgres.IdleLifecycleRepository
 	AdminAuditLog   *postgres.AuditLogRepository
-	AdminOrg        *postgres.AdminOrganizationRepository
-	AdminConsole    *postgres.AdminConsoleRepository
-	PlatformIdP     *postgres.PlatformIdPRepository
+	// SupportAccess stores support grants and sessions; SupportRead is the
+	// read model a support session sees (RFC-063).
+	SupportAccess *postgres.SupportAccessRepository
+	SupportRead   *postgres.SupportReadRepository
+	AdminOrg      *postgres.AdminOrganizationRepository
+	AdminConsole  *postgres.AdminConsoleRepository
+	// AdminFactor stores console security keys and recovery codes (RFC-078).
+	AdminFactor *postgres.AdminFactorRepository
+	PlatformIdP *postgres.PlatformIdPRepository
+	// AdminDB is the pool of the console's identity tables (UseAdminDB).
+	AdminDB *postgres.DB
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -289,10 +314,14 @@ type Repositories struct {
 	IOC *postgres.IOCRepository
 
 	// Validation evidence (CTEM Stage-4, migration 000178)
-	ValidationEvidence *postgres.ValidationEvidenceRepository
-	FindingRetest      *postgres.FindingRetestRepository
-	FindingEvidence    *postgres.FindingEvidenceRepository
-	FindingSLARestart  *postgres.FindingSLARestartRepository
+	ValidationEvidence      *postgres.ValidationEvidenceRepository
+	FindingRetest           *postgres.FindingRetestRepository
+	FindingEvidence         *postgres.FindingEvidenceRepository
+	FindingSLARestart       *postgres.FindingSLARestartRepository
+	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
+	// FindingMaterialChange: standing decisions for the material-change
+	// controller (RFC-111).
+	FindingMaterialChange *postgres.FindingMaterialChangeRepository
 
 	// Runtime-telemetry reads for Stage-4 detection correlation
 	// (migration 000203)
@@ -329,6 +358,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Assets & Components
 		Asset:                   postgres.NewAssetRepository(db),
 		RepoExt:                 postgres.NewRepositoryExtensionRepository(db),
+		RepoIdentity:            postgres.NewRepositoryIdentityRepository(db),
 		Component:               postgres.NewComponentRepository(db),
 		VEXStatement:            postgres.NewVEXStatementRepository(db),
 		LicensePolicy:           postgres.NewLicensePolicyRepository(db),
@@ -344,6 +374,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),
+		AssetTechnology:         postgres.NewAssetTechnologyRepository(db),
+		AssetTechnologyBackfill: postgres.NewAssetTechnologyBackfillRepository(db),
 		AssetCoverage:           postgres.NewAssetCoverageRepository(db),
 		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
@@ -411,6 +443,10 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Remediation Campaigns
 		RemediationCampaign:       postgres.NewRemediationCampaignRepository(db),
 		RemediationCampaignTicket: postgres.NewRemediationCampaignTicketRepository(db),
+		TicketLink:                postgres.NewTicketLinkRepository(db),
+		RemediationTask:           postgres.NewRemediationTaskRepository(db),
+		RemediationSuggestion:     postgres.NewRemediationSuggestionRepository(db),
+		TicketMapping:             postgres.NewTicketMappingRepository(db),
 		FindingRemediationKey:     postgres.NewFindingRemediationKeyRepository(db),
 
 		// Business Units
@@ -449,10 +485,13 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Scan zones (RFC-023)
 		ScanZone:            postgres.NewScanZoneRepository(db),
 		ScanWindowPolicy:    postgres.NewScanWindowPolicyRepository(db),
+		LifecycleSubStatus:  postgres.NewLifecycleSubStatusRepository(db),
+		LifecycleScheme:     postgres.NewLifecycleSchemeRepository(db),
 		ScanWindowOverride:  postgres.NewScanWindowOverrideRepository(db),
 		ScanWindowAsset:     postgres.NewScanWindowAssetRepository(db),
 		ContentPack:         postgres.NewContentPackRepository(db),
 		PlatformContentPack: postgres.NewPlatformContentPackRepository(db),
+		ContentCatalog:      postgres.NewContentCatalogRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),
@@ -485,14 +524,15 @@ func newRepositories(db *postgres.DB) *Repositories {
 		FindingCorrelation: postgres.NewFindingCorrelationRepository(db),
 
 		// Access Control
-		Group:            postgres.NewGroupRepository(db),
-		GroupRoleBinding: postgres.NewGroupRoleBindingRepository(db),
-		ServiceAccount:   postgres.NewServiceAccountRepository(db),
-		AccessControl:    postgres.NewAccessControlRepository(db),
-		DataScope:        postgres.NewDataScopeRepository(db),
-		MemberLifecycle:  postgres.NewMemberLifecycleRepository(db),
-		Role:             postgres.NewRoleRepository(db),
-		RolePermission:   postgres.NewPermissionRepository(db),
+		Group:             postgres.NewGroupRepository(db),
+		GroupRoleBinding:  postgres.NewGroupRoleBindingRepository(db),
+		ServiceAccount:    postgres.NewServiceAccountRepository(db),
+		AccessControl:     postgres.NewAccessControlRepository(db),
+		DataScope:         postgres.NewDataScopeRepository(db),
+		MemberLifecycle:   postgres.NewMemberLifecycleRepository(db),
+		OwnershipTransfer: postgres.NewOwnershipTransferRepository(db),
+		Role:              postgres.NewRoleRepository(db),
+		RolePermission:    postgres.NewPermissionRepository(db),
 
 		// Session (raw *sql.DB required)
 		Session:      postgres.NewSessionRepository(db.DB),
@@ -502,15 +542,20 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:           postgres.NewAdminRepository(db),
 		SignupPolicy:    postgres.NewSignupPolicyRepository(db),
+		JoinRequest:     postgres.NewJoinRequestRepository(db),
+		AccountDeletion: postgres.NewAccountDeletionRepository(db),
 		PlatformSetting: postgres.NewPlatformSettingRepository(db),
 		ScanPolicy:      postgres.NewScanPolicyRepository(db),
 		ScanApproval:    postgres.NewScanApprovalRepository(db),
 		AccessRequest:   postgres.NewAccessRequestRepository(db),
-		Plan:            postgres.NewPlanRepository(db),
+		Limits:          postgres.NewLimitsRepository(db),
 		IdleLifecycle:   postgres.NewIdleLifecycleRepository(db),
 		AdminAuditLog:   postgres.NewAuditLogRepository(db),
+		SupportAccess:   postgres.NewSupportAccessRepository(db),
+		SupportRead:     postgres.NewSupportReadRepository(db),
 		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:    postgres.NewAdminConsoleRepository(db),
+		AdminFactor:     postgres.NewAdminFactorRepository(db),
 		PlatformIdP:     postgres.NewPlatformIdPRepository(db),
 
 		// Target Mappings
@@ -563,10 +608,12 @@ func newRepositories(db *postgres.DB) *Repositories {
 		IOC: postgres.NewIOCRepository(db),
 
 		// Validation evidence (CTEM Stage-4, migration 000178).
-		ValidationEvidence: postgres.NewValidationEvidenceRepository(db),
-		FindingRetest:      postgres.NewFindingRetestRepository(db),
-		FindingEvidence:    postgres.NewFindingEvidenceRepository(db),
-		FindingSLARestart:  postgres.NewFindingSLARestartRepository(db),
+		ValidationEvidence:      postgres.NewValidationEvidenceRepository(db),
+		FindingRetest:           postgres.NewFindingRetestRepository(db),
+		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
+		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
+		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),
+		FindingMaterialChange:   postgres.NewFindingMaterialChangeRepository(db),
 
 		// Runtime-telemetry reads for detection correlation (migration 000203).
 		TelemetryProbe: postgres.NewTelemetryProbeRepository(db),
@@ -590,4 +637,23 @@ func newRepositories(db *postgres.DB) *Repositories {
 func (r *Repositories) InitIntegrationExtensions(db *postgres.DB) {
 	r.IntegrationSCMExt = postgres.NewIntegrationSCMExtensionRepository(db, r.Integration)
 	r.IntegrationNotificationExt = postgres.NewIntegrationNotificationExtensionRepository(db, r.Integration)
+}
+
+// UseAdminDB moves the repositories of the platform console's identity tables
+// (admin_users, admin_credentials, admin_sessions, the platform identity
+// provider and its login states) to adminDB, the DB_ADMIN_USER pool. With one
+// pool it is the same database handle.
+func (r *Repositories) UseAdminDB(adminDB *postgres.DB) {
+	r.AdminDB = adminDB
+	r.Admin = postgres.NewAdminRepository(adminDB)
+	r.AdminConsole = postgres.NewAdminConsoleRepository(adminDB)
+	r.PlatformIdP = postgres.NewPlatformIdPRepository(adminDB)
+}
+
+// adminDBOf is the console identity pool, or db when none was set up.
+func adminDBOf(r *Repositories, db *postgres.DB) *postgres.DB {
+	if r != nil && r.AdminDB != nil {
+		return r.AdminDB
+	}
+	return db
 }

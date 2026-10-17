@@ -32,7 +32,6 @@ export interface CurrentTenant {
   slug: string
   name?: string
   role: TenantRole
-  plan?: string
   logo_url?: string
 }
 
@@ -151,7 +150,6 @@ export function TenantProvider({ children }: TenantProviderProps) {
         setCurrentTenant({
           ...currentTenant,
           name: fullTenant.name,
-          plan: fullTenant.plan,
         })
       }
     }
@@ -215,7 +213,6 @@ export function TenantProvider({ children }: TenantProviderProps) {
           slug: data.data.tenant_slug,
           name: targetTenant.name,
           role: data.data.role as TenantRole,
-          plan: targetTenant.plan,
         }
 
         setCurrentTenant(newTenant)

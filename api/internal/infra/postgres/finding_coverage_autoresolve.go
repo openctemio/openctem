@@ -180,11 +180,12 @@ func (r *FindingRepository) ResolveCoverageStale(ctx context.Context, tenantID s
 	for i, id := range ids {
 		idStrs[i] = id.String()
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	resolved, err := r.db.queryIDsWithTransition(ctx, findingTransition{ActivityType: "auto_resolved", Source: "auto", Reason: "not_found_in_full_scan", ActorType: "scanner",
+		ActorName: "system: covered scan", Message: "A full, successful scan that covered it no longer reported it"}, `
 		UPDATE findings f
 		SET status = 'resolved',
 			resolution = 'auto_fixed',
-			resolution_method = 'scan_verified',
+			closure_reason = 'fixed', verification = 'covered_scan',
 			resolved_at = NOW(),
 			updated_at = NOW()
 		WHERE f.tenant_id = $1
@@ -195,20 +196,6 @@ func (r *FindingRepository) ResolveCoverageStale(ctx context.Context, tenantID s
 		RETURNING f.id::text`, tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("resolve coverage-stale findings: %w", err)
-	}
-	defer rows.Close()
-	var resolved []shared.ID
-	for rows.Next() {
-		var idStr string
-		if err := rows.Scan(&idStr); err != nil {
-			return nil, fmt.Errorf("scan resolved finding id: %w", err)
-		}
-		if id, err := shared.IDFromString(idStr); err == nil {
-			resolved = append(resolved, id)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate resolved findings: %w", err)
 	}
 	return resolved, nil
 }
@@ -250,30 +237,17 @@ func (r *FindingRepository) ResolveSourceMitigated(ctx context.Context, tenantID
 		UPDATE findings f
 		SET status = 'resolved',
 			resolution = 'auto_fixed',
-			resolution_method = 'source_mitigated',
+			closure_reason = 'fixed', verification = 'source_reported',
 			resolved_at = NOW(),
 			updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.id IN (` + match + `)
 			AND f.status IN ` + autoResolveFromSQL + `
 		RETURNING f.id::text`
 	}
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), tool, pq.Array(fps), pq.Array(assets), pq.Array(ats))
+	out, err := r.db.queryIDsWithTransition(ctx, findingTransition{ActivityType: "auto_resolved", Source: "auto", Reason: "source_mitigated", ActorType: "integration",
+		ActorName: "system: source reported mitigated", Message: "Its source reported it mitigated", Changes: map[string]any{"scanner": tool}}, query, tenantID.String(), tool, pq.Array(fps), pq.Array(assets), pq.Array(ats))
 	if err != nil {
 		return nil, fmt.Errorf("resolve source-mitigated findings: %w", err)
-	}
-	defer rows.Close()
-	var out []shared.ID
-	for rows.Next() {
-		var idStr string
-		if err := rows.Scan(&idStr); err != nil {
-			return nil, fmt.Errorf("scan source-mitigated finding id: %w", err)
-		}
-		if id, err := shared.IDFromString(idStr); err == nil {
-			out = append(out, id)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate source-mitigated findings: %w", err)
 	}
 	return out, nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	notificationclient "github.com/openctemio/openctem/api/internal/infra/notifier"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
@@ -47,6 +48,10 @@ type Service struct {
 // about an asset only private programs list reaches only the integrations
 // attached to one of them (unless an owner opted the programs in), and the
 // names of private programs are scrubbed for every other destination.
+// SetBrand names the instance brand in the notifications this service
+// delivers (docs/architecture/brand.md).
+func (s *Service) SetBrand(b brand.Brand) { s.clientFactory.SetBrand(b) }
+
 func (s *Service) SetDeliveryResolver(r bountyprogram.DeliveryResolver) { s.delivery = r }
 
 // NewService creates a new Service.
@@ -514,10 +519,30 @@ func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, en
 		URL:            entry.URL(),
 		IdempotencyKey: "outbox-" + entry.ID().String(),
 	}
+	// Minimal by default: unless the channel opted in to details, nothing
+	// that names a finding or an asset leaves the platform, only the kind
+	// of event, its severity and a link back to it.
+	if ext := intg.Notification; ext == nil || !ext.IncludeDetails() {
+		msg.Title = minimalTitle(entry)
+		msg.Body = "Open the link to see the details."
+	}
 	if ext := intg.Notification; ext != nil && ext.MessageTemplate() != "" {
 		msg = s.applyTemplate(msg, ext.MessageTemplate())
 	}
 	return msg
+}
+
+// minimalTitle is the title of a message that carries no details: the event
+// type ("new_finding" becomes "New finding") and the severity.
+func minimalTitle(entry *outboxdom.Outbox) string {
+	kind := strings.ReplaceAll(entry.EventType(), "_", " ")
+	if kind != "" {
+		kind = strings.ToUpper(kind[:1]) + kind[1:]
+	}
+	if kind == "" {
+		kind = "Notification"
+	}
+	return kind + " (" + entry.Severity().String() + ")"
 }
 
 // configureClientFromCredentials configures the notification client based on provider type.

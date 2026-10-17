@@ -33,7 +33,13 @@ const summary: FleetSummary = {
 function renderStrip(over: Partial<React.ComponentProps<typeof FleetHealthStrip>> = {}) {
   const props = {
     summary,
-    channel: { latest: 'v0.4.2', min: 'v0.4.0' },
+    channel: {
+      products: [
+        { id: 'openctemio-sensor', latest_version: 'v0.4.2', min_version: 'v0.4.0', image: '' },
+      ],
+    },
+    notConnectedActive: false,
+    onToggleNotConnected: vi.fn(),
     attentionActive: false,
     onToggleAttention: vi.fn(),
     updatesActive: false,
@@ -60,6 +66,29 @@ describe('FleetHealthStrip', () => {
     ).toBeInTheDocument()
   })
 
+  it('fleet health filters to the sensors that are not connected', () => {
+    const p = renderStrip({ notConnectedActive: true })
+    const btn = screen.getByRole('button', { name: /Fleet health/ })
+    expect(btn).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(btn)
+    expect(p.onToggleNotConnected).toHaveBeenCalledTimes(1)
+  })
+
+  it('fleet health is a plain number when every sensor is connected', () => {
+    renderStrip({
+      summary: {
+        ...summary,
+        byState: { ...summary.byState, stale: 0, offline: 0, never_connected: 0 },
+      },
+    })
+    expect(screen.queryByRole('button', { name: /Fleet health/ })).not.toBeInTheDocument()
+  })
+
+  it('names not connected and setup check among the attention kinds', () => {
+    renderStrip({ summary: { ...summary, attentionKinds: ['offline', 'preflight'] } })
+    expect(screen.getByText('not connected, setup check')).toBeInTheDocument()
+  })
+
   it('needs attention filters the table and says what kind of problems', () => {
     const p = renderStrip()
     expect(screen.getByText('backlog, key, version')).toBeInTheDocument()
@@ -67,10 +96,10 @@ describe('FleetHealthStrip', () => {
     expect(p.onToggleAttention).toHaveBeenCalledTimes(1)
   })
 
-  it('updates show the latest release and the ones below the minimum', () => {
+  it('updates show the scanning sensor release and the ones below their product minimum', () => {
     const p = renderStrip({ updatesActive: true })
-    expect(screen.getByText('latest v0.4.2')).toBeInTheDocument()
-    expect(screen.getByText('1 below minimum v0.4.0')).toBeInTheDocument()
+    expect(screen.getByText('scanning sensor v0.4.2')).toBeInTheDocument()
+    expect(screen.getByText("1 below their product's minimum")).toBeInTheDocument()
     const btn = screen.getByRole('button', { name: /Update available/ })
     expect(btn).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(btn)

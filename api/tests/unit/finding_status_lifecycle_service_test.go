@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -36,7 +34,7 @@ func TestLifecycle_RequestApprovalRefusesIllegalMove(t *testing.T) {
 	svc := newApprovalTestService(repo, newMockApprovalRepository())
 
 	_, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
-		TenantID: shared.NewID().String(), FindingID: id.String(), RequestedStatus: "false_positive",
+		TenantID: shared.NewID().String(), FindingID: id.String(), RequestedStatus: "false_positive", ClosureReason: "detection_error",
 		Justification: "not real", RequestedBy: shared.NewID().String(),
 	})
 	require.ErrorIs(t, err, shared.ErrValidation)
@@ -54,7 +52,7 @@ func TestLifecycle_ApproveStatusRefusesWhenFindingMoved(t *testing.T) {
 	tenant := shared.NewID()
 
 	a, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
-		TenantID: tenant.String(), FindingID: id.String(), RequestedStatus: "false_positive",
+		TenantID: tenant.String(), FindingID: id.String(), RequestedStatus: "false_positive", ClosureReason: "detection_error",
 		Justification: "not real", RequestedBy: shared.NewID().String(),
 	})
 	require.NoError(t, err)
@@ -83,38 +81,8 @@ func TestLifecycle_TriageFindingRefusesIllegalMove(t *testing.T) {
 	require.Equal(t, vulnerability.FindingStatusFixApplied, f.Status())
 }
 
-// An expired acceptance reopens the finding only while it is still accepted.
-func TestLifecycle_ApprovalExpiryLeavesMovedFindingAlone(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		status     []vulnerability.FindingStatus
-		wantReopen bool
-	}{
-		{"still accepted", []vulnerability.FindingStatus{vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusAccepted}, true},
-		{"reopened and resolved since", []vulnerability.FindingStatus{vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusResolved}, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			repo := newMockFindingRepository()
-			approvals := newMockApprovalRepository()
-			id := shared.NewID()
-			repo.findings[id] = lifecycleFindingAt(t, tc.status...)
-			past := time.Now().Add(-time.Hour)
-			a := vulnerability.NewApproval(shared.NewID(), id, shared.NewID(), "accepted", "risk ok", &past)
-			a.Status = vulnerability.ApprovalStatusApproved
-			approvals.approvals[a.ID] = a
-
-			c := controller.NewApprovalExpirationController(approvals, repo, nil)
-			_, err := c.Reconcile(context.Background())
-			require.NoError(t, err)
-			if tc.wantReopen {
-				require.Len(t, repo.statusUpdates, 1)
-				require.Equal(t, vulnerability.FindingStatusConfirmed, repo.statusUpdates[0].Status)
-			} else {
-				require.Empty(t, repo.statusUpdates)
-			}
-		})
-	}
-}
+// An expired acceptance reopening only a still-accepted finding is covered
+// against the database in tests/integration/finding_acceptance_expiry_atomic_test.go.
 
 // The retired aliases are not statuses: a status change to one is a 400
 // (validation), never mapped to the canonical status.

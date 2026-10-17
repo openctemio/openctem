@@ -1,8 +1,6 @@
 package postgres
 
 import (
-	"strings"
-
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -19,21 +17,23 @@ var (
 	// Open work an automated close acts on, per target.
 	autoResolveFromSQL      = platformFromSQL(vulnerability.FindingStatusResolved, vulnerability.AutoCloseFromStatuses()...)
 	vexFalsePositiveFromSQL = platformFromSQL(vulnerability.FindingStatusFalsePositive, vulnerability.AutoCloseFromStatuses()...)
-	staleFromSQL            = platformFromSQL(vulnerability.FindingStatusNotObserved, vulnerability.AutoCloseFromStatuses()...)
+	// Open work a stale source marks stale (observation_state; the status
+	// stays, so this is a set, not a lifecycle move).
+	staleFromSQL = vulnerability.StatusListSQL(vulnerability.AutoCloseFromStatuses())
 
-	// A retired CI source also closes the findings it had already marked stale.
-	sourceRetiredFromSQL = platformFromSQL(vulnerability.FindingStatusResolved,
-		append(vulnerability.AutoCloseFromStatuses(), vulnerability.FindingStatusNotObserved)...)
+	// A retired CI source closes its open findings, stale ones included.
+	sourceRetiredFromSQL = platformFromSQL(vulnerability.FindingStatusResolved, vulnerability.AutoCloseFromStatuses()...)
 
 	// A feature branch that expires marks its untriaged findings stale; a
-	// branch-only finding also when it was confirmed.
-	branchExpiryFromSQL     = platformFromSQL(vulnerability.FindingStatusNotObserved, vulnerability.FindingStatusNew)
-	branchOnlyExpiryFromSQL = platformFromSQL(vulnerability.FindingStatusNotObserved,
-		vulnerability.FindingStatusNew, vulnerability.FindingStatusConfirmed)
+	// branch-only finding also when it was confirmed (observation only).
+	branchExpiryFromSQL     = vulnerability.StatusListSQL([]vulnerability.FindingStatus{vulnerability.FindingStatusNew})
+	branchOnlyExpiryFromSQL = vulnerability.StatusListSQL([]vulnerability.FindingStatus{
+		vulnerability.FindingStatusNew, vulnerability.FindingStatusConfirmed})
 
 	// A scan that reports a finding again.
 	regressionReopenFromSQL = platformFromSQL(vulnerability.FindingStatusConfirmed, vulnerability.RegressionReopenFromStatuses()...)
-	// AutoReopenByFingerprint reopens only findings closed as fixed.
+	// A license policy that flags a finding again reopens only findings
+	// closed as fixed.
 	fixedReopenFromSQL = platformFromSQL(vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusResolved)
 
 	// A suppression rule lifted (the finding returns to new) or re-linked to
@@ -79,11 +79,7 @@ func platformFromSQLEach(targets []vulnerability.FindingStatus, from ...vulnerab
 
 // sqlStatusList renders statuses as a SQL list: ('a', 'b').
 func sqlStatusList(statuses []vulnerability.FindingStatus) string {
-	quoted := make([]string, len(statuses))
-	for i, s := range statuses {
-		quoted[i] = "'" + strings.ReplaceAll(string(s), "'", "''") + "'"
-	}
-	return "(" + strings.Join(quoted, ", ") + ")"
+	return vulnerability.StatusListSQL(statuses)
 }
 
 // statusStrings is statuses as strings, for a pq.Array parameter.

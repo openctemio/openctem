@@ -18,15 +18,22 @@ import (
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
+	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/internal/app/onboarding"
+	slaapp "github.com/openctemio/openctem/api/internal/app/sla"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	moduleTypes "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -45,22 +52,39 @@ type TenantHandler struct {
 	service         *tenantapp.TenantService
 	roleService     *accesscontrol.RoleService
 	assetService    *assetapp.AssetService
+	priorityPreview PriorityImpactPreviewer
+	slaDeadlines    SLADeadlineSource
+	scoringVersions ScoringVersionReader
+	previewLimit    *tenantRateLimiter
 	moduleService   *module.ModuleService
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
 	logger          *logger.Logger
-	// selfServiceCreation allows POST /tenants (TENANT_CREATION_MODE=
-	// self_service). Off by default: organizations are then created by the
+	// selfServiceCreation allows POST /tenants when no sign-up policy is
+	// wired (SIGNUP_MODE=open). Off by default: organizations are then created by the
 	// platform administrator only.
 	selfServiceCreation bool
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
 	// sign-up setting, read on each request.
 	signupPolicy signupdom.PolicySource
+	// selfServiceLimits: the instance's self-service default limits and the
+	// per-person organization cap (none unless an operator set them).
+	selfServiceLimits auth.SelfServiceLimits
+	// signupDomains: a claimed domain may block new organizations for
+	// accounts on it.
+	signupDomains signupdom.DomainPolicySource
+	// domains, domainAudit: Settings > Domains (domain_signup_policy_handler.go).
+	domains     *domainverify.Service
+	domainAudit *auditsvc.AuditService
+	// domainCapture tells existing accounts on a domain that the
+	// organization now manages it (first time sso_required or
+	// block_new_workspaces turns on). Nil: not sent.
+	domainCapture func(ctx context.Context, vd *verifieddomain.VerifiedDomain)
+	// joinRequests: the organization's inbox of requests to join.
+	joinRequests *onboarding.Service
 	// licenseEvaluator re-evaluates the inventory after a license policy
 	// change (nil: not evaluated until the next package write).
 	licenseEvaluator LicensePolicyEvaluator
-	// freePlan: self-service organizations are Free, capped per person.
-	freePlan auth.FreePlan
 	// provisioning creates accounts on behalf of organization administrators.
 	// Nil disables POST /tenants/{tenant}/users.
 	provisioning *tenantapp.UserProvisioningService
@@ -80,20 +104,27 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 }
 
 // SetSelfServiceTenantCreation lets signed-in users create organizations
-// (TENANT_CREATION_MODE=self_service). Without it POST /tenants is refused.
+// (SIGNUP_MODE=open). Without it POST /tenants is refused.
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
 }
 
-// SetFreePlan wires the Free plan for self-service organizations.
-func (h *TenantHandler) SetFreePlan(p auth.FreePlan) { h.freePlan = p }
+// SetSelfServiceLimits wires the self-service default limits.
+func (h *TenantHandler) SetSelfServiceLimits(l auth.SelfServiceLimits) { h.selfServiceLimits = l }
 
 // SetSignupPolicy makes POST /tenants follow the console sign-up policy.
 func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
 	h.signupPolicy = p
 }
 
-// selfServiceAllowed reports whether a signed-in user may create an organization.
+// SetSignupDomainPolicy wires the per-domain sign-up policy of claimed
+// domains.
+func (h *TenantHandler) SetSignupDomainPolicy(src signupdom.DomainPolicySource) {
+	h.signupDomains = src
+}
+
+// selfServiceAllowed reports whether a signed-in user may create an
+// organization: the policy in force, and the user's domain does not block it.
 func (h *TenantHandler) selfServiceAllowed(r *http.Request) bool {
 	p := signupdom.Default()
 	switch {
@@ -102,15 +133,25 @@ func (h *TenantHandler) selfServiceAllowed(r *http.Request) bool {
 	case h.selfServiceCreation:
 		p = signupdom.Policy{Mode: signupdom.ModeSelfService}
 	}
-	return signupdom.Admit(p, signupdom.Identity{Intent: signupdom.IntentOrganization}).Admitted()
+	id := signupdom.Identity{Intent: signupdom.IntentOrganization}
+	if u := middleware.GetLocalUser(r.Context()); u != nil {
+		facts, err := signupdom.FactsForEmail(r.Context(), h.signupDomains, u.Email())
+		if err != nil {
+			h.logger.Warn("domain sign-up policy unreadable; organization creation refused", "error", err)
+			return false
+		}
+		id = facts.Apply(id)
+	}
+	return signupdom.Admit(p, id).Admitted()
 }
 
 // NewTenantHandler creates a new tenant handler.
 func NewTenantHandler(svc *tenantapp.TenantService, v *validator.Validator, log *logger.Logger) *TenantHandler {
 	return &TenantHandler{
-		service:   svc,
-		validator: v,
-		logger:    log,
+		service:      svc,
+		validator:    v,
+		logger:       log,
+		previewLimit: newTenantRateLimiter(scoringPreviewPerMinute, scoringPreviewBurst),
 	}
 }
 
@@ -122,6 +163,30 @@ func (h *TenantHandler) SetRoleService(svc *accesscontrol.RoleService) {
 // SetAssetService sets the asset service for risk scoring operations.
 func (h *TenantHandler) SetAssetService(svc *assetapp.AssetService) {
 	h.assetService = svc
+}
+
+// PriorityImpactPreviewer previews a change of the settings that feed finding
+// priority over the tenant's open findings (read-only).
+type PriorityImpactPreviewer interface {
+	PreviewOwnershipFloor(ctx context.Context, tenantID shared.ID, enabled bool, deadline findingapp.DeadlineFor) (*findingapp.PriorityImpact, error)
+}
+
+// SLADeadlineSource resolves a tenant's SLA deadlines from its policies.
+type SLADeadlineSource interface {
+	SLADeadlineFunc(ctx context.Context, tenantID string) (slaapp.DeadlineFunc, error)
+}
+
+// ScoringVersionReader reads a tenant's current scoring version.
+type ScoringVersionReader interface {
+	CurrentVersion(ctx context.Context, tenantID shared.ID, kind scoring.Kind) (int64, error)
+}
+
+// SetScoringPreview wires the finding-priority preview, the SLA deadlines it
+// counts and the version source of the risk scoring settings routes.
+func (h *TenantHandler) SetScoringPreview(p PriorityImpactPreviewer, sla SLADeadlineSource, v ScoringVersionReader) {
+	h.priorityPreview = p
+	h.slaDeadlines = sla
+	h.scoringVersions = v
 }
 
 // SetModuleService sets the module service for module management.
@@ -142,14 +207,16 @@ func (h *TenantHandler) SetAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker
 
 // TenantResponse represents a tenant in API responses.
 type TenantResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Slug        string    `json:"slug"`
-	Description string    `json:"description,omitempty"`
-	LogoURL     string    `json:"logo_url,omitempty"`
-	Plan        string    `json:"plan"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description,omitempty"`
+	LogoURL     string `json:"logo_url,omitempty"`
+	// Region is the organization's data region, fixed at creation; empty
+	// for organizations from before regions were named.
+	Region    string    `json:"region,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // TenantWithRoleResponse represents a tenant with the user's role.
@@ -247,6 +314,16 @@ type InvitationResponse struct {
 	// LookalikeOf lists members whose address reaches the same mailbox once
 	// dots and +tags are ignored: a warning, never a merge (create only).
 	LookalikeOf []string `json:"lookalike_of,omitempty"`
+	// MemberKind is internal or external, as classified at creation;
+	// Privileged: the roles are above member for an outside invitee, so the
+	// member will need two-factor (RFC-095).
+	MemberKind string `json:"member_kind"`
+	Privileged bool   `json:"privileged"`
+	// LastSentAt and ResendCount: resends are limited (RFC-095 §5).
+	LastSentAt  time.Time `json:"last_sent_at"`
+	ResendCount int       `json:"resend_count"`
+	// GroupIDs: the teams the invitee joins at acceptance.
+	GroupIDs []string `json:"group_ids"`
 }
 
 // =============================================================================
@@ -290,6 +367,10 @@ type CreateInvitationRequest struct {
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 	// AccessReason says why the external invitee gets access (shown to admins).
 	AccessReason string `json:"access_reason,omitempty" validate:"max=500"`
+	// GroupIDs adds the invitee to these teams (data access) when they accept:
+	// at most 20, each one the inviter may add a member to, checked again at
+	// acceptance.
+	GroupIDs []string `json:"group_ids,omitempty" validate:"max=20"`
 }
 
 // UpdateMemberAccessRequest sets when an external member's access ends.
@@ -323,7 +404,7 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 		Slug:        t.Slug(),
 		Description: t.Description(),
 		LogoURL:     t.LogoURL(),
-		Plan:        t.Plan().String(),
+		Region:      t.Region(),
 		CreatedAt:   t.CreatedAt(),
 		UpdatedAt:   t.UpdatedAt(),
 	}
@@ -366,6 +447,13 @@ type InvitationListItem struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
 	Pending   bool      `json:"pending"`
+	// MemberKind, Privileged, AccessExpiresAt, LastSentAt, ResendCount: see
+	// InvitationResponse.
+	MemberKind      string     `json:"member_kind"`
+	Privileged      bool       `json:"privileged"`
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	LastSentAt      time.Time  `json:"last_sent_at"`
+	ResendCount     int        `json:"resend_count"`
 }
 
 // InvitationListResponse is the body of GET /tenants/{tenant}/invitations.
@@ -379,6 +467,8 @@ func toInvitationListItem(inv *tenant.Invitation) InvitationListItem {
 	return InvitationListItem{
 		ID: r.ID, Email: r.Email, Role: r.Role, RoleIDs: r.RoleIDs, InvitedBy: r.InvitedBy,
 		ExpiresAt: r.ExpiresAt, CreatedAt: r.CreatedAt, Pending: r.Pending,
+		MemberKind: r.MemberKind, Privileged: r.Privileged, AccessExpiresAt: r.AccessExpiresAt,
+		LastSentAt: r.LastSentAt, ResendCount: r.ResendCount,
 	}
 }
 
@@ -398,6 +488,11 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 		Pending:   inv.IsPending(),
 
 		AccessExpiresAt: inv.Access().ExpiresAt,
+		MemberKind:      string(inv.InviteeInfo().Kind),
+		Privileged:      inv.InviteeInfo().Privileged,
+		LastSentAt:      inv.LastSentAt(),
+		ResendCount:     inv.ResendCount(),
+		GroupIDs:        nonNilIDs(inv.GroupIDs()),
 	}
 	if includeToken {
 		resp.Token = inv.Token()
@@ -408,6 +503,14 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 // =============================================================================
 // Helpers
 // =============================================================================
+
+// nonNilIDs answers an empty list instead of null.
+func nonNilIDs(ids []string) []string {
+	if ids == nil {
+		return []string{}
+	}
+	return ids
+}
 
 // buildAuditContext builds an app.AuditContext from the HTTP request.
 func (h *TenantHandler) buildAuditContext(r *http.Request) auditsvc.AuditContext {
@@ -452,7 +555,7 @@ func (h *TenantHandler) handleValidationError(w http.ResponseWriter, err error) 
 }
 
 func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
-	if WritePlanLimitError(w, err) {
+	if WriteLimitError(w, err) {
 		return
 	}
 	if writeStepUpError(w, err) {
@@ -477,6 +580,14 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// carry stored values, so it is not logged here.
 		h.logger.Error("settings section unreadable")
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
+		return
+	}
+	if code, status, ok := invitationErrorCode(err); ok {
+		msg := err.Error()
+		if idx := strings.Index(msg, ": "); idx != -1 {
+			msg = msg[idx+2:]
+		}
+		apierror.New(status, apierror.Code(code), msg).WriteJSON(w)
 		return
 	}
 	if errors.Is(err, tenantapp.ErrStoredFilesNotErased) {
@@ -506,9 +617,29 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		}
 		apierror.BadRequest(msg).WriteJSON(w)
 	default:
-		h.logger.Error("service error", "error", err)
+		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// invitationErrorCode gives the invitation refusals a stable code the console
+// translates (RFC-095 §6).
+func invitationErrorCode(err error) (string, int, bool) {
+	switch {
+	case errors.Is(err, tenantapp.ErrInviteeNotOnVerifiedDomain):
+		return "INVITEE_NOT_ON_VERIFIED_DOMAIN", http.StatusForbidden, true
+	case errors.Is(err, tenantapp.ErrEmailDomainNotAllowed):
+		return "INVITEE_DOMAIN_NOT_ALLOWED", http.StatusBadRequest, true
+	case errors.Is(err, tenantapp.ErrInvitationNoLongerValid):
+		return "INVITATION_NO_LONGER_VALID", http.StatusForbidden, true
+	case errors.Is(err, tenantapp.ErrPersonalAccountsBlocked):
+		return "PERSONAL_ACCOUNTS_BLOCKED", http.StatusForbidden, true
+	case errors.Is(err, tenant.ErrInvitationResendTooSoon):
+		return "INVITATION_RESEND_TOO_SOON", http.StatusTooManyRequests, true
+	case errors.Is(err, tenant.ErrInvitationRateLimited):
+		return "INVITATIONS_RATE_LIMITED", http.StatusTooManyRequests, true
+	}
+	return "", 0, false
 }
 
 // writeToggleErrorJSON serialises a module.ToggleError as the 400
@@ -570,14 +701,22 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Slug:        req.Slug,
 		Description: req.Description,
 	}
-
-	if h.freePlan != nil {
-		if err := h.freePlan.CheckFreeTeam(r.Context(), userID); err != nil {
-			if !WritePlanLimitError(w, err) {
+	// The instance's self-service default limits and per-person cap; none
+	// unless an operator set them.
+	if h.selfServiceLimits != nil {
+		if err := h.selfServiceLimits.CheckOrgsPerUser(r.Context(), userID); err != nil {
+			if !WriteLimitError(w, err) {
 				h.handleServiceError(w, err)
 			}
 			return
 		}
+		d, _, err := h.selfServiceLimits.SelfServiceDefaults(r.Context())
+		if err != nil {
+			h.logger.Error("read self-service default limits", "error", err)
+			apierror.ServiceUnavailable("Organization limits could not be read; try again").WriteJSON(w)
+			return
+		}
+		input.InitialLimits = d
 	}
 
 	actx := h.buildAuditContext(r)
@@ -586,13 +725,6 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
-	// A self-service organization starts on the Free plan.
-	if h.freePlan != nil {
-		if err := h.freePlan.AssignFree(r.Context(), t.ID()); err != nil {
-			h.logger.Error("assign the Free plan to a new organization", "tenant_id", t.ID().String(), "error", err)
-		}
-	}
-
 	// Apply the chosen module preset if one was picked during creation.
 	// Failures are logged but do NOT abort the tenant creation — the
 	// admin can always apply the preset later from Settings → Modules.
@@ -1162,6 +1294,7 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 		RoleIDs:         req.RoleIDs,
 		AccessExpiresAt: req.AccessExpiresAt,
 		AccessReason:    req.AccessReason,
+		GroupIDs:        req.GroupIDs,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -1178,6 +1311,74 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// PreviewInvitationRequest is the body of POST /organization/invitations/preview.
+type PreviewInvitationRequest struct {
+	Email   string   `json:"email" validate:"required,max=254"`
+	RoleIDs []string `json:"role_ids" validate:"max=10"`
+	// GroupIDs: the teams the invitee would join.
+	GroupIDs []string `json:"group_ids,omitempty" validate:"max=20"`
+}
+
+// PreviewInvitationResponse says what inviting the address would do.
+type PreviewInvitationResponse struct {
+	Allowed              bool   `json:"allowed"`
+	Reason               string `json:"reason,omitempty"`
+	Outside              bool   `json:"outside"`
+	Personal             bool   `json:"personal"`
+	Privileged           bool   `json:"privileged"`
+	StepUpRequired       bool   `json:"step_up_required"`
+	MFARequired          bool   `json:"mfa_required"`
+	AccessEndRequired    bool   `json:"access_end_required"`
+	DefaultAccessEndDays int    `json:"default_access_end_days"`
+	MaxAccessEndDays     int    `json:"max_access_end_days"`
+	SSOExceptionNeeded   bool   `json:"sso_exception_needed"`
+	AlreadyMember        bool   `json:"already_member"`
+	AlreadyInvited       bool   `json:"already_invited"`
+}
+
+// PreviewInvitation handles POST /api/v1/organization/invitations/preview.
+//
+// @Summary      Preview an invitation
+// @Description  What inviting this address with these roles would do, before anything is sent: whether the organization's invitation policy allows it (reason code when not), whether the person is outside the organization or uses a personal address, whether the roles are above member for them (the inviter then re-authenticates and the member needs two-factor), whether an end of access is required, and whether they are already a member or invited. Says nothing about other organizations. Owner or administrator with members:invite, the same requirements as creating an invitation; the organization comes from the token (RFC-095).
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        body  body  PreviewInvitationRequest  true  "Address and roles"
+// @Success      200  {object}  PreviewInvitationResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/invitations/preview [post]
+func (h *TenantHandler) PreviewInvitation(w http.ResponseWriter, r *http.Request) {
+	actx := h.tokenTenantAuditContext(r)
+	if actx.ActorID == "" || actx.TenantID == "" {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+	var req PreviewInvitationRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	p, err := h.service.PreviewInvitationWithTeams(r.Context(), actx.TenantID, req.Email, req.RoleIDs, req.GroupIDs, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(PreviewInvitationResponse{
+		Allowed: p.Allowed, Reason: p.Reason, Outside: p.Outside, Personal: p.Personal,
+		Privileged: p.Privileged, StepUpRequired: p.StepUpRequired, MFARequired: p.MFARequired,
+		AccessEndRequired: p.AccessEndRequired, DefaultAccessEndDays: p.DefaultAccessEndDays,
+		MaxAccessEndDays: p.MaxAccessEndDays, SSOExceptionNeeded: p.SSOExceptionNeeded,
+		AlreadyMember: p.AlreadyMember, AlreadyInvited: p.AlreadyInvited,
+	})
 }
 
 // canGrantRoles enforces anti-escalation for invitations and administrator-
@@ -1202,6 +1403,12 @@ func (h *TenantHandler) canGrantRoles(w http.ResponseWriter, r *http.Request, ro
 			return false
 		}
 		if e := assertCanGrantPermissions(r.Context(), role.Permissions()); e != nil {
+			apierror.Forbidden(refusal).WriteJSON(w)
+			return false
+		}
+		// Full data access is part of the ceiling too: only owners and
+		// administrators (who skip this check) see all data.
+		if role.HasFullDataAccess() {
 			apierror.Forbidden(refusal).WriteJSON(w)
 			return false
 		}
@@ -1568,6 +1775,16 @@ type InvitationLookupInvitation struct {
 	Pending     bool      `json:"pending"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	InviterName string    `json:"inviter_name"`
+	// What accepting gives (RFC-095 §5): the roles with their risk, the
+	// teams, the end of access, outside-member status and whether two-factor
+	// authentication will be required.
+	// Present only while the invitation is pending.
+	Roles           []tenantapp.InvitationGrantRole `json:"roles,omitempty"`
+	Teams           []tenantapp.InvitationGrantTeam `json:"teams,omitempty"`
+	MemberKind      string                          `json:"member_kind,omitempty"`
+	AccessExpiresAt *time.Time                      `json:"access_expires_at,omitempty"`
+	MFARequired     bool                            `json:"mfa_required"`
+	MFAReason       string                          `json:"mfa_reason,omitempty"`
 }
 
 // InvitationLookupTenant is the organization part of InvitationLookupResponse.
@@ -1579,7 +1796,7 @@ type InvitationLookupTenant struct {
 
 // LookupInvitation handles POST /api/v1/invitations/lookup (public).
 // @Summary      Look up an invitation
-// @Description  What an invitation token grants, readable before sign-in: the organization, the invited email and role, and whether it is still pending. The token travels in the body, never in the URL.
+// @Description  What an invitation token grants, readable before sign-in: the organization, the invited email, the roles with their risk, the teams, the end of access, whether the person is outside the organization and whether two-factor authentication will be required, and whether it is still pending. The token travels in the body, never in the URL.
 // @Tags         Invitations
 // @Accept       json
 // @Produce      json
@@ -1619,18 +1836,27 @@ func (h *TenantHandler) writeInvitationLookup(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	look := InvitationLookupInvitation{
+		ID:          invitation.ID().String(),
+		Email:       invitation.Email(),
+		Role:        invitation.Role().String(),
+		Pending:     invitation.IsPending(),
+		ExpiresAt:   invitation.ExpiresAt(),
+		InviterName: h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
+	}
+	// What accepting gives is shown only while it can still be accepted: an
+	// expired or used token reveals nothing about roles, teams or access.
+	if invitation.IsPending() {
+		grants := h.service.InvitationGrants(r.Context(), invitation)
+		look.Roles, look.Teams, look.MemberKind = grants.Roles, grants.Teams, grants.MemberKind
+		look.AccessExpiresAt = invitation.Access().ExpiresAt
+		look.MFARequired, look.MFAReason = grants.MFARequired, grants.MFAReason
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(InvitationLookupResponse{
-		Invitation: InvitationLookupInvitation{
-			ID:          invitation.ID().String(),
-			Email:       invitation.Email(),
-			Role:        invitation.Role().String(),
-			Pending:     invitation.IsPending(),
-			ExpiresAt:   invitation.ExpiresAt(),
-			InviterName: h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
-		},
-		Tenant: InvitationLookupTenant{ID: t.ID().String(), Name: t.Name(), Slug: t.Slug()},
+		Invitation: look,
+		Tenant:     InvitationLookupTenant{ID: t.ID().String(), Name: t.Name(), Slug: t.Slug()},
 	})
 }
 
@@ -1836,6 +2062,11 @@ type SecuritySettingsResponse struct {
 	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
 	PersonalAccounts string `json:"personal_accounts"`
+	// Invitees: who may be invited: any, verified_domains or allow_list (RFC-095).
+	Invitees string `json:"invitees"`
+	// ExternalAccessEndRequired: outside people no organization manages must
+	// have an end of access (RFC-095).
+	ExternalAccessEndRequired bool `json:"external_access_end_required"`
 	// SSOExceptions: members who may sign in without SSO while it is enforced.
 	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
 	// JITRequiresApproval: SSO newcomers wait for an administrator's approval.
@@ -1875,6 +2106,8 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			ToolHTTPUserAgent:                         s.Security.ToolHTTPUserAgent,
 			ForbidToolInsecureTLS:                     s.Security.ForbidToolInsecureTLS,
 			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
+			Invitees:                                  string(s.Security.EffectiveInvitees()),
+			ExternalAccessEndRequired:                 s.Security.ExternalAccessEndRequired,
 			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 			JITRequiresApproval:                       s.Security.JITRequiresApproval,
 		},
@@ -2003,6 +2236,10 @@ type UpdateSecuritySettingsRequest struct {
 	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
 	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
+	// Invitees: any, verified_domains or allow_list (RFC-095 §4.1).
+	Invitees *string `json:"invitees" validate:"omitempty,oneof=any verified_domains allow_list"`
+	// ExternalAccessEndRequired: see SecuritySettingsResponse.
+	ExternalAccessEndRequired *bool `json:"external_access_end_required"`
 	// SSOExceptions replaces the list of members who may sign in without SSO
 	// (with a second factor) while it is enforced.
 	SSOExceptions *[]tenant.SSOException `json:"sso_exceptions" validate:"omitempty,max=100"`
@@ -2047,6 +2284,8 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		ToolHTTPUserAgent:                         req.ToolHTTPUserAgent,
 		ForbidToolInsecureTLS:                     req.ForbidToolInsecureTLS,
 		PersonalAccounts:                          req.PersonalAccounts,
+		Invitees:                                  req.Invitees,
+		ExternalAccessEndRequired:                 req.ExternalAccessEndRequired,
 		SSOExceptions:                             req.SSOExceptions,
 		JITRequiresApproval:                       req.JITRequiresApproval,
 		// Lockout guard: the saved IP allowlist must include this IP.
@@ -2303,30 +2542,21 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 	}
 	h.writeSectionETag(w, r, tenantID, tenant.SectionRiskScoring)
 
-	// Invalidate scoring config cache so new formula takes effect immediately
+	// The new settings take effect at once on this replica; the database
+	// trigger recorded the change (scoring_changes) and queued every asset
+	// (and, for the ownership floor, every open finding) for the workers.
 	if h.assetService != nil {
 		h.assetService.InvalidateScoringConfigCache(tenantID)
 	}
-
-	// Auto-recalculate all asset risk scores after saving new config
-	var assetsUpdated int
-	if h.assetService != nil {
-		updated, recalcErr := h.assetService.RecalculateAllRiskScores(r.Context(), tenantID)
-		if recalcErr != nil {
-			h.logger.Warn("auto-recalculate after config save failed",
-				"tenant_id", tenantID.String(), "error", recalcErr)
-		} else {
-			assetsUpdated = updated
-			// Record recalculation time for rate limiting on the dedicated endpoint
-			recalculateLastRun.Store(tenantID.String(), time.Now())
+	resp := map[string]any{"config": settings.RiskScoring, "recompute": "queued"}
+	if h.scoringVersions != nil {
+		if v, verr := h.scoringVersions.CurrentVersion(r.Context(), tenantID, scoring.KindAssetRisk); verr == nil {
+			resp["scoring_version"] = v
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"config":         settings.RiskScoring,
-		"assets_updated": assetsUpdated,
-	})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // GetRetestSettings handles GET /api/v1/organization/settings/retest.
@@ -2690,6 +2920,14 @@ func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http
 		return
 	}
 
+	// A whole-organization dry run: limited per tenant (scoring_preview_limit.go).
+	if ok, retryAfter := h.previewLimit.allow(tenantID.String(), time.Now()); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+		apierror.TooManyRequests(fmt.Sprintf("The scoring preview is limited to %d per minute. Try again in %d seconds.",
+			scoringPreviewPerMinute, retryAfter)).WriteJSON(w)
+		return
+	}
+
 	if h.assetService == nil {
 		apierror.InternalServerError("Asset service not configured").WriteJSON(w)
 		return
@@ -2707,18 +2945,56 @@ func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http
 	}
 
 	config := assetapp.MapTenantToAssetScoringConfig(&req)
-	items, totalAssets, err := h.assetService.PreviewRiskScoreChanges(r.Context(), tenantID, config)
+	assets, err := h.assetService.PreviewRiskImpact(r.Context(), tenantID, config)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	resp := map[string]any{"assets": assets, "affects_priority": false}
+
+	// Of the risk scoring settings only the ownership floor feeds finding
+	// priority: preview the open findings when it would change.
+	current, err := h.service.GetRiskScoringSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if current.FloorUnownedAtP2 != req.FloorUnownedAtP2 && h.priorityPreview != nil {
+		findings, perr := h.priorityPreview.PreviewOwnershipFloor(r.Context(), tenantID, req.FloorUnownedAtP2, h.previewDeadlines(r.Context(), tenantID))
+		if perr != nil {
+			h.handleServiceError(w, perr)
+			return
+		}
+		resp["affects_priority"] = true
+		resp["findings"] = findings
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"assets":       items,
-		"sample_count": len(items),
-		"total_assets": totalAssets,
-	})
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// previewDeadlines adapts the tenant's SLA policies to the preview: the
+// deadline a finding would get with a class, counted from now. Nil when no
+// SLA source is wired (deadlines are then not counted).
+func (h *TenantHandler) previewDeadlines(ctx context.Context, tenantID shared.ID) findingapp.DeadlineFor {
+	if h.slaDeadlines == nil {
+		return nil
+	}
+	fn, err := h.slaDeadlines.SLADeadlineFunc(ctx, tenantID.String())
+	if err != nil {
+		return nil
+	}
+	return func(f *vulnerability.Finding, class vulnerability.PriorityClass, now time.Time) time.Time {
+		aid := ""
+		if !f.AssetID().IsZero() {
+			aid = f.AssetID().String()
+		}
+		d, derr := fn(aid, string(class), f.Severity(), now)
+		if derr != nil {
+			return time.Time{}
+		}
+		return d
+	}
 }
 
 // RecalculateRiskScores handles POST /api/v1/tenants/{tenant}/settings/risk-scoring/recalculate
@@ -2757,7 +3033,8 @@ func (h *TenantHandler) RecalculateRiskScores(w http.ResponseWriter, r *http.Req
 
 	actx := h.buildAuditContext(r)
 
-	updated, err := h.assetService.RecalculateAllRiskScores(r.Context(), tenantID)
+	// Queue every live asset; the asset-risk-score worker rescores them.
+	queued, err := h.assetService.EnqueueRiskRescore(r.Context(), tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -2768,14 +3045,14 @@ func (h *TenantHandler) RecalculateRiskScores(w http.ResponseWriter, r *http.Req
 
 	// Audit log the recalculation
 	event := auditsvc.NewSuccessEvent(audit.ActionTenantRiskScoresRecalculated, audit.ResourceTypeTenant, tenantKey).
-		WithMessage(fmt.Sprintf("Risk scores recalculated for %d assets", updated)).
-		WithMetadata("assets_updated", updated).
+		WithMessage(fmt.Sprintf("Risk scores queued for recalculation (%d assets)", queued)).
+		WithMetadata("assets_queued", queued).
 		WithSeverity(audit.SeverityMedium)
 	h.service.LogAuditEvent(r.Context(), actx, event)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"assets_updated": updated,
+		"assets_queued": queued,
 	})
 }
 
@@ -2814,8 +3091,8 @@ type TenantModuleResponse struct {
 	DisplayOrder int    `json:"display_order"`
 	IsCore       bool   `json:"is_core"`
 	IsEnabled    bool   `json:"is_enabled"`
-	// Entitled: the organization's plan or a platform grant includes the
-	// module; one that is not cannot be switched on here.
+	// Entitled: the module is available for the organization; one that is
+	// not cannot be switched on here.
 	Entitled      bool                      `json:"entitled"`
 	ReleaseStatus string                    `json:"release_status"`
 	SubModules    []TenantSubModuleResponse `json:"sub_modules,omitempty"`

@@ -32,6 +32,7 @@ import (
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
@@ -314,6 +315,7 @@ func (j *DecorationJob) decorateGitLab(ctx context.Context, run *cirun.Run) (str
 		return cirun.DecorationSkipped, "no verified commit"
 	}
 	mrIID := 0
+	var pipelineID int64
 	if run.PullRequest != "" {
 		n, err := strconv.Atoi(run.PullRequest)
 		if err != nil || n <= 0 {
@@ -323,10 +325,11 @@ func (j *DecorationJob) decorateGitLab(ctx context.Context, run *cirun.Run) (str
 		if err != nil {
 			return gitlabOutcome(err, "read the merge request")
 		}
-		if !strings.EqualFold(mr.SHA, run.CommitSHA) {
+		current, pid := gitlabRunIsCurrent(run, mr)
+		if !current {
 			return cirun.DecorationSkipped, "the merge request has newer commits"
 		}
-		mrIID = n
+		mrIID, pipelineID = n, pid
 	}
 	others, err := j.otherFailures(ctx, run, run.CommitSHA)
 	if err != nil {
@@ -337,7 +340,7 @@ func (j *DecorationJob) decorateGitLab(ctx context.Context, run *cirun.Run) (str
 		state = "failed"
 	}
 	runURL := j.webBase + RunPath(run.ID)
-	if err := api.SetCommitStatus(ctx, project, run.CommitSHA, state, CheckName, runURL, plain(commitTitle(&v, others), 250)); err != nil {
+	if err := api.SetCommitStatus(ctx, project, run.CommitSHA, state, CheckName, runURL, plain(commitTitle(&v, others), 250), pipelineID); err != nil {
 		return gitlabOutcome(err, "set the commit status")
 	}
 	if mrIID > 0 {
@@ -347,6 +350,30 @@ func (j *DecorationJob) decorateGitLab(ctx context.Context, run *cirun.Run) (str
 		}
 	}
 	return cirun.DecorationPosted, ""
+}
+
+// gitlabRunIsCurrent reports whether a merge request run judged the merge
+// request as it stands, and the pipeline its status attaches to. A
+// detached merge request pipeline runs on the merge request's head (mr.SHA).
+// A merged results pipeline (refs/merge-requests/<n>/merge) runs on a
+// commit GitLab made by merging the head into the target, which is never
+// mr.SHA: it is current when it is the merge request's head pipeline (same
+// pipeline id as the run's, same commit as the run's verified one). Its
+// status goes on that commit, attached to that pipeline, which is what the
+// merge request shows. A merge train run (/train) is neither and is skipped.
+func gitlabRunIsCurrent(run *cirun.Run, mr *gitlabapi.MergeRequest) (bool, int64) {
+	if mr == nil {
+		return false, 0
+	}
+	if strings.EqualFold(mr.SHA, run.CommitSHA) {
+		return true, 0
+	}
+	hp := mr.HeadPipeline
+	if !strings.HasSuffix(run.Ref, "/merge") || hp == nil || hp.ID <= 0 ||
+		strconv.FormatInt(hp.ID, 10) != run.ExternalRunID || !strings.EqualFold(hp.SHA, run.CommitSHA) {
+		return false, 0
+	}
+	return true, hp.ID
 }
 
 func gitlabOutcome(err error, what string) (string, string) {
@@ -529,7 +556,7 @@ func summaryMarkdown(v *Verdict, runURL string) string {
 		v.Summary.Accepted, v.Summary.Blocking)
 	fmt.Fprintf(&b, "Policy: %s (%s).\n\n", md(v.Policy.Mode, 20), md(v.Policy.Source, 20))
 	writeReasons(&b, v, 20)
-	fmt.Fprintf(&b, "\n[Open the run in OpenCTEM](%s)\n", runURL)
+	fmt.Fprintf(&b, "\n[Open the run in %s](%s)\n", brand.Name(), runURL)
 	return b.String()
 }
 

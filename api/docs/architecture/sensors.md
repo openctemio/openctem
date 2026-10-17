@@ -341,7 +341,7 @@ idle interval stays online: interval + grace) and `offline_after_seconds`
 whatever the state: `outbox_backlog` (results waiting over an hour),
 `outbox_dead_letters`, `outbox_evicted`, `key_expired`, `key_expiring` (within
 7 days), `identity_cloned` (two live processes use the key; see "Key use and
-cloned identities"), `version_unsupported`, `sdk_unsupported` (see "Build information"),
+cloned identities"), `version_unsupported`, `sdk_advisory` (see "Build information"),
 `no_tools` (a scanning daemon with no tools), `error_reported`,
 `heartbeat_late` (the sensor is late or stale, or its last delivered heartbeat
 came more than 1.5 intervals after the previous one, `control.gap_s`) and
@@ -349,17 +349,29 @@ came more than 1.5 intervals after the previous one, `control.gap_s`) and
 config report (below) `config_check_failed`, `config_check_warning` and
 `config_report_stale`. An online sensor with any reason is `degraded`.
 
-**Release channel**: `SENSOR_LATEST_VERSION` (default: the newest sensor release
-when the API was built, `none` turns it off) and `SENSOR_MIN_VERSION` (default
-none). `version` is normalized to one form (`0.4.2`, `v0.4.2` and `vv0.4.2` all
-read `v0.4.2`); `version_status` is `latest`, `update_available`, `unsupported`
-or `unknown` (no version, a dev build, or no channel). A git-describe build
-(`v0.4.2-3-gabc1234`) counts as its tag. Both settings are in the stats
-response (`latest_version`, `min_version`).
+**Sensor products and release lines** (RFC-037 §11): the platform knows
+several sensor products, listed in `versions.yaml` and built into the API
+(`internal/versions`): the scanning sensor (`openctemio-sensor`) and the
+Tenable.sc connector (`openctemio-connector-tenable`), each with its own
+`latest` and `min`. A sensor's product is what it reports (heartbeat
+`sensor.name`, else its User-Agent product token); one that reports none is
+the scanning sensor. `product` in the sensor response is that product,
+`product_known` whether the catalog lists it, and `product_latest_version` /
+`product_min_version` its release line. `version` is normalized to one form
+(`0.4.2`, `v0.4.2` and `vv0.4.2` all read `v0.4.2`); `version_status` compares
+it with the product's own line: `latest`, `update_available`, `unsupported`
+(below the product's minimum: health reason `version_unsupported`) or
+`unknown` (no version, a dev build, or a product the catalog does not list: a
+custom sensor gets no version verdict; its compatibility is the protocol and
+the capabilities it advertises). A git-describe build (`v0.4.2-3-gabc1234`)
+counts as its tag. The stats response lists the catalog (`products`: `id`,
+`latest_version`, `min_version`, `image`). A release bump changes
+`versions.yaml` only; there is no setting for it (`SENSOR_LATEST_VERSION` and
+`SENSOR_MIN_VERSION` are refused at startup).
 
 **Other fields**: `key_expires_at`, `last_offline_at`, `last_error_at`,
 `started_at` and `uptime_seconds` (from the heartbeat's `uptime_seconds`, stored
-as `sensors.process_started_at`, migration 000249), `is_platform_sensor`.
+as `sensors.process_started_at`, migration 000249), `scope`.
 `ip_address` is the heartbeat's client address under the trusted-proxy rule
 (`SERVER_TRUSTED_PROXIES`): behind the built-in gateway it is the address the
 gateway saw (`X-Real-IP`), so a sensor running in a container on the platform
@@ -367,35 +379,172 @@ host shows the container network's gateway address, which is where it really
 connects from.
 
 **Stats** count the same rows the list returns: the tenant's own sensors.
-Shared platform sensors (`is_platform_sensor`) are in neither. Their queue
+Shared sensors (`scope = 'instance'`) are in neither. Their queue
 (`get_next_platform_job`) is shared fairly across tenants: within a priority
 class, the tenant with the fewest platform jobs in flight goes first
 (migration 000461, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
 
-## Platform sensors on the tenant plane
+## Shared sensor enrollment
 
-A platform sensor's row carries a `tenant_id` (the operator's), but it is
-never that tenant's sensor. Managing platform sensors belongs to the platform
-admin console (RFC-022); on the tenant plane they do not exist:
+A shared sensor is enrolled with a **single-use instance enrollment token**
+([RFC-100](../rfcs/RFC-100-shared-sensors.md) §7), never a long-lived
+registration secret:
 
+1. A super administrator issues it in the console
+   (`POST /api/v1/admin/shared-sensors/enrollment-tokens`: super admin, the
+   route-level step-up, a reason), or an install registers the value it
+   generated for its bundled sensor (`bootstrap-admin sensor-token
+   -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN`). The token is `octe_` plus 49
+   letters or digits, lives 5 to 60 minutes (the table refuses more than an
+   hour), is shown once and stored only as an HMAC-SHA256 with the sensor-key
+   pepper (`instance_enrollment_tokens`). Each issue writes a console audit
+   row (high) with the reason.
+2. The sensor starts an ordinary pairing (RFC-052, its own Ed25519 key, the
+   request signed with it) and puts the token in `enrollment_token`. The
+   platform spends the token and inserts the request bound to it
+   (`sensor_pairings.instance_token_id`) in one transaction; the first key
+   that presents it wins. A malformed, unknown, expired or used token gets the
+   same `401`, and nothing is written; the start route keeps its per-address
+   and platform-wide rate limits.
+3. When the sensor reveals its nonce, the request is approved as a shared
+   sensor in one transaction: `scope = 'instance'`, no tenant, trust level
+   `trusted` and the least-privilege grant from the insert trigger, and its
+   pending key without a tenant. The sensor confirms its identity
+   (`identity.scope = "instance"`, empty tenant in the signed transcript) and
+   the key becomes active.
+
+The installs enroll their bundled sensor this way: the compose overlay
+`api/deploy/docker-compose.sensor.yml` (the token from `.env`, which
+`setup.sh` generates, registered by a one-shot `sensor-enrollment` service)
+and the Helm chart's `sensor.enrollment=instance` (a generated Secret and a
+post-install/post-upgrade Job). An existing organization sensor keeps its
+identity: the scope is fixed at creation, so converting means retiring it and
+enrolling a fresh one.
+
+Such a request has no tenant ever (`chk_sensor_pairings_instance_no_tenant`):
+no organization can look it up, approve or deny it. Redemption, approval and
+confirmation each write a console audit row; nothing reaches an
+organization's audit log or timeline. Transport v3 certificates are not
+issued to a shared sensor yet: it speaks the signed HTTPS protocol.
+
+## Shared sensors on the tenant plane
+
+Platform sensors become **shared sensors** (instance scope) in every edition;
+the design, access layers, deployment defaults and rollout are in
+[RFC-100](../rfcs/RFC-100-shared-sensors.md). Until its gate (§11) is met,
+no organization may use them.
+
+A sensor has a **scope** (`sensors.scope`, [RFC-100](../rfcs/RFC-100-shared-sensors.md) §3.1):
+
+| `scope` | `tenant_id` | Meaning |
+|---|---|---|
+| `organization` | the organization | an organization sensor (pairing, RFC-052) |
+| `instance` | `NULL` | a shared sensor: it belongs to the instance and serves the organizations the access policy allows |
+
+The table enforces it (`chk_sensors_scope_tenant`: `(scope = 'instance') =
+(tenant_id IS NULL)`), and the scope is fixed at creation
+(`trigger_sensors_scope_immutable`): an organization sensor never becomes a
+shared one, so no organization's keys, grant or history move to the instance.
+Rows that refer to a sensor through `(tenant_id, sensor_id)`:
+
+- `sensor_grants` and `sensor_keys` may belong to a shared sensor. Their
+  `tenant_id` is `NULL` then, and only then (trigger
+  `sensor_child_tenant_matches_scope`); a plain foreign key on `sensor_id`
+  keeps the cascade on delete.
+- `scan_zone_sensors`, `sensor_tool_settings` and `collector_assets` keep
+  `tenant_id NOT NULL`, so the composite foreign key refuses a shared sensor:
+  it is never a zone member, has no organization's tool settings and collects
+  no assets.
+- `ingest_reports` holds a shared sensor's report of a shared job in the
+  command's organization: a plain foreign key on `sensor_id` and the trigger
+  `trigger_ingest_reports_sensor_binding` keep an organization sensor's
+  reports in its organization and store a shared sensor's report only with a
+  shared job of that organization it holds; a shared sensor pushes nothing
+  ([result binding](sensor-result-binding.md#shared-sensors)).
+
+A shared sensor has no "home" organization. Managing shared sensors belongs to
+the platform admin console (RFC-022); on the tenant plane they do not exist:
+
+- **Access.** One rule decides whether an organization may send scans to
+  shared sensors (`scanpolicy.Service.SharedSensorsAllowed`; the scan
+  trigger, the pipeline and the platform scanning view all call it). Every
+  layer must allow, and any unreadable layer refuses:
+  1. the instance switch, `platform_settings['shared_sensors'].enabled`
+     (default off);
+  2. the instance administrator's decision for the organization,
+     `tenants.shared_sensors_access` (`allow`, `deny`), or, without one,
+     `platform_settings['shared_sensors'].new_orgs`: unset by default, and
+     unset refuses. Turning the switch on requires `new_orgs` true or false in
+     the same request (400 `NEW_ORGS_CHOICE_REQUIRED`). A deny always wins;
+  3. the owner's opt-out, the organization setting `shared_sensors.opt_out`.
+
+  Console > System > Platform scanning (`/api/v1/admin/settings/shared-sensors`)
+  and `/api/v1/admin/tenants/{id}/shared-sensors`: any administrator reads,
+  and a super admin changes either with a reason and a fresh authenticator
+  code (critical admin audit row, other administrators emailed). The owner's
+  choice is at `/api/v1/organization/settings/shared-sensors`: the owner or
+  an administrator reads it, only the owner changes it, and the change gets a
+  tenant audit row. The refusal reason names the layer that refused.
+  Above the three layers sits the rollout gate (`sharedSensorsReady` in
+  `internal/app/scanpolicy/shared_sensors.go`, RFC-100 §11). While it is
+  closed, every organization is refused with "shared sensors are not
+  available yet", and the console refuses to turn the switch on (409
+  `SHARED_SENSORS_NOT_READY`) before it spends the code.
 - **Lookups.** `GetByTenantAndID`, the list filter, the dispatch finders
   (`FindAvailable*`, `HasSensorFor*`), tool and capability availability, grant
-  summaries and manifests all add `NOT is_platform_sensor`.
+  summaries and manifests all add `scope = 'organization'` (besides
+  `tenant_id = $1`, which a `NULL` never matches).
+- **Authentication.** A shared sensor's key authenticates it as a sensor but
+  never into an organization: the v2 authenticator sets no tenant context,
+  and every tenant-bound sensor route answers 403 `scope-denied`
+  (`sensorForV2`, the results receiver). A signed request resolves the key's
+  sensor within the key's tenant; a key without a tenant resolves only to a
+  shared sensor (`SensorService.keyOwner`), which then has no tenant context
+  either (`shared_sensor_auth_db_test.go`, `instance_db_test.go`).
 - **One guard for every route on one sensor.** Every `/api/v1/sensors/{id}...`
   route ends with `SensorHandler.OwnSensor`: a sensor that is not one of the
-  organization's own (another organization's, or a platform sensor) answers
+  organization's own (another organization's, or a shared sensor) answers
   404 before the handler runs, reads and writes alike, today's routes and any
   added later. `platform_sensor_tenant_plane_db_test.go` walks the router and
   checks each one.
-- **Platform scanning.** `GET /api/v1/platform/scanning` (sensors:read or
-  scans:read) shows the service, not the sensors: whether the organization may
-  use it (`offered`, the scan trigger's own `PlatformSensorsAllowed` rule;
-  false says nothing else), each region's state (`available`, `busy`,
-  `unavailable`), the tools online platform sensors run, the organization's
-  own queued and running platform jobs, and the queue limit. No sensor id,
-  name, host, address, version, node count, capacity or other organization's
-  load.
+- **Shared sensors view.** `GET /api/v1/platform/scanning` (sensors:read or
+  scans:read; the "Shared sensors" card on the Sensors page) shows the
+  service, not the sensors: whether the organization may use it (`offered`,
+  the scan trigger's own shared sensor access rule; false says nothing else,
+  not even the egress addresses), each region's state (`available`, `busy`,
+  `unavailable`), the tools online shared sensors run, the organization's own
+  queued and running shared jobs, the queue limit, and the **egress
+  addresses** to allowlist (`egress`: the list for every region first, then
+  one per region). No sensor id, name, host, address, version, node count,
+  capacity or other organization's load. The card links administrators to
+  the owner's opt-out.
+- **Console fleet.** Console > System > Shared sensors
+  (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
+  `postgres/shared_fleet_repository.go`). Any administrator: the instance
+  sensors, queued and running jobs per tool lane, per-organization counts
+  (queued, running, completed and failed in 24 hours) and job metadata. The
+  read model names its columns, so a job row never carries the payload,
+  result or error text. A job's targets and logs: `POST
+  /jobs/{job_id}/view`, super or ops admin, reason, rate-limited, high admin
+  audit row written before the data is read (`shared_sensor.job_viewed`).
+  Organization names in the queue and job lists only for super and ops
+  admins. Pause, resume, retire: super admin, reason, route-level step-up,
+  critical audit row written before the status change (no row, no change) (`shared_sensor.paused|resumed|retired`); the status update is
+  guarded by `scope = 'instance'` and a retired sensor cannot be resumed
+  (409). Pause leaves held jobs to finish (drain); retire is a revoke.
+- **Egress addresses.** Console > System > Platform scanning, "Egress
+  addresses" (`GET/PUT /api/v1/admin/settings/shared-sensors/egress`,
+  `platform_settings['shared_sensors_egress']`): IP addresses or CIDR ranges
+  for every region and per region label (sensor region tokens, at most 32
+  regions and 64 entries per list). Only public addresses: any entry that is,
+  or overlaps, an internal range of ctis `addrscope` (private, loopback,
+  link-local, metadata, CGNAT, multicast, IPv6 forms that carry such an IPv4
+  address) is refused with 400, so the list never discloses the operator's
+  internal network. Any administrator reads; a super admin replaces the list
+  with a reason and a route-level step-up (critical admin audit row
+  `platform.shared_sensors_egress_changed`, other administrators emailed).
+  The list is normalized (host bits cleared, duplicates removed, sorted).
 - **Platform jobs.** A command, run task or run stage of a platform job never
   carries a sensor id or name (`platform: true` instead). Text the platform
   sensor wrote (command logs, error message, result, run task error) is read
@@ -408,6 +557,110 @@ admin console (RFC-022); on the tenant plane they do not exist:
   "platform sensor".
 - **Events.** The health controller writes no tenant audit row or
   notification for a platform sensor going offline.
+- **Claims.** A job queued for platform sensors (`is_platform_job`) is never
+  offered to, counted for or claimable by an organization's own sensor: the
+  poll, the doorbell, the batch claim and the claim by id share
+  `tenantJobPredicate` (`command_repository.go`).
+- **Grant.** A platform sensor's grant is least privilege whatever writes it:
+  no credentials, no push ingest, tier 1 at most, public targets, no remote
+  update, never `legacy-broad`, job types scan, validate and retest only (no
+  limit becomes exactly these). The insert trigger `sensor_grants_default`
+  gives it `easm-external`; the trigger `clamp_shared_sensor_grant` on
+  `sensor_grants` clamps any later edit (migrations
+  `shared_sensor_grant_least_privilege` and `sensor_scope`).
+- **Workflow steps.** Every workflow step about to be queued for platform
+  sensors goes through the scan trigger's own target check
+  (`scan.Service.PlatformTargetRefusal`: no asset group, no internal target,
+  proof where the operator requires it, no bug-bounty program target), on the
+  step's own targets. A run started from a workflow directly has no trigger
+  decision, and a later step may carry targets found after the trigger
+  checked the seeds. A refusal or a failed lookup keeps the step on the
+  organization's own sensors.
+- **Deployment defaults.** `MANAGED_SERVICE` (environment, default false,
+  read at start-up) marks a hosted multi-tenant service and changes defaults
+  only, never a feature or a stored value (RFC-100 §6):
+
+  | Setting (`platform_settings` key) | Self-hosted default | `MANAGED_SERVICE=true` default |
+  |---|---|---|
+  | Verified domain before platform sensors scan (`platform_sensor_proof`) | off | on |
+  | Shared sensors may scan internal zones (`shared_sensor_internal_zones`) | off | off |
+
+  The internal-zones setting is enforced by instance scan zones (below);
+  its GET answers `enforced: true`. It stays **off by default on self-hosted
+  installs too**: an administrator turns it on explicitly, after creating
+  zones, until sensors that apply the signed zone ranges are released.
+- **Instance scan zones** (RFC-100 §6.1). Tables `instance_scan_zones`
+  (name, description, `ranges cidr[]`, private only), `instance_scan_zone_sensors`
+  (a trigger accepts only `scope = 'instance'` sensors) and
+  `instance_scan_zone_tenants`; `commands.instance_scan_zone_id` (only on a
+  shared job, CHECK). Console: `/api/v1/admin/instance-scan-zones` (any
+  administrator reads; create, change, delete, set sensors and assign
+  organizations need a super admin, a reason and route step-up; critical
+  admin audit; each change goes to the job signer's zone ledger first).
+  Routing: a **single scan** at the trigger whose internal targets are
+  addresses or ranges goes to shared sensors only when the internal-zones
+  setting is on and one zone assigned to the organization (with at least one
+  sensor) contains them all; the narrowest zone wins, and the job is stamped
+  with it. The lookup reads only the organization's own assignments
+  (`ListForTenant`, filtered again in the service), so the same private range
+  assigned to two organizations never mixes. Internal names, asset groups and
+  workflow steps keep the public-only rule. When the job is claimed, the
+  zone's id and ranges go into the **signed statement** (`zone`), never into
+  the payload; the signer checks them against its zone ledger (assignment,
+  serving sensor, exact ranges) and the sensor reaches private addresses only
+  inside them. A deleted zone leaves its queued jobs unsigned.
+
+  Once an administrator saves a value in Console > System > Platform
+  scanning, the stored value wins. The GET routes return the value in force,
+  `default` (the deployment default) and `version` (0 while nothing is
+  stored). An unreadable stored value fails closed: proof required,
+  internal zones refused. Turning internal zones on assigns no zone: the
+  administrator still assigns each instance scan zone to organizations.
+  Changes: super admin, reason, fresh authenticator code (route step-up),
+  critical admin audit row, the other administrators emailed
+  (`/api/v1/admin/settings/platform-sensor-proof`,
+  `/api/v1/admin/settings/shared-sensor-internal-zones`).
+- **Anomaly signals.** Three per-organization daily counts
+  (`scanpolicy.Service.Observe*`, counters in Redis, keys carry the
+  organization and the UTC day and expire after 48 hours):
+  distinct registrable domains (eTLD+1, a HyperLogLog estimate, so no target
+  is stored) of every job queued for shared sensors (single scans, zone
+  batches and workflow steps); failed shared jobs (`command.Service.Fail`);
+  targets the platform deny list refused, on any sensor (the scan gate's
+  `logRefusedTarget`). When a count first reaches its threshold that day, one
+  alert: the metric `shared_sensor_anomalies_total{signal}`, a warning log
+  line, an admin audit row `organization.shared_sensor_anomaly` (severity
+  high, the organization as resource, the count and threshold, never a
+  target) and an email to every administrator. Events are counted in
+  `shared_sensor_signal_events_total{signal}`. Metrics are labeled by signal
+  only. Thresholds: `platform_settings['shared_sensor_anomaly_thresholds']`
+  (defaults 25 domains, 50 failures, 5 deny-list hits per day; 0 turns a
+  signal off), `/api/v1/admin/settings/shared-sensor-anomaly`, same gate and
+  audit as above. The signals are detective: nothing that admits or refuses a
+  scan reads them, so a missing or failing Redis loses the signal (logged)
+  and never blocks a scan. The response to an alert is the per-organization
+  deny (`/api/v1/admin/tenants/{id}/shared-sensors`).
+- **Scanner identity.** What the operator publishes so a target's owner can
+  tell where scans come from:
+  - User-Agent. Sensor traffic to the platform and to the services its
+    collectors call carries `<product>/<version> openctem-sdk-go/<version>`
+    (sdk-go `pkg/useragent`). Tools run through the sdk-go tool runtime send
+    `openctem-<tool>/<version>` unless the tool's `http.user_agent` setting
+    (Tool settings, RFC-038) sets another value. A hosted operator sets that
+    setting on shared sensors to a value naming the service and its
+    information page, for example
+    `openctem-scanner/1.0 (+https://scanner.example.com)`.
+  - Reverse DNS. Give every egress address of a shared sensor a PTR record
+    under a name the operator controls (for example
+    `scanner-1.eu.scanner.example.com`), with a matching forward record.
+  - Information page. Serve a page at that name (HTTP and HTTPS) that says
+    the address belongs to a security scanning service, who runs it, the
+    abuse contact, the published list of scanner addresses per region, and
+    how a target owner asks to be excluded (the operator adds the name or
+    range to the platform deny list, `SCOPE_DENY_EXTRA`).
+  - Egress addresses. Keep the scanner egress addresses separate from the
+    API and console addresses, so the reputation of one does not affect the
+    other, and publish them to organizations (RFC-100 §9).
 
 ## Build information
 
@@ -434,14 +687,14 @@ it is empty. Stored in `sensors.sdk_name`, `sdk_version`, `sensor_product`,
 `sensor_commit`, `sensor_build_time` (migration 000255); an empty part leaves
 the stored value.
 
-**SDK policy**: `SENSOR_SDK_MIN_VERSION` and `SENSOR_SDK_LATEST_VERSION`
-(default none; `none` turns one off). `sdk_status` per sensor is `unsupported`
-(below the minimum: health reason `sdk_unsupported`, so a heartbeating sensor
-is `degraded`), `outdated` (below the latest), `current`, or `unknown` (no SDK
-version known). The sensor responses carry `sdk_name`, `sdk_version`,
-`sdk_status`, `sensor_product`, `sensor_commit`, `sensor_build_time`; the stats
-add `sdk_min_version`, `sdk_latest_version`, `by_sdk_version` (`unknown` for
-none) and `by_sdk_status`; `GET /sensors?sdk_version=v0.9.0` (or `unknown`)
+**SDK**: informational, from `versions.yaml` (`sdk.latest`, `sdk.advisories`).
+`sdk_status` per sensor is `advisory` (an SDK release with a published
+security advisory: health reason `sdk_advisory`, so a heartbeating sensor is
+`degraded`), `outdated` (below the latest, no health effect), `current`, or
+`unknown` (no SDK version known). There is no SDK minimum. The sensor
+responses carry `sdk_name`, `sdk_version`, `sdk_status`, `sensor_product`,
+`sensor_commit`, `sensor_build_time`; the stats add `sdk_latest_version`,
+`sdk_advisories`, `by_sdk_version` (`unknown` for none) and `by_sdk_status`; `GET /sensors?sdk_version=v0.9.0` (or `unknown`)
 filters on it.
 
 ## Activity
@@ -524,17 +777,46 @@ reason, instead of the generic empty state.
 page shows: `docker` (docker run), `compose` (compose.yaml), `kubernetes`
 (Secret + PVC + Deployment; a Job for a one-shot sensor), `helm` (turns on the
 sensor bundled with the openctem chart), `yaml` (sensor.yaml), `env`, `cli`.
-Templates: `configs/sensor-templates/*.tmpl` (editable on the API host,
-`SENSOR_CONFIG_TEMPLATES_DIR`); the built-in fallbacks in
-`internal/app/sensor/config_templates_builtin.go` are generated from them
-(`go generate ./internal/app/sensor/`, a test keeps them identical).
+Templates: `configs/sensor-products/<set>/<format>.tmpl`, one directory per
+install snippet set (the `install` key of the product in `versions.yaml`:
+`sensor/`, `collector/`, `connector-tenable/`), editable on the API host
+(`SENSOR_CONFIG_TEMPLATES_DIR`). The built-in fallbacks in
+`internal/app/sensor/config_templates_builtin.go` are generated from the
+shipped sets (`go generate ./internal/app/sensor/`, a test keeps them
+identical). Templates are product data: the platform passes the same closed
+data to every set (API URL, key reference, the product's image and tag from
+the catalog, CA, name) and never names a sensor's settings itself.
+
+**A new sensor product needs no platform change** (RFC-094 I2). A product of
+your own (for example a sensor built on the SDK) is:
+
+1. a section in the file named by `SENSOR_PRODUCTS_FILE`, in the
+   `versions.yaml` product format (`product`, `latest`, `min`, `image`,
+   `install`, and `release_identity`, which may be `""`). It may not redefine
+   a built-in product or a fixed section, and an invalid file stops the API
+   from starting;
+2. its snippet set: `<SENSOR_CONFIG_TEMPLATES_DIR>/<install>/docker.tmpl`
+   (required) and any other formats.
+
+The Sensors page then lists the product (named by its id), the install
+dialog offers its snippets (`?product=<id>`), and its sensors are judged
+against its own release line. A sensor reporting a product the catalog does
+not list gets version status `unknown`.
 
 Every snippet works as pasted for the release it pins (tests run `bash -n` on
 the shell ones and parse the YAML ones; `docker compose config` accepts the
 compose file):
 
-- **Image** `SENSOR_IMAGE` (default `ghcr.io/openctemio/sensor`) with the tag
-  `SENSOR_LATEST_VERSION`, never `latest`. The response's `image` says which.
+- **Product** `?product=<id>`: a catalog product (400 otherwise); default the
+  product the sensor reports when the catalog lists it, else the scanning
+  sensor. Each product has its own snippet set (`versions.yaml` `install`:
+  `sensor` is `<format>.tmpl`, another set is `<set>-<format>.tmpl` and may
+  ship only some formats; the others come back empty). A collector always gets
+  the collector's set. The response's `product` says which.
+- **Image** the product's `image` with its `latest` tag, never `latest`;
+  `SENSOR_IMAGE` replaces the scanning sensor's repository (a mirror). The
+  response's `image` says which. A product set with a `release_identity` shows
+  the `cosign verify` command for that release.
 - **URL** `SENSOR_PUBLIC_API_URL`, else `APP_URL` (`api_url` in the response).
 - **Key** only when the caller passes the freshly issued key in
   `X-Sensor-API-Key` (validated: key characters only, it lands in a shell
@@ -579,7 +861,7 @@ compose file):
   (`-tool <name>`), a different mode. The sensor name becomes a slug.
 
 - **Collectors** (sensor type `collector`) get the asset collector's own
-  commands (`configs/sensor-templates/collector-*.tmpl`): the image
+  commands (`configs/sensor-products/collector/*.tmpl`): the image
   `SENSOR_COLLECTOR_IMAGE` (default `ghcr.io/openctemio/asset-collector:latest`
   until the collector tags a release), `SENSOR_API_URL`, the API key and
   vendor passwords as files (`SENSOR_API_KEY_FILE`, `LDAP_PASSWORD_FILE`),
@@ -830,7 +1112,7 @@ Each segment runs through the v1 pipeline with the v2 options:
   guard applies. `INGEST_COVERAGE_AUTO_RESOLVE` = `dry_run` (default: log,
   `findings_coverage_auto_resolve_total{mode,result}` and an
   `ingest.coverage_auto_resolve_dry_run` audit entry listing the findings, no
-  state change), `enforce` (closes them as `auto_fixed`/`scan_verified`,
+  state change), `enforce` (closes them as `auto_fixed`, `fixed` / `covered_scan`,
   audited as `ingest.coverage_auto_resolved`) or `off`.
 - An uncommitted report expires 60 minutes after its last segment; its
   upserts stay and it never resolves anything. A segment's outcome is stored
@@ -1342,6 +1624,77 @@ change). For protocol v2 the tool is part of the report header, stored
 verbatim in `ingest_reports.header`; findings carry the report id as
 `scan_id`. Protocol v1 ingest keeps no report header.
 
+## The shared claim path
+
+A shared sensor (scope `instance`) claims shared jobs (`is_platform_job`) of
+every organization; it is the only way a shared job is handed out
+([RFC-100](../rfcs/RFC-100-shared-sensors.md) §8, RFC-090 W11). Code:
+`internal/infra/postgres/command_shared_claim.go`,
+`internal/app/command/shared_claim.go`, `sensor_control_v2_handler.go`.
+
+**Who.** The authenticated sensor's stored row decides, never a request
+field. It must be an active shared sensor (no tenant) that **reported**
+`shared.isolation@1` (the sdk-go shared isolation profile: per-job sandbox,
+network namespace, egress policy) and accepts unzoned jobs
+(`sensors.accepts_unzoned_jobs`, default true; false keeps a shared sensor
+for zone work only). An organization sensor never takes a shared job
+(`tenantJobPredicate`) and a shared sensor never takes anything else.
+
+**What.** A pending, unheld, unexpired, due, **unzoned** shared job whose
+tool the sensor verified (`effective_tools`), whose required capabilities it
+advertises and whose required features it reported, not refused by it, and
+whose `preferred_region` (payload) is empty or the sensor's `region`. Its
+hosts must be free in its organization: the same host keys, advisory locks
+and settled-host rule as the organization's own sensors, so a shared job and
+an organization sensor's job never take one host at once.
+
+**Order.** Priority class (one class up per 30 minutes waited, never into
+critical), then the organization with the fewest shared jobs in flight
+(fair share), then queue priority and age.
+
+**Limits.** Each organization's `platform_scans_concurrent` limit, read
+through the entitlement service by key: in the claim transaction, per
+organization, a lock on its shared jobs, a count of those in flight, and no
+more than the limit; an organization at its limit is skipped and its jobs
+wait. A limit that cannot be read counts as 0 (fail closed). Without the
+entitlement service the shared claim hands out nothing.
+
+**Access.** The access policy of RFC-100 §5 (`SharedSensorsAllowed`: the
+instance switch, the administrator's decision, the organization's opt-out)
+is applied again at claim time: an organization that lost access or opted
+out after queueing is skipped, and its jobs wait and expire. Without the
+policy wired the shared claim hands out nothing.
+
+**Gates.** Each organization's candidates pass the same gates as an
+organization sensor's claim, in that organization: the shared sensor's grant
+(it has no tenant; without a reader for it, or without the grant, nothing is
+claimed), its manifest and local policy, the scope re-check, scan
+windows, program rules and tool settings. Scans are capped at the sensor's
+free slots.
+
+**Claim.** `commands.sensor_id` is the holder of a shared job, as for every
+job, with a lease and a new lease epoch; the claim is signed for the shared
+sensor in the command's organization (statement `tenant_id` = the command's,
+`sensor_id` = the shared sensor). `commands.platform_sensor_id` is removed.
+
+**Routes.** On `GET /api/v2/sensor/commands` a shared sensor must claim
+(capacity feature, claim-N); a listing poll answers 403 `scope-denied`.
+Claim by id (a replay), start, complete, fail, release and logs work only for
+a shared job it holds; the step runs in the command's organization, read
+from the command. Complete, fail and logs need `X-OpenCTEM-Lease-Epoch`.
+Anything else answers `command-not-found`. Its heartbeat renews the leases
+of the shared jobs it lists and holds, records their progress per
+organization, and lists every other id to cancel; the answer names no
+tenant. The other control routes (manifest, config report, suppressions,
+fingerprints, key renewal, content) still refuse a shared sensor.
+
+**Reapers.** The lease reaper, the stall reaper and the stuck-job recovery
+treat shared jobs like the others. A shared job still queued 60 minutes
+after it was queued, or after it last went back to the queue, expires.
+
+**Gate.** No shared job is created, and none is claimed, until the access
+gate opens (`SharedSensorsAllowed` answers false, RFC-100 §11).
+
 ## Load, capacity and release (RFC-030)
 
 The heartbeat may carry the sensor's **load report**, computed by the SDK
@@ -1666,7 +2019,7 @@ and narrows dispatch:
   affect (`GET /scans/sensor-opt-in-impact`). Trigger refusals
   `SENSOR_POLICY_REFUSED` and `SENSOR_OPT_IN_DISABLED` carry a next-step hint.
 - **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
-  sensor-policy/v1 template (`configs/sensor-templates/policy.tmpl`)
+  sensor-policy/v1 template (`configs/sensor-products/sensor/policy.tmpl`)
   prefilled with the ranges of the sensor's scan zones (none for a sensor in
   the default zone, which scans public targets), tools from the sensor, and
   custom templates and interactsh off. The docker, Compose and Kubernetes
@@ -1844,13 +2197,65 @@ inside it. Use one zone per segment (scan-zones.md).
 ## Tool settings (RFC-038)
 
 > Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
-> **per-sensor tool settings, per-scan settings, the scan-layer preview and
-> the save-time check of scan and step options shipped** (below); tenant
-> policy and dangerous-option enablement are planned.
+> **organization tool defaults, per-sensor overrides, per-scan settings, the
+> scan-layer preview and the save-time check of scan and step options
+> shipped** (below); dangerous-option enablement is planned.
 
-**Per-sensor tool settings (shipped).** An owner or administrator configures
-each tool of one of the organization's own sensors from the sensor drawer's
-"Tool settings" tab.
+**Layers.** A tool's value comes from the first of these that sets it,
+reading upward:
+
+```
+tool default (the manifest's settings schema)
+  → organization default   (Settings → Scanning → Tool defaults; may raise or lower)
+  → sensor override        (sensor drawer → Tool settings; may raise or lower)
+  → scan profile / workflow step / scan   (scope "scan" keys; lower-only for rate, concurrency, retries)
+  → job decision           (the platform's budget, fitted under the value in force)
+  → sensor local policy    (on the sensor, last; only narrows)
+```
+
+The organization layer is a default, not a cap: a sensor overrides a key in
+either direction. Only the two administrators' layers may raise rate,
+concurrency or retries above the tool's default.
+
+**Organization tool defaults (shipped).** An owner or administrator sets,
+per tool, the values every one of the organization's own sensors runs the
+tool with, from Settings → Scanning → Tool defaults.
+
+- *Schema.* The tools listed are those that a current manifest of the
+  organization's own sensors declares settings for (never a platform
+  sensor). The form uses the reference schema, which is the one from the most
+  recently reported manifest.
+- *Validation.* A save is validated against **every** distinct schema the
+  organization's sensors report for the tool (at most 200 sensors, one per
+  schema digest), as a tenant layer (`ValidateTenantToolSettings`). A
+  value one sensor's tool version refuses is a 422 whose message names that
+  sensor. A non-default dangerous (T2) value is refused.
+- *Storage.* Table `tenant_tool_settings` (migration `002136`): `tenant_id`,
+  `tool`, `values`, `schema_digest` (of the reference schema), `updated_by`,
+  `updated_at`; primary key (`tenant_id`, `tool`); foreign key to `tenants`
+  with `ON DELETE CASCADE`.
+- *Audit.* Saving and resetting log `settings.updated` on the organization
+  (`resource_type` `tenant`, resource name `tool defaults: <tool>`) with one
+  change per key (`tool_settings.<tool>.<key>`), redacted like the
+  sensor's. A change that sets an Impact option is high severity.
+- *Problems.* Defaults that a sensor's schema refuses (a sensor joined or was
+  upgraded with an older or narrower tool) are listed per sensor on the page
+  and in that sensor's Tool settings tab. That sensor's jobs of the tool fail
+  with `TOOL_SETTINGS_INVALID` until the defaults change. They are never
+  silently dropped.
+
+**Impact options need step-up.** Setting an `x-octm-tier: T1` (Impact) key
+to a new value, in either the organization or the sensor layer, needs the
+acting user's recent re-authentication (403 `STEP_UP_REQUIRED`;
+docs/architecture/step-up-reauth.md). Removing such a value does not.
+`sensors:write` is reserved for the owner and admin roles, which hold every
+permission, so a separate permission would add no control. Step-up is the
+control.
+
+**Per-sensor overrides (shipped).** An owner or administrator overrides the
+organization's defaults for one of the organization's own sensors from the
+sensor drawer's "Tool settings" tab. Each option shows its effective value
+and its source (tool default, organization or this sensor).
 
 - *Schema.* The settings schema is the `config` object of the tool's
   descriptor (Tool Contract v1), which the sensor already reports in its
@@ -1879,10 +2284,18 @@ each tool of one of the organization's own sensors from the sensor drawer's
   sensitive or write-only key, or of a key the schema no longer knows, is
   written as `[redacted]`.
 - *Delivery.* When a sensor claims a scan job (claim-N, poll, claim by id;
-  `internal/app/command/tool_settings.go`), the platform looks up that
-  sensor's stored values for the job's tool and puts them into the payload
-  as `settings_layers: {"sensor": {...}}` before the job is signed, so the
-  job signature (payload SHA-256) covers them. The stored command is never
+  `internal/app/command/tool_settings.go`), the platform looks up the
+  organization's defaults and that sensor's stored values for the job's
+  tool and puts them into the payload as `settings_layers: {"tenant": {...},
+  "sensor": {...}}` before the job is signed, so the job signature (payload
+  SHA-256) covers them. `tenant` is the organization's defaults *without
+  the keys the sensor overrides* (`InheritedValues`), so the two layers
+  never share a key. The sensor resolves them with the unchanged settings
+  contract (whose tenant layer would otherwise cap the sensor's), and its
+  report names each key's source. `tenant` is added only when the claiming
+  sensor is one of the command's organization's own sensors, never for a
+  shared platform sensor. The organization's values are validated against
+  the claiming sensor's schema on every claim. The stored command is never
   changed, and a `settings_layers` that a command's creator put in the
   payload is replaced or removed. If the sensor's current schema digest
   differs from the stored one (a sensor upgrade), the values are validated
@@ -1896,16 +2309,22 @@ each tool of one of the organization's own sensors from the sensor drawer's
 
 | Route | Gate | |
 |---|---|---|
-| `GET /api/v1/sensors/{id}/tool-settings` | `sensors:read` | per tool with a schema: `schema`, `schema_digest`, `values`, `stored`, `problems` |
+| `GET /api/v1/sensors/tool-defaults` | `sensors:read` | per tool the organization's own sensors declare settings for: reference `schema`, `values`, `stored`, `sensors` (count), `problems` per sensor |
+| `PUT /api/v1/sensors/tool-defaults/{tool}` | `sensors:write` (+ step-up for an Impact change) | body `{"values": {...}}`; 422 by path, naming the sensor that refuses a value |
+| `DELETE /api/v1/sensors/tool-defaults/{tool}` | `sensors:write` | back to the tool's defaults; works for a tool no sensor reports any more |
+| `GET /api/v1/sensors/{id}/tool-settings` | `sensors:read` | per tool with a schema: `schema`, `schema_digest`, `values`, `stored`, `problems`, `organization_values`, `organization_problems` |
 | `PUT /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | body `{"values": {...}}`; 422 with `details: [{path, message}]` |
 | `DELETE /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | back to defaults; works for a tool the manifest no longer lists |
-| `GET /api/v1/sensors/{id}/tool-settings/{tool}/effective` | `sensors:read` | every key with `value`, `source` (`default`/`sensor`), `flag`, `common`, `scope`, `tier` |
-| `POST /api/v1/sensors/{id}/tool-settings/{tool}/preview` | `sensors:read` | read-only; body `{"config": {...}}` (a scan's or step's options); every key with its `source` (`default`/`sensor`/`scan`) and the `ignored` config keys; 422 by path when the sensor would refuse the config |
+| `GET /api/v1/sensors/{id}/tool-settings/{tool}/effective` | `sensors:read` | every key with `value`, `source` (`default`/`tenant`/`sensor`), `chain` (every layer that sets it, lowest first), `flag`, `common`, `scope`, `tier` |
+| `POST /api/v1/sensors/{id}/tool-settings/{tool}/preview` | `sensors:read` | read-only; body `{"config": {...}}` (a scan's or step's options); every key with its `source` (`default`/`tenant`/`sensor`/`scan`), `chain`, and the `ignored` config keys; 422 by path when the sensor would refuse the config |
 
-Every route ends with the own-sensor check: another organization's sensor
-and a platform sensor answer 404. Key files:
+Every route on one sensor ends with the own-sensor check: another
+organization's sensor and a platform sensor answer 404; the tool-defaults
+routes take the organization from the authenticated context. Key files:
 `pkg/domain/sensor/tool_settings.go`, `internal/app/sensor/tool_settings.go`,
+`internal/app/sensor/tool_defaults.go`,
 `internal/infra/postgres/sensor_tool_settings.go`,
+`internal/infra/postgres/tenant_tool_settings.go`,
 `internal/infra/http/handler/sensor_tool_settings_handler.go`,
 `internal/app/command/tool_settings.go`; web
 `web/src/features/sensors/components/sensor-tool-settings.tsx` and
@@ -1918,10 +2337,10 @@ workflow step's options are checked the way the sensor will resolve them
 schema declares, minus the keys the sensor's executor reads itself
 (`rate_limit`, `concurrency`, `bulk_size` are the job's limits, which only
 ever lower the value in force; `allow_interactsh`, `exclude`); other keys
-are ignored, as on the sensor. Over the sensor's stored values, the scan
-layer may only set `scan`-scope keys within their bounds, may not raise
-rate, concurrency or retries above the value in force (the sensor's raise,
-or the default), and may not give a dangerous (T2) key a non-default value.
+are ignored, as on the sensor. Over the organization's defaults and the
+sensor's stored values, the scan layer may only set `scan`-scope keys within
+their bounds, may not raise rate, concurrency or retries above the value in
+force (the sensor's, the organization's, or the default), and may not give a dangerous (T2) key a non-default value.
 
 - *Preview.* `POST .../tool-settings/{tool}/preview` answers what a job of
   that config runs with on that sensor, before the job's own limits and the

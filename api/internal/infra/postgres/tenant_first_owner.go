@@ -29,10 +29,10 @@ const ownerPresenceQuery = `
 	       COALESCE(BOOL_OR(COALESCE(m.status, 'active') = 'active'), FALSE)
 	  FROM tenant_members m
 	 WHERE m.tenant_id = $1
-	   AND (m.role = 'owner' OR EXISTS (
-	        SELECT 1 FROM user_roles ur
-	         WHERE ur.tenant_id = m.tenant_id AND ur.user_id = m.user_id
-	           AND ur.role_id = '00000000-0000-0000-0000-000000000001'))`
+	   AND EXISTS (
+	        SELECT 1 FROM v_user_effective_role ver
+	         WHERE ver.tenant_id = m.tenant_id AND ver.user_id = m.user_id
+	           AND ver.role = 'owner')`
 
 type ownerQuerier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
@@ -124,10 +124,10 @@ const activeOwnersQuery = `
 	 WHERE m.tenant_id = $1
 	   AND COALESCE(m.status, 'active') = 'active'
 	   AND u.status = 'active'
-	   AND (m.role = 'owner' OR EXISTS (
-	        SELECT 1 FROM user_roles ur
-	         WHERE ur.tenant_id = m.tenant_id AND ur.user_id = m.user_id
-	           AND ur.role_id = '00000000-0000-0000-0000-000000000001'))`
+	   AND EXISTS (
+	        SELECT 1 FROM v_user_effective_role ver
+	         WHERE ver.tenant_id = m.tenant_id AND ver.user_id = m.user_id
+	           AND ver.role = 'owner')`
 
 // ListActiveOwners returns the organization's active owners, for notifying
 // them of an SSO change that waits for their approval.

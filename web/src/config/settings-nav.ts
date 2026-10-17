@@ -22,6 +22,8 @@
 import {
   GitMerge,
   Handshake,
+  LifeBuoy,
+  Globe,
   Activity,
   Bell,
   Bot,
@@ -43,14 +45,18 @@ import {
   Key,
   KeyRound,
   ListChecks,
+  ArrowLeftRight,
   Lock,
   LockKeyhole,
   MessageSquare,
+  Package,
   Puzzle,
   Scale,
+  ClipboardCheck,
   ServerCog,
   Settings2,
   Shield,
+  SlidersHorizontal,
   ShieldCheck,
   Timer,
   User,
@@ -81,6 +87,11 @@ export interface SettingsNavItem {
   badge?: 'Soon'
   /** Extra words the rail filter and ⌘K match on. */
   keywords?: string[]
+  /**
+   * Listed only while a limit or a module deny applies to the organization
+   * (GET /organization/limits says applies). Nothing applies by default.
+   */
+  onlyWhenLimitsApply?: boolean
 }
 
 export interface SettingsNavGroup {
@@ -173,16 +184,28 @@ export const settingsNav: SettingsNavGroup[] = [
         url: '/settings/modules',
         icon: Boxes,
         permission: Permission.TeamUpdate,
-        keywords: ['features', 'plan', 'license', 'enable', 'disable'],
+        keywords: ['features', 'enable', 'disable'],
       },
       {
-        id: 'plan',
-        title: 'Plan & usage',
-        description: 'Your plan, its limits and what this organization uses.',
-        url: '/settings/plan',
+        id: 'limits',
+        title: 'Usage & limits',
+        description: 'The limits that apply to this organization and what it uses.',
+        url: '/settings/limits',
         icon: Gauge,
         permission: Permission.TeamUpdate,
-        keywords: ['plan', 'limits', 'quota', 'seats', 'usage', 'free', 'pro', 'enterprise'],
+        keywords: ['limits', 'quota', 'seats', 'usage'],
+        onlyWhenLimitsApply: true,
+      },
+      {
+        // What the verified SSO domains do to accounts on them (api RFC-104):
+        // read by owners and admins, changed by owners only.
+        id: 'domains',
+        title: 'Domains',
+        description: 'Who may join with your domain, and whether it must use single sign-on.',
+        url: '/settings/domains',
+        icon: Globe,
+        permission: Permission.TeamUpdate,
+        keywords: ['domain', 'join', 'sign up', 'sso required', 'workspace', 'claim'],
       },
       {
         // Two-sided trusts with partner organizations (api RFC-058): read by
@@ -212,6 +235,17 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: FileBadge,
         permission: Permission.SettingsRead,
         keywords: ['license', 'spdx', 'copyleft', 'gpl', 'sbom', 'compliance'],
+      },
+      {
+        // Signed content packages from the catalog (api RFC-099): read with
+        // content:read; installs and approvals need content:install.
+        id: 'content',
+        title: 'Content catalog',
+        description: 'Signed rules, templates and other packages: install, update and approve.',
+        url: '/settings/content',
+        icon: Package,
+        permission: Permission.ContentRead,
+        keywords: ['content', 'packages', 'catalog', 'install', 'rules', 'templates', 'signed'],
       },
     ],
   },
@@ -284,6 +318,17 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
       },
       {
+        // Time-boxed, read-only, audited access for platform support (api
+        // RFC-063): owners grant, owners and admins revoke and see history.
+        id: 'support-access',
+        title: 'Support access',
+        description: 'Let platform support read your data for a limited time.',
+        url: '/settings/support-access',
+        icon: LifeBuoy,
+        permission: Permission.TeamUpdate,
+        keywords: ['support', 'help', 'troubleshoot', 'grant', 'revoke', 'case'],
+      },
+      {
         id: 'api-keys',
         title: 'API keys',
         description: 'Keys for scripts and tools that call the API.',
@@ -294,12 +339,46 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'mcp',
-        title: 'AI access (MCP)',
-        description: 'Let AI assistants read your data over MCP.',
+        title: 'AI assistants (MCP)',
+        description: 'Let AI assistants work with your data over MCP; approve applications.',
         url: '/settings/mcp',
         icon: Bot,
         permission: Permission.ApiKeysRead,
-        keywords: ['mcp', 'claude', 'llm', 'assistant'],
+        keywords: ['mcp', 'claude', 'llm', 'assistant', 'publisher', 'approve', 'request'],
+      },
+    ],
+  },
+  {
+    id: 'findings',
+    title: 'Findings',
+    items: [
+      {
+        id: 'finding-lifecycle',
+        title: 'Finding lifecycle',
+        description: 'Your own sub-statuses, moves and the requirements each move needs.',
+        url: '/settings/finding-lifecycle',
+        icon: GitBranch,
+        permission: Permission.FindingsRead,
+        module: 'findings',
+        keywords: ['sub-status', 'status', 'transition', 'move', 'lifecycle', 'publish'],
+      },
+      {
+        id: 'finding-approvals',
+        title: 'Finding approvals',
+        description: 'Who decides false positives and accepted risks, and who is told.',
+        url: '/settings/finding-approvals',
+        icon: ClipboardCheck,
+        permission: Permission.SettingsRead,
+        keywords: ['approval', 'four-eyes', 'false positive', 'accepted risk', 'backup contact'],
+      },
+      {
+        id: 'vulnerability-matching',
+        title: 'Vulnerability matching',
+        description: 'Which CVEs affecting your software versions become findings.',
+        url: '/settings/vulnerability-matching',
+        icon: Bug,
+        permission: Permission.TeamUpdate,
+        keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
       },
     ],
   },
@@ -335,15 +414,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Clock,
         permission: Permission.TeamUpdate,
         keywords: ['stale', 'retire', 'archive'],
-      },
-      {
-        id: 'vulnerability-matching',
-        title: 'Vulnerability matching',
-        description: 'Which CVEs affecting your software versions become findings.',
-        url: '/settings/vulnerability-matching',
-        icon: Bug,
-        permission: Permission.TeamUpdate,
-        keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
       },
       {
         id: 'asset-sources',
@@ -488,6 +558,16 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['taxonomy'],
       },
       {
+        id: 'tool-defaults',
+        title: 'Tool defaults',
+        description: 'Default options for each tool on every sensor; a sensor can override them.',
+        url: '/settings/scanning/tool-defaults',
+        icon: SlidersHorizontal,
+        permission: Permission.SensorsRead,
+        module: 'sensors',
+        keywords: ['tool settings', 'rate limit', 'concurrency', 'timeout', 'retries', 'options'],
+      },
+      {
         id: 'scanner-content',
         title: 'Scanner content',
         description: 'How fresh vulnerability databases, templates and rules must be.',
@@ -545,6 +625,17 @@ export const settingsNav: SettingsNavGroup[] = [
         module: 'integrations',
         subModuleKey: 'ticketing',
         keywords: ['jira', 'servicenow', 'tickets'],
+      },
+      {
+        id: 'ticket-field-mapping',
+        title: 'Ticket field mapping',
+        description: 'Which fields and statuses sync with Jira, per project.',
+        url: '/settings/integrations/ticketing/mappings',
+        icon: ArrowLeftRight,
+        permission: Permission.IntegrationsRead,
+        module: 'integrations',
+        subModuleKey: 'ticketing',
+        keywords: ['jira', 'fields', 'mapping', 'workflow', 'status'],
       },
       {
         id: 'notification-channels',

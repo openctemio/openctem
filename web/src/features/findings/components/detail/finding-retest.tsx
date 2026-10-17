@@ -11,7 +11,7 @@
  *
  * "Retest now" re-runs the check that produced the finding against the origin
  * of its matched-at URL. A verified fix (the endpoint answered and the check
- * did not match) moves the finding to validated_fixed, or resolves it when the
+ * did not match) marks the finding not reproducible, or resolves it when the
  * organization auto-resolves; still vulnerable keeps it (or reopens a resolved
  * one); not reproduced and inconclusive change nothing. Each attempt's
  * request and response are shown under "View evidence". Needs
@@ -37,6 +37,7 @@ import { safeHref } from '@/lib/safe-href'
 import { usePermissions } from '@/context/permission-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import {
+  hasRetestHistory,
   isRetestable,
   useFindingRetests,
   useRequestRetest,
@@ -174,14 +175,15 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
   const { hasPermission } = usePermissions()
   const { t } = useTranslation()
   const { mutate } = useSWRConfig()
-  const retestable = isRetestable(finding)
-  // History is shown for any nuclei finding, also one no longer retestable (e.g.
-  // false positive), and for pentest findings, whose testers retest by hand.
+  const mayRetest = isRetestable(finding)
+  // History is shown for any finding of a tool rule, also one no longer
+  // retestable (e.g. false positive), and for pentest findings, whose testers
+  // retest by hand. Whether "Retest now" is offered comes from the API
+  // (can_retest), which knows what the organization's sensors can re-check.
   const { data } = useFindingRetests(
-    (finding.toolName ?? '').toLowerCase() === 'nuclei' || finding.source === 'pentest'
-      ? finding.id
-      : null
+    hasRetestHistory(finding) || finding.source === 'pentest' ? finding.id : null
   )
+  const retestable = mayRetest && data?.can_retest === true
   const { trigger, isMutating } = useRequestRetest(finding.id)
   const list = data?.data ?? []
   const latest = list[0]

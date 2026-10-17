@@ -18,8 +18,8 @@ a **central gate policy** instead of a flag in each pipeline.
 A CI run is not a sensor row: it has no row in `sensors`, no heartbeat, no
 offline alert and no key to rotate. Its logical identity is the **CI
 pipeline** (one workflow file of one repository, section 10), listed on the
-Sensors page as a sensor in **runner mode**: fresh or stale against its own
-cadence, never offline, never dispatched.
+CI/CD page (never on the Sensors page: a pipeline is not a sensor): fresh or
+stale against its own cadence, never offline, never dispatched.
 
 ```
 CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs (tenant) ──▶ run + octci_ token (≤15 min)
@@ -140,7 +140,15 @@ id is not recorded; an invalid draft fetches nothing.
    discovery document must name that exact issuer and a JWKS on the issuer's
    own host; discovery and JWKS are fetched through the SSRF-guarded client
    (`httpsec.SafeHTTPClient` + `ValidateURL`) and cached for an hour, with an
-   unknown `kid` refetching at most every 30 seconds; algorithms RS256, RS384,
+   unknown `kid` refetching at most every 30 seconds. Concurrent refreshes of
+   one document wait for a single fetch; when the issuer cannot be reached
+   the last discovery document and keys keep verifying for six hours, and a
+   failed fetch is not repeated within 30 seconds. A token whose keys cannot
+   be had (issuer unreachable past that bound, or a `kid` not yet fetched)
+   answers `503 CI_ISSUER_UNAVAILABLE` with `Retry-After: 30`, before
+   anything is claimed, so the job retries the same token. This tells the
+   caller that the organization trusts the token's issuer and nothing more;
+   algorithms RS256, RS384,
    RS512, ES256 only (never HMAC or `none`), key type must match the
    algorithm; `iss`, `aud`, `exp` (required), `nbf`, `iat` (required, not in
    the future) with one minute of leeway; lifetime at most 24 hours; `sub` and
@@ -156,9 +164,23 @@ id is not recorded; an invalid draft fetches nothing.
    `001261`) and never matches a break-glass. A refusal is audited (`ci_run.token_refused`) with the repository,
    actor, pipeline run id and the rule that refused.
 4. Replay: `(iss, jti)` is recorded in `ci_oidc_replay` until the token
-   expires plus an hour; a second exchange of the same token is refused and
-   audited at high severity. The table is global by design (a token is good
-   for one exchange anywhere) and purged every ten minutes.
+   expires plus an hour, with the organization, the SHA-256 of the exact
+   token, the run it opened or joined and an exchange count (migration
+   `002137`). The same token presented again while valid (same bytes, same
+   organization) is a re-exchange: it gets a fresh upload token, added
+   beside the first one, for the same run only, after every continuation
+   check (repository, commit, pipeline run, attempt, job, still running,
+   within six hours); at most five exchanges per token
+   (`cirun.MaxTokenExchanges`), each audited (`token_exchanges`). A plain
+   run's id is chosen at the first exchange, so a re-exchange after a failed
+   creation makes that run and never a second one. Any other token under a
+   used `(iss, jti)`, a token re-presented to another organization, or a
+   record without organization is a replay, refused and audited at high
+   severity. A holder of a valid token can already exchange it once and
+   upload to its run; a re-exchange returns that run again and nothing
+   wider, so it adds no capability, while refusing it broke honest jobs that
+   lost the first answer or run `openctem-ci` more than once. The table is
+   global by design and purged every ten minutes.
 5. The repository asset (`github.com/<owner>/<repo>`, or
    `<gitlab host>/<project path>`) is found or created in the tenant. The run
    records repository, commit, branch, pull request, pipeline URL (built from
@@ -171,8 +193,18 @@ id is not recorded; an invalid draft fetches nothing.
    stored. It expires after 15 minutes. `ci_run.token_issued` is audited
    without the token.
 
-Every refusal answers the same `401 The CI token was not accepted`, with one
-exception decided after the token verified and was admitted: a runner that
+Every refusal before a trust configuration admitted the token answers the
+same `401 CI_TOKEN_NOT_TRUSTED`, whose message lists what to check (tenant
+id, audience, expiry, trust) without saying which failed: on a shared issuer
+anyone can mint a token for any audience, and the organization's
+configuration is not theirs to learn. A refusal after admission is the
+organization's own pipeline and is told the reason as `401 CI_TOKEN_<reason>`
+(`replay`, `replay_limit` with the first exchange time and run,
+`replay_run_closed`, `run_mismatch`, `pipeline_rate`, `pipeline_cap`,
+`pipeline_identity`, `aggregate_no_run_id`, `repository_binding`,
+`owner_id_mismatch`, `legacy_audience`); the text names only that pipeline's
+token and run, never another repository or owner id. One more exception
+decided after the token verified and was admitted: a runner that
 reports (User-Agent) a CI runner version below `CI_RUNNER_MIN_VERSION` gets `403
 RUNNER_OUTDATED` and the refusal is audited (`runner_outdated`); the fix is on
 its side. The version is self-reported: this keeps known-bad releases out, it
@@ -206,13 +238,14 @@ A pipeline that runs one job per scan capability in parallel (the
 `openctemio/ci` GitHub reusable workflow and GitLab `all` template) reports
 into ONE run and is judged once. Each job sends `aggregate: true`:
 
-- The run is keyed by the pipeline, the provider's pipeline run id, the
-  attempt and the commit, all from the verified token (GitHub `run_id` and
-  `run_attempt`, GitLab `pipeline_id`). The first job opens it
-  (`ci_runs.aggregate`); every later job of the same pipeline run joins it.
-  At most one aggregate run is open per key (`idx_ci_runs_aggregate_open`,
-  partial unique on `status = 'running'`), so racing jobs land in the same
-  run. A token without a pipeline run id is refused (`aggregate_no_run_id`).
+- The run is keyed by the pipeline, the provider's pipeline run id and the
+  commit, all from the verified token (GitHub `run_id`, GitLab
+  `pipeline_id`), **whatever the attempt or the run's status**: a pipeline run
+  is the unit of evidence. The first job opens it (`ci_runs.aggregate`,
+  `evidence_union`); every later job, retry and re-run attempt of the same
+  pipeline run joins it. One run per key (`idx_ci_runs_pipeline_run`), so
+  racing jobs land in the same run. A token without a pipeline run id is
+  refused (`aggregate_no_run_id`).
 - Every job gets its own 15-minute token for the run (`ci_run_tokens`, one
   hash per exchange); a job joining never invalidates another job's token.
   A continuation (`run_id`) on an aggregate run adds a token instead of
@@ -220,8 +253,39 @@ into ONE run and is judged once. Each job sends `aggregate: true`:
 - The scan jobs upload; a final job (which joins the same way) calls
   `evaluate` with the number of capability jobs that did not report as
   `scan_failures`. The verdict covers every report of the run. Once
-  evaluated, the run takes no more results, and the next aggregate exchange
-  of that pipeline run opens a new run.
+  evaluated, the run takes no more results until a later attempt of the same
+  pipeline run joins: that **re-opens** it (running again, `run_attempt`
+  recorded) and the next `evaluate` judges the union of every attempt's
+  reports with today's decisions. A re-run of only the gate job therefore
+  never judges an empty run (it used to open a new run with no reports, which
+  passed, and the commit check took that latest verdict). An exception
+  approved since, or a flaky scan that succeeds on re-run, can turn it green
+  without a new commit.
+- A re-opened run **keeps its last verdict** until it is judged again: the
+  commit check (`CommitVerdicts`) and the merged-without-a-passing-gate check
+  (`PullRequestPassed`) read any run with a verdict, whatever its status. So
+  retrying one scan job of a failed pipeline cannot make its failure drop out
+  while another pipeline's pass decides the check.
+- Capabilities the last verdict found failed (`failed_capabilities`: the
+  job's capability states and those already carried) are carried on re-open
+  (`carried_failed_capabilities`). Each keeps failing the run
+  (`capability_failed`, state `failed_earlier`) until a report of **that**
+  capability arrives. The capability comes from the tool registry by the
+  report's tool name, so a report of another capability does not clear it.
+  The evaluating job cannot clear it by claiming it uploaded. A runner that
+  sends only a count of failed scanners (`scan_failures`, no capability
+  states) has the count carried (`carried_scan_failures`) until the next
+  upload.
+- A run, aggregate or not, that no report was uploaded to fails
+  (`no_results`): there is nothing to judge.
+- A run whose gate job never ran (pipeline cancelled, gate removed, a rule
+  that skipped it) would stay `running` for ever, with no verdict and nothing
+  blocking a merge. A sweeper (controller `ci-sweep`, every 15 minutes, one
+  replica) concludes each run still running after `MaxRunContinuation` (6 h,
+  the longest a run can still get a token) with the verdict `fail` and the
+  reason `not_judged`. Silence is never a pass; the uploaded findings are
+  kept, and the verdict is audited as `ci_run.evaluated` with
+  `reason: not_judged`. A run judged meanwhile keeps its verdict.
 - The response says `aggregate: true`; a client that asked for an aggregate
   run and does not see it refuses to continue (otherwise its gate would judge
   an empty run).
@@ -248,6 +312,52 @@ upload is audited (`ci_run.results_uploaded`: finding count, tool label, job;
 never finding content). A run
 accepts at most 200 reports (`409` beyond), and a pipeline may start at most
 300 runs an hour (the exchange is refused beyond, audited `pipeline_rate`).
+
+**Retries (`Idempotency-Key`).** An upload may carry an `Idempotency-Key`
+header (1 to 128 printable ASCII characters). The first completed answer
+(`201`) is stored for one hour under tenant + run + the key's hash (the run
+comes from the upload token, so a key never reaches another run or tenant),
+and a retry with the same key and body gets that answer back with
+`Idempotent-Replayed: true`, without ingesting again or counting another
+report. The same key with a different body is `422 IDEMPOTENCY_KEY_REUSED`;
+the same key while the first request is still running is `409` with
+`Retry-After`; the in-flight marker lives at least as long as the run token
+(15 minutes), or until the request deadline when later. A refusal or failure
+releases the key, so the retry runs again; a finished request only overwrites or
+releases the key while the stored record still carries its own body hash.
+The store is the shared Redis; without it, or when it fails, the upload runs
+as it always did (the fingerprints still dedupe findings).
+**Secrets on a branch.** A secret a run finds on any non-fork branch (a pull
+request included) is exposure the moment it is pushed: the finding becomes an
+organization finding at once (no longer hidden as seen only on a branch), and a
+remediation task "Rotate <secret type>" is opened for it (origin `system`, kind
+`rotate`, action key `rotate:secret:<fingerprint>`). The task is per secret
+identity: the same credential found in other repositories or branches joins the
+open task instead of opening another, and a later sighting never opens a second
+one. Removing the secret from the branch does not close it, because history
+keeps it. A fork's run never raises one.
+
+Which secrets page, for the gate and for this task: the finding is a secret, it
+is not validated false, and its rule is not on the allowlist of known generic or
+heuristic scanner rule ids (matched exactly, never by substring).
+"Validated false" comes only from a validation the platform ran itself: the
+validity an uploaded report claims is ignored, because a fork pull request
+could otherwise mark a live secret dead and switch off blocking and rotation.
+At most one active rotation task exists per action (a unique index); a run that
+loses the race joins the existing task. A hard-coded password
+hit therefore does not block every pipeline and does not open a task; it follows
+the policy's severity and modes like any finding. Everything else blocks.
+
+**Renamed repositories.** A repository renamed on its code host keeps its asset
+(the exchange finds it by the code host's repository id). A trust configuration
+that names repositories by pattern no longer admits the new name, and the
+platform does not rewrite it: changing trust stays a manual, audited, step-up
+change. When a verified token comes from a repository that already has a
+pipeline under another name and no configuration admits it, the organization's
+owners and administrators are told, in-app and by e-mail, with the old and new
+name and a link to the trust settings (`/ci-cd?tab=setup`). One alert per
+repository and new name per day.
+
 A secret finding is never stored in clear whatever the runner sends: the
 runner masks it, and the server keeps only a preview of at most four
 characters at each end (`vulnerability.MaskSecretPreview`), redacts the
@@ -325,10 +435,13 @@ For each finding the run reported:
 - **secret**: a new committed secret always blocks, whatever its severity; a
   secret already open on the baseline branch blocks default-branch runs and is
   a non-blocking `secret_pre_existing` note on other branches (RFC-077 G-9);
-- with new-findings-only, a finding already open on the default branch does
-  not block; on the default branch itself, "new" means first detected or
-  reopened by this run. Without a scan of the default branch every finding
-  counts as new (fail closed, with a `no_baseline` note);
+- with new-findings-only, a finding already open on the target branch does
+  not block a pull request run. A **default-branch run is judged against the
+  repository's gate baseline only** (section 6.2): a finding in it is
+  pre-existing, every other finding is new. Without a baseline every finding
+  of a default-branch run counts as new (fail closed, with a `no_baseline`
+  note); without a scan of the target branch every finding of a pull request
+  run counts as new;
 - otherwise KEV, then the EPSS threshold, then the severity threshold.
 
 Any scanner failure the runner reports fails the run. `warn` mode passes and
@@ -344,6 +457,33 @@ override expires (default 24 hours, at most 7 days) or is revoked. A reason of
 (`ci_gate_override.used`, with the run and the blocking count) are audited at
 high severity. Creating and every use also notify every active owner and
 administrator in-app and the `ci.break_glass` channel event.
+
+### 6.2 Gate baseline
+
+A repository's **gate baseline** (`ci_gate_baselines`, `ci_gate_baseline_findings`) is the set of findings
+open on its default branch when it was recorded: by the repository's **first verified default-branch run**
+(once per repository), or by a person. It is the only comparison base of a default-branch run.
+
+Why: comparing a default-branch run with "what earlier runs saw" let a failed run become its own baseline.
+The first run on the default branch failed with every finding new; running the same commit again (or pushing
+anything) then found every finding "already on the default branch" and passed. A failing run must never
+establish a baseline, so nothing a run reports changes it.
+
+| Rule | Where |
+|---|---|
+| A default-branch run: a finding is pre-existing only if its fingerprint is in the baseline and it was not reopened after the baseline was recorded | `cirun.Service.newFindings` |
+| The first default-branch run of a repository that never had a baseline records one and passes on the findings it holds; the verdict says so (`baseline.established`, `baseline_established` note) and it is audited at high severity (`ci_gate_baseline.set`, source `first_run`). Only a run whose branch and commit the provider signed, never a fork; only the default branch. Once per repository: a removed baseline keeps its row (`cleared_at`), so no later run records one again | `cirun.Service.firstRunBaseline` |
+| No baseline (removed): every finding of a default-branch run is new (`no_baseline` note) | same |
+| A pull request run: a finding is pre-existing if it is open on the target branch and, when the target is the default branch and the repository has a baseline, also in the baseline. A finding that reached the default branch after the baseline (for example through a merge that ignored a failed gate) blocks pull requests until it is fixed, accepted or baselined | same |
+| Recording a baseline (`PUT /api/v1/ci/gate-baselines/{id}`): `scans:ci:policy`, step-up, repository in the caller's data scope (404 otherwise); audited `ci_gate_baseline.set` at high severity and announced to every administrator on the break-glass channel; it replaces an earlier baseline | handler, service |
+| Removing it (`DELETE`): `scans:ci:policy`; stricter, so no step-up; audited | handler, service |
+| Reading it (`GET`): `scans:ci:read`, data scope | handler |
+| The repository file `.openctem.yml` has no baseline setting; a CI job cannot record, change or reset a baseline | the file's schema, `RepoPolicy` |
+| Secrets in the baseline still block default-branch runs (section 6) | `cirun.Evaluate` |
+| The verdict names the baseline (`baseline.set_at`) and counts `new` and `pre_existing` separately | `GateBaselineView` |
+
+The same code path judges every provider (GitHub, GitLab, Azure, Bitbucket, Jenkins); only the branch,
+commit and target branch come from the provider's signed token.
 
 ### 6.1 Who sees a run
 
@@ -392,7 +532,7 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | Forged, expired, not-yet-valid, wrong-issuer or wrong-audience token | Signature against the issuer's JWKS, alg allowlist, `iss`/`aud`/`exp`/`nbf`/`iat`; tests for each |
 | Token for another repository, branch, event or environment | Trust rules; refusal audited with the rule |
 | Fork code acting as the repository | Fork-capable events refused unless explicitly allowed; GitLab `require_protected_ref` |
-| Replay of a stolen OIDC token | One exchange per `(iss, jti)`; 24-hour lifetime cap |
+| Replay of a stolen OIDC token | A token maps to one run: re-exchanges (same bytes, same organization, at most five) return that run only, audited; any other token under a used `(iss, jti)` is refused; 24-hour lifetime cap |
 | Stolen run token | 15 minutes, one run, one repository, upload/evaluate only; hash stored, never the token |
 | Cross-tenant | Configurations, runs, policies and overrides tenant-scoped (composite FKs to the tenant's assets); the audience names the tenant; another tenant's ids answer 404 |
 | Data scope (RFC-050) | Run list and overrides filtered to the caller's repositories; by id out of scope is 404 |
@@ -402,9 +542,11 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | A CI identity receiving work | Pipelines are a separate table with no key and no zone; no claim query reads them |
 | Withdrawn trust | Disabling, deleting or re-pointing a configuration revokes its pipelines and its running runs' tokens at once |
 | Personal data in claims | `user_email` never read; actor login only |
-| Cross-tenant through the fleet union | Each source tenant-scoped; the union adds no query; tests assert another tenant's fleet lists none of the pipelines |
+| Cross-tenant pipeline reads | The pipeline list and detail are tenant-scoped and follow the repository data scope; tests assert another tenant reads and lists none of the pipelines |
 | A report on another asset | `REPORT_OUT_OF_SCOPE`; the `ci_run` binding can change only the repository asset |
 | Baseline poisoning | The baseline branch is server-side (known default branch, else the configuration's); a run's branch comes from the token |
+| A re-run of only the gate job judging an empty run and passing | Retries and re-runs re-open the pipeline run's one aggregate run (section 4.1); carried scanner failures; a run with no report fails (`no_results`) |
+| A failed default-branch run becoming its own baseline (rerun whitewash) | Default-branch runs compare only with the recorded gate baseline (section 6.2); runs never write it |
 | SSRF through a self-managed GitLab issuer or a Jenkins issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host; the preview validates the draft before any fetch |
 | A token valid for other services (Azure's fixed audience, a CI organization's default audience) | Azure: `org_id` pinned to the issuer, one exchange per `jti`, five-minute tokens; elsewhere a tenant-bound audience is required |
 | A renamed Bitbucket workspace's slug taken by someone else | `workspaceUuid` pinned in the configuration |
@@ -414,7 +556,8 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | A job naming a commit it did not build (CircleCI) | Marked unverified; never matches a break-glass |
 | A person driving a CI job interactively (CircleCI SSH re-run) | Refused |
 | Pull request builds of fork code where the token cannot say so | Refused unless fork pull requests are admitted |
-| JWKS fetch amplification | One-hour cache, at most one refetch per 30 seconds for an unknown `kid` |
+| JWKS fetch amplification | One-hour cache, at most one refetch per 30 seconds for an unknown `kid` or a failed fetch, concurrent refreshes collapsed into one |
+| Issuer outage or key rotation breaking scans | Discovery and keys served stale up to six hours; a missing key is a retryable 503 with nothing claimed |
 | Audit flooding | Nothing is audited before the token verifies |
 | Brute force | Per-IP limit on the exchange (shared across replicas) and on run routes before the token lookup; per-run limit after |
 | Token in logs | Neither token is logged or audited; tests assert the audit log carries none |
@@ -433,7 +576,7 @@ custom roles).
 | R4 | Remote repository execution by a zoned daemon sensor | Open (needs the executor sandbox and the credential broker) |
 | R5 | Signed runner image, GitHub Action and GitLab component, SARIF upload | Implemented (openctemio/ci) |
 | F1 | CI pipelines: identity, JIT creation, caps, revocation, status, fleet read model (section 10, migration 001084) | Implemented |
-| F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented |
+| F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented, then revised (2026-10-15): pipelines live only on the CI/CD page; Sensors keeps one line linking there (FI-4) |
 | F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6, migration 001099) | Implemented |
 | F4, F5 | Sensor pools; policy timeouts for daemons (section 10.7) | Design only |
 | P1 | Azure Pipelines, Bitbucket Pipelines, CircleCI and Jenkins trust; trust preview (section 3.1, migration 001261) | Implemented |
@@ -464,8 +607,12 @@ ever listed as "offline".
 - **FI-3** Liveness per kind: heartbeat for daemons; for pipelines, freshness
   against the expected cadence. "Offline" is never used for a pipeline.
 - **FI-4** Pipelines live in their own table (`ci_pipelines`) and are never
-  dispatchable: no key, no zone, no claim query reads them. One read model
-  (`GET /api/v1/fleet`) unifies the console.
+  dispatchable: no key, no zone, no claim query reads them. Revised
+  2026-10-15: each kind has one home in the console. Sensors lists the
+  sensors (`GET /api/v1/sensors`), CI/CD lists the pipelines
+  (`GET /api/v1/ci/pipelines`), and Sensors shows only a one-line link with
+  the pipeline count. The earlier union read model, `GET /api/v1/fleet`, made
+  the Sensors page list every pipeline next to the sensors, and was removed.
 - **FI-5** Alerts only on signals (missed schedule, coverage regression,
   opt-in failing gate, outdated runner), never per run (section 10.6).
 - **FI-6** Coverage (repository x capability) is a first-class output
@@ -537,7 +684,6 @@ revocation.
 
 | Endpoint | Permission |
 |---|---|
-| `GET /api/v1/fleet?mode=all\|daemon\|runner` (`role`, `status`, `attention`, `include_inactive`, `search`, paging) | `sensors:read` for daemon rows, `scans:ci:read` (and the scans module) for runner rows; each mode filtered by its own permission, 403 with neither |
 | `GET /api/v1/ci/pipelines` (`status`, `include_inactive`, `provider`, `repository_asset_id`, `search`, paging; status counts) | `scans:ci:read` |
 | `GET /api/v1/ci/pipelines/{id}` (status, branches, default-branch gate trend) | `scans:ci:read` |
 | `GET /api/v1/ci/runs?pipeline_id=` | `scans:ci:read` |

@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
+
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	exposureapp "github.com/openctemio/openctem/api/internal/app/exposure"
@@ -16,13 +19,14 @@ import (
 )
 
 // dispositionFixture: tenant A with an owner and two administrators (three
-// eligible approvers), tenant B, and tenant Solo whose owner is the only
-// member.
+// eligible approvers), tenant B, tenant Solo whose owner is the only member,
+// and tenant SoloAdmin whose only member is an administrator (not an owner).
 type dispositionFixture struct {
 	db                       *sql.DB
 	pdb                      *postgres.DB
-	a, b, solo               shared.ID
+	a, b, solo, soloAdmin    shared.ID
 	owner, u1, u2, soloOwner shared.ID
+	lonelyAdmin              shared.ID
 	svc                      *exposureapp.ExposureService
 	creds                    *integration.CredentialImportService
 }
@@ -32,14 +36,16 @@ func newDispositionFixture(t *testing.T) *dispositionFixture {
 	db := setupTestDB(t)
 	f := &dispositionFixture{
 		db: db, pdb: &postgres.DB{DB: db},
-		a:     createTestTenant(t, db, "disp-a"),
-		b:     createTestTenant(t, db, "disp-b"),
-		solo:  createTestTenant(t, db, "disp-solo"),
-		owner: shared.NewID(), u1: shared.NewID(), u2: shared.NewID(), soloOwner: shared.NewID(),
+		a:         createTestTenant(t, db, "disp-a"),
+		b:         createTestTenant(t, db, "disp-b"),
+		solo:      createTestTenant(t, db, "disp-solo"),
+		soloAdmin: createTestTenant(t, db, "disp-solo-admin"),
+		owner:     shared.NewID(), u1: shared.NewID(), u2: shared.NewID(), soloOwner: shared.NewID(),
+		lonelyAdmin: shared.NewID(),
 	}
-	users := []shared.ID{f.owner, f.u1, f.u2, f.soloOwner}
+	users := []shared.ID{f.owner, f.u1, f.u2, f.soloOwner, f.lonelyAdmin}
 	t.Cleanup(func() {
-		for _, id := range []shared.ID{f.a, f.b, f.solo} {
+		for _, id := range []shared.ID{f.a, f.b, f.solo, f.soloAdmin} {
 			_, _ = db.Exec(`DELETE FROM tenants WHERE id = $1`, id.String())
 		}
 		for _, id := range users {
@@ -54,10 +60,12 @@ func newDispositionFixture(t *testing.T) *dispositionFixture {
 	f.member(t, f.a, f.u1, "admin")
 	f.member(t, f.a, f.u2, "admin")
 	f.member(t, f.solo, f.soloOwner, "owner")
+	f.member(t, f.soloAdmin, f.lonelyAdmin, "admin")
 
 	log := logger.NewNop()
 	gate := exposureapp.NewDispositionGate(postgres.NewExposureDispositionRepository(f.pdb),
 		audit.NewAuditService(postgres.NewAuditRepository(f.pdb), log), log)
+	gate.SetTOTP(fakeFreshTOTP{good: "246810"})
 	expRepo := postgres.NewExposureRepository(f.pdb)
 	histRepo := postgres.NewExposureStateHistoryRepository(f.pdb)
 	f.svc = exposureapp.NewExposureService(expRepo, histRepo, log)
@@ -192,22 +200,133 @@ func TestExposureDisposition_FourEyes(t *testing.T) {
 	}
 }
 
-// TestExposureDisposition_OwnerAloneSelfApproves: the owner who is the only
-// eligible approver applies at once; the step is audited Critical.
+// fakeFreshTOTP accepts one code, as the authenticator check would.
+type fakeFreshTOTP struct{ good string }
+
+func (f fakeFreshTOTP) VerifyFreshTOTP(_ context.Context, _, code string) error {
+	if code != f.good {
+		return exposure.ErrDispositionSelfApprovalBadCode
+	}
+	return nil
+}
+
+func (f *dispositionFixture) selfApprove(tenant, id, user shared.ID, state exposure.State, reason, code string) (*exposureapp.DispositionOutcome, error) {
+	return f.svc.RequestDisposition(context.Background(), exposureapp.DispositionCall{
+		TenantID: tenant.String(), ExposureID: id.String(), UserID: user.String(), State: state, Reason: reason,
+		Self: exposureapp.SelfApproval{Requested: true, Code: code}})
+}
+
+func (f *dispositionFixture) auditSeverity(t *testing.T, id shared.ID, action string) []string {
+	t.Helper()
+	rows, err := f.db.Query(`SELECT severity FROM audit_logs WHERE resource_id = $1 AND action = $2 ORDER BY logged_at, id`, id.String(), action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestExposureDisposition_OwnerAloneSelfApproves: a lone owner's request is
+// never applied automatically; their own approval is a separate call with a
+// reason and a fresh authenticator code, audited Critical; every refused
+// attempt (no reason, no code, wrong code) is audited High and changes
+// nothing; another tenant reaches nothing.
 func TestExposureDisposition_OwnerAloneSelfApproves(t *testing.T) {
 	f := newDispositionFixture(t)
 	high := f.exposure(t, f.solo, "port_open", "high")
 	out, err := f.call(f.solo, high, f.soloOwner, exposure.StateAccepted)
+	if err != nil || !out.Pending || out.SelfApproved {
+		t.Fatalf("solo owner request: %v %+v, want pending", err, out)
+	}
+	if s := f.state(t, high); s != "active" {
+		t.Fatalf("state %s after the request, want active (never applied automatically)", s)
+	}
+	// Repeating the plain call is not an own approval.
+	if _, err := f.call(f.solo, high, f.soloOwner, exposure.StateAccepted); !errors.Is(err, exposure.ErrDispositionSelfApproval) {
+		t.Fatalf("plain repeat: %v, want ErrDispositionSelfApproval", err)
+	}
+	if _, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "", "246810"); !errors.Is(err, exposure.ErrDispositionSelfApprovalNeedsReason) {
+		t.Fatalf("no reason: %v", err)
+	}
+	if _, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", ""); !errors.Is(err, exposure.ErrDispositionSelfApprovalBadCode) {
+		t.Fatalf("no code: %v", err)
+	}
+	if _, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "111111"); !errors.Is(err, exposure.ErrDispositionSelfApprovalBadCode) {
+		t.Fatalf("wrong code: %v", err)
+	}
+	// Another tenant cannot approve it, even with a good code.
+	if _, err := f.selfApprove(f.b, high, f.soloOwner, exposure.StateAccepted, "x", "246810"); err == nil {
+		t.Fatal("tenant B self-approved tenant Solo's exposure")
+	}
+	if s := f.state(t, high); s != "active" {
+		t.Fatalf("state %s after refused attempts, want active", s)
+	}
+	if got := f.auditSeverity(t, high, "exposure.disposition_self_approval_refused"); len(got) != 3 || got[0] != "high" {
+		t.Fatalf("refusals audited %v, want 3 at high", got)
+	}
+
+	out, err = f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member; reviewed the port", "246810")
 	if err != nil || out.Pending || !out.SelfApproved {
-		t.Fatalf("solo owner: %v %+v", err, out)
+		t.Fatalf("self-approve with fresh code: %v %+v", err, out)
 	}
 	if s := f.state(t, high); s != "accepted" {
 		t.Fatalf("state %s, want accepted", s)
 	}
-	var sev string
-	if err := f.db.QueryRow(`SELECT severity FROM audit_logs WHERE resource_id = $1 AND action = 'exposure.disposition_self_approved'`,
-		high.String()).Scan(&sev); err != nil || sev != "critical" {
-		t.Fatalf("self-approval audit: %v %q, want critical", err, sev)
+	if got := f.auditSeverity(t, high, "exposure.disposition_self_approved"); len(got) != 1 || got[0] != "critical" {
+		t.Fatalf("self-approval audit %v, want one critical", got)
+	}
+}
+
+// TestExposureDisposition_SelfApprovalOnlyLoneOwner: an owner with other
+// approvers, and a lone administrator who is not an owner, may never approve
+// their own request, even with a good code.
+func TestExposureDisposition_SelfApprovalOnlyLoneOwner(t *testing.T) {
+	f := newDispositionFixture(t)
+	crit := f.exposure(t, f.a, "port_open", "critical")
+	if out, err := f.call(f.a, crit, f.owner, exposure.StateFalsePositive); err != nil || !out.Pending {
+		t.Fatalf("owner request: %v", err)
+	}
+	if _, err := f.selfApprove(f.a, crit, f.owner, exposure.StateFalsePositive, "x", "246810"); !errors.Is(err, exposure.ErrDispositionSelfApprovalNotAllowed) {
+		t.Fatalf("owner with other approvers: %v, want ErrDispositionSelfApprovalNotAllowed", err)
+	}
+	// Someone else's request is never "self"-approved.
+	if _, err := f.selfApprove(f.a, crit, f.u1, exposure.StateFalsePositive, "x", "246810"); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("self-approve of another's request: %v", err)
+	}
+	lone := f.exposure(t, f.soloAdmin, "port_open", "high")
+	if out, err := f.call(f.soloAdmin, lone, f.lonelyAdmin, exposure.StateAccepted); err != nil || !out.Pending {
+		t.Fatalf("lone admin request: %v", err)
+	}
+	if _, err := f.selfApprove(f.soloAdmin, lone, f.lonelyAdmin, exposure.StateAccepted, "x", "246810"); !errors.Is(err, exposure.ErrDispositionSelfApprovalNotAllowed) {
+		t.Fatalf("lone non-owner: %v, want ErrDispositionSelfApprovalNotAllowed", err)
+	}
+	if f.state(t, crit) != "active" || f.state(t, lone) != "active" {
+		t.Fatal("a refused self-approval changed an exposure")
+	}
+	// Without a verifier wired the call fails closed.
+	log := logger.NewNop()
+	bare := exposureapp.NewDispositionGate(postgres.NewExposureDispositionRepository(f.pdb), nil, log)
+	svc := exposureapp.NewExposureService(postgres.NewExposureRepository(f.pdb), postgres.NewExposureStateHistoryRepository(f.pdb), log)
+	svc.SetDispositionGate(bare)
+	solo := f.exposure(t, f.solo, "port_open", "high")
+	if _, err := f.call(f.solo, solo, f.soloOwner, exposure.StateAccepted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RequestDisposition(context.Background(), exposureapp.DispositionCall{TenantID: f.solo.String(),
+		ExposureID: solo.String(), UserID: f.soloOwner.String(), State: exposure.StateAccepted, Reason: "x",
+		Self: exposureapp.SelfApproval{Requested: true, Code: "246810"}}); !errors.Is(err, exposure.ErrDispositionSelfApprovalBadCode) {
+		t.Fatalf("no verifier: %v, want ErrDispositionSelfApprovalBadCode", err)
 	}
 }
 
@@ -237,8 +356,93 @@ func TestExposureDisposition_Credentials(t *testing.T) {
 		t.Fatalf("second approver: %v %+v", err, item)
 	}
 
+	// A lone owner's leak: pending first, own approval only with a fresh code.
+	soloLeak := f.exposure(t, f.solo, "credential_leaked", "critical")
+	if item, err := f.creds.AcceptCredential(ctx, f.solo.String(), soloLeak.String(), f.soloOwner.String(), "rotated"); err != nil || item.PendingDisposition == nil || item.State != "active" {
+		t.Fatalf("solo leak request: %v %+v", err, item)
+	}
+	if _, err := f.creds.ApplyCredentialDisposition(ctx, f.solo.String(), soloLeak.String(), f.soloOwner.String(), exposure.StateAccepted,
+		"rotated", audit.AuditContext{}, exposureapp.SelfApproval{Requested: true, Code: "000000"}); !errors.Is(err, exposure.ErrDispositionSelfApprovalBadCode) {
+		t.Fatalf("solo leak wrong code: %v", err)
+	}
+	if item, err := f.creds.ApplyCredentialDisposition(ctx, f.solo.String(), soloLeak.String(), f.soloOwner.String(), exposure.StateAccepted,
+		"rotated", audit.AuditContext{}, exposureapp.SelfApproval{Requested: true, Code: "246810"}); err != nil || item.State != "accepted" {
+		t.Fatalf("solo leak self-approve: %v %+v", err, item)
+	}
+
 	low := f.exposure(t, f.a, "credential_leaked", "low")
 	if item, err := f.creds.AcceptCredential(ctx, f.a.String(), low.String(), f.u1.String(), ""); err != nil || item.State != "accepted" {
 		t.Fatalf("low leak takes one approver: %v %+v", err, item)
+	}
+}
+
+// TestExposureDisposition_SelfApprovalAfterMemberRemoval: a lone owner may
+// not approve their own request within 7 days of a member being suspended
+// or removed (removing the other approver must not open the path at once);
+// after 7 days they may; another organization's change does not count.
+func TestExposureDisposition_SelfApprovalAfterMemberRemoval(t *testing.T) {
+	f := newDispositionFixture(t)
+	gone, elsewhere := shared.NewID(), shared.NewID()
+	t.Cleanup(func() {
+		for _, id := range []shared.ID{gone, elsewhere} {
+			_, _ = f.db.Exec(`DELETE FROM tenant_members WHERE user_id = $1`, id.String())
+			_, _ = f.db.Exec(`DELETE FROM users WHERE id = $1`, id.String())
+		}
+	})
+	for _, u := range []shared.ID{gone, elsewhere} {
+		f.exec(t, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'disp')`, u.String(), u.String()+"@example.com")
+	}
+	// Another organization suspended someone yesterday: does not count.
+	f.exec(t, `INSERT INTO tenant_members (user_id, tenant_id, role, status, suspended_at) VALUES ($1, $2, 'admin', 'suspended', now() - interval '1 day')`,
+		elsewhere.String(), f.b.String())
+	high := f.exposure(t, f.solo, "port_open", "high")
+	if out, err := f.call(f.solo, high, f.soloOwner, exposure.StateAccepted); err != nil || !out.Pending {
+		t.Fatalf("request: %v", err)
+	}
+	// The solo organization suspended its admin 2 days ago.
+	f.exec(t, `INSERT INTO tenant_members (user_id, tenant_id, role, status, suspended_at) VALUES ($1, $2, 'admin', 'suspended', now() - interval '2 days')`,
+		gone.String(), f.solo.String())
+	_, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810")
+	if !errors.Is(err, exposure.ErrDispositionSelfApprovalAfterRemoval) || !strings.Contains(err.Error(), "possible again from") {
+		t.Fatalf("2 days after a suspension: %v, want ErrDispositionSelfApprovalAfterRemoval with the date", err)
+	}
+	if got := f.auditSeverity(t, high, "exposure.disposition_self_approval_refused"); len(got) != 1 {
+		t.Fatalf("refusal audited %v, want once", got)
+	}
+	if s := f.state(t, high); s != "active" {
+		t.Fatalf("state %s, want active", s)
+	}
+	f.exec(t, `UPDATE tenant_members SET suspended_at = now() - interval '8 days' WHERE user_id = $1`, gone.String())
+	if out, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810"); err != nil || !out.SelfApproved {
+		t.Fatalf("8 days after: %v", err)
+	}
+}
+
+// Demoting the other approver, changing a role so it loses the approve
+// permission, removing them from a team or unbinding or deleting the team
+// that gave it, is a recent approver change: the owner left alone may not
+// approve their own disposition for 7 days.
+func TestExposureDisposition_SelfApprovalAfterRoleChange(t *testing.T) {
+	f := newDispositionFixture(t)
+	actions := []string{"member.role_changed", "user.roles_updated", "role.updated", "role.deleted", "role.unassigned",
+		"group.updated", "group.deleted", "permission_set.updated", "permission_set.deleted", "permission_set.unassigned",
+		"scim.group_mappings_updated", "member.removed"}
+	for i, action := range actions {
+		high := f.exposure(t, f.solo, "port_open", "high")
+		if out, err := f.call(f.solo, high, f.soloOwner, exposure.StateAccepted); err != nil || !out.Pending {
+			t.Fatalf("request: %v", err)
+		}
+		f.exec(t, `DELETE FROM audit_logs WHERE tenant_id = $1 AND action = ANY($2)`, f.solo.String(),
+			pq.Array(actions))
+		f.exec(t, `INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
+			VALUES (gen_random_uuid(), $1, $2, 'role', 'x', 'success', 'medium', 'changed', now() - interval '1 hour')`, f.solo.String(), action)
+		_, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810")
+		if !errors.Is(err, exposure.ErrDispositionSelfApprovalAfterRemoval) {
+			t.Fatalf("%d: 1 hour after %s: %v, want ErrDispositionSelfApprovalAfterRemoval", i, action, err)
+		}
+		f.exec(t, `UPDATE audit_logs SET logged_at = now() - interval '8 days' WHERE tenant_id = $1 AND action = $2`, f.solo.String(), action)
+		if out, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810"); err != nil || !out.SelfApproved {
+			t.Fatalf("%d: 8 days after %s: %v", i, action, err)
+		}
 	}
 }

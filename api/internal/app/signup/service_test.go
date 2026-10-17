@@ -81,11 +81,18 @@ func mustAdmin(t *testing.T, email string) *admin.AdminUser {
 	return a
 }
 
+// openService is a service under the open ceiling (SIGNUP_MODE=open).
+func openService(repo signupdom.Repository, audit admin.AuditLogRepository, admins AdminLister, n ChangeNotifier) *Service {
+	svc := NewService(repo, audit, admins, n, nil)
+	svc.SetCeiling(signupdom.CeilingOpen)
+	return svc
+}
+
 func TestSeed_EnvironmentSeedsOnceAndStoredValueWins(t *testing.T) {
 	repo := &memRepo{}
-	svc := NewService(repo, nil, nil, nil, nil)
+	svc := openService(repo, nil, nil, nil)
 	ctx := context.Background()
-	if err := svc.Seed(ctx, "self_service"); err != nil {
+	if err := svc.Seed(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if got := svc.Current(ctx); got.Mode != signupdom.ModeSelfService {
@@ -96,7 +103,7 @@ func TestSeed_EnvironmentSeedsOnceAndStoredValueWins(t *testing.T) {
 		t.Fatalf("seeded source = %s", st.Source)
 	}
 	// A later start with another env value does not override the stored one.
-	if err := NewService(repo, nil, nil, nil, nil).Seed(ctx, "admin_only"); err != nil {
+	if err := NewService(repo, nil, nil, nil, nil).Seed(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if st2, _ := repo.Get(ctx); st2.Policy.Mode != signupdom.ModeSelfService {
@@ -104,13 +111,73 @@ func TestSeed_EnvironmentSeedsOnceAndStoredValueWins(t *testing.T) {
 	}
 }
 
-func TestSeed_UnknownModeSeedsAdminOnly(t *testing.T) {
-	repo := &memRepo{}
-	if err := NewService(repo, nil, nil, nil, nil).Seed(context.Background(), "open-to-all"); err != nil {
-		t.Fatal(err)
+func TestSeed_ClosedCeilingsSeedAdminOnly(t *testing.T) {
+	for _, c := range []signupdom.Ceiling{"", signupdom.CeilingDisabled, signupdom.CeilingDomain} {
+		repo := &memRepo{}
+		svc := NewService(repo, nil, nil, nil, nil)
+		svc.SetCeiling(c)
+		if err := svc.Seed(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if st, _ := repo.Get(context.Background()); st.Policy.Mode != signupdom.ModeAdminOnly {
+			t.Fatalf("ceiling %q must seed admin_only, got %s", c, st.Policy.Mode)
+		}
 	}
-	if st, _ := repo.Get(context.Background()); st.Policy.Mode != signupdom.ModeAdminOnly {
-		t.Fatalf("an unknown mode must seed admin_only, got %s", st.Policy.Mode)
+}
+
+// The console cannot open more than SIGNUP_MODE: a write above the ceiling is
+// refused before anything is stored, audited or sent, and a stored
+// self_service policy is clamped on read when the ceiling is lowered later.
+func TestCeiling_LocksConsole(t *testing.T) {
+	ctx := context.Background()
+	actor := mustAdmin(t, "alice@op.example")
+	for _, c := range []signupdom.Ceiling{"", signupdom.CeilingDisabled, signupdom.CeilingDomain} {
+		repo := &memRepo{}
+		audit := &memAudit{}
+		n := &recNotifier{}
+		svc := NewService(repo, audit, staticAdmins{actor, mustAdmin(t, "bob@op.example")}, n, nil)
+		svc.SetCeiling(c)
+		_ = svc.Seed(ctx)
+		if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 1, "", ""); !errors.Is(err, signupdom.ErrLockedByDeployment) {
+			t.Fatalf("ceiling %q: expected ErrLockedByDeployment, got %v", c, err)
+		}
+		if st, _ := repo.Get(ctx); st.Version != 1 || st.Policy.AllowsSelfService() || len(audit.rows) != 0 || len(n.alerts) != 0 {
+			t.Fatalf("ceiling %q: a refused change writes nothing (%+v, %d audit, %d alerts)", c, st, len(audit.rows), len(n.alerts))
+		}
+		// Request access stays a console choice under every ceiling.
+		if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly, RequestAccess: true}, 1, "", ""); err != nil {
+			t.Fatalf("ceiling %q: request access must be allowed: %v", c, err)
+		}
+	}
+
+	// Stored self_service (from an earlier open deployment) is clamped once
+	// the ceiling is lowered, with no console change.
+	repo := &memRepo{}
+	_ = openService(repo, nil, nil, nil).Seed(ctx)
+	lowered := NewService(repo, nil, nil, nil, nil)
+	lowered.SetCeiling(signupdom.CeilingDisabled)
+	if lowered.Current(ctx).AllowsSelfService() {
+		t.Fatal("a lowered ceiling must close self-service at once")
+	}
+	if st, _ := lowered.Get(ctx); !st.Policy.AllowsSelfService() {
+		t.Fatal("Get reports the stored policy; only the policy in force is clamped")
+	}
+}
+
+// Without working e-mail, public sign-up is closed: every self-registered
+// address must be verified.
+func TestEffective_NoMailClosesPublicSignup(t *testing.T) {
+	ctx := context.Background()
+	svc := openService(&memRepo{}, nil, nil, nil)
+	_ = svc.Seed(ctx)
+	ready := false
+	svc.SetMailReady(func() bool { return ready })
+	if svc.Current(ctx).AllowsSelfService() {
+		t.Fatal("no e-mail: self-service must be closed")
+	}
+	ready = true
+	if !svc.Current(ctx).AllowsSelfService() {
+		t.Fatal("with e-mail the stored self_service policy is in force")
 	}
 }
 
@@ -134,7 +201,8 @@ func TestUpdate_AuditsCriticalAndNotifiesOtherAdmins(t *testing.T) {
 	notifier := &recNotifier{}
 	svc := NewService(repo, audit, staticAdmins{actor, other}, notifier, nil)
 	ctx := context.Background()
-	_ = svc.Seed(ctx, "admin_only")
+	_ = svc.Seed(ctx)
+	svc.SetCeiling(signupdom.CeilingOpen)
 	// Warm the cache with the old value: the update must replace it.
 	if svc.Current(ctx).AllowsSelfService() {
 		t.Fatal("seeded admin_only")
@@ -172,8 +240,9 @@ func TestUpdate_Refusals(t *testing.T) {
 	t.Run("stale version", func(t *testing.T) {
 		repo := &memRepo{}
 		audit := &memAudit{}
-		svc := NewService(repo, audit, nil, nil, nil)
-		_ = svc.Seed(ctx, "admin_only")
+		svc := openService(repo, audit, nil, nil)
+		_ = svc.Seed(ctx)
+		repo.st.Policy = signupdom.Default()
 		if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 7, "", ""); !errors.Is(err, signupdom.ErrVersionConflict) {
 			t.Fatalf("expected a version conflict, got %v", err)
 		}
@@ -197,9 +266,86 @@ func TestUpdate_Refusals(t *testing.T) {
 
 // With nothing stored (no seed ran), the first save works from version 0.
 func TestUpdate_NothingStoredStartsFromVersionZero(t *testing.T) {
-	svc := NewService(&memRepo{}, nil, nil, nil, nil)
+	svc := openService(&memRepo{}, nil, nil, nil)
 	st, err := svc.Update(context.Background(), mustAdmin(t, "a@op.example"), signupdom.Policy{Mode: signupdom.ModeSelfService}, 0, "", "")
 	if err != nil || !st.Policy.AllowsSelfService() {
 		t.Fatalf("expected the first save to work, got %+v %v", st, err)
+	}
+}
+
+// Self-service sign-up cannot be turned on while no starting limits are
+// configured; admin_only always can; a read error refuses too.
+func TestUpdate_SelfServiceNeedsStartLimits(t *testing.T) {
+	repo := &memRepo{}
+	actor := mustAdmin(t, "alice@op.example")
+	svc := openService(repo, nil, nil, nil)
+	ctx := context.Background()
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly}, 0, "", ""); err != nil {
+		t.Fatalf("store admin_only: %v", err)
+	}
+	configured, readErr := false, error(nil)
+	svc.SetStartLimitsCheck(func(context.Context) (bool, error) { return configured, readErr })
+
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 2, "", ""); !errors.Is(err, ErrStartLimitsRequired) {
+		t.Fatalf("no starting limits: %v", err)
+	}
+	if svc.Current(ctx).AllowsSelfService() {
+		t.Fatal("a refused update must not change the policy")
+	}
+	readErr = errors.New("db down")
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 2, "", ""); err == nil {
+		t.Fatal("an unreadable check must refuse")
+	}
+	readErr = nil
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly}, 2, "", ""); err != nil {
+		t.Fatalf("admin_only needs nothing: %v", err)
+	}
+	configured = true
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 3, "", ""); err != nil {
+		t.Fatalf("configured: %v", err)
+	}
+}
+
+// Under disabled or domain the save of self_service fails as locked by the
+// deployment, before the starting-limits check runs.
+func TestUpdate_LockedCeilingSkipsLimitsCheck(t *testing.T) {
+	actor := mustAdmin(t, "alice@op.example")
+	ctx := context.Background()
+	for _, c := range []signupdom.Ceiling{signupdom.CeilingDisabled, signupdom.CeilingDomain} {
+		svc := NewService(&memRepo{}, nil, nil, nil, nil)
+		svc.SetCeiling(c)
+		called := false
+		svc.SetStartLimitsCheck(func(context.Context) (bool, error) { called = true; return true, nil })
+		_, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService}, 0, "", "")
+		if !errors.Is(err, signupdom.ErrLockedByDeployment) {
+			t.Fatalf("ceiling %q: expected ErrLockedByDeployment, got %v", c, err)
+		}
+		if called {
+			t.Fatalf("ceiling %q: the limits check must not run for a locked save", c)
+		}
+	}
+}
+
+// The console may open account sign-up up to the ceiling: domain under
+// domain, never open; organizations only under open.
+func TestCeiling_AccountsUnderDomain(t *testing.T) {
+	ctx := context.Background()
+	actor := mustAdmin(t, "alice@op.example")
+	repo := &memRepo{}
+	svc := NewService(repo, nil, nil, nil, nil)
+	svc.SetCeiling(signupdom.CeilingDomain)
+	_ = svc.Seed(ctx)
+	if got := svc.Current(ctx); got.AccountSignup() != signupdom.AccountsDomain || got.AllowsSelfService() {
+		t.Fatalf("domain seeds domain sign-up without organizations: %+v", got)
+	}
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly, Accounts: signupdom.AccountsOpen}, 1, "", ""); !errors.Is(err, signupdom.ErrLockedByDeployment) {
+		t.Fatalf("open accounts under domain must be locked, got %v", err)
+	}
+	st, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeAdminOnly, Accounts: signupdom.AccountsClosed}, 1, "", "")
+	if err != nil || st.Policy.AccountSignup() != signupdom.AccountsClosed {
+		t.Fatalf("closing sign-up is always allowed: %+v %v", st, err)
+	}
+	if _, err := svc.Update(ctx, actor, signupdom.Policy{Mode: signupdom.ModeSelfService, Accounts: signupdom.AccountsDomain}, 2, "", ""); !errors.Is(err, signupdom.ErrSelfServiceNeedsOpenAccounts) {
+		t.Fatalf("self_service needs open accounts, got %v", err)
 	}
 }

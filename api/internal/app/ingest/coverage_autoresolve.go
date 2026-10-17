@@ -231,7 +231,7 @@ type CoverageOutcome struct {
 	Resolved     []shared.ID
 	// TemplateDrift are the candidates whose last sighting ran other
 	// template content than this run (research/18 O6): not proven fixed,
-	// marked not_observed (NotObserved) in enforce mode.
+	// marked stale (NotObserved, observation_state) in enforce mode.
 	TemplateDrift []shared.ID
 	NotObserved   []shared.ID
 	Held          bool
@@ -360,6 +360,10 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	out.WouldResolve, out.TemplateDrift = resolvable, drifted
 	stale = resolvable
 
+	// Every move below writes its timeline entry with the scan behind it.
+	ctx = vulnerability.WithTransitionEvidence(ctx, map[string]any{
+		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
+	})
 	logArgs := []any{
 		"command_id", commandID.String(), "tool_name", sanitizeIngestLogField(d.query.ToolName),
 		"profile_id", d.query.ProfileID, "covered_assets", len(d.query.AssetIDs),
@@ -379,7 +383,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 			if dr, ok := s.findingRepo.(templateDriftRepo); ok {
 				marked, err := dr.MarkCoverageNotObserved(ctx, tenantID, drifted)
 				if err != nil {
-					s.logger.Warn("coverage auto-resolve: marking template-drifted findings not_observed failed", append(logArgs, "error", err)...)
+					s.logger.Warn("coverage auto-resolve: marking template-drifted findings stale failed", append(logArgs, "error", err)...)
 				} else {
 					out.NotObserved = marked
 					metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "not_observed").Add(float64(len(marked)))
@@ -394,11 +398,6 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		out.Resolved = resolved
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "resolved").Add(float64(len(resolved)))
 		s.logger.Info("coverage auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
-		if s.activityService != nil && len(resolved) > 0 {
-			if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, resolved, d.query.ToolName, commandID.String()); err != nil {
-				s.logger.Warn("failed to record coverage auto-resolve activities", "error", err)
-			}
-		}
 	}
 	s.auditCoverageAutoResolve(ctx, tenantID, commandID, d.query, out, open)
 	return out
@@ -459,6 +458,10 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 	}
 	out.WouldResolve = stale
 	out.Held = guard.Holds(len(stale), open)
+	// Every move below writes its timeline entry with the scan behind it.
+	ctx = vulnerability.WithTransitionEvidence(ctx, map[string]any{
+		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
+	})
 	logArgs := []any{
 		"command_id", commandID.String(), "tool_name", sanitizeIngestLogField(d.query.ToolName),
 		"profile_id", d.query.ProfileID, "covered_assets", len(d.query.AssetIDs),
@@ -478,11 +481,6 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 		metrics.FindingsAutoResolved.
 			WithLabelValues().Add(float64(len(resolved)))
 		s.logger.Info("repository auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
-		if s.activityService != nil && len(resolved) > 0 {
-			if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, resolved, d.query.ToolName, commandID.String()); err != nil {
-				s.logger.Warn("failed to record repository auto-resolve activities", "error", err)
-			}
-		}
 	}
 	s.auditCoverageAutoResolve(ctx, tenantID, commandID, d.query, out, open)
 	return out

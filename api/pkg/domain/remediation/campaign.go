@@ -56,6 +56,13 @@ type Campaign struct {
 	createdBy     *shared.ID
 	createdAt     time.Time
 	updatedAt     time.Time
+	// version is the optimistic-concurrency token: every full save checks it
+	// and bumps it (CampaignRepository.Update).
+	version int
+	// verifiedCount: members closed as resolved (a verified fix), computed
+	// with the counts and never stored. Accepted, false-positive and
+	// duplicate members are closed but not fixed.
+	verifiedCount int
 }
 
 // NewCampaign creates a new remediation campaign.
@@ -74,6 +81,7 @@ func NewCampaign(tenantID shared.ID, name string, priority CampaignPriority) (*C
 		tags:          []string{},
 		createdAt:     now,
 		updatedAt:     now,
+		version:       1,
 	}, nil
 }
 
@@ -89,6 +97,7 @@ func ReconstituteCampaign(
 	startDate, dueDate, completedAt *time.Time,
 	tags []string, createdBy *shared.ID,
 	createdAt, updatedAt time.Time,
+	version int,
 ) *Campaign {
 	return &Campaign{
 		id: id, tenantID: tenantID,
@@ -101,6 +110,7 @@ func ReconstituteCampaign(
 		startDate: startDate, dueDate: dueDate, completedAt: completedAt,
 		tags: tags, createdBy: createdBy,
 		createdAt: createdAt, updatedAt: updatedAt,
+		version: version,
 	}
 }
 
@@ -127,6 +137,23 @@ func (c *Campaign) Tags() []string                { return c.tags }
 func (c *Campaign) CreatedBy() *shared.ID         { return c.createdBy }
 func (c *Campaign) CreatedAt() time.Time          { return c.createdAt }
 func (c *Campaign) UpdatedAt() time.Time          { return c.updatedAt }
+func (c *Campaign) Version() int                  { return c.version }
+func (c *Campaign) VerifiedCount() int            { return c.verifiedCount }
+
+// SetVerifiedCount records how many members are verified fixed (resolved).
+func (c *Campaign) SetVerifiedCount(n int) { c.verifiedCount = n }
+
+// SetVersion records the version the repository stored (after a save).
+func (c *Campaign) SetVersion(v int) { c.version = v }
+
+// ParseCampaignPriority accepts only the defined priorities.
+func ParseCampaignPriority(s string) (CampaignPriority, error) {
+	switch p := CampaignPriority(s); p {
+	case CampaignPriorityCritical, CampaignPriorityHigh, CampaignPriorityMedium, CampaignPriorityLow:
+		return p, nil
+	}
+	return "", fmt.Errorf("%w: priority must be one of critical, high, medium, low", shared.ErrValidation)
+}
 
 // Update sets mutable fields.
 func (c *Campaign) Update(name, description string, priority CampaignPriority) {
@@ -199,6 +226,14 @@ func (c *Campaign) SetCreatedBy(userID shared.ID) {
 	c.createdBy = &userID
 }
 
+// RedactForViewer replaces what a restricted viewer sees: the filter with
+// out-of-scope references removed and no organization-wide risk values. It
+// is a view, never saved, and does not touch updatedAt.
+func (c *Campaign) RedactForViewer(filter map[string]any) {
+	c.findingFilter = filter
+	c.riskBefore, c.riskAfter, c.riskReduction = nil, nil, nil
+}
+
 // UpdateProgress updates finding counts and progress percentage.
 func (c *Campaign) UpdateProgress(findingCount, resolvedCount int) {
 	c.findingCount = findingCount
@@ -212,11 +247,18 @@ func (c *Campaign) UpdateProgress(findingCount, resolvedCount int) {
 }
 
 // AllFindingsResolved reports whether every finding in the campaign
-// is resolved (progress at 100%). A zero-finding campaign is NOT
+// is closed (progress at 100%). A zero-finding campaign is NOT
 // treated as complete — an empty campaign is a misconfiguration, not
 // an accomplishment.
 func (c *Campaign) AllFindingsResolved() bool {
 	return c.findingCount > 0 && c.resolvedCount >= c.findingCount
+}
+
+// IsDone reports a campaign whose work is really finished: every member is
+// closed AND at least one was verified fixed. A campaign whose members were
+// all accepted, marked false positive or folded as duplicates fixed nothing.
+func (c *Campaign) IsDone() bool {
+	return c.AllFindingsResolved() && c.verifiedCount > 0
 }
 
 // TryAutoComplete attempts the active/validating → completed
@@ -229,7 +271,7 @@ func (c *Campaign) AllFindingsResolved() bool {
 // this as a normal no-op, not an error.
 // Returns (_, err) for genuine state-machine or validation failures.
 func (c *Campaign) TryAutoComplete() (bool, error) {
-	if !c.AllFindingsResolved() {
+	if !c.IsDone() {
 		return false, nil
 	}
 	// Eligible terminal targets: active and validating. Draft,
@@ -244,18 +286,12 @@ func (c *Campaign) TryAutoComplete() (bool, error) {
 	return true, nil
 }
 
-// RecordRiskReduction records risk before/after for this campaign.
-func (c *Campaign) RecordRiskReduction(before, after float64) {
-	c.riskBefore = &before
-	c.riskAfter = &after
-	reduction := before - after
-	c.riskReduction = &reduction
-	c.updatedAt = time.Now()
-}
-
-// Activate transitions to active status.
+// Activate transitions to active status. Allowed from draft (first start),
+// paused (resume) and validating (validation failed: the fix did not hold,
+// so the campaign goes back to remediation instead of being completed).
 func (c *Campaign) Activate() error {
-	if c.status != CampaignStatusDraft && c.status != CampaignStatusPaused {
+	if c.status != CampaignStatusDraft && c.status != CampaignStatusPaused &&
+		c.status != CampaignStatusValidating {
 		return fmt.Errorf("%w: cannot activate from %s", shared.ErrValidation, c.status)
 	}
 	c.status = CampaignStatusActive
@@ -264,6 +300,18 @@ func (c *Campaign) Activate() error {
 		c.startDate = &now
 	}
 	c.updatedAt = now
+	return nil
+}
+
+// Reopen moves a completed campaign back to active (its work turned out not
+// to be done) and clears the completion time.
+func (c *Campaign) Reopen() error {
+	if c.status != CampaignStatusCompleted {
+		return fmt.Errorf("%w: cannot reopen from %s", shared.ErrValidation, c.status)
+	}
+	c.status = CampaignStatusActive
+	c.completedAt = nil
+	c.updatedAt = time.Now()
 	return nil
 }
 
@@ -310,17 +358,40 @@ func (c *Campaign) Cancel() error {
 	return nil
 }
 
-// IsOverdue returns true if past due date and not completed.
+// IsOverdue reports a campaign past the END of its due day (UTC) that is
+// not completed or canceled. The due date is stored as a date, so it reads
+// back as the start of that day; a campaign due today is not overdue today.
 func (c *Campaign) IsOverdue() bool {
+	return c.isOverdueAt(time.Now())
+}
+
+func (c *Campaign) isOverdueAt(now time.Time) bool {
 	if c.dueDate == nil || c.status == CampaignStatusCompleted || c.status == CampaignStatusCanceled {
 		return false
 	}
-	return time.Now().After(*c.dueDate)
+	return !now.Before(DueDayEnd(*c.dueDate))
+}
+
+// DueDayEnd is the first instant after the due day (UTC): a campaign is
+// overdue from then on.
+func DueDayEnd(due time.Time) time.Time {
+	d := due.UTC()
+	return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
 }
 
 // Errors
 var (
 	ErrCampaignNotFound = fmt.Errorf("%w: remediation campaign not found", shared.ErrNotFound)
+	// ErrCampaignVersionConflict: the campaign changed since the caller read
+	// it (another person, or the platform); reload and retry.
+	// ErrCampaignNotDone refuses completing a campaign whose findings are not
+	// all closed or of which none was verified fixed, unless the person
+	// explicitly closes it with open members.
+	ErrCampaignNotDone = fmt.Errorf("%w: the campaign is not done (every finding closed and at least one verified fixed); set close_with_open_members to complete it anyway", shared.ErrValidation)
+	// ErrCampaignDeadlineOnlyTightens refuses moving a campaign's due date
+	// later or clearing it.
+	ErrCampaignDeadlineOnlyTightens = fmt.Errorf("%w: a campaign's due date can only move earlier", shared.ErrValidation)
+	ErrCampaignVersionConflict      = fmt.Errorf("%w: the remediation campaign was changed by someone else; reload it and try again", shared.ErrConflict)
 )
 
 // CampaignFilter defines criteria for listing campaigns.
@@ -335,13 +406,20 @@ type CampaignFilter struct {
 type CampaignRepository interface {
 	Create(ctx context.Context, campaign *Campaign) error
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*Campaign, error)
+	// Update saves every field when the stored version equals the
+	// campaign's, bumps the version, and returns ErrCampaignVersionConflict
+	// otherwise.
 	Update(ctx context.Context, campaign *Campaign) error
+	// UpdateCounts writes only the finding counters and progress and stamps
+	// last_reconciled_at. It never touches status, dates or the version, so a
+	// counter refresh cannot undo a person's change.
+	UpdateCounts(ctx context.Context, campaign *Campaign) error
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	List(ctx context.Context, filter CampaignFilter, page pagination.Pagination) (pagination.Result[*Campaign], error)
 
 	// ListNonTerminal returns campaigns that are not in a terminal state
-	// (completed/canceled) across all tenants, ordered by least-recently
-	// updated first, up to limit. Used by the progress-reconcile controller
+	// (completed/canceled) across all tenants, least recently reconciled
+	// first (never reconciled first), up to limit. Used by the progress-reconcile controller
 	// to refresh finding counts and auto-complete. limit <= 0 means a
 	// repository-chosen default.
 	ListNonTerminal(ctx context.Context, limit int) ([]*Campaign, error)

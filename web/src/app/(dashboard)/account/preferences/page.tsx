@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -28,6 +29,7 @@ import {
 import type { UpdatePreferencesInput } from '@/features/account'
 
 export default function PreferencesPage() {
+  const { t } = useTranslation()
   const { theme, setTheme } = useTheme()
   const { preferences, isLoading, mutate } = usePreferences()
   const { updatePreferences, isUpdating } = useUpdatePreferences()
@@ -147,7 +149,12 @@ export default function PreferencesPage() {
             <Palette className="h-5 w-5" />
             Appearance
           </CardTitle>
-          <CardDescription>Customize how OpenCTEM looks on your device</CardDescription>
+          <CardDescription>
+            {t(
+              'settings.preferences.appearanceDescription',
+              'Customize how {product} looks on your device'
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">

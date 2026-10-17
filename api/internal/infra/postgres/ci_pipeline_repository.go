@@ -22,7 +22,7 @@ const ciPipelineColumns = `id, tenant_id, provider, issuer, external_repo_id, wo
 	last_run_at, last_run_id, last_run_status, last_fork_run_at, runs_count, last_default_run_at,
 	last_default_verdict, last_default_verdict_at, last_pr_verdict, last_pr_verdict_at, last_scan_failures,
 	sensor_version, tools, median_interval_seconds, schedule_interval_seconds, revoked_at, retired_at, retired_by,
-	COALESCE(retire_reason, ''), created_at, updated_at`
+	COALESCE(retire_reason, ''), created_at, updated_at, repository_archived_at`
 
 func scanCIPipeline(row ciScanner) (cirun.Pipeline, error) {
 	var (
@@ -31,7 +31,7 @@ func scanCIPipeline(row ciScanner) (cirun.Pipeline, error) {
 		trust, lastRun, defVerdict, prVerdict sql.NullString
 		firstRun, lastRunAt, lastFork         sql.NullTime
 		lastDefRun, defAt, prAt, revoked      sql.NullTime
-		retired                               sql.NullTime
+		retired, repoArchived                 sql.NullTime
 		retiredBy                             sql.NullString
 		failures, median, schedule            sql.NullInt64
 		tools                                 []byte
@@ -40,7 +40,7 @@ func scanCIPipeline(row ciScanner) (cirun.Pipeline, error) {
 		&p.RepositoryName, &p.WorkflowName, &p.TemplateRef, &p.TemplateSHA, &p.DefaultBranch, &firstRun,
 		&lastRunAt, &lastRun, &p.LastRunStatus, &lastFork, &p.RunsCount, &lastDefRun, &defVerdict, &defAt,
 		&prVerdict, &prAt, &failures, &p.SensorVersion, &tools, &median, &schedule, &revoked, &retired, &retiredBy,
-		&p.RetireReason, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		&p.RetireReason, &p.CreatedAt, &p.UpdatedAt, &repoArchived); err != nil {
 		return p, err
 	}
 	p.ID, _ = shared.IDFromString(id)
@@ -65,6 +65,7 @@ func scanCIPipeline(row ciScanner) (cirun.Pipeline, error) {
 	}
 	p.RevokedAt = optTime(revoked)
 	p.RetiredAt = optTime(retired)
+	p.RepositoryArchivedAt = optTime(repoArchived)
 	p.RetiredBy = parseOptID(retiredBy)
 	return p, nil
 }
@@ -262,6 +263,11 @@ func (r *CIRunRepository) ListPipelines(ctx context.Context, tenantID shared.ID,
 	if f.Provider != "" {
 		args = append(args, f.Provider)
 		where = append(where, fmt.Sprintf("provider = $%d", len(args)))
+	}
+	if f.HasPolicyOverride {
+		where = append(where, `EXISTS (SELECT 1 FROM ci_gate_policies gp WHERE gp.tenant_id = ci_pipelines.tenant_id
+			AND gp.scope_type = 'repository' AND gp.repository_asset_id = ci_pipelines.repository_asset_id AND gp.enabled
+			AND (gp.expires_at IS NULL OR gp.expires_at > now()))`)
 	}
 	var cond string
 	cond, args = dataScopeCond("repository_asset_id", f.DataScope, args)

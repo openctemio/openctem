@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"regexp"
 
+	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/validation"
@@ -40,6 +42,30 @@ type FindingActionsService struct {
 	dataScope       *datascope.Enforcer // optional; Layer 2 scope on by-id actions
 	db              *sql.DB
 	logger          *logger.Logger
+	lifecycles      LifecycleSchemes // organization lifecycles (RFC-110); nil = the platform alone
+}
+
+// SetLifecycles wires the organization lifecycles: each action is then also
+// decided by the scheme selected for the finding, which can only narrow it.
+func (s *FindingActionsService) SetLifecycles(l LifecycleSchemes) { s.lifecycles = l }
+
+func (s *FindingActionsService) lifecycleCandidates(ctx context.Context, tenantID shared.ID) ([]lc.Candidate, error) {
+	if s.lifecycles == nil {
+		return nil, nil
+	}
+	return s.lifecycles.Candidates(ctx, tenantID)
+}
+
+// actionAllowed decides one finding's move for an action route: the
+// platform engine narrowed by the organization's lifecycle (the move lands
+// on the target's default sub-status; action routes take no lifecycle
+// fields, so a move that needs them is refused here).
+func actionAllowed(ctx context.Context, cands []lc.Candidate, f *vulnerability.Finding, facts vulnerability.TransitionFacts,
+	actor vulnerability.TransitionActor, to vulnerability.FindingStatus, note string,
+) error {
+	d, _ := lifecycleDecision(cands, f, facts, lifecycleActor(ctx, actor), lc.Target{Status: to})
+	_, err := lifecycleError(d, note, nil)
+	return err
 }
 
 // NewFindingActionsService creates a new FindingActionsService.
@@ -405,9 +431,18 @@ func (s *FindingActionsService) BulkFixApplied(
 	// asset owner" for this check.
 	ownedAssets := s.assetsOwnedBy(ctx, tid, uid, allFindings)
 
-	// Process findings with preloaded data (all auth checks in-memory)
+	// Process findings with preloaded data (all auth checks in-memory). The
+	// transition engine decides each claim, with whose finding it is as a
+	// fact (the route requires findings:fix_apply).
+	actor := personActor(uid, TransitionPermissions{FixApply: true})
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
 	for _, f := range allFindings {
-		if !s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, ownedAssets, f) {
+		facts := transitionFactsOf(f)
+		facts.CanClaimFix = s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, ownedAssets, f)
+		if actionAllowed(ctx, cands, f, facts, actor, vulnerability.FindingStatusFixApplied, input.Note) != nil {
 			result.Skipped++
 			continue
 		}
@@ -508,6 +543,10 @@ func (s *FindingActionsService) BulkVerify(
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
 
 	result := &BulkUpdateResult{}
 
@@ -555,12 +594,28 @@ func (s *FindingActionsService) BulkVerify(
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue
 		}
+		// The transition engine (the route requires findings:verify), with
+		// the evidence the finding's risk asks for.
+		facts := transitionFactsOf(f)
+		if s.db != nil {
+			if err := loadResolveEvidence(ctx, s.db, tid, fid, &facts); err != nil {
+				result.Failed++
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+				continue
+			}
+		}
+		if err := actionAllowed(ctx, cands, f, facts, personActor(uid, TransitionPermissions{Verify: true}),
+			vulnerability.FindingStatusResolved, resolution); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			continue
+		}
 		if err := f.TransitionStatusWithChecklist(vulnerability.FindingStatusResolved, resolution, &uid, checklist); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue
 		}
-		if err := f.SetResolutionMethod(string(vulnerability.ResolutionMethodSecurityReviewed)); err != nil {
+		if err := f.SetClosure(vulnerability.Fixed(vulnerability.VerificationSecurityReview)); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue
@@ -591,6 +646,10 @@ func (s *FindingActionsService) BulkRejectFix(
 
 	if reason == "" {
 		return nil, fmt.Errorf("%w: reason is required when rejecting fix", shared.ErrValidation)
+	}
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return nil, err
 	}
 
 	result := &BulkUpdateResult{}
@@ -625,6 +684,14 @@ func (s *FindingActionsService) BulkRejectFix(
 			continue
 		}
 
+		// The transition engine: a verifier may reject a fix (the route
+		// requires findings:verify).
+		if err := actionAllowed(ctx, cands, f, transitionFactsOf(f),
+			personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusInProgress, reason); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			continue
+		}
 		if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, reason, &uid); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
@@ -676,15 +743,75 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 	if input.Note != "" {
 		resolution = input.Note
 	}
-
-	count, err := s.findingRepo.BulkUpdateStatusByFilter(ctx, tid, input.Filter,
-		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.ResolutionMethodSecurityReviewed)
+	// The transition engine decides each finding, with the evidence its risk
+	// asks for (a high or critical finding needs its checklist or a retest),
+	// so the filtered set is read first (at most 1000) and only the findings
+	// it allows are resolved.
+	count, err := s.findingRepo.Count(ctx, input.Filter)
 	if err != nil {
-		return 0, fmt.Errorf("failed to verify findings: %w", err)
+		return 0, fmt.Errorf("failed to count findings: %w", err)
+	}
+	if count > 1000 {
+		return 0, fmt.Errorf("%w: too many findings (%d), max 1000. Use a narrower filter", shared.ErrValidation, count)
+	}
+	actor := personActor(uid, TransitionPermissions{Verify: true})
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return 0, err
+	}
+	allowed := make([]shared.ID, 0, int(count))
+	const batchSize = 100
+	for offset := int64(0); offset < count; offset += batchSize {
+		page, err := s.findingRepo.List(ctx, input.Filter, vulnerability.NewFindingListOptions(), pagination.New(int(offset/batchSize)+1, batchSize))
+		if err != nil {
+			return 0, fmt.Errorf("failed to list findings: %w", err)
+		}
+		for _, f := range page.Data {
+			facts := transitionFactsOf(f)
+			if s.db != nil {
+				if err := loadResolveEvidence(ctx, s.db, tid, f.ID(), &facts); err != nil {
+					return 0, err
+				}
+			}
+			if actionAllowed(ctx, cands, f, facts, actor, vulnerability.FindingStatusResolved, resolution) == nil {
+				allowed = append(allowed, f.ID())
+			}
+		}
+	}
+	if len(allowed) == 0 {
+		return 0, nil
 	}
 
-	return count, nil
+	// Each verified finding gets its timeline entry in the same transaction.
+	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+		Source: string(vulnerability.SourceAPI), Reason: "verified_by_filter", ActorType: "user", ActorID: uid.String(), Message: resolution,
+	})
+	if err := s.moveFixApplied(moveCtx, tid, allowed,
+		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.Fixed(verifyByFilterVerification)); err != nil {
+		return 0, fmt.Errorf("failed to verify findings: %w", err)
+	}
+	return int64(len(allowed)), nil
 }
+
+// moveFixApplied writes a verifier's decision on fix_applied findings, limited
+// to findings that are still fix_applied: one that moved on since it was read
+// (for example to an approved false positive or accepted risk) is left alone.
+// A repository that cannot limit the write is refused, never written blind.
+func (s *FindingActionsService) moveFixApplied(ctx context.Context, tid shared.ID, ids []shared.ID,
+	to vulnerability.FindingStatus, resolution string, by *shared.ID, closure vulnerability.Closure,
+) error {
+	w, ok := s.findingRepo.(vulnerability.FixClaimBatchWriter)
+	if !ok {
+		return fmt.Errorf("%w: the finding store cannot limit a batch to fix_applied findings", shared.ErrValidation)
+	}
+	return w.UpdateStatusBatchFrom(ctx, tid, ids, []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied},
+		to, resolution, by, closure)
+}
+
+// verifyByFilterVerification is how a verify-by-filter close is recorded: it
+// reads no per-finding verification checklist, so it is a findings:verify
+// holder's attestation, not a checklist-backed security review.
+const verifyByFilterVerification = vulnerability.VerificationAttested
 
 // RejectByFilterInput is the input for bulk reject by filter.
 type RejectByFilterInput struct {
@@ -709,14 +836,43 @@ func (s *FindingActionsService) BulkRejectByFilter(
 		return 0, fmt.Errorf("%w: reason is required when rejecting fix", shared.ErrValidation)
 	}
 
+	// The transition engine for the filtered set (all fix_applied): a
+	// verifier rejecting the claims.
+	if err := transitionError(vulnerability.EvaluateTransition(
+		vulnerability.TransitionFacts{Status: vulnerability.FindingStatusFixApplied},
+		personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusInProgress), input.Reason); err != nil {
+		return 0, err
+	}
+
 	input.Filter.Statuses = []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied}
 	input.Filter, err = s.visibleTo(ctx, tid, input.Filter)
 	if err != nil {
 		return 0, err
 	}
 
-	count, err := s.findingRepo.BulkUpdateStatusByFilter(ctx, tid, input.Filter,
-		vulnerability.FindingStatusInProgress, input.Reason, &uid, "")
+	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+		Source: string(vulnerability.SourceAPI), Reason: "fix_rejected_by_filter", ActorType: "user", ActorID: uid.String(), Message: input.Reason,
+	})
+	// An organization lifecycle decides each finding: read the set (at most
+	// 1000) and reject only the findings it allows.
+	cands, err := s.lifecycleCandidates(ctx, tid)
+	if err != nil {
+		return 0, err
+	}
+	if len(cands) > 0 {
+		allowed, err := s.allowedByFilter(ctx, cands, input.Filter, personActor(uid, TransitionPermissions{Verify: true}),
+			vulnerability.FindingStatusInProgress, input.Reason)
+		if err != nil || len(allowed) == 0 {
+			return 0, err
+		}
+		if err := s.moveFixApplied(moveCtx, tid, allowed,
+			vulnerability.FindingStatusInProgress, input.Reason, &uid, vulnerability.Closure{}); err != nil {
+			return 0, fmt.Errorf("failed to reject findings: %w", err)
+		}
+		return int64(len(allowed)), nil
+	}
+	count, err := s.findingRepo.BulkUpdateStatusByFilter(moveCtx, tid, input.Filter,
+		vulnerability.FindingStatusInProgress, input.Reason, &uid, vulnerability.Closure{})
 	if err != nil {
 		return 0, fmt.Errorf("failed to reject findings: %w", err)
 	}
@@ -731,10 +887,16 @@ type AutoAssignToOwnersResult struct {
 	Assigned   int            `json:"assigned"`
 	ByOwner    map[string]int `json:"by_owner"`
 	Unassigned int            `json:"unassigned"`
+	// Started counts the assigned findings that were confirmed and moved to
+	// in_progress (work started). A new finding stays new: assignment is not
+	// triage.
+	Started int `json:"started"`
 }
 
-// AutoAssignToOwners assigns findings to their asset owners.
-// Only assigns findings that don't already have an assignee.
+// AutoAssignToOwners assigns open findings to their asset owners.
+// Only assigns findings that don't already have an assignee; closed findings
+// are never touched. A confirmed finding moves to in_progress (a lifecycle
+// edge); any other status is left as it is.
 func (s *FindingActionsService) AutoAssignToOwners(
 	ctx context.Context, tenantID string, assignerID string, filter vulnerability.FindingFilter,
 ) (*AutoAssignToOwnersResult, error) {
@@ -754,6 +916,9 @@ func (s *FindingActionsService) AutoAssignToOwners(
 	if err != nil {
 		return nil, err
 	}
+	// Closed findings (resolved, false positive, accepted, duplicate) are
+	// done: assigning them would put finished work back on someone's plate.
+	filter.ExcludeStatuses = vulnerability.ClosedFindingStatuses()
 	result := &AutoAssignToOwnersResult{ByOwner: make(map[string]int)}
 
 	// Cache asset lookups by ID across all pages so repeated findings on the same
@@ -765,6 +930,9 @@ func (s *FindingActionsService) AutoAssignToOwners(
 		found   bool
 	}
 	assetCache := make(map[shared.ID]assetInfo)
+
+	// The organization's lifecycle decides whether assigning starts work.
+	cands, candsErr := s.lifecycleCandidates(ctx, tid)
 
 	const batchSize = 100
 	// pagination.New is (page, perPage) — page is 1-based. Iterate by page;
@@ -781,8 +949,9 @@ func (s *FindingActionsService) AutoAssignToOwners(
 		}
 
 		for _, f := range findings.Data {
-			// Skip already assigned
-			if f.AssignedTo() != nil {
+			// Skip already assigned, and closed findings (the filter
+			// excludes them; a row that closed meanwhile is skipped too).
+			if f.AssignedTo() != nil || f.Status().IsClosed() {
 				continue
 			}
 
@@ -819,17 +988,38 @@ func (s *FindingActionsService) AutoAssignToOwners(
 				continue
 			}
 
-			// Auto-transition to in_progress if still new/confirmed
-			if f.Status() == vulnerability.FindingStatusNew || f.Status() == vulnerability.FindingStatusConfirmed {
-				_ = f.TransitionStatus(vulnerability.FindingStatusInProgress, "", nil)
+			// Work starts on a confirmed finding (confirmed → in_progress is
+			// a lifecycle edge). A new finding is not triaged by assigning it,
+			// so it stays new; no other status is changed.
+			started := false
+			if f.Status() == vulnerability.FindingStatusConfirmed && s.lifecycleLetsWorkStart(ctx, cands, candsErr, f, aid) {
+				if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, "", nil); err != nil {
+					s.logger.Warn("failed to start work on an assigned finding", "finding_id", f.ID(), "error", err)
+				} else {
+					started = true
+				}
 			}
 
-			if err := s.findingRepo.Update(ctx, f); err != nil {
+			// The automatic move to in_progress writes its timeline entry in
+			// the same transaction as the assignment.
+			msg := "Assigned to the asset owner"
+			if started {
+				msg += ": work started"
+			}
+			moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
+				Source: "auto_assign", Reason: "assigned_to_owner", ActorType: "user", ActorID: aid.String(),
+				Message: msg,
+				Changes: map[string]any{"assigned_to": info.ownerID.String()},
+			})
+			if err := s.findingRepo.Update(moveCtx, f); err != nil {
 				s.logger.Warn("failed to assign finding", "finding_id", f.ID(), "error", err)
 				continue
 			}
 
 			result.Assigned++
+			if started {
+				result.Started++
+			}
 			result.ByOwner[info.name]++
 		}
 	}
@@ -846,4 +1036,107 @@ func validateCVEID(cveID string) error {
 		return fmt.Errorf("%w: invalid CVE ID format: %s (expected CVE-YYYY-NNNNN)", shared.ErrValidation, cveID)
 	}
 	return nil
+}
+
+// FixAppliers returns which of the findings the user may mark fix_applied:
+// the direct assignee, a member of an assigned group, or a primary or
+// secondary owner of the asset. The same rule as BulkFixApplied, for every
+// route that marks a fix applied (the status endpoint, the bulk status change,
+// remediation group and campaign resolves). A lookup failure narrows, never
+// widens.
+func (s *FindingActionsService) FixAppliers(ctx context.Context, tenantID, userID shared.ID, findings []*vulnerability.Finding) map[shared.ID]bool {
+	out := make(map[shared.ID]bool, len(findings))
+	if len(findings) == 0 {
+		return out
+	}
+	groupIDSet := map[shared.ID]bool{}
+	if s.groupRepo != nil {
+		ids, err := s.groupRepo.ListGroupIDsByUser(ctx, tenantID, userID)
+		if err != nil {
+			s.logger.Warn("failed to load user groups", "error", err)
+		}
+		for _, gid := range ids {
+			groupIDSet[gid] = true
+		}
+	}
+	findingIDs := make([]shared.ID, len(findings))
+	for i, f := range findings {
+		findingIDs[i] = f.ID()
+	}
+	findingGroupMap := map[shared.ID][]shared.ID{}
+	if s.accessCtrlRepo != nil {
+		m, err := s.accessCtrlRepo.BatchListFindingGroupIDs(ctx, tenantID, findingIDs)
+		if err != nil {
+			s.logger.Warn("failed to batch load finding groups", "error", err)
+		} else {
+			findingGroupMap = m
+		}
+	}
+	owned := s.assetsOwnedBy(ctx, tenantID, userID, findings)
+	for _, f := range findings {
+		out[f.ID()] = s.canMarkFixApplied(userID, groupIDSet, findingGroupMap, owned, f)
+	}
+	return out
+}
+
+// QueueProofOfFix queues a proof-of-fix re-check for each finding just marked
+// fix_applied (the same bounded, best-effort dispatch as BulkFixApplied) and
+// returns how many were queued. The bulk status path calls it for a fix claim.
+func (s *FindingActionsService) QueueProofOfFix(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) int {
+	return s.autoQueueValidations(ctx, tenantID, findingIDs)
+}
+
+// allowedByFilter reads the findings a by-filter action selects (at most
+// 1000) and keeps those the lifecycle allows to move to target.
+func (s *FindingActionsService) allowedByFilter(ctx context.Context, cands []lc.Candidate, filter vulnerability.FindingFilter,
+	actor vulnerability.TransitionActor, target vulnerability.FindingStatus, note string,
+) ([]shared.ID, error) {
+	count, err := s.findingRepo.Count(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count findings: %w", err)
+	}
+	if count > 1000 {
+		return nil, fmt.Errorf("%w: too many findings (%d), max 1000. Use a narrower filter", shared.ErrValidation, count)
+	}
+	allowed := make([]shared.ID, 0, int(count))
+	const batchSize = 100
+	for offset := int64(0); offset < count; offset += batchSize {
+		page, err := s.findingRepo.List(ctx, filter, vulnerability.NewFindingListOptions(), pagination.New(int(offset/batchSize)+1, batchSize))
+		if err != nil {
+			return nil, fmt.Errorf("failed to list findings: %w", err)
+		}
+		for _, f := range page.Data {
+			if actionAllowed(ctx, cands, f, transitionFactsOf(f), actor, target, note) == nil {
+				allowed = append(allowed, f.ID())
+			}
+		}
+	}
+	return allowed, nil
+}
+
+// lifecycleLetsWorkStart reports whether the organization's lifecycle lets
+// assign-to-owners start work on a confirmed finding (confirmed ->
+// in_progress, landing on the default sub-status). The move is the
+// platform's side effect of an assignment, so only the lifecycle's own
+// blocks and requirements are asked; when they refuse, the finding is
+// assigned and stays confirmed.
+func (s *FindingActionsService) lifecycleLetsWorkStart(ctx context.Context, cands []lc.Candidate, candsErr error,
+	f *vulnerability.Finding, assigner shared.ID,
+) bool {
+	if candsErr != nil {
+		s.logger.Warn("assign to owners: finding lifecycle unavailable, work not started", "finding_id", f.ID(), "error", candsErr)
+		return false
+	}
+	if len(cands) == 0 {
+		return true
+	}
+	actor := personActor(assigner, TransitionPermissions{Status: true})
+	d, _ := lifecycleDecision(cands, f, transitionFactsOf(f), lifecycleActor(ctx, actor),
+		lc.Target{Status: vulnerability.FindingStatusInProgress})
+	for _, b := range d.Blocked {
+		if _, ok := lifecycleBlockMessage(b); ok {
+			return false
+		}
+	}
+	return d.NoteMinLen == 0 && len(d.Fields) == 0
 }

@@ -40,6 +40,13 @@ export interface SuppressionRule {
   expires_at?: string | null
   created_at: string
   updated_at: string
+  /**
+   * Set when the platform gave the rule an end it did not have (rules made
+   * before an end was required); cleared when someone edits the rule.
+   */
+  review_flagged_at?: string | null
+  /** Why the rule is flagged: `no_end_date`. */
+  review_reason?: string
 }
 
 /** `POST /api/v1/suppressions/{id}/approve`: the rule plus what the approval closed. */
@@ -57,6 +64,22 @@ export interface SuppressionPreview {
   /** More than `limit` match; an approval closes `limit` of them. */
   capped: boolean
   limit: number
+  /** Of those, the findings on assets the caller's data scope covers. */
+  in_scope_findings: number
+  /** The first few in-scope findings; never findings outside the caller's scope. */
+  sample: SuppressionPreviewFinding[]
+}
+
+/** One finding of a preview sample. */
+export interface SuppressionPreviewFinding {
+  id: string
+  asset_id: string
+  asset_name?: string
+  rule_id?: string
+  file_path?: string
+  title: string
+  severity: string
+  status: string
 }
 
 /** `GET /api/v1/suppressions` list envelope. */

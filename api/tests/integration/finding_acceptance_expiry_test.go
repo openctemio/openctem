@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -81,6 +82,9 @@ func (f *acceptanceFixture) state(t *testing.T) (string, *time.Time) {
 func (f *acceptanceFixture) service() *finding.VulnerabilityService {
 	svc := finding.NewVulnerabilityService(nil, postgres.NewFindingRepository(f.pdb), logger.NewNop())
 	svc.SetApprovalRepository(postgres.NewFindingApprovalRepository(f.pdb))
+	// The approver re-authenticated recently (a high finding's acceptance
+	// is the security tier).
+	svc.SetStepUpGate(recentAuth{})
 	return svc
 }
 
@@ -96,8 +100,8 @@ func TestFindingAcceptance_EndIsWrittenClearedAndEndsTheGate(t *testing.T) {
 	end := time.Now().Add(30 * 24 * time.Hour).UTC().Truncate(time.Second)
 	endStr := end.Format(time.RFC3339)
 	req, err := svc.RequestApproval(ctx, finding.RequestApprovalInput{
-		TenantID: f.tenant.String(), FindingID: f.findingID.String(), RequestedStatus: "accepted",
-		Justification: "compensating control", RequestedBy: f.requester.String(), ExpiresAt: &endStr,
+		TenantID: f.tenant.String(), FindingID: f.findingID.String(), RequestedStatus: "accepted", ClosureReason: "risk_accepted",
+		Justification: "compensating control: WAF rule blocks the path", RequestedBy: f.requester.String(), ExpiresAt: &endStr,
 	})
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -156,7 +160,7 @@ func TestFindingAcceptance_EndIsWrittenClearedAndEndsTheGate(t *testing.T) {
 
 	// Another tenant's write path cannot set the end on this finding.
 	repo := postgres.NewFindingRepository(f.pdb)
-	if err := repo.AcceptUntil(ctx, f.other, f.findingID, end.AddDate(0, 6, 0), nil); err != nil {
+	if err := repo.AcceptUntil(ctx, f.other, f.findingID, end.AddDate(0, 6, 0), nil, vulnerability.ClosureReasonRiskAccepted); err != nil {
 		t.Fatalf("cross-tenant AcceptUntil: %v", err)
 	}
 	if _, e := f.state(t); e == nil || !e.Equal(end) {

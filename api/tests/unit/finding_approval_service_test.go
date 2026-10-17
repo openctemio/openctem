@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
+	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -25,6 +26,7 @@ type mockApprovalRepository struct {
 	approvals map[shared.ID]*vulnerability.Approval
 	createErr error
 	updateErr error
+	findings  *mockFindingRepository
 }
 
 func newMockApprovalRepository() *mockApprovalRepository {
@@ -104,6 +106,29 @@ func (m *mockApprovalRepository) ListExpiredApproved(_ context.Context, limit in
 	return result, nil
 }
 
+// ApproveAndApply applies the status through the linked finding mock (the
+// database writes both in one transaction).
+func (m *mockApprovalRepository) ApproveAndApply(ctx context.Context, approval *vulnerability.Approval, _ *vulnerability.FindingActivity) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	if m.findings != nil {
+		var err error
+		status := vulnerability.FindingStatus(approval.RequestedStatus)
+		if status == vulnerability.FindingStatusAccepted {
+			err = m.findings.AcceptUntil(ctx, approval.TenantID, approval.FindingID, *approval.ExpiresAt, approval.ApprovedBy, approval.ClosureReason)
+		} else {
+			err = m.findings.UpdateStatusBatch(ctx, approval.TenantID, []shared.ID{approval.FindingID}, status, "", approval.ApprovedBy,
+				vulnerability.Closure{Reason: approval.ClosureReason, Verification: vulnerability.VerificationSecurityReview})
+		}
+		if err != nil {
+			return err
+		}
+	}
+	m.approvals[approval.ID] = approval
+	return nil
+}
+
 func (m *mockApprovalRepository) Update(_ context.Context, approval *vulnerability.Approval) error {
 	if m.updateErr != nil {
 		return m.updateErr
@@ -129,6 +154,7 @@ type statusBatchCall struct {
 	Status     vulnerability.FindingStatus
 	Resolution string
 	ResolvedBy *shared.ID
+	Closure    vulnerability.Closure
 }
 
 func newMockFindingRepository() *mockFindingRepository {
@@ -227,11 +253,11 @@ func (m *mockFindingRepository) BatchCountByAssetIDs(_ context.Context, _ shared
 }
 
 // AcceptUntil records an accept like UpdateStatusBatch does.
-func (m *mockFindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
-	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+func (m *mockFindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID, reason vulnerability.ClosureReason) error {
+	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, vulnerability.Closure{Reason: reason})
 }
 
-func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.ResolutionMethod) error {
+func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) error {
 	if m.statusBatchErr != nil {
 		return m.statusBatchErr
 	}
@@ -241,6 +267,7 @@ func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID sh
 		Status:     status,
 		Resolution: resolution,
 		ResolvedBy: resolvedBy,
+		Closure:    closure,
 	})
 	return nil
 }
@@ -255,16 +282,6 @@ func (m *mockFindingRepository) GetStats(_ context.Context, _ shared.ID, _ *shar
 }
 func (m *mockFindingRepository) CountBySeverityForScan(_ context.Context, _ shared.ID, _ string) (vulnerability.SeverityCounts, error) {
 	return vulnerability.SeverityCounts{}, nil
-}
-func (m *mockFindingRepository) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-
-func (m *mockFindingRepository) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-func (m *mockFindingRepository) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
-	return nil, nil
 }
 func (m *mockFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
 	return nil, nil
@@ -332,9 +349,18 @@ func newApprovalTestService(
 	vulnRepo := &mockVulnerabilityRepository{}
 	log := logger.NewNop()
 	svc := finding.NewVulnerabilityService(vulnRepo, findingRepo, log)
+	approvalRepo.findings = findingRepo
 	svc.SetApprovalRepository(approvalRepo)
+	// Approvers here re-authenticated recently (the policy asks it of
+	// security and dual tiers; approval_policy tests cover the refusal).
+	svc.SetStepUpGate(steppedUpGate{})
 	return svc
 }
+
+// steppedUpGate answers every step-up check as passed.
+type steppedUpGate struct{}
+
+func (steppedUpGate) RequireRecentAuth(context.Context, string) error { return nil }
 
 // =============================================================================
 // Tests: RequestApproval
@@ -361,6 +387,7 @@ func TestFindingApprovalService_RequestApproval_Success(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
+		ClosureReason:   "detection_error",
 		Justification:   "This is a known test pattern and not a real vulnerability",
 		RequestedBy:     requestedBy.String(),
 	}
@@ -398,6 +425,7 @@ func TestFindingApprovalService_RequestApproval_RejectsNonApprovalStatus(t *test
 				TenantID:        tenantID.String(),
 				FindingID:       findingID.String(),
 				RequestedStatus: status,
+				ClosureReason:   testClosureReason(status),
 				Justification:   "trying to launder status via approval",
 				RequestedBy:     shared.NewID().String(),
 			})
@@ -422,7 +450,8 @@ func TestFindingApprovalService_RequestApproval_FindingNotFound(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
-		Justification:   "Test justification",
+		ClosureReason:   "detection_error",
+		Justification:   "Test justification: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	}
 
@@ -448,7 +477,8 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 				TenantID:        "not-a-uuid",
 				FindingID:       shared.NewID().String(),
 				RequestedStatus: "false_positive",
-				Justification:   "Test",
+				ClosureReason:   "detection_error",
+				Justification:   "Test: the input is a fixed constant",
 				RequestedBy:     shared.NewID().String(),
 			},
 		},
@@ -458,7 +488,8 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 				TenantID:        shared.NewID().String(),
 				FindingID:       "not-a-uuid",
 				RequestedStatus: "false_positive",
-				Justification:   "Test",
+				ClosureReason:   "detection_error",
+				Justification:   "Test: the input is a fixed constant",
 				RequestedBy:     shared.NewID().String(),
 			},
 		},
@@ -468,7 +499,8 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 				TenantID:        shared.NewID().String(),
 				FindingID:       shared.NewID().String(),
 				RequestedStatus: "false_positive",
-				Justification:   "Test",
+				ClosureReason:   "detection_error",
+				Justification:   "Test: the input is a fixed constant",
 				RequestedBy:     "not-a-uuid",
 			},
 		},
@@ -505,7 +537,8 @@ func TestFindingApprovalService_ApproveStatus_Success(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
-		Justification:   "Known test pattern",
+		ClosureReason:   "detection_error",
+		Justification:   "Known test pattern: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	}
 	created, err := svc.RequestApproval(context.Background(), requestInput)
@@ -571,7 +604,8 @@ func TestFindingApprovalService_ApproveStatus_AlreadyApproved(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
-		Justification:   "Test",
+		ClosureReason:   "detection_error",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -611,7 +645,8 @@ func TestFindingApprovalService_ApproveStatus_Expired(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "accepted",
-		Justification:   "Test",
+		ClosureReason:   "risk_accepted",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -627,7 +662,7 @@ func TestFindingApprovalService_ApproveStatus_Expired(t *testing.T) {
 
 	assert.Error(t, err, "should not be able to approve an expired approval")
 	assert.Nil(t, approval)
-	assert.Contains(t, err.Error(), "expired")
+	assert.Contains(t, err.Error(), "acceptance end has passed")
 }
 
 func TestFindingApprovalService_ApproveStatus_SelfApproval(t *testing.T) {
@@ -644,7 +679,8 @@ func TestFindingApprovalService_ApproveStatus_SelfApproval(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
-		Justification:   "Test",
+		ClosureReason:   "detection_error",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -681,14 +717,15 @@ func TestFindingApprovalService_RejectApproval_Expired(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "accepted",
-		Justification:   "Test",
+		ClosureReason:   "risk_accepted",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
 	past := time.Now().Add(-1 * time.Hour)
-	approvalRepo.approvals[created.ID].ExpiresAt = &past
+	approvalRepo.approvals[created.ID].DecideBy = &past
 
-	// Try to reject the expired approval
+	// Try to reject a request past its decide-by time
 	approval, err := svc.RejectApproval(context.Background(), finding.RejectApprovalInput{
 		TenantID:   tenantID.String(),
 		ApprovalID: created.ID.String(),
@@ -696,9 +733,8 @@ func TestFindingApprovalService_RejectApproval_Expired(t *testing.T) {
 		Reason:     "Test rejection",
 	})
 
-	assert.Error(t, err, "should not be able to reject an expired approval")
+	assert.ErrorIs(t, err, vulnerability.ErrDecisionOverdue, "a request past its decide-by time cannot be decided")
 	assert.Nil(t, approval)
-	assert.Contains(t, err.Error(), "expired")
 }
 
 func TestFindingApprovalService_RejectApproval_Success(t *testing.T) {
@@ -717,7 +753,8 @@ func TestFindingApprovalService_RejectApproval_Success(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
-		Justification:   "Test",
+		ClosureReason:   "detection_error",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -835,7 +872,8 @@ func TestFindingApprovalService_ListApprovals_Success(t *testing.T) {
 			TenantID:        tenantID.String(),
 			FindingID:       findingID.String(),
 			RequestedStatus: "false_positive",
-			Justification:   "Test justification",
+			ClosureReason:   "detection_error",
+			Justification:   "Test justification: the input is a fixed constant",
 			RequestedBy:     requestedBy.String(),
 		})
 		require.NoError(t, err)
@@ -849,7 +887,8 @@ func TestFindingApprovalService_ListApprovals_Success(t *testing.T) {
 		TenantID:        otherTenantID.String(),
 		FindingID:       otherFindingID.String(),
 		RequestedStatus: "accepted",
-		Justification:   "Other tenant",
+		ClosureReason:   "risk_accepted",
+		Justification:   "Other tenant: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -902,7 +941,8 @@ func TestFindingApprovalService_ListApprovals_StatusFilterAndCounts(t *testing.T
 	for i := 0; i < 3; i++ {
 		a, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 			TenantID: tenantID.String(), FindingID: findingID.String(),
-			RequestedStatus: "false_positive", Justification: "j", RequestedBy: requester.String(),
+			RequestedStatus: "false_positive",
+			ClosureReason:   "detection_error", Justification: "j: the input is a fixed constant", RequestedBy: requester.String(),
 		})
 		require.NoError(t, err)
 		ids = append(ids, a.ID)
@@ -946,7 +986,8 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 			TenantID:        shared.NewID().String(),
 			FindingID:       shared.NewID().String(),
 			RequestedStatus: "false_positive",
-			Justification:   "Test",
+			ClosureReason:   "detection_error",
+			Justification:   "Test: the input is a fixed constant",
 			RequestedBy:     shared.NewID().String(),
 		})
 		assert.Error(t, err)
@@ -1010,7 +1051,8 @@ func TestFindingApprovalService_CancelApproval_Success(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
-		Justification:   "Test",
+		ClosureReason:   "detection_error",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -1046,7 +1088,8 @@ func TestFindingApprovalService_CancelApproval_NotRequester(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
-		Justification:   "Test",
+		ClosureReason:   "detection_error",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -1079,7 +1122,8 @@ func TestFindingApprovalService_CancelApproval_NotPending(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
-		Justification:   "Test",
+		ClosureReason:   "detection_error",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -1121,7 +1165,8 @@ func TestFindingApprovalService_RequestApproval_InvalidStatus(t *testing.T) {
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "invalid_garbage_status",
-		Justification:   "Test justification",
+		ClosureReason:   testClosureReason("invalid_garbage_status"),
+		Justification:   "Test justification: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	}
 
@@ -1153,7 +1198,8 @@ func TestFindingApprovalService_ApproveStatus_ConcurrentModification(t *testing.
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
-		Justification:   "Test",
+		ClosureReason:   "detection_error",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -1178,7 +1224,7 @@ func (m *mockFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *mockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
+func (m *mockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) (int64, error) {
 	return 0, nil
 }
 
@@ -1272,8 +1318,8 @@ func TestFindingApprovalService_RequestApproval_DecisionEnd(t *testing.T) {
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 	req := func(status string, end *string) (*vulnerability.Approval, error) {
 		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
-			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: status,
-			Justification: "Test", RequestedBy: requestedBy.String(), ExpiresAt: end,
+			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: status, ClosureReason: testClosureReason(status),
+			Justification: "Test: the input is a fixed constant", RequestedBy: requestedBy.String(), ExpiresAt: end,
 		})
 	}
 	str := func(t time.Time) *string { s := t.Format(time.RFC3339); return &s }
@@ -1304,8 +1350,8 @@ func TestFindingApprovalService_ApproveAccepted_StoresAcceptanceEnd(t *testing.T
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
 	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
-		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "accepted",
-		Justification: "Test", RequestedBy: shared.NewID().String(),
+		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "accepted", ClosureReason: "risk_accepted",
+		Justification: "Test: the input is a fixed constant", RequestedBy: shared.NewID().String(),
 	})
 	require.NoError(t, err)
 	// A request from before the end was required has none.
@@ -1317,4 +1363,160 @@ func TestFindingApprovalService_ApproveAccepted_StoresAcceptanceEnd(t *testing.T
 	require.NoError(t, err)
 	require.NotNil(t, approved.ExpiresAt, "approving gives an endless acceptance the default end")
 	assert.WithinDuration(t, time.Now().Add(vulnerability.DefaultAcceptanceDuration), *approved.ExpiresAt, time.Minute)
+}
+
+// testClosureReason is a reason the requested status accepts ("" when it
+// accepts none), so a request fails, or passes, for the reason under test.
+func testClosureReason(status string) string {
+	if rs := vulnerability.PersonClosureReasons(vulnerability.FindingStatus(status)); len(rs) > 0 {
+		return string(rs[0])
+	}
+	return ""
+}
+
+// A false-positive or accepted-risk request names a VEX-aligned reason of
+// its own status, and the approval applies exactly that reason: a false
+// positive as security-reviewed (a second person decided), an accepted risk
+// with its reason and no verification.
+func TestFindingApprovalService_ClosureReason(t *testing.T) {
+	tenantID, findingID := shared.NewID(), shared.NewID()
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+	request := func(status, reason string) (*vulnerability.Approval, error) {
+		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: status,
+			ClosureReason: reason, Justification: "why: the input is a fixed constant", RequestedBy: shared.NewID().String(),
+		})
+	}
+
+	for name, c := range map[string][2]string{
+		"no reason":                   {"false_positive", ""},
+		"reason of another status":    {"false_positive", "risk_accepted"},
+		"platform-only reason":        {"accepted", "unknown"},
+		"made-up reason":              {"accepted", "because"},
+		"resolved reason on accepted": {"accepted", "fixed"},
+	} {
+		_, err := request(c[0], c[1])
+		require.ErrorIs(t, err, shared.ErrValidation, name)
+	}
+
+	fp, err := request("false_positive", "vulnerable_code_not_in_execute_path")
+	require.NoError(t, err)
+	assert.Equal(t, vulnerability.ClosureReasonVulnerableCodeNotInExecutePath, fp.ClosureReason)
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: fp.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+	require.Len(t, findingRepo.statusUpdates, 1)
+	assert.Equal(t, vulnerability.Closure{
+		Reason:       vulnerability.ClosureReasonVulnerableCodeNotInExecutePath,
+		Verification: vulnerability.VerificationSecurityReview,
+	}, findingRepo.statusUpdates[0].Closure)
+
+	// The finding is a false positive now (the mock does not move it):
+	// reset it to confirmed for the accepted-risk request.
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
+	acc, err := request("accepted", "compensating_control")
+	require.NoError(t, err)
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: acc.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+	require.Len(t, findingRepo.statusUpdates, 2)
+	assert.Equal(t, vulnerability.Closure{Reason: vulnerability.ClosureReasonCompensatingControl},
+		findingRepo.statusUpdates[1].Closure)
+}
+
+// An accepted risk is capped by the finding's priority: a request past the
+// cap is refused (never shortened), a request with no end gets the cap when
+// it is shorter than the default, and an approval past the finding's cap now
+// (its priority rose after the request) is refused too.
+func TestFindingApprovalService_AcceptanceCapByPriority(t *testing.T) {
+	tenantID, findingID := shared.NewID(), shared.NewID()
+	findingRepo := newMockFindingRepository()
+	f := newApprovalTestFinding(t)
+	findingRepo.findings[findingID] = f
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+	request := func(end *time.Time) (*vulnerability.Approval, error) {
+		var s *string
+		if end != nil {
+			v := end.Format(time.RFC3339)
+			s = &v
+		}
+		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "accepted",
+			ClosureReason: "risk_accepted", Justification: "why: the input is a fixed constant", RequestedBy: shared.NewID().String(), ExpiresAt: s,
+		})
+	}
+	day := 24 * time.Hour
+	at := func(d time.Duration) *time.Time { v := time.Now().Add(d); return &v }
+
+	// P2: 180 days allowed, 200 refused.
+	f.SetPriorityClassification(vulnerability.PriorityP2, "test")
+	_, err := request(at(170 * day))
+	require.NoError(t, err)
+	_, err = request(at(200 * day))
+	require.ErrorIs(t, err, shared.ErrValidation, "an end past the P2 cap is refused")
+
+	// KEV: 30 days; no end means 30 days, not the 90-day default.
+	f.SetIsInKEV(true)
+	kev, err := request(nil)
+	require.NoError(t, err)
+	require.NotNil(t, kev.ExpiresAt)
+	assert.WithinDuration(t, time.Now().Add(30*day), *kev.ExpiresAt, time.Minute)
+	_, err = request(at(60 * day))
+	require.ErrorIs(t, err, shared.ErrValidation, "an end past the KEV cap is refused")
+
+	// A P3 request for 300 days, then the finding becomes P0: approval refused.
+	f.SetIsInKEV(false)
+	f.SetPriorityClassification(vulnerability.PriorityP3, "test")
+	long, err := request(at(300 * day))
+	require.NoError(t, err)
+	f.SetPriorityClassification(vulnerability.PriorityP0, "test")
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: long.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.ErrorIs(t, err, shared.ErrValidation, "approving past the current cap is refused")
+	assert.Empty(t, findingRepo.statusUpdates, "nothing was accepted")
+}
+
+// stubLifecycles gives the service one organization scheme.
+type stubLifecycles struct{ cands []lc.Candidate }
+
+func (s stubLifecycles) Candidates(context.Context, shared.ID) ([]lc.Candidate, error) {
+	return s.cands, nil
+}
+
+// Approving runs the organization's lifecycle again with the approver as the
+// actor: a scheme that now needs a permission the approver does not hold
+// refuses the approval, which stays pending.
+func TestFindingApprovalService_ApproveStatus_LifecycleDecidesForTheApprover(t *testing.T) {
+	tenantID, findingID := shared.NewID(), shared.NewID()
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "false_positive",
+		ClosureReason: "detection_error", Justification: "Known test pattern", RequestedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+
+	scheme, v := lc.Compile(lc.Spec{Transitions: []lc.TransitionSpec{{
+		ID: "fp", Name: "False positive", From: []string{"status:confirmed"}, To: "status:false_positive",
+		Guards: []lc.Guard{{Kind: lc.GuardRequirePermission, AnyOf: []string{"findings:verify"}}},
+	}}}, nil, lc.Meta{VersionID: shared.NewID(), Version: 1})
+	require.True(t, v.OK(), "%+v", v.Errors)
+	svc.SetLifecycles(stubLifecycles{cands: []lc.Candidate{{Scheme: scheme, Default: true}}})
+
+	_, err = svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: created.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, finding.ErrLifecycleMove), "got %v", err)
+	assert.Empty(t, findingRepo.statusUpdates, "the finding must not move")
 }

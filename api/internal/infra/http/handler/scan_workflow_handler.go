@@ -663,7 +663,7 @@ func (h *ScanWorkflowHandler) GetTemplate(w http.ResponseWriter, r *http.Request
 	// Get steps for template
 	steps, err := h.service.GetSteps(r.Context(), templateID)
 	if err != nil {
-		h.logger.Warn("failed to get steps for template", "error", err, "template_id", templateID)
+		h.logger.Warn("failed to get steps for template", "error", logger.SanitizeError(err), "template_id", logger.SanitizeValue(templateID))
 	} else {
 		template.Steps = steps
 	}
@@ -1711,7 +1711,7 @@ func (h *ScanWorkflowHandler) handleServiceError(w http.ResponseWriter, err erro
 	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden("").WriteJSON(w)
 	default:
-		h.logger.Error("service error", "error", err)
+		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }
@@ -1735,7 +1735,7 @@ func (h *ScanWorkflowHandler) handleStepError(w http.ResponseWriter, err error) 
 	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden("").WriteJSON(w)
 	default:
-		h.logger.Error("step service error", "error", err)
+		h.logger.Error("step service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }

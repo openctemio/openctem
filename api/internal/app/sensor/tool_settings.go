@@ -1,11 +1,12 @@
 package sensor
 
 // Per-sensor tool settings (docs/architecture/sensors.md, "Tool settings"):
-// an owner or administrator configures a tool of one of the organization's
-// own sensors from the settings schema the tool's descriptor declares in the
-// sensor's current manifest. The values are validated with the CTIS
-// settings contract, audited with a redacted diff, and delivered to the
-// sensor inside each signed job's payload (SensorToolSettingsLayer).
+// an owner or administrator overrides, for one of the organization's own
+// sensors, the organization's tool defaults (tool_defaults.go), from the
+// settings schema the tool's descriptor declares in the sensor's current
+// manifest. The values are validated with the CTIS settings contract,
+// audited with a redacted diff, and delivered to the sensor inside each
+// signed job's payload with the defaults it inherits (ToolSettingsLayers).
 
 import (
 	"context"
@@ -38,9 +39,16 @@ type ToolSettingsView struct {
 	// Problems are why the stored values no longer validate against the
 	// current schema (empty when they do); such values fail the jobs of
 	// the tool on this sensor until they are saved again or reset.
-	Problems  settings.Errors
-	UpdatedAt *time.Time
-	UpdatedBy *shared.ID
+	Problems settings.Errors
+	// Organization are the organization's defaults for the tool (nil when
+	// none): the sensor runs with them for every key it does not set.
+	Organization map[string]any
+	// OrganizationProblems are why the organization's defaults do not
+	// validate against this sensor's schema; they fail the tool's jobs on
+	// this sensor until the defaults are changed.
+	OrganizationProblems settings.Errors
+	UpdatedAt            *time.Time
+	UpdatedBy            *shared.ID
 }
 
 // UpdateToolSettingsInput replaces one tool's settings.
@@ -105,7 +113,7 @@ func (s *SensorService) toolSettingsSensor(ctx context.Context, tenantID, sensor
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if a.TenantID == nil || a.IsPlatformSensor {
+	if a.TenantID == nil || a.IsShared() {
 		// Platform sensors are managed from the admin console only.
 		return nil, nil, nil, shared.ErrNotFound
 	}
@@ -147,15 +155,26 @@ func (s *SensorService) ListToolSettings(ctx context.Context, tenantID, sensorID
 	for i := range rows {
 		byTool[rows[i].Tool] = &rows[i]
 	}
+	org, err := s.orgToolValues(ctx, *a.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]ToolSettingsView, 0, len(schemas))
 	for _, ts := range schemas {
-		out = append(out, toolSettingsView(ts, byTool[ts.tool]))
+		out = append(out, toolSettingsView(ts, byTool[ts.tool], org[ts.tool]))
 	}
 	return out, nil
 }
 
-func toolSettingsView(ts toolSchema, row *sensordom.ToolSettings) ToolSettingsView {
+func toolSettingsView(ts toolSchema, row *sensordom.ToolSettings, org map[string]any) ToolSettingsView {
 	v := ToolSettingsView{Tool: ts.tool, SchemaDigest: ts.schema.Digest(), Schema: ts.schema.Raw, Values: map[string]any{}}
+	if len(org) > 0 {
+		v.Organization = org
+		var errs settings.Errors
+		if err := sensordom.ValidateTenantToolSettings(ts.schema, org); errors.As(err, &errs) {
+			v.OrganizationProblems = errs
+		}
+	}
 	if row == nil {
 		return v
 	}
@@ -197,6 +216,13 @@ func (s *SensorService) UpdateToolSettings(ctx context.Context, in UpdateToolSet
 	} else if !errors.Is(err, shared.ErrNotFound) {
 		return nil, err
 	}
+	if err := s.requireImpactStepUp(ctx, ts.schema, before, values, in.AuditContext); err != nil {
+		return nil, err
+	}
+	org, err := s.orgToolValues(ctx, *a.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	row := sensordom.ToolSettings{
 		TenantID: *a.TenantID, SensorID: a.ID, Tool: ts.tool, Values: values,
 		SchemaDigest: ts.schema.Digest(), UpdatedAt: s.now().UTC(),
@@ -210,7 +236,7 @@ func (s *SensorService) UpdateToolSettings(ctx context.Context, in UpdateToolSet
 		return nil, err
 	}
 	s.auditToolSettings(ctx, a, ts.tool, ts.schema, before, values, in.AuditContext)
-	v := toolSettingsView(*ts, &row)
+	v := toolSettingsView(*ts, &row, org[ts.tool])
 	return &v, nil
 }
 
@@ -258,8 +284,9 @@ func (s *SensorService) auditToolSettings(ctx context.Context, a *sensordom.Sens
 }
 
 // EffectiveToolSettings returns every key of the tool's schema with the
-// value a job of this sensor runs with (before the scan's own layer), and
-// where it comes from.
+// value a job of this sensor runs with (before the scan's own layer), where
+// it comes from (default, the organization, the sensor) and the chain of
+// layers that set it.
 func (s *SensorService) EffectiveToolSettings(ctx context.Context, tenantID, sensorID, tool string) ([]sensordom.EffectiveToolSetting, *ToolSettingsView, error) {
 	a, store, ts, err := s.toolSettingsSensor(ctx, tenantID, sensorID, tool)
 	if err != nil {
@@ -274,62 +301,109 @@ func (s *SensorService) EffectiveToolSettings(ctx context.Context, tenantID, sen
 	} else if err != nil {
 		return nil, nil, err
 	}
-	view := toolSettingsView(*ts, row)
+	org, err := s.orgToolValues(ctx, *a.TenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	view := toolSettingsView(*ts, row, org[ts.tool])
 	if len(view.Problems) > 0 {
 		return nil, &view, view.Problems
 	}
-	eff, err := sensordom.EffectiveToolSettings(ts.schema, view.Values)
+	if len(view.OrganizationProblems) > 0 {
+		return nil, &view, view.OrganizationProblems
+	}
+	eff, err := sensordom.EffectiveToolSettings(ts.schema, view.admin())
 	if err != nil {
 		return nil, &view, err
 	}
 	return eff, &view, nil
 }
 
-// SensorToolSettingsLayer is the sensor layer of a job of tool claimed by
-// sensorID: the stored values (nil when none), checked against the schema
-// of the sensor's current manifest. Values saved against another schema
-// digest are validated again; values that no longer validate are an error
-// wrapping sensordom.ErrToolSettingsInvalid (the job is failed with it,
-// never run without them). Other errors are transient.
-func (s *SensorService) SensorToolSettingsLayer(ctx context.Context, tenantID, sensorID shared.ID, tool string) (map[string]any, error) {
+// admin is the view's administrators' values: the organization's defaults
+// and the sensor's own.
+func (v ToolSettingsView) admin() sensordom.AdminValues {
+	return sensordom.AdminValues{Organization: v.Organization, Sensor: v.Values}
+}
+
+// ToolSettingsLayers are the administrators' layers of a job of tool
+// claimed by sensorID: the organization's defaults the sensor inherits
+// (without the keys it overrides; only for the tenant's own sensors, never
+// a shared platform sensor) and the sensor's own values, each nil when
+// empty, checked against the schema of the sensor's current manifest.
+// Values that no longer validate are an error wrapping
+// sensordom.ErrToolSettingsInvalid (the job is failed with it, never run
+// without them). Other errors are transient.
+func (s *SensorService) ToolSettingsLayers(ctx context.Context, tenantID, sensorID shared.ID, tool string) (tenant, sensor map[string]any, err error) {
 	store, ok := s.toolSettingsStore()
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 	row, err := store.GetToolSettings(ctx, tenantID, sensorID, tool)
-	if errors.Is(err, shared.ErrNotFound) {
-		return nil, nil
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		row = nil
+	case err != nil:
+		return nil, nil, err
 	}
-	if err != nil {
-		return nil, err
+	var org map[string]any
+	if own, err := s.ownSensor(ctx, tenantID, sensorID); err != nil {
+		return nil, nil, err
+	} else if own {
+		vals, err := s.orgToolValues(ctx, tenantID)
+		if err != nil {
+			return nil, nil, err
+		}
+		org = vals[tool]
 	}
-	if len(row.Values) == 0 {
-		return nil, nil
+	if row != nil && len(row.Values) > 0 {
+		sensor = row.Values
+	}
+	if len(sensor) == 0 && len(org) == 0 {
+		return nil, nil, nil
 	}
 	mstore, ok := s.manifestStore()
 	if !ok {
-		return nil, fmt.Errorf("%w: no manifest store", sensordom.ErrToolSettingsInvalid)
+		return nil, nil, fmt.Errorf("%w: no manifest store", sensordom.ErrToolSettingsInvalid)
 	}
 	mv, err := mstore.CurrentManifest(ctx, &tenantID, sensorID)
 	if errors.Is(err, shared.ErrNotFound) {
-		return nil, fmt.Errorf("%w: the sensor reports no manifest", sensordom.ErrToolSettingsInvalid)
+		return nil, nil, fmt.Errorf("%w: the sensor reports no manifest", sensordom.ErrToolSettingsInvalid)
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	schema, err := sensordom.ToolSettingsSchema(mv.Manifest.ToolDescriptor(tool))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", sensordom.ErrToolSettingsInvalid, err)
+		return nil, nil, fmt.Errorf("%w: %w", sensordom.ErrToolSettingsInvalid, err)
 	}
 	if schema == nil {
-		return nil, fmt.Errorf("%w: the sensor's %s no longer declares settings", sensordom.ErrToolSettingsInvalid, tool)
+		return nil, nil, fmt.Errorf("%w: the sensor's %s no longer declares settings", sensordom.ErrToolSettingsInvalid, tool)
 	}
-	if schema.Digest() != row.SchemaDigest {
-		if err := sensordom.ValidateToolSettings(schema, row.Values); err != nil {
-			return nil, fmt.Errorf("%w: %w", sensordom.ErrToolSettingsInvalid, err)
+	if len(sensor) > 0 && schema.Digest() != row.SchemaDigest {
+		if err := sensordom.ValidateToolSettings(schema, sensor); err != nil {
+			return nil, nil, fmt.Errorf("%w: %w", sensordom.ErrToolSettingsInvalid, err)
 		}
 	}
-	return row.Values, nil
+	if len(org) > 0 {
+		if err := sensordom.ValidateTenantToolSettings(schema, org); err != nil {
+			return nil, nil, fmt.Errorf("%w: the organization's %s defaults do not fit this sensor: %w", sensordom.ErrToolSettingsInvalid, tool, err)
+		}
+	}
+	return sensordom.InheritedValues(org, sensor), sensor, nil
+}
+
+// ownSensor reports whether sensorID is one of the tenant's own sensors (not
+// a shared platform sensor): only those receive the organization's tool
+// defaults.
+func (s *SensorService) ownSensor(ctx context.Context, tenantID, sensorID shared.ID) (bool, error) {
+	a, err := s.repo.GetByTenantAndID(ctx, tenantID, sensorID)
+	if errors.Is(err, shared.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return a.TenantID != nil && a.TenantID.Equals(tenantID) && !a.IsShared(), nil
 }
 
 // ToolSettingsPreview is what a job of a scan with config runs with on a
@@ -343,7 +417,8 @@ type ToolSettingsPreview struct {
 }
 
 // PreviewToolSettings resolves a scan's config (its scan layer) over the
-// sensor's stored settings for tool, as the sensor will. A config the
+// organization's defaults and the sensor's stored settings for tool, as the
+// sensor will. A config the
 // sensor would refuse (a sensor-scope key, a value out of bounds, a raise
 // above the value in force, a dangerous option) is settings.Errors; stored
 // values that no longer validate are the view's problems.
@@ -357,10 +432,10 @@ func (s *SensorService) PreviewToolSettings(ctx context.Context, tenantID, senso
 		return nil, err
 	}
 	layer, ignored := sensordom.ScanSettingsLayer(ts.schema, config)
-	if err := sensordom.ValidateScanSettings(ts.schema, view.Values, layer); err != nil {
+	if err := sensordom.ValidateScanSettings(ts.schema, view.admin(), layer); err != nil {
 		return nil, err
 	}
-	eff, err := sensordom.EffectiveToolSettingsWithScan(ts.schema, view.Values, layer)
+	eff, err := sensordom.EffectiveToolSettingsWithScan(ts.schema, view.admin(), layer)
 	if err != nil {
 		return nil, err
 	}
@@ -373,8 +448,8 @@ const maxScanConfigSensors = 50
 
 // CheckScanToolConfig checks the config of a scan (or of a workflow step
 // pinned to tool) against the tenant's own sensors whose current manifest
-// declares settings for tool: the scan layer over each sensor's stored
-// values, as that sensor will resolve it. It refuses (shared.ErrValidation
+// declares settings for tool: the scan layer over the organization's
+// defaults and each sensor's stored values, as that sensor will resolve it. It refuses (shared.ErrValidation
 // with the first sensor's problems) only when no such sensor accepts it, so
 // one stale sensor does not block a scan the others run. No such sensor
 // (the tool runs on platform sensors only, or has no settings): nil.
@@ -392,10 +467,14 @@ func (s *SensorService) CheckScanToolConfig(ctx context.Context, tenantID shared
 	if err != nil {
 		return err
 	}
+	org, err := s.orgToolValues(ctx, tenantID)
+	if err != nil {
+		return err
+	}
 	var first error
 	checked := 0
 	for _, a := range sensors {
-		if a.TenantID == nil || a.IsPlatformSensor || !a.TenantID.Equals(tenantID) {
+		if a.TenantID == nil || a.IsShared() || !a.TenantID.Equals(tenantID) {
 			continue
 		}
 		if checked == maxScanConfigSensors {
@@ -422,7 +501,7 @@ func (s *SensorService) CheckScanToolConfig(ctx context.Context, tenantID shared
 			return err
 		}
 		layer, _ := sensordom.ScanSettingsLayer(schema, config)
-		err = sensordom.ValidateScanSettings(schema, values, layer)
+		err = sensordom.ValidateScanSettings(schema, sensordom.AdminValues{Organization: org[name], Sensor: values}, layer)
 		if err == nil {
 			return nil
 		}

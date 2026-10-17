@@ -80,6 +80,8 @@ type Service struct {
 	gitlabRepo    scmapp.GitLabRepository
 	enc           crypto.Encryptor
 	gitlabFactory GitLabFactory
+	// lifecycle applies repository events (nil: ignored).
+	lifecycle RepositoryLifecycle
 }
 
 // NewService creates the service. stateSecret signs install states (a
@@ -212,7 +214,7 @@ func (s *Service) CompleteGitHubInstall(ctx context.Context, tenantID shared.ID,
 		AccountType: truncate(gh.Account.Type, 20), RepositorySelection: truncate(gh.RepositorySelection, 20), CreatedBy: createdBy}
 	if err := s.repo.Create(ctx, inst); err != nil {
 		if errors.Is(err, scmapp.ErrBoundElsewhere) {
-			s.log.Warn("github app installation bound elsewhere", "tenant_id", tenantID.String(), "installation_id", in.InstallationID)
+			s.log.Warn("github app installation bound elsewhere", "tenant_id", logger.SanitizeValue(tenantID.String()), "installation_id", in.InstallationID)
 		}
 		return nil, err
 	}
@@ -276,6 +278,9 @@ func (s *Service) HandleGitHubWebhook(ctx context.Context, event, signature stri
 	}
 	if !s.github.VerifySignature(body, signature) {
 		return ErrBadSignature
+	}
+	if event == "repository" {
+		return s.handleRepositoryEvent(ctx, body)
 	}
 	if event != "installation" {
 		return nil

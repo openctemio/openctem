@@ -41,8 +41,15 @@ describe('route gates from the API route table', () => {
       key: 'POST /api/v1/secret-store',
       perms: ['scans:secret_store:write'],
       role: 'member',
+      allowed: false,
+      why: 'storing a source credential is admin-only even with secret_store:write',
+    },
+    {
+      key: 'POST /api/v1/secret-store',
+      perms: ['scans:secret_store:write'],
+      role: 'admin',
       allowed: true,
-      why: 'source credentials need secret_store:write, not the leaked-credentials permission',
+      why: 'admins with secret_store:write may store source credentials',
     },
     {
       key: 'PUT /api/v1/tools/{id}',

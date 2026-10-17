@@ -43,6 +43,7 @@ import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth
 
 // SSO imports
 import { useAuthProviders } from '../api/use-auth-providers'
+import { TurnstileWidget } from './turnstile-widget'
 import { useTenantSSOProviders } from '@/features/sso/api/use-sso-api'
 import { useEmailDiscovery } from '../hooks/use-email-discovery'
 import { initiateSSOLogin } from '@/features/sso/actions/sso-auth-actions'
@@ -118,6 +119,11 @@ export function LoginForm({
   const [loadingSSOProvider, setLoadingSSOProvider] = useState<SSOProviderType | null>(null)
   // Set when the password was right but a second factor is needed.
   const [mfaPurpose, setMfaPurpose] = useState<MfaPurpose | null>(null)
+  // After repeated failed sign-ins from this address the API asks for the
+  // security check (CAPTCHA_REQUIRED); it is then shown and sent along.
+  const [captchaRequired, setCaptchaRequired] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaReset, setCaptchaReset] = useState(0)
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -169,7 +175,9 @@ export function LoginForm({
       const result = await loginAction({
         email: data.email,
         password: data.password,
+        captchaToken: captchaRequired ? captchaToken : undefined,
       })
+      if (captchaRequired) setCaptchaReset((n) => n + 1)
 
       if (result.success && result.mfaRequired && result.mfaPurpose) {
         form.resetField('password')
@@ -202,10 +210,10 @@ export function LoginForm({
         }
       }
 
-      // Platform administrator: the admin console (it asks for the TOTP code).
+      // Platform administrator: the console is a separate site with its own
+      // sign-in (RFC-022); this app has no console to go to.
       if (result.platformAdmin) {
-        const toConsole = safeRedirectTo === '/admin' || safeRedirectTo.startsWith('/admin/')
-        hardNavigate(toConsole ? safeRedirectTo : '/admin')
+        toast.info(t('auth.login.platformAdminUseConsole'))
         return
       }
 
@@ -237,6 +245,9 @@ export function LoginForm({
       // to ensure cookies set by Server Action are picked up properly
       toast.success(t('auth.login.success', 'Signed in'))
       hardNavigate(safeRedirectTo)
+    } else if (result.code === 'CAPTCHA_REQUIRED') {
+      setCaptchaRequired(true)
+      toast.error(t('auth.login.captchaRequired'))
     } else {
       toast.error(result.error || t('auth.login.failed', 'Sign-in failed'))
     }
@@ -345,6 +356,14 @@ export function LoginForm({
             </FormItem>
           )}
         />
+
+        {captchaRequired && authProviders?.captcha_site_key && (
+          <TurnstileWidget
+            siteKey={authProviders.captcha_site_key}
+            onToken={setCaptchaToken}
+            resetSignal={captchaReset}
+          />
+        )}
 
         {/* Submit Button */}
         <Button className="mt-2" disabled={isLoading} type="submit">

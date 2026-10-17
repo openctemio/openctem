@@ -206,9 +206,10 @@ report ──▶ ingest.recordSets ──▶ AssetService.ReconcileSets ──�
 - **Shown set:** union of the elements a trusted source still reports within
   its TTL, plus untracked values (pre-upgrade or written elsewhere), which
   only a trusted `full`/`ranges` observation naming them can remove.
-- **Writers:** `properties.ip_addresses` and `properties.technologies` are
-  written by the reconciliation (ingest keeps the existing values when it
-  merges a report into an existing asset); open ports become the status of
+- **Writers:** `properties.ip_addresses` and the `asset_technologies` rows
+  (RFC-112; one row per technology name, the better version when sources
+  disagree) are written by the reconciliation (ingest keeps the existing
+  addresses when it merges a report into an existing asset); open ports become the status of
   the address's `open_port` assets (closed: `inactive`, `disappeared`
   history, exposures resolved; reopened: `recovered`).
 - **Ordering and timeline:** strictly newer per element; re-sightings

@@ -21,9 +21,11 @@ import (
 
 // Service handles command-related business operations.
 type Service struct {
-	repo      commanddom.Repository
-	sensors   SensorLookup
-	templates TemplateSigner
+	instanceZones  InstanceZoneSource
+	sharedFailures SharedFailureObserver
+	repo           commanddom.Repository
+	sensors        SensorLookup
+	templates      TemplateSigner
 	// jobs signs every claimed command (job_signing.go); nil: claims
 	// carry no signed job.
 	jobs JobSigner
@@ -54,6 +56,12 @@ type Service struct {
 	// limits computes the scope limits a signed job carries for an
 	// enforcing sensor (scope_limits.go); nil: none.
 	limits ScopeLimitSource
+	// sharedLimits reads each organization's limit of shared jobs in flight
+	// (shared_claim.go); nil: the shared claim hands out nothing.
+	sharedLimits SharedLimitSource
+	// sharedAccess is the shared sensor access policy applied at claim
+	// time (shared_claim.go); nil: the shared claim hands out nothing.
+	sharedAccess SharedAccessPolicy
 	// now is the clock (tests replace it).
 	now func() time.Time
 	// programRules applies bug-bounty program rules at delivery
@@ -483,7 +491,7 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 // claimed commands go back when their lease ends): a job never leaves
 // without the organization's layer.
 func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules,
-	layers map[shared.ID]map[string]any,
+	layers map[shared.ID]settingsLayers,
 ) ([]*commanddom.Command, error) {
 	if s.httpPolicy != nil {
 		for i, c := range cmds {
@@ -587,7 +595,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	}
 
 	var rules *bp.JobRules
-	var layer map[string]any
+	var layer settingsLayers
 	if !cmd.CanBeAcknowledged() {
 		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
 	}
@@ -641,7 +649,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	if err != nil {
 		return got, err
 	}
-	withLayer, err := withToolSettings([]*commanddom.Command{got}, map[shared.ID]map[string]any{got.ID: layer})
+	withLayer, err := withToolSettings([]*commanddom.Command{got}, map[shared.ID]settingsLayers{got.ID: layer})
 	if err != nil {
 		return nil, err
 	}
@@ -849,7 +857,9 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 	// hear about every refusal.
 	if ref := sensordom.RefusalOf(input.Refusal, input.ErrorMessage); ref != nil {
 		sensorID := cmd.SensorID
-		if s.refusals != nil && sensorID != nil {
+		// A shared job's refusal is not reported into the organization's
+		// timeline and audit: they never name a shared sensor.
+		if s.refusals != nil && sensorID != nil && !cmd.IsPlatformJob {
 			s.refusals.ObserveLocalPolicyRefusal(ctx, cmd.TenantID, *sensorID, cmd.ID.String(), ref.Message())
 		}
 		out, done, err := s.handleRefusal(ctx, cmd, input, ref)
@@ -861,6 +871,7 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 		if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 			return nil, err
 		}
+		s.observeSharedFailure(ctx, cmd)
 		return cmd, nil
 	}
 
@@ -883,8 +894,25 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
 	}
+	s.observeSharedFailure(ctx, cmd)
 
 	return cmd, nil
+}
+
+// SharedFailureObserver counts failed shared jobs per organization
+// (*scanpolicy.Service, anomaly signals of
+// docs/rfcs/RFC-100-shared-sensors.md §9). It never refuses and never blocks.
+type SharedFailureObserver interface {
+	ObserveSharedFailure(ctx context.Context, tenantID shared.ID)
+}
+
+// SetSharedFailureObserver wires the observer; nil: none.
+func (s *Service) SetSharedFailureObserver(o SharedFailureObserver) { s.sharedFailures = o }
+
+func (s *Service) observeSharedFailure(ctx context.Context, cmd *commanddom.Command) {
+	if s.sharedFailures != nil && cmd.IsPlatformJob {
+		s.sharedFailures.ObserveSharedFailure(ctx, cmd.TenantID)
+	}
 }
 
 // truncateUTF8 cuts s to at most maxBytes without splitting a UTF-8 rune.

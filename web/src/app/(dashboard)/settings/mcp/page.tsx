@@ -1,435 +1,198 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { KeyRound } from 'lucide-react'
+
 import { Main } from '@/components/layout'
-import { PageHeader } from '@/features/shared'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogBody,
-} from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { ShieldCheck, Copy, Check, Loader2, KeyRound, AlertTriangle, Sparkles } from 'lucide-react'
-import { toast } from 'sonner'
-import { copyToClipboard } from '@/lib/clipboard'
-import { getErrorMessage } from '@/lib/api/error-handler'
-import { useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
-import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '@/features/api-keys/lib/expiry'
-import type { CreateAPIKeyResponse } from '@/features/api-keys/types/api-key.types'
-import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
-import { revokeOrgConnection, useOrgConnections } from '@/features/mcp-oauth/api/connections'
+import { useAccessRequests } from '@/features/mcp-oauth/api/access-requests'
+import {
+  revokeOrgConnection,
+  useMcpPolicy,
+  useOrgConnections,
+} from '@/features/mcp-oauth/api/connections'
+import { AccessRequestsCard } from '@/features/mcp-oauth/components/access-requests-card'
+import { ApprovedPublishersCard } from '@/features/mcp-oauth/components/approved-publishers-card'
+import { ConnectPanel } from '@/features/mcp-oauth/components/connect-panel'
 import { ConnectionsList } from '@/features/mcp-oauth/components/connections-list'
 import { McpPolicyCard } from '@/features/mcp-oauth/components/mcp-policy-card'
+import { McpStatusStrip } from '@/features/mcp-oauth/components/mcp-status-strip'
 import { OrgClientsCard } from '@/features/mcp-oauth/components/org-clients-card'
-import { useTranslation } from '@/context/i18n-provider'
+import { UnverifiedAppsCard } from '@/features/mcp-oauth/components/unverified-apps-card'
+import { PageHeader } from '@/features/shared'
+import { useUrlParams } from '@/hooks/use-url-param'
+import { Can, Permission, useHasPermission } from '@/lib/permissions'
 
-// A minted MCP key carries exactly the read scopes below — nothing more. The
-// user picks the key's purpose so it maps to what the server's MCP tools/prompts
-// require. Scope strings mirror the backend permission constants (see
-// src/lib/permissions/constants.ts).
-type PresetId = 'general' | 'pentest'
+type TabId = 'connect' | 'applications' | 'connections' | 'policy'
 
-const KEY_PRESETS: Record<
-  PresetId,
-  {
-    label: string
-    hint: string
-    scopes: string[]
-    defaultName: string
-    description: string
-  }
-> = {
-  general: {
-    label: 'General read access',
-    hint: 'findings / assets / compliance',
-    // Read-only CTEM data: findings, KEV/EPSS CVEs, attack paths, compliance, assets.
-    scopes: ['findings:read', 'assets:read', 'compliance:frameworks:read'],
-    defaultName: 'Claude MCP',
-    description: 'MCP connection key (read-only AI access)',
-  },
-  pentest: {
-    label: 'Pentest report writing',
-    hint: 'campaigns / findings / retests / templates',
-    // Read-only pentest data used by the report-writing tools + prompts.
-    scopes: [
-      'pentest:campaigns:read',
-      'pentest:findings:read',
-      'pentest:retests:read',
-      'pentest:templates:read',
-    ],
-    defaultName: 'Pentest report writer',
-    description: 'MCP connection key for pentest report writing (read-only AI access)',
-  },
-}
-
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      onClick={async () => {
-        if (await copyToClipboard(value)) {
-          setCopied(true)
-          toast.success(`${label} copied`)
-          setTimeout(() => setCopied(false), 1500)
-        }
-      }}
-    >
-      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-      <span className="ml-1.5">Copy</span>
-    </Button>
-  )
-}
-
-export default function MCPConnectPage() {
+/**
+ * AI assistants (MCP): how to connect (everyone), which applications the
+ * organization approves and the members' requests (settings readers), every
+ * connection (owners and administrators) and the policy (settings readers;
+ * editing needs settings:write and a recent sign-in). The tab is in the URL.
+ */
+export default function MCPSettingsPage() {
   const { t } = useTranslation()
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [preset, setPreset] = useState<PresetId>('general')
-  const [name, setName] = useState(KEY_PRESETS.general.defaultName)
-  const [expiry, setExpiry] = useState<string>(DEFAULT_API_KEY_EXPIRY_DAYS)
-  const [created, setCreated] = useState<CreateAPIKeyResponse | null>(null)
-  const { trigger, isMutating } = useCreateApiKey()
+  const router = useRouter()
+  const searchParams = useUrlParams()
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false)
   const canWriteKeys = useHasPermission(Permission.ApiKeysWrite)
-
-  const activePreset = KEY_PRESETS[preset]
-
-  // Switching purpose swaps the default key name unless the user has typed a
-  // custom one that doesn't match either preset's default.
-  const handlePresetChange = (next: PresetId) => {
-    const isDefaultName = Object.values(KEY_PRESETS).some((p) => p.defaultName === name.trim())
-    if (isDefaultName || !name.trim()) {
-      setName(KEY_PRESETS[next].defaultName)
-    }
-    setPreset(next)
-  }
-
-  // The MCP endpoint is served under the API path; default to this origin (the
-  // Next proxy forwards /api/v1/* to the backend). Adjust if your API is hosted
-  // on a different domain.
-  const [endpoint, setEndpoint] = useState('/api/v1/mcp')
-  useEffect(() => {
-    setEndpoint(`${window.location.origin}/api/v1/mcp`)
-  }, [])
-
-  // Most MCP clients sign in with OAuth: the server URL is all they need.
-  const oauthConfigJson = useMemo(
-    () => JSON.stringify({ mcpServers: { openctem: { type: 'http', url: endpoint } } }, null, 2),
-    [endpoint]
-  )
-
   const { currentTenant } = useTenant()
   const isOrgAdmin = currentTenant?.role === 'owner' || currentTenant?.role === 'admin'
   const canReadPolicy = useHasPermission(Permission.SettingsRead)
   const canWritePolicy = useHasPermission(Permission.SettingsWrite)
+  const policy = useMcpPolicy(canReadPolicy)
+  const requests = useAccessRequests(canReadPolicy)
   const orgConnections = useOrgConnections(isOrgAdmin)
 
-  const configJson = useMemo(() => {
-    const key = created?.key ?? 'oct_YOUR_KEY_HERE'
-    return JSON.stringify(
-      {
-        mcpServers: {
-          openctem: {
-            type: 'http',
-            url: endpoint,
-            headers: { Authorization: `Bearer ${key}` },
-          },
-        },
-      },
-      null,
-      2
-    )
-  }, [created, endpoint])
+  const available: TabId[] = [
+    'connect',
+    ...(canReadPolicy ? (['applications'] as const) : []),
+    ...(isOrgAdmin ? (['connections'] as const) : []),
+    ...(canReadPolicy ? (['policy'] as const) : []),
+  ]
+  const urlTab = searchParams.get('tab') as TabId | null
+  const tab: TabId = urlTab && available.includes(urlTab) ? urlTab : 'connect'
 
-  const handleCreate = async () => {
-    const trimmed = name.trim()
-    if (!trimmed) {
-      toast.error('Give the key a name')
-      return
-    }
-    try {
-      const res = await trigger({
-        name: trimmed,
-        description: activePreset.description,
-        scopes: activePreset.scopes,
-        expires_in_days: Number(expiry),
-      })
-      setCreated(res ?? null)
-      setDialogOpen(false)
-      toast.success('MCP key generated — copy it now, it is shown only once')
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to generate the MCP key'))
-    }
-  }
+  const setTab = useCallback(
+    (next: string) => {
+      const params = new URLSearchParams(searchParams.toString())
+      if (next === 'connect') params.delete('tab')
+      else params.set('tab', next)
+      const qs = params.toString()
+      router.replace(qs ? `?${qs}` : window.location.pathname, { scroll: false })
+    },
+    [searchParams, router]
+  )
+
+  const pendingCount = requests.data?.data.length ?? 0
+  const connect = (
+    <ConnectPanel
+      keyDialogOpen={keyDialogOpen}
+      onKeyDialogOpenChange={setKeyDialogOpen}
+      canWriteKeys={canWriteKeys}
+    />
+  )
+  const policyLoading = (
+    <Card>
+      <CardHeader>
+        <Skeleton className="h-5 w-1/3" />
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-2/3" />
+      </CardContent>
+    </Card>
+  )
 
   return (
     <Main>
       <PageHeader
-        title={t('settings.mcp.title', 'AI access (MCP)')}
+        title={t('mcp.page.title', 'AI assistants (MCP)')}
         description={t(
-          'settings.mcp.description',
-          'Connect Claude or another MCP client to this organization’s data, read-only.'
+          'mcp.page.description',
+          'Let AI assistants work with this organization’s data, as the person who connects them and never beyond what that person can see.'
         )}
       >
         <Can route="POST /api/v1/api-keys">
-          <Button size="sm" onClick={() => setDialogOpen(true)}>
-            <KeyRound className="me-2 h-4 w-4" />
-            Generate connection key
+          <Button size="sm" variant="outline" onClick={() => setKeyDialogOpen(true)}>
+            <KeyRound className="me-2 h-4 w-4" aria-hidden />
+            {t('mcp.key.generate', 'Generate key')}
           </Button>
         </Can>
       </PageHeader>
 
-      <div className="mt-5 space-y-5">
-        <Card>
-          <CardHeader>
-            <CardTitle>What is MCP?</CardTitle>
-            <CardDescription>
-              The Model Context Protocol lets an AI assistant query your data through defined tools.
-              This server exposes <strong>read-only</strong> access to findings,
-              KEV/EPSS-prioritized CVEs, attack-path exposure chains, remediation groups, compliance
-              posture, and assets — plus a <strong>pentest report-writing</strong> toolset
-              (campaigns, findings, retests, templates) with drafting prompts.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" className="gap-1">
-              <ShieldCheck className="h-3.5 w-3.5" /> Read-only
-            </Badge>
-            <span className="text-muted-foreground text-xs">{activePreset.label} scopes:</span>
-            {activePreset.scopes.map((s) => (
-              <Badge key={s} variant="outline" className="font-mono text-xs">
-                {s}
-              </Badge>
-            ))}
-          </CardContent>
-        </Card>
+      {policy.data && (
+        <div className="mt-3">
+          <McpStatusStrip policy={policy.data} />
+        </div>
+      )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Connect an AI assistant</CardTitle>
-            <CardDescription>
-              Add this server to your MCP client. On first use it opens OpenCTEM in your browser:
-              you sign in, choose what it may read, and approve. No key to copy; you can disconnect
-              it any time in My account, Connected applications.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Client configuration</Label>
-              <CopyButton value={oauthConfigJson} label="Configuration" />
-            </div>
-            <pre className="bg-muted overflow-x-auto rounded-md p-4 text-xs">
-              <code>{oauthConfigJson}</code>
-            </pre>
-          </CardContent>
-        </Card>
-
-        {canReadPolicy && <McpPolicyCard canEdit={canWritePolicy} />}
-
-        {canReadPolicy && <OrgClientsCard canEdit={canWritePolicy} />}
-
-        {isOrgAdmin && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Connected applications in this organization</CardTitle>
-              <CardDescription>
-                Every AI application a member connected. Disconnecting one ends its access at once.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ConnectionsList
-                connections={orgConnections.data?.data}
-                isLoading={orgConnections.isLoading}
-                showUser
-                onRevoke={revokeOrgConnection}
-                emptyTitle="No connected applications"
-                emptyDescription="When a member connects an AI assistant, it appears here."
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Connect a script with an API key</CardTitle>
-            <CardDescription>
-              For automation without a person at the keyboard. Pick the key&apos;s purpose, generate
-              a connection key, then add this configuration. The key is scoped to exactly the read
-              permissions above and is bound to your account.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!canWriteKeys && (
-              <p className="text-muted-foreground text-sm">
-                You need the API-keys permission to generate a connection key.
-              </p>
+      {available.length === 1 ? (
+        <div className="mt-5">{connect}</div>
+      ) : (
+        <Tabs value={tab} onValueChange={setTab} className="mt-5">
+          <TabsList>
+            <TabsTrigger value="connect">{t('mcp.tabs.connect', 'Connect')}</TabsTrigger>
+            {available.includes('applications') && (
+              <TabsTrigger value="applications">
+                {t('mcp.tabs.applications', 'Applications')}
+                {pendingCount > 0 && <TabsCount value={pendingCount} />}
+              </TabsTrigger>
             )}
+            {available.includes('connections') && (
+              <TabsTrigger value="connections">
+                {t('mcp.tabs.connections', 'Connections')}
+              </TabsTrigger>
+            )}
+            {available.includes('policy') && (
+              <TabsTrigger value="policy">{t('mcp.tabs.policy', 'Policy')}</TabsTrigger>
+            )}
+          </TabsList>
 
-            {created ? (
-              <div className="border-primary/40 bg-primary/5 space-y-3 rounded-md border p-4">
-                <div className="flex items-start gap-2 text-sm">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <p>
-                    Copy your key now — for security it is shown <strong>only once</strong>. It is
-                    already embedded in the configuration below.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input readOnly value={created.key} className="font-mono text-xs" />
-                  <CopyButton value={created.key} label="Key" />
-                </div>
-              </div>
-            ) : null}
+          <TabsContent value="connect" className="mt-5">
+            {connect}
+          </TabsContent>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Client configuration</Label>
-                <CopyButton value={configJson} label="Configuration" />
-              </div>
-              <pre className="bg-muted overflow-x-auto rounded-md p-4 text-xs">
-                <code>{configJson}</code>
-              </pre>
-              <p className="text-muted-foreground text-xs">
-                Endpoint: <code className="font-mono">{endpoint}</code>. If your OpenCTEM API is on
-                a different host, replace the URL accordingly.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+          {available.includes('applications') && (
+            <TabsContent value="applications" className="mt-5 space-y-5">
+              <AccessRequestsCard canEdit={canWritePolicy} />
+              {policy.data ? (
+                <ApprovedPublishersCard policy={policy.data} canEdit={canWritePolicy} />
+              ) : (
+                policyLoading
+              )}
+              <OrgClientsCard canEdit={canWritePolicy} />
+              {policy.data && <UnverifiedAppsCard policy={policy.data} canEdit={canWritePolicy} />}
+            </TabsContent>
+          )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Write pentest reports with MCP</CardTitle>
-            <CardDescription>
-              Connect a <strong>Pentest report writing</strong> key, then draft report sections
-              inside your MCP client (Claude Desktop, Code, or Cursor) and paste them back into the
-              finding or campaign editor.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm">
-            <ol className="list-decimal space-y-2 pl-5">
-              <li>
-                <strong>Pull context.</strong> Call the read tools —{' '}
-                <code className="font-mono text-xs">get_campaign</code>,{' '}
-                <code className="font-mono text-xs">list_campaign_findings</code>,{' '}
-                <code className="font-mono text-xs">list_retests</code>,{' '}
-                <code className="font-mono text-xs">list_finding_templates</code>, and{' '}
-                <code className="font-mono text-xs">campaign_report_stats</code> — to load the
-                campaign, its findings, retest history, and reusable templates.
-              </li>
-              <li>
-                <strong>Draft with prompts.</strong> Use the MCP prompts{' '}
-                <code className="font-mono text-xs">exec_summary</code>,{' '}
-                <code className="font-mono text-xs">finding_writeup</code>,{' '}
-                <code className="font-mono text-xs">remediation_guidance</code>, and{' '}
-                <code className="font-mono text-xs">attack_narrative</code> to generate each report
-                section from that context.
-              </li>
-              <li>
-                <strong>Paste back.</strong> Review the draft, then paste it into the finding or
-                campaign editor and refine. Nothing is written by the AI — the key is read-only.
-              </li>
-            </ol>
-            <div className="border-primary/40 bg-primary/5 flex items-start gap-2 rounded-md border p-3">
-              <Sparkles className="text-primary mt-0.5 h-4 w-4 shrink-0" />
-              <p className="text-muted-foreground">
-                {t(
-                  'settings.mcp.evidenceNote',
-                  'Evidence files and attachments are never sent to the AI: the tools return only counts.'
-                )}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          {available.includes('connections') && (
+            <TabsContent value="connections" className="mt-5">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('mcp.connections.orgTitle', 'Connected applications')}</CardTitle>
+                  <CardDescription>
+                    {t(
+                      'mcp.connections.orgDescription',
+                      'Every AI application a member connected. Disconnecting one ends its access at once.'
+                    )}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ConnectionsList
+                    connections={orgConnections.data?.data}
+                    isLoading={orgConnections.isLoading}
+                    showUser
+                    onRevoke={revokeOrgConnection}
+                    emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}
+                    emptyDescription={t(
+                      'mcp.connections.orgEmpty',
+                      'When a member connects an AI assistant, it appears here.'
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Generate MCP connection key</DialogTitle>
-            <DialogDescription>
-              Read-only and bound to your account — it stops working if your membership is suspended
-              or removed. Pick the purpose to scope the key.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="mcp-key-purpose">Purpose</Label>
-                <Select value={preset} onValueChange={(v) => handlePresetChange(v as PresetId)}>
-                  <SelectTrigger id="mcp-key-purpose">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(KEY_PRESETS) as PresetId[]).map((id) => (
-                      <SelectItem key={id} value={id}>
-                        {KEY_PRESETS[id].label} ({KEY_PRESETS[id].hint})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {activePreset.scopes.map((s) => (
-                    <Badge key={s} variant="outline" className="font-mono text-xs">
-                      {s}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="mcp-key-name">Name</Label>
-                <Input
-                  id="mcp-key-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Claude on my laptop"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="mcp-key-expiry">Expires</Label>
-                <Select value={expiry} onValueChange={setExpiry}>
-                  <SelectTrigger id="mcp-key-expiry">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {API_KEY_EXPIRY_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isMutating}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreate} disabled={isMutating}>
-              {isMutating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Generate
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {available.includes('policy') && (
+            <TabsContent value="policy" className="mt-5">
+              {policy.data ? (
+                <McpPolicyCard policy={policy.data} canEdit={canWritePolicy} />
+              ) : (
+                policyLoading
+              )}
+            </TabsContent>
+          )}
+        </Tabs>
+      )}
     </Main>
   )
 }

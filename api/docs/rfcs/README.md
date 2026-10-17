@@ -53,7 +53,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-035](RFC-035-sensor-control-plane-under-load.md) | Sensor control plane under load: heartbeats that survive the scans they supervise | **Accepted** (decisions 2026-10-02, §6.1; proposed in api#727). |
 | [RFC-036](RFC-036-easm.md) | External Attack Surface Management (EASM) | **Accepted** (2026-10-02; decisions O1–O10 in §12.3). |
 | [RFC-037](RFC-037-versioning-and-release-train.md) | Versioning rule and release train | **Accepted** (decisions 2026-10-02, §8; design PR #787). |
-| [RFC-038](RFC-038-sensor-tool-settings.md) | Sensor tool settings: typed schemas from the sensor, forms on the platform, signed config back | **Partially implemented** (2026-10-14). |
+| [RFC-038](RFC-038-sensor-tool-settings.md) | Sensor tool settings: typed schemas from the sensor, forms on the platform, signed config back | **Partially implemented** (2026-10-15). |
 | [RFC-039](RFC-039-continuous-retest.md) | Continuous retest with regression reopen | **Implemented**: P1 (#867), P2a (#881) and tool retest (§12: any tool with a retest handler on a tenant sensor); decisions approved 2026-10-03 (#866). |
 | [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) | Mutual distrust between the platform and sensors | **Accepted** (2026-10-03; every recommendation in §9 approved). |
 | [RFC-041](RFC-041-api-path-design.md) | API path design, plane separation and a route style guard | **Accepted** (decisions D1–D12 approved 2026-10-03 as recommended, §8). |
@@ -69,7 +69,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-051](RFC-051-ci-runner-identity-and-gate.md) | CI runner identity and the central gate | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05; P-1..P-6, 2026-10-07); R1, R2, F1 and P1 implemented |
 | [RFC-052](RFC-052-sensor-pairing-and-authorization.md) | Sensor pairing and per-sensor authorization | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented |
 | [RFC-053](RFC-053-migration-baseline.md) | Migration baseline (squash the migration chain) | Implemented |
-| [RFC-054](RFC-054-scope-model.md) | Scope model (what a tenant may actively probe) | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented); P0 implemented |
+| [RFC-054](RFC-054-scope-model.md) | Scope model (what a tenant may actively probe) | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented; repository entries and CI trusts 2026-10-15, §17: implemented); P0 implemented |
 | [RFC-055](RFC-055-tool-contract-v1.md) | Tool Contract v1 (capabilities, descriptors, inputs and outputs of every sensor tool) | Accepted (decisions TC1–TC16, 2026-10-07); in implementation: capability contracts from `ctis/capability` in the stage catalog and ingest (OC1, OC4) shipped; per-tenant tool descriptors (OC2) and later items not built |
 | [RFC-056](RFC-056-web-attack-surface.md) | Web attack surface (origins, endpoints, parameters, path patterns) | Implemented (decisions WS1–WS14, 2026-10-07; W-OC1–W-OC8) |
 | [RFC-057](RFC-057-finding-evidence-and-retest.md) | Finding evidence and honest retests | Implemented in the API (decided 2026-10-07: mask by default with an audited reveal; a tool-agnostic evidence contract); the SDK and sensor emitters follow the tool contract track (RFC-055) |
@@ -78,7 +78,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-060](RFC-060-tool-network-confinement-and-overrides.md) | Tool network confinement, verified built-ins and the tool override surface | Proposed (owner 2026-10-08: "the tool SDK must be secure", and "a developer must be able to override fields such as the User-Agent; support flexibility as much as possible") |
 | [RFC-061](RFC-061-content-packs.md) | Content packs — templates, rules, wordlists and signatures as a contract | Proposed (owner 2026-10-08: "a developer writes a tool and wants to point it at templates or rules other than the default: default + custom, custom only, or another source; it must be flexible and there must be a contract the platform understands". And: "should the tool check for updates before running, or should the platform push them? Think through every use case") |
 | [RFC-062](RFC-062-mcp-authorization.md) | MCP authorization — OAuth 2.1 for AI clients | Accepted, implemented (PRs 1–7 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
-| [RFC-063](RFC-063-support-access.md) | Support access — customer-granted, time-boxed, visible | Proposed (decisions SU1–SU10 recommended; delegated to the platform team, 2026-10-08) |
+| [RFC-063](RFC-063-support-access.md) | Support access — customer-granted, time-boxed, visible | Partially implemented (read-only grants and console support sessions, §11, 2026-10-16); read and write, emergency access and the tenant-tab frame are Proposed |
 | [RFC-064](RFC-064-modules-entitlements-preferences.md) | Modules — entitlements, preferences and one registry | Accepted (decisions MD1–MD12 delegated to the platform team, 2026-10-09) |
 | [RFC-065](RFC-065-bug-bounty-programs.md) | Bug-bounty programs, authorization sources and the Researcher role | Proposed (2026-10-09); P0 in review; P1 designed (§12–§14, owner delegated 2026-10-09); private programs and the public program monitor added 2026-10-10 (§15–§16, owner direction), §15 in implementation |
 | [RFC-066](RFC-066-inventory-vulnerability-matching.md) | Inventory vulnerability matching | Accepted (2026-10-09; decisions O1–O10 adopted as recommended, §11; data model revised by the owner the same day: shared software catalog, matching once per version, §5–§7; feed moved out of the platform into a signed-bundle collector, §5.5, O12). |
@@ -93,7 +93,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-075](RFC-075-asset-freshness.md) | Asset freshness and automatic enrichment | Proposed (2026-10-11); P0 in implementation |
 | [RFC-076](RFC-076-pentest-report-templates.md) | Pentest report templates | Proposed (2026-10-11); implemented: upload, check, preview with sample data, DOCX rendering of a campaign, evidence images, tag reference, full check with fixes, three starter templates |
 | [RFC-077](RFC-077-ci-enforced-gate-and-pr-feedback.md) | CI enforced gate, pull request feedback and diff-aware runs | Implemented in part (decisions G-1..G-10 adopted 2026-10-11; open items in section 8) |
-| [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Proposed (2026-10-11) |
+| [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Partially implemented: the platform console part (§7, 2026-10-16); the user-account phases P1 and P3 are Proposed |
 | [RFC-079](RFC-079-console-platform-settings.md) | Run-time settings in the console instead of environment variables | Proposed (2026-10-11) |
 | [RFC-080](RFC-080-attack-surface-changes-and-digest.md) | Typed attack-surface changes and the weekly digest | Implemented (2026-10-11) |
 | [RFC-081](RFC-081-web-evidence-screenshots.md) | Web evidence and screenshots of web assets | Accepted (2026-10-11); platform side implemented, sensor `screenshot` tool in the sensor repository |
@@ -109,6 +109,20 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-091](RFC-091-code-scanning-baseline.md) | Code scanning — baseline first, then diff-aware CI, with periodic re-review | Accepted (2026-10-14). |
 | [RFC-092](RFC-092-tool-agnostic-platform.md) | Tool-agnostic platform — sensors declare tools, the platform orchestrates capabilities | Proposed (2026-10-14). |
 | [RFC-093](RFC-093-asset-coverage.md) | Asset coverage — every asset gets every capability its type needs, and a gap is never silent | Accepted (2026-10-14). |
+| [RFC-094](RFC-094-platform-contracts-only.md) | The platform depends on contracts only | Proposed (2026-10-14). |
+| [RFC-095](RFC-095-role-templates-and-invitations.md) | Role templates and invitations | Accepted (owner feedback on the invite dialog, 2026-10-15). |
+| [RFC-096](RFC-096-ci-per-repository-settings.md) | CI gate settings per repository | Proposed (2026-10-15). |
+| [RFC-097](RFC-097-ticket-field-mapping.md) | Ticket field and status mapping | Proposed (2026-10-15). |
+| [RFC-098](RFC-098-remediation-tasks.md) | Remediation actions, tasks and suggestions | Accepted (2026-10-15). |
+| [RFC-099](RFC-099-content-packages.md) | Content packages, signatures, revocation and the content catalog | Proposed (2026-10-15). |
+| [RFC-100](RFC-100-shared-sensors.md) | Shared sensors | Accepted (2026-10-15); S0 in review (#2308), S2 in review (#2325), S3 in review, S4 in review, the rest designed |
+| [RFC-104](RFC-104-signup-modes-and-joining.md) | Sign-up modes and organization joining | Accepted (2026-10-15). |
+| [RFC-105](RFC-105-version-check-and-usage-telemetry.md) | Version check and usage telemetry | Accepted (2026-10-16). |
+| [RFC-110](RFC-110-tenant-lifecycles.md) | Tenant lifecycles (sub-statuses and lifecycle schemes for findings) | Accepted (2026-10-16). |
+| [RFC-111](RFC-111-approval-policy.md) | Approval policy (one evaluator for false positives, accepted risks, suppressions and group exceptions) | Accepted (2026-10-16). |
+| [RFC-112](RFC-112-asset-technologies.md) | Asset technologies (detected technology fingerprint per asset) | Accepted (2026-10-16). |
+| [RFC-113](RFC-113-sensor-tool-standard.md) | Sensor tool standard (one contract for jobs, targets and results) | Proposed (2026-10-17). |
+| [RFC-114](RFC-114-system-page.md) | System page and host operations for self-managed installs | Proposed (2026-10-17) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
