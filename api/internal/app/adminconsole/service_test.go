@@ -158,6 +158,18 @@ func (f *fakeConsole) GetSessionByTokenHash(_ context.Context, h string) (*admin
 	return &cp, nil
 }
 
+func (f *fakeConsole) SetSessionElevation(_ context.Context, id shared.ID, role admin.AdminRole, until *time.Time, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, s := range f.sessions {
+		if s.ID == id && s.MFAVerified {
+			s.ElevatedRole, s.ElevatedUntil = role, until
+			return nil
+		}
+	}
+	return admin.ErrSessionNotFound
+}
+
 func (f *fakeConsole) MarkSessionStepUp(_ context.Context, id shared.ID, at time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -250,26 +262,47 @@ func (f *fakeAudit) has(action string) bool {
 // users, and provisioning creates or reuses accounts by email.
 type fakeAccounts struct {
 	mu        sync.Mutex
-	sessions  map[string]*SignedInUser // refresh token -> user
+	sessions  map[string]*SignedInUser // sign-in email -> account
 	byEmail   map[string]shared.ID
 	suspended map[string]bool
 	passwords map[string]string // user id -> password
+	resets    int               // RecordPasswordSuccess calls
+	failures  int               // RecordPasswordFailure calls
+	lockedFor map[string]bool   // sign-in email -> directory reports a locked tenant account
 }
 
-func (f *fakeAccounts) SignedInUser(_ context.Context, token string) (*SignedInUser, error) {
+func (f *fakeAccounts) RecordPasswordFailure(_ context.Context, _ shared.ID) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if u, ok := f.sessions[token]; ok {
-		return u, nil
+	f.failures++
+}
+
+func (f *fakeAccounts) RecordPasswordSuccess(_ context.Context, _ shared.ID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resets++
+}
+
+// VerifyPassword: sessions maps the email the test signs in with to the
+// account; its password is passwords[user id], or the shared test password.
+func (f *fakeAccounts) VerifyPassword(_ context.Context, email, pw string, _ ClientInfo) (*SignedInUser, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, ok := f.sessions[email]
+	if !ok {
+		return nil, admin.ErrInvalidCredentials
 	}
-	return nil, errors.New("invalid refresh token")
-}
-
-func (f *fakeAccounts) EndSignIn(_ context.Context, token string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	delete(f.sessions, token)
-	return nil
+	if f.lockedFor[email] {
+		return nil, admin.ErrAccountLocked
+	}
+	want, ok := f.passwords[u.UserID.String()]
+	if !ok {
+		want = password
+	}
+	if pw != want {
+		return nil, admin.ErrInvalidCredentials
+	}
+	return u, nil
 }
 
 func (f *fakeAccounts) CreateAccount(_ context.Context, email, _ string) (shared.ID, string, error) {
@@ -303,7 +336,7 @@ func (f *fakeAccounts) ChangePassword(_ context.Context, userID shared.ID, curre
 
 const password = "Current-Pass-123"
 
-// refresh is the admin's normal /login session (password sign-in).
+// refresh is the email the admin signs in to the console with.
 const refresh = "refresh-token-of-ops"
 
 type harness struct {
@@ -319,7 +352,7 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	u := &SignedInUser{UserID: shared.NewID(), Email: "ops@acme.io", Name: "Ops", Active: true, PasswordSignIn: true}
+	u := &SignedInUser{UserID: shared.NewID(), Email: "ops@acme.io", Name: "Ops", Active: true}
 	now := time.Now()
 	a := admin.Reconstitute(shared.NewID(), "ops@acme.io", "Ops", admin.AdminRoleSuperAdmin, true,
 		&u.UserID, nil, "", 0, nil, nil, "", now, nil, now)
@@ -356,7 +389,7 @@ var client = ClientInfo{IP: "203.0.113.7", UserAgent: "test"}
 // the TOTP secret and a verified session token.
 func (h *harness) enroll(t *testing.T) (secret, token string) {
 	t.Helper()
-	res, err := h.svc.Start(context.Background(), refresh, client)
+	res, err := h.svc.Start(context.Background(), refresh, password, client)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -388,7 +421,7 @@ func TestEnrollmentThenStartWithMFA(t *testing.T) {
 
 	// Next time: MFA already enrolled, no new secret is issued.
 	h.clock = h.clock.Add(time.Minute)
-	res, err := h.svc.Start(ctx, refresh, client)
+	res, err := h.svc.Start(ctx, refresh, password, client)
 	if err != nil || res.Status != StatusMFARequired || res.Secret != "" {
 		t.Fatalf("second start: %+v %v", res, err)
 	}
@@ -401,47 +434,65 @@ func TestEnrollmentThenStartWithMFA(t *testing.T) {
 func TestStartRefusals(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("not signed in", func(t *testing.T) {
+	t.Run("wrong password or unknown email answer the same", func(t *testing.T) {
 		h := newHarness(t)
-		for _, tok := range []string{"", "forged"} {
-			if _, err := h.svc.Start(ctx, tok, client); !errors.Is(err, admin.ErrNotSignedIn) {
-				t.Fatalf("token %q: got %v, want ErrNotSignedIn", tok, err)
+		for _, tc := range []struct{ email, pw string }{{"", password}, {"nobody@acme.io", password}, {refresh, "wrong"}, {refresh, ""}} {
+			if _, err := h.svc.Start(ctx, tc.email, tc.pw, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+				t.Fatalf("%q/%q: got %v, want ErrInvalidCredentials", tc.email, tc.pw, err)
 			}
 		}
 	})
 
 	t.Run("signed-in user who is not an administrator", func(t *testing.T) {
 		h := newHarness(t)
-		h.accounts.sessions["member"] = &SignedInUser{UserID: shared.NewID(), Active: true, PasswordSignIn: true}
-		if _, err := h.svc.Start(ctx, "member", client); !errors.Is(err, admin.ErrNotPlatformAdmin) {
-			t.Fatalf("got %v, want ErrNotPlatformAdmin", err)
+		h.accounts.sessions["member"] = &SignedInUser{UserID: shared.NewID(), Active: true}
+		if _, err := h.svc.Start(ctx, "member", password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+			t.Fatalf("got %v, want ErrInvalidCredentials", err)
 		}
 	})
 
-	t.Run("SSO sign-in cannot open the console", func(t *testing.T) {
+	t.Run("non-admin, inactive and locked admins never reset the lockout counter", func(t *testing.T) {
 		h := newHarness(t)
-		h.user.PasswordSignIn = false
-		if _, err := h.svc.Start(ctx, refresh, client); !errors.Is(err, admin.ErrPasswordSignInRequired) {
-			t.Fatalf("got %v, want ErrPasswordSignInRequired", err)
+		h.accounts.sessions["member"] = &SignedInUser{UserID: shared.NewID(), Active: true}
+		_, _ = h.svc.Start(ctx, "member", password, client)
+		h.admin.Deactivate()
+		_, _ = h.svc.Start(ctx, refresh, password, client)
+		if h.accounts.resets != 0 {
+			t.Fatalf("lockout counter reset %d times for refused accounts", h.accounts.resets)
 		}
-		if !h.audit.has(ActionLoginFailed) {
-			t.Fatal("refused SSO attempt must be audited")
+	})
+
+	t.Run("an accepted administrator resets the counter once", func(t *testing.T) {
+		h := newHarness(t)
+		if _, err := h.svc.Start(ctx, refresh, password, client); err != nil {
+			t.Fatal(err)
+		}
+		if h.accounts.resets != 1 {
+			t.Fatalf("resets = %d, want 1", h.accounts.resets)
 		}
 	})
 
 	t.Run("suspended user account", func(t *testing.T) {
 		h := newHarness(t)
 		h.user.Active = false
-		if _, err := h.svc.Start(ctx, refresh, client); !errors.Is(err, admin.ErrNotSignedIn) {
-			t.Fatalf("got %v, want ErrNotSignedIn", err)
+		if _, err := h.svc.Start(ctx, refresh, password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+			t.Fatalf("got %v, want ErrInvalidCredentials", err)
+		}
+	})
+
+	t.Run("locked tenant account answers like a wrong password", func(t *testing.T) {
+		h := newHarness(t)
+		h.accounts.lockedFor = map[string]bool{refresh: true}
+		if _, err := h.svc.Start(ctx, refresh, password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+			t.Fatalf("got %v, want ErrInvalidCredentials", err)
 		}
 	})
 
 	t.Run("deactivated administrator", func(t *testing.T) {
 		h := newHarness(t)
 		h.admin.Deactivate()
-		if _, err := h.svc.Start(ctx, refresh, client); !errors.Is(err, admin.ErrNotPlatformAdmin) {
-			t.Fatalf("got %v, want ErrNotPlatformAdmin", err)
+		if _, err := h.svc.Start(ctx, refresh, password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+			t.Fatalf("got %v, want ErrInvalidCredentials", err)
 		}
 	})
 }
@@ -450,7 +501,7 @@ func TestLockoutBlocksTheConsole(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	for i := 0; i < admin.MaxFailedLoginAttempts; i++ {
-		res, err := h.svc.Start(ctx, refresh, client)
+		res, err := h.svc.Start(ctx, refresh, password, client)
 		if err != nil {
 			t.Fatalf("start %d: %v", i, err)
 		}
@@ -459,7 +510,7 @@ func TestLockoutBlocksTheConsole(t *testing.T) {
 	if !h.admin.IsLocked() {
 		t.Fatal("expected administrator locked after repeated wrong codes")
 	}
-	if _, err := h.svc.Start(ctx, refresh, client); !errors.Is(err, admin.ErrNotPlatformAdmin) {
+	if _, err := h.svc.Start(ctx, refresh, password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
 		t.Fatalf("locked start: %v", err)
 	}
 }
@@ -471,11 +522,11 @@ func TestReplayedCodeIsRejected(t *testing.T) {
 
 	h.clock = h.clock.Add(totp.Period) // new step
 	code, _ := totp.Code(secret, h.clock)
-	res1, _ := h.svc.Start(ctx, refresh, client)
+	res1, _ := h.svc.Start(ctx, refresh, password, client)
 	if _, _, err := h.svc.VerifyMFA(ctx, res1.PendingToken, code, client); err != nil {
 		t.Fatalf("first use: %v", err)
 	}
-	res2, _ := h.svc.Start(ctx, refresh, client)
+	res2, _ := h.svc.Start(ctx, refresh, password, client)
 	if _, _, err := h.svc.VerifyMFA(ctx, res2.PendingToken, code, client); !errors.Is(err, admin.ErrInvalidMFACode) {
 		t.Fatalf("replay: got %v, want ErrInvalidMFACode", err)
 	}
@@ -484,7 +535,7 @@ func TestReplayedCodeIsRejected(t *testing.T) {
 func TestPendingSessionCannotAuthenticateAndExpires(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	res, _ := h.svc.Start(ctx, refresh, client)
+	res, _ := h.svc.Start(ctx, refresh, password, client)
 
 	if _, err := h.svc.Authenticate(ctx, res.PendingToken); err == nil {
 		t.Fatal("a pending (pre-TOTP) session must not authenticate")
@@ -499,7 +550,7 @@ func TestPendingSessionCannotAuthenticateAndExpires(t *testing.T) {
 func TestWrongCodeCountsTowardLockout(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	res, _ := h.svc.Start(ctx, refresh, client)
+	res, _ := h.svc.Start(ctx, refresh, password, client)
 	if _, _, err := h.svc.VerifyMFA(ctx, res.PendingToken, "000000", client); !errors.Is(err, admin.ErrInvalidMFACode) {
 		t.Fatalf("wrong code: %v", err)
 	}
@@ -535,7 +586,7 @@ func TestResetCredentialsRequiresReenrollment(t *testing.T) {
 	if _, err := h.svc.Authenticate(ctx, token); err == nil {
 		t.Fatal("sessions must end on reset")
 	}
-	res, err := h.svc.Start(ctx, refresh, client)
+	res, err := h.svc.Start(ctx, refresh, password, client)
 	if err != nil || res.Status != StatusMFAEnrollment {
 		t.Fatalf("after reset the next start must re-enroll: %+v %v", res, err)
 	}
@@ -548,12 +599,8 @@ func TestLogoutEndsSession(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	_, token := h.enroll(t)
-	if err := h.svc.Logout(ctx, token, refresh, client); err != nil {
+	if err := h.svc.Logout(ctx, token, client); err != nil {
 		t.Fatal(err)
-	}
-	// The /login session it was opened from ends too.
-	if _, err := h.svc.Start(ctx, refresh, client); !errors.Is(err, admin.ErrNotSignedIn) {
-		t.Fatalf("start after logout: got %v, want ErrNotSignedIn", err)
 	}
 	if _, err := h.svc.Authenticate(ctx, token); err == nil {
 		t.Fatal("logged-out session must not authenticate")

@@ -45,7 +45,7 @@ const (
 
 // Caps.
 const (
-	MaxKeySetValidity    = feedsign.MaxKeySetValidity
+	MaxKeySetValidity    = 180 * 24 * time.Hour
 	MaxBundleValidity    = 7 * 24 * time.Hour
 	MaxKeySetBytes       = 64 << 10
 	MaxManifestBytes     = 1 << 20
@@ -124,7 +124,7 @@ type Latest struct {
 // the pinned one, valid at now, version not below minVersion
 // (feedsign.VerifyKeySet with this feed's payload type and kind).
 func VerifyKeySet(envelope []byte, pinnedRoot string, minVersion uint64, now time.Time) (*KeySet, error) {
-	return feedsign.VerifyKeySet(envelope, feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind},
+	return feedsign.VerifyKeySet(envelope, feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind, MaxValidity: MaxKeySetValidity},
 		pinnedRoot, minVersion, now)
 }
 

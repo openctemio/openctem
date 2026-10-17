@@ -92,7 +92,14 @@ type Pairing struct {
 	ConfirmedAt *time.Time
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
+
+	// InstanceTokenID is the instance enrollment token the sensor started
+	// with: such a request never has a tenant and approves a shared sensor.
+	InstanceTokenID *shared.ID
 }
+
+// IsInstance reports whether the request enrolls a shared sensor.
+func (p *Pairing) IsInstance() bool { return p != nil && p.InstanceTokenID != nil }
 
 // Revealed reports whether the sensor revealed its nonce (the SAS exists).
 func (p *Pairing) Revealed() bool { return p != nil && len(p.SensorNonce) > 0 && p.SAS != "" }
@@ -154,4 +161,16 @@ type PairingRepository interface {
 	// rows older than purgeBefore; it revokes the pending key of an approval
 	// that was never confirmed.
 	ExpireForPlatform(ctx context.Context, now, purgeBefore time.Time) (int64, error)
+
+	// CreateInstanceToken stores a new instance enrollment token (its hash).
+	CreateInstanceToken(ctx context.Context, t *InstanceEnrollmentToken) error
+	// StartWithInstanceTokenUnscoped spends the unused, unexpired token with
+	// this hash and inserts p bound to it, in one transaction; false (and
+	// nothing written) when no such token exists.
+	StartWithInstanceTokenUnscoped(ctx context.Context, tokenHash string, p *Pairing, now time.Time) (*InstanceEnrollmentToken, bool, error)
+	// GetInstanceTokenUnscoped returns a token by id.
+	GetInstanceTokenUnscoped(ctx context.Context, id shared.ID) (*InstanceEnrollmentToken, error)
+	// ApproveInstanceUnscoped approves a revealed request bound to an
+	// instance token: a shared sensor (no tenant) and its pending key.
+	ApproveInstanceUnscoped(ctx context.Context, a InstanceApproval) (*PairingApprovalResult, error)
 }

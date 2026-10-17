@@ -115,6 +115,12 @@ func TestRegister_NewAndExistingEmailAnswerIdentically(t *testing.T) {
 	if first.Code != http.StatusCreated {
 		t.Fatalf("seed registration: %d %s", first.Code, first.Body.String())
 	}
+	// The existing account proved its address (self-registration verifies
+	// it under SIGNUP_MODE=open). An unverified one gets a set-password link
+	// in the background instead, which another test covers.
+	for _, u := range deps.userRepo.users {
+		u.VerifyEmail()
+	}
 	again := postJSON(t, h.Register, map[string]string{"email": "taken@example.com", "password": "An0therPassw0rd!", "name": "Same Name"})
 	fresh := postJSON(t, h.Register, map[string]string{"email": "fresh@example.com", "password": "Str0ngPassw0rd!", "name": "Same Name"})
 	if again.Code != fresh.Code {

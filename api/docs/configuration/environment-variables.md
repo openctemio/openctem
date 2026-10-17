@@ -16,7 +16,7 @@ admin console and the organization settings.
 
 Read by the API server at start-up (`server`). The server refuses to start when a variable under one of its prefixes is a likely misspelling of a listed name, or when a typed value does not parse; `server -check-config` runs the same checks without starting.
 
-Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`.
+Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `VERSION_CHECK_`.
 
 ### Application
 
@@ -25,6 +25,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
 | `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
+| `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Unset: not named. |
 
 ### Brand
 
@@ -73,6 +74,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `DB_MAX_IDLE_CONNS` | int | `5` |  |  | Maximum idle connections kept in the pool. |
 | `DB_MAX_OPEN_CONNS` | int | `25` |  |  | Maximum open connections in the API's pool. |
 | `DB_NAME` | string | `openctem` |  |  | Database name. |
+| `DB_ADMIN_PASSWORD` | string | empty |  | yes | Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`. |
+| `DB_ADMIN_USER` | string | empty |  |  | Role the platform console's identity tables (administrators, console sessions and credentials, the platform identity provider) are written with, through a second small pool. The least-privilege bootstrap (`admin_user`) creates it and takes write on those tables away from `DB_USER`. Unset: one role, as before. |
 | `DB_PASSWORD` | string | empty | yes | yes | Password of `DB_USER`. Required outside `APP_ENV=development`; there is no default. |
 | `DB_PORT` | int | `5432` |  |  | PostgreSQL port. |
 | `DB_SSLMODE` | string | `disable` | production |  | libpq `sslmode`. Production refuses `disable`: use `require`, `verify-ca` or `verify-full`. |
@@ -123,6 +126,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENCRYPTION_KEY_PREVIOUS` | list | empty |  | yes | Comma-separated earlier keys, only while a key rotation is in progress. Values encrypted under them stay readable. Remove them when the rotation is finished. |
 | `APP_TEMPLATE_SIGNING_KEY` | string | empty |  | yes | Master secret the per-organization signing keys of custom scanner templates are derived from. Same formats as `APP_ENCRYPTION_KEY` and must differ from it. Set it to rotate template keys independently of the encryption key. Unset: derived from `APP_ENCRYPTION_KEY`. |
 | `APP_CONTENT_SIGNING_KEY` | string | empty |  | yes | Master secret of each organization's content pack signing key (Ed25519). Same formats as `APP_ENCRYPTION_KEY` and must differ from it and from `APP_TEMPLATE_SIGNING_KEY`. Unset: derived from `APP_ENCRYPTION_KEY` under its own label. |
+| `FINGERPRINT_KEY` | string | empty | production | yes | Server secret the fingerprint of each reported secret finding is keyed from (and the key CI jobs hash raw secrets with). At least 32 characters: `openssl rand -hex 32`. Never rotate it with `APP_ENCRYPTION_KEY`: changing it changes every secret's identity, so a secret seen again opens a second finding. On an install that already stores secret findings, set it to the current `APP_ENCRYPTION_KEY` value (the key those fingerprints were made with). Required unless `APP_ENV=development`, where `APP_ENCRYPTION_KEY` is used when it is unset. Back it up with the database. |
 | `CONTENT_TRUST_ROOT_KEY_IDS` | list | empty |  |  | Extra content catalog roots (comma-separated key ids, `SHA256:<hex>`) trusted beside the roots pinned in the release, for an operator's own catalog source (RFC-099). Setting it writes a high-severity admin audit row at startup. Unset: only the pinned roots; with none, bundle imports are refused. |
 | `CONTENT_SIGSTORE_TRUSTED_ROOT` | path | empty |  |  | Path of a Sigstore trusted root (JSON) that replaces the one embedded in the release for verifying publisher signatures of content packages (RFC-099). Setting it writes a high-severity admin audit row with the file's SHA-256 at startup. Unset: the embedded trusted root. |
 
@@ -159,7 +163,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SCOPE_PUBLIC_CODE_HOSTS_EXTRA` | list | empty |  |  | Comma-separated code hosts shared by many organizations, in addition to the built-in list (github.com, gitlab.com, bitbucket.org and others). A repository scope entry on such a host must name a namespace (host/namespace/*), never the whole host. |
 | `SCOPE_MAX_PUBLIC_CIDR_V4` | int | `16` |  |  | Largest public IPv4 range (prefix length) one scope entry may cover. Private ranges are not capped. |
 | `SCOPE_MAX_PUBLIC_CIDR_V6` | int | `32` |  |  | Largest public IPv6 range one scope entry may cover. |
-| `TENANT_CREATION_MODE` | string | `admin_only` |  |  | `admin_only`: only a platform administrator creates organizations (admin console or `bootstrap-admin`). `self_service`: any signed-in user may create organizations. Any other value stops start-up. |
+| `SIGNUP_MODE` | string | `disabled` |  |  | The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (System > E-mail) at start and verify every self-registered address; `open` in production also needs the Turnstile keys or `SIGNUP_CAPTCHA`. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`. |
+| `SIGNUP_CAPTCHA` | string | empty |  |  | Only value: `off-i-understand`, which accepts `SIGNUP_MODE=open` in production without a CAPTCHA (labs, training installs). Unset: open sign-up in production refuses to start without `CAPTCHA_TURNSTILE_SECRET` and `CAPTCHA_TURNSTILE_SITE_KEY`. |
 | `CAPTCHA_TURNSTILE_SECRET` | string | empty |  | yes | Cloudflare Turnstile secret for the public request-access form. Unset: no CAPTCHA (the rate limits still apply). Set together with `CAPTCHA_TURNSTILE_SITE_KEY`. |
 | `CAPTCHA_TURNSTILE_SITE_KEY` | string | empty |  |  | Cloudflare Turnstile site key (public) shown on the request-access form. Set together with `CAPTCHA_TURNSTILE_SECRET`. |
 
@@ -308,6 +313,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `CERT_MONITOR_CERTSPOTTER_URL` | string | `https://api.certspotter.com` |  |  | Fallback CT search service when the primary fails. `off` disables the fallback. |
+| `VERSION_CHECK_ENABLED` | bool | `true` |  |  | Daily version check: one anonymous download of the signed release feed (no instance id, version or counts), compared with the running version on the instance; the platform console shows newer and security releases. `false` stops the download; offline import in the console still works. See `docs/architecture/version-check.md`. |
+| `VERSION_CHECK_URL` | url | `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json` |  |  | Where the version check reads the signed release feed (https only). Point it at an internal mirror if needed; the signature, not the host, is trusted. A mirror on a private address also needs the private egress allowlist. |
 | `CERT_MONITOR_ENABLED` | bool | `true` |  |  | Certificate Transparency discovery sweep (passive, public data). `false` stops all outbound CT-log queries. |
 | `CERT_MONITOR_FEED_URL` | string | `https://crt.sh` |  |  | CT-log search service queried per organization domain. |
 | `CERT_MONITOR_INTERVAL` | duration | `24h` |  |  | How often the CT sweep runs. |
@@ -363,6 +370,26 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `ADMIN_AUDIT_RETENTION_BATCH_SIZE` | int | `10000` |  |  | Rows per delete transaction. |
+
+### Admin console
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ADMIN_ALLOWED_CIDRS` | list | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` |  |  | Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address. |
+| `ADMIN_LISTEN_ADDR` | string | empty |  |  | The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener. |
+| `ADMIN_LISTEN_ALLOW_ALL_INTERFACES` | bool | `false` |  |  | `true` lets `ADMIN_LISTEN_ADDR` be any address: every interface (`:8081`, `0.0.0.0:8081`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port. |
+| `ADMIN_ELEVATION` | string | `required` |  |  | `required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in. |
+
+### Audit log retention
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ADMIN_AUDIT_SINK` | string | empty |  |  | Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off. |
+| `ADMIN_AUDIT_SINK_SECRET` | string | empty |  | yes | HMAC-SHA256 key that signs each request to an `https://` `ADMIN_AUDIT_SINK` (`X-OpenCTEM-Signature`, `X-OpenCTEM-Timestamp`, `X-OpenCTEM-Batch-Id`). At least 32 bytes, required for https, refused for other destinations. Never logged. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CA_FILE` | path | empty |  |  | PEM bundle that replaces the system roots when verifying a `syslog+tls://` `ADMIN_AUDIT_SINK`. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT` | path | empty |  |  | PEM client certificate presented to a `syslog+tls://` `ADMIN_AUDIT_SINK` (mutual TLS), so the collector can accept only this sender. Set together with `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY`. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY` | path | empty |  |  | PEM private key of `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT`. |
+| `ADMIN_AUDIT_SINK_HEAD_INTERVAL` | duration | `15m` |  |  | How often the administrators' audit chain head (position and hash) and the chain verification state are sent to `ADMIN_AUDIT_SINK` when no row is new. A later re-signing of the chain cannot match a head already sent. |
 | `ADMIN_AUDIT_RETENTION_DAYS` | int | `365` |  |  | Age threshold. At least 30 when deletion is enabled. |
 | `ADMIN_AUDIT_RETENTION_DRY_RUN` | bool | `true` |  |  | Report what would be deleted instead of deleting. Set `false` to enforce retention (irreversible). |
 | `ADMIN_AUDIT_RETENTION_ENABLED` | bool | `true` |  |  | Run the platform admin audit-log retention controller. |
@@ -371,6 +398,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AUDIT_RETENTION_DAYS` | int | `365` |  |  | Organization audit entries older than this are archived and deleted, keeping the hash chain verifiable. |
 | `ADMIN_SESSION_PURGE_INTERVAL` | duration | `1h` |  |  | How often platform-admin console sessions past their absolute expiry are deleted. |
 | `ASSET_CHANGE_RETENTION_DAYS` | int | `400` |  |  | Days the asset change timeline keeps events. Minimum 30. |
+| `ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY` | bool | `true` |  |  | The asset technology backfill logs the component links it would remove (a count and a sample) instead of deleting them. Set `false` to delete links that have no version and no CPE; each deleted link is recorded. |
 | `INVITATION_PURGE_INTERVAL` | duration | `1h` |  |  | How often expired, unaccepted invitations are deleted. |
 
 ### AI triage
@@ -441,6 +469,8 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
+| `ADMIN_API_URL` | string | empty |  |  | Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. |
+| `OPENCTEM_ADMIN_PLANE` | string | `shared` |  |  | `separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`. |
 | `BACKEND_API_URL` | string | `http://localhost:8080` | yes |  | Internal URL of the API. The console proxies the browser's `/api/v1` calls and the WebSocket upgrade to it. Compose: `http://api:8080`. |
 | `SECURE_COOKIES` | string | `true` |  |  | `Secure` flag on the cookies the console sets. Only `false` turns it off (local `http://` development). |
 | `TRUST_PROXY_HEADERS` | string | `false` |  |  | Forward `X-Real-IP` / `X-Forwarded-For` to the API. Set `true` only when a proxy in front of the console overwrites those headers (the gateway does), otherwise a browser could choose its own address. |
@@ -451,7 +481,6 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 | `NEXT_PUBLIC_APP_URL` | string | `http://localhost:3000` |  |  | Public origin of the console, used for the Content-Security-Policy and auth redirects. Set to the platform's public URL. |
 | `NEXT_PUBLIC_WS_BASE_URL` | string | empty |  |  | WebSocket base URL. Unset: the console's own origin. |
 | `NEXT_PUBLIC_SENTRY_DSN` | string | empty |  |  | Sentry DSN for browser and server error reporting. Unset: off. |
-| `NEXT_PUBLIC_APP_NAME` | string | `OpenCTEM` |  |  | Product name in the page title. |
 | `NEXT_PUBLIC_APP_DESCRIPTION` | string | empty |  |  | Page description meta tag. |
 | `NEXT_PUBLIC_COOKIE_DOMAIN` | string | empty |  |  | Cookie domain for the console's cookies. Unset: the host only. |
 | `NEXT_PUBLIC_ENABLE_SIDEBAR_BADGES` | string | `false` |  |  | Show live count badges in the sidebar. |
@@ -551,6 +580,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |
 | `AI_MAX_CONCURRENT_JOBS` | unset it; it limited nothing, AI triage jobs run on the background job queue |
 | `AUTH_ALLOW_REGISTRATION` | unset it; who may sign up is the sign-up policy (Console > System > Sign-up) |
+| `TENANT_CREATION_MODE` | unset it and set SIGNUP_MODE: admin_only is SIGNUP_MODE=disabled (the default), self_service is SIGNUP_MODE=open |
 | `SMTP_ENABLED` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
 | `SMTP_HOST` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
 | `SMTP_PORT` | unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
