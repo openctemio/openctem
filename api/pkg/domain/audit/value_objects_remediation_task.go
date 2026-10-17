@@ -35,7 +35,6 @@ var _ = registerActions("remediation_task", map[Action]Severity{
 	ActionRemediationTaskFixClaimed: SeverityMedium,
 	// One request to hide the risk of every open finding of the task.
 	ActionRemediationTaskExceptionRequested: SeverityMedium,
-	ActionRemediationTaskFixClaimed:         SeverityMedium,
 	ActionRemediationTaskIssueCreated:       SeverityLow,
 })
 
