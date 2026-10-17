@@ -462,7 +462,7 @@ func (h *CompensatingControlHandler) loadControlAssetIDs(ctx context.Context, co
 		controlID,
 	)
 	if err != nil {
-		h.logger.Warn("load control assets failed", "control_id", controlID, "error", err)
+		h.logger.Warn("load control assets failed", "control_id", logger.SanitizeValue(controlID), "error", logger.SanitizeError(err))
 		return nil
 	}
 	defer func() { _ = rows.Close() }()
@@ -489,7 +489,7 @@ func (h *CompensatingControlHandler) loadControlFindingIDs(ctx context.Context, 
 		controlID,
 	)
 	if err != nil {
-		h.logger.Warn("load control findings failed", "control_id", controlID, "error", err)
+		h.logger.Warn("load control findings failed", "control_id", logger.SanitizeValue(controlID), "error", logger.SanitizeError(err))
 		return nil
 	}
 	defer func() { _ = rows.Close() }()
@@ -503,6 +503,10 @@ func (h *CompensatingControlHandler) loadControlFindingIDs(ctx context.Context, 
 		if id, err := shared.IDFromString(raw); err == nil {
 			ids = append(ids, id)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		h.logger.Warn("load control findings rows failed", "control_id", logger.SanitizeValue(controlID), "error", logger.SanitizeError(err))
+		return nil
 	}
 	return ids
 }
@@ -626,7 +630,7 @@ func (h *CompensatingControlHandler) LinkAssets(w http.ResponseWriter, r *http.R
 			id, assetID, tenantID,
 		)
 		if err != nil {
-			h.logger.Error("compensating control link asset", "error", err, "asset_id", assetID)
+			h.logger.Error("compensating control link asset", "error", logger.SanitizeError(err), "asset_id", logger.SanitizeValue(assetID))
 			apierror.InternalServerError("internal error").WriteJSON(w)
 			return
 		}
@@ -699,7 +703,7 @@ func (h *CompensatingControlHandler) LinkFindings(w http.ResponseWriter, r *http
 			id, findingID, tenantID,
 		)
 		if err != nil {
-			h.logger.Error("compensating control link finding", "error", err, "finding_id", findingID)
+			h.logger.Error("compensating control link finding", "error", logger.SanitizeError(err), "finding_id", logger.SanitizeValue(findingID))
 			apierror.InternalServerError("internal error").WriteJSON(w)
 			return
 		}
