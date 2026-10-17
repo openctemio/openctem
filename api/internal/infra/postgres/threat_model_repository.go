@@ -273,7 +273,7 @@ func (r *ThreatModelRepository) ListModels(ctx context.Context, tenantID shared.
 	}
 	defer func() { _ = rows.Close() }()
 
-	models := make([]*threatmodel.ThreatModel, 0, page.Limit())
+	models := make([]*threatmodel.ThreatModel, 0, capHint(page.Limit()))
 	for rows.Next() {
 		m, serr := r.scanModel(rows.Scan)
 		if serr != nil {

@@ -329,7 +329,7 @@ func TestCheckEnvironment(t *testing.T) {
 		{"bad enum", []string{"SENSOR_TRANSPORT_V3=on"}, []string{"SENSOR_TRANSPORT_V3 must be one of auto, off"}, nil},
 		{"empty value is unset", []string{"SERVER_PORT="}, nil, nil},
 		{"retired names are left to rejectRetiredEnv", []string{"AGENT_KEY_TTL=1h"}, nil, nil},
-		{"other components' names are known", []string{"OPENCTEM_TLS_MODE=internal", "SENSOR_MTLS_UPSTREAM=api:8443", "DB_MIGRATE_USER=owner"}, nil, nil},
+		{"other components' names are known", []string{"OPENCTEM_TLS_MODE=internal", "SENSOR_MTLS_UPSTREAM=api:9443", "DB_MIGRATE_USER=owner"}, nil, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

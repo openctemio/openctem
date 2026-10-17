@@ -367,6 +367,11 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:8080' }}
+      # The tenant image must not carry any of the platform console.
+      - name: Tenant build holds no console routes
+        run: |
+          sh scripts/check-tenant-bundle.test.sh
+          sh scripts/check-tenant-bundle.sh .next/server
 
   web-ok:
     name: Web CI OK

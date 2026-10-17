@@ -385,8 +385,8 @@ async function completeLogin(
     authProvider: 'local',
   }
 
-  // A platform administrator belongs to no organization: send them to the
-  // admin console (which asks for the TOTP code) instead of onboarding.
+  // A platform administrator belongs to no organization: the sign-in page
+  // points them to the platform console (its own site) instead of onboarding.
   if (loginData.platform_admin) {
     return { success: true, user, platformAdmin: true, tenants: [] }
   }

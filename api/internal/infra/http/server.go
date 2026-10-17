@@ -171,10 +171,23 @@ func (s *Server) Logger() *logger.Logger {
 	return s.logger
 }
 
+// applyPlane makes the main listener serve only this process's plane
+// (OPENCTEM_PLANE), whatever the router holds: the console API alone on the
+// admin plane, never the console API on the tenant plane.
+func (s *Server) applyPlane() {
+	switch s.config.AdminPlane.Plane {
+	case config.PlaneAdmin:
+		s.httpServer.Handler = adminOnly(s.httpServer.Handler)
+	case config.PlaneTenant:
+		s.httpServer.Handler = publicOnly(s.httpServer.Handler)
+	}
+}
+
 // Start starts the HTTP server, and the console's own listener when
 // ADMIN_LISTEN_ADDR is set (the main listener then answers 404 for the
 // console API).
 func (s *Server) Start() error {
+	s.applyPlane()
 	if s.adminListenerEnabled() {
 		s.httpServer.Handler = publicOnly(s.httpServer.Handler)
 		s.adminServer = s.newAdminServer()

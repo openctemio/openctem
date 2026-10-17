@@ -338,6 +338,12 @@ type AppConfig struct {
 	Name string
 	Env  string
 	URL  string // Public app URL (used as fallback for sensor config base URL)
+	// ManagedService (MANAGED_SERVICE, default false) marks a hosted,
+	// multi-tenant service. It changes defaults only, never features: the
+	// verified-domain requirement for platform sensors defaults on until an
+	// administrator stores a value in the console
+	// (docs/rfcs/RFC-100-shared-sensors.md §6).
+	ManagedService bool
 	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
 	// to every organization created here and never changed (empty: not
 	// named).
@@ -949,13 +955,13 @@ type SensorTransportV3Config struct {
 	Mode string
 	// PublicHost is host[:port] sensors dial for the gRPC binding
 	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443 for a dedicated
-	// sensor host name, or 192.0.2.10:8444 for a port of its own). Empty:
+	// sensor host name, or 192.0.2.10:9443 for a port of its own). Empty:
 	// the platform's public URL host and port (SensorPublicHost), reached
 	// through the gateway's ALPN routing; advertised only while the
 	// self-probe passes either way.
 	PublicHost string
 	// MTLSListenAddr is the gRPC binding's TLS 1.3 listener
-	// (SENSOR_MTLS_LISTEN_ADDR, default :8443). The gateway passes
+	// (SENSOR_MTLS_LISTEN_ADDR, default :9443). The gateway passes
 	// connections that offer the sensor ALPN id (or name the dedicated
 	// sensor host) through to it at layer 4.
 	MTLSListenAddr string
@@ -1359,12 +1365,14 @@ func Load() (*Config, error) {
 			Env:    appEnv(),
 			URL:    getEnv("APP_URL", ""),
 			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
+
+			ManagedService: getEnvBool("MANAGED_SERVICE", false),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
 				Mode:           strings.ToLower(strings.TrimSpace(getEnv("SENSOR_TRANSPORT_V3", TransportV3Auto))),
 				PublicHost:     getEnv("SENSOR_PUBLIC_HOST", ""),
-				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":8443"),
+				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":9443"),
 				CACertFile:     getEnv("SENSOR_MTLS_CA_CERT_FILE", ""),
 				CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
 				CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),
@@ -1672,6 +1680,7 @@ func Load() (*Config, error) {
 			AllowedCIDRs:             getEnvSlice("ADMIN_ALLOWED_CIDRS", DefaultAdminAllowedCIDRs),
 			ListenAddr:               getEnv("ADMIN_LISTEN_ADDR", ""),
 			ListenAllowAllInterfaces: getEnvBool("ADMIN_LISTEN_ALLOW_ALL_INTERFACES", false),
+			Plane:                    getEnv("OPENCTEM_PLANE", PlaneAll),
 		},
 		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
 		AdminAuditSink: AdminAuditSinkConfig{

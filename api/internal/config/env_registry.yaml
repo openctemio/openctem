@@ -43,6 +43,12 @@ vars:
     type: string
     example: "http://localhost:8080"
     description: "Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment."
+  - name: MANAGED_SERVICE
+    component: api
+    group: "Application"
+    type: bool
+    default: "false"
+    description: "Set to  only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
   - name: DEPLOYMENT_REGION
     component: api
     group: "Application"
@@ -1195,7 +1201,7 @@ vars:
     component: api
     group: "Sensors"
     type: string
-    default: ":8443"
+    default: ":9443"
     description: "TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it."
   - name: SENSOR_MTLS_TRUSTED_PROXIES
     component: api
@@ -1538,6 +1544,13 @@ vars:
     group: "Admin console"
     type: string
     description: "The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener."
+  - name: OPENCTEM_PLANE
+    component: api
+    group: "Admin console"
+    type: enum
+    values: [all, tenant, admin]
+    default: "all"
+    description: "What this API process serves (RFC-022 revision 21). `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`."
   - name: ADMIN_LISTEN_ALLOW_ALL_INTERFACES
     component: api
     group: "Admin console"
@@ -1926,13 +1939,7 @@ vars:
     component: web
     group: "Web console"
     type: string
-    description: "Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`."
-  - name: OPENCTEM_ADMIN_PLANE
-    component: web
-    group: "Web console"
-    type: string
-    default: "shared"
-    description: "`separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`."
+    description: "Platform console app only (`openctem-console`): internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. The tenant web app never reads it."
   - name: BACKEND_API_URL
     component: web
     group: "Web console"
@@ -2103,6 +2110,12 @@ vars:
     type: string
     default: "web:3000"
     description: "Address of the web console."
+  - name: OPENCTEM_CONSOLE_UPSTREAM
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "console:3000"
+    description: "Address of the platform console service, which the console's site (`OPENCTEM_ADMIN_SITE`) serves at its root."
   - name: OPENCTEM_SENSOR_GATEWAY
     component: gateway
     group: "Gateway"
@@ -2119,8 +2132,32 @@ vars:
     component: gateway
     group: "Gateway"
     type: string
-    default: "api:8443"
-    description: "Address of the API's sensor listener the gateway passes sensor connections to."
+    default: "api:9443"
+    description: "Address of the API's sensor listener the gateway passes sensor connections to (internal only; sensors dial the gateway's port 443)."
+  - name: OPENCTEM_ADMIN_SITE
+    component: gateway
+    group: "Gateway"
+    type: enum
+    values: [port, host, off]
+    default: "off"
+    description: "The platform console's own site: `port` serves it on `https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT>`, `host` on `https://<OPENCTEM_ADMIN_HOST>` (recommended for production: a separate origin), `off` not at all. The Compose stack sets `port`."
+  - name: OPENCTEM_ADMIN_HOST
+    component: gateway
+    group: "Gateway"
+    type: string
+    description: "The console's own DNS name (no scheme, port or path), with `OPENCTEM_ADMIN_SITE=host`; must differ from `OPENCTEM_HOSTNAME`."
+  - name: OPENCTEM_ADMIN_PORT
+    component: gateway
+    group: "Gateway"
+    type: int
+    default: "8443"
+    description: "The console's port, with `OPENCTEM_ADMIN_SITE=port`. Not a security control: change it if it is taken on the host. Must differ from 80, 443 and `GATEWAY_HTTPS_PORT`."
+  - name: OPENCTEM_ADMIN_ALLOWED_CIDRS
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7"
+    description: "Client networks that may reach the console site, space-separated; everyone else gets 403. The Compose stack passes the same list to the API as `ADMIN_ALLOWED_CIDRS`."
   - name: OPENCTEM_HOSTNAME
     component: compose
     group: "Docker Compose stack"
@@ -2160,6 +2197,12 @@ vars:
     type: string
     default: "ghcr.io/openctemio/openctem-web"
     description: "Image repository of the web console."
+  - name: CONSOLE_IMAGE
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "ghcr.io/openctemio/openctem-console"
+    description: "Image repository of the platform console."
   - name: MIGRATIONS_IMAGE
     component: compose
     group: "Docker Compose stack"
@@ -2178,12 +2221,23 @@ vars:
     type: string
     default: "OPENCTEM_VERSION"
     description: "Per-image tag override. Leave unset."
+  - name: CONSOLE_VERSION
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "OPENCTEM_VERSION"
+    description: "Per-image tag override. Leave unset."
   - name: GATEWAY_BIND
     component: compose
     group: "Docker Compose stack"
     type: string
     default: "0.0.0.0"
     description: "Host interface the gateway port is published on."
+  - name: OPENCTEM_ADMIN_BIND
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    description: "Host interface the console port is published on, with `OPENCTEM_ADMIN_SITE=port` (default `GATEWAY_BIND`). A private or VPN address keeps the console off the public interface; a published container port is not filtered by the host firewall."
   - name: GATEWAY_HTTPS_PORT
     component: compose
     group: "Docker Compose stack"
@@ -2264,6 +2318,12 @@ vars:
     type: string
     default: "1g"
     description: "Memory limit of the `web` container."
+  - name: CONSOLE_MEMORY_LIMIT
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "512m"
+    description: "Memory limit of the `console` container."
   - name: GATEWAY_MEMORY_LIMIT
     component: compose
     group: "Docker Compose stack"

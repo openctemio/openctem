@@ -106,7 +106,27 @@ func (h *SAMLHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Secure:   true,
 		SameSite: http.SameSiteNoneMode,
 	})
+	// The target is the tenant-configured IdP SSO URL (never a request
+	// value), so a relative-path allowlist does not apply; still refuse
+	// anything that is not an absolute http(s) URL with a host.
+	if !isSafeIdPRedirect(redirectURL) {
+		h.redirectWithError(w, r, errors.New("idp sso url is not an absolute http(s) URL"))
+		return
+	}
 	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+// isSafeIdPRedirect reports whether u is an absolute http or https URL with a
+// host and no embedded credentials or control characters.
+func isSafeIdPRedirect(u string) bool {
+	if strings.ContainsAny(u, "\\\r\n\t") {
+		return false
+	}
+	p, err := url.Parse(u)
+	if err != nil || p.Host == "" || p.User != nil {
+		return false
+	}
+	return p.Scheme == "https" || p.Scheme == "http"
 }
 
 // ACS handles POST /api/v1/auth/saml/{org}/acs — the IdP posts the SAML

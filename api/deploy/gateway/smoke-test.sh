@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test for the OpenCTEM gateway: validates the Caddyfile in every TLS
 # mode, checks the entrypoint's refusals, then runs the gateway (TLS mode
-# `internal`) against two stub upstreams that answer "api" or "web", and checks
+# `internal`) against stub upstreams that answer "api", "web" or "console", and checks
 # where each request lands. Then builds the gateway image with the layer4
 # module (deploy/gateway/Dockerfile; or uses GATEWAY_L4_IMAGE) and checks the
 # sensor ALPN and SNI routing next to the normal routing. Needs only Docker
@@ -53,8 +53,8 @@ done
 echo "== Caddyfile validates with the console's own site, in every TLS mode"
 for mode in internal acme files http; do
 	if [ "$mode" = files ] && [ ! -s "$certs/tls.crt" ]; then continue; fi
-	addr="https://203.0.113.10:8444"
-	[ "$mode" != http ] || addr="http://:8444"
+	addr="https://203.0.113.10:8443"
+	[ "$mode" != http ] || addr="http://:8443"
 	for a in "$addr" "https://admin.example.test"; do
 		[ "$mode" != http ] || [ "$a" = "$addr" ] || a="http://admin.example.test"
 		if docker run --rm -e OPENCTEM_TLS_MODE="$mode" -e OPENCTEM_HOSTNAME=203.0.113.10 -e ACME_EMAIL=ops@example.com \
@@ -92,8 +92,10 @@ refuses "sensor passthrough without the layer4 module" -e OPENCTEM_TLS_MODE=inte
 refuses "unknown console site mode" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=public
 refuses "console host mode without its host name" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=host
 refuses "console host name equal to the main one" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=host -e OPENCTEM_ADMIN_HOST=x
-refuses "console host name with a port" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=host -e OPENCTEM_ADMIN_HOST=admin.x:8444
+refuses "console host name with a port" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=host -e OPENCTEM_ADMIN_HOST=admin.x:8443
 refuses "console on the main port" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=port -e OPENCTEM_ADMIN_PORT=443
+refuses "console on the main site's published port" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=port -e GATEWAY_HTTPS_PORT=8443
+refuses "console port out of range" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=port -e OPENCTEM_ADMIN_PORT=70000
 refuses "console allow-list that is not CIDRs" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=port -e "OPENCTEM_ADMIN_ALLOWED_CIDRS=10.0.0.0/8 office"
 if docker run --rm -e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -v "$here:/etc/caddy:ro" \
 	--entrypoint sh "$image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
@@ -110,10 +112,11 @@ pad="$(printf 'p%.0s' $(seq 1 1024))"
 stub() {
 	docker run -d --name "$run-$1" --network "$net" --network-alias "$1" "$image" \
 		caddy respond --listen :8000 --header "Content-Type: application/json" \
-		--body "$1 xrealip={http.request.header.X-Real-IP}| xff={http.request.header.X-Forwarded-For}| cfip={http.request.header.Cf-Connecting-Ip}| plane={http.request.header.X-OpenCTEM-Plane}| $pad" >/dev/null
+		--body "$1 xrealip={http.request.header.X-Real-IP}| xff={http.request.header.X-Forwarded-For}| cfip={http.request.header.Cf-Connecting-Ip}| $pad" >/dev/null
 }
 stub api
 stub web
+stub console
 docker run -d --name "$run-gw" --network "$net" \
 	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
 	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
@@ -199,13 +202,13 @@ echo "== The console on its own site (OPENCTEM_ADMIN_SITE=port), private network
 subnet="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$net")"
 docker run -d --name "$run-gwa" --network "$net" \
 	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
-	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
+	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 -e OPENCTEM_CONSOLE_UPSTREAM=console:8000 \
 	-e OPENCTEM_ADMIN_SITE=port -e OPENCTEM_ADMIN_ALLOWED_CIDRS="$subnet" \
 	-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
 # Same network, but an allow-list the test client is not in.
 docker run -d --name "$run-gwb" --network "$net" \
 	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
-	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
+	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 -e OPENCTEM_CONSOLE_UPSTREAM=console:8000 \
 	-e OPENCTEM_ADMIN_SITE=port -e OPENCTEM_ADMIN_ALLOWED_CIDRS="192.0.2.0/24" \
 	-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
 console() { # console <gateway> <port> <method> <path> [curl args...]: prints "<body> <code>"
@@ -216,25 +219,26 @@ console() { # console <gateway> <port> <method> <path> [curl args...]: prints "<
 		-w ' %{http_code}' "$@" "https://gateway.test:$port$path" 2>/dev/null || true
 }
 for _ in $(seq 1 30); do
-	case "$(console "$run-gwa" 8444 GET /admin)" in *" 200") break ;; esac
+	case "$(console "$run-gwa" 8443 GET /)" in *" 200") break ;; esac
 	sleep 1
 done
 expect() { # expect <label> <glob> <got>
 	# shellcheck disable=SC2254 # the pattern is the point
 	case "$3" in $2) ok "$1" ;; *) bad "$1: got ${3%% p*}" ;; esac
 }
-expect "console site serves the console, marked as the admin plane" "web *plane=admin|*200" "$(console "$run-gwa" 8444 GET /admin/organizations)"
-expect "console site proxies the console API through the web console" "web *plane=admin|*200" "$(console "$run-gwa" 8444 POST /api/v1/admin/auth/login)"
-expect "console site never serves /metrics" "* 404" "$(console "$run-gwa" 8444 GET /metrics)"
-expect "main site has no console pages" "* 404" "$(console "$run-gwa" 443 GET /admin)"
+expect "console site serves the console service at its root" "console *200" "$(console "$run-gwa" 8443 GET /)"
+expect "console site serves the console's pages" "console *200" "$(console "$run-gwa" 8443 GET /organizations)"
+expect "console site proxies the console API through the console service" "console *200" "$(console "$run-gwa" 8443 POST /api/v1/admin/auth/login)"
+expect "console site passes the client address on" "console xrealip=*200" "$(console "$run-gwa" 8443 GET /)"
+expect "console site never serves /metrics" "* 404" "$(console "$run-gwa" 8443 GET /metrics)"
+expect "main site never reaches the console service" "web *200" "$(console "$run-gwa" 443 GET /organizations)"
 expect "main site has no console API" "* 404" "$(console "$run-gwa" 443 GET /api/v1/admin/tenants -H 'Cookie: admin_session=abc')"
 expect "main site has no console API, even for a token client" "* 404" "$(console "$run-gwa" 443 GET /api/v1/admin/tenants -H 'Authorization: Bearer eyJ.token')"
-for p in //admin /admin/ /x/../admin "/api/v1//admin/tenants" "/api/v1/./admin/tenants" "/%61dmin" "/api/v1%2Fadmin/tenants"; do
-	expect "main site has no console as $p either" "* 404" "$(console "$run-gwa" 443 GET "$p" --path-as-is)"
+for p in "/api/v1//admin/tenants" "/api/v1/./admin/tenants" "/api/v1/x/../admin/tenants" "/api/v1%2Fadmin/tenants"; do
+	expect "main site has no console API as $p either" "* 404" "$(console "$run-gwa" 443 GET "$p" --path-as-is)"
 done
 expect "main site still serves the tenant UI" "web *200" "$(console "$run-gwa" 443 GET /login)"
-expect "a client cannot mark a main-site request as the console's" "web *plane=|*200" "$(console "$run-gwa" 443 GET /login -H 'X-OpenCTEM-Plane: admin')"
-expect "console site refuses a network outside the allow-list" "* 403" "$(console "$run-gwb" 8444 GET /admin)"
+expect "console site refuses a network outside the allow-list" "* 403" "$(console "$run-gwb" 8443 GET /)"
 expect "the allow-list does not apply to the main site" "web *200" "$(console "$run-gwb" 443 GET /login)"
 
 echo "== Behind a trusted front proxy, the client is the right-most untrusted X-Forwarded-For entry"
@@ -410,13 +414,13 @@ fi
 # (one file per connection), so a passed-through connection shows the PROXY
 # protocol v2 signature (it ends in "QUIT") and the untouched ClientHello.
 docker run -d --name "$run-mtls" --network "$net" --network-alias mtls --entrypoint sh "$image" -c \
-	'i=0; while :; do i=$((i+1)); nc -l -p 8443 -w 3 >"/tmp/conn.$i" 2>/dev/null; done' >/dev/null
+	'i=0; while :; do i=$((i+1)); nc -l -p 9443 -w 3 >"/tmp/conn.$i" 2>/dev/null; done' >/dev/null
 # Run as api/deploy/docker-compose.yml runs it: non-root, no capability,
 # no-new-privileges, ports below 1024 opened by the namespaced sysctl.
 docker run -d --name "$run-gwl4" --network "$net" \
 	--cap-drop ALL --security-opt no-new-privileges:true --sysctl net.ipv4.ip_unprivileged_port_start=0 \
 	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
-	-e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=sensors.gateway.test -e SENSOR_MTLS_UPSTREAM=mtls:8443 \
+	-e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=sensors.gateway.test -e SENSOR_MTLS_UPSTREAM=mtls:9443 \
 	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
 	-v "$here:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh >/dev/null
 l4ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gwl4")"

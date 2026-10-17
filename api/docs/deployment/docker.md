@@ -110,7 +110,7 @@ The platform administration console has its own site and its own API
 listener, reachable only from private networks by default (RFC-022
 revision 20):
 
-- the gateway serves it on `https://<OPENCTEM_HOSTNAME>:8444` (`OPENCTEM_ADMIN_SITE=port`,
+- the gateway serves it on `https://<OPENCTEM_HOSTNAME>:8443` (`OPENCTEM_ADMIN_SITE=port`,
   the default) or on its own DNS name (`OPENCTEM_ADMIN_SITE=host`,
   `OPENCTEM_ADMIN_HOST=admin.example.com`: the stronger choice, since the browser
   then isolates the console from the main site entirely);
@@ -124,9 +124,22 @@ revision 20):
   internal listener (`ADMIN_LISTEN_ADDR=:8081`, never published), reached by the
   web console through `ADMIN_API_URL`.
 
-From a VPS, use an SSH tunnel: `ssh -L 8444:127.0.0.1:8444 you@server`, then
-open `https://localhost:8444/admin`. `./setup.sh <host> --admin-host <name>` puts
+From a VPS, use an SSH tunnel: `ssh -L 8443:127.0.0.1:8443 you@server`, then
+open `https://localhost:8443/admin`. `./setup.sh <host> --admin-host <name>` puts
 the console on its own host name; `--admin-public` opens it to every network.
+
+### System page and host operations
+
+The platform console has a read-only **System** page (platform administrators
+only): service health, free space of the data volumes and the database size,
+the age of the last backup, certificate expiry, and the running version with
+the version-check result. When free space drops below 20% (warning) or 10%
+(critical), the backup is older than 26 hours, or a certificate is close to
+expiry, the platform administrators are emailed through the system mailer and
+a metric and a log line are written. Backup, restore, upgrade and key rotation
+stay in the Ansible kit's command line over SSH; the kit installs no host web
+console. An operator who wants one can follow the optional recipe in
+[RFC-114](../rfcs/RFC-114-system-page.md), appendix A.
 
 ### Outbound connection: the version check
 

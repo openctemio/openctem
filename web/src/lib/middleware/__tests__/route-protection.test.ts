@@ -16,7 +16,6 @@ import {
 
 // Built at runtime so secret scanners do not read a literal token.
 const JWT = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiJ1MSJ9', 'c2lnbmF0dXJl'].join('.')
-const ADMIN_NONCE = 'A'.repeat(43) + '='
 
 function jar(cookies: Record<string, string>): CookieReader {
   return (name) => cookies[name]
@@ -30,7 +29,6 @@ const COOKIE_STATES: Record<string, Record<string, string>> = {
   'malformed refresh': { refresh_token: 'not-a-token', app_tenant: '{"id":"t1"}' },
   'empty access': { auth_token: '' },
   'tenant only': { app_tenant: '{"id":"t1"}' },
-  'admin console': { admin_csrf_ui: ADMIN_NONCE },
 }
 
 const SESSION_STATES = new Set(['access', 'refresh', 'refresh+tenant'])
@@ -44,8 +42,6 @@ const PUBLIC_PAGES = [
   '/invitations/tok123',
   '/auth/callback/google',
   '/auth/sso/callback/entra',
-  '/admin/login',
-  '/admin/login/callback',
   '/icon',
 ]
 
@@ -62,9 +58,10 @@ const PROTECTED_PAGES = [
   '/loginx',
   '/invitationsx',
   '/administrators',
+  // No console on this site (RFC-022 revision 21): an ordinary page path.
+  '/admin',
+  '/admin/login',
 ]
-
-const ADMIN_PAGES = ['/admin', '/admin/organizations', '/admin/security/activity']
 
 describe('decideAuth: routes x cookie states', () => {
   for (const [state, cookies] of Object.entries(COOKIE_STATES)) {
@@ -83,18 +80,6 @@ describe('decideAuth: routes x cookie states', () => {
           expect(decision.type).toBe('redirect')
           if (decision.type === 'redirect') {
             expect(decision.location.startsWith('/login')).toBe(true)
-          }
-        }
-      })
-
-      it.each(ADMIN_PAGES)('%s needs the admin console cookie', (pathname) => {
-        const decision = decideAuth({ pathname, search: '', cookie: jar(cookies) })
-        if (state === 'admin console') {
-          expect(decision).toEqual({ type: 'allow' })
-        } else {
-          expect(decision.type).toBe('redirect')
-          if (decision.type === 'redirect') {
-            expect(decision.location).toBe(`/admin/login?next=${encodeURIComponent(pathname)}`)
           }
         }
       })
@@ -173,14 +158,6 @@ describe('no redirect loop', () => {
       type: 'allow',
     })
   })
-
-  it('/admin/login is let through without a console cookie', () => {
-    expect(
-      decideAuth({ pathname: '/admin/login', search: '?next=%2Fadmin', cookie: jar({}) })
-    ).toEqual({
-      type: 'allow',
-    })
-  })
 })
 
 describe('cookie shape', () => {
@@ -198,15 +175,6 @@ describe('cookie shape', () => {
   it('/login and the proxy agree (hasSessionCookie is shared)', () => {
     expect(hasSessionCookie(jar({ refresh_token: 'garbage' }))).toBe(false)
     expect(hasSessionCookie(jar({ refresh_token: JWT }))).toBe(true)
-  })
-
-  it('a malformed admin console cookie does not open the console', () => {
-    const decision = decideAuth({
-      pathname: '/admin',
-      search: '',
-      cookie: jar({ admin_csrf_ui: 'x' }),
-    })
-    expect(decision.type).toBe('redirect')
   })
 })
 
