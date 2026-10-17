@@ -1892,6 +1892,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing = sp
 		s.SensorPairing.SetAudit(s.Audit)
 		s.SensorPairing.SetEvents(s.Sensor)
+		// Shared sensor enrollment (RFC-100) has no tenant: console audit.
+		s.SensorPairing.SetAdminAudit(repos.AdminAuditLog)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
@@ -1952,6 +1954,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
 	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
+	s.ContentCatalog.SetPublishing(contentPublishing(s.ContentPacks, s.PlatformContentPacks, contentSigner,
+		func(ctx context.Context, id shared.ID) (string, error) {
+			t, err := repos.Tenant.GetByID(ctx, id)
+			if err != nil {
+				return "", err
+			}
+			return t.Slug(), nil
+		}))
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets

@@ -56,6 +56,11 @@ import (
 //	                                            (critical audit, password never
 //	                                            returned); test: super_admin,
 //	                                            to the caller's address only
+//	/admin/settings/console-mfa
+//	                          any admin         super_admin + step-up
+//	/admin/auth/factors, webauthn/*, recovery-codes
+//	                          own account only  register, remove and new codes:
+//	                                            step-up
 //	/admin/support            own grants only   open a session: ops_admin+ named in
 //	                                            a live grant + step-up; reads only
 //	                                            through a live session (audited in
@@ -74,8 +79,8 @@ import (
 //	                                            TOTP code (audited, both logs)
 //	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
 //	                                            code (audited with the reason)
-//	/admin/content-catalog    any admin         import: super_admin + reason + fresh
-//	                                            TOTP code (audited with the reason)
+//	/admin/content-catalog    any admin         import, publish, revoke: super_admin +
+//	                                            reason + fresh TOTP code (audited)
 //	/admin/program-feed       any admin         local bundle switch: super_admin +
 //	                                            reason + fresh TOTP code (audited)
 //	/admin/version-check      any admin         import: super_admin + step-up
@@ -107,8 +112,16 @@ func registerAdminRoutes(
 		return
 	}
 
-	// Base chain: a verified console session (any role).
-	adminMiddlewares := []Middleware{h.AdminAuthMiddleware.Authenticate}
+	// The console network check first, on every console route (the
+	// server-wide gate already ran on the raw path; this one sees what was
+	// routed here).
+	var netGate []Middleware
+	if h.AdminNetwork != nil {
+		netGate = []Middleware{h.AdminNetwork}
+	}
+
+	// Base chain: the network check, then a verified console session (any role).
+	adminMiddlewares := append(cloneMW(netGate), h.AdminAuthMiddleware.Authenticate)
 
 	// Super-admin group guard, composed onto the base chain. Built here so the
 	// authorization guarantee lives at the route layer, not in handlers.
@@ -123,6 +136,13 @@ func registerAdminRoutes(
 	// every console write and fails on one that is not classified.
 	stepUp := func(purpose string) Middleware {
 		return middleware.RequireAdminStepUp(h.AdminStepUp, purpose)
+	}
+
+	// freshStepUp is for adding or replacing a sign-in factor and turning the
+	// factor policy: a fresh code or a single-use security-key confirmation,
+	// never the session's step-up window.
+	freshStepUp := func(purpose string) Middleware {
+		return middleware.RequireAdminFreshStepUp(h.AdminStepUp, purpose)
 	}
 
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
@@ -143,6 +163,19 @@ func registerAdminRoutes(
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
 				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
+				// Security keys and recovery codes (RFC-078). The sign-in steps
+				// share the TOTP step's login bucket and pending cookie.
+				r.POST("/webauthn/session/options", h.AdminConsole.WebAuthnLoginOptions, preSession(crossSite, loginRL)...)
+				r.POST("/webauthn/session", h.AdminConsole.WebAuthnLogin, preSession(crossSite, loginRL)...)
+				r.POST("/recovery", h.AdminConsole.RecoveryLogin, preSession(crossSite, loginRL)...)
+				r.GET("/factors", h.AdminConsole.Factors, authed)
+				r.POST("/webauthn/credentials/options", h.AdminConsole.WebAuthnRegisterOptions, authed, freshStepUp("webauthn.register"))
+				r.POST("/webauthn/credentials", h.AdminConsole.WebAuthnRegister, authed)
+				r.PATCH("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRename, authed)
+				r.DELETE("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRemove, authed, stepUp("webauthn.remove"))
+				r.POST("/recovery-codes", h.AdminConsole.GenerateRecoveryCodes, authed, freshStepUp("recovery_codes.generate"))
+				r.POST("/step-up/webauthn/options", h.AdminConsole.WebAuthnStepUpOptions, authed)
+				r.POST("/step-up/webauthn", h.AdminConsole.WebAuthnStepUp, consoleRL.LoginMiddleware(), authed)
 				// Time-boxed elevation: read-only until the session elevates
 				// (a fresh confirmation); ending it is always allowed.
 				r.POST("/elevate", h.AdminConsole.Elevate, authed, stepUp("console.elevate"))
@@ -159,7 +192,7 @@ func registerAdminRoutes(
 				r.POST("/idp/start", h.AdminConsole.IdPStart, preSession(crossSite, idpRL)...)
 				r.POST("/idp/callback", h.AdminConsole.IdPCallback, preSession(crossSite, idpRL)...)
 			}
-		})
+		}, netGate...)
 	}
 
 	// Support access (RFC-063): the administrator a grant names opens a
@@ -243,6 +276,16 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// Console MFA policy ("require security keys", RFC-078): any admin reads;
+	// a super admin changes it with a step-up.
+	if h.AdminConsole != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/console-mfa", func(r Router) {
+			r.GET("/", h.AdminConsole.GetMFAPolicy)
+			r.PUT("/", h.AdminConsole.PutMFAPolicy, requireSuper, freshStepUp("settings.console_mfa"))
+		}, adminMiddlewares...)
+	}
+
 	// Platform e-mail (Console > System > E-mail, RFC-079): any admin reads;
 	// a super admin changes it with a fresh authenticator code and sends the
 	// test message (to their own address only).
@@ -288,6 +331,28 @@ func registerAdminRoutes(
 			// Egress addresses organizations see to allowlist the scanners.
 			r.GET("/egress", h.AdminScanPolicy.GetSharedSensorsEgress)
 			r.PUT("/egress", h.AdminScanPolicy.UpdateSharedSensorsEgress, requireSuper, stepUp("settings.shared_sensors_egress"))
+		}, adminMiddlewares...)
+		// Shared sensors may scan internal zones, and the anomaly alert
+		// thresholds (RFC-100 §6, §9): same gate, step-up and audit.
+		router.Group("/api/v1/admin/settings/shared-sensor-internal-zones", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensorInternalZones)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorInternalZones, requireSuper, stepUp("settings.shared_sensor_internal_zones"))
+		}, adminMiddlewares...)
+		router.Group("/api/v1/admin/settings/shared-sensor-anomaly", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensorAnomaly)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorAnomaly, requireSuper, stepUp("settings.shared_sensor_anomaly"))
+		}, adminMiddlewares...)
+	}
+
+	// Shared sensor enrollment (RFC-100 §7): a super admin issues a
+	// single-use instance enrollment token with a reason and a fresh console
+	// authenticator code (checked in the handler; the service writes the
+	// console audit row).
+	if h.AdminSharedSensor != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/shared-sensors", func(r Router) {
+			r.POST("/enrollment-tokens", h.AdminSharedSensor.CreateInstanceEnrollmentToken, requireSuper,
+				stepUp("shared_sensors.enrollment_token"))
 		}, adminMiddlewares...)
 	}
 
@@ -347,6 +412,8 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/content-catalog", func(r Router) {
 			r.GET("/", c.Status)
 			r.POST("/import", c.Import, requireSuper, stepUp("content_catalog.change"))
+			r.POST("/packages", c.Publish, requireSuper, stepUp("content_catalog.change"))
+			r.POST("/packages/revoke", c.Revoke, requireSuper, stepUp("content_catalog.change"))
 		}, adminMiddlewares...)
 	}
 
@@ -436,11 +503,13 @@ func registerAdminRoutes(
 			// organization that has none (RFC-022 rev. 5). The platform
 			// administrator never adds users to an organization that has an
 			// owner (409); the owner and its administrators do that.
-			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, with(read, bypass("user list", true))...)
+			// The member list is personal data: every view is audited, and a
+			// read-only administrator gets counts only (the handler redacts).
+			r.GET("/{tenantId}/users", h.AdminOrganization.ListUsers, with(read, bypass("user list", true), audit("organization.users_view"))...)
 			// Creating the first owner (or recovering one) hands an
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
-				with([]Middleware{opsWrite, stepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
+				with([]Middleware{opsWrite, freshStepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
 
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
@@ -540,9 +609,12 @@ func registerAdminRoutes(
 			}
 			return out
 		}
+		// Finding people by email is personal data: ops_admin+ (a read-only
+		// administrator sees counts elsewhere, never accounts).
+		opsRead := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
 		router.Group("/api/v1/admin/platform-users", func(r Router) {
-			r.GET("/", h.AdminPlatformUser.Search)
-			r.GET("/{user_id}", h.AdminPlatformUser.Get, audited("platform_user.view", nil)...)
+			r.GET("/", h.AdminPlatformUser.Search, opsRead...)
+			r.GET("/{user_id}", h.AdminPlatformUser.Get, append(cloneMW(opsRead), audited("platform_user.view", nil)...)...)
 			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
 			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
 			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)

@@ -136,6 +136,13 @@ func (f *fakeSigner) fail(err error) {
 // payload bytes of the response. It returns the statement.
 func verifySignedJob(t *testing.T, c wireCommand, pub ed25519.PublicKey, tenantID, sensorID string) *jobsign.Statement {
 	t.Helper()
+	return verifySignedJobTarget(t, c, pub, tenantID, sensorID, ".")
+}
+
+// verifySignedJobTarget is verifySignedJob for a command whose one target is
+// target (a shared job's target must be public, so never ".").
+func verifySignedJobTarget(t *testing.T, c wireCommand, pub ed25519.PublicKey, tenantID, sensorID, target string) *jobsign.Statement {
+	t.Helper()
 	if len(c.SignedJob) == 0 {
 		t.Fatalf("command %s handed out without signed_job", c.ID)
 	}
@@ -152,7 +159,7 @@ func verifySignedJob(t *testing.T, c wireCommand, pub ed25519.PublicKey, tenantI
 	if st.LeaseEpoch != c.LeaseEpoch || st.LeaseEpoch < 1 {
 		t.Fatalf("statement lease epoch %d, command %d", st.LeaseEpoch, c.LeaseEpoch)
 	}
-	if st.CommandType != "scan" || st.Tool != "semgrep" || len(st.Targets) != 1 || st.Targets[0] != "." {
+	if st.CommandType != "scan" || st.Tool != "semgrep" || len(st.Targets) != 1 || st.Targets[0] != target {
 		t.Fatalf("statement %+v does not describe the command", st)
 	}
 	if !st.ExpiresAt.After(st.IssuedAt) || st.ExpiresAt.Sub(st.IssuedAt) > jobsign.MaxTTL {

@@ -171,6 +171,8 @@ export function FindingProperties({
             <StatusSelect
               findingId={finding.id}
               value={triage.status}
+              subStatusId={triage.subStatusId}
+              allowSubStatusMoves
               onChange={triage.changeStatus}
               loading={triage.statusBusy}
               disabled={locked}
