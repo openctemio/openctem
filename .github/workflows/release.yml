@@ -98,9 +98,10 @@ jobs:
           ## Container images (multi-arch: amd64 + arm64)
 
           \`\`\`bash
-          docker pull ghcr.io/openctemio/openctem:${TAG}      # all-in-one (API + web + gateway)
+          docker pull ghcr.io/openctemio/openctem:${TAG}      # all-in-one (API + web + console + gateway)
           docker pull ghcr.io/openctemio/openctem-api:${TAG}
           docker pull ghcr.io/openctemio/openctem-web:${TAG}
+          docker pull ghcr.io/openctemio/openctem-console:${TAG}   # platform console
           docker pull ghcr.io/openctemio/migrations:${TAG}
           docker pull ghcr.io/openctemio/seed:${TAG}
           docker pull ghcr.io/openctemio/admin-cli:${TAG}
