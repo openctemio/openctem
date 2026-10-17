@@ -376,6 +376,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                 label: t('scans.new.viewScan'),
                 onClick: () => {
                   // Navigate to the scan detail page
+                  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- toast action outside the router context; a full navigation to the scan page is intended
                   window.location.href = `/scans/${scanConfig.id}`
                 },
               },
