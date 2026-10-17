@@ -1185,7 +1185,7 @@ vars:
     group: "Sensors"
     type: path
     default: "data/sensor-ca"
-    description: "Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume."
+    description: "Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys)."
   - name: SENSOR_MTLS_CA_KEY_FILE
     component: api
     group: "Sensors"
@@ -1910,7 +1910,7 @@ vars:
     component: tool
     group: "Administration tools"
     type: string
-    description: "`openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume."
+    description: "`openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys)."
   - name: SIGNER_TENANT_BURST
     component: tool
     group: "Administration tools"
