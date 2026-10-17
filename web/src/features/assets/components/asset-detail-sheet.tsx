@@ -42,6 +42,7 @@ import { AssetOwnersTab } from './asset-owners-tab'
 import { AssetScanningSection } from './asset-scanning-section'
 import { AssetScopeChip } from './asset-scope-chip'
 import { KeyFactsSection, hasKeyFacts } from './key-facts'
+import { AssetTechnologiesSection, AssetTechnologiesTab } from './technologies'
 import {
   RiskSummarySection,
   OwnershipSection,
@@ -301,6 +302,20 @@ export function AssetDetailSheet<T extends Asset>({
           },
         ]
       : []),
+    // What probes fingerprinted on the asset (RFC-112), when anything.
+    ...((asset.technologies?.length ?? 0) > 0
+      ? [
+          {
+            value: 'technologies',
+            label: (
+              <>
+                {t('assets.technologies.title', 'Technologies')}
+                <TabsCount value={asset.technologies?.length ?? 0} />
+              </>
+            ),
+          },
+        ]
+      : []),
     // What the asset runs and the CVEs its versions fall in (RFC-066).
     { value: 'software', label: t('assets.sheet.tab.software', 'Software') },
     ...(showFindingsTab
@@ -450,6 +465,12 @@ export function AssetDetailSheet<T extends Asset>({
                 own curated sections instead. */}
             {overviewContent === undefined && <KeyFactsSection asset={asset} />}
 
+            {/* What runs on it, by category (RFC-112). */}
+            <AssetTechnologiesSection
+              asset={asset}
+              onViewAll={() => setActiveTab('technologies')}
+            />
+
             <RiskSummarySection
               asset={asset}
               onViewFindings={showFindingsTab ? () => setActiveTab('findings') : undefined}
@@ -554,7 +575,9 @@ export function AssetDetailSheet<T extends Asset>({
           />
         )}
 
-        {tab === 'software' && <AssetSoftwareTab assetId={asset.id} />}
+        {tab === 'technologies' && <AssetTechnologiesTab assetId={asset.id} />}
+
+        {tab === 'software' && <AssetSoftwareTab assetId={asset.id} assetType={asset.type} />}
 
         {tab === 'findings' && <AssetFindings assetId={asset.id} assetName={asset.name} />}
 

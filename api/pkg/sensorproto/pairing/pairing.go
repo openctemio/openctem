@@ -122,6 +122,12 @@ type StartRequest struct {
 	// SensorID asks to re-pair this existing registration (lost or
 	// compromised key). The administrator must approve it like a new one.
 	SensorID string `json:"sensor_id,omitempty"`
+	// EnrollmentToken is a single-use instance enrollment token (octe_…)
+	// a super administrator issued: the request is approved as a shared
+	// sensor (scope instance, no tenant) once the nonce is revealed. An
+	// unusable token is refused with 401, whatever the reason. Never with
+	// Code or SensorID.
+	EnrollmentToken string `json:"enrollment_token,omitempty"`
 }
 
 // StartResponse is the 201 answer to POST /pairings. The answer has the same
@@ -154,7 +160,14 @@ type Identity struct {
 	// Repair is true when the pairing replaced the key of an existing
 	// registration.
 	Repair bool `json:"repair,omitempty"`
+	// Scope is "instance" for a shared sensor (TenantID is then empty and
+	// the confirmation transcript carries an empty tenant id); empty for a
+	// sensor of the organization TenantID.
+	Scope string `json:"scope,omitempty"`
 }
+
+// ScopeInstance is Identity.Scope of a shared sensor.
+const ScopeInstance = "instance"
 
 // StatusResponse is the answer to GET /pairings/{id}.
 type StatusResponse struct {

@@ -86,5 +86,6 @@
   "common.cvss.value.CIA.L": "Low",
   "common.cvss.value.CIA.N": "None",
   "common.failedToLoad": "Failed to load {title}",
-  "common.unexpectedError": "An unexpected error occurred"
+  "common.unexpectedError": "An unexpected error occurred",
+  "common.moreTabs": "More"
 }
