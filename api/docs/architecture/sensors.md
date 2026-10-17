@@ -385,6 +385,41 @@ class, the tenant with the fewest platform jobs in flight goes first
 (migration 000461, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
 
+## Shared sensor enrollment
+
+A shared sensor is enrolled with a **single-use instance enrollment token**
+([RFC-100](../rfcs/RFC-100-shared-sensors.md) §7), never a long-lived
+registration secret:
+
+1. A super administrator issues it in the console
+   (`POST /api/v1/admin/shared-sensors/enrollment-tokens`: super admin, the
+   route-level step-up, a reason), or an install registers the value it
+   generated for its bundled sensor (`bootstrap-admin sensor-token
+   -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN`). The token is `octe_` plus 49
+   letters or digits, lives 5 to 60 minutes (the table refuses more than an
+   hour), is shown once and stored only as an HMAC-SHA256 with the sensor-key
+   pepper (`instance_enrollment_tokens`). Each issue writes a console audit
+   row (high) with the reason.
+2. The sensor starts an ordinary pairing (RFC-052, its own Ed25519 key, the
+   request signed with it) and puts the token in `enrollment_token`. The
+   platform spends the token and inserts the request bound to it
+   (`sensor_pairings.instance_token_id`) in one transaction; the first key
+   that presents it wins. A malformed, unknown, expired or used token gets the
+   same `401`, and nothing is written; the start route keeps its per-address
+   and platform-wide rate limits.
+3. When the sensor reveals its nonce, the request is approved as a shared
+   sensor in one transaction: `scope = 'instance'`, no tenant, trust level
+   `trusted` and the least-privilege grant from the insert trigger, and its
+   pending key without a tenant. The sensor confirms its identity
+   (`identity.scope = "instance"`, empty tenant in the signed transcript) and
+   the key becomes active.
+
+Such a request has no tenant ever (`chk_sensor_pairings_instance_no_tenant`):
+no organization can look it up, approve or deny it. Redemption, approval and
+confirmation each write a console audit row; nothing reaches an
+organization's audit log or timeline. Transport v3 certificates are not
+issued to a shared sensor yet: it speaks the signed HTTPS protocol.
+
 ## Shared sensors on the tenant plane
 
 Platform sensors become **shared sensors** (instance scope) in every edition;
@@ -409,10 +444,16 @@ Rows that refer to a sensor through `(tenant_id, sensor_id)`:
   `tenant_id` is `NULL` then, and only then (trigger
   `sensor_child_tenant_matches_scope`); a plain foreign key on `sensor_id`
   keeps the cascade on delete.
-- `scan_zone_sensors`, `sensor_tool_settings`, `collector_assets` and
-  `ingest_reports` keep `tenant_id NOT NULL`, so the composite foreign key
-  refuses a shared sensor: it is never a zone member, has no organization's
-  tool settings, collects no assets and pushes no reports.
+- `scan_zone_sensors`, `sensor_tool_settings` and `collector_assets` keep
+  `tenant_id NOT NULL`, so the composite foreign key refuses a shared sensor:
+  it is never a zone member, has no organization's tool settings and collects
+  no assets.
+- `ingest_reports` holds a shared sensor's report of a shared job in the
+  command's organization: a plain foreign key on `sensor_id` and the trigger
+  `trigger_ingest_reports_sensor_binding` keep an organization sensor's
+  reports in its organization and store a shared sensor's report only with a
+  shared job of that organization it holds; a shared sensor pushes nothing
+  ([result binding](sensor-result-binding.md#shared-sensors)).
 
 A shared sensor has no "home" organization. Managing shared sensors belongs to
 the platform admin console (RFC-022); on the tenant plane they do not exist:
@@ -450,8 +491,9 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   never into an organization: the v2 authenticator sets no tenant context,
   and every tenant-bound sensor route answers 403 `scope-denied`
   (`sensorForV2`, the results receiver). A signed request resolves the key's
-  sensor within the key's tenant, which a shared sensor's key does not have,
-  so it is refused (`shared_sensor_auth_db_test.go`).
+  sensor within the key's tenant; a key without a tenant resolves only to a
+  shared sensor (`SensorService.keyOwner`), which then has no tenant context
+  either (`shared_sensor_auth_db_test.go`, `instance_db_test.go`).
 - **One guard for every route on one sensor.** Every `/api/v1/sensors/{id}...`
   route ends with `SensorHandler.OwnSensor`: a sensor that is not one of the
   organization's own (another organization's, or a shared sensor) answers
@@ -1474,6 +1516,77 @@ report's `tool.properties.content` (CTIS `properties` is free-form, no schema
 change). For protocol v2 the tool is part of the report header, stored
 verbatim in `ingest_reports.header`; findings carry the report id as
 `scan_id`. Protocol v1 ingest keeps no report header.
+
+## The shared claim path
+
+A shared sensor (scope `instance`) claims shared jobs (`is_platform_job`) of
+every organization; it is the only way a shared job is handed out
+([RFC-100](../rfcs/RFC-100-shared-sensors.md) §8, RFC-090 W11). Code:
+`internal/infra/postgres/command_shared_claim.go`,
+`internal/app/command/shared_claim.go`, `sensor_control_v2_handler.go`.
+
+**Who.** The authenticated sensor's stored row decides, never a request
+field. It must be an active shared sensor (no tenant) that **reported**
+`shared.isolation@1` (the sdk-go shared isolation profile: per-job sandbox,
+network namespace, egress policy) and accepts unzoned jobs
+(`sensors.accepts_unzoned_jobs`, default true; false keeps a shared sensor
+for zone work only). An organization sensor never takes a shared job
+(`tenantJobPredicate`) and a shared sensor never takes anything else.
+
+**What.** A pending, unheld, unexpired, due, **unzoned** shared job whose
+tool the sensor verified (`effective_tools`), whose required capabilities it
+advertises and whose required features it reported, not refused by it, and
+whose `preferred_region` (payload) is empty or the sensor's `region`. Its
+hosts must be free in its organization: the same host keys, advisory locks
+and settled-host rule as the organization's own sensors, so a shared job and
+an organization sensor's job never take one host at once.
+
+**Order.** Priority class (one class up per 30 minutes waited, never into
+critical), then the organization with the fewest shared jobs in flight
+(fair share), then queue priority and age.
+
+**Limits.** Each organization's `platform_scans_concurrent` limit, read
+through the entitlement service by key: in the claim transaction, per
+organization, a lock on its shared jobs, a count of those in flight, and no
+more than the limit; an organization at its limit is skipped and its jobs
+wait. A limit that cannot be read counts as 0 (fail closed). Without the
+entitlement service the shared claim hands out nothing.
+
+**Access.** The access policy of RFC-100 §5 (`SharedSensorsAllowed`: the
+instance switch, the administrator's decision, the organization's opt-out)
+is applied again at claim time: an organization that lost access or opted
+out after queueing is skipped, and its jobs wait and expire. Without the
+policy wired the shared claim hands out nothing.
+
+**Gates.** Each organization's candidates pass the same gates as an
+organization sensor's claim, in that organization: the shared sensor's grant
+(it has no tenant; without a reader for it, or without the grant, nothing is
+claimed), its manifest and local policy, the scope re-check, scan
+windows, program rules and tool settings. Scans are capped at the sensor's
+free slots.
+
+**Claim.** `commands.sensor_id` is the holder of a shared job, as for every
+job, with a lease and a new lease epoch; the claim is signed for the shared
+sensor in the command's organization (statement `tenant_id` = the command's,
+`sensor_id` = the shared sensor). `commands.platform_sensor_id` is removed.
+
+**Routes.** On `GET /api/v2/sensor/commands` a shared sensor must claim
+(capacity feature, claim-N); a listing poll answers 403 `scope-denied`.
+Claim by id (a replay), start, complete, fail, release and logs work only for
+a shared job it holds; the step runs in the command's organization, read
+from the command. Complete, fail and logs need `X-OpenCTEM-Lease-Epoch`.
+Anything else answers `command-not-found`. Its heartbeat renews the leases
+of the shared jobs it lists and holds, records their progress per
+organization, and lists every other id to cancel; the answer names no
+tenant. The other control routes (manifest, config report, suppressions,
+fingerprints, key renewal, content) still refuse a shared sensor.
+
+**Reapers.** The lease reaper, the stall reaper and the stuck-job recovery
+treat shared jobs like the others. A shared job still queued 60 minutes
+after it was queued, or after it last went back to the queue, expires.
+
+**Gate.** No shared job is created, and none is claimed, until the access
+gate opens (`SharedSensorsAllowed` answers false, RFC-100 §11).
 
 ## Load, capacity and release (RFC-030)
 

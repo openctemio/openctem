@@ -15,6 +15,8 @@ import (
 const (
 	claimModeByID = "claim"
 	claimModePoll = "claim_n"
+	// claimModeShared: a shared sensor's claim-N (shared_claim.go).
+	claimModeShared = "shared_claim_n"
 )
 
 // Reasons a poll candidate was not handed out (the reason label).

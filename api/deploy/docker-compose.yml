@@ -66,6 +66,9 @@ services:
     entrypoint: ["/bin/sh", "/etc/caddy/entrypoint.sh"]
     ports:
       - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_HTTPS_PORT:-443}:443"
+      # The platform console's site (OPENCTEM_ADMIN_SITE=port); it answers only
+      # OPENCTEM_ADMIN_ALLOWED_CIDRS (private networks by default).
+      - "${GATEWAY_BIND:-0.0.0.0}:${OPENCTEM_ADMIN_PORT:-8444}:${OPENCTEM_ADMIN_PORT:-8444}"
     environment:
       OPENCTEM_HOSTNAME: ${OPENCTEM_HOSTNAME:?OPENCTEM_HOSTNAME is required (DNS name or IP clients use)}
       OPENCTEM_TLS_MODE: ${OPENCTEM_TLS_MODE:-internal}
@@ -76,6 +79,11 @@ services:
       OPENCTEM_TRUSTED_PROXIES: ${OPENCTEM_TRUSTED_PROXIES:-}
       OPENCTEM_CLIENT_IP_HEADERS: ${OPENCTEM_CLIENT_IP_HEADERS:-X-Forwarded-For}
       GATEWAY_MAX_BODY_SIZE: ${GATEWAY_MAX_BODY_SIZE:-256MB}
+      # The platform console on its own site (port | host | off).
+      OPENCTEM_ADMIN_SITE: ${OPENCTEM_ADMIN_SITE:-port}
+      OPENCTEM_ADMIN_HOST: ${OPENCTEM_ADMIN_HOST:-}
+      OPENCTEM_ADMIN_PORT: ${OPENCTEM_ADMIN_PORT:-8444}
+      OPENCTEM_ADMIN_ALLOWED_CIDRS: ${OPENCTEM_ADMIN_ALLOWED_CIDRS:-}
     volumes:
       # A directory, not single files: editors replace a file's inode on save
       # and a single-file bind mount keeps showing the old content.
@@ -129,6 +137,10 @@ services:
     environment:
       NODE_ENV: production
       BACKEND_API_URL: http://api:8080
+      # The platform console has its own origin (the gateway's console site)
+      # and talks to the API's console listener.
+      OPENCTEM_ADMIN_PLANE: ${OPENCTEM_ADMIN_PLANE:-separate}
+      ADMIN_API_URL: http://api:8081
       # The public origin, for the Content-Security-Policy (same value as the
       # API's APP_URL).
       NEXT_PUBLIC_APP_URL: ${OPENCTEM_PUBLIC_URL:-https://${OPENCTEM_HOSTNAME}}
@@ -273,6 +285,12 @@ services:
       APP_ENV: ${APP_ENV:-production}
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
+      # The console API on its own internal listener (plain HTTP on the stack's
+      # private network, never published); the
+      # main listener answers 404 for /api/v1/admin. Same allow-list as the
+      # gateway's console site (empty = private networks).
+      ADMIN_LISTEN_ADDR: ${OPENCTEM_NET_PREFIX:-172.30.80}.12:8081
+      ADMIN_ALLOWED_CIDRS: ${OPENCTEM_ADMIN_ALLOWED_CIDRS:-}
       # Only the gateway and the web UI may assert a client address
       # (X-Real-IP / X-Forwarded-For). Anything else is recorded as its own
       # TCP peer, so a client cannot choose the IP in the audit log.
@@ -357,7 +375,9 @@ services:
       db-grants:
         condition: service_completed_successfully
     networks:
-      - openctem
+      openctem:
+        # Fixed, so the console listener can bind this private address only.
+        ipv4_address: ${OPENCTEM_NET_PREFIX:-172.30.80}.12
     restart: unless-stopped
     volumes:
       - datastore-tls:/datastore-tls:ro

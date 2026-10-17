@@ -299,6 +299,24 @@ func (s *Service) limitAndUsage(ctx context.Context, tenantID shared.ID, key lim
 	return limit, usage[key], nil
 }
 
+// Limit returns the organization's effective limit of key (limits.Unlimited
+// when none applies), without counting usage: for a caller that counts
+// usage itself under its own lock (the shared claim path counts shared jobs
+// in flight in its claim transaction).
+func (s *Service) Limit(ctx context.Context, tenantID shared.ID, key limits.Key) (int, error) {
+	if !key.PerOrganization() {
+		return 0, limits.ErrInvalid
+	}
+	byKey, err := s.stored(ctx, tenantID)
+	if err != nil {
+		return 0, err
+	}
+	if l, ok := byKey[key]; ok {
+		return l.Value, nil
+	}
+	return limits.Unlimited, nil
+}
+
 // Check refuses an addition of delta to key when it would exceed the
 // organization's limit: *limits.ErrLimitReached. Any read error refuses too
 // (fail-closed). Unlimited never refuses and counts no usage.
