@@ -6,8 +6,8 @@ import { SWRConfig } from 'swr'
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const adminFetch = vi.fn()
-vi.mock('../api/admin-client', async (orig) => {
-  const actual = await orig<typeof import('../api/admin-client')>()
+vi.mock('@console/lib/admin-api/client', async (orig) => {
+  const actual = await orig<typeof import('@console/lib/admin-api/client')>()
   return {
     ...actual,
     adminFetch: (path: string, init?: unknown) => adminFetch(path, init),
@@ -21,7 +21,7 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 }
 
-import { AdminApiError } from '../api/admin-client'
+import { AdminApiError } from '@console/lib/admin-api/client'
 import { SupportAccessPanel } from '../components/support-access-panel'
 
 const FUTURE = new Date(Date.now() + 3 * 3600_000).toISOString()
