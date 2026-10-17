@@ -18,6 +18,7 @@ type Service struct {
 	approvers ApproverDirectory
 	scope     ScopeFilter
 	assetRefs AssetRefChecker
+	resolve   ScopeResolver
 	totp      TOTPVerifier
 	policy    PolicySource
 	stepUp    shared.RecentAuthGate
@@ -41,6 +42,82 @@ func (s *Service) SetTOTPVerifier(v TOTPVerifier) {
 // AssertAssetRef). Any refusal is shared.ErrNotFound.
 type AssetRefChecker interface {
 	AssertAssetRef(ctx context.Context, tenantID, assetID shared.ID) error
+}
+
+// ScopeResolver returns the data scope of the request's caller: nil for a
+// caller with full data access, a restricted scope otherwise
+// (datascope.Enforcer.Resolve).
+type ScopeResolver func(ctx context.Context, tenantID shared.ID) (*shared.DataScope, error)
+
+// ErrOrgWideRuleNeedsFullScope: an organization-wide rule (no asset) acts on
+// every asset of the tenant, so only a caller with full data access may
+// create, edit, approve or delete one.
+var ErrOrgWideRuleNeedsFullScope = fmt.Errorf("%w: an organization-wide rule needs full data access; bind the rule to an asset in your scope", shared.ErrForbidden)
+
+// SetScopeResolver wires the check of organization-wide rules. Without it
+// the check is skipped (internal use); production wires it.
+func (s *Service) SetScopeResolver(r ScopeResolver) { s.resolve = r }
+
+// requireFullScope refuses a caller whose data scope is restricted.
+func (s *Service) requireFullScope(ctx context.Context, tenantID shared.ID) error {
+	if s.resolve == nil {
+		return nil
+	}
+	scope, err := s.resolve(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: cannot resolve your data scope", shared.ErrForbidden)
+	}
+	if scope.Restricted() {
+		return ErrOrgWideRuleNeedsFullScope
+	}
+	return nil
+}
+
+// assertRuleReach is the data-scope check of a rule the caller names by id: an
+// asset-bound rule needs its asset in the caller's scope (else it does not
+// exist for them); an organization-wide rule is visible to all and, when
+// write is set, needs full data access.
+func (s *Service) assertRuleReach(ctx context.Context, rule *Rule, write bool) error {
+	if id := rule.AssetID(); id != nil && !id.IsZero() {
+		if s.assetRefs != nil && s.assetRefs.AssertAssetRef(ctx, rule.TenantID(), *id) != nil {
+			return ErrRuleNotFound
+		}
+		return nil
+	}
+	if write {
+		return s.requireFullScope(ctx, rule.TenantID())
+	}
+	return nil
+}
+
+// VisibleRules keeps the rules the caller may see: organization-wide rules and
+// the rules bound to an asset in the caller's data scope. Use it for lists
+// shown to a person; internal readers (ingest) take the full list.
+func (s *Service) VisibleRules(ctx context.Context, tenantID shared.ID, rules []*Rule) ([]*Rule, error) {
+	if s.scope == nil || len(rules) == 0 {
+		return rules, nil
+	}
+	var ids []shared.ID
+	for _, r := range rules {
+		if id := r.AssetID(); id != nil && !id.IsZero() {
+			ids = append(ids, *id)
+		}
+	}
+	if len(ids) == 0 {
+		return rules, nil
+	}
+	in, err := s.scope(ctx, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*Rule, 0, len(rules))
+	for _, r := range rules {
+		id := r.AssetID()
+		if id == nil || id.IsZero() || in(*id) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 // ErrRuleAssetNotFound is the one answer for a suppression rule's asset that
@@ -118,6 +195,8 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 		if s.assetRefs == nil || s.assetRefs.AssertAssetRef(ctx, input.TenantID, *input.AssetID) != nil {
 			return nil, ErrRuleAssetNotFound
 		}
+	} else if err := s.requireFullScope(ctx, input.TenantID); err != nil {
+		return nil, err
 	}
 
 	// Set criteria
@@ -251,6 +330,9 @@ func (s *Service) PreviewRule(ctx context.Context, tenantID, ruleID shared.ID) (
 	if rule == nil {
 		return nil, ErrRuleNotFound
 	}
+	if err := s.assertRuleReach(ctx, rule, false); err != nil {
+		return nil, err
+	}
 	n, err := s.repo.CountMatchingOpenFindings(ctx, rule, MaxFindingsAppliedOnApprove)
 	if err != nil {
 		return nil, err
@@ -287,6 +369,9 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 	}
 	if rule == nil {
 		return nil, ErrRuleNotFound
+	}
+	if err := s.assertRuleReach(ctx, rule, true); err != nil {
+		return nil, err
 	}
 	if !rule.UpdatedAt().Equal(*input.ReviewedUpdatedAt) {
 		return nil, ErrRuleChangedSinceReview
@@ -400,6 +485,9 @@ func (s *Service) RejectRule(ctx context.Context, input RejectRuleInput) (*Rule,
 	if rule == nil {
 		return nil, ErrRuleNotFound
 	}
+	if err := s.assertRuleReach(ctx, rule, false); err != nil {
+		return nil, err
+	}
 
 	if err := rule.Reject(input.RejectedBy, input.Reason); err != nil {
 		return nil, err
@@ -437,6 +525,9 @@ func (s *Service) UpdateRule(ctx context.Context, input UpdateRuleInput) (*Rule,
 	}
 	if rule == nil {
 		return nil, ErrRuleNotFound
+	}
+	if err := s.assertRuleReach(ctx, rule, true); err != nil {
+		return nil, err
 	}
 
 	// Only pending rules can be updated
@@ -520,6 +611,9 @@ func (s *Service) MarkReviewed(ctx context.Context, input MarkReviewedInput) (*R
 	if rule == nil {
 		return nil, nil, "", ErrRuleNotFound
 	}
+	if err := s.assertRuleReach(ctx, rule, true); err != nil {
+		return nil, nil, "", err
+	}
 	flaggedAt, reason := rule.ReviewFlaggedAt(), rule.ReviewReason()
 	if flaggedAt == nil {
 		return nil, nil, "", ErrRuleNotFlagged
@@ -575,6 +669,9 @@ func (s *Service) GetRule(ctx context.Context, tenantID, ruleID shared.ID) (*Rul
 	if rule == nil {
 		return nil, ErrRuleNotFound
 	}
+	if err := s.assertRuleReach(ctx, rule, false); err != nil {
+		return nil, err
+	}
 	return rule, nil
 }
 
@@ -601,6 +698,9 @@ func (s *Service) DeleteRule(ctx context.Context, tenantID, ruleID, deletedBy sh
 	}
 	if rule == nil {
 		return ErrRuleNotFound
+	}
+	if err := s.assertRuleReach(ctx, rule, true); err != nil {
+		return err
 	}
 
 	// Record audit before deletion

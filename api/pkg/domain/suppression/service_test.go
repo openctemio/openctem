@@ -795,3 +795,26 @@ func TestService_ApproveRule_AppliesToExistingFindings(t *testing.T) {
 		}
 	})
 }
+
+// Clearing the review flag of an organization-wide rule is a change to a rule
+// that acts on every asset: it needs full data access, like approving it.
+func TestMarkReviewed_OrgWideRuleNeedsFullScope(t *testing.T) {
+	ctx := context.Background()
+	tenant := shared.NewID()
+	repo := newMockRepository()
+	svc := NewService(repo, nil)
+	svc.SetScopeResolver(func(context.Context, shared.ID) (*shared.DataScope, error) {
+		return &shared.DataScope{TenantID: tenant, UserID: shared.NewID()}, nil
+	})
+	flagged := time.Now()
+	rule := ReconstituteRule(RuleData{ID: shared.NewID(), TenantID: tenant, Name: "org-wide", RuleID: "x",
+		SuppressionType: SuppressionTypeFalsePositive, Status: RuleStatusPending, RequestedBy: shared.NewID(),
+		ReviewFlaggedAt: &flagged, ReviewReason: ReviewReasonNoEndDate})
+	if err := repo.Save(ctx, rule); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err := svc.MarkReviewed(ctx, MarkReviewedInput{TenantID: tenant, RuleID: rule.ID(), By: shared.NewID()})
+	if !errors.Is(err, ErrOrgWideRuleNeedsFullScope) {
+		t.Fatalf("restricted caller cleared an org-wide rule's review flag: %v", err)
+	}
+}

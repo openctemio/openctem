@@ -678,3 +678,54 @@ func TestSuppressionHandler_PreviewRule(t *testing.T) {
 		}
 	})
 }
+
+// The user-facing active-rules list leaves out rules bound to an asset outside
+// the caller's data scope (their asset id and path pattern are not theirs to see).
+func TestSuppressionHandler_ListActiveRules_FollowsDataScope(t *testing.T) {
+	tenantID, userID := shared.NewID(), shared.NewID()
+	inAsset, outAsset := shared.NewID(), shared.NewID()
+
+	repo := NewMockSuppressionRepository()
+	svc := suppression.NewService(repo, nil)
+	svc.SetAssetRefChecker(allowAssetRefs{})
+	svc.SetScopeFilter(func(_ context.Context, _ shared.ID, _ []shared.ID) (func(shared.ID) bool, error) {
+		return func(id shared.ID) bool { return id == inAsset }, nil
+	})
+	h := handler.NewSuppressionHandler(svc, logger.NewNop())
+
+	for _, asset := range []*shared.ID{nil, &inAsset, &outAsset} {
+		rule, err := svc.CreateRule(context.Background(), suppression.CreateRuleInput{
+			TenantID: tenantID, Name: "r", SuppressionType: suppression.SuppressionTypeFalsePositive,
+			ReasonCode: "detection_error", Description: "fixture rule used by tests", RuleID: "test-*",
+			PathPattern: "secret/" + shared.NewID().String(), AssetID: asset, RequestedBy: userID,
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		reviewed := rule.UpdatedAt()
+		if _, err := svc.ApproveRule(context.Background(), suppression.ApproveRuleInput{
+			TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: shared.NewID(), ReviewedUpdatedAt: &reviewed,
+		}); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
+	}
+
+	req := withSuppressionContext(httptest.NewRequest(http.MethodGet, "/api/v1/suppressions/active", nil), tenantID, userID)
+	rr := httptest.NewRecorder()
+	h.ListActiveRules(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp handler.SensorSuppressionsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Count != 2 {
+		t.Fatalf("count %d, want 2 (org-wide + in-scope)", resp.Count)
+	}
+	for _, r := range resp.Rules {
+		if r.AssetID != nil && *r.AssetID == outAsset.String() {
+			t.Fatalf("out-of-scope asset's rule leaked: %+v", r)
+		}
+	}
+}
