@@ -131,7 +131,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"POST /api/v1/ci/runs/{id}/results":           {classSystem, "CI run token: write to the run's repository only (RFC-051)"},
 	"POST /api/v1/ci/runs/{id}/baseline-diff":     {classSystem, "CI run token: the run's repository only (RFC-051)"},
 	"POST /api/v1/ci/runs/{id}/evaluate":          {classSystem, "CI run token: the run's own verdict (RFC-051)"},
-	"/api/v1/sensors":                             {classConfig, "sensor management"},
+	"/api/v1/sensors":                             {classConfig, "sensor management; host details, quarantined results and config reports are owner/admin only"},
 	"/api/v1/sensor-pairings":                     {classConfig, "sensor pairing (RFC-052): a pending request has no tenant until approved; the approver's tenant binds it"},
 	"/api/v1/scan-zones":                          {classConfig, "scan zones"},
 	"/api/v1/scan-window-policies":                {classConfig, "scan window policies (RFC-067): tenant dispatch configuration"},

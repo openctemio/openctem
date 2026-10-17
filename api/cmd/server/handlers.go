@@ -468,7 +468,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
 		User:   newUserHandler(svc, repos, v, log),
-		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
+		Audit:  handler.NewAuditHandler(svc.Audit, v, log).SetDataScope(svc.DataScope),
 
 		// Assets & Components
 		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
