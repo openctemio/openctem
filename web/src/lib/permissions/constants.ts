@@ -196,6 +196,7 @@ export const Permission = {
   // Content catalog (RFC-099)
   ContentRead: 'content:read',
   ContentInstall: 'content:install',
+  ContentPublish: 'content:publish',
 
   // Template Sources (scans:sources:* - shared with Sources)
   TemplateSourcesRead: 'scans:sources:read',
@@ -507,6 +508,7 @@ export const PermissionGroups = {
     Permission.ScannerTemplatesWrite,
     Permission.ContentPacksWrite,
     Permission.ContentInstall,
+    Permission.ContentPublish,
     Permission.TemplateSourcesWrite,
     Permission.SecretStoreWrite,
     Permission.CIWrite,
@@ -681,6 +683,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ContentPacksWrite]: 'Manage Content Packs',
   [Permission.ContentRead]: 'View Content Catalog',
   [Permission.ContentInstall]: 'Install Content',
+  [Permission.ContentPublish]: 'Publish Private Content',
   // Note: TemplateSourcesRead/Write/Delete use the same permission strings as SourcesRead/Write/Delete
   // so they share the same labels
   [Permission.SecretStoreRead]: 'View Secret Store',
@@ -889,6 +892,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ContentPacksWrite,
     Permission.ContentRead,
     Permission.ContentInstall,
+    Permission.ContentPublish,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,
@@ -1056,6 +1060,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ContentPacksWrite,
     Permission.ContentRead,
     Permission.ContentInstall,
+    Permission.ContentPublish,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,

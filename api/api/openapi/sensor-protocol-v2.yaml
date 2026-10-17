@@ -568,7 +568,8 @@ paths:
         Ed25519 key in the body, keyid = its RFC 7638 thumbprint. Capped per
         address (10/hour) and platform-wide; the answer has the same shape
         whether or not a reverse-mode code matched. The request belongs to no
-        organization until an administrator approves it.
+        organization until an administrator approves it; one started with an
+        instance enrollment token never belongs to one (a shared sensor).
       security: []
       requestBody:
         required: true
@@ -727,6 +728,12 @@ components:
         commitment: { type: string, description: "SHA-256 commitment to the sensor nonce, base64url" }
         code: { type: string, description: "Reverse mode: the code an administrator created" }
         sensor_id: { type: string, description: "Re-pair this existing registration" }
+        enrollment_token:
+          type: string
+          description: |
+            A single-use instance enrollment token (octe_…, docs/rfcs/RFC-100-shared-sensors.md §7):
+            the request is approved as a shared sensor (no organization) once the nonce is revealed.
+            Never with code or sensor_id. A malformed, unknown, expired or used token is 401.
         host:
           type: object
           properties:
@@ -766,6 +773,10 @@ components:
             key_id: { type: string }
             approved_at: { type: string, format: date-time }
             repair: { type: boolean }
+            scope:
+              type: string
+              enum: [instance]
+              description: "instance: a shared sensor; tenant_id is then empty, also in the confirmation transcript"
     ItemError:
       type: object
       required: [pointer, code, detail]
