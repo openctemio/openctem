@@ -1,7 +1,7 @@
 package routes
 
 // Research 170 (assets authz audit): an access-team membership that has
-// passed its end date must not grant data scope. Team ROLES honour the end
+// passed its end date must not grant data scope. Team ROLES honor the end
 // date at read time (v_user_role_grants filters expires_at), but the data
 // scope (user_accessible_assets) is only cleaned when the expiry controller
 // deletes the row, and the scope triggers that add rows ignore expires_at.
