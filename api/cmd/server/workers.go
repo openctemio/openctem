@@ -601,6 +601,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "vex-request-notice")))
 	}
 
+	// A standing accepted risk or one-person false positive whose finding
+	// turned worse is ended, flagged or withdrawn under the approval policy
+	// (RFC-111 §6).
+	if repos.FindingMaterialChange != nil && svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewApprovalMaterialChangeController(
+			repos.FindingMaterialChange, svc.Vulnerability, svc.SLA, svc.Vulnerability,
+			10*time.Minute, 200, log.With("controller", "approval-material-change")))
+	}
+
 	// Asset identity model: derive identifiers for assets that predate it and
 	// queue suspected duplicates for review (never merges).
 	w.ControllerManager.Register(controller.NewAssetIdentityBackfillController(

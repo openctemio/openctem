@@ -219,6 +219,6 @@ data with optional per-language names.
 | 3 | Catalog and schemes API (versions, validate, publish with step-up, roll back), permission `findings:lifecycles:write`, plan limits | in review |
 | 4 | The tenant layer wired into every status path (sub-status changes only as engine-decided, audited moves); `PATCH /status` with `sub_status_id` and `fields`; the finding resource; the allowed moves and the dry run; the timeline | in review |
 | 4b | Sub-statuses and fields on approval requests; the list filter by sub-status; simulate | designed |
-| 5 | Settings → Findings → Lifecycle | designed |
+| 5 | Settings → Findings → Finding lifecycle (sub-status lanes, draft editor, check, publish with step-up, version history and roll back) | in review |
 | 6 | Drawer, list and bulk with sub-statuses | designed |
 | 7 | Templates, extra approval steps, ticket mapping by sub-status, flow report | designed |

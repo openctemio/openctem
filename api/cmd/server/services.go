@@ -1658,6 +1658,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
 	// own findings, proof-of-fix queued) behind the abuse guard.
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
+	// One exception over a task's open findings (RFC-111 §7).
+	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
@@ -1890,6 +1892,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing = sp
 		s.SensorPairing.SetAudit(s.Audit)
 		s.SensorPairing.SetEvents(s.Sensor)
+		// Shared sensor enrollment (RFC-100) has no tenant: console audit.
+		s.SensorPairing.SetAdminAudit(repos.AdminAuditLog)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
@@ -1950,6 +1954,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
 	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
+	s.ContentCatalog.SetPublishing(contentPublishing(s.ContentPacks, s.PlatformContentPacks, contentSigner,
+		func(ctx context.Context, id shared.ID) (string, error) {
+			t, err := repos.Tenant.GetByID(ctx, id)
+			if err != nil {
+				return "", err
+			}
+			return t.Slug(), nil
+		}))
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -1996,6 +2008,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	// research/122: completed scan commands teach per-target durations.
 	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
+	// RFC-100 §10: shared jobs in flight per organization, read through the
+	// entitlement service by key (platform_scans_concurrent).
+	if s.Entitlement != nil {
+		cmdOpts = append(cmdOpts, command.WithSharedLimits(s.Entitlement))
+	}
+	// RFC-100 §5: the access policy again at claim time (an organization
+	// that lost access or opted out keeps its queued shared jobs waiting).
+	cmdOpts = append(cmdOpts, command.WithSharedAccess(s.SharedSensorsAllowed))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
@@ -2512,6 +2532,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 	// Four-eyes on approvals (owner decision B16) reads who may approve.
 	s.Suppression.SetApproverDirectory(repos.Suppression)
+	// Rules follow the approval policy (RFC-111): tier by the worst finding
+	// they match, security pool, asset owners excluded, sign-offs.
+	if s.Vulnerability != nil {
+		s.Suppression.SetApprovalPolicy(finding.NewRulePolicyEvaluator(s.Vulnerability, repos.Suppression))
+	}
 	// An asset-bound rule names an asset of the tenant the requester may see
 	// (RFC-050 W8, 21b M-10).
 	s.Suppression.SetAssetRefChecker(s.DataScope)
@@ -3417,4 +3442,18 @@ func (s *Services) SharedSensorsAllowed(ctx context.Context, tenantID shared.ID)
 		return false, scanpolicy.ReasonSharedSensorsUnavailable
 	}
 	return s.ScanPolicy.SharedSensorsAllowed(ctx, tenantID)
+}
+
+// SharedSensorsEgress is the egress addresses the instance administrator
+// published for shared sensors (RFC-100 §9): the global list first, then
+// each region, sorted. Nothing without the scan policy service.
+func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.PlatformEgress, error) {
+	if s == nil || s.ScanPolicy == nil {
+		return nil, nil
+	}
+	v, _, err := s.ScanPolicy.SharedSensorsEgress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
 }
