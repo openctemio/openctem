@@ -124,6 +124,17 @@ func (r *CommandRepository) GetByTenantAndID(ctx context.Context, tenantID, id s
 	return r.scanCommand(row)
 }
 
+// GetHeldSharedJobForPlatform returns the shared job (is_platform_job) commandID that
+// sensorID holds (commands.sensor_id), in whatever tenant it belongs to: a
+// shared sensor has no tenant, so the tenant is read from the command row
+// and never supplied by the caller. Not found for a tenant job, a job held by
+// another sensor, or an unknown id (docs/rfcs/RFC-100-shared-sensors.md §8).
+func (r *CommandRepository) GetHeldSharedJobForPlatform(ctx context.Context, sensorID, commandID shared.ID) (*command.Command, error) {
+	query := r.selectQuery() + " WHERE id = $1 AND sensor_id = $2 AND is_platform_job = TRUE"
+	row := r.db.QueryRowContext(ctx, query, commandID.String(), sensorID.String())
+	return r.scanCommand(row)
+}
+
 // GetPendingForSensor retrieves pending commands for a sensor.
 //
 // A command that names a tool (payload "scanner", else "preferred_tool") is
@@ -240,11 +251,20 @@ func fairPendingQuery(selectSQL, where string, limit int) string {
 }
 
 // pendingReadyPredicate keeps a command that is waiting and due: pending, not
-// expired, and not scheduled for later.
+// expired, not scheduled for later, and queued for the organization's own
+// sensors (tenantJobPredicate).
 const pendingReadyPredicate = `commands.status = 'pending'
 		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
+		AND ` + tenantJobPredicate + `
 		AND ` + scheduledDuePredicate + `
 		AND ` + hostFreePredicate
+
+// tenantJobPredicate keeps a command that an organization's own sensor may
+// take: never one queued for shared sensors (is_platform_job). The routing
+// decision that sent a job to shared sensors is final; the tenant poll, the
+// doorbell, the batch claim and the claim by id must not override it, and a
+// sensor row of the tenant flagged as shared is no exception here.
+const tenantJobPredicate = `NOT COALESCE(commands.is_platform_job, FALSE)`
 
 // scheduledDuePredicate keeps a command that is not scheduled for later: a
 // job deferred to its scan window's next opening (window_hold.go) is not
@@ -525,6 +545,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		    lease_expires_at = NOW() + make_interval(secs => $4)
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 		  AND (sensor_id IS NULL OR sensor_id = $3)
+		  AND ` + tenantJobPredicate + `
 		  AND ` + zoneClaimPredicate("$3") + `
 		  AND ` + toolClaimPredicate("$3") + `
 		  AND ` + capabilityClaimPredicate(claimSensorCapabilities) + `
