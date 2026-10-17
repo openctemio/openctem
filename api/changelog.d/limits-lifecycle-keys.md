@@ -1,0 +1,2 @@
+### Changed: finding lifecycle caps are organization limits
+- The finding lifecycle catalog caps (`lifecycle_sub_statuses`, `lifecycle_schemes`) are limit keys like the others: unlimited unless set. Migration 002890 carries each organization's earlier caps (Free 3 sub-statuses and no scheme, Pro 1 scheme) into operator limits with the reason "migrated from plan". A refused addition answers `LIMIT_REACHED`.

@@ -22,7 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -34,8 +34,8 @@ import (
 // on the shared test database get 0 and are never claimed by this test).
 type testSharedLimits map[string]int
 
-func (l testSharedLimits) Limit(_ context.Context, tenantID shared.ID, key plan.Key) (int, error) {
-	if key != plan.PlatformScansConcurrent {
+func (l testSharedLimits) Limit(_ context.Context, tenantID shared.ID, key limits.Key) (int, error) {
+	if key != limits.PlatformScansConcurrent {
 		return 0, nil
 	}
 	if v, ok := l[tenantID.String()]; ok && v != denied {

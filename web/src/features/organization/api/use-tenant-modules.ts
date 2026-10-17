@@ -32,7 +32,7 @@ export interface TenantModule {
   category: string
   display_order: number
   is_core: boolean
-  /** The organization's plan (or a platform grant) includes it; otherwise it cannot be switched on. */
+  /** Available for the organization (not denied by the administrator); otherwise it cannot be switched on. */
   entitled?: boolean
   is_enabled: boolean
   release_status: string
@@ -386,7 +386,7 @@ export function useApplyPreset(tenantIdOrSlug: string | undefined, presetId: str
  * Applies a preset to an organization right after it is created (onboarding):
  * the same POST as {@link useApplyPreset}, callable outside a hook binding
  * because the organization does not exist at render time. A preset switches
- * modules on or off once, within what the organization's plan includes.
+ * modules on or off once, within what is available for the organization.
  */
 export function applyPresetRequest(tenantIdOrSlug: string, presetId: string) {
   return fetcherWithOptions<TenantModuleListResponse>(
