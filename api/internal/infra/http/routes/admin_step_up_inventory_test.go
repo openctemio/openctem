@@ -107,6 +107,8 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/content-packs/{id}/revoke":              {stepUpRoute, "platform content pack"},
 	"PUT /api/v1/admin/content-packs/channels/{channel}":        {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-catalog/import":                 {stepUpRoute, "content catalog bundle import"},
+	"POST /api/v1/admin/content-catalog/packages":               {stepUpRoute, "instance content package"},
+	"POST /api/v1/admin/content-catalog/packages/revoke":        {stepUpRoute, "instance content package"},
 	"POST /api/v1/admin/announcements/":                         {routine, "banner text; reason required, audited"},
 	"POST /api/v1/admin/announcements/{announcement_id}/cancel": {routine, "ends a banner; reason required, audited"},
 	"POST /api/v1/admin/threat-intel/sync":                      {routine, "runs a public feed sync; audited"},
@@ -222,6 +224,7 @@ func TestAdminStepUpRoutesRefuseWithoutCode(t *testing.T) {
 			"{user_id}", shared.NewID().String(), "{console_session_id}", shared.NewID().String(),
 			"{announcement_id}", shared.NewID().String(), "{module_id}", "pentest",
 			"{key}", "seats", "{channel}", "stable", "{source}", "epss",
+			"{namespace}", "acme", "{name}", "words", "{version}", "1.0.0",
 		).Replace(path)
 		before := len(*purposes)
 		rec := httptest.NewRecorder()
