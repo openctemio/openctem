@@ -192,6 +192,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
 	assetHandler.SetIntegrationService(svc.Integration)
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
+	assetHandler.SetTechnologyReader(repos.AssetTechnology)
 	assetHandler.SetAuditService(svc.Audit)
 
 	// Command handler with scan run service wired
