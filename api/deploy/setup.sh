@@ -6,6 +6,11 @@
 #
 #   ./setup.sh ctem.example.com                       # TLS from the gateway's own CA
 #   ./setup.sh ctem.example.com --acme you@example.com # Let's Encrypt (public DNS name)
+#   ./setup.sh ctem.example.com --admin-host admin.ctem.example.com
+#                                  # the platform console on its own host name
+#
+# The platform console answers only private networks by default (see
+# OPENCTEM_ADMIN_* in .env); --admin-public opens it to every network.
 #
 # It never overwrites an existing .env and never prints a secret. The file is
 # created mode 0600: keep it (and a backup of APP_ENCRYPTION_KEY) safe, the
@@ -18,11 +23,13 @@ example="$here/.env.example"
 
 die() { echo "setup: $*" >&2; exit 1; }
 
-host="" acme_email=""
+host="" acme_email="" admin_host="" admin_public=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --acme) [[ $# -ge 2 ]] || die "--acme needs an e-mail address"; acme_email="$2"; shift ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --admin-host) [[ $# -ge 2 ]] || die "--admin-host needs a host name"; admin_host="$2"; shift ;;
+    --admin-public) admin_public=1 ;;
+    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [[ -z "$host" ]] || die "one host name only"; host="$1" ;;
   esac
@@ -38,6 +45,10 @@ fi
 [[ -n "$host" ]] || die "usage: ./setup.sh <host name or IP> [--acme you@example.com]"
 # A host name or an IP address only: no scheme, port, path or spaces.
 [[ "$host" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || die "'$host' is not a host name or IPv4 address (no scheme, port or path)"
+if [[ -n "$admin_host" ]]; then
+  [[ "$admin_host" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || die "'$admin_host' is not a host name (no scheme, port or path)"
+  [[ "$admin_host" != "$host" ]] || die "--admin-host must differ from the main host name"
+fi
 if [[ -n "$acme_email" ]]; then
   [[ "$acme_email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || die "'$acme_email' is not an e-mail address"
 fi
@@ -67,8 +78,17 @@ if [[ -n "$acme_email" ]]; then
   set_value OPENCTEM_TLS_MODE acme
   set_value ACME_EMAIL "$acme_email"
 fi
+if [[ -n "$admin_host" ]]; then
+  set_value OPENCTEM_ADMIN_SITE host
+  set_value OPENCTEM_ADMIN_HOST "$admin_host"
+fi
+if [[ -n "$admin_public" ]]; then
+  # Spaces in the value: replace the whole line.
+  sed -i -E "s|^OPENCTEM_ADMIN_ALLOWED_CIDRS=.*$|OPENCTEM_ADMIN_ALLOWED_CIDRS=0.0.0.0/0 ::/0|" "$tmp"
+fi
 set_value DB_SUPERUSER_PASSWORD "$(secret 24)"
 set_value DB_MIGRATE_PASSWORD "$(secret 24)"
+set_value DB_ADMIN_PASSWORD "$(secret 24)"
 set_value DB_PASSWORD "$(secret 24)"
 set_value REDIS_PASSWORD "$(secret 24)"
 set_value APP_ENCRYPTION_KEY "$(secret 32)"
@@ -79,10 +99,19 @@ chmod 600 "$tmp"
 mv "$tmp" "$env_file"
 trap - EXIT
 
+console="https://$host:8444/admin"
+[[ -z "$admin_host" ]] || console="https://$admin_host/admin"
+reach="from private networks only (loopback, 10/8, 172.16/12, 192.168/16, IPv6 ULA)"
+[[ -z "$admin_public" ]] || reach="from EVERY network (--admin-public)"
+
 cat <<MSG
 Wrote $env_file (mode 0600) for https://$host with generated secrets.
 Back up APP_ENCRYPTION_KEY from it now: without that key the stored
 credentials cannot be decrypted.
+
+Platform console: $console, $reach.
+From outside those networks, use an SSH tunnel, e.g.:
+  ssh -L 8444:127.0.0.1:8444 you@$host   then open https://localhost:8444/admin
 
 Next:
   docker compose up -d

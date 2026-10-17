@@ -27,6 +27,7 @@
   "remediationHub.actions.snooze": "Tạm hoãn",
   "remediationHub.actions.undo": "Hoàn tác",
   "remediationHub.actions.why": "Tại sao?",
+  "remediationHub.band.tracked": "Đang theo dõi trong công việc",
   "remediationHub.campaigns.description": "Các chương trình theo dõi nhiều bản sửa hướng tới một mục tiêu và thời hạn.",
   "remediationHub.campaigns.title": "Chiến dịch",
   "remediationHub.cancelTask.confirm": "Hủy công việc",

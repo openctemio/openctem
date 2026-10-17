@@ -138,17 +138,55 @@ func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *sha
 	if sensorID == nil || len(cmds) == 0 || (s.sensors == nil && s.privatePolicy == nil && s.optIns == nil && s.grants == nil) {
 		return nil
 	}
-	var grant *sensordom.Grant
+	return s.gateWith(ctx, tenantID, s.tenantSubject(ctx, tenantID, *sensorID), cmds)
+}
+
+// gateSubject is what the dispatch gate knows about the claiming sensor:
+// its grant, its current manifest and its last local-policy report.
+type gateSubject struct {
+	grant    *sensordom.Grant
+	manifest *sensordom.Manifest
+	report   *sensordom.LocalPolicyReport
+	// closed: the grant or the sensor could not be read (fail closed).
+	closed bool
+}
+
+// tenantSubject reads the gate subject of the tenant's own sensor sensorID.
+func (s *Service) tenantSubject(ctx context.Context, tenantID, sensorID shared.ID) gateSubject {
+	var subj gateSubject
 	if s.grants != nil {
-		g, err := s.grants.Get(ctx, tenantID, *sensorID)
+		g, err := s.grants.Get(ctx, tenantID, sensorID)
 		if err != nil || g == nil {
 			// Every sensor has a grant (migration backfill + insert trigger):
 			// none, or a read error, withholds everything (fail closed).
 			s.logger.Warn("cannot read the polling sensor's grant; withholding commands",
 				"tenant_id", tenantID.String(), "sensor_id", sensorID.String(), "error", err)
-			return &dispatchGate{closed: true}
+			return gateSubject{closed: true}
 		}
-		grant = g
+		subj.grant = g
+		if s.contracts != nil {
+			if v, err := s.contracts.CurrentManifest(ctx, &tenantID, sensorID); err == nil && v != nil {
+				subj.manifest = &v.Manifest
+			}
+		}
+	}
+	if s.sensors != nil {
+		a, err := s.sensors.GetByTenantAndID(ctx, tenantID, sensorID)
+		if err != nil || a == nil {
+			s.logger.Warn("cannot read the polling sensor's local policy; withholding commands",
+				"tenant_id", tenantID.String(), "sensor_id", sensorID.String(), "error", err)
+			return gateSubject{closed: true}
+		}
+		subj.report = a.LocalPolicy
+	}
+	return subj
+}
+
+// gateWith is the dispatch gate of subj for cmds of tenantID: the subject's
+// grant, manifest and report with the tenant's dispatch settings.
+func (s *Service) gateWith(ctx context.Context, tenantID shared.ID, subj gateSubject, cmds []*commanddom.Command) *dispatchGate {
+	if subj.closed {
+		return &dispatchGate{closed: true}
 	}
 	opts, err := s.dispatchOptions(ctx, tenantID, cmds)
 	if err != nil {
@@ -156,25 +194,7 @@ func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *sha
 			"tenant_id", tenantID.String(), "error", err)
 		return &dispatchGate{closed: true}
 	}
-	g := &dispatchGate{opts: opts, grant: grant}
-	if grant != nil && s.contracts != nil {
-		if v, err := s.contracts.CurrentManifest(ctx, &tenantID, *sensorID); err == nil && v != nil {
-			g.manifest = &v.Manifest
-		}
-	}
-	if s.sensors == nil {
-		// No report to read: only the private-target switch applies, and
-		// no sensor qualifies for it.
-		return g
-	}
-	a, err := s.sensors.GetByTenantAndID(ctx, tenantID, *sensorID)
-	if err != nil || a == nil {
-		s.logger.Warn("cannot read the polling sensor's local policy; withholding commands",
-			"tenant_id", tenantID.String(), "sensor_id", sensorID.String(), "error", err)
-		return &dispatchGate{closed: true}
-	}
-	g.report = a.LocalPolicy
-	return g
+	return &dispatchGate{opts: opts, grant: subj.grant, manifest: subj.manifest, report: subj.report}
 }
 
 // dispatchOptions reads the tenant settings the pre-check needs for cmds:

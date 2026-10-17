@@ -12,10 +12,8 @@
  *   and `admin_csrf`, HttpOnly like the session). Only those cookies
  *   are forwarded, and the backend's Set-Cookie headers are passed back so the
  *   browser stores them under the same paths.
- * - The exceptions are POST /auth/session, which starts the console from the
- *   normal /login session, and POST /auth/logout, which ends both: only those
- *   two requests also carry the refresh-token cookie, which names the
- *   signed-in account.
+ * - The console signs in on its own (POST /auth/login with the account's
+ *   email and password): no tenant credential is ever forwarded here.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -24,11 +22,6 @@ import { env } from '@/lib/env'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
 import { proxyBackendPath } from '@/lib/api/proxy-path'
 import { csrfRejection } from '@/lib/server-auth-cookies'
-
-/** Backend cookie name the admin API reads the /login refresh token from. */
-const BACKEND_REFRESH_COOKIE = 'refresh_token'
-/** The only admin API calls that receive the /login refresh token. */
-const REFRESH_PATHS = new Set(['auth/session', 'auth/logout'])
 
 export const dynamic = 'force-dynamic'
 
@@ -76,7 +69,7 @@ async function proxy(request: NextRequest, path: string[]): Promise<NextResponse
     )
   }
   const url = new URL(request.url)
-  const backendUrl = `${env.api.url}/api/v1/admin/${path.map(encodeURIComponent).join('/')}${url.search}`
+  const backendUrl = `${env.api.adminUrl}/api/v1/admin/${path.map(encodeURIComponent).join('/')}${url.search}`
 
   const headers = new Headers()
   const contentType = request.headers.get('content-type')
@@ -95,10 +88,6 @@ async function proxy(request: NextRequest, path: string[]): Promise<NextResponse
     const value = request.cookies.get(name)?.value
     return value ? [`${name}=${value}`] : []
   })
-  if (request.method === 'POST' && REFRESH_PATHS.has(path.join('/'))) {
-    const refresh = request.cookies.get(env.auth.refreshCookieName)?.value
-    if (refresh) cookieParts.push(`${BACKEND_REFRESH_COOKIE}=${refresh}`)
-  }
   if (cookieParts.length > 0) headers.set('Cookie', cookieParts.join('; '))
 
   let body: BodyInit | undefined

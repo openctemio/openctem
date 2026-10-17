@@ -39,6 +39,7 @@ func registerRemediationCampaignRoutes(
 func registerRemediationTaskRoutes(
 	router Router,
 	h *handler.RemediationTaskHandler,
+	jiraHandler *handler.JiraWebhookHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	moduleGate Middleware,
@@ -58,6 +59,16 @@ func registerRemediationTaskRoutes(
 		// Marking the task fixed is a fix claim on each of its findings: the
 		// task write plus findings:fix_apply.
 		r.POST("/{task_id}/resolve", h.Resolve, middleware.RequireAll(permission.RemediationWrite, permission.FindingsFixApply))
+		// One exception over the task's open findings (RFC-111 §7): the task
+		// write plus findings:write (it requests a finding disposition).
+		r.POST("/{task_id}/exception/preview", h.PreviewException, middleware.RequireAll(permission.RemediationWrite, permission.FindingsWrite))
+		r.POST("/{task_id}/exception", h.RequestException, middleware.RequireAll(permission.RemediationWrite, permission.FindingsWrite))
+		// The task's tracker issue (one per task): list, create. Creating it
+		// is a change of the task (every member in the caller's scope).
+		if jiraHandler != nil {
+			r.GET("/{task_id}/ticket-links", jiraHandler.ListTaskTicketLinks, middleware.Require(permission.RemediationRead))
+			r.POST("/{task_id}/ticket-links", jiraHandler.CreateTaskIssue, middleware.Require(permission.RemediationWrite))
+		}
 	}, tenantMiddlewares...)
 
 	// Moves of findings between tasks (or out of any task).
