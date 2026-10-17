@@ -79,11 +79,11 @@ function useGroupTitle(g: RefusalGroup): string {
   const vars = { count, pattern: g.rule?.pattern ?? '' }
   switch (g.kind) {
     case 'proof':
-      return t('scans.groups.proof', '{count} need a verified domain for platform sensors', vars)
+      return t('scans.groups.proof', '{count} need a verified domain for shared sensors', vars)
     case 'platform':
       return t(
         'scans.groups.platform',
-        '{count} are program targets platform sensors never scan',
+        '{count} are program targets shared sensors never scan',
         vars
       )
     case 'zone':

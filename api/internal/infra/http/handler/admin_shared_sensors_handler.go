@@ -203,3 +203,82 @@ func (h *AdminScanPolicyHandler) writeSharedErr(w http.ResponseWriter, err error
 	}
 	h.writeErr(w, err)
 }
+
+const stepUpPurposeSharedSensorsEgress = "shared sensor egress addresses change"
+
+// SharedSensorsEgressResponse is the operator's egress addresses that
+// organizations see for shared sensors.
+type SharedSensorsEgressResponse struct {
+	// Global addresses (IP or CIDR) used by every region.
+	Global []string `json:"global"`
+	// Regions maps a region label to its addresses.
+	Regions map[string][]string `json:"regions"`
+	// Version to send back on PUT (0: nothing stored).
+	Version int `json:"version"`
+}
+
+// UpdateSharedSensorsEgressRequest replaces the egress addresses.
+type UpdateSharedSensorsEgressRequest struct {
+	Global   []string            `json:"global"`
+	Regions  map[string][]string `json:"regions"`
+	Version  int                 `json:"version"`
+	Reason   string              `json:"reason"`
+	TOTPCode string              `json:"totp_code"`
+}
+
+// GetSharedSensorsEgress returns the egress addresses.
+// @Summary      Egress addresses of shared sensors
+// @Description  The public addresses (IP or CIDR) shared sensors send traffic from, for every region and per region; organizations that may use shared sensors see them to allowlist the scanners. Any administrator.
+// @Tags         Admin System
+// @Produce      json
+// @Success      200  {object}  SharedSensorsEgressResponse
+// @Router       /admin/settings/shared-sensors/egress [get]
+func (h *AdminScanPolicyHandler) GetSharedSensorsEgress(w http.ResponseWriter, r *http.Request) {
+	v, ver, err := h.svc.SharedSensorsEgress(r.Context())
+	if err != nil {
+		h.logger.Error("read shared sensor egress", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("could not read the setting").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, SharedSensorsEgressResponse{Global: v.Global, Regions: v.Regions, Version: ver})
+}
+
+// UpdateSharedSensorsEgress replaces the egress addresses.
+// @Summary      Change the egress addresses of shared sensors
+// @Description  Super admin with a reason and a fresh authenticator code (route-level step-up). Every entry must be a public IP address or CIDR range: private, loopback, link-local, metadata, CGNAT and other internal ranges are refused (400). At most 32 regions and 64 entries per list. Audited (critical); the other administrators are emailed.
+// @Tags         Admin System
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UpdateSharedSensorsEgressRequest  true  "Addresses"
+// @Success      200  {object}  SharedSensorsEgressResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Router       /admin/settings/shared-sensors/egress [put]
+func (h *AdminScanPolicyHandler) UpdateSharedSensorsEgress(w http.ResponseWriter, r *http.Request) {
+	actor := middleware.GetAdminUser(r.Context())
+	if actor == nil {
+		apierror.Unauthorized("administrator session required").WriteJSON(w)
+		return
+	}
+	var req UpdateSharedSensorsEgressRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	// The service validates again; this answers a bad list before the
+	// reason check.
+	if _, err := scanpolicy.NormalizeSharedSensorsEgress(scanpolicy.SharedSensorsEgress{Global: req.Global, Regions: req.Regions}); err != nil {
+		h.writeErr(w, err)
+		return
+	}
+	if !h.stepUpChange(w, r, actor, stepUpPurposeSharedSensorsEgress, req.Reason, req.TOTPCode) {
+		return
+	}
+	v, ver, err := h.svc.UpdateSharedSensorsEgress(r.Context(),
+		scanpolicy.SharedSensorsEgress{Global: req.Global, Regions: req.Regions}, req.Version, h.change(r, actor, req.Reason))
+	if err != nil {
+		h.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, SharedSensorsEgressResponse{Global: v.Global, Regions: v.Regions, Version: ver})
+}
