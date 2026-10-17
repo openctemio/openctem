@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { proxyBackendPath } from '../proxy-path'
+import { isConsoleApiPath, proxyBackendPath } from '../proxy-path'
 
 describe('proxyBackendPath', () => {
   it('joins ordinary segments', () => {
@@ -42,4 +42,25 @@ describe('proxyBackendPath', () => {
   it('refuses backslashes, which URL parsing treats as separators', () => {
     expect(proxyBackendPath(['x', '..\\..\\health'])).toBeNull()
   })
+})
+
+describe('isConsoleApiPath', () => {
+  it.each([
+    [['admin', 'tenants']],
+    [['admin']],
+    [['Admin', 'auth', 'login']],
+    [['', 'admin', 'tenants']],
+    [['.', 'admin']],
+    [['admin/tenants']],
+    [['admin\\tenants']],
+  ])('%j is the console API, never forwarded by the tenant proxy', (segments) => {
+    expect(isConsoleApiPath(segments)).toBe(true)
+  })
+
+  it.each([[['findings']], [['administrators']], [['assets', 'admin']], [[]]])(
+    '%j is not the console API',
+    (segments) => {
+      expect(isConsoleApiPath(segments)).toBe(false)
+    }
+  )
 })

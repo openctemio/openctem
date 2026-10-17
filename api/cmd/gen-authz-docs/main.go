@@ -39,7 +39,7 @@ func main() {
 		os.Exit(1)
 	}
 	if *jsonPath != "" {
-		b, err := ref.JSON()
+		b, err := ref.WithoutConsoleRoutes().JSON()
 		if err == nil {
 			err = writeFile(*jsonPath, b)
 		}

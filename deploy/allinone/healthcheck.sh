@@ -1,8 +1,10 @@
 #!/bin/sh
 # Healthy only if EVERY process this container runs answers.
 set -e
+. /usr/local/bin/openctem-console-plan
 wget -q -T 5 -O /dev/null "http://127.0.0.1:${SERVER_PORT:-8080}/health"
 wget -q -T 5 -O /dev/null http://127.0.0.1:3000/api/health
+if console_enabled; then wget -q -T 5 -O /dev/null http://127.0.0.1:3001/api/health; fi
 [ "${GATEWAY:-on}" = on ] || exit 0
 
 # The gateway's admin API (bound to 127.0.0.1:2019 by the shared Caddyfile).

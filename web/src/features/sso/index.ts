@@ -1,1 +1,1 @@
-export { useOrgIdentityProviders, useTenantSSOProviders } from './api/use-sso-api'
+export { useTenantSSOProviders } from './api/use-sso-api'

@@ -910,8 +910,10 @@ attacker reaching the console from outside the allowed networks.
   only those (never a tenant cookie or token).
 - **CSRF.** Every state-changing request to the console proxy must carry the
   console's own origin in `Origin` (a tenant page's origin differs by host or
-  port and is refused) and the double-submit token; the API checks the pair
-  again.
+  port and is refused) and the console's token, which is bound to the session
+  (HMAC of the session secret under a server key; see Security notes). The
+  API verifies the binding, so a cookie planted by a tenant page on the same
+  host cannot satisfy it.
 - **Headers.** Console pages carry the headers listed under Isolation model;
   a tenant page cannot frame the console, keep a window handle on it, embed
   its resources or read its responses.
@@ -931,9 +933,9 @@ token is never set in a readable cookie.
 
 ### Upgrade
 
-- The console moves from `https://<host>:8444/admin` to
-  `https://<host>:8443/` (port mode) or `https://<OPENCTEM_ADMIN_HOST>/` (host
-  mode). Update bookmarks; a platform identity provider's redirect URI becomes
+- The console moves from `https://<host>/admin` to `https://<host>:8443/`
+  (port mode) or `https://<OPENCTEM_ADMIN_HOST>/` (host mode); the all-in-one
+  image publishes 8443 for it. Update bookmarks; a platform identity provider's redirect URI becomes
   `<console origin>/login/callback`.
 - A deployment that publishes or proxies the API's sensor listener directly
   (`:8443`) changes it to `:9443`, or sets `SENSOR_MTLS_LISTEN_ADDR` and
@@ -944,11 +946,14 @@ token is never set in a readable cookie.
 ### Delivery
 
 Small pull requests, in order: the gateway, Compose and configuration (port
-8443, the four settings, sensor listener 9443, this revision); the console's
-CSRF token in the response body and the shorter idle timeout (API); the
-console app and its image, with `/admin` removed from the tenant app; the
-release pipeline for `openctem-console`; `OPENCTEM_PLANE` in the API; the
-Helm chart; the Ansible kit; the documentation.
+8443, the four settings, sensor listener 9443, this revision: #2438); the
+console's CSRF token in the response body and the shorter idle timeout
+(#2439), bound to the session with no-store responses (#2447); sensor ALPN
+routing only on the main listener (#2448); the console app and its image,
+with `/admin` removed from the tenant app (#2442); the release pipeline for
+`openctem-console` and the all-in-one image (#2443); `OPENCTEM_PLANE` in the
+API (#2444); the Helm chart and the Ansible kit (their repositories); the
+documentation.
 
 ## Later phases
 
@@ -1072,20 +1077,20 @@ Helm chart; the Ansible kit; the documentation.
   The listener speaks plain HTTP on the private network between the web
   console and the API (the gateway's console site terminates TLS for the
   browser); where that network is not trusted, TLS goes in front of it.
-- The console has its own origin. The gateway's console site
-  (`OPENCTEM_ADMIN_SITE=port`: `https://<host>:8444`, or `host`: its own DNS
-  name) answers only `OPENCTEM_ADMIN_ALLOWED_CIDRS` (private networks by
-  default) and marks what it forwards `X-OpenCTEM-Plane: admin` (the main site
-  strips that header from clients). With `OPENCTEM_ADMIN_PLANE=separate` the web
-  console serves only the console there (pages, its API proxy to the API's
-  console listener via `ADMIN_API_URL`) and 404 for everything else, and 404
-  for the console on the main site, as the gateway does too. With its own host
-  name the browser isolates the console from the main site completely
-  (cookies, scripts, storage); on a second port of the same host name cookies
-  are still shared by host, so the host-name mode is the recommended one and
-  the port mode is the default only because it needs no DNS. This closes the
-  residual risk of the path-scoped cookies (a script on the main site reaching
-  the console).
+- The console has its own origin and its own service (revision 21). The
+  gateway's console site (`OPENCTEM_ADMIN_SITE=port`: `https://<host>:8443`,
+  or `host`: its own DNS name) answers only `OPENCTEM_ADMIN_ALLOWED_CIDRS`
+  (private networks by default) and sends everything to the console service
+  (`openctem-console`, `OPENCTEM_CONSOLE_UPSTREAM`), which serves the console
+  at the root of that site and proxies its API to the API's console listener
+  (`ADMIN_API_URL`). The tenant web app has no console route and refuses to
+  proxy `/api/v1/admin` however it is spelled; the gateway's main site answers
+  404 for it too. With its own host name the browser isolates the console from
+  the main site completely (cookies, scripts, storage); on a second port of
+  the same host name the two are separate origins that share the host's
+  cookies, so no console secret is kept in a readable cookie and every console
+  write must carry the console's own `Origin`. Host mode is the recommended
+  one; port mode is the default only because it needs no DNS.
 - A verified console sign-in from another address than the administrator's
   last one is audited (`console.new_network_sign_in`, high) and emailed to
   every administrator (the system SMTP sender; a WARN line with

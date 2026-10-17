@@ -23,7 +23,8 @@ root_ok=""  # set with the reason for a component that must still run as root
 case "$comp" in
   openctem-api)     budget=150 ;;  # 131 MB
   openctem-web)     budget=300 ;;  # 253 MB (node alone is ~145 MB)
-  openctem)         budget=490 ;;  # 423 MB (node + web + API + Caddy)
+  openctem-console) budget=260 ;;  # node (~145 MB) + a 59 MB standalone build
+  openctem)         budget=560 ;;  # 423 MB + the platform console (~60 MB standalone, RFC-022 rev. 21)
   openctem-gateway) budget=75 ;;   # 63 MB (runs as uid 1000)
   migrations)       budget=25 ;;   # 18 MB
   seed)             budget=25 ;;   # 17 MB
