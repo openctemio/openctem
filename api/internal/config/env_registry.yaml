@@ -1544,6 +1544,13 @@ vars:
     group: "Admin console"
     type: string
     description: "The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener."
+  - name: OPENCTEM_PLANE
+    component: api
+    group: "Admin console"
+    type: enum
+    values: [all, tenant, admin]
+    default: "all"
+    description: "What this API process serves (RFC-022 revision 21). `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`."
   - name: ADMIN_LISTEN_ALLOW_ALL_INTERFACES
     component: api
     group: "Admin console"
