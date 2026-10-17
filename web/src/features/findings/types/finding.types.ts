@@ -741,6 +741,8 @@ export interface Finding {
   resolvedAt?: string
   /** Why it is closed (lib/closure.ts); absent while open. */
   closureReason?: string
+  /** The organization's sub-status inside the status; absent: the status itself. */
+  subStatusId?: string
   /** Longest risk acceptance for this finding's priority, in days (server rule). */
   maxAcceptanceDays?: number
   /** How a resolve was proven. */
@@ -1273,6 +1275,11 @@ export interface ApiApproval {
   /** People other than the requester who must sign off, and how many did. */
   approvals_required?: number
   approvals_collected?: number
+  /**
+   * Set when the request is a member of a group exception: it is decided
+   * only with its group (approving it alone answers 409 BATCH_MEMBER).
+   */
+  batch_id?: string
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'

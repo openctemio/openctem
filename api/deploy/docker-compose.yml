@@ -68,7 +68,9 @@ services:
       - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_HTTPS_PORT:-443}:443"
       # The platform console's site (OPENCTEM_ADMIN_SITE=port); it answers only
       # OPENCTEM_ADMIN_ALLOWED_CIDRS (private networks by default).
-      - "${GATEWAY_BIND:-0.0.0.0}:${OPENCTEM_ADMIN_PORT:-8444}:${OPENCTEM_ADMIN_PORT:-8444}"
+      # OPENCTEM_ADMIN_BIND puts it on one interface only (a private or VPN
+      # address): a published port is not filtered by the host firewall.
+      - "${OPENCTEM_ADMIN_BIND:-${GATEWAY_BIND:-0.0.0.0}}:${OPENCTEM_ADMIN_PORT:-8443}:${OPENCTEM_ADMIN_PORT:-8443}"
     environment:
       OPENCTEM_HOSTNAME: ${OPENCTEM_HOSTNAME:?OPENCTEM_HOSTNAME is required (DNS name or IP clients use)}
       OPENCTEM_TLS_MODE: ${OPENCTEM_TLS_MODE:-internal}
@@ -82,7 +84,10 @@ services:
       # The platform console on its own site (port | host | off).
       OPENCTEM_ADMIN_SITE: ${OPENCTEM_ADMIN_SITE:-port}
       OPENCTEM_ADMIN_HOST: ${OPENCTEM_ADMIN_HOST:-}
-      OPENCTEM_ADMIN_PORT: ${OPENCTEM_ADMIN_PORT:-8444}
+      OPENCTEM_ADMIN_PORT: ${OPENCTEM_ADMIN_PORT:-8443}
+      # The main site's published port: the entrypoint refuses a console port
+      # equal to it (both are published on this host).
+      GATEWAY_HTTPS_PORT: ${GATEWAY_HTTPS_PORT:-443}
       OPENCTEM_ADMIN_ALLOWED_CIDRS: ${OPENCTEM_ADMIN_ALLOWED_CIDRS:-}
     volumes:
       # A directory, not single files: editors replace a file's inode on save
@@ -105,6 +110,8 @@ services:
       api:
         condition: service_healthy
       web:
+        condition: service_healthy
+      console:
         condition: service_healthy
     networks:
       openctem:
@@ -137,10 +144,6 @@ services:
     environment:
       NODE_ENV: production
       BACKEND_API_URL: http://api:8080
-      # The platform console has its own origin (the gateway's console site)
-      # and talks to the API's console listener.
-      OPENCTEM_ADMIN_PLANE: ${OPENCTEM_ADMIN_PLANE:-separate}
-      ADMIN_API_URL: http://api:8081
       # The public origin, for the Content-Security-Policy (same value as the
       # API's APP_URL).
       NEXT_PUBLIC_APP_URL: ${OPENCTEM_PUBLIC_URL:-https://${OPENCTEM_HOSTNAME}}
@@ -174,6 +177,48 @@ services:
       resources:
         limits:
           memory: ${WEB_MEMORY_LIMIT:-1g}
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Platform console (Next.js): internal only, served by the gateway's console
+  # site at its root (RFC-022 revision 21). Its own app and image: no tenant
+  # page runs here and no console page in `web`.
+  # ---------------------------------------------------------------------------
+  console:
+    image: ${CONSOLE_IMAGE:-ghcr.io/openctemio/openctem-console}:${CONSOLE_VERSION:-${OPENCTEM_VERSION:-v0.9.7}}
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      # The console API: the API's internal console listener.
+      ADMIN_API_URL: http://api:8081
+      # The public API for the instance brand (name, colors, logo).
+      BACKEND_API_URL: http://api:8080
+      SECURE_COOKIES: "true"
+      # The gateway overwrites X-Real-IP / X-Forwarded-For; passed on to the
+      # API for the console's audit log. Safe only because the console is not
+      # published: nothing but the gateway can reach it.
+      TRUST_PROXY_HEADERS: "true"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      openctem:
+        ipv4_address: ${OPENCTEM_NET_PREFIX:-172.30.80}.13
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+      - /app/console/.next/cache:uid=1001,gid=1001,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${CONSOLE_MEMORY_LIMIT:-512m}
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
@@ -291,10 +336,10 @@ services:
       # gateway's console site (empty = private networks).
       ADMIN_LISTEN_ADDR: ${OPENCTEM_NET_PREFIX:-172.30.80}.12:8081
       ADMIN_ALLOWED_CIDRS: ${OPENCTEM_ADMIN_ALLOWED_CIDRS:-}
-      # Only the gateway and the web UI may assert a client address
+      # Only the gateway, the web UI and the console may assert a client address
       # (X-Real-IP / X-Forwarded-For). Anything else is recorded as its own
       # TCP peer, so a client cannot choose the IP in the audit log.
-      SERVER_TRUSTED_PROXIES: ${OPENCTEM_NET_PREFIX:-172.30.80}.10,${OPENCTEM_NET_PREFIX:-172.30.80}.11
+      SERVER_TRUSTED_PROXIES: ${OPENCTEM_NET_PREFIX:-172.30.80}.10,${OPENCTEM_NET_PREFIX:-172.30.80}.11,${OPENCTEM_NET_PREFIX:-172.30.80}.13
       # The one public origin of the UI, the API and the WebSocket. The API
       # derives from it the CORS allow-list, links in e-mails, the SSO
       # (OAuth, OIDC, SAML) callback and the sensor endpoint.

@@ -140,10 +140,10 @@ func (h *AITriageHandler) RequestTriage(w http.ResponseWriter, r *http.Request) 
 	}
 
 	h.logger.Info("AI triage requested",
-		"tenant_id", tenantID,
-		"finding_id", findingID,
-		"user_id", userID,
-		"mode", req.Mode,
+		"tenant_id", logger.SanitizeValue(tenantID),
+		"finding_id", logger.SanitizeValue(findingID),
+		"user_id", logger.SanitizeValue(userID),
+		"mode", logger.SanitizeValue(req.Mode),
 	)
 
 	// Request triage
