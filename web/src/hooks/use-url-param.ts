@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { usePathname } from 'next/navigation'
 
 /**
  * Emitted after we rewrite the query string ourselves.
@@ -76,6 +77,44 @@ export function useUrlParam(key: string): string | null {
   const getSnapshot = useCallback(() => new URLSearchParams(window.location.search).get(key), [key])
   const getServerSnapshot = useCallback(() => null, [])
   return useSyncExternalStore(subscribeToUrl, getSnapshot, getServerSnapshot)
+}
+
+/**
+ * True once the address bar belongs to the page that is rendering.
+ *
+ * The hooks here read `window.location`, not the router. During a client-side
+ * navigation the router renders the new page BEFORE it writes the new URL to
+ * the address bar (it does so while committing that render), so the new
+ * page's first render reads the PREVIOUS page's query string: arriving at
+ * `/findings?asset_id=…` from `/assets?sort=-risk_score` rendered once with
+ * `sort=-risk_score` and no `asset_id`. A request keyed on that render goes
+ * out with the wrong filter (the findings list answered 400 for the foreign
+ * sort) and the page fetches again a moment later.
+ *
+ * The router's own pathname is already the new page's, so the two pathnames
+ * differ for exactly that render. Gate requests built from URL params on this
+ * (`enabled: urlSettled`); the store re-renders the page when the address bar
+ * catches up. False during server rendering (there is no address bar).
+ */
+export function useUrlSettled(): boolean {
+  const routerPathname = usePathname()
+  const getSnapshot = useCallback(() => window.location.pathname, [])
+  const getServerSnapshot = useCallback(() => null, [])
+  const locationPathname = useSyncExternalStore(subscribeToUrl, getSnapshot, getServerSnapshot)
+  if (locationPathname === null || routerPathname === null) return false
+  return (
+    locationPathname === routerPathname ||
+    safeDecode(locationPathname) === safeDecode(routerPathname)
+  )
+}
+
+/** Percent-decodes a pathname for comparison; a malformed one compares as is. */
+function safeDecode(pathname: string): string {
+  try {
+    return decodeURI(pathname)
+  } catch {
+    return pathname
+  }
 }
 
 /**
