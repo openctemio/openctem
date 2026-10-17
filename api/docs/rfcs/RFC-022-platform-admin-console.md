@@ -831,3 +831,49 @@ Approval of an elevation by another super admin is a later step.
 - An administrator cannot deactivate, demote or delete themselves, so the
   super admin making a change always remains: the platform is never left
   without an active super admin.
+- The console answers only to the client networks in `ADMIN_ALLOWED_CIDRS`
+  (default: loopback, RFC 1918 and IPv6 unique local addresses); any other
+  network gets 403 `ADMIN_NETWORK_NOT_ALLOWED` on every `/api/v1/admin` route,
+  the sign-in steps included. The client address is the TCP peer, or
+  `X-Forwarded-For` from `SERVER_TRUSTED_PROXIES` only. An internet-facing
+  console is an explicit choice (`0.0.0.0/0,::/0`, logged as a warning at
+  start).
+- With `ADMIN_LISTEN_ADDR` set (a loopback or private IP, e.g.
+  `10.0.0.5:8081`; anything else needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`,
+  for a container network with no published port) the console API has its own
+  listener: `/api/v1/admin` is served only there and the main listener
+  answers 404 for it; the admin listener answers 404 for every other route
+  but `/health`. Both share the router and its global middleware, so the
+  console's guards are unchanged; the listener decides where it can be
+  reached (the gateway's admin site, or nowhere outside the host). Any later
+  internal-only surface (the control-plane API) gets its own listener the
+  same way. The split reads the path the way the router does (repeated slashes,
+  `.` and `..` segments, a trailing slash, percent-encoded separators), so
+  `/api/v1//admin/...` is the console on the public listener (404) and
+  `/api/v1/admin/../findings` is not the console on the admin listener (404).
+  The listener speaks plain HTTP on the private network between the web
+  console and the API (the gateway's console site terminates TLS for the
+  browser); where that network is not trusted, TLS goes in front of it.
+- The console has its own origin. The gateway's console site
+  (`OPENCTEM_ADMIN_SITE=port`: `https://<host>:8444`, or `host`: its own DNS
+  name) answers only `OPENCTEM_ADMIN_ALLOWED_CIDRS` (private networks by
+  default) and marks what it forwards `X-OpenCTEM-Plane: admin` (the main site
+  strips that header from clients). With `OPENCTEM_ADMIN_PLANE=separate` the web
+  console serves only the console there (pages, its API proxy to the API's
+  console listener via `ADMIN_API_URL`) and 404 for everything else, and 404
+  for the console on the main site, as the gateway does too. With its own host
+  name the browser isolates the console from the main site completely
+  (cookies, scripts, storage); on a second port of the same host name cookies
+  are still shared by host, so the host-name mode is the recommended one and
+  the port mode is the default only because it needs no DNS. This closes the
+  residual risk of the path-scoped cookies (a script on the main site reaching
+  the console).
+- A verified console sign-in from another address than the administrator's
+  last one is audited (`console.new_network_sign_in`, high) and emailed to
+  every administrator (the system SMTP sender; a WARN line with
+  `alert=new_network_sign_in` otherwise).
+- A read-only administrator sees counts, not people: an organization's member
+  list returns counts by role only (`redacted: true`), organizations show the
+  owner count without owner emails, and the account search
+  (`/platform-users`) is ops_admin+. Every member-list view is audited
+  (`organization.users_view`).

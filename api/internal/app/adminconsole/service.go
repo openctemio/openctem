@@ -431,6 +431,8 @@ func (s *Service) openVerifiedSession(ctx context.Context, a *admin.AdminUser, a
 	if err != nil {
 		return "", err
 	}
+	// Compared with the last address before RecordUsage replaces it.
+	s.noteSignInNetwork(ctx, a, client)
 	if err := s.admins.RecordUsage(ctx, a.ID(), client.IP); err != nil {
 		s.log.Warn("record admin console usage", "error", err)
 	}

@@ -866,6 +866,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// aggregates, job metadata, the audited job view and remote actions.
 	handlers.AdminSharedFleet = handler.NewAdminSharedFleetHandler(sensor.NewSharedFleetService(
 		postgres.NewSharedFleetRepository(deps.DB), repos.CommandLog, repos.AdminAuditLog, log), log)
+	// Shared sensor enrollment tokens (RFC-100): super admin, console step-up.
+	if svc.SensorPairing != nil {
+		handlers.AdminSharedSensor = handler.NewAdminSharedSensorHandler(svc.SensorPairing, adminConsoleSvc, log)
+	}
 	// Scan approval governance (RFC-073): settings, requests, the inbox and
 	// the scan list badge.
 	if svc.ScanGovernance != nil {

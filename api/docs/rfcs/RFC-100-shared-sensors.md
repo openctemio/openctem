@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-15); S0 in review (#2308), S2 in review (#2325), S3 in review, the rest designed |
+| Status | Accepted (2026-10-15); S0 in review (#2308), S2 in review (#2325), S3 in review, S4 in review, the rest designed |
 | Scope | api (schema, access policy, claim, enrollment, signer, quotas, console), web (console fleet page, tenant view), sdk-go (per-job isolation, target re-check), sensor (instance enrollment, isolation profile), helm-charts and compose (bundled sensor) |
 | Architecture | [sensors.md](../architecture/sensors.md#shared-sensors-on-the-tenant-plane) |
 | Amends | RFC-023 D14 (public targets only becomes a deployment default), RFC-022 (console owns the shared fleet), RFC-090 W11/W12 (shared-pool lanes replace `get_next_platform_job`) |
@@ -168,6 +168,11 @@ sensor.
   bundled sensor comes up as a shared sensor (P11).
 - sdk-go `pkg/platform` (routes the core never served) is deprecated and
   removed; shared sensors use the same v2/v3 protocol as every sensor.
+- The token rides in the pairing start request (`enrollment_token`); the
+  platform spends it with the insert of the request and approves the request
+  as a shared sensor once the sensor reveals its nonce. Any unusable token is
+  one `401`. A shared sensor's signing key has no tenant and resolves only to
+  a sensor of scope instance.
 
 ## 8. Isolation on a shared sensor
 
@@ -242,7 +247,7 @@ needs them.
 | S1 | this RFC | this PR |
 | S2 | `sensors.scope`, nullable `tenant_id`, drop `is_platform_sensor`; scope fixed at creation; a shared sensor's grant limited to scan, validate and retest | in review (#2325) |
 | S3 | access policy (§5) with the instance switch off everywhere: instance setting, per-organization allow or deny, owner opt-out, rollout gate in code | in review |
-| S4 | instance enrollment token, bundled sensor at instance scope | designed |
+| S4 | instance enrollment token (console issue, bootstrap registration, redemption through pairing), bundled sensor at instance scope ([architecture](../architecture/sensors.md#shared-sensor-enrollment)) | in review |
 | S5 | shared claim path (fair share, per-organization concurrency limit, region, untagged switch, isolation capability); remove `get_next_platform_job` ([architecture](../architecture/sensors.md#the-shared-claim-path)); the approved-jobs-only flag waits for the instance signer (S6) | in review |
 | S5a | results of a shared sensor bound to the job it holds under its lease epoch, written into the command's organization; no push ([architecture](../architecture/sensor-result-binding.md#shared-sensors)) | in review |
 | S6 | instance key set and shared-job envelope | designed |

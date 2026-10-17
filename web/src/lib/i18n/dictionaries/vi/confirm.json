@@ -382,5 +382,6 @@
   "confirm.verifiedDomain.removeTitle": "Gỡ tên miền {domain}?",
   "confirm.workflowStep.builderDeleteDesc": "Bước này rời khỏi quy trình bạn đang chỉnh sửa và các bước phụ thuộc vào nó mất phụ thuộc đó. Không có gì thay đổi cho tới khi bạn lưu.",
   "confirm.workflowStep.deleteDesc": "Bước này rời khỏi bản nháp và các bước phụ thuộc vào nó mất phụ thuộc đó. Quy trình đã xuất bản không thay đổi cho tới khi bạn xuất bản.",
-  "confirm.workflowStep.deleteTitle": "Xóa bước này?"
+  "confirm.workflowStep.deleteTitle": "Xóa bước này?",
+  "confirm.findingApproval.approveDescMore": "Phê duyệt của bạn được ghi nhận. Phát hiện chuyển sang trạng thái được yêu cầu khi có thêm {count} phê duyệt."
 }

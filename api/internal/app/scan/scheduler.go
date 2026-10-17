@@ -254,8 +254,8 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 	if err != nil {
 		s.logger.Error("failed to trigger scan",
 			"scan_id", sc.ID.String(),
-			"scan_name", sc.Name,
-			"error", err,
+			"scan_name", logger.SanitizeValue(sc.Name),
+			"error", logger.SanitizeError(err),
 		)
 		metrics.ScanScheduleOutcomes.WithLabelValues("failed").Inc()
 		// A refusal (e.g. NO_SENSOR_AVAILABLE) is already a blocked run of the
@@ -323,7 +323,7 @@ func (s *ScanScheduler) deferToWindow(ctx context.Context, sc *scan.Scan, next *
 	for _, b := range we.Blocking {
 		windows = append(windows, b.Name)
 	}
-	s.logger.Info("scheduled run deferred to its scan window", "scan_id", sc.ID.String(), "until", we.Until)
+	s.logger.Info("scheduled run deferred to its scan window", "scan_id", sc.ID.String(), "until", logger.SanitizeValue(we.Until.UTC().Format(time.RFC3339)))
 	s.scanService.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
 		NewSuccessEvent(audit.ActionScanWindowDeferred, audit.ResourceTypeScanConfig, sc.ID.String()).
 			WithResourceName(sc.Name).
