@@ -80,6 +80,8 @@ type Service struct {
 	gitlabRepo    scmapp.GitLabRepository
 	enc           crypto.Encryptor
 	gitlabFactory GitLabFactory
+	// lifecycle applies repository events (nil: ignored).
+	lifecycle RepositoryLifecycle
 }
 
 // NewService creates the service. stateSecret signs install states (a
@@ -276,6 +278,9 @@ func (s *Service) HandleGitHubWebhook(ctx context.Context, event, signature stri
 	}
 	if !s.github.VerifySignature(body, signature) {
 		return ErrBadSignature
+	}
+	if event == "repository" {
+		return s.handleRepositoryEvent(ctx, body)
 	}
 	if event != "installation" {
 		return nil
