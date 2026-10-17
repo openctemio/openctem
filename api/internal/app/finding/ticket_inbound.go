@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/safetext"
@@ -327,9 +328,14 @@ func (s *VulnerabilityService) RequestTicketDisposition(ctx context.Context, ten
 			return nil, err
 		}
 		if target == vulnerability.FindingStatusAccepted {
-			// An accepted risk always ends: the default for the finding's
-			// priority (the approver sees it and may reject instead).
-			approval.ExpiresAt, _ = vulnerability.AcceptanceEnd(nil, time.Now(), priorityClassString(f), f.IsInKEV())
+			// An accepted risk always ends: the default within the longest
+			// acceptance the organization's policy allows for this finding
+			// (the approver sees it and may reject instead).
+			ev, err := s.evaluateFindingRequest(ctx, f, approvalpolicy.KindAccepted, shared.ID{}, true, false)
+			if err != nil {
+				return nil, fmt.Errorf("evaluate the approval policy: %w", err)
+			}
+			approval.ExpiresAt, _ = vulnerability.AcceptanceEndWithin(nil, time.Now(), ev.result.MaxAcceptance, "")
 		}
 		if err := s.approvalRepo.Create(ctx, approval); err != nil {
 			if errors.Is(err, shared.ErrConflict) {

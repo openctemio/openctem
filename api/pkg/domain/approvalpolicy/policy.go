@@ -122,13 +122,15 @@ func (p Policy) Validate() error {
 
 // Normalized returns p with defaults spelled out as zero values (so two
 // policies that mean the same compare equal): cells equal to the platform
-// default are dropped, material-change floors are empty.
+// default are dropped, material-change floors are empty. A false-positive
+// cell is always kept: it raises the tier above the organization's
+// false-positive level, which may sit below the default.
 func (p Policy) Normalized() Policy {
 	out := p
 	out.Tiers = nil
 	for key, t := range p.Tiers {
 		k, c, ok := parseCellKey(key)
-		if !ok || t == Default(k, c) {
+		if !ok || (t == Default(k, c) && k != KindFalsePositive) {
 			continue
 		}
 		if out.Tiers == nil {

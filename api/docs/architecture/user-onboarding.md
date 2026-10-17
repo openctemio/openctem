@@ -77,31 +77,44 @@ way for a new and an existing address, so it does not enumerate.
 
 ## Sign-up policy (Console > System > Sign-up)
 
-Who may create an organization on this deployment is **one platform setting**,
-`signup_policy` in `platform_settings` (migration 001313), edited in the admin
-console:
+Who may create an account and who may create an organization on this
+deployment is **one platform setting** with two decisions, `signup_policy` in
+`platform_settings` (migration 001313), edited in the admin console:
 
-| Mode | Meaning |
-|------|---------|
-| `admin_only` (default) | Only a platform administrator creates organizations (console, `bootstrap-admin -org-*`). People sign in only to organizations that exist. |
-| `self_service` | Anyone signed in may create their own organization (create-first-team, `POST /tenants`). |
+| `accounts` | Who may create an account by public sign-up |
+|------------|---------------------------------------------|
+| `closed` (default) | Nobody. Accounts come from an administrator, an invitation or an organization's SSO/SCIM. |
+| `domain` | Only an address on a domain an organization verified and opened to joining; the account joins that organization and never creates one. |
+| `open` | Anyone (not a disposable address). |
+
+| `mode` | Who may create an organization |
+|--------|--------------------------------|
+| `admin_only` (default) | Only a platform administrator (console, `bootstrap-admin -org-*`). |
+| `self_service` | Anyone signed in (create-first-team, `POST /tenants`). Needs `accounts: open`. |
+
+`accounts: open` with `mode: admin_only` lets the hosted service keep sign-up
+open while it pauses organization creation (an abuse wave). A policy stored
+before `accounts` existed reads as `open` with `self_service` and `closed`
+otherwise.
 
 Plus `request_access`: whether people who cannot sign up may ask for an
 organization (the request queue follows in its own change).
 
 - **Who reads it.** create-first-team, `POST /tenants` and
   `GET /auth/providers` (`tenant_creation_mode`, which the web uses to offer
-  "create organization") read it per request (`signup.Service.Current`,
+  "create organization"; `registration_enabled` and `signup_accounts`, which
+  decide "Sign up") read it per request (`signup.Service.Current`,
   cached 15 s per replica).
 - **Fail-closed.** Nothing stored or a read error means `admin_only`.
 - **Ceiling.** The value in force is clamped to `SIGNUP_MODE` (see
   [Sign-up ceiling](#sign-up-ceiling)). `GET` reports the stored
-  `mode`, the `deployment_mode`, `self_service_locked` and the
-  `effective_mode`; the console shows the self-service choice locked with the
-  reason.
+  `mode` and `accounts`, the `deployment_mode`, `max_accounts`,
+  `self_service_locked`, and the `effective_mode` and `effective_accounts`;
+  the console shows the choices above the ceiling locked with the reason.
 - **Seeding.** `SIGNUP_MODE` seeds the first value at start-up when no row
-  exists (`source: environment`): `open` seeds `self_service`, anything else
-  `admin_only`. After that the stored value wins (still clamped); the console
+  exists (`source: environment`), the widest the ceiling allows: `open` seeds
+  `accounts: open` + `self_service`, `domain` seeds `accounts: domain` +
+  `admin_only`, `disabled` seeds `closed` + `admin_only`. After that the stored value wins (still clamped); the console
   shows where the value came from.
 - **Changing it.** `PUT /api/v1/admin/settings/signup` with the version that
   was read (409 when another administrator saved since) needs a **super admin**
@@ -121,10 +134,12 @@ Every path that would write an account or an organization asks one function,
 
 | Creating | Admitted when | Path |
 |----------|---------------|------|
-| an organization | the policy is `self_service` | create-first-team, `POST /tenants` |
+| an organization | the policy in force is `self_service` (so `accounts: open`) | create-first-team, `POST /tenants` |
+| an account | **refused first** (`sso_required`, nothing written) when the address is on a domain whose organization requires its SSO, except through that SSO itself | register, first social sign-in |
 | an account | an organization's SSO admits the identity (JIT: auto-provision, DNS-verified SSO domain, allowed domains), in either mode | OIDC/SAML callbacks |
 | an account | a pending invitation is addressed to the email, in either mode | register with the invitation token; a social sign-in whose verified email has a pending invitation |
-| an account | the policy is `self_service` and the email is not on a disposable-address service (`pkg/emaildomain`) | register, first social sign-in |
+| an account | `accounts: open` and the email is not on a disposable-address service (`pkg/emaildomain`) | register, first social sign-in |
+| an account (`domain_account`) | `accounts: domain`, the verified email is on a joinable domain of an organization, not disposable; the account joins that organization by its join policy and never creates one | register, first social sign-in |
 
 Anything else is refused **before anything is written**: no `users`,
 `sessions`, `refresh_tokens` or membership row. Register and the social
@@ -304,6 +319,53 @@ An organization a person creates themselves starts on the **Free** plan, and
 one person owns at most the Free plan's `free_teams_per_user` (1 by default):
 another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 `docs/architecture/plans-and-limits.md`.
+
+## Leaving and deleting (RFC-104)
+
+### Leave an organization
+
+`POST /api/v1/organization/leave` (any member, step-up, the organization of
+the credential) runs the same offboarding an administrator runs: API keys
+revoked, groups, grants, engagements and roles stripped, the membership kept
+as a tombstone. The only active owner is refused (transfer ownership or
+delete the organization first); someone who still owns assignable work is
+refused with "ask an administrator to offboard you" (nothing is reassigned
+without an administrator). Audited `member.left`; administrators notified.
+
+### Delete my account
+
+`DELETE /api/v1/me/account` (step-up) schedules the deletion
+(`account_deletions`, migration 002812):
+
+- refused (409 `SOLE_OWNER`, naming the organizations to the caller only)
+  while the caller is the only active owner of an organization, and for a
+  platform administrator account;
+- every session ends and the account's API keys are revoked at once (keys do
+  not come back on cancel);
+- **signing in again within 14 days cancels it** (password, social or SSO
+  sign-in; `account.deletion_canceled`);
+- after 14 days the `account-erase` controller offboards every membership
+  (best effort: an owner among several, or someone who still owns work, keeps
+  a disabled membership and the administrators are asked to reassign), then
+  anonymises the account in one transaction: name "Deleted user #<hash>",
+  an undeliverable unique email, password, second factor, federated
+  identities, sessions, refresh tokens and API keys removed or revoked. The
+  users row and every foreign key stay, so history remains readable.
+
+The erasure claims the request first (`claimed_at`): a sign-in after the
+claim no longer cancels it, and one before leaves nothing to claim. A failed
+offboarding stops that account's erasure and the next run retries; a failed
+session revoke at request time fails the request and undoes it. An owner
+among several is offboarded too (the erasure runs only while another active
+owner remains).
+
+**What stays.** Audit rows keep the actor's name and email as they were
+recorded (the audit trail is evidence; it is not rewritten). The users row
+keeps its id so foreign keys and history stay valid.
+
+`GET /api/v1/me/account/deletion` reports whether a deletion is pending.
+Audited: `account.deletion_requested`, `account.deletion_canceled`,
+`account.erased`.
 
 ## Data region (RFC-104)
 
