@@ -75,6 +75,30 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: bash .github/scripts/check-commit-emails.sh "${BASE_SHA:+$BASE_SHA..$HEAD_SHA}"
 
+      # Fails when a file this change adds or modifies holds a PEM/OpenSSH private
+      # key block, is a key or keystore file (.key .p12 .pfx .jks), or lives under
+      # data/ (runtime state). Throwaway keys under testdata/ are allowed. Betterleaks
+      # below reports only (--exit-code 0), so this is the step that blocks.
+      - name: Private keys (self-test)
+        run: bash .github/scripts/check-private-keys.test.sh >/dev/null
+
+      - name: Private keys
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          case "$EVENT" in
+            pull_request) bash .github/scripts/check-private-keys.sh "$PR_BASE" "$PR_HEAD" ;;
+            merge_group) bash .github/scripts/check-private-keys.sh "$MG_BASE" "$MG_HEAD" ;;
+            push) bash .github/scripts/check-private-keys.sh "$PUSH_BEFORE" "$PUSH_AFTER" ;;
+            *) bash .github/scripts/check-private-keys.sh "" "" ;;
+          esac
+
       - name: Install Betterleaks (pinned, checksum-verified)
         run: |
           curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o betterleaks.tgz \
