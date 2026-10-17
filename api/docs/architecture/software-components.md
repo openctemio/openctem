@@ -101,13 +101,15 @@ compares versions), on every asset or one asset, with an optional expiry.
   statements cover a finding the most specific governs: one asset over every
   asset, listed versions over a range over every version, then the most
   recently edited.
-- **Effect.** `not_affected` closes an open finding (new, confirmed, in
-  progress, fix applied) as `false_positive` with resolution method
-  `vex_not_affected`; `fixed` resolves it with `vex_fixed`; `affected` and
+- **Effect.** `not_affected` never sets `false_positive`: on an open finding
+  (new, confirmed, in progress, fix applied) it opens a pending false-positive
+  request by the actor `vex` (it needs one more sign-off than the tier, so the
+  person who created the statement cannot complete it alone) and the status
+  stays; `fixed` resolves it with `vex_fixed`; `affected` and
   `under_investigation` only annotate. The finding keeps the statement as
   `vex_statement_id` and its `vex_*` columns show the reason. A finding a
   person closed, and a finding from a human source (pentest, manual, bug
-  bounty, red team), is annotated, never closed.
+  bounty, red team), is annotated, never closed or requested.
 - **When it applies.** On create, edit, delete and expiry (in batches of
   1 000 findings per transaction) and to every finding an ingest writes
   later (sticky). A scan that reports a finding again does not reopen a

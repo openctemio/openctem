@@ -80,6 +80,12 @@ type Effect struct {
 	ClosureReason string
 	Verification  string
 	Resolution    string
+	// RequestFalsePositive asks for a false positive instead of setting it:
+	// a not_affected statement never moves the status itself, it opens the
+	// pending approval request (actor "vex") a second person decides.
+	// ClosureReason and Resolution carry the request's reason and
+	// justification; NewStatus stays empty.
+	RequestFalsePositive bool
 }
 
 // Changes reports whether the effect moves the status.
@@ -91,11 +97,13 @@ func (e *Effect) Changes() bool { return e.NewStatus != "" && e.NewStatus != e.O
 //   - No statement: a finding that carried one loses it; when that
 //     statement had closed it, it reopens (false positive -> new, resolved ->
 //     confirmed, the lifecycle's reopen edges).
-//   - not_affected / fixed: an open, non-human finding is closed (false
-//     positive for the statement's justification, or resolved as fixed),
-//     verified by vex_statement. A finding
-//     closed by another statement switches to this one's closure. A finding a
-//     person closed, or a human-sourced finding, is annotated only.
+//   - fixed: an open, non-human finding is resolved as fixed, verified by
+//     vex_statement. A finding closed by another statement switches to this
+//     one's closure. A finding a person closed, or a human-sourced finding,
+//     is annotated only.
+//   - not_affected: an open, non-human finding gets a pending false positive
+//     request (RequestFalsePositive) and is annotated; the status never
+//     moves without a person's approval.
 //   - affected / under_investigation: annotate; a finding closed by a
 //     statement reopens.
 func Decide(f *FindingRef, w *Statement) *Effect {
@@ -112,7 +120,14 @@ func Decide(f *FindingRef, w *Statement) *Effect {
 	}
 	if w.Status.Closes() && !IsHumanSource(f.Source) {
 		target, reason := closure(w)
+		isFP := target == string(vulnerability.FindingStatusFalsePositive)
 		switch {
+		case isFP && canAutoClose(f.Status):
+			e.RequestFalsePositive = true
+			e.ClosureReason, e.Resolution = reason, ResolutionText(w)
+		case isFP:
+			// A false positive is never written by a statement; a finding
+			// that is not open work is annotated only.
 		case canAutoClose(f.Status), byStatement && (f.Status != target || f.ClosureReason != reason):
 			e.NewStatus, e.ClosureReason, e.Resolution = target, reason, ResolutionText(w)
 			e.Verification = string(vulnerability.VerificationVEXStatement)
