@@ -66,6 +66,9 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/admin-console/api/use-admin-operations.ts': 1,
   'features/admin-console/api/use-admin-overview.ts': 1,
   'features/admin-console/api/use-admin-sessions.ts': 1,
+  // Shared fleet health and the queue depth are read-time values no event
+  // pushes; the page is for an operator watching the fleet (30 s).
+  'features/admin-console/api/use-shared-fleet.ts': 2,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
   'features/ci-runners/api/use-ci.ts': 1,
   // Runs and refused exchanges are polled only while the CI setup dialog
@@ -78,6 +81,10 @@ const POLLING_BASELINE: Record<string, number> = {
   // Whether each policy is open is computed at read time.
   'features/scan-windows/api/use-scan-windows.ts': 1,
   'features/scans/components/run-detail-sheet.tsx': 1,
+  // The support-access banner (RFC-063): a console session opening or a grant
+  // running out is not pushed as an event; one small read a minute tells
+  // every member while platform support can read the organization's data.
+  'features/support-access/api/use-support-access.ts': 1,
   // The run list and its counts poll on their own clocks: fast only while a
   // listed run is live (research/81); it was one shared 30 s poll before.
   'features/scans/components/scan-runs-tab.tsx': 2,

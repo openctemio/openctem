@@ -18,6 +18,14 @@ const FALLBACK: Record<string, string> = {
     'Needs a retest pass, or the verification checklist completed by another person',
   checklist_required: 'Needs the verification checklist',
   not_found: 'Not found',
+  not_in_lifecycle: "Not a move of your organization's lifecycle",
+  same_sub_status: 'Already there',
+  closure_reason_change: 'A different closure reason is a new decision, not a label change',
+  platform_sub_status: 'Set by the platform, not by a person',
+  lifecycle_permission: 'Your organization requires one of: {any_of}',
+  actor_kind_denied: 'Your organization keeps this move to people',
+  fields_required: 'Needs {fields}: change these findings one at a time',
+  note_too_short: 'Needs a note of at least {n} characters',
 }
 
 /** The sentence for one blocked reason. */
@@ -25,6 +33,9 @@ export function transitionReason(t: Translate, b: TransitionBlock): string {
   const fallback = FALLBACK[b.code] ?? b.code
   return t(`findings.transitionReason.${b.code}`, fallback, {
     permission: b.params?.permission ?? '',
+    any_of: (b.params?.any_of ?? '').split(',').join(', '),
+    fields: b.params?.fields ?? '',
+    n: b.params?.n ?? '',
   })
 }
 
@@ -36,19 +47,37 @@ export function firstReason(t: Translate, blocked?: TransitionBlock[]): string |
 /** A bulk dry run split into the ids that may move and the reasons the rest may not, with counts. */
 export function summarizeDryRun(
   t: Translate,
-  results: EvaluatedTransition[]
+  results: EvaluatedTransition[],
+  opts: { note?: string } = {}
 ): { allowed: string[]; refused: { reason: string; count: number }[] } {
+  const noteLen = (opts.note ?? '').trim().length
   const allowed: string[] = []
   const counts = new Map<string, number>()
   for (const r of results) {
-    if (r.decision?.allowed) {
+    // A bulk change carries no field values: a move that requires them is
+    // refused for that finding, so the dry run says so up front.
+    const needsFields = r.decision?.allowed && (r.decision.fields?.length ?? 0) > 0
+    const minLen = r.decision?.note_min_len ?? 0
+    const noteTooShort = r.decision?.allowed && !needsFields && minLen > noteLen
+    if (r.decision?.allowed && !needsFields && !noteTooShort) {
       allowed.push(r.finding_id)
       continue
     }
-    const reason = r.not_found
-      ? transitionReason(t, { code: 'not_found' })
-      : (firstReason(t, r.decision?.blocked) ??
-        transitionReason(t, { code: 'not_a_lifecycle_move' }))
+    const reason = needsFields
+      ? transitionReason(t, {
+          code: 'fields_required',
+          params: {
+            fields: (r.decision?.fields ?? [])
+              .map((f) => t(`findingLifecycle.field.${f}`, f))
+              .join(', '),
+          },
+        })
+      : noteTooShort
+        ? transitionReason(t, { code: 'note_too_short', params: { n: String(minLen) } })
+        : r.not_found
+          ? transitionReason(t, { code: 'not_found' })
+          : (firstReason(t, r.decision?.blocked) ??
+            transitionReason(t, { code: 'not_a_lifecycle_move' }))
     counts.set(reason, (counts.get(reason) ?? 0) + 1)
   }
   return {

@@ -8,9 +8,19 @@
 #   ./setup.sh ctem.example.com --acme you@example.com # Let's Encrypt (public DNS name)
 #   ./setup.sh ctem.example.com --admin-host admin.ctem.example.com
 #                                  # the platform console on its own host name
+#                                  # (recommended for production)
 #
-# The platform console answers only private networks by default (see
-# OPENCTEM_ADMIN_* in .env); --admin-public opens it to every network.
+# The platform console (OPENCTEM_ADMIN_* in .env) has its own site:
+#   --admin-site port|host|off   port: https://<host>:<port> (default, no DNS
+#                                needed); host: its own DNS name (implied by
+#                                --admin-host; the strongest isolation from
+#                                the main site); off: no console site
+#   --admin-host <name>          the console's DNS name (host mode)
+#   --admin-port <port>          the console's port (port mode, default 8443)
+#   --admin-cidrs "<cidrs>"      client networks that may reach it, space-
+#                                separated (default: private networks only)
+#   --admin-public               every network (not recommended: keep it on a
+#                                VPN or behind your access gateway instead)
 #
 # It never overwrites an existing .env and never prints a secret. The file is
 # created mode 0600: keep it (and a backup of APP_ENCRYPTION_KEY) safe, the
@@ -23,13 +33,16 @@ example="$here/.env.example"
 
 die() { echo "setup: $*" >&2; exit 1; }
 
-host="" acme_email="" admin_host="" admin_public=""
+host="" acme_email="" admin_site="" admin_host="" admin_port="" admin_cidrs="" admin_public=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --acme) [[ $# -ge 2 ]] || die "--acme needs an e-mail address"; acme_email="$2"; shift ;;
+    --admin-site) [[ $# -ge 2 ]] || die "--admin-site needs port, host or off"; admin_site="$2"; shift ;;
     --admin-host) [[ $# -ge 2 ]] || die "--admin-host needs a host name"; admin_host="$2"; shift ;;
+    --admin-port) [[ $# -ge 2 ]] || die "--admin-port needs a port number"; admin_port="$2"; shift ;;
+    --admin-cidrs) [[ $# -ge 2 ]] || die "--admin-cidrs needs a list of networks"; admin_cidrs="$2"; shift ;;
     --admin-public) admin_public=1 ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [[ -z "$host" ]] || die "one host name only"; host="$1" ;;
   esac
@@ -45,9 +58,30 @@ fi
 [[ -n "$host" ]] || die "usage: ./setup.sh <host name or IP> [--acme you@example.com]"
 # A host name or an IP address only: no scheme, port, path or spaces.
 [[ "$host" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || die "'$host' is not a host name or IPv4 address (no scheme, port or path)"
+# The console site: host mode when a console host name is given.
+[[ -n "$admin_site" ]] || { [[ -n "$admin_host" ]] && admin_site=host; } || admin_site=port
+case "$admin_site" in
+  port) [[ -z "$admin_host" ]] || die "--admin-host needs --admin-site host" ;;
+  host)
+    [[ -n "$admin_host" ]] || die "--admin-site host needs --admin-host <the console's DNS name>"
+    [[ -z "$admin_port" ]] || die "--admin-port is for --admin-site port"
+    ;;
+  off) [[ -z "$admin_host$admin_port$admin_cidrs$admin_public" ]] || die "--admin-site off takes no other console option" ;;
+  *) die "--admin-site must be port, host or off" ;;
+esac
 if [[ -n "$admin_host" ]]; then
   [[ "$admin_host" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || die "'$admin_host' is not a host name (no scheme, port or path)"
   [[ "$admin_host" != "$host" ]] || die "--admin-host must differ from the main host name"
+fi
+if [[ -n "$admin_port" ]]; then
+  [[ "$admin_port" =~ ^[1-9][0-9]{0,4}$ ]] && (( admin_port >= 1 && admin_port <= 65535 )) || die "'$admin_port' is not a port number"
+  [[ "$admin_port" != 443 && "$admin_port" != 80 ]] || die "--admin-port must not be the main site's port"
+fi
+if [[ -n "$admin_cidrs" ]]; then
+  [[ -z "$admin_public" ]] || die "--admin-cidrs and --admin-public are exclusive"
+  for c in $admin_cidrs; do
+    [[ "$c" =~ ^[0-9a-fA-F:.]+(/[0-9]{1,3})?$ ]] || die "--admin-cidrs: '$c' is not an IP address or CIDR"
+  done
 fi
 if [[ -n "$acme_email" ]]; then
   [[ "$acme_email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || die "'$acme_email' is not an e-mail address"
@@ -59,6 +93,14 @@ secret() { # secret <bytes>: hex from the system CSPRNG
   else
     od -An -tx1 -N "$1" /dev/urandom | tr -d ' \n'
   fi
+}
+
+base62() { # base62 <length>: letters and digits from the system CSPRNG
+  local out=""
+  while (( ${#out} < $1 )); do
+    out+="$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9')"
+  done
+  printf '%s' "${out:0:$1}"
 }
 
 umask 077
@@ -78,14 +120,12 @@ if [[ -n "$acme_email" ]]; then
   set_value OPENCTEM_TLS_MODE acme
   set_value ACME_EMAIL "$acme_email"
 fi
-if [[ -n "$admin_host" ]]; then
-  set_value OPENCTEM_ADMIN_SITE host
-  set_value OPENCTEM_ADMIN_HOST "$admin_host"
-fi
-if [[ -n "$admin_public" ]]; then
-  # Spaces in the value: replace the whole line.
-  sed -i -E "s|^OPENCTEM_ADMIN_ALLOWED_CIDRS=.*$|OPENCTEM_ADMIN_ALLOWED_CIDRS=0.0.0.0/0 ::/0|" "$tmp"
-fi
+set_value OPENCTEM_ADMIN_SITE "$admin_site"
+[[ -z "$admin_host" ]] || set_value OPENCTEM_ADMIN_HOST "$admin_host"
+[[ -z "$admin_port" ]] || set_value OPENCTEM_ADMIN_PORT "$admin_port"
+[[ -z "$admin_public" ]] || admin_cidrs="0.0.0.0/0 ::/0"
+# Spaces in the value: replace the whole line (checked above: no "|" or "&").
+[[ -z "$admin_cidrs" ]] || sed -i -E "s|^OPENCTEM_ADMIN_ALLOWED_CIDRS=.*$|OPENCTEM_ADMIN_ALLOWED_CIDRS=${admin_cidrs}|" "$tmp"
 set_value DB_SUPERUSER_PASSWORD "$(secret 24)"
 set_value DB_MIGRATE_PASSWORD "$(secret 24)"
 set_value DB_ADMIN_PASSWORD "$(secret 24)"
@@ -94,26 +134,51 @@ set_value REDIS_PASSWORD "$(secret 24)"
 set_value APP_ENCRYPTION_KEY "$(secret 32)"
 set_value FINGERPRINT_KEY "$(secret 32)"
 set_value METRICS_TOKEN "$(secret 32)"
+# The bundled shared sensor's single-use enrollment token
+# (docker-compose.sensor.yml): octe_ and 49 base62 characters.
+set_value SENSOR_INSTANCE_ENROLLMENT_TOKEN "octe_$(base62 49)"
 
 chmod 600 "$tmp"
 mv "$tmp" "$env_file"
 trap - EXIT
 
-console="https://$host:8444/admin"
+# The bundled shared sensor's local policy (docker-compose.sensor.yml): a
+# copy of the example the operator edits; never overwritten.
+if [[ ! -e "$here/sensor/sensor-policy.yaml" && -f "$here/sensor/sensor-policy.example.yaml" ]]; then
+  install -m 0644 "$here/sensor/sensor-policy.example.yaml" "$here/sensor/sensor-policy.yaml"
+fi
+port="${admin_port:-8443}"
+console="https://$host:$port/admin"
 [[ -z "$admin_host" ]] || console="https://$admin_host/admin"
 reach="from private networks only (loopback, 10/8, 172.16/12, 192.168/16, IPv6 ULA)"
+[[ -z "$admin_cidrs" ]] || reach="from $admin_cidrs"
 [[ -z "$admin_public" ]] || reach="from EVERY network (--admin-public)"
+if [[ "$admin_site" = off ]]; then
+  console_msg="Platform console: off (--admin-site off)."
+else
+  console_msg="Platform console: $console, $reach.
+From outside those networks, use your VPN"
+  if [[ "$admin_site" = port ]]; then
+    console_msg="$console_msg or an SSH tunnel, e.g.:
+  ssh -L $port:127.0.0.1:$port you@$host   then open https://localhost:$port/admin
+For production, give the console its own DNS name (--admin-host): the
+browser then isolates it from the main site entirely."
+  else
+    console_msg="$console_msg."
+  fi
+fi
 
 cat <<MSG
 Wrote $env_file (mode 0600) for https://$host with generated secrets.
 Back up APP_ENCRYPTION_KEY from it now: without that key the stored
 credentials cannot be decrypted.
 
-Platform console: $console, $reach.
-From outside those networks, use an SSH tunnel, e.g.:
-  ssh -L 8444:127.0.0.1:8444 you@$host   then open https://localhost:8444/admin
+$console_msg
 
 Next:
   docker compose up -d
   docker compose run --rm api -check-config   # optional preflight
+
+Optional bundled shared sensor (enrolls with SENSOR_INSTANCE_ENROLLMENT_TOKEN):
+  docker compose -f docker-compose.yml -f docker-compose.sensor.yml up -d
 MSG

@@ -170,15 +170,17 @@ migration on publish (which only remaps between sub-statuses of the same canonic
 
 The finding resource gains `sub_status` (`{id, key, name, color}` or null); lists filter by `sub_status`.
 
-## 7. Plans
+## 7. Limits
 
-| Plan | Sub-statuses | Schemes |
+The catalog is capped by two organization limits (`lifecycle_sub_statuses` and `lifecycle_schemes`, see `docs/architecture/limits.md`). An organization is unlimited unless an operator or the hosted control plane sets them. A hosted offer typically sets:
+
+| Tier | Sub-statuses | Schemes |
 |---|---|---|
-| Free | up to 3 labels, no guards | none (the system lifecycle) |
-| Pro | up to 30 | 1 per kind, with guards |
-| Enterprise | up to 30 | up to 10 per kind, with context selectors |
+| Entry | up to 3 labels, no guards | none (the system lifecycle) |
+| Mid | up to 30 | 1 per kind, with guards |
+| Top | up to 30 | up to 10 per kind, with context selectors |
 
-A limit caps what an organization may add: after a downgrade the published schemes keep working.
+A limit caps what an organization may add: after a lowering the published schemes keep working.
 
 ## 8. Threat model
 
@@ -220,5 +222,5 @@ data with optional per-language names.
 | 4 | The tenant layer wired into every status path (sub-status changes only as engine-decided, audited moves); `PATCH /status` with `sub_status_id` and `fields`; the finding resource; the allowed moves and the dry run; the timeline | in review |
 | 4b | Sub-statuses and fields on approval requests; the list filter by sub-status; simulate | designed |
 | 5 | Settings → Findings → Finding lifecycle (sub-status lanes, draft editor, check, publish with step-up, version history and roll back) | in review |
-| 6 | Drawer, list and bulk with sub-statuses | designed |
+| 6 | Drawer, list and bulk with sub-statuses (sub-status pill, status menu with sub-status moves and their requirements, bulk dry run) | in review |
 | 7 | Templates, extra approval steps, ticket mapping by sub-status, flow report | designed |

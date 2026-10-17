@@ -16,9 +16,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -374,16 +374,27 @@ func (s *TenantService) LogAuditEvent(ctx context.Context, actx auditapp.AuditCo
 // Tenant Operations
 // =============================================================================
 
+// ProvisionedEntitlements are what a hosted service's control plane writes
+// with an organization it provisions (validated by the caller).
+type ProvisionedEntitlements struct {
+	Limits         limits.Limits
+	DeniedFeatures []string
+	IdlePolicy     bool
+	Reason         string
+}
+
 // CreateTenantInput represents the input for creating a tenant.
 type CreateTenantInput struct {
 	Name        string `json:"name" validate:"required,min=2,max=100"`
 	Slug        string `json:"slug" validate:"required,min=3,max=100,slug"`
 	Description string `json:"description" validate:"max=500"`
-	// Plan is stored with the organization when set (Free for a
-	// self-service organization). Empty: no plan is stored and the
-	// organization is on plan.Unassigned until an administrator picks one
-	// (bootstrap-admin, the console, an approved access request).
-	Plan plan.Plan `json:"-"`
+	// InitialLimits are stored with the organization (the instance's
+	// self-service defaults for an organization a person creates). Empty:
+	// no limits.
+	InitialLimits limits.Limits `json:"-"`
+	// Provisioned, when set, replaces InitialLimits: what the control plane
+	// provisions with the organization (its limits, denies and idle policy).
+	Provisioned *ProvisionedEntitlements `json:"-"`
 }
 
 // CreateTenant creates a new tenant and adds the creator as owner.
@@ -409,10 +420,14 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 	if input.Description != "" {
 		t.UpdateDescription(input.Description)
 	}
-	if input.Plan != "" {
-		if err := t.SetPlan(input.Plan); err != nil {
-			return nil, err
-		}
+	if p := input.Provisioned; p != nil {
+		t.SetInitial(tenantdom.InitialEntitlements{
+			Limits:     limits.Rows(t.ID(), limits.OriginControlPlane, p.Reason, p.Limits, t.CreatedAt()),
+			Denies:     limits.DenyRows(t.ID(), limits.OriginControlPlane, p.Reason, p.DeniedFeatures, t.CreatedAt()),
+			IdlePolicy: p.IdlePolicy, IdleReason: p.Reason,
+		})
+	} else {
+		t.SetInitialLimits(limits.SelfServiceRows(t.ID(), input.InitialLimits, t.CreatedAt()))
 	}
 
 	// Build the owner membership before any write so a construction error can't
@@ -872,7 +887,7 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	s.invalidateMembershipCache(ctx, membership.TenantID().String(), membership.UserID().String())
 	s.bumpPermissionVersion(ctx, membership.TenantID().String(), membership.UserID().String())
 
-	s.logger.Info("member role updated", "membership_id", membershipID, "new_role", role)
+	s.logger.Info("member role updated", "membership_id", logger.SanitizeValue(membershipID), "new_role", logger.SanitizeValue(string(role)))
 	if tenantdom.PrivilegeRank(role) > tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) {
 		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
 			fmt.Sprintf("membership role raised from %s to %s", oldRole, role))

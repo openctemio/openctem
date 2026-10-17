@@ -36,11 +36,20 @@ type ValidateResponse struct {
 	IsBreakGlass bool `json:"is_break_glass"`
 	// PasswordChangeRequired: the session may only change the temporary password.
 	PasswordChangeRequired bool `json:"password_change_required"`
+	// FactorEnrollmentRequired: the console requires security keys and this
+	// administrator must register them (and recovery codes) first.
+	FactorEnrollmentRequired bool `json:"factor_enrollment_required"`
 	// MaxRole is the administrator's own role: the most this session may
 	// elevate to. Role is what the session acts as now.
 	MaxRole string `json:"max_role,omitempty"`
 	// ElevatedUntil is when the session's elevation ends (absent: not elevated).
 	ElevatedUntil *time.Time `json:"elevated_until,omitempty"`
+	// CSRFToken is the console session's CSRF token, for the console to echo
+	// in X-CSRF-Token. Returned only by the sign-in steps that open a session
+	// and by validate (the session's own cookie request), never in a readable
+	// cookie: on a second port of the tenant host the two sites share cookies,
+	// but a tenant page cannot read the console's responses.
+	CSRFToken string `json:"csrf_token,omitempty"`
 }
 
 // Validate validates the admin API key and returns admin info.
@@ -71,7 +80,14 @@ func (h *AdminAuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 			response.ElevatedUntil = sess.ElevatedUntil
 		}
 		response.PasswordChangeRequired = adminUser.PasswordChangeRequired() && sess.AuthMethod == admin.AuthMethodPassword
+		response.FactorEnrollmentRequired = sess.EnrollmentRequired
 	}
+	// The session's own CSRF token (bound to the session cookie that
+	// authenticated this request).
+	if c, err := r.Cookie(middleware.AdminSessionCookie); err == nil && c.Value != "" {
+		response.CSRFToken = middleware.AdminCSRFToken(c.Value)
+	}
+	w.Header().Set("Cache-Control", "no-store")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
