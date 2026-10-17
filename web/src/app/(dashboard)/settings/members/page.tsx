@@ -23,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -86,6 +87,7 @@ import { useTenant } from '@/context/tenant-provider'
 import {
   useMembers,
   useMemberStats,
+  useUpdateMemberRole,
   useInvitations,
   type MemberWithUser,
   type MemberRole,
@@ -385,6 +387,12 @@ function UserRolesDetailCard({
   )
 }
 
+// The four team roles are the member's role in the organization. They change
+// through the member's role on this page and ownership transfer; the roles
+// dialog below edits custom roles only.
+const isTeamRoleItem = (r: { slug: string; is_system: boolean }) =>
+  r.is_system && ['owner', 'admin', 'member', 'viewer'].includes(r.slug)
+
 // Dialog for editing user roles
 function EditUserRolesDialog({
   member,
@@ -406,7 +414,18 @@ function EditUserRolesDialog({
     isLoading: userRolesLoading,
     mutate: mutateUserRoles,
   } = useUserRoles(open ? member?.user_id || null : null)
-  const { roles: allRoles, isLoading: allRolesLoading } = useRoles({ skip: !open })
+  const { roles: everyRole, isLoading: allRolesLoading } = useRoles({ skip: !open })
+  const { t } = useTranslation()
+  const { currentTenant: dialogTenant } = useTenant()
+  const { updateRole, isUpdating } = useUpdateMemberRole(dialogTenant?.slug, member?.id)
+  // The team role changes through the membership (PATCH), the custom roles
+  // through the roles API.
+  const [teamRole, setTeamRole] = useState<MemberRole>('member')
+  useEffect(() => {
+    if (open && member) setTeamRole(member.role)
+  }, [open, member])
+  const teamRoleLocked = member?.role === 'owner'
+  const allRoles = useMemo(() => everyRole.filter((r) => !isTeamRoleItem(r)), [everyRole])
   const { setUserRoles, isSetting } = useSetUserRoles(open ? member?.user_id || null : null)
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([])
 
@@ -421,8 +440,9 @@ function EditUserRolesDialog({
       initialized.current = false
       return
     }
-    if (!initialized.current && !userRolesLoading && userRoles.length > 0) {
-      setSelectedRoleIds(userRoles.map((r) => r.id))
+    const custom = userRoles.filter((r) => !isTeamRoleItem(r))
+    if (!initialized.current && !userRolesLoading && custom.length > 0) {
+      setSelectedRoleIds(custom.map((r) => r.id))
       initialized.current = true
     } else if (!initialized.current && !userRolesLoading) {
       // Loaded with empty result — still mark as initialized so we don't
@@ -434,6 +454,9 @@ function EditUserRolesDialog({
 
   const handleSave = async () => {
     try {
+      if (member && !teamRoleLocked && teamRole !== member.role) {
+        await updateRole({ role: teamRole })
+      }
       await setUserRoles({ role_ids: selectedRoleIds })
       toast.success('Roles updated successfully')
       mutateUserRoles()
@@ -456,13 +479,50 @@ function EditUserRolesDialog({
 
         <DialogBody>
           <div className="py-4">
+            <div className="mb-4 space-y-1.5">
+              <Label htmlFor="member-team-role">
+                {t('org.roles.teamRole', 'Role in the organization')}
+              </Label>
+              {teamRoleLocked ? (
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    'org.roles.ownerLocked',
+                    'This person is the owner. Ownership moves with Transfer ownership.'
+                  )}
+                </p>
+              ) : (
+                <Select value={teamRole} onValueChange={(v) => setTeamRole(v as MemberRole)}>
+                  <SelectTrigger id="member-team-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(canGrantAdmin || member?.role === 'admin') && (
+                      <SelectItem
+                        value="admin"
+                        disabled={!canGrantAdmin && member?.role !== 'admin'}
+                      >
+                        {t('org.role.admin', 'Admin')}
+                      </SelectItem>
+                    )}
+                    <SelectItem value="member">{t('org.role.member', 'Member')}</SelectItem>
+                    <SelectItem value="viewer">{t('org.role.viewer', 'Viewer')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              {t(
+                'org.roles.manageNote',
+                'Custom roles add permissions on top of the role in the organization.'
+              )}
+            </p>
             <RoleChecklist
               canGrantAdmin={canGrantAdmin}
               roles={allRoles}
               selected={selectedRoleIds}
               onChange={setSelectedRoleIds}
               loading={isLoading}
-              disabled={isSetting}
+              disabled={isSetting || isUpdating}
             />
           </div>
         </DialogBody>
@@ -478,7 +538,7 @@ function EditUserRolesDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSetting}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isSetting || isLoading}>
+          <Button onClick={handleSave} disabled={isSetting || isUpdating || isLoading}>
             {isSetting ? (
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (

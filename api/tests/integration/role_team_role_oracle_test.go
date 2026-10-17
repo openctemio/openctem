@@ -333,9 +333,10 @@ func TestTeamRoleOracle_TeamGatesRefuseCustomRoleHolders(t *testing.T) {
 }
 
 // Removing a role is bounded like granting it (F5): a delegated role manager
-// may not strip a role they could not grant, neither one at a time nor by
-// replacing the role set. An administrator stripped of every role (by someone
-// allowed to) is no longer an administrator.
+// may not strip a role they could not grant. The system roles are not a Roles
+// API matter at all (they are the member's team role), and a custom-role
+// replace leaves the team role alone. An administrator demoted through the
+// membership is no longer an administrator.
 func TestTeamRoleOracle_RemovalCeiling(t *testing.T) {
 	f := newRoleFixture(t)
 	owner := f.member("owner")
@@ -353,14 +354,21 @@ func TestTeamRoleOracle_RemovalCeiling(t *testing.T) {
 		}
 	}
 	mctx := auditapp.AuditContext{ActorID: manager, TenantID: f.tenantID}
-	forbidden("manager removes admin's admin role",
-		f.svc.RemoveRole(f.ctx, f.tenantID, admin, sysAdminRole, mctx))
-	forbidden("manager removes member's member role",
-		f.svc.RemoveRole(f.ctx, f.tenantID, victim, sysMemberRole, mctx))
-	forbidden("manager replaces member's roles",
-		f.svc.SetUserRoles(f.ctx, accesscontrol.SetUserRolesInput{
-			TenantID: f.tenantID, UserID: victim, RoleIDs: []string{sub},
-		}, manager, mctx))
+	for what, err := range map[string]error{
+		"manager removes admin's admin role":   f.svc.RemoveRole(f.ctx, f.tenantID, admin, sysAdminRole, mctx),
+		"manager removes member's member role": f.svc.RemoveRole(f.ctx, f.tenantID, victim, sysMemberRole, mctx),
+	} {
+		if !errors.Is(err, accesscontrol.ErrSystemRoleViaRoles) {
+			t.Fatalf("%s: want the system-role refusal, got %v", what, err)
+		}
+	}
+	// Replacing a member's custom roles keeps the member role.
+	if err := f.svc.SetUserRoles(f.ctx, accesscontrol.SetUserRolesInput{
+		TenantID: f.tenantID, UserID: victim, RoleIDs: []string{sub},
+	}, manager, mctx); err != nil {
+		t.Fatalf("manager replaces member's custom roles: %v", err)
+	}
+	f.setRoles(victim, sysMemberRole)
 	forbidden("manager replaces admin's roles",
 		f.svc.SetUserRoles(f.ctx, accesscontrol.SetUserRolesInput{
 			TenantID: f.tenantID, UserID: admin, RoleIDs: []string{sub},
@@ -382,12 +390,11 @@ func TestTeamRoleOracle_RemovalCeiling(t *testing.T) {
 		t.Fatalf("manager removes cr-sub: %v", err)
 	}
 
-	// The owner strips the admin of every role: no admin powers remain.
-	octx := auditapp.AuditContext{ActorID: owner, TenantID: f.tenantID}
-	if err := f.svc.RemoveRole(f.ctx, f.tenantID, admin, sysAdminRole, octx); err != nil {
-		t.Fatalf("owner removes admin role: %v", err)
-	}
+	// The owner demotes the admin through the membership (the label; the
+	// trigger moves the system role): no admin powers remain.
+	f.exec(`UPDATE tenant_members SET role = 'viewer' WHERE tenant_id = $1 AND user_id = $2`, f.tenantID, admin)
 	if got := f.teamRole(admin); adminRole(got) {
-		t.Fatalf("admin with zero roles still resolves to %q", got)
+		t.Fatalf("a demoted admin still resolves to %q", got)
 	}
+	_ = owner
 }

@@ -29,6 +29,13 @@ vi.mock('@/features/access-control', async (orig) => ({
   }),
   useTenantPermissionModules: () => ({ modules: [], isLoading: false }),
 }))
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { slug: 'acme' } }),
+}))
+vi.mock('@/features/organization', async (orig) => ({
+  ...(await orig<typeof import('@/features/organization')>()),
+  useMembers: () => ({ members: [{ id: 'mem1', user_id: 'u1' }] }),
+}))
 vi.mock('../add-member-to-role-dialog', () => ({ AddMemberToRoleDialog: () => null }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -65,5 +72,38 @@ describe('Role detail: remove a member', () => {
     await waitFor(() =>
       expect(csrfFetch).toHaveBeenCalledWith('/api/v1/users/u1/roles/r1', { method: 'DELETE' })
     )
+  })
+
+  // A team role is the member's role: it changes through the membership
+  // (PATCH), never through /users/{id}/roles.
+  it('changes a team role through the membership, not the roles API', async () => {
+    csrfFetch.mockReset()
+    csrfFetch.mockResolvedValue(new Response(null, { status: 200 }))
+    const admin = { ...role, name: 'Admin', slug: 'admin', is_system: true } as unknown as Role
+    render(<RoleDetailSheet role={admin} open onOpenChange={vi.fn()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Members/ }))
+    expect(screen.queryByRole('button', { name: /Add member/ })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /Actions for Lan Tran/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Change to Member/ }))
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Change' }))
+    await waitFor(() =>
+      expect(csrfFetch).toHaveBeenCalledWith('/api/v1/tenants/acme/members/mem1', {
+        method: 'PATCH',
+        body: JSON.stringify({ role: 'member' }),
+      })
+    )
+    expect(csrfFetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/users/'),
+      expect.anything()
+    )
+  })
+
+  it('offers no way to remove the owner role', async () => {
+    const owner = { ...role, name: 'Owner', slug: 'owner', is_system: true } as unknown as Role
+    render(<RoleDetailSheet role={owner} open onOpenChange={vi.fn()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Members/ }))
+    expect(screen.queryByRole('button', { name: /Add member/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Actions for Lan Tran/ })).toBeNull()
   })
 })
