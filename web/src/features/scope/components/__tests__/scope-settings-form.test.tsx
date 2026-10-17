@@ -65,7 +65,7 @@ beforeEach(() => {
 describe('ScopeSettingsForm', () => {
   it('shows what is in effect, read-only, and offers no way to turn scope off', () => {
     wrap(<ScopeSettingsForm settings={settings} />)
-    expect(screen.getByText('Platform sensors need proof')).toBeInTheDocument()
+    expect(screen.getByText('Shared sensors need proof')).toBeInTheDocument()
     expect(screen.getByText('Always on')).toBeInTheDocument()
     // The switches are auto-join, confirm-adds-to-scope, the review gate and
     // the opt-in proof for CI scopes (none of them changes what may be

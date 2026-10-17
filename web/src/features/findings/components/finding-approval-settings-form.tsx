@@ -145,14 +145,12 @@ export function FindingApprovalSettingsForm({
     ? new Date(settings.pending_second_look_at).toLocaleString()
     : ''
 
-  // Cancel a waiting lowering: choosing the value in force again applies at
-  // once and clears the pending change (the API treats it as a raise).
+  // Cancel the waiting lowerings: the API drops them and keeps the values in
+  // force (`what` only says which button shows the busy state).
   const cancelPending = async (what: 'level' | 'percent') => {
     setCanceling(what)
     try {
-      const next = await updateFindingApprovalSettings(
-        what === 'level' ? { fp_approval: inForce } : { second_look_percent: percentInForce }
-      )
+      const next = await updateFindingApprovalSettings({ cancel_pending: true })
       toast.success(
         t('findingApprovals.settings.pendingCanceled', 'The waiting change was canceled')
       )
@@ -206,7 +204,7 @@ export function FindingApprovalSettingsForm({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="mt-2"
+                  className="col-start-2 mt-2 justify-self-start"
                   disabled={canceling !== null}
                   onClick={() => void cancelPending('level')}
                 >
@@ -282,7 +280,7 @@ export function FindingApprovalSettingsForm({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="mt-2"
+                  className="col-start-2 mt-2 justify-self-start"
                   disabled={canceling !== null}
                   onClick={() => void cancelPending('percent')}
                 >

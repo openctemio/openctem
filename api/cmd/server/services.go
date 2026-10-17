@@ -81,6 +81,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
+	onboardingapp "github.com/openctemio/openctem/api/internal/app/onboarding"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
@@ -875,6 +876,9 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// Onboarding: the fork of an account without an organization and the
+	// join-request inbox (RFC-104).
+	Onboarding *onboardingapp.Service
 	// AccountDeletion: self-service account deletion with a grace period.
 	AccountDeletion *accountdeletionapp.Service
 	// PlatformEmail is the platform's SMTP settings, set in the admin console
@@ -1654,6 +1658,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Mark fixed = the finding bulk path (legal steps, a note, the owner's
 	// own findings, proof-of-fix queued) behind the abuse guard.
 	s.RemediationTask.SetFixClaimer(s.Vulnerability, s.BulkGuard)
+	// One exception over a task's open findings (RFC-111 §7).
+	s.RemediationTask.SetExceptionRequester(s.Vulnerability)
 	// Remediation suggestions: algorithms propose, a person accepts.
 	s.RemediationSuggest = remediation.NewSuggestionService(repos.RemediationSuggestion, log)
 	s.RemediationSuggest.SetDataScope(s.DataScope)
@@ -1946,6 +1952,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
 	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
+	s.ContentCatalog.SetPublishing(contentPublishing(s.ContentPacks, s.PlatformContentPacks, contentSigner,
+		func(ctx context.Context, id shared.ID) (string, error) {
+			t, err := repos.Tenant.GetByID(ctx, id)
+			if err != nil {
+				return "", err
+			}
+			return t.Slug(), nil
+		}))
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -1992,6 +2006,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	// research/122: completed scan commands teach per-target durations.
 	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
+	// RFC-100 §10: shared jobs in flight per organization, read through the
+	// entitlement service by key (platform_scans_concurrent).
+	if s.Entitlement != nil {
+		cmdOpts = append(cmdOpts, command.WithSharedLimits(s.Entitlement))
+	}
+	// RFC-100 §5: the access policy again at claim time (an organization
+	// that lost access or opted out keeps its queued shared jobs waiting).
+	cmdOpts = append(cmdOpts, command.WithSharedAccess(s.SharedSensorsAllowed))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
@@ -2959,6 +2981,19 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// managed elsewhere; proving it again restores them (RFC-058).
 	s.DomainVerify.SetClaimListener(s.Tenant)
 	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
+	// Per-domain sign-up policy (RFC-104): sso_required, join by domain and
+	// blocking new organizations for accounts on a claimed domain.
+	s.Auth.SetSignupDomainPolicy(s.DomainVerify)
+	s.Onboarding = onboardingapp.NewService(repos.Tenant, repos.Tenant, onboardingTenants{s.Tenant}, s.DomainVerify,
+		s.Signup, repos.JoinRequest, s.Audit, deriveKey(cfg.Auth.JWTSecret, "openctem/onboarding-offer/v1"), log)
+	sso := s.SSO
+	s.DomainVerify.SetSSOReadiness(func(ctx context.Context, tenantID shared.ID) (bool, error) {
+		t, err := repos.Tenant.GetByID(ctx, tenantID)
+		if err != nil {
+			return false, err
+		}
+		return sso.HasUsableSSOPath(ctx, t.Slug())
+	})
 	s.SSO.SetJITApprovalNotifier(s.Tenant)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
@@ -2998,6 +3033,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// admits it (self-service, or a pending invitation for the email).
 		if s.Signup != nil {
 			s.OAuth.SetSignupPolicy(s.Signup)
+			if s.DomainVerify != nil {
+				s.OAuth.SetSignupDomainPolicy(s.DomainVerify)
+			}
 			if s.AccountDeletion != nil {
 				s.OAuth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 			}
@@ -3402,4 +3440,18 @@ func (s *Services) SharedSensorsAllowed(ctx context.Context, tenantID shared.ID)
 		return false, scanpolicy.ReasonSharedSensorsUnavailable
 	}
 	return s.ScanPolicy.SharedSensorsAllowed(ctx, tenantID)
+}
+
+// SharedSensorsEgress is the egress addresses the instance administrator
+// published for shared sensors (RFC-100 §9): the global list first, then
+// each region, sorted. Nothing without the scan policy service.
+func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.PlatformEgress, error) {
+	if s == nil || s.ScanPolicy == nil {
+		return nil, nil
+	}
+	v, _, err := s.ScanPolicy.SharedSensorsEgress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
 }

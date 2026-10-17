@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
@@ -159,6 +160,12 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 	if svc.Tenant != nil {
 		m.Register(controller.NewPurgeController("invitation-purge", cfg.Worker.InvitationPurgeInterval,
 			svc.Tenant.CleanupExpiredInvitations, log.With("controller", "invitation-purge")))
+	}
+	if svc.Onboarding != nil {
+		// Decided and expired join requests carry the requester's address:
+		// gone 30 days after (RFC-104).
+		m.Register(controller.NewPurgeController("join-request-purge", cfg.Worker.InvitationPurgeInterval,
+			svc.Onboarding.Purge, log.With("controller", "join-request-purge")))
 	}
 	if svc.AccountDeletion != nil {
 		// Accounts whose deletion grace period ended are erased (RFC-104).
@@ -594,11 +601,27 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "vex-request-notice")))
 	}
 
+	// A standing accepted risk or one-person false positive whose finding
+	// turned worse is ended, flagged or withdrawn under the approval policy
+	// (RFC-111 §6).
+	if repos.FindingMaterialChange != nil && svc.Vulnerability != nil {
+		w.ControllerManager.Register(controller.NewApprovalMaterialChangeController(
+			repos.FindingMaterialChange, svc.Vulnerability, svc.SLA, svc.Vulnerability,
+			10*time.Minute, 200, log.With("controller", "approval-material-change")))
+	}
+
 	// Asset identity model: derive identifiers for assets that predate it and
 	// queue suspected duplicates for review (never merges).
 	w.ControllerManager.Register(controller.NewAssetIdentityBackfillController(
 		ingest.NewIdentityBackfill(repos.AssetIdentityBackfill, repos.AssetIdentifier, repos.AssetDedup,
 			log.With("controller", "asset-identity-backfill")),
+	))
+
+	// Detected technologies (RFC-112): fill them for assets that predate
+	// them and drop the component links ingest no longer creates.
+	w.ControllerManager.Register(controller.NewAssetTechnologyBackfillController(
+		assettechapp.NewBackfill(repos.AssetTechnologyBackfill,
+			log.With("controller", "asset-technology-backfill"), cfg.Worker.AssetTechnologyBackfillReportOnly),
 	))
 
 	w.ControllerManager.Register(controller.NewScopeReconciliationController(

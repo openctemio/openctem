@@ -899,9 +899,18 @@ func (a *Asset) SetClassification(classification string) {
 	a.updatedAt = time.Now().UTC()
 }
 
+// RetiredPropTechnologies is the former properties.technologies key. The
+// technologies detected on an asset live in asset_technologies (RFC-112);
+// the key (and its input synonym "technology") is never stored again.
+const RetiredPropTechnologies = "technologies"
+
+func isRetiredProperty(key string) bool {
+	return key == RetiredPropTechnologies || key == "technology"
+}
+
 // SetProperty sets a type-specific property.
 func (a *Asset) SetProperty(key string, value any) {
-	if key == "" {
+	if key == "" || isRetiredProperty(key) {
 		return
 	}
 	a.properties[key] = value
@@ -918,6 +927,11 @@ func (a *Asset) GetProperty(key string) (any, bool) {
 func (a *Asset) SetProperties(properties map[string]any) {
 	if properties == nil {
 		properties = make(map[string]any)
+	}
+	for k := range properties {
+		if isRetiredProperty(k) {
+			delete(properties, k)
+		}
 	}
 	a.properties = properties
 	a.updatedAt = time.Now().UTC()

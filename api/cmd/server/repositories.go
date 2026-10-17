@@ -23,24 +23,25 @@ type Repositories struct {
 	AssetTypeCat            *postgres.AssetTypeCategoryRepository
 	ScopeTarget             *postgres.ScopeTargetRepository
 	ScopeExcl               *postgres.ScopeExclusionRepository
-	AssetService            *postgres.AssetServiceRepository           // CTEM: Network services on assets
-	WebEndpoint             *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
-	Software                *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
-	CVECorpus               *postgres.CVECorpusRepository              // CVE corpus for inventory matching (RFC-066)
-	SoftwareMatch           *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
-	AssetAttributeSources   *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
-	AssetFreshness          *postgres.AssetFreshnessRepository         // Last observation per attribute class (RFC-075)
-	AssetTechnology         *postgres.AssetTechnologyRepository        // Detected technologies (RFC-112)
-	AssetCoverage           *postgres.AssetCoverageRepository          // Coverage ledger (RFC-093)
-	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository       // Names that resolve only through a wildcard (RFC-088 A4)
-	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository // Automatic enrichment requests (RFC-075)
-	AssetChangeEvents       *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
-	APISpec                 *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
-	AssetStateHistory       *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
-	AssetRelationship       *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
-	RelationshipSuggestion  *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
-	ThreatModel             *postgres.ThreatModelRepository            // CTEM: Continuous threat models
-	AttackerProfileReader   *postgres.AttackerProfileReader            // CTEM: Attacker profiles (generation input)
+	AssetService            *postgres.AssetServiceRepository            // CTEM: Network services on assets
+	WebEndpoint             *postgres.WebEndpointRepository             // Web surface: endpoints under origin assets (RFC-056)
+	Software                *postgres.SoftwareRepository                // Software catalog and asset links (RFC-066)
+	CVECorpus               *postgres.CVECorpusRepository               // CVE corpus for inventory matching (RFC-066)
+	SoftwareMatch           *postgres.SoftwareMatchRepository           // Inventory vulnerability matcher (RFC-066)
+	AssetAttributeSources   *postgres.AssetAttributeSourceRepository    // Per-source asset attribute values (RFC-069)
+	AssetFreshness          *postgres.AssetFreshnessRepository          // Last observation per attribute class (RFC-075)
+	AssetTechnology         *postgres.AssetTechnologyRepository         // Detected technologies (RFC-112)
+	AssetTechnologyBackfill *postgres.AssetTechnologyBackfillRepository // Technology backfill (RFC-112)
+	AssetCoverage           *postgres.AssetCoverageRepository           // Coverage ledger (RFC-093)
+	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository        // Names that resolve only through a wildcard (RFC-088 A4)
+	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository  // Automatic enrichment requests (RFC-075)
+	AssetChangeEvents       *postgres.AssetChangeEventRepository        // Asset change timeline (RFC-069)
+	APISpec                 *postgres.APISpecRepository                 // API descriptions of web origins (RFC-056)
+	AssetStateHistory       *postgres.AssetStateHistoryRepository       // CTEM: State change audit log
+	AssetRelationship       *postgres.AssetRelationshipRepository       // CTEM: Asset topology graph
+	RelationshipSuggestion  *postgres.RelationshipSuggestionRepository  // CTEM: Relationship suggestions
+	ThreatModel             *postgres.ThreatModelRepository             // CTEM: Continuous threat models
+	AttackerProfileReader   *postgres.AttackerProfileReader             // CTEM: Attacker profiles (generation input)
 
 	// Vulnerabilities & Findings
 	Vulnerability    *postgres.VulnerabilityRepository
@@ -224,6 +225,7 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin        *postgres.AdminRepository
 	SignupPolicy *postgres.SignupPolicyRepository
+	JoinRequest  *postgres.JoinRequestRepository
 	// AccountDeletion: self-service account deletions (RFC-104).
 	AccountDeletion *postgres.AccountDeletionRepository
 	// PlatformSetting stores the other console settings (RFC-079).
@@ -234,9 +236,13 @@ type Repositories struct {
 	Plan            *postgres.PlanRepository
 	IdleLifecycle   *postgres.IdleLifecycleRepository
 	AdminAuditLog   *postgres.AuditLogRepository
-	AdminOrg        *postgres.AdminOrganizationRepository
-	AdminConsole    *postgres.AdminConsoleRepository
-	PlatformIdP     *postgres.PlatformIdPRepository
+	// SupportAccess stores support grants and sessions; SupportRead is the
+	// read model a support session sees (RFC-063).
+	SupportAccess *postgres.SupportAccessRepository
+	SupportRead   *postgres.SupportReadRepository
+	AdminOrg      *postgres.AdminOrganizationRepository
+	AdminConsole  *postgres.AdminConsoleRepository
+	PlatformIdP   *postgres.PlatformIdPRepository
 	// AdminDB is the pool of the console's identity tables (UseAdminDB).
 	AdminDB *postgres.DB
 
@@ -311,6 +317,9 @@ type Repositories struct {
 	FindingEvidence         *postgres.FindingEvidenceRepository
 	FindingSLARestart       *postgres.FindingSLARestartRepository
 	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
+	// FindingMaterialChange: standing decisions for the material-change
+	// controller (RFC-111).
+	FindingMaterialChange *postgres.FindingMaterialChangeRepository
 
 	// Runtime-telemetry reads for Stage-4 detection correlation
 	// (migration 000203)
@@ -364,6 +373,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),
 		AssetTechnology:         postgres.NewAssetTechnologyRepository(db),
+		AssetTechnologyBackfill: postgres.NewAssetTechnologyBackfillRepository(db),
 		AssetCoverage:           postgres.NewAssetCoverageRepository(db),
 		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
@@ -530,6 +540,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:           postgres.NewAdminRepository(db),
 		SignupPolicy:    postgres.NewSignupPolicyRepository(db),
+		JoinRequest:     postgres.NewJoinRequestRepository(db),
 		AccountDeletion: postgres.NewAccountDeletionRepository(db),
 		PlatformSetting: postgres.NewPlatformSettingRepository(db),
 		ScanPolicy:      postgres.NewScanPolicyRepository(db),
@@ -538,6 +549,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Plan:            postgres.NewPlanRepository(db),
 		IdleLifecycle:   postgres.NewIdleLifecycleRepository(db),
 		AdminAuditLog:   postgres.NewAuditLogRepository(db),
+		SupportAccess:   postgres.NewSupportAccessRepository(db),
+		SupportRead:     postgres.NewSupportReadRepository(db),
 		AdminOrg:        postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:    postgres.NewAdminConsoleRepository(db),
 		PlatformIdP:     postgres.NewPlatformIdPRepository(db),
@@ -597,6 +610,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
 		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
 		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),
+		FindingMaterialChange:   postgres.NewFindingMaterialChangeRepository(db),
 
 		// Runtime-telemetry reads for detection correlation (migration 000203).
 		TelemetryProbe: postgres.NewTelemetryProbeRepository(db),

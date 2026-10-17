@@ -179,7 +179,7 @@ func TestSharedResults_BoundToCommandTenant(t *testing.T) {
 	a := h.newSharedSensor("shared-a")
 	jobX := h.sharedJob(tenantX, a.id, 3)
 
-	rule := "shared-bind-" + shared.NewID().String()[:8]
+	rule := "shared-bind-" + shared.NewID().String()
 	rid := newReportID()
 	resp, raw := h.putBound(a.key, jobX, rid+"?tenant_id="+tenantY+"&organization_id="+tenantY, 3, v2Segment("semgrep", "1.0", rule),
 		"X-Tenant-ID", tenantY, "X-OpenCTEM-Tenant", tenantY)
@@ -260,7 +260,7 @@ func TestSharedResults_DroppedWhenNoLongerHeld(t *testing.T) {
 	h := newCtlHarness(t)
 	a, b := h.newSharedSensor("shared-a"), h.newSharedSensor("shared-b")
 	job := h.sharedJob(h.tenantID, a.id, 3)
-	rule := "shared-drop-" + shared.NewID().String()[:8]
+	rule := "shared-drop-" + shared.NewID().String()
 	rid := newReportID()
 	resp, raw := h.putBound(a.key, job, rid, 3, v2Segment("semgrep", "1.0", rule))
 	h.want(resp, raw, 202, "")

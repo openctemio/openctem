@@ -45,6 +45,15 @@ func (r *SensorGrantRepository) Get(ctx context.Context, tenantID, sensorID shar
 	return scanSensorGrant(row)
 }
 
+// GetShared returns the grant of a shared sensor (scope instance): it has no
+// tenant, and a tenant's sensor is never one.
+func (r *SensorGrantRepository) GetShared(ctx context.Context, sensorID shared.ID) (*sensordom.Grant, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+sensorGrantColumns+`
+		FROM sensor_grants g JOIN sensors s ON s.id = g.sensor_id AND s.scope = 'instance' AND s.tenant_id IS NULL
+		WHERE g.tenant_id IS NULL AND g.sensor_id = $1`, sensorID.String())
+	return scanSensorGrant(row)
+}
+
 // Update writes g if the stored version is still g.Version, and bumps it.
 func (r *SensorGrantRepository) Update(ctx context.Context, g *sensordom.Grant) (bool, error) {
 	args := grantArgs(g)
@@ -130,14 +139,15 @@ func nullableIDArray(v []shared.ID) any {
 
 func scanSensorGrant(row interface{ Scan(...any) error }) (*sensordom.Grant, error) {
 	var (
-		g                                  sensordom.Grant
-		tenantID, sensorID, trust, network string
-		actions                            pq.StringArray
-		updatedBy                          sql.NullString
-		jobTypesArr, zonesArr, toolsArr    nullStringArray
-		capArr, cidrArr, domainArr         nullStringArray
+		g                               sensordom.Grant
+		sensorID, trust, network        string
+		tenantNull                      sql.NullString
+		actions                         pq.StringArray
+		updatedBy                       sql.NullString
+		jobTypesArr, zonesArr, toolsArr nullStringArray
+		capArr, cidrArr, domainArr      nullStringArray
 	)
-	if err := row.Scan(&tenantID, &sensorID, &g.Profile, &trust, &jobTypesArr, &zonesArr, &toolsArr, &capArr,
+	if err := row.Scan(&tenantNull, &sensorID, &g.Profile, &trust, &jobTypesArr, &zonesArr, &toolsArr, &capArr,
 		&g.TierCeiling, &network, &cidrArr, &domainArr, &g.AllowCredentials, &g.AllowPushIngest,
 		&actions, &g.Version, &updatedBy, &g.CreatedAt, &g.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -145,9 +155,12 @@ func scanSensorGrant(row interface{ Scan(...any) error }) (*sensordom.Grant, err
 		}
 		return nil, fmt.Errorf("scan sensor grant: %w", err)
 	}
+	tenantID := tenantNull.String
 	var err error
-	if g.TenantID, err = shared.IDFromString(tenantID); err != nil {
-		return nil, err
+	if tenantID != "" { // a shared sensor's grant has no tenant
+		if g.TenantID, err = shared.IDFromString(tenantID); err != nil {
+			return nil, err
+		}
 	}
 	if g.SensorID, err = shared.IDFromString(sensorID); err != nil {
 		return nil, err

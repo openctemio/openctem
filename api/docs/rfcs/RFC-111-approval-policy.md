@@ -160,7 +160,11 @@ relaxation.
 A decision is valid for the facts it was made on. When an accepted risk is approved, or a false positive
 is decided by one person, the approval row stores the facts (`decision_facts`) and a moving baseline
 (`facts_baseline`). A controller (every 10 minutes, bounded batches, one transaction per finding)
-compares the baseline with the facts now.
+compares the baseline with the facts now. The batch takes the decisions checked least recently first
+(`last_checked_at`, set on every attempt, a failed one included), so a decision that keeps failing cannot
+hold the batch and starve other organizations. Ending or withdrawing a decision locks its approved request
+and stops when the request is no longer approved or the finding holds a newer approved request: a decision
+made after the change was seen is not undone by it.
 
 **Signals:** `severity_raised`, `priority_raised`, `kev_added`, `epss_crossed` (the score reached the
 threshold), `exploit_validated`, `exposure_raised` (the asset became internet-exposed or a crown jewel).
@@ -194,7 +198,9 @@ threshold), `exploit_validated`, `exposure_raised` (the asset became internet-ex
   preview lists every member with its tier and end.
 - **One decision:** `POST /api/v1/approvals/batches/{id}/approve | reject | cancel`. Sign-offs are on the
   batch. The last sign-off applies every member in one transaction; a member that moved since is canceled
-  with the reason and listed. A member request of a batch cannot be decided alone.
+  with the reason and listed, and so is a member whose finding left the task after the request was made
+  (`finding_left_task`). `GET /api/v1/approvals/batches` takes `source_id` (the task) to list one task's
+  exceptions. A member request of a batch cannot be decided alone.
 - Afterwards each member is an ordinary decision: its own end, expiry and material-change check.
 - Findings that join the task later are not covered.
 

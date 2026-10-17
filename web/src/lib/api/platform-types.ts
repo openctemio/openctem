@@ -1,10 +1,10 @@
 /**
- * Platform scanning: GET /api/v1/platform/scanning.
+ * Shared sensors: GET /api/v1/platform/scanning.
  *
- * The platform operator's shared sensors as the organization sees them: a
- * managed service with regions and a state, the tools it runs and the
- * organization's own platform jobs. Never a sensor (no id, name, host,
- * address or version) and nothing about other organizations. Platform
+ * The instance's shared sensors as the organization sees them: a managed
+ * service with regions and a state, the tools it runs, the organization's own
+ * jobs and the egress addresses to allowlist. Never a sensor (no id, name,
+ * host, address or version) and nothing about other organizations. Shared
  * sensors are managed from the admin console only.
  */
 
@@ -29,4 +29,12 @@ export interface PlatformScanningResponse {
   your_jobs: { queued: number; running: number }
   /** A platform job that waits this long for a slot fails. */
   queue_limit_minutes?: number
+  /** Egress addresses (IP or CIDR) to allowlist: region "" is every region. */
+  egress?: PlatformEgress[]
+}
+
+export interface PlatformEgress {
+  /** The region label; empty for addresses every region uses. */
+  region: string
+  addresses: string[]
 }

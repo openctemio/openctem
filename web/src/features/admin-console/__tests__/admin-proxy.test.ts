@@ -51,11 +51,12 @@ describe('admin API proxy', () => {
   const sentAuth = () => (fetchMock.mock.calls[0][1].headers as Headers).get('Authorization')
 
   it.each([
-    ['auth', 'session'],
+    ['auth', 'login'],
     ['auth', 'logout'],
-  ])('forwards the /login refresh token only to %s/%s', async (...path) => {
+    ['auth', 'mfa'],
+  ])('never forwards the tenant refresh token, not even to %s/%s', async (...path) => {
     await call(POST, 'POST', path)
-    expect(sentCookie()).toContain('refresh_token=signed-in-refresh')
+    expect(sentCookie()).not.toContain('refresh_token')
     expect(sentCookie()).toContain('admin_session=console')
   })
 
@@ -64,17 +65,8 @@ describe('admin API proxy', () => {
     expect((fetchMock.mock.calls[0][1].headers as Headers).get('x-admin-step-up')).toBe('123456')
   })
 
-  it('never forwards the refresh token to other admin routes', async () => {
-    await call(POST, 'POST', ['tenants'])
-    expect(sentCookie()).not.toContain('refresh_token')
-    await call(GET, 'GET', ['auth', 'session'])
-    expect((fetchMock.mock.calls[1][1].headers as Headers).get('Cookie')).not.toContain(
-      'refresh_token'
-    )
-  })
-
   it('never forwards tenant credentials', async () => {
-    await call(POST, 'POST', ['auth', 'session'])
+    await call(POST, 'POST', ['auth', 'login'])
     expect(sentCookie()).not.toContain('auth_token')
     expect(sentCookie()).not.toContain('csrf_token')
     expect(sentAuth()).toBeNull()
