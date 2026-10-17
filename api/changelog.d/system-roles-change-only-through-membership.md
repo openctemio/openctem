@@ -21,6 +21,7 @@
   selector (administrator for the owner only) and lists custom roles; the role
   detail sheet of a team role no longer adds or removes members through the
   Roles API.
+- A co-owner planted before this change (owner role row, membership label not owner) is removed by the real owner through the member role route, with a fresh step-up; the change is audited as `owner_role_drift_removed` (Critical).
 
 Upgrade note: API clients that assigned `admin`, `member` or `viewer` through
 `/users/{id}/roles` must use the member role route instead.

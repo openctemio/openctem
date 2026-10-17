@@ -93,7 +93,7 @@ func TestNoRawMembershipRoleReads(t *testing.T) {
 		t.Errorf("%d SQL literal(s) read the raw tenant_members.role label.\n"+
 			"Join v_user_effective_role (ver.role) instead: it is the role the gates use. A query that must read\n"+
 			"the label itself (the membership routes, the ownership transfer, a display column) goes in\n"+
-			"tools/lint/rawrole/allowlist.txt as `file:Func  reason`.\n\n%s", len(bad), strings.Join(bad, "\n"))
+			"tools/lint/rawrole/allowlist.txt as `path:Func  reason`.\n\n%s", len(bad), strings.Join(bad, "\n"))
 	}
 	var stale []string
 	for k := range allow {
