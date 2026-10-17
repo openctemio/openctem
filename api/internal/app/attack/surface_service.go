@@ -239,10 +239,10 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	}.WithAttribution(approved).WithDataScope(scope))
 
 	// Get assets with risk score for average calculation
-	avgRiskScore := s.calculateAverageRiskScore(ctx, tenantID)
+	avgRiskScore := s.calculateAverageRiskScore(ctx, tenantID, scope)
 
 	// Get asset breakdown by type
-	assetBreakdown := s.getAssetBreakdown(ctx, tenantID)
+	assetBreakdown := s.getAssetBreakdown(ctx, tenantID, scope)
 
 	// Get exposed services list (limit to 5 for overview)
 	exposedServicesList := s.getExposedServicesList(ctx, tenantIDStr, scope, approved, 5)
@@ -266,8 +266,8 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 }
 
 // calculateAverageRiskScore calculates the average risk score using a single AVG() query.
-func (s *SurfaceService) calculateAverageRiskScore(ctx context.Context, tenantID shared.ID) float64 {
-	avg, err := s.assetRepo.GetAverageRiskScore(ctx, tenantID)
+func (s *SurfaceService) calculateAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) float64 {
+	avg, err := s.assetRepo.GetAverageRiskScore(ctx, tenantID, scope)
 	if err != nil {
 		s.logger.Error("failed to get average risk score", "error", err)
 		return 0
@@ -293,8 +293,8 @@ func (s *SurfaceService) countOrZero(ctx context.Context, what string, f asset.F
 // api and web_application are stored as application since migration 000130;
 // ingest aliases them the same way), so a "Websites" row can no longer sit at
 // 0 while the tenant's sites are counted nowhere.
-func (s *SurfaceService) getAssetBreakdown(ctx context.Context, tenantID shared.ID) []AssetTypeBreakdown {
-	statsMap, err := s.assetRepo.GetAssetTypeBreakdown(ctx, tenantID)
+func (s *SurfaceService) getAssetBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) []AssetTypeBreakdown {
+	statsMap, err := s.assetRepo.GetAssetTypeBreakdown(ctx, tenantID, scope)
 	if err != nil {
 		s.logger.Error("failed to get asset type breakdown", "error", err)
 		return []AssetTypeBreakdown{}

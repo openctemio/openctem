@@ -20,7 +20,9 @@ type Repository interface {
 	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, scope *shared.DataScope, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
 	ListGroupsByAsset(ctx context.Context, assetID shared.ID) ([]shared.ID, error)
 	CountAssetOwners(ctx context.Context, assetID shared.ID) (int64, error)
-	CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error)
+	// CountAssetsByGroups counts the assets of each group; a non-nil scope
+	// counts only the assets inside it.
+	CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]int, error)
 	HasPrimaryOwner(ctx context.Context, assetID shared.ID) (bool, error)
 
 	// Extended Asset Ownership (with tenant isolation and user/group name resolution)
@@ -104,6 +106,12 @@ type Repository interface {
 
 	// Materialized view operations
 	RefreshUserAccessibleAssets(ctx context.Context) error
+	// RefreshUserAccessibleAssetsForTenant rebuilds the scope rows of one
+	// tenant only.
+	RefreshUserAccessibleAssetsForTenant(ctx context.Context, tenantID shared.ID) error
+	// ListAssetIDsByScopeRule returns the assets a scope rule has assigned
+	// to its group.
+	ListAssetIDsByScopeRule(ctx context.Context, tenantID, ruleID shared.ID) ([]shared.ID, error)
 
 	// Incremental access refresh (targeted updates instead of full refresh)
 	RefreshAccessForAssetAssign(ctx context.Context, groupID, assetID shared.ID, ownershipType string) error
