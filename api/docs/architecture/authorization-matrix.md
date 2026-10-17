@@ -1279,10 +1279,27 @@ could otherwise widen anyone's scope, their own included:
 |---|---|
 | `POST /groups/{g}/assets`, `/assets/bulk` | only assets in their scope; another asset answers 404 (bulk: counted as failed) |
 | `POST /groups/{g}/members` | only when every asset the group holds is in their scope (403 otherwise); never themselves: joining a group needs full data access (admin or a `has_full_data_access` role), 403 otherwise |
+| `DELETE /groups/{g}/scope-rules/{r}` | only when every asset the group holds and every asset the rule assigned is in their scope (403 otherwise); the scope rows are rebuilt for the rule's organization only |
 | `POST/PUT /groups/{g}/scope-rules` | refused (403): a rule adds every matching asset, now and later, so it cannot be capped when it is written |
 | `PUT /groups/{g}` with `is_active` (switch a team on or off) | the whole group must be in their scope, the security pool group needs step-up (as for delete). Switching a team **on** also re-grants its bound roles, so it is treated as a grant: each bound role passes the binding ceiling, a privileged role needs the owner plus step-up, and a member cannot revive their own team unless they are the owner or hold full data access. Every flip, and a group delete, drops the members' cached permissions |
 | `/assets/{id}/access-grants`, a group owner on `/assets/{id}/owners` | already limited to assets the caller sees (route guard on `/assets/{id}`) |
 
+**Counts follow the reader.** For a caller restricted to their scope rows,
+these counts cover only the assets they can see: `asset_count` on `GET
+/groups`, `asset_count` / `finding_count` / `critical_finding_count` /
+`avg_risk_score` on business units (the stored rollups stay organization-wide
+and are replaced in the response), the asset, crown-jewel and in-business-unit
+counts of `GET /scoping/summary`, `asset_breakdown` and `risk_score` of `GET
+/attack-surface/stats`, and the exposure-chain `summary` (recomputed from the
+chains the caller may see). Counts that stay organization-wide, because they
+count configuration and expose no asset name or id: the business service,
+business unit, boundary, attacker profile, threat model and cycle totals of
+`/scoping/summary`, the attack-path `summary`, and threat-model rollups.
+
+**Team membership end dates are read at scope time.** A membership whose
+`expires_at` has passed grants no data scope even before the expiry
+controller deletes the row: the scope refresh functions skip expired
+memberships (migration `002903`), the same rule team roles already follow.
 Objects that feed the risk of the assets they link follow the same rule
 (`Enforcer.RequireActOnAssets` / `RequireActOnFindings`): linking an asset or
 finding to a **compensating control** admits only ids the caller can see (404

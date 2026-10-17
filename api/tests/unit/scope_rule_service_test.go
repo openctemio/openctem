@@ -241,6 +241,15 @@ func (m *mockACRepoForScope) BulkCreateAssetOwnersWithSource(_ context.Context, 
 	return len(owners), nil
 }
 
+func (m *mockACRepoForScope) RefreshUserAccessibleAssetsForTenant(_ context.Context, _ shared.ID) error {
+	m.refreshAccessCalls++
+	return m.refreshAccessErr
+}
+
+func (m *mockACRepoForScope) ListAssetIDsByScopeRule(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+
 func (m *mockACRepoForScope) RefreshUserAccessibleAssets(_ context.Context) error {
 	m.refreshAccessCalls++
 	return m.refreshAccessErr

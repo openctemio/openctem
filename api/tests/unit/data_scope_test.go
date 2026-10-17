@@ -72,7 +72,7 @@ func (m *mockAccessControlRepo) ListGroupsByAsset(_ context.Context, _ shared.ID
 func (m *mockAccessControlRepo) CountAssetOwners(_ context.Context, _ shared.ID) (int64, error) {
 	return 0, nil
 }
-func (m *mockAccessControlRepo) CountAssetsByGroups(_ context.Context, _ []shared.ID) (map[shared.ID]int, error) {
+func (m *mockAccessControlRepo) CountAssetsByGroups(_ context.Context, _ []shared.ID, _ *shared.DataScope) (map[shared.ID]int, error) {
 	return nil, nil
 }
 func (m *mockAccessControlRepo) ListAssetOwnersByGroupWithDetails(_ context.Context, _ shared.ID, _ *shared.DataScope, _, _ int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
@@ -111,6 +111,14 @@ func (m *mockAccessControlRepo) ListActiveRulesByPriority(_ context.Context, _ s
 func (m *mockAccessControlRepo) BulkCreateAssetOwners(_ context.Context, _ []*accesscontrol.AssetOwner) (int, error) {
 	return 0, nil
 }
+func (m *mockAccessControlRepo) RefreshUserAccessibleAssetsForTenant(_ context.Context, _ shared.ID) error {
+	return nil
+}
+
+func (m *mockAccessControlRepo) ListAssetIDsByScopeRule(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+
 func (m *mockAccessControlRepo) RefreshUserAccessibleAssets(_ context.Context) error {
 	return nil
 }
