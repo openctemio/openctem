@@ -3,7 +3,7 @@
 #
 # Starts the all-in-one image twice against an EXTERNAL Postgres + Redis and
 # waits for Docker's own healthcheck (which covers every process):
-#   GATEWAY=off -> :8080 /health, :3000 /api/health and :3001 /api/health answer
+#   GATEWAY=off -> :8080 /health and :3000 /api/health answer; no console on :3001
 #   GATEWAY=on  -> :443 /health (API) and /login (web) answer through the
 #                  shared gateway (api/deploy/gateway, TLS mode internal),
 #                  /metrics is blocked, 8080/3000 are bound to 127.0.0.1 only
@@ -47,7 +47,8 @@ docker run -d --name "$name-off" "${common[@]}" -e GATEWAY=off "$img" >/dev/null
 wait_healthy "$name-off"
 docker exec "$name-off" wget -qO- http://127.0.0.1:8080/health; echo
 docker exec "$name-off" wget -qO /dev/null http://127.0.0.1:3000/login && echo "  ok    web /login on :3000 -> 200"
-docker exec "$name-off" wget -qO /dev/null http://127.0.0.1:3001/login && echo "  ok    console /login on :3001 -> 200"
+if docker exec "$name-off" wget -q -T 3 -O /dev/null http://127.0.0.1:3001/login 2>/dev/null; then echo "  FAIL  console runs with GATEWAY=off (it would see every client as loopback)" >&2; exit 1; fi
+echo "  ok    no console with GATEWAY=off"
 docker exec "$name-off" sh -c 'wget -qO- http://127.0.0.1:8080/openapi.yaml | grep -q "^paths:"' && echo "  ok    api /openapi.yaml on :8080 -> spec"
 docker exec "$name-off" sh -c 'netstat -ltn 2>/dev/null | grep -E ":(8080|3000|443) " || true'
 docker logs "$name-off" 2>&1 | grep -oE '^\[(supervise|migrate|api|web|console|gateway)\]' | sort | uniq -c
