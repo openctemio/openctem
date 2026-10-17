@@ -33,12 +33,16 @@ export function useAdminSession() {
 }
 
 /**
- * Opens the TOTP step of a console session for the account signed in on the
- * normal /login page (the API reads its refresh-token cookie). 401: not signed
- * in; 403: not a platform administrator, or signed in with SSO.
+ * The console's own sign-in: the account's email and password open the TOTP
+ * step of a console session. No tenant sign-in is involved. 401: wrong email
+ * or password, or not an active unlocked administrator (one answer); 403:
+ * CAPTCHA_REQUIRED after repeated failures, or the identity provider is required.
  */
-export function adminStartSession() {
-  return adminFetch<AdminLoginResult>('/auth/session', { method: 'POST' })
+export function adminSignIn(email: string, password: string, captchaToken?: string) {
+  return adminFetch<AdminLoginResult>('/auth/login', {
+    method: 'POST',
+    body: { email, password, captcha_token: captchaToken },
+  })
 }
 
 export function adminVerifyMFA(code: string) {

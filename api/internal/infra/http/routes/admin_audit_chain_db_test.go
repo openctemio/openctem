@@ -51,18 +51,23 @@ import (
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
-// chainSignIns stands in for the normal /login session: each refresh token
-// names one users row.
+// chainSignIns stands in for the account password check: each email signs in
+// with chainPassword.
 type chainSignIns map[string]adminconsole.SignedInUser
 
-func (s chainSignIns) SignedInUser(_ context.Context, token string) (*adminconsole.SignedInUser, error) {
-	u, ok := s[token]
-	if !ok {
-		return nil, errors.New("invalid refresh token")
+// chainPassword is every harness account's password.
+const chainPassword = "Chain-Admin-Pass-1"
+
+func (s chainSignIns) VerifyPassword(_ context.Context, email, password string, _ adminconsole.ClientInfo) (*adminconsole.SignedInUser, error) {
+	u, ok := s[email]
+	if !ok || password != chainPassword {
+		return nil, admin.ErrInvalidCredentials
 	}
 	return &u, nil
 }
-func (s chainSignIns) EndSignIn(context.Context, string) error { return nil }
+func (s chainSignIns) RecordPasswordSuccess(context.Context, shared.ID) {}
+func (s chainSignIns) RecordPasswordFailure(context.Context, shared.ID) {}
+
 func (s chainSignIns) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
 	return shared.ID{}, "", errors.New("not used")
 }
@@ -144,7 +149,7 @@ func newChainHarness(t *testing.T, extra ...func(h *Handlers, db *postgres.DB, c
 		Tenant:              handler.NewTenantHandler(tenantSvc, v, log),
 		AdminAuth:           handler.NewAdminAuthHandler(log),
 		AdminOrganization:   handler.NewAdminOrganizationHandler(orgs, tenantSvc, userRepo, v, log),
-		AdminConsole:        handler.NewAdminConsoleHandler(console, false, "refresh_token", log),
+		AdminConsole:        handler.NewAdminConsoleHandler(console, false, log),
 		AdminAuditChain:     handler.NewAdminAuditChainHandler(auditSvc, console, adminAudit, orgs, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(console, log),
 		// The route-level step-up, wired as the server wires it.
@@ -263,14 +268,11 @@ func (h *chainHarness) newAdmin(role admin.AdminRole) *consoleAdmin {
 	if err := h.admins.LinkUser(context.Background(), a.ID(), uid); err != nil {
 		h.t.Fatal(err)
 	}
-	refresh := "refresh-" + uid.String()
-	h.signIns[refresh] = adminconsole.SignedInUser{UserID: uid, Email: email, Active: true, PasswordSignIn: true}
+	h.signIns[email] = adminconsole.SignedInUser{UserID: uid, Email: email, Active: true}
 
 	jar, _ := cookiejar.New(nil)
-	base, _ := url.Parse(h.srv.URL + "/")
-	jar.SetCookies(base, []*http.Cookie{{Name: "refresh_token", Value: refresh, Path: "/"}})
 	c := &consoleAdmin{h: h, a: a, userID: uid, jar: jar, client: &http.Client{Jar: jar}}
-	code, body := c.do(http.MethodPost, "/api/v1/admin/auth/session", nil, true)
+	code, body := c.do(http.MethodPost, "/api/v1/admin/auth/login", map[string]string{"email": email, "password": chainPassword}, true)
 	if code != http.StatusOK {
 		h.t.Fatalf("console session: %d %s", code, body)
 	}

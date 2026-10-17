@@ -88,7 +88,7 @@ func TestConsoleSignInStepsRefuseCrossSite(t *testing.T) {
 	}, middleware.RejectCrossSiteBrowser(nil, logger.NewNop()))
 	mux := router.(interface{ Handler() http.Handler }).Handler()
 	for _, path := range []string{
-		"/api/v1/admin/auth/session",
+		"/api/v1/admin/auth/login",
 		"/api/v1/admin/auth/mfa",
 		"/api/v1/admin/auth/logout",
 		"/api/v1/admin/auth/idp/start",
