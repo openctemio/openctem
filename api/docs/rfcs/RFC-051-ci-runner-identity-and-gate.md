@@ -327,6 +327,16 @@ releases the key, so the retry runs again; a finished request only overwrites or
 releases the key while the stored record still carries its own body hash.
 The store is the shared Redis; without it, or when it fails, the upload runs
 as it always did (the fingerprints still dedupe findings).
+**Renamed repositories.** A repository renamed on its code host keeps its asset
+(the exchange finds it by the code host's repository id). A trust configuration
+that names repositories by pattern no longer admits the new name, and the
+platform does not rewrite it: changing trust stays a manual, audited, step-up
+change. When a verified token comes from a repository that already has a
+pipeline under another name and no configuration admits it, the organization's
+owners and administrators are told, in-app and by e-mail, with the old and new
+name and a link to the trust settings (`/ci-cd?tab=setup`). One alert per
+repository and new name per day.
+
 A secret finding is never stored in clear whatever the runner sends: the
 runner masks it, and the server keeps only a preview of at most four
 characters at each end (`vulnerability.MaskSecretPreview`), redacts the
