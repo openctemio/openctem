@@ -132,6 +132,9 @@ export const Permission = {
   SuppressionsDelete: 'findings:suppressions:delete',
   SuppressionsApprove: 'findings:suppressions:approve',
 
+  // Finding lifecycles (sub-statuses and schemes)
+  FindingsLifecyclesWrite: 'findings:lifecycles:write',
+
   // Vulnerabilities (findings:vulnerabilities:*)
   VulnerabilitiesRead: 'findings:vulnerabilities:read',
 
@@ -189,6 +192,10 @@ export const Permission = {
   // Content packs (scans:content:*, RFC-061)
   ContentPacksRead: 'scans:content:read',
   ContentPacksWrite: 'scans:content:write',
+
+  // Content catalog (RFC-099)
+  ContentRead: 'content:read',
+  ContentInstall: 'content:install',
 
   // Template Sources (scans:sources:* - shared with Sources)
   TemplateSourcesRead: 'scans:sources:read',
@@ -448,6 +455,7 @@ export const PermissionGroups = {
     Permission.TenantToolsRead,
     Permission.ScannerTemplatesRead,
     Permission.ContentPacksRead,
+    Permission.ContentRead,
     Permission.TemplateSourcesRead,
     Permission.SecretStoreRead,
     Permission.CIRead,
@@ -498,6 +506,7 @@ export const PermissionGroups = {
     Permission.TenantToolsWrite,
     Permission.ScannerTemplatesWrite,
     Permission.ContentPacksWrite,
+    Permission.ContentInstall,
     Permission.TemplateSourcesWrite,
     Permission.SecretStoreWrite,
     Permission.CIWrite,
@@ -539,6 +548,7 @@ export const PermissionGroups = {
     Permission.FindingsDelete,
     Permission.ExposuresDelete,
     Permission.SuppressionsDelete,
+    Permission.FindingsLifecyclesWrite,
     Permission.ScansDelete,
     Permission.ScanProfilesDelete,
     Permission.SourcesDelete,
@@ -638,6 +648,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.SuppressionsWrite]: 'Manage Suppressions',
   [Permission.SuppressionsDelete]: 'Delete Suppressions',
   [Permission.SuppressionsApprove]: 'Approve Suppressions',
+  [Permission.FindingsLifecyclesWrite]: 'Manage Finding Lifecycles',
   [Permission.VulnerabilitiesRead]: 'View Vulnerabilities',
   [Permission.CredentialsRead]: 'View Credentials',
   [Permission.CredentialsWrite]: 'Manage Credentials',
@@ -668,6 +679,8 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ScannerTemplatesDelete]: 'Delete Scanner Templates',
   [Permission.ContentPacksRead]: 'View Content Packs',
   [Permission.ContentPacksWrite]: 'Manage Content Packs',
+  [Permission.ContentRead]: 'View Content Catalog',
+  [Permission.ContentInstall]: 'Install Content',
   // Note: TemplateSourcesRead/Write/Delete use the same permission strings as SourcesRead/Write/Delete
   // so they share the same labels
   [Permission.SecretStoreRead]: 'View Secret Store',
@@ -843,6 +856,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsRead,
     Permission.SuppressionsWrite,
     Permission.SuppressionsDelete,
+    Permission.FindingsLifecyclesWrite,
     Permission.SuppressionsApprove,
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
@@ -873,6 +887,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScannerTemplatesDelete,
     Permission.ContentPacksRead,
     Permission.ContentPacksWrite,
+    Permission.ContentRead,
+    Permission.ContentInstall,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,
@@ -1008,6 +1024,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsRead,
     Permission.SuppressionsWrite,
     Permission.SuppressionsDelete,
+    Permission.FindingsLifecyclesWrite,
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
     Permission.CredentialsWrite,
@@ -1037,6 +1054,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScannerTemplatesDelete,
     Permission.ContentPacksRead,
     Permission.ContentPacksWrite,
+    Permission.ContentRead,
+    Permission.ContentInstall,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,
@@ -1140,6 +1159,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     // Core (the audit log is owner/admin only)
     Permission.DashboardRead,
     Permission.SettingsRead,
+    Permission.ContentRead,
     // Assets (read + write, no delete)
     Permission.AssetsRead,
     Permission.AssetsWrite,
@@ -1232,6 +1252,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     // Core (the audit log is owner/admin only)
     Permission.DashboardRead,
     Permission.SettingsRead,
+    Permission.ContentRead,
     // Assets (read only)
     Permission.AssetsRead,
     Permission.AssetGroupsRead,

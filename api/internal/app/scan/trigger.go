@@ -828,9 +828,9 @@ func (s *Service) scannerPayload(
 	scannerConfig map[string]any, runContext map[string]any,
 	targets []string, templates []EmbeddedTemplate,
 ) map[string]any {
-	// A "targets" list in the scan's settings (a quick scan mirrors its
-	// typed targets there) becomes the job's gated targets: as typed it
-	// would carry what the gate left out, excluded names and whole ranges
+	// A "targets" list in the scan's settings (older scans stored a quick
+	// scan's typed targets there) becomes the job's gated targets: as typed
+	// it would carry what the gate left out, excluded names and whole ranges
 	// included.
 	if len(targets) > 0 {
 		scannerConfig = batchScannerConfig(scannerConfig, targets)
@@ -1523,6 +1523,9 @@ type groupScanMember struct {
 	MatchValues []string
 	// Type is the stored (type, sub_type) the scanner type gate reads.
 	Type asset.TypeRef
+	// Selector is the typed selector that expanded to this member, for
+	// selector members.
+	Selector string
 }
 
 // groupScanMemberPage is the keyset page size for group members; the

@@ -30,6 +30,7 @@ type Repositories struct {
 	SoftwareMatch           *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources   *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
 	AssetFreshness          *postgres.AssetFreshnessRepository         // Last observation per attribute class (RFC-075)
+	AssetTechnology         *postgres.AssetTechnologyRepository        // Detected technologies (RFC-112)
 	AssetCoverage           *postgres.AssetCoverageRepository          // Coverage ledger (RFC-093)
 	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository       // Names that resolve only through a wildcard (RFC-088 A4)
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository // Automatic enrichment requests (RFC-075)
@@ -155,13 +156,18 @@ type Repositories struct {
 	// Scan zones (RFC-023)
 	ScanZone *postgres.ScanZoneRepository
 	// Scan window policies, overrides and the assets behind targets (RFC-067)
-	ScanWindowPolicy   *postgres.ScanWindowPolicyRepository
+	ScanWindowPolicy *postgres.ScanWindowPolicyRepository
+	// Finding lifecycles (RFC-110): the sub-status catalog and the schemes.
+	LifecycleSubStatus *postgres.LifecycleSubStatusRepository
+	LifecycleScheme    *postgres.LifecycleSchemeRepository
 	ScanWindowOverride *postgres.ScanWindowOverrideRepository
 	ScanWindowAsset    *postgres.ScanWindowAssetRepository
 	// Content packs (RFC-061)
 	ContentPack *postgres.ContentPackRepository
 	// Platform content packs and channels (RFC-061)
 	PlatformContentPack *postgres.PlatformContentPackRepository
+	// Content catalog (RFC-099)
+	ContentCatalog *postgres.ContentCatalogRepository
 
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
@@ -218,6 +224,8 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin        *postgres.AdminRepository
 	SignupPolicy *postgres.SignupPolicyRepository
+	// AccountDeletion: self-service account deletions (RFC-104).
+	AccountDeletion *postgres.AccountDeletionRepository
 	// PlatformSetting stores the other console settings (RFC-079).
 	PlatformSetting *postgres.PlatformSettingRepository
 	ScanPolicy      *postgres.ScanPolicyRepository
@@ -229,6 +237,8 @@ type Repositories struct {
 	AdminOrg        *postgres.AdminOrganizationRepository
 	AdminConsole    *postgres.AdminConsoleRepository
 	PlatformIdP     *postgres.PlatformIdPRepository
+	// AdminDB is the pool of the console's identity tables (UseAdminDB).
+	AdminDB *postgres.DB
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -353,6 +363,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),
+		AssetTechnology:         postgres.NewAssetTechnologyRepository(db),
 		AssetCoverage:           postgres.NewAssetCoverageRepository(db),
 		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
@@ -462,10 +473,13 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Scan zones (RFC-023)
 		ScanZone:            postgres.NewScanZoneRepository(db),
 		ScanWindowPolicy:    postgres.NewScanWindowPolicyRepository(db),
+		LifecycleSubStatus:  postgres.NewLifecycleSubStatusRepository(db),
+		LifecycleScheme:     postgres.NewLifecycleSchemeRepository(db),
 		ScanWindowOverride:  postgres.NewScanWindowOverrideRepository(db),
 		ScanWindowAsset:     postgres.NewScanWindowAssetRepository(db),
 		ContentPack:         postgres.NewContentPackRepository(db),
 		PlatformContentPack: postgres.NewPlatformContentPackRepository(db),
+		ContentCatalog:      postgres.NewContentCatalogRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),
@@ -516,6 +530,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:           postgres.NewAdminRepository(db),
 		SignupPolicy:    postgres.NewSignupPolicyRepository(db),
+		AccountDeletion: postgres.NewAccountDeletionRepository(db),
 		PlatformSetting: postgres.NewPlatformSettingRepository(db),
 		ScanPolicy:      postgres.NewScanPolicyRepository(db),
 		ScanApproval:    postgres.NewScanApprovalRepository(db),
@@ -605,4 +620,23 @@ func newRepositories(db *postgres.DB) *Repositories {
 func (r *Repositories) InitIntegrationExtensions(db *postgres.DB) {
 	r.IntegrationSCMExt = postgres.NewIntegrationSCMExtensionRepository(db, r.Integration)
 	r.IntegrationNotificationExt = postgres.NewIntegrationNotificationExtensionRepository(db, r.Integration)
+}
+
+// UseAdminDB moves the repositories of the platform console's identity tables
+// (admin_users, admin_credentials, admin_sessions, the platform identity
+// provider and its login states) to adminDB, the DB_ADMIN_USER pool. With one
+// pool it is the same database handle.
+func (r *Repositories) UseAdminDB(adminDB *postgres.DB) {
+	r.AdminDB = adminDB
+	r.Admin = postgres.NewAdminRepository(adminDB)
+	r.AdminConsole = postgres.NewAdminConsoleRepository(adminDB)
+	r.PlatformIdP = postgres.NewPlatformIdPRepository(adminDB)
+}
+
+// adminDBOf is the console identity pool, or db when none was set up.
+func adminDBOf(r *Repositories, db *postgres.DB) *postgres.DB {
+	if r != nil && r.AdminDB != nil {
+		return r.AdminDB
+	}
+	return db
 }

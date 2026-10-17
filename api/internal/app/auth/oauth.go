@@ -72,6 +72,8 @@ func (p OAuthProvider) ToAuthProvider() userdom.AuthProvider {
 
 // OAuthService handles OAuth authentication.
 type OAuthService struct {
+	// onSignIn runs after a sign-in created a session (signin_hook.go).
+	onSignIn SignInHook
 	// audit records each sign-in (auth.login), as the password sign-in does.
 	audit            *auditapp.AuditService
 	userRepo         userdom.Repository
@@ -90,7 +92,7 @@ type OAuthService struct {
 	// its state, until the callback consumes it.
 	pkceStore PKCEVerifierStore
 	// signupPolicy decides whether a social sign-in may create an account
-	// (signup.Admit). Nil: TENANT_CREATION_MODE from the config.
+	// (signup.Admit). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
 	// invitations answers whether a pending invitation is addressed to an
 	// email (an invited person may sign up with Google/GitHub/Microsoft).
@@ -941,6 +943,7 @@ func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*Ses
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("failed to save session: %w", err)
 	}
+	runSignInHook(ctx, s.onSignIn, u.ID())
 
 	// Create refresh token entity
 	refreshTokenEntity, err := sessiondom.NewRefreshToken(

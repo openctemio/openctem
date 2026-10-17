@@ -70,8 +70,12 @@ import (
 //	                                            TOTP code (audited, both logs)
 //	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
 //	                                            code (audited with the reason)
+//	/admin/content-catalog    any admin         import: super_admin + reason + fresh
+//	                                            TOTP code (audited with the reason)
 //	/admin/program-feed       any admin         local bundle switch: super_admin +
 //	                                            reason + fresh TOTP code (audited)
+//	/admin/version-check      any admin         import: super_admin + step-up
+//	                                            (audited high)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // "step-up" is the route-level gate (middleware.RequireAdminStepUp): a fresh
@@ -135,6 +139,10 @@ func registerAdminRoutes(
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
 				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
+				// Time-boxed elevation: read-only until the session elevates
+				// (a fresh confirmation); ending it is always allowed.
+				r.POST("/elevate", h.AdminConsole.Elevate, authed, stepUp("console.elevate"))
+				r.DELETE("/elevate", h.AdminConsole.EndElevation, authed)
 				// Platform identity provider sign-in (RFC-022 revision 4). Not a
 				// credential-guessing surface (the IdP authenticates, the state is
 				// single use), so it uses the token-exchange bucket (20/min) rather
@@ -290,6 +298,29 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/program-feed", func(r Router) {
 			r.GET("/", f.Status)
 			r.PUT("/local-bundle", f.SetLocalBundle, requireSuper, stepUp("program_feed.local_bundle"))
+		}, adminMiddlewares...)
+	}
+
+	// Version check (RFC-105): any admin reads the status; importing the
+	// signed release feed file (air-gapped instances) needs super_admin and
+	// the step-up, audited high.
+	if h.AdminVersionCheck != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		vc := h.AdminVersionCheck
+		router.Group("/api/v1/admin/version-check", func(r Router) {
+			r.GET("/", vc.Status)
+			r.POST("/import", vc.Import, requireSuper, stepUp("version_check.import"))
+		}, adminMiddlewares...)
+	}
+
+	if h.AdminContentCatalog != nil {
+		// Import: super_admin here; the handler adds the reason, a fresh
+		// console authenticator code and its own high admin audit row.
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		c := h.AdminContentCatalog
+		router.Group("/api/v1/admin/content-catalog", func(r Router) {
+			r.GET("/", c.Status)
+			r.POST("/import", c.Import, requireSuper, stepUp("content_catalog.change"))
 		}, adminMiddlewares...)
 	}
 
