@@ -125,7 +125,7 @@ func TestProbesReportCodesOnly(t *testing.T) {
 	defer ok.Close()
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "db password is hunter2", 500) }))
 	defer bad.Close()
-	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, ok.URL, 302) }))
+	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, ok.URL, http.StatusFound) }))
 	defer redir.Close()
 	n := hits.Load()
 	c := New(Config{WebHealthURL: ok.URL, GatewayHealthURL: bad.URL}, Deps{
