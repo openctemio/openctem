@@ -185,11 +185,12 @@ const (
 	ContentPacksRead  Permission = "scans:content:read"
 	ContentPacksWrite Permission = "scans:content:write"
 
-	// Content catalog permissions (content:*, RFC-099): browse and install
+	// Content catalog permissions (content:*, RFC-099): browse, install
 	// (install, update, pin, roll back, uninstall, approve others'
-	// requests).
+	// requests) and publish the organization's private packages.
 	ContentRead    Permission = "content:read"
 	ContentInstall Permission = "content:install"
+	ContentPublish Permission = "content:publish"
 
 	// Secret Store permissions (scans:secret_store:*)
 	SecretStoreRead   Permission = "scans:secret_store:read"
@@ -488,7 +489,7 @@ func AllPermissions() []Permission {
 		ScanWindowsManage, ScanWindowsOverride,
 
 		// Content catalog
-		ContentRead, ContentInstall,
+		ContentRead, ContentInstall, ContentPublish,
 
 		// Sensors module
 		SensorsRead, SensorsWrite, SensorsDelete,

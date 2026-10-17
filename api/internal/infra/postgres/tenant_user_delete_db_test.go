@@ -235,6 +235,11 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"from_user_id": s.userID, "to_user_id": other, "status": "pending",
 			"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-04T00:00:00Z"}
 	},
+	// A grant's scopes, reason and window are checked by the table.
+	"support_grants": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scopes": "{findings}", "reason": "seeded support grant", "access_level": "read",
+			"starts_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
+	},
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},
@@ -301,7 +306,7 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"content_packages": func(*schemaSeeder) map[string]any {
 		return map[string]any{"type": "rules", "origin": "organization", "tier": "T0",
 			"manifest_digest": "sha256:" + strings.Repeat("a", 64), "artifact_digest": "sha256:" + strings.Repeat("b", 64),
-			"revoked_at": nil, "revoke_reason": nil}
+			"revoked_at": nil, "revoke_reason": nil, "platform_pack_id": nil}
 	},
 	"content_install_requests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"action": "uninstall", "target_row_id": nil, "status": "pending", "decided_by": nil}

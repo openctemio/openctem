@@ -38,7 +38,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Pentest (granular) | 12 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write`, `pentest:checklists:manage` (RFC-087) |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
 | Reports | 2 | `reports:read/write` |
-| Content catalog | 2 | `content:read`, `content:install` (RFC-099) |
+| Content catalog | 3 | `content:read`, `content:install`, `content:publish` (RFC-099) |
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
@@ -115,6 +115,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `POST /api/v1/scim-tokens`
 - `PATCH /api/v1/tenants/{tenant}/settings/security`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
+- `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
 - `DELETE /api/v1/me/account`
 - `POST /api/v1/organization/leave`
@@ -371,9 +372,10 @@ create's target validator, exclusions, zone routing) in one call.
 | `POST /installs` · `POST /installs/{ns}/{name}/update` · `/rollback` · `DELETE /installs/{ns}/{name}` · `POST /requests/{id}/approve` · `/reject` | `content:install` + a recent sign-in; nobody approves their own request |
 | `PUT /installs/{ns}/{name}/pin` · `POST /requests/{id}/cancel` (requester only) | `content:install` |
 | `PUT /settings` (approval option) | `settings:write` + a recent sign-in |
+| `POST /private-packages` · `POST /private-packages/{ns}/{name}/{version}/revoke` | `content:publish` + a recent sign-in |
 
-Another organization's installation or request answers 404. Owners and administrators hold both content
-permissions; members and viewers hold `content:read` (migration `002571`). `/api/v1/admin/content-catalog`: any
+Another organization's installation or request answers 404. Owners and administrators hold all three content
+permissions; members and viewers hold `content:read` (migrations `002571`, `002886`). `/api/v1/admin/content-catalog`: any
 platform administrator reads the trust status; `POST /import` needs a super admin, a reason and a fresh console
 authenticator code, and is audited.
 
@@ -678,6 +680,10 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
 | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
+| `GET /api/v1/organization/join-requests` | owner or admin (`RequireAdmin`) + `team:members:read` (the organization's own requests; RFC-104) |
+| `POST /api/v1/organization/join-requests/{request_id}/approve`, `.../reject` | owner or admin + `team:members:write`; approve grants viewer or member only; another organization's request is 404 |
+| `GET /api/v1/organization/settings/domains` | owner or admin (`RequireAdmin`) + `settings:read` (the organization's own domains only) |
+| `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy` | **owner only** (`RequireOwner`) + `settings:write` + **step-up**; a domain of another organization is 404 (RFC-104) |
 | `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
 | `POST /api/v1/organization/leave` | any member (`team:read`) + **step-up**, for themselves in the credential's organization; refused for the only owner (RFC-104) |
@@ -849,7 +855,7 @@ is still accepted and checked the same way).
 | `GET /api/v1/admin/announcements` | any admin |
 | `POST /api/v1/admin/announcements`, `POST /api/v1/admin/announcements/{announcement_id}/cancel` | **ops_admin+**, `reason` (10-500), audited `announcement.create` / `announcement.cancel` |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
-| `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
+| `POST /api/v1/admin/auth/login`, `/mfa` | public (rate-limited, cross-site guard; the account's email and password, then the console TOTP; no tenant session involved) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
@@ -901,8 +907,8 @@ role, however high, can reach SSO setup. The SSO **login** flow
 A platform administrator is a `users` account linked to an `admin_users` row
 (`admin_users.user_id`) that holds the role (`super_admin` > `ops_admin` >
 `readonly`), the TOTP second factor and the admin audit trail. It signs in on the
-normal `/login`, then `POST /api/v1/admin/auth/session` (refresh-token cookie)
-and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
+console's own sign-in page: `POST /api/v1/admin/auth/login` (email and
+password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
 
 - **Belongs to no organization.** A trigger on `tenant_members` rejects a
   membership for a linked account (SQLSTATE 23514, surfaced as 409), and an
@@ -922,6 +928,36 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 
+#### Support access (RFC-063)
+
+A platform administrator never holds standing access to an organization's
+data. The only path is a **support grant**: an owner (with a recent
+re-authentication) names one active `ops_admin` or `super_admin` by email,
+for 1 to 72 hours, read-only, with a reason and the data scopes (`findings`,
+`assets`). Owners and admins list and revoke grants under
+`/api/v1/organization/support-access`; every member reads the active ones.
+
+- The named administrator opens a support session from the console
+  (`POST /api/v1/admin/support/grants/{grant_id}/sessions`, route-level
+  step-up); the session is bound to that console session.
+- Reads (`/api/v1/admin/support/sessions/{session_id}/…`) are resolved live on
+  every request: open session, same administrator and console session, grant
+  not revoked and unexpired (server clock), scope granted. Otherwise 403
+  `SUPPORT_GRANT_REQUIRED`. There is no write route.
+- Every read is written to the organization's audit log (`support.accessed`,
+  actor `support:<email>`) and to the admin audit log before data is returned;
+  if either write fails the read is refused.
+- The read model selects an explicit column allow-list (no messages,
+  snippets, descriptions, evidence, secrets or people), is scoped to the
+  grant's organization, and hides private-program assets and their findings.
+- The overview and finding rows carry only the granted scopes' parts: without
+  `assets` there is no asset count and a finding row names no asset.
+- Grant-bypass paths (RFC-063 section 11.5): the console user list, first owner
+  create or recovery and identity provider creation do not need a grant. They
+  write `admin_console.tenant_access` (actor `console:<email>`) to the
+  organization's audit log and email its owners before running; a failed audit
+  write refuses the use.
+
 #### Break-glass administrators and the platform IdP (RFC-022 revision 4)
 
 - **Platform IdP** (`platform_identity_provider`, one OIDC provider, not
@@ -930,7 +966,7 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   first sign-in by verified email, then bound. No JIT creation. The console TOTP
   is still required after it unless a super admin trusts specific `acr`/`amr`
   values. Organization IdPs still cannot open the console.
-- **Require IdP** refuses the local password path (`/auth/session`) for every
+- **Require IdP** refuses the local password path (`/auth/login`) for every
   administrator except break-glass ones.
 - **Break-glass** administrators are local `super_admin`s that can never be
   bound to the IdP (database `CHECK`), are exempt from "require IdP", and every
@@ -1813,7 +1849,7 @@ viewer (1) ┴─ Can only view resources
    session cookies (`/auth/register`, `/login`, `/mfa/*`, `/token`,
    `/refresh`, `/verify-email`, `/forgot-password`, `/reset-password`,
    `/create-first-team`, `/discover`, the OAuth and SSO callbacks, and the
-   console's `/admin/auth/session`, `/mfa`, `/logout`, `/idp/start`,
+   console's `/admin/auth/login`, `/mfa`, `/logout`, `/idp/start`,
    `/idp/callback`) refuse a write a browser sent for another site
    (`RejectCrossSiteBrowser`: an `Origin` that is neither the request's host
    nor in `CORS_ALLOWED_ORIGINS`, `Origin: null`, or no `Origin` with
