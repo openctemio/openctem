@@ -413,5 +413,109 @@ class GateTest(unittest.TestCase):
             self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
 
 
+class LargePullRequestTest(unittest.TestCase):
+    """A pull request of 3000+ files: the API list is cut off, so the gate
+    diffs the two commits with git (never checking either out)."""
+
+    def git(self, d, *args):
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+        return subprocess.run(["git", "-C", d, *args], check=True, capture_output=True, text=True, env=env).stdout.strip()
+
+    def make_repo(self, d, sensitive_line="x := 1"):
+        """main has an old file and a to-be-removed one; the head adds many
+        plain files, a sensitive file, a TLS-off line, a binary and a weird name."""
+        self.git(d, "init", "-q", "-b", "main")
+        for name, body in (("api/pkg/httpsec/ssrf.go", "package httpsec\n"), ("docs/old.md", "old\n"),
+                           ("web/src/a.tsx", "a\n")):
+            pathlib.Path(d, name).parent.mkdir(parents=True, exist_ok=True)
+            pathlib.Path(d, name).write_text(body)
+        self.git(d, "add", "."); self.git(d, "commit", "-qm", "base")
+        self.git(d, "checkout", "-q", "-b", "feature")
+        pathlib.Path(d, "api/pkg/httpsec/ssrf.go").write_text(f"package httpsec\n{sensitive_line}\n")
+        pathlib.Path(d, "api/pkg/x.go").write_text("package pkg\nvar c = &tls.Config{InsecureSkipVerify: true}\n")
+        pathlib.Path(d, "docs/old.md").unlink()
+        pathlib.Path(d, "bin.dat").write_bytes(b"\0\1\2")
+        pathlib.Path(d, "docs/with space.md").write_text("hi\n")
+        pathlib.Path(d, "docs/gen").mkdir()
+        for i in range(60):
+            pathlib.Path(d, f"docs/gen/{i}.md").write_text("x\n")
+        self.git(d, "add", "."); self.git(d, "commit", "-qm", "head")
+        # main moves on after the branch point: the three-dot diff must ignore it
+        self.git(d, "checkout", "-q", "main")
+        pathlib.Path(d, "other.txt").write_text("later\n")
+        self.git(d, "add", "."); self.git(d, "commit", "-qm", "main moves")
+        return self.git(d, "rev-parse", "main"), self.git(d, "rev-parse", "feature")
+
+    def test_git_file_list_matches_the_api_shape(self):
+        with tempfile.TemporaryDirectory() as d:
+            base, head = self.make_repo(d)
+            files = {f.filename: f for f in sg.git_changed_files(d, base, head, CONFIG)}
+        self.assertNotIn("other.txt", files)  # merge-base diff, like GitHub's
+        self.assertEqual(files["docs/old.md"].status, "removed")
+        self.assertEqual(files["docs/old.md"].deletions, 1)
+        self.assertEqual(files["docs/with space.md"].status, "added")
+        self.assertEqual(files["docs/gen/7.md"].patch, "")  # no rule or path category reads it
+        self.assertIsNone(files["bin.dat"].patch)
+        self.assertTrue(files["api/pkg/httpsec/ssrf.go"].patch.startswith("@@"))
+        findings, unreviewed = sg.review(list(files.values()))
+        self.assertEqual([f.rule for f in findings if f.severity == "HIGH"], ["GO-TLS-NOVERIFY"])
+        self.assertIn("bin.dat", unreviewed)
+        self.assertIn("api/pkg/httpsec/ssrf.go", sg.classify(list(files.values()), CONFIG)["outbound-ssrf"])
+
+    def test_digest_follows_the_sensitive_lines_only(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
+            base, head = self.make_repo(d)
+            one = sg.git_changed_files(d, base, head, CONFIG)
+            again = sg.git_changed_files(d, base, head, CONFIG)
+            base2, head2 = self.make_repo(e, sensitive_line="x := 2")
+            two = sg.git_changed_files(e, base2, head2, CONFIG)
+        digest = lambda fs: sg.sensitive_digest(fs, CONFIG, sg.review(fs)[0])
+        self.assertEqual(digest(one), digest(again))
+        self.assertNotEqual(digest(one), digest(two))
+
+    def run_large(self, labels=(), events=()):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as ev_dir:
+            base, head = self.make_repo(d)
+            pr = {"number": 7, "changed_files": 3000, "labels": [{"name": n} for n in labels],
+                  "head": {"sha": head, "ref": "feature/x", "repo": {"full_name": "o/r"}},
+                  "base": {"ref": "main", "sha": base}}
+            routes = {"pulls/7": pr, "issues/7/events": list(events), "issues/7/comments": [],
+                      "commits/" + head + "/check-runs": {"check_runs": []}}  # no pulls/7/files route: the API list is not used
+            fake = FakeGitHub(routes)
+            evp = pathlib.Path(ev_dir, "event.json")
+            evp.write_text(json.dumps({"pull_request": {"number": 7}}))
+            env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t", "GITHUB_EVENT_NAME": "pull_request",
+                   "GITHUB_EVENT_PATH": str(evp), "SECURITY_PATHS": str(ROOT / ".github/security-paths.yml"),
+                   "GATE_DIR": d, "INTEGRATION_BRANCH": ""}
+            fetched = []
+            with mock.patch.dict(os.environ, env), \
+                    mock.patch.object(sg.GitHub, "request", lambda self, *a, **k: fake.request(*a, **k)), \
+                    mock.patch.object(sg, "fetch_pr_commits", lambda *a: fetched.append(a)), \
+                    mock.patch("builtins.print"):
+                code = sg.cmd_gate()
+        return code, fake, fetched
+
+    def test_gate_uses_git_for_3000_files_and_blocks_without_ack(self):
+        code, fake, fetched = self.run_large()
+        self.assertEqual(code, 1)
+        self.assertEqual(len(fetched), 1)  # fetched the PR's two commits, nothing else
+        self.assertTrue(any(w[0] == "POST" and w[2] == {"labels": ["security-sensitive"]} for w in fake.writes))
+
+    def test_gate_still_blocks_a_high_finding_with_ack(self):
+        code, _, _ = self.run_large(labels=["security-ack"], events=GateTest.ACK_BY_OWNER)
+        self.assertEqual(code, 1)  # GO-TLS-NOVERIFY is HIGH whatever the ack says
+
+    def test_fetch_requires_a_git_checkout(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(RuntimeError):
+                sg.fetch_pr_commits(d, "o/r", "https://github.com", "t", "a" * 40, "b" * 40)
+
+    def test_fewer_than_3000_files_still_use_the_api(self):
+        routes = GateTest.routes(GateTest(), GateTest.pr(GateTest()), GateTest.PLAIN)
+        code, _ = GateTest.run_gate(GateTest(), "pull_request", {"pull_request": {"number": 7}}, routes)
+        self.assertEqual(code, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -53,6 +53,7 @@ var hardBlockedIPRanges = []string{
 	"::1/128",            // IPv6 loopback
 	"::/128",             // IPv6 unspecified
 	"fe80::/10",          // IPv6 link-local
+	"fec0::/10",          // IPv6 site-local (deprecated, still routed internally)
 	"ff00::/8",           // IPv6 multicast
 	"fd00:ec2::254/128",  // AWS IMDS over IPv6 (inside fc00::/7)
 	"fd20:ce::254/128",   // GCP metadata server over IPv6 (inside fc00::/7)
