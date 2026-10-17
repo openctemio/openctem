@@ -58,6 +58,12 @@ export default function AdminOrganizationsPage() {
         header: t('admin.org.col.owner', 'Owner'),
         cell: ({ row }) => {
           const owners = row.original.owner_emails
+          if (owners.length === 0 && row.original.owner_count > 0)
+            return (
+              <span className="text-sm text-muted-foreground">
+                {t('admin.org.ownerCount', '{count} owner(s)', { count: row.original.owner_count })}
+              </span>
+            )
           if (owners.length === 0)
             return (
               <Badge variant="outline" className="border-warning/50 text-warning">

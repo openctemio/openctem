@@ -129,6 +129,9 @@ func (h *SensorPairingHandler) Start(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, resp)
 	case errors.Is(err, sensorpairing.ErrInvalid):
 		protov2.NewProblem(protov2.ProblemInvalidRequest).Write(w)
+	case errors.Is(err, sensorpairing.ErrEnrollmentRefused):
+		// One answer for a malformed, unknown, expired or used token.
+		protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
 	case errors.Is(err, sensorpairing.ErrCapacity):
 		w.Header().Set("Retry-After", "60")
 		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)

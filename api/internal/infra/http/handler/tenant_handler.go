@@ -617,7 +617,7 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		}
 		apierror.BadRequest(msg).WriteJSON(w)
 	default:
-		h.logger.Error("service error", "error", err)
+		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }

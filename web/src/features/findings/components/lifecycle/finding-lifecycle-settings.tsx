@@ -78,7 +78,7 @@ export function FindingLifecycleSettings() {
             title={t('findingLifecycle.subStatus.title', 'Sub-statuses')}
             description={
               subLimit
-                ? t('findingLifecycle.plan.usage', '{used} of {limit} on your plan', {
+                ? t('findingLifecycle.plan.usage', '{used} of {limit} used', {
                     used: subLimit.used,
                     limit: subLimit.limit,
                   })
@@ -104,7 +104,7 @@ export function FindingLifecycleSettings() {
               <p role="status" className="text-sm text-warning">
                 {t(
                   'findingLifecycle.plan.subStatusesReached',
-                  'Your plan allows no more sub-statuses. Archive one, or ask your administrator for more.'
+                  'This organization has reached its limit of sub-statuses. Archive one, or ask your administrator for more.'
                 )}
               </p>
             )}
