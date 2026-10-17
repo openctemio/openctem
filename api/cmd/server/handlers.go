@@ -14,6 +14,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
+	"github.com/openctemio/openctem/api/internal/app/supportaccess"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
@@ -782,6 +783,19 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	if svc.SSOChange != nil {
 		handlers.SSOChange = handler.NewSSOChangeHandler(svc.SSOChange, svc.Audit, log)
+	}
+
+	// Support access (RFC-063): owners grant, the named administrator reads
+	// through a live support session; both audit logs, owner emails.
+	if repos.SupportAccess != nil && repos.SupportRead != nil && svc.Audit != nil {
+		var mailer supportaccess.Mailer
+		if svc.Email != nil {
+			mailer = svc.Email
+		}
+		supportSvc := supportaccess.NewService(repos.SupportAccess, repos.SupportRead, repos.Admin, svc.Audit,
+			repos.AdminAuditLog, repos.Tenant, tenantNames{repo: repos.Tenant}, mailer, log)
+		handlers.SupportAccess = handler.NewSupportAccessHandler(supportSvc, log)
+		handlers.AdminSupport = handler.NewAdminSupportHandler(supportSvc, log)
 	}
 
 	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil

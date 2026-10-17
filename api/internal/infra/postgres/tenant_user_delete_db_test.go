@@ -235,6 +235,11 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"from_user_id": s.userID, "to_user_id": other, "status": "pending",
 			"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-04T00:00:00Z"}
 	},
+	// A grant's scopes, reason and window are checked by the table.
+	"support_grants": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scopes": "{findings}", "reason": "seeded support grant", "access_level": "read",
+			"starts_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
+	},
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},
