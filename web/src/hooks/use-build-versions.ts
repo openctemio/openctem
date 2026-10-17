@@ -3,7 +3,6 @@
 import useSWR from 'swr'
 
 import { get } from '@/lib/api/client'
-import { adminFetch } from '@/features/admin-console/api/admin-client'
 import {
   channelOf,
   getAppVersion,
@@ -16,6 +15,17 @@ import type { ShortcutShell } from '@/config/keyboard-shortcuts'
 /** Where the shell's API version comes from: its own session decides. */
 export const API_VERSION_PATH = '/api/v1/version'
 export const ADMIN_API_VERSION_PATH = '/version' // under /api/v1/admin
+
+/**
+ * How the platform console reads its API's build (its own session and API
+ * proxy). The console app registers it; the tenant app has none and reads
+ * the API version with its own session.
+ */
+let adminApiVersion: (() => Promise<unknown>) | null = null
+
+export function setAdminApiVersionFetcher(fetcher: (() => Promise<unknown>) | null) {
+  adminApiVersion = fetcher
+}
 export const WEB_VERSION_PATH = '/api/version'
 
 export interface BuildVersions {
@@ -47,7 +57,9 @@ async function fetchApiBuild(shell: ShortcutShell): Promise<BuildInfo | null> {
   try {
     const data =
       shell === 'admin'
-        ? await adminFetch<unknown>(ADMIN_API_VERSION_PATH)
+        ? adminApiVersion
+          ? await adminApiVersion()
+          : null
         : await get<unknown>(API_VERSION_PATH)
     return parseBuildInfo(data)
   } catch {
