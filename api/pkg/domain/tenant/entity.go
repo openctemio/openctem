@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -21,8 +21,9 @@ type Tenant struct {
 	logoURL     string
 	settings    map[string]any
 	createdBy   string // Keycloak user ID
-	// plan is the stored plan (tenant_plans); empty when none is stored.
-	plan plan.Plan
+	// initial are the limits, feature denies and idle policy written with the
+	// organization when it is created; never loaded back.
+	initial InitialEntitlements
 	// region is the data region set when the organization was created
 	// (DEPLOYMENT_REGION); empty for organizations from before. Never
 	// changed afterwards.
@@ -114,33 +115,30 @@ func (t *Tenant) LogoURL() string {
 	return t.logoURL
 }
 
-// Plan returns the organization's plan: the stored one, or plan.Unassigned
-// when none is stored. The repository loads it from tenant_plans, the one
-// source of the plan that limits, the console and Settings > Plan & usage read.
-func (t *Tenant) Plan() plan.Plan {
-	if t.plan == "" {
-		return plan.Unassigned
-	}
-	return t.plan
+// InitialEntitlements are written in the transaction that creates the
+// organization, so it never exists without them: the instance's
+// self-service defaults, or what the control plane provisioned.
+type InitialEntitlements struct {
+	Limits []limits.Limit
+	Denies []limits.FeatureDeny
+	// IdlePolicy turns the idle policy on, with IdleReason.
+	IdlePolicy bool
+	IdleReason string
 }
 
-// StoredPlan returns the plan stored for the organization; ok=false when none
-// is stored (the organization resolves to plan.Unassigned).
-func (t *Tenant) StoredPlan() (plan.Plan, bool) {
-	return t.plan, t.plan != ""
-}
+// InitialLimits returns the limits written with the organization when it is
+// created.
+func (t *Tenant) InitialLimits() []limits.Limit { return t.initial.Limits }
 
-// SetPlan records the organization's plan: the repository sets the stored
-// plan when it loads the organization, and a self-service creation sets Free
-// before the organization is written, so the plan is stored in the same
-// transaction (never an organization without its Free plan).
-func (t *Tenant) SetPlan(p plan.Plan) error {
-	if !p.IsValid() {
-		return plan.ErrInvalid
-	}
-	t.plan = p
-	return nil
-}
+// Initial returns everything written with the organization when it is
+// created.
+func (t *Tenant) Initial() InitialEntitlements { return t.initial }
+
+// SetInitialLimits sets the limits the organization starts with.
+func (t *Tenant) SetInitialLimits(l []limits.Limit) { t.initial.Limits = l }
+
+// SetInitial sets everything the organization starts with.
+func (t *Tenant) SetInitial(in InitialEntitlements) { t.initial = in }
 
 // Settings returns the tenant settings.
 func (t *Tenant) Settings() map[string]any {

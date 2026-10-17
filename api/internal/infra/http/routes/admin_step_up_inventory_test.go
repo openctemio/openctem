@@ -95,11 +95,10 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline":           {stepUpRoute, "re-signs an organization's audit chain"},
 	"PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy":              {stepUpRoute, "scan governance of an organization"},
 	"PUT /api/v1/admin/tenants/{tenantId}/shared-sensors":                    {stepUpRoute, "whether an organization's scans may run on shared sensors"},
-	"PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":         {stepUpRoute, "module entitlement"},
-	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":      {stepUpRoute, "module entitlement"},
-	"PUT /api/v1/admin/tenants/{tenantId}/plan":                              {routine, "limits only; audited by the service"},
-	"PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}":              {routine, "limits only; audited by the service"},
-	"DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}":           {routine, "limits only; audited by the service"},
+	"PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny":          {stepUpRoute, "module entitlement"},
+	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny":       {stepUpRoute, "module entitlement"},
+	"PUT /api/v1/admin/tenants/{tenantId}/limits/{key}":                      {routine, "limits only; audited by the service"},
+	"DELETE /api/v1/admin/tenants/{tenantId}/limits/{key}":                   {routine, "limits only; audited by the service"},
 	"PUT /api/v1/admin/tenants/{tenantId}/idle/policy":                       {routine, "idle policy on or off (read-only at worst, deletes nothing); reason required, audited by the service"},
 	"POST /api/v1/admin/access-requests/{id}/reject":                         {routine, "refuses a request; nothing is created"},
 
@@ -108,8 +107,7 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/email/":                             {stepUpRoute, "platform mail relay"},
 	"POST /api/v1/admin/settings/email/test":                        {routine, "sends a test to the caller's own address"},
 	"PUT /api/v1/admin/settings/legal/":                             {stepUpRoute, "legal pages"},
-	"PUT /api/v1/admin/settings/plans/":                             {stepUpRoute, "default limits"},
-	"PUT /api/v1/admin/settings/plan-modules/":                      {stepUpRoute, "default modules"},
+	"PUT /api/v1/admin/settings/limits/":                            {stepUpRoute, "self-service default limits"},
 	"PUT /api/v1/admin/settings/scan-approval-policy/":              {stepUpRoute, "scan governance default"},
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":             {stepUpRoute, "platform sensor domain proof"},
 	"POST /api/v1/admin/instance-scan-zones/":                       {stepUpRoute, "an instance scan zone that lets shared sensors reach private ranges"},
@@ -118,19 +116,23 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/instance-scan-zones/{zone_id}/sensors":       {stepUpRoute, "the shared sensors that serve an instance scan zone"},
 	"PUT /api/v1/admin/instance-scan-zones/{zone_id}/organizations": {stepUpRoute, "the organizations an instance scan zone is assigned to"},
 	"PUT /api/v1/admin/settings/shared-sensors/":                    {stepUpRoute, "shared sensors on or off for the instance, and the default for organizations"},
-	"PUT /api/v1/admin/settings/shared-sensors/egress":              {stepUpRoute, "egress addresses every organization is told to allowlist"},
-	"POST /api/v1/admin/shared-sensors/enrollment-tokens":           {stepUpRoute, "shared sensor enrollment token"},
+	"POST /api/v1/admin/shared-sensors/{sensor_id}/disable":         {stepUpRoute, "stops a shared sensor taking jobs"},
+	"POST /api/v1/admin/shared-sensors/{sensor_id}/enable":          {stepUpRoute, "lets a shared sensor take every organization's jobs again"},
+	"POST /api/v1/admin/shared-sensors/{sensor_id}/revoke":          {stepUpRoute, "revokes a shared sensor for good"},
+	"POST /api/v1/admin/shared-sensors/jobs/{job_id}/view":          {routine, "reads a job's targets and logs; changes nothing; reason required, ops_admin+, rate-limited, audited high before data is returned"},
 	"PUT /api/v1/admin/settings/shared-sensor-internal-zones/":      {stepUpRoute, "whether shared sensors may scan internal zones"},
 	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":             {stepUpRoute, "shared sensor anomaly alert thresholds"},
+	"PUT /api/v1/admin/settings/shared-sensors/egress":              {stepUpRoute, "egress addresses every organization is told to allowlist"},
 	"PUT /api/v1/admin/program-feed/local-bundle":                   {stepUpRoute, "program feed source"},
+	"POST /api/v1/admin/shared-sensors/enrollment-tokens":           {stepUpRoute, "shared sensor enrollment token"},
 	"POST /api/v1/admin/version-check/import":                       {stepUpRoute, "release feed trust: what the console says about releases"},
 	"POST /api/v1/admin/content-packs/":                             {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/import":                       {stepUpRoute, "platform content pack"},
 	"POST /api/v1/admin/content-packs/{id}/revoke":                  {stepUpRoute, "platform content pack"},
 	"PUT /api/v1/admin/content-packs/channels/{channel}":            {stepUpRoute, "platform content pack"},
+	"POST /api/v1/admin/content-catalog/import":                     {stepUpRoute, "content catalog bundle import"},
 	"POST /api/v1/admin/content-catalog/packages":                   {stepUpRoute, "instance content package"},
 	"POST /api/v1/admin/content-catalog/packages/revoke":            {stepUpRoute, "instance content package"},
-	"POST /api/v1/admin/content-catalog/import":                     {stepUpRoute, "content catalog bundle import"},
 	"POST /api/v1/admin/announcements/":                             {routine, "banner text; reason required, audited"},
 	"POST /api/v1/admin/announcements/{announcement_id}/cancel":     {routine, "ends a banner; reason required, audited"},
 	"POST /api/v1/admin/threat-intel/sync":                          {routine, "runs a public feed sync; audited"},
@@ -233,7 +235,7 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		req := httptest.NewRequest(c.method, c.path, strings.NewReader(`{}`))
 		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
 		req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
-		req.Header.Set(middleware.CSRFHeaderName, "c")
+		req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
 		handler.ServeHTTP(httptest.NewRecorder(), req)
 		got, asked := fresh[c.purpose]
 		if !asked || !got {
@@ -302,7 +304,7 @@ func TestAdminStepUpRoutesRefuseWithoutCode(t *testing.T) {
 		req := httptest.NewRequest(method, path, strings.NewReader(`{}`))
 		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
 		req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
-		req.Header.Set(middleware.CSRFHeaderName, "c")
+		req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
 		func() {
 			// A zero-value handler body may panic on a non-step-up route;
 			// reaching it is the point, the panic is not.
@@ -350,7 +352,7 @@ func TestAdminRoutesRefuseOutsideNetworks(t *testing.T) {
 			req.RemoteAddr = "203.0.113.9:5000"
 			req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
 			req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
-			req.Header.Set(middleware.CSRFHeaderName, "c")
+			req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
 			rec := httptest.NewRecorder()
 			func() {
 				defer func() { _ = recover() }()

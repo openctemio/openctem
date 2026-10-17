@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/module"
@@ -66,6 +67,9 @@ type TenantHandler struct {
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
 	// sign-up setting, read on each request.
 	signupPolicy signupdom.PolicySource
+	// selfServiceLimits: the instance's self-service default limits and the
+	// per-person organization cap (none unless an operator set them).
+	selfServiceLimits auth.SelfServiceLimits
 	// signupDomains: a claimed domain may block new organizations for
 	// accounts on it.
 	signupDomains signupdom.DomainPolicySource
@@ -104,6 +108,9 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
 }
+
+// SetSelfServiceLimits wires the self-service default limits.
+func (h *TenantHandler) SetSelfServiceLimits(l auth.SelfServiceLimits) { h.selfServiceLimits = l }
 
 // SetSignupPolicy makes POST /tenants follow the console sign-up policy.
 func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
@@ -205,7 +212,6 @@ type TenantResponse struct {
 	Slug        string `json:"slug"`
 	Description string `json:"description,omitempty"`
 	LogoURL     string `json:"logo_url,omitempty"`
-	Plan        string `json:"plan"`
 	// Region is the organization's data region, fixed at creation; empty
 	// for organizations from before regions were named.
 	Region    string    `json:"region,omitempty"`
@@ -398,7 +404,6 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 		Slug:        t.Slug(),
 		Description: t.Description(),
 		LogoURL:     t.LogoURL(),
-		Plan:        string(t.Plan()),
 		Region:      t.Region(),
 		CreatedAt:   t.CreatedAt(),
 		UpdatedAt:   t.UpdatedAt(),
@@ -550,7 +555,7 @@ func (h *TenantHandler) handleValidationError(w http.ResponseWriter, err error) 
 }
 
 func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
-	if WritePlanLimitError(w, err) {
+	if WriteLimitError(w, err) {
 		return
 	}
 	if writeStepUpError(w, err) {
@@ -691,12 +696,27 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A self-service organization gets no limits: limits apply only where an
-	// operator set them for that organization.
 	input := tenantapp.CreateTenantInput{
 		Name:        req.Name,
 		Slug:        req.Slug,
 		Description: req.Description,
+	}
+	// The instance's self-service default limits and per-person cap; none
+	// unless an operator set them.
+	if h.selfServiceLimits != nil {
+		if err := h.selfServiceLimits.CheckOrgsPerUser(r.Context(), userID); err != nil {
+			if !WriteLimitError(w, err) {
+				h.handleServiceError(w, err)
+			}
+			return
+		}
+		d, _, err := h.selfServiceLimits.SelfServiceDefaults(r.Context())
+		if err != nil {
+			h.logger.Error("read self-service default limits", "error", err)
+			apierror.ServiceUnavailable("Organization limits could not be read; try again").WriteJSON(w)
+			return
+		}
+		input.InitialLimits = d
 	}
 
 	actx := h.buildAuditContext(r)
@@ -3071,8 +3091,8 @@ type TenantModuleResponse struct {
 	DisplayOrder int    `json:"display_order"`
 	IsCore       bool   `json:"is_core"`
 	IsEnabled    bool   `json:"is_enabled"`
-	// Entitled: the organization's plan or a platform grant includes the
-	// module; one that is not cannot be switched on here.
+	// Entitled: the module is available for the organization; one that is
+	// not cannot be switched on here.
 	Entitled      bool                      `json:"entitled"`
 	ReleaseStatus string                    `json:"release_status"`
 	SubModules    []TenantSubModuleResponse `json:"sub_modules,omitempty"`

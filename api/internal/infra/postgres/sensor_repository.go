@@ -13,7 +13,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -23,7 +23,7 @@ import (
 type SensorRepository struct {
 	db *DB
 	tokenPepper
-	planLimits // sensors (the organization's own; shared sensors never count)
+	limitChecks // sensors (the organization's own; shared sensors never count)
 }
 
 // NewSensorRepository creates a new SensorRepository.
@@ -42,7 +42,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		return shared.NewDomainError("VALIDATION", "sensor scope and tenant do not match", shared.ErrValidation)
 	}
 	if !a.IsShared() {
-		if err := r.checkLimit(ctx, *a.TenantID, plan.Sensors, 1); err != nil {
+		if err := r.checkLimit(ctx, *a.TenantID, limits.Sensors, 1); err != nil {
 			return err
 		}
 	}

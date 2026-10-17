@@ -1627,30 +1627,6 @@ func TestAITriage_GetAIConfig_TenantNotFound(t *testing.T) {
 }
 
 // =============================================================================
-// Tests: GetPlanTokenLimit (OSS always unlimited)
-// =============================================================================
-
-func TestAITriage_GetPlanTokenLimit_AlwaysUnlimited(t *testing.T) {
-	t.Parallel()
-
-	log := logger.NewNop()
-	svc := aitriagesvc.NewAITriageService(
-		newMockAITriageRepo(),
-		nil, nil, nil, nil,
-		config.AITriageConfig{},
-		log,
-	)
-
-	limit, err := svc.GetPlanTokenLimit(context.Background(), "any-tenant")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if limit != -1 {
-		t.Errorf("expected -1 (unlimited) in OSS edition, got %d", limit)
-	}
-}
-
-// =============================================================================
 // Tests: RecoverStuckJobs
 // =============================================================================
 

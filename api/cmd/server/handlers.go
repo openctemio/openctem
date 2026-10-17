@@ -176,6 +176,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Platform admin console (RFC-022): the administrator signs in on the normal
 	// /login with their users-table account, then the console adds a TOTP step
 	// and its own session, accepted by the admin auth middleware alongside API keys.
+	// The console CSRF token is bound to its session under a key every
+	// replica derives from the session-signing secret.
+	middleware.SetAdminCSRFSecret(cfg.Auth.JWTSecret)
 	adminConsoleSvc := adminconsole.NewService(repos.Admin, repos.AdminConsole, repos.AdminAuditLog, svc.Encryptor,
 		adminAccountDirectory{auth: svc.Auth}, log)
 	// Administrators' platform identity provider (RFC-022 revision 4): every
@@ -270,6 +273,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
+	}
+	if svc.Entitlement != nil {
+		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
 	}
 	if svc.DomainVerify != nil {
 		tenantHandler.SetSignupDomainPolicy(svc.DomainVerify)
@@ -863,8 +869,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
 	}
 	if svc.Entitlement != nil {
-		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
-		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
+		handlers.Limits = handler.NewLimitsHandler(svc.Entitlement, adminConsoleSvc, log)
+		handlers.Limits.SetAccountPortalURL(cfg.AccountPortalURL)
 	}
 	if svc.IdleWorkspaces != nil {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
@@ -878,6 +884,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Instance scan zones (RFC-100 §6.1): console routes, the trigger's
 	// zone lookup and the zone in a shared job's signed statement.
 	handlers.AdminInstanceScanZone = wireInstanceScanZones(svc, repos, deps.DB, adminConsoleSvc, log)
+	// Console > System > Shared sensors (RFC-100 §12): the fleet, queue
+	// aggregates, job metadata, the audited job view and remote actions.
+	handlers.AdminSharedFleet = handler.NewAdminSharedFleetHandler(sensor.NewSharedFleetService(
+		postgres.NewSharedFleetRepository(deps.DB), repos.CommandLog, repos.AdminAuditLog, log), log)
 	// Shared sensor enrollment tokens (RFC-100): super admin, console step-up.
 	if svc.SensorPairing != nil {
 		handlers.AdminSharedSensor = handler.NewAdminSharedSensorHandler(svc.SensorPairing, adminConsoleSvc, log)
@@ -1612,6 +1622,9 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	}
 	if h.Announcement != nil {
 		s.Announcements = h.Announcement.ActiveResponses
+	}
+	if svc.Entitlement != nil {
+		s.LimitsApply = svc.Entitlement.Applies
 	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability
