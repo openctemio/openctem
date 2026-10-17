@@ -21,7 +21,7 @@
 # Retired and removed names live in config.go (retiredEnv, removedEnv).
 
 # Prefixes the API owns: any variable under them must be listed here.
-prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_, VERSION_CHECK_, SYSTEM_]
+prefixes: [APP_, BRAND_, SERVER_, DB_, REDIS_, LOG_, AUTH_, SSO_, OAUTH_, KEYCLOAK_, CORS_, RATE_LIMIT_, SMTP_, STORAGE_, SENSOR_, INGEST_, SCOPE_, CERT_MONITOR_, EASM_, ASSET_, ADMIN_AUDIT_, ADMIN_SESSION_, AUDIT_, METRICS_, MCP_, AI_, WORKER_, PROGRAMFEED_, VULNFEED_, CAPTCHA_, SIGNER_, OPENCTEM_HTTPSEC_, TENANT_, INVITATION_, SELF_SERVICE_, INTERNAL_API_, ACCOUNT_PORTAL_, VERSION_CHECK_, SYSTEM_]
 
 vars:
   - name: APP_ENV
@@ -1232,7 +1232,7 @@ vars:
     component: api
     group: "Sensors"
     type: string
-    default: ":8443"
+    default: ":9443"
     description: "TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it."
   - name: SENSOR_MTLS_TRUSTED_PROXIES
     component: api
@@ -1546,6 +1546,54 @@ vars:
     group: "Integrations"
     type: string
     description: "Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says."
+  - name: ACCOUNT_PORTAL_URL
+    component: api
+    group: "Internal entitlements API"
+    type: url
+    description: "A hosted service's account page (absolute https URL). When set, Settings > Usage & limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link."
+  - name: INTERNAL_API_ADDR
+    component: api
+    group: "Internal entitlements API"
+    type: string
+    description: "Listen address of the internal entitlements API, for example `10.0.0.5:9443` (a loopback or private IP; any other address, or a hostname, needs `INTERNAL_API_ALLOW_ALL_INTERFACES=true`). Empty (the default) turns it off. It is for the control plane of a hosted service only: expose it on a private network, never through the public gateway. When set, every other `INTERNAL_API_` variable is required."
+  - name: INTERNAL_API_ALLOW_ALL_INTERFACES
+    component: api
+    group: "Internal entitlements API"
+    type: bool
+    default: "false"
+    description: "`true` lets `INTERNAL_API_ADDR` be any address: every interface (`:9443`, `0.0.0.0:9443`, `[::]:9443`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port."
+  - name: INTERNAL_API_TLS_CERT
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    description: "PEM server certificate of the internal API (TLS 1.3 only)."
+  - name: INTERNAL_API_TLS_KEY
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    secret: true
+    description: "PEM private key of the internal API server certificate."
+  - name: INTERNAL_API_CLIENT_CA
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    description: "PEM CA bundle the control plane's client certificate must chain to. A connection without a valid client certificate is refused during the handshake."
+  - name: INTERNAL_API_JWT_PUBLIC_KEYS
+    component: api
+    group: "Internal entitlements API"
+    type: path
+    description: "PEM file with one or more Ed25519 public keys. Every request carries a token signed by one of the matching private keys (`EdDSA`), audience `openctem-core`, at most 5 minutes long, single use (`jti`), with scopes `limits:write`, `orgs:provision` or `usage:read`. List two keys while rotating."
+  - name: INTERNAL_API_JWT_ISSUER
+    component: api
+    group: "Internal entitlements API"
+    type: string
+    default: "openctem-cloud"
+    description: "The `iss` claim the internal API accepts."
+  - name: SELF_SERVICE_START_LIMITS
+    component: api
+    group: "Organizations"
+    type: string
+    description: "Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > System > Limits: a JSON object of limit keys, for example `{\"seats\":5,\"assets\":500,\"orgs_per_user\":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`TENANT_CREATION_MODE=self_service`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API."
   - name: METRICS_PUBLIC
     component: api
     group: "Metrics"
@@ -2163,8 +2211,32 @@ vars:
     component: gateway
     group: "Gateway"
     type: string
-    default: "api:8443"
-    description: "Address of the API's sensor listener the gateway passes sensor connections to."
+    default: "api:9443"
+    description: "Address of the API's sensor listener the gateway passes sensor connections to (internal only; sensors dial the gateway's port 443)."
+  - name: OPENCTEM_ADMIN_SITE
+    component: gateway
+    group: "Gateway"
+    type: enum
+    values: [port, host, off]
+    default: "off"
+    description: "The platform console's own site: `port` serves it on `https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT>`, `host` on `https://<OPENCTEM_ADMIN_HOST>` (recommended for production: a separate origin), `off` not at all. The Compose stack sets `port`."
+  - name: OPENCTEM_ADMIN_HOST
+    component: gateway
+    group: "Gateway"
+    type: string
+    description: "The console's own DNS name (no scheme, port or path), with `OPENCTEM_ADMIN_SITE=host`; must differ from `OPENCTEM_HOSTNAME`."
+  - name: OPENCTEM_ADMIN_PORT
+    component: gateway
+    group: "Gateway"
+    type: int
+    default: "8443"
+    description: "The console's port, with `OPENCTEM_ADMIN_SITE=port`. Not a security control: change it if it is taken on the host. Must differ from 80, 443 and `GATEWAY_HTTPS_PORT`."
+  - name: OPENCTEM_ADMIN_ALLOWED_CIDRS
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7"
+    description: "Client networks that may reach the console site, space-separated; everyone else gets 403. The Compose stack passes the same list to the API as `ADMIN_ALLOWED_CIDRS`."
   - name: OPENCTEM_HOSTNAME
     component: compose
     group: "Docker Compose stack"
@@ -2228,6 +2300,11 @@ vars:
     type: string
     default: "0.0.0.0"
     description: "Host interface the gateway port is published on."
+  - name: OPENCTEM_ADMIN_BIND
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    description: "Host interface the console port is published on, with `OPENCTEM_ADMIN_SITE=port` (default `GATEWAY_BIND`). A private or VPN address keeps the console off the public interface; a published container port is not filtered by the host firewall."
   - name: GATEWAY_HTTPS_PORT
     component: compose
     group: "Docker Compose stack"

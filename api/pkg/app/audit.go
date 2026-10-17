@@ -42,29 +42,3 @@ type AuditService interface {
 	// GetByResourceID returns audit logs for a specific resource.
 	GetByResourceID(ctx context.Context, tenantID shared.ID, resourceType, resourceID string) ([]*audit.AuditLog, error)
 }
-
-// AuditServiceEnterprise extends AuditService with Enterprise features.
-// This interface is implemented by Enterprise edition only.
-type AuditServiceEnterprise interface {
-	AuditService
-
-	// Export exports audit logs to external storage.
-	Export(ctx context.Context, filter ListAuditLogsFilter, format string) ([]byte, error)
-
-	// GetRetentionPolicy returns the audit log retention policy.
-	GetRetentionPolicy(ctx context.Context, tenantID shared.ID) (*AuditRetentionPolicy, error)
-
-	// SetRetentionPolicy sets the audit log retention policy.
-	SetRetentionPolicy(ctx context.Context, tenantID shared.ID, policy *AuditRetentionPolicy) error
-
-	// PurgeOldLogs purges logs older than retention period.
-	PurgeOldLogs(ctx context.Context, tenantID shared.ID) (int64, error)
-}
-
-// AuditRetentionPolicy represents an audit log retention policy.
-type AuditRetentionPolicy struct {
-	RetentionDays     int    `json:"retention_days"`
-	CompressAfterDays int    `json:"compress_after_days"`
-	ArchiveEnabled    bool   `json:"archive_enabled"`
-	ArchiveLocation   string `json:"archive_location"`
-}

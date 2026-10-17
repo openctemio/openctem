@@ -255,14 +255,18 @@ func TestProbeClientIgnoresProxyAndRedirects(t *testing.T) {
 	if !ok || tr.Proxy != nil {
 		t.Fatal("probe transport must not use a proxy")
 	}
-	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid/", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.invalid/", nil)
 	if c.CheckRedirect(req, nil) != http.ErrUseLastResponse {
 		t.Fatal("redirects must not be followed")
 	}
 	// A reachable target still works although the env proxy is unreachable.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
 	defer srv.Close()
-	resp, err := c.Get(srv.URL)
+	probeReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Do(probeReq)
 	if err != nil {
 		t.Fatalf("get via env proxy path: %v", err)
 	}
