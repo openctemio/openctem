@@ -194,6 +194,7 @@ func TestStepDispatch_NeverPinsASensor(t *testing.T) {
 			tpl.Settings.SensorPreference = tc.pref
 			s.sensorRepo = tenantSensors{id: shared.NewID()}
 			s.sensorSelector = tc.selector
+			s.targetGate = sharedTargetGate{}
 			created := &capturingCommands{}
 			s.commandRepo = created
 			run.Context = map[string]any{"targets": []string{"example.com"}}
