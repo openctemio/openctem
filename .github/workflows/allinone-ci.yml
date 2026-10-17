@@ -114,6 +114,8 @@ jobs:
           bash .github/scripts/smoke-image.sh openctem-web local/openctem-web:ci amd64
           bash .github/scripts/smoke-image.sh openctem-console local/openctem-console:ci amd64
           bash .github/scripts/smoke-image.sh openctem local/openctem:ci amd64
+      - name: Console plan (no console without the gateway)
+        run: sh deploy/allinone/console-plan.test.sh
       - name: All-in-one, both gateway modes, against Postgres + Redis
         env:
           SMOKE_NETWORK: host
