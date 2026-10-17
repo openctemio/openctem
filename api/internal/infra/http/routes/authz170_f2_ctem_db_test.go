@@ -23,7 +23,7 @@ func authz170Mount(t *testing.T, h *dsHarness) {
 	t.Helper()
 	log := logger.NewNop()
 	auth := Middleware(h.dsAuth)
-	registerCompensatingControlRoutes(h.router, handler.NewCompensatingControlHandler(h.db, log), auth, nil, passthrough)
+	registerCompensatingControlRoutes(h.router, handler.NewCompensatingControlHandler(h.db, log).WithDataScope(h.enforcer), auth, nil, passthrough)
 	registerBusinessServiceRoutes(h.router, handler.NewBusinessServiceHandler(h.db, log).WithDataScope(h.enforcer), auth, nil, passthrough)
 	registerScopingRoutes(h.router, handler.NewScopingHandler(postgres.NewScopingSummaryRepository(&postgres.DB{DB: h.db}), log), auth, nil)
 }
