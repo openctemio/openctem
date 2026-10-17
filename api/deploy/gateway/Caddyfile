@@ -34,8 +34,8 @@
 # mode is a pair of small files under modes/. Environment placeholders
 # {$NAME:default} are substituted when the file is read.
 #
-# Platform console (RFC-022 revisions 20-21): OPENCTEM_ADMIN_SITE=port serves it on
-# https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT, 8443>, =host on
+# Platform console (RFC-022 revision 20): OPENCTEM_ADMIN_SITE=port serves it on
+# https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT, 8444>, =host on
 # https://<OPENCTEM_ADMIN_HOST>, only to OPENCTEM_ADMIN_ALLOWED_CIDRS (default
 # private networks), and the main site then answers 404 for it (admin/).
 #
