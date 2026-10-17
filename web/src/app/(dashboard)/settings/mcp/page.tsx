@@ -1,7 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { KeyRound } from 'lucide-react'
 
 import { Main } from '@/components/layout'
@@ -26,7 +25,7 @@ import { McpStatusStrip } from '@/features/mcp-oauth/components/mcp-status-strip
 import { OrgClientsCard } from '@/features/mcp-oauth/components/org-clients-card'
 import { UnverifiedAppsCard } from '@/features/mcp-oauth/components/unverified-apps-card'
 import { PageHeader } from '@/features/shared'
-import { useUrlParams } from '@/hooks/use-url-param'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 
 type TabId = 'connect' | 'applications' | 'connections' | 'policy'
@@ -39,8 +38,7 @@ type TabId = 'connect' | 'applications' | 'connections' | 'policy'
  */
 export default function MCPSettingsPage() {
   const { t } = useTranslation()
-  const router = useRouter()
-  const searchParams = useUrlParams()
+  const [urlTab, setUrlTab] = useUrlFilter('tab', 'connect')
   const [keyDialogOpen, setKeyDialogOpen] = useState(false)
   const canWriteKeys = useHasPermission(Permission.ApiKeysWrite)
   const { currentTenant } = useTenant()
@@ -57,19 +55,9 @@ export default function MCPSettingsPage() {
     ...(isOrgAdmin ? (['connections'] as const) : []),
     ...(canReadPolicy ? (['policy'] as const) : []),
   ]
-  const urlTab = searchParams.get('tab') as TabId | null
-  const tab: TabId = urlTab && available.includes(urlTab) ? urlTab : 'connect'
+  const tab: TabId = available.includes(urlTab as TabId) ? (urlTab as TabId) : 'connect'
 
-  const setTab = useCallback(
-    (next: string) => {
-      const params = new URLSearchParams(searchParams.toString())
-      if (next === 'connect') params.delete('tab')
-      else params.set('tab', next)
-      const qs = params.toString()
-      router.replace(qs ? `?${qs}` : window.location.pathname, { scroll: false })
-    },
-    [searchParams, router]
-  )
+  const setTab = setUrlTab
 
   const pendingCount = requests.data?.data.length ?? 0
   const connect = (
