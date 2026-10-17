@@ -1,5 +1,7 @@
 'use client'
 
+import { DOCS } from '@/lib/docs-links'
+import { useDocsHref } from '@/context/brand-provider'
 import { useEffect, useState } from 'react'
 import { Check, Copy, Download, ExternalLink, Info } from 'lucide-react'
 import { toast } from 'sonner'
@@ -74,7 +76,7 @@ export function availableFormats(t: SensorTemplates | null | undefined): Snippet
 }
 
 /** Where the tool-author guide for custom sensors (built on sdk-go) lives. */
-export const CUSTOM_SENSOR_DOCS_URL = 'https://docs.openctem.io/developers/tool-authoring/'
+export const CUSTOM_SENSOR_DOCS_URL = DOCS.developers.toolAuthoring
 
 /** The pseudo product for a sensor built on the SDK that the platform does not list. */
 const CUSTOM_PRODUCT = 'custom'
@@ -199,6 +201,7 @@ export function SensorInstallSnippets({
   defaultFormat?: SnippetFormat
   className?: string
 }) {
+  const docsHref = useDocsHref()
   const { t } = useTranslation()
   const { data: stats } = useTenantSensorStats()
   const products = stats?.products ?? []
@@ -266,7 +269,7 @@ export function SensorInstallSnippets({
           <div className="min-w-0 space-y-1.5">
             <p>{t('sensors.snippets.customNote')}</p>
             <a
-              href={CUSTOM_SENSOR_DOCS_URL}
+              href={docsHref(CUSTOM_SENSOR_DOCS_URL)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"

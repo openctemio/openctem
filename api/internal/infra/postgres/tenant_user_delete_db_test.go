@@ -235,6 +235,11 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"from_user_id": s.userID, "to_user_id": other, "status": "pending",
 			"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-04T00:00:00Z"}
 	},
+	// A grant's scopes, reason and window are checked by the table.
+	"support_grants": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scopes": "{findings}", "reason": "seeded support grant", "access_level": "read",
+			"starts_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
+	},
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},
@@ -315,7 +320,18 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"finding_rekey_runs": func(*schemaSeeder) map[string]any { return map[string]any{"target_version": "2"} },
 	// Ticket links: an issue key (CHECK) and exactly one object (the finding).
 	"ticket_links": func(*schemaSeeder) map[string]any {
-		return map[string]any{"external_key": "SEC-1", "campaign_id": nil, "role": "own", "state": "active", "source": "person", "provider": "jira"}
+		return map[string]any{"external_key": "SEC-1", "campaign_id": nil, "task_id": nil, "role": "own", "state": "active", "source": "person", "provider": "jira"}
+	},
+	// Lifecycle catalog: a key pattern, a closed status set, a closure reason
+	// only under a closed status, and an object spec (CHECKs, RFC-110).
+	"lifecycle_sub_statuses": func(*schemaSeeder) map[string]any {
+		return map[string]any{"key": "seed_sub", "canonical_status": "new", "closure_reason": nil, "labels": "{}", "archived_at": nil}
+	},
+	"lifecycle_schemes": func(*schemaSeeder) map[string]any {
+		return map[string]any{"key": "seed_scheme", "context": nil, "published_version_id": nil, "archived_at": nil}
+	},
+	"lifecycle_scheme_versions": func(*schemaSeeder) map[string]any {
+		return map[string]any{"state": "draft", "version": 1, "spec": "{}"}
 	},
 	// emoji has a length CHECK.
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },

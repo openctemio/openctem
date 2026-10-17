@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,6 +60,13 @@ type Config struct {
 	// AdminAuditRetention controls pruning of the platform-level
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
+
+	// AdminElevationRequired: platform administrators act as read-only until
+	// they elevate their console session for a while (ADMIN_ELEVATION=
+	// required, the default; off = act as their own role at once).
+	AdminElevationRequired bool
+	// AdminAuditSink streams the administrators' audit log off the box.
+	AdminAuditSink AdminAuditSinkConfig
 
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
 	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
@@ -182,6 +190,32 @@ type AdminAuditRetentionConfig struct {
 	BatchSize int
 }
 
+// AdminAuditSinkConfig sends every administrators' audit row (with its chain
+// position and hash) and the chain head to a destination outside the
+// application database.
+type AdminAuditSinkConfig struct {
+	// URL is the destination: https://..., syslog+tls://host:port or
+	// file:///path. ADMIN_AUDIT_SINK; empty = off.
+	URL string `json:"-"`
+	// Secret is the webhook's HMAC-SHA256 key (at least 32 bytes, required
+	// for https). ADMIN_AUDIT_SINK_SECRET.
+	Secret string `json:"-"`
+	// SyslogCAFile, SyslogClientCert and SyslogClientKey are PEM paths for a
+	// syslog+tls destination: the server roots and the client certificate
+	// (mutual TLS). ADMIN_AUDIT_SINK_SYSLOG_CA_FILE, _CLIENT_CERT, _CLIENT_KEY.
+	SyslogCAFile     string
+	SyslogClientCert string
+	SyslogClientKey  string
+	// HeadInterval is how often the chain head is sent when no row is new.
+	// ADMIN_AUDIT_SINK_HEAD_INTERVAL, default 15m.
+	HeadInterval time.Duration
+}
+
+// String never prints the secret or the URL.
+func (c AdminAuditSinkConfig) String() string {
+	return fmt.Sprintf("AdminAuditSinkConfig{enabled:%t}", c.URL != "")
+}
+
 // MetricsConfig controls exposure of the Prometheus /metrics endpoint.
 //
 // SECURITY: /metrics leaks internal cardinality (route names, error rates,
@@ -295,6 +329,10 @@ type AppConfig struct {
 	Name string
 	Env  string
 	URL  string // Public app URL (used as fallback for sensor config base URL)
+	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
+	// to every organization created here and never changed (empty: not
+	// named).
+	Region string
 }
 
 // SensorConfigConfig holds the sensor config template service settings.
@@ -493,6 +531,48 @@ type DatabaseConfig struct {
 	// on a 200k-finding tenant. Disabled by default, per session, via the
 	// connection startup parameter; the server-wide setting is untouched.
 	JITEnabled bool
+	// AdminUser and AdminPassword: the database role the platform console's
+	// identity tables are written with (DB_ADMIN_USER, DB_ADMIN_PASSWORD).
+	// Set, the API opens a second, small pool with it for the administrator,
+	// console-session and platform identity-provider repositories, and the
+	// least-privilege bootstrap takes writing those tables away from DB_USER.
+	// Empty: one pool, as before.
+	AdminUser     string
+	AdminPassword string
+}
+
+// validateAdminRole: a console role needs its own password and must not be
+// the app role (the split would then protect nothing).
+func (c *DatabaseConfig) validateAdminRole() error {
+	if c.AdminUser == "" {
+		if c.AdminPassword != "" {
+			return fmt.Errorf("DB_ADMIN_PASSWORD is set but DB_ADMIN_USER is not")
+		}
+		return nil
+	}
+	if c.AdminUser == c.User {
+		return fmt.Errorf("DB_ADMIN_USER must differ from DB_USER")
+	}
+	if c.AdminPassword == "" {
+		return fmt.Errorf("DB_ADMIN_USER is set but DB_ADMIN_PASSWORD is empty")
+	}
+	if c.AdminPassword == c.Password {
+		return fmt.Errorf("DB_ADMIN_PASSWORD must differ from DB_PASSWORD")
+	}
+	return nil
+}
+
+// AdminConfig returns the database settings of the console's pool: the same
+// database as DB_USER with DB_ADMIN_USER's credentials and a small pool, or
+// nil when DB_ADMIN_USER is not set.
+func (c *DatabaseConfig) AdminConfig() *DatabaseConfig {
+	if c.AdminUser == "" {
+		return nil
+	}
+	a := *c
+	a.User, a.Password = c.AdminUser, c.AdminPassword
+	a.MaxOpenConns, a.MaxIdleConns = 5, 2
+	return &a
 }
 
 // RedisConfig holds Redis configuration.
@@ -929,6 +1009,14 @@ type SensorConfig struct {
 	VulnFeedBundleDir string
 	VulnFeedMirrors   []string
 
+	// VersionCheckEnabled turns on the daily version check: one anonymous
+	// download of the signed release feed, compared with the running version
+	// on the instance (RFC-105). VERSION_CHECK_ENABLED, default true.
+	// VersionCheckURL is where the feed is read (VERSION_CHECK_URL, https; the
+	// signature carries the trust, so a mirror is fine).
+	VersionCheckEnabled bool
+	VersionCheckURL     string
+
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
 	// no-credentials external-exposure source. Set CERT_MONITOR_ENABLED=false to
@@ -993,6 +1081,12 @@ type SensorConfig struct {
 	// (free tier), when crt.sh still fails after its retries. Set
 	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
 	CertMonitorCertSpotterURL string
+
+	// AssetTechnologyBackfillReportOnly makes the asset-technology-backfill
+	// job count and log the component links it would remove instead of
+	// deleting them. ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY, default TRUE: an
+	// operator checks the report, then sets it to false to enforce.
+	AssetTechnologyBackfillReportOnly bool
 
 	// InvitationPurgeInterval is how often expired, unaccepted invitations
 	// (an email address and a token hash) are deleted. They can no longer be
@@ -1112,6 +1206,14 @@ type EncryptionConfig struct {
 	// Env var: APP_CONTENT_SIGNING_KEY
 	ContentSigningKey string
 
+	// FingerprintKey is the server secret the fingerprint of every reported
+	// secret finding (and the key CI producers hash raw secrets with) is
+	// derived from. It never rotates with APP_ENCRYPTION_KEY: changing it
+	// changes every secret's identity, so a secret seen again would open a
+	// second finding. Empty is allowed only in development, where Key is used.
+	// At least 32 characters. Env var: FINGERPRINT_KEY
+	FingerprintKey string
+
 	// ContentTrustRootKeyIDs are extra content catalog roots (key ids,
 	// "SHA256:<hex>") trusted beside the ones pinned in the release, for an
 	// operator's own catalog source (RFC-099). Env var:
@@ -1122,6 +1224,18 @@ type EncryptionConfig struct {
 	// replaces the one embedded in the release for publisher signatures.
 	// Env var: CONTENT_SIGSTORE_TRUSTED_ROOT.
 	ContentSigstoreTrustedRoot string
+}
+
+// FingerprintSecret is the server secret the secret-finding fingerprint is
+// keyed from: FingerprintKey, or Key in development only. Never log it.
+func (c *Config) FingerprintSecret() string {
+	if c.Encryption.FingerprintKey != "" {
+		return c.Encryption.FingerprintKey
+	}
+	if c.IsDevelopment() {
+		return c.Encryption.Key
+	}
+	return ""
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1232,9 +1346,10 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name: getEnv("APP_NAME", "openctem"),
-			Env:  appEnv(),
-			URL:  getEnv("APP_URL", ""),
+			Name:   getEnv("APP_NAME", "openctem"),
+			Env:    appEnv(),
+			URL:    getEnv("APP_URL", ""),
+			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
@@ -1311,6 +1426,8 @@ func Load() (*Config, error) {
 			Port:            getEnvInt("DB_PORT", 5432),
 			User:            getEnv("DB_USER", "openctem"),
 			Password:        getEnv("DB_PASSWORD", ""),
+			AdminUser:       getEnv("DB_ADMIN_USER", ""),
+			AdminPassword:   getEnv("DB_ADMIN_PASSWORD", ""),
 			Name:            getEnv("DB_NAME", "openctem"),
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
@@ -1445,34 +1562,37 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: SensorConfig{
-			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
-			HeartbeatTimeout:            getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
-			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
-			VulnFeedRootKeyID:           getEnv("VULNFEED_ROOT_KEY_ID", ""),
-			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
-			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
-			VulnFeedMirrors:             feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
-			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
-			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
-			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
-			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
-			AssetEnrichmentEnabled:      getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
-			AssetEnrichmentDailyBudget:  getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
-			AssetCoverageEnabled:        getEnvBool("ASSET_COVERAGE_ENABLED", true),
-			AssetCoverageInterval:       getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
-			AssetCoverageDailyBudget:    getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
-			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
-			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
-			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),
-			EASMDNSInterval:             getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
-			EASMDNSMaxNamesPerRun:       getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
-			CertMonitorCertSpotterURL:   getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
-			InvitationPurgeInterval:     getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
-			AdminSessionPurgeInterval:   getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
-			QuarantinePurgeInterval:     getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
-			QuarantineRetention:         getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
+			Enabled:                           getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
+			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
+			HealthCheckInterval:               getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
+			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
+			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", ""),
+			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
+			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
+			VersionCheckURL:                   getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
+			CertMonitorEnabled:                getEnvBool("CERT_MONITOR_ENABLED", true),
+			CertMonitorFeedBaseURL:            getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
+			CertMonitorInterval:               getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+			CertMonitorMaxDomainsPerRun:       getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
+			AssetEnrichmentEnabled:            getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
+			AssetEnrichmentDailyBudget:        getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
+			AssetCoverageEnabled:              getEnvBool("ASSET_COVERAGE_ENABLED", true),
+			AssetCoverageInterval:             getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
+			AssetCoverageDailyBudget:          getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
+			EASMDNSChecksEnabled:              getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
+			EASMDNSResolver:                   getEnv("EASM_DNS_RESOLVER", ""),
+			EASMDNSQPS:                        getEnvFloat("EASM_DNS_QPS", 20),
+			EASMDNSInterval:                   getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
+			EASMDNSMaxNamesPerRun:             getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
+			CertMonitorCertSpotterURL:         getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
+			AssetTechnologyBackfillReportOnly: getEnvBool("ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY", true),
+			InvitationPurgeInterval:           getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
+			AdminSessionPurgeInterval:         getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
+			QuarantinePurgeInterval:           getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
+			QuarantineRetention:               getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
@@ -1490,6 +1610,7 @@ func Load() (*Config, error) {
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
+			FingerprintKey:     getEnv("FINGERPRINT_KEY", ""),
 
 			ContentTrustRootKeyIDs:     getEnvSlice("CONTENT_TRUST_ROOT_KEY_IDS", nil),
 			ContentSigstoreTrustedRoot: getEnv("CONTENT_SIGSTORE_TRUSTED_ROOT", ""),
@@ -1537,6 +1658,16 @@ func Load() (*Config, error) {
 			ProgramFeedLocalBundleDir: getEnv("PROGRAMFEED_LOCAL_BUNDLE_DIR", ""),
 			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
 			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
+		},
+		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
+		AdminAuditSink: AdminAuditSinkConfig{
+			URL:    getEnv("ADMIN_AUDIT_SINK", ""),
+			Secret: getEnv("ADMIN_AUDIT_SINK_SECRET", ""),
+
+			SyslogCAFile:     getEnv("ADMIN_AUDIT_SINK_SYSLOG_CA_FILE", ""),
+			SyslogClientCert: getEnv("ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT", ""),
+			SyslogClientKey:  getEnv("ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY", ""),
+			HeadInterval:     getEnvDuration("ADMIN_AUDIT_SINK_HEAD_INTERVAL", 15*time.Minute),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
@@ -1628,6 +1759,9 @@ func deriveSSORedirectAllowList(cfg *Config) []string {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
+	if c.App.Region != "" && !deploymentRegionRE.MatchString(c.App.Region) {
+		return fmt.Errorf("DEPLOYMENT_REGION=%q must be 1-32 lowercase letters, digits or hyphens (e.g. eu-central)", c.App.Region)
+	}
 	if err := c.validateBasic(); err != nil {
 		return err
 	}
@@ -1689,6 +1823,9 @@ func (c *Config) validateBasic() error {
 	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
 		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
 	}
+	if v := c.Worker.VersionCheckURL; v != "" && (parsePublicURL(v) == nil || !strings.HasPrefix(v, "https://")) {
+		return errors.New("VERSION_CHECK_URL must be an https URL without credentials, query or fragment")
+	}
 	for _, u := range c.Scope.ProgramFeedURLs {
 		pu, err := url.Parse(u)
 		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
@@ -1729,6 +1866,9 @@ func (c *Config) validateBasic() error {
 	if err := c.validatePlaceholders(); err != nil {
 		return err
 	}
+	if err := c.Database.validateAdminRole(); err != nil {
+		return err
+	}
 	if err := c.validateAuth(); err != nil {
 		return err
 	}
@@ -1739,6 +1879,9 @@ func (c *Config) validateBasic() error {
 		return err
 	}
 	if err := c.validateAdminAuditRetention(); err != nil {
+		return err
+	}
+	if err := c.validateAdminAuditSink(); err != nil {
 		return err
 	}
 	if err := c.validateStorage(); err != nil {
@@ -1756,6 +1899,26 @@ const minAdminAuditRetentionDays = 30
 
 // validateAdminAuditRetention guards the destructive knobs. A zero or negative
 // retention window would push the cutoff to now-or-later and delete every row.
+// validateAdminAuditSink refuses an unsafe off-box audit sink configuration at
+// boot. The destination itself (scheme, certificates) is checked when the
+// sink is built, which also stops the start-up.
+func (c *Config) validateAdminAuditSink() error {
+	k := c.AdminAuditSink
+	if k.URL == "" {
+		if k.Secret != "" || k.SyslogCAFile != "" || k.SyslogClientCert != "" || k.SyslogClientKey != "" {
+			return fmt.Errorf("ADMIN_AUDIT_SINK_SECRET / ADMIN_AUDIT_SINK_SYSLOG_* are set but ADMIN_AUDIT_SINK is not")
+		}
+		return nil
+	}
+	if strings.HasPrefix(k.URL, "https:") && len(k.Secret) < 32 {
+		return fmt.Errorf("ADMIN_AUDIT_SINK_SECRET must be at least 32 bytes when ADMIN_AUDIT_SINK is an https URL (the receiver verifies the HMAC signature with it)")
+	}
+	if k.HeadInterval <= 0 {
+		return fmt.Errorf("ADMIN_AUDIT_SINK_HEAD_INTERVAL must be positive")
+	}
+	return nil
+}
+
 func (c *Config) validateAdminAuditRetention() error {
 	r := c.AdminAuditRetention
 	if !r.Enabled || r.DryRun {
@@ -1841,6 +2004,15 @@ func (c *Config) validateEncryption() error {
 		if k == c.Encryption.Key || k == c.Encryption.TemplateSigningKey {
 			return fmt.Errorf("APP_CONTENT_SIGNING_KEY must differ from APP_ENCRYPTION_KEY and APP_TEMPLATE_SIGNING_KEY (leave it unset to derive it)")
 		}
+	}
+
+	// The fingerprint key is its own secret so rotating the encryption key
+	// never changes the identity of a stored secret finding.
+	if k := c.Encryption.FingerprintKey; k != "" && len(k) < 32 {
+		return fmt.Errorf("FINGERPRINT_KEY must be at least 32 characters, got %d; generate one with `openssl rand -hex 32`", len(k))
+	}
+	if c.Encryption.FingerprintKey == "" && !c.IsDevelopment() {
+		return fmt.Errorf("FINGERPRINT_KEY is required when APP_ENV=%q (only APP_ENV=development may omit it); generate one with `openssl rand -hex 32`, and on an existing install set it to the current APP_ENCRYPTION_KEY value so stored secret fingerprints stay valid", c.App.Env)
 	}
 
 	// Encryption key is optional only in development. Any other APP_ENV
@@ -1969,6 +2141,12 @@ func (c *Config) validateAuth() error {
 		return fmt.Errorf("APP_ENCRYPTION_KEY is the docker-compose default and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
 	}
 
+	// The example FINGERPRINT_KEY values are public: refuse them outside
+	// development.
+	if !c.IsDevelopment() && isDevDefaultFingerprintKey(c.Encryption.FingerprintKey) {
+		return fmt.Errorf("FINGERPRINT_KEY is an example value from the repository and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
+	}
+
 	// A dedicated sensor-key pepper must be a real secret: at least 32
 	// characters (openssl rand -hex 32 gives 64).
 	if p := c.SensorConfig.KeyPepper; p != "" && len(p) < 32 {
@@ -1993,12 +2171,15 @@ func (c *Config) validatePlaceholders() error {
 		{"APP_ENCRYPTION_KEY", c.Encryption.Key},
 		{"APP_TEMPLATE_SIGNING_KEY", c.Encryption.TemplateSigningKey},
 		{"APP_CONTENT_SIGNING_KEY", c.Encryption.ContentSigningKey},
+		{"FINGERPRINT_KEY", c.Encryption.FingerprintKey},
 		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
 		{"DB_PASSWORD", c.Database.Password},
+		{"DB_ADMIN_PASSWORD", c.Database.AdminPassword},
 		{"REDIS_PASSWORD", c.Redis.Password},
 		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
 		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
 		{"METRICS_TOKEN", c.Metrics.Token},
+		{"ADMIN_AUDIT_SINK_SECRET", c.AdminAuditSink.Secret},
 	}
 	for i, prev := range c.Encryption.PreviousKeys {
 		secrets = append(secrets, struct{ name, value string }{fmt.Sprintf("APP_ENCRYPTION_KEY_PREVIOUS entry %d", i+1), prev})
@@ -2045,6 +2226,18 @@ var devDefaultJWTSecrets = []string{
 
 func isDevDefaultJWTSecret(s string) bool {
 	return slices.Contains(devDefaultJWTSecrets, s)
+}
+
+// devDefaultFingerprintKeys is the closed set of FINGERPRINT_KEY values that
+// ship in .env.example, the registry example and the compose fallback.
+// Update it whenever a new example is introduced.
+var devDefaultFingerprintKeys = []string{
+	"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+}
+
+func isDevDefaultFingerprintKey(s string) bool {
+	return s != "" && slices.Contains(devDefaultFingerprintKeys, s)
 }
 
 // isDevDefaultEncryptionKey flags the repeating-hex-digit AES-256 key
@@ -2526,3 +2719,7 @@ func feedURLs(primary, mirrors string) []string {
 	}
 	return out
 }
+
+// deploymentRegionRE is the shape of DEPLOYMENT_REGION (the tenants.region
+// check in the database is the same).
+var deploymentRegionRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)

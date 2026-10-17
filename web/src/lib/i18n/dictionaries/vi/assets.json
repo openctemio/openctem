@@ -942,5 +942,7 @@
   "assets.actions.copied": "Đã sao chép",
   "assets.actions.copyName": "Sao chép tên",
   "assets.scanning.tenableScan": "Quét bằng Tenable.sc",
-  "assets.scanning.tenableScanTitle": "Quét tài sản này ngay qua bộ kết nối Tenable.sc của tổ chức"
+  "assets.scanning.tenableScanTitle": "Quét tài sản này ngay qua bộ kết nối Tenable.sc của tổ chức",
+  "assets.repository.notScannedYet": "Kho mã này có phát hiện từ dữ liệu nhập, nhưng {product} chưa quét nó.",
+  "assets.technologies.title": "Công nghệ"
 }

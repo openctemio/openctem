@@ -280,6 +280,12 @@ func (m *mockAuthTenantRepo) ExistsBySlug(_ context.Context, _ string) (bool, er
 	return m.existsBySlugResult, nil
 }
 
+// noSMTP reports that no SMTP server is configured anywhere.
+type noSMTP struct{}
+
+func (noSMTP) HasSystemSMTP() bool                        { return false }
+func (noSMTP) HasTenantSMTP(context.Context, string) bool { return false }
+
 func (m *mockAuthTenantRepo) ListActiveTenantIDs(_ context.Context) ([]shared.ID, error) {
 	if m.listActiveTenantIDsErr != nil {
 		return nil, m.listActiveTenantIDsErr
@@ -1119,8 +1125,10 @@ func TestAuthService_Register(t *testing.T) {
 		if result.User.Email() != "new@example.com" {
 			t.Errorf("expected email new@example.com, got %s", result.User.Email())
 		}
-		if result.RequiresVerification {
-			t.Error("expected RequiresVerification=false when verification is disabled")
+		// Self-registration under SIGNUP_MODE=open always verifies, whatever
+		// AUTH_REQUIRE_EMAIL_VERIFICATION says.
+		if !result.RequiresVerification {
+			t.Error("expected RequiresVerification=true for open self-registration")
 		}
 		if deps.userRepo.createCalls != 1 {
 			t.Errorf("expected 1 create call, got %d", deps.userRepo.createCalls)
@@ -1213,15 +1221,13 @@ func TestAuthService_Register(t *testing.T) {
 		_ = deps // used
 	})
 
-	// --- Single-tenant fallback (Fix for the "EmailVerificationMode=never
-	// is ignored at register time" bug) ---
-	t.Run("single tenant with mode=never overrides global verification", func(t *testing.T) {
-		// Global config requires verification, but the platform's only
-		// tenant says "never". Register must respect the tenant rule
-		// because it's the obvious target for any new self-registration.
+	// --- Public sign-up always verifies (one organization's setting never
+	// decides platform-wide sign-up, and missing SMTP never skips it) ---
+	t.Run("open sign-up verifies even when the only tenant says never", func(t *testing.T) {
 		cfg := defaultAuthTestConfig()
-		cfg.RequireEmailVerification = true
+		cfg.RequireEmailVerification = false
 		svc, deps := newTestAuthServiceWithConfig(cfg)
+		svc.SetSMTPChecker(noSMTP{})
 
 		soleTenant := mustNewTenantWithVerificationMode(
 			t, "Acme", tenant.EmailVerificationNever,
@@ -1236,11 +1242,11 @@ func TestAuthService_Register(t *testing.T) {
 		if err != nil {
 			t.Fatalf("register: %v", err)
 		}
-		if result.RequiresVerification {
-			t.Error("expected RequiresVerification=false (single-tenant override should win)")
+		if !result.RequiresVerification || result.VerificationToken == "" {
+			t.Error("self-registration under SIGNUP_MODE=open must always verify")
 		}
-		if !result.User.EmailVerified() {
-			t.Error("expected user to be auto-verified when verification is skipped")
+		if result.User.EmailVerified() {
+			t.Error("the account must stay unverified until the address is proved")
 		}
 	})
 
@@ -2995,4 +3001,61 @@ func TestAuthService_PasswordOverBcryptLimit(t *testing.T) {
 	if deps.userRepo.createCalls != 0 {
 		t.Fatalf("no account may be created, got %d create calls", deps.userRepo.createCalls)
 	}
+}
+
+// The platform console's own password check: the same rules as a sign-in
+// (one answer for a wrong password and an unknown email, a wrong password
+// counted, a locked account stated only to the password holder), and no
+// /login session is opened.
+func TestAuthService_VerifyConsolePassword(t *testing.T) {
+	hasher := password.New(password.WithCost(4))
+	hash, err := hasher.Hash("ValidPassword123")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("right password: the user, no session", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		seedAuthLocalUser(deps.userRepo, "admin@example.com", hash)
+		u, err := svc.VerifyConsolePassword(context.Background(), " Admin@Example.com ", "ValidPassword123", "10.0.0.1", "ua")
+		if err != nil || u == nil || u.Email() != "admin@example.com" {
+			t.Fatalf("got %v, %v", u, err)
+		}
+		if len(deps.sessionRepo.sessions) != 0 {
+			t.Fatalf("the console check must not open a /login session: %d", len(deps.sessionRepo.sessions))
+		}
+		if deps.userRepo.updateCalls != 0 {
+			t.Fatal("a right password must not clear the lockout counter before the caller accepts the account")
+		}
+		svc.RecordConsolePasswordSuccess(context.Background(), u.ID())
+		if deps.userRepo.updateCalls != 1 {
+			t.Fatal("RecordConsolePasswordSuccess must reset the counter")
+		}
+	})
+
+	t.Run("wrong password and unknown email answer the same", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		seedAuthLocalUser(deps.userRepo, "admin@example.com", hash)
+		before := deps.userRepo.updateCalls
+		if _, err := svc.VerifyConsolePassword(context.Background(), "admin@example.com", "wrong", "10.0.0.1", "ua"); !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("wrong password: %v", err)
+		}
+		if deps.userRepo.updateCalls == before {
+			t.Fatal("a wrong password must count toward the lockout")
+		}
+		if _, err := svc.VerifyConsolePassword(context.Background(), "nobody@example.com", "ValidPassword123", "10.0.0.1", "ua"); !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("unknown email: %v", err)
+		}
+	})
+
+	t.Run("locked account", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		seedAuthLockedUser(deps.userRepo, "locked@example.com", hash)
+		if _, err := svc.VerifyConsolePassword(context.Background(), "locked@example.com", "ValidPassword123", "10.0.0.1", "ua"); !errors.Is(err, auth.ErrAccountLocked) {
+			t.Fatalf("locked, right password: %v", err)
+		}
+		if _, err := svc.VerifyConsolePassword(context.Background(), "locked@example.com", "wrong", "10.0.0.1", "ua"); !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("locked, wrong password: %v", err)
+		}
+	})
 }

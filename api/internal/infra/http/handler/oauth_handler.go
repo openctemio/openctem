@@ -217,6 +217,8 @@ func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
 		apierror.BadRequest("Failed to exchange authorization code").WriteJSON(w)
 	case errors.Is(err, auth.ErrSignupNotAvailable):
 		writeSignupNotAvailable(w)
+	case errors.Is(err, auth.ErrSignupSSORequired):
+		writeSignupSSORequired(w)
 	case errors.Is(err, auth.ErrOAuthUserInfoFailed):
 		apierror.BadRequest("Failed to get user information from provider").WriteJSON(w)
 	default:

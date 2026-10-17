@@ -179,7 +179,7 @@ export function TenableConnectorDialog({
           <DialogDescription>
             {t(
               'tenableSc.dialog.description',
-              'The Tenable.sc connector runs as its own container next to your Tenable.sc, paired like a sensor. It pulls from Tenable.sc and launches its scans; the Tenable.sc API keys stay in its config, and OpenCTEM never stores them.'
+              'The Tenable.sc connector runs as its own container next to your Tenable.sc, paired like a sensor. It pulls from Tenable.sc and launches its scans; the Tenable.sc API keys stay in its config, and {product} never stores them.'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -413,7 +413,7 @@ export function TenableConnectorDialog({
               <p className="text-muted-foreground text-xs">
                 {t(
                   'tenableSc.dialog.ownerLimits',
-                  "What the connector may read and which policies and repositories scans may use are set by the connector's owner in its config; OpenCTEM can only ask within them."
+                  "What the connector may read and which policies and repositories scans may use are set by the connector's owner in its config; {product} can only ask within them."
                 )}
               </p>
             </div>

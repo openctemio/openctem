@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-15). Implemented: the package format (`package.yaml`, JSON schema, validator); signatures and trust, the signed index and revocation list, the offline bundle reader and verifier (`pkg/contentpkg`); the content catalog (offline import, install, update, pin, rollback, uninstall, approval option, audit; [architecture](../architecture/content-catalog.md)); the first-party package descriptions and the bundle generator (`pkg/contentpkg/firstparty`, `cmd/content-bundle`). Designed: private catalogs, the console |
+| Status | Proposed (2026-10-15). Implemented: the package format (`package.yaml`, JSON schema, validator); signatures and trust, the signed index and revocation list, the offline bundle reader and verifier (`pkg/contentpkg`); the content catalog (offline import, install, update, pin, rollback, uninstall, approval option, audit; [architecture](../architecture/content-catalog.md)); the first-party package descriptions and the bundle generator (`pkg/contentpkg/firstparty`, `cmd/content-bundle`); the console Content page. Designed: private catalogs |
 | Scope | api, web |
 | Related | RFC-061 (content packs), RFC-040 (mutual distrust, signed jobs), RFC-037 (versions and the sensor product catalog), RFC-072 (chunked feed transfer), RFC-094 (contracts only) |
 | Schema | [`api/pkg/contentpkg/schema/package.v1.schema.json`](../../pkg/contentpkg/schema/package.v1.schema.json) |
@@ -141,7 +141,7 @@ easy to read in a review.
  offline catalog root (Ed25519, kept offline)  ── key id pinned in the platform release
         │ signs
         ▼
- catalog key set (version, issued, not after ≤ 180 days, ≤ 8 online keys)
+ catalog key set (version, issued, not after ≤ 365 days, ≤ 8 online keys)
         │ each online key signs
         ▼
  statements (one per package version) · the index · the revocation list
@@ -329,11 +329,14 @@ and moves unpinned installations forward. Any failure stores nothing. The bundle
 | The program and vulnerability feeds | `openctem/program-feed`, `openctem/vulnerability-feed`, `feeds` | the feed key set | the feed root (RFC-072) |
 
 A generator (`cmd/content-bundle`) builds the first-party bundle from these sources; the catalog online key signs
-it in the release pipeline:
+it in the release pipeline. The catalog online key is its own key, held in its own GitHub environment
+(`content-catalog`); the release feed key (RFC-105) is a different key and is never listed in the catalog key set,
+so a key that signs information cannot ship code. The catalog key set may be valid up to 365 days (the program
+and vulnerability feed key sets, up to 180):
 
 ```
-go run ./cmd/content-bundle keygen -out root.key                      # offline, once (root) and per online key
-go run ./cmd/content-bundle keyset -root root.key -online <hex> -version 1 -days 180 -out keyset.dsse.json
+go run ./cmd/content-bundle keygen -out root.key                      # offline, once (root) and per online key (the catalog's own)
+go run ./cmd/content-bundle keyset -root root.key -online <hex> -version 1 -days 365 -out keyset.dsse.json
 go run ./cmd/content-bundle build -keyset keyset.dsse.json -online-key online.key \
     -sast-rules dist/ -image sensor=sha256:<hex>:<size>:GPL-3.0-only \
     -feed program-feed=keyset.dsse.json -out openctem-content.tar

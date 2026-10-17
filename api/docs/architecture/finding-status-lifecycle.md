@@ -4,6 +4,11 @@ Every finding, whatever its source (scanner, import, CI, pentest), takes one
 status from one set, and every write of `findings.status` follows one
 lifecycle.
 
+
+An organization's own labels and rules on top of these statuses (sub-statuses and lifecycle schemes) are
+described in [finding-lifecycles.md](finding-lifecycles.md): they can only add constraints, never relax one
+of the rules below.
+
 ## The status set
 
 | Status | Category | Meaning |
@@ -279,6 +284,7 @@ Actors:
 - **api_key**: an organization key. The same rules apply, but it is not a person, so it cannot claim a fix.
 - **workflow**: an automation `update_status` and an explicit system move. It holds no permission to verify, triage or request a disposition, and is free of the fix-claim person rules.
 - **ticket_inbound**: Jira or GitHub. It moves work state only (`IsTicketInboundTarget`).
+- **rule**: an approved suppression rule (the rule itself passed four-eyes). It moves the open findings the rule matches (`SuppressionApplyFromStatuses`) to the rule's disposition (`false_positive` or `accepted`) directly, with no person permission, and nothing else: any other target, a pentest finding, or a rule actor without a rule id is blocked (`rule_scope`). Approving a rule decides each matching finding through the engine with this actor and records the rule id and `actor_kind: rule` on each timeline entry. The acceptance end is still capped by priority, and the rule's scope is unchanged (the organization, or its asset).
 
 The engine only adds constraints to the lifecycle map. `TestEvaluateTransition_NeverWiderThanTheLifecycle` proves that, for every actor and status pair, no allowed move is off the map. It also proves that no disposition is direct, no resolve lacks `findings:verify`, and no ticket closes a finding.
 
@@ -473,8 +479,13 @@ instead).
   title, requested status and dates, never the justification; the link opens
   the inbox, sign-in required. `POST /api/v1/approvals/{id}/remind`
   (`findings:write`) repeats it at most once an hour per request
-  (`reminded_at`, atomic), audited `finding_approval.reminded`. VEX requests
-  from a scan report are not notified one by one.
+  (`reminded_at`, atomic), audited `finding_approval.reminded`. Requests VEX
+  statements make are announced from the requests table as an outbox: the
+  `vex-request-notice` job (every minute) claims rows with no
+  `approvers_notified_at` (`FOR UPDATE SKIP LOCKED`) and sends one notice and
+  one email per tenant and approver, counting only findings in that
+  approver's data scope and naming at most five titles; without a data-scope
+  check nobody is told (`DispatchVEXRequestNotices`, `NotifyVEXRequests`).
 - **Sole member.** An organization with one person has nobody to ask. Its
   owner may approve their own pending request
   (`POST /api/v1/approvals/{id}/self-approve`, `findings:approve`) only while
@@ -495,6 +506,111 @@ instead).
   and a recent re-authentication; changes are audited with before/after and
   the approvers are told.
 
+- **Daily digest.** The hourly `approval-digest` controller sends each
+  approver, at most once per 23 hours and organization
+  (`finding_approval_digest_sent`), one in-app notice
+  (`finding_approval_digest`) and one email: the requests they may decide
+  (never their own, the finding in their data scope), how many expire within
+  two days, and up to five titles they can see
+  (`internal/app/finding/approval_digest.go`). Muting the digest type in the
+  notification preferences opts out of both.
+
+### Approval policy
+
+Every false-positive and accepted-risk request is evaluated by the approval
+policy (`pkg/domain/approvalpolicy`, design: RFC-111) from facts read on the
+server, when it is made and again when someone approves it
+(`internal/app/finding/approval_policy.go`):
+
+- **Risk class:** critical (severity critical, P0, KEV), high (severity high,
+  P1, a validated exploit, EPSS at or above the threshold, 0.5 unless the
+  organization lowers it), standard. An acceptance on a crown-jewel or
+  internet-exposed asset is one class higher.
+- **Tier:** `single` (the requester alone), `peer` (one other person),
+  `security` (one other person from the security pool, recent
+  re-authentication), `dual` (two other people, one from the security pool,
+  each re-authenticated). Defaults: false positive by the level below;
+  accepted risk `peer` / `security` / `dual` for standard / high / critical.
+  Floors that no policy lowers: an accepted risk never below `peer`, and
+  never below `security` from high up.
+- **Who may approve:** members holding `findings:approve` with the finding
+  in their data scope, except the requester and **the owners of the finding's
+  asset** (user owners and members of owner groups, ownership primary or
+  secondary), and the assignee when the organization asks. A requester who
+  owns the asset never decides a false positive alone. The security pool is
+  the organization's `security_pool_group_id` group; when nobody in it is
+  eligible the approver pool stands in (`security_pool_fallback`, recorded
+  on the sign-off) unless `security_pool_strict`.
+- **Sign-offs:** each approval is a row in `approval_signoffs` (one per
+  person). `POST /approvals/{id}/approve` locks the request, judges the
+  signer against the sign-offs already in, records the sign-off and, on the
+  last one, applies the request with its timeline entry in the same
+  transaction (`FindingApprovalRepository.SignOff`). Earlier sign-offs count
+  only while their signer still qualifies. A partial sign-off answers 200
+  with the request still `pending` and `approvals_collected` /
+  `approvals_required`; it is on the timeline as `approval_signed` and in the
+  audit log as `finding_approval.signed`. Refusals answer 403
+  `APPROVER_NOT_ELIGIBLE` with `details.reason` (`asset_owner`, `assignee`,
+  `not_in_security_pool`, `already_signed`, `not_an_approver`), 409
+  `NO_ELIGIBLE_APPROVER` when the organization cannot complete the request,
+  or 403 `STEP_UP_REQUIRED`; each is audited
+  `finding_approval.approval_refused`.
+- **Ends and deadlines:** the acceptance cap is the platform's (P0/KEV 30,
+  P1 90, P2 180, P3 365 days) or the organization's class cap when shorter;
+  the decision deadline is 14 days or the organization's shorter value. A
+  `security` or `dual` request carries a note of at least 20 characters.
+- **Stored on the request:** `tier`, `risk_class`, `required_approvals`,
+  `policy_eval` (the evaluation, as evidence) and, when decided,
+  `decision_facts` (the facts it was decided on).
+- **The organization's policy** is `settings.finding_approvals.policy`
+  (`GET/PUT /api/v1/organization/settings/finding-approvals/`, same gate as
+  the rest of the section: `settings:write`, an owner or administrator, recent
+  re-authentication; audited with before and after; approvers told). It only
+  adds: tier cells per `<kind>.<class>` (never below the floor), security
+  pool and strict mode, exclude assignee, step-up for every tier, class caps,
+  decision deadline, EPSS threshold, material-change behavior. A change that
+  only tightens applies at once; a change that relaxes anything is
+  `pending_policy` until `pending_policy_at` (24 hours) while the stricter of
+  both applies field by field. The response carries the platform `floors` and
+  `defaults`.
+- `GET /api/v1/findings/{id}/approvals/policy?status=accepted|false_positive`
+  answers the evaluation for the caller as requester (tier, reasons,
+  approvers, step-up, cap, deadline, `satisfiable`).
+
+### Material change of standing decisions
+
+A decision is valid for the facts it was made on. The approval row keeps
+`decision_facts` (when decided) and `facts_baseline` (the facts last checked).
+The `approval-material-change` controller (every 10 minutes, 200 per run,
+`internal/infra/controller/approval_material_change.go`,
+`internal/infra/postgres/finding_material_change.go`) takes the latest
+approved request of each accepted finding, and of each false positive one
+person decided (`single_person` or the sole member's), whose finding moved up
+since the baseline: severity or priority up, KEV added, EPSS higher, an
+exploit newly validated, the asset newly internet exposed or a crown jewel.
+For each, under the organization's policy (`approvalpolicy.MaterialChange`):
+
+| Decision | Floor | `on_material_change` option |
+|---|---|---|
+| accepted risk | **ends** when the tier the finding needs now is above the decided tier, or its cap now ends before the decided end; otherwise a review flag `material_change_accepted` (the decision stands) | `end_on_any_change`: any signal ends it |
+| one-person false positive | review flag `material_change_single_person` | `revoke`: withdrawn, the finding is `confirmed` again |
+
+- **Ending** is the expiry path (above) with reason `material_change` and the
+  signals: `confirmed`, a new SLA clock, the request `expired`, the timeline
+  entry `acceptance_expired`, in one transaction.
+- **Withdrawing** writes the status with a platform transition (timeline
+  `status_changed`, reason `material_change`), a new SLA clock, the request
+  `expired`.
+- Every action is audited (`finding_approval.material_change_ended`,
+  `..._flagged`, `..._revoked`) and the requester and the approvers of the
+  decision get an in-app notification (title and the change, no
+  justification).
+- An EPSS rise that stays below the threshold only moves the baseline. A
+  decision made before the baseline existed gets today's facts on the first
+  run and no action.
+- The triggers of the single-person flag (severity, KEV, new evidence, above)
+  stay; the controller adds the other signals and the `revoke` option.
+
 ### False-positive approval level
 
 `settings.finding_approvals.fp_approval` decides who decides a false positive
@@ -507,8 +623,9 @@ instead).
 | `off` | none |
 
 An accepted risk always needs a second person. When the level lets one person
-decide, a requester holding `findings:approve` (with the finding in their
-data scope) gets the false positive applied at once: the request row is
+decide (and the approval policy gives the request the `single` tier: the
+requester holds `findings:approve`, has the finding in their data scope and
+does not own its asset), the false positive is applied at once: the request row is
 written approved with `single_person`, the status, closure reason and timeline
 entry in one transaction (`FindingApprovalRepository.CreateApplied`), audited
 `finding_approval.single_person_decided`. A member without `findings:approve`

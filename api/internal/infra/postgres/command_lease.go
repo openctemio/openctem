@@ -121,8 +121,8 @@ func (r *CommandRepository) CancelIfOpen(ctx context.Context, cmd *command.Comma
 	return n > 0, nil
 }
 
-// RequeueExpiredLeases puts every tenant command whose lease ran out back
-// to pending: unpinned, its zone kept, one more dispatch attempt (so
+// RequeueExpiredLeases puts every command whose lease ran out back to
+// pending, shared jobs included (their holder is sensor_id too): unpinned, its zone kept, one more dispatch attempt (so
 // fail_exhausted_commands ends a command that keeps killing its sensors).
 // The holder can no longer change it: its start, complete or fail are
 // guarded by the sensor, the state and the lease epoch (FencedUpdate).
@@ -138,7 +138,6 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 			SELECT id, sensor_id AS old_sensor_id, lease_epoch AS old_epoch
 			FROM commands
 			WHERE status IN ('acknowledged', 'running')
-			  AND is_platform_job = FALSE
 			  AND lease_expires_at IS NOT NULL
 			  AND lease_expires_at < NOW()
 			FOR UPDATE SKIP LOCKED

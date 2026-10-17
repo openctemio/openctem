@@ -34,6 +34,8 @@ type AuthProvidersHandler struct {
 	// signupPolicy, when wired, replaces tenantCreationMode (the console
 	// sign-up setting).
 	signupPolicy signupdom.PolicySource
+	// deploymentRegion is DEPLOYMENT_REGION.
+	deploymentRegion string
 	// captchaSiteKey is the public Turnstile site key.
 	captchaSiteKey string
 	// registrationEnabled is reported when no sign-up policy is wired (the
@@ -85,6 +87,12 @@ func (h *AuthProvidersHandler) WithTenantCreationMode(mode string) *AuthProvider
 // WithSignupPolicy reports tenant_creation_mode from the console sign-up policy.
 func (h *AuthProvidersHandler) WithSignupPolicy(p signupdom.PolicySource) *AuthProvidersHandler {
 	h.signupPolicy = p
+	return h
+}
+
+// WithDeploymentRegion sets the region reported to the UI.
+func (h *AuthProvidersHandler) WithDeploymentRegion(region string) *AuthProvidersHandler {
+	h.deploymentRegion = region
 	return h
 }
 
@@ -149,9 +157,15 @@ type AuthProvidersResponse struct {
 	// the self_service sign-up mode. When false the UI hides sign-up; an
 	// invited person can still register with their invitation.
 	RegistrationEnabled bool `json:"registration_enabled"`
+	// SignupAccounts is who may create an account by public sign-up:
+	// closed, domain (an organization's verified, joinable domain) or open.
+	SignupAccounts string `json:"signup_accounts"`
 	// RequestAccess reports whether people who cannot sign up may request an
 	// organization (POST /auth/access-requests).
 	RequestAccess bool `json:"request_access"`
+	// DeploymentRegion is DEPLOYMENT_REGION: the data region a new
+	// organization gets (shown, fixed, when creating one). Empty: not named.
+	DeploymentRegion string `json:"deployment_region,omitempty"`
 	// CaptchaSiteKey is the Turnstile site key the request-access form
 	// renders; empty when no CAPTCHA is configured.
 	CaptchaSiteKey string `json:"captcha_site_key,omitempty"`
@@ -182,12 +196,20 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Reque
 	if h.signupPolicy != nil {
 		p := h.signupPolicy.Current(r.Context())
 		resp.TenantCreationMode = string(p.Mode)
-		// Anyone may create an account exactly when anyone may create an
-		// organization (one policy); an invited person registers either way.
-		resp.RegistrationEnabled = p.AllowsSelfService()
+		// The web offers "Sign up" when some public sign-up is open; an
+		// invited person registers either way.
+		resp.RegistrationEnabled = p.AllowsPublicSignup()
+		resp.SignupAccounts = string(p.AccountSignup())
 		resp.RequestAccess = p.RequestAccess && !p.AllowsSelfService()
 	}
+	if resp.SignupAccounts == "" {
+		resp.SignupAccounts = string(signupdom.AccountsClosed)
+		if resp.RegistrationEnabled {
+			resp.SignupAccounts = string(signupdom.AccountsOpen)
+		}
+	}
 	resp.CaptchaSiteKey = h.captchaSiteKey
+	resp.DeploymentRegion = h.deploymentRegion
 	// Report what the server enforces: anything but an explicit self_service
 	// is admin-only.
 	if resp.TenantCreationMode != string(signupdom.ModeSelfService) {

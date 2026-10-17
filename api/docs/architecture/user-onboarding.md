@@ -56,33 +56,65 @@ Start-up refuses to run when:
 
 A deployment with `domain` or `open` logs a WARN line at every start.
 
+### Email verification of self-registered accounts
+
+Under `domain` and `open` every account created by self-registration (no
+pending invitation for that exact address) verifies its address before it can
+sign in. The verification rule is decided before the account lookup, the same
+way for a new and an existing address, so it does not enumerate.
+
+- An organization's `security.email_verification_mode` governs only the
+  accounts **invited** into that organization (the invitation proves the
+  mailbox, so an invited registration is verified at once). It never decides
+  public sign-up: there is no "the only organization is the default" rule, and
+  an invitation token for another address does not make its organization's
+  setting apply.
+- Missing SMTP never skips verification there. Start-up refuses `domain`/`open`
+  without the platform e-mail, and sign-up closes at run time without it.
+- Under `disabled` only invited and administrator-created accounts exist; the
+  organization setting, then the platform e-mail (auto: no e-mail, no
+  verification) and `AUTH_REQUIRE_EMAIL_VERIFICATION` apply as before.
+
 ## Sign-up policy (Console > System > Sign-up)
 
-Who may create an organization on this deployment is **one platform setting**,
-`signup_policy` in `platform_settings` (migration 001313), edited in the admin
-console:
+Who may create an account and who may create an organization on this
+deployment is **one platform setting** with two decisions, `signup_policy` in
+`platform_settings` (migration 001313), edited in the admin console:
 
-| Mode | Meaning |
-|------|---------|
-| `admin_only` (default) | Only a platform administrator creates organizations (console, `bootstrap-admin -org-*`). People sign in only to organizations that exist. |
-| `self_service` | Anyone signed in may create their own organization (create-first-team, `POST /tenants`). |
+| `accounts` | Who may create an account by public sign-up |
+|------------|---------------------------------------------|
+| `closed` (default) | Nobody. Accounts come from an administrator, an invitation or an organization's SSO/SCIM. |
+| `domain` | Only an address on a domain an organization verified and opened to joining; the account joins that organization and never creates one. |
+| `open` | Anyone (not a disposable address). |
+
+| `mode` | Who may create an organization |
+|--------|--------------------------------|
+| `admin_only` (default) | Only a platform administrator (console, `bootstrap-admin -org-*`). |
+| `self_service` | Anyone signed in (create-first-team, `POST /tenants`). Needs `accounts: open`. |
+
+`accounts: open` with `mode: admin_only` lets the hosted service keep sign-up
+open while it pauses organization creation (an abuse wave). A policy stored
+before `accounts` existed reads as `open` with `self_service` and `closed`
+otherwise.
 
 Plus `request_access`: whether people who cannot sign up may ask for an
 organization (the request queue follows in its own change).
 
 - **Who reads it.** create-first-team, `POST /tenants` and
   `GET /auth/providers` (`tenant_creation_mode`, which the web uses to offer
-  "create organization") read it per request (`signup.Service.Current`,
+  "create organization"; `registration_enabled` and `signup_accounts`, which
+  decide "Sign up") read it per request (`signup.Service.Current`,
   cached 15 s per replica).
 - **Fail-closed.** Nothing stored or a read error means `admin_only`.
 - **Ceiling.** The value in force is clamped to `SIGNUP_MODE` (see
   [Sign-up ceiling](#sign-up-ceiling)). `GET` reports the stored
-  `mode`, the `deployment_mode`, `self_service_locked` and the
-  `effective_mode`; the console shows the self-service choice locked with the
-  reason.
+  `mode` and `accounts`, the `deployment_mode`, `max_accounts`,
+  `self_service_locked`, and the `effective_mode` and `effective_accounts`;
+  the console shows the choices above the ceiling locked with the reason.
 - **Seeding.** `SIGNUP_MODE` seeds the first value at start-up when no row
-  exists (`source: environment`): `open` seeds `self_service`, anything else
-  `admin_only`. After that the stored value wins (still clamped); the console
+  exists (`source: environment`), the widest the ceiling allows: `open` seeds
+  `accounts: open` + `self_service`, `domain` seeds `accounts: domain` +
+  `admin_only`, `disabled` seeds `closed` + `admin_only`. After that the stored value wins (still clamped); the console
   shows where the value came from.
 - **Changing it.** `PUT /api/v1/admin/settings/signup` with the version that
   was read (409 when another administrator saved since) needs a **super admin**
@@ -102,10 +134,12 @@ Every path that would write an account or an organization asks one function,
 
 | Creating | Admitted when | Path |
 |----------|---------------|------|
-| an organization | the policy is `self_service` | create-first-team, `POST /tenants` |
+| an organization | the policy in force is `self_service` (so `accounts: open`) | create-first-team, `POST /tenants` |
+| an account | **refused first** (`sso_required`, nothing written) when the address is on a domain whose organization requires its SSO, except through that SSO itself | register, first social sign-in |
 | an account | an organization's SSO admits the identity (JIT: auto-provision, DNS-verified SSO domain, allowed domains), in either mode | OIDC/SAML callbacks |
 | an account | a pending invitation is addressed to the email, in either mode | register with the invitation token; a social sign-in whose verified email has a pending invitation |
-| an account | the policy is `self_service` and the email is not on a disposable-address service (`pkg/emaildomain`) | register, first social sign-in |
+| an account | `accounts: open` and the email is not on a disposable-address service (`pkg/emaildomain`) | register, first social sign-in |
+| an account (`domain_account`) | `accounts: domain`, the verified email is on a joinable domain of an organization, not disposable; the account joins that organization by its join policy and never creates one | register, first social sign-in |
 
 Anything else is refused **before anything is written**: no `users`,
 `sessions`, `refresh_tokens` or membership row. Register and the social
@@ -116,6 +150,82 @@ exists signs in as before: a mode change never locks anyone out.
 
 `AUTH_ALLOW_REGISTRATION` and `TENANT_CREATION_MODE` are retired: start-up
 refuses to run while either is set and names `SIGNUP_MODE` instead.
+
+### Domain sign-up policy (Settings > Domains, owner only)
+
+An organization that holds a domain **verified for SSO** (exclusive
+platform-wide, DNS TXT, set up by the platform administrator) decides what
+that claim does to accounts on the domain. Every effect is **off by default**
+and applies only while the claim is verified and unambiguous: a lapsed claim
+(DNS proof gone) or a claim in conflict stops every effect at once.
+
+| Setting | Effect |
+|---------|--------|
+| `join_policy` `off` / `approval` / `auto` | Whether a verified holder of an address on the domain may ask to join (`approval`) or joins at once (`auto`); with `accounts: domain` this is what admits a public sign-up (`domain_account`) |
+| `join_role` `viewer` / `member` | Role of people who join by domain; never an administrator |
+| `discoverable` | Show the organization to verified holders of the domain during onboarding |
+| `sso_required` | Refuse password and social sign-up for addresses on the domain (403 `SSO_REQUIRED`, nothing written); they come in through the organization's SSO. Needs a working SSO connection |
+| `block_new_workspaces` | Accounts on the domain cannot create organizations (create-first-team, `POST /tenants`) |
+| `include_subdomains` | The effects also cover `*.domain` addresses; the exact claim of a subdomain wins |
+
+- `GET /api/v1/organization/settings/domains` (owner or admin) lists the
+  organization's domains with their policy and `effective`.
+- `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
+  (owner, step-up) changes it; audited as
+  `sso.verified_domain_signup_policy_changed` (high). A domain id of another
+  organization answers 404.
+- **Existing accounts.** The first time `sso_required` or
+  `block_new_workspaces` turns on, every active account on the domain outside
+  the organization gets its own e-mail naming only the domain (once,
+  `capture_notified_at`). Nothing is moved: the account's other organizations
+  and data stay its own and are never shown to the claimant.
+- An unreadable domain policy refuses the sign-up or the organization
+  creation (fail-closed).
+
+### Onboarding fork and join requests
+
+An account with no organization (after sign-up and email verification) is
+offered, in this order:
+
+1. its **pending invitations** (only to the verified address they were sent
+   to);
+2. the organization that claims its **verified email domain**, when that
+   organization set `discoverable` and a join policy (`auto`: join; `approval`:
+   ask to join). An organization that is not discoverable is never revealed,
+   and nothing is offered by domain before the address is verified;
+3. **create an organization**, when the policy in force allows it and the
+   domain does not block it.
+
+Routes (refresh-token authenticated like create-first-team, cross-site
+refused, rate limited):
+
+- `POST /api/v1/auth/onboarding/options` returns the offers. Each carries an
+  opaque `ref`: kind, organization, target and expiry under an HMAC bound to
+  the account (30 minutes; the key is derived from the session secret under
+  its own label). No organization id or slug reaches the client.
+- `POST /api/v1/auth/onboarding/accept` with `{ref}` re-checks everything now
+  (verified address, the same claim still governing the address, still
+  discoverable and joinable, the invitation still pending) and then accepts
+  the invitation (the verified address stands in for the emailed token), joins
+  at once with the domain's role (`auto`, audited `member.joined_by_domain`,
+  admins notified), or creates a **join request** (`approval`). A stale or
+  foreign reference answers 409 `OFFER_UNAVAILABLE`.
+
+Join requests (`organization_join_requests`, migration 002830): one pending
+per person and organization, at most 5 per person per day, expire after 30
+days; decided and expired rows are purged 30 days later
+(`join-request-purge` controller). The organization's inbox:
+
+- `GET /api/v1/organization/join-requests` (owner or admin, `team:members:read`):
+  waiting requests with the requester's email, name and verification;
+- `POST .../join-requests/{id}/approve` `{role}` (owner or admin,
+  `team:members:write`): role `viewer` or `member` only (nobody becomes an
+  administrator by request), creates the membership with no data scope;
+- `POST .../join-requests/{id}/reject`: the requester is not told who decided.
+
+Every query is scoped to the organization (or to the requester); another
+organization's request id answers 404. Audited: `join_request.created`,
+`join_request.approved`, `join_request.rejected`.
 
 ### Request access
 
@@ -267,7 +377,7 @@ has an account or an organization exists:
 
 | Endpoint | Unknown and known answer the same way |
 |---|---|
-| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal. With Turnstile keys, after 3 failed sign-ins from one client address in 15 minutes the next attempt from it answers 403 `CAPTCHA_REQUIRED` until a passing `captcha_token` is sent (counted per address, never per account; Redis across replicas) |
+| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal. With Turnstile keys, after 3 failed sign-ins from one client address in 15 minutes the next attempt from it answers 403 `CAPTCHA_REQUIRED` until a passing `captcha_token` is sent (counted per address, never per account, in Redis across replicas; the count only decays with its window, a success does not clear it, and an unreadable counter asks for the CAPTCHA) |
 | `POST /auth/register` | 201 with the same body for a new and an existing email: no account id, the verification rule a new account would get, one message; the password policy is checked first for both; the verification email is sent after the response |
 | `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response |
 | `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
@@ -285,6 +395,65 @@ An organization a person creates themselves starts on the **Free** plan, and
 one person owns at most the Free plan's `free_teams_per_user` (1 by default):
 another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
 `docs/architecture/plans-and-limits.md`.
+
+## Leaving and deleting (RFC-104)
+
+### Leave an organization
+
+`POST /api/v1/organization/leave` (any member, step-up, the organization of
+the credential) runs the same offboarding an administrator runs: API keys
+revoked, groups, grants, engagements and roles stripped, the membership kept
+as a tombstone. The only active owner is refused (transfer ownership or
+delete the organization first); someone who still owns assignable work is
+refused with "ask an administrator to offboard you" (nothing is reassigned
+without an administrator). Audited `member.left`; administrators notified.
+
+### Delete my account
+
+`DELETE /api/v1/me/account` (step-up) schedules the deletion
+(`account_deletions`, migration 002812):
+
+- refused (409 `SOLE_OWNER`, naming the organizations to the caller only)
+  while the caller is the only active owner of an organization, and for a
+  platform administrator account;
+- every session ends and the account's API keys are revoked at once (keys do
+  not come back on cancel);
+- **signing in again within 14 days cancels it** (password, social or SSO
+  sign-in; `account.deletion_canceled`);
+- after 14 days the `account-erase` controller offboards every membership
+  (best effort: an owner among several, or someone who still owns work, keeps
+  a disabled membership and the administrators are asked to reassign), then
+  anonymises the account in one transaction: name "Deleted user #<hash>",
+  an undeliverable unique email, password, second factor, federated
+  identities, sessions, refresh tokens and API keys removed or revoked. The
+  users row and every foreign key stay, so history remains readable.
+
+The erasure claims the request first (`claimed_at`): a sign-in after the
+claim no longer cancels it, and one before leaves nothing to claim. A failed
+offboarding stops that account's erasure and the next run retries; a failed
+session revoke at request time fails the request and undoes it. An owner
+among several is offboarded too (the erasure runs only while another active
+owner remains).
+
+**What stays.** Audit rows keep the actor's name and email as they were
+recorded (the audit trail is evidence; it is not rewritten). The users row
+keeps its id so foreign keys and history stay valid.
+
+`GET /api/v1/me/account/deletion` reports whether a deletion is pending.
+Audited: `account.deletion_requested`, `account.deletion_canceled`,
+`account.erased`.
+
+## Data region (RFC-104)
+
+`DEPLOYMENT_REGION` names the data region of the deployment (1-32 lowercase
+letters, digits or hyphens; validated at start). Every organization created
+here gets it in `tenants.region` (migration 002571), at insert, and keeps it
+for its life: no update writes the column, and a later change of
+`DEPLOYMENT_REGION` never moves an existing organization. Organizations from
+before have no region. The region is shown on the create form
+(`deployment_region` on `GET /auth/providers`) and in the organization's
+settings (`region` on the organization). With a second region, each region
+runs its own deployment; the selector appears only then.
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 
