@@ -375,7 +375,7 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
 	if _, err := io.Copy(w, reader); err != nil {
-		h.logger.Warn("attachment stream interrupted", "error", err, "id", id)
+		h.logger.Warn("attachment stream interrupted", "error", logger.SanitizeError(err), "id", logger.SanitizeValue(id))
 	}
 }
 

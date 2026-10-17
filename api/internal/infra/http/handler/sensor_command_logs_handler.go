@@ -106,7 +106,7 @@ func (h *SensorControlV2Handler) CommandLogs(w http.ResponseWriter, r *http.Requ
 	case res.Collided:
 		commandLogBatchesDropped.WithLabelValues("collision").Inc()
 		h.logger.Warn("command log batch dropped: its seq is already stored with other lines in this attempt",
-			"sensor_id", s.ID.String(), "command_id", sanitizeLogField(commandID.String()), "lease_epoch", res.Attempt, "seq", req.Seq)
+			"sensor_id", sanitizeLogField(s.ID.String()), "command_id", sanitizeLogField(commandID.String()), "lease_epoch", res.Attempt, "seq", req.Seq)
 	case res.Truncated && res.Dropped > 0:
 		commandLogBatchesDropped.WithLabelValues("caps").Inc()
 	}
