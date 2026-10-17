@@ -124,7 +124,7 @@ The sensors API returns them under `protocol.binding` /
   clientAuth, `SENSOR_MTLS_CERT_TTL` (7 days). Budget: 5, then one per 10
   minutes per sensor. Recorded on the sensor timeline (`certificate_issued`).
   The answer carries the CA bundle the sensor pins for the gRPC host.
-- **Listener** (`SENSOR_MTLS_LISTEN_ADDR`, `:8443`, only with
+- **Listener** (`SENSOR_MTLS_LISTEN_ADDR`, `:9443`, only with
   `SENSOR_PUBLIC_HOST`): TLS 1.3, client certificate required and verified
   against the sensor CA only, ALPN `h2` only (anything else fails the
   handshake), server certificate minted from the CA for the public host. At
@@ -150,7 +150,7 @@ docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up
   `deploy/gateway/Dockerfile` with caddy-l4 pinned) has the layer4 module; the
   override sets `OPENCTEM_SENSOR_GATEWAY=alpn`
   (`sensors/alpn.wrappers`): a TLS connection whose ClientHello offers the ALPN
-  id `openctem-sensor/3` is not terminated; its bytes go to `api:8443` behind a
+  id `openctem-sensor/3` is not terminated; its bytes go to `api:9443` behind a
   PROXY protocol v2 header. Every other connection (browsers on h2 or
   HTTP/1.1, WebSockets, API clients, sensors on the HTTPS binding or v2) is
   served exactly as before: none of them offers that id.
@@ -168,7 +168,7 @@ docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up
 - The gateway entrypoint refuses `alpn` or `passthrough` in TLS mode `http`
   or on an image without the layer4 module, and `passthrough` without
   `SENSOR_PUBLIC_HOSTNAME`, with a port in it or with the platform host name.
-- A separate port, only when explicitly wanted: publish the API's 8443
+- A separate port, only when explicitly wanted: publish the API's 9443
   directly (or through any TCP load balancer) and set
   `SENSOR_PUBLIC_HOST=<host>:<port>`.
 - With the stock gateway image nothing changes: the probe meets the gateway's
@@ -200,10 +200,10 @@ SENSOR_PUBLIC_API_URL=https://api.example.com   # what sensors and the probe dia
   served by the mTLS listener's server: client certificate from the sensor
   CA required and resolved through the key table at the handshake and again
   on every call, `h2` only. A connection that offers the id without a valid
-  certificate is refused, exactly as on `:8443`.
+  certificate is refused, exactly as on `:9443`.
 - The endpoint is derived from `SENSOR_PUBLIC_API_URL` (else `APP_URL`) and
   advertised as `grpc_alpn_endpoint` once the self-probe passes; nothing else
-  to set. `:8443` still listens and need not be published.
+  to set. `:9443` still listens and need not be published.
 - The certificate files are checked every minute and re-read when they
   change; a renewal that does not load keeps the previous certificate.
 - Everything that called the API over plain HTTP (the web server's API
@@ -219,7 +219,7 @@ SENSOR_PUBLIC_API_URL=https://api.example.com   # what sensors and the probe dia
 
 The proxy reads the ClientHello without terminating it and sends a
 connection that offers `openctem-sensor/3` to the API's mTLS listener
-(`:8443`), everything else to the service that terminates TLS for the web UI
+(`:9443`), everything else to the service that terminates TLS for the web UI
 and the API. Both examples below were run against the mTLS listener
 (sensor with a certificate served, without one refused, browsers on h2 served
 by the HTTPS backend, the probe advertising `grpc_alpn_endpoint`); a sensor
@@ -232,7 +232,7 @@ offers):
 ```nginx
 stream {
     map $ssl_preread_alpn_protocols $openctem_backend {
-        ~(^|,)openctem-sensor/3(,|$)  api.internal:8443;
+        ~(^|,)openctem-sensor/3(,|$)  api.internal:9443;
         default                        web-tls.internal:443;
     }
     server {
@@ -261,7 +261,7 @@ frontend openctem
     default_backend openctem_https
 backend openctem_sensor
     mode tcp
-    server api api.internal:8443 send-proxy-v2   # SENSOR_MTLS_TRUSTED_PROXIES = this proxy
+    server api api.internal:9443 send-proxy-v2   # SENSOR_MTLS_TRUSTED_PROXIES = this proxy
 backend openctem_https
     mode tcp
     server web web-tls.internal:443
@@ -274,7 +274,7 @@ controller started with `--enable-ssl-passthrough` and the
 `nginx.ingress.kubernetes.io/ssl-passthrough: "true"` annotation, or the
 `req.ssl_sni` rule in HAProxy, tested) cannot route by ALPN and cannot
 route an IP address. Give sensors their own name that the router passes to
-the API's `:8443`, and set `SENSOR_PUBLIC_HOST=sensors.example.com:443`. The
+the API's `:9443`, and set `SENSOR_PUBLIC_HOST=sensors.example.com:443`. The
 probe then passes with and without the id, so hello names the endpoint as
 `grpc_endpoint` and `grpc_alpn_endpoint`. The passthrough backend of
 ingress-nginx is the Service's cluster IP, so `SENSOR_MTLS_TRUSTED_PROXIES`

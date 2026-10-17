@@ -21,14 +21,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
 import { safeInternalHref } from '@/lib/safe-href'
-import {
-  ADMIN_CONSOLE_LOGIN,
-  ADMIN_CONSOLE_ROOT,
-  API_PREFIX,
-  LOGIN_PATH,
-  NEXT_PARAM,
-  PUBLIC_ROUTES,
-} from './config'
+import { API_PREFIX, LOGIN_PATH, NEXT_PARAM, PUBLIC_ROUTES } from './config'
 
 /** Reads one cookie's value. */
 export type CookieReader = (name: string) => string | undefined
@@ -51,13 +44,9 @@ export function isApiRoute(pathname: string): boolean {
   return underPrefix(pathname, API_PREFIX)
 }
 
-export function isAdminConsoleRoute(pathname: string): boolean {
-  return underPrefix(pathname, ADMIN_CONSOLE_ROOT) && !isPublicRoute(pathname)
-}
-
 /** A page that needs the tenant session. Default: every page not listed public. */
 export function requiresAuth(pathname: string): boolean {
-  return !isApiRoute(pathname) && !isPublicRoute(pathname) && !isAdminConsoleRoute(pathname)
+  return !isApiRoute(pathname) && !isPublicRoute(pathname)
 }
 
 // ============================================
@@ -69,9 +58,6 @@ const MAX_TOKEN_LENGTH = 4096
 
 /** header.payload.signature, base64url. Access and refresh tokens are JWTs. */
 const JWT_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/
-
-/** The admin console CSRF nonce: 32 random bytes, base64 (URL alphabet). */
-const ADMIN_NONCE_SHAPE = /^[A-Za-z0-9_-]{32,}={0,2}$/
 
 export function looksLikeJwt(value: string | undefined): boolean {
   return !!value && value.length <= MAX_TOKEN_LENGTH && JWT_SHAPE.test(value)
@@ -96,20 +82,6 @@ export function hasSessionCookie(read: CookieReader): boolean {
   if (looksLikeJwt(read(names.access)) || looksLikeJwt(read(names.refresh))) return true
   // Local development sign-in (never in a production build).
   return process.env.NODE_ENV === 'development' && !!read('dev_auth_token')
-}
-
-/**
- * The admin console cookie the page request can see. The console session
- * itself (`admin_session`) is scoped to /api/v1/admin, so a page request never
- * carries it; `admin_csrf` is issued and cleared with it, on path `/`, with the
- * same lifetime. It is a hint for the redirect only; the console API checks
- * the real session.
- */
-export const ADMIN_CONSOLE_COOKIE = 'admin_csrf'
-
-export function hasAdminConsoleCookie(read: CookieReader): boolean {
-  const value = read(ADMIN_CONSOLE_COOKIE)
-  return !!value && value.length <= MAX_TOKEN_LENGTH && ADMIN_NONCE_SHAPE.test(value)
 }
 
 /** Request helper kept for route handlers (GET /api/version). */
@@ -162,17 +134,6 @@ function withNext(page: string, next: string | undefined): string {
  */
 export function decideAuth({ pathname, search, cookie }: AuthRequest): AuthDecision {
   if (isApiRoute(pathname) || isPublicRoute(pathname)) return { type: 'allow' }
-
-  if (isAdminConsoleRoute(pathname)) {
-    if (hasAdminConsoleCookie(cookie)) return { type: 'allow' }
-    // The console's sign-in page; it sends a browser without a tenant session
-    // on to /login itself. Only console paths are carried over.
-    return {
-      type: 'redirect',
-      location: withNext(ADMIN_CONSOLE_LOGIN, returnPath(pathname, search)),
-      clearCookies: [],
-    }
-  }
 
   if (hasSessionCookie(cookie)) return { type: 'allow' }
 

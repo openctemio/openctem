@@ -128,6 +128,13 @@ interface DataTableProps<TData, TValue> {
   /** Rendered at the end of the toolbar, before the column toggle. */
   toolbarEnd?: React.ReactNode
   /**
+   * A full-width row directly under the toolbar, for the active context-filter
+   * chips. Kept out of the toolbar row so a chip never makes that row taller
+   * and never moves the controls on its end. Pass it only when there is
+   * something to show (no empty row is reserved).
+   */
+  toolbarBelow?: React.ReactNode
+  /**
    * Keep the selection checkbox and the first data column (the row's name) —
    * and the trailing `actions` column — in view while the table scrolls
    * sideways, so a row can be identified and acted on at any scroll position.
@@ -354,6 +361,7 @@ export function DataTable<TData, TValue>({
   filterToggle,
   toolbarStart,
   toolbarEnd,
+  toolbarBelow,
   stickyFirstColumn = true,
   resetSelectionKey,
   showSelectionCount = true,
@@ -692,6 +700,18 @@ export function DataTable<TData, TValue>({
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Active context filters: their own full-width row under the toolbar
+          (8px below it), so the toolbar row keeps one height and its end
+          controls never shift when a chip comes or goes. */}
+      {toolbarBelow ? (
+        <div
+          data-testid="data-table-toolbar-below"
+          className="-mt-2 flex min-w-0 flex-wrap items-center gap-2"
+        >
+          {toolbarBelow}
+        </div>
+      ) : null}
 
       {phoneCards && (
         <div className="divide-y rounded-md border">

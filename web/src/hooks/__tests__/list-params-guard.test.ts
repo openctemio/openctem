@@ -73,7 +73,6 @@ describe('list URL parameters', () => {
     'src/features/ci-runners/components/ci-pipelines-panel.tsx',
     'src/features/ci-runners/components/ci-coverage-view.tsx',
     'src/features/ci-runners/components/ci-runs-view.tsx',
-    'src/features/sensors/components/fleet-all-view.tsx',
     'src/features/attack-surface/components/easm-review-queue.tsx',
   ]
 

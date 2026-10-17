@@ -15,5 +15,7 @@
   "exposures.disposition.rejected": "Request rejected",
   "exposures.disposition.canceled": "Request canceled",
   "exposures.disposition.failed": "Could not update the request",
-  "exposures.disposition.badge": "Awaiting approval"
+  "exposures.disposition.badge": "Awaiting approval",
+  "exposures.disposition.selfHint": "Nobody else can approve it. As the owner you may approve it yourself with a reason and a code from your authenticator app.",
+  "exposures.disposition.selfApprove": "Approve my own request"
 }

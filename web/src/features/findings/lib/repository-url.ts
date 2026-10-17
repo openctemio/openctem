@@ -185,3 +185,53 @@ export function isValidRepositoryUrl(url?: string): boolean {
     return false
   }
 }
+
+/**
+ * The web URL of a commit, or null for an unusable repository URL or a
+ * malformed SHA (the result is rendered as an href).
+ */
+export function buildRepositoryCommitUrl(
+  repositoryUrl: string | undefined,
+  sha: string | undefined
+): string | null {
+  if (!repositoryUrl || !sha || !/^[0-9a-f]{7,64}$/i.test(sha)) return null
+  try {
+    const base = normalizeRepoWebUrl(repositoryUrl)
+    if (!isValidRepositoryUrl(base)) return null
+    switch (detectPlatform(base)) {
+      case 'gitlab':
+        return `${base}/-/commit/${sha}`
+      case 'bitbucket':
+        return `${base}/commits/${sha}`
+      case 'azure':
+        return `${base}/commit/${sha}`
+      default:
+        return `${base}/commit/${sha}`
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The web URL of a repository asset named "host/owner/repo" (the name CI
+ * gives a repository), or undefined when the name is not of that shape.
+ */
+export function repositoryUrlFromName(name: string | undefined): string | undefined {
+  if (!name) return undefined
+  const n = name.trim()
+  return /^[a-z0-9.-]+\.[a-z]{2,}(:\d{1,5})?(\/[\w.-]+){2,}$/i.test(n) ? `https://${n}` : undefined
+}
+
+/** An http(s) URL with a host, or undefined (never a script or data URL in an href). */
+export function safeHttpUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  try {
+    const u = new URL(raw)
+    return (u.protocol === 'https:' || u.protocol === 'http:') && u.hostname
+      ? u.toString()
+      : undefined
+  } catch {
+    return undefined
+  }
+}

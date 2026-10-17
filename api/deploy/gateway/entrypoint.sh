@@ -58,6 +58,22 @@ http)
 	;;
 esac
 
+# Which header a trusted front proxy carries the client address in. Only
+# headers a proxy sets for the client are accepted: a free-form name would let
+# a typo (or a header the client controls end to end) decide the address.
+# Empty means the default, as Caddy would otherwise read an empty list.
+client_ip_headers="${OPENCTEM_CLIENT_IP_HEADERS:-X-Forwarded-For}"
+for h in $client_ip_headers; do
+	case "$(printf '%s' "$h" | tr '[:upper:]' '[:lower:]')" in
+	x-forwarded-for | cf-connecting-ip | true-client-ip) ;;
+	*) die "OPENCTEM_CLIENT_IP_HEADERS: $h is not one of: X-Forwarded-For, Cf-Connecting-Ip, True-Client-Ip (space-separated, tried in order)" ;;
+	esac
+done
+export OPENCTEM_CLIENT_IP_HEADERS="$client_ip_headers"
+if [ "$client_ip_headers" != X-Forwarded-For ] && [ -z "${OPENCTEM_TRUSTED_PROXIES:-}" ]; then
+	echo "openctem-gateway: WARNING: OPENCTEM_CLIENT_IP_HEADERS=$client_ip_headers has no effect without OPENCTEM_TRUSTED_PROXIES (the proxy that sets it)" >&2
+fi
+
 # Sensor protocol v3 gRPC binding (RFC-059 §5): layer-4 routing on this
 # port to the API's mTLS listener, by the sensor ALPN id (alpn) or by the
 # ALPN id and a dedicated sensor host name (passthrough).
@@ -84,6 +100,56 @@ passthrough)
 	;;
 *) die "OPENCTEM_SENSOR_GATEWAY=${OPENCTEM_SENSOR_GATEWAY} is not one of: off, alpn, passthrough" ;;
 esac
+
+# Platform console site (RFC-022 revision 20): off, port (a second port of
+# the main host name) or host (its own host name). Private networks only by
+# default (OPENCTEM_ADMIN_ALLOWED_CIDRS, space-separated).
+admin_site="${OPENCTEM_ADMIN_SITE:-off}"
+scheme=https
+[ "$mode" != http ] || scheme=http
+case "$admin_site" in
+off) export OPENCTEM_ADMIN_SITE_FILE=off ;;
+port)
+	admin_port="${OPENCTEM_ADMIN_PORT:-8443}"
+	case "$admin_port" in
+	'' | *[!0-9]*) die "OPENCTEM_ADMIN_PORT=$admin_port is not a port number" ;;
+	esac
+	[ "$admin_port" -ge 1 ] && [ "$admin_port" -le 65535 ] || die "OPENCTEM_ADMIN_PORT=$admin_port is not a port number"
+	[ "$admin_port" != 443 ] && [ "$admin_port" != 80 ] || die "OPENCTEM_ADMIN_PORT must not be the main site's port"
+	# The console port is published on the same host as the main site
+	# (GATEWAY_HTTPS_PORT, passed by the compose file): the two must differ.
+	[ "$admin_port" != "${GATEWAY_HTTPS_PORT:-443}" ] || die "OPENCTEM_ADMIN_PORT=$admin_port is also GATEWAY_HTTPS_PORT, the main site's published port; pick another console port"
+	if [ "$mode" = http ]; then
+		export OPENCTEM_ADMIN_ADDRESS="http://:$admin_port"
+	else
+		export OPENCTEM_ADMIN_ADDRESS="https://${OPENCTEM_HOSTNAME}:$admin_port"
+	fi
+	export OPENCTEM_ADMIN_SITE_FILE=on
+	;;
+host)
+	admin_host="${OPENCTEM_ADMIN_HOST:-}"
+	[ -n "$admin_host" ] || die "OPENCTEM_ADMIN_SITE=host needs OPENCTEM_ADMIN_HOST (the console's own DNS name, e.g. admin.example.com)"
+	case "$admin_host" in
+	*:* | */* | *" "*) die "OPENCTEM_ADMIN_HOST=$admin_host must be a host name only (no scheme, port, path or space)" ;;
+	esac
+	[ "$admin_host" != "${OPENCTEM_HOSTNAME:-}" ] || die "OPENCTEM_ADMIN_HOST must differ from OPENCTEM_HOSTNAME; for one host name use OPENCTEM_ADMIN_SITE=port"
+	export OPENCTEM_ADMIN_ADDRESS="$scheme://$admin_host"
+	export OPENCTEM_ADMIN_SITE_FILE=on
+	;;
+*) die "OPENCTEM_ADMIN_SITE=$admin_site is not one of: off, port, host" ;;
+esac
+if [ "$admin_site" != off ]; then
+	cidrs="${OPENCTEM_ADMIN_ALLOWED_CIDRS:-127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7}"
+	for c in $cidrs; do
+		case "$c" in
+		*[!0-9a-fA-F:./]* | "") die "OPENCTEM_ADMIN_ALLOWED_CIDRS: $c is not an IP address or CIDR (space-separated)" ;;
+		esac
+	done
+	export OPENCTEM_ADMIN_ALLOWED_CIDRS="$cidrs"
+	case " $cidrs " in
+	*" 0.0.0.0/0 "*) echo "openctem-gateway: WARNING: the platform console is reachable from every network (OPENCTEM_ADMIN_ALLOWED_CIDRS)" >&2 ;;
+	esac
+fi
 
 # A non-root gateway needs its data and config directories (certificates, the
 # internal CA, the ACME account, the autosaved config) to be its own. Volumes

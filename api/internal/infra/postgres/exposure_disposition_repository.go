@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -133,7 +134,8 @@ func (r *ExposureDispositionRepository) CountEligibleApprovers(ctx context.Conte
 		WHERE tm.tenant_id = $1
 		  AND tm.status = 'active'
 		  AND (
-		      tm.role IN ('owner', 'admin')
+		      (SELECT ver.role FROM v_user_effective_role ver
+		        WHERE ver.tenant_id = tm.tenant_id AND ver.user_id = tm.user_id) IN ('owner', 'admin')
 		      OR (
 		          SELECT COUNT(DISTINCT rp.permission_id)
 		          FROM v_user_role_grants ur
@@ -153,13 +155,22 @@ func (r *ExposureDispositionRepository) IsTenantOwner(ctx context.Context, tenan
 	var ok bool
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM tenant_members
-			WHERE tenant_id = $1 AND user_id = $2 AND role = 'owner' AND status = 'active'
+			SELECT 1 FROM tenant_members m
+			JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+			WHERE m.tenant_id = $1 AND m.user_id = $2 AND ver.role = 'owner' AND m.status = 'active'
 		)`, tenantID.String(), userID.String()).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check tenant owner: %w", err)
 	}
 	return ok, nil
+}
+
+// RecentMemberRemoval answers the latest time after since at which the
+// tenant lost a possible second approver: a member suspended, offboarded,
+// removed, expired, demoted, or a role change that can strip the approve
+// permission (recentApproverChange; nil: none).
+func (r *ExposureDispositionRepository) RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error) {
+	return recentApproverChange(ctx, r.db, tenantID, since)
 }
 
 func scanDisposition(s interface{ Scan(dest ...any) error }) (*exposure.DispositionRequest, error) {

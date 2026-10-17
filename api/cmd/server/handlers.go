@@ -5,6 +5,7 @@ import (
 
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -13,11 +14,11 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
+	"github.com/openctemio/openctem/api/internal/app/supportaccess"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -50,13 +51,17 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -70,21 +75,19 @@ import (
 // one wired. Kept as a helper so handlers.go stays declarative.
 func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Services) *handler.CompensatingControlHandler {
 	h := handler.NewCompensatingControlHandler(db, log)
+	if svc != nil {
+		h.WithDataScope(svc.DataScope)
+	}
 	if svc != nil && svc.ControlChangePub != nil {
 		h.SetChangePublisher(svc.ControlChangePub)
 	}
 	return h
 }
 
-// newPriorityRuleHandlerWithWiring constructs the priority-rule handler and
-// attaches the reclassify publisher when the services graph has one, so a rule
-// create/update/delete drives a whole-tenant reclassify sweep. Mirrors
-// newCompensatingControlHandlerWithWiring.
+// newPriorityRuleHandlerWithWiring constructs the priority-rule handler. A
+// rule change is recorded and its findings queued by a database trigger.
 func newPriorityRuleHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Services) *handler.PriorityRuleHandler {
 	h := handler.NewPriorityRuleHandler(db, log)
-	if svc != nil && svc.ControlChangePub != nil {
-		h.SetChangePublisher(svc.ControlChangePub)
-	}
 	// Wire the classifier so POST /priority-rules/dry-run can evaluate a draft
 	// rule against live findings with the real engine (nil → endpoint 503s).
 	if svc != nil && svc.PriorityClassification != nil {
@@ -176,23 +179,39 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Platform admin console (RFC-022): the administrator signs in on the normal
 	// /login with their users-table account, then the console adds a TOTP step
 	// and its own session, accepted by the admin auth middleware alongside API keys.
+	// The console CSRF token is bound to its session under a key every
+	// replica derives from the session-signing secret.
+	middleware.SetAdminCSRFSecret(cfg.Auth.JWTSecret)
 	adminConsoleSvc := adminconsole.NewService(repos.Admin, repos.AdminConsole, repos.AdminAuditLog, svc.Encryptor,
 		adminAccountDirectory{auth: svc.Auth}, log)
 	// Administrators' platform identity provider (RFC-022 revision 4): every
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
-	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
+	adminConsoleSvc.SetFactorChangeNotifier(adminFactorMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
+	// Console security keys (RFC-078): the relying party is the console origin.
+	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
+		rp, err := adminconsole.NewConsoleWebAuthn(adminconsole.WebAuthnConfig{
+			PublicURL: cfg.AdminPublicURL, DisplayName: cfg.Brand.DisplayName() + " Admin",
+		})
+		if err != nil {
+			log.Error("console security keys are off: ADMIN_PUBLIC_URL is not a usable origin", "error", err)
+		} else {
+			adminConsoleSvc.EnableWebAuthn(rp, repos.AdminFactor, repos.PlatformSetting)
+		}
+	}
 	if svc.Signup != nil {
-		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
 
 	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
-	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, log)
+	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, deps.RedisClient, log)
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
 	assetHandler.SetIntegrationService(svc.Integration)
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
+	assetHandler.SetTechnologyReader(repos.AssetTechnology)
 	assetHandler.SetAuditService(svc.Audit)
 
 	// Command handler with scan run service wired
@@ -253,19 +272,43 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// constructed. The handler returns 503 from the dry-run
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
-	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
+	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SignupOpen())
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
 	if svc.Entitlement != nil {
-		tenantHandler.SetFreePlan(svc.Entitlement)
+		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
+	}
+	if svc.DomainVerify != nil {
+		tenantHandler.SetSignupDomainPolicy(svc.DomainVerify)
+		tenantHandler.SetDomainSignupPolicy(svc.DomainVerify, svc.Audit)
+		if svc.Onboarding != nil {
+			tenantHandler.SetJoinRequests(svc.Onboarding)
+		}
+		if svc.Email != nil {
+			domains, email, users := svc.DomainVerify, svc.Email, repos.User
+			tenantHandler.SetDomainCapture(func(ctx context.Context, vd *verifieddomain.VerifiedDomain) {
+				// Told once, in the background: the owner's save never waits
+				// on mail delivery.
+				go func() {
+					bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+					defer cancel()
+					if _, err := domains.NotifyCapture(bg, vd, users, email.SendDomainManagedEmail); err != nil {
+						log.Warn("domain capture notice", "error", err)
+					}
+				}()
+			})
+		}
 	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}
 	tenantHandler.SetRoleService(svc.Role)
 	tenantHandler.SetAssetService(svc.Asset)
+	if svc.PriorityClassification != nil && svc.SLA != nil && svc.Scoring != nil {
+		tenantHandler.SetScoringPreview(svc.PriorityClassification, svc.SLA, svc.Scoring)
+	}
 	tenantHandler.SetModuleService(svc.Module)
 	lastTenantHandler = tenantHandler
 
@@ -274,6 +317,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
 	vulnHandler.SetAuditService(svc.Audit)
+	if svc.Tenant != nil {
+		vulnHandler.SetFindingApprovalSettings(svc.Tenant)
+	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
 	if svc.BulkGuard != nil {
@@ -283,11 +329,27 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
 	}
 	vulnHandler.SetFindingCorrelations(repos.FindingCorrelation)
+	vulnHandler.SetProvenanceLister(repos.Finding)
+	vulnHandler.SetPackageFixLister(repos.Finding)
+	vulnHandler.SetIntelFeeds(repos.ThreatIntel.EPSS(), repos.ThreatIntel.KEV())
+	// The approvals inbox names each requester from this tenant's members.
+	vulnHandler.SetApprovalMemberNamer(postgres.NewScopeActorRepository(deps.DB))
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
 	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
+	jiraWebhookHandler.SetAuditService(svc.Audit)
+	var ticketMappingHandler *handler.TicketMappingHandler
+	if svc.TicketMapping != nil {
+		ticketMappingHandler = handler.NewTicketMappingHandler(svc.TicketMapping, svc.Audit, log)
+	}
+	// Inbound Jira deliveries: the integration in the URL and its own secret
+	// authenticate them; replays are ignored for 24 hours (all replicas).
+	jiraWebhookHandler.SetDeliveryVerifier(svc.Integration)
+	if deps.RedisClient != nil {
+		jiraWebhookHandler.SetDeliveryGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
@@ -385,6 +447,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	handlers := routes.Handlers{
 		ModuleGate:     moduleGate,
+		Brand:          handler.NewBrandHandler(cfg.Brand),
 		DataScope:      byIDGuardAsserter(svc),
 		MCP:            mcpHandler,
 		MCPAuth:        mcpAuth,
@@ -407,8 +470,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Core
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
-		User:   handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log),
-		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
+		User:   newUserHandler(svc, repos, v, log),
+		Audit:  handler.NewAuditHandler(svc.Audit, v, log).SetDataScope(svc.DataScope),
 
 		// Assets & Components
 		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
@@ -434,6 +497,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetSoftware:          handler.NewAssetSoftwareHandler(svc.VulnMatch, repos.Asset, log).SetDataScope(svc.DataScope),
+		AssetTechnology:        handler.NewAssetTechnologyHandler(repos.AssetTechnology, repos.Asset, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
@@ -456,14 +520,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			}
 			return h
 		}(),
-		FindingEvidenceItems:      handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
-		JiraWebhook:               jiraWebhookHandler,
-		JiraWebhookSecretResolver: svc.Integration,
-		GitHubWebhook:             githubWebhookHandler,
-		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:               handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
-		CTEMID:                    handler.NewCTEMIDHandler(svc.CTEMID, log),
-		CredentialImport:          handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
+		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
+		JiraWebhook:          jiraWebhookHandler,
+		TicketMapping:        ticketMappingHandler,
+		GitHubWebhook:        githubWebhookHandler,
+		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
+		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
+		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
+		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),
@@ -484,17 +548,18 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		DefectDojo: handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
-		Command:         commandHandler,
-		Sensor:          sensorHandler,
-		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
-		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
-		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		ScanWindow:      newScanWindowHandler(svc, log),
-		Ingest:          ingestHandler,
-		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
-		SensorPairing:   newSensorPairingHandler(svc, log),
-		IOC:             newIOCHandlerWithFindingCheck(deps, log),
-		Validation:      validationHandler,
+		Command:          commandHandler,
+		Sensor:           sensorHandler,
+		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
+		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
+		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		ScanWindow:       newScanWindowHandler(svc, log),
+		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
+		Ingest:           ingestHandler,
+		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
+		SensorPairing:    newSensorPairingHandler(svc, log),
+		IOC:              newIOCHandlerWithFindingCheck(deps, log),
+		Validation:       validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
@@ -514,9 +579,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
+		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
 		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
 			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
+		AdminVersionCheck: handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
+
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
@@ -558,6 +627,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Remediation Campaigns
 		RemediationCampaign: handler.NewRemediationCampaignHandler(svc.RemediationCampaign, log),
+		RemediationTask:     handler.NewRemediationTaskHandler(svc.RemediationTask, log),
+		RemediationSuggest:  handler.NewRemediationSuggestionHandler(svc.RemediationSuggest, log),
 
 		// Business Units
 		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),
@@ -616,11 +687,18 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			log),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
-		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
+		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
-		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
+		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
-		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
+		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
+			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
+			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
+				log.Error("console step-up", "purpose", purpose, "error", err)
+			}
+			return err
+		}),
 
 		// Admin Audit middleware (audit logging for admin operations)
 		AdminAuditMiddleware: middleware.NewAuditMiddleware(repos.AdminAuditLog, log),
@@ -643,12 +721,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
-		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log),
+		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log).WithDataScope(svc.DataScope),
 
 		// Platform scanning: the shared platform sensors as a service the
 		// tenant may use, never the sensors themselves.
 		PlatformScanning: handler.NewPlatformScanningHandler(
-			sensor.NewPlatformScanningService(repos.Sensor, app.PlatformSensorsAllowed), log),
+			sensor.NewPlatformScanningService(repos.Sensor, svc.SharedSensorsAllowed).
+				WithEgress(svc.SharedSensorsEgress), log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
@@ -671,6 +750,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	wireSharedSensorDefaults(svc, cfg, deps.RedisClient, log)
+	wireFindingApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	wireSelfApprovalTOTP(svc)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).
 	wireScanWindowTOTP(svc)
 	if svc.EASMSweep != nil {
@@ -725,6 +807,19 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSOChange = handler.NewSSOChangeHandler(svc.SSOChange, svc.Audit, log)
 	}
 
+	// Support access (RFC-063): owners grant, the named administrator reads
+	// through a live support session; both audit logs, owner emails.
+	if repos.SupportAccess != nil && repos.SupportRead != nil && svc.Audit != nil {
+		var mailer supportaccess.Mailer
+		if svc.Email != nil {
+			mailer = svc.Email
+		}
+		supportSvc := supportaccess.NewService(repos.SupportAccess, repos.SupportRead, repos.Admin, svc.Audit,
+			repos.AdminAuditLog, repos.Tenant, tenantNames{repo: repos.Tenant}, mailer, log)
+		handlers.SupportAccess = handler.NewSupportAccessHandler(supportSvc, log)
+		handlers.AdminSupport = handler.NewAdminSupportHandler(supportSvc, log)
+	}
+
 	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil
 	// only when a provider is configured, so /auth/oauth/* exists exactly when
 	// /auth/providers advertises a social button for it.
@@ -777,17 +872,28 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
 	}
 	if svc.Entitlement != nil {
-		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
-		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+		handlers.Limits = handler.NewLimitsHandler(svc.Entitlement, adminConsoleSvc, log)
+		handlers.Limits.SetAccountPortalURL(cfg.AccountPortalURL)
 	}
 	if svc.IdleWorkspaces != nil {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
 		handlers.IdleReadOnly = svc.IdleWorkspaces
-		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
+		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), baseURL: cfg.SMTP.BaseURL, log: log})
 	}
 	// The platform policy for scan approval (RFC-073).
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
+	}
+	// Instance scan zones (RFC-100 §6.1): console routes, the trigger's
+	// zone lookup and the zone in a shared job's signed statement.
+	handlers.AdminInstanceScanZone = wireInstanceScanZones(svc, repos, deps.DB, adminConsoleSvc, log)
+	// Console > System > Shared sensors (RFC-100 §12): the fleet, queue
+	// aggregates, job metadata, the audited job view and remote actions.
+	handlers.AdminSharedFleet = handler.NewAdminSharedFleetHandler(sensor.NewSharedFleetService(
+		postgres.NewSharedFleetRepository(deps.DB), repos.CommandLog, repos.AdminAuditLog, log), log)
+	// Shared sensor enrollment tokens (RFC-100): super admin, console step-up.
+	if svc.SensorPairing != nil {
+		handlers.AdminSharedSensor = handler.NewAdminSharedSensorHandler(svc.SensorPairing, adminConsoleSvc, log)
 	}
 	// Scan approval governance (RFC-073): settings, requests, the inbox and
 	// the scan list badge.
@@ -804,9 +910,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
 		}
 		if svc.PlatformEmail != nil {
-			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.App.Name, log)
+			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log)
 		}
 		handlers.SignupPolicy = svc.Signup
+	}
+	if handlers.AdminSystem == nil {
+		var ping func(ctx context.Context) error
+		if deps.RedisClient != nil {
+			ping = deps.RedisClient.Ping
+		}
+		sys := newSystemCollector(cfg, deps.DB.DB, ping, svc.VersionCheck)
+		handlers.AdminSystem = handler.NewAdminSystemHandler(sys.Collect)
 	}
 	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
 	if handlers.AdminOperations != nil {
@@ -959,6 +1073,9 @@ func InitLocalAuthHandler(
 		log.Info("local auth handler initialized")
 		if svc.Signup != nil {
 			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
+			if svc.Onboarding != nil {
+				handlers.LocalAuth.SetOnboarding(svc.Onboarding)
+			}
 		}
 		// The same CAPTCHA as the request-access form, on registration.
 		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
@@ -994,6 +1111,17 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if svc.Scope != nil {
 		svc.Scope.SetStepUpGate(gate)
 	}
+	if svc.Vulnerability != nil {
+		// Approvals whose policy tier needs a recent re-authentication.
+		svc.Vulnerability.SetStepUpGate(gate)
+	}
+	if svc.Suppression != nil {
+		svc.Suppression.SetStepUpGate(gate)
+	}
+	if svc.Group != nil {
+		// Edits of the approval policy's security pool group.
+		svc.Group.SetStepUpGate(gate)
+	}
 	if svc.Sensor != nil {
 		svc.Sensor.SetStepUpGate(gate)
 	}
@@ -1007,7 +1135,7 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
-// $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
+// $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-products) and can be
 // edited without rebuilding the frontend.
 func newSensorHandlerWithTemplates(
 	sensorSvc *sensor.SensorService,
@@ -1019,7 +1147,7 @@ func newSensorHandlerWithTemplates(
 
 	templatesDir := cfg.SensorConfig.TemplatesDir
 	if templatesDir == "" {
-		templatesDir = "configs/sensor-templates"
+		templatesDir = config.DefaultSensorConfigTemplatesDir
 	}
 	tmplSvc := sensor.NewSensorConfigTemplateService(templatesDir, log)
 	h.SetTemplateService(tmplSvc)
@@ -1029,8 +1157,8 @@ func newSensorHandlerWithTemplates(
 		publicAPIURL = cfg.App.URL
 	}
 	h.SetPublicAPIURL(publicAPIURL)
-	h.SetHealthPolicy(sensorHealthPolicy(cfg, log))
-	h.SetSensorImage(sensorInstallImage(cfg, log))
+	h.SetHealthPolicy(sensorHealthPolicy(cfg))
+	h.SetProducts(sensorInstallProducts(cfg, log))
 	h.SetCollectorImage(collectorInstallImage(cfg, log))
 	h.SetCACertificateFile(cfg.SensorConfig.CACertFile)
 
@@ -1040,26 +1168,30 @@ func newSensorHandlerWithTemplates(
 // imageRepositoryRegexp is an image repository safe to put in a shell snippet.
 var imageRepositoryRegexp = regexp.MustCompile(`^[a-z0-9][a-z0-9._/:-]{0,254}$`)
 
-// sensorInstallImage is the image the install snippets run: SENSOR_IMAGE with
-// the release-channel tag (never "latest"). An unusable SENSOR_IMAGE falls
-// back to the published image.
-func sensorInstallImage(cfg *config.Config, log *logger.Logger) string {
+// sensorInstallProducts is the sensor product catalog built into the API
+// (versions.yaml), each product's install snippets pinned to its latest
+// release (never "latest"). SENSOR_IMAGE replaces the scanning sensor's image
+// repository (a mirror); an unusable value falls back to the published image.
+func sensorInstallProducts(cfg *config.Config, log *logger.Logger) []handler.SensorInstallProduct {
+	products := handler.CatalogInstallProducts()
 	repo := strings.TrimSpace(cfg.SensorConfig.Image)
-	if !imageRepositoryRegexp.MatchString(repo) || strings.Contains(repo, "@") {
-		if repo != "" {
-			log.Warn("ignoring SENSOR_IMAGE that is not an image repository", "value", repo)
-		}
-		repo = config.DefaultSensorImageRepository
+	if repo == "" || repo == versions.SensorImage() {
+		return products
 	}
-	// A tag in SENSOR_IMAGE is dropped: the tag is the release channel's.
+	if !imageRepositoryRegexp.MatchString(repo) || strings.Contains(repo, "@") {
+		log.Warn("ignoring SENSOR_IMAGE that is not an image repository", "value", repo)
+		return products
+	}
+	// A tag in SENSOR_IMAGE is dropped: the tag is the product's release.
 	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
 		repo = repo[:i]
 	}
-	tag := sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion)
-	if !sensordom.IsReleaseVersion(tag) {
-		tag = config.DefaultSensorLatestVersion
+	for i, p := range products {
+		if p.ID == versions.DefaultProductID {
+			products[i].Image = repo + ":" + p.Latest
+		}
 	}
-	return repo + ":" + tag
+	return products
 }
 
 // collectorInstallImage is the image a collector's install snippets run:
@@ -1076,30 +1208,25 @@ func collectorInstallImage(cfg *config.Config, log *logger.Logger) string {
 	return img
 }
 
-// sensorHealthPolicy maps the heartbeat settings and the sensor release
-// channel onto the fleet-health thresholds. Each sensor is judged against
-// its own heartbeat deadline (pkg/domain/sensor/liveness.go); the policy adds
-// the online window of the idle interval (informational) and the
-// WORKER_HEARTBEAT_TIMEOUT backstop.
-func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.HealthPolicy {
+// sensorHealthPolicy maps the heartbeat settings, the sensor products'
+// release lines and the SDK entries of the version manifest onto the
+// fleet-health thresholds. Each sensor is judged against its own heartbeat
+// deadline (pkg/domain/sensor/liveness.go) and its own product's release
+// line; the policy adds the online window of the idle interval
+// (informational) and the WORKER_HEARTBEAT_TIMEOUT backstop.
+func sensorHealthPolicy(cfg *config.Config) sensordom.HealthPolicy {
 	sc := cfg.SensorConfig
-	for name, v := range map[string]string{
-		"SENSOR_LATEST_VERSION": sc.LatestVersion, "SENSOR_MIN_VERSION": sc.MinVersion,
-		"SENSOR_SDK_LATEST_VERSION": sc.SDKLatestVersion, "SENSOR_SDK_MIN_VERSION": sc.SDKMinVersion,
-	} {
-		if v != "" && !sensordom.IsReleaseVersion(v) {
-			log.Warn("ignoring sensor release setting that is not a version (want e.g. v0.4.2, or none)",
-				"setting", name, "value", v)
-		}
-	}
 	offline := cfg.Worker.HeartbeatTimeout
+	lines := map[string]sensordom.ReleaseLine{}
+	for _, p := range versions.Products() {
+		lines[p.ID] = sensordom.ReleaseLine{Latest: p.Latest, Min: p.Min}
+	}
 	return sensordom.HealthPolicy{
 		OnlineWindow:     sensordom.OnlineWindowFor(sc.HeartbeatInterval, offline),
 		OfflineAfter:     offline,
-		LatestVersion:    sc.LatestVersion,
-		MinVersion:       sc.MinVersion,
-		SDKLatestVersion: sc.SDKLatestVersion,
-		SDKMinVersion:    sc.SDKMinVersion,
+		Products:         lines,
+		SDKLatestVersion: versions.SDKLatest(),
+		SDKAdvisories:    versions.SDKAdvisories(),
 	}.Normalized()
 }
 
@@ -1377,7 +1504,7 @@ func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.Suppressi
 // newCIHandlers builds the CI run service and its two handlers (RFC-051).
 // The CI providers' discovery and JWKS documents are fetched through the
 // SSRF-safe client: a self-managed GitLab issuer is configured by a tenant.
-func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
+func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redisClient *redis.Client, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
 	if repos.CIRun == nil || svc.Ingest == nil {
 		return nil, nil
 	}
@@ -1403,6 +1530,10 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	if svc.Outbox != nil {
 		ob = svc.Outbox
 	}
+	ciAlerts := cirunapp.NewAdminAlerts(admins, inApp, ob, log)
+	if repos.MemberLifecycle != nil && svc.Email != nil {
+		ciAlerts.SetEmail(repos.MemberLifecycle, svc.Email)
+	}
 	ciSvc := cirunapp.NewService(cirunapp.Deps{
 		Repo:     repos.CIRun,
 		Verifier: verifier,
@@ -1412,7 +1543,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		Ingester: svc.Ingest,
 		Units:    repos.CIRun,
 		Audit:    audit,
-		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
+		Alerts:   ciAlerts,
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
@@ -1425,13 +1556,34 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		}
 		ciSvc.SetSuppressionRules(svc.Suppression, mg)
 	}
+	if repos.RepoIdentity != nil {
+		ciSvc.SetRepositoryIdentity(repos.RepoIdentity)
+	}
+	// A secret a run finds on a non-fork branch is an organization finding
+	// with a "Rotate <secret type>" task.
+	if repos.RemediationTask != nil {
+		ciSvc.SetSecretExposure(cirunapp.NewSecretExposure(repos.CIRun, repos.RemediationTask, log))
+	}
+	// A GitLab merge request run's baseline is its target branch as GitLab
+	// reports it through the organization's connection.
+	if repos.SCMApp != nil && svc.Encryptor != nil {
+		gl := scmappsvc.NewService(repos.SCMApp, nil, cfg.Auth.JWTSecret, nil, log)
+		gl.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+		ciSvc.SetGitLab(gl)
+	}
 	if repos.RelationshipSuggestion != nil {
 		ciSvc.SetImageLinker(ciImageLinker{repos.CIRun, repos.RelationshipSuggestion})
+	}
+	if svc.Scope != nil {
+		// A trust's repositories are repository scope entries linked to it.
+		ciSvc.SetScopeLinker(svc.Scope)
 	}
 	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
 	admin.SetSettingsService(ciSvc)
+	admin.SetGateBaselineService(ciSvc)
+	admin.SetRepositorySettingsService(ciSvc)
 	if repos.CodeScan != nil {
 		var csAudit codescanapp.Auditor
 		if svc.Audit != nil {
@@ -1441,12 +1593,16 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
-	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)); fp != nil {
+	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())); fp != nil {
 		runner.SetSecretKeys(fp)
 	}
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
 	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
+	// Idempotency-Key on uploads needs the shared store; without Redis the header is ignored.
+	if redisClient != nil {
+		runner.SetIdempotencyStore(redisClient)
+	}
 	return admin, runner
 }
 
@@ -1461,7 +1617,8 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 
 // bootstrapSession wires the session parts of GET /me/bootstrap to the same
 // code that serves /users/me, /users/me/tenants, /notifications/unread-count,
-// /easm/candidates and the organization policy of /auth/providers.
+// /easm/candidates, the pending count of /approvals and the organization
+// policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
 	s := handler.BootstrapSession{}
 	if h.User != nil {
@@ -1477,7 +1634,23 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.Announcement != nil {
 		s.Announcements = h.Announcement.ActiveResponses
 	}
-	mode := cfg.Auth.TenantCreationMode
+	if svc.Entitlement != nil {
+		s.LimitsApply = svc.Entitlement.Applies
+	}
+	if svc.Vulnerability != nil {
+		vulns := svc.Vulnerability
+		s.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
+			page, err := vulns.ListApprovals(ctx, tenantID.String(), string(vulnerability.ApprovalStatusPending), 1, 1)
+			if err != nil {
+				return 0, err
+			}
+			return int(page.StatusCounts[vulnerability.ApprovalStatusPending]), nil
+		}
+	}
+	mode := string(signupdom.Default().Mode)
+	if cfg.Auth.SignupOpen() {
+		mode = string(signupdom.ModeSelfService)
+	}
 	signup := svc.Signup
 	s.TenantCreationMode = func(ctx context.Context) string {
 		if signup != nil {
@@ -1549,6 +1722,9 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, rc
 	// An install state is usable once (all replicas).
 	if rc != nil {
 		s.SetOnceStore(redis.NewWebhookDeliveryStore(rc))
+	}
+	if repos.RepoIdentity != nil {
+		s.SetRepositoryLifecycle(repos.RepoIdentity)
 	}
 	if svc.Encryptor != nil {
 		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
@@ -1623,4 +1799,13 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 		return svc.DataScope
 	}
 	return findingAccessGuard{DataScopeAsserter: svc.DataScope, findings: svc.Vulnerability}
+}
+
+// newUserHandler builds the user handler with self-service account deletion.
+func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
+	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	if svc.AccountDeletion != nil {
+		h.SetAccountDeletion(svc.AccountDeletion)
+	}
+	return h
 }

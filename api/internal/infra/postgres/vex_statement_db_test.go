@@ -105,7 +105,7 @@ func (f *vexFixture) finding(tenant, asset shared.ID, version, cve, source, stat
 func (f *vexFixture) state(id shared.ID) (status, method string, stmt *string) {
 	f.t.Helper()
 	var m, s sql.NullString
-	if err := f.db.QueryRow(`SELECT status, resolution_method, vex_statement_id::text FROM findings WHERE id = $1`, id.String()).
+	if err := f.db.QueryRow(`SELECT status, verification, vex_statement_id::text FROM findings WHERE id = $1`, id.String()).
 		Scan(&status, &m, &s); err != nil {
 		f.t.Fatal(err)
 	}
@@ -113,6 +113,19 @@ func (f *vexFixture) state(id shared.ID) (status, method string, stmt *string) {
 		stmt = &s.String
 	}
 	return status, m.String, stmt
+}
+
+// pendingRequests is the number of pending false positive requests by the
+// actor "vex" on the finding.
+func (f *vexFixture) pendingRequests(id shared.ID) int {
+	f.t.Helper()
+	var n int
+	if err := f.db.QueryRow(`SELECT count(*) FROM finding_status_approvals
+		WHERE tenant_id = $1 AND finding_id = $2 AND status = 'pending' AND requested_status = 'false_positive'
+		  AND requested_by_actor = 'vex'`, f.tenant.String(), id.String()).Scan(&n); err != nil {
+		f.t.Fatal(err)
+	}
+	return n
 }
 
 func (f *vexFixture) wantStatus(id shared.ID, want, method string) {
@@ -141,8 +154,9 @@ func TestVEXStatements_DB(t *testing.T) {
 	other := f.finding(f.tenant, f.a1, f.v20, "CVE-2020-8203", "sca", "new")
 	foreign := f.finding(f.other, f.b1, f.v20, "CVE-2021-23337", "sca", "new")
 
-	// 1. A statement for every asset at 4.17.20 closes the open, non-human
-	// findings it covers, and nothing in another tenant.
+	// 1. A statement for every asset at 4.17.20 requests a false positive
+	// for the open, non-human findings it covers (the status never moves
+	// without a person), and nothing in another tenant.
 	expiry := now.Add(48 * time.Hour)
 	st, res, err := svc.Create(ctx, f.tenant, vexapp.Input{
 		VulnID: "cve-2021-23337", ProductID: f.product, Versions: []string{"4.17.20"}, Status: "not_affected",
@@ -151,21 +165,38 @@ func TestVEXStatements_DB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if res.Closed != 2 {
-		t.Errorf("closed %d, want 2 (%+v)", res.Closed, res)
+	if res.Closed != 0 || res.Requested != 2 {
+		t.Errorf("closed %d requested %d, want 0 and 2 (%+v)", res.Closed, res.Requested, res)
 	}
-	f.wantStatus(f1, "false_positive", "vex_not_affected")
-	f.wantStatus(f2, "false_positive", "vex_not_affected")
+	f.wantStatus(f1, "new", "")
+	f.wantStatus(f2, "confirmed", "")
 	f.wantStatus(f3, "in_progress", "")
+	for _, id := range []shared.ID{f1, f2} {
+		if n := f.pendingRequests(id); n != 1 {
+			t.Errorf("finding %s: %d pending requests, want 1", id, n)
+		}
+	}
+	for _, id := range []shared.ID{f3, pen, other, foreign} {
+		if n := f.pendingRequests(id); n != 0 {
+			t.Errorf("finding %s: %d pending requests, want 0", id, n)
+		}
+	}
+	// A later reconcile does not stack a second request.
+	if n, err := svc.ApplyToFingerprints(ctx, f.tenant, []string{"fp-" + f1.String()}); err != nil || n != 0 {
+		t.Fatalf("reconcile: %d %v", n, err)
+	}
+	if n := f.pendingRequests(f1); n != 1 {
+		t.Errorf("repeat reconcile left %d pending requests, want 1", n)
+	}
 	f.wantStatus(other, "new", "")
 	f.wantStatus(foreign, "new", "")
 	if status, _, sid := f.state(pen); status != "new" || sid == nil || *sid != st.ID.String() {
 		t.Errorf("a pentest finding is annotated, never closed: %s %v", status, sid)
 	}
 	var acts int
-	if err := f.db.QueryRow(`SELECT count(*) FROM finding_activities WHERE finding_id = $1 AND changes->>'reason' = 'vex_statement'`,
+	if err := f.db.QueryRow(`SELECT count(*) FROM finding_activities WHERE finding_id = $1 AND activity_type = 'approval_requested'`,
 		f1.String()).Scan(&acts); err != nil || acts != 1 {
-		t.Errorf("activity entry for the closure: %d %v", acts, err)
+		t.Errorf("timeline entry for the request: %d %v", acts, err)
 	}
 	if _, _, err := svc.Create(ctx, f.tenant, vexapp.Input{VulnID: "CVE-2021-23337", ProductID: f.product,
 		Versions: []string{"4.17.20"}, Status: "affected"}, actx); !errors.Is(err, shared.ErrConflict) {
@@ -179,12 +210,12 @@ func TestVEXStatements_DB(t *testing.T) {
 		t.Fatalf("asset-bound create: %v", err)
 	}
 	f.wantStatus(f1, "new", "")
-	f.wantStatus(f2, "false_positive", "vex_not_affected")
+	f.wantStatus(f2, "confirmed", "")
 	f.wantStatus(f3, "in_progress", "")
 	if _, err := svc.Delete(ctx, f.tenant, onA1.ID.String(), actx); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	f.wantStatus(f1, "false_positive", "vex_not_affected")
+	f.wantStatus(f1, "new", "")
 
 	// 3. Widening to a range covers 4.17.21 too; status fixed resolves.
 	rng := ">=4.17.0,<4.17.22"
@@ -192,12 +223,15 @@ func TestVEXStatements_DB(t *testing.T) {
 	if _, res, err = svc.Update(ctx, f.tenant, st.ID.String(), vexapp.Patch{VersionRange: &rng}, actx); err != nil {
 		t.Fatalf("update range: %v", err)
 	}
-	f.wantStatus(f3, "false_positive", "vex_not_affected")
+	f.wantStatus(f3, "in_progress", "")
+	if n := f.pendingRequests(f3); n != 1 {
+		t.Errorf("widened range: %d pending requests on 4.17.21, want 1", n)
+	}
 	if _, _, err = svc.Update(ctx, f.tenant, st.ID.String(), vexapp.Patch{Status: &fixed}, actx); err != nil {
 		t.Fatalf("update status: %v", err)
 	}
 	for _, id := range []shared.ID{f1, f2, f3} {
-		f.wantStatus(id, "resolved", "vex_fixed")
+		f.wantStatus(id, "resolved", "vex_statement")
 	}
 
 	// 4. A finding reported later is covered (sticky), and a scan that
@@ -206,7 +240,7 @@ func TestVEXStatements_DB(t *testing.T) {
 	if n, err := svc.ApplyToFingerprints(ctx, f.tenant, []string{"fp-" + f4.String()}); err != nil || n != 1 {
 		t.Fatalf("sticky: %d %v", n, err)
 	}
-	f.wantStatus(f4, "resolved", "vex_fixed")
+	f.wantStatus(f4, "resolved", "vex_statement")
 	reopened, err := NewFindingRepository(&DB{DB: f.db}).AutoReopenByFingerprintsBatch(ctx, f.tenant, []string{"fp-" + f4.String()})
 	if err != nil || len(reopened) != 0 {
 		t.Fatalf("regression reopen must skip a vex_fixed finding: %v %v", reopened, err)
@@ -367,10 +401,16 @@ func TestVEXStatements_Import_DB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
-	if res.Created != 1 || res.Applied.Closed != 1 {
+	if res.Created != 1 {
 		t.Fatalf("import: %+v", res)
 	}
-	f.wantStatus(fnd, "false_positive", "vex_not_affected")
+	if res.Applied.Closed != 0 || res.Applied.Requested != 1 {
+		t.Fatalf("import applied: %+v", res.Applied)
+	}
+	f.wantStatus(fnd, "new", "")
+	if n := f.pendingRequests(fnd); n != 1 {
+		t.Errorf("imported statement: %d pending requests, want 1", n)
+	}
 	var origin, ref string
 	_ = f.db.QueryRow(`SELECT origin, document_ref FROM vex_statements WHERE tenant_id = $1`, f.tenant.String()).Scan(&origin, &ref)
 	if origin != "document" || !strings.HasPrefix(ref, "openvex") {
@@ -392,5 +432,42 @@ func TestVEXStatements_Import_DB(t *testing.T) {
 	}
 	if _, err := member.Import(ctx, f.tenant, f.a2.String(), strings.NewReader(doc), true, actx); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("import for an out-of-scope asset: %v", err)
+	}
+}
+
+// A not_affected statement never writes false_positive: it opens a pending
+// request, and a finding reported after the statement gets one too.
+func TestVEXStatements_NotAffectedNeverSetsFalsePositive_DB(t *testing.T) {
+	f := newVEXFixture(t)
+	ctx := context.Background()
+	repo := NewVEXStatementRepository(&DB{DB: f.db})
+	svc := vexapp.NewService(repo, &vexScope{tenant: f.tenant}, nil, nil)
+	actx := auditapp.AuditContext{TenantID: f.tenant.String(), ActorID: f.user.String()}
+
+	early := f.finding(f.tenant, f.a1, f.v20, "CVE-2021-23337", "sca", "new")
+	if _, _, err := svc.Create(ctx, f.tenant, vexapp.Input{VulnID: "CVE-2021-23337", ProductID: f.product,
+		Versions: []string{"4.17.20"}, Status: "not_affected", Justification: "vulnerable_code_not_present"}, actx); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	f.wantStatus(early, "new", "")
+	if n := f.pendingRequests(early); n != 1 {
+		t.Fatalf("existing finding: %d pending requests, want 1", n)
+	}
+
+	late := f.finding(f.tenant, f.a2, f.v20, "CVE-2021-23337", "sca", "new")
+	if _, err := svc.ApplyToFingerprints(ctx, f.tenant, []string{"fp-" + late.String()}); err != nil {
+		t.Fatalf("sticky: %v", err)
+	}
+	f.wantStatus(late, "new", "")
+	if n := f.pendingRequests(late); n != 1 {
+		t.Fatalf("later finding: %d pending requests, want 1", n)
+	}
+	var reason, just string
+	if err := f.db.QueryRow(`SELECT COALESCE(closure_reason, ''), justification FROM finding_status_approvals
+		WHERE finding_id = $1 AND status = 'pending'`, late.String()).Scan(&reason, &just); err != nil {
+		t.Fatal(err)
+	}
+	if reason == "" || !strings.Contains(just, "vulnerable_code_not_present") {
+		t.Errorf("request carries the statement: closure %q justification %q", reason, just)
 	}
 }

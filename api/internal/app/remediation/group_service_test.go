@@ -20,7 +20,26 @@ type mockKeyRepo struct {
 }
 
 func (m *mockKeyRepo) Upsert(_ context.Context, _, _ shared.ID, _, _ string) error { return nil }
-func (m *mockKeyRepo) Delete(_ context.Context, _ shared.ID) error                 { return nil }
+func (m *mockKeyRepo) Delete(_ context.Context, _, _ shared.ID) error              { return nil }
+func (m *mockKeyRepo) KeySources(_ context.Context, _ shared.ID, _ []shared.ID) ([]remediationdom.KeySource, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) KeySourcesByFingerprints(_ context.Context, _ shared.ID, _ []string) ([]remediationdom.KeySource, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) FindingIDsAfter(_ context.Context, _, _ shared.ID, _ int) ([]shared.ID, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) TenantsWithFindings(_ context.Context) ([]shared.ID, error) { return nil, nil }
+func (m *mockKeyRepo) CampaignsTrackingKeys(_ context.Context, _ shared.ID, _ []string) ([]remediationdom.CampaignKeyRef, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) CampaignsWithStaleKey(_ context.Context, _ shared.ID) ([]remediationdom.CampaignKeyRef, error) {
+	return nil, nil
+}
+func (m *mockKeyRepo) RetargetCampaignKey(_ context.Context, _, _ shared.ID, _, _ string) (bool, error) {
+	return false, nil
+}
 func (m *mockKeyRepo) ListGroups(_ context.Context, _ shared.ID, excl []string, _ *shared.DataScope) ([]remediationdom.Group, error) {
 	m.lastExcl = excl
 	return m.groups, nil
@@ -74,15 +93,15 @@ func TestResolveGroup_DefaultsToFixApplied(t *testing.T) {
 	guard := &mockGuard{}
 	svc := newSvc(keys, res, guard)
 
-	out, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "sol:abc", OperatorApproved: true})
+	out, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "sol:abc", OperatorApproved: true, Resolution: "patched", HasFixApplyPermission: true})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	if !res.called {
 		t.Fatal("expected the bulk resolver to be called")
 	}
-	if res.gotInput.Status != "fix_applied" {
-		t.Errorf("expected default status fix_applied, got %q", res.gotInput.Status)
+	if res.gotInput.Status != "fix_applied" || !res.gotInput.WalkToFixApplied {
+		t.Errorf("expected a mark fixed (fix_applied, legal steps), got %q walk=%v", res.gotInput.Status, res.gotInput.WalkToFixApplied)
 	}
 	if len(res.gotInput.FindingIDs) != 2 {
 		t.Errorf("expected 2 finding IDs, got %d", len(res.gotInput.FindingIDs))
@@ -112,25 +131,26 @@ func TestResolveGroup_InvalidStatusRejected(t *testing.T) {
 	}
 }
 
-// Resolving a group without findings:verify is forbidden before anything is
-// read or counted (a member with findings:write cannot close a whole group).
-func TestResolveGroup_ResolvedNeedsVerify(t *testing.T) {
-	keys := &mockKeyRepo{openIDs: []shared.ID{shared.NewID()}}
-	res := &mockResolver{}
-	guard := &mockGuard{}
-	svc := newSvc(keys, res, guard)
-
-	_, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "k", Status: "resolved"})
-	if !errors.Is(err, shared.ErrForbidden) {
-		t.Fatalf("group resolve without verify: err = %v, want ErrForbidden", err)
-	}
-	if res.called || keys.lastKey != "" || guard.gotSize != 0 {
-		t.Error("a refused group resolve must not read the group, hit the guard or call the bulk path")
-	}
-
-	out, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "k", Status: "resolved", HasVerifyPermission: true})
-	if err != nil || out.Updated != 1 || !res.gotInput.HasVerifyPermission {
-		t.Fatalf("verify holder group resolve = %+v, %v; want 1 updated with the permission passed on", out, err)
+// A group resolve never closes findings (not even for a findings:verify
+// holder), and a fix claim needs findings:fix_apply and a note: all refused
+// before the group is read, counted or sent to the bulk path.
+func TestResolveGroup_ClosesNothingAndNeedsTheClaimRules(t *testing.T) {
+	for name, in := range map[string]ResolveGroupInput{
+		"resolved":     {Key: "k", Status: "resolved", Resolution: "x", HasVerifyPermission: true, HasFixApplyPermission: true},
+		"no fix_apply": {Key: "k", Resolution: "x"},
+		"no note":      {Key: "k", HasFixApplyPermission: true},
+		"blank note":   {Key: "k", Resolution: " \t", HasFixApplyPermission: true},
+	} {
+		keys := &mockKeyRepo{openIDs: []shared.ID{shared.NewID()}}
+		res := &mockResolver{}
+		guard := &mockGuard{}
+		svc := newSvc(keys, res, guard)
+		if _, err := svc.ResolveGroup(context.Background(), shared.NewID(), in); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+		if res.called || keys.lastKey != "" || guard.gotSize != 0 {
+			t.Errorf("%s: a refused group resolve read the group, hit the guard or called the bulk path", name)
+		}
 	}
 }
 
@@ -139,7 +159,7 @@ func TestResolveGroup_EmptyGroupNoop(t *testing.T) {
 	res := &mockResolver{}
 	svc := newSvc(&mockKeyRepo{openIDs: nil}, res, &mockGuard{})
 
-	out, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "k"})
+	out, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "k", Resolution: "x", HasFixApplyPermission: true})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -157,7 +177,7 @@ func TestResolveGroup_GuardBlocks(t *testing.T) {
 	guard := &mockGuard{err: errors.New("too large")}
 	svc := newSvc(&mockKeyRepo{openIDs: []shared.ID{shared.NewID()}}, res, guard)
 
-	if _, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "k"}); err == nil {
+	if _, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "k", Resolution: "x", HasFixApplyPermission: true}); err == nil {
 		t.Fatal("expected guard error")
 	}
 	if res.called {

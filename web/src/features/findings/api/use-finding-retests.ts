@@ -4,9 +4,10 @@
  *   GET  /api/v1/findings/{id}/retests   — the finding's retests, newest first
  *   POST /api/v1/findings/{id}/retests   — "Retest now" (needs findings:verify)
  *
- * A retest re-runs the nuclei template that produced the finding against its
- * own target, with a reachability probe. Its result arrives asynchronously, so
- * the list polls while the newest retest is still pending.
+ * A retest re-runs the rule that produced the finding against its own target,
+ * on a sensor that reports it can re-check findings of that tool. Its result
+ * arrives asynchronously, so the list polls while the newest retest is still
+ * pending. The list says whether a retest would be accepted now (can_retest).
  */
 
 'use client'
@@ -23,20 +24,14 @@ export type FindingRetest = FindingRetestResponse
 export const RETEST_POLL_MS = 5000
 
 /** Statuses a retest may run on (the API refuses the others). */
-const RETESTABLE_STATUSES = new Set([
-  'new',
-  'confirmed',
-  'in_progress',
-  'fix_applied',
-  'validated_fixed',
-  'resolved',
-])
+const RETESTABLE_STATUSES = new Set(['new', 'confirmed', 'in_progress', 'fix_applied', 'resolved'])
 
 /**
- * Whether a finding has a deterministic re-check the platform can run: Phase 1
- * retests findings raised by a nuclei template, in an open or resolved status.
- * The API makes the authoritative decision (scope, asset, sensor); this only
- * keeps the button off findings it would always refuse.
+ * Whether a finding may have a deterministic re-check: a rule of a tool, in an
+ * open or resolved status. Which tools can be re-checked is decided by the API
+ * from what the organization's sensors report (`can_retest` on the retest
+ * list); this only keeps the button and the history request off findings the
+ * API would always refuse.
  */
 export function isRetestable(finding: {
   toolName?: string
@@ -44,10 +39,15 @@ export function isRetestable(finding: {
   status?: string
 }): boolean {
   return (
-    (finding.toolName ?? '').toLowerCase() === 'nuclei' &&
+    !!finding.toolName?.trim() &&
     !!finding.ruleId?.trim() &&
     RETESTABLE_STATUSES.has(finding.status ?? '')
   )
+}
+
+/** Whether a finding can have retest history: a rule of a tool, any status. */
+export function hasRetestHistory(finding: { toolName?: string; ruleId?: string }): boolean {
+  return !!finding.toolName?.trim() && !!finding.ruleId?.trim()
 }
 
 function retestsEndpoint(findingId: string): string {

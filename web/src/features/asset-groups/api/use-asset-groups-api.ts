@@ -178,15 +178,19 @@ async function fetchAssetGroupStats(url: string): Promise<ApiAssetGroupStats> {
  * }
  * ```
  */
-export function useAssetGroupsApi(filters?: AssetGroupApiFilters, config?: SWRConfiguration) {
+export function useAssetGroupsApi(
+  filters?: AssetGroupApiFilters | null,
+  config?: SWRConfiguration
+) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const canReadAssetGroups = can(Permission.AssetGroupsRead)
 
-  // Only fetch if user has permission
-  const shouldFetch = currentTenant && canReadAssetGroups
+  // Only fetch if user has permission. `null` filters mean "not now" (a
+  // closed dialog): no request at all, not the unfiltered list.
+  const shouldFetch = currentTenant && canReadAssetGroups && filters !== null
 
-  const key = shouldFetch ? buildAssetGroupsEndpoint(filters) : null
+  const key = shouldFetch ? buildAssetGroupsEndpoint(filters ?? undefined) : null
 
   return useSWR<ApiAssetGroupListResponse>(key, fetchAssetGroups, { ...defaultConfig, ...config })
 }

@@ -2,6 +2,7 @@ package bountyprogram
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -86,5 +87,53 @@ func TestMergeJobRules(t *testing.T) {
 		if _, err := MergeJobRules(ps); !errors.Is(err, ErrRulesConflict) {
 			t.Errorf("case %d: %v, want ErrRulesConflict", i, err)
 		}
+	}
+}
+
+// SECURITY: a job's identification is what a sensor sends: printable ASCII
+// only, at most MaxHeaders headers across all the job's programs. A rule
+// saved before (non-ASCII) or a union of programs over the cap fails the
+// job with the reason instead of being refused by the sensor.
+func TestMergeJobRules_Sendable(t *testing.T) {
+	prog := func(name string, hs ...Header) *Program {
+		return &Program{Name: name, Rules: Rules{RequiredHeaders: hs}}
+	}
+	var a, b []Header
+	for i := range 6 {
+		a = append(a, Header{Name: fmt.Sprintf("X-A%d", i), Value: "1"})
+		b = append(b, Header{Name: fmt.Sprintf("X-B%d", i), Value: "1"})
+	}
+	if _, err := MergeJobRules([]*Program{prog("a", a...), prog("b", b...)}); !errors.Is(err, ErrRulesConflict) {
+		t.Fatalf("12 headers: %v", err)
+	}
+	if r, err := MergeJobRules([]*Program{prog("a", a...)}); err != nil || len(r.Headers) != 6 {
+		t.Fatalf("six headers: %v %v", r, err)
+	}
+	nonASCII := "jdo\u00e9"
+	nonASCII = "jdo" + string(rune(0xe9))
+	if _, err := MergeJobRules([]*Program{prog("a", Header{Name: "X-Bug-Bounty", Value: nonASCII})}); !errors.Is(err, ErrRulesConflict) {
+		t.Fatalf("non-ASCII value: %v", err)
+	}
+	if _, err := MergeJobRules([]*Program{{Name: "a", Rules: Rules{UserAgent: nonASCII}}}); !errors.Is(err, ErrRulesConflict) {
+		t.Fatalf("non-ASCII User-Agent: %v", err)
+	}
+}
+
+// Saving rules refuses a non-ASCII or control-character value or
+// User-Agent: what a sensor sends.
+func TestRules_ValidateASCII(t *testing.T) {
+	nonASCII := "jdo" + string(rune(0xe9))
+	crlf := "jdoe" + string([]byte{13, 10}) + "X-Evil: 1"
+	for name, r := range map[string]Rules{
+		"non-ASCII value":      {RequiredHeaders: []Header{{Name: "X-Bug-Bounty", Value: nonASCII}}},
+		"CRLF value":           {RequiredHeaders: []Header{{Name: "X-Bug-Bounty", Value: crlf}}},
+		"non-ASCII User-Agent": {UserAgent: nonASCII},
+	} {
+		if err := r.Validate(); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	if err := (Rules{RequiredHeaders: []Header{{Name: "X-Bug-Bounty", Value: "jdoe; id=7"}}, UserAgent: "jdoe-research/1.0"}).Validate(); err != nil {
+		t.Fatalf("plain ASCII refused: %v", err)
 	}
 }

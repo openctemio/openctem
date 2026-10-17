@@ -29,6 +29,9 @@ const PayloadType = "application/vnd.openctem.job.v1+json"
 // Kind is the statement kind (v1).
 const Kind = "openctem.job/v1"
 
+// SensorScopeInstance marks a statement for a shared (instance) sensor.
+const SensorScopeInstance = "instance"
+
 // Algorithm is the signature algorithm of every key the signer holds.
 const Algorithm = "ed25519"
 
@@ -55,11 +58,27 @@ const (
 // encoding of this struct, field order as declared. A verifier never
 // re-encodes it: it hashes and parses the envelope's payload bytes.
 type Statement struct {
-	Kind        string `json:"kind"`
-	TenantID    string `json:"tenant_id"`
-	SensorID    string `json:"sensor_id"`
-	CommandID   string `json:"command_id"`
-	CommandType string `json:"command_type"`
+	Kind     string `json:"kind"`
+	TenantID string `json:"tenant_id"`
+	SensorID string `json:"sensor_id"`
+	// SensorScope is SensorScopeInstance for a job of a shared sensor (one
+	// that serves several organizations), absent for an organization's own
+	// sensor. A shared sensor runs only statements that carry it, binds the
+	// job's results to TenantID, and refuses any whose SensorID is not its
+	// own; an organization's sensor refuses statements that carry it (an
+	// older one refuses the unknown field). The signer signs a shared job
+	// only within the shared-job rules (internal/signer/shared.go).
+	SensorScope string `json:"sensor_scope,omitempty"`
+	// Zone is the instance scan zone of a shared job that reaches internal
+	// addresses (zone.go): its id and ranges, only with SensorScope
+	// instance. The signer signs it only for a zone in its zone ledger that
+	// is assigned to TenantID and served by SensorID, with exactly that
+	// zone's ranges, and only when every internal target lies inside them.
+	// A shared sensor reaches a private address only inside these signed
+	// ranges, never inside ranges an unsigned command field names.
+	Zone        *StatementZone `json:"zone,omitempty"`
+	CommandID   string         `json:"command_id"`
+	CommandType string         `json:"command_type"`
 	// Tool is the tool the command names (payload "scanner", else
 	// "preferred_tool"); "" for a command that names none.
 	Tool string `json:"tool"`

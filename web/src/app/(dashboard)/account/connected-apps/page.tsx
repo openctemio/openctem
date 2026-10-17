@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { revokeMyConnection, useMyConnections } from '@/features/mcp-oauth/api/connections'
 import { ConnectionsList } from '@/features/mcp-oauth/components/connections-list'
@@ -10,14 +11,17 @@ import { ConnectionsList } from '@/features/mcp-oauth/components/connections-lis
  * they can see; disconnecting ends it at once.
  */
 export default function ConnectedAppsPage() {
+  const { t } = useTranslation()
   const { data, isLoading } = useMyConnections()
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Your AI applications</CardTitle>
+        <CardTitle>{t('mcp.myConnections.title', 'Your AI applications')}</CardTitle>
         <CardDescription>
-          Applications you allowed to read data in this organization as you. They lose access when
-          you disconnect them or when your own access changes.
+          {t(
+            'mcp.myConnections.description',
+            'Applications you allowed to work with this organization’s data as you. They lose access when you disconnect them or when your own access changes.'
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -25,8 +29,11 @@ export default function ConnectedAppsPage() {
           connections={data?.data}
           isLoading={isLoading}
           onRevoke={revokeMyConnection}
-          emptyTitle="No connected applications"
-          emptyDescription="When you connect an AI assistant to OpenCTEM, it appears here."
+          emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}
+          emptyDescription={t(
+            'mcp.myConnections.empty',
+            'When you connect an AI assistant to {product}, it appears here.'
+          )}
         />
       </CardContent>
     </Card>

@@ -102,6 +102,7 @@ R3 POST /api/v1/groups/{groupId}/scope-rules/{ruleId}/preview
 R3 POST /api/v1/pentest/findings/{findingId}/retests
 R3 POST /api/v1/repositories/{repositoryId}/branches
 R3 POST /api/v1/roles/{roleId}/members/bulk
+R3 POST /api/v1/roles/{roleId}/template/apply
 R3 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend
 R3 POST /api/v1/tenants/{tenant}/members/{userId}/reactivate
 R3 POST /api/v1/tenants/{tenant}/members/{userId}/suspend
@@ -159,6 +160,7 @@ R5 PATCH /api/v1/admin/threat-intel/sync/{source}
 R5 PATCH /api/v1/findings/{id}/classify
 R5 PATCH /api/v1/notifications/{id}/read
 R5 PATCH /api/v1/reports/schedules/{id}/toggle
+R5 POST /api/v1/admin/auth/login
 R5 POST /api/v1/admin/auth/logout
 R5 POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline
 R5 POST /api/v1/assets/{id}/activate
@@ -314,7 +316,6 @@ R9 POST /api/v1/users/me/2fa/setup
 R9 POST /api/v1/users/me/change-password
 R9 POST /api/v1/validation/evidence
 R9 POST /api/v1/webhooks/incoming/github
-R9 POST /api/v1/webhooks/incoming/jira
 R9 PUT /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R9 PUT /api/v1/users/me
 R9 PUT /api/v1/users/me/preferences
@@ -332,17 +333,18 @@ R8 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
 R9 GET /api/v1/tenants/{tenant}/settings/sso/changes
 R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/approve
 R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
-R3 DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant
+R3 DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny
 R3 GET /api/v1/admin/tenants/{tenantId}/modules
-R3 DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
-R3 GET /api/v1/admin/tenants/{tenantId}/plan
-R3 PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant
-R3 PUT /api/v1/admin/tenants/{tenantId}/plan
-R3 PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
+R3 DELETE /api/v1/admin/tenants/{tenantId}/limits/{key}
+R3 GET /api/v1/admin/tenants/{tenantId}/limits
+R3 PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny
+R3 GET /api/v1/admin/tenants/{tenantId}/shared-sensors
+R3 PUT /api/v1/admin/tenants/{tenantId}/shared-sensors
+R3 PUT /api/v1/admin/tenants/{tenantId}/limits/{key}
 R3 GET /api/v1/admin/tenants/{tenantId}/scan-approval-policy
 R3 PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy
 R3 GET /api/v1/admin/tenants/{tenantId}/idle
-R3 PUT /api/v1/admin/tenants/{tenantId}/idle/exemption
+R3 PUT /api/v1/admin/tenants/{tenantId}/idle/policy
 # Team member end dates (RFC-050 W22): the /groups subtree keeps {groupId}/{userId} (chi needs one name per position).
 R3 PATCH /api/v1/groups/{groupId}/members/{userId}
 # Team role bindings (decisions G1-G12): the /groups subtree keeps {groupId}; a role id next to it follows the subtree style.

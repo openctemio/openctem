@@ -86,5 +86,10 @@
   "common.cvss.value.CIA.L": "Low",
   "common.cvss.value.CIA.N": "None",
   "common.failedToLoad": "Failed to load {title}",
-  "common.unexpectedError": "An unexpected error occurred"
+  "common.unexpectedError": "An unexpected error occurred",
+  "common.moreTabs": "More",
+  "common.openFullPage": "Open full page",
+  "common.contextFilters.label": "Context filters",
+  "common.contextFilters.remove": "Remove {kind} filter",
+  "common.contextFilters.removeNamed": "Remove {kind} filter: {label}"
 }

@@ -53,14 +53,29 @@ export type SensorState =
   | 'disabled'
   | 'revoked'
 
-/** How a sensor's version compares with the platform's release channel. */
+/**
+ * How a sensor's version compares with its product's release line;
+ * "unknown" for a product the platform does not list (a custom sensor).
+ */
 export type SensorVersionStatus = 'latest' | 'update_available' | 'unsupported' | 'unknown'
 
 /**
- * How the SDK a sensor is built with compares with the platform's supported
- * SDK range (GET /sensors/stats sdk_min_version / sdk_latest_version).
+ * The SDK a sensor is built with: "outdated" is informational (older than
+ * GET /sensors/stats sdk_latest_version), "advisory" a release with a
+ * published security advisory (sdk_advisories).
  */
-export type SensorSdkStatus = 'current' | 'outdated' | 'unsupported' | 'unknown'
+export type SensorSdkStatus = 'current' | 'outdated' | 'advisory' | 'unknown'
+
+/** One sensor product the platform knows (GET /sensors/stats products). */
+export interface SensorProduct {
+  /** The product token its sensors report ("openctemio-sensor"). */
+  id: string
+  latest_version: string
+  /** "" = no minimum. */
+  min_version: string
+  /** The image, with its pinned tag, its install snippets run. */
+  image: string
+}
 
 /** One problem found on a sensor (stable `code`; `message` is a fallback). */
 export interface SensorHealthReason {
@@ -76,7 +91,7 @@ export interface SensorHealthReason {
     | 'error_reported'
     | 'content_stale'
     | 'content_refresh_failed'
-    | 'sdk_unsupported'
+    | 'sdk_advisory'
     | 'heartbeat_late'
     | 'control_slow'
     | 'config_check_failed'
@@ -370,6 +385,12 @@ export interface Sensor {
   sdk_status?: SensorSdkStatus
   /** The sensor binary's product name ("openctemio-sensor"); "" when unknown. */
   sensor_product?: string
+  /** Its product for the release line: the reported one, or openctemio-sensor. */
+  product?: string
+  /** The platform lists the product; its release line follows. */
+  product_known?: boolean
+  product_latest_version?: string
+  product_min_version?: string
   /** The commit the sensor binary was built from; "" when unknown. */
   sensor_commit?: string
   /** When the sensor binary was built. */

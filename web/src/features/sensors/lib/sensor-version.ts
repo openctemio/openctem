@@ -1,4 +1,55 @@
-import type { Sensor, SensorSdkStatus, SensorVersionStatus } from '@/lib/api/sensor-types'
+import type {
+  Sensor,
+  SensorProduct,
+  SensorSdkStatus,
+  SensorVersionStatus,
+} from '@/lib/api/sensor-types'
+
+/** The product of a sensor that reports none: the scanning sensor. */
+export const DEFAULT_SENSOR_PRODUCT = 'openctemio-sensor'
+
+/** A product's release line; null parts are not set. */
+export interface ReleaseLine {
+  latest: string | null
+  min: string | null
+}
+
+type ProductFields = Pick<
+  Sensor,
+  'product' | 'product_known' | 'product_latest_version' | 'product_min_version' | 'sensor_product'
+>
+
+/** The sensor's product: what the API resolved, else what it reported, else the scanning sensor. */
+export function sensorProductId(sensor: ProductFields): string {
+  return sensor.product || sensor.sensor_product || DEFAULT_SENSOR_PRODUCT
+}
+
+/**
+ * The release line a sensor is judged against: its own product's, as the API
+ * sent it, else looked up in the catalog (GET /sensors/stats products). A
+ * product the platform does not list (a custom sensor) has none: no update or
+ * unsupported verdict.
+ */
+export function releaseLineOf(
+  sensor: ProductFields,
+  products?: Pick<SensorProduct, 'id' | 'latest_version' | 'min_version'>[] | null
+): ReleaseLine {
+  if (sensor.product_known !== undefined) {
+    return sensor.product_known
+      ? {
+          latest: normalizeSensorVersion(sensor.product_latest_version),
+          min: normalizeSensorVersion(sensor.product_min_version),
+        }
+      : { latest: null, min: null }
+  }
+  const p = products?.find((x) => x.id === sensorProductId(sensor))
+  return p
+    ? {
+        latest: normalizeSensorVersion(p.latest_version),
+        min: normalizeSensorVersion(p.min_version),
+      }
+    : { latest: null, min: null }
+}
 
 /**
  * One display form for a sensor version, the same rule the API applies: a
@@ -58,7 +109,7 @@ export function compareSensorVersions(
 
 /**
  * The version status: the API's when it sent one, else computed from the
- * release channel (latest / minimum from GET /sensors/stats).
+ * sensor's release line (releaseLineOf).
  */
 export function sensorVersionStatus(
   sensor: Pick<Sensor, 'version' | 'version_status'>,

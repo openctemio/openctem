@@ -58,6 +58,11 @@ export interface PendingDisposition {
   requested_by?: string
   reason: string
   created_at: string
+  /**
+   * Set on the viewer's own request when they may approve it themselves: an
+   * owner with no other approver, with a reason and a fresh authenticator code.
+   */
+  self_approval_available?: boolean
 }
 
 export interface ExposureEvent {
@@ -195,6 +200,10 @@ export interface BulkIngestExposuresResponse {
  */
 export interface ChangeExposureStateRequest {
   reason?: string
+  /** The owner approves their own pending request (no other approver). */
+  self_approve?: boolean
+  /** Fresh code from the owner's authenticator app (with self_approve). */
+  totp_code?: string
 }
 
 /**

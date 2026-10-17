@@ -103,6 +103,66 @@ ENV BACKEND_API_URL=$BACKEND_API_URL
 RUN npm run build
 
 # ==============================================================================
+# CONSOLE: the platform administration console (web/console), its own image
+# ==============================================================================
+# Its own Next.js app built from the same dependencies (RFC-022 revision 21):
+#   docker build --target console -t openctem-console .
+# The tenant image (production, the last and default stage) contains no console route and this one no tenant
+# route. Same minimal runtime: Alpine + node, no package manager, non-root,
+# read-only application files.
+FROM base AS console-builder
+
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+ARG NEXT_PUBLIC_APP_VERSION
+ARG NEXT_PUBLIC_APP_COMMIT
+ENV DOCKER_BUILD=true
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION
+ENV NEXT_PUBLIC_APP_COMMIT=$NEXT_PUBLIC_APP_COMMIT
+
+RUN npm run build:console
+
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS console
+
+RUN apk add --no-cache libstdc++ libgcc libatomic
+COPY --from=base /usr/local/bin/node /usr/local/bin/node
+RUN node --version
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+RUN addgroup -S -g 1001 nodejs && \
+  adduser -S -D -H -u 1001 -G nodejs -h /app nextjs
+
+# The standalone build of web/console keeps its path under the tracing root
+# (web/): the server is console/server.js. Writable only: console/.next/cache
+# (and /tmp), as for the tenant image.
+COPY --from=console-builder /app/console/.next/standalone ./
+COPY --from=console-builder /app/console/.next/static ./console/.next/static
+RUN mkdir -p console/.next/cache && chown nextjs:nodejs console/.next/cache
+
+LABEL org.opencontainers.image.title="OpenCTEM platform console" \
+      org.opencontainers.image.description="OpenCTEM platform administration console (Next.js standalone, non-root)" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
+
+USER nextjs
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1
+
+CMD ["node", "console/server.js"]
+
+# ==============================================================================
 # PRODUCTION STAGE - Minimal production image
 # ==============================================================================
 # Plain Alpine plus the node binary of the base stage, and nothing else: no
@@ -116,7 +176,7 @@ RUN npm run build
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS production
 
 # node's shared libraries (see `ldd /usr/local/bin/node` in the node image).
-RUN apk add --no-cache libstdc++ libgcc libatomic
+RUN apk add --no-cache libstdc++ libgcc libatomic && apk upgrade --no-cache zlib
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
 RUN node --version
 
@@ -165,3 +225,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Start application
 CMD ["node", "server-with-ws.mjs"]
+

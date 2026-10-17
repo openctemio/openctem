@@ -29,6 +29,15 @@
 > setting, no longer only an environment variable (see
 > [Revision 10](#revision-10-the-sign-up-policy-is-a-console-setting)).
 
+> **Revision 20** (2026-10-15): the console becomes a hardened plane of its
+> own: route-level step-up on every protected action first (see
+> [Revision 20](#revision-20-the-admin-plane)).
+
+> **Revision 21** (2026-10-17): the console is its own web service at the
+> root of its own site (default port 8443, or its own host name), with no
+> `/admin` path in the tenant app; the API's internal sensor listener moves to
+> 9443 (see [Revision 21](#revision-21-the-consoles-own-service-and-port)).
+
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*: the system administrator is an account
 > with a system-level role and a different menu (Organizations, Users, Scanning,
@@ -85,15 +94,16 @@ used; migration 001483 dropped them:
   32-byte random token; the token itself is never stored), `mfa_verified`,
   `created_at`, `expires_at`, `last_seen_at`, `ip`, `user_agent`.
 
-**Flow.** The administrator signs in on the normal `/login` (email + password,
-the account's own lockout and password policy). Login and `GET /users/me` report
-`platform_admin` / `is_platform_admin`, and the UI sends the administrator to
-`/admin` instead of organization onboarding. Then, under `/api/v1/admin/auth`:
+**Flow** (as revised by revision 20: the console signs in on its own). Under
+`/api/v1/admin/auth`, on the console's sign-in page:
 
-1. `POST /session`: reads the `/login` refresh-token cookie (validated, not
-   rotated). Refused with 401 when not signed in, 403 when the account is not
-   linked to an active, unlocked administrator, and 403 when the sign-in came
-   from SSO, SAML or a social provider (audited). Otherwise it creates a
+1. `POST /login {email, password}`: the account's password, checked with the
+   account's own lockout and password policy and without opening a `/login`
+   session (`AuthService.VerifyConsolePassword`). A wrong password and an
+   unknown email answer the same 401; only a local password account can pass,
+   so an organization's SSO never authenticates an administrator. 403 when the
+   account is not linked to an active, unlocked administrator (audited), or
+   when the identity provider is required. Otherwise it creates a
    *pending* session (`mfa_verified=false`, 5-minute expiry) in an HttpOnly
    `admin_mfa` cookie and answers `mfa_required`, or `mfa_enrollment_required`
    with a freshly generated secret + `otpauth://` URI when MFA is not set up.
@@ -232,8 +242,8 @@ a local administrator for when SSO is unavailable.
   organization's providers (`/auth/providers`, per org slug); the platform IdP
   appears only on the console sign-in page, through
   `GET /api/v1/admin/auth/idp` (enabled + display name, nothing else). An
-  organization's IdP still cannot open the console: `/auth/session` refuses any
-  non-password `/login` session as before.
+  organization's IdP still cannot open the console: the console's own
+  sign-in (`/auth/login`) accepts only a local account's password.
 - **Flow** (authorization code + PKCE S256 + nonce + state):
   1. `POST /api/v1/admin/auth/idp/start` stores `sha256(state)`, the nonce and
      the encrypted PKCE verifier server-side (10-minute expiry, single use) and
@@ -266,7 +276,7 @@ a local administrator for when SSO is unavailable.
   Only then does a matching token open a verified session directly. The
   session records `auth_method = idp`.
 - **Require IdP.** With the IdP enabled and `require_idp` on, the local
-  password path (`/auth/session`) is refused for every administrator except
+  password path (`/auth/login`) is refused for every administrator except
   break-glass ones, and turning it on ends existing password sessions of
   non-break-glass administrators. The `/login` account itself is untouched,
   since it belongs to no organization and can open nothing without the console.
@@ -493,32 +503,34 @@ creates the organization with the requester as owner (ops_admin+, audited).
 Details: `docs/architecture/user-onboarding.md`, "Sign-up policy" and
 "Request access".
 
-## Revision 11: plans and limits
+## Revision 11: limits
 
-Organizations are on a plan (Free, Pro, Enterprise) that caps what they may
-add:
+(Revised 2026-10-15.) Every organization is unlimited and may use every
+module unless a limit or a module deny is set for it:
 
-- System > Plans: the plan defaults; any administrator reads them, a super
-  admin changes them with a fresh authenticator code and the version read,
-  audited at critical severity and emailed to the other administrators;
-- Organizations > an organization: its plan, usage, an over-limit badge, and
-  per-organization overrides (reason required, optional expiry), ops_admin+,
-  audited;
+- System > Limits: the default limits of self-service organizations (empty
+  by default) and the per-person organization cap; any administrator reads
+  them, a super admin changes them with a fresh authenticator code and the
+  version read, audited at critical severity;
+- Organizations > an organization: its limits, usage, an over-limit badge,
+  and per-organization limits (reason required, optional expiry), ops_admin+,
+  audited; module denies need a reason and a fresh authenticator code;
+  limits set by a hosted service's control plane are shown read-only;
 - lowering a limit never removes members, assets or keys: new additions are
-  refused until usage is under it again;
-- organizations created before plans are Enterprise (unlimited); a
-  self-service organization starts on Free.
+  refused until usage is under it again.
 
-Details: `docs/architecture/plans-and-limits.md`.
+Details: `docs/architecture/limits.md`.
 
-## Revision 12: idle Free workspaces
+## Revision 12: idle-organization policy
 
-A Free organization nobody signs in to is reminded at 60 days, read-only at
-90 (changes refused, reads and exports kept), warned again at 113 and due for
-deletion at 120; a sign-in by any member undoes it at once. The platform
+(Revised 2026-10-15: off by default.) For an organization the idle policy is
+turned on for, nobody signing in leads to a reminder at 60 days, read-only at
+90 (changes refused, reads and exports kept), a second warning at 113 and
+deletion due at 120; a sign-in by any member undoes it at once. The platform
 administrators are alerted at deletion_due and delete from the console;
 nothing is deleted automatically. Organizations > an organization shows the
-stage and lets an ops_admin+ exempt it with a reason (audited).
+stage and lets an ops_admin+ turn the policy on or off with a reason
+(audited).
 
 Details: `docs/architecture/idle-workspaces.md`.
 
@@ -529,7 +541,7 @@ them:
 
 - **Navigation.** Overview · Customers (Organizations) · Scanning (Target
   mappings) · Security (Admin activity, Administrators) · System (Sign-up,
-  Admin sign-in, Plans). Later sections (Users, Requests, Plans & usage, Operations)
+  Admin sign-in, Limits). Later sections (Users, Requests, Operations)
   are added together with their pages, never ahead of them. Pages that moved
   (`/admin/system-logs` to `/admin/security/activity`, `/admin/administrators`
   to `/admin/security/administrators`) have no redirect.
@@ -553,16 +565,16 @@ them:
 ## Revision 14: organization 360
 
 Organizations > an organization opens on a summary: owners and active
-members, the plan with an over-limit badge and the limits that are over,
+members, the limits that apply with an over-limit badge,
 sign-in (SSO posture and verified domains), identifiers, and the latest
 administrator actions on it. Each card leads to its tab. The tab is in the
-URL (`?tab=overview|users|plan|sso|activity|audit-chain`), so a support link
+URL (`?tab=overview|users|limits|sso|activity|audit-chain`), so a support link
 can point at one. Activity lists every admin audit row about the
 organization (`GET /admin/audit-logs?resource_id=<id>`).
 
-The organization list shows each organization's plan and filters by owner
-(`owner=none` lists those with no active owner, which the overview links
-to) and by plan. Owner recovery gained a reason and step-up (revision 7).
+The organization list shows whether limits apply to each organization and
+filters by owner (`owner=none` lists those with no active owner, which the
+overview links to). Owner recovery gained a reason and step-up (revision 7).
 Nothing from inside an organization (findings, assets) is shown: the console
 never reads it.
 
@@ -663,6 +675,286 @@ it.
   `/api/v1/admin/threat-intel/sync` routes (ops_admin+ for changes,
   audited).
 
+## Revision 20: the admin plane
+
+The console runs in the API process, on the API's listener and the web app's
+origin, with the API's database role. Revision 20 hardens it step by step
+into a separate plane of the same codebase and image. Threat model: a stolen
+console session (malware, a stolen cookie, a phishing proxy relaying TOTP), a
+script on the tenant origin riding the console, and a tenant-side SQL
+injection reaching the admin tables. Each step below ships on its own.
+
+### Step-up on protected actions
+
+A console session alone no longer changes who may sign in or what they may
+do. Every protected action takes a route-level step-up
+(`middleware.RequireAdminStepUp`): a fresh authenticator code in the
+`X-Admin-Step-Up` header. One confirmation opens a five-minute window on the
+same console session (`admin_sessions.step_up_at`, migration 002472); another
+session, another administrator or a pending session never rides it. Without
+a code or window the API answers `401 ADMIN_STEP_UP_REQUIRED`; the console's
+one step-up dialog asks for the code and retries the same request. A wrong
+code counts toward the sign-in lockout; each confirmation is audited
+(`console.step_up`, with the action as its purpose).
+
+Protected actions: every console write except the routine ones. Identity
+and privilege: provisioning, changing, deleting or resetting an administrator,
+a break-glass test, unbinding an administrator from the platform identity
+provider, replacing or removing that provider, ending another administrator's
+session, and the account support actions on a user (revoke sessions, unlock,
+password reset, verification e-mail). Organizations: creating one, approving
+an access request (it creates an organization and its owner), creating or
+recovering an owner, every SSO write (SAML, identity providers, verified
+domains, SSO enforcement), module grants, the scan-approval policy and the
+audit-chain rebaseline. Platform settings and trust: sign-up mode, e-mail,
+legal pages, default limits and modules, the scan-approval default, platform
+sensor domain proof, content packs and the program feed. The handlers that
+read a code from the request body check it with the same helper, which
+accepts the route's confirmation, so a form that already asked for a code
+sends it once (`adminFetch` puts a body `totp_code` in the header).
+
+The routine writes, each with its reason in `adminWriteInventory`: an
+organization's limits and idle exemption, rejecting an access request, the
+e-mail test (to the caller's own address), announcements, threat-intel sync,
+blocking or unblocking an AI client, and scanner target mappings. CI fails on
+a console write that is not classified, on a listed route that does not
+exist, on a step-up route that reaches its handler without a code, and on a
+routine route that asks for one.
+
+An administrator who signs in only through the platform identity provider has
+no console authenticator, so protected actions answer
+`403 STEP_UP_UNAVAILABLE` until one is enrolled (WebAuthn for the console
+lifts this).
+
+### The console signs in on its own
+
+The console no longer starts from the tenant `/login` session (owner
+decision D2): `POST /api/v1/admin/auth/session`, which read the tenant
+refresh-token cookie, is removed, and `POST /api/v1/admin/auth/login` takes
+the account's email and password (same account, password and lockout), then
+the console's own second factor. Signing out of the console ends only the
+console session. A tenant-side session bug can no longer lead into the
+console, and the console works on an origin of its own, where a host-only
+cookie of the tenant origin would never arrive anyway.
+
+### Time-boxed elevation
+
+Administrators act as read-only until they elevate (owner decision D8,
+`ADMIN_ELEVATION=required`, the default). `POST /api/v1/admin/auth/elevate
+{role, minutes, reason}` (step-up) makes the console session act as
+`ops_admin` or `super_admin`, never above the administrator's own role, for 15
+to 60 minutes (never past the session), audited at high severity
+(`console.elevated`); `DELETE /api/v1/admin/auth/elevate` ends it at once.
+The elevation lives on the session (`admin_sessions.elevated_role`,
+`elevated_until`, migration 002813), so another session of the same
+administrator stays read-only. Authorization uses the acting role
+(`AdminUser.EffectiveRole`); the persisted role is the ceiling and is never
+changed by acting. `GET /admin/auth/validate` returns `role` (acting),
+`max_role` and `elevated_until`; the console shows a bar to elevate or end.
+Approval of an elevation by another super admin is a later step.
+
+## Revision 21: the console's own service and port
+
+Owner decision 2026-10-17. Revision 20 gave the console its own site on the
+gateway, but the web app still carried the console under `/admin` and served
+it from the same process as the tenant pages. Revision 21 finishes the split.
+
+### Decisions
+
+| # | Decision |
+|---|----------|
+| R21.1 | **The console is its own web service, at the root of its own site.** `https://admin.example.com/` or `https://<host>:8443/`, never under `/admin`. It is its own Next.js app in the monorepo (`web/console/`) and its own image (`openctem-console`, its own container or Deployment): its own bundle, process, origin and cookies. The tenant web app contains no console page, route or API proxy; the console contains no tenant page or tenant API proxy. There is no `/admin` path left and no redirect from it. The console API stays on the API's internal console listener (`ADMIN_LISTEN_ADDR`). |
+| R21.2 | **Default console port 8443** in port mode. |
+| R21.3 | **Everything is configurable, with the same four settings in every installer**: the console mode, its host name, its port and the client networks that may reach it (table below). No domain is built in; `admin.example.com` style names are examples only. |
+| R21.4 | **The API's internal sensor mTLS listener moves from 8443 to 9443** (`SENSOR_MTLS_LISTEN_ADDR`, `SENSOR_MTLS_UPSTREAM`), so 8443 has one meaning: the console. Sensors keep dialing only port 443; the gateway passes their connections through to 9443 inside the stack network. |
+
+| Setting | Compose / `setup.sh` | Helm chart | Ansible kit |
+|---------|----------------------|------------|-------------|
+| Mode | `OPENCTEM_ADMIN_SITE` = `port` \| `host` \| `off` (`--admin-site`) | `admin.site.mode` | `openctem_admin_site` |
+| Host name | `OPENCTEM_ADMIN_HOST` (`--admin-host`) | `admin.site.host` | `openctem_admin_host` |
+| Port | `OPENCTEM_ADMIN_PORT`, default 8443 (`--admin-port`) | `admin.site.port` | `openctem_admin_port` |
+| Client networks | `OPENCTEM_ADMIN_ALLOWED_CIDRS` (`--admin-cidrs`, `--admin-public`) | `admin.allowedCidrs` | `openctem_admin_allowed_cidrs` |
+
+Defaults everywhere: mode `port`, port 8443, private networks only
+(loopback, RFC 1918, IPv6 unique local addresses). Host mode is the
+recommended production setup and the installers say so.
+
+### Isolation model
+
+Seven ways to isolate an instance console were compared for a multi-tenant
+service and for self-host (threats: a tenant-origin script riding a console
+session, CSRF, credential stuffing, phishing proxies relaying codes, session
+theft, insiders, a compromised dependency, the blast radius of a compromise,
+network exposure):
+
+| # | Model | What it separates | Verdict |
+|---|-------|-------------------|---------|
+| 1 | One app, role-based menus | Authorization checks only | Not isolation: a tenant XSS is a console compromise. Single-tenant appliances only. |
+| 2 | Same host, `/admin` path | Cookie paths, which are no boundary inside one origin | Rejected (what revision 20 replaced). |
+| 3 | Same host, own port | A separate origin (same-origin policy, storage, CSP); cookies and `SameSite` are still shared, since both ignore the port | Acceptable with the rules under Security: the CSRF token never in a cookie, an Origin check on every write, strict response headers. |
+| 4 | Own host name | A separate origin and cookie jar; still the same site when both are subdomains of one registrable domain | Recommended for production; strongest on a registrable domain of its own. |
+| 5 | Own web service and API listener | Process, bundle and dependencies in the browser tier; the console API is never on the public listener | Adopted in every mode. The API process is still shared, so the console database role keeps a tenant-side SQL injection out of the console's tables. |
+| 6 | Private network, VPN or access proxy only | The console is off the internet attack surface; an identity-aware proxy adds an independent sign-in | Default (private client networks); an access proxy for anything wider. |
+| 7 | Separate deployment (hosted service) | Console credentials are absent from the tenant tier, so a tenant-side code execution does not reach them | For the hosted service. |
+
+Recommendation, adopted:
+
+- **Self-host default: 5 + 3 + 6.** The console service and listener, port
+  8443, private networks only. Every installer recommends host mode (4) for
+  production and warns never to publish the console through a public tunnel
+  without an access proxy. One `compose up` still gives a working console
+  with no extra DNS name.
+- **Hosted service: 7 + 4 + 5 + 6.** Its own deployment and database
+  credentials, its own host name, reachable only through an identity-aware
+  proxy with staff single sign-on, security keys required for every
+  administrator (RFC-078 console policy), the audit log streamed off-box,
+  tenant data only through a tenant's support-access grant.
+- **Hardening that keeps self-host simple, in this revision:** strict console
+  response headers (a nonce CSP with `frame-ancestors 'none'`,
+  `form-action 'self'`, `base-uri 'none'`, `object-src 'none'`;
+  `Cross-Origin-Opener-Policy: same-origin`;
+  `Cross-Origin-Resource-Policy: same-origin`; `Origin-Agent-Cluster: ?1`;
+  `Referrer-Policy: no-referrer`; `Cache-Control: no-store` on pages); the
+  CSRF token in memory only; an Origin check on every console write; a
+  15-minute idle timeout (was 30; the absolute lifetime stays 8 hours); and
+  an optional bind address for the console port (`OPENCTEM_ADMIN_BIND`), so
+  it can listen only on a private or VPN interface, since a published
+  container port is not filtered by the host firewall.
+- **Recommended, not on by default for self-host:** security keys only for
+  administrators. A fresh install has no keys, and the policy needs two keys
+  and recovery codes per administrator before it turns on; the console
+  prompts for enrollment. Later options: idle time that ignores background
+  refreshes, binding a console session to its network, and `__Host-` cookies
+  in host mode.
+
+### Why these ports
+
+- **A port number is not a security control.** The controls are the
+  separate origin, private networks (a VPN or an access gateway in front),
+  the console's own sign-in with its second factor (TOTP or a security key),
+  step-up on protected actions and the append-only audit log. Moving the
+  console to an unusual port hides nothing from a scanner.
+- **Port mode, 8443**, is the default because it needs no extra DNS name and
+  8443 is the familiar alternative HTTPS port for a self-hosted service. It is
+  a setting because it may already be taken on the host; the gateway refuses
+  a console port equal to 80, 443 or the main site's published port.
+- **Host mode is recommended for production.** Only a separate host name
+  isolates the console from the main site completely in the browser: cookies
+  are scoped by host, not by port, so in port mode the two sites share a
+  cookie jar even though they are separate origins (see Security below).
+- **Never publish the console through a public tunnel without an access
+  gateway (an identity-aware proxy) in front of it.** A tunnel makes every
+  client arrive from the tunnel connector's private address, which the
+  private-network allow-list would accept.
+- **Sensors use outbound 443 only.** The gateway routes a TLS connection that
+  offers the sensor ALPN id to the API's internal mTLS listener (now 9443)
+  without terminating it. This is the firewall-friendly pattern: the
+  customer's network allows one outbound HTTPS port, and the platform opens no
+  extra inbound port for sensors.
+
+### Repository, images and planes
+
+- **Repository: the monorepo.** The console is its own Next.js app in
+  `web/console/` (its own `next.config.ts`, app directory, proxy, tsconfig,
+  Dockerfile target and CODEOWNERS entry with required review, as are the
+  console API routes). It sits inside `web/` so that it resolves the same
+  installed dependencies as the tenant app (one lockfile, one React), and
+  imports the shared code (UI components, i18n, the API client helpers) from
+  `web/src` through one alias. Lint rules keep the boundary: the tenant app
+  never imports console code, and the console imports only the shared
+  folders. Moving the shared folders into a package of their own is a
+  mechanical later step that changes no boundary.
+- **Images.** A separate image, `openctem-console`, built from the monorepo:
+  a Next.js standalone build, so it holds only the modules the console
+  imports; non-root on a minimal base; its own strict CSP (the headers under
+  Isolation model, no third-party script); built, signed and given an SBOM by
+  the same release pipeline as every image. The tenant image
+  (`openctem-web`) contains no console code. The all-in-one image starts the
+  console as one more process.
+- **API planes.** One API image; `OPENCTEM_PLANE=all|tenant|admin` selects
+  what a process serves. `all` (the self-host default) is one process with
+  the internal console listener, as today. `tenant` never registers the
+  console routes and needs no console database credentials. `admin` serves
+  only the console API (and health) on its listener, with the console
+  database role, and runs no tenant background work. A hosted deployment runs
+  `tenant` and `admin` as two deployments of the same image.
+- **Routes of the console app:** its pages at `/` (overview, organizations,
+  users, security, operations, system, requests), `/login` and
+  `/login/callback`, its API proxy `/api/v1/admin/*` (to `ADMIN_API_URL`, the
+  API's console listener) and `/api/health`. Anything else is the console's
+  own 404.
+
+### Security
+
+Threat model: a script on the tenant origin (an XSS past the CSP, a
+compromised dependency of the tenant bundle) acting on an administrator's
+live console session; a tenant-side bug leading into the console; a network
+attacker reaching the console from outside the allowed networks.
+
+- **No shared code path at run time.** The tenant process has no console
+  route to call and the console process no tenant route, so neither can be
+  reached through the other's proxy, rewrites or middleware. The gateway
+  still answers 404 for `/api/v1/admin` on the main site, and the API's main
+  listener answers 404 for it.
+- **Origin.** In both modes the console is a separate origin (scheme, host and
+  port), so the same-origin policy keeps a tenant page from reading console
+  responses, and the console sends `X-Frame-Options: DENY` and
+  `frame-ancestors 'none'`, so it cannot be framed.
+- **Cookies.** In host mode nothing is shared. In port mode the two sites are
+  separate origins but share the host's cookies, and are the same site for
+  `SameSite`. So no readable console secret is left in a cookie: the
+  console's CSRF token is returned in the body of the sign-in and validate
+  responses and kept in memory (the readable `admin_csrf_ui` copy is
+  removed). `admin_session`, `admin_mfa`, `admin_idp` and `admin_csrf` stay
+  HttpOnly and scoped to `/api/v1/admin`, and the console's API proxy forwards
+  only those (never a tenant cookie or token).
+- **CSRF.** Every state-changing request to the console proxy must carry the
+  console's own origin in `Origin` (a tenant page's origin differs by host or
+  port and is refused) and the console's token, which is bound to the session
+  (HMAC of the session secret under a server key; see Security notes). The
+  API verifies the binding, so a cookie planted by a tenant page on the same
+  host cannot satisfy it.
+- **Headers.** Console pages carry the headers listed under Isolation model;
+  a tenant page cannot frame the console, keep a window handle on it, embed
+  its resources or read its responses.
+- **Sessions.** 15 minutes idle, 8 hours at most, server-side.
+- **Network.** The gateway's console site admits only the allowed client
+  networks, and the API's console listener applies the same list. In port
+  mode `OPENCTEM_ADMIN_BIND` can publish the console port on one interface
+  only (a private or VPN address).
+- **Unchanged:** the console's own sign-in, its second factor (TOTP, security
+  keys), step-up on protected actions, time-boxed elevation and the audit log.
+
+Tests: the tenant build has no console route and the console build no tenant
+route (route manifest checks of both builds); the console proxy refuses a
+write whose `Origin` is the tenant origin (same host, other port); the gateway
+smoke test checks both sites, the allow-list and the port checks; the CSRF
+token is never set in a readable cookie.
+
+### Upgrade
+
+- The console moves from `https://<host>/admin` to `https://<host>:8443/`
+  (port mode) or `https://<OPENCTEM_ADMIN_HOST>/` (host mode); the all-in-one
+  image publishes 8443 for it. Update bookmarks; a platform identity provider's redirect URI becomes
+  `<console origin>/login/callback`.
+- A deployment that publishes or proxies the API's sensor listener directly
+  (`:8443`) changes it to `:9443`, or sets `SENSOR_MTLS_LISTEN_ADDR` and
+  `SENSOR_MTLS_UPSTREAM` to keep the old port.
+- The Compose stack, the Helm chart and the Ansible kit gain the console
+  service; a deployment without it has no console.
+
+### Delivery
+
+Small pull requests, in order: the gateway, Compose and configuration (port
+8443, the four settings, sensor listener 9443, this revision: #2438); the
+console's CSRF token in the response body and the shorter idle timeout
+(#2439), bound to the session with no-store responses (#2447); sensor ALPN
+routing only on the main listener (#2448); the console app and its image,
+with `/admin` removed from the tenant app (#2442); the release pipeline for
+`openctem-console` and the all-in-one image (#2443); `OPENCTEM_PLANE` in the
+API (#2444); the Helm chart and the Ansible kit (their repositories); the
+documentation.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
@@ -696,10 +988,50 @@ it.
 
 - The admin session cookie is scoped to `/api/v1/admin`, so it is never sent to
   tenant routes, and the tenant JWT never authenticates admin routes.
+- The CSRF token is HttpOnly on `/api/v1/admin` as well (`admin_csrf`). The
+  console gets the same token in the body of the responses that open a
+  session (the TOTP step, the identity-provider callback) and of
+  `GET /admin/auth/validate`, keeps it in memory and echoes it in the
+  `X-CSRF-Token` header; no console secret is ever readable in a cookie
+  (revision 21: on a second port of the tenant host both sites share the
+  host's cookies, but a tenant page cannot read the console's responses).
+  Before a session exists, the sign-in steps echo the page's `csrf_token`.
+  The older readable copies (`admin_csrf` at `/`) are cleared on every
+  sign-in. A console session ends after 15 minutes without use (8 hours at
+  most).
+- The CSRF token is bound to the session: HMAC-SHA256 of the session secret
+  under a server key derived from the session-signing secret
+  (`AUTH_JWT_SECRET`, shared by every replica). The API verifies that
+  binding on every console write, never cookie equality, so an `admin_csrf`
+  cookie a tenant-page script plants on the same host (cookies ignore ports,
+  and a more specific path shadows the real one) is worthless. Every console
+  response is `Cache-Control: no-store`.
+- With `OPENCTEM_ADMIN_SITE=off` the gateway serves no console site and the
+  console service is reachable only the way the operator routes it. Routing
+  it on the tenant site's origin (a path of the main host name) brings back
+  the residual risks of a shared origin: a tenant-page script could read
+  console responses and frame console pages. The network allow-list, the
+  session-bound token, step-up and the audit log still apply, but `off` is
+  meant for installations that give the console their own separate host name
+  or private network, never a shared origin.
 - Server-side sessions: deactivating an admin or resetting credentials deletes
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes
-  are written to `admin_audit_logs`.
+  are written to `admin_audit_logs`. That log is append-only and hash-chained
+  (migration 002545): the database chains every insert, refuses updates,
+  deletes and truncation, and removes only the oldest prefix older than a
+  year through `admin_audit_prune`, anchoring the chain where it stopped.
+  `GET /api/v1/admin/audit-logs/chain` (any admin; shown on Security >
+  Activity) and `bootstrap-admin verify-audit` report every row that does not
+  verify. `ADMIN_AUDIT_SINK` streams every row (with its chain position and
+  hash), the chain head and the chain verification state to an HMAC-signed
+  HTTPS, syslog-over-TLS (optionally mutual TLS) or file destination outside
+  the database, so a re-signed chain no longer matches the copy already sent.
+  An exclusive controller reads rows after a durable cursor and advances it
+  only after the destination accepted the batch (at-least-once, batch id,
+  exponential backoff, lag and chain-break alerts, an idle head export every
+  `ADMIN_AUDIT_SINK_HEAD_INTERVAL`).
+  See `docs/architecture/audit-hash-chain.md`.
 - Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
   code from the console authenticator, single use (the sign-in replay guard),
   counted toward lockout when wrong, audited as `console.step_up` /
@@ -722,3 +1054,49 @@ it.
 - An administrator cannot deactivate, demote or delete themselves, so the
   super admin making a change always remains: the platform is never left
   without an active super admin.
+- The console answers only to the client networks in `ADMIN_ALLOWED_CIDRS`
+  (default: loopback, RFC 1918 and IPv6 unique local addresses); any other
+  network gets 403 `ADMIN_NETWORK_NOT_ALLOWED` on every `/api/v1/admin` route,
+  the sign-in steps included. The client address is the TCP peer, or
+  `X-Forwarded-For` from `SERVER_TRUSTED_PROXIES` only. An internet-facing
+  console is an explicit choice (`0.0.0.0/0,::/0`, logged as a warning at
+  start).
+- With `ADMIN_LISTEN_ADDR` set (a loopback or private IP, e.g.
+  `10.0.0.5:8081`; anything else needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`,
+  for a container network with no published port) the console API has its own
+  listener: `/api/v1/admin` is served only there and the main listener
+  answers 404 for it; the admin listener answers 404 for every other route
+  but `/health`. Both share the router and its global middleware, so the
+  console's guards are unchanged; the listener decides where it can be
+  reached (the gateway's admin site, or nowhere outside the host). Any later
+  internal-only surface (the control-plane API) gets its own listener the
+  same way. The split reads the path the way the router does (repeated slashes,
+  `.` and `..` segments, a trailing slash, percent-encoded separators), so
+  `/api/v1//admin/...` is the console on the public listener (404) and
+  `/api/v1/admin/../findings` is not the console on the admin listener (404).
+  The listener speaks plain HTTP on the private network between the web
+  console and the API (the gateway's console site terminates TLS for the
+  browser); where that network is not trusted, TLS goes in front of it.
+- The console has its own origin and its own service (revision 21). The
+  gateway's console site (`OPENCTEM_ADMIN_SITE=port`: `https://<host>:8443`,
+  or `host`: its own DNS name) answers only `OPENCTEM_ADMIN_ALLOWED_CIDRS`
+  (private networks by default) and sends everything to the console service
+  (`openctem-console`, `OPENCTEM_CONSOLE_UPSTREAM`), which serves the console
+  at the root of that site and proxies its API to the API's console listener
+  (`ADMIN_API_URL`). The tenant web app has no console route and refuses to
+  proxy `/api/v1/admin` however it is spelled; the gateway's main site answers
+  404 for it too. With its own host name the browser isolates the console from
+  the main site completely (cookies, scripts, storage); on a second port of
+  the same host name the two are separate origins that share the host's
+  cookies, so no console secret is kept in a readable cookie and every console
+  write must carry the console's own `Origin`. Host mode is the recommended
+  one; port mode is the default only because it needs no DNS.
+- A verified console sign-in from another address than the administrator's
+  last one is audited (`console.new_network_sign_in`, high) and emailed to
+  every administrator (the system SMTP sender; a WARN line with
+  `alert=new_network_sign_in` otherwise).
+- A read-only administrator sees counts, not people: an organization's member
+  list returns counts by role only (`redacted: true`), organizations show the
+  owner count without owner emails, and the account search
+  (`/platform-users`) is ops_admin+. Every member-list view is audited
+  (`organization.users_view`).

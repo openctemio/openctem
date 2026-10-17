@@ -17,6 +17,11 @@ export type CITrustRules = S['github_com_openctemio_openctem_api_pkg_domain_ciru
 export type CIGatePolicy = S['internal_infra_http_handler.CIGatePolicyResponse']
 export type CIGatePolicyList = S['internal_infra_http_handler.CIGatePolicyListResponse']
 export type CIGatePolicyRequest = S['internal_infra_http_handler.CIGatePolicyRequest']
+/** A repository's effective gate settings with per-field provenance (RFC-096). */
+export type CIRepositorySettings = S['internal_infra_http_handler.CIRepositorySettingsResponse']
+export type CIRepositorySettingField = S['internal_infra_http_handler.CIRepositorySettingField']
+/** A repository's gate baseline: findings known when it was recorded do not block. */
+export type CIGateBaseline = S['internal_infra_http_handler.CIGateBaselineResponse']
 export type CIGateOverride = S['internal_infra_http_handler.CIGateOverrideResponse']
 export type CIGateOverrideRequest = S['internal_infra_http_handler.CIGateOverrideRequest']
 
@@ -35,11 +40,6 @@ export type CIVerdictFilter = '' | 'pass' | 'fail' | 'none'
 export type CIPipeline = S['internal_infra_http_handler.CIPipelineResponse']
 export type CIPipelineList = S['internal_infra_http_handler.CIPipelineListResponse']
 export type CIPipelineDetail = S['internal_infra_http_handler.CIPipelineDetailResponse']
-export type FleetItem = S['internal_infra_http_handler.FleetItem']
-export type FleetList = S['internal_infra_http_handler.FleetListResponse']
-
-/** The fleet mode: a sensor row (daemon) or a CI pipeline (runner). */
-export type FleetMode = 'daemon' | 'runner'
 export type CIPipelineStatus =
   | 'retired'
   | 'revoked'

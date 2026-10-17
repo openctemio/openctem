@@ -134,13 +134,14 @@ type Repository interface {
 	// most used first, and, when asked, the system tags the caller may see.
 	ListDistinctTags(ctx context.Context, tenantID shared.ID, access AccessScope, q TagListQuery) (TagList, error)
 
-	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
+	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query,
+	// over the assets in scope (nil scope: the whole tenant).
 	// This replaces the N+1 pattern of calling Count() per type.
-	GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID) (map[string]AssetTypeStats, error)
+	GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[string]AssetTypeStats, error)
 
-	// GetAverageRiskScore returns the average risk_score for all assets in a tenant.
+	// GetAverageRiskScore returns the average risk_score of the assets in scope (nil scope: the whole tenant).
 	// This replaces loading all assets into memory to compute the average.
-	GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error)
+	GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (float64, error)
 
 	// BatchUpdateRiskScores updates risk scores for multiple assets in a single query.
 	// Uses PostgreSQL unnest() for efficient bulk updates.
@@ -298,11 +299,16 @@ type Filter struct {
 	// Freshness keeps assets whose data is "stale" (an attribute class past
 	// its TTL) or "never" (a passive class that applies was never observed);
 	// docs/architecture/asset-freshness.md. "" = no filter.
-	Freshness        string
-	ParentID         *string             // Filter by parent asset ID
-	IsCrownJewel     *bool               // Filter crown jewel assets
-	SubType          *string             // Filter by sub_type
-	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
+	Freshness string
+	// Technologies keeps assets using any of these technologies (normalised
+	// names, RFC-112); TechnologyCategories keeps assets with a technology
+	// in any of these categories.
+	Technologies         []string
+	TechnologyCategories []string
+	ParentID             *string             // Filter by parent asset ID
+	IsCrownJewel         *bool               // Filter crown jewel assets
+	SubType              *string             // Filter by sub_type
+	PropertiesFilter     map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
 	BusinessUnitIDs []string // Filter by business_units membership (business_unit_assets)
@@ -691,6 +697,8 @@ func (f Filter) IsEmpty() bool {
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
 		f.Freshness == "" &&
+		len(f.Technologies) == 0 &&
+		len(f.TechnologyCategories) == 0 &&
 		f.ParentID == nil &&
 		f.DataScopeUserID == nil &&
 		len(f.PropertiesFilter) == 0 &&

@@ -10,7 +10,7 @@
 
 import useSWR, { type SWRConfiguration } from 'swr'
 import useSWRMutation from 'swr/mutation'
-import { get, post, patch } from '@/lib/api/client'
+import { get, post, patch, put } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import type {
@@ -25,6 +25,7 @@ import type {
   AddCommentInput,
 } from './finding-api.types'
 import type { ApiApproval, ApprovalStatus } from '../types/finding.types'
+import type { ApprovalEvaluation, ApprovalPolicy } from '../lib/approval-policy'
 
 // ============================================
 // SWR CONFIGURATION
@@ -507,14 +508,21 @@ export function buildFindingsExportUrl(
  * tenant-wide counts. The cache key includes the serialized filters
  * so different filter combinations don't trample each other in SWR.
  */
-export function useFindingStatsApi(filters?: FindingStatsFilters, config?: SWRConfiguration) {
+export function useFindingStatsApi(
+  filters?: FindingStatsFilters,
+  config?: SWRConfiguration & {
+    /** false = do not fetch yet (e.g. while the page's URL params are not final) */
+    enabled?: boolean
+  }
+) {
   const { currentTenant } = useTenant()
+  const { enabled = true, ...swrConfig } = config ?? {}
 
   const url = buildFindingStatsUrl(filters)
 
-  const key = currentTenant ? url : null
+  const key = currentTenant && enabled ? url : null
 
-  return useSWR<FindingStatsResponse>(key, fetchFindingStats, { ...defaultConfig, ...config })
+  return useSWR<FindingStatsResponse>(key, fetchFindingStats, { ...defaultConfig, ...swrConfig })
 }
 
 // ============================================
@@ -545,11 +553,56 @@ export function useRequestApproval(findingId: string) {
     currentTenant ? `/api/v1/findings/${findingId}/approvals` : null,
     async (
       url: string,
-      { arg }: { arg: { requested_status: string; justification: string; expires_at?: string } }
+      {
+        arg,
+      }: {
+        arg: {
+          requested_status: string
+          justification: string
+          closure_reason: string
+          expires_at?: string
+        }
+      }
     ) => {
-      const response = await post(url, arg)
+      // Usually a pending request; an approved one (single_person) when the
+      // organization lets the requester decide this false positive alone.
+      const response = await post<ApiApproval>(url, arg)
       return response
     }
+  )
+}
+
+/** How a request of one status on one finding is decided now. */
+export interface FalsePositivePolicy {
+  fp_approval: FPApprovalLevel
+  /** One person holding findings:approve may decide it alone. */
+  single_person: boolean
+  /** ...and the caller is such a person: it applies at once. */
+  can_decide_alone: boolean
+  /** The finding is material (always four-eyes under high_and_above). */
+  material: boolean
+  pending_fp_approval?: FPApprovalLevel
+  pending_fp_approval_at?: string
+  /** The approval policy's evaluation: tier, why, who may approve, how long. */
+  evaluation?: ApprovalEvaluation
+}
+
+/**
+ * GET /api/v1/findings/{id}/approvals/policy?status=, only while `enabled`:
+ * how a request for `status` (false_positive or accepted) would be decided.
+ */
+export function useFindingApprovalPolicy(
+  findingId: string,
+  status: 'false_positive' | 'accepted',
+  enabled: boolean
+) {
+  const { currentTenant } = useTenant()
+  return useSWR<FalsePositivePolicy>(
+    currentTenant && enabled && findingId
+      ? `/api/v1/findings/${encodeURIComponent(findingId)}/approvals/policy?status=${status}`
+      : null,
+    get,
+    defaultConfig
   )
 }
 
@@ -562,8 +615,8 @@ export function useApproveStatus(approvalId: string) {
   return useSWRMutation(
     currentTenant ? `/api/v1/approvals/${approvalId}/approve` : null,
     async (url: string) => {
-      const response = await post(url, {})
-      return response
+      // 200 with status "pending" while more sign-offs are needed.
+      return post<ApiApproval>(url, {})
     }
   )
 }
@@ -591,6 +644,87 @@ export interface ApprovalListResponse {
   per_page: number
   /** Count per status under the caller's data scope, zero included. */
   status_counts: Record<ApprovalStatus, number>
+  /**
+   * The viewer is the organization's only active person and its owner: they
+   * may approve their own pending requests with an authenticator code.
+   */
+  self_approval_available?: boolean
+}
+
+/** The approved request after a sole member's own approval. */
+export interface SelfApproveResponse extends ApiApproval {
+  /** The acceptance end asked for was brought forward to the self-approval limit. */
+  end_shortened: boolean
+}
+
+/**
+ * The sole member of the organization approves their own pending request
+ * (POST /api/v1/approvals/{id}/self-approve) with a reason and a fresh code
+ * from their authenticator app. The server decides whether it is allowed.
+ */
+export function selfApproveFindingApproval(id: string, input: { reason: string; code: string }) {
+  return post<SelfApproveResponse>(
+    `/api/v1/approvals/${encodeURIComponent(id)}/self-approve`,
+    input
+  )
+}
+
+/** The organization's finding approval settings. */
+/** Who decides a false positive (accepted risk always needs a second person). */
+export type FPApprovalLevel = 'all' | 'high_and_above' | 'off'
+
+export interface FindingApprovalSettings {
+  /** Emailed when the sole member approves their own request. */
+  backup_contact_email: string
+  /** The false-positive approval level in force. */
+  fp_approval?: FPApprovalLevel
+  /** A lower level chosen less than 24 hours ago, in force at pending_fp_approval_at. */
+  pending_fp_approval?: FPApprovalLevel
+  pending_fp_approval_at?: string
+  /** Share (0-10 %) of single-person false positives flagged for a second look. */
+  second_look_percent?: number
+  /** A lower share chosen less than 24 hours ago, in force at pending_second_look_at. */
+  pending_second_look_percent?: number
+  pending_second_look_at?: string
+  /** The approval policy in force. */
+  policy?: ApprovalPolicy
+  /** A relaxing policy chosen less than 24 hours ago, in force at pending_policy_at. */
+  pending_policy?: ApprovalPolicy
+  pending_policy_at?: string
+  /** The platform's lowest tier per "<kind>.<class>". */
+  floors?: Record<string, string>
+  /** The platform's default tier per "<kind>.<class>". */
+  defaults?: Record<string, string>
+}
+
+/**
+ * PUT body: any of the plain fields, or the whole approval policy.
+ * `cancel_pending` drops every waiting lowering (level, second-look share,
+ * relaxing policy) and keeps the values in force.
+ */
+export type FindingApprovalSettingsUpdate = Partial<
+  Pick<FindingApprovalSettings, 'backup_contact_email' | 'fp_approval' | 'second_look_percent'>
+> & { policy?: ApprovalPolicy; cancel_pending?: boolean }
+
+const FINDING_APPROVAL_SETTINGS_URL = '/api/v1/organization/settings/finding-approvals'
+
+/** Read the organization's finding approval settings. */
+export function useFindingApprovalSettings() {
+  const { currentTenant } = useTenant()
+  return useSWR<FindingApprovalSettings>(
+    currentTenant ? FINDING_APPROVAL_SETTINGS_URL : null,
+    get,
+    defaultConfig
+  )
+}
+
+/**
+ * Save the organization's finding approval settings (settings:write and a
+ * recent sign-in; the API client asks for re-authentication when needed).
+ * Fields left out keep their value.
+ */
+export function updateFindingApprovalSettings(input: FindingApprovalSettingsUpdate) {
+  return put<FindingApprovalSettings>(FINDING_APPROVAL_SETTINGS_URL, input)
 }
 
 /**
@@ -624,6 +758,14 @@ export function useFindingApprovals(findingId: string | undefined) {
 /**
  * Cancel own approval request
  */
+/**
+ * Remind the eligible approvers of the caller's own pending request (the API
+ * allows one reminder per request per hour; a second answers 409 CONFLICT).
+ */
+export function remindApprovers(approvalId: string): Promise<{ reminded: number }> {
+  return post<{ reminded: number }>(`/api/v1/approvals/${approvalId}/remind`, {})
+}
+
 export function useCancelApproval(approvalId: string) {
   const { currentTenant } = useTenant()
 

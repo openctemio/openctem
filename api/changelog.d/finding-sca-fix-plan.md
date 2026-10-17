@@ -1,0 +1,5 @@
+### Added: the nearest fixed version and an upgrade plan for dependency findings
+
+- Ingest keeps the scanner's fixed versions on each finding (`metadata.fixed_versions`; trivy's comma-separated list is split, bounded to 20 entries). Findings from CI and sensor reports, which do not write the shared CVE catalog, now get a nearest fix.
+- `GET /api/v1/findings/{id}`: `component.fixed_in` is the nearest fix for the installed version (same major line first), `component.fixed_in_major` flags a breaking upgrade, `component.fixed_versions` lists every release line's fix, and `component.manifest_file` falls back to the finding's file. New `package_fix`: the version that fixes the most open findings of the same package version on the same asset, which ones it fixes and which stay open, and the lowest version that fixes all of them when the installed line no longer gets fixes.
+- The Fix card in the finding drawer and page reads "Upgrade Django 4.2.20 → 4.2.26" instead of listing every release line, flags a major upgrade, and says "Upgrading Django to 4.2.30 fixes 22 of 30 open findings of this package on this asset" with the list.

@@ -9,16 +9,17 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, render } from '@testing-library/react'
+import { renderHook, render, act, fireEvent } from '@testing-library/react'
 
 import { useFindingTriage, type FindingTriageTarget } from '../use-finding-triage'
 import type { FindingUser } from '../../types'
 
 // The API mutation hooks: never actually called in these tests, but the hook
 // wires them up on mount.
+const updateStatus = vi.fn()
 vi.mock('../../api/use-findings-api', () => ({
   invalidateFindingsCache: vi.fn(),
-  useUpdateFindingStatusApi: () => ({ trigger: vi.fn(), isMutating: false }),
+  useUpdateFindingStatusApi: () => ({ trigger: updateStatus, isMutating: false }),
   useUpdateFindingSeverityApi: () => ({ trigger: vi.fn(), isMutating: false }),
   useAssignFindingApi: () => ({ trigger: vi.fn(), isMutating: false }),
   useUnassignFindingApi: () => ({ trigger: vi.fn(), isMutating: false }),
@@ -26,6 +27,11 @@ vi.mock('../../api/use-findings-api', () => ({
 
 vi.mock('../../components/approval-dialog', () => ({
   ApprovalDialog: () => null,
+}))
+
+vi.mock('../../api/use-finding-lifecycles', () => ({
+  useSubStatusCatalog: () => new Map(),
+  subStatusName: (s: { name: string }) => s.name,
 }))
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -110,5 +116,115 @@ describe('useFindingTriage — no render loop', () => {
     // A loop would blow past React's ~50 update-depth limit. A handful (mount +
     // StrictMode double-invoke + one settling pass) is expected.
     expect(renders).toBeLessThan(10)
+  })
+})
+
+describe('useFindingTriage — notes', () => {
+  it('asks for a note before a fix claim, sending nothing until then', async () => {
+    const { result } = renderHook(() => useFindingTriage(target({ status: 'in_progress' })))
+    act(() => result.current.changeStatus('fix_applied'))
+    // The note dialog is shown; nothing is sent and the status is unchanged.
+    expect(result.current.status).toBe('in_progress')
+    render(<>{result.current.dialogs}</>)
+    expect(document.querySelector('#status-note')).not.toBeNull()
+  })
+})
+
+describe('useFindingTriage — Undo', () => {
+  it('offers Undo on a non-closing move, never on a resolve', async () => {
+    const { toast } = await import('sonner')
+    const { result } = renderHook(() => useFindingTriage(target({ status: 'confirmed' })))
+    await act(async () => {
+      await result.current.changeStatus('in_progress')
+    })
+    const opened = vi.mocked(toast.success).mock.calls.at(-1)?.[1] as { action?: unknown }
+    expect(opened?.action).toBeTruthy()
+
+    // A resolve asks for its note first; confirm it.
+    act(() => result.current.changeStatus('resolved'))
+    const { getByLabelText, getByRole } = render(<>{result.current.dialogs}</>)
+    fireEvent.change(getByLabelText('Note (required)'), { target: { value: 'patched' } })
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Save' }))
+    })
+    const resolved = vi.mocked(toast.success).mock.calls.at(-1)?.[1] as { action?: unknown }
+    expect(resolved?.action).toBeUndefined()
+  })
+})
+
+describe('useFindingTriage — organization lifecycle moves', () => {
+  function Harness({ f }: { f: FindingTriageTarget }) {
+    const triage = useFindingTriage(f)
+    return (
+      <>
+        <button
+          onClick={() =>
+            triage.changeStatus('in_progress', {
+              to: 'in_progress',
+              allowed: true,
+              mode: 'direct',
+              to_sub_status_id: 'sub-review',
+              name: 'Send to review',
+              note_min_len: 5,
+              fields: ['ticket_link'],
+            })
+          }
+        >
+          move
+        </button>
+        <button
+          onClick={() =>
+            triage.changeStatus('in_progress', {
+              to: 'in_progress',
+              allowed: true,
+              mode: 'direct',
+              to_sub_status_id: 'sub-wait',
+            })
+          }
+        >
+          relabel
+        </button>
+        <span data-testid="sub">{triage.subStatusId ?? ''}</span>
+        {triage.dialogs}
+      </>
+    )
+  }
+
+  it('asks for the required fields and note, then sends them with the sub-status', async () => {
+    updateStatus.mockResolvedValue({ sub_status_id: 'sub-review' })
+    const view = render(<Harness f={target({ status: 'confirmed' })} />)
+    fireEvent.click(view.getByText('move'))
+    expect(updateStatus).not.toHaveBeenCalled()
+    const confirm = view.getByRole('button', { name: /^move$/i })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(view.getByLabelText(/ticket link/i), {
+      target: { value: 'https://tickets.example.com/SEC-1' },
+    })
+    fireEvent.change(view.getByLabelText(/note/i), { target: { value: 'too' } })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(view.getByLabelText(/note/i), { target: { value: 'long enough' } })
+    await act(async () => {
+      fireEvent.click(confirm)
+    })
+    expect(updateStatus).toHaveBeenCalledWith({
+      status: 'in_progress',
+      resolution: 'long enough',
+      sub_status_id: 'sub-review',
+      fields: { ticket_link: 'https://tickets.example.com/SEC-1' },
+    })
+    expect(view.getByTestId('sub')).toHaveTextContent('sub-review')
+  })
+
+  it('relabels inside the current status without a dialog', async () => {
+    updateStatus.mockResolvedValue({ sub_status_id: 'sub-wait' })
+    const view = render(<Harness f={target({ status: 'in_progress' })} />)
+    await act(async () => {
+      fireEvent.click(view.getByText('relabel'))
+    })
+    expect(updateStatus).toHaveBeenCalledWith({
+      status: 'in_progress',
+      resolution: undefined,
+      sub_status_id: 'sub-wait',
+    })
   })
 })

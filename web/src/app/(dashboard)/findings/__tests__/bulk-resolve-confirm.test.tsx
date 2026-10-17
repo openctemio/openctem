@@ -3,7 +3,7 @@
  * count; one click on the menu item changes nothing.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const csrfFetch = vi.hoisted(() => vi.fn())
@@ -33,6 +33,7 @@ vi.mock('swr', () => ({
 }))
 
 vi.mock('@/features/findings/api/use-findings-api', () => ({
+  useFindingApi: () => ({ data: undefined }),
   useFindingsApi: () => ({
     data: {
       data: [
@@ -146,6 +147,19 @@ vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', slug: 't1' } }),
 }))
 vi.mock('@/features/findings/components/assignee-select', () => ({ AssigneeSelect: () => null }))
+// The dry run of the API's transition engine: f2 is blocked unless allowAll.
+let allowAll = true
+const evaluate = vi.hoisted(() => vi.fn())
+vi.mock('@/features/findings/api/use-finding-transitions', () => ({
+  evaluateFindingTransitions: evaluate,
+}))
+evaluate.mockImplementation(async (ids: string[], to: string) =>
+  ids.map((id) =>
+    allowAll || id === 'f1'
+      ? { finding_id: id, decision: { to, allowed: true } }
+      : { finding_id: id, decision: { to, allowed: false, blocked: [{ code: 'not_fix_owner' }] } }
+  )
+)
 
 import FindingsPage from '../page'
 
@@ -167,11 +181,39 @@ describe('Findings bulk resolve', () => {
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Resolve 2 findings?')
 
+    // A bulk resolve is attested: the confirm waits for a note.
+    expect(within(dialog).getByRole('button', { name: 'Resolve' })).toBeDisabled()
+    fireEvent.change(within(dialog).getByLabelText('Note (required)'), {
+      target: { value: 'patched in 4.2' },
+    })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }))
     await waitFor(() => expect(bulkCalls()).toHaveLength(1))
     expect(JSON.parse(String(bulkCalls()[0][1]?.body))).toMatchObject({
       finding_ids: ['f1', 'f2'],
       status: 'resolved',
+      resolution: 'patched in 4.2',
     })
+  })
+  it('sends only the findings the dry run allows', async () => {
+    allowAll = false
+    csrfFetch.mockClear()
+    csrfFetch.mockResolvedValue(
+      new Response(JSON.stringify({ updated: 1, failed: 0 }), { status: 200 })
+    )
+    window.history.replaceState(null, '', '/findings')
+    render(<FindingsPage />)
+    await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
+    const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
+    await userEvent.click(within(bar).getByRole('button', { name: 'Status' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Resolved' }))
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.change(within(dialog).getByLabelText('Note (required)'), {
+      target: { value: 'patched in 4.2' },
+    })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }))
+    const bulkCalls = () =>
+      csrfFetch.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
+    await waitFor(() => expect(bulkCalls()).toHaveLength(1))
+    expect(JSON.parse(String(bulkCalls()[0][1]?.body)).finding_ids).toEqual(['f1'])
   })
 })

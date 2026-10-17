@@ -195,7 +195,8 @@ func TestFindingStatusUpdate_AllClosedStatusesSetResolvedBy(t *testing.T) {
 		{vulnerability.FindingStatusResolved, "resolved"},
 		{vulnerability.FindingStatusFalsePositive, "false_positive"},
 		{vulnerability.FindingStatusAccepted, "accepted"},
-		{vulnerability.FindingStatusDuplicate, "duplicate"},
+		// duplicate is made by MarkAsDuplicate (it names the canonical
+		// finding); a plain transition to it is refused.
 	}
 
 	for _, tc := range closedStatuses {
@@ -373,7 +374,7 @@ func (m *MockFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *MockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
+func (m *MockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.Closure) (int64, error) {
 	return 0, nil
 }
 

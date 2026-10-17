@@ -1,0 +1,10 @@
+# A sensor product the platform has never heard of: a customer's own sensor
+# built on the SDK. Data only (SENSOR_PRODUCTS_FILE); its install snippets are
+# the acme-toy set (configs/sensor-products/acme-toy/).
+acme-toy:
+  product: acme-toy-sensor
+  latest: v1.2.3
+  min: v1.0.0
+  image: ghcr.io/acme/toy-sensor
+  install: acme-toy
+  release_identity: ""

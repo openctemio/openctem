@@ -75,7 +75,7 @@ asset merge re-keys a version-2 finding by rewriting the `asset` field of its
 stored tuple, only when the stored tuple still reproduces the stored key.
 
 Findings a scan does not report again are re-keyed by the re-fingerprint job
-(`cmd/refingerprint`, shipped in the API image as `/app/refingerprint`):
+(`internal/tools/refingerprintcmd`, shipped in the API image as `/app/refingerprint`):
 
 ```bash
 refingerprint                 # dry run, every tenant with older keys (read-only connection)
@@ -100,10 +100,13 @@ progress for 2 hours stops pausing.
 locked and the rules re-checked under the lock
 (`FindingRepository.MarkDuplicateOf`, rules in
 `vulnerability.CheckMarkDuplicate`): same tenant and data scope (404
-otherwise), same asset, neither already a duplicate, no pentest finding, and
-`findings:approve` when either finding is a false positive or risk acceptance
-(otherwise a merge would close an open finding under, or carry onto it, a
-decision that needs approval). The activity on both findings names the user;
+otherwise), same asset, neither already a duplicate, no pentest finding, and no
+false positive or risk acceptance carried across findings: if either finding
+is under such a decision, the other must be under the same one (409
+otherwise), whatever the caller's permissions. A merge writes no approval, so
+it would otherwise close an open finding under, or carry onto it, a decision
+that was approved (or not needed) for a different finding. Request the
+decision on the finding itself. The activity on both findings names the user;
 the audit log records `finding.duplicate_marked`.
 
 Known limits: the SAST occurrence index is counted within one report, so twin
@@ -191,7 +194,7 @@ known hole · **BROKEN** produces wrong data today · **MISSING** no dedup at al
 | DAST without sensor fingerprint (imports, other tools) | F1(c) `generic`: rule + title | **BROKEN** | `TargetHost/Path` never set (§1) | **P6:** the same template on `/a/.git/config` and `/b/.git/config` → **1** finding |
 | Network VA (Nessus/Tenable/Qualys) | F1(b) `netva:<port>:<lowest CVE>` | **PARTIAL** | `processor_findings.go:697-705,770-800` | **P15:** same CVE + same port from Nessus and Qualys → 1 (OK). **P2:** a plugin that lists two CVEs keys on the lexically lowest one (`CVE-2023-39325`), the single-CVE scanner on `CVE-2023-44487` → 2 findings; port 443 vs host-level → 2 |
 | Same CVE, same asset, different technique (trivy package vs Tenable host) | none | **MISSING** | different recipes by design | **P2:** 4 findings for one CVE on one host (nessus:443, qualys host-level, qualys multi-CVE, trivy package). No correlation key links them |
-| Cross-tool merged row lifecycle | `AutoResolveStale*` keyed on `tool_name` (first writer) + `scan_id` (last writer) | **BROKEN** | `finding_repository.go:3217-3300`, `service.go:417`; ADR-004 §"Related" | **P11:** trivy creates, grype re-sees, trivy's next full scan misses it → **resolved** although grype still reports it (it reopens on grype's next scan: flapping) |
+| Cross-tool merged row lifecycle | the former `AutoResolveStale*` (removed) keyed on `tool_name` (first writer) + `scan_id` (last writer) | **BROKEN** | `finding_repository.go:3217-3300`, `service.go:417`; ADR-004 §"Related" | **P11:** trivy creates, grype re-sees, trivy's next full scan misses it → **resolved** although grype still reports it (it reopens on grype's next scan: flapping) |
 | Misconfig / IaC (trivy config, checkov via SARIF) | F4 trivy `ID:Target:Type:Message`; SARIF → F1(c) | **PARTIAL** | `trivy/parser.go:270`; message in key | reworded message → new finding (**code**). trivy emits an empty `ctis.Finding{}` for PASS results (`trivy/parser.go:266-268`, appended at `:93-96`) |
 | Cloud (CSPM) | F1(c) `misconfig` / `generic` | **PARTIAL** | ARN-named assets collapse (asset table, P17) | findings of two EC2 instances land on one asset (**proven** at the asset layer) |
 | Pentest manual findings | F3 `campaign + title` | **BROKEN** | `pentest.go:1297,1669`; `Create` maps the unique violation to `FindingAlreadyExists` (`finding_repository.go:127-129`) | two "Reflected XSS" findings on two assets in one campaign cannot both be filed; editing a title does not change the fingerprint (**code**) |
@@ -475,14 +478,19 @@ with an activity on both and a `finding.duplicate_marked` audit row naming
 both ids (`metadata.reason = dast_identity_repair`). A second run changes
 nothing.
 
-### A changed taint source suspends a decision
+### A changed taint source flags a decision for review
 
 A trace is never part of a finding's identity, but the source of a taint
 finding is what a false-positive or accepted decision usually argues about.
 When a re-scan reports a decided finding whose trace starts at another source
 (`vulnerability.TaintSourceHash`: the source step's file and code; lines and
-intermediate steps ignored), the decision is suspended before the trace is
-replaced: the finding is `confirmed` again with resolution
-`decision_suspended`, the earlier decision is kept in
-`finding_decision_suspensions` and an audit row records it. A report without
-a trace, or one whose intermediate steps changed, keeps the decision.
+intermediate steps ignored), the decision **stands** and a review flag is
+raised before the trace is replaced: a row in `finding_decision_reviews`
+(reason `taint_source_changed`, the old and new source hashes), a
+`decision_review` timeline entry and an audit row, in one transaction. A
+person with the approve permission revisits the decision; the flag clears when
+the finding's status changes. A changed source is a reason to look again,
+never proof the decision was wrong, so the platform does not reopen it (it
+did before migration `002154`; rows in `finding_decision_suspensions` are that
+history). A report without a trace, or one whose intermediate steps changed,
+raises nothing.

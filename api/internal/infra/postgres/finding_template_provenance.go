@@ -108,7 +108,8 @@ func (r *FindingRepository) TemplateDriftedFindings(ctx context.Context, tenantI
 	return out, rows.Err()
 }
 
-// MarkCoverageNotObserved moves still-open findings of ids to not_observed:
+// MarkCoverageNotObserved marks still-open findings of ids stale
+// (observation_state; the status stays):
 // a covered run did not report them but ran different template content,
 // so their absence proves nothing (research/18 O6). The same guards as
 // ResolveCoverageStale apply.
@@ -123,28 +124,21 @@ func (r *FindingRepository) MarkCoverageNotObserved(ctx context.Context, tenantI
 	for i, id := range ids {
 		idStrs[i] = id.String()
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	out, err := r.db.queryIDsWithTransition(ctx, findingTransition{
+		Source: "template_drift", Reason: "template_drift", ActorType: "scanner", ActorName: "system: covered scan",
+		Message: "A covered scan did not report it, but ran different template content: stale, not fixed",
+	}, `
 		UPDATE findings f
-		SET status = 'not_observed', updated_at = NOW()
+		SET observation_state = 'stale', updated_at = NOW()
 		WHERE f.tenant_id = $1
 			AND f.id = ANY($2::uuid[])
 			AND f.branch_id IS NULL
 			AND f.status IN `+staleFromSQL+`
+			AND f.observation_state = 'present'
 			AND f.source NOT IN `+coverageProtectedSources+`
 		RETURNING f.id::text`, tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("mark coverage findings not observed: %w", err)
 	}
-	defer rows.Close()
-	var out []shared.ID
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return nil, err
-		}
-		if id, err := shared.IDFromString(s); err == nil {
-			out = append(out, id)
-		}
-	}
-	return out, rows.Err()
+	return out, nil
 }

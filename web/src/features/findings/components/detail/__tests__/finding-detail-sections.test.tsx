@@ -31,7 +31,7 @@ function finding(over: Partial<FindingDetail> = {}): FindingDetail {
     source: 'sca',
     assets: [
       {
-        id: 'a1',
+        id: 'dcdc1111-0000-0000-0000-000000000001',
         type: 'website',
         name: 'demo-web-storefront',
         criticality: 'critical',
@@ -79,7 +79,7 @@ describe('FindingWhyItMatters', () => {
     expect(within(panel).getByText('P1')).toBeInTheDocument()
     // The P1 window of the finding's asset, as the API reports it.
     expect(within(panel).getByText('fix within 9 days')).toBeInTheDocument()
-    expect(slaPolicy).toHaveBeenCalledWith('a1')
+    expect(slaPolicy).toHaveBeenCalledWith('dcdc1111-0000-0000-0000-000000000001')
     expect(
       within(panel).getByText('High severity, reachable, no compensating controls.')
     ).toBeInTheDocument()
@@ -130,6 +130,31 @@ describe('FindingWhyItMatters', () => {
     expect(screen.getByText('How this was scored')).toBeInTheDocument()
   })
 
+  it('never asks the SLA policy of a nil or free-text asset id', () => {
+    slaPolicy.mockClear()
+    render(
+      <FindingWhyItMatters
+        finding={finding({
+          assets: [{ id: '00000000-0000-0000-0000-000000000000', type: 'website', name: 'x' }],
+        })}
+      />
+    )
+    expect(slaPolicy).not.toHaveBeenCalledWith('00000000-0000-0000-0000-000000000000')
+  })
+
+  it('says the deadline follows the priority when the severity window differs', () => {
+    slaPolicy.mockReturnValueOnce({
+      data: { p0_days: 3, p1_days: 9, p2_days: 15, p3_days: 40, critical_days: 2, high_days: 15 },
+    } as never)
+    slaPolicy.mockReturnValueOnce({
+      data: { p0_days: 3, p1_days: 9, p2_days: 15, p3_days: 40, critical_days: 2, high_days: 15 },
+    } as never)
+    render(<FindingWhyItMatters finding={finding({ priorityClass: 'P2', severity: 'critical' })} />)
+    expect(document.querySelector('[data-slot="sla-basis"]')).toHaveTextContent(
+      'The deadline follows the priority (P2: 15 days), not the severity (critical: 2 days).'
+    )
+  })
+
   it('renders nothing without a priority or any signal', () => {
     const { container } = render(
       <FindingWhyItMatters
@@ -149,6 +174,165 @@ describe('FindingWhyItMatters', () => {
 })
 
 describe('FindingFixCard', () => {
+  it('names the nearest fix of a CI dependency and what the upgrade fixes on the asset', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          advisory: undefined,
+          component: {
+            name: 'Django',
+            version: '4.2.20',
+            ecosystem: 'pypi',
+            fixedIn: '4.2.26',
+            fixedVersions: ['5.2.8', '5.1.14', '4.2.26'],
+            manifestFile: 'app/requirements.txt',
+          },
+          packageFix: {
+            targetVersion: '4.2.30',
+            majorUpgrade: false,
+            openFindings: 3,
+            resolvesCount: 2,
+            truncated: false,
+            resolves: [
+              { id: 'a', title: 'SQL injection', severity: 'critical', cveId: 'CVE-2025-64459' },
+              { id: 'b', title: 'DoS', severity: 'high', cveId: 'CVE-B' },
+            ],
+            remaining: [{ id: 'c', title: 'Needs 5.x', severity: 'medium', cveId: 'CVE-C' }],
+            completeVersion: '5.1.14',
+            completeMajor: true,
+            completeResolves: 3,
+          },
+        })}
+      />
+    )
+    const card = screen.getByRole('region', { name: 'Fix' })
+    expect(card).toHaveTextContent('Upgrade Django4.2.204.2.26')
+    expect(card).toHaveTextContent('Also fixed in 5.2.8, 5.1.14')
+    expect(card).toHaveTextContent(
+      'Upgrading Django to 4.2.30 fixes 2 of 3 open findings of this package on this asset.'
+    )
+    expect(within(card).getByRole('link', { name: /CVE-2025-64459/ })).toHaveAttribute(
+      'href',
+      '/findings/a'
+    )
+    expect(card).toHaveTextContent(
+      'Upgrading to 5.1.14 fixes 3 of them, every one with a known fix.Major upgrade'
+    )
+  })
+
+  it('says which dependency brings a transitive package in and links its lock file line', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          repositoryUrl: 'https://github.com/acme/shop',
+          commitSha: '3f1c2a9e',
+          component: {
+            name: 'body-parser',
+            version: '1.19.0',
+            ecosystem: 'npm',
+            fixedIn: '1.20.3',
+            dependencyType: 'transitive',
+            dependencyPath: ['express@4.17.1', 'body-parser@1.19.0'],
+            manifestFile: 'package-lock.json',
+            manifestLine: 34,
+          },
+        })}
+      />
+    )
+    const card = screen.getByRole('region', { name: 'Fix' })
+    expect(card).toHaveTextContent('Transitive via express@4.17.1')
+    expect(card).not.toHaveTextContent('express@4.17.1 → body-parser')
+    expect(within(card).getByRole('link', { name: /package-lock\.json:34/ })).toHaveAttribute(
+      'href',
+      'https://github.com/acme/shop/blob/3f1c2a9e/package-lock.json#L34'
+    )
+  })
+
+  it('shortens a long chain and keeps the line without a repository link', () => {
+    const path = ['a@1', 'b@1', 'c@1', 'd@1', 'e@1', 'f@1', 'body-parser@1.19.0']
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          component: {
+            name: 'body-parser',
+            version: '1.19.0',
+            ecosystem: 'npm',
+            fixedIn: '1.20.3',
+            dependencyType: 'transitive',
+            dependencyPath: path,
+            manifestFile: 'package-lock.json',
+            manifestLine: 34,
+          },
+        })}
+      />
+    )
+    const card = screen.getByRole('region', { name: 'Fix' })
+    const chain = within(card).getByText('Transitive via a@1 → … → e@1 → f@1')
+    expect(chain).toHaveAttribute('title', 'a@1 → b@1 → c@1 → d@1 → e@1 → f@1')
+    expect(card).toHaveTextContent('in package-lock.json:34')
+    expect(within(card).queryByRole('link', { name: /package-lock/ })).toBeNull()
+  })
+
+  it('says direct for a direct dependency', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          component: {
+            name: 'lodash',
+            version: '4.17.20',
+            ecosystem: 'npm',
+            fixedIn: '4.17.21',
+            dependencyType: 'direct',
+            dependencyPath: ['lodash@4.17.20'],
+          },
+        })}
+      />
+    )
+    expect(screen.getByRole('region', { name: 'Fix' })).toHaveTextContent('Direct dependency')
+  })
+
+  it('flags a major upgrade', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          component: {
+            name: 'body-parser',
+            version: '1.19.0',
+            ecosystem: 'npm',
+            fixedIn: '2.2.1',
+            fixedInMajor: true,
+          },
+        })}
+      />
+    )
+    expect(screen.getByRole('region', { name: 'Fix' })).toHaveTextContent('Major upgrade')
+  })
+
+  it('hides the plan when the finding is the only open one of its package', () => {
+    render(
+      <FindingFixCard
+        compact
+        finding={finding({
+          packageFix: {
+            targetVersion: '7.0.5',
+            majorUpgrade: false,
+            openFindings: 1,
+            resolvesCount: 1,
+            truncated: false,
+            resolves: [],
+            remaining: [],
+          },
+        })}
+      />
+    )
+    expect(document.querySelector('[data-slot="package-fix-plan"]')).toBeNull()
+  })
+
   it('names the upgrade and gives the npm override for a transitive package', () => {
     render(<FindingFixCard finding={finding()} />)
     const card = screen.getByRole('region', { name: 'Fix' })

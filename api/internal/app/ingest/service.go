@@ -10,10 +10,10 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app/activity"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
@@ -70,6 +70,7 @@ type Service struct {
 	software     *softwareRecorder
 	attributes   AttributeReconciler
 	sets         SetReconciler
+	techs        assettech.Repository
 	webRules     WebRuleSource
 	sensorRepo   sensor.Repository
 	branchRepo   branch.Repository
@@ -87,8 +88,6 @@ type Service struct {
 	// uses — its chainMu is what serializes chain extension, and a second
 	// instance would have its own mutex and could interleave appends.
 	auditSvc *auditapp.AuditService
-
-	activityService *activity.FindingActivityService
 
 	// assetExposureProjector promotes recon-discovered assets (open ports,
 	// exposed services, TLS certificates) into the Exposure Register. Runs
@@ -244,12 +243,6 @@ func (s *Service) SetIdentityStore(store IdentityStore, reviewer IdentityReviewe
 	s.assetProcessor.SetIdentityStore(store, reviewer)
 }
 
-// SetActivityService sets the finding activity service for audit trail during ingestion.
-func (s *Service) SetActivityService(activityService *activity.FindingActivityService) {
-	s.activityService = activityService
-	s.findingProcessor.SetActivityService(activityService)
-}
-
 // SetFindingCreatedCallback sets the callback for when findings are created.
 // This is used to trigger workflows when new findings are ingested.
 func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
@@ -378,6 +371,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		return nil, err
 	}
 	tenantID := *agt.TenantID
+	// A shared sensor writes only the results of a shared job it holds,
+	// into that job's tenant (RFC-040 §11.2, RFC-100 §8): never unsolicited.
+	if agt.IsShared() && (input.Options.Binding.Kind != BindingCommand || input.Options.Binding.CommandID == nil) {
+		return nil, shared.NewDomainError("FORBIDDEN", "a shared sensor reports only for a job it holds", shared.ErrForbidden)
+	}
 
 	report := input.Report
 	if report == nil {
@@ -545,6 +543,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	src := attributeSource{kind: sourceKind, name: sourceName, run: sourceRun}
 	s.recordAttributes(ctx, tenantID, scope, src, observedAt, report, assetMap)
 	s.recordSets(ctx, tenantID, scope, src, observedAt, report, binding, assetMap)
+	// What each asset was fingerprinted with (RFC-112), after the sets
+	// decided which technologies the asset shows.
+	s.recordTechnologies(ctx, tenantID, scope, src, observedAt, report, assetMap)
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,

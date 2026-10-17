@@ -81,7 +81,13 @@ func MapTenantToAssetScoringConfig(s *tenantdom.RiskScoringSettings) *assetdom.R
 			HighRiskCompliance: s.CTEMPoints.HighRiskCompliance,
 			RestrictedData:     s.CTEMPoints.RestrictedData,
 		},
-		// Empty resolves to "multiply" in the engine (backward compatible).
+		// Empty resolves to "multiply" in the engine.
 		ScoreCompositionMode: s.ScoreCompositionMode,
+		RiskLevels: assetdom.RiskLevelMap{
+			CriticalMin: s.RiskLevels.CriticalMin,
+			HighMin:     s.RiskLevels.HighMin,
+			MediumMin:   s.RiskLevels.MediumMin,
+			LowMin:      s.RiskLevels.LowMin,
+		},
 	}
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -63,19 +62,22 @@ func (h *AdminOrganizationHandler) TenantExists(ctx context.Context, id shared.I
 
 // AdminOrganizationResponse is one organization in the admin console.
 type AdminOrganizationResponse struct {
-	ID                      string    `json:"id"`
-	Name                    string    `json:"name"`
-	Slug                    string    `json:"slug"`
-	Description             string    `json:"description,omitempty"`
-	CreatedAt               time.Time `json:"created_at"`
-	ActiveMembers           int       `json:"active_members"`
-	OwnerEmails             []string  `json:"owner_emails"`
-	SAMLEnabled             bool      `json:"saml_enabled"`
-	ActiveIdentityProviders int       `json:"active_identity_providers"`
-	VerifiedDomains         int       `json:"verified_domains"`
-	SSOEnforced             bool      `json:"sso_enforced"`
-	// Plan is free, pro or enterprise.
-	Plan string `json:"plan"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Slug          string    `json:"slug"`
+	Description   string    `json:"description,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	ActiveMembers int       `json:"active_members"`
+	// OwnerEmails is empty for a read-only administrator (personal data);
+	// OwnerCount is always there.
+	OwnerEmails             []string `json:"owner_emails"`
+	OwnerCount              int      `json:"owner_count"`
+	SAMLEnabled             bool     `json:"saml_enabled"`
+	ActiveIdentityProviders int      `json:"active_identity_providers"`
+	VerifiedDomains         int      `json:"verified_domains"`
+	SSOEnforced             bool     `json:"sso_enforced"`
+	// LimitsApply: at least one limit or feature deny is set.
+	LimitsApply bool `json:"limits_apply"`
 }
 
 // AdminOrganizationListResponse is a page of organizations.
@@ -155,10 +157,21 @@ type AdminOrgUserResponse struct {
 	JoinedAt     time.Time `json:"joined_at"`
 }
 
-// AdminOrgUserListResponse lists an organization's members.
+// AdminOrgUserListResponse lists an organization's members. A read-only
+// administrator gets the counts only: Data is empty and Redacted is true.
 type AdminOrgUserListResponse struct {
 	Data  []AdminOrgUserResponse `json:"data"`
 	Total int                    `json:"total"`
+	// ByRole counts the members by role.
+	ByRole   map[string]int `json:"by_role"`
+	Redacted bool           `json:"redacted,omitempty"`
+}
+
+// adminSeesPersonalData reports whether the console caller may see people's
+// names and emails: every role but readonly, which sees counts.
+func adminSeesPersonalData(r *http.Request) bool {
+	role := middleware.GetAdminRole(r.Context())
+	return role != "" && role != string(admin.AdminRoleReadonly)
 }
 
 // AdminSSOEnforcementRequest turns SSO enforcement on or off for an organization.
@@ -171,16 +184,17 @@ type AdminSSOEnforcementResponse struct {
 	Enforced bool `json:"enforced"`
 }
 
-func toAdminOrganizationResponse(o *admin.Organization) AdminOrganizationResponse {
+func toAdminOrganizationResponse(o *admin.Organization, personalData bool) AdminOrganizationResponse {
 	owners := o.OwnerEmails
-	if owners == nil {
+	count := len(owners)
+	if owners == nil || !personalData {
 		owners = []string{}
 	}
 	return AdminOrganizationResponse{
 		ID: o.ID.String(), Name: o.Name, Slug: o.Slug, Description: o.Description,
-		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners,
+		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners, OwnerCount: count,
 		SAMLEnabled: o.SAMLEnabled, ActiveIdentityProviders: o.ActiveIdentityProviders,
-		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, Plan: o.Plan,
+		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, LimitsApply: o.LimitsApply,
 	}
 }
 
@@ -214,7 +228,6 @@ func orgIDParam(r *http.Request) (shared.ID, bool) {
 // @Produce json
 // @Param search query string false "Match name or slug"
 // @Param owner query string false "none: no active owner; present: has one" Enums(none, present)
-// @Param plan query string false "Plan" Enums(free, pro, enterprise)
 // @Param include_system query bool false "Also list the internal platform system organization (left out by default)"
 // @Param page query int false "Page (default 1)"
 // @Param per_page query int false "Page size (default 50, max 100)"
@@ -247,13 +260,6 @@ func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("include_system must be true or false").WriteJSON(w)
 		return
 	}
-	if p := q.Get("plan"); p != "" {
-		if !plan.Plan(p).IsValid() {
-			apierror.BadRequest("plan must be free, pro or enterprise").WriteJSON(w)
-			return
-		}
-		f.Plan = p
-	}
 	orgs, total, err := h.orgs.ListOrganizations(r.Context(), f)
 	if err != nil {
 		h.logger.Error("list organizations", "error", sanitizeLogField(err.Error()))
@@ -265,7 +271,7 @@ func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) 
 		TotalPages: (total + perPage - 1) / perPage,
 	}
 	for _, o := range orgs {
-		resp.Data = append(resp.Data, toAdminOrganizationResponse(o))
+		resp.Data = append(resp.Data, toAdminOrganizationResponse(o, adminSeesPersonalData(r)))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -294,13 +300,13 @@ func (h *AdminOrganizationHandler) Get(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, toAdminOrganizationResponse(o))
+	writeJSON(w, http.StatusOK, toAdminOrganizationResponse(o, adminSeesPersonalData(r)))
 }
 
 // Create handles POST /api/v1/admin/tenants. The owner must be an existing
-// user; the organization is created in either TENANT_CREATION_MODE.
+// user; the organization is created under every SIGNUP_MODE.
 // @Summary Create an organization (platform admin)
-// @Description Creates an organization with an existing user as its owner. Works in both TENANT_CREATION_MODE values.
+// @Description Creates an organization with an existing user as its owner. Works under every SIGNUP_MODE and sign-up policy.
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
@@ -355,7 +361,7 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	resp.AdminOrganizationResponse = toAdminOrganizationResponse(o)
+	resp.AdminOrganizationResponse = toAdminOrganizationResponse(o, true)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -381,14 +387,19 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	resp := AdminOrgUserListResponse{Data: make([]AdminOrgUserResponse, 0, len(members))}
+	personal := adminSeesPersonalData(r)
+	resp := AdminOrgUserListResponse{Data: make([]AdminOrgUserResponse, 0, len(members)), ByRole: map[string]int{},
+		Total: len(members), Redacted: !personal}
 	for _, m := range members {
+		resp.ByRole[m.Role.String()]++
+		if !personal {
+			continue
+		}
 		resp.Data = append(resp.Data, AdminOrgUserResponse{
 			UserID: m.UserID.String(), Email: m.Email, Name: m.Name, Role: m.Role.String(),
 			Status: m.Status, PendingSetup: m.PendingSetup, JoinedAt: m.JoinedAt,
 		})
 	}
-	resp.Total = len(resp.Data)
 	writeJSON(w, http.StatusOK, resp)
 }
 

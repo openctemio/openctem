@@ -118,6 +118,7 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     default_max_tier: s.default_max_tier === 't0' ? 't0' : 't1',
     ...unclassifiedOf(s),
     ...autoCoverageOf(s),
+    ci_scope_requires_proof: s.ci_scope_requires_proof ?? false,
   }
 }
 
@@ -459,6 +460,22 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 id={`${id}-reviewfirst`}
                 checked={form.review_before_inventory}
                 onCheckedChange={(v) => setForm({ ...form, review_before_inventory: v })}
+                disabled={disabled}
+              />
+            </Row>
+
+            <Row
+              label={t('scope.settings.ciScopeRequiresProof', 'Require proof for CI scopes')}
+              htmlFor={`${id}-ciproof`}
+              hint={t(
+                'scope.settings.ciScopeRequiresProofHint',
+                "Off (default): the repositories a CI trust names are in scope as soon as the trust is saved, and a verified pipeline run is shown as evidence. On: a CI trust's new repository entries wait until a verified pipeline run under them."
+              )}
+            >
+              <Switch
+                id={`${id}-ciproof`}
+                checked={form.ci_scope_requires_proof ?? false}
+                onCheckedChange={(v) => setForm({ ...form, ci_scope_requires_proof: v })}
                 disabled={disabled}
               />
             </Row>

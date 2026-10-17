@@ -17,6 +17,7 @@ import (
 
 // TelegramClient implements the Client interface for Telegram notifications.
 type TelegramClient struct {
+	product    string // brand name in test messages
 	botToken   string
 	chatID     string
 	apiURL     string
@@ -38,6 +39,7 @@ func NewTelegramClient(config Config) (*TelegramClient, error) {
 	}
 
 	return &TelegramClient{
+		product:  config.productName(),
 		botToken: config.BotToken,
 		chatID:   config.ChatID,
 		apiURL:   apiURL,
@@ -132,7 +134,7 @@ func (c *TelegramClient) Send(ctx context.Context, msg Message) (*SendResult, er
 // TestConnection tests the Telegram bot configuration.
 func (c *TelegramClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	testMsg := Message{
-		Title:    "OpenCTEM.io Test Notification",
+		Title:    c.product + " Test Notification",
 		Body:     "This is a test notification to verify your Telegram integration is working correctly.",
 		Severity: "low",
 	}

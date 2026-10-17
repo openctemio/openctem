@@ -218,7 +218,9 @@ const (
 // ScopeOfAsset answers whether the tenant's scope covers one asset and what
 // covers it: in_scope (with the authority), out_of_scope, internal (a
 // private or internal name, gated by scan zones) or not_applicable (a type
-// the scope authority does not judge). An unknown asset is out_of_scope.
+// the scope authority does not judge). A repository is always judged: by a
+// repository entry or an entry for its code host. An unknown asset is
+// out_of_scope.
 func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, assetID string) (string, *scopeauth.Via, error) {
 	if err := g.ready(); err != nil {
 		return "", nil, err
@@ -235,6 +237,9 @@ func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, asset
 	if a == nil {
 		return ScopeStatusOutOfScope, nil, nil
 	}
+	if a.Type() == asset.AssetTypeRepository {
+		return g.repositoryScope(ctx, tenantID, a.Name())
+	}
 	if isInternalName(a.Name()) {
 		return ScopeStatusInternal, nil, nil
 	}
@@ -246,6 +251,36 @@ func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, asset
 		return "", nil, err
 	}
 	if v, ok := cover[a.Name()]; ok {
+		return ScopeStatusInScope, &v, nil
+	}
+	return ScopeStatusOutOfScope, nil, nil
+}
+
+// repositoryScope judges a repository by repository entries
+// ("host/namespace/*"). On a self-hosted code host an entry for the host
+// (a domain entry) covers its repositories too; on a code host many
+// organizations share (scopedom.Guardrails.PublicCodeHost) only repository
+// entries do, so a domain entry "github.com" claims nobody's repositories.
+func (g *ActiveGate) repositoryScope(ctx context.Context, tenantID shared.ID, name string) (string, *scopeauth.Via, error) {
+	gr := scopedom.DefaultGuardrails()
+	if g.guardrails != nil {
+		gr = *g.guardrails
+	}
+	if gr.PublicCodeHost(scopedom.RepositoryPatternHost(name)) {
+		auth, err := scopeauth.Load(ctx, tenantID, g.scope, g.roots)
+		if err != nil {
+			return "", nil, err
+		}
+		if v, ok := auth.CoversRepository(name); ok {
+			return ScopeStatusInScope, &v, nil
+		}
+		return ScopeStatusOutOfScope, nil, nil
+	}
+	cover, err := g.CoverOf(ctx, tenantID, []string{name})
+	if err != nil {
+		return "", nil, err
+	}
+	if v, ok := cover[name]; ok {
 		return ScopeStatusInScope, &v, nil
 	}
 	return ScopeStatusOutOfScope, nil, nil
@@ -364,13 +399,13 @@ func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, 
 			portChecked = append(portChecked, t)
 			continue
 		}
-		if reason := scopedom.ConstrainedJobRefusal(job.Tool, ports, path, job.Ports, job.TopPorts); reason != "" {
+		if reason := scopedom.ConstrainedJobRefusal(job, ports, path); reason != "" {
 			out[t] = reason
 			continue
 		}
 		portChecked = append(portChecked, t)
 	}
-	if !isPortScanner(job.Tool) || len(portChecked) == 0 {
+	if !job.PortScan() || len(portChecked) == 0 {
 		return out, nil
 	}
 	if mode == "" {
@@ -387,12 +422,6 @@ func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, 
 		}
 	}
 	return out, nil
-}
-
-// isPortScanner reports whether tool scans ports (a port scan of a name
-// reaches every address it resolves to).
-func isPortScanner(tool string) bool {
-	return strings.EqualFold(strings.TrimSpace(tool), "naabu")
 }
 
 // namePortCaps answers, for each name among targets, the ports a port scan

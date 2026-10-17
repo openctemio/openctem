@@ -2,6 +2,8 @@ package jobs
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -55,5 +57,25 @@ func TestJiraSyncHandler_BadPayloadDoesNotCallSyncer(t *testing.T) {
 	}
 	if syncer.calls != 0 {
 		t.Fatalf("syncer must not be called on bad payload; calls=%d", syncer.calls)
+	}
+}
+
+type permanentErr struct{}
+
+func (permanentErr) Error() string   { return "refused" }
+func (permanentErr) Permanent() bool { return true }
+
+func TestJiraSyncHandler_PermanentErrorsAreNotRetried(t *testing.T) {
+	task, err := NewJiraSyncFindingStatusTask(JiraSyncFindingStatusPayload{TenantID: shared.NewID().String(), FindingID: shared.NewID().String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewJiraSyncTaskHandler(&stubSyncer{err: fmt.Errorf("wrapped: %w", permanentErr{})}, slog.Default())
+	if err := h.HandleSyncFindingStatus(context.Background(), task); !errors.Is(err, asynq.SkipRetry) {
+		t.Fatalf("permanent: want SkipRetry, got %v", err)
+	}
+	h = NewJiraSyncTaskHandler(&stubSyncer{err: errors.New("timeout")}, slog.Default())
+	if err := h.HandleSyncFindingStatus(context.Background(), task); err == nil || errors.Is(err, asynq.SkipRetry) {
+		t.Fatalf("transient: want a retry, got %v", err)
 	}
 }

@@ -35,37 +35,14 @@ func (s *AssetService) SetBusinessContextLookup(lookup BusinessContextLookup) {
 	s.businessContext = lookup
 }
 
-// effectiveCriticality resolves an asset's business-aligned criticality — the
-// MAX/floor of {own, its business unit, the business services it powers}. Nil
-// lookup, a zero asset ID, or any lookup error yields the asset's OWN
-// criticality, so scoring degrades to the pre-business-alignment behavior and
-// never fails a save. Floor semantics guaranteed by assetdom.EffectiveCriticality
-// (a lower BU/service never lowers the result).
-func (s *AssetService) effectiveCriticality(ctx context.Context, tenantID shared.ID, a *assetdom.Asset) assetdom.Criticality {
-	if s.businessContext == nil || a == nil || a.ID().IsZero() {
-		if a == nil {
-			return ""
-		}
-		return a.Criticality()
-	}
-	m, err := s.businessContext.GetForAssets(ctx, tenantID, []shared.ID{a.ID()})
-	if err != nil {
-		s.logger.Warn("business context lookup failed; scoring on own criticality",
-			"tenant_id", tenantID.String(), "asset_id", a.ID().String(), "error", err.Error())
-		return a.Criticality()
-	}
-	eff, _ := assetdom.EffectiveCriticality(a.Criticality(), m[a.ID()])
-	return eff
-}
-
 // scoreAsset computes and sets the asset's risk score using the tenant scoring
 // config and the asset's EFFECTIVE (business-aligned) criticality. It is the
 // single seam through which the persist paths route scoring so the floor rule is
 // applied consistently. Nil-safe (see effectiveCriticality): with no lookup
 // wired, the score is byte-identical to the prior own-criticality behavior.
 func (s *AssetService) scoreAsset(ctx context.Context, tenantID shared.ID, a *assetdom.Asset) {
-	eff := s.effectiveCriticality(ctx, tenantID, a)
-	a.CalculateRiskScoreWithConfigAndCriticality(s.getScoringConfig(ctx, tenantID), eff)
+	in := s.riskInputsMap(ctx, tenantID, []*assetdom.Asset{a})[a.ID()]
+	a.CalculateRiskScoreWithInputs(s.getScoringConfig(ctx, tenantID), in)
 }
 
 // effectiveCriticalityMap batch-resolves effective criticality for a slice of

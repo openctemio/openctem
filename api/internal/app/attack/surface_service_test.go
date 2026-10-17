@@ -32,11 +32,11 @@ func (f *fakeSurfaceAssets) List(_ context.Context, _ asset.Filter, opts asset.L
 	return pagination.Result[*asset.Asset]{Data: f.list, Total: int64(len(f.list))}, nil
 }
 
-func (f *fakeSurfaceAssets) GetAssetTypeBreakdown(context.Context, shared.ID) (map[string]asset.AssetTypeStats, error) {
+func (f *fakeSurfaceAssets) GetAssetTypeBreakdown(context.Context, shared.ID, *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
 	return f.breakdown, nil
 }
 
-func (f *fakeSurfaceAssets) GetAverageRiskScore(context.Context, shared.ID) (float64, error) {
+func (f *fakeSurfaceAssets) GetAverageRiskScore(context.Context, shared.ID, *shared.DataScope) (float64, error) {
 	return 42, nil
 }
 

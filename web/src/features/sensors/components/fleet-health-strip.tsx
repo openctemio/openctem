@@ -4,10 +4,16 @@ import { useTranslation } from '@/context/i18n-provider'
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import { cn } from '@/lib/utils'
 
-import type { AttentionKind, FleetSummary, ReleaseChannel } from '../lib/fleet'
+import {
+  scanningSensorLine,
+  type AttentionKind,
+  type FleetSummary,
+  type ReleaseChannel,
+} from '../lib/fleet'
 import { PROTOCOL_V1_SUNSET, PROTOCOL_V2_SENSOR_VERSION } from './sensor-cells'
 
 const ATTENTION_WORDS: Record<AttentionKind, string> = {
+  offline: 'sensors.health.attention.offline',
   backlog: 'sensors.health.attention.backlog',
   key: 'sensors.health.attention.key',
   version: 'sensors.health.attention.version',
@@ -15,6 +21,7 @@ const ATTENTION_WORDS: Record<AttentionKind, string> = {
   heartbeat: 'sensors.health.attention.heartbeat',
   tools: 'sensors.health.attention.tools',
   content: 'sensors.health.attention.content',
+  preflight: 'sensors.health.attention.preflight',
   error: 'sensors.health.attention.error',
 }
 
@@ -73,6 +80,9 @@ export interface FleetHealthStripProps {
   summary: FleetSummary
   channel: ReleaseChannel
   loading?: boolean
+  /** The table shows only the sensors that are not connected. */
+  notConnectedActive: boolean
+  onToggleNotConnected: () => void
   attentionActive: boolean
   onToggleAttention: () => void
   updatesActive: boolean
@@ -87,12 +97,16 @@ export interface FleetHealthStripProps {
 /**
  * Fleet health, the first thing on the page: how many sensors can take work,
  * what needs attention, version drift, zone coverage and job slots. The
- * clickable metrics filter (or group) the table below.
+ * clickable metrics filter (or group) the table below: Fleet health to the
+ * sensors that are not connected, Needs attention, Updates, Zones (grouping)
+ * and protocol v1. Jobs stays a number: no subset of sensors answers it.
  */
 export function FleetHealthStrip({
   summary,
   channel,
   loading,
+  notConnectedActive,
+  onToggleNotConnected,
   attentionActive,
   onToggleAttention,
   updatesActive,
@@ -104,6 +118,9 @@ export function FleetHealthStrip({
   className,
 }: FleetHealthStripProps) {
   const { t } = useTranslation()
+  const scanner = scanningSensorLine(channel)
+  const s = summary.byState
+  const notConnected = s.stale + s.offline + s.never_connected
   const items: MetricStripItem[] = [
     {
       key: 'health',
@@ -111,6 +128,10 @@ export function FleetHealthStrip({
       value: summary.canTakeJobs,
       hint: t('sensors.health.canTakeJobs', undefined, { count: summary.enabled }),
       detail: <FleetBar summary={summary} />,
+      // Filters to the sensors that are not connected, when there are any.
+      ...(notConnected > 0 || notConnectedActive
+        ? { onClick: onToggleNotConnected, active: notConnectedActive }
+        : {}),
     },
     {
       key: 'attention',
@@ -128,18 +149,15 @@ export function FleetHealthStrip({
       key: 'updates',
       label: t('sensors.health.updates'),
       value: summary.updates,
-      hint: channel.latest
-        ? t('sensors.health.latest', undefined, { version: channel.latest })
+      hint: scanner.latest
+        ? t('sensors.health.latest', undefined, { version: scanner.latest })
         : undefined,
       detail:
-        summary.unsupported > 0 && channel.min ? (
+        summary.unsupported > 0 ? (
           <span className="text-destructive">
-            {t('sensors.health.belowMin', undefined, {
-              count: summary.unsupported,
-              min: channel.min,
-            })}
+            {t('sensors.health.belowProductMin', undefined, { count: summary.unsupported })}
           </span>
-        ) : channel.latest ? (
+        ) : (channel.products?.length ?? 0) > 0 ? (
           summary.updates === 0 ? (
             t('sensors.health.allLatest')
           ) : (

@@ -5,17 +5,14 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // RFC-039 §6.5: a scan that re-detects a finding a person resolved reopens it,
-// and the reopen clears resolved_by / resolution / resolution_method on the row.
+// and the reopen clears resolved_by / resolution / the closure on the row.
 // Before this change the regression's activity said only
-// {"reason":"finding_detected_again"}: who had fixed it, and how, was gone. A
-// scan re-detecting a validated_fixed finding left it validated_fixed.
+// {"reason":"finding_detected_again"}: who had fixed it, and how, was gone.
 func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T) {
 	db := openReopenDB(t)
 	ctx := context.Background()
@@ -34,21 +31,20 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 	})
 
 	humanID, humanFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "patched in release 4.2")
-	if _, err := db.ExecContext(ctx, `UPDATE findings SET resolved_by = $2, resolution_method = 'security_reviewed' WHERE id = $1`,
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET resolved_by = $2, closure_reason = 'fixed', verification = 'security_review' WHERE id = $1`,
 		humanID.String(), resolver.String()); err != nil {
 		t.Fatal(err)
 	}
-	downgradedID, downgradedFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "validated_fixed", "")
 
-	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantID, []string{humanFP, downgradedFP})
+	// The reopen writes its own timeline entry in the same transaction, with
+	// the scan from the context's evidence.
+	scanCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": "nuclei", "scan_id": "report-9"})
+	reopened, err := repo.AutoReopenByFingerprintsBatch(scanCtx, tenantID, []string{humanFP})
 	if err != nil {
 		t.Fatalf("AutoReopenByFingerprintsBatch: %v", err)
 	}
 	if got := statusOf(ctx, t, db, humanID); got != "confirmed" {
 		t.Errorf("human-resolved finding status = %s, want confirmed", got)
-	}
-	if got := statusOf(ctx, t, db, downgradedID); got != "confirmed" {
-		t.Errorf("validated_fixed finding a scan saw again: status = %s, want confirmed", got)
 	}
 
 	rf, ok := reopened[humanFP]
@@ -56,16 +52,9 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 		t.Fatalf("human-resolved finding not returned as reopened: %+v", reopened)
 	}
 	if rf.PreviousResolvedBy == nil || *rf.PreviousResolvedBy != resolver ||
-		rf.PreviousResolution != "patched in release 4.2" || rf.PreviousResolutionMethod != "security_reviewed" ||
+		rf.PreviousResolution != "patched in release 4.2" || rf.PreviousClosureReason != "fixed" || rf.PreviousVerification != "security_review" ||
 		string(rf.PreviousStatus) != "resolved" || rf.PreviousResolvedAt == nil {
 		t.Errorf("reopen lost what it cleared: %+v", rf)
-	}
-
-	// The ingest path records the reopen through the activity service.
-	svc := activity.NewFindingActivityService(NewFindingActivityRepository(&DB{DB: db}), repo, logger.NewNop())
-	all := []vulnerability.ReopenedFinding{reopened[humanFP], reopened[downgradedFP]}
-	if err := svc.RecordBatchAutoReopened(ctx, tenantID, all, "nuclei", "report-9"); err != nil {
-		t.Fatalf("record: %v", err)
 	}
 
 	var raw []byte
@@ -80,8 +69,9 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 	}
 	for k, want := range map[string]string{
 		"reason": "regression_detected_again", "previous_resolved_by": resolver.String(),
-		"previous_resolution": "patched in release 4.2", "previous_resolution_method": "security_reviewed",
-		"scanner": "nuclei", "scan_id": "report-9",
+		"previous_resolution": "patched in release 4.2", "previous_closure_reason": "fixed",
+		"previous_verification": "security_review",
+		"scanner":               "nuclei", "scan_id": "report-9",
 	} {
 		if changes[k] != want {
 			t.Errorf("activity changes[%q] = %v, want %q", k, changes[k], want)

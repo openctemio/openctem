@@ -109,6 +109,15 @@ Beyond the classic inputs, the explanation now also surfaces:
   batch (`AttributionRepository.ActiveCheckBlocked`); a lookup error means no
   cap, never a failed classification.
 
+- `reachability_unknown` — nothing decided reachability: the asset's exposure
+  is unknown and no attack path, threat path or scanner flag says otherwise
+  (typically a dependency in a repository). Unknown is not unreachable: the
+  reason says "reachability unknown", never "not reachable", and exploitation
+  evidence still makes the finding P1 (a KEV CVE, EPSS >= 50%, or EPSS >= 10%
+  on a critical or high asset). Severity alone stays at P2 until reachability
+  is known. An isolated asset is evidence of unreachability; a private or
+  restricted one of internal-only reachability, and the reason names it.
+
 > Reachability inputs are populated from the asset's exposure level and
 > attack-path membership. `reachable` follows the engine formula
 > `is_reachable || is_internet_accessible || on_open_threat_path` (the

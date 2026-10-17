@@ -329,7 +329,7 @@ var Personas = []Persona{
 		Roles:     []string{"researcher"},
 		Team:      "bounty-program",
 		DataScope: "The targets of the programs they belong to.",
-		Access:    "The built-in Researcher role (RFC-064) and a program group.",
+		Access:    "A role created from the Researcher template (RFC-064) and a program group.",
 		MustNot:   []string{"widen the organization's own scope", "approve scope entries"},
 	},
 	{

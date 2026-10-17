@@ -44,7 +44,11 @@ type GroupService struct {
 	// bindings and roles enable team role bindings (group_role.go).
 	bindings groupdom.RoleBindingRepository
 	roles    *RoleService
-	logger   *logger.Logger
+	// poolLookup and poolStepUp guard edits of the security pool group
+	// (group_security_pool.go).
+	poolLookup SecurityPoolLookup
+	poolStepUp shared.RecentAuthGate
+	logger     *logger.Logger
 }
 
 // NewGroupService creates a new GroupService.
@@ -264,6 +268,16 @@ func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input Up
 		return nil, err
 	}
 
+	// Switching a team on or off changes what its members hold (scope rows
+	// and bound roles), so it is a grant: checked before anything changes.
+	flip := input.IsActive != nil && *input.IsActive != g.IsActive()
+	var flipMembers []shared.ID
+	if flip {
+		if flipMembers, err = s.authorizeActiveFlip(ctx, g, *input.IsActive, actx); err != nil {
+			return nil, err
+		}
+	}
+
 	if input.Name != nil {
 		if err := g.UpdateName(*input.Name); err != nil {
 			return nil, err
@@ -307,6 +321,10 @@ func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input Up
 	if err := s.repo.Update(ctx, g); err != nil {
 		return nil, fmt.Errorf("failed to update group: %w", err)
 	}
+	if flip {
+		// Members' cached permissions follow the team's state.
+		s.invalidateMembers(ctx, g.TenantID(), flipMembers)
+	}
 
 	s.logger.Info("group updated", "id", groupID)
 
@@ -332,12 +350,20 @@ func (s *GroupService) DeleteGroup(ctx context.Context, groupID string, actx aud
 		return err
 	}
 
+	if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
+		return err
+	}
 	tenantID := g.TenantID().String()
 	groupName := g.Name()
+
+	// The bindings and memberships go with the team: read the members first,
+	// then drop their cached permissions.
+	members := s.activeMemberIDs(ctx, g)
 
 	if err := s.repo.Delete(ctx, g.TenantID(), id); err != nil {
 		return err
 	}
+	s.invalidateMembers(ctx, g.TenantID(), members)
 
 	s.logger.Info("group deleted", "id", groupID)
 
@@ -436,7 +462,14 @@ func (s *GroupService) GetGroupCounts(ctx context.Context, groups []*groupdom.Gr
 	}
 
 	if s.accessControlRepo != nil {
-		assetCounts, err := s.accessControlRepo.CountAssetsByGroups(ctx, groupIDs)
+		// A restricted reader counts only the assets they can see.
+		var scope *shared.DataScope
+		if s.delegation != nil {
+			if scope, err = s.delegation.Resolve(ctx, groups[0].TenantID()); err != nil {
+				return nil, fmt.Errorf("failed to resolve data scope: %w", err)
+			}
+		}
+		assetCounts, err := s.accessControlRepo.CountAssetsByGroups(ctx, groupIDs, scope)
 		if err != nil {
 			s.logger.Warn("failed to get asset counts", "error", err)
 		} else {
@@ -563,6 +596,11 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	}
 	if err := s.checkMembershipDelegation(ctx, g, input.UserID, actx.ActorID); err != nil {
 		return nil, err
+	}
+	if !input.creator {
+		if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
+			return nil, err
+		}
 	}
 	// The team's roles go with the membership (decisions G1-G12 R3-R5). The
 	// creator joining their new team carries no roles yet.
@@ -729,6 +767,9 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 	// Get group (tenant-scoped) for audit context
 	g, err := s.groupForTenant(ctx, gid, actx.TenantID)
 	if err != nil {
+		return err
+	}
+	if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
 		return err
 	}
 	// Leaving a group oneself only narrows one's own scope; removing someone

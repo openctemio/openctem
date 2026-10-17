@@ -14,7 +14,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -24,7 +24,7 @@ import (
 // table (global by design).
 type CIRunRepository struct {
 	db         *DB
-	planLimits // ci_trusts
+	limitChecks // ci_trusts
 }
 
 var _ cirun.Repository = (*CIRunRepository)(nil)
@@ -56,7 +56,7 @@ func optTime(nt sql.NullTime) *time.Time {
 // ---------------------------------------------------------------- trust ---
 
 const ciTrustColumns = `id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled,
-	created_by, last_used_at, created_at, updated_at, COALESCE(legacy_audience, ''), legacy_audience_until`
+	created_by, last_used_at, created_at, updated_at, COALESCE(legacy_audience, ''), legacy_audience_until, manage_scope`
 
 func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 	var (
@@ -69,7 +69,7 @@ func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 		legacyUntil    sql.NullTime
 	)
 	if err := row.Scan(&id, &tid, &c.Name, &prov, &c.Issuer, &c.Audience, &rules, &c.DefaultBranch, &c.Enabled,
-		&createdBy, &lastUsed, &createdAt, &upd, &c.LegacyAudience, &legacyUntil); err != nil {
+		&createdBy, &lastUsed, &createdAt, &upd, &c.LegacyAudience, &legacyUntil, &c.ManageScope); err != nil {
 		return c, err
 	}
 	c.LegacyAudienceUntil = optTime(legacyUntil)
@@ -89,7 +89,7 @@ func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 
 // CreateTrustConfig inserts a configuration.
 func (r *CIRunRepository) CreateTrustConfig(ctx context.Context, c *cirun.TrustConfig) error {
-	if err := r.checkLimit(ctx, c.TenantID, plan.CITrusts, 1); err != nil {
+	if err := r.checkLimit(ctx, c.TenantID, limits.CITrusts, 1); err != nil {
 		return err
 	}
 	rules, err := json.Marshal(c.Rules)
@@ -97,10 +97,10 @@ func (r *CIRunRepository) CreateTrustConfig(ctx context.Context, c *cirun.TrustC
 		return err
 	}
 	_, err = r.db.ExecContext(ctx, `INSERT INTO ci_trust_configs
-		(id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)`,
+		(id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled, created_by, created_at, updated_at, manage_scope)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12)`,
 		c.ID.String(), c.TenantID.String(), c.Name, string(c.Provider), c.Issuer, c.Audience, rules,
-		c.DefaultBranch, c.Enabled, nullID(c.CreatedBy), c.CreatedAt)
+		c.DefaultBranch, c.Enabled, nullID(c.CreatedBy), c.CreatedAt, c.ManageScope)
 	if isUniqueViolation(err) {
 		return cirun.ErrTrustConfigExists
 	}
@@ -114,12 +114,12 @@ func (r *CIRunRepository) UpdateTrustConfig(ctx context.Context, c *cirun.TrustC
 		return err
 	}
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_trust_configs
-		SET name = $3, issuer = $4, audience = $5::text, rules = $6, default_branch = $7, enabled = $8, updated_at = NOW(),
+		SET name = $3, issuer = $4, audience = $5::text, rules = $6, default_branch = $7, enabled = $8, manage_scope = $9, updated_at = NOW(),
 			-- A changed audience withdraws the trust: no legacy audience survives it.
 			legacy_audience = CASE WHEN audience = $5::text THEN legacy_audience END,
 			legacy_audience_until = CASE WHEN audience = $5::text THEN legacy_audience_until END
 		WHERE tenant_id = $1 AND id = $2`,
-		c.TenantID.String(), c.ID.String(), c.Name, c.Issuer, c.Audience, rules, c.DefaultBranch, c.Enabled)
+		c.TenantID.String(), c.ID.String(), c.Name, c.Issuer, c.Audience, rules, c.DefaultBranch, c.Enabled, c.ManageScope)
 	if isUniqueViolation(err) {
 		return cirun.ErrTrustConfigExists
 	}
@@ -127,6 +127,27 @@ func (r *CIRunRepository) UpdateTrustConfig(ctx context.Context, c *cirun.TrustC
 		return err
 	}
 	return requireOneRow(res, cirun.ErrTrustConfigNotFound)
+}
+
+// TrustConfigTenants lists the tenants that have trust configurations
+// (the CI trust scope backfill walks them one by one).
+func (r *CIRunRepository) TrustConfigTenants(ctx context.Context) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT tenant_id FROM ci_trust_configs ORDER BY tenant_id`)
+	if err != nil {
+		return nil, fmt.Errorf("list trust configuration tenants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if tid, err := shared.IDFromString(id); err == nil {
+			out = append(out, tid)
+		}
+	}
+	return out, rows.Err()
 }
 
 // DeleteTrustConfig removes a configuration of the tenant. Its runs stay.
@@ -218,15 +239,69 @@ func (r *CIRunRepository) TouchTrustConfig(ctx context.Context, tenantID, id sha
 
 // --------------------------------------------------------------- replay ---
 
-// ClaimJTI records a token id; false when it was exchanged before.
-func (r *CIRunRepository) ClaimJTI(ctx context.Context, issuer, jti string, expiresAt time.Time) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_oidc_replay (issuer, jti, expires_at) VALUES ($1, $2, $3)
-		ON CONFLICT (issuer, jti) DO NOTHING`, issuer, jti, expiresAt)
+// ClaimReplay records a token's first exchange; when the token id was
+// claimed before it returns the earlier record.
+func (r *CIRunRepository) ClaimReplay(ctx context.Context, rp cirun.Replay) (bool, *cirun.Replay, error) {
+	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_oidc_replay (issuer, jti, expires_at, tenant_id, token_sha256, run_id)
+		VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (issuer, jti) DO NOTHING`,
+		rp.Issuer, rp.JTI, rp.ExpiresAt, nullID(rp.TenantID), rp.TokenSHA256, nullID(rp.RunID))
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	n, err := res.RowsAffected()
-	return n == 1, err
+	if err != nil {
+		return false, nil, err
+	}
+	if n == 1 {
+		return true, nil, nil
+	}
+	prior, err := scanReplay(r.db.QueryRowContext(ctx, `SELECT `+replayColumns+` FROM ci_oidc_replay
+		WHERE issuer = $1 AND jti = $2`, rp.Issuer, rp.JTI))
+	if errors.Is(err, sql.ErrNoRows) {
+		// Purged between the insert and the read: a replay all the same.
+		return false, &cirun.Replay{Issuer: rp.Issuer, JTI: rp.JTI}, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+	return false, prior, nil
+}
+
+// ReuseReplay counts one more exchange of the same token, atomically, while
+// it is under max.
+func (r *CIRunRepository) ReuseReplay(ctx context.Context, issuer, jti string, tenantID shared.ID, digest []byte, max int) (*cirun.Replay, error) {
+	rp, err := scanReplay(r.db.QueryRowContext(ctx, `UPDATE ci_oidc_replay SET exchanges = exchanges + 1
+		WHERE issuer = $1 AND jti = $2 AND tenant_id = $3 AND token_sha256 = $4 AND exchanges < $5
+		RETURNING `+replayColumns, issuer, jti, tenantID.String(), digest, max))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return rp, err
+}
+
+// BindReplayRun records the run a token's exchange produced.
+func (r *CIRunRepository) BindReplayRun(ctx context.Context, issuer, jti string, tenantID, runID shared.ID) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_oidc_replay SET run_id = $4
+		WHERE issuer = $1 AND jti = $2 AND tenant_id = $3 AND (run_id IS NULL OR run_id = $4)`,
+		issuer, jti, tenantID.String(), runID.String())
+	return err
+}
+
+const replayColumns = `issuer, jti, tenant_id, token_sha256, run_id, exchanges, first_at, expires_at`
+
+func scanReplay(row *sql.Row) (*cirun.Replay, error) {
+	var rp cirun.Replay
+	var tenant, run sql.NullString
+	if err := row.Scan(&rp.Issuer, &rp.JTI, &tenant, &rp.TokenSHA256, &run, &rp.Exchanges, &rp.FirstAt, &rp.ExpiresAt); err != nil {
+		return nil, err
+	}
+	if id, err := shared.IDFromString(tenant.String); tenant.Valid && err == nil {
+		rp.TenantID = &id
+	}
+	if id, err := shared.IDFromString(run.String); run.Valid && err == nil {
+		rp.RunID = &id
+	}
+	return &rp, nil
 }
 
 // PurgeExpiredJTIs drops token ids that expired before the given time.
@@ -263,7 +338,8 @@ const ciRunColumns = `id, tenant_id, trust_config_id, repository_asset_id, provi
 	commit_sha, pull_request, default_branch, is_default_branch, event, environment, actor, external_run_id,
 	run_attempt, workflow, pipeline_url, fork, token_expires_at, status, verdict, verdict_detail, evaluated_at,
 	reports_count, findings_count, pipeline_id, sensor_version, scan_failures, tools, template_ref, created_at, updated_at,
-	external_job_id, aggregate, commit_verified, base_ref, decoration_state, decoration_detail`
+	external_job_id, aggregate, commit_verified, base_ref, decoration_state, decoration_detail, carried_scan_failures,
+	carried_failed_capabilities`
 
 func scanCIRun(row ciScanner) (cirun.Run, error) {
 	var (
@@ -280,7 +356,8 @@ func scanCIRun(row ciScanner) (cirun.Run, error) {
 		&run.Actor, &run.ExternalRunID, &run.RunAttempt, &run.Workflow, &run.PipelineURL, &run.Fork, &tokenExp,
 		&run.Status, &verdict, &detail, &evaluated, &run.ReportsCount, &run.FindingsCount, &pipeline,
 		&run.SensorVersion, &failures, &tools, &run.TemplateRef, &run.CreatedAt, &run.UpdatedAt,
-		&run.ExternalJobID, &run.Aggregate, &run.CommitVerified, &run.BaseRef, &run.DecorationState, &run.DecorationDetail); err != nil {
+		&run.ExternalJobID, &run.Aggregate, &run.CommitVerified, &run.BaseRef, &run.DecorationState, &run.DecorationDetail, &run.CarriedScanFailures,
+		pq.Array(&run.CarriedFailedCapabilities)); err != nil {
 		return run, err
 	}
 	run.ID, _ = shared.IDFromString(id)
@@ -328,11 +405,15 @@ func ciRunInsertArgs(run *cirun.Run) []any {
 		run.Aggregate, run.CommitVerified, run.BaseRef}
 }
 
-// OpenAggregateRun returns the open aggregate run of the run's pipeline run
-// (same pipeline, external run id, attempt and commit), creating it from
-// run when there is none. Two jobs racing here get the same run: the
-// second insert conflicts on idx_ci_runs_aggregate_open and reads the
-// first. created says whether this call created it.
+// OpenAggregateRun returns the aggregate run of the run's pipeline run (same
+// pipeline, external run id and commit, whatever the attempt), creating it
+// from run when there is none. Every job, retry and re-run attempt reports
+// into it: an attempt that finds it evaluated re-opens it (running again,
+// the attempt recorded, the verdict's scanner failures carried until a new
+// report arrives), so a re-run of only the gate job is judged on the
+// evidence already uploaded, never on an empty run. Two jobs racing here get
+// the same run: the second insert conflicts on idx_ci_runs_pipeline_run and
+// reads the first. created says whether this call created it.
 func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) (*cirun.Run, bool, error) {
 	if !run.Aggregate || run.PipelineID == nil || run.ExternalRunID == "" {
 		return nil, false, fmt.Errorf("%w: an aggregate run needs a pipeline and an external run id", shared.ErrValidation)
@@ -341,10 +422,10 @@ func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) 
 		provider, issuer, repository, ref, branch, commit_sha, pull_request, default_branch, is_default_branch, event,
 		environment, actor, external_run_id, run_attempt, workflow, pipeline_url, fork, token_hash, token_expires_at,
 		status, created_at, updated_at, pipeline_id, sensor_version, template_ref, external_job_id, aggregate, commit_verified,
-		base_ref)
-		VALUES (`+ciRunInsertValues+`)
-		ON CONFLICT (tenant_id, pipeline_id, external_run_id, run_attempt, commit_sha)
-		WHERE aggregate AND status = 'running' DO NOTHING`, ciRunInsertArgs(run)...)
+		base_ref, evidence_union)
+		VALUES (`+ciRunInsertValues+`, true)
+		ON CONFLICT (tenant_id, pipeline_id, external_run_id, commit_sha)
+		WHERE aggregate AND evidence_union DO NOTHING`, ciRunInsertArgs(run)...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -352,12 +433,22 @@ func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) 
 	if err != nil {
 		return nil, false, err
 	}
+	// A later attempt re-opens an evaluated run for its reports; the
+	// verdict's scanner failures keep failing it until a report arrives.
+	if _, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'running', run_attempt = $5,
+			carried_scan_failures = GREATEST(carried_scan_failures, COALESCE(scan_failures, 0)),
+			carried_failed_capabilities = ARRAY(SELECT DISTINCT c FROM unnest(carried_failed_capabilities || failed_capabilities) AS c),
+			updated_at = NOW()
+		WHERE tenant_id = $1 AND pipeline_id = $2 AND external_run_id = $3 AND commit_sha = $4
+		  AND aggregate AND evidence_union AND status = 'evaluated'`,
+		run.TenantID.String(), run.PipelineID.String(), run.ExternalRunID, run.CommitSHA, run.RunAttempt); err != nil {
+		return nil, false, err
+	}
 	open, err := scanCIRun(r.db.QueryRowContext(ctx, `SELECT `+ciRunColumns+` FROM ci_runs
-		WHERE tenant_id = $1 AND pipeline_id = $2 AND external_run_id = $3 AND run_attempt = $4 AND commit_sha = $5
-		  AND aggregate AND status = 'running'`, run.TenantID.String(), run.PipelineID.String(), run.ExternalRunID,
-		run.RunAttempt, run.CommitSHA))
+		WHERE tenant_id = $1 AND pipeline_id = $2 AND external_run_id = $3 AND commit_sha = $4
+		  AND aggregate AND evidence_union`, run.TenantID.String(), run.PipelineID.String(), run.ExternalRunID,
+		run.CommitSHA))
 	if errors.Is(err, sql.ErrNoRows) {
-		// Evaluated between the insert and the read.
 		return nil, false, cirun.ErrRunNotFound
 	}
 	if err != nil {
@@ -366,11 +457,26 @@ func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) 
 	return &open, n == 1, nil
 }
 
-// AddRunToken adds a job's upload token to a running aggregate run.
+// ClearCarriedCapabilities drops the carried failed capabilities that the
+// named tool provides: the report's tool name is matched against the tool
+// registry (the platform's tools and the tenant's own), whose capabilities
+// decide what is cleared.
+func (r *CIRunRepository) ClearCarriedCapabilities(ctx context.Context, tenantID, runID shared.ID, tool string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs r SET carried_failed_capabilities = ARRAY(
+			SELECT c FROM unnest(r.carried_failed_capabilities) AS c
+			WHERE NOT EXISTS (SELECT 1 FROM tools tt WHERE lower(tt.name) = lower($3)
+				AND (tt.tenant_id IS NULL OR tt.tenant_id = r.tenant_id) AND c = ANY(tt.capabilities)))
+		WHERE r.tenant_id = $1 AND r.id = $2 AND cardinality(r.carried_failed_capabilities) > 0`,
+		tenantID.String(), runID.String(), tool)
+	return err
+}
+
+// AddRunToken adds an upload token to a running run (a job of an aggregate
+// run, or a re-exchange of the token that opened a run).
 func (r *CIRunRepository) AddRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, jobID string, expiresAt time.Time) error {
 	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_run_tokens (token_hash, tenant_id, run_id, external_job_id, expires_at)
 		SELECT $3, tenant_id, id, $4, $5 FROM ci_runs
-		WHERE tenant_id = $1 AND id = $2 AND aggregate AND status = 'running'`,
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
 		tenantID.String(), runID.String(), hash, jobID, expiresAt)
 	if err != nil {
 		return err
@@ -490,7 +596,7 @@ func (r *CIRunRepository) ListRuns(ctx context.Context, tenantID shared.ID, f ci
 // land after the verdict.
 func (r *CIRunRepository) ReserveRunReport(ctx context.Context, tenantID, runID shared.ID) error {
 	var n int
-	err := r.db.QueryRowContext(ctx, `UPDATE ci_runs SET reports_count = reports_count + 1, updated_at = NOW()
+	err := r.db.QueryRowContext(ctx, `UPDATE ci_runs SET reports_count = reports_count + 1, carried_scan_failures = 0, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND reports_count < $3
 		RETURNING reports_count`, tenantID.String(), runID.String(), cirun.MaxRunReports).Scan(&n)
 	if err == nil {
@@ -537,8 +643,18 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 	if status != string(cirun.StatusRunning) {
 		return cirun.ErrRunEvaluated
 	}
-	if room := cirun.MaxRunFindings - current; len(fingerprints) > room {
-		fingerprints = fingerprints[:max(room, 0)]
+	overCap := false
+	if room := max(cirun.MaxRunFindings-current, 0); len(fingerprints) > room {
+		// Keep only what the run has not recorded yet: a report that repeats
+		// sightings already recorded does not overflow the cap.
+		fresh, err := unrecordedFingerprints(ctx, tx, tenantID, runID, fingerprints)
+		if err != nil {
+			return err
+		}
+		if len(fresh) > room {
+			fresh, overCap = fresh[:room], true
+		}
+		fingerprints = fresh
 	}
 	added := int64(0)
 	if len(fingerprints) > 0 {
@@ -550,12 +666,52 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 		}
 		added, _ = res.RowsAffected()
 	}
+	// A run past the cap is marked: the gate cannot judge what it did not
+	// record, so the verdict fails (ReasonTooManyFindings) instead of
+	// judging a prefix.
 	if _, err := tx.ExecContext(ctx, `UPDATE ci_runs SET
-		findings_count = findings_count + $3, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
-		tenantID.String(), runID.String(), added); err != nil {
+		findings_count = findings_count + $3, findings_over_cap = findings_over_cap OR $4, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), runID.String(), added, overCap); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// unrecordedFingerprints returns the distinct fingerprints the run has not
+// recorded yet, in their first-seen order.
+func unrecordedFingerprints(ctx context.Context, tx *sql.Tx, tenantID, runID shared.ID, fingerprints []string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT fp FROM (
+			SELECT fp, MIN(ord) AS ord FROM unnest($3::text[]) WITH ORDINALITY AS u(fp, ord) GROUP BY fp
+		) d
+		WHERE NOT EXISTS (SELECT 1 FROM ci_run_findings f
+			WHERE f.tenant_id = $1 AND f.run_id = $2 AND f.fingerprint = d.fp)
+		ORDER BY d.ord`, tenantID.String(), runID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, err
+		}
+		out = append(out, fp)
+	}
+	return out, rows.Err()
+}
+
+// RunFindingsOverCap reports whether the run reported more findings than
+// it could record (MaxRunFindings).
+func (r *CIRunRepository) RunFindingsOverCap(ctx context.Context, tenantID, runID shared.ID) (bool, error) {
+	var over bool
+	err := r.db.QueryRowContext(ctx, `SELECT findings_over_cap FROM ci_runs WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), runID.String()).Scan(&over)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, cirun.ErrRunNotFound
+	}
+	return over, err
 }
 
 // runFindingColumns are the columns scanRunFindings reads, from findings f.
@@ -568,7 +724,8 @@ const runFindingColumns = `f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(
 				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
 				WHERE s.finding_id = f.id AND sr.status = 'approved'
 				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())),
-			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at`
+			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at,
+			NULL::boolean, COALESCE(f.secret_type, ''), COALESCE(f.type_details->'secret'->>'fingerprint', '')`
 
 // RunFindings returns the findings on the run's asset that the run recorded.
 //
@@ -608,6 +765,10 @@ func (r *CIRunRepository) FindingsByFingerprints(ctx context.Context, tenantID, 
 	return scanRunFindings(rows)
 }
 
+// The gate never reads findings.secret_valid: that column was written from
+// the uploaded report, and a fork pull request could report a live secret as
+// dead. The query selects NULL in its place until the platform records its own
+// validation result.
 func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 	defer func() { _ = rows.Close() }()
 	out := []cirun.RunFinding{}
@@ -617,15 +778,21 @@ func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 			id                         string
 			epss                       sql.NullFloat64
 			accExp, firstDet, reopened sql.NullTime
+			secretValid                sql.NullBool
 		)
 		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType, &f.Source, &f.ToolName,
-			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.FixAvailable, &f.Suppressed, &accExp, &firstDet, &reopened); err != nil {
+			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.FixAvailable, &f.Suppressed, &accExp, &firstDet, &reopened,
+			&secretValid, &f.SecretType, &f.SecretFingerprint); err != nil {
 			return nil, err
 		}
 		f.ID, _ = shared.IDFromString(id)
 		if epss.Valid {
 			v := epss.Float64
 			f.EPSSScore = &v
+		}
+		if secretValid.Valid {
+			v := secretValid.Bool
+			f.SecretValid = &v
 		}
 		f.AcceptanceExpiresAt = optTime(accExp)
 		f.FirstDetectedAt = optTime(firstDet)
@@ -637,11 +804,21 @@ func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 
 // SaveVerdict stores the run's verdict. The first verdict is final: a run
 // that is no longer running keeps the verdict it has (cirun.ErrRunEvaluated).
-func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error {
+// A run marked over the findings cap stores only a verdict that names the
+// cap (ReasonTooManyFindings): one computed before the mark is refused as
+// changed and judged again.
+func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int, failedCapabilities []string) error {
+	if failedCapabilities == nil {
+		failedCapabilities = []string{}
+	}
+	// The failed capabilities are written with the verdict, in one
+	// statement: a later attempt re-opening the run carries exactly the list
+	// of the verdict it re-opens.
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
-		evaluated_at = $5, updated_at = NOW(),`+decorationQueued+`
-		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6`,
-		tenantID.String(), runID.String(), verdict, detail, at, expectFindings)
+		evaluated_at = $5, failed_capabilities = $7, updated_at = NOW(),`+decorationQueued+`
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6
+		  AND (NOT findings_over_cap OR $4::jsonb @> '{"reasons":[{"code":"`+cirun.ReasonTooManyFindings+`"}]}')`,
+		tenantID.String(), runID.String(), verdict, detail, at, expectFindings, pq.Array(failedCapabilities))
 	if err != nil {
 		return err
 	}
@@ -668,7 +845,7 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 // with a foreign key (migration 001144).
 const ciPolicyColumns = `id, tenant_id, scope_type, COALESCE(repository_asset_id, business_unit_id), enabled, mode,
 	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at, modes, allow_repo_policy,
-	fixable_only`
+	fixable_only, fields, locked_fields, reason, expires_at, baseline_on_first_run, baseline_grace_days, baseline_secrets_block`
 
 func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 	var (
@@ -678,10 +855,21 @@ func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 		epss                 sql.NullFloat64
 		createdAt, updatedAt time.Time
 		modes                []byte
+		expires              sql.NullTime
+		grace                sql.NullInt64
 	)
 	if err := row.Scan(&id, &tid, &p.ScopeType, &scopeID, &p.Enabled, &p.Mode, &p.FailOnSeverity,
-		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes, &p.AllowRepoPolicy, &p.FixableOnly); err != nil {
+		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes, &p.AllowRepoPolicy, &p.FixableOnly,
+		pq.Array(&p.Fields), pq.Array(&p.LockedFields), &p.Reason, &expires, &p.BaselineOnFirstRun, &grace, &p.BaselineSecretsBlock); err != nil {
 		return p, err
+	}
+	if expires.Valid {
+		t := expires.Time
+		p.ExpiresAt = &t
+	}
+	if grace.Valid {
+		g := int(grace.Int64)
+		p.BaselineGraceDays = &g
 	}
 	if len(modes) > 0 {
 		_ = json.Unmarshal(modes, &p.Modes)
@@ -707,6 +895,30 @@ func modesJSON(m cirun.PolicyModes) []byte {
 	return b
 }
 
+// nonNilFields stores an empty array, never NULL.
+func nonNilFields(f []string) []string {
+	if f == nil {
+		return []string{}
+	}
+	return f
+}
+
+// nullGraceDays stores the baseline grace (NULL: no end).
+func nullGraceDays(v *int) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(*v), Valid: true}
+}
+
+// policyExpiry stores a policy's end (NULL: none).
+func policyExpiry(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: *t, Valid: true}
+}
+
 func nullFloat(v *float64) sql.NullFloat64 {
 	if v == nil {
 		return sql.NullFloat64{}
@@ -721,10 +933,11 @@ func (r *CIRunRepository) ListGatePolicies(ctx context.Context, tenantID shared.
 		tenantID.String())
 }
 
-// GatePoliciesFor returns the enabled policies that may apply to an asset.
+// GatePoliciesFor returns the policies, enabled or not, that may apply to an
+// asset: the tenant's, its business units' and its own.
 func (r *CIRunRepository) GatePoliciesFor(ctx context.Context, tenantID, assetID shared.ID) ([]cirun.GatePolicy, error) {
 	return r.queryPolicies(ctx, `SELECT `+ciPolicyColumns+` FROM ci_gate_policies p
-		WHERE p.tenant_id = $1 AND p.enabled AND (
+		WHERE p.tenant_id = $1 AND (
 			p.scope_type = 'tenant'
 			OR (p.scope_type = 'repository' AND p.repository_asset_id = $2)
 			OR (p.scope_type = 'business_unit' AND p.business_unit_id IN (
@@ -774,11 +987,14 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_gate_policies (id, tenant_id, scope_type, repository_asset_id,
 		business_unit_id, enabled, mode, fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by,
-		updated_by, created_at, updated_at, modes, allow_repo_policy, fixable_only)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14, $15, $16)`,
+		updated_by, created_at, updated_at, modes, allow_repo_policy, fixable_only, fields, locked_fields, reason, expires_at,
+		baseline_on_first_run, baseline_grace_days, baseline_secrets_block)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
 		p.ID.String(), p.TenantID.String(), p.ScopeType, nullID(repoID), nullID(unitID), p.Enabled, p.Mode,
 		p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt,
-		modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly)
+		modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly, pq.Array(nonNilFields(p.Fields)),
+		pq.Array(nonNilFields(p.LockedFields)), p.Reason, policyExpiry(p.ExpiresAt), p.BaselineOnFirstRun,
+		nullGraceDays(p.BaselineGraceDays), p.BaselineSecretsBlock)
 	if isUniqueViolation(err) {
 		return cirun.ErrPolicyExists
 	}
@@ -789,10 +1005,13 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 func (r *CIRunRepository) UpdateGatePolicy(ctx context.Context, p *cirun.GatePolicy) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_gate_policies SET enabled = $3, mode = $4, fail_on_severity = $5,
 		new_findings_only = $6, fail_on_kev = $7, epss_threshold = $8, updated_by = $9, modes = $10,
-		allow_repo_policy = $11, fixable_only = $12, updated_at = NOW()
+		allow_repo_policy = $11, fixable_only = $12, fields = $13, locked_fields = $14, reason = $15, expires_at = $16,
+		baseline_on_first_run = $17, baseline_grace_days = $18, baseline_secrets_block = $19, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2`,
 		p.TenantID.String(), p.ID.String(), p.Enabled, p.Mode, p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV,
-		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly)
+		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly,
+		pq.Array(nonNilFields(p.Fields)), pq.Array(nonNilFields(p.LockedFields)), p.Reason, policyExpiry(p.ExpiresAt),
+		p.BaselineOnFirstRun, nullGraceDays(p.BaselineGraceDays), p.BaselineSecretsBlock)
 	if err != nil {
 		return err
 	}
@@ -981,8 +1200,9 @@ func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, a
 		}
 		id := shared.NewID().String()
 		res, err := r.db.ExecContext(ctx, `INSERT INTO suppression_rules (id, tenant_id, rule_id, path_pattern, asset_id,
-				name, description, suppression_type, status, expires_at, requested_by_actor)
-			SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::uuid, $6::varchar, $7::text, 'accepted_risk', 'pending', $8::timestamptz, $9::varchar
+				name, description, suppression_type, status, expires_at, requested_by_actor, reason_code)
+			SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::uuid, $6::varchar, $7::text, 'accepted_risk', 'pending', $8::timestamptz, $9::varchar,
+			       'risk_accepted'
 			WHERE NOT EXISTS (SELECT 1 FROM suppression_rules
 				WHERE tenant_id = $2::uuid AND asset_id = $5::uuid AND rule_id IS NOT DISTINCT FROM $3::varchar
 				  AND path_pattern IS NOT DISTINCT FROM $4::varchar AND status IN ('pending', 'approved'))`,
@@ -1069,13 +1289,14 @@ func (r *CIRunRepository) FinishDecoration(ctx context.Context, tenantID, runID 
 	return err
 }
 
-// PullRequestPassed reports whether the last evaluated non-fork run of a
-// pull request on the repository passed the gate (tenant-scoped).
+// PullRequestPassed reports whether the last judged non-fork run of a pull
+// request on the repository passed the gate (tenant-scoped). A run a later
+// attempt re-opened keeps its last verdict until it is judged again.
 func (r *CIRunRepository) PullRequestPassed(ctx context.Context, tenantID, assetID shared.ID, pullRequest string) (bool, error) {
 	var verdict sql.NullString
 	err := r.db.QueryRowContext(ctx, `SELECT verdict FROM ci_runs
-		WHERE tenant_id = $1 AND repository_asset_id = $2 AND pull_request = $3 AND status = 'evaluated' AND NOT fork
-		ORDER BY evaluated_at DESC LIMIT 1`, tenantID.String(), assetID.String(), pullRequest).Scan(&verdict)
+		WHERE tenant_id = $1 AND repository_asset_id = $2 AND pull_request = $3 AND verdict IS NOT NULL AND NOT fork
+		ORDER BY evaluated_at DESC NULLS LAST LIMIT 1`, tenantID.String(), assetID.String(), pullRequest).Scan(&verdict)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -1085,9 +1306,10 @@ func (r *CIRunRepository) PullRequestPassed(ctx context.Context, tenantID, asset
 	return verdict.String == cirun.VerdictPass, nil
 }
 
-// CommitVerdicts returns the latest evaluated verdict of each pipeline on
-// any of the commits of the repository (tenant-scoped). A run without a
-// pipeline counts on its own.
+// CommitVerdicts returns the latest verdict of each pipeline on any of the
+// commits of the repository (tenant-scoped). A run without a pipeline counts
+// on its own. A run a later attempt re-opened keeps its last verdict until it
+// is judged again, so re-opening a failed run never hides its failure.
 func (r *CIRunRepository) CommitVerdicts(ctx context.Context, tenantID, assetID shared.ID, shas []string) ([]cirun.CommitVerdict, error) {
 	clean := make([]string, 0, len(shas))
 	for _, s := range shas {
@@ -1102,8 +1324,8 @@ func (r *CIRunRepository) CommitVerdicts(ctx context.Context, tenantID, assetID 
 			id, verdict, COALESCE((verdict_detail->>'would_fail')::boolean, false)
 		FROM ci_runs
 		WHERE tenant_id = $1 AND repository_asset_id = $2 AND lower(commit_sha) = ANY($3)
-		  AND status = 'evaluated' AND verdict IS NOT NULL
-		ORDER BY COALESCE(pipeline_id::text, id::text), evaluated_at DESC`,
+		  AND verdict IS NOT NULL
+		ORDER BY COALESCE(pipeline_id::text, id::text), evaluated_at DESC NULLS LAST`,
 		tenantID.String(), assetID.String(), pq.Array(clean))
 	if err != nil {
 		return nil, err
@@ -1148,6 +1370,41 @@ func (r *CIRunRepository) AssetsWithImageDigest(ctx context.Context, tenantID sh
 		}
 		a.ID, _ = shared.IDFromString(id)
 		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// PromoteSecretFindings makes secret findings of the run's repository
+// organization findings: a secret pushed to any non-fork branch is exposed
+// whether or not the branch merges, so it must not stay hidden as seen only
+// on a branch that is no exposure. Same SLA shift as promoting on a counting
+// branch (promote_branch_only_findings). Returns the ids it changed.
+func (r *CIRunRepository) PromoteSecretFindings(ctx context.Context, tenantID, assetID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		UPDATE findings f
+		SET branch_only = FALSE,
+		    sla_deadline = f.sla_deadline + (NOW() - COALESCE(f.first_detected_at, f.created_at)),
+		    sla_status = CASE WHEN f.sla_deadline IS NULL THEN f.sla_status ELSE 'on_track' END,
+		    updated_at = NOW()
+		WHERE f.tenant_id = $1 AND f.asset_id = $2 AND f.id = ANY($3::uuid[])
+		  AND f.branch_only AND f.finding_type = 'secret'
+		RETURNING f.id::text`, tenantID.String(), assetID.String(), pq.Array(rtIDStrings(ids)))
+	if err != nil {
+		return nil, fmt.Errorf("promote secret findings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		if id, err := shared.IDFromString(s); err == nil {
+			out = append(out, id)
+		}
 	}
 	return out, rows.Err()
 }

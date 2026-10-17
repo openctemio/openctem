@@ -59,6 +59,8 @@ const (
 	EventCategoryApproval EventCategory = "approval"
 	EventCategoryWorkflow EventCategory = "workflow"
 	EventCategorySensor   EventCategory = "sensor"
+	// EventCategoryRemediation groups remediation task and suggestion events.
+	EventCategoryRemediation EventCategory = "remediation"
 )
 
 // EventCategoryInfo pairs an event category with its display label.
@@ -82,7 +84,7 @@ func AllEventCategories() []EventCategoryInfo {
 		{Category: EventCategoryApproval, Label: "Approval Events"},
 		{Category: EventCategoryWorkflow, Label: "Workflow Events"},
 		{Category: EventCategoryExposure, Label: "Exposure Events"},
-		{Category: EventCategorySensor, Label: "Sensor Events"},
+		{Category: EventCategorySensor, Label: "Sensors and CI pipelines"},
 	}
 }
 
@@ -103,6 +105,11 @@ const (
 	// listed in KEV, or a compensating control was removed). Without it a
 	// priority escalation is a silent dashboard update.
 	EventTypeFindingPriorityEscalated EventType = "finding_priority_escalated"
+	// EventTypeScoringChangeApplied fires once per scoring change (a new
+	// scoring model, or the organization's risk scoring settings, priority
+	// rules or SLA policy) when its recompute has finished: one summary
+	// instead of one priority-escalated event per finding.
+	EventTypeScoringChangeApplied EventType = "scoring_change_applied"
 
 	// EventTypeFindingAssigned fires when an assignment rule routes a finding to
 	// a group AND that rule has its "notify group" option switched on. The
@@ -143,6 +150,11 @@ const (
 	// type needs: a coverage gap, a capability that stopped producing its
 	// output, or repeated failures (docs/rfcs/RFC-093-asset-coverage.md).
 	EventTypeCoverageGap EventType = "coverage_gap"
+
+	// EventTypeRemediationSuggestionsDigest is the daily digest of new
+	// remediation suggestions to review (docs/rfcs/RFC-098-remediation-tasks.md):
+	// one message per tenant and day, never one per suggestion.
+	EventTypeRemediationSuggestionsDigest EventType = "remediation_suggestions_digest"
 
 	// EventTypeSensorOffline fires when the sensor-health controller sees a
 	// sensor stop heartbeating (online -> offline). The id keeps the dotted
@@ -198,6 +210,8 @@ const (
 	ModuleSensors  = "sensors"
 	// ModuleAttackSurface is the EASM module.
 	ModuleAttackSurface = "attack_surface"
+	// ModuleRemediation is the remediation tasks and campaigns module.
+	ModuleRemediation = "remediation"
 )
 
 // AllEventTypes returns all event types with metadata for UI.
@@ -214,6 +228,7 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeFindingFixed, Category: EventCategoryFinding, Label: "Fixed Finding", Description: "Finding has been remediated", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingReopened, Category: EventCategoryFinding, Label: "Reopened Finding", Description: "Finding reopened after fix", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingPriorityEscalated, Category: EventCategoryFinding, Label: "Priority Escalated", Description: "Finding re-classified to a higher priority (e.g. P3 to P0)", RequiredModule: ModuleFindings},
+		{Type: EventTypeScoringChangeApplied, Category: EventCategoryFinding, Label: "Scoring Changed", Description: "One summary when a scoring model or the risk scoring settings, priority rules or SLA policy changed open findings", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingAssigned, Category: EventCategoryFinding, Label: "Finding Assigned", Description: "Finding routed to a group by an assignment rule with group notification enabled", RequiredModule: ModuleFindings},
 		{Type: EventTypeSLABreach, Category: EventCategoryFinding, Label: "SLA Breached", Description: "Finding missed its SLA remediation deadline", RequiredModule: ModuleFindings},
 		{Type: EventTypeSLAWarning, Category: EventCategoryFinding, Label: "SLA Approaching", Description: "Finding is approaching its SLA remediation deadline (pre-breach warning)", RequiredModule: ModuleFindings},
@@ -235,6 +250,9 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
 		{Type: EventTypeCoverageGap, Category: EventCategoryAsset, Label: "Coverage Gap", Description: "Assets went without a capability their type needs (never or not recently scanned), a capability stopped producing its output, or it failed repeatedly", RequiredModule: ModuleAttackSurface},
 		{Type: EventTypeAttackSurfaceDigest, Category: EventCategoryExposure, Label: "Attack Surface Weekly Digest", Description: "Weekly summary of what changed on the external attack surface: new and removed hosts, ports, certificates, DNS, technologies and exposures", RequiredModule: ModuleAttackSurface},
+
+		// Remediation events - require the 'remediation' module
+		{Type: EventTypeRemediationSuggestionsDigest, Category: EventCategoryRemediation, Label: "Remediation Suggestions Digest", Description: "Daily summary of new remediation suggestions to review (findings one fix closes); nothing changes until someone accepts one", RequiredModule: ModuleRemediation},
 
 		// Sensor events - require 'sensors' module
 		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
@@ -296,6 +314,10 @@ func DefaultEnabledEventTypes() []EventType {
 		// per-integration severity filter still applies (P0 -> critical,
 		// P1 -> high, ...), so this is not a firehose.
 		EventTypeFindingPriorityEscalated,
+		// A scoring change sends one summary instead of the escalations it
+		// caused (docs/architecture/scoring-versions.md), so it is on
+		// wherever escalations are.
+		EventTypeScoringChangeApplied,
 
 		// A scheduled CI scan that silently stopped, a repository that lost
 		// its scanning, or a runner below the supported version are the
@@ -366,6 +388,9 @@ func SeverityFilterApplies(eventType EventType) bool {
 		return false
 	// A coverage gap carries a fixed severity chosen by the coverage loop.
 	case EventTypeCoverageGap:
+		return false
+	// The suggestions digest is a summary with a fixed "info" severity.
+	case EventTypeRemediationSuggestionsDigest:
 		return false
 	default:
 		return true
@@ -498,7 +523,7 @@ func NewNotificationExtension(integrationID ID) *NotificationExtension {
 		integrationID:      integrationID,
 		enabledSeverities:  DefaultEnabledSeverities(),
 		enabledEventTypes:  DefaultEnabledEventTypes(),
-		includeDetails:     true,
+		includeDetails:     false,
 		minIntervalMinutes: 5,
 	}
 }

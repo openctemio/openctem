@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/accountdeletion"
+
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -23,6 +25,8 @@ type UserHandler struct {
 	platformAdmin PlatformAdminChecker
 	validator     *validator.Validator
 	logger        *logger.Logger
+	// accountDeletion serves DELETE /users/me (account_deletion_handler.go).
+	accountDeletion *accountdeletion.Service
 }
 
 // NewUserHandler creates a new user handler.
@@ -326,7 +330,6 @@ type TenantMembershipResponse struct {
 	Slug        string    `json:"slug"`
 	Description string    `json:"description,omitempty"`
 	LogoURL     string    `json:"logo_url,omitempty"`
-	Plan        string    `json:"plan"`
 	Role        string    `json:"role"`
 	JoinedAt    time.Time `json:"joined_at"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -385,7 +388,6 @@ func (h *UserHandler) MyTenantsResponse(ctx context.Context, userID shared.ID) (
 			Slug:            t.Tenant.Slug(),
 			Description:     t.Tenant.Description(),
 			LogoURL:         t.Tenant.LogoURL(),
-			Plan:            t.Tenant.Plan().String(),
 			Role:            t.Role.String(),
 			JoinedAt:        t.JoinedAt,
 			CreatedAt:       t.Tenant.CreatedAt(),

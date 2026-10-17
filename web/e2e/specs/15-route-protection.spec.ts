@@ -10,8 +10,9 @@ import { submitSignIn } from '../helpers/auth'
  *   2. A stale session cookie (well-formed, rejected by the API) loads the
  *      page, the client clears the cookies on the 401 and lands on /login
  *      once: no redirect loop.
- *   3. Public pages and the admin console sign-in open without a session; the
- *      admin console redirects to its own sign-in.
+ *   3. Public pages open without a session; the platform console is not part
+ *      of this app (its own site, RFC-022 revision 21): /admin is an ordinary
+ *      page path and the console API is not proxied.
  *   4. The CSP nonce still reaches Next.js's scripts, and nothing is blocked.
  *   5. Locale: the cookie wins, Accept-Language is a default, never RTL.
  *
@@ -149,7 +150,6 @@ test('public pages open without a session', async ({ request }) => {
     '/reset-password',
     '/set-password',
     '/invitations',
-    '/admin/login',
   ]) {
     const res = await request.get(path, { maxRedirects: 0 })
     expect(res.status(), path).toBe(200)
@@ -168,12 +168,21 @@ test('an invitation link from before RFC-041 moves its token into the fragment',
   expect(res.headers()['location']).toMatch(/\/invitations#token=this-token-does-not-exist$/)
 })
 
-test('the admin console redirects to its own sign-in', async ({ request }) => {
+test('this app has no platform console', async ({ request }) => {
+  // An ordinary page path: the tenant sign-in, never a console sign-in.
   const res = await request.get('/admin/organizations', { maxRedirects: 0 })
   expect(res.status()).toBe(307)
   const location = new URL(res.headers()['location'], cookieUrl())
-  expect(location.pathname).toBe('/admin/login')
-  expect(location.searchParams.get('next')).toBe('/admin/organizations')
+  expect(location.pathname).toBe('/login')
+  // The console API is not proxied by this app, however it is spelled.
+  for (const path of [
+    '/api/v1/admin/auth/validate',
+    '/api/v1/Admin/tenants',
+    '/api/v1/./admin/tenants',
+  ]) {
+    const api = await request.get(path, { maxRedirects: 0 })
+    expect(api.status(), path).toBe(404)
+  }
 })
 
 test('the CSP nonce reaches the page scripts and nothing is blocked', async ({ page, request }) => {

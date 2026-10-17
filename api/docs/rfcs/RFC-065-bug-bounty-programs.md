@@ -216,14 +216,16 @@ A program the caller may not see answers 404. Errors: `PROGRAM_SCOPE_EMPTY`,
 ## 7. Researcher role and data scope
 
 Permissions `attack_surface:programs:read` and
-`attack_surface:programs:write` (owner and admin by default). The system role
-**Researcher** (`researcher`, fixed id `00000000-0000-0000-0000-000000000005`,
-no full data access) holds: `dashboard:read`, `assets:read`,
+`attack_surface:programs:write` (owner and admin by default). The
+**Researcher** role (no full data access) holds: `dashboard:read`, `assets:read`,
 `findings:read|write|status|triage|export`, `scans:read|write|execute`,
 `scans:profiles:read`, `scans:templates:read`, `scans:workflows:read`,
 `sensors:read`, `attack_surface:programs:read|write`. It holds no scope,
-sensor-management, member or settings permission. Organizations clone it to
-change it.
+sensor-management, member or settings permission. It was a built-in role
+(fixed id `…0005`) until RFC-095 made it the `researcher` role template: an
+organization creates its own Researcher role from the template, and migration
+`role_template_library` gave every organization that used the built-in role
+its own copy with the same assignments.
 
 **Data scope.** Each program has a group (type `project`, created with the
 program). Program members are the group's members, added like any group
@@ -319,12 +321,14 @@ deferred to the next opening (no longer skipped), a target whose windows
 never open refuses the run (`SCAN_WINDOW_NEVER_OPENS`), and no override ever
 lifts them.
 
-Headers and User-Agent need sdk-go `core.OrgHTTPPolicy.Headers` (sdk-go
-#227, #228); a sensor without it ignores the field, so a command that carries
-a program's headers or User-Agent goes only to a sensor that reported SDK
-v0.19.0 or later (`command.MinSDKForProgramHTTPRules`). Any other sensor,
-including a development build or one that reported no version, does not get
-it: the command waits, and a claim by id answers `PROGRAM_RULES_UNSUPPORTED`.
+Headers and User-Agent are sent by a sensor whose tools run through the
+tool host, which applies `core.OrgHTTPPolicy`; such a sensor reports the
+capability `http.identity@1` (`sensor.CapabilityHTTPIdentity`). A command
+that carries a program's headers or User-Agent goes only to a sensor that
+reported it. Any other sensor, whatever its SDK version, does not get it: the
+command waits, and a claim by id answers `PROGRAM_RULES_UNSUPPORTED`.
+(Amended 2026-10-14 by RFC-094 decision O2: the gate was SDK v0.19.0 or
+later; the platform no longer judges a sensor by its SDK version.)
 A rule lookup that fails withholds the command (fail closed). A program can
 never require a credential or connection header (`Authorization`, `Cookie`,
 `Host`, `Proxy-*`, `Connection`, …): the import refuses it.

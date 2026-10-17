@@ -122,6 +122,7 @@ const threatIntel = {
   },
 }
 vi.mock('@/features/dashboard/hooks/use-ctem-dashboard', () => ({
+  scoringChangeDates: () => [],
   useRiskTrend: () => ({ data: trend, isLoading: false }),
   useExecutiveSummary: () => ({ data: summary, isLoading: false }),
   useThreatIntelStats: () => ({ data: threatIntel, isLoading: false }),

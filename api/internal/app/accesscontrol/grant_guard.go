@@ -121,21 +121,39 @@ func (a grantActor) mayCarry(perms []string, fullData bool) error {
 	return nil
 }
 
-// ErrExternalRoleCeiling refuses a role an external member may not hold.
-var ErrExternalRoleCeiling = fmt.Errorf("%w: someone outside your organization can be a viewer or a member, never an administrator or owner, and cannot get full data access", ErrGrantForbidden)
+// ErrExternalRoleCeiling refuses a role above the ceiling of the trust with
+// an outside member's home organization (viewer or member), or the owner
+// role for an outside member.
+var ErrExternalRoleCeiling = fmt.Errorf("%w: the trust with this member's organization allows at most the member role; administrator, full data access and other privileged roles are not part of it", ErrGrantForbidden)
 
-// capExternalTarget enforces the external-member role ceiling (RFC-058): a
-// member whose email domain the organization does not own may not hold the
-// owner or admin role, nor a role with full data access. It applies to every
-// actor, system paths included; the owner role is also refused by a
-// database trigger. No-op when no membership reader is wired.
-func (s *RoleService) capExternalTarget(ctx context.Context, tid, uid roledom.ID, r *roledom.Role) error {
+// ErrExternalTeamFullData refuses full data access for an outside member
+// through a team: an outside person gets it only by a direct, per-person
+// grant (with the inviter's or assigner's step-up), never as a side effect
+// of joining a team.
+var ErrExternalTeamFullData = fmt.Errorf("%w: someone outside your organization gets full data access only through a role given to them directly, never through a team", ErrGrantForbidden)
+
+// capExternalTarget enforces the outside-member rules (RFC-058 as amended by
+// RFC-095 §4.2) when actorID gives user uid role r:
+//
+//   - the owner role never (also refused by a database trigger);
+//   - a privileged role (admin, full data access, or a privileged
+//     permission) needs the actor's recent re-authentication, and is refused
+//     when an active trust with the member's home organization caps them
+//     (the trust's max_role is viewer or member);
+//   - a trust capping them at viewer refuses anything but viewer.
+//
+// A service account cannot hold a privileged role at all. It applies to
+// every actor; the step-up gate itself skips system paths and grants carried
+// out for someone else (an invitation being accepted). No-op when no
+// membership reader is wired.
+func (s *RoleService) capExternalTarget(ctx context.Context, actorID string, tid, uid roledom.ID, r *roledom.Role) error {
 	if r == nil {
 		return nil
 	}
-	privileged := r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID || r.HasFullDataAccess()
-	// A service account is held to the same ceiling as an external member.
-	if privileged && s.serviceAccounts != nil {
+	privileged := r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID ||
+		permission.IsAboveMember(r.Permissions(), r.HasFullDataAccess())
+	// A service account is held to its own ceiling.
+	if (r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID || r.HasFullDataAccess()) && s.serviceAccounts != nil {
 		svc, err := s.serviceAccounts.IsServiceAccount(ctx, asSharedID(uid))
 		if err != nil {
 			return fmt.Errorf("check service account: %w", err)
@@ -168,18 +186,24 @@ func (s *RoleService) capExternalTarget(ctx context.Context, tid, uid roledom.ID
 	if m == nil || !m.IsExternal() {
 		return nil
 	}
-	if privileged {
+	if r.ID() == roledom.OwnerRoleID {
 		return ErrExternalRoleCeiling
 	}
-	// The trust with the member's home may cap them at viewer.
-	if m.HomeTenantID() != nil {
+	// The trust with the member's home may cap them.
+	if m.HomeTenantID() != nil && s.externalCeiling != nil {
 		ceiling, cerr := s.externalCeiling(ctx, t, *m.HomeTenantID())
 		if cerr != nil {
 			return fmt.Errorf("load the trust ceiling: %w", cerr)
 		}
-		if ceiling == "viewer" {
+		if ceiling != "" && privileged {
+			return ErrExternalRoleCeiling
+		}
+		if ceiling == "viewer" && r.ID() != roledom.ViewerRoleID {
 			return ErrExternalViewerCeiling
 		}
+	}
+	if privileged && s.stepUp != nil {
+		return s.stepUp.RequireRecentAuth(ctx, actorID)
 	}
 	return nil
 }
@@ -201,7 +225,8 @@ type serviceAccountReader interface {
 var ErrExternalViewerCeiling = fmt.Errorf("%w: the trust with this member's organization allows the viewer role only", ErrGrantForbidden)
 
 // SetExternalRoleCeiling wires the trust ceiling for external members:
-// ceiling returns "viewer" or "member" for members homed in home.
+// ceiling returns "viewer" or "member" for members homed in home under an
+// active trust, and "" when no trust caps them.
 func (s *RoleService) SetExternalRoleCeiling(ceiling func(ctx context.Context, host, home shared.ID) (string, error)) {
 	s.externalCeiling = ceiling
 }
@@ -312,7 +337,7 @@ func (s *RoleService) authorizeRoleSetChange(ctx context.Context, a grantActor, 
 		return fmt.Errorf("%w: only an owner can change another administrator's roles", ErrGrantForbidden)
 	}
 	if !keepsOwner && s.isMembershipOwner(ctx, tid, uid) {
-		return fmt.Errorf("%w: the organization's owner keeps the owner role; transfer ownership instead", shared.ErrValidation)
+		return fmt.Errorf("%w: the organization's owner keeps the owner role; to hand it over, use Transfer ownership on the Members page (POST /api/v1/organization/ownership-transfer)", shared.ErrValidation)
 	}
 	return nil
 }

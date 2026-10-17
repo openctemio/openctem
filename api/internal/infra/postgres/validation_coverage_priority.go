@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // Querier is the part of *sql.DB the coverage query needs.
@@ -14,8 +15,8 @@ type Querier interface {
 }
 
 // ValidationCoverageByPriority counts, per priority class (P0..P3), the
-// findings that reached a terminal state (resolved | verified | accepted |
-// false_positive) and how many of them have a validation_evidence record
+// closed findings (fixed or dispositioned, vulnerability.ClosedStatusSQL; the
+// window is on the close date) and how many of them have a validation_evidence record
 // (RFC-011: pentest, scripted and sensor evidence all land there).
 //
 // It is the one definition of "validation coverage": the CTEM cycle's
@@ -30,12 +31,12 @@ func ValidationCoverageByPriority(
 	args := []any{tenantID}
 	argN := 2
 	if startDate != "" {
-		windowSQL += " AND f.updated_at >= $" + strconv.Itoa(argN)
+		windowSQL += " AND COALESCE(f.resolved_at, f.updated_at) >= $" + strconv.Itoa(argN)
 		args = append(args, startDate)
 		argN++
 	}
 	if endDate != "" {
-		windowSQL += " AND f.updated_at < ($" + strconv.Itoa(argN) + "::date + INTERVAL '1 day')"
+		windowSQL += " AND COALESCE(f.resolved_at, f.updated_at) < ($" + strconv.Itoa(argN) + "::date + INTERVAL '1 day')"
 		args = append(args, endDate)
 	}
 	q := `
@@ -50,7 +51,7 @@ func ValidationCoverageByPriority(
 		  ) AS with_ev
 		FROM findings f
 		WHERE f.tenant_id = $1 AND NOT f.branch_only
-		  AND f.status IN ('resolved','accepted','false_positive')` + windowSQL + `
+		  AND ` + vulnerability.ClosedStatusSQL("f.status") + windowSQL + `
 		GROUP BY COALESCE(f.priority_class, '')
 	`
 	rows, err := db.QueryContext(ctx, q, args...)

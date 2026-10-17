@@ -9,6 +9,7 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	exposuresvc "github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -862,6 +863,11 @@ func trimWhitespace(s string) string {
 // CredentialStateChangeRequest represents the request to change credential state.
 type CredentialStateChangeRequest struct {
 	Notes string `json:"notes" validate:"max=500"`
+	// SelfApprove: the owner approves their own pending request of a high or
+	// critical leak because no other approver exists. Needs Notes (the
+	// reason) and a fresh TOTPCode from the owner's authenticator app.
+	SelfApprove bool   `json:"self_approve,omitempty"`
+	TOTPCode    string `json:"totp_code,omitempty" validate:"max=16"`
 }
 
 // Resolve handles POST /api/v1/credentials/{id}/resolve
@@ -931,7 +937,8 @@ func (h *CredentialImportHandler) Accept(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	item, err := h.service.ApplyCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateAccepted, req.Notes, configAuditContext(r))
+	item, err := h.service.ApplyCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateAccepted, req.Notes, configAuditContext(r),
+		exposuresvc.SelfApproval{Requested: req.SelfApprove, Code: req.TOTPCode})
 	if err != nil {
 		h.writeStateChangeError(w, "accept", id, err)
 		return
@@ -967,7 +974,8 @@ func (h *CredentialImportHandler) MarkFalsePositive(w http.ResponseWriter, r *ht
 		return
 	}
 
-	item, err := h.service.ApplyCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateFalsePositive, req.Notes, configAuditContext(r))
+	item, err := h.service.ApplyCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateFalsePositive, req.Notes, configAuditContext(r),
+		exposuresvc.SelfApproval{Requested: req.SelfApprove, Code: req.TOTPCode})
 	if err != nil {
 		h.writeStateChangeError(w, "mark as false positive", id, err)
 		return

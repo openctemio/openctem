@@ -20,7 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
@@ -74,6 +74,8 @@ const ssoMaxRedirectURILength = 2000
 
 // SSOService handles per-tenant SSO authentication.
 type SSOService struct {
+	// onSignIn runs after a sign-in created a session (signin_hook.go).
+	onSignIn SignInHook
 	// audit records each sign-in (auth.login), as the password sign-in does.
 	audit            *auditapp.AuditService
 	ipRepo           identityproviderdom.Repository
@@ -102,6 +104,9 @@ type SSOService struct {
 	// for SSO (email-first sign-in, discovery.go). Nil: discovery always
 	// answers "password".
 	domainOwner DomainOwnerLookup
+	// discoveryKey signs the opaque organization references discovery
+	// returns (discovery.go).
+	discoveryKey []byte
 
 	// revocations records back-channel-logged-out sessions so their access
 	// tokens (and live WebSocket connections) stop at once rather than at
@@ -823,8 +828,8 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && !m.IsOffboarded() {
 			return nil
 		}
-		// No free seat on the organization's plan: say so.
-		if lim := (*plan.ErrLimitReached)(nil); errors.As(err, &lim) {
+		// No free seat under the organization's limit: say so.
+		if lim := (*limits.ErrLimitReached)(nil); errors.As(err, &lim) {
 			return err
 		}
 		s.logger.Warn("SSO auto-provision membership failed",
@@ -1730,6 +1735,7 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("save session: %w", err)
 	}
+	runSignInHook(ctx, s.onSignIn, u.ID())
 	s.stampProviderAuthentication(ctx, newSession, fed.authTime)
 
 	refreshTokenEntity, err := sessiondom.NewRefreshToken(
@@ -1895,7 +1901,7 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 			// rather than issue a session with no membership.
 			if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr != nil || m == nil {
 				s.logger.Warn("federated auto-provision membership failed", "user_id", u.ID().String(), "error", memErr)
-				if lim := (*plan.ErrLimitReached)(nil); errors.As(memErr, &lim) {
+				if lim := (*limits.ErrLimitReached)(nil); errors.As(memErr, &lim) {
 					return nil, memErr
 				}
 				return nil, ErrSSONotAMember

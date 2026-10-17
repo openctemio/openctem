@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -22,11 +23,21 @@ func confirmAdminStepUp(w http.ResponseWriter, r *http.Request, v StepUpVerifier
 		apierror.Unauthorized("administrator session required").WriteJSON(w)
 		return false
 	}
+	// The route already confirmed this request (RequireAdminStepUp): one
+	// confirmation per action.
+	if middleware.AdminSteppedUp(r.Context()) {
+		return true
+	}
 	if v == nil {
 		apierror.ServiceUnavailable("This action is not available").WriteJSON(w)
 		return false
 	}
 	code = strings.TrimSpace(code)
+	// A security-key confirmation opens the session's step-up window; the
+	// action is retried without a code inside it.
+	if code == "" && middleware.GetAdminSession(r.Context()).SteppedUp(time.Now()) {
+		return true
+	}
 	if code == "" {
 		apierror.New(http.StatusUnauthorized, codeStepUpRequired, "Enter a code from your authenticator to confirm").WriteJSON(w)
 		return false
@@ -36,6 +47,9 @@ func confirmAdminStepUp(w http.ResponseWriter, r *http.Request, v StepUpVerifier
 		case errors.Is(err, admin.ErrStepUpUnavailable):
 			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
 				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
+		case errors.Is(err, admin.ErrWebAuthnRequired):
+			apierror.New(http.StatusForbidden, codeWebAuthnRequired,
+				"Confirm this action with your security key or passkey").WriteJSON(w)
 		case errors.Is(err, admin.ErrInvalidMFACode):
 			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
 		default:

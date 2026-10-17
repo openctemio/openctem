@@ -148,6 +148,14 @@ func IsDefaultBranchRun(c Claims, defaultBranch string) bool {
 	return c.Branch != "" && c.PullRequest == "" && c.Branch == defaultBranch && !c.IsForkEvent()
 }
 
+// PullRequestBranch is the branch a pull request's results are recorded on
+// ("pull/17"). It never counts as exposure.
+func PullRequestBranch(number string) string { return "pull/" + number }
+
+// MergeRequestBranch is the branch a GitLab merge request's results are
+// recorded on ("merge-requests/17").
+func MergeRequestBranch(number string) string { return "merge-requests/" + number }
+
 // ReportBranchName is the branch a run's findings are recorded on. A fork
 // event's branch claim names the base branch (or a branch of the fork that
 // may share a name with one of the repository's), so its findings go to a
@@ -155,6 +163,11 @@ func IsDefaultBranchRun(c Claims, defaultBranch string) bool {
 // until a run of a real branch sees them.
 func ReportBranchName(branch, event, pullRequest string, fork bool) string {
 	if !fork {
+		// A pull or merge request run records on its own scope, whatever
+		// branch name a stored run carries: never on a real branch.
+		if pullRequest != "" && branch != PullRequestBranch(pullRequest) && branch != MergeRequestBranch(pullRequest) {
+			return PullRequestBranch(pullRequest)
+		}
 		return branch
 	}
 	if pullRequest != "" {
@@ -370,8 +383,12 @@ func ParseGitHubClaims(m map[string]any) Claims {
 	c.CommitVerified = c.SHA != ""
 	switch {
 	case pullRefRE.MatchString(c.Ref):
+		// The token names the pull request; its head branch (head_ref) is a
+		// name the author picks and may equal a real branch of the
+		// repository (a fork's "main", or "release/1.x"). The results belong
+		// to the pull request, never to a branch of that name.
 		c.PullRequest = pullRefRE.FindStringSubmatch(c.Ref)[1]
-		c.Branch = str(m, "head_ref")
+		c.Branch = PullRequestBranch(c.PullRequest)
 	case strings.HasPrefix(c.Ref, "refs/heads/"):
 		c.Branch = strings.TrimPrefix(c.Ref, "refs/heads/")
 	}
@@ -412,7 +429,7 @@ func ParseGitLabClaims(m map[string]any) Claims {
 		// request, never to a real branch.
 		c.Ref = ref
 		c.PullRequest = mergeRequestRefRE.FindStringSubmatch(ref)[1]
-		c.Branch = "merge-requests/" + c.PullRequest
+		c.Branch = MergeRequestBranch(c.PullRequest)
 	case strings.HasPrefix(ref, "refs/"):
 		c.Ref = ref
 		if b, ok := strings.CutPrefix(ref, "refs/heads/"); ok {

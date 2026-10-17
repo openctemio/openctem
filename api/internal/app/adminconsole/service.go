@@ -19,10 +19,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/totp"
@@ -47,7 +53,7 @@ const (
 const StatusSignedIn LoginStatus = "signed_in"
 
 // Issuer is the account label shown in authenticator apps.
-const Issuer = "OpenCTEM Admin"
+var Issuer = brand.DefaultName + " Admin"
 
 // touchInterval throttles last_seen_at writes to one per minute per session.
 const touchInterval = time.Minute
@@ -70,6 +76,9 @@ type LoginResult struct {
 	// OTPAuthURI and Secret are set only for StatusMFAEnrollment.
 	OTPAuthURI string
 	Secret     string
+	// Methods lists the second factors this administrator may use, WebAuthn
+	// first (MethodWebAuthn, MethodTOTP, MethodRecoveryCode).
+	Methods []string
 }
 
 // ClientInfo is recorded on sessions and audit entries.
@@ -93,26 +102,50 @@ type Service struct {
 	oidc OIDCProvider
 	// notifier tells the other administrators about a break-glass sign-in.
 	notifier BreakGlassNotifier
+
+	// Console WebAuthn (webauthn.go); nil when ADMIN_PUBLIC_URL resolves to
+	// no usable origin.
+	webauthn *webauthn.WebAuthn
+	factors  admin.FactorRepository
+	settings platformsetting.Repository
+	// grace is how long TOTP-only administrators keep TOTP after "require
+	// WebAuthn" is switched on (0: admin.DefaultWebAuthnGrace).
+	grace time.Duration
+	// factorCache memoizes the enrollment gate's FactorStatus (webauthn.go).
+	factorMu    sync.Mutex
+	factorCache map[string]factorCacheEntry
+	// factorNotifier emails an administrator about their own factor changes.
+	factorNotifier FactorChangeNotifier
 }
 
-// SignedInUser is the user behind a normal (/login) sign-in session.
+// SignedInUser is the account whose password the console just checked.
 type SignedInUser struct {
 	UserID shared.ID
 	Email  string
 	Name   string
 	// Active is false for suspended or deactivated user accounts.
 	Active bool
-	// PasswordSignIn is true when the session came from the local email and
-	// password form, not from SSO, SAML or a social provider.
-	PasswordSignIn bool
 }
 
 // AccountDirectory is the tenant-user side the console needs: who is signed in
 // behind a refresh token, and creating an account for a new administrator.
 // Implemented over the auth service in the composition root.
 type AccountDirectory interface {
-	// SignedInUser validates a refresh token (without rotating it).
-	SignedInUser(ctx context.Context, refreshToken string) (*SignedInUser, error)
+	// VerifyPassword checks an account's email and password as a sign-in
+	// does (lockout, enumeration-safe), without opening a /login session. A
+	// wrong password or an unknown email is admin.ErrInvalidCredentials; a
+	// locked account admin.ErrAccountLocked. Only a local password account
+	// can pass: an organization's SSO never authenticates an administrator.
+	VerifyPassword(ctx context.Context, email, password string, client ClientInfo) (*SignedInUser, error)
+	// RecordPasswordSuccess resets the account's failed sign-in counter. The
+	// console calls it only after the account is confirmed an active, unlocked
+	// administrator.
+	RecordPasswordSuccess(ctx context.Context, userID shared.ID)
+	// RecordPasswordFailure counts a refused sign-in toward the account's
+	// lockout. The console calls it when a correct password is still refused
+	// (the organization requires the identity provider), so the refusal can
+	// neither clear nor dodge the lockout.
+	RecordPasswordFailure(ctx context.Context, userID shared.ID)
 	// CreateAccount creates a new local account with a temporary password. It
 	// returns admin.ErrEmailHasAccount when the email already has an account:
 	// an existing account is never linked, because whoever registered it (with
@@ -124,8 +157,6 @@ type AccountDirectory interface {
 	// ChangePassword changes the account's password after checking the current
 	// one, and ends all of its /login sessions.
 	ChangePassword(ctx context.Context, userID shared.ID, current, next string) error
-	// EndSignIn revokes the /login session behind a refresh token.
-	EndSignIn(ctx context.Context, refreshToken string) error
 }
 
 // NewService creates the console authentication service.
@@ -165,51 +196,53 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Start opens the TOTP step of a console session for the user signed in behind
-// refreshToken (their normal /login session). It succeeds only when that
-// session came from the password form and the user is linked to an active,
-// unlocked administrator. On first use it issues a fresh TOTP secret to
+// Start opens the TOTP step of a console session from the account's own email
+// and password, entered on the console's sign-in page (its own origin; the
+// tenant /login session plays no part). It succeeds only for a local password
+// account linked to an active, unlocked administrator; a wrong password and an
+// unknown email answer the same, and so do an account that is not an
+// administrator, an inactive or locked one (all admin.ErrInvalidCredentials, the
+// real reason only in the audit record), so the sign-in is not an oracle for a
+// tenant account's password. On first use it issues a fresh TOTP secret to
 // enroll; the secret becomes active only once a code from it is verified.
-func (s *Service) Start(ctx context.Context, refreshToken string, client ClientInfo) (*LoginResult, error) {
+func (s *Service) Start(ctx context.Context, email, password string, client ClientInfo) (*LoginResult, error) {
 	// Sessions carry an absolute expiry; sweep dead rows here (an indexed delete)
 	// instead of running a dedicated background job for a low-volume table.
 	if _, err := s.console.DeleteExpiredSessions(ctx, s.now()); err != nil {
 		s.log.Warn("purge expired admin sessions", "error", err)
 	}
 
-	if refreshToken == "" {
-		return nil, admin.ErrNotSignedIn
+	if strings.TrimSpace(email) == "" || password == "" {
+		return nil, admin.ErrInvalidCredentials
 	}
-	u, err := s.accounts.SignedInUser(ctx, refreshToken)
+	u, err := s.accounts.VerifyPassword(ctx, email, password, client)
 	if err != nil {
-		return nil, admin.ErrNotSignedIn
+		return nil, admin.ErrInvalidCredentials
 	}
 	if !u.Active {
-		return nil, admin.ErrNotSignedIn
+		return nil, admin.ErrInvalidCredentials
 	}
 	a, err := s.admins.GetByUserID(ctx, u.UserID)
 	if err != nil {
 		if admin.IsAdminNotFound(err) {
-			return nil, admin.ErrNotPlatformAdmin
+			return nil, admin.ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("start console session: %w", err)
 	}
-	if !u.PasswordSignIn {
-		// An organization's IdP must never be able to authenticate a platform
-		// administrator.
-		s.record(ctx, a, ActionLoginFailed, client, "not a password sign-in")
-		return nil, admin.ErrPasswordSignInRequired
-	}
 	if !a.IsActive() || a.IsLocked() {
 		s.record(ctx, a, ActionLoginFailed, client, "inactive or locked")
-		return nil, admin.ErrNotPlatformAdmin
+		return nil, admin.ErrInvalidCredentials
 	}
 	if err := s.checkPasswordPathAllowed(ctx, a); err != nil {
 		if errors.Is(err, admin.ErrIdPSignInRequired) {
+			// A refused sign-in is a failure: it counts toward the lockout
+			// and never clears it.
+			s.accounts.RecordPasswordFailure(ctx, u.UserID)
 			s.record(ctx, a, ActionLoginFailed, client, "identity provider sign-in required")
 		}
 		return nil, err
 	}
+	s.accounts.RecordPasswordSuccess(ctx, u.UserID)
 	return s.beginSecondFactor(ctx, a, admin.AuthMethodPassword, client)
 }
 
@@ -241,12 +274,19 @@ func (s *Service) beginSecondFactor(ctx context.Context, a *admin.AdminUser, aut
 		creds = &admin.Credentials{AdminID: a.ID()}
 	}
 
+	st, err := s.FactorStatus(ctx, a)
+	if err != nil {
+		return nil, fmt.Errorf("start console session: %w", err)
+	}
+
 	pending, err := s.newSession(ctx, a.ID(), false, admin.PendingMFATTL, authMethod, client)
 	if err != nil {
 		return nil, err
 	}
-	if creds.MFAEnabled {
-		return &LoginResult{Status: StatusMFARequired, PendingToken: pending}, nil
+	// An administrator who holds an authenticator or an enrolled TOTP proves
+	// it; only one with neither is issued a TOTP secret to enroll.
+	if creds.MFAEnabled || st.WebAuthnCount > 0 {
+		return &LoginResult{Status: StatusMFARequired, PendingToken: pending, Methods: signInMethods(st)}, nil
 	}
 
 	secret, err := totp.GenerateSecret()
@@ -268,6 +308,7 @@ func (s *Service) beginSecondFactor(ctx context.Context, a *admin.AdminUser, aut
 		PendingToken: pending,
 		OTPAuthURI:   totp.URI(secret, Issuer, a.Email()),
 		Secret:       secret,
+		Methods:      []string{MethodTOTP},
 	}, nil
 }
 
@@ -275,35 +316,19 @@ func (s *Service) beginSecondFactor(ctx context.Context, a *admin.AdminUser, aut
 // session and, on success, replaces it with a verified session. Wrong codes
 // count toward the same lockout as wrong passwords.
 func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, client ClientInfo) (string, *admin.AdminUser, error) {
-	if pendingToken == "" {
-		return "", nil, admin.ErrInvalidMFACode
-	}
-	sess, err := s.console.GetSessionByTokenHash(ctx, hashToken(pendingToken))
+	sess, a, err := s.pendingSession(ctx, pendingToken)
 	if err != nil {
-		if errors.Is(err, admin.ErrSessionNotFound) {
-			return "", nil, admin.ErrInvalidMFACode
-		}
 		return "", nil, err
 	}
 	now := s.now()
-	if sess.MFAVerified || !now.Before(sess.ExpiresAt) {
-		return "", nil, admin.ErrInvalidMFACode
-	}
-	a, err := s.admins.GetByID(ctx, sess.AdminID)
+	st, err := s.FactorStatus(ctx, a)
 	if err != nil {
-		return "", nil, admin.ErrInvalidMFACode
+		return "", nil, err
 	}
-	if !a.IsActive() || a.IsLocked() {
-		_ = s.console.DeleteSession(ctx, sess.ID)
-		return "", nil, admin.ErrInvalidMFACode
-	}
-	authMethod := sessionAuthMethod(sess)
-	if authMethod == admin.AuthMethodPassword {
-		// "require IdP" may have been turned on after the password step.
-		if err := s.checkPasswordPathAllowed(ctx, a); err != nil {
-			_ = s.console.DeleteSession(ctx, sess.ID)
-			return "", nil, err
-		}
+	if !st.TOTPAllowed() {
+		// "require WebAuthn": this administrator holds an authenticator, and a
+		// TOTP code can be relayed by a phishing proxy.
+		return "", nil, admin.ErrWebAuthnRequired
 	}
 	creds, err := s.console.GetCredentials(ctx, a.ID())
 	if err != nil || creds.MFASecretEncrypted == "" {
@@ -335,19 +360,7 @@ func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, clie
 		}
 		s.record(ctx, a, ActionMFAEnrolled, client, "")
 	}
-	if a.FailedLoginCount() > 0 {
-		a.ResetFailedLogins()
-		if err := s.admins.Update(ctx, a); err != nil {
-			s.log.Warn("reset admin failed-login counter", "error", err)
-		}
-	}
-
-	_ = s.console.DeleteSession(ctx, sess.ID)
-	token, err := s.openVerifiedSession(ctx, a, authMethod, client, "")
-	if err != nil {
-		return "", nil, err
-	}
-	return token, a, nil
+	return s.completeSecondFactor(ctx, sess, a, client, "")
 }
 
 // StepUp re-confirms the signed-in administrator with a fresh code from the
@@ -359,6 +372,13 @@ func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, clie
 func (s *Service) StepUp(ctx context.Context, a *admin.AdminUser, code, purpose string, client ClientInfo) error {
 	if a == nil {
 		return admin.ErrInvalidMFACode
+	}
+	st, err := s.FactorStatus(ctx, a)
+	if err != nil {
+		return err
+	}
+	if !st.TOTPAllowed() {
+		return admin.ErrWebAuthnRequired
 	}
 	creds, err := s.console.GetCredentials(ctx, a.ID())
 	if err != nil || !creds.MFAEnabled || creds.MFASecretEncrypted == "" {
@@ -383,6 +403,50 @@ func (s *Service) StepUp(ctx context.Context, a *admin.AdminUser, code, purpose 
 	return nil
 }
 
+// ConfirmProtected is the step-up gate of a protected console action, for the
+// route-level middleware. Within admin.StepUpWindow of the session's last
+// confirmation the action passes without a code (the action itself is still
+// audited by its route). Otherwise a fresh code is checked exactly like
+// StepUp, and on success the session's window restarts. No code outside the
+// window is ErrStepUpRequired; a session that is not a verified console
+// session never passes.
+func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, client ClientInfo) error {
+	if a == nil || sess == nil || !sess.MFAVerified || sess.AdminID != a.ID() {
+		return admin.ErrStepUpRequired
+	}
+	now := s.now()
+	fresh := admin.FreshStepUpRequired(ctx)
+	if code == "" {
+		if fresh {
+			// A security-key confirmation given just now, spent by this action.
+			ok, err := s.console.ConsumeSessionStepUp(ctx, sess.ID, now.Add(-admin.FreshStepUpWindow))
+			if err != nil {
+				return err
+			}
+			if ok {
+				return nil
+			}
+			return admin.ErrStepUpRequired
+		}
+		if sess.SteppedUp(now) {
+			return nil
+		}
+		return admin.ErrStepUpRequired
+	}
+	if err := s.StepUp(ctx, a, code, purpose, client); err != nil {
+		return err
+	}
+	if fresh {
+		return nil // a code is fresh by itself; it opens no window
+	}
+	if err := s.console.MarkSessionStepUp(ctx, sess.ID, now); err != nil {
+		// The code was valid and is spent: this action goes ahead, the next
+		// one asks again.
+		s.log.Warn("record console step-up window", "error", err)
+	}
+	return nil
+}
+
 // openVerifiedSession issues a verified console session and records the
 // sign-in. A break-glass sign-in is alerted every time.
 func (s *Service) openVerifiedSession(ctx context.Context, a *admin.AdminUser, authMethod string, client ClientInfo, note string) (string, error) {
@@ -390,6 +454,8 @@ func (s *Service) openVerifiedSession(ctx context.Context, a *admin.AdminUser, a
 	if err != nil {
 		return "", err
 	}
+	// Compared with the last address before RecordUsage replaces it.
+	s.noteSignInNetwork(ctx, a, client)
 	if err := s.admins.RecordUsage(ctx, a.ID(), client.IP); err != nil {
 		s.log.Warn("record admin console usage", "error", err)
 	}
@@ -443,6 +509,7 @@ func (s *Service) AuthenticateSession(ctx context.Context, token string) (*admin
 		}
 	}
 	sess.AuthMethod = sessionAuthMethod(sess)
+	sess.EnrollmentRequired = s.enrollmentRequired(ctx, a)
 	return a, sess, nil
 }
 
@@ -485,15 +552,9 @@ func (s *Service) ChangePassword(ctx context.Context, a *admin.AdminUser, curren
 	return nil
 }
 
-// Logout ends the console session behind token and, when refreshToken is set,
-// the /login session it was opened from, so signing out of the console signs
-// the administrator out completely. Unknown tokens are ignored.
-func (s *Service) Logout(ctx context.Context, token, refreshToken string, client ClientInfo) error {
-	if refreshToken != "" {
-		if err := s.accounts.EndSignIn(ctx, refreshToken); err != nil {
-			s.log.Debug("end sign-in on console logout", "error", err)
-		}
-	}
+// Logout ends the console session behind token. The console has its own
+// sign-in, so no other session is touched. Unknown tokens are ignored.
+func (s *Service) Logout(ctx context.Context, token string, client ClientInfo) error {
 	if token == "" {
 		return nil
 	}
@@ -600,6 +661,12 @@ func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, 
 	}
 	if err := s.console.DeleteCredentials(ctx, target.ID()); err != nil {
 		return err
+	}
+	s.forgetFactors(target)
+	if s.factors != nil {
+		if err := s.factors.DeleteFactorsForAdmin(ctx, target.ID()); err != nil {
+			return err
+		}
 	}
 	if s.audit != nil {
 		entry := admin.NewAuditLogBuilder(actor, ActionCredentialsReset).

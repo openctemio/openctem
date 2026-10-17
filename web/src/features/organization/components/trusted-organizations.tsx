@@ -553,7 +553,7 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
             <CardTitle className="text-base">Organizations you trust</CardTitle>
             <CardDescription>
               People from these organizations can be invited here and sign in with their own
-              company&apos;s SSO. Requires SSO on your plan.
+              company&apos;s SSO.
             </CardDescription>
           </div>
           {isOwner && (

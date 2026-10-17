@@ -1,0 +1,4 @@
+# TLS mode `acme` for the admin site: Caddy obtains its certificate. With
+# OPENCTEM_ADMIN_HOST, that name must resolve and be reachable on ports
+# 80/443 for the ACME challenge; for a private-only admin host use the
+# `files` or `internal` mode instead.

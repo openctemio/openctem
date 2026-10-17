@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/sdk-go/pkg/transfer/bundle"
+	"github.com/openctemio/ctis/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 )

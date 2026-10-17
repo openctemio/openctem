@@ -1,0 +1,1 @@
+ALTER TABLE suppression_rules DROP CONSTRAINT IF EXISTS chk_suppression_rules_expires_at_set;

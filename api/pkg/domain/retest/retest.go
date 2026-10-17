@@ -102,10 +102,6 @@ func (o Outcome) Conclusive() bool { return o == OutcomeConfirmedFixed || o == O
 // ActorName is the audit actor of every status change a retest makes.
 const ActorName = "system: retest"
 
-// ResolutionMethodRetestVerified is the resolution_method a retest stamps when
-// it resolves a finding.
-const ResolutionMethodRetestVerified = vulnerability.ResolutionMethodRetestVerified
-
 // Sentinel errors. They wrap the shared kinds so the HTTP layer maps them.
 var (
 	// ErrNotEligible: the finding has no deterministic re-check (no tool rule
@@ -237,13 +233,11 @@ func shortDigest(d string) string {
 // dispositions (false positive, accepted risk, duplicate) and the pentest
 // workflow are never retested.
 var eligibleStatuses = map[vulnerability.FindingStatus]bool{ //nolint:gochecknoglobals // static rule table
-	vulnerability.FindingStatusNew:            true,
-	vulnerability.FindingStatusConfirmed:      true,
-	vulnerability.FindingStatusInProgress:     true,
-	vulnerability.FindingStatusFixApplied:     true,
-	vulnerability.FindingStatusValidatedFixed: true,
-	vulnerability.FindingStatusNotObserved:    true, // a retest is the proof a stale finding needs
-	vulnerability.FindingStatusResolved:       true,
+	vulnerability.FindingStatusNew:        true,
+	vulnerability.FindingStatusConfirmed:  true,
+	vulnerability.FindingStatusInProgress: true,
+	vulnerability.FindingStatusFixApplied: true,
+	vulnerability.FindingStatusResolved:   true,
 }
 
 // EligibleStatus reports whether a finding in status s may be retested.
@@ -254,7 +248,6 @@ func EligibleStatuses() []string {
 	return []string{
 		string(vulnerability.FindingStatusNew), string(vulnerability.FindingStatusConfirmed),
 		string(vulnerability.FindingStatusInProgress), string(vulnerability.FindingStatusFixApplied),
-		string(vulnerability.FindingStatusValidatedFixed), string(vulnerability.FindingStatusNotObserved),
 		string(vulnerability.FindingStatusResolved),
 	}
 }
@@ -264,10 +257,10 @@ func EligibleStatuses() []string {
 // and never one in an ineligible status.
 //
 //	confirmed_fixed:  resolved stays; with autoResolve the rest → resolved;
-//	                  otherwise open / fix_applied / not_observed → validated_fixed
-//	                  ("verified fixed, awaiting confirmation"), validated_fixed stays
+//	                  otherwise the status stays and the finding's validation
+//	                  says not_reproducible (ValidationOutcome): a person closes it
 //	still_vulnerable: resolved → confirmed (regression); fix_applied → in_progress;
-//	                  validated_fixed / not_observed → confirmed; open stays
+//	                  open stays (validation: reproducible)
 func NextStatus(prior vulnerability.FindingStatus, outcome Outcome, autoResolve bool) (vulnerability.FindingStatus, bool) {
 	if !EligibleStatus(prior) {
 		return prior, false
@@ -279,15 +272,12 @@ func NextStatus(prior vulnerability.FindingStatus, outcome Outcome, autoResolve 
 			return prior, false
 		case autoResolve:
 			return vulnerability.FindingStatusResolved, true
-		case prior == vulnerability.FindingStatusValidatedFixed:
-			return prior, false
 		default:
-			return vulnerability.FindingStatusValidatedFixed, true
+			return prior, false
 		}
 	case OutcomeStillVulnerable:
 		switch prior {
-		case vulnerability.FindingStatusResolved, vulnerability.FindingStatusValidatedFixed,
-			vulnerability.FindingStatusNotObserved:
+		case vulnerability.FindingStatusResolved:
 			return vulnerability.FindingStatusConfirmed, true
 		case vulnerability.FindingStatusFixApplied:
 			return vulnerability.FindingStatusInProgress, true
@@ -296,6 +286,20 @@ func NextStatus(prior vulnerability.FindingStatus, outcome Outcome, autoResolve 
 		}
 	default:
 		return prior, false
+	}
+}
+
+// ValidationOutcome is the findings.validation_outcome a conclusive retest
+// outcome stamps on an eligible finding ("" for an inconclusive one):
+// confirmed_fixed is not_reproducible, still_vulnerable is reproducible.
+func ValidationOutcome(o Outcome) string {
+	switch o {
+	case OutcomeConfirmedFixed:
+		return "not_reproducible"
+	case OutcomeStillVulnerable:
+		return "reproducible"
+	default:
+		return ""
 	}
 }
 

@@ -74,10 +74,10 @@ describe('RiskScoreBadge', () => {
     expect(screen.getByText('35 - Low')).toBeInTheDocument()
   })
 
-  it('renders Info label for score below custom low threshold', async () => {
+  it('renders Minimal label for score below custom low threshold', async () => {
     const { RiskScoreBadge } = await import('../components/risk-score-badge')
     render(<RiskScoreBadge score={15} />)
-    expect(screen.getByText('15 - Info')).toBeInTheDocument()
+    expect(screen.getByText('15 - Minimal')).toBeInTheDocument()
   })
 
   it('renders only label when showScore is false', async () => {
@@ -109,5 +109,44 @@ describe('RiskScoreGauge', () => {
     render(<RiskScoreGauge score={92} />)
     expect(screen.getByText('92')).toBeInTheDocument()
     expect(screen.getByText('Critical')).toBeInTheDocument()
+  })
+})
+
+describe('RiskScoreBadge freshness', () => {
+  it('shows 0 as no open risk, not Info', async () => {
+    const { RiskScoreBadge } = await import('../components/risk-score-badge')
+    render(<RiskScoreBadge score={0} />)
+    expect(screen.getByText('0 - No open risk')).toBeInTheDocument()
+  })
+
+  it('never shows a fake 0 for an asset that was never scored', async () => {
+    const { RiskScoreBadge } = await import('../components/risk-score-badge')
+    render(<RiskScoreBadge score={0} state="unscored" />)
+    expect(screen.getByText('Not yet scored')).toBeInTheDocument()
+    expect(screen.queryByText(/^0 - /)).not.toBeInTheDocument()
+  })
+
+  it('shows Calculating for a first score in the queue', async () => {
+    const { RiskScoreBadge } = await import('../components/risk-score-badge')
+    render(<RiskScoreBadge score={0} state="calculating" />)
+    expect(screen.getByText('Calculating…')).toBeInTheDocument()
+    expect(screen.queryByText(/^0 - /)).not.toBeInTheDocument()
+  })
+
+  it('keeps the score of a scored asset whose rescore is queued', async () => {
+    const { RiskScoreBadge } = await import('../components/risk-score-badge')
+    render(<RiskScoreBadge score={75} state="pending" />)
+    expect(screen.getByText('75 - High')).toBeInTheDocument()
+  })
+})
+
+describe('riskScoreState', () => {
+  it('maps the API freshness fields', async () => {
+    const { riskScoreState } = await import('../components/risk-score-badge')
+    expect(riskScoreState({})).toBe('scored')
+    expect(riskScoreState({ riskScored: true })).toBe('scored')
+    expect(riskScoreState({ riskScored: true, riskScorePending: true })).toBe('pending')
+    expect(riskScoreState({ riskScored: false })).toBe('unscored')
+    expect(riskScoreState({ riskScored: false, riskScorePending: true })).toBe('calculating')
   })
 })

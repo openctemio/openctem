@@ -63,8 +63,15 @@ Parallel to Jira, intentionally:
   (`IntegrationService.decryptCredentials`): `CredentialsEncrypted()` →
   `encryptor.DecryptString`, with plaintext fallback on decryption failure.
   Credentials are never read from the request.
-- **Shared secret redaction.** Both providers route ticket text through one
-  implementation, `ticketing.RedactSecrets`, so they cannot diverge. Secret
+- **Shared secret redaction.** Jira and GitHub route ticket text through one
+  implementation, `safetext.RedactSecrets` (`pkg/safetext/redact.go`), so they
+  cannot diverge. It removes whole private key blocks (header, base64 body and
+  footer, also when the footer is cut off), JWTs, AWS access key ids
+  (`AKIA`/`ASIA`/...), GitHub, Slack and Google tokens, `Authorization`/`Bearer`
+  values and `password=`/`api_key:`-style assignments. The mobilization brief
+  and the campaign epic description are written by people, but they get the
+  same redaction, a length cap (`safetext.MaxBriefRunes`) and the same block
+  encoding as finding text, so they cannot add links or mentions either. Secret
   findings additionally **omit the raw description entirely** and surface only
   the masked value plus a pointer to the platform — the credential is never
   written into a third-party tracker.
@@ -94,7 +101,7 @@ Parallel to Jira, intentionally:
 |--------------|-----------------------------------------------------------------|-------------------------------------------------|
 | HTTP handler | `internal/infra/http/handler/jira_webhook_handler.go`           | Parse request, select provider, map errors      |
 | App service  | `internal/app/ticketing/github_ticket.go` (`GitHubTicketService`) | Resolve integration, idempotency, build body    |
-| Shared       | `internal/app/ticketing/redact.go` (`RedactSecrets`)            | Provider-agnostic secret scrubbing              |
+| Shared       | `pkg/safetext/redact.go` (`RedactSecrets`)                      | Provider-agnostic secret scrubbing              |
 | Shared       | `pkg/safetext` (`MarkdownInline`, `MarkdownBlock`, `Jira*`)      | Output encoding per ticket format (RFC-040)     |
 | SCM client   | `internal/infra/scm/github.go` (`GitHubClient.CreateIssue`)     | `POST /repos/{owner}/{repo}/issues`             |
 | Domain       | `pkg/domain/vulnerability`, `pkg/domain/integration`            | Finding + integration entities/repositories     |

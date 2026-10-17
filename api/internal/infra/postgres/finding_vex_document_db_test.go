@@ -104,24 +104,37 @@ func TestFindingVEXDocument_DB(t *testing.T) {
 	}
 	q.AssetNames = nil
 
-	// Apply with close: only the open, non-human finding closes; all get the
+	// Apply with request: only the open, non-human finding gets a pending false-positive request; all get the
 	// statement; the other tenant's finding is untouched even when its id is
 	// passed.
 	v := vulnerability.InteropVEX{Status: "not_affected", Justification: "vulnerable_code_not_in_execute_path", Source: "doc-1"}
-	stored, closed, err := repo.ApplyVEXDocument(ctx, f.tenant, []shared.ID{onHost, pentest, resolved, foreign}, v, true, "VEX not_affected: test")
+	stored, requested, err := repo.ApplyVEXDocument(ctx, f.tenant, []shared.ID{onHost, pentest, resolved, foreign}, v, true, "VEX not_affected: test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stored) != 3 || len(closed) != 1 || closed[0] != onHost {
-		t.Fatalf("stored %v closed %v", stored, closed)
+	if len(stored) != 3 || len(requested) != 1 || requested[0] != onHost {
+		t.Fatalf("stored %v requested %v", stored, requested)
 	}
 	var status, method string
 	var vexStatus *string
-	if err := f.db.QueryRowContext(ctx, `SELECT status, COALESCE(resolution_method, ''), vex_status FROM findings WHERE id = $1`, onHost.String()).Scan(&status, &method, &vexStatus); err != nil {
+	if err := f.db.QueryRowContext(ctx, `SELECT status, COALESCE(verification, ''), vex_status FROM findings WHERE id = $1`, onHost.String()).Scan(&status, &method, &vexStatus); err != nil {
 		t.Fatal(err)
 	}
-	if status != "false_positive" || method != "vex_not_affected" || vexStatus == nil || *vexStatus != "not_affected" {
-		t.Errorf("closed finding = %s %s %v", status, method, vexStatus)
+	// The statement is stored, the status is not set: a person decides.
+	if status != "new" || method != "" || vexStatus == nil || *vexStatus != "not_affected" {
+		t.Errorf("requested finding = %s %s %v", status, method, vexStatus)
+	}
+	var pending int
+	if err := f.db.QueryRowContext(ctx, `SELECT count(*) FROM finding_status_approvals WHERE tenant_id = $1 AND finding_id = $2
+		AND requested_status = 'false_positive' AND requested_by_actor = 'vex' AND status = 'pending'`, f.tenant.String(), onHost.String()).Scan(&pending); err != nil || pending != 1 {
+		t.Errorf("pending vex requests for the finding = %d %v, want 1", pending, err)
+	}
+	// The same document again does not stack a second request.
+	if _, again, err := repo.ApplyVEXDocument(ctx, f.tenant, []shared.ID{onHost}, v, true, "again"); err != nil || len(again) != 0 {
+		t.Errorf("second apply requested %v %v", again, err)
+	}
+	if err := f.db.QueryRowContext(ctx, `SELECT count(*) FROM finding_status_approvals WHERE tenant_id = $1 AND finding_id = $2`, f.tenant.String(), onHost.String()).Scan(&pending); err != nil || pending != 1 {
+		t.Errorf("approval rows after a second apply = %d %v, want 1", pending, err)
 	}
 	if err := f.db.QueryRowContext(ctx, `SELECT status FROM findings WHERE id = $1`, pentest.String()).Scan(&status); err != nil || status != "new" {
 		t.Errorf("pentest finding = %s %v", status, err)
@@ -130,18 +143,18 @@ func TestFindingVEXDocument_DB(t *testing.T) {
 		t.Errorf("another tenant's finding changed: %s %v %v", status, vexStatus, err)
 	}
 
-	// Without close: stored, not closed.
-	_, closed, err = repo.ApplyVEXDocument(ctx, f.tenant, []shared.ID{onOther}, v, false, "r")
-	if err != nil || len(closed) != 0 {
-		t.Fatalf("closed %v %v", closed, err)
+	// Without request: stored only.
+	_, requested, err = repo.ApplyVEXDocument(ctx, f.tenant, []shared.ID{onOther}, v, false, "r")
+	if err != nil || len(requested) != 0 {
+		t.Fatalf("requested %v %v", requested, err)
 	}
 	if err := f.db.QueryRowContext(ctx, `SELECT status, vex_status FROM findings WHERE id = $1`, onOther.String()).Scan(&status, &vexStatus); err != nil || status != "new" || vexStatus == nil {
 		t.Errorf("unclosed finding = %s %v %v", status, vexStatus, err)
 	}
 
 	// An affected statement never closes, even when asked.
-	_, closed, err = repo.ApplyVEXDocument(ctx, f.tenant, []shared.ID{otherCVE}, vulnerability.InteropVEX{Status: "affected", Source: "d"}, true, "r")
-	if err != nil || len(closed) != 0 {
-		t.Fatalf("affected closed %v %v", closed, err)
+	_, requested, err = repo.ApplyVEXDocument(ctx, f.tenant, []shared.ID{otherCVE}, vulnerability.InteropVEX{Status: "affected", Source: "d"}, true, "r")
+	if err != nil || len(requested) != 0 {
+		t.Fatalf("affected requested %v %v", requested, err)
 	}
 }

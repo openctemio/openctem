@@ -8,5 +8,5 @@
   "criticality.high.hint": "Tài sản quan trọng, ảnh hưởng lớn đến kinh doanh",
   "criticality.medium.hint": "Tài sản thông thường, ảnh hưởng vừa phải",
   "criticality.low.hint": "Tài sản không trọng yếu, ảnh hưởng nhỏ",
-  "criticality.none.hint": "Chưa đánh giá: không cộng trọng số vào rủi ro"
+  "criticality.none.hint": "Chưa đánh giá: rủi ro được tính như tài sản mức trung bình cho đến khi được đánh giá"
 }

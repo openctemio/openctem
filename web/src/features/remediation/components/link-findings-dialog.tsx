@@ -44,7 +44,7 @@ interface LinkFindingsToRemediationDialogProps {
   onDone?: () => void
 }
 
-const PRIORITIES = ['urgent', 'high', 'medium', 'low'] as const
+const PRIORITIES = ['critical', 'high', 'medium', 'low'] as const
 
 /**
  * Turns a set of findings into remediation work — either a NEW campaign or by

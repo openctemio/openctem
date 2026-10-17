@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -60,7 +61,7 @@ func TestCIRunRepository(t *testing.T) {
 	if runs, total, err := repo.ListRuns(ctx, other, cirun.RunFilter{}); err != nil || total != 0 || len(runs) != 0 {
 		t.Fatalf("cross-tenant list: %d %v", total, err)
 	}
-	if err := repo.SaveVerdict(ctx, other, runA.ID, cirun.VerdictPass, []byte(`{}`), now, 0); !errors.Is(err, shared.ErrNotFound) {
+	if err := repo.SaveVerdict(ctx, other, runA.ID, cirun.VerdictPass, []byte(`{}`), now, 0, nil); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant verdict: %v", err)
 	}
 	// A run cannot point at another tenant's asset (composite foreign key).
@@ -91,16 +92,47 @@ func TestCIRunRepository(t *testing.T) {
 		t.Fatalf("unrestricted list: %d", total)
 	}
 
-	// Replay: one exchange per token id.
+	// Replay: a token id is claimed once; the same token (organization and
+	// digest) may be counted again up to the bound, nothing else may.
 	jti := "jti-" + shared.NewID().String()
-	if ok, err := repo.ClaimJTI(ctx, "https://issuer.test", jti, now.Add(time.Hour)); err != nil || !ok {
+	digest := []byte("0123456789abcdef0123456789abcdef")
+	planned := shared.NewID()
+	claim := cirun.Replay{Issuer: "https://issuer.test", JTI: jti, TenantID: &tenant, TokenSHA256: digest, RunID: &planned,
+		ExpiresAt: now.Add(time.Hour)}
+	if ok, _, err := repo.ClaimReplay(ctx, claim); err != nil || !ok {
 		t.Fatalf("first claim: %v %v", ok, err)
 	}
-	if ok, _ := repo.ClaimJTI(ctx, "https://issuer.test", jti, now.Add(time.Hour)); ok {
-		t.Fatal("replayed token id accepted")
+	ok, prior, err := repo.ClaimReplay(ctx, claim)
+	if err != nil || ok || prior == nil || prior.RunID == nil || *prior.RunID != planned || prior.TenantID == nil ||
+		*prior.TenantID != tenant || prior.Exchanges != 1 || !bytes.Equal(prior.TokenSHA256, digest) {
+		t.Fatalf("second claim: %v %+v %v", ok, prior, err)
 	}
-	if ok, _ := repo.ClaimJTI(ctx, "https://other-issuer.test", jti, now.Add(time.Hour)); !ok {
+	otherIss := claim
+	otherIss.Issuer = "https://other-issuer.test"
+	if ok, _, _ := repo.ClaimReplay(ctx, otherIss); !ok {
 		t.Fatal("same id from another issuer refused")
+	}
+	if rp, _ := repo.ReuseReplay(ctx, claim.Issuer, jti, shared.NewID(), digest, 5); rp != nil {
+		t.Fatal("reused from another organization")
+	}
+	if rp, _ := repo.ReuseReplay(ctx, claim.Issuer, jti, tenant, []byte("other-token-digest-0123456789abc"), 5); rp != nil {
+		t.Fatal("reused with another token's digest")
+	}
+	for want := 2; want <= 5; want++ {
+		rp, err := repo.ReuseReplay(ctx, claim.Issuer, jti, tenant, digest, 5)
+		if err != nil || rp == nil || rp.Exchanges != want {
+			t.Fatalf("reuse %d: %+v %v", want, rp, err)
+		}
+	}
+	if rp, _ := repo.ReuseReplay(ctx, claim.Issuer, jti, tenant, digest, 5); rp != nil {
+		t.Fatal("reused past the bound")
+	}
+	// The recorded run is kept: binding another run does not move it.
+	if err := repo.BindReplayRun(ctx, claim.Issuer, jti, tenant, shared.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, prior, _ := repo.ClaimReplay(ctx, claim); prior == nil || prior.RunID == nil || *prior.RunID != planned {
+		t.Fatalf("recorded run moved: %+v", prior)
 	}
 
 	// The findings cap holds across reports.
@@ -314,10 +346,10 @@ func TestCIRunReportSlotsAndVerdictGuard(t *testing.T) {
 	if err := repo.RecordRunReport(ctx, tenant, run.ID, []string{"fp-late"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 0); !errors.Is(err, cirun.ErrRunChanged) {
+	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 0, nil); !errors.Is(err, cirun.ErrRunChanged) {
 		t.Fatalf("stale verdict: %v", err)
 	}
-	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictFail, []byte(`{}`), now, 1); err != nil {
+	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictFail, []byte(`{}`), now, 1, nil); err != nil {
 		t.Fatalf("current verdict: %v", err)
 	}
 	// After the verdict: no slot, no recording, no second verdict.
@@ -327,11 +359,104 @@ func TestCIRunReportSlotsAndVerdictGuard(t *testing.T) {
 	if err := repo.RecordRunReport(ctx, tenant, run.ID, []string{"fp-after"}); !errors.Is(err, cirun.ErrRunEvaluated) {
 		t.Fatalf("report after the verdict: %v", err)
 	}
-	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 1); !errors.Is(err, cirun.ErrRunEvaluated) {
+	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 1, nil); !errors.Is(err, cirun.ErrRunEvaluated) {
 		t.Fatalf("second verdict: %v", err)
 	}
 	got, err := repo.GetRun(ctx, tenant, run.ID)
 	if err != nil || got.Verdict != cirun.VerdictFail || got.FindingsCount != 1 {
 		t.Fatalf("stored run: %+v %v", got, err)
+	}
+}
+
+// Repository events change only the tenant's own pipelines of that
+// repository id, and the archived flag is set once and clears.
+func TestRepositoryLifecyclePipelines(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	lc := NewRepositoryIdentityRepository(&DB{DB: db})
+	pipes := NewCIRunRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	other := seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	otherAsset := seedTestAsset(ctx, t, db, other)
+	ins := func(tid, aid shared.ID) shared.ID {
+		id := shared.NewID()
+		if _, err := db.ExecContext(ctx, `INSERT INTO ci_pipelines (id, tenant_id, provider, issuer, external_repo_id, workflow_path, repository_asset_id, repository_name)
+			VALUES ($1, $2, 'github', $3, '77', '.github/workflows/a.yml', $4, 'github.com/acme/old')`,
+			id.String(), tid.String(), cirun.GitHubIssuer, aid.String()); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	mine, theirs := ins(tenant, asset), ins(other, otherAsset)
+	name := func(tid, id shared.ID) (string, bool) {
+		p, err := pipes.GetPipeline(ctx, tid, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.RepositoryName, p.RepositoryArchivedAt != nil
+	}
+	if n, err := lc.RenamePipelineRepository(ctx, tenant, "github", cirun.GitHubIssuer, "77", "github.com/acme/new"); err != nil || n != 1 {
+		t.Fatalf("rename: %d %v", n, err)
+	}
+	if got, _ := name(tenant, mine); got != "github.com/acme/new" {
+		t.Fatalf("own pipeline name = %q", got)
+	}
+	if got, _ := name(other, theirs); got != "github.com/acme/old" {
+		t.Fatalf("another tenant's pipeline was renamed: %q", got)
+	}
+	if n, err := lc.SetPipelinesRepositoryArchived(ctx, tenant, "github", cirun.GitHubIssuer, "77", true); err != nil || n != 1 {
+		t.Fatalf("archive: %d %v", n, err)
+	}
+	if _, arch := name(tenant, mine); !arch {
+		t.Fatal("pipeline not flagged archived")
+	}
+	if _, arch := name(other, theirs); arch {
+		t.Fatal("another tenant's pipeline was archived")
+	}
+	if n, _ := lc.SetPipelinesRepositoryArchived(ctx, tenant, "github", cirun.GitHubIssuer, "77", true); n != 0 {
+		t.Fatalf("archiving twice changed %d rows", n)
+	}
+	if n, err := lc.SetPipelinesRepositoryArchived(ctx, tenant, "github", cirun.GitHubIssuer, "77", false); err != nil || n != 1 {
+		t.Fatalf("unarchive: %d %v", n, err)
+	}
+	if _, arch := name(tenant, mine); arch {
+		t.Fatal("pipeline still archived")
+	}
+}
+
+// UnjudgedRuns lists only the tenant's own runs that are still running and
+// older than the cutoff.
+func TestCIRunRepositoryUnjudgedRuns(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	repo := NewCIRunRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	other := seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	otherAsset := seedTestAsset(ctx, t, db, other)
+	now := time.Now().UTC()
+	mk := func(tid, aid shared.ID, age time.Duration) *cirun.Run {
+		_, hash, _ := cirun.NewToken()
+		exp := now.Add(time.Hour)
+		r := &cirun.Run{ID: shared.NewID(), TenantID: tid, RepositoryAssetID: aid, Provider: cirun.ProviderGitHub,
+			Issuer: cirun.GitHubIssuer, Repository: "github.com/acme/api", Branch: "main", CommitSHA: "abcdef1234567",
+			Status: cirun.StatusRunning, TokenHash: hash, TokenExpiresAt: &exp, CreatedAt: now.Add(-age), UpdatedAt: now}
+		if err := repo.CreateRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	old, fresh, foreign := mk(tenant, asset, 7*time.Hour), mk(tenant, asset, time.Hour), mk(other, otherAsset, 7*time.Hour)
+	done := mk(tenant, asset, 8*time.Hour)
+	if err := repo.SaveVerdict(ctx, tenant, done.ID, cirun.VerdictPass, []byte(`{}`), now, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.UnjudgedRuns(ctx, tenant, now.Add(-6*time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != old.ID {
+		t.Fatalf("got %+v, want only the old running run %s (not fresh %s, foreign %s)", got, old.ID, fresh.ID, foreign.ID)
 	}
 }

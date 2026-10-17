@@ -148,8 +148,9 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 
 ## Security notes
 
-- Nothing reusable is stored in GitLab. Each ID token can be exchanged once,
-  and the run token expires after 15 minutes.
+- Nothing reusable is stored in GitLab. Each ID token belongs to one run: it
+  can be exchanged again (at most five times, while valid) only for that same
+  run, and the run token expires after 15 minutes.
 - A run can only report on its own project. Branch, commit and merge request
   are taken from the verified token, not from the uploaded report.
 - Fork merge requests run in the fork's project by default and do not match
@@ -191,7 +192,10 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 
 | Symptom | Cause and fix |
 |---|---|
-| `The CI token was not accepted` | No trust configuration admits the project or branch, the `aud` differs from the configuration's audience, or the token was used twice. **Trust and gate > Recent refused pipelines** shows the rule and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
+| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the project or branch, the `aud` is not `openctem:tenant:<OPENCTEM_TENANT_ID>`, the tenant id is wrong, or the token expired. **Trust and gate > Recent refused pipelines** shows the rule and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
+| `CI_TOKEN_REPLAY_LIMIT`, `CI_TOKEN_REPLAY_RUN_CLOSED` | The job's ID token was already exchanged five times, or its run already has its verdict: rerun the job for a new token |
+| `CI_TOKEN_REPLAY` | A different token under an ID token id already used, or a token presented to another organization: refused and audited at high severity |
+| `the gitlab OIDC token was already exchanged` (openctem-ci v0.3.0 and older) | The first exchange of the job failed and the CLI hid why; update the pinned `openctemio/ci` release, which prints the real cause |
 | `id_tokens` is ignored / `OPENCTEM_ID_TOKEN` is empty | GitLab older than 15.7, or the variable name differs from the one under `id_tokens` |
 | `403 RUNNER_OUTDATED` on the exchange | The pinned `openctemio/ci` release is older than the platform's minimum CI runner release (`CI_RUNNER_MIN_VERSION`, v0.3.0 by default): change the `include` to the line the message names |
 | `401` on upload after a long scan | The 15-minute run token expired: keep the token exchange and the verdict within 15 minutes of each other (the parallel per-capability jobs of `all.yml` help) |

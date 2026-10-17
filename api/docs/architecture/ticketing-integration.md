@@ -6,6 +6,12 @@
 > [RFC-006](../rfcs/RFC-006-ticketing-provider-and-mapping.md) /
 > [RFC-006 Phase 3](../rfcs/RFC-006-phase-3-bidirectional-sync.md).
 > Ticketing is the CTEM **Mobilization** pillar.
+> Ticket links live in `ticket_links` (one row per finding or task ↔ issue,
+> with the owning integration, the issue key and a state); the ticket paths
+> move onto it from the `findings.work_item_uris` strings (display only).
+> Field and status mapping profiles per destination and object (finding or
+> task) are described in [ticket field and status mapping](ticket-field-mapping.md)
+> ([RFC-097](../rfcs/RFC-097-ticket-field-mapping.md)).
 
 ## Overview
 
@@ -14,9 +20,32 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
 - **Create** a Jira ticket from a finding (`POST /api/v1/findings/{id}/create-ticket`)
   into the tenant's **default project** (or an explicit `project_key`); the
   project picker is fed by `GET /api/v1/integrations/jira/projects`.
-- **Link / unlink** an existing ticket to a finding.
-- **Inbound** (`POST /api/v1/webhooks/incoming/jira?tenant=<id>`): a Jira status
+- **Link / unlink** an existing ticket to a finding. Linking is limited to
+  the projects the organization configured for ticketing (default project,
+  routing rules, mapping profiles); the issue's current project is checked
+  after the tracker resolves the key, so a moved issue cannot slip through.
+- **Task issues** (one issue per remediation task): `POST /api/v1/remediation/tasks/{task_id}/ticket-links`
+  creates the task's issue (title, fix, finding count, deadline, link back; no
+  finding details) in a configured project; the task ticket controller then
+  moves it with the task's state and comments every move with the progress;
+  Done on the issue is a fix claim for the task's open findings (RFC-098 §9).
+- **Inbound** (`POST /hooks/jira-integrations/{integration_id}`): a Jira status
   change updates the finding status (and can trigger a verification scan).
+  With a published mapping profile for the issue's project, its inbound
+  rules decide (RFC-097): Done is a fix claim, "Won't Do" opens a pending
+  risk-acceptance request (four-eyes, requested by the `ticket` actor), and
+  nothing from a ticket ever closes a finding. The
+  URL names one Jira integration (one tenant); the delivery must carry Jira's
+  `X-Hub-Signature: sha256=<HMAC-SHA256 of the raw body>` under that
+  integration's own secret (stored encrypted in the integration metadata,
+  generated or entered in the settings page, shown once, never returned).
+  Replays are refused by body hash and by delivery id
+  (`X-Atlassian-Webhook-Identifier`), kept 24 h in Redis and released when
+  processing fails (so Jira's retry is processed; no store means 503) and by the payload `timestamp` (at most one
+  hour old). Per-IP and per-integration rate limits sit in front of the
+  secret lookup. Secret routes: `GET /api/v1/integrations/{id}/jira-webhook`
+  (URL, whether a secret is set), `POST .../jira-webhook/secret/rotate` and
+  `PUT .../jira-webhook/secret` (`integrations:manage` plus step-up).
 - **Outbound** (RFC-006 Phase 3): a finding status change in OpenCTEM transitions
   the linked Jira issue to match. **Opt-in per integration** (`sync_enabled`,
   default off).
@@ -100,9 +129,9 @@ token with the email from `config`/`metadata["email"]`; or a legacy packed
 3. Create a ticket from any finding via the finding actions, or the
    `create-ticket` endpoint with `{"project_key": "SEC", "issue_type": "Bug"}`.
    When the request omits `project_key`, the tenant's default project is used.
-4. (Inbound) Configure a Jira webhook to
-   `POST /api/v1/webhooks/incoming/jira?tenant=<tenant-id>` (HMAC via
-   `JiraSecret`, fail-closed).
+4. (Inbound) On the integration, open **Inbound webhook**, copy the URL and
+   generate (or enter) the secret, then create the Jira webhook with both
+   (fail-closed without a valid signature).
 5. (Outbound) **Configure** on the connected integration → toggle **Bidirectional
    status sync** and, for a custom Jira workflow, map your status names.
 
@@ -229,6 +258,32 @@ target `project_key` (+ optional `issue_type`):
   `asset_group` dimension is parsed and matchable but **not yet populated** by
   the resolver (group-membership wiring is a follow-up) — use `scope`/
   `criticality`/`severity`/`tag` today.
+
+### How an inbound status change is applied
+
+An inbound change goes through the finding service, never a direct row write
+(`VulnerabilityService.ApplyTicketStatus`, wired as the sync service's
+`InboundStatusApplier`):
+
+- **Every linked finding.** All findings of the tenant whose `work_item_uris`
+  contain the issue's browse URL (partial GIN index `idx_findings_work_item_uris`,
+  at most 500), not one arbitrary finding.
+- **Same rules as a person's bulk change**, with the Jira integration as the
+  recorded actor (`StatusTransition{Source: "jira", ActorType: "integration"}`,
+  so each step's timeline entry commits with it): the transition map, the
+  pentest and approval gates, tenant scope.
+- **Done = fix claimed.** A target of `fix_applied` is a "mark fixed": legal
+  steps (`new → confirmed → in_progress → fix_applied`), the ticket named in the
+  note, a proof-of-fix re-check queued per finding (plus the verification-scan
+  hook). A finding already `fix_applied` is left alone. Nothing is ever closed:
+  a retest, a covered scan or a reviewer verifies.
+- **In Progress / reopen** walk the legal open steps (`new → confirmed →
+  in_progress`, `fix_applied → in_progress`).
+- **Refusals are commented back** on the issue: one comment listing each finding
+  the rules kept where it is (a closed finding, a pentest finding, ...) with the
+  reason, not repeated for the same issue, status and reasons within an hour.
+- **A campaign's epic**: Done marks the campaign's findings fixed through the
+  campaign resolve; it never completes the campaign.
 
 > Inbound never auto-applies `false_positive`/`accepted` (they require approval),
 > and every Jira "done"-like status maps to `fix_applied` (not `resolved`, which

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -169,6 +170,41 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 	return n + len(blocked), nil
 }
 
+// ReasonRepositoryCodeOnly blocks a pair of a repository and a capability
+// that takes network kinds: a repository is scanned by code tools only, a
+// network tool would probe the code host.
+const ReasonRepositoryCodeOnly = "repository_code_only"
+
+// blockRepositories takes out of a due batch every repository (by its
+// stored type, or a name in the path form) when the capability's stage
+// takes network kinds, and blocks those pairs with the reason. The policy
+// gives repositories no network capability; this keeps a stray ledger row
+// from ever sending one to a network tool.
+func (s *Service) blockRepositories(ctx context.Context, tenantID shared.ID, capability string, due []covdom.DueTarget) ([]covdom.DueTarget, error) {
+	st, ok := stage.Lookup(stage.Key(capability))
+	if !ok || !st.TakesNetworkKinds() || len(due) == 0 {
+		return due, nil
+	}
+	kept := make([]covdom.DueTarget, 0, len(due))
+	blocked := map[shared.ID]string{}
+	for _, d := range due {
+		if stage.IsRepositoryType(asset.TypeRef{Type: d.Type, SubType: d.SubType}) || stage.ClassifyTarget(d.Target()) == stage.KindPath {
+			blocked[d.AssetID] = ReasonRepositoryCodeOnly
+			continue
+		}
+		kept = append(kept, d)
+	}
+	if len(blocked) == 0 {
+		return due, nil
+	}
+	if err := s.planner.MarkBlocked(ctx, tenantID, capability, blocked, BlockedRecheck); err != nil {
+		return nil, err
+	}
+	s.logger.Warn("SECURITY: repositories left out of a network coverage batch", "tenant_id", tenantID.String(),
+		"capability", capability, "count", len(blocked))
+	return kept, nil
+}
+
 // plan starts every planned capability on its due pairs, within the
 // tenant's daily budget.
 func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
@@ -184,6 +220,9 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 		}
 		due, err := s.planner.DueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left))
 		if err != nil {
+			return total, err
+		}
+		if due, err = s.blockRepositories(ctx, tenantID, capability, due); err != nil {
 			return total, err
 		}
 		if len(due) == 0 {
@@ -218,7 +257,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 					return total, err
 				}
 				s.logger.Info("coverage batch refused, pairs blocked", "tenant_id", tenantID.String(),
-					"capability", capability, "targets", len(targets), "code", de.Code)
+					"capability", logger.SanitizeValue(capability), "targets", len(targets), "code", logger.SanitizeValue(de.Code))
 				continue
 			}
 			s.logger.Warn("coverage run not started", "tenant_id", tenantID.String(), "capability", capability,

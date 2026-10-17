@@ -23,16 +23,21 @@ import (
 func (h *gsHarness) seedLensFindings(t *testing.T) map[string]string {
 	t.Helper()
 	ids := map[string]string{}
-	for _, st := range []string{"new", "fix_applied", "not_observed", "resolved", "false_positive", "accepted", "duplicate"} {
+	for _, st := range []string{"new", "fix_applied", "in_progress", "resolved", "false_positive", "accepted", "duplicate"} {
 		id := shared.NewID()
 		resolvedAt := "NULL"
 		switch st {
 		case "resolved", "false_positive", "accepted", "duplicate":
 			resolvedAt = "now() - interval '3 days'"
 		}
-		h.exec(fmt.Sprintf(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, finding_type, resolved_at)
-			VALUES ($1::uuid, $2, $3, 'sast', 'ds-tool', 'lens finding', 'medium', $1::text, $4, 'vulnerability', %s)`, resolvedAt),
-			id.String(), h.tenant.String(), h.assetA.String(), st)
+		// A duplicate names its canonical finding (FA, on the same asset).
+		var dupOf any
+		if st == "duplicate" {
+			dupOf = h.findingA.String()
+		}
+		h.exec(fmt.Sprintf(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, finding_type, resolved_at, duplicate_of)
+			VALUES ($1::uuid, $2, $3, 'sast', 'ds-tool', 'lens finding', 'medium', $1::text, $4, 'vulnerability', %s, $5)`, resolvedAt),
+			id.String(), h.tenant.String(), h.assetA.String(), st, dupOf)
 		ids[st] = id.String()
 	}
 	// An out-of-scope resolved finding: it must never count for memberA.
@@ -66,8 +71,8 @@ func TestFindingsStateLens_CountContract(t *testing.T) {
 
 	want := map[string]map[string][]string{
 		"open": {
-			"owner":   sorted(fa, fb, ids["new"], ids["fix_applied"], ids["not_observed"]),
-			"memberA": sorted(fa, ids["new"], ids["fix_applied"], ids["not_observed"]),
+			"owner":   sorted(fa, fb, ids["new"], ids["fix_applied"], ids["in_progress"]),
+			"memberA": sorted(fa, ids["new"], ids["fix_applied"], ids["in_progress"]),
 		},
 		"fixed": {
 			"owner":   sorted(fb2, ids["resolved"]),

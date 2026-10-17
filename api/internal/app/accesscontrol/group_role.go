@@ -150,7 +150,7 @@ func (s *GroupService) checkMembershipGrant(ctx context.Context, g *groupdom.Gro
 			return true, err
 		}
 		if external {
-			return true, ErrExternalRoleCeiling
+			return true, ErrExternalTeamFullData
 		}
 	}
 	return true, nil
@@ -279,7 +279,7 @@ func (s *GroupService) BindRole(ctx context.Context, groupID, roleID string, act
 			return err
 		}
 		if external {
-			return ErrExternalRoleCeiling
+			return ErrExternalTeamFullData
 		}
 	}
 	var by *shared.ID
@@ -359,4 +359,89 @@ func roleNotFound(err error) error {
 		return fmt.Errorf("%w: role not found", shared.ErrNotFound)
 	}
 	return err
+}
+
+// activeMemberIDs lists the team's active members for cache invalidation
+// (nil when role bindings are not wired; a lookup error is logged).
+func (s *GroupService) activeMemberIDs(ctx context.Context, g *groupdom.Group) []shared.ID {
+	if s.bindings == nil {
+		return nil
+	}
+	members, err := s.bindings.ListActiveMemberIDs(ctx, g.TenantID(), g.ID())
+	if err != nil {
+		s.logger.Error("failed to list team members for invalidation", "error", err)
+		return nil
+	}
+	return members
+}
+
+// authorizeActiveFlip applies the grant rules to switching team g on (want
+// true) or off. Both directions need the whole-team scope cap and the
+// security pool step-up (as delete does). Activation also re-grants the
+// bound roles, so it applies the binding ceiling per role, the owner and
+// step-up rule for privileged roles, and refuses a member reviving their own
+// team unless they are the owner or hold full data access. It returns the
+// active members whose cached permissions the flip invalidates.
+func (s *GroupService) authorizeActiveFlip(ctx context.Context, g *groupdom.Group, want bool, actx auditapp.AuditContext) ([]shared.ID, error) {
+	if err := s.requireWholeGroupInScope(ctx, g); err != nil {
+		return nil, err
+	}
+	if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
+		return nil, err
+	}
+	members := s.activeMemberIDs(ctx, g)
+
+	roles, err := s.boundRoles(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	if len(roles) > 0 {
+		a, err := s.roles.loadGrantActor(ctx, asRoleID(g.TenantID()), actx.ActorID)
+		if err != nil {
+			return nil, err
+		}
+		if want && !a.system && !a.owner {
+			for _, m := range members {
+				if m.String() == a.id {
+					return nil, ErrSelfJoinRoleTeam
+				}
+			}
+		}
+		privileged := false
+		for _, r := range roles {
+			check := a.mayRevoke
+			if want {
+				check = a.mayGrant
+			}
+			if err := check(r); err != nil {
+				return nil, err
+			}
+			privileged = privileged || isPrivileged(r)
+		}
+		if privileged {
+			if err := s.requireOwnerStepUp(ctx, a); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if want && s.delegation != nil && actx.ActorID != "" {
+		actor, perr := shared.IDFromString(actx.ActorID)
+		if perr != nil {
+			return nil, fmt.Errorf("%w: invalid actor id format", shared.ErrValidation)
+		}
+		member, merr := s.repo.IsMember(ctx, g.ID(), actor)
+		if merr != nil {
+			return nil, merr
+		}
+		if member {
+			full, ferr := s.delegation.FullDataCaller(ctx, g.TenantID())
+			if ferr != nil {
+				return nil, ferr
+			}
+			if !full {
+				return nil, ErrSelfMembership
+			}
+		}
+	}
+	return members, nil
 }

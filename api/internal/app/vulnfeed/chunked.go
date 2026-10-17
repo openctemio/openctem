@@ -22,8 +22,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/openctemio/sdk-go/pkg/transfer"
-	"github.com/openctemio/sdk-go/pkg/transfer/bundle"
+	"github.com/openctemio/ctis/transfer"
+	"github.com/openctemio/ctis/transfer/bundle"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"

@@ -8,6 +8,7 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -34,7 +35,18 @@ type CreateOrganizationInput struct {
 	OwnerEmail string
 	// OwnerName is used only for a new account (defaults to the email).
 	OwnerName string
+	// Provisioned: the control plane's limits, denies and idle policy,
+	// written with the organization (nil from the console).
+	Provisioned *ProvisionedEntitlements
+	// NewOwnerOnly refuses an owner email that already has an account
+	// (ErrOwnerAccountExists): someone else's request must never make an
+	// existing person the owner of an organization without their consent.
+	NewOwnerOnly bool
 }
+
+// ErrOwnerAccountExists is returned when NewOwnerOnly is set and the owner
+// email already has an account.
+var ErrOwnerAccountExists = fmt.Errorf("%w: the owner email already has an account; that person creates the organization after signing in", shared.ErrConflict)
 
 // CreatedOrganization is the result of OrganizationCreator.Create.
 type CreatedOrganization struct {
@@ -50,8 +62,8 @@ type CreatedOrganization struct {
 }
 
 // OrganizationCreator creates an organization together with its owner on
-// behalf of the platform administrator. It works in either
-// TENANT_CREATION_MODE: that setting governs self-service creation only.
+// behalf of the platform administrator. It works under every SIGNUP_MODE and
+// sign-up policy: those govern self-service creation only.
 type OrganizationCreator struct {
 	tenants      *TenantService
 	provisioning *UserProvisioningService
@@ -81,6 +93,9 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 
 	owner, err := c.users.GetByEmail(ctx, ownerEmail)
 	ownerCreated := false
+	if err == nil && in.NewOwnerOnly {
+		return nil, ErrOwnerAccountExists
+	}
 	if err != nil {
 		if !shared.IsNotFound(err) {
 			return nil, fmt.Errorf("look up owner: %w", err)
@@ -92,13 +107,16 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 		// through a one-time link issued once the organization exists.
 		owner, err = c.provisioning.CreateAccount(ctx, ownerEmail, in.OwnerName)
 		if err != nil {
+			if in.NewOwnerOnly && errors.Is(err, ErrAccountExists) {
+				return nil, ErrOwnerAccountExists
+			}
 			return nil, err
 		}
 		ownerCreated = true
 	}
 
 	t, err := c.tenants.CreateTenant(ctx, CreateTenantInput{
-		Name: in.Name, Slug: in.Slug, Description: in.Description,
+		Name: in.Name, Slug: in.Slug, Description: in.Description, Provisioned: in.Provisioned,
 	}, owner.ID(), actx)
 	if err != nil {
 		// tenantdom.ErrPlatformAdminMembership (the owner is a platform

@@ -111,9 +111,14 @@ type CommandReader interface {
 // finding right now?" (online, with capacity): with the retest handler of the
 // finding's tool (retest:<tool>), or by re-running a nuclei template
 // (validate:nuclei).
+//
+// RetestTools lists the tools whose findings an online sensor of the tenant
+// can re-check now (validation.RetestToolsOf over the online sensors'
+// capabilities): the auto-retest picks candidates among them only.
 type SensorAvailability interface {
 	HasNucleiValidationSensor(ctx context.Context, tenantID shared.ID) (bool, error)
 	HasRetestSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error)
+	RetestTools(ctx context.Context, tenantID shared.ID) ([]string, error)
 }
 
 // Dispatcher queues the two checks (*validation.CommandDispatcher). Dispatch
@@ -130,7 +135,7 @@ type Dispatcher interface {
 }
 
 // Policy answers the tenant's retest policy: whether a confirmed fix
-// resolves a finding (true) or moves it to validated_fixed for a person to
+// resolves a finding (true) or only stamps it not reproducible for a person to
 // confirm (false, the default).
 type Policy interface {
 	AutoResolve(ctx context.Context, tenantID shared.ID) bool
@@ -332,8 +337,8 @@ func (s *Service) chooseMethod(ctx context.Context, tenantID shared.ID, tool str
 	return "", retestdom.ErrNoSensor
 }
 
-// nucleiTool is the tool name of nuclei findings.
-const nucleiTool = "nuclei"
+// nucleiTool is the tool of the template re-verify rung.
+const nucleiTool = validation.ReverifyTool
 
 // eligible loads the finding and its asset and checks that a deterministic
 // re-check can run: an eligible status, a rule of the finding's tool (for
@@ -381,6 +386,28 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (
 	}
 
 	return f, a, templateID, target, nil
+}
+
+// CanRetest reports whether a retest of the finding would be accepted now
+// for its eligibility, the target gates and an online sensor able to
+// re-check it (cooldown and in-flight caps aside). It records nothing. The
+// console shows "Retest now" from it, so no tool name is known there.
+func (s *Service) CanRetest(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
+	f, _, _, _, err := s.eligible(ctx, tenantID, findingID)
+	switch {
+	case errors.Is(err, retestdom.ErrNotEligible), errors.Is(err, validation.ErrTargetRefused):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	_, err = s.chooseMethod(ctx, tenantID, findingTool(f))
+	switch {
+	case errors.Is(err, retestdom.ErrNoSensor):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	return true, nil
 }
 
 // checkLimits applies the per-finding cooldown and the in-flight caps.
@@ -607,7 +634,7 @@ func (s *Service) storeAttempt(ctx context.Context, rt *retestdom.Retest, items 
 	if s.evidence == nil || len(items) == 0 {
 		return
 	}
-	tool := "nuclei"
+	tool := nucleiTool
 	if rt.Method == retestdom.MethodTool {
 		tool = ""
 		if f, err := s.findings.GetByID(ctx, rt.TenantID, rt.FindingID); err == nil && f != nil {

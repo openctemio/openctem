@@ -6,6 +6,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -20,5 +21,5 @@ func newAdminOperationsHandler(deps *HandlerDeps, cfg *config.Config, log *logge
 		func(ctx context.Context) (postgres.OpsSnapshot, error) {
 			return postgres.ReadOpsSnapshot(ctx, deps.DB.DB)
 		},
-		pingRedis, nil, shippedSchemaVersion(log), cfg.SensorConfig.SDKMinVersion, log)
+		pingRedis, nil, shippedSchemaVersion(log), versions.SDKAdvisories(), log)
 }

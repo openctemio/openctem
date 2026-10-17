@@ -12,10 +12,8 @@ import (
 	"github.com/openctemio/ctis"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // exchangeAs exchanges a token with a User-Agent (the runner's version).
@@ -217,7 +215,7 @@ func TestCIPipelines(t *testing.T) {
 		t.Fatalf("the token's user_email was stored in %d rows", leaked)
 	}
 
-	// --- tenant isolation, the fleet union included ----------------------
+	// --- tenant isolation -------------------------------------------------
 	if _, err := r.svc.GetPipeline(ctx, r.other, ps[0].ID); err == nil {
 		t.Fatal("another tenant read the pipeline")
 	}
@@ -226,14 +224,6 @@ func TestCIPipelines(t *testing.T) {
 	}
 	if b, err := r.svc.PipelineBranches(ctx, r.other, ps[0].ID); err != nil || len(b) != 0 {
 		t.Fatalf("another tenant reads the branches: %d %v", len(b), err)
-	}
-	admin := handler.NewCIAdminHandler(r.svc, nil, logger.NewNop())
-	admin.SetPipelineService(r.svc)
-	if rows, err := admin.FleetRunners(ctx, r.other); err != nil || len(rows) != 0 {
-		t.Fatalf("another tenant's fleet lists %d runner rows (%v)", len(rows), err)
-	}
-	if rows, err := admin.FleetRunners(ctx, r.tenant); err != nil || len(rows) != 2 || rows[0].Mode != handler.FleetModeRunner {
-		t.Fatalf("own fleet rows = %d %v", len(rows), err)
 	}
 	if runs, total, err := r.svc.ListRuns(ctx, r.other, cirun.RunFilter{PipelineID: &ps[0].ID}); err != nil || total != 0 || len(runs) != 0 {
 		t.Fatalf("another tenant lists the pipeline's runs: %d %v", total, err)

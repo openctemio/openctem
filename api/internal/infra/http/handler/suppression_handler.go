@@ -3,14 +3,18 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -61,25 +65,40 @@ type SuppressionRuleResponse struct {
 	ExpiresAt        *string `json:"expires_at,omitempty"`
 	CreatedAt        string  `json:"created_at"`
 	UpdatedAt        string  `json:"updated_at"`
+	// ReviewFlaggedAt is set when the platform gave the rule an end it did
+	// not have; ReviewReason says why (no_end_date). The flag clears when a
+	// person edits the rule.
+	ReviewFlaggedAt *string `json:"review_flagged_at,omitempty"`
+	ReviewReason    string  `json:"review_reason,omitempty"`
+	// ReasonCode is the rule's structured reason; Tier, ApprovalsRequired
+	// and ApprovalsCollected come from the approval policy (RFC-111).
+	ReasonCode         string `json:"reason_code,omitempty"`
+	Tier               string `json:"tier,omitempty" enums:"peer,security,dual"`
+	ApprovalsRequired  int    `json:"approvals_required"`
+	ApprovalsCollected int    `json:"approvals_collected"`
 }
 
 // toSuppressionRuleResponse converts a domain rule to API response.
 func toSuppressionRuleResponse(r *suppression.Rule) SuppressionRuleResponse {
 	resp := SuppressionRuleResponse{
-		ID:               r.ID().String(),
-		TenantID:         r.TenantID().String(),
-		Name:             r.Name(),
-		Description:      r.Description(),
-		SuppressionType:  string(r.SuppressionType()),
-		RuleID:           r.RuleID(),
-		ToolName:         r.ToolName(),
-		PathPattern:      r.PathPattern(),
-		Status:           string(r.Status()),
-		RequestedBy:      r.RequestedBy().StringOrEmpty(),
-		RequestedByActor: r.RequestedByActor(),
-		RequestedAt:      r.RequestedAt().Format(time.RFC3339),
-		RejectionReason:  r.RejectionReason(),
-		CreatedAt:        r.CreatedAt().Format(time.RFC3339),
+		ReasonCode:         r.ReasonCode(),
+		Tier:               r.Tier(),
+		ApprovalsRequired:  r.RequiredApprovals(),
+		ApprovalsCollected: r.ApprovalsCollected(),
+		ID:                 r.ID().String(),
+		TenantID:           r.TenantID().String(),
+		Name:               r.Name(),
+		Description:        r.Description(),
+		SuppressionType:    string(r.SuppressionType()),
+		RuleID:             r.RuleID(),
+		ToolName:           r.ToolName(),
+		PathPattern:        r.PathPattern(),
+		Status:             string(r.Status()),
+		RequestedBy:        r.RequestedBy().StringOrEmpty(),
+		RequestedByActor:   r.RequestedByActor(),
+		RequestedAt:        r.RequestedAt().Format(time.RFC3339),
+		RejectionReason:    r.RejectionReason(),
+		CreatedAt:          r.CreatedAt().Format(time.RFC3339),
 		// Full precision: an approval sends this back as the version it
 		// reviewed, and two edits in the same second must not look equal.
 		UpdatedAt: r.UpdatedAt().Format(time.RFC3339Nano),
@@ -109,6 +128,11 @@ func toSuppressionRuleResponse(r *suppression.Rule) SuppressionRuleResponse {
 		s := r.ExpiresAt().Format(time.RFC3339)
 		resp.ExpiresAt = &s
 	}
+	if r.ReviewFlaggedAt() != nil {
+		s := r.ReviewFlaggedAt().Format(time.RFC3339)
+		resp.ReviewFlaggedAt = &s
+		resp.ReviewReason = r.ReviewReason()
+	}
 
 	return resp
 }
@@ -123,6 +147,10 @@ type CreateSuppressionRuleRequest struct {
 	PathPattern     string  `json:"path_pattern,omitempty"`
 	AssetID         *string `json:"asset_id,omitempty"`
 	ExpiresAt       *string `json:"expires_at,omitempty"`
+	// ReasonCode is required: a false-positive justification for a
+	// false_positive rule, an accepted-risk reason otherwise (the finding
+	// closure reason catalog). Description is the note, also required.
+	ReasonCode string `json:"reason_code"`
 }
 
 // CreateRule handles POST /api/v1/suppressions
@@ -170,6 +198,7 @@ func (h *SuppressionHandler) CreateRule(w http.ResponseWriter, r *http.Request) 
 		AssetID:         assetID,
 		RequestedBy:     userUUID,
 		ExpiresAt:       req.ExpiresAt,
+		ReasonCode:      req.ReasonCode,
 	}
 
 	rule, err := h.service.CreateRule(r.Context(), input)
@@ -211,6 +240,11 @@ func (h *SuppressionHandler) ListRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rules, err := h.service.ListRules(r.Context(), tenantUUID, filter)
+	if err == nil {
+		// A person sees organization-wide rules and the rules bound to an asset
+		// in their data scope.
+		rules, err = h.service.VisibleRules(r.Context(), tenantUUID, rules)
+	}
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -337,6 +371,11 @@ type ApproveRuleRequest struct {
 	// ReviewedUpdatedAt is the rule's updated_at exactly as the approver last
 	// loaded it. The approval is refused (409) if the rule changed since.
 	ReviewedUpdatedAt string `json:"reviewed_updated_at"`
+	// SelfApprovalReason and TOTPCode: the owner approves their own rule
+	// because no other approver exists; both are required then, and the
+	// code must be fresh from the owner's authenticator app.
+	SelfApprovalReason string `json:"self_approval_reason,omitempty"`
+	TOTPCode           string `json:"totp_code,omitempty"`
 }
 
 // ApproveRule handles POST /api/v1/suppressions/{id}/approve
@@ -373,10 +412,16 @@ func (h *SuppressionHandler) ApproveRule(w http.ResponseWriter, r *http.Request)
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
+	if len(req.SelfApprovalReason) > 1000 || len(req.TOTPCode) > 16 {
+		apierror.BadRequest("self_approval_reason is at most 1000 characters").WriteJSON(w)
+		return
+	}
 	input := suppression.ApproveRuleInput{
-		TenantID:   tenantUUID,
-		RuleID:     ruleUUID,
-		ApprovedBy: userUUID,
+		TenantID:           tenantUUID,
+		RuleID:             ruleUUID,
+		ApprovedBy:         userUUID,
+		SelfApprovalReason: req.SelfApprovalReason,
+		TOTPCode:           req.TOTPCode,
 	}
 	if req.ReviewedUpdatedAt != "" {
 		reviewed, err := time.Parse(time.RFC3339Nano, req.ReviewedUpdatedAt)
@@ -389,6 +434,22 @@ func (h *SuppressionHandler) ApproveRule(w http.ResponseWriter, r *http.Request)
 
 	result, err := h.service.ApproveRule(r.Context(), input)
 	if err != nil {
+		if suppression.IsSelfApprovalRefusal(err) {
+			h.auditSelfApprovalRefused(r, ruleID, err)
+		}
+		if ref, ok := approvalpolicy.IsRefusal(err); ok {
+			h.auditPolicyRefusal(r, ruleID, ref.Reason)
+			status := http.StatusForbidden
+			if ref.Code == approvalpolicy.CodeNoEligibleApprover {
+				status = http.StatusConflict
+			}
+			apierror.New(status, apierror.Code(ref.Code), ref.Error()).
+				WithDetails(map[string]string{"reason": ref.Reason}).WriteJSON(w)
+			return
+		}
+		if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
@@ -431,13 +492,31 @@ type SuppressionRulePreviewResponse struct {
 	// Capped: more than Limit match; an approval closes Limit of them.
 	Capped bool `json:"capped"`
 	Limit  int  `json:"limit"`
+	// InScopeFindings is how many of those are on assets the caller's data
+	// scope covers (at most Limit); Sample lists the first few of them.
+	// Findings outside the caller's scope are only in MatchingOpenFindings.
+	InScopeFindings int                             `json:"in_scope_findings"`
+	Sample          []SuppressionPreviewFindingResp `json:"sample"`
+}
+
+// SuppressionPreviewFindingResp is one finding of a preview sample.
+type SuppressionPreviewFindingResp struct {
+	ID        string `json:"id"`
+	AssetID   string `json:"asset_id"`
+	AssetName string `json:"asset_name,omitempty"`
+	RuleID    string `json:"rule_id,omitempty"`
+	FilePath  string `json:"file_path,omitempty"`
+	Title     string `json:"title"`
+	Severity  string `json:"severity"`
+	Status    string `json:"status"`
 }
 
 // PreviewRule handles GET /api/v1/suppressions/{id}/preview: the number of
 // open findings an approval would close. The count is organization-wide, as
-// the approval is, so the route is gated like the approval itself.
+// the approval is, so the route is gated like the approval itself; the sample
+// and the in-scope count only cover the caller's data scope.
 // @Summary      Preview a suppression rule's approval
-// @Description  The number of the organization's open findings the rule matches and an approval would close now (at most limit; capped when more match). Organization-wide, like the approval; needs findings:suppressions:approve.
+// @Description  The number of the organization's open findings the rule matches and an approval would close now (at most limit; capped when more match). Organization-wide, like the approval; needs findings:suppressions:approve. in_scope_findings and sample cover only the findings on assets the caller's data scope admits.
 // @Tags         Suppressions
 // @Produce      json
 // @Param        id   path      string  true  "Suppression rule ID"
@@ -466,10 +545,26 @@ func (h *SuppressionHandler) PreviewRule(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// The approver may approve without being allowed to read findings: the
+	// examples are finding data, so they need findings:read as well (the
+	// counts stay).
+	examples := preview.Sample
+	if !middleware.HasPermission(r.Context(), permission.FindingsRead.String()) {
+		examples = nil
+	}
+	sample := make([]SuppressionPreviewFindingResp, 0, len(examples))
+	for _, f := range examples {
+		sample = append(sample, SuppressionPreviewFindingResp{
+			ID: f.ID.String(), AssetID: f.AssetID.String(), AssetName: f.AssetName, RuleID: f.RuleID,
+			FilePath: f.FilePath, Title: f.Title, Severity: f.Severity, Status: f.Status,
+		})
+	}
 	json.NewEncoder(w).Encode(SuppressionRulePreviewResponse{
 		MatchingOpenFindings: preview.MatchingOpenFindings,
 		Capped:               preview.Capped,
 		Limit:                preview.Limit,
+		InScopeFindings:      preview.InScopeFindings,
+		Sample:               sample,
 	})
 }
 
@@ -481,9 +576,14 @@ func (h *SuppressionHandler) auditApproval(r *http.Request, result *suppression.
 	}
 	rule := result.Rule
 	action, msg := auditdom.ActionSuppressionRuleApproved, "Suppression rule approved"
+	if result.Pending {
+		action = auditdom.ActionSuppressionRuleSigned
+		msg = fmt.Sprintf("Suppression rule approved by one approver (%d of %d); it needs more approvals",
+			result.ApprovalsCollected, result.ApprovalsRequired)
+	}
 	if result.SelfApproved {
 		action = auditdom.ActionSuppressionRuleSelfApproved
-		msg = "Suppression rule approved by its own requester (the owner, the only eligible approver)"
+		msg = "Suppression rule approved by its own requester (the owner, the only eligible approver) with a fresh authenticator code"
 	}
 	actx := auditapp.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
@@ -503,6 +603,103 @@ func (h *SuppressionHandler) auditApproval(r *http.Request, result *suppression.
 		WithSeverity(auditdom.SeverityForAction(action))
 	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
 		h.logger.Warn("failed to audit suppression approval", "error", err)
+	}
+}
+
+// MarkReviewed handles POST /api/v1/suppressions/{id}/reviewed: an approver
+// clears the review flag of a rule the platform gave an end it did not have.
+// The rule keeps its end. Audited with the flag before and after.
+// @Summary      Clear a suppression rule's review flag
+// @Description  An approver confirms they reviewed a rule flagged because it had no end date. The rule keeps its end; 409 when the rule is not flagged. Needs findings:suppressions:approve.
+// @Tags         Suppressions
+// @Produce      json
+// @Param        id   path      string  true  "Suppression rule ID"
+// @Success      200  {object}  SuppressionRuleResponse
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /suppressions/{id}/reviewed [post]
+func (h *SuppressionHandler) MarkReviewed(w http.ResponseWriter, r *http.Request) {
+	tenantUUID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	ruleUUID, err := shared.IDFromString(r.PathValue("id"))
+	if err != nil {
+		apierror.BadRequest("Invalid rule ID").WriteJSON(w)
+		return
+	}
+	userUUID, err := shared.IDFromString(middleware.GetUserID(r.Context()))
+	if err != nil {
+		apierror.BadRequest("Invalid user ID").WriteJSON(w)
+		return
+	}
+	// The body is optional: the rule's own requester sends a reason and a
+	// fresh authenticator code (the sole-approver path).
+	var req MarkReviewedRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apierror.BadRequest("invalid request body").WriteJSON(w)
+			return
+		}
+	}
+	rule, flaggedAt, reason, err := h.service.MarkReviewed(r.Context(), suppression.MarkReviewedInput{
+		TenantID: tenantUUID, RuleID: ruleUUID, By: userUUID,
+		SelfApprovalReason: req.SelfApprovalReason, TOTPCode: req.TOTPCode,
+	})
+	if err != nil {
+		if suppression.IsSelfApprovalRefusal(err) || errors.Is(err, suppression.ErrSelfApprovalAfterRemoval) {
+			h.auditReviewRefusal(r, tenantUUID, userUUID, ruleUUID, err)
+		}
+		h.handleServiceError(w, err)
+		return
+	}
+	if h.auditService != nil {
+		actx := auditapp.AuditContext{
+			TenantID:   tenantUUID.String(),
+			ActorID:    userUUID.String(),
+			ActorEmail: auditActorEmail(r.Context()),
+			ActorIP:    getClientIP(r),
+			UserAgent:  r.UserAgent(),
+			RequestID:  r.Header.Get("X-Request-ID"),
+		}
+		changes := auditdom.NewChanges().
+			Set("review_flagged_at", flaggedAt.UTC().Format(time.RFC3339), nil).
+			Set("review_reason", reason, "")
+		event := auditapp.NewSuccessEvent(auditdom.ActionSuppressionRuleReviewed, auditdom.ResourceTypeSuppressionRule, rule.ID().String()).
+			WithResourceName(rule.Name()).
+			WithChanges(changes).
+			WithMessage("Suppression rule review flag cleared").
+			WithSeverity(auditdom.SeverityForAction(auditdom.ActionSuppressionRuleReviewed))
+		if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
+			h.logger.Warn("failed to audit suppression review", "error", err)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toSuppressionRuleResponse(rule))
+}
+
+// auditSelfApprovalRefused records a refused own approval at High: the
+// signal of someone trying to bypass the second approver.
+func (h *SuppressionHandler) auditSelfApprovalRefused(r *http.Request, ruleID string, cause error) {
+	if h.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	action := auditdom.ActionSuppressionRuleSelfApprovalRefused
+	event := auditapp.NewFailureEvent(action, auditdom.ResourceTypeSuppressionRule, ruleID, cause).
+		WithMessage("Own approval of a suppression rule refused").
+		WithSeverity(auditdom.SeverityForAction(action))
+	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
+		h.logger.Warn("failed to audit refused suppression self-approval", "error", err)
 	}
 }
 
@@ -643,6 +840,11 @@ type SensorSuppressionsResponse struct {
 
 func (h *SuppressionHandler) writeActiveRules(w http.ResponseWriter, r *http.Request, tenantID shared.ID) {
 	rules, err := h.service.ListActiveRules(r.Context(), tenantID)
+	if err == nil {
+		// A person sees organization-wide rules and the rules bound to an asset
+		// in their data scope, never another asset's id or path pattern.
+		rules, err = h.service.VisibleRules(r.Context(), tenantID, rules)
+	}
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -696,7 +898,54 @@ func (h *SuppressionHandler) handleServiceError(w http.ResponseWriter, err error
 		// e.g. approving or rejecting a rule that is no longer pending
 		apierror.Conflict(err.Error()).WriteJSON(w)
 	default:
-		h.logger.Error("suppression service error", "error", err)
+		h.logger.Error("suppression service error", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("Internal server error").WriteJSON(w)
+	}
+}
+
+// auditPolicyRefusal records an approver the approval policy refused.
+func (h *SuppressionHandler) auditPolicyRefusal(r *http.Request, ruleID, reason string) {
+	if h.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	event := auditapp.NewDeniedEvent(auditdom.ActionSuppressionRuleApprovalRefused, auditdom.ResourceTypeSuppressionRule, ruleID, reason).
+		WithMessage("Refused by the approval policy ("+reason+")").
+		WithMetadata("reason", reason).
+		WithSeverity(auditdom.SeverityMedium)
+	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
+		h.logger.Warn("failed to audit suppression approval refusal", "error", err)
+	}
+}
+
+// MarkReviewedRequest is the optional body of POST /suppressions/{id}/reviewed:
+// the rule's own requester gives a reason and a fresh authenticator code.
+type MarkReviewedRequest struct {
+	SelfApprovalReason string `json:"self_approval_reason"`
+	TOTPCode           string `json:"totp_code"`
+}
+
+// auditReviewRefusal records a refused attempt to clear the review flag of
+// one's own rule.
+func (h *SuppressionHandler) auditReviewRefusal(r *http.Request, tenantID, userID, ruleID shared.ID, cause error) {
+	if h.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{
+		TenantID: tenantID.String(), ActorID: userID.String(), ActorEmail: auditActorEmail(r.Context()),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+	}
+	event := auditapp.NewDeniedEvent(auditdom.ActionSuppressionRuleReviewed, auditdom.ResourceTypeSuppressionRule, ruleID.String(), cause.Error()).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage("Refused: the requester tried to clear the review flag of their own rule")
+	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
+		h.logger.Warn("failed to audit suppression review refusal", "error", err)
 	}
 }

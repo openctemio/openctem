@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"context"
 	"net/http"
 	"time"
 
@@ -85,6 +84,17 @@ func registerLegalRoute(router Router, h *handler.AdminLegalHandler) {
 		return
 	}
 	router.GET("/api/v1/legal", h.Public)
+}
+
+// registerBrandRoutes registers the public instance brand: GET /api/v1/brand
+// and its images. Public on purpose (the sign-in page shows the brand);
+// nothing secret or tenant-specific is in it (docs/architecture/brand.md).
+func registerBrandRoutes(router Router, h *handler.BrandHandler) {
+	if h == nil {
+		return
+	}
+	router.GET("/api/v1/brand", h.Get)
+	router.GET("/api/v1/brand/images/{kind}", h.Asset)
 }
 
 // registerDocsRoutes registers the API documentation (the OpenAPI spec and
@@ -244,6 +254,7 @@ func registerIntegrationRoutes(
 	moduleGate Middleware,
 	scanNow *handler.ScanHandler,
 	scansModule Middleware,
+	ticketMapping *handler.TicketMappingHandler,
 ) {
 	// Build tenant middleware chain from JWT token.
 	// Append the module gate after tenant extraction so it can read the tenant.
@@ -269,12 +280,10 @@ func registerIntegrationRoutes(
 		// Test credentials without creating (must be before /{id} routes)
 		r.POST("/test-credentials", h.TestCredentials, middleware.Require(permission.IntegrationsManage))
 
-		// Per-tenant Jira inbound-webhook secret (static paths; must be before
-		// /{id} routes). Gated by IntegrationsManage because the response
-		// contains a secret, and by step-up: whoever holds the secret can
-		// forge inbound webhook events for the organization.
-		r.GET("/jira/webhook-secret", h.GetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
-		r.POST("/jira/webhook-secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		// Per-tenant GitHub inbound-webhook secret (static paths; must be
+		// before /{id} routes). Gated by IntegrationsManage because the
+		// response contains a secret, and by step-up: whoever holds the secret
+		// can forge inbound webhook events for the organization.
 		r.GET("/github/webhook-secret", h.GetGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
 		r.POST("/github/webhook-secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
@@ -282,6 +291,37 @@ func registerIntegrationRoutes(
 		// must be before /{id} routes). nil handler = no DB → skip.
 		if jiraHandler != nil {
 			r.GET("/jira/projects", jiraHandler.ListJiraProjects, middleware.Require(permission.IntegrationsRead))
+		}
+
+		// Ticket field and status mapping profiles (static paths; must be
+		// before /{id} routes). Reading is integrations:read; every change is
+		// integrations:manage, and publishing also needs a fresh step-up. A
+		// preview renders a finding or task: the service enforces the
+		// caller's data scope on that object.
+		if ticketMapping != nil {
+			read := middleware.Require(permission.IntegrationsRead)
+			manage := middleware.Require(permission.IntegrationsManage)
+			r.GET("/ticket-mappings/catalog", ticketMapping.Catalog, read)
+			r.GET("/ticket-mappings", ticketMapping.List, read)
+			r.POST("/ticket-mappings", ticketMapping.Create, manage)
+			r.GET("/ticket-mappings/{mapping_id}", ticketMapping.Get, read)
+			r.DELETE("/ticket-mappings/{mapping_id}", ticketMapping.Delete, manage, requireStepUp())
+			r.PUT("/ticket-mappings/{mapping_id}/draft", ticketMapping.SaveDraft, manage)
+			r.DELETE("/ticket-mappings/{mapping_id}/draft", ticketMapping.DiscardDraft, manage)
+			r.POST("/ticket-mappings/{mapping_id}/publish", ticketMapping.Publish, manage, requireStepUp())
+			r.POST("/ticket-mappings/{mapping_id}/rollback", ticketMapping.Rollback, manage)
+			r.POST("/ticket-mappings/{mapping_id}/dry-run", ticketMapping.SetDryRun, manage, requireStepUp())
+			r.GET("/ticket-mappings/{mapping_id}/versions", ticketMapping.Versions, read)
+			r.GET("/ticket-mappings/{mapping_id}/diff", ticketMapping.Diff, read)
+			r.POST("/ticket-mappings/{mapping_id}/verify", ticketMapping.Validate, read)
+			r.POST("/ticket-mappings/{mapping_id}/drift", ticketMapping.Drift, manage)
+			r.GET("/ticket-mappings/{mapping_id}/export", ticketMapping.Export, read)
+			r.POST("/ticket-mappings/{mapping_id}/import", ticketMapping.Import, manage)
+			r.POST("/ticket-mappings/{mapping_id}/copy", ticketMapping.Copy, manage)
+			r.POST("/ticket-mappings/{mapping_id}/suggest", ticketMapping.Suggest, read)
+			r.POST("/ticket-mappings/{mapping_id}/simulate", ticketMapping.Simulate, read)
+			r.POST("/ticket-mappings/{mapping_id}/preview", ticketMapping.Preview, manage)
+			r.POST("/ticket-mappings/{mapping_id}/inbound-preview", ticketMapping.PreviewInbound, manage)
 		}
 
 		// DefectDojo co-existence sync (RFC-013): pull the tenant's DefectDojo
@@ -311,6 +351,15 @@ func registerIntegrationRoutes(
 		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.IntegrationsManage))
 
+		// Inbound Jira webhook of one integration: its URL and whether a
+		// secret is set (no secret in the response), and the secret's
+		// rotation (shown once) or replacement. Changing the secret is
+		// IntegrationsManage plus step-up: whoever holds it can sign inbound
+		// status changes for the organization.
+		r.GET("/{id}/jira-webhook", h.GetJiraWebhook, middleware.Require(permission.IntegrationsManage))
+		r.POST("/{id}/jira-webhook/secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.PUT("/{id}/jira-webhook/secret", h.SetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+
 		// Notification actions
 		r.PUT("/{id}/notification", h.UpdateNotification, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/test-notification", h.TestNotification, middleware.Require(permission.IntegrationsManage))
@@ -324,6 +373,12 @@ func registerIntegrationRoutes(
 
 		// List repositories from SCM integration
 		r.GET("/{id}/repositories", h.ListRepositories, middleware.Require(permission.IntegrationsRead))
+
+		// Jira field and workflow metadata for the mapping editor.
+		if ticketMapping != nil {
+			r.GET("/{id}/jira/issue-types", ticketMapping.IssueTypes, middleware.Require(permission.IntegrationsRead))
+			r.GET("/{id}/jira/metadata", ticketMapping.Metadata, middleware.Require(permission.IntegrationsRead))
+		}
 	}, tenantMiddlewares...)
 }
 
@@ -479,54 +534,30 @@ func registerPlatformScanningRoutes(
 	}, tenantMiddlewares...)
 }
 
-// JiraWebhookSecretResolver returns the candidate HMAC secrets for a tenant's
-// inbound Jira webhooks (one per configured Jira integration). Implemented by
-// the integration service.
-type JiraWebhookSecretResolver interface {
-	ListJiraWebhookSecrets(ctx context.Context, tenantID shared.ID) ([]string, error)
-}
+// Inbound Jira webhook budgets. Per client IP in front of the secret lookup
+// (deliveries for every organization come from Jira's shared address pool,
+// so it is generous), and per integration URL.
+const (
+	jiraWebhookPerIPPerSecond          = 50
+	jiraWebhookPerIPBurst              = 500
+	jiraWebhookPerIntegrationPerSecond = 20
+	jiraWebhookPerIntegrationBurst     = 200
+)
 
-// registerIncomingWebhookRoutes registers public incoming webhook endpoints.
-// These endpoints are NOT protected by JWT — they are called by external services (e.g. Jira).
-// Tenant routing is done via a ?tenant= query parameter that each external service configures.
-//
-// Each request is verified with HMAC-SHA256 over the raw body
-// (middleware.VerifyHMACMulti) against the requesting organization's own
-// per-integration webhook secrets only, resolved from ?tenant=. An
-// organization only ever holds its own secrets, so one organization cannot
-// sign a delivery for another. There is no platform-wide secret. With no
-// secret for the named organization the middleware rejects the request.
-func registerIncomingWebhookRoutes(
-	router Router,
-	jiraHandler *handler.JiraWebhookHandler,
-	resolver JiraWebhookSecretResolver,
-	log *logger.Logger,
-) {
+// registerIncomingWebhookRoutes registers the public inbound Jira webhook.
+// The URL names one Jira integration (and so one tenant); the handler
+// verifies Jira's X-Hub-Signature with that integration's own secret and
+// refuses replays. There is no platform-wide secret and no tenant chosen by
+// the sender.
+func registerIncomingWebhookRoutes(router Router, jiraHandler *handler.JiraWebhookHandler, log *logger.Logger) {
 	if jiraHandler == nil {
 		return
 	}
-	hmacMW := middleware.VerifyHMACMulti(
-		"X-OpenCTEM-Signature",
-		func(r *http.Request) ([]string, bool) {
-			// Failures to resolve (bad tenant id, lookup error) contribute no
-			// candidates — they never widen acceptance to another tenant.
-			if resolver == nil {
-				return nil, false
-			}
-			tid, err := shared.IDFromString(r.URL.Query().Get("tenant"))
-			if err != nil {
-				return nil, false
-			}
-			secrets, err := resolver.ListJiraWebhookSecrets(r.Context(), tid)
-			if err != nil {
-				log.Warn("failed to resolve tenant Jira webhook secrets", "error", err)
-				return nil, false
-			}
-			return secrets, len(secrets) > 0
-		},
-		log,
-	)
-	router.POST("/api/v1/webhooks/incoming/jira", jiraHandler.IncomingJiraWebhook, hmacMW)
+	perIP := middleware.NewTelemetryRateLimiter(jiraWebhookPerIPPerSecond, jiraWebhookPerIPBurst, time.Hour, log).
+		MiddlewareKeyed(middleware.ClientIPKey, "Too many webhook deliveries")
+	perIntegration := middleware.NewTelemetryRateLimiter(jiraWebhookPerIntegrationPerSecond, jiraWebhookPerIntegrationBurst, time.Hour, log).
+		MiddlewareKeyed(func(r *http.Request) string { return "jira:" + r.URL.Path }, "Too many webhook deliveries")
+	router.POST("/hooks/jira-integrations/{integration_id}", jiraHandler.IncomingJiraWebhook, perIP, perIntegration)
 }
 
 // GitHub webhook budget per client IP. Generous: deliveries for every

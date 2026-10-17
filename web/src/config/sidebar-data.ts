@@ -28,8 +28,6 @@ import {
   Workflow,
   FileWarning,
   FileText,
-  Command,
-  AudioWaveform,
   Crosshair,
   ClipboardList,
   RotateCcw,
@@ -63,6 +61,7 @@ import {
   Database,
   Fence,
   ListChecks,
+  Stamp,
 } from 'lucide-react'
 import { type SidebarData } from '@/components/types'
 import { Permission, Role } from '@/lib/permissions'
@@ -86,18 +85,6 @@ export const sidebarData: SidebarData = {
     email: 'user@openctem.io',
     avatar: '',
   },
-  teams: [
-    {
-      name: 'Security Platform',
-      logo: Command,
-      plan: 'Enterprise',
-    },
-    {
-      name: 'Security Ops',
-      logo: AudioWaveform,
-      plan: 'Team',
-    },
-  ],
   navGroups: [
     // ========================================
     // DASHBOARD - Overview & Quick Access
@@ -124,7 +111,17 @@ export const sidebarData: SidebarData = {
           url: '/findings',
           icon: FileWarning,
           // Badge is dynamically fetched from dashboard stats - see useDynamicBadges hook
-          // Approvals accessible via button in findings page (not sidebar - keeps sidebar lean)
+          permission: Permission.FindingsRead,
+          module: 'findings',
+        },
+        {
+          // The four-eyes inbox: false-positive and risk-acceptance requests
+          // waiting for a second person. Same gate as the page (findings:read):
+          // requesters follow their own requests here too. The pending-count
+          // badge is fetched only for approvers (useDynamicBadges).
+          title: 'Approvals',
+          url: '/findings/approvals',
+          icon: Stamp,
           permission: Permission.FindingsRead,
           module: 'findings',
         },
@@ -297,7 +294,7 @@ export const sidebarData: SidebarData = {
         },
         // ----------------------------------------
         // CREDENTIAL LEAKS
-        // Module: credentials (requires Team+ plan)
+        // Module: credentials
         // ----------------------------------------
         {
           // "Credential leaks", not "Credentials": leaked accounts and tokens
@@ -312,7 +309,7 @@ export const sidebarData: SidebarData = {
         },
         // ----------------------------------------
         // SOFTWARE COMPONENTS (SBOM)
-        // Module: components (requires Team+ plan)
+        // Module: components
         // ----------------------------------------
         {
           title: 'Components',
@@ -327,7 +324,7 @@ export const sidebarData: SidebarData = {
     // ========================================
     // PHASE 3: PRIORITIZATION
     // Rank risks based on exploitability, impact, and threat intelligence
-    // Module: threat_intel (requires Business+ plan)
+    // Module: threat_intel
     // ========================================
     {
       title: 'Prioritization',
@@ -464,7 +461,7 @@ export const sidebarData: SidebarData = {
     // ========================================
     // PHASE 5: MOBILIZATION
     // Execute remediation and track progress
-    // Module: remediation (requires Business+ plan)
+    // Module: remediation
     // ========================================
     {
       title: 'Mobilization',
@@ -472,11 +469,8 @@ export const sidebarData: SidebarData = {
       cluster: 'cycle',
       items: [
         {
-          // One nav item; the two related views (Tasks / Solution Families) are
-          // presented as in-page <SectionTabs> rather than two near-identical
-          // sidebar entries.
-          // "Solution Families" (/remediations) is reachable as an in-page
-          // SectionTabs tab on this page — not a separate sidebar entry.
+          // One nav item; its views (Fix plan, Suggestions, Tasks, Campaigns)
+          // are in-page <SectionTabs>.
           title: 'Remediation',
           url: '/remediation',
           icon: Wrench,

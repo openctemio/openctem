@@ -39,7 +39,7 @@ func TestBulkStatus_PentestFindingRefusedLikeSinglePath(t *testing.T) {
 		admin bool
 	}{{"owner", h.owner, true}, {"in-scope member not on the campaign", h.memberA, false}} {
 		status, body := h.do(who.user, who.admin, http.MethodPost, "/api/v1/findings/bulk/status",
-			map[string]any{"finding_ids": []string{h.findingP.String()}, "status": "fix_applied", "resolution": "patched"})
+			map[string]any{"finding_ids": []string{h.findingP.String()}, "status": "confirmed", "resolution": "back to triage"})
 		if status != http.StatusOK || !strings.Contains(body, `"updated":0`) || !strings.Contains(body, "pentest") {
 			t.Errorf("%s bulk status on pentest finding = %d %.300s, want updated 0 and a pentest error", who.name, status, body)
 		}
@@ -48,7 +48,9 @@ func TestBulkStatus_PentestFindingRefusedLikeSinglePath(t *testing.T) {
 		}
 	}
 
-	// Non-pentest findings in the same call still move.
+	// Non-pentest findings in the same call still move (a fix claim is the
+	// assignee's).
+	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id = $1`, h.findingA.String(), h.owner.String())
 	status, body := h.do(h.owner, true, http.MethodPost, "/api/v1/findings/bulk/status",
 		map[string]any{"finding_ids": []string{h.findingA.String(), h.findingP.String()}, "status": "fix_applied", "resolution": "patched"})
 	if status != http.StatusOK || !strings.Contains(body, `"updated":1`) || !strings.Contains(body, `"failed":1`) {

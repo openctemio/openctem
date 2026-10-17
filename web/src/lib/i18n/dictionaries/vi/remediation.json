@@ -1,0 +1,18 @@
+{
+  "remediation.markFixed.confirmRequired": "Hãy xác nhận thay đổi lớn này để tiếp tục",
+  "remediation.markFixed.done": "Đã đánh dấu {count} phát hiện là đã sửa",
+  "remediation.markFixed.error": "Không thể đánh dấu các phát hiện là đã sửa",
+  "remediation.markFixed.summary": "{updated} đã đánh dấu đã sửa, {skipped} bỏ qua, {failed} không thay đổi, {queued} lượt kiểm tra lại đã xếp hàng.",
+  "remediation.markFixed.outcomeSkipped": "bỏ qua",
+  "remediation.markFixed.outcomeFailed": "không thay đổi",
+  "remediation.markFixed.explain": "Mỗi phát hiện chuyển sang trạng thái đã áp dụng bản sửa. Sau đó một lần kiểm tra lại, một lần quét có phạm vi bao phủ hoặc người rà soát sẽ xác minh và đóng từng phát hiện; không có gì bị đóng cho cả nhóm.",
+  "remediation.markFixed.notePlaceholder": "ví dụ: Đã vá qua thay đổi CR-1234",
+  "remediation.markFixed.confirmLarge": "Tôi xác nhận đánh dấu {count} phát hiện là đã sửa cùng lúc.",
+  "remediation.markFixed.noPermission": "Bạn cần quyền đánh dấu phát hiện là đã sửa.",
+  "remediation.markFixed.submit": "Đánh dấu đã sửa",
+  "remediation.markFixed.campaignTitle": "Đánh dấu các phát hiện của chiến dịch là đã sửa",
+  "remediation.markFixed.campaignDescription": "{count} phát hiện đang mở trong {name}.",
+  "remediation.markFixed.groupTitle": "Đánh dấu nhóm là đã sửa",
+  "remediation.markFixed.groupDescription": "{count} phát hiện đang mở trên {assets} tài sản: {title}",
+  "remediation.markFixed.close": "Đóng"
+}

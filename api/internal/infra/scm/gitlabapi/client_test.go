@@ -69,3 +69,43 @@ func TestNewRefusesBadHosts(t *testing.T) {
 		}
 	}
 }
+
+// A merge request's head pipeline is read, and a status attached to a
+// pipeline sends its id (a merged results pipeline's status); without one
+// no pipeline_id is sent.
+func TestMergedResultsPipelineWire(t *testing.T) {
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/merge_requests/3"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"iid": 3, "sha": "head",
+				"head_pipeline": map[string]any{"id": 501, "sha": "mrc"}})
+		case strings.Contains(r.URL.Path, "/statuses/"):
+			var b map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			bodies = append(bodies, b)
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := NewWithBase(srv.URL, "glpat-x", srv.Client())
+	ctx := context.Background()
+	mr, err := c.MergeRequest(ctx, "acme/api", 3)
+	if err != nil || mr.HeadPipeline == nil || mr.HeadPipeline.ID != 501 || mr.HeadPipeline.SHA != "mrc" {
+		t.Fatalf("merge request: %+v %v", mr, err)
+	}
+	if err := c.SetCommitStatus(ctx, "acme/api", "mrc", "failed", "gate", "https://c", "d", 501); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetCommitStatus(ctx, "acme/api", "head", "success", "gate", "https://c", "d", 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 2 || bodies[0]["pipeline_id"] != float64(501) {
+		t.Fatalf("bodies = %v", bodies)
+	}
+	if _, ok := bodies[1]["pipeline_id"]; ok {
+		t.Fatalf("pipeline_id sent without a pipeline: %v", bodies[1])
+	}
+}

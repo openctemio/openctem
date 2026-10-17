@@ -103,8 +103,11 @@ func TestRemediationGroups_ResolveOnlyInScope(t *testing.T) {
 	// fix_applied is reachable from in_progress (not from new/confirmed).
 	h.exec(`UPDATE findings SET status = 'in_progress' WHERE id IN ($1, $2, $3)`,
 		h.findingA.String(), h.findingB.String(), h.findingB2.String())
-	resolve := func(user shared.ID, admin bool, key string) (int, string) {
-		return h.do(user, admin, http.MethodPost, "/api/v1/findings/remediation-groups/"+url.PathEscape(key)+"/resolve",
+	// A fix claim is the assignee's (the same rule on every route).
+	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id = ANY($1::uuid[])`,
+		"{"+h.findingA.String()+","+h.findingB.String()+","+h.findingB2.String()+"}", h.memberA.String())
+	resolve := func(user shared.ID, _ bool, key string) (int, string) {
+		return h.doPerms(user, rgMemberPerms, http.MethodPost, "/api/v1/findings/remediation-groups/"+url.PathEscape(key)+"/resolve",
 			map[string]any{"status": "fix_applied", "resolution": "patched"})
 	}
 
@@ -127,7 +130,8 @@ func TestRemediationGroups_ResolveOnlyInScope(t *testing.T) {
 		t.Errorf("out-of-scope FB2 changed to %s", st)
 	}
 
-	// The owner resolves the rest.
+	// The owner resolves the rest (a fix claim is the assignee's).
+	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id = $1`, h.findingB.String(), h.owner.String())
 	if status, body := resolve(h.owner, true, rgKeyB); status != http.StatusOK || !strings.Contains(body, `"updated":1`) {
 		t.Errorf("owner resolve group B = %d %.200s, want updated 1", status, body)
 	}

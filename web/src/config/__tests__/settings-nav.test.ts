@@ -67,11 +67,12 @@ function staticPagesUnder(prefix: string): string[] {
 const isPersonal = (url: string) => url === '/account' || url.startsWith('/account/')
 
 describe('settings nav config', () => {
-  it('has the six groups in order', () => {
+  it('has the seven groups in order', () => {
     expect(settingsNav.map((g) => g.id)).toEqual([
       'account',
       'organization',
       'access',
+      'findings',
       'policies',
       'scanning',
       'integrations',
@@ -86,9 +87,10 @@ describe('settings nav config', () => {
   })
 
   for (const group of settingsNav) {
-    it(`group "${group.title}" has 2 to 8 items`, () => {
+    // Scanning holds 9 (Tool defaults joined its 8); keep groups scannable.
+    it(`group "${group.title}" has 2 to 9 items`, () => {
       expect(group.items.length).toBeGreaterThanOrEqual(2)
-      expect(group.items.length).toBeLessThanOrEqual(8)
+      expect(group.items.length).toBeLessThanOrEqual(9)
     })
   }
 

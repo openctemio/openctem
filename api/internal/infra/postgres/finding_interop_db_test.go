@@ -150,6 +150,10 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 	accepted, accFP := insert(f.tenant, f.host, "accepted", "sca")
 	resolved, resFP := insert(f.tenant, f.host, "resolved", "sca")
 	pentest, penFP := insert(f.tenant, f.host, "confirmed", "pentest")
+	// Another tool's finding on the same asset: a trivy report's VEX never
+	// speaks for it.
+	otherTool, otherToolFP := insert(f.tenant, f.host, "new", "sca")
+	f.exec(t, `UPDATE findings SET tool_name = 'grype', last_seen_tool = 'grype' WHERE id = $1`, otherTool)
 
 	otherTenant := shared.NewID()
 	f.exec(t, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, otherTenant, "vex-o-"+otherTenant.String())
@@ -160,17 +164,18 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 
 	reason := vulnerability.VEXResolutionText(&vulnerability.InteropVEX{Status: "not_affected", Justification: "component_not_present", Source: "vex-doc"})
 	items := []vulnerability.VEXNotAffected{
-		{Fingerprint: openFP, AssetID: f.host.String(), Resolution: reason},
+		{Fingerprint: openFP, AssetID: f.host.String(), Resolution: reason, ClosureReason: vulnerability.ClosureReasonComponentNotPresent},
 		{Fingerprint: accFP, AssetID: f.host.String(), Resolution: reason},
 		{Fingerprint: resFP, AssetID: f.host.String(), Resolution: reason},
 		{Fingerprint: penFP, AssetID: f.host.String(), Resolution: reason},
+		{Fingerprint: otherToolFP, AssetID: f.host.String(), Resolution: reason},
 		// Right key, wrong asset.
 		{Fingerprint: openFP, AssetID: f.otherHost.String(), Resolution: reason},
 		// Another tenant's finding, named with its own key and asset.
 		{Fingerprint: foreignFP, AssetID: otherAsset.String(), Resolution: reason},
 	}
 
-	ids, err := repo.ApplyVEXNotAffected(ctx, f.tenant, items, true)
+	ids, err := repo.ApplyVEXNotAffected(ctx, f.tenant, "trivy", items, true)
 	if err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
@@ -181,29 +186,36 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 		t.Fatalf("dry run changed the status to %q", got)
 	}
 
-	ids, err = repo.ApplyVEXNotAffected(ctx, f.tenant, items, false)
+	ids, err = repo.ApplyVEXNotAffected(ctx, f.tenant, "trivy", items, false)
 	if err != nil {
 		t.Fatalf("enforce: %v", err)
 	}
 	if len(ids) != 1 || ids[0] != open {
-		t.Fatalf("enforce closed %v, want only %s", ids, open)
+		t.Fatalf("enforce requested %v, want only %s", ids, open)
 	}
-	var status, resolution, method string
-	if err := f.db.QueryRowContext(ctx, `SELECT status, resolution, resolution_method FROM findings WHERE id = $1`, open.String()).
-		Scan(&status, &resolution, &method); err != nil {
-		t.Fatal(err)
+	// A false positive needs four-eyes: the statement only requests it.
+	// The request carries the statement's justification as its closure
+	// reason, so approving it records why (not "unknown").
+	var justification, actor, reqStatus, closureReason string
+	if err := f.db.QueryRowContext(ctx, `SELECT justification, requested_by_actor, status, COALESCE(closure_reason, '') FROM finding_status_approvals
+		WHERE tenant_id = $1 AND finding_id = $2 AND requested_status = 'false_positive'`, f.tenant.String(), open.String()).
+		Scan(&justification, &actor, &reqStatus, &closureReason); err != nil {
+		t.Fatalf("pending request: %v", err)
 	}
-	if status != "false_positive" || method != "vex_not_affected" || !strings.Contains(resolution, "component_not_present") || !strings.Contains(resolution, "vex-doc") {
-		t.Errorf("closed finding: %s / %s / %s", status, method, resolution)
+	if closureReason != string(vulnerability.ClosureReasonComponentNotPresent) {
+		t.Errorf("request closure_reason = %q, want component_not_present", closureReason)
 	}
-	for id, want := range map[shared.ID]string{accepted: "accepted", resolved: "resolved", pentest: "confirmed", foreign: "new"} {
+	if actor != vulnerability.ApprovalActorVEX || reqStatus != "pending" || !strings.Contains(justification, "component_not_present") {
+		t.Errorf("request: actor=%s status=%s justification=%q", actor, reqStatus, justification)
+	}
+	for id, want := range map[shared.ID]string{open: "new", accepted: "accepted", resolved: "resolved", pentest: "confirmed", foreign: "new", otherTool: "new"} {
 		if got := f.status(t, id); got != want {
-			t.Errorf("finding %s is %q, want %q (must not be touched)", id, got, want)
+			t.Errorf("finding %s is %q, want %q (a statement never changes the status)", id, got, want)
 		}
 	}
-	// Idempotent: a second run closes nothing more.
-	if ids, _ := repo.ApplyVEXNotAffected(ctx, f.tenant, items, false); len(ids) != 0 {
-		t.Errorf("second run closed %v", ids)
+	// Idempotent: a second run requests nothing more (one pending request).
+	if ids, _ := repo.ApplyVEXNotAffected(ctx, f.tenant, "trivy", items, false); len(ids) != 0 {
+		t.Errorf("second run requested %v", ids)
 	}
 }
 

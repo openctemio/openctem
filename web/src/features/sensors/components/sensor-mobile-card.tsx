@@ -12,13 +12,8 @@ import { sensorCapacity } from '../lib/capabilities'
 import { contentStateLabel, worstContentState } from '../lib/content'
 import { agoShort, formatDurationShort, keyExpiry } from '../lib/format'
 import { isOneShotSensor, sensorState, type FleetThresholds } from '../lib/sensor-state'
-import {
-  normalizeSensorVersion,
-  sensorSdkStatus,
-  sensorSdkVersion,
-  sensorVersionStatus,
-} from '../lib/sensor-version'
-import type { ReleaseChannel } from '../lib/fleet'
+import { normalizeSensorVersion, sensorSdkStatus, sensorSdkVersion } from '../lib/sensor-version'
+import { versionStatusIn, type ReleaseChannel } from '../lib/fleet'
 
 /**
  * A sensor on a phone: name and address, the state on the right, then the few
@@ -64,7 +59,7 @@ export function SensorMobileCard({
     })
   }
   const v = normalizeSensorVersion(sensor.version)
-  const vs = sensorVersionStatus(sensor, channel.latest, channel.min)
+  const vs = versionStatusIn(sensor, channel)
   if (v && vs === 'update_available')
     facts.push({ text: t('sensors.mobile.updateAvailable', undefined, { version: v }) })
   if (v && vs === 'unsupported')
@@ -75,20 +70,12 @@ export function SensorMobileCard({
   // The SDK only when it needs attention, worded like the table's tag.
   const sdk = sensorSdkVersion(sensor)
   const sdkStatus = sensorSdkStatus(sensor)
-  if (sdkStatus === 'outdated') {
+  if (sdkStatus === 'advisory') {
     facts.push({
       text: sdk
-        ? t('sensors.version.sdkOutdatedFact', 'SDK {version} outdated', { version: sdk })
-        : t('sensors.version.sdkOutdated', 'SDK outdated'),
+        ? t('sensors.version.sdkAdvisoryFact', 'SDK {version} has an advisory', { version: sdk })
+        : t('sensors.version.sdkAdvisory', 'SDK advisory'),
       tone: 'warning',
-    })
-  }
-  if (sdkStatus === 'unsupported') {
-    facts.push({
-      text: sdk
-        ? t('sensors.version.sdkUnsupportedFact', 'SDK {version} unsupported', { version: sdk })
-        : t('sensors.version.sdkUnsupported', 'SDK unsupported'),
-      tone: 'destructive',
     })
   }
   const k = keyExpiry(sensor.key_expires_at, now)

@@ -31,7 +31,7 @@ breadth (more cloud connectors, more RLS tables) or UI consumers.
 
 | ID | Name | Wire | Test |
 |----|------|------|------|
-| B1 | Reclassification sweep | `controller.PriorityReclassifyController` | `TestCTEM_B1_*` |
+| B1 | Priority recompute queue | `controller.FindingPriorityController` ([scoring versions](scoring-versions.md)) | `TestCTEM_B1_*` |
 | B2 | Compensating-control change triggers reclassify | `controller.ControlChangePublisher` | Q1 gate tests |
 | B3 | Jira "Done" → verification scan | `internal/app/jira/rescan_hook.go` | `TestCTEM_B3_*` |
 | B4 | SLA breach → notification outbox | `internal/app/sla/breach_outbox_adapter.go` | `TestCTEM_B4_*` |

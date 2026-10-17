@@ -137,6 +137,7 @@ Besides the Go runtime and process metrics:
 | `openctem_log_records_total` | level (warn, error), component | Log records written, before sampling. |
 | `openctem_auth_login_failures_total` | reason (invalid_credentials, locked, suspended, other) | Refused password sign-ins. |
 | `openctem_automation_runs_total`, `openctem_automations_auto_paused_total` | status | Finished automation runs; automations paused after repeated failures. |
+| `openctem_suppression_rule_hits_total` | applied_by (ingest, approval, other) | Findings decided by an approved suppression rule: new findings a rule matched as they arrived, and open findings it closed when approved. Counted once per finding; no tenant or rule label (the per-rule breakdown is the `finding_suppressions` table). A sudden rise from `ingest` is a noisy rule. |
 | `openctem_web_client_errors_total` | kind | Errors reported by browsers (when the web reporter is enabled). |
 | `openctem_sensors`, `openctem_sensors_config_health`, `openctem_sensors_sdk` | kind (platform, tenant), health / config_health / status | Active sensors, platform-wide counts. |
 | `openctem_sensors_unhardened` | kind (policy_none, pin_none, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |
@@ -345,10 +346,11 @@ not on the warning schedule.
 The posture is what the sensor reports about itself: the platform shows it and
 alerts on it but never relaxes a check because of it.
 
-### SensorSdkUnsupported
+### SensorSdkAdvisory
 
-Sensors run an SDK older than `SENSOR_SDK_MIN_VERSION`. Upgrade them (install
-command on the Sensors page).
+Sensors run an SDK release with a published security advisory (`versions.yaml`
+`sdk.advisories`, built into the API). Upgrade them to a build with a fixed
+SDK (install command on the Sensors page).
 
 ### CommandQueueStuck
 
@@ -587,3 +589,29 @@ chat id, or a deleted Slack webhook.
 
 An alert rule fails to evaluate (Prometheus "Rules" page shows the error).
 Fix the rule and run `deploy/observability/test/check-config.sh`.
+
+## Built-in System page (no monitoring stack needed)
+
+The platform console's **System** page (`/admin/system`, every platform
+administrator role, read-only) shows service health, free space of the
+configured data volumes, the database size, the last successful backup,
+certificate expiry and the running version. A watcher checks the same values
+every `SYSTEM_WATCH_INTERVAL` (5 minutes), sets the metrics below, and emails
+the active platform administrators through the system SMTP sender when a check
+gets worse (a standing warning is mailed again after 24 hours). Without SMTP
+the WARN log line (`alert=system_storage`, `system_backup`, `system_cert`) and
+the metrics are the alert.
+
+| Check | Warning | Critical |
+|---|---|---|
+| Free space of a `SYSTEM_STORAGE_PATHS` volume | below 20% | below 10% |
+| Last successful backup (`SYSTEM_BACKUP_STATUS_FILE`) | older than 26 h | - |
+| Certificate (the sensor CA and `SYSTEM_TLS_CERT_FILES`) | within 30 days | within 7 days |
+
+Metrics: `openctem_system_storage_free_ratio{volume}`,
+`openctem_system_storage_level{volume}`, `openctem_system_database_bytes`,
+`openctem_system_backup_age_seconds`, `openctem_system_backup_level`,
+`openctem_system_certificate_expiry_seconds{name}`,
+`openctem_system_certificate_level{name}` (levels: 0 ok, 1 warning, 2 critical).
+The page holds no action: backup, restore, upgrade and key rotation stay in the
+kit's command line (RFC-114).

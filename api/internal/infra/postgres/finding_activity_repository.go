@@ -34,6 +34,12 @@ func NewFindingActivityRepository(db *DB) *FindingActivityRepository {
 
 // Create persists a new finding activity.
 func (r *FindingActivityRepository) Create(ctx context.Context, activity *vulnerability.FindingActivity) error {
+	return insertFindingActivity(ctx, r.db, activity)
+}
+
+// insertFindingActivity writes one timeline entry through db (the pool or a
+// caller's transaction).
+func insertFindingActivity(ctx context.Context, db execer, activity *vulnerability.FindingActivity) error {
 	changesJSON, err := json.Marshal(activity.Changes())
 	if err != nil {
 		return fmt.Errorf("failed to marshal changes: %w", err)
@@ -62,7 +68,7 @@ func (r *FindingActivityRepository) Create(ctx context.Context, activity *vulner
 		actorIDStr = sql.NullString{String: activity.ActorID().String(), Valid: true}
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
+	_, err = db.ExecContext(ctx, query,
 		activity.ID().String(),
 		activity.TenantID().String(),
 		activity.FindingID().String(),

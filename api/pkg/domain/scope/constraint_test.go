@@ -129,7 +129,8 @@ func TestConstrainedJobRefusal(t *testing.T) {
 		{"port scanner on a path", "naabu", nil, true, "443", false, scope.ConstrainedToolRefused},
 	}
 	for _, c := range cases {
-		if got := scope.ConstrainedJobRefusal(c.tool, c.cs, c.path, c.jobPorts, c.top); got != c.want {
+		job := scope.JobShape{Tool: c.tool, Ports: c.jobPorts, TopPorts: c.top}
+		if got := scope.ConstrainedJobRefusal(job, c.cs, c.path); got != c.want {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
 	}
@@ -156,5 +157,40 @@ func TestTargetConstraint(t *testing.T) {
 	}
 	if err := tg.SetConstraint(scope.Constraint{Ports: "x"}); err == nil {
 		t.Fatal("invalid limit accepted")
+	}
+}
+
+// SECURITY: whether a job probes ports is decided by the capability it runs,
+// so every port scanner is held to the same caps; without a capability, by
+// the capabilities its tool implements, and an unknown tool fails closed.
+func TestJobShapePortScan(t *testing.T) {
+	cases := []struct {
+		name string
+		job  scope.JobShape
+		want bool
+	}{
+		{"port scan by any tool", scope.JobShape{Tool: "portscan-x", Capability: "scan.ports@1"}, true},
+		{"host discovery by any tool", scope.JobShape{Tool: "pinger", Capability: "discover.hosts@1"}, true},
+		{"capability spelled in upper case", scope.JobShape{Tool: "x", Capability: " SCAN.PORTS@2 "}, true},
+		{"http probe by the port scanner", scope.JobShape{Tool: "naabu", Capability: "probe.http@1"}, false},
+		{"template scan", scope.JobShape{Tool: "anything", Capability: "vuln.templates@1"}, false},
+		{"no capability: the default port scanner", scope.JobShape{Tool: "naabu"}, true},
+		{"no capability: an http prober", scope.JobShape{Tool: "httpx"}, false},
+		{"no capability: an unknown tool fails closed", scope.JobShape{Tool: "mystery"}, true},
+	}
+	for _, c := range cases {
+		if got := c.job.PortScan(); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+	// A port scan without a list on a port-limited entry is refused whatever
+	// the capability-implementing tool is called (here the default one, the
+	// only port-limited tool today).
+	ports := []scope.Constraint{{Ports: "8443", Protocol: "tcp"}}
+	if got := scope.ConstrainedJobRefusal(scope.JobShape{Tool: "naabu", Capability: "scan.ports@1"}, ports, false); got != scope.ConstrainedPortsOutside {
+		t.Errorf("port scan without a list: %q", got)
+	}
+	if got := scope.ConstrainedJobRefusal(scope.JobShape{Tool: "httpx", Capability: "probe.http@1"}, ports, false); got != "" {
+		t.Errorf("http probe of the allowed port: %q", got)
 	}
 }

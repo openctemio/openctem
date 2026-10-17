@@ -47,7 +47,8 @@
 
 import * as React from 'react'
 import { createPortal } from 'react-dom'
-import { MoreHorizontal, X } from 'lucide-react'
+import Link from '@/components/link'
+import { ChevronDown, ExternalLink, Maximize2, MoreHorizontal, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -59,7 +60,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Drawer, DrawerContent, DrawerHandle } from '@/components/ui/drawer'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { TAB_CLASS, Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useTranslation } from '@/context/i18n-provider'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
@@ -296,7 +299,7 @@ export function DetailSheet({
         <DrawerContent
           data-slot="detail-sheet"
           className={cn(
-            'w-full gap-0 overflow-hidden p-0 outline-none',
+            'w-full gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip p-0 outline-none',
             // One height whatever the content (svh: the browser's bars never
             // cover it), clear of the home indicator.
             'rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)]',
@@ -320,7 +323,7 @@ export function DetailSheet({
         side="right"
         data-slot="detail-sheet"
         className={cn(
-          'flex w-full flex-col gap-0 overflow-hidden p-0 outline-none [&>button]:hidden',
+          'flex w-full flex-col gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip p-0 outline-none [&>button]:hidden',
           WIDTH[width],
           className
         )}
@@ -367,6 +370,12 @@ export interface DetailHeaderProps {
    * revoke, delete) goes in the `⋯` menu. No items, no menu.
    */
   menu?: DetailMenuItem[]
+  /**
+   * The record's own page. Adds an "Open full page" icon button beside the
+   * header icons and the same entry at the top of the `⋯` menu. A real link,
+   * so ctrl/cmd-click and middle-click open it in a new tab.
+   */
+  fullPageHref?: string
   onClose: () => void
 }
 
@@ -378,7 +387,17 @@ export interface DetailHeaderProps {
  */
 const HEADER_ICON_BUTTON = 'relative size-8 after:absolute after:-inset-1.5'
 
-export function DetailHeader({ title, badges, meta, actions, menu, onClose }: DetailHeaderProps) {
+export function DetailHeader({
+  title,
+  badges,
+  meta,
+  actions,
+  menu,
+  fullPageHref,
+  onClose,
+}: DetailHeaderProps) {
+  const { t } = useTranslation()
+  const fullPageLabel = t('common.openFullPage', 'Open full page')
   const parts = (meta ?? []).filter((p) => p !== null && p !== undefined && p !== false && p !== '')
   return (
     <div data-slot="detail-header">
@@ -405,7 +424,21 @@ export function DetailHeader({ title, badges, meta, actions, menu, onClose }: De
           )}
         </div>
         <div className="-me-2 flex shrink-0 items-center gap-3">
-          {menu && menu.length > 0 && (
+          {fullPageHref && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="ghost" size="icon" className={HEADER_ICON_BUTTON}>
+                    <Link href={fullPageHref} aria-label={fullPageLabel}>
+                      <Maximize2 className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{fullPageLabel}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {((menu && menu.length > 0) || fullPageHref) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -418,7 +451,16 @@ export function DetailHeader({ title, badges, meta, actions, menu, onClose }: De
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                {menu.map((item, i) => {
+                {fullPageHref && (
+                  <DropdownMenuItem asChild>
+                    <Link href={fullPageHref}>
+                      <ExternalLink className="h-4 w-4" />
+                      {fullPageLabel}
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {fullPageHref && menu && menu.length > 0 && <DropdownMenuSeparator />}
+                {(menu ?? []).map((item, i) => {
                   const Icon = item.icon
                   return (
                     <React.Fragment key={item.label}>
@@ -473,7 +515,8 @@ export interface DetailTabsProps<T extends string = string> {
 /**
  * The default underline tabs, keyboard operable (Radix: arrows, Home, End).
  * Controlled; `useDetailTab` keeps the value in the URL when the page wants a
- * shareable link to a tab.
+ * shareable link to a tab. Tabs that do not fit the width go under a "More"
+ * menu instead of being cut off; the active tab always stays visible.
  */
 export function DetailTabs<T extends string>({
   tabs,
@@ -481,21 +524,119 @@ export function DetailTabs<T extends string>({
   onValueChange,
   className,
 }: DetailTabsProps<T>) {
+  const { t } = useTranslation()
+  const stripRef = React.useRef<HTMLDivElement>(null)
+  const measureRef = React.useRef<HTMLDivElement>(null)
+  const fit = useTabsThatFit(stripRef, measureRef, tabs.length)
+
+  // The tabs that fit stay in the strip; the rest go under "More". The
+  // active tab is always in the strip, in place of the last one that fits.
+  const activeIndex = tabs.findIndex((tab) => tab.value === value)
+  let shown = tabs.slice(0, fit)
+  if (fit < tabs.length && activeIndex >= fit) {
+    shown = [...tabs.slice(0, Math.max(0, fit - 1)), tabs[activeIndex]]
+  }
+  const shownValues = new Set(shown.map((tab) => tab.value))
+  const overflow = tabs.filter((tab) => !shownValues.has(tab.value))
+  const moreLabel = t('common.moreTabs', 'More')
+
   return (
     <Tabs
       value={value}
       onValueChange={(v) => onValueChange(v as T)}
-      className={cn('mt-3', className)}
+      className={cn('relative mt-3', className)}
     >
-      <TabsList>
-        {tabs.map((t) => (
-          <TabsTrigger key={t.value} value={t.value}>
-            {t.label}
+      <TabsList ref={stripRef}>
+        {shown.map((tab) => (
+          <TabsTrigger key={tab.value} value={tab.value}>
+            {tab.label}
           </TabsTrigger>
         ))}
+        {overflow.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className={TAB_CLASS} data-slot="tabs-more">
+                {moreLabel}
+                <ChevronDown aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {overflow.map((tab) => (
+                <DropdownMenuItem key={tab.value} onSelect={() => onValueChange(tab.value)}>
+                  {tab.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </TabsList>
+      {/* Every label at its natural width, out of sight, so the strip knows
+          how many fit whatever is currently shown. */}
+      <div
+        ref={measureRef}
+        aria-hidden="true"
+        className="pointer-events-none invisible absolute top-0 left-0 flex h-0 gap-6 overflow-hidden whitespace-nowrap"
+      >
+        {tabs.map((tab) => (
+          <span key={tab.value} className={TAB_CLASS}>
+            {tab.label}
+          </span>
+        ))}
+        <span className={TAB_CLASS}>
+          {moreLabel}
+          <ChevronDown />
+        </span>
+      </div>
     </Tabs>
   )
+}
+
+/** The gap between tabs in a strip (`gap-6`). */
+const TAB_GAP_PX = 24
+
+/**
+ * How many tabs fit in the strip with room for a "More" button after them,
+ * from the hidden row of natural-width labels; all of them when nothing can
+ * be measured (server render, tests).
+ */
+function useTabsThatFit(
+  stripRef: React.RefObject<HTMLDivElement | null>,
+  measureRef: React.RefObject<HTMLDivElement | null>,
+  count: number
+): number {
+  const [fit, setFit] = React.useState(count)
+  React.useLayoutEffect(() => {
+    const strip = stripRef.current
+    const measure = measureRef.current
+    if (!strip || !measure) return
+    const compute = () => {
+      const widths = Array.from(measure.children).map((c) => (c as HTMLElement).offsetWidth)
+      const more = widths.pop() ?? 0
+      const avail = strip.clientWidth
+      const total =
+        widths.reduce((sum, w) => sum + w, 0) + TAB_GAP_PX * Math.max(0, widths.length - 1)
+      if (avail <= 0 || total <= avail) {
+        setFit(widths.length)
+        return
+      }
+      let used = 0
+      let n = 0
+      for (const w of widths) {
+        const next = used + (n > 0 ? TAB_GAP_PX : 0) + w
+        if (next + TAB_GAP_PX + more > avail) break
+        used = next
+        n++
+      }
+      setFit(Math.max(1, n))
+    }
+    compute()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(compute)
+    ro.observe(strip)
+    ro.observe(measure)
+    return () => ro.disconnect()
+  }, [stripRef, measureRef, count])
+  return fit
 }
 
 /**

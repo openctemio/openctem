@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openctem.io/schemas/package/v1.json",
+  "title": "OpenCTEM content package manifest (package.yaml)",
+  "description": "The manifest of a content package, apiVersion openctem.io/package/v1. Design: api/docs/rfcs/RFC-099-content-packages.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "id", "version", "type", "title", "artifact", "compatibility", "permissions", "license"],
+  "properties": {
+    "apiVersion": {"const": "openctem.io/package/v1"},
+    "id": {
+      "description": "<namespace>/<name>; the namespace openctem and its look-alikes are reserved for first-party packages.",
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?/[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+    },
+    "version": {"$ref": "#/$defs/semver"},
+    "type": {
+      "enum": ["rules", "templates", "wordlists", "profiles", "report-templates", "playbooks", "policy-packs", "tool-adapters", "sensors", "feeds"]
+    },
+    "title": {"$ref": "#/$defs/text", "maxLength": 80, "minLength": 1},
+    "summary": {"$ref": "#/$defs/text", "maxLength": 500},
+    "content_kind": {
+      "description": "The RFC-061 content pack kind; required for rules, templates and wordlists, forbidden otherwise.",
+      "type": "string",
+      "pattern": "^(?:[a-z][a-z0-9-]{1,40}|x-[a-z0-9-]{1,32}/[a-z][a-z0-9-]{1,40})$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["media_type", "digest", "size"],
+      "properties": {
+        "media_type": {
+          "enum": [
+            "application/gzip",
+            "application/x-tar",
+            "application/vnd.openctem.content-pack.v1.tar",
+            "application/vnd.oci.image.index.v1+json",
+            "application/vnd.oci.image.manifest.v1+json",
+            "application/vnd.openctem.feed-keyset+json"
+          ]
+        },
+        "digest": {"$ref": "#/$defs/digest"},
+        "size": {"type": "integer", "minimum": 1, "maximum": 536870912},
+        "ref": {
+          "description": "OCI artifacts only: the repository without a tag.",
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\\.[a-z0-9]+(?:[._-][a-z0-9]+)*)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)+$"
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform"],
+      "properties": {
+        "platform": {"$ref": "#/$defs/range"},
+        "protocol": {"$ref": "#/$defs/range"}
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier", "side_effects", "network"],
+      "properties": {
+        "tier": {"enum": ["T0", "T1", "T2"]},
+        "side_effects": {"enum": ["none", "state-changing", "destructive"]},
+        "network": {"enum": ["none", "targets-only", "declared-hosts"]},
+        "declared_hosts": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {"type": "string", "maxLength": 253, "pattern": "^(?:\\*\\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"}
+        },
+        "credentials": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,63}$"}
+        },
+        "data_scopes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,40}(?::[a-z][a-z0-9_]{0,40}){1,2}$"}
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spdx", "service_use", "redistribution"],
+      "properties": {
+        "spdx": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9.+:() -]+$"},
+        "service_use": {"type": "boolean"},
+        "redistribution": {"type": "boolean"}
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?/[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"},
+          "version": {"$ref": "#/$defs/range"}
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_repository": {"$ref": "#/$defs/https"},
+        "source_revision": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+        "build_identity": {"$ref": "#/$defs/https"},
+        "build_issuer": {"$ref": "#/$defs/https"}
+      }
+    },
+    "security_contact": {
+      "type": "string",
+      "maxLength": 254,
+      "pattern": "^(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,63}|https://[^\\s]+)$"
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+    },
+    "range": {
+      "description": "Comparators (=, >, >=, <, <=) and versions joined by commas; all must hold.",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^(?:=|>=|<=|>|<)[0-9][0-9A-Za-z.-]*(?:, ?(?:=|>=|<=|>|<)[0-9][0-9A-Za-z.-]*)*$"
+    },
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "text": {"type": "string", "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*$"},
+    "https": {"type": "string", "maxLength": 512, "pattern": "^https://[^\\s]+$"}
+  }
+}

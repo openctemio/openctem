@@ -171,10 +171,13 @@ asset_software (RFC-066) gains:
 - Confidence is 100 for a version read from a lock file or SBOM with a purl,
   80 for a name and version without a purl.
 - `superseded_at` is not used for packages: several versions of one package
-  legitimately coexist in one lock file. A full snapshot (a sensor or CI
-  report, an SBOM) replaces the links at the locations it names, so an
-  upgrade shows as the old version's link going away; partial reports (a
-  finding that names a package) only add or refresh.
+  legitimately coexist in one lock file. A snapshot replaces its own
+  channel's links at the locations it names, so an upgrade shows as the old
+  version's link going away. A full inventory (a sensor or integration
+  report, an SBOM) takes the links it names over; a CI upload, whose list is
+  trimmed to the vulnerable packages and their paths, refreshes them without
+  taking them over, so it never removes another producer's inventory of the
+  same file; a finding import only adds.
 
 ### 5.4 Dependency graph: `asset_software_edges`
 
@@ -300,12 +303,14 @@ the parser is isolated so a format adds a reader, not a writer.
 
 - **Create:** `POST /api/v1/vex-statements` (the subject, status,
   justification, statements, optional expiry). Applying it:
-  - `not_affected` or `fixed` closes matching open, non-human findings
-    (`false_positive` with `resolution_method = vex_not_affected`, or
-    `resolved` with `vex_fixed`), sets `vex_*` and `vex_statement_id`;
+  - `fixed` resolves matching open, non-human findings (`resolved` with
+    `vex_fixed`), sets `vex_*` and `vex_statement_id`;
+  - `not_affected` annotates them the same way and opens a pending
+    false-positive request (actor `vex`, one more sign-off than the tier); the
+    status never moves without a person's approval;
   - `affected` and `under_investigation` annotate only.
 - **Sticky:** ingest and the matcher check statements before creating or
-  reopening a finding; a matching `not_affected` statement creates it closed.
+  reopening a finding; a matching `not_affected` statement opens the same pending request for it.
 - **Edit or delete:** findings the statement closed reopen (false positive
   to `new`, resolved to `confirmed`, the lifecycle's reopen edges; C13)
   unless another statement still covers them. The vulnerability, package and

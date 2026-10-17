@@ -72,6 +72,10 @@ type LedgerRecord struct {
 	CountedApprovals int                `json:"counted_approvals,omitempty"`
 	PlatformPolicy   string             `json:"platform_policy,omitempty"`
 	Ops              []jobsign.LedgerOp `json:"ops,omitempty"`
+	// Zone (zone_put) and ZoneID (zone_delete) change the zone ledger
+	// (zones.go).
+	Zone   *jobsign.LedgerZone `json:"zone,omitempty"`
+	ZoneID string              `json:"zone_id,omitempty"`
 	// DefaultMode (init, import start) is the mode the signer runs in when
 	// SIGNER_LEDGER does not say.
 	DefaultMode string `json:"default_mode,omitempty"`
@@ -168,6 +172,7 @@ type Ledger struct {
 	log            *chainLog
 	lock           *os.File
 	tenants        map[string]*tenantLedger
+	zones          map[string]jobsign.LedgerZone
 	defaultMode    string
 	mode           string
 	minApprovals   int
@@ -256,6 +261,8 @@ func (l *Ledger) replay(r LedgerRecord) error {
 		l.tenants[r.TenantID] = t
 	case jobsign.ChangeWiden, jobsign.ChangeNarrow, recordSync:
 		l.tenant(r.TenantID).apply(r.Ops, r.Time)
+	case recordZonePut, recordZoneDelete:
+		l.replayZone(r)
 	default:
 		return fmt.Errorf("unknown ledger record kind %q", r.Kind)
 	}

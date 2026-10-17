@@ -32,6 +32,23 @@ type BuildInfo struct {
 	BuildTime *time.Time
 }
 
+// DefaultProduct is the product of a sensor that reports none: the scanning
+// sensor, the only product before sensors reported theirs. It equals
+// versions.DefaultProductID (a test keeps them equal).
+const DefaultProduct = "openctemio-sensor"
+
+// ProductID is the sensor's product for the release-line lookup: the
+// reported product, or DefaultProduct when it reported none. Like all build
+// information it is the sensor's own claim: it chooses which release line
+// the sensor is compared with (display and health reasons), never what it
+// may do.
+func (b BuildInfo) ProductID() string {
+	if b.Product == "" {
+		return DefaultProduct
+	}
+	return b.Product
+}
+
 // IsEmpty reports whether nothing is known.
 func (b BuildInfo) IsEmpty() bool {
 	return b.SDKName == "" && b.SDKVersion == "" && b.Product == "" && b.Commit == "" && b.BuildTime == nil
@@ -170,36 +187,42 @@ func parseBuildTime(s string, now time.Time) *time.Time {
 	return &t
 }
 
-// SDKStatus says how a sensor's SDK version compares with the SDK policy
-// (SENSOR_SDK_MIN_VERSION, SENSOR_SDK_LATEST_VERSION).
+// SDKStatus says how a sensor's SDK version compares with the SDK entries of
+// versions.yaml (sdk.latest, sdk.advisories). It is informational except for
+// an advisory: whether a sensor works with the platform is its protocol
+// version and the capabilities it advertises, not its SDK release.
 type SDKStatus string
 
 const (
-	// SDKCurrent: at least the latest configured SDK (or no latest is set
-	// and it meets the minimum).
+	// SDKCurrent: at least the latest SDK (or no latest is set).
 	SDKCurrent SDKStatus = "current"
-	// SDKOutdated: supported, but older than SENSOR_SDK_LATEST_VERSION.
+	// SDKOutdated: older than sdk.latest (no health effect).
 	SDKOutdated SDKStatus = "outdated"
-	// SDKUnsupported: older than SENSOR_SDK_MIN_VERSION.
-	SDKUnsupported SDKStatus = "unsupported"
+	// SDKAdvisory: a release listed in sdk.advisories (a published security
+	// advisory); the sensor is degraded with a warning.
+	SDKAdvisory SDKStatus = "advisory"
 	// SDKUnknown: the sensor reported no SDK version.
 	SDKUnknown SDKStatus = "unknown"
 )
 
 // AllSDKStatuses lists every SDK status (for stable breakdowns).
 func AllSDKStatuses() []SDKStatus {
-	return []SDKStatus{SDKCurrent, SDKOutdated, SDKUnsupported, SDKUnknown}
+	return []SDKStatus{SDKCurrent, SDKOutdated, SDKAdvisory, SDKUnknown}
 }
 
-// ClassifySDK compares an SDK version with the SDK policy; latest and minimum
-// may be empty (not configured).
-func ClassifySDK(version, latest, minimum string) SDKStatus {
+// ClassifySDK compares an SDK version with the latest SDK and the releases
+// with an advisory; latest may be empty (not configured).
+func ClassifySDK(version, latest string, advisories []string) SDKStatus {
 	v := comparableVersion(version)
 	if v == "" {
 		return SDKUnknown
 	}
-	if m := comparableVersion(minimum); m != "" && semver.Compare(v, m) < 0 {
-		return SDKUnsupported
+	for _, a := range advisories {
+		// Exact release match: a git-describe build after an advised tag
+		// carries the tag's code plus later commits, so it counts as the tag.
+		if c := comparableVersion(a); c != "" && semver.Compare(v, c) == 0 {
+			return SDKAdvisory
+		}
 	}
 	if l := comparableVersion(latest); l != "" && semver.Compare(v, l) < 0 {
 		return SDKOutdated

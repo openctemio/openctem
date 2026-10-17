@@ -60,6 +60,45 @@ jobs:
           CUSTOMER_DENYLIST: ${{ secrets.CUSTOMER_DENYLIST }}
         run: bash .github/scripts/check-customer-identifiers.sh
 
+      # Fails when a commit this pull request (or merge-queue group) adds has
+      # an address from the COMMIT_EMAIL_DENYLIST secret as its author, its
+      # committer or in a Co-authored-by trailer, so the list is never
+      # committed. Prints only the commit and the field. Passes with a notice
+      # when the secret is empty (forks) and on pushes and schedules.
+      - name: Commit emails (self-test)
+        run: bash .github/scripts/check-commit-emails.test.sh >/dev/null
+
+      - name: Commit emails
+        env:
+          COMMIT_EMAIL_DENYLIST: ${{ secrets.COMMIT_EMAIL_DENYLIST }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: bash .github/scripts/check-commit-emails.sh "${BASE_SHA:+$BASE_SHA..$HEAD_SHA}"
+
+      # Fails when a file this change adds or modifies holds a PEM/OpenSSH private
+      # key block, is a key or keystore file (.key .p12 .pfx .jks), or lives under
+      # data/ (runtime state). Throwaway keys under testdata/ are allowed. Betterleaks
+      # below reports only (--exit-code 0), so this is the step that blocks.
+      - name: Private keys (self-test)
+        run: bash .github/scripts/check-private-keys.test.sh >/dev/null
+
+      - name: Private keys
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          case "$EVENT" in
+            pull_request) bash .github/scripts/check-private-keys.sh "$PR_BASE" "$PR_HEAD" ;;
+            merge_group) bash .github/scripts/check-private-keys.sh "$MG_BASE" "$MG_HEAD" ;;
+            push) bash .github/scripts/check-private-keys.sh "$PUSH_BEFORE" "$PUSH_AFTER" ;;
+            *) bash .github/scripts/check-private-keys.sh "" "" ;;
+          esac
+
       - name: Install Betterleaks (pinned, checksum-verified)
         run: |
           curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o betterleaks.tgz \
@@ -133,6 +172,9 @@ jobs:
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh
+      # The CodeQL gate: new medium-or-higher alerts fail `CodeQL OK`.
+      - name: CodeQL new-alert gate self-test
+        run: bash .github/scripts/codeql-new-alerts.test.sh
 
   # New or upgraded dependencies a pull request brings in (Go modules, npm,
   # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a
@@ -152,3 +194,20 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: never
+
+  # The platform depends on contracts only (ctis, the sensor protocol, signed
+  # manifests): api/ and web/ must never require, import or vendor the sensor
+  # SDK or a sensor (api/docs/rfcs/RFC-094-platform-contracts-only.md).
+  platform-deps:
+    name: Platform depends on contracts only
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-test
+        run: bash .github/scripts/check-platform-deps.test.sh
+      - name: No sensor module or SDK in api/ or web/
+        run: bash .github/scripts/check-platform-deps.sh

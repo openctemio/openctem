@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -41,18 +42,52 @@ func NewRoleHandler(svc *accesscontrol.RoleService, v *validator.Validator, log 
 
 // RoleResponse represents a role in API responses.
 type RoleResponse struct {
-	ID                string    `json:"id"`
-	TenantID          *string   `json:"tenant_id,omitempty"`
-	Slug              string    `json:"slug"`
-	Name              string    `json:"name"`
-	Description       string    `json:"description,omitempty"`
-	IsSystem          bool      `json:"is_system"`
-	HierarchyLevel    int       `json:"hierarchy_level"`
-	HasFullDataAccess bool      `json:"has_full_data_access"`
-	Permissions       []string  `json:"permissions"`
-	PermissionCount   int       `json:"permission_count"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                string   `json:"id"`
+	TenantID          *string  `json:"tenant_id,omitempty"`
+	Slug              string   `json:"slug"`
+	Name              string   `json:"name"`
+	Description       string   `json:"description,omitempty"`
+	IsSystem          bool     `json:"is_system"`
+	HierarchyLevel    int      `json:"hierarchy_level"`
+	HasFullDataAccess bool     `json:"has_full_data_access"`
+	Permissions       []string `json:"permissions"`
+	PermissionCount   int      `json:"permission_count"`
+	// Summary is what the role can do, in words: risk, why, and per area.
+	Summary permission.Summary `json:"summary"`
+	// Template is set for a role created from a role template.
+	Template  *RoleTemplateStatusResponse `json:"template,omitempty"`
+	CreatedAt time.Time                   `json:"created_at"`
+	UpdatedAt time.Time                   `json:"updated_at"`
+}
+
+// RoleTemplateStatusResponse relates a custom role to the template it was
+// created from: the version it took, the current version and, when newer,
+// the permissions the update adds and removes.
+type RoleTemplateStatusResponse struct {
+	TemplateID      string                  `json:"template_id"`
+	TemplateName    string                  `json:"template_name,omitempty"`
+	VersionTaken    int                     `json:"version_taken"`
+	CurrentVersion  int                     `json:"current_version,omitempty"`
+	UpdateAvailable bool                    `json:"update_available"`
+	Retired         bool                    `json:"retired,omitempty"`
+	Diff            permission.TemplateDiff `json:"diff"`
+}
+
+func toRoleTemplateStatusResponse(st *accesscontrol.TemplateStatus) *RoleTemplateStatusResponse {
+	if st == nil {
+		return nil
+	}
+	return &RoleTemplateStatusResponse{
+		TemplateID: st.TemplateID, TemplateName: st.TemplateName,
+		VersionTaken: st.VersionTaken, CurrentVersion: st.CurrentVersion,
+		UpdateAvailable: st.UpdateAvailable, Retired: st.Retired, Diff: st.Diff,
+	}
+}
+
+// isAdminBypassRoleID reports whether id is the system owner or admin role,
+// which pass every permission check.
+func isAdminBypassRoleID(id role.ID) bool {
+	return id == role.OwnerRoleID || id == role.AdminRoleID
 }
 
 // UserRoleResponse represents a user's role assignment.
@@ -109,6 +144,8 @@ type CreateRoleRequest struct {
 	HierarchyLevel    int      `json:"hierarchy_level" validate:"min=0,max=79"`
 	HasFullDataAccess bool     `json:"has_full_data_access"`
 	Permissions       []string `json:"permissions" validate:"max=200,dive,max=100"`
+	// TemplateID names the role template the role starts from (optional).
+	TemplateID string `json:"template_id" validate:"omitempty,max=64"`
 }
 
 // UpdateRoleRequest represents the request to update a role.
@@ -126,8 +163,10 @@ type AssignRoleRequest struct {
 }
 
 // SetUserRolesRequest represents the request to set all roles for a user.
+// An empty list clears the user's custom roles; their team role is not part
+// of it.
 type SetUserRolesRequest struct {
-	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=50,dive,uuid"`
+	RoleIDs []string `json:"role_ids" validate:"required,max=50,dive,uuid"`
 }
 
 // BulkAssignRoleMembersRequest represents the request to assign a role to multiple users.
@@ -157,6 +196,8 @@ func toRoleResponse(r *role.Role) RoleResponse {
 		HasFullDataAccess: r.HasFullDataAccess(),
 		Permissions:       r.Permissions(),
 		PermissionCount:   r.PermissionCount(),
+		Summary:           permission.Summarize(r.Permissions(), r.HasFullDataAccess(), isAdminBypassRoleID(r.ID())),
+		Template:          toRoleTemplateStatusResponse(accesscontrol.TemplateStatusOf(r)),
 		CreatedAt:         r.CreatedAt(),
 		UpdatedAt:         r.UpdatedAt(),
 	}
@@ -283,6 +324,12 @@ func (h *RoleHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.BadRequest(msg).WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		msg := err.Error()
+		if idx := strings.Index(msg, ": "); idx != -1 {
+			msg = msg[idx+2:]
+		}
+		apierror.Conflict(msg).WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
@@ -354,6 +401,7 @@ func (h *RoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		HierarchyLevel:    req.HierarchyLevel,
 		HasFullDataAccess: req.HasFullDataAccess,
 		Permissions:       req.Permissions,
+		TemplateID:        req.TemplateID,
 	}
 
 	actx := h.buildAuditContext(r)

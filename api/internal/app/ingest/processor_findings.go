@@ -64,8 +64,6 @@ type FindingProcessor struct {
 	// Nil-safe: when unwired, no evidence is kept.
 	evidence EvidenceStore
 
-	// activityService records audit trail for auto-reopen events
-	activityService activityRecorder
 	// regressions follows up on reopened findings (fresh SLA, announcement).
 	regressions RegressionHandler
 
@@ -131,14 +129,6 @@ type RegressionHandler interface {
 	HandleRegressions(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner string)
 }
 
-// activityRecorder is the subset of FindingActivityService needed by the processor.
-type activityRecorder interface {
-	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner, scanID string) error
-}
-
-// RemediationKeyApplier derives and persists each finding's remediation group
-// key. Runs POST-insert (needs persisted finding IDs). Implemented by
-// *remediation.KeyApplier. Best-effort: errors are logged, never fatal.
 // VEXStatementApplier applies the organization's VEX statements to the
 // findings with these fingerprints (internal/app/vex). Returns how many
 // findings changed status.
@@ -146,8 +136,14 @@ type VEXStatementApplier interface {
 	ApplyToFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (int, error)
 }
 
+// RemediationKeyApplier derives and persists each finding's remediation group
+// key. Runs POST-insert (needs persisted finding IDs) for created findings and
+// after enrichment for re-sighted ones, so a key follows a new fix version.
+// Implemented by *remediation.KeyApplier. Best-effort: errors are logged,
+// never fatal.
 type RemediationKeyApplier interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
+	ApplyByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) error
 }
 
 // ExposureBridge promotes secret-scan findings into the exposure/credential
@@ -177,11 +173,6 @@ func (p *FindingProcessor) SetComponentRepository(repo software.PackageWriter) {
 // SetDataFlowRepository sets the data flow repository for persisting data flow traces.
 func (p *FindingProcessor) SetDataFlowRepository(repo vulnerability.DataFlowRepository) {
 	p.dataFlowRepo = repo
-}
-
-// SetActivityService sets the activity service for recording auto-reopen audit trail.
-func (p *FindingProcessor) SetActivityService(svc activityRecorder) {
-	p.activityService = svc
 }
 
 // SetRegressionHandler wires the follow-up on scan regressions (RFC-039 D2).
@@ -545,7 +536,13 @@ func (p *FindingProcessor) processBatch(
 	// PERFORMANCE: Single query instead of N queries per existing finding
 	existingFingerprints = p.withoutHumanResolved(ctx, tenantID, existingFingerprints, guardedFingerprints, output)
 	if len(existingFingerprints) > 0 {
-		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(ctx, tenantID, existingFingerprints)
+		scanner := ""
+		if report.Tool != nil {
+			scanner = report.Tool.Name
+		}
+		// Each reopen writes its timeline entry with the scan behind it.
+		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": report.Metadata.ID})
+		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints)
 		if err != nil {
 			p.logger.Warn("failed to batch auto-reopen findings", "error", err)
 		} else if len(reopenedMap) > 0 {
@@ -556,16 +553,6 @@ func (p *FindingProcessor) processBatch(
 			reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
 			for _, rf := range reopenedMap {
 				reopened = append(reopened, rf)
-			}
-			scanner := ""
-			if report.Tool != nil {
-				scanner = report.Tool.Name
-			}
-			// Record the regression on each finding, with who had resolved it.
-			if p.activityService != nil {
-				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopened, scanner, report.Metadata.ID); err != nil {
-					p.logger.Warn("failed to record auto-reopen activities", "error", err)
-				}
 			}
 			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5),
 			// for findings that count as exposure.
@@ -584,6 +571,10 @@ func (p *FindingProcessor) processBatch(
 	// (tenant-scoped). The returned map (index → rule id) is recorded for audit
 	// AFTER insert, once the findings have persisted IDs. Nil-safe.
 	suppressionDecisions := p.applySuppressions(ctx, tenantID, newFindings)
+
+	// Fingerprints of findings that already existed: their remediation keys
+	// are re-derived after enrichment (Step 5c).
+	var resighted []string
 
 	// Step 4: Batch create new findings with partial success support
 	if len(newFindings) > 0 {
@@ -621,6 +612,8 @@ func (p *FindingProcessor) processBatch(
 				if result.WasInserted(i) {
 					createdFindings = append(createdFindings, f)
 					createdIndex[i] = struct{}{}
+				} else {
+					resighted = append(resighted, f.Fingerprint())
 				}
 			}
 
@@ -723,6 +716,15 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 
+	// Step 5c: Re-derive the remediation keys of re-sighted findings: a new
+	// fixed version or changed advice moves the finding to the right group.
+	resighted = append(resighted, existingFingerprints...)
+	if p.remediationKeyApplier != nil && len(resighted) > 0 {
+		if err := p.remediationKeyApplier.ApplyByFingerprints(ctx, tenantID, resighted); err != nil {
+			p.logger.Warn("failed to refresh remediation keys", "error", err)
+		}
+	}
+
 	// Step 6: Branch-aware occurrence model. Record, per branch, where each
 	// finding was observed in this scan. Matched by fingerprint so it covers
 	// both newly-created and enriched findings, and is additive to the finding
@@ -804,7 +806,7 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 	p.storeInterop(ctx, tenantID, interop)
-	p.applyVEX(ctx, tenantID, vexNotAffectedItems(vexSightings), scope, output)
+	p.applyVEX(ctx, tenantID, report, vexNotAffectedItems(vexSightings), scope, output)
 
 	// Step 7c: the organization's VEX statements cover findings reported
 	// after the statement was made. Best-effort, like 7b.
@@ -1080,8 +1082,8 @@ func (p *FindingProcessor) buildFinding(
 	source := vulnerability.FindingSourceExternal
 	toolName := UnknownValue
 	toolVersion := ""
-	if report.Tool != nil || report.Metadata.Capability != "" {
-		source = reportFindingSource(report)
+	if report.Tool != nil || reportCapability(report) != "" {
+		source = findingTechnique(report, ctisFinding)
 	}
 	if report.Tool != nil {
 		toolName = report.Tool.Name
@@ -1330,6 +1332,38 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ct
 	if ctisFinding.Vulnerability.ExploitAvailable {
 		f.SetMetadata(vulnerability.FindingMetaScannerExploitAvailable, true)
 	}
+	// The versions that fix this package, as the scanner reported them. Kept
+	// on the finding for the same reason (the catalog is not written from a
+	// report); the detail view picks the nearest one for the installed version.
+	if fixed := vulnerability.NormalizeFixedVersions(ctisFinding.Vulnerability.FixedVersion,
+		ctisFinding.Vulnerability.FixedVersions); len(fixed) > 0 {
+		f.SetMetadata(vulnerability.FindingMetaFixedVersions, fixed)
+	}
+	// Direct dependency or the chain that brings the package in (bounded).
+	if d := vulnerability.NewDependencyInfo(ctisFinding.Vulnerability.IsDirect,
+		ctisFinding.Vulnerability.DependencyPath); d != nil {
+		f.SetMetadata(vulnerability.FindingMetaDependency, d.Meta())
+	}
+	setAdvisoryMetadata(f, ctisFinding)
+}
+
+// setAdvisoryMetadata keeps what the scanner's advisory said on the finding
+// (the catalog is not written from a report): its references (http(s) only,
+// bounded), publication dates and who scored the primary CVSS.
+func setAdvisoryMetadata(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	v := ctisFinding.Vulnerability
+	if refs := vulnerability.NormalizeReferences(ctisFinding.References); len(refs) > 0 {
+		f.SetMetadata(vulnerability.FindingMetaReferences, refs)
+	}
+	if v.PublishedAt != nil && !v.PublishedAt.IsZero() {
+		f.SetMetadata(vulnerability.FindingMetaPublishedAt, v.PublishedAt.UTC().Format(time.RFC3339))
+	}
+	if v.ModifiedAt != nil && !v.ModifiedAt.IsZero() {
+		f.SetMetadata(vulnerability.FindingMetaModifiedAt, v.ModifiedAt.UTC().Format(time.RFC3339))
+	}
+	if src := vulnerability.NormalizeScoreSource(v.CVSSSource); src != "" {
+		f.SetMetadata(vulnerability.FindingMetaCVSSSource, src)
+	}
 }
 
 // setFindingTypeAndSpecializedFields sets the finding type discriminator and specialized fields.
@@ -1436,9 +1470,10 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	if ctisFinding.Secret.Service != "" {
 		f.SetSecretService(ctisFinding.Secret.Service)
 	}
-	if ctisFinding.Secret.Valid != nil {
-		f.SetSecretValid(ctisFinding.Secret.Valid)
-	}
+	// The reported validity (secret.valid) is deliberately not stored: any
+	// uploader, including a fork pull request, could claim a live secret is
+	// dead and switch off the CI gate and the rotation task. Validity is
+	// recorded only from a validation the platform runs itself.
 	if ctisFinding.Secret.Revoked {
 		revoked := true
 		f.SetSecretRevoked(&revoked)
@@ -1681,9 +1716,12 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 		}
 		f.SetAttachments(atts)
 	}
-	if len(ctisFinding.WorkItemURIs) > 0 {
-		f.SetWorkItemURIs(ctisFinding.WorkItemURIs)
-	}
+	// work_item_uris are the finding's ticket links, and the ticket sync acts
+	// on them (moves and comments on the linked issue, and an inbound issue
+	// change moves the finding). A report never sets them: only the platform
+	// (create ticket) or a person links a ticket. A sensor or an imported
+	// file could otherwise point a finding at any issue of the tenant's
+	// tracker.
 	if ctisFinding.HostedViewerURI != "" {
 		f.SetHostedViewerURI(ctisFinding.HostedViewerURI)
 	}
@@ -2123,7 +2161,7 @@ func withoutDecided(findings []*vulnerability.Finding) []*vulnerability.Finding 
 // taintSourceSuspender suspends decisions whose taint source changed (the
 // postgres data flow repository).
 type taintSourceSuspender interface {
-	SuspendOnTaintSourceChange(ctx context.Context, tenantID shared.ID, traces []vulnerability.FindingTrace) ([]shared.ID, error)
+	ReviewOnTaintSourceChange(ctx context.Context, tenantID shared.ID, traces []vulnerability.FindingTrace) ([]shared.ID, error)
 }
 
 // persistDataFlows stores each trace on the tenant's finding with its
@@ -2134,13 +2172,14 @@ func (p *FindingProcessor) persistDataFlows(ctx context.Context, tenantID shared
 	if p.dataFlowRepo == nil || len(traces) == 0 {
 		return
 	}
-	// A decision on a taint finding is suspended for review when its source
-	// changed (checked against the stored trace before it is replaced).
+	// A decision on a taint finding is flagged for review when its source
+	// changed (checked against the stored trace before it is replaced); the
+	// decision itself stands.
 	if sus, ok := p.dataFlowRepo.(taintSourceSuspender); ok {
-		if ids, err := sus.SuspendOnTaintSourceChange(ctx, tenantID, traces); err != nil {
+		if ids, err := sus.ReviewOnTaintSourceChange(ctx, tenantID, traces); err != nil {
 			p.logger.Warn("taint source check failed", "error", err)
 		} else if len(ids) > 0 {
-			p.logger.Info("decisions suspended: taint source changed", "count", len(ids))
+			p.logger.Info("decisions flagged for review: taint source changed", "count", len(ids))
 		}
 	}
 	n, err := p.dataFlowRepo.ReplaceDataFlows(ctx, tenantID, traces)

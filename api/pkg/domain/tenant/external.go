@@ -91,6 +91,12 @@ type Classification struct {
 	Domain string
 	// Personal is set for consumer mail domains (gmail.com, outlook.com, ...).
 	Personal bool
+	// EndOptional: the organization does not require an end of access for
+	// outside people no organization manages
+	// (Security.external_access_end_required off, RFC-095 §4.2). The zero
+	// value keeps the end required, so a path that does not read the policy
+	// stays on the stricter rule.
+	EndOptional bool
 }
 
 // Managed reports whether an organization manages the address (it has a home
@@ -98,8 +104,11 @@ type Classification struct {
 func (c Classification) Managed() bool { return c.HomeTenantID != nil }
 
 // ExpiryRequired reports whether the membership must expire: an external
-// member that no organization manages.
-func (c Classification) ExpiryRequired() bool { return c.Kind == MemberKindExternal && !c.Managed() }
+// member that no organization manages, in an organization that requires an
+// end of access for them.
+func (c Classification) ExpiryRequired() bool {
+	return c.Kind == MemberKindExternal && !c.Managed() && !c.EndOptional
+}
 
 // ExternalAccess is the access an external member is given.
 type ExternalAccess struct {

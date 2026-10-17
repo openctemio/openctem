@@ -97,6 +97,8 @@ jobs:
         uses: ./.github/actions/generate-contract
       - name: Build openctem-web
         run: bash .github/scripts/retry.sh docker build -t local/openctem-web:ci web
+      - name: Build openctem-console
+        run: bash .github/scripts/retry.sh docker build -t local/openctem-console:ci --target console web
       - name: Build openctem (all-in-one)
         run: >-
           bash .github/scripts/retry.sh
@@ -104,12 +106,16 @@ jobs:
           --build-context gateway=api/deploy/gateway
           --build-arg API_IMAGE=local/openctem-api:ci
           --build-arg WEB_IMAGE=local/openctem-web:ci
+          --build-arg CONSOLE_IMAGE=local/openctem-console:ci
           deploy/allinone
       - name: Smoke test (arch, ELF, executes)
         run: |
           bash .github/scripts/smoke-image.sh openctem-api local/openctem-api:ci amd64
           bash .github/scripts/smoke-image.sh openctem-web local/openctem-web:ci amd64
+          bash .github/scripts/smoke-image.sh openctem-console local/openctem-console:ci amd64
           bash .github/scripts/smoke-image.sh openctem local/openctem:ci amd64
+      - name: Console plan (no console without the gateway)
+        run: sh deploy/allinone/console-plan.test.sh
       - name: All-in-one, both gateway modes, against Postgres + Redis
         env:
           SMOKE_NETWORK: host
@@ -128,6 +134,7 @@ jobs:
         run: |
           bash .github/scripts/image-guard.sh openctem-api local/openctem-api:ci
           bash .github/scripts/image-guard.sh openctem-web local/openctem-web:ci
+          bash .github/scripts/image-guard.sh openctem-console local/openctem-console:ci
           bash .github/scripts/image-guard.sh openctem local/openctem:ci
       - name: Image sizes
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep '^local/'

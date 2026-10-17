@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Accepted (2026-10-10, delegated; D1–D8 adopted as recommended, §12). F3/F4 implemented in #1701, F1/F2 in programfeed#5 and vulnfeed#2, F5 (vulnfeed importer reads v2, migration `cve_corpus_feed_sequence`) implemented |
-| Scope | sdk-go (`pkg/transfer`, `pkg/transfer/bundle`), openctemio/programfeed and openctemio/vulnfeed (bundle writers), api (feed importers, migration `feed_checkpoints`) |
+| Scope | ctis (`transfer`, `transfer/bundle`; first in sdk-go `pkg/transfer`, moved by RFC-094), openctemio/programfeed and openctemio/vulnfeed (bundle writers), api (feed importers, migration `feed_checkpoints`) |
 | Architecture | [feed-transfer.md](../architecture/feed-transfer.md); sdk-go `docs/ARCHITECTURE.md` "Feed transfer" |
 | Related | RFC-005 (asynchronous ingest), RFC-026 (sensor results ingest, protocol v2 segments), RFC-061 (content packs), RFC-065 §16 (public program feed), RFC-066 §5.5 (vulnerability feed) |
 
@@ -315,7 +315,7 @@ F1/F2 and F3 are independent; F4 needs F1 and F3; F5 needs F2 and F3.
 
 | # | Decision | Adopted |
 |---|---|---|
-| D1 | One shared layer in sdk-go, published as its own module `github.com/openctemio/sdk-go/pkg/transfer` (tags `pkg/transfer/vX.Y.Z`; standard library + Prometheus). The api, vulnfeed and programfeed require that module, not the whole SDK | yes |
+| D1 | One shared layer, published as its own module (standard library + Prometheus). First `github.com/openctemio/sdk-go/pkg/transfer` (tags `pkg/transfer/vX.Y.Z`); amended 2026-10-14 by RFC-094: it is a contract, so it moved unchanged to `github.com/openctemio/ctis/transfer` (tags `transfer/vX.Y.Z`), byte-identical (golden test). The api, vulnfeed and programfeed require that module | yes, amended |
 | D2 | Flat release layout, chunks named `sha256-<hex>.jsonl.gz` | yes |
 | D3 | Content-defined chunk boundaries from record ids (target 2 000 records, cap 48 MiB uncompressed) | yes |
 | D4 | The SDK verifies through a `Verifier`/`Trust` interface; each feed keeps its key set rules (`feedsign`); the SDK ships a plain Ed25519 DSSE signer and verifier on the `jobsig` envelope | yes |

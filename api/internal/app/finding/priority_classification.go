@@ -543,6 +543,14 @@ func (s *PriorityClassificationService) publishIfChanged(
 	if previousClass != nil && *previousClass == c.Class {
 		return // no transition
 	}
+	if changeEventsCoalesced(ctx) && c.Class != vulnerability.PriorityP0 {
+		// A recompute caused by a scoring change: the worker sends one
+		// summary for the whole change instead of one event per finding.
+		// A move INTO P0 still gets its own event (security first: it opens
+		// the ticket and starts the workflow a P0 needs; the flood guard
+		// below still bounds it). Every other move is in the summary.
+		return
+	}
 
 	// anti-flap — when the tenant has burned its rolling budget at
 	// the protected class we RECORD the classification (already done
@@ -626,7 +634,7 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		previousClass := f.PriorityClass()
 		f.SetPriorityClassification(classification.Class, classification.Reason)
 		// Record the priority change in the audit trail. The batch path is the
-		// MAIN classification path (ingest + the 12h reclassify sweep), yet it
+		// MAIN classification path (ingest + the finding-priority worker), yet it
 		// logged nothing — priority_class_audit_log was empty despite classified
 		// findings, so "why/when did this become P0" had no answer. Gated on an
 		// actual class change so a re-confirming sweep does not flood the log,
@@ -907,7 +915,8 @@ func (s *PriorityClassificationService) buildPriorityContext(
 			// external-attacker "reachable" gate (see ClassifyPriority).
 			ctx.IsNetworkAccessible = true
 		case asset.ExposureIsolated, asset.ExposureUnknown:
-			// Air-gapped/isolated or unknown -> leave conservative (not reachable).
+			// Air-gapped/isolated: not reachable. Unknown: neither, see
+			// ReachabilityUnknown below.
 		}
 
 		// Attack-path reachability (close-the-loop): an asset sitting on a
@@ -942,6 +951,14 @@ func (s *PriorityClassificationService) buildPriorityContext(
 			ctx.AssetUnowned = true
 		}
 	}
+
+	// Nothing says whether an attacker can reach this finding: the asset's
+	// exposure is unknown (or there is no asset) and no attack path, threat
+	// path or scanner flag decided it. The classifier then reports
+	// reachability as unknown instead of citing unreachability.
+	unknownExposure := a == nil || a.Exposure() == asset.ExposureUnknown || a.Exposure() == ""
+	ctx.ReachabilityUnknown = unknownExposure && !ctx.IsReachable && !ctx.IsInternetAccessible &&
+		!ctx.IsNetworkAccessible && !ctx.OnOpenThreatPath
 
 	// AI-triage de-escalation signal (keyed by finding, not asset): a
 	// high-confidence "likely false positive" verdict lets the classifier lower

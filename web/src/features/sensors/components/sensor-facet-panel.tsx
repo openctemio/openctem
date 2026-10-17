@@ -78,6 +78,7 @@ export function SensorFacetPanel({
   activeCount,
   hasChannel,
   hasProtocolInfo,
+  hasOneShot = true,
   sdkVersions,
 }: {
   filters: FleetFilters
@@ -87,6 +88,11 @@ export function SensorFacetPanel({
   hasChannel: boolean
   /** Whether the API reports protocol telemetry (RFC-029). */
   hasProtocolInfo: boolean
+  /**
+   * Some sensor runs one-shot (a legacy CI key): only then does the run-style
+   * facet mean anything, so it hides otherwise (unless a filter is set).
+   */
+  hasOneShot?: boolean
   /** Sensors per SDK version (GET /sensors/stats by_sdk_version); absent on older APIs. */
   sdkVersions?: Record<string, number>
 }) {
@@ -201,20 +207,24 @@ export function SensorFacetPanel({
           />
         ))}
       </FacetSection>
-      <FacetSection
-        title={t('sensors.facets.modeTitle')}
-        selectedCount={filters.modes.length}
-        defaultOpen={false}
-      >
-        {(Object.keys(MODE_LABELS) as SensorModeFilter[]).map((m) => (
-          <FacetOption
-            key={m}
-            label={t(MODE_LABELS[m])}
-            checked={filters.modes.includes(m)}
-            onCheckedChange={(on) => onChange({ ...filters, modes: toggle(filters.modes, m, on) })}
-          />
-        ))}
-      </FacetSection>
+      {(hasOneShot || filters.modes.length > 0) && (
+        <FacetSection
+          title={t('sensors.facets.modeTitle')}
+          selectedCount={filters.modes.length}
+          defaultOpen={false}
+        >
+          {(Object.keys(MODE_LABELS) as SensorModeFilter[]).map((m) => (
+            <FacetOption
+              key={m}
+              label={t(MODE_LABELS[m])}
+              checked={filters.modes.includes(m)}
+              onCheckedChange={(on) =>
+                onChange({ ...filters, modes: toggle(filters.modes, m, on) })
+              }
+            />
+          ))}
+        </FacetSection>
+      )}
     </FacetPanel>
   )
 }

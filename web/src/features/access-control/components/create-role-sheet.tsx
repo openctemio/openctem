@@ -260,6 +260,7 @@ export function CreateRoleSheet({ open, onOpenChange, onSuccess }: CreateRoleShe
         description: form.description || undefined,
         has_full_data_access: form.hasFullDataAccess,
         permissions: form.permissions,
+        template_id: templateId || undefined,
       })
       toast.success(`Role "${form.name}" created successfully`)
       handleOpenChange(false)

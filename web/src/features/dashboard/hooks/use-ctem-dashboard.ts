@@ -20,6 +20,14 @@ import type { ApiResponse } from '@/lib/api/generated'
 // TYPES
 // ============================================
 
+/** A scoring model or settings change shown on a trend (API: scoring-versions.md). */
+export interface ScoringChangeMarker {
+  date: string
+  kind: 'asset_risk' | 'finding_priority'
+  source: 'platform_model' | 'risk_settings' | 'priority_rules' | 'sla_policy'
+  summary: string
+}
+
 export interface RiskTrendPoint {
   date: string
   risk_score_avg: number
@@ -29,6 +37,19 @@ export interface RiskTrendPoint {
   p1_open: number
   p2_open: number
   p3_open: number
+  /** Scoring versions the day's numbers were computed with. */
+  risk_version?: number
+  priority_version?: number
+  /** Scoring changes that took effect at this point. */
+  scoring_changes?: ScoringChangeMarker[]
+}
+
+/** Dates of the points where a scoring change of the given kind took effect. */
+export function scoringChangeDates(
+  points: RiskTrendPoint[],
+  kind: ScoringChangeMarker['kind']
+): string[] {
+  return points.filter((p) => p.scoring_changes?.some((c) => c.kind === kind)).map((p) => p.date)
 }
 
 export interface ExecTopRisk {

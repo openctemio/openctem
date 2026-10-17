@@ -1,7 +1,7 @@
 'use client'
 
 import { formatDistanceToNow } from 'date-fns'
-import { Check, Clock, Hash, Pencil, ShieldQuestion, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Check, Clock, Hash, Pencil, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -37,6 +37,8 @@ interface SuppressionDetailSheetProps {
   onApprove?: (rule: SuppressionRule) => void
   onReject?: (rule: SuppressionRule) => void
   onDelete?: (rule: SuppressionRule) => void
+  /** An approver confirms they reviewed a flagged rule (clears the flag). */
+  onReviewed?: (rule: SuppressionRule) => void
 }
 
 function relative(iso?: string | null): string {
@@ -67,6 +69,7 @@ export function SuppressionDetailSheet({
   onApprove,
   onReject,
   onDelete,
+  onReviewed,
 }: SuppressionDetailSheetProps) {
   const { t } = useTranslation()
   const canApprove = useHasPermission(Permission.SuppressionsApprove)
@@ -161,6 +164,27 @@ export function SuppressionDetailSheet({
       }
     >
       <div className="space-y-5">
+        {rule.review_flagged_at && (
+          <DetailCallout
+            tone="warning"
+            icon={AlertTriangle}
+            title={t('exceptions.detail.reviewTitle', 'Review this rule')}
+            actions={
+              canApprove && onReviewed ? (
+                <Button size="sm" variant="outline" onClick={() => onReviewed(rule)}>
+                  <Check className="h-4 w-4" />
+                  {t('exceptions.detail.markReviewed', 'Mark as reviewed')}
+                </Button>
+              ) : undefined
+            }
+          >
+            {t(
+              'exceptions.detail.reviewBody',
+              'This rule had no end date. It was given one ({when}). Check whether it should still suppress findings; to keep it after that date, submit a new rule.',
+              { when: relative(rule.expires_at) }
+            )}
+          </DetailCallout>
+        )}
         {isPending && !canApprove && (
           <DetailCallout
             tone="info"

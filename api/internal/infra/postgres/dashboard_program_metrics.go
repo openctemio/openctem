@@ -19,6 +19,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
@@ -139,7 +140,7 @@ var mttrValidatedQuery = `
 		SELECT EXTRACT(EPOCH FROM (f.resolved_at - v.validated_at)) / 3600.0 AS hours
 		FROM validated v
 		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1 AND NOT f.branch_only AND (($3::bool AND ` + programVisibleSQL("f.asset_id") + `) OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
-		WHERE f.status = 'resolved'
+		WHERE ` + vulnerability.RemediatedSQL("f") + `
 			AND f.resolved_at IS NOT NULL
 			AND f.resolved_at >= NOW() - make_interval(days => $2::int)
 			AND f.resolved_at >= v.validated_at

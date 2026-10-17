@@ -50,6 +50,7 @@ func TestAllFindingsResolved_Empty(t *testing.T) {
 func TestAllFindingsResolved_Partial(t *testing.T) {
 	c := newCampaign(t, CampaignStatusActive)
 	c.UpdateProgress(10, 5)
+	c.SetVerifiedCount(1)
 	if c.AllFindingsResolved() {
 		t.Fatal("5/10 is not all resolved")
 	}
@@ -58,6 +59,7 @@ func TestAllFindingsResolved_Partial(t *testing.T) {
 func TestAllFindingsResolved_Full(t *testing.T) {
 	c := newCampaign(t, CampaignStatusActive)
 	c.UpdateProgress(10, 10)
+	c.SetVerifiedCount(1)
 	if !c.AllFindingsResolved() {
 		t.Fatal("10/10 must be all resolved")
 	}
@@ -69,6 +71,7 @@ func TestAllFindingsResolved_ResolvedExceedsTotal(t *testing.T) {
 	// the guard must still trigger rather than get stuck below 100%.
 	c := newCampaign(t, CampaignStatusActive)
 	c.UpdateProgress(3, 5)
+	c.SetVerifiedCount(1)
 	if !c.AllFindingsResolved() {
 		t.Fatal("resolved ≥ total must count as all-resolved")
 	}
@@ -77,6 +80,7 @@ func TestAllFindingsResolved_ResolvedExceedsTotal(t *testing.T) {
 func TestTryAutoComplete_FromActive(t *testing.T) {
 	c := newCampaign(t, CampaignStatusActive)
 	c.UpdateProgress(3, 3)
+	c.SetVerifiedCount(1)
 	done, err := c.TryAutoComplete()
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -95,6 +99,7 @@ func TestTryAutoComplete_FromActive(t *testing.T) {
 func TestTryAutoComplete_FromValidating(t *testing.T) {
 	c := newCampaign(t, CampaignStatusValidating)
 	c.UpdateProgress(3, 3)
+	c.SetVerifiedCount(1)
 	done, err := c.TryAutoComplete()
 	if err != nil || !done {
 		t.Fatalf("should auto-complete from validating: done=%v err=%v", done, err)
@@ -110,6 +115,7 @@ func TestTryAutoComplete_NotEligibleWhenPaused(t *testing.T) {
 	// resolved.
 	c := newCampaign(t, CampaignStatusPaused)
 	c.UpdateProgress(3, 3)
+	c.SetVerifiedCount(1)
 	done, err := c.TryAutoComplete()
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -125,6 +131,7 @@ func TestTryAutoComplete_NotEligibleWhenPaused(t *testing.T) {
 func TestTryAutoComplete_NotEligibleWhenDraft(t *testing.T) {
 	c := newCampaign(t, CampaignStatusDraft)
 	c.UpdateProgress(3, 3)
+	c.SetVerifiedCount(1)
 	done, err := c.TryAutoComplete()
 	if err != nil || done {
 		t.Fatalf("draft must not auto-complete: done=%v err=%v", done, err)
@@ -134,6 +141,7 @@ func TestTryAutoComplete_NotEligibleWhenDraft(t *testing.T) {
 func TestTryAutoComplete_NotEligibleWhenPartialProgress(t *testing.T) {
 	c := newCampaign(t, CampaignStatusActive)
 	c.UpdateProgress(10, 8)
+	c.SetVerifiedCount(1)
 	done, err := c.TryAutoComplete()
 	if err != nil || done {
 		t.Fatal("partial progress must not auto-complete")
@@ -143,6 +151,7 @@ func TestTryAutoComplete_NotEligibleWhenPartialProgress(t *testing.T) {
 func TestTryAutoComplete_IdempotentAfterCompletion(t *testing.T) {
 	c := newCampaign(t, CampaignStatusActive)
 	c.UpdateProgress(3, 3)
+	c.SetVerifiedCount(1)
 	done1, err := c.TryAutoComplete()
 	if err != nil || !done1 {
 		t.Fatalf("first call: %v", err)
@@ -167,5 +176,59 @@ func TestTryAutoComplete_EmptyCampaignDoesNotComplete(t *testing.T) {
 	done, err := c.TryAutoComplete()
 	if err != nil || done {
 		t.Fatal("empty campaign must not auto-complete")
+	}
+}
+
+// Done means fixed: every member closed AND at least one verified fixed. A
+// campaign whose members were all accepted or marked false positive did not
+// fix anything and does not auto-complete.
+func TestTryAutoComplete_NeedsAVerifiedFix(t *testing.T) {
+	c, err := NewCampaign(shared.NewID(), "all accepted", CampaignPriorityHigh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Activate(); err != nil {
+		t.Fatal(err)
+	}
+	c.UpdateProgress(3, 3)
+	c.SetVerifiedCount(0)
+	if done, err := c.TryAutoComplete(); done || err != nil {
+		t.Fatalf("all closed, none verified: done=%v err=%v, want not completed", done, err)
+	}
+	c.SetVerifiedCount(1)
+	if done, err := c.TryAutoComplete(); !done || err != nil {
+		t.Fatalf("all closed, one verified: done=%v err=%v, want completed", done, err)
+	}
+}
+
+func TestCampaignReopenAndReworkAfterFailedValidation(t *testing.T) {
+	c, err := NewCampaign(shared.NewID(), "loop", CampaignPriorityHigh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Reopen(); err == nil {
+		t.Fatal("reopen from draft must fail")
+	}
+	if err := c.Activate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.StartValidation(); err != nil {
+		t.Fatal(err)
+	}
+	// Validation failed: back to active.
+	if err := c.Activate(); err != nil || c.Status() != CampaignStatusActive {
+		t.Fatalf("validating -> active: %v (%s)", err, c.Status())
+	}
+	if err := c.Complete(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Reopen(); err != nil || c.Status() != CampaignStatusActive || c.CompletedAt() != nil {
+		t.Fatalf("reopen: %v status=%s completed_at=%v", err, c.Status(), c.CompletedAt())
+	}
+	if err := c.Cancel(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Reopen(); err == nil {
+		t.Fatal("a canceled campaign must not reopen")
 	}
 }

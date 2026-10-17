@@ -90,6 +90,10 @@ type BootstrapResponse struct {
 	// Announcements are the platform notices shown now, as GET
 	// /announcements returns them in `data`. Platform-wide, not per tenant.
 	Announcements *[]AnnouncementResponse `json:"announcements,omitempty"`
+	// LimitsApply: a limit or module deny applies to the organization (owners
+	// and admins only; the settings rail lists Usage & limits then). Absent
+	// otherwise.
+	LimitsApply bool `json:"limits_apply,omitempty"`
 }
 
 // BootstrapBadges are the counts the app shell shows on every page. A count
@@ -101,6 +105,10 @@ type BootstrapBadges struct {
 	// EASMReview is the external-surface review queue (needs review and
 	// candidates), as GET /easm/candidates reports in `total`.
 	EASMReview *int `json:"easm_review,omitempty"`
+	// PendingApprovals is the finding approval requests waiting for a
+	// decision under the caller's data scope, as GET /approvals reports in
+	// `status_counts.pending`. Only for approvers (findings:approve).
+	PendingApprovals *int `json:"pending_approvals,omitempty"`
 }
 
 // BootstrapSession supplies the session parts of the bootstrap. Each source
@@ -115,12 +123,19 @@ type BootstrapSession struct {
 	// EASMReviewCount is EASMHandler.ReviewCount (nil when the review queue
 	// is not wired).
 	EASMReviewCount func(ctx context.Context, tenantID shared.ID) (int, error)
+	// PendingApprovalCount is the pending count of GET /approvals for the
+	// request's caller (data scope from ctx); nil when approvals are not
+	// wired.
+	PendingApprovalCount func(ctx context.Context, tenantID shared.ID) (int, error)
 	// TenantCreationMode reports the current organization policy (the sign-up
 	// policy when it is configured, else the configured mode).
 	TenantCreationMode func(ctx context.Context) string
 	// Announcements is AnnouncementHandler.ActiveResponses (the
 	// /announcements body).
 	Announcements func(ctx context.Context) ([]AnnouncementResponse, error)
+	// LimitsApply reports whether a limit or deny applies to the
+	// organization (entitlement.Service.Applies; no usage is counted).
+	LimitsApply func(ctx context.Context, tenantID shared.ID) (bool, error)
 }
 
 // BootstrapPermissions contains user permissions and version.
@@ -141,8 +156,9 @@ type TenantModulesResponse struct {
 	// bare []string here would be a second, thinner copy of that catalog.
 	ComingSoonModuleIDs []string `json:"coming_soon_module_ids,omitempty"`
 	BetaModuleIDs       []string `json:"beta_module_ids,omitempty"`
-	// NotEntitledModuleIDs are modules the organization's plan does not
-	// include: a page of one says "not in your plan", not "turned off".
+	// NotEntitledModuleIDs are modules not available for the organization: a
+	// page of one says "not available for this organization", not "turned
+	// off".
 	NotEntitledModuleIDs []string `json:"not_entitled_module_ids,omitempty"`
 	// ReadOnlyModules are modules the organization lost recently, with the end
 	// of their read-only grace: pages read, writes are refused.
@@ -446,6 +462,38 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			}
 			mu.Lock()
 			badges.EASMReview = &n
+			hasBadg = true
+			mu.Unlock()
+		})
+	}
+	if h.session.LimitsApply != nil && middleware.IsAdmin(ctx) {
+		run(func() {
+			applies, err := h.session.LimitsApply(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: limits unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			resp.LimitsApply = applies
+			mu.Unlock()
+		})
+	}
+	// Only approvers see the inbox badge (the web asks for it only with
+	// findings:approve), and only with the findings module on. The count
+	// comes from the same service call as GET /approvals, with this
+	// request's context, so a restricted member counts only approvals for
+	// findings in their data scope.
+	if h.session.PendingApprovalCount != nil &&
+		middleware.HasPermission(ctx, permission.FindingsApprove.String()) &&
+		resp.Modules != nil && slices.Contains(resp.Modules.ModuleIDs, module.ModuleFindings) {
+		run(func() {
+			n, err := h.session.PendingApprovalCount(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: pending approval count unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			badges.PendingApprovals = &n
 			hasBadg = true
 			mu.Unlock()
 		})

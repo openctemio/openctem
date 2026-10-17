@@ -365,6 +365,15 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		// them: the scanner's tier ceiling and the caller's act scope.
 		input.DispatchGate = &commanddom.DispatchGate{Tier: int(gated.Tier), ActScope: true, Actor: requestUserID(r.Context())}
 		targets = gated.Targets
+	} else if req.Type != string(commanddom.CommandTypeHealthCheck) && !middleware.IsAdmin(r.Context()) {
+		// collect makes a sensor run its collectors and ingest, config_update
+		// and cancel change what it does: like scan commands, sensor control
+		// is for owners and administrators. health_check only asks for state.
+		logRequestChange(h.audit, h.logger, r,
+			auditsvc.NewDeniedEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, "", "only owners and administrators can send "+req.Type+" commands").
+				WithResourceName(req.Type))
+		apierror.Forbidden("Only owners and administrators can send " + req.Type + " commands").WriteJSON(w)
+		return
 	}
 
 	cmd, err := h.service.Create(r.Context(), input)
@@ -1009,7 +1018,7 @@ func (h *CommandHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// sensor should treat as "not mine any more", not a server fault.
 		apierror.Conflict(conflictMessage(err)).WriteJSON(w)
 	default:
-		h.logger.Error("service error", "error", err)
+		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }

@@ -61,6 +61,17 @@ var ErrOwnerRequiredForAdminPromotion = fmt.Errorf(
 // the organization's active owner who re-authenticated recently (step-up).
 // An empty actor is a system path (SCIM, SSO), bounded by its own rules.
 func (s *TenantService) authorizeAdminPromotion(ctx context.Context, tenantID shared.ID, actx auditapp.AuditContext) error {
+	if err := s.authorizeAdminPromotionNoStepUp(ctx, tenantID, actx); err != nil {
+		return err
+	}
+	if actx.ActorID == "" {
+		return nil
+	}
+	return s.requireStepUp(ctx, actx.ActorID)
+}
+
+// authorizeAdminPromotionNoStepUp is the owner check of authorizeAdminPromotion.
+func (s *TenantService) authorizeAdminPromotionNoStepUp(ctx context.Context, tenantID shared.ID, actx auditapp.AuditContext) error {
 	if actx.ActorID == "" {
 		return nil
 	}
@@ -72,7 +83,7 @@ func (s *TenantService) authorizeAdminPromotion(ctx context.Context, tenantID sh
 	if err != nil || actor == nil || !actor.IsOwner() || actor.IsSuspended() {
 		return ErrOwnerRequiredForAdminPromotion
 	}
-	return s.requireStepUp(ctx, actx.ActorID)
+	return nil
 }
 
 // requireStepUp asks the step-up gate, when one is wired, for the acting
@@ -89,3 +100,55 @@ func (s *TenantService) requireStepUp(ctx context.Context, actorID string) error
 // (docs/architecture/step-up-reauth.md). Without it (a service built outside
 // the HTTP server, such as the bootstrap CLI) the check is skipped.
 func (s *TenantService) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
+
+// OwnerRoleDriftReader reads the raw membership label, which the effective
+// role (owner role row) can differ from for a co-owner planted before system
+// roles were limited to the membership routes.
+type OwnerRoleDriftReader interface {
+	MembershipLabel(ctx context.Context, tenantID, userID shared.ID) (string, error)
+}
+
+// ErrOwnerRoleDriftRemoval is returned when an owner role row without the
+// owner membership is targeted by someone who may not remove it.
+var ErrOwnerRoleDriftRemoval = fmt.Errorf(
+	"%w: only the organization owner, with a recent re-authentication, can remove an owner role held without the owner membership", shared.ErrForbidden)
+
+// authorizeOwnerDriftRemoval decides whether an effective owner target is in
+// drift (owner role row, membership label not owner) and, if so, whether the
+// actor may remove it: the actor holds the owner LABEL, is active, is not the
+// target and passed a fresh step-up. A target whose label is owner is no drift
+// (false, nil: the caller keeps its transfer-only rule). A drift target the
+// actor may not touch returns an error.
+func (s *TenantService) authorizeOwnerDriftRemoval(ctx context.Context, target *tenantdom.Membership, actx auditapp.AuditContext) (bool, error) {
+	reader, ok := s.repo.(OwnerRoleDriftReader)
+	if !ok {
+		return false, nil
+	}
+	label, err := reader.MembershipLabel(ctx, target.TenantID(), target.UserID())
+	if err != nil {
+		return false, err
+	}
+	if label == tenantdom.RoleOwner.String() {
+		return false, nil
+	}
+	// A system path (no human actor) never removes an owner role.
+	if actx.ActorID == "" || actx.ActorID == target.UserID().String() {
+		return false, ErrOwnerRoleDriftRemoval
+	}
+	actorID, err := shared.IDFromString(actx.ActorID)
+	if err != nil {
+		return false, fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
+	}
+	actor, err := s.repo.GetMembership(ctx, actorID, target.TenantID())
+	if err != nil || actor == nil || !actor.IsActive() {
+		return false, ErrOwnerRoleDriftRemoval
+	}
+	actorLabel, err := reader.MembershipLabel(ctx, target.TenantID(), actorID)
+	if err != nil || actorLabel != tenantdom.RoleOwner.String() {
+		return false, ErrOwnerRoleDriftRemoval
+	}
+	if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+		return false, err
+	}
+	return true, nil
+}

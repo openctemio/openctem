@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -26,6 +27,9 @@ type TrustConfigInput struct {
 	DefaultBranch string
 	Rules         cirun.Rules
 	Enabled       *bool
+	// ManageScope: add the trusted repositories to scope (nil: on for a new
+	// trust, unchanged for an existing one).
+	ManageScope *bool
 }
 
 // ListTrustConfigs returns the tenant's trust configurations.
@@ -48,9 +52,18 @@ func (s *Service) CreateTrustConfig(ctx context.Context, tenantID shared.ID, in 
 	now := s.now().UTC()
 	c := &cirun.TrustConfig{ID: shared.NewID(), TenantID: tenantID, Name: in.Name, Provider: cirun.Provider(in.Provider),
 		Issuer: in.Issuer, Audience: in.Audience, DefaultBranch: in.DefaultBranch, Rules: in.Rules, Enabled: true,
-		CreatedAt: now, UpdatedAt: now}
+		ManageScope: true, CreatedAt: now, UpdatedAt: now}
 	if in.Enabled != nil {
 		c.Enabled = *in.Enabled
+	}
+	// Adding repositories to scope widens scope: only a caller who may
+	// change scope chooses it, and it is their default.
+	c.ManageScope = a.ScopeWrite
+	if in.ManageScope != nil {
+		if *in.ManageScope && !a.ScopeWrite {
+			return nil, ErrManageScopeForbidden
+		}
+		c.ManageScope = *in.ManageScope
 	}
 	if uid, err := shared.IDFromString(a.UserID); err == nil {
 		c.CreatedBy = &uid
@@ -66,6 +79,7 @@ func (s *Service) CreateTrustConfig(ctx context.Context, tenantID shared.ID, in 
 		WithResourceName(c.Name).
 		WithMessage(fmt.Sprintf("CI trust configuration %q created for %s", c.Name, c.Issuer)).
 		WithChanges(auditdom.NewChanges().SetAfter("config", trustSnapshot(c))))
+	s.syncScope(ctx, tenantID, c, false, a)
 	return c, nil
 }
 
@@ -85,9 +99,15 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 	if in.Enabled != nil {
 		next.Enabled = *in.Enabled
 	}
+	if in.ManageScope != nil {
+		next.ManageScope = *in.ManageScope
+	}
 	next.Normalize()
 	if err := next.Validate(); err != nil {
 		return nil, err
+	}
+	if !a.ScopeWrite && widensScope(cur, &next) {
+		return nil, ErrManageScopeForbidden
 	}
 	if err := s.repo.UpdateTrustConfig(ctx, &next); err != nil {
 		return nil, err
@@ -112,7 +132,28 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 		WithResourceName(next.Name).
 		WithMessage(fmt.Sprintf("CI trust configuration %q changed", next.Name)).
 		WithChanges(auditdom.NewChanges().Set("config", before, trustSnapshot(&next))))
+	s.syncScope(ctx, tenantID, &next, false, a)
 	return &next, nil
+}
+
+// ErrManageScopeForbidden refuses a trust change that would add
+// repositories to scope from a caller without attack_surface:scope:write.
+var ErrManageScopeForbidden = shared.NewDomainError("MANAGE_SCOPE_FORBIDDEN",
+	"adding the trusted repositories to scope needs the scope write permission; turn off Trust and add to scope or ask an administrator",
+	shared.ErrForbidden)
+
+// widensScope reports whether next claims a repository pattern cur did not.
+func widensScope(cur, next *cirun.TrustConfig) bool {
+	had := map[string]bool{}
+	for _, p := range cirun.ScopePatterns(cur) {
+		had[p] = true
+	}
+	for _, p := range cirun.ScopePatterns(next) {
+		if !had[p] {
+			return true
+		}
+	}
+	return false
 }
 
 // DeleteTrustConfig removes a trust configuration (audited). Runs it
@@ -126,6 +167,8 @@ func (s *Service) DeleteTrustConfig(ctx context.Context, tenantID, id shared.ID,
 	if err := s.revokePipelines(ctx, tenantID, cur, a, "the trust configuration was deleted"); err != nil {
 		return err
 	}
+	// Its scope entries are retired first: the links go with the trust.
+	s.syncScope(ctx, tenantID, cur, true, a)
 	if err := s.repo.DeleteTrustConfig(ctx, tenantID, id); err != nil {
 		return err
 	}
@@ -154,7 +197,7 @@ func (s *Service) revokePipelines(ctx context.Context, tenantID shared.ID, c *ci
 
 func trustSnapshot(c *cirun.TrustConfig) map[string]any {
 	return map[string]any{"name": c.Name, "provider": string(c.Provider), "issuer": c.Issuer, "audience": c.Audience,
-		"default_branch": c.DefaultBranch, "enabled": c.Enabled, "rules": c.Rules}
+		"default_branch": c.DefaultBranch, "enabled": c.Enabled, "rules": c.Rules, "manage_scope": c.ManageScope}
 }
 
 // -------------------------------------------------------------------- runs --
@@ -188,6 +231,22 @@ type GatePolicyInput struct {
 	// FixableOnly, when set: vulnerabilities without a fixed version do not
 	// block on severity or EPSS.
 	FixableOnly *bool
+	// BaselineOnFirstRun and BaselineSecretsBlock, when set, change the gate
+	// baseline settings; BaselineGraceDays is replaced (nil: no end).
+	BaselineOnFirstRun   *bool
+	BaselineSecretsBlock *bool
+	BaselineGraceDays    *int
+	// Fields, when set, replaces the fields the policy sets (the others are
+	// inherited). Nil on create: every field.
+	Fields *[]string
+	// LockedFields, when set, replaces the fields no layer below may loosen
+	// (organization and business unit policies).
+	LockedFields *[]string
+	// Reason and ExpiresAt are replaced on every write (repository
+	// policies); a change that loosens a repository or business unit policy
+	// needs a reason.
+	Reason    string
+	ExpiresAt *time.Time
 }
 
 // ErrStepUpUnavailable: a change that loosens the gate needs step-up, and
@@ -214,7 +273,7 @@ func (s *Service) CreateGatePolicy(ctx context.Context, tenantID shared.ID, in G
 	now := s.now().UTC()
 	p := &cirun.GatePolicy{ID: shared.NewID(), TenantID: tenantID, ScopeType: in.ScopeType, ScopeID: in.ScopeID,
 		Enabled: true, Mode: def.Mode, FailOnSeverity: def.FailOnSeverity, NewFindingsOnly: def.NewFindingsOnly,
-		FailOnKEV: def.FailOnKEV, AllowRepoPolicy: true, CreatedAt: now, UpdatedAt: now}
+		FailOnKEV: def.FailOnKEV, AllowRepoPolicy: true, BaselineOnFirstRun: true, BaselineSecretsBlock: true, Fields: slices.Clone(cirun.PolicyFields), CreatedAt: now, UpdatedAt: now}
 	applyPolicyInput(p, in)
 	if uid, err := shared.IDFromString(a.UserID); err == nil {
 		p.CreatedBy, p.UpdatedBy = &uid, &uid
@@ -222,15 +281,21 @@ func (s *Service) CreateGatePolicy(ctx context.Context, tenantID shared.ID, in G
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
+	if err := p.ValidateLayer(now); err != nil {
+		return nil, err
+	}
 	if err := s.checkPolicyScope(ctx, tenantID, p); err != nil {
 		return nil, err
 	}
-	inherited, err := s.inheritedPolicy(ctx, tenantID, p)
+	inh, err := s.inheritedPolicy(ctx, tenantID, p)
 	if err != nil {
 		return nil, err
 	}
-	loosened := cirun.Loosens(inherited, effective(p, inherited))
-	if err := s.requireStepUpToLoosen(ctx, a, loosened); err != nil {
+	if err := refuseLockedLoosening(inh, *p); err != nil {
+		return nil, err
+	}
+	loosened := cirun.Loosens(inh.policy, inh.apply(*p, now))
+	if err := s.requireToLoosen(ctx, a, p, loosened); err != nil {
 		return nil, err
 	}
 	if err := s.repo.CreateGatePolicy(ctx, p); err != nil {
@@ -260,12 +325,20 @@ func (s *Service) UpdateGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 	if err := next.Validate(); err != nil {
 		return nil, err
 	}
-	inherited, err := s.inheritedPolicy(ctx, tenantID, cur)
+	now := s.now().UTC()
+	if err := next.ValidateLayer(now); err != nil {
+		return nil, err
+	}
+	inh, err := s.inheritedPolicy(ctx, tenantID, cur)
 	if err != nil {
 		return nil, err
 	}
-	loosened := cirun.Loosens(effective(cur, inherited), effective(&next, inherited))
-	if err := s.requireStepUpToLoosen(ctx, a, loosened); err != nil {
+	if err := refuseLockedLoosening(inh, next); err != nil {
+		return nil, err
+	}
+	loosened := cirun.Loosens(inh.apply(*cur, now), inh.apply(next, now))
+	loosened = append(loosened, layerLoosens(inh, *cur, &next, now)...)
+	if err := s.requireToLoosen(ctx, a, &next, loosened); err != nil {
 		return nil, err
 	}
 	if err := s.repo.UpdateGatePolicy(ctx, &next); err != nil {
@@ -279,18 +352,28 @@ func (s *Service) UpdateGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 	return &next, nil
 }
 
-// DeleteGatePolicy removes a policy (audited).
-func (s *Service) DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, a Actor) error {
+// DeleteGatePolicy removes a policy (audited). A deletion that loosens the
+// gate needs, like any loosening change, a recent sign-in and, for a
+// business unit or repository policy, a reason.
+func (s *Service) DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, reason string, a Actor) error {
 	cur, err := s.repo.GetGatePolicy(ctx, tenantID, id)
 	if err != nil {
 		return err
 	}
-	inherited, err := s.inheritedPolicy(ctx, tenantID, cur)
+	inh, err := s.inheritedPolicy(ctx, tenantID, cur)
 	if err != nil {
 		return err
 	}
-	loosened := cirun.Loosens(effective(cur, inherited), inherited)
-	if err := s.requireStepUpToLoosen(ctx, a, loosened); err != nil {
+	now := s.now().UTC()
+	loosened := cirun.Loosens(inh.apply(*cur, now), inh.policy)
+	loosened = append(loosened, layerLoosens(inh, *cur, nil, now)...)
+	reason = strings.TrimSpace(reason)
+	if len([]rune(reason)) > cirun.MaxPolicyReason || strings.ContainsFunc(reason, unicode.IsControl) {
+		return fmt.Errorf("%w: reason must be at most %d characters of text", shared.ErrValidation, cirun.MaxPolicyReason)
+	}
+	withReason := *cur
+	withReason.Reason = reason
+	if err := s.requireToLoosen(ctx, a, &withReason, loosened); err != nil {
 		return err
 	}
 	if err := s.repo.DeleteGatePolicy(ctx, tenantID, id); err != nil {
@@ -299,8 +382,9 @@ func (s *Service) DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 	s.logAudit(ctx, tenantID, a, auditapp.NewSuccessEvent(auditdom.ActionCIGatePolicyDeleted, auditdom.ResourceTypeCIGatePolicy, id.String()).
 		WithResourceName(policyName(cur)).
 		WithMessage("CI gate policy deleted for "+policyName(cur)).
+		WithMetadata("reason", reason).
 		WithChanges(auditdom.NewChanges().SetBefore("config", policySnapshot(cur))))
-	s.announceLoosened(ctx, tenantID, a, cur, loosened)
+	s.announceLoosened(ctx, tenantID, a, &withReason, loosened)
 	return nil
 }
 
@@ -336,22 +420,41 @@ func applyPolicyInput(p *cirun.GatePolicy, in GatePolicyInput) {
 	if in.FixableOnly != nil {
 		p.FixableOnly = *in.FixableOnly
 	}
+	if in.BaselineOnFirstRun != nil {
+		p.BaselineOnFirstRun = *in.BaselineOnFirstRun
+	}
+	if in.BaselineSecretsBlock != nil {
+		p.BaselineSecretsBlock = *in.BaselineSecretsBlock
+	}
+	p.BaselineGraceDays = in.BaselineGraceDays
+	if in.Fields != nil {
+		p.Fields = slices.Clone(*in.Fields)
+	}
+	if in.LockedFields != nil {
+		p.LockedFields = slices.Clone(*in.LockedFields)
+	}
+	p.Reason = in.Reason
+	p.ExpiresAt = in.ExpiresAt
 }
 
-// effective is what applies to a policy's scope: the policy while it is
-// enabled, else what the scope inherits.
-func effective(p *cirun.GatePolicy, inherited cirun.GatePolicy) cirun.GatePolicy {
-	if p.Enabled {
-		return *p
-	}
-	return inherited
+// inherited is what applies to a policy's scope without the policy, and the
+// fields a layer above locks.
+type inherited struct {
+	policy cirun.GatePolicy
+	locked map[string]bool
+}
+
+// apply is what applies to the scope with p on top (p's fields while it is
+// active; a looser value of a locked field keeps the inherited one).
+func (i inherited) apply(p cirun.GatePolicy, now time.Time) cirun.GatePolicy {
+	return cirun.ApplyLayer(i.policy, i.locked, p, now)
 }
 
 // inheritedPolicy is what applies to p's scope without p: for a repository,
-// its business units' (strictest) or the tenant's policy or the default;
-// for a business unit, the tenant's or the default; for the tenant, the
-// default.
-func (s *Service) inheritedPolicy(ctx context.Context, tenantID shared.ID, p *cirun.GatePolicy) (cirun.GatePolicy, error) {
+// the organization's fields and per field the strictest of its business
+// units', over the default; for a business unit, the organization's; for
+// the organization, the default.
+func (s *Service) inheritedPolicy(ctx context.Context, tenantID shared.ID, p *cirun.GatePolicy) (inherited, error) {
 	var ps []cirun.GatePolicy
 	var err error
 	switch p.ScopeType {
@@ -360,21 +463,74 @@ func (s *Service) inheritedPolicy(ctx context.Context, tenantID shared.ID, p *ci
 	case cirun.ScopeBusinessUnit:
 		ps, err = s.repo.ListGatePolicies(ctx, tenantID)
 	default:
-		return cirun.DefaultGatePolicy(), nil
+		return inherited{policy: cirun.DefaultGatePolicy(), locked: map[string]bool{}}, nil
 	}
 	if err != nil {
-		return cirun.GatePolicy{}, fmt.Errorf("load gate policies: %w", err)
+		return inherited{}, fmt.Errorf("load gate policies: %w", err)
 	}
-	keep := ps[:0]
+	keep := make([]cirun.GatePolicy, 0, len(ps))
 	for _, q := range ps {
-		if !q.Enabled || q.ID == p.ID || q.ScopeType == cirun.ScopeRepository ||
+		if q.ID == p.ID || q.ScopeType == cirun.ScopeRepository ||
 			(p.ScopeType == cirun.ScopeBusinessUnit && q.ScopeType != cirun.ScopeTenant) {
 			continue
 		}
 		keep = append(keep, q)
 	}
-	out, _ := resolveFrom(keep)
+	res := cirun.Resolve(keep, s.now().UTC())
+	out := inherited{policy: res.Policy, locked: map[string]bool{}}
+	for _, f := range res.Fields {
+		if f.LockedBy != "" {
+			out.locked[f.Field] = true
+		}
+	}
 	return out, nil
+}
+
+// refuseLockedLoosening refuses a policy that sets a looser value for a
+// field a layer above locks, whoever asks.
+func refuseLockedLoosening(inh inherited, p cirun.GatePolicy) error {
+	if fs := cirun.LockedLoosens(inh.policy, inh.locked, p); len(fs) > 0 {
+		return fmt.Errorf("%w: %s is locked above this scope and can only be made stricter", cirun.ErrFieldLocked,
+			strings.Join(fs, ", "))
+	}
+	return nil
+}
+
+// layerLoosens lists what a change of the layering values loosens: locks
+// removed (or the policy carrying them deleted or disabled), and the end of
+// a looser repository policy removed or pushed later. next nil: deleted.
+func layerLoosens(inh inherited, cur cirun.GatePolicy, next *cirun.GatePolicy, now time.Time) []string {
+	var out []string
+	if cur.Enabled && len(cur.LockedFields) > 0 {
+		if next == nil || !next.Enabled {
+			out = append(out, "locked_fields")
+		} else {
+			for _, f := range cur.LockedFields {
+				if !next.Locks(f) {
+					out = append(out, "locked_fields")
+					break
+				}
+			}
+		}
+	}
+	if next != nil && cur.ExpiresAt != nil && (next.ExpiresAt == nil || next.ExpiresAt.After(*cur.ExpiresAt)) {
+		open := *next
+		open.ExpiresAt = nil
+		if len(cirun.Loosens(inh.policy, inh.apply(open, now))) > 0 {
+			out = append(out, "expires_at")
+		}
+	}
+	return out
+}
+
+// requireToLoosen asks, for a change that weakens the gate, a reason (on a
+// business unit or repository policy) and a recent sign-in.
+func (s *Service) requireToLoosen(ctx context.Context, a Actor, p *cirun.GatePolicy, loosened []string) error {
+	if len(loosened) > 0 && p.ScopeType != cirun.ScopeTenant && len([]rune(p.Reason)) < cirun.MinPolicyReason {
+		return fmt.Errorf("%w: a change that loosens the gate (%s) needs a reason of at least %d characters",
+			shared.ErrValidation, strings.Join(loosened, ", "), cirun.MinPolicyReason)
+	}
+	return s.requireStepUpToLoosen(ctx, a, loosened)
 }
 
 // requireStepUpToLoosen asks for a recent sign-in when a change weakens
@@ -450,7 +606,9 @@ func policySnapshot(p *cirun.GatePolicy) map[string]any {
 	return map[string]any{"scope_type": p.ScopeType, "enabled": p.Enabled, "mode": p.Mode,
 		"fail_on_severity": p.FailOnSeverity, "new_findings_only": p.NewFindingsOnly, "fail_on_kev": p.FailOnKEV,
 		"epss_threshold": p.EPSSThreshold, "modes": p.Modes, "allow_repo_policy": p.AllowRepoPolicy,
-		"fixable_only": p.FixableOnly}
+		"fixable_only": p.FixableOnly, "fields": p.Fields, "locked_fields": p.LockedFields, "reason": p.Reason,
+		"expires_at": p.ExpiresAt, "baseline_on_first_run": p.BaselineOnFirstRun,
+		"baseline_grace_days": p.BaselineGraceDays, "baseline_secrets_block": p.BaselineSecretsBlock}
 }
 
 // ---------------------------------------------------------------- overrides --

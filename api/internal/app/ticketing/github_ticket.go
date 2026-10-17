@@ -9,7 +9,10 @@ import (
 	"strings"
 	"time"
 
+	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+
 	"github.com/openctemio/openctem/api/internal/infra/scm"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -78,7 +81,20 @@ type GitHubTicketService struct {
 
 	// activity records inbound status changes with the integration as actor.
 	activity statusActivityRecorder
+
+	// lifecycles are the organization's finding lifecycles (RFC-110): a
+	// webhook's move is also decided by the scheme selected for the
+	// finding, which can only narrow it. nil = the platform alone.
+	lifecycles lifecycleSchemes
 }
+
+// lifecycleSchemes returns a tenant's published finding lifecycle schemes.
+type lifecycleSchemes interface {
+	Candidates(ctx context.Context, tenantID shared.ID) ([]lc.Candidate, error)
+}
+
+// SetLifecycles wires the organization lifecycles.
+func (s *GitHubTicketService) SetLifecycles(l lifecycleSchemes) { s.lifecycles = l }
 
 // NewGitHubTicketService constructs a GitHubTicketService.
 //
@@ -286,7 +302,7 @@ func (s *GitHubTicketService) resolveCredential(ctx context.Context, tenantID sh
 // issueTitle is the GitHub issue title (plain text, at most 256 characters):
 // secret-redacted, cleaned of control and bidi characters, one line, capped.
 func issueTitle(finding *vulnerability.Finding) string {
-	return safetext.SingleLine(RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())), safetext.MaxTitleRunes)
+	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())), safetext.MaxTitleRunes)
 }
 
 // buildIssueBody renders the markdown body of the issue, mirroring the
@@ -306,7 +322,7 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 	fmt.Fprintf(&b, "**Status:** %s\n", finding.Status())
 
 	if loc := findingLocation(finding); loc != "" {
-		fmt.Fprintf(&b, "**Location:** %s\n", safetext.MarkdownInline(RedactSecrets(loc), safetext.MaxInlineRunes))
+		fmt.Fprintf(&b, "**Location:** %s\n", safetext.MarkdownInline(safetext.RedactSecrets(loc), safetext.MaxInlineRunes))
 	}
 	b.WriteString("\n")
 
@@ -315,13 +331,13 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 		if masked := finding.SecretMaskedValue(); masked != "" {
 			fmt.Fprintf(&b, "**Masked value:** %s\n\n", safetext.MarkdownInline(masked, safetext.MaxInlineRunes))
 		}
-		b.WriteString("Open the finding in the OpenCTEM platform for full details.\n")
+		b.WriteString("Open the finding in " + brand.Name() + " for full details.\n")
 		appendMobilizationBrief(&b, finding)
 		return b.String()
 	}
 
 	if desc := strings.TrimSpace(finding.Description()); desc != "" {
-		b.WriteString(safetext.MarkdownBlock(RedactSecrets(desc), safetext.MaxDescriptionRunes))
+		b.WriteString(safetext.MarkdownBlock(safetext.RedactSecrets(desc), safetext.MaxDescriptionRunes))
 		b.WriteString("\n")
 	}
 
@@ -331,16 +347,16 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 
 // appendMobilizationBrief appends the CTEM Mobilization brief (definition of
 // done + acceptable fixes) to the issue body when the finding carries one. The
-// brief holds only operator-entered guidance — never a finding-embedded secret.
-// It keeps its markdown (it is written for the ticket) but loses control and
-// bidi characters.
+// brief is written by people with write access, so it is treated like any
+// other text that leaves the platform: secret-redacted, capped, and placed in a
+// fenced block so it cannot add links, images, HTML or @mentions.
 func appendMobilizationBrief(b *strings.Builder, finding *vulnerability.Finding) {
-	brief := safetext.Clean(finding.Remediation().MobilizationBrief())
+	brief := strings.TrimSpace(finding.Remediation().MobilizationBrief())
 	if brief == "" {
 		return
 	}
 	b.WriteString("\n")
-	b.WriteString(brief)
+	b.WriteString(safetext.MarkdownBlock(safetext.RedactSecrets(brief), safetext.MaxBriefRunes))
 	b.WriteString("\n")
 }
 
@@ -406,8 +422,25 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 		return fmt.Errorf("lookup finding by issue url: %w", err)
 	}
 
-	// A ticket never closes a finding (see IsTicketInboundTarget).
-	if !target.IsTicketInboundTarget() {
+	// A ticket never closes a finding: the transition engine allows a ticket
+	// work-state moves only (IsTicketInboundTarget), along the lifecycle.
+	ticket := vulnerability.TransitionActor{Kind: vulnerability.TransitionActorTicket}
+	facts := vulnerability.TransitionFacts{Status: finding.Status(), Source: finding.Source(), Severity: finding.Severity()}
+	var cands []lc.Candidate
+	if s.lifecycles != nil {
+		if cands, err = s.lifecycles.Candidates(ctx, tenantID); err != nil {
+			return fmt.Errorf("load finding lifecycle: %w", err)
+		}
+	}
+	lf := lc.Facts{TransitionFacts: facts, ClosureReason: finding.ClosureReason(),
+		FindingType: string(finding.FindingType()), ToolName: finding.ToolName()}
+	if id := finding.SubStatusID(); id != nil {
+		lf.SubStatus = *id
+	}
+	if d := lc.EvaluateMove(lc.SelectScheme(cands, lf.ConditionFacts()), lf, lc.Actor{TransitionActor: ticket},
+		lc.Target{Status: target}); !d.Allowed {
+		s.logger.Warn("github webhook: the transition engine refused the move",
+			"finding_id", finding.ID().String(), "current", finding.Status(), "target", target, "error", d.Err())
 		return nil
 	}
 	oldStatus := finding.Status()
@@ -422,7 +455,7 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 		return fmt.Errorf("update finding from github issue event: %w", uerr)
 	}
 	s.logger.Info("github webhook synced finding status",
-		"finding_id", finding.ID().String(), "issue_url", issueHTMLURL, "action", action, "status", target)
+		"finding_id", logger.SanitizeValue(finding.ID().String()), "issue_url", logger.SanitizeValue(issueHTMLURL), "action", logger.SanitizeValue(action), "status", logger.SanitizeValue(target.String()))
 	if s.activity != nil && oldStatus != target {
 		if aerr := s.activity.RecordIntegrationStatusChange(ctx, tenantID, finding.ID(),
 			oldStatus.String(), target.String(), "github", issueKeyFromURL(issueHTMLURL)); aerr != nil {

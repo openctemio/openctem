@@ -443,14 +443,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.RemediationRead,
     module: Module.Remediation,
   },
-  '/remediations': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
-  '/remediations/**': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
   '/automations': {
     permission: Permission.WorkflowsRead,
     module: Module.Workflows,
@@ -601,6 +593,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
+  // Organization tool defaults: a sensors setting; saving needs
+  // sensors:write (checked by the page and the API).
+  '/settings/scanning/tool-defaults': {
+    permission: Permission.SensorsRead,
+    module: Module.Sensors,
+  },
 
   // ========================================
   // Settings - Organization (Core feature, no module required)
@@ -622,6 +620,16 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     message: 'Only an owner can approve or reject SSO changes.',
   },
+  // Owners and admins see support access; granting is owner only (api RFC-063).
+  '/settings/support-access': {
+    permission: Permission.TeamUpdate,
+    message: 'Only owners and admins can manage support access.',
+  },
+  // Owners and admins read domain policies; changes are owner only (api RFC-104).
+  '/settings/domains': {
+    permission: Permission.TeamUpdate,
+    message: 'Only owners and admins can see domain settings.',
+  },
   // Owners and admins read trusts; changes are owner only (api RFC-058).
   '/settings/trusted-organizations': {
     permission: Permission.TeamUpdate,
@@ -630,8 +638,8 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/modules': {
     permission: Permission.TeamUpdate,
   },
-  // Plan & usage: owners and admins (GET /organization/plan needs admin).
-  '/settings/plan': {
+  // Usage & limits: owners and admins (GET /organization/limits needs admin).
+  '/settings/limits': {
     permission: Permission.TeamUpdate,
   },
   // The user's own notification settings live at /account/notifications
@@ -777,9 +785,23 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/vulnerability-matching': {
     permission: Permission.TeamUpdate,
   },
+  // Finding approvals: settings:read to see, settings:write (+ step-up) to save.
+  '/settings/finding-approvals': {
+    permission: Permission.SettingsRead,
+  },
+  // Finding lifecycle (RFC-110): findings:read to see, findings:lifecycles:write
+  // to change (publishing also asks for a recent sign-in).
+  '/settings/finding-lifecycle': {
+    permission: Permission.FindingsRead,
+    module: Module.Findings,
+  },
   // License policy (RFC-070): settings:read to see, settings:write to save.
   '/settings/license-policy': {
     permission: Permission.SettingsRead,
+  },
+  // Content catalog (RFC-099): content:read to see; the API gates every change.
+  '/settings/content': {
+    permission: Permission.ContentRead,
   },
   // Asset source precedence (RFC-069): owner/admin on the API.
   '/settings/asset-sources': {

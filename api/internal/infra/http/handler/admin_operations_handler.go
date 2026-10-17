@@ -23,14 +23,14 @@ import (
 // It works without Prometheus: it reads the database directly and the
 // controller gauges from the API's own metrics registry.
 type AdminOperationsHandler struct {
-	db        *sql.DB
-	readOps   func(ctx context.Context) (postgres.OpsSnapshot, error)
-	pingRedis func(ctx context.Context) error
-	gatherer  prometheus.Gatherer
-	shipped   int64
-	sdkMin    string
-	now       func() time.Time
-	logger    *logger.Logger
+	db            *sql.DB
+	readOps       func(ctx context.Context) (postgres.OpsSnapshot, error)
+	pingRedis     func(ctx context.Context) error
+	gatherer      prometheus.Gatherer
+	shipped       int64
+	sdkAdvisories []string
+	now           func() time.Time
+	logger        *logger.Logger
 	// transport reports the sensor protocol v3 bindings (SetSensorTransport).
 	transport func() SensorTransportStatus
 }
@@ -46,7 +46,7 @@ func NewAdminOperationsHandler(
 	pingRedis func(ctx context.Context) error,
 	gatherer prometheus.Gatherer,
 	shippedSchema int64,
-	sdkMin string,
+	sdkAdvisories []string,
 	log *logger.Logger,
 ) *AdminOperationsHandler {
 	if gatherer == nil {
@@ -54,7 +54,7 @@ func NewAdminOperationsHandler(
 	}
 	return &AdminOperationsHandler{
 		db: db, readOps: readOps, pingRedis: pingRedis, gatherer: gatherer,
-		shipped: shippedSchema, sdkMin: sdkMin, now: time.Now,
+		shipped: shippedSchema, sdkAdvisories: sdkAdvisories, now: time.Now,
 		logger: log.With("handler", "admin_operations"),
 	}
 }
@@ -118,14 +118,16 @@ type AdminOpsController struct {
 
 // AdminOperationsResponse is GET /api/v1/admin/operations.
 type AdminOperationsResponse struct {
-	Build       version.Info          `json:"build"`
-	Schema      AdminOpsSchema        `json:"schema"`
-	Database    AdminOpsDatabase      `json:"database"`
-	Redis       AdminOpsComponent     `json:"redis"`
-	Queues      AdminOpsQueues        `json:"queues"`
-	Sensors     []AdminOpsSensorGroup `json:"sensors"`
-	SDKMin      string                `json:"sdk_min_version,omitempty"`
-	Controllers []AdminOpsController  `json:"controllers"`
+	Build    version.Info          `json:"build"`
+	Schema   AdminOpsSchema        `json:"schema"`
+	Database AdminOpsDatabase      `json:"database"`
+	Redis    AdminOpsComponent     `json:"redis"`
+	Queues   AdminOpsQueues        `json:"queues"`
+	Sensors  []AdminOpsSensorGroup `json:"sensors"`
+	// SDKAdvisories are the SDK releases with a published security advisory
+	// (versions.yaml sdk.advisories); sensors built with one are flagged.
+	SDKAdvisories []string             `json:"sdk_advisories"`
+	Controllers   []AdminOpsController `json:"controllers"`
 	// SensorTransport: how sensors reach this installation (protocol v3
 	// bindings and the gRPC self-probe). Absent when not wired.
 	SensorTransport *SensorTransportStatus `json:"sensor_transport,omitempty"`
@@ -150,7 +152,7 @@ func (h *AdminOperationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	out := AdminOperationsResponse{
-		Build: version.Get(), SDKMin: h.sdkMin, CheckedAt: h.now().UTC(),
+		Build: version.Get(), SDKAdvisories: append(make([]string, 0, len(h.sdkAdvisories)), h.sdkAdvisories...), CheckedAt: h.now().UTC(),
 		Sensors: []AdminOpsSensorGroup{}, Controllers: []AdminOpsController{},
 	}
 

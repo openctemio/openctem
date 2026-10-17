@@ -40,6 +40,7 @@ func (f *fleetHarness) call(fn http.HandlerFunc, path, id string) map[string]jso
 	f.t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, f.tenantID)
+	ctx = context.WithValue(ctx, middleware.IsAdminKey, true) // host details are admin-only
 	if id != "" {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("id", id)
@@ -110,7 +111,11 @@ func reasonCodes(rs []SensorHealthReasonResponse) map[string]bool {
 // offline/error times reach GET /sensors/{id}, GET /sensors and
 // GET /sensors/stats, and the stats count the same sensors as the list.
 func TestSensorFleetHealth_ResponseFields(t *testing.T) {
-	f := newFleetHarness(t, sensordom.HealthPolicy{LatestVersion: "v0.8.0", MinVersion: "v0.4.0"})
+	f := newFleetHarness(t, sensordom.HealthPolicy{})
+	f.sh.SetProducts([]SensorInstallProduct{
+		{ID: sensordom.DefaultProduct, Latest: "v0.8.0", Min: "v0.4.0", Image: "ghcr.io/openctemio/sensor:v0.8.0", Install: "sensor"},
+		{ID: "openctemio-connector-tenable", Latest: "v0.1.0", Image: "ghcr.io/openctemio/connector-tenable:v0.1.0", Install: "connector-tenable"},
+	})
 
 	// Before the first heartbeat.
 	s, raw := f.get()
@@ -194,8 +199,12 @@ func TestSensorFleetHealth_ResponseFields(t *testing.T) {
 	if st.ByVersionStatus["update_available"] != 1 {
 		t.Errorf("by_version_status=%v", st.ByVersionStatus)
 	}
-	if st.LatestVersion != "v0.8.0" || st.MinVersion != "v0.4.0" {
-		t.Errorf("channel latest=%q min=%q", st.LatestVersion, st.MinVersion)
+	if len(st.Products) != 2 || st.Products[0].ID != sensordom.DefaultProduct || st.Products[0].LatestVersion != "v0.8.0" ||
+		st.Products[0].MinVersion != "v0.4.0" || st.Products[1].Image != "ghcr.io/openctemio/connector-tenable:v0.1.0" {
+		t.Errorf("products = %+v", st.Products)
+	}
+	if st.SDKAdvisories == nil {
+		t.Error("sdk_advisories is null, want []")
 	}
 	if st.OnlineWindowSeconds != 40 || st.OfflineAfterSeconds != 300 { // 30s idle interval + 10s grace
 		t.Errorf("windows online=%d offline=%d", st.OnlineWindowSeconds, st.OfflineAfterSeconds)

@@ -1,0 +1,31 @@
+name: CLA scope test
+
+# Tests the "Decide who must sign" step of cla.yml whenever the workflow or its
+# test changes. Runs the pull request's own copy with a read-only token.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/cla.yml
+      - .github/workflows/cla-test.yml
+      - .github/scripts/cla-scope.test.sh
+  push:
+    branches: [main, develop]
+    paths:
+      - .github/workflows/cla.yml
+      - .github/workflows/cla-test.yml
+      - .github/scripts/cla-scope.test.sh
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: cla-scope-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash .github/scripts/cla-scope.test.sh

@@ -123,6 +123,7 @@ asset and filters on its tenant.
 | Forked pull requests | Full scans fetch only protected branches of the repository itself; CI forks stay scan-only |
 | Rescan storms | Fair share, jitter on rule-pack triggers, scan windows, a per-tenant re-baseline rate limit |
 | Settings tampering | `scans:ci:write`; data scope on per-repository routes; audit of every change |
+| Scanning a repository the organization does not own | The planner scans a repository only when a repository scope entry covers it and no exclusion matches (RFC-054 §17), and only with a credential minted from the organization's own code-host connection; a CI trust alone never yields a clone |
 
 ## 8. Phases
 

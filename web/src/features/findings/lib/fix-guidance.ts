@@ -32,9 +32,15 @@ export type FixGuidance =
       /** direct | transitive | undefined (unknown). */
       dependencyType?: string
       manifestFile?: string
+      /** The package's line in manifestFile. */
+      manifestLine?: number
+      /** Transitive: the packages that bring it in, direct dependency first. */
+      via?: string[]
       commands: FixCommand[]
       /** Other release lines with a fix (6.0.6 when the advice is 7.0.5). */
       otherFixedVersions: string[]
+      /** The upgrade crosses a major version: expect breaking changes. */
+      majorUpgrade: boolean
     }
   | {
       kind: 'no-fix'
@@ -60,6 +66,23 @@ export type FixGuidance =
       text: string
       fixCode?: string
     }
+
+/**
+ * The packages that bring a transitive package in, direct dependency first:
+ * the scanner's path without its last entry when that entry is the package
+ * itself (name@version, as trivy writes package ids).
+ */
+export function dependencyVia(
+  path: string[] | undefined,
+  name: string,
+  version: string
+): string[] | undefined {
+  if (!path?.length) return undefined
+  const last = path[path.length - 1].toLowerCase()
+  const self = last === `${name}@${version}`.toLowerCase() || last === name.toLowerCase()
+  const via = self ? path.slice(0, -1) : path
+  return via.length ? via : undefined
+}
 
 /** The upgrade command(s) for a package, by ecosystem. */
 export function upgradeCommands(
@@ -149,8 +172,13 @@ export function fixGuidance(
   const pkg = f.component?.name || meta(f, 'package_name', 'component_name')
   const from = f.component?.version || meta(f, 'installed_version', 'current_version')
   if (pkg && from) {
-    const fixed = f.advisory?.fixedVersions ?? []
-    const to = f.component?.fixedIn || meta(f, 'fixed_version', 'patched_version')
+    const fixed = f.advisory?.fixedVersions?.length
+      ? f.advisory.fixedVersions
+      : (f.component?.fixedVersions ?? [])
+    // A scanner's fixed_version may list every release line ("5.2.8, 4.2.26"):
+    // that is not one version to upgrade to.
+    const metaTo = meta(f, 'fixed_version', 'patched_version')
+    const to = f.component?.fixedIn || (metaTo.includes(',') ? '' : metaTo)
     const ecosystem = f.component?.ecosystem || meta(f, 'ecosystem', 'package_manager')
     if (to) {
       return {
@@ -161,8 +189,11 @@ export function fixGuidance(
         ecosystem,
         dependencyType: f.component?.dependencyType,
         manifestFile: f.component?.manifestFile,
+        manifestLine: f.component?.manifestLine,
+        via: dependencyVia(f.component?.dependencyPath, pkg, from),
         commands: ecosystem ? upgradeCommands(ecosystem, pkg, to, f.component?.dependencyType) : [],
         otherFixedVersions: fixed.filter((v) => v !== to),
+        majorUpgrade: !!f.component?.fixedInMajor,
       }
     }
     if (f.advisory && fixed.length === 0) {

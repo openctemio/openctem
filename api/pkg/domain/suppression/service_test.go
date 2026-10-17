@@ -20,6 +20,11 @@ type mockRepository struct {
 	// of open findings the rule matches.
 	matching   int
 	applyLimit int
+	// sampleScope is the scope filter the last preview sample was asked with
+	// (sampleAsked: it was asked at all).
+	sampleScope ScopeFilter
+	sampleAsked bool
+	sample      []SampleFinding
 }
 
 type auditCall struct {
@@ -80,6 +85,14 @@ func (m *mockRepository) Approve(_ context.Context, rule *Rule, _ time.Time, act
 
 func (m *mockRepository) CountMatchingOpenFindings(_ context.Context, _ *Rule, limit int) (int, error) {
 	return min(m.matching, limit+1), nil
+}
+
+func (m *mockRepository) SampleMatchingOpenFindings(_ context.Context, _ *Rule, scope ScopeFilter, limit, _ int) (int, []SampleFinding, error) {
+	m.sampleScope, m.sampleAsked = scope, true
+	if scope == nil {
+		return 0, nil, nil
+	}
+	return min(m.matching, limit+1), m.sample, nil
 }
 
 func (m *mockRepository) FindByID(_ context.Context, tenantID, ruleID shared.ID) (*Rule, error) {
@@ -198,10 +211,10 @@ func TestService_CreateRule(t *testing.T) {
 			TenantID:        tenantID,
 			Name:            "Test Rule",
 			Description:     "Test description",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "sql-injection",
-			ToolName:        "semgrep",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error",
+			RuleID:      "sql-injection",
+			ToolName:    "semgrep",
+			RequestedBy: userID,
 		}
 
 		rule, err := svc.CreateRule(ctx, input)
@@ -228,10 +241,10 @@ func TestService_CreateRule(t *testing.T) {
 		input := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Expiring Rule",
-			SuppressionType: SuppressionTypeAcceptedRisk,
-			RuleID:          "test-*",
-			RequestedBy:     userID,
-			ExpiresAt:       &expiresAt,
+			SuppressionType: SuppressionTypeAcceptedRisk, ReasonCode: "risk_accepted", Description: "fixture rule used by tests",
+			RuleID:      "test-*",
+			RequestedBy: userID,
+			ExpiresAt:   &expiresAt,
 		}
 
 		rule, err := svc.CreateRule(ctx, input)
@@ -251,7 +264,7 @@ func TestService_CreateRule(t *testing.T) {
 		input := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Invalid Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 			// No criteria set
 			RequestedBy: userID,
 		}
@@ -277,9 +290,9 @@ func TestService_ApproveRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -337,9 +350,9 @@ func TestService_RejectRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -379,9 +392,9 @@ func TestService_UpdateRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Original Name",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -412,9 +425,9 @@ func TestService_UpdateRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 		svc.ApproveRule(ctx, ApproveRuleInput{
@@ -454,9 +467,9 @@ func TestService_ListActiveRules(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-*",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-*",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -494,9 +507,9 @@ func TestService_DeleteRule(t *testing.T) {
 		createInput := CreateRuleInput{
 			TenantID:        tenantID,
 			Name:            "Test Rule",
-			SuppressionType: SuppressionTypeFalsePositive,
-			RuleID:          "test-rule",
-			RequestedBy:     userID,
+			SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
+			RuleID:      "test-rule",
+			RequestedBy: userID,
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 
@@ -525,16 +538,18 @@ func TestService_DeleteRule(t *testing.T) {
 }
 
 type fakeApprovers struct {
-	count int
-	owner shared.ID
+	count     int
+	owner     shared.ID
+	removedAt *time.Time
 }
 
-func (f fakeApprovers) CountEligibleApprovers(context.Context, shared.ID) (int, error) {
-	return f.count, nil
+func (f fakeApprovers) RecentMemberRemoval(context.Context, shared.ID, time.Time) (*time.Time, error) {
+	return f.removedAt, nil
 }
 
-func (f fakeApprovers) IsTenantOwner(_ context.Context, _ shared.ID, user shared.ID) (bool, error) {
-	return user == f.owner, nil
+// IsSoleActiveOwner: count is the number of active people of the tenant.
+func (f fakeApprovers) IsSoleActiveOwner(_ context.Context, _ shared.ID, user shared.ID) (bool, error) {
+	return f.count == 1 && user == f.owner, nil
 }
 
 // Owner decision B16: the requester may not approve their own rule while a
@@ -547,7 +562,7 @@ func TestService_ApproveRule_FourEyes(t *testing.T) {
 	newPending := func(svc *Service) *Rule {
 		t.Helper()
 		rule, err := svc.CreateRule(ctx, CreateRuleInput{
-			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 			RuleID: "x", RequestedBy: requester,
 		})
 		if err != nil {
@@ -568,11 +583,54 @@ func TestService_ApproveRule_FourEyes(t *testing.T) {
 			t.Fatalf("self-approval with a second approver = %v, want ErrSelfApproval (forbidden)", err)
 		}
 	})
-	t.Run("lone owner may approve, flagged", func(t *testing.T) {
+	t.Run("lone owner without reason or fresh code is refused", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester})
+		svc.SetTOTPVerifier(fakeTOTP{good: "123456"})
+		rule := newPending(svc)
+		if _, err := approveOwn(svc, rule); !errors.Is(err, ErrSelfApprovalNeedsReason) {
+			t.Fatalf("no reason = %v, want ErrSelfApprovalNeedsReason", err)
+		}
+		for _, code := range []string{"", "000000"} {
+			_, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester,
+				ReviewedUpdatedAt: reviewedAt(rule), SelfApprovalReason: "alone", TOTPCode: code})
+			if !errors.Is(err, ErrSelfApprovalBadCode) || !IsSelfApprovalRefusal(err) {
+				t.Fatalf("code %q = %v, want ErrSelfApprovalBadCode", code, err)
+			}
+		}
+		if rule.Status() != RuleStatusPending {
+			t.Fatalf("refused self-approval changed the rule: %s", rule.Status())
+		}
+	})
+	t.Run("lone owner refused within 7 days of a member removal", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		removed := time.Now().Add(-2 * 24 * time.Hour)
+		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester, removedAt: &removed})
+		svc.SetTOTPVerifier(fakeTOTP{good: "123456"})
+		rule := newPending(svc)
+		_, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester,
+			ReviewedUpdatedAt: reviewedAt(rule), SelfApprovalReason: "alone", TOTPCode: "123456"})
+		if !errors.Is(err, ErrSelfApprovalAfterRemoval) || !IsSelfApprovalRefusal(err) {
+			t.Fatalf("recent removal = %v, want ErrSelfApprovalAfterRemoval", err)
+		}
+	})
+	t.Run("lone owner without a verifier fails closed", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester})
+		rule := newPending(svc)
+		if _, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester,
+			ReviewedUpdatedAt: reviewedAt(rule), SelfApprovalReason: "alone", TOTPCode: "123456"}); !errors.Is(err, ErrSelfApprovalBadCode) {
+			t.Fatalf("no verifier = %v, want ErrSelfApprovalBadCode", err)
+		}
+	})
+	t.Run("lone owner may approve with reason and fresh code, flagged", func(t *testing.T) {
 		repo := newMockRepository()
 		svc := NewService(repo, nil)
 		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester})
-		res, err := approveOwn(svc, newPending(svc))
+		svc.SetTOTPVerifier(fakeTOTP{good: "123456"})
+		rule := newPending(svc)
+		res, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester,
+			ReviewedUpdatedAt: reviewedAt(rule), SelfApprovalReason: "only member", TOTPCode: "123456"})
 		if err != nil {
 			t.Fatalf("lone owner self-approval: %v", err)
 		}
@@ -599,13 +657,23 @@ func TestService_ApproveRule_FourEyes(t *testing.T) {
 	})
 }
 
+// fakeTOTP accepts one code.
+type fakeTOTP struct{ good string }
+
+func (f fakeTOTP) VerifyFreshTOTP(_ context.Context, _, code string) error {
+	if code != f.good {
+		return ErrSelfApprovalBadCode
+	}
+	return nil
+}
+
 // The approval pins the version the approver reviewed.
 func TestService_ApproveRule_PinsReviewedVersion(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 	svc := NewService(newMockRepository(), nil)
 	rule, err := svc.CreateRule(ctx, CreateRuleInput{
-		TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+		TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 		RuleID: "narrow.rule", RequestedBy: shared.NewID(),
 	})
 	if err != nil {
@@ -638,7 +706,7 @@ func TestService_ApproveRule_AppliesToExistingFindings(t *testing.T) {
 	tenantID := shared.NewID()
 	newPending := func(svc *Service) *Rule {
 		rule, err := svc.CreateRule(ctx, CreateRuleInput{
-			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive, ReasonCode: "detection_error", Description: "fixture rule used by tests",
 			RuleID: "semgrep.sqli", RequestedBy: shared.NewID(),
 		})
 		if err != nil {
@@ -700,4 +768,53 @@ func TestService_ApproveRule_AppliesToExistingFindings(t *testing.T) {
 			t.Fatalf("other tenant preview err = %v, want ErrRuleNotFound", err)
 		}
 	})
+
+	t.Run("preview sample follows the data scope and fails closed", func(t *testing.T) {
+		repo := newMockRepository()
+		svc := NewService(repo, nil)
+		rule := newPending(svc)
+		repo.matching = 3
+		repo.sample = []SampleFinding{{ID: shared.NewID(), Title: "t"}}
+
+		// No scope filter wired: the organization-wide count stays, nothing
+		// is listed and nothing counts as in scope.
+		p, err := svc.PreviewRule(ctx, tenantID, rule.ID())
+		if err != nil || !repo.sampleAsked || repo.sampleScope != nil {
+			t.Fatalf("asked = %v, scope set = %v, err = %v; want asked without a scope", repo.sampleAsked, repo.sampleScope != nil, err)
+		}
+		if p.MatchingOpenFindings != 3 || p.InScopeFindings != 0 || len(p.Sample) != 0 {
+			t.Fatalf("preview without scope = %+v, want 3 matching, nothing in scope or listed", p)
+		}
+
+		svc.SetScopeFilter(func(context.Context, shared.ID, []shared.ID) (func(shared.ID) bool, error) {
+			return func(shared.ID) bool { return true }, nil
+		})
+		p, err = svc.PreviewRule(ctx, tenantID, rule.ID())
+		if err != nil || repo.sampleScope == nil || p.InScopeFindings != 3 || len(p.Sample) != 1 {
+			t.Fatalf("preview with scope = %+v, %v; want 3 in scope and the sample", p, err)
+		}
+	})
+}
+
+// Clearing the review flag of an organization-wide rule is a change to a rule
+// that acts on every asset: it needs full data access, like approving it.
+func TestMarkReviewed_OrgWideRuleNeedsFullScope(t *testing.T) {
+	ctx := context.Background()
+	tenant := shared.NewID()
+	repo := newMockRepository()
+	svc := NewService(repo, nil)
+	svc.SetScopeResolver(func(context.Context, shared.ID) (*shared.DataScope, error) {
+		return &shared.DataScope{TenantID: tenant, UserID: shared.NewID()}, nil
+	})
+	flagged := time.Now()
+	rule := ReconstituteRule(RuleData{ID: shared.NewID(), TenantID: tenant, Name: "org-wide", RuleID: "x",
+		SuppressionType: SuppressionTypeFalsePositive, Status: RuleStatusPending, RequestedBy: shared.NewID(),
+		ReviewFlaggedAt: &flagged, ReviewReason: ReviewReasonNoEndDate})
+	if err := repo.Save(ctx, rule); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err := svc.MarkReviewed(ctx, MarkReviewedInput{TenantID: tenant, RuleID: rule.ID(), By: shared.NewID()})
+	if !errors.Is(err, ErrOrgWideRuleNeedsFullScope) {
+		t.Fatalf("restricted caller cleared an org-wide rule's review flag: %v", err)
+	}
 }

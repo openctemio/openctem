@@ -32,7 +32,7 @@ type GitLabAPI interface {
 	Group(ctx context.Context, pathOrID string) (*gitlabapi.Group, error)
 	GroupMember(ctx context.Context, groupID, userID int64) (bool, error)
 	MergeRequest(ctx context.Context, projectPath string, iid int) (*gitlabapi.MergeRequest, error)
-	SetCommitStatus(ctx context.Context, projectPath, sha, state, name, targetURL, description string) error
+	SetCommitStatus(ctx context.Context, projectPath, sha, state, name, targetURL, description string, pipelineID int64) error
 	UpsertMergeRequestNote(ctx context.Context, projectPath string, iid int, authorID int64, marker, body string) error
 }
 

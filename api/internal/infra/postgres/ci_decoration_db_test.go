@@ -29,7 +29,7 @@ func TestCIDecorationQueue(t *testing.T) {
 			t.Fatal(err)
 		}
 		if status == cirun.StatusEvaluated {
-			if err := repo.SaveVerdict(ctx, tenant, r.ID, cirun.VerdictPass, []byte(`{}`), now, 0); err != nil {
+			if err := repo.SaveVerdict(ctx, tenant, r.ID, cirun.VerdictPass, []byte(`{}`), now, 0, nil); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -40,7 +40,7 @@ func TestCIDecorationQueue(t *testing.T) {
 	running := mk(cirun.ProviderGitHub, cirun.StatusRunning)
 	// Storing the verdict queues it (one statement: no later step can lose
 	// it); another tenant cannot store one on this tenant's run.
-	if err := repo.SaveVerdict(ctx, other, running.ID, cirun.VerdictPass, []byte(`{}`), now, 0); err == nil {
+	if err := repo.SaveVerdict(ctx, other, running.ID, cirun.VerdictPass, []byte(`{}`), now, 0, nil); err == nil {
 		t.Fatal("another tenant stored a verdict")
 	}
 	state := func(id shared.ID) (string, int) {
@@ -156,7 +156,7 @@ func TestCIPullRequestPassed(t *testing.T) {
 		if err := repo.CreateRun(ctx, r); err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.SaveVerdict(ctx, tenant, r.ID, verdict, []byte(`{}`), when, 0); err != nil {
+		if err := repo.SaveVerdict(ctx, tenant, r.ID, verdict, []byte(`{}`), when, 0, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -206,7 +206,7 @@ func TestCICommitVerdicts(t *testing.T) {
 			t.Fatal(err)
 		}
 		if verdict != "" {
-			if err := repo.SaveVerdict(ctx, tid, r.ID, verdict, []byte(`{"would_fail":true}`), when, 0); err != nil {
+			if err := repo.SaveVerdict(ctx, tid, r.ID, verdict, []byte(`{"would_fail":true}`), when, 0, nil); err != nil {
 				t.Fatal(err)
 			}
 		}

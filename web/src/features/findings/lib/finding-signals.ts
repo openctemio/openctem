@@ -6,11 +6,12 @@
  * Every signal comes from the finding response itself — no extra request —
  * and states a fact the data has. A missing fact is left out, never guessed:
  * "Not in KEV" appears only for a CVE the catalogue was checked against.
+ * Unknown reachability is stated as unknown, never as unreachable.
  */
 
 import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
+import { defaultT, type TFn } from '@/features/assets/lib/default-t'
 import type { FindingDetail } from '../types'
-import { CRITICALITY_LABELS } from '@/lib/criticality'
 
 /** `raises` makes the finding more urgent; `lowers` less; `neutral` is context. */
 export type SignalEffect = 'raises' | 'lowers' | 'neutral'
@@ -29,11 +30,25 @@ export interface RiskSignal {
 /** EPSS at or above this probability counts as likely to be exploited. */
 export const EPSS_HIGH = 0.1
 
-const MATURITY_LABEL: Record<string, string> = {
-  weaponized: 'Weaponized exploit',
-  functional: 'Working exploit',
-  poc: 'Proof-of-concept exploit',
-  proof_of_concept: 'Proof-of-concept exploit',
+const MATURITY_LABEL: Record<string, { key: string; fallback: string }> = {
+  weaponized: { key: 'findings.signals.weaponized', fallback: 'Weaponized exploit' },
+  functional: { key: 'findings.signals.functional', fallback: 'Working exploit' },
+  poc: { key: 'findings.signals.poc', fallback: 'Proof-of-concept exploit' },
+  proof_of_concept: { key: 'findings.signals.poc', fallback: 'Proof-of-concept exploit' },
+}
+
+const CRITICALITY_SIGNAL: Record<string, { key: string; fallback: string }> = {
+  critical: { key: 'findings.signals.criticalAsset', fallback: 'Critical asset' },
+  high: { key: 'findings.signals.highAsset', fallback: 'High-criticality asset' },
+  medium: { key: 'findings.signals.mediumAsset', fallback: 'Medium-criticality asset' },
+  low: { key: 'findings.signals.lowAsset', fallback: 'Low-criticality asset' },
+}
+
+const EXPOSURE_SIGNAL: Record<string, { key: string; fallback: string }> = {
+  public: { key: 'findings.signals.publicAsset', fallback: 'Public asset' },
+  restricted: { key: 'findings.signals.restrictedAsset', fallback: 'Restricted asset' },
+  private: { key: 'findings.signals.privateAsset', fallback: 'Private asset' },
+  isolated: { key: 'findings.signals.isolatedAsset', fallback: 'Isolated asset' },
 }
 
 type SignalInput = Pick<
@@ -53,7 +68,7 @@ type SignalInput = Pick<
   | 'scannerFacts'
 >
 
-export function riskSignals(f: SignalInput): RiskSignal[] {
+export function riskSignals(f: SignalInput, t: TFn = defaultT): RiskSignal[] {
   const out: RiskSignal[] = []
   const adv = f.advisory
 
@@ -62,9 +77,13 @@ export function riskSignals(f: SignalInput): RiskSignal[] {
     out.push({
       key: 'kev',
       group: 'exploitation',
-      label: 'Known exploited (CISA KEV)',
+      label: t('findings.signals.kev', 'Known exploited (CISA KEV)'),
       effect: 'raises',
-      detail: f.kevDueDate ? `CISA remediation due ${f.kevDueDate.slice(0, 10)}` : undefined,
+      detail: f.kevDueDate
+        ? t('findings.signals.kevDue', 'CISA remediation due {date}', {
+            date: f.kevDueDate.slice(0, 10),
+          })
+        : undefined,
     })
   }
 
@@ -78,41 +97,62 @@ export function riskSignals(f: SignalInput): RiskSignal[] {
     out.push({
       key: 'exploit',
       group: 'exploitation',
-      label: MATURITY_LABEL[maturity],
+      label: t(MATURITY_LABEL[maturity].key, MATURITY_LABEL[maturity].fallback),
       effect: 'raises',
     })
   } else if (adv?.exploitAvailable || scannerExploit) {
-    out.push({ key: 'exploit', group: 'exploitation', label: 'Public exploit', effect: 'raises' })
+    out.push({
+      key: 'exploit',
+      group: 'exploitation',
+      label: t('findings.signals.publicExploit', 'Public exploit'),
+      effect: 'raises',
+    })
   } else if (adv && !f.isInKev) {
     // The advisory was checked and records no exploit.
     out.push({
       key: 'exploit',
       group: 'exploitation',
-      label: 'No known exploit',
+      label: t('findings.signals.noExploit', 'No known exploit'),
       effect: 'lowers',
     })
   }
 
   if (typeof f.epssScore === 'number') {
-    const pct =
-      typeof f.epssPercentile === 'number'
-        ? ` · ${formatEpssPercentile(f.epssPercentile, 0)} percentile`
-        : ''
+    const score = formatEpssScore(f.epssScore, f.epssScore < 0.1 ? 2 : 1)
     out.push({
       key: 'epss',
       group: 'exploitation',
-      label: `EPSS ${formatEpssScore(f.epssScore, f.epssScore < 0.1 ? 2 : 1)}${pct}`,
+      label:
+        typeof f.epssPercentile === 'number'
+          ? t('findings.signals.epssWithPercentile', 'EPSS {score} · {percentile} percentile', {
+              score,
+              percentile: formatEpssPercentile(f.epssPercentile, 0),
+            })
+          : t('findings.signals.epss', 'EPSS {score}', { score }),
       effect: f.epssScore >= EPSS_HIGH ? 'raises' : 'neutral',
-      detail: 'Probability of exploitation in the next 30 days (FIRST EPSS)',
+      detail: t(
+        'findings.signals.epssDetail',
+        'Probability of exploitation in the next 30 days (FIRST EPSS)'
+      ),
     })
   }
 
   // --- Exposure -----------------------------------------------------------
   const asset = f.assets[0]
   if (f.isInternetAccessible || asset?.isInternetAccessible) {
-    out.push({ key: 'internet', group: 'exposure', label: 'Internet-facing', effect: 'raises' })
+    out.push({
+      key: 'internet',
+      group: 'exposure',
+      label: t('findings.signals.internetFacing', 'Internet-facing'),
+      effect: 'raises',
+    })
   } else if (f.isNetworkAccessible) {
-    out.push({ key: 'network', group: 'exposure', label: 'Network-reachable', effect: 'neutral' })
+    out.push({
+      key: 'network',
+      group: 'exposure',
+      label: t('findings.signals.networkReachable', 'Network-reachable'),
+      effect: 'neutral',
+    })
   }
 
   const reach = f.reachableFromCount ?? 0
@@ -120,35 +160,61 @@ export function riskSignals(f: SignalInput): RiskSignal[] {
     out.push({
       key: 'reachable',
       group: 'exposure',
-      label: `Reachable from ${reach} entry point${reach === 1 ? '' : 's'}`,
+      label:
+        reach === 1
+          ? t('findings.signals.reachableFromOne', 'Reachable from 1 entry point')
+          : t('findings.signals.reachableFromMany', 'Reachable from {count} entry points', {
+              count: reach,
+            }),
       effect: 'raises',
     })
   } else if (f.isReachable) {
-    out.push({ key: 'reachable', group: 'exposure', label: 'Reachable', effect: 'raises' })
+    out.push({
+      key: 'reachable',
+      group: 'exposure',
+      label: t('findings.signals.reachable', 'Reachable'),
+      effect: 'raises',
+    })
+  }
+  // Nothing says whether an attacker can reach it: say so, never guess.
+  const exposureKnown = !!asset?.exposure && asset.exposure !== 'unknown'
+  if (
+    asset &&
+    !exposureKnown &&
+    !out.some((x) => x.group === 'exposure') &&
+    !asset.isInternetAccessible
+  ) {
+    out.push({
+      key: 'reachability-unknown',
+      group: 'exposure',
+      label: t('findings.signals.reachabilityUnknown', 'Reachability unknown'),
+      effect: 'neutral',
+      detail: t(
+        'findings.signals.reachabilityUnknownDetail',
+        'No exposure, attack-path or call-path data for this asset yet'
+      ),
+    })
   }
 
   // --- Business impact ----------------------------------------------------
   // Not rated (none) is not a signal.
-  if (asset?.criticality && asset.criticality !== 'none') {
+  if (asset?.criticality && CRITICALITY_SIGNAL[asset.criticality]) {
     const c = asset.criticality
     out.push({
       key: 'criticality',
       group: 'impact',
-      label: c === 'critical' ? 'Critical asset' : `${CRITICALITY_LABELS[c]}-criticality asset`,
+      label: t(CRITICALITY_SIGNAL[c].key, CRITICALITY_SIGNAL[c].fallback),
       effect: c === 'critical' || c === 'high' ? 'raises' : 'neutral',
     })
   }
   // "Public" says the same as "Internet-facing"; show it only when that is absent.
   const internet = out.some((x) => x.key === 'internet')
-  if (
-    asset?.exposure &&
-    asset.exposure !== 'unknown' &&
-    !(internet && asset.exposure === 'public')
-  ) {
+  const exposureLabel = asset?.exposure ? EXPOSURE_SIGNAL[asset.exposure] : undefined
+  if (asset?.exposure && exposureLabel && !(internet && asset.exposure === 'public')) {
     out.push({
       key: 'asset-exposure',
       group: 'impact',
-      label: `${asset.exposure.charAt(0).toUpperCase()}${asset.exposure.slice(1)} asset`,
+      label: t(exposureLabel.key, exposureLabel.fallback),
       effect: asset.exposure === 'public' ? 'raises' : 'neutral',
     })
   }

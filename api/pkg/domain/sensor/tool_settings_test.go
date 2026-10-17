@@ -159,7 +159,7 @@ func TestToolSettingsDiffRedactsSensitive(t *testing.T) {
 
 func TestEffectiveToolSettings(t *testing.T) {
 	s := mustToolSchema(t)
-	eff, err := EffectiveToolSettings(s, values(t, `{"rate_limit": 300}`))
+	eff, err := EffectiveToolSettings(s, AdminValues{Sensor: values(t, `{"rate_limit": 300}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,10 +183,10 @@ func TestEffectiveToolSettings(t *testing.T) {
 	if a := byKey["api_token"]; a.Value != nil || a.Source != "" {
 		t.Fatalf("api_token = %+v", a)
 	}
-	if _, err := EffectiveToolSettings(s, values(t, `{"bogus": 1}`)); err == nil {
+	if _, err := EffectiveToolSettings(s, AdminValues{Sensor: values(t, `{"bogus": 1}`)}); err == nil {
 		t.Fatal("invalid values resolved")
 	}
-	if eff, err := EffectiveToolSettings(nil, nil); err != nil || len(eff) != 0 {
+	if eff, err := EffectiveToolSettings(nil, AdminValues{}); err != nil || len(eff) != 0 {
 		t.Fatalf("nil schema = %v, %v", eff, err)
 	}
 }

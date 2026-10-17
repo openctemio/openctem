@@ -126,7 +126,7 @@ func registerTenantRoutes(
 
 		// Risk scoring settings (admin+)
 		r.GET("/settings/risk-scoring", h.GetRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
-		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUp())
 		r.POST("/settings/risk-scoring/preview", h.PreviewRiskScoringChanges, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.POST("/settings/risk-scoring/recalculate", h.RecalculateRiskScores, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.GET("/settings/risk-scoring/presets", h.GetRiskScoringPresets, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
@@ -238,16 +238,16 @@ func tenantPerm(p permission.Permission) Middleware {
 	}
 }
 
-// registerOrganizationPlanRoutes serves the organization's plan, limits and
-// usage (Settings > Plan & usage) under the token singleton
-// /api/v1/organization: owners and administrators with settings:read
-// (docs/architecture/plans-and-limits.md).
-func registerOrganizationPlanRoutes(router Router, h *handler.PlanHandler, authMiddleware, userSyncMiddleware Middleware) {
+// registerOrganizationLimitsRoutes serves the limits and unavailable
+// features that apply to the organization (Settings > Usage & limits) under
+// the token singleton /api/v1/organization: owners and administrators with
+// settings:read (docs/architecture/limits.md).
+func registerOrganizationLimitsRoutes(router Router, h *handler.LimitsHandler, authMiddleware, userSyncMiddleware Middleware) {
 	if h == nil {
 		return
 	}
-	router.Group("/api/v1/organization/plan", func(r Router) {
-		r.GET("/", h.GetOwnPlan, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+	router.Group("/api/v1/organization/limits", func(r Router) {
+		r.GET("/", h.GetOwnLimits, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
@@ -287,6 +287,49 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 	if localAuth == nil && tenantH == nil {
 		return
 	}
+	if tenantH != nil {
+		// What inviting an address would do, before sending (RFC-095): the
+		// same gate as creating an invitation.
+		router.Group("/api/v1/organization/invitations", func(r Router) {
+			r.POST("/preview", tenantH.PreviewInvitation, middleware.RequireAdmin(), middleware.Require(permission.MembersInvite))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
+	if tenantH != nil {
+		// Ownership transfer (RFC-095): the owner asks with step-up; the
+		// member asked accepts with their own step-up, or declines. Reading,
+		// accepting and declining are member routes; the service answers 404
+		// unless the caller is the owner or the member asked.
+		router.Group("/api/v1/organization/ownership-transfer", func(r Router) {
+			r.GET("/", tenantH.GetOwnershipTransfer, middleware.Require(permission.TeamRead))
+			r.POST("/", tenantH.StartOwnershipTransfer, middleware.RequireOwner(), requireStepUp())
+			r.DELETE("/", tenantH.CancelOwnershipTransfer, middleware.RequireOwner())
+			r.POST("/approve", tenantH.AcceptOwnershipTransfer, middleware.Require(permission.TeamRead), requireStepUp())
+			r.POST("/reject", tenantH.DeclineOwnershipTransfer, middleware.Require(permission.TeamRead))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
+	if tenantH != nil {
+		// Domains: what the organization's verified SSO domains do to
+		// accounts on them (RFC-104). Changing it decides who may join and
+		// who must use SSO: owner only, with step-up.
+		router.Group("/api/v1/organization/settings/domains", func(r Router) {
+			r.GET("/", tenantH.ListDomainSignupPolicies, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+			r.PUT("/{domain_id}/signup-policy", tenantH.UpdateDomainSignupPolicy, middleware.RequireOwner(), middleware.Require(permission.SettingsWrite), requireStepUp())
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+		// Leaving the organization of the credential (RFC-104): any member,
+		// for themselves only.
+		router.Group("/api/v1/organization/leave", func(r Router) {
+			r.POST("/", tenantH.LeaveOrganization, middleware.Require(permission.TeamRead), requireStepUp())
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
+	if tenantH != nil {
+		// Requests to join by a verified email domain (RFC-104): the
+		// organization's own inbox.
+		router.Group("/api/v1/organization/join-requests", func(r Router) {
+			r.GET("/", tenantH.ListJoinRequests, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
+			r.POST("/{request_id}/approve", tenantH.ApproveJoinRequest, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
+			r.POST("/{request_id}/reject", tenantH.RejectJoinRequest, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
 	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {
 		if localAuth != nil {
 			r.DELETE("/mfa", localAuth.ResetMemberMFA, middleware.RequireAdmin(), requireStepUp())
@@ -298,5 +341,22 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 			// External members (RFC-058): when the access ends.
 			r.PATCH("/access", tenantH.UpdateMemberAccess, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
 		}
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
+// registerOrganizationSupportAccessRoutes serves support access (RFC-063)
+// under the token singleton /api/v1/organization/support-access: an owner
+// grants a named platform support administrator time-boxed, read-only access
+// (recent re-authentication); owners and administrators list and revoke;
+// every member sees the active grants (the banner).
+func registerOrganizationSupportAccessRoutes(router Router, h *handler.SupportAccessHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/support-access", func(r Router) {
+		r.GET("/active", h.Active, middleware.Require(permission.TeamRead))
+		r.GET("/grants", h.List, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+		r.POST("/grants", h.Create, middleware.RequireOwner(), requireStepUp())
+		r.DELETE("/grants/{grant_id}", h.Revoke, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

@@ -51,6 +51,10 @@ func (h *grbHarness) user(tenant shared.ID, kind string, systemRole string) shar
 	} else {
 		h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, id.String(), tenant.String())
 	}
+	// The owner role needs the owner membership (database trigger).
+	if systemRole == roledom.OwnerRoleID.String() {
+		h.exec(`UPDATE tenant_members SET role = 'owner' WHERE user_id = $1 AND tenant_id = $2`, id.String(), tenant.String())
+	}
 	// The membership trigger grants the label role; start from no role.
 	h.exec(`DELETE FROM user_roles WHERE user_id = $1 AND tenant_id = $2`, id.String(), tenant.String())
 	if systemRole != "" {
@@ -276,7 +280,7 @@ func TestTeamRoleBinding_ExternalsNeverGetFullDataThroughATeam(t *testing.T) {
 	if err := h.groups.BindRole(ctx, h.team.String(), h.fullData.String(), h.actx(h.owner)); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.addMember(h.owner, h.outsider); !errors.Is(err, accesscontrol.ErrExternalRoleCeiling) {
+	if err := h.addMember(h.owner, h.outsider); !errors.Is(err, accesscontrol.ErrExternalTeamFullData) {
 		t.Fatalf("external member joins a full-data team: %v", err)
 	}
 	// And a full-data role is not bound to a team that has an external member.
@@ -284,7 +288,7 @@ func TestTeamRoleBinding_ExternalsNeverGetFullDataThroughATeam(t *testing.T) {
 	if _, err := h.groups.AddMember(ctx, accesscontrol.AddGroupMemberInput{GroupID: other.String(), UserID: h.outsider, Role: "member"}, h.actx(h.owner)); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.groups.BindRole(ctx, other.String(), h.fullData.String(), h.actx(h.owner)); !errors.Is(err, accesscontrol.ErrExternalRoleCeiling) {
+	if err := h.groups.BindRole(ctx, other.String(), h.fullData.String(), h.actx(h.owner)); !errors.Is(err, accesscontrol.ErrExternalTeamFullData) {
 		t.Fatalf("full-data role bound to a team with an external member: %v", err)
 	}
 	full, err := h.roles.HasFullDataAccess(ctx, rid(h.tenant), rid(h.outsider))

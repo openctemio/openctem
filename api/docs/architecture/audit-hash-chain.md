@@ -178,3 +178,114 @@ signed.
 
 The rebaseline also appears in the audit log itself: filter on action
 `audit.chain_rebaselined`.
+
+## The administrators' audit log
+
+`admin_audit_logs` (platform administrators' actions) has its own, single
+chain, built differently from the tenant chain: the database computes it
+(migration 002545), so every writer is covered, the API, the console service
+and the `bootstrap-admin` CLI alike.
+
+| Piece | Where |
+|---|---|
+| Chain columns on the row: `chain_position`, `prev_hash`, `hash` | `admin_audit_logs` |
+| `hash = SHA-256(prev_hash \| payload)`, payload = every other column as a fixed-order JSON array, the timestamp as epoch microseconds | `admin_audit_row_payload`, `admin_audit_row_hash` (SQL) |
+| Append: a `BEFORE INSERT` trigger takes a transaction-scoped advisory lock, reads the tail and overwrites whatever chain values the writer sent | `admin_audit_chain_append` |
+| Append-only: `UPDATE`, `DELETE` and `TRUNCATE` are refused by triggers, and the API role holds no `UPDATE`/`DELETE`/`TRUNCATE` grant on the table (the migration and `deploy/postgres/least-privilege-roles.sql` revoke them) | `admin_audit_refuse_change` |
+| Retention: `admin_audit_prune(cutoff, max_rows)` (`SECURITY DEFINER`, runs as the table owner) deletes only the oldest prefix older than `max(cutoff, now - 365 days)` and records an anchor | `admin_audit_chain_anchors`; the admin audit retention controller calls it |
+| Verify: recompute each online row with the same SQL function, check links from the newest anchor and that no position is missing | `AuditLogRepository.VerifyChain`; `GET /api/v1/admin/audit-logs/chain` (any admin, Security > Activity); `bootstrap-admin verify-audit [-json]` (exit 1 on a break) |
+
+Off-box copy (`ADMIN_AUDIT_SINK`). The chain cannot stop the table owner from
+re-signing it, so the API ships the administrators' audit log to a destination
+the database operator cannot write. Off unless set. Implementation:
+`internal/infra/auditsink`, an exclusive controller (one replica at a time,
+under the controller lease) with its cursor in `admin_audit_forward_cursor`.
+
+| Setting | Meaning |
+|---|---|
+| `ADMIN_AUDIT_SINK` | `https://collector/path`, `syslog+tls://host:port` or `file:///path`. Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. An unusable value stops the API at boot. |
+| `ADMIN_AUDIT_SINK_SECRET` | HMAC-SHA256 key of the webhook, at least 32 bytes, required for https and refused otherwise. Never logged. |
+| `ADMIN_AUDIT_SINK_SYSLOG_CA_FILE` | PEM roots for the syslog collector (default: system roots). |
+| `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT`, `_CLIENT_KEY` | PEM client certificate and key (set together), for mutual TLS. |
+| `ADMIN_AUDIT_SINK_HEAD_INTERVAL` | Head-only export when no row is new (15 minutes). |
+
+**Delivery.** Rows go out in chain order in batches of up to 500 (at most 10
+batches per run, every 15 seconds). The cursor (position and hash of the last
+accepted row) moves forward only after the sink accepted the batch (a 2xx for
+the webhook, the collector closing the TLS stream after reading it for syslog, a synced line for the file), so
+delivery is at-least-once: a failure, a crash or a failed cursor save re-sends
+the batch. The receiver de-duplicates on the chain position; the batch id is
+`<first>-<last>` (or `head-<position>`). A failed run backs off exponentially
+from 15 seconds up to 15 minutes. The cursor never moves backwards.
+
+**Payload.** One JSON object per batch: `version`, `batch_id`, `sent_at`,
+`first_position`, `last_position`, `rows`, `head` (`position`, `hash`) and
+`chain` (`verified`, `ok`, `breaks`, `truncated`, `verified_at`). Each row has
+`position`, `prev_hash`, `hash`, `id`, `at`, `admin_id`, `admin_email`,
+`action`, `resource_type`, `resource_id`, `resource_name`, `method`, `path`,
+`status`, `ip`, `success`, `error` and `severity`. The request body and the
+user agent are withheld (the hash covers them, so the database row can still be
+checked against it). The columns are explicit: `AdminAuditShippedColumns` and
+`AdminAuditWithheldColumns` together name every column of `admin_audit_logs`,
+and `TestAdminAuditSinkColumns_DB` fails when a column is added without a
+decision, so nothing leaves the box by accident.
+
+**Webhook authentication.** Headers `X-OpenCTEM-Timestamp` (unix seconds),
+`X-OpenCTEM-Batch-Id` and `X-OpenCTEM-Signature: sha256=<hex HMAC-SHA256(secret,
+timestamp + "." + body)>`. The receiver verifies the signature in constant time
+and refuses a timestamp older than a few minutes. Each batch carries its own
+send time. Redirects are never followed. The client is the operator's (the URL
+is an environment setting, usually a collector on a private network, so it is
+not dialed through the SSRF guard); errors name the host and the reason only,
+never the URL or the secret.
+
+**Syslog.** RFC 5424 messages (one per row and one for the head) over TLS 1.2+
+(RFC 5425, octet-counting frames), verified against the roots above. Configure
+the client certificate and key and require them on the collector (mutual TLS)
+so nobody else can write rows or a head into the copy. Restrict who can read
+the copy too: it holds what the table holds, less the request body.
+
+Syslog has no application-level acknowledgement. After the batch is written
+the sender half-closes and counts it delivered only when the collector reads
+to the end and closes its side cleanly before the 20 second deadline; a
+timeout or a reset fails the batch and it is re-sent. That proves less than the
+webhook's 2xx or the file's fsync: a collector can close and still drop the
+batch. Prefer https or file where the copy must be provable.
+
+**Gaps.** The forwarder checks that each batch continues the cursor (first
+position is the cursor's plus one and its previous hash is the cursor's hash).
+When it does not, rows were removed or rewritten after delivery: it logs
+`admin_audit_forward_gap`, raises `openctem_admin_audit_forward_gaps_total` and
+adds a `gap` object (`expected_position`, `first_position`,
+`prev_hash_matches`) to the batch, and keeps delivering so the copy never stalls.
+
+**Chain state and head export.** The forwarder verifies the chain every hour
+and puts the result in every export. `chain.verified` is false until a
+verification ran, and again after one that could not run: the export never
+repeats an older good result as current; a failed run is retried within five
+minutes. When nothing is new it still sends a row-less batch every
+`ADMIN_AUDIT_SINK_HEAD_INTERVAL`, so the receiver can alarm on silence and
+compare the head with what the database later claims. Someone who controls the
+database can re-sign the whole chain, but cannot change the heads and rows
+already sent: compare them with `GET /api/v1/admin/audit-logs/chain` or
+`bootstrap-admin verify-audit -json`.
+
+**Alerts.** Prometheus: `openctem_admin_audit_forward_consecutive_failures`
+(above 0 for several minutes), `..._forward_failures_total{sink}`,
+`..._forward_rows_total`, `..._forward_lag_rows`, `..._forward_lag_seconds`,
+`..._forward_last_success_timestamp_seconds` (alert when it stops moving),
+`openctem_admin_audit_chain_ok` (0 on a break), `..._chain_breaks_total` and
+`..._chain_verify_errors_total`. Error logs: `admin audit forward failed`,
+`admin audit forwarder is lagging` (oldest unsent row older than 10 minutes)
+and `admin_audit_chain_break` (the SIEM keyword).
+
+The administrator a row names is history: the foreign key from `admin_id` to
+`admin_users` is dropped, so deleting an administrator never rewrites a row.
+
+Threat model. The chain detects a row edited or removed by anyone who can
+bypass the triggers (the table owner disabling them, a restore from an edited
+dump); it cannot stop the owner from re-signing the whole chain: that is what
+the off-box copy (`ADMIN_AUDIT_SINK`) is for. With the single-role database
+setup the API role is the owner, so the guarantee then rests on the triggers
+alone; the least-privilege roles make it a database permission.
+

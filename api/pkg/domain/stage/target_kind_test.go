@@ -1,6 +1,10 @@
 package stage
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+)
 
 func TestClassifyTarget(t *testing.T) {
 	cases := map[string]TargetKind{
@@ -23,8 +27,13 @@ func TestClassifyTarget(t *testing.T) {
 		"app.example.com:8443":           KindService,
 		"203.0.113.9:443/tcp":            KindService,
 		"[2001:db8::1]:443":              KindService,
-		"github.com/acme/app":            KindOther,
-		"registry.example.com/app:1.2.3": KindOther,
+		"github.com/acme/app":            KindPath,
+		"gitlab.com/acme/sub/app":        KindPath,
+		"git@github.com:acme/app":        KindPath,
+		"example.com/login":              KindPath,
+		"registry.example.com/app:1.2.3": KindPath,
+		"intranet/app":                   KindOther,
+		"example.com/":                   KindOther,
 		"":                               KindOther,
 	}
 	for in, want := range cases {
@@ -62,11 +71,14 @@ func TestAcceptsKind(t *testing.T) {
 		if !st.AcceptsKind(KindOther) {
 			t.Errorf("%s refuses an unclassified target", key)
 		}
+		if st.AcceptsKind(KindPath) {
+			t.Errorf("%s takes a repository or path target", key)
+		}
 	}
 	// Stages that take no network kind are not gated by kind.
-	for _, key := range []Key{SecretsCode, SASTCode, ContainerImage} {
+	for _, key := range []Key{SecretsCode, SASTCode, SCADeps, IaCMisconfig, ContainerImage} {
 		st, _ := Lookup(key)
-		for _, k := range []TargetKind{KindName, KindAddr, KindRange, KindURL, KindService} {
+		for _, k := range []TargetKind{KindName, KindAddr, KindRange, KindURL, KindService, KindPath} {
 			if !st.AcceptsKind(k) {
 				t.Errorf("%s refuses %s", key, k)
 			}
@@ -91,12 +103,78 @@ func TestFilterKinds(t *testing.T) {
 // A target with a stored type is left to the type gate, except a range.
 func TestFilterKinds_TypedTargets(t *testing.T) {
 	st, _ := Lookup(DASTWeb)
-	typed := func(s string) bool { return s == "mystery" || s == "203.0.113.0/24" }
+	typed := func(s string) (asset.TypeRef, bool) {
+		return asset.TypeRef{Type: asset.AssetTypeNetwork}, s == "mystery" || s == "203.0.113.0/24"
+	}
 	kept, refused := st.FilterKinds([]string{"mystery", "plain", "203.0.113.0/24", "https://app.example.com"}, typed)
 	if len(kept) != 2 || kept[0] != "mystery" || kept[1] != "https://app.example.com" {
 		t.Fatalf("kept = %v", kept)
 	}
 	if refused[KindName] != 1 || refused[KindRange] != 1 {
 		t.Fatalf("refused = %v", refused)
+	}
+}
+
+// Every network stage refuses a repository: one in the path form whatever
+// its stored type, and a repository asset whatever its name.
+func TestFilterKinds_Repositories(t *testing.T) {
+	repoNamed := map[string]bool{"acme-app": true, "github.com/acme/app": true}
+	typeOf := func(s string) (asset.TypeRef, bool) {
+		if repoNamed[s] {
+			return asset.TypeRef{Type: asset.AssetTypeRepository}, true
+		}
+		if s == "example.com/login" {
+			return asset.TypeRef{Type: asset.AssetTypeService, SubType: "discovered_url"}, true
+		}
+		return asset.TypeRef{}, false
+	}
+	in := []string{"github.com/acme/app", "acme-app", "git@gitlab.com:acme/app", "example.com/login", "app.example.com", "https://app.example.com"}
+	for _, key := range []Key{DiscoverSubdomains, ResolveDNS, ScanPorts, ProbeHTTP, CrawlWeb, VulnTemplates, DASTWeb, NetworkVAConnector} {
+		st, _ := Lookup(key)
+		kept, refused := st.FilterKinds(in, typeOf)
+		for _, k := range kept {
+			if repoNamed[k] || ClassifyTarget(k) == KindPath {
+				t.Errorf("%s kept %q", key, k)
+			}
+		}
+		if refused[KindPath] != 4 {
+			t.Errorf("%s refused %v, want 4 path targets", key, refused)
+		}
+		if msg := st.DescribeRefusedKinds(map[TargetKind]int{KindPath: 1}); msg != "1 path target(s): "+st.Name+" does not take them ("+ReasonPathTarget+")" {
+			t.Errorf("%s reason = %q", key, msg)
+		}
+	}
+	for _, key := range []Key{SecretsCode, SASTCode, SCADeps, IaCMisconfig} {
+		st, _ := Lookup(key)
+		if kept, refused := st.FilterKinds(in, typeOf); len(kept) != len(in) || len(refused) != 0 {
+			t.Errorf("%s kept %v refused %v; a code stage takes repositories", key, kept, refused)
+		}
+	}
+}
+
+func TestTakesPathTargets(t *testing.T) {
+	cases := []struct {
+		tool      string
+		caps      []string
+		ok, known bool
+	}{
+		{"nuclei", nil, false, true},
+		{"httpx", nil, false, true},
+		{"naabu", nil, false, true},
+		{"subfinder", nil, false, true},
+		{"semgrep", nil, true, true},
+		{"gitleaks", nil, true, true},
+		{"", []string{"probe.http@1"}, false, true},
+		{"", []string{"scan.ports"}, false, true},
+		{"", []string{"sast.code@1"}, true, true},
+		{"tenant-tool", []string{"secrets.code"}, true, true},
+		{"tenant-tool", nil, false, false},
+		{"", nil, false, false},
+	}
+	for _, c := range cases {
+		ok, known := TakesPathTargets(c.tool, c.caps)
+		if ok != c.ok || known != c.known {
+			t.Errorf("TakesPathTargets(%q, %v) = %v, %v; want %v, %v", c.tool, c.caps, ok, known, c.ok, c.known)
+		}
 	}
 }

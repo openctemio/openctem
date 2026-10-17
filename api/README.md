@@ -184,7 +184,7 @@ explicitly for local development (`.env.example` does).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTH_PROVIDER` | `local` | Auth provider: `local`, `oidc`, `hybrid` (the default was `oidc` up to v0.8.0) |
-| `TENANT_CREATION_MODE` | `admin_only` | Seeds the sign-up policy on the first start: `admin_only` (only the platform administrator creates organizations; nobody else can create an account without an invitation or their organization's SSO) or `self_service` (anyone may sign up and create one). Afterwards change it in the console (System > Sign-up). |
+| `SIGNUP_MODE` | `disabled` | The sign-up ceiling, which no API can change: `disabled` (only the platform administrator creates organizations; nobody else can create an account without an invitation or their organization's SSO), `domain` (sign-up only for addresses on an organization's verified domain) or `open` (anyone may sign up and create an organization; needs the platform e-mail, and in production the Turnstile keys). The console (System > Sign-up) switches sign-up within it. Replaces `TENANT_CREATION_MODE`. |
 | `AI_PLATFORM_PROVIDER` | — | AI triage: `claude`, `openai`, `gemini` |
 | `RATE_LIMIT_RPS` | `100` | Rate limit (requests/second) |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
@@ -194,7 +194,7 @@ explicitly for local development (`.env.example` does).
 Public registration and self-service organizations are off by default:
 
 ```env
-TENANT_CREATION_MODE=admin_only    # Seeds the sign-up policy: no public signup (the default)
+SIGNUP_MODE=disabled    # No public sign-up; the console cannot open it (the default)
 ```
 
 Platform e-mail (set-password links, invitations, verification) is set in the

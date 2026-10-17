@@ -147,6 +147,11 @@ export interface UpdateScopeSettingsInput {
    * keeps the stored one (the default is on, except under Strict approval).
    */
   auto_coverage?: boolean
+  /**
+   * A CI trust's new repository entries wait for a verified pipeline run
+   * (opt-in, default off); omitted keeps the stored value.
+   */
+  ci_scope_requires_proof?: boolean
 }
 
 /** The unclassified-scans setting (RFC-054 §16). */

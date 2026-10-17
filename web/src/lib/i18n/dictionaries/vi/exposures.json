@@ -15,5 +15,7 @@
   "exposures.disposition.rejected": "Đã từ chối yêu cầu",
   "exposures.disposition.canceled": "Đã hủy yêu cầu",
   "exposures.disposition.failed": "Không thể cập nhật yêu cầu",
-  "exposures.disposition.badge": "Chờ phê duyệt"
+  "exposures.disposition.badge": "Chờ phê duyệt",
+  "exposures.disposition.selfHint": "Không ai khác có thể phê duyệt. Là chủ sở hữu, bạn có thể tự phê duyệt kèm lý do và mã từ ứng dụng xác thực.",
+  "exposures.disposition.selfApprove": "Tự phê duyệt yêu cầu của tôi"
 }

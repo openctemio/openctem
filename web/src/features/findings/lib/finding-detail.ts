@@ -8,6 +8,9 @@ import type {
   ApiDataFlow,
   ApiDataFlowLocation,
   ApiFinding,
+  ApiFindingRun,
+  ApiFindingFixPlan,
+  ApiFindingFixPlanItem,
   ApiFindingSourceData,
 } from '../api/finding-api.types'
 import type {
@@ -20,6 +23,10 @@ import type {
   DataFlowLocation,
   DataFlowLocationType,
   FindingDetail,
+  FindingProvenance,
+  FindingRunSighting,
+  FindingFixPlan,
+  FindingFixPlanItem,
   FindingSourceData,
   FindingStatus,
   FindingType,
@@ -145,6 +152,67 @@ export function mapDataFlow(df: ApiDataFlow | undefined): DataFlow | undefined {
   return steps.length > 0 ? { steps, commitSha: trace?.commit_sha || undefined } : undefined
 }
 
+function mapRun(r: ApiFindingRun): FindingRunSighting {
+  return {
+    id: r.id,
+    provider: r.provider,
+    externalRunId: r.external_run_id,
+    pipelineUrl: r.pipeline_url,
+    branch: r.branch,
+    commitSha: r.commit_sha,
+    pullRequest: r.pull_request,
+    isDefaultBranch: r.is_default_branch,
+    createdAt: r.created_at,
+  }
+}
+
+function mapProvenance(api: ApiFinding): FindingProvenance | undefined {
+  const p = api.provenance
+  if (!p && !api.first_detected_branch && !api.last_seen_branch) return undefined
+  return {
+    firstDetectedBranch: api.first_detected_branch,
+    firstDetectedCommit: api.first_detected_commit,
+    lastSeenBranch: api.last_seen_branch,
+    lastSeenCommit: api.last_seen_commit,
+    lastSeenTool: api.last_seen_tool,
+    branches: (p?.branches ?? []).map((b) => ({
+      name: b.name,
+      isDefault: b.is_default,
+      status: b.status,
+      firstSeenAt: b.first_seen_at,
+      lastSeenAt: b.last_seen_at,
+      firstCommit: b.first_commit,
+      lastCommit: b.last_commit,
+    })),
+    runs: (p?.runs ?? []).map(mapRun),
+    firstRun: p?.first_run ? mapRun(p.first_run) : undefined,
+  }
+}
+
+function mapFixPlanItems(items: ApiFindingFixPlanItem[] | undefined): FindingFixPlanItem[] {
+  return (items ?? []).map((i) => ({
+    id: i.id,
+    title: i.title,
+    severity: i.severity,
+    cveId: i.cve_id,
+  }))
+}
+
+function mapFixPlan(p: ApiFindingFixPlan): FindingFixPlan {
+  return {
+    targetVersion: p.target_version,
+    majorUpgrade: p.major_upgrade,
+    openFindings: p.open_findings,
+    resolvesCount: p.resolves_count,
+    truncated: p.truncated,
+    resolves: mapFixPlanItems(p.resolves),
+    remaining: mapFixPlanItems(p.remaining),
+    completeVersion: p.complete_version,
+    completeMajor: p.complete_major,
+    completeResolves: p.complete_resolves,
+  }
+}
+
 export function toFindingDetail(api: ApiFinding): FindingDetail {
   const v = api.vulnerability
   const c = api.component
@@ -212,6 +280,12 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
 
     discoveredAt: api.first_detected_at || api.created_at,
     resolvedAt: api.resolved_at,
+    closureReason: api.closure_reason,
+    subStatusId: api.sub_status_id,
+    maxAcceptanceDays: api.max_acceptance_days,
+    verification: api.verification,
+    observation: api.observation,
+    validation: api.validation,
     verifiedAt: api.verified_at,
     createdAt: api.created_at,
     updatedAt: api.updated_at,
@@ -281,8 +355,25 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
           purl: c.purl,
           license: c.license,
           fixedIn: c.fixed_in,
+          fixedInMajor: c.fixed_in_major,
+          fixedVersions: c.fixed_versions,
           dependencyType: c.dependency_type,
           manifestFile: c.manifest_file,
+          manifestLine: c.manifest_line,
+          dependencyPath: c.dependency_path,
+        }
+      : undefined,
+    provenance: mapProvenance(api),
+    packageFix: api.package_fix ? mapFixPlan(api.package_fix) : undefined,
+    intel: api.intel
+      ? {
+          cvssSource: api.intel.cvss_source,
+          publishedAt: api.intel.published_at,
+          modifiedAt: api.intel.modified_at,
+          references: api.intel.references ?? [],
+          epssDate: api.intel.epss_date,
+          kevDateAdded: api.intel.kev_date_added,
+          kevRansomware: api.intel.kev_ransomware,
         }
       : undefined,
     advisory: v

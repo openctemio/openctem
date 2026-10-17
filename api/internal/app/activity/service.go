@@ -199,124 +199,6 @@ func (s *FindingActivityService) RecordActivity(ctx context.Context, input Recor
 	return activity, nil
 }
 
-// RecordBatchAutoResolved creates activity records for findings that were auto-resolved
-// during ingestion. This provides an audit trail for the auto-resolve lifecycle event.
-func (s *FindingActivityService) RecordBatchAutoResolved(
-	ctx context.Context,
-	tenantID shared.ID,
-	findingIDs []shared.ID,
-	toolName string,
-	scanID string,
-) error {
-	if len(findingIDs) == 0 {
-		return nil
-	}
-
-	activities := make([]*vulnerability.FindingActivity, 0, len(findingIDs))
-	for _, fid := range findingIDs {
-		activity, err := vulnerability.NewFindingActivity(
-			tenantID,
-			fid,
-			vulnerability.ActivityAutoResolved,
-			nil, // no actor - system action
-			vulnerability.ActorTypeSystem,
-			map[string]any{
-				"reason":  "not_found_in_full_scan",
-				"scanner": toolName,
-				"scan_id": scanID,
-			},
-			vulnerability.SourceAuto,
-			nil,
-		)
-		if err != nil {
-			s.logger.Warn("failed to create auto-resolved activity", "finding_id", fid.String(), "error", err)
-			continue
-		}
-		activities = append(activities, activity)
-	}
-
-	if err := s.activityRepo.CreateBatch(ctx, activities); err != nil {
-		return fmt.Errorf("failed to batch create auto-resolved activities: %w", err)
-	}
-
-	s.logger.Info("recorded batch auto-resolved activities", "count", len(activities))
-	return nil
-}
-
-// RecordBatchAutoReopened creates activity records for findings a scan
-// re-detected and reopened: a regression of a finding closed as fixed (by a scan
-// or by a person), or a scan refuting a validation downgrade. The reopen cleared
-// the finding's resolution fields, so the entry keeps what they were — the
-// previous status, resolution, method and resolver — plus the scanner and scan
-// that saw it again.
-func (s *FindingActivityService) RecordBatchAutoReopened(
-	ctx context.Context,
-	tenantID shared.ID,
-	reopened []vulnerability.ReopenedFinding,
-	scanner, scanID string,
-) error {
-	if len(reopened) == 0 {
-		return nil
-	}
-
-	activities := make([]*vulnerability.FindingActivity, 0, len(reopened))
-	for _, rf := range reopened {
-		changes := map[string]any{
-			"reason":          "regression_detected_again",
-			"old_status":      string(rf.PreviousStatus),
-			"new_status":      string(vulnerability.FindingStatusConfirmed),
-			"previous_status": string(rf.PreviousStatus),
-		}
-		switch rf.PreviousStatus {
-		case vulnerability.FindingStatusValidatedFixed:
-			changes["reason"] = "validation_downgrade_refuted_by_scan"
-		case vulnerability.FindingStatusNotObserved:
-			// Not a regression: it was never counted as fixed.
-			changes["reason"] = "observed_again"
-		}
-		if rf.PreviousResolution != "" {
-			changes["previous_resolution"] = rf.PreviousResolution
-		}
-		if rf.PreviousResolutionMethod != "" {
-			changes["previous_resolution_method"] = rf.PreviousResolutionMethod
-		}
-		if rf.PreviousResolvedBy != nil {
-			changes["previous_resolved_by"] = rf.PreviousResolvedBy.String()
-		}
-		if rf.PreviousResolvedAt != nil {
-			changes["previous_resolved_at"] = rf.PreviousResolvedAt.UTC().Format(time.RFC3339)
-		}
-		if scanner != "" {
-			changes["scanner"] = scanner
-		}
-		if scanID != "" {
-			changes["scan_id"] = scanID
-		}
-		activity, err := vulnerability.NewFindingActivity(
-			tenantID,
-			rf.ID,
-			vulnerability.ActivityAutoReopened,
-			nil, // no actor - system action
-			vulnerability.ActorTypeSystem,
-			changes,
-			vulnerability.SourceAuto,
-			nil,
-		)
-		if err != nil {
-			s.logger.Warn("failed to create auto-reopened activity", "finding_id", rf.ID.String(), "error", err)
-			continue
-		}
-		activities = append(activities, activity)
-	}
-
-	if err := s.activityRepo.CreateBatch(ctx, activities); err != nil {
-		return fmt.Errorf("failed to batch create auto-reopened activities: %w", err)
-	}
-
-	s.logger.Info("recorded batch auto-reopened activities", "count", len(activities))
-	return nil
-}
-
 // RecordStatusChange is a convenience method for recording status changes.
 func (s *FindingActivityService) RecordStatusChange(
 	ctx context.Context,
@@ -343,6 +225,61 @@ func (s *FindingActivityService) RecordStatusChange(
 		Changes:      changes,
 		Source:       source,
 	})
+}
+
+// LifecycleMove is a person's or a delegated actor's status move as the
+// timeline keeps it: the canonical statuses, the organization sub-statuses,
+// the lifecycle version and transition that decided it, and the inputs the
+// lifecycle asked for (RFC-110).
+type LifecycleMove struct {
+	TenantID, FindingID        string
+	ActorID                    *string
+	OldStatus, NewStatus       string
+	OldSubStatus, NewSubStatus *shared.ID
+	Reason, Source             string
+	LifecycleVersion           string
+	Transition                 string
+	Fields                     map[string]string
+}
+
+// RecordLifecycleMove records a status or sub-status move.
+func (s *FindingActivityService) RecordLifecycleMove(ctx context.Context, m LifecycleMove) (*vulnerability.FindingActivity, error) {
+	changes := map[string]any{
+		"old_status": m.OldStatus,
+		"new_status": m.NewStatus,
+	}
+	if m.Reason != "" {
+		changes["reason"] = m.Reason
+	}
+	if m.OldSubStatus != nil || m.NewSubStatus != nil {
+		changes["old_sub_status_id"] = idOrNil(m.OldSubStatus)
+		changes["new_sub_status_id"] = idOrNil(m.NewSubStatus)
+	}
+	if m.LifecycleVersion != "" {
+		changes["lifecycle_version"] = m.LifecycleVersion
+	}
+	if m.Transition != "" {
+		changes["transition"] = m.Transition
+	}
+	if len(m.Fields) > 0 {
+		changes["fields"] = m.Fields
+	}
+	return s.RecordActivity(ctx, RecordActivityInput{
+		TenantID:     m.TenantID,
+		FindingID:    m.FindingID,
+		ActivityType: string(vulnerability.ActivityStatusChanged),
+		ActorID:      m.ActorID,
+		ActorType:    string(vulnerability.ActorTypeUser),
+		Changes:      changes,
+		Source:       m.Source,
+	})
+}
+
+func idOrNil(id *shared.ID) any {
+	if id == nil {
+		return nil
+	}
+	return id.String()
 }
 
 // RecordIntegrationStatusChange records a status change made by an

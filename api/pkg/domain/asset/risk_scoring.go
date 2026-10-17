@@ -34,10 +34,54 @@ type RiskScoringConfig struct {
 	FindingImpact       FindingImpactConfig
 	CTEMPoints          CTEMPointsConfig
 
-	// ScoreCompositionMode selects how the exposure multiplier composes with the
-	// weighted raw score. Empty / unset resolves to ScoreCompositionMultiply for
-	// backward compatibility (existing tenants see no change).
+	// ScoreCompositionMode selects the model: ScoreCompositionLikelihoodImpact,
+	// or a weighted sum composed with the exposure multiplier
+	// (ScoreCompositionMultiply, the meaning of empty, or
+	// ScoreCompositionAmplifyHeadroom).
 	ScoreCompositionMode string
+
+	// RiskLevels are the lower bounds of the level bands.
+	RiskLevels RiskLevelMap
+}
+
+// RiskLevelMap holds the lower bound of each risk level band.
+type RiskLevelMap struct {
+	CriticalMin int
+	HighMin     int
+	MediumMin   int
+	LowMin      int
+}
+
+// Risk levels.
+const (
+	RiskLevelCritical = "critical"
+	RiskLevelHigh     = "high"
+	RiskLevelMedium   = "medium"
+	RiskLevelLow      = "low"
+	RiskLevelMinimal  = "minimal" // above 0, below the low band
+	RiskLevelNone     = "none"    // 0: no open risk
+)
+
+// Level returns the risk level band of a score. Unset bands use 80/60/40/20.
+func (c RiskScoringConfig) Level(score int) string {
+	l := c.RiskLevels
+	if l.CriticalMin <= 0 || l.HighMin <= 0 || l.MediumMin <= 0 || l.LowMin <= 0 {
+		l = RiskLevelMap{CriticalMin: 80, HighMin: 60, MediumMin: 40, LowMin: 20}
+	}
+	switch {
+	case score <= 0:
+		return RiskLevelNone
+	case score >= l.CriticalMin:
+		return RiskLevelCritical
+	case score >= l.HighMin:
+		return RiskLevelHigh
+	case score >= l.MediumMin:
+		return RiskLevelMedium
+	case score >= l.LowMin:
+		return RiskLevelLow
+	default:
+		return RiskLevelMinimal
+	}
 }
 
 // ComponentWeights defines the percentage weights for each risk component.
@@ -164,6 +208,12 @@ func (e *RiskScoringEngine) CalculateScore(a *Asset) int {
 // business-alignment behavior (nothing else in the formula changes). The asset's
 // own criticality column is never mutated — only the score reflects the floor.
 func (e *RiskScoringEngine) CalculateScoreWithCriticality(a *Asset, effectiveCriticality Criticality) int {
+	return e.CalculateScoreWithInputs(a, RiskInputs{EffectiveCriticality: effectiveCriticality})
+}
+
+// weightedScore is the weighted-sum model (composition multiply or
+// amplify_headroom).
+func (e *RiskScoringEngine) weightedScore(a *Asset, effectiveCriticality Criticality) int {
 	crit := effectiveCriticality
 	if crit == "" {
 		crit = a.criticality
@@ -360,7 +410,18 @@ func (a *Asset) CalculateRiskScoreWithConfigAndCriticality(config *RiskScoringCo
 		config = &legacy
 	}
 
+	a.CalculateRiskScoreWithInputs(config, RiskInputs{EffectiveCriticality: effectiveCriticality})
+}
+
+// CalculateRiskScoreWithInputs calculates and sets the risk score from the
+// config and the inputs that do not live on the asset (effective
+// criticality, compensating-control reduction).
+func (a *Asset) CalculateRiskScoreWithInputs(config *RiskScoringConfig, in RiskInputs) {
+	if config == nil {
+		legacy := LegacyRiskScoringConfig()
+		config = &legacy
+	}
 	engine := NewRiskScoringEngine(*config)
-	a.riskScore = engine.CalculateScoreWithCriticality(a, effectiveCriticality)
+	a.riskScore = engine.CalculateScoreWithInputs(a, in)
 	a.updatedAt = time.Now().UTC()
 }

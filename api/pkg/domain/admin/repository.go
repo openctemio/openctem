@@ -145,13 +145,68 @@ type AuditLogRepository interface {
 	// Retention Management
 	// ==========================================================================
 
-	// DeleteOlderThan deletes audit logs older than the specified time.
-	// This is used for compliance-based retention policies.
-	// Returns the number of logs deleted.
-	// Note: This is a destructive operation. Ensure proper backups before running.
+	// DeleteOlderThan prunes the oldest rows written before olderThan (never
+	// newer than a year), as a prefix of the hash chain, and anchors the
+	// chain where they ended. Returns the number of rows deleted. The table is
+	// append-only: this is the only deletion the database accepts.
 	DeleteOlderThan(ctx context.Context, olderThan time.Time) (int64, error)
 
 	// CountOlderThan counts audit logs older than the specified time.
 	// Used to estimate the number of logs that will be deleted.
 	CountOlderThan(ctx context.Context, olderThan time.Time) (int64, error)
+
+	// VerifyChain walks the hash chain from the newest retention anchor to
+	// the tail and reports every row that does not verify.
+	VerifyChain(ctx context.Context) (*AuditChainReport, error)
 }
+
+// AuditChainEntry is an audit row as written, with its place in the hash
+// chain (the database computes it on insert).
+type AuditChainEntry struct {
+	Log      *AuditLog
+	Position int64
+	PrevHash string
+	Hash     string
+}
+
+// AuditChainBreakLimit bounds the breaks one verification reports.
+const AuditChainBreakLimit = 100
+
+// Reasons a row of the administrators' audit chain does not verify.
+const (
+	// ChainBreakChanged: the row's content no longer gives its stored hash.
+	ChainBreakChanged = "changed"
+	// ChainBreakLink: the row does not link to the row before it.
+	ChainBreakLink = "link"
+	// ChainBreakGap: rows are missing before this one.
+	ChainBreakGap = "gap"
+)
+
+// AuditChainBreak is one row of the administrators' audit chain that does
+// not verify.
+type AuditChainBreak struct {
+	Position int64  `json:"position"`
+	ID       string `json:"id"`
+	Reason   string `json:"reason"`
+}
+
+// AuditChainReport is the state of the administrators' audit chain.
+type AuditChainReport struct {
+	// Entries is the number of rows walked.
+	Entries int64 `json:"entries"`
+	// FirstPosition and LastPosition bound the rows online (0 when none).
+	FirstPosition int64 `json:"first_position"`
+	LastPosition  int64 `json:"last_position"`
+	// AnchorPosition is where the newest retention prune left the chain (0
+	// when nothing was pruned).
+	AnchorPosition int64 `json:"anchor_position"`
+	// Breaks lists the rows that do not verify, at most AuditChainBreakLimit;
+	// Truncated says there were more.
+	Breaks    []AuditChainBreak `json:"breaks"`
+	Truncated bool              `json:"truncated"`
+	// VerifiedAt is when the walk ran.
+	VerifiedAt time.Time `json:"verified_at"`
+}
+
+// OK reports whether every row verified.
+func (r *AuditChainReport) OK() bool { return r != nil && len(r.Breaks) == 0 }

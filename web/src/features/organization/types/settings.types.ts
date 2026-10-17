@@ -63,6 +63,10 @@ export interface SecuritySettings {
   sso_enforced?: boolean
   /** Whether personal email accounts may join (api RFC-058). */
   personal_accounts?: PersonalAccountsPolicy
+  /** Who may be invited (api RFC-095). */
+  invitees?: InviteesPolicy
+  /** Outside people no organization manages need an end of access. */
+  external_access_end_required?: boolean
   /** Members who may sign in without SSO while it is enforced. */
   sso_exceptions?: SSOException[]
   /** SSO newcomers wait for an administrator's approval (api RFC-058). */
@@ -70,6 +74,8 @@ export interface SecuritySettings {
 }
 
 export type PersonalAccountsPolicy = 'allowed' | 'allowed_with_mfa' | 'blocked'
+
+export type InviteesPolicy = 'any' | 'verified_domains' | 'allow_list'
 
 export interface SSOException {
   user_id: string
@@ -91,6 +97,8 @@ export interface UpdateSecuritySettingsInput {
   tool_http_user_agent?: string
   forbid_tool_insecure_tls?: boolean
   personal_accounts?: PersonalAccountsPolicy
+  invitees?: InviteesPolicy
+  external_access_end_required?: boolean
   /** Replaces the whole list. */
   sso_exceptions?: SSOException[]
   jit_requires_approval?: boolean
@@ -206,23 +214,70 @@ export interface RiskScoringSettings {
   floor_unowned_at_p2?: boolean
 }
 
-export interface RiskScorePreviewItem {
+/** Assets that move from one risk band to another. */
+export interface RiskBandChange {
+  from: string
+  to: string
+  count: number
+}
+
+/** One listed asset of a scoring preview (the largest changes you may see). */
+export interface RiskImpactAsset {
   asset_id: string
   asset_name: string
   asset_type: string
   current_score: number
   new_score: number
-  delta: number
+  current_level: string
+  new_level: string
 }
 
-export interface PreviewResponse {
-  assets: RiskScorePreviewItem[]
-  sample_count: number
+/** What applying new risk scoring settings would do to every asset. */
+export interface RiskImpact {
   total_assets: number
+  changed: number
+  raised: number
+  lowered: number
+  changed_bands: number
+  band_changes: RiskBandChange[]
+  top_changes: RiskImpactAsset[]
+}
+
+/** Open findings that move from one priority class to another. */
+export interface PriorityClassChange {
+  from: string
+  to: string
+  count: number
+}
+
+/** What a change of the ownership floor would do to the open findings. */
+export interface PriorityImpact {
+  open_findings: number
+  changed: number
+  raised: number
+  lowered: number
+  class_changes: PriorityClassChange[]
+  deadlines_tightened: number
+  tickets_affected: number
+  manual_overrides_kept: number
+}
+
+/** POST /settings/risk-scoring/preview: a whole-organization dry run. */
+export interface RiskScoringPreviewResponse {
+  assets: RiskImpact
+  affects_priority: boolean
+  findings?: PriorityImpact
+}
+
+/** PATCH /settings/risk-scoring: the recompute runs in the background. */
+export interface UpdateRiskScoringResponse {
+  config: RiskScoringSettings
+  recompute: 'queued'
+  scoring_version?: number
 }
 
 export interface RecalculateResponse {
-  assets_updated: number
+  assets_queued: number
 }
 
 export interface PresetInfo {

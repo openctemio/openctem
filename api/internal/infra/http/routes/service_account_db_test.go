@@ -53,7 +53,13 @@ func TestServiceAccounts(t *testing.T) {
 		t.Fatal("the service account lacks its custom role")
 	}
 	for _, r := range []string{roledom.OwnerRoleID.String(), roledom.AdminRoleID.String(), h.fullData.String()} {
-		if err := assign(r); !errors.Is(err, shared.ErrForbidden) {
+		// The system roles are refused outright on the Roles API; full data is
+		// refused by the service-account ceiling.
+		want := shared.ErrForbidden
+		if r != h.fullData.String() {
+			want = accesscontrol.ErrSystemRoleViaRoles
+		}
+		if err := assign(r); !errors.Is(err, want) {
 			t.Errorf("assign %s to a service account: %v", r, err)
 		}
 		if _, err := h.db.Exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, a.ID.String(), h.tenant.String(), r); err == nil {
@@ -64,7 +70,7 @@ func TestServiceAccounts(t *testing.T) {
 	if err := h.groups.BindRole(ctx, h.team.String(), h.fullData.String(), h.actx(h.owner)); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.addMember(h.owner, a.ID); !errors.Is(err, accesscontrol.ErrExternalRoleCeiling) {
+	if err := h.addMember(h.owner, a.ID); !errors.Is(err, accesscontrol.ErrExternalTeamFullData) {
 		t.Fatalf("service account joins a full-data team: %v", err)
 	}
 

@@ -17,9 +17,8 @@ Migration `001138_finding_branch_only`. RFC-051 §5 (CI uploads).
 branch is
 
 - the repository's default branch (`is_default`), or
-- protected (`is_protected`), or
-- of type `main` or `release` (the branch type rules: per asset, per tenant,
-  then the defaults `main`/`master` and `release/*`), or
+- protected (`is_protected`, read from the code host by repository import or
+  set by an administrator), or
 - in a repository with **no known default branch yet**: nothing is hidden
   until the platform knows which branch is the baseline.
 
@@ -27,6 +26,11 @@ A branch that no longer exists counts (fail open: a finding is never hidden by
 a missing row). Feature, hotfix, develop and other branches do not count.
 
 ## The mark
+
+A branch type guessed from the name (`main`, `release/*`) is a display label
+and never counts (migration `002147`): anyone who can push can create
+`release/x`. The CI gate uses the same rule for a pull request's baseline
+(`ci-runner-identity.md`).
 
 `findings.branch_only` (boolean, default false, partial index on
 `(tenant_id) WHERE branch_only`).
@@ -36,8 +40,8 @@ a missing row). Feature, hotfix, develop and other branches do not count.
 | A finding is inserted with a branch that does not count | `branch_only = true` | `BEFORE INSERT` trigger `trg_findings_mark_branch_only` |
 | A finding is inserted with no branch (host, cloud, pentest, manual…) or on a counting branch | `branch_only = false` | same trigger |
 | A counting branch sees a branch-only finding (its occurrence there is recorded at ingest) | promoted: `branch_only = false`, the SLA deadline keeps its length measured from now, `sla_status = on_track`; its workflows (notifications, ticket rules) run as for a new finding | `promote_branch_only_findings()` from `FindingProcessor.promoteBranchOnly` |
-| A branch starts to count (made default, protected, retyped to `main`/`release`) | its branch-only findings are promoted (no workflows) | `AFTER UPDATE` trigger on `repository_branches` |
-| No branch still shows a branch-only finding | `not_observed`, resolution `branch_expired`, a `status_changed` activity with reason `branch_only_expired` | `ExpireFeatureBranchFindings` (finding lifecycle job) |
+| A branch starts to count (made default or protected) | its branch-only findings are promoted (no workflows) | `AFTER UPDATE` trigger on `repository_branches` |
+| No branch still shows a branch-only finding | stale (`observation_state`; the status stays) | `ExpireFeatureBranchFindings` (finding lifecycle job) |
 
 Only the insert sets the mark: a finding that already counts is never hidden
 later, and a branch that stops counting hides nothing. `first_detected_at`
@@ -52,8 +56,8 @@ period and none of its occurrences is open and seen within its branch's
 retention (`retention_days`, else the default). A deleted branch removes its
 occurrences; a merged branch is no longer scanned, so its occurrences age out.
 `keep_when_inactive` is not consulted: it keeps findings of branches that
-count. `not_observed` is never a fix (decision O2); a sighting reopens
-the finding without a regression flag.
+count. Stale is never a fix (decision O2); a sighting makes the finding
+present again without a regression flag.
 
 ## Where branch-only findings are left out
 
@@ -74,6 +78,26 @@ fingerprints; the gate's findings link adds `branch_only=true` for a run on a
 branch that does not count, so it opens the branch's own findings), the branch pages and per-branch counts, a finding opened by
 id, and the secret-to-credential bridge (a secret pushed to any branch of a
 hosted repository is already exposed).
+
+## Provenance in the finding detail
+
+`GET /api/v1/findings/{id}` returns `provenance`:
+
+- `branches`: every branch the finding was seen on (`finding_branch_occurrences`
+  joined to `repository_branches`), the default branch first: first and last
+  commit, first and last time, and the branch status (`open`, `auto_fixed`,
+  `resolved`). At most 20.
+- `runs` and `first_run`: the CI runs that reported it (`ci_runs` joined
+  through `ci_run_findings` on the finding's fingerprint), newest five and the
+  first one, with the pipeline URL (http(s) only), external run id, branch,
+  commit and merge request. Only for a caller holding `scans:ci:read`; the
+  run's actor and token data are never part of it.
+
+`findings.last_seen_branch` / `last_seen_commit` follow the latest sighting:
+`Finding.EnrichFrom` moves them with the scan id, and the batch enrich
+update writes them (before, a re-sighting kept the first sighting's branch
+and commit forever). The drawer reads "last seen" from the newest branch
+occurrence.
 
 ## Security
 

@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -22,39 +23,67 @@ import (
 // a sensor (docker run, Compose, Kubernetes, Helm, yaml, env, cli) from
 // filesystem-loaded templates.
 //
-// Templates live in <templates_dir>/<format>.tmpl and use Go text/template
-// syntax. Operators can edit the .tmpl files in place without rebuilding the
-// API or frontend; changes are picked up on restart, or live if Reload() is
-// called. A missing file falls back to the built-in template of the same name
-// (identical to the shipped file; a test keeps them in step).
+// Templates live in <templates_dir>/<set>/<format>.tmpl, one directory per
+// install snippet set (a product's versions.yaml install key), and use Go
+// text/template syntax. They are product data, not platform code: a new
+// sensor product adds a directory (and a catalog entry) and needs no API
+// change. Operators can edit the .tmpl files in place, or add a set,
+// without rebuilding the API or frontend; changes are picked up on restart,
+// or live if Reload() is called. A missing shipped file falls back to the
+// built-in template of the same name (identical to the shipped file; a test
+// keeps them in step).
 //
-// Every snippet must work as pasted, for the sensor release the image tag
-// pins (SENSOR_LATEST_VERSION): tests run `bash -n` on the shell snippets and
-// parse the YAML ones.
+// Every snippet must work as pasted, for the release the image tag pins (the
+// product's latest release in versions.yaml): tests run `bash -n` on the
+// shell snippets and parse the YAML ones.
 type SensorConfigTemplateService struct {
 	templatesDir string
 	logger       *logger.Logger
 
 	mu        sync.RWMutex
-	templates map[string]*template.Template // key: format name
+	templates map[string]*template.Template // key: templateKey(set, format)
 }
 
 // templateFormats is every format, in response order.
 var templateFormats = []string{"yaml", "env", "docker", "cli", "compose", "kubernetes", "helm", "policy"}
 
-// collectorPrefix names a collector's template of a format
-// ("collector-docker"): a collector sensor runs the asset collector, with
-// its own image and settings, not the scanner.
-const collectorPrefix = "collector-"
+// installCollector is the snippet set of a collector sensor: it runs the
+// inventory collector, with its own image and settings, not the scanner.
+const installCollector = "collector"
 
-// templateNames is every template loaded: each format, and its collector
-// variant.
+// InstallSensor is the snippet set of the scanning sensor. Every set is the
+// directory <set>/ of <format>.tmpl files; a product's set (versions.yaml
+// install) may cover only some formats, but always docker.
+const InstallSensor = "sensor"
+
+// installSetRE is a snippet set name (a directory of the templates dir).
+var installSetRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
+// templateNames is every template loaded: the shipped ones (each format of
+// the scanning sensor, the collector's and each product set's files).
 func templateNames() []string {
-	out := slices.Clone(templateFormats)
-	for _, f := range templateFormats {
-		out = append(out, collectorPrefix+f)
+	out := make([]string, 0, len(builtinTemplates))
+	for name := range builtinTemplates {
+		out = append(out, name)
 	}
+	slices.Sort(out)
 	return out
+}
+
+// HasInstallSet reports whether the snippet set has at least its docker
+// template, the one every set must offer.
+func (s *SensorConfigTemplateService) HasInstallSet(set string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.templates[templateKey(set, "docker")]
+	return ok
+}
+
+func templateKey(set, format string) string {
+	if set == "" {
+		set = InstallSensor
+	}
+	return set + "/" + format
 }
 
 // SensorTemplateData is the data passed to every sensor config template.
@@ -69,6 +98,15 @@ type SensorTemplateData struct {
 	// Image is the sensor image with its pinned tag, e.g.
 	// ghcr.io/openctemio/sensor:v0.4.2. Never "latest".
 	Image string
+	// ImageTag is Image's tag (the product release it pins).
+	ImageTag string
+	// Install is the product's snippet set (InstallSensor when empty); a
+	// collector sensor always uses the collector's set.
+	Install string
+	// ReleaseIdentity is the workflow that signs the product's image
+	// (versions.yaml release_identity); the snippets that check the
+	// signature use it + "@refs/tags/" + ImageTag. Empty: no check shown.
+	ReleaseIdentity string
 	// CACert is the PEM of the platform's certificate authority when it uses
 	// a private one (SENSOR_CA_CERT_FILE); empty for a publicly trusted
 	// certificate. The snippets install it and point SSL_CERT_DIR at it.
@@ -155,11 +193,24 @@ func (s *SensorConfigTemplateService) loadBuiltins() {
 	s.mu.Unlock()
 }
 
-// Reload re-reads all template files from disk. Safe to call at runtime.
+// Reload re-reads all template files from disk: every shipped template
+// (falling back to its built-in copy when the file is missing) and every
+// other <set>/<format>.tmpl in the directory, so a product's snippet set
+// added on disk is served without an API change. Safe to call at runtime.
 func (s *SensorConfigTemplateService) Reload() error {
-	loaded := make(map[string]*template.Template, 2*len(templateFormats))
-	for _, format := range templateNames() {
-		path := filepath.Join(s.templatesDir, format+".tmpl")
+	names := templateNames()
+	if files, err := filepath.Glob(filepath.Join(s.templatesDir, "*", "*.tmpl")); err == nil {
+		for _, f := range files {
+			set, format := filepath.Base(filepath.Dir(f)), strings.TrimSuffix(filepath.Base(f), ".tmpl")
+			name := templateKey(set, format)
+			if installSetRE.MatchString(set) && slices.Contains(templateFormats, format) && !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	loaded := make(map[string]*template.Template, len(names))
+	for _, format := range names {
+		path := filepath.Join(s.templatesDir, filepath.FromSlash(format)+".tmpl")
 		content, err := os.ReadFile(path)
 		if err != nil {
 			s.logger.Debug("template file missing, using the built-in one",
@@ -216,15 +267,25 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 		data.CACert += "\n"
 	}
 
-	prefix := ""
+	if data.ImageTag == "" {
+		if i := strings.LastIndex(data.Image, ":"); i > strings.LastIndex(data.Image, "/") {
+			data.ImageTag = data.Image[i+1:]
+		}
+	}
+	set := data.Install
 	if data.Sensor.Type.IsCollector() {
-		prefix = collectorPrefix
+		set = installCollector
 	}
 	out := make(map[string]string, len(templateFormats))
 	for _, format := range templateFormats {
-		tmpl, ok := tmpls[prefix+format]
+		tmpl, ok := tmpls[templateKey(set, format)]
 		if !ok {
-			return nil, fmt.Errorf("template %q not loaded", format)
+			if set == "" || set == InstallSensor || format == "docker" {
+				return nil, fmt.Errorf("template %q not loaded", templateKey(set, format))
+			}
+			// A product set covers only the formats it ships; the
+			// others are left empty and the console hides them.
+			continue
 		}
 		var buf bytes.Buffer
 		if err := tmpl.Execute(&buf, data); err != nil {
@@ -333,6 +394,10 @@ func imageTag(image string) string {
 // templateFuncs are the functions exposed to templates.
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
+		// product and docs name the instance brand in comments
+		// (docs/architecture/brand.md).
+		"product": brand.Name,
+		"docs":    func() string { return brand.Instance().Docs() },
 		// toScannerName maps a tool name to its scanner name
 		// (e.g., "trivy" -> "trivy-fs").
 		"toScannerName": normalizeToolName,

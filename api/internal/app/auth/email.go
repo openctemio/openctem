@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"html"
 	"net/url"
 	"strings"
 	"time"
@@ -26,7 +27,14 @@ type EmailService struct {
 	tenantSMTP TenantSMTPResolver
 	config     config.SMTPConfig
 	appName    string
+	branding   emaildom.Branding
 	logger     *logger.Logger
+}
+
+// SetBranding sets the brand's email footer line and "Powered by" credit,
+// added to every email this service sends.
+func (s *EmailService) SetBranding(b emaildom.Branding) {
+	s.branding = b
 }
 
 // NewEmailService creates a new EmailService.
@@ -59,7 +67,7 @@ func (s *EmailService) SendReport(ctx context.Context, tenantID string, to []str
 	return sender.Send(ctx, &emaildom.Message{
 		To:      to,
 		Subject: subject,
-		Body:    htmlBody,
+		Body:    htmlBody + string(s.branding.FooterHTML()),
 		IsHTML:  true,
 	})
 }
@@ -126,6 +134,7 @@ func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, use
 		VerificationURL: verificationURL,
 		ExpiresIn:       formatDuration(expiresIn),
 		AppName:         s.appName,
+		Branding:        s.branding,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateVerifyEmail, data); err != nil {
@@ -162,6 +171,7 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 		ResetURL:    resetURL,
 		ExpiresIn:   formatDuration(expiresIn),
 		AppName:     s.appName,
+		Branding:    s.branding,
 		IPAddress:   ipAddress,
 		RequestedAt: time.Now().Format("January 2, 2006 at 3:04 PM MST"),
 	}
@@ -195,6 +205,7 @@ func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, 
 		ChangedAt: time.Now().Format("January 2, 2006 at 3:04 PM MST"),
 		IPAddress: ipAddress,
 		AppName:   s.appName,
+		Branding:  s.branding,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplatePasswordChanged, data); err != nil {
@@ -227,6 +238,7 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 		Email:    userEmail,
 		LoginURL: loginURL,
 		AppName:  s.appName,
+		Branding: s.branding,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateWelcome, data); err != nil {
@@ -268,6 +280,7 @@ func (s *EmailService) SendMemberSuspendedEmail(
 		ActorName: actorName,
 		AppURL:    s.config.BaseURL,
 		AppName:   s.appName,
+		Branding:  s.branding,
 	}
 
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateMemberSuspended, data); err != nil {
@@ -304,6 +317,7 @@ func (s *EmailService) SendMemberReactivatedEmail(
 		ActorName: actorName,
 		AppURL:    s.config.BaseURL,
 		AppName:   s.appName,
+		Branding:  s.branding,
 	}
 
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateMemberReactivated, data); err != nil {
@@ -344,6 +358,7 @@ func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, reci
 		SetupURL:  s.AccountSetupURL(token),
 		ExpiresIn: formatDuration(expiresIn),
 		AppName:   s.appName,
+		Branding:  s.branding,
 	}
 	// tenantID reaches here from the request path; strip line breaks before
 	// logging it (CWE-117).
@@ -383,6 +398,7 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 		InvitationURL: invitationURL,
 		ExpiresIn:     formatDuration(expiresIn),
 		AppName:       s.appName,
+		Branding:      s.branding,
 	}
 
 	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateTeamInvitation, data); err != nil {
@@ -463,6 +479,18 @@ func (s *EmailService) NotifySSOChangePending(ctx context.Context, ownerEmail, o
 		summary+" Review it under Settings > SSO approvals. If you did not expect this change, reject it.")
 }
 
+// NotifySupportAccess tells an organization owner about support access:
+// a grant, a revocation, a support session opened or ended.
+func (s *EmailService) NotifySupportAccess(ctx context.Context, email, name, subject, message string) {
+	s.sendSecurityNotice(ctx, email, name, "", subject, message)
+}
+
+// NotifyOwnershipTransfer tells one of the two people in an ownership
+// transfer what happened (requested, canceled, declined, accepted).
+func (s *EmailService) NotifyOwnershipTransfer(ctx context.Context, email, name, subject, message string) {
+	s.sendSecurityNotice(ctx, email, name, "", subject, message)
+}
+
 func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userName, ipAddress, subject, message string) {
 	if !s.IsConfigured() {
 		return
@@ -475,6 +503,7 @@ func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userNa
 		OccurredAt: time.Now().UTC().Format("January 2, 2006 at 3:04 PM MST"),
 		IPAddress:  ipAddress,
 		AppName:    s.appName,
+		Branding:   s.branding,
 	}
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	go func() {
@@ -490,4 +519,26 @@ func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userNa
 // \n and \r is the sanitizer CodeQL recognizes.
 func logSafe(v string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(v, "\n", ""), "\r", "")
+}
+
+// SendDomainManagedEmail tells an account that the organization which
+// verified its email domain now manages accounts on it: the next sign-in may
+// go through that organization's single sign-on, or new organizations may be
+// blocked. Nothing is moved: the account's other organizations stay its own.
+// The message names only the domain.
+func (s *EmailService) SendDomainManagedEmail(ctx context.Context, userEmail, domain string) error {
+	if !s.IsConfigured() {
+		return fmt.Errorf("email: no SMTP sender configured")
+	}
+	loginURL := fmt.Sprintf("%s/login", strings.TrimSuffix(s.config.BaseURL, "/"))
+	d := html.EscapeString(domain)
+	body := fmt.Sprintf(`<p>The organization that verified <strong>%s</strong> on %s now manages accounts on this domain.</p>
+<p>Your next sign-in with this address may go through your organization's single sign-on, and creating new organizations with it may be turned off. Your account, and any organization you already belong to, stay yours: nothing is moved or shared with that organization.</p>
+<p><a href="%s">Sign in</a></p>`, d, html.EscapeString(s.appName), html.EscapeString(loginURL))
+	return s.sender.Send(ctx, &emaildom.Message{
+		To:      []string{userEmail},
+		Subject: fmt.Sprintf("[%s] Accounts on %s are now managed by your organization", s.appName, domain),
+		Body:    body,
+		IsHTML:  true,
+	})
 }

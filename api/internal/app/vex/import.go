@@ -327,6 +327,7 @@ func (s *Service) auditImport(ctx context.Context, actx auditapp.AuditContext, o
 		WithMetadata("created", out.Created).WithMetadata("updated", out.Updated).
 		WithMetadata("skipped", out.SkippedTotal).
 		WithMetadata("closed", out.Applied.Closed).WithMetadata("reopened", out.Applied.Reopened).
+		WithMetadata("requested", out.Applied.Requested).
 		WithMetadata("finding_ids", out.Applied.FindingIDs)
 	if assetID != nil {
 		ev = ev.WithMetadata("asset_id", assetID.String())

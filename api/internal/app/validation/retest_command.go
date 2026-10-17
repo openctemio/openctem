@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -27,6 +28,30 @@ var retestToolRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 // ValidRetestTool reports whether tool is a well-formed tool name for a retest
 // command (lowercase; the name a sensor's manifest registers).
 func ValidRetestTool(tool string) bool { return retestToolRe.MatchString(tool) }
+
+// RetestToolsOf returns the tools whose findings a sensor with these
+// capabilities can re-check: every "retest:<tool>" (the tool's own retest
+// handler), plus the tool whose rules the template re-verify rung re-runs
+// when the sensor offers that rung. Sorted, without duplicates; malformed
+// names are dropped.
+func RetestToolsOf(capabilities []string) []string {
+	seen := map[string]bool{}
+	for _, c := range capabilities {
+		c = strings.ToLower(strings.TrimSpace(c))
+		if t, ok := strings.CutPrefix(c, SensorCapabilityRetest+":"); ok && ValidRetestTool(t) {
+			seen[t] = true
+		}
+		if c == SensorCapabilityValidateNuclei {
+			seen[ReverifyTool] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for t := range seen {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // RetestItemPayload is one known finding the tool re-checks.
 type RetestItemPayload struct {

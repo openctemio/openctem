@@ -1,0 +1,6 @@
+# Acme toy sensor: a product the platform has never heard of. These lines are
+# the product's own install snippet; the platform only fills in the data.
+docker run -d --name acme-toy-sensor \
+  -e TOY_PLATFORM_URL='{{.BaseURL}}' \
+  -e TOY_KEY="${OPENCTEM_API_KEY}" \
+  {{.Image}}

@@ -1,48 +1,46 @@
-# Finding status `not_observed`
+# Finding observation and validation
 
-Decided 2026-10-04 (decision O2).
+Decided 2026-10-04 (decision O2, stale is not fixed); made fields beside the
+status 2026-10-15 (research/154 D1). The status set and lifecycle:
+[finding-status-lifecycle.md](finding-status-lifecycle.md). Code:
+`pkg/domain/vulnerability/observation.go`.
 
-The whole status set and lifecycle: [finding-status-lifecycle.md](finding-status-lifecycle.md).
+The status answers "what is the next human action?". Two facts about a
+finding are not actions and live beside it:
 
-## Meaning
+| Field | Values | Meaning |
+|---|---|---|
+| `observation_state` (API `observation`, filter `observation`) | `present`, `stale` | Stale: recent scans no longer report it, **but nothing proves the check ran against it** (no coverage proof). Stale is never fixed. |
+| `validation_outcome` (API `validation`, filter `validation`) | `reproducible`, `not_reproducible`, none | The latest re-check verdict (a retest, the validation engine). |
 
-`not_observed` means that recent scans no longer report the finding, **but
-nothing proves the check ran against it** (no coverage proof). The finding is
-stale, **not fixed**.
+They replace the statuses `not_observed` and `validated_fixed`. A finding is
+now, for example, `in_progress` **and** stale **and** not reproducible; before,
+going stale lost its work state.
+
+## Observation
 
 | Property | Value |
 |---|---|
-| Category | `in_progress` (open). Listed in `ActiveFindingStatuses`; never in `ClosedFindingStatuses`. |
-| Counted as fixed | Never. It has no `resolved_at` and no `resolution_method`, so fix-rate and MTTR exclude it. |
-| SLA | Keeps running: it is an open status. |
-| Who sets it | Only the platform. No status transition leads to it, so `PATCH /findings/{id}/status`, bulk status and every other person-facing path refuse it. |
-| Writers today | Feature-branch expiry (`ExpireFeatureBranchFindings`): a finding not seen on a non-default branch for the branch's retention period. `resolution = 'branch_expired'` records why. Branch-only expiry (same job): a branch-only finding no branch still shows (`branch-only-findings.md`). Coverage auto-resolve in enforce mode, for template drift: a covered nuclei run that did not report the finding but ran another template release (`templates_digest`) than the finding's last sighting (`MarkCoverageNotObserved`). |
-| Writers later | The closure evaluator (planned): a finding not reported by a run that could not prove coverage. |
+| Counted as fixed | Never. The status stays open, so fix-rate and MTTR exclude it and its SLA keeps running. |
+| Who sets stale | Only the platform: feature-branch expiry (`ExpireFeatureBranchFindings`) and branch-only expiry, a stale CI source (`MarkStaleSourceFindings`), template drift in coverage auto-resolve (`MarkCoverageNotObserved`), the software matcher when a version is no longer installed. Each marks only open findings that are present. |
+| Back to present | Any sighting: the ingest upsert and re-sighting paths, a retest that still matches, the software matcher matching again. |
+| Closing a stale finding | A covered scan still resolves it (coverage proof), a retest with auto-resolve, or a `findings:verify` holder. |
 
-## Leaving `not_observed`
+## Validation
 
-| To | How |
-|---|---|
-| `confirmed` | A scan reports it again (`AutoReopenByFingerprintsBatch`; activity reason `observed_again`, **not** a regression), a retest still matches, or a person reopens it. |
-| `in_progress` | A person picks it up. |
-| `resolved` | A retest proves the fix (`retest_verified`), or a `findings:verify` holder closes it. Later also the closure evaluator with coverage proof. |
-| `false_positive` / `accepted` | Through the approval workflow. |
-| `duplicate` | Triage. |
+| Event | Status | `validation_outcome` |
+|---|---|---|
+| A retest confirms the fix, without `retest.auto_resolve` | unchanged | `not_reproducible` |
+| A retest confirms the fix, with `retest.auto_resolve` | `resolved` (`fixed` / `retest`) | `not_reproducible` |
+| A retest still matches | `resolved` → `confirmed` (regression), `fix_applied` → `in_progress`, otherwise unchanged | `reproducible` |
+| The validation engine: not reproducible on new / confirmed / in progress | unchanged (a downgrade, `downgraded_at`) | `not_reproducible` |
+| The validation engine: reproducible on fix_applied | `in_progress` | `reproducible` |
 
-## Storage
+## Migration
 
-- Migration 000640 adds the `chk_findings_status` CHECK constraint. It names
-  every status the API knows (plus the legacy `open`); before it, `findings.status` had no constraint.
-- The migration moves rows closed by branch expiry (`status = 'resolved'`,
-  `resolution = 'branch_expired'`) to `not_observed`, and clears `resolved_at`.
-  Their provenance is certain, so no other row is touched.
-- The regression trigger (`mark_finding_regression`) does not count
-  `resolved → not_observed` or `resolved → accepted` as a regression.
-
-## Web
-
-- Label: "Not Observed".
-- It belongs to the Findings list's "Open" status group (`FINDINGS_OPEN_STATUSES`)
-  and to the grouped view's default statuses.
-- It is a filter option on the repository findings tab.
-- The status select never offers it as a target.
+`finding_status_dimensions` moves every finding in a retired status back to
+the status its timeline shows it had before (else `confirmed`), sets the
+dimension, writes a timeline entry (source `migration`, reason
+`status_retired`), rewrites stored filter documents (saved views, remediation
+campaigns), and replaces the status CHECK (validated in
+`finding_status_dimensions_validate`). Live had no finding in either status.

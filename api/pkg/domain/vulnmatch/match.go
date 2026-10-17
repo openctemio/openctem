@@ -295,3 +295,16 @@ func clamp(c int) int {
 	}
 	return c
 }
+
+// FixedVersionFromDescription returns the first fixed version a range
+// description (Range.Describe) names: the exclusive upper bound "< X". An
+// inclusive bound ("<= X") or an exact match names no fix, so "" is returned.
+func FixedVersionFromDescription(desc string) string {
+	for _, part := range strings.Split(desc, ",") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "< ") {
+			return strings.TrimSpace(part[2:])
+		}
+	}
+	return ""
+}

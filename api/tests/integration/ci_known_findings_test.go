@@ -93,8 +93,10 @@ func TestCIKnownFindings_DecisionsHoldOnTheNextRun(t *testing.T) {
 	cmdi := sastWithCode("Command injection", "py.cmdi", "app/run.py", 10, "    os.system(cmd)")
 	md5 := sastWithCode("Weak hash", "py.md5", "app/hash.py", 4, "hashlib.md5(data)")
 
-	// 1. The default branch reports both; both block (high).
-	if _, v := run(r.tenant.String(), cfg.Audience, "main", strings.Repeat("1", 40), "1", nil, cmdi, md5); v["verdict"] != "fail" {
+	// 1. The default branch reports both: its first run records them as the
+	// gate baseline and passes.
+	if _, v := run(r.tenant.String(), cfg.Audience, "main", strings.Repeat("1", 40), "1", nil, cmdi, md5); v["verdict"] != "pass" ||
+		!hasReason(v, cirun.ReasonBaselineEstablished) {
 		t.Fatalf("baseline verdict: %v", v)
 	}
 

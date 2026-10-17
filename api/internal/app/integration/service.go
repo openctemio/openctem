@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/infra/notifier"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	branchdom "github.com/openctemio/openctem/api/pkg/domain/branch"
@@ -61,6 +62,7 @@ type IntegrationService struct {
 	notificationEventRepo outbox.EventRepository
 	scmFactory            *scm.ClientFactory
 	notificationFactory   *notifier.ClientFactory
+	productName           string // instance brand, in notification footers
 	encryptor             crypto.Encryptor
 	logger                *logger.Logger
 
@@ -73,7 +75,10 @@ type IntegrationService struct {
 	// SetRepoImportRepos). nil when import is not configured.
 	assetRepo   assetdom.Repository
 	repoExtRepo assetdom.RepositoryExtensionRepository
-	branchRepo  branchdom.Repository
+	// repoIdentity finds repositories by their code host id (optional).
+	repoIdentity RepositoryIdentity
+	renameAudit  RenameAuditor
+	branchRepo   branchdom.Repository
 
 	// ticketingTester verifies a ticketing integration's credentials against
 	// the provider (Jira today). Without it a ticketing integration can never
@@ -93,6 +98,20 @@ type IntegrationService struct {
 // NewIntegrationService creates a new IntegrationService.
 // The encryptor is used to encrypt/decrypt integration credentials.
 // If encryptor is nil, a no-op encryptor is used (credentials stored in plaintext).
+// SetBrand names the instance brand in notifications this service sends
+// (docs/architecture/brand.md).
+func (s *IntegrationService) SetBrand(b brand.Brand) {
+	s.productName = b.DisplayName()
+	s.notificationFactory.SetBrand(b)
+}
+
+func (s *IntegrationService) product() string {
+	if s.productName == "" {
+		return brand.DefaultName
+	}
+	return s.productName
+}
+
 func NewIntegrationService(
 	repo integrationdom.Repository,
 	scmExtRepo integrationdom.SCMExtensionRepository,
@@ -2412,7 +2431,7 @@ func (s *IntegrationService) SendNotification(ctx context.Context, input SendNot
 		Severity:   input.Severity,
 		URL:        input.URL,
 		Fields:     input.Fields,
-		FooterText: "Sent via OpenCTEM.io",
+		FooterText: "Sent via " + s.product(),
 	}
 
 	// Send notification

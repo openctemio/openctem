@@ -3,6 +3,7 @@ package cirun
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,11 +41,72 @@ const (
 	// with it, for example because the pipeline was edited to skip it.
 	ReasonMissingCapability = "missing_capability"
 	ReasonOverride          = "override"
-	ReasonNoBaseline        = "no_baseline"
+	// ReasonNoResults: no scan results were uploaded to the run, so it
+	// cannot be judged (fail closed).
+	ReasonNoResults = "no_results"
+	// ReasonNotJudged: the pipeline run never asked for a verdict (its gate
+	// job did not run), so the sweeper concluded it as a failure.
+	ReasonNotJudged  = "not_judged"
+	ReasonNoBaseline = "no_baseline"
+	// ReasonBaselineEstablished notes that this run recorded the
+	// repository's first gate baseline: its open findings stopped blocking.
+	ReasonBaselineEstablished = "baseline_established"
 	// ReasonSecretPreExisting notes a secret already open on the baseline
 	// branch: it blocks default-branch runs, not pull requests.
 	ReasonSecretPreExisting = "secret_pre_existing"
+	// ReasonCapabilityFailed: the job reported that a capability it ran
+	// did not fully reach the platform (failed, partial, not uploaded or
+	// missing), whatever its scan_failures count says.
+	ReasonCapabilityFailed = "capability_failed"
+	// ReasonTooManyFindings: the run reported more findings than the gate
+	// records (MaxRunFindings), so it cannot be judged on all of them.
+	ReasonTooManyFindings = "too_many_findings"
 )
+
+// CapabilityState is what the CI job reports about one capability at
+// evaluation: its name, tool, state and a fixed reason word. Only
+// CapabilityUploaded is a clean state; any other state fails the gate.
+type CapabilityState struct {
+	Name   string `json:"name"`
+	Tool   string `json:"tool,omitempty"`
+	State  string `json:"state"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// CapabilityUploaded is the state of a capability whose results all reached
+// the platform. The CI runner also sends partial, failed, not_uploaded and
+// missing; an unknown state counts as not clean (fail closed).
+const CapabilityUploaded = "uploaded"
+
+// MaxCapabilityStates bounds the capability states one evaluation reads.
+const MaxCapabilityStates = 64
+
+// FailedCapabilities returns the reported capabilities that are not clean,
+// with their labels sanitized (they are job input, shown in the verdict and
+// the merge request comment). Past MaxCapabilityStates the rest are ignored;
+// an empty name is reported as "unknown".
+func FailedCapabilities(states []CapabilityState) []CapabilityState {
+	out := []CapabilityState{}
+	for i, c := range states {
+		if i >= MaxCapabilityStates {
+			break
+		}
+		state := SanitizeLabel(strings.ToLower(c.State), 32)
+		if state == CapabilityUploaded {
+			continue
+		}
+		name := SanitizeLabel(c.Name, 64)
+		if name == "" {
+			name = "unknown"
+		}
+		if state == "" {
+			state = "unknown"
+		}
+		out = append(out, CapabilityState{Name: name, Tool: SanitizeLabel(c.Tool, 64), State: state,
+			Reason: SanitizeLabel(c.Reason, 64)})
+	}
+	return out
+}
 
 // Break-glass limits.
 const (
@@ -88,17 +150,39 @@ type GatePolicy struct {
 	// or EPSS score only when a fixed version exists; one with no fix is
 	// listed, not blocking. KEV still fails, fixable or not.
 	FixableOnly bool
-	CreatedBy   *shared.ID
-	UpdatedBy   *shared.ID
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// BaselineOnFirstRun records the repository's gate baseline on its first
+	// verified default-branch run (default on; off: an administrator records
+	// it).
+	BaselineOnFirstRun bool
+	// BaselineGraceDays: baseline findings stop counting as pre-existing
+	// this many days after the baseline was recorded (nil: no end). Their
+	// due date is the end of the grace.
+	BaselineGraceDays *int
+	// BaselineSecretsBlock: a secret in the baseline still blocks
+	// default-branch runs (default true).
+	BaselineSecretsBlock bool
+	// Fields are the fields this policy sets; the others are inherited from
+	// the layer above (the organization policy sets every field).
+	Fields []string
+	// LockedFields are fields no layer below may loosen (organization and
+	// business unit policies only).
+	LockedFields []string
+	// Reason says why a repository policy differs from what it inherits.
+	Reason string
+	// ExpiresAt ends a repository policy: after it the repository inherits
+	// again (nil: no end).
+	ExpiresAt *time.Time
+	CreatedBy *shared.ID
+	UpdatedBy *shared.ID
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // DefaultGatePolicy is the built-in policy: new findings of high severity
 // or above, or on the KEV list, fail; secrets always fail.
 func DefaultGatePolicy() GatePolicy {
 	return GatePolicy{ScopeType: ScopeDefault, Enabled: true, Mode: ModeEnforce, FailOnSeverity: "high",
-		NewFindingsOnly: true, FailOnKEV: true, AllowRepoPolicy: true}
+		NewFindingsOnly: true, FailOnKEV: true, AllowRepoPolicy: true, BaselineOnFirstRun: true, BaselineSecretsBlock: true, Fields: slices.Clone(PolicyFields)}
 }
 
 // Validate checks a policy. Every error wraps shared.ErrValidation.
@@ -126,6 +210,9 @@ func (p *GatePolicy) Validate() error {
 	}
 	if p.EPSSThreshold != nil && (*p.EPSSThreshold < 0 || *p.EPSSThreshold > 1) {
 		return invalid("epss_threshold must be between 0 and 1")
+	}
+	if p.BaselineGraceDays != nil && (*p.BaselineGraceDays < 1 || *p.BaselineGraceDays > MaxBaselineGraceDays) {
+		return invalid("baseline_grace_days must be between 1 and %d", MaxBaselineGraceDays)
 	}
 	return p.Modes.Validate()
 }
@@ -159,6 +246,12 @@ func Strictest(ps []GatePolicy) GatePolicy {
 		}
 		out.Modes = strictestModes(out.Modes, p.Modes)
 		out.AllowRepoPolicy = out.AllowRepoPolicy && p.AllowRepoPolicy
+		out.BaselineOnFirstRun = out.BaselineOnFirstRun && p.BaselineOnFirstRun
+		out.BaselineSecretsBlock = out.BaselineSecretsBlock || p.BaselineSecretsBlock
+		if p.BaselineGraceDays != nil && (out.BaselineGraceDays == nil || *p.BaselineGraceDays < *out.BaselineGraceDays) {
+			v := *p.BaselineGraceDays
+			out.BaselineGraceDays = &v
+		}
 	}
 	return out
 }
@@ -236,10 +329,26 @@ type GateInput struct {
 	NewFingerprints map[string]bool
 	BaselineBranch  string
 	BaselineKnown   bool
+	// BaselineSetAt is when the repository's gate baseline was recorded (nil
+	// when it has none).
+	BaselineSetAt *time.Time
+	// BaselineEstablished: this run recorded the repository's first gate
+	// baseline.
+	BaselineEstablished bool
+	// BaselineDueAt ends the baseline's grace (nil: no end).
+	BaselineDueAt *time.Time
 	// DefaultBranch: the run is on the repository's default branch, where
 	// every open secret blocks.
 	DefaultBranch bool
 	ScanFailures  int
+	// NoResults: nothing was uploaded to the run.
+	NoResults bool
+	// FailedCapabilities are the capabilities the job reported as not clean
+	// (FailedCapabilities).
+	FailedCapabilities []CapabilityState
+	// FindingsOverCap: the run reported more findings than it could record;
+	// judging only the recorded ones would miss the rest, so it fails.
+	FindingsOverCap bool
 	// MissingCapabilities are the capabilities the repository is expected
 	// to report (coverage expectation) that the run reported no tool for.
 	MissingCapabilities []string
@@ -294,6 +403,15 @@ type GatePolicyView struct {
 type GateBaselineView struct {
 	Branch string `json:"branch,omitempty"`
 	Known  bool   `json:"known"`
+	// SetAt is when the repository's gate baseline was recorded; absent
+	// when it has none. A default-branch run is compared with it only.
+	SetAt *time.Time `json:"set_at,omitempty"`
+	// DueAt ends the baseline's grace (its findings' due date): after it they
+	// block again. Absent: no end.
+	DueAt *time.Time `json:"due_at,omitempty"`
+	// Established: this run recorded the repository's first gate baseline
+	// (its open findings stopped blocking).
+	Established bool `json:"established,omitempty"`
 }
 
 // GateOverrideView is the break-glass that let the run pass.
@@ -348,6 +466,14 @@ func honored(f RunFinding, now time.Time) bool { return Decision(f, now) != "" }
 // decision, so the job leaves it out of its own output (console, SARIF,
 // merge request report). Index is the result's position in the uploaded
 // report. The job learns nothing about findings it did not report.
+// MaxKnownInResponse bounds the decided results an upload response lists
+// (about 1 MB of JSON). The rest are counted (KnownTotal), never dropped
+// silently: a job that sees fewer shows more of its own results, which is
+// safe, and the gate on the platform judges every finding either way. A
+// response that grew with the report could exceed what a client reads and
+// make a stored report look like a failed upload.
+const MaxKnownInResponse = 10_000
+
 type KnownFinding struct {
 	Index     int        `json:"index"`
 	Decision  string     `json:"decision"`
@@ -363,7 +489,8 @@ func Evaluate(in GateInput) GateVerdict {
 		Reasons: []GateReason{},
 		Policy: GatePolicyView{Source: in.PolicySource, Mode: p.Mode, FailOnSeverity: p.FailOnSeverity, Modes: modesView(p.Modes),
 			NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV, EPSSThreshold: p.EPSSThreshold, FixableOnly: p.FixableOnly},
-		Baseline: GateBaselineView{Branch: in.BaselineBranch, Known: in.BaselineKnown},
+		Baseline: GateBaselineView{Branch: in.BaselineBranch, Known: in.BaselineKnown, SetAt: in.BaselineSetAt,
+			Established: in.BaselineEstablished, DueAt: in.BaselineDueAt},
 	}
 	blocking := 0
 	listed := 0
@@ -384,6 +511,26 @@ func Evaluate(in GateInput) GateVerdict {
 	if in.ScanFailures > 0 {
 		add(GateReason{Code: ReasonScanFailure,
 			Message: fmt.Sprintf("%d scanner(s) failed to run or to report: the run cannot be judged", in.ScanFailures)})
+	}
+	if in.NoResults {
+		add(GateReason{Code: ReasonNoResults,
+			Message: "no scan results were uploaded to this run: it cannot be judged"})
+	}
+	for _, c := range in.FailedCapabilities {
+		what := c.Name
+		if c.Tool != "" {
+			what += " (" + c.Tool + ")"
+		}
+		why := c.State
+		if c.Reason != "" {
+			why += ": " + c.Reason
+		}
+		add(GateReason{Code: ReasonCapabilityFailed,
+			Message: fmt.Sprintf("the %s scan did not fully reach the platform (%s): the run cannot be judged", what, why)})
+	}
+	if in.FindingsOverCap {
+		add(GateReason{Code: ReasonTooManyFindings,
+			Message: fmt.Sprintf("the run reported more than %d findings, more than the gate can judge: the run cannot be judged; split the scan or narrow it", MaxRunFindings)})
 	}
 	for _, c := range in.MissingCapabilities {
 		add(GateReason{Code: ReasonMissingCapability,
@@ -407,13 +554,15 @@ func Evaluate(in GateInput) GateVerdict {
 		if in.FindingURL != nil && !f.ID.IsZero() {
 			base.URL = in.FindingURL(f.ID)
 		}
-		// A secret in the code fails whatever its age and severity.
-		if f.FindingType == "secret" {
+		// A secret in the code fails whatever its age and severity, unless it
+		// is known to be dead or only a heuristic rule matched it (SecretPages):
+		// those follow the policy like any finding.
+		if f.SecretPages() {
 			// A new secret always blocks. One already open on the baseline
 			// branch blocks the default branch, and is a note on any other
 			// branch: a pull request did not add it and cannot remove it from
 			// history, so it must not block every pull request.
-			if isNew || in.DefaultBranch {
+			if isNew || (in.DefaultBranch && p.BaselineSecretsBlock) {
 				r := base
 				r.Code, r.Message = ReasonSecret, "a secret is committed to the repository"
 				add(r)
@@ -467,8 +616,15 @@ func Evaluate(in GateInput) GateVerdict {
 	v.Summary.Blocking = blocking
 	if p.NewFindingsOnly && !in.BaselineKnown && len(in.Findings) > 0 {
 		// Informational: listed after the blocking reasons, not counted.
-		v.Reasons = append(v.Reasons, GateReason{Code: ReasonNoBaseline,
-			Message: fmt.Sprintf("no scan of the baseline branch %q is known: every finding counts as new", in.BaselineBranch)})
+		msg := fmt.Sprintf("no scan of the baseline branch %q is known: every finding counts as new", in.BaselineBranch)
+		if in.DefaultBranch {
+			msg = "no gate baseline is recorded for this repository: every finding counts as new until an administrator records one"
+		}
+		v.Reasons = append(v.Reasons, GateReason{Code: ReasonNoBaseline, Message: msg})
+	}
+	if in.BaselineEstablished {
+		v.Reasons = append(v.Reasons, GateReason{Code: ReasonBaselineEstablished,
+			Message: fmt.Sprintf("first run on the default branch: %d existing findings recorded as the gate baseline; from now on only new findings block", v.Summary.PreExisting)})
 	}
 	fail := blocking > 0
 	switch {

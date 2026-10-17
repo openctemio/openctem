@@ -129,15 +129,17 @@ func (r Rules) Normalize() Rules {
 	return out
 }
 
-// Validate checks the bounds. Header names are HTTP tokens; no value may
-// carry a control character (no header injection into a sensor's request).
+// Validate checks the bounds. Header names are HTTP tokens; values and the
+// User-Agent are printable ASCII (no control character: no header injection
+// into a sensor's request; ASCII: what a sensor accepts and sends, sdk-go
+// core.OrgHTTPPolicy).
 func (r Rules) Validate() error {
 	switch {
 	case r.RateLimitRPS < 0 || r.RateLimitRPS > MaxRateLimitRPS:
 		return fmt.Errorf("%w: rate_limit_rps must be between 0 and %d", shared.ErrValidation, MaxRateLimitRPS)
 	case len(r.RequiredHeaders) > MaxHeaders:
 		return fmt.Errorf("%w: at most %d required headers", shared.ErrValidation, MaxHeaders)
-	case len(r.UserAgent) > MaxUserAgent || hasControl(r.UserAgent):
+	case len(r.UserAgent) > MaxUserAgent || !printableASCII(r.UserAgent):
 		return fmt.Errorf("%w: user_agent must be at most %d printable characters", shared.ErrValidation, MaxUserAgent)
 	case len(r.Notes) > MaxNotes:
 		return fmt.Errorf("%w: notes must be at most %d characters", shared.ErrValidation, MaxNotes)
@@ -149,7 +151,7 @@ func (r Rules) Validate() error {
 		if refusedHeader(h.Name) {
 			return fmt.Errorf("%w: header %s cannot be required (credentials and connection headers are refused)", shared.ErrValidation, h.Name)
 		}
-		if len(h.Value) > MaxHeaderValue || hasControl(h.Value) {
+		if len(h.Value) > MaxHeaderValue || !printableASCII(h.Value) {
 			return fmt.Errorf("%w: header %s: the value must be at most %d printable characters", shared.ErrValidation, h.Name, MaxHeaderValue)
 		}
 	}
@@ -189,6 +191,12 @@ func isToken(s string) bool {
 		}
 	}
 	return true
+}
+
+// printableASCII reports whether s is printable ASCII only (0x20-0x7e):
+// what a sensor sends in a request header.
+func printableASCII(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r > 0x7e }) < 0
 }
 
 func hasControl(s string) bool {

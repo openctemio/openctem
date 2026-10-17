@@ -347,6 +347,30 @@ func TestActiveGate_NamePortCaps(t *testing.T) {
 	if got, _ := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierActive, scopedom.JobShape{Tool: "httpx"}); len(got) != 0 {
 		t.Fatalf("httpx: %v", got)
 	}
+	// SECURITY: the caps follow the capability, not a tool name. Another
+	// port scanner (a name the platform has never heard of) running
+	// scan.ports or discover.hosts is narrowed exactly like the default
+	// one; before, only the default tool's name was capped.
+	for _, capID := range []string{"scan.ports@1", "discover.hosts@1"} {
+		other := scopedom.JobShape{Tool: "portscan-x", Capability: capID, Ports: "1-65535"}
+		got, err := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierActive, other)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("%s by another tool: %v", capID, got)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Fatalf("%s by another tool: %v", capID, got)
+			}
+		}
+	}
+	// A job the default port scanner runs for another capability is judged
+	// by that capability.
+	if got, _ := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierActive, scopedom.JobShape{Tool: "naabu", Capability: "probe.http@1"}); len(got) != 0 {
+		t.Fatalf("probe.http by naabu: %v", got)
+	}
 	// A lookup failure refuses the whole check (nothing dispatched).
 	f.resolveErr = errors.New("db down")
 	if _, err := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierActive, full); err == nil {

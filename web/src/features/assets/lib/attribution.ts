@@ -45,7 +45,7 @@ export interface AssetAttribution {
   evidence: AttributionEvidence[]
   /**
    * May scans reach it (RFC-054 §6.6): in_scope, out_of_scope, internal
-   * (routed by a scan zone) or not_applicable (repositories, cloud
+   * (routed by a scan zone) or not_applicable (cloud
    * resources). Older API responses leave it out.
    */
   scope_status?: 'in_scope' | 'out_of_scope' | 'internal' | 'not_applicable' | string

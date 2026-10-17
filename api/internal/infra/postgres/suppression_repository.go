@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // SuppressionRepository handles suppression rule persistence.
@@ -67,9 +68,10 @@ func (r *SuppressionRepository) saveInTx(ctx context.Context, exec executor, rul
 			name, description, suppression_type, status,
 			requested_by, requested_at, approved_by, approved_at,
 			rejected_by, rejected_at, rejection_reason, expires_at,
-			created_at, updated_at
+			created_at, updated_at, review_flagged_at, review_reason,
+			reason_code, tier, required_approvals
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
 		ON CONFLICT (id) DO UPDATE SET
 			rule_id = EXCLUDED.rule_id,
 			tool_name = EXCLUDED.tool_name,
@@ -85,7 +87,12 @@ func (r *SuppressionRepository) saveInTx(ctx context.Context, exec executor, rul
 			rejected_at = EXCLUDED.rejected_at,
 			rejection_reason = EXCLUDED.rejection_reason,
 			expires_at = EXCLUDED.expires_at,
-			updated_at = EXCLUDED.updated_at
+			updated_at = now(),
+			review_flagged_at = EXCLUDED.review_flagged_at,
+			review_reason = EXCLUDED.review_reason,
+			reason_code = COALESCE(EXCLUDED.reason_code, suppression_rules.reason_code),
+			tier = COALESCE(EXCLUDED.tier, suppression_rules.tier),
+			required_approvals = COALESCE(EXCLUDED.required_approvals, suppression_rules.required_approvals)
 	`
 
 	_, err := exec.ExecContext(ctx, query,
@@ -109,6 +116,11 @@ func (r *SuppressionRepository) saveInTx(ctx context.Context, exec executor, rul
 		nullTime(rule.ExpiresAt()),
 		rule.CreatedAt(),
 		rule.UpdatedAt(),
+		nullTime(rule.ReviewFlaggedAt()),
+		rule.ReviewReason(),
+		nullString(rule.ReasonCode()),
+		nullString(rule.Tier()),
+		nullRuleRequired(rule),
 	)
 
 	if err != nil {
@@ -212,18 +224,35 @@ func (r *SuppressionRepository) liftSuppressionsInTx(
 				ON CONFLICT (finding_id, suppression_rule_id) DO NOTHING`, c.id, cover.ID().String()); err != nil {
 				return 0, fmt.Errorf("re-link suppressed finding: %w", err)
 			}
+			if err := setFindingTransition(ctx, tx, findingTransition{
+				Source: "suppression_rule", Reason: "suppression_relinked", ActorName: "system: suppression rule",
+				Message: "Its suppression rule was lifted; another active rule covers it",
+				Changes: map[string]any{"suppression_rule_id": cover.ID().String(), "previous_rule_id": ruleID.String()},
+			}); err != nil {
+				return 0, err
+			}
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE findings SET status = $3, updated_at = NOW()
 				WHERE tenant_id = $1 AND id = $2 AND status <> $3 AND status IN `+suppressionRelinkFromSQL+``,
 				tenantID.String(), c.id, cover.SuppressionType().Disposition()); err != nil {
 				return 0, fmt.Errorf("re-apply suppression disposition: %w", err)
 			}
+			// An accepted risk now held by the covering rule ends when that
+			// rule's acceptance ends.
+			if _, err := tx.ExecContext(ctx, relinkAcceptanceSQL,
+				tenantID.String(), c.id, ruleAcceptanceEnd(cover.ExpiresAt(), time.Now())); err != nil {
+				return 0, fmt.Errorf("re-apply acceptance end: %w", err)
+			}
+			// The lift below records its own entries.
+			if err := clearFindingTransition(ctx, tx); err != nil {
+				return 0, err
+			}
 			continue
 		}
 
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE findings
-			   SET status = 'new', resolution = NULL, resolution_method = NULL,
+			   SET status = 'new', resolution = NULL, closure_reason = NULL, verification = NULL,
 			       resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
 			 WHERE tenant_id = $1 AND id = $2 AND resolution = 'suppressed'
 			   AND status IN `+suppressionLiftFromSQL+``,
@@ -260,7 +289,7 @@ func loadSuppressedCandidates(ctx context.Context, tx *sql.Tx, tenantID, ruleID 
 		JOIN findings f ON f.id = fs.finding_id AND f.tenant_id = $1
 		WHERE fs.suppression_rule_id = $2
 		  AND f.resolution = 'suppressed'
-		  AND f.status IN ('false_positive', 'accepted')
+		  AND f.status IN `+vulnerability.StatusListSQL(vulnerability.SuppressedStatuses())+`
 		FOR UPDATE OF f`, tenantID.String(), ruleID.String())
 	if err != nil {
 		return nil, fmt.Errorf("load suppressed findings: %w", err)
@@ -501,7 +530,8 @@ func (r *SuppressionRepository) CountEligibleApprovers(ctx context.Context, tena
 		WHERE tm.tenant_id = $1
 		  AND tm.status = 'active'
 		  AND (
-		      tm.role IN ('owner', 'admin')
+		      (SELECT ver.role FROM v_user_effective_role ver
+		        WHERE ver.tenant_id = tm.tenant_id AND ver.user_id = tm.user_id) IN ('owner', 'admin')
 		      OR EXISTS (
 		          SELECT 1 FROM v_user_role_grants ur
 		          JOIN role_permissions rp ON rp.role_id = ur.role_id
@@ -519,13 +549,30 @@ func (r *SuppressionRepository) CountEligibleApprovers(ctx context.Context, tena
 // here to keep the repository free of the permission package).
 const suppressionApprovePermission = "findings:suppressions:approve"
 
+// RecentMemberRemoval answers the latest time after since at which the
+// tenant lost a possible second approver: a member suspended, offboarded,
+// removed, expired, demoted, or a role change that can strip the approve
+// permission (recentApproverChange; nil: none).
+func (r *SuppressionRepository) RecentMemberRemoval(ctx context.Context, tenantID shared.ID, since time.Time) (*time.Time, error) {
+	return recentApproverChange(ctx, r.db, tenantID, since)
+}
+
+// IsSoleActiveOwner reports whether the user is an owner and the only active
+// person in the tenant: exactly one active, unexpired membership of an active
+// person account, and it is the user's with the owner role. Read at decision
+// time. A member who cannot approve still counts as a person.
+func (r *SuppressionRepository) IsSoleActiveOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	return isSoleActiveOwner(ctx, r.db, tenantID, userID.String())
+}
+
 // IsTenantOwner reports whether the user is an active owner of the tenant.
 func (r *SuppressionRepository) IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
 	var ok bool
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM tenant_members
-			WHERE tenant_id = $1 AND user_id = $2 AND role = 'owner' AND status = 'active'
+			SELECT 1 FROM tenant_members m
+			JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+			WHERE m.tenant_id = $1 AND m.user_id = $2 AND ver.role = 'owner' AND m.status = 'active'
 		)`, tenantID.String(), userID.String()).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check tenant owner: %w", err)
@@ -535,26 +582,34 @@ func (r *SuppressionRepository) IsTenantOwner(ctx context.Context, tenantID, use
 
 // RecordSuppression records that a finding was suppressed by a rule. A
 // finding the rule made accepted takes the rule's expiry as the end of its
-// acceptance (findings.acceptance_expires_at, read by the CI gate); the rule
-// and the finding must belong to the same tenant.
+// acceptance (findings.acceptance_expires_at, read by the CI gate), or the
+// default acceptance length when the rule has none: an accepted risk always
+// ends. Either is capped by the finding's priority. The rule and the finding must belong to the same tenant.
 func (r *SuppressionRepository) RecordSuppression(ctx context.Context, findingID, ruleID shared.ID, appliedBy string) error {
 	query := `
 		WITH rec AS (
 			INSERT INTO finding_suppressions (finding_id, suppression_rule_id, applied_by)
 			VALUES ($1, $2, $3)
 			ON CONFLICT (finding_id, suppression_rule_id) DO NOTHING
+			RETURNING 1
+		), acc AS (
+			UPDATE findings f
+			SET acceptance_expires_at = ` + acceptanceCappedSQL("COALESCE(sr.expires_at, $4)", "f") + `
+			FROM suppression_rules sr
+			WHERE f.id = $1 AND sr.id = $2 AND sr.tenant_id = f.tenant_id
+			  AND f.status = 'accepted'
+			RETURNING 1
 		)
-		UPDATE findings f
-		SET acceptance_expires_at = sr.expires_at
-		FROM suppression_rules sr
-		WHERE f.id = $1 AND sr.id = $2 AND sr.tenant_id = f.tenant_id
-		  AND f.status = 'accepted' AND sr.expires_at IS NOT NULL
+		SELECT (SELECT count(*) FROM rec), (SELECT count(*) FROM acc)
 	`
 
-	_, err := r.db.ExecContext(ctx, query, findingID.String(), ruleID.String(), appliedBy)
+	var recorded, accepted int
+	err := r.db.QueryRowContext(ctx, query, findingID.String(), ruleID.String(), appliedBy,
+		ruleAcceptanceEnd(nil, time.Now())).Scan(&recorded, &accepted)
 	if err != nil {
 		return fmt.Errorf("failed to record finding suppression: %w", err)
 	}
+	observeSuppressionHits(appliedBy, recorded)
 
 	return nil
 }
@@ -646,7 +701,12 @@ func (r *SuppressionRepository) selectQuery() string {
 			sr.name, sr.description, sr.suppression_type, sr.status,
 			sr.requested_by, sr.requested_at, sr.approved_by, sr.approved_at,
 			sr.rejected_by, sr.rejected_at, sr.rejection_reason, sr.expires_at,
-			sr.created_at, sr.updated_at, sr.requested_by_actor
+			sr.created_at, sr.updated_at, sr.requested_by_actor,
+			sr.review_flagged_at, sr.review_reason,
+			COALESCE(sr.reason_code, ''), COALESCE(sr.tier, ''), COALESCE(sr.required_approvals, -1),
+			(SELECT COUNT(*) FROM approval_signoffs so
+			 WHERE so.tenant_id = sr.tenant_id AND so.subject_type = 'suppression_rule' AND so.subject_id = sr.id
+			   AND (sr.status <> 'pending' OR so.created_at >= sr.updated_at))
 		FROM suppression_rules sr
 	`
 }
@@ -675,6 +735,9 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 		createdAt        time.Time
 		updatedAt        time.Time
 		requestedByActor sql.NullString
+		reviewFlaggedAt  sql.NullTime
+		reviewReason     string
+		pol              rulePolicyColumns
 	)
 
 	err := row.Scan(
@@ -683,6 +746,8 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 		&requestedBy, &requestedAt, &approvedBy, &approvedAt,
 		&rejectedBy, &rejectedAt, &rejectionReason, &expiresAt,
 		&createdAt, &updatedAt, &requestedByActor,
+		&reviewFlaggedAt, &reviewReason,
+		&pol.reasonCode, &pol.tier, &pol.required, &pol.collected,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -692,13 +757,14 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 		return nil, fmt.Errorf("failed to scan suppression rule: %w", err)
 	}
 
-	return r.buildRule(
+	return pol.apply(r.buildRule(
 		id, tenantID, ruleID, toolName, pathPattern, assetID,
 		name, description, suppressionType, status,
 		requestedBy.String, requestedAt, approvedBy, approvedAt,
 		rejectedBy, rejectedAt, rejectionReason, expiresAt,
 		createdAt, updatedAt, requestedByActor.String,
-	), nil
+		reviewFlaggedAt, reviewReason,
+	)), nil
 }
 
 // scanRules scans multiple rows into Rules.
@@ -728,6 +794,9 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 			createdAt        time.Time
 			updatedAt        time.Time
 			requestedByActor sql.NullString
+			reviewFlaggedAt  sql.NullTime
+			reviewReason     string
+			pol              rulePolicyColumns
 		)
 
 		err := rows.Scan(
@@ -736,18 +805,21 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 			&requestedBy, &requestedAt, &approvedBy, &approvedAt,
 			&rejectedBy, &rejectedAt, &rejectionReason, &expiresAt,
 			&createdAt, &updatedAt, &requestedByActor,
+			&reviewFlaggedAt, &reviewReason,
+			&pol.reasonCode, &pol.tier, &pol.required, &pol.collected,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan suppression rule: %w", err)
 		}
 
-		rules = append(rules, r.buildRule(
+		rules = append(rules, pol.apply(r.buildRule(
 			id, tenantID, ruleID, toolName, pathPattern, assetID,
 			name, description, suppressionType, status,
 			requestedBy.String, requestedAt, approvedBy, approvedAt,
 			rejectedBy, rejectedAt, rejectionReason, expiresAt,
 			createdAt, updatedAt, requestedByActor.String,
-		))
+			reviewFlaggedAt, reviewReason,
+		)))
 	}
 
 	return rules, rows.Err()
@@ -765,6 +837,7 @@ func (r *SuppressionRepository) buildRule(
 	rejectionReason sql.NullString, expiresAt sql.NullTime,
 	createdAt, updatedAt time.Time,
 	requestedByActor string,
+	reviewFlaggedAt sql.NullTime, reviewReason string,
 ) *suppression.Rule {
 	idParsed, _ := shared.IDFromString(id)
 	tenantIDParsed, _ := shared.IDFromString(tenantID)
@@ -786,6 +859,10 @@ func (r *SuppressionRepository) buildRule(
 		CreatedAt:        createdAt,
 		UpdatedAt:        updatedAt,
 		RequestedByActor: requestedByActor,
+		ReviewReason:     reviewReason,
+	}
+	if reviewFlaggedAt.Valid {
+		data.ReviewFlaggedAt = &reviewFlaggedAt.Time
 	}
 
 	if assetID.Valid {
@@ -814,4 +891,58 @@ func (r *SuppressionRepository) buildRule(
 	}
 
 	return suppression.ReconstituteRule(data)
+}
+
+// ruleAcceptanceEnd is when an acceptance given by a suppression rule ends:
+// the rule's expiry, or the default acceptance length from now when the rule
+// has none (an accepted risk always ends; vulnerability.DefaultAcceptanceDuration).
+// relinkAcceptanceSQL caps the acceptance end of a finding re-linked to a
+// covering rule. It is built once from a constant fragment (no input).
+var relinkAcceptanceSQL = `
+				UPDATE findings SET acceptance_expires_at = ` + acceptanceCappedSQL("$3::timestamptz", "findings") + `
+				WHERE tenant_id = $1 AND id = $2 AND status = 'accepted'`
+
+// acceptanceCappedSQL is the end of an acceptance a suppression rule gives
+// one finding: the rule's end, but never past the cap of that finding's
+// priority (finding_max_acceptance_days: P0 or KEV 30 days, P1 90, P2 180,
+// otherwise 365, the same as vulnerability.MaxAcceptanceFor). A rule that
+// matches findings of several priorities gives each the stricter of the two;
+// the rule itself keeps its end.
+func acceptanceCappedSQL(endExpr, alias string) string {
+	return "LEAST(" + endExpr + ", NOW() + make_interval(days => finding_max_acceptance_days(" +
+		alias + ".priority_class, " + alias + ".is_in_kev)))"
+}
+
+func ruleAcceptanceEnd(ruleExpiry *time.Time, now time.Time) time.Time {
+	if ruleExpiry != nil {
+		return *ruleExpiry
+	}
+	return now.Add(vulnerability.DefaultAcceptanceDuration)
+}
+
+// rulePolicyColumns are the approval-policy columns of a rule row.
+type rulePolicyColumns struct {
+	reasonCode, tier string
+	required         int
+	collected        int
+}
+
+func (c rulePolicyColumns) apply(rule *suppression.Rule) *suppression.Rule {
+	if rule == nil {
+		return nil
+	}
+	required := c.required
+	if required < 0 {
+		required = 1 // a rule made before the policy needs one other person
+	}
+	rule.SetPolicyInfo(c.reasonCode, c.tier, required, c.collected)
+	return rule
+}
+
+// nullRuleRequired stores the rule's required approvals, NULL without a tier.
+func nullRuleRequired(rule *suppression.Rule) any {
+	if rule.Tier() == "" {
+		return nil
+	}
+	return rule.RequiredApprovals()
 }

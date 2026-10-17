@@ -35,6 +35,7 @@ import { AssetFreshnessSection } from './asset-freshness-section'
 import { AssetCoverageSection } from './asset-coverage-section'
 import { AssetTimeline } from './asset-timeline'
 import { useTranslation } from '@/context/i18n-provider'
+import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { RELATED_PREVIEW_ROWS, RelatedAssetsList } from './relationships/related-assets-list'
 import { useRelatedAssets } from '../hooks/use-related-assets'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
@@ -42,6 +43,7 @@ import { AssetOwnersTab } from './asset-owners-tab'
 import { AssetScanningSection } from './asset-scanning-section'
 import { AssetScopeChip } from './asset-scope-chip'
 import { KeyFactsSection, hasKeyFacts } from './key-facts'
+import { AssetTechnologiesSection, AssetTechnologiesTab } from './technologies'
 import {
   RiskSummarySection,
   OwnershipSection,
@@ -301,6 +303,20 @@ export function AssetDetailSheet<T extends Asset>({
           },
         ]
       : []),
+    // What probes fingerprinted on the asset (RFC-112), when anything.
+    ...((asset.technologies?.length ?? 0) > 0
+      ? [
+          {
+            value: 'technologies',
+            label: (
+              <>
+                {t('assets.technologies.title', 'Technologies')}
+                <TabsCount value={asset.technologies?.length ?? 0} />
+              </>
+            ),
+          },
+        ]
+      : []),
     // What the asset runs and the CVEs its versions fall in (RFC-066).
     { value: 'software', label: t('assets.sheet.tab.software', 'Software') },
     ...(showFindingsTab
@@ -400,6 +416,7 @@ export function AssetDetailSheet<T extends Asset>({
               </>
             }
             menu={menu}
+            fullPageHref={assetDetailHref(asset.id)}
             onClose={() => onOpenChange(false)}
           />
         }
@@ -449,6 +466,12 @@ export function AssetDetailSheet<T extends Asset>({
             {/* What it is and what runs on it, first; typed pages pass their
                 own curated sections instead. */}
             {overviewContent === undefined && <KeyFactsSection asset={asset} />}
+
+            {/* What runs on it, by category (RFC-112). */}
+            <AssetTechnologiesSection
+              asset={asset}
+              onViewAll={() => setActiveTab('technologies')}
+            />
 
             <RiskSummarySection
               asset={asset}
@@ -554,7 +577,9 @@ export function AssetDetailSheet<T extends Asset>({
           />
         )}
 
-        {tab === 'software' && <AssetSoftwareTab assetId={asset.id} />}
+        {tab === 'technologies' && <AssetTechnologiesTab assetId={asset.id} />}
+
+        {tab === 'software' && <AssetSoftwareTab assetId={asset.id} assetType={asset.type} />}
 
         {tab === 'findings' && <AssetFindings assetId={asset.id} assetName={asset.name} />}
 

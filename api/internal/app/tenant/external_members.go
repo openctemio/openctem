@@ -5,18 +5,22 @@ package tenant
 //
 // Threat model. Users are global, so one person can be a member of several
 // organizations. An organization that admits someone it does not manage must
-// bound what that person can do and for how long, because nobody tells it when
-// the person leaves their own company:
+// see that they are from outside and bound the risk of an account whose
+// mailbox it does not control (RFC-058, amended by RFC-095 §4):
 //
-//   - every external member joins as a viewer, with no data scope until a
-//     host administrator adds them to a team (a member with no scope row sees
-//     nothing), and can never hold the owner role (database trigger) or the
-//     admin role or a full-data-access role (role grant guard);
-//   - an external member no organization manages (a personal address, or a
-//     work domain nobody has verified) must have an expiry, 90 days by
-//     default and 365 at most; an expired membership is suspended within a
+//   - anyone may be invited, to any role but owner, unless the organization
+//     restricts who may be invited (Security.invitees);
+//   - an outside member is marked as such everywhere, can never hold the
+//     owner role (database CHECK and triggers), and is capped by a trust's
+//     max_role when the host trusts their home organization;
+//   - inviting an outside address with a privileged role set needs the
+//     inviter's step-up, and an outside member holding a privileged role must
+//     prove a second factor at every token mint (auth.enforceOutsidePrivilege);
+//   - an end of access is optional, unless Security.external_access_end_required
+//     makes it mandatory (90 days by default, 365 at most) for outside people
+//     no organization manages; an expired membership is suspended within a
 //     minute (ExpireMemberships);
-//   - an external person joins only by accepting an invitation addressed to
+//   - an outside person joins only by accepting an invitation addressed to
 //     them (their consent); administrators cannot add or create them directly.
 //
 // Classification reads the platform-wide verified SSO domains (one holder per
@@ -30,7 +34,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -54,9 +60,15 @@ var ErrExternalNeedsInvitation = fmt.Errorf("%w: people outside your organizatio
 // and they consent by accepting.
 var ErrDirectAddNeedsVerifiedDomain = fmt.Errorf("%w: people are added or created directly only on an email domain your organization has verified; invite them instead", shared.ErrValidation)
 
-// ErrExternalViewerOnly refuses an invitation that gives an external invitee
-// more than the viewer role.
-var ErrExternalViewerOnly = fmt.Errorf("%w: people outside your organization join as viewers; change their role after they join", shared.ErrValidation)
+// ErrInviteeNotOnVerifiedDomain refuses an invitation to an address outside
+// the organization's verified domains when Security.invitees is
+// verified_domains.
+var ErrInviteeNotOnVerifiedDomain = fmt.Errorf("%w: only addresses on your organization's verified domains can be invited", shared.ErrForbidden)
+
+// ErrInvitationNoLongerValid refuses an acceptance whose inviter can no
+// longer grant what the invitation offers (they left, were suspended or
+// demoted), or that a trust's role ceiling now exceeds.
+var ErrInvitationNoLongerValid = fmt.Errorf("%w: this invitation is no longer valid; ask the organization for a new one", shared.ErrForbidden)
 
 // AddressClassifier classifies an email address for one organization.
 type AddressClassifier struct {
@@ -157,6 +169,11 @@ func (s *TenantService) classifyInvitee(ctx context.Context, tenantID shared.ID,
 	if err != nil {
 		return c, access, err
 	}
+	required, err := s.externalAccessEndRequired(ctx, tenantID)
+	if err != nil {
+		return c, access, err
+	}
+	c.EndOptional = !required
 	// A trusted home organization may propose an end of access.
 	if c.Managed() && access.ExpiresAt == nil && s.trustPolicy != nil {
 		at, terr := s.trustPolicy.DefaultExpiryFor(ctx, tenantID, *c.HomeTenantID, now)
@@ -192,25 +209,13 @@ func SettleExternalAccess(c tenantdom.Classification, access tenantdom.ExternalA
 	return access
 }
 
-// requireViewerOnly refuses an external invitation that grants more than the
-// viewer role.
-func requireViewerOnly(roleIDs []string) error {
-	if len(roleIDs) != 1 || !strings.EqualFold(roleIDs[0], roledom.ViewerRoleID.String()) {
-		return ErrExternalViewerOnly
-	}
-	return nil
-}
-
-// ExternalInviteeRoleIDs is the role set an external invitee receives on
-// acceptance: viewer, whatever the invitation said (the address may have
-// become external after the invitation was sent).
-func ExternalInviteeRoleIDs() []string { return []string{roledom.ViewerRoleID.String()} }
-
 // ClassifyAcceptedInvitation classifies the invitee again at acceptance (the
 // domain may have been claimed or released since the invitation was sent)
-// and applies the outcome to the new membership: an external invitee joins
-// as a viewer, with the invitation's access (or the default expiry when one
-// is required). Fail closed: a classification error refuses the acceptance.
+// and applies the outcome to the new membership: an outside invitee joins
+// with the invited roles and the invitation's access (or the default expiry
+// when one is required). A trust that now caps the invitee below the invited
+// roles refuses the acceptance. Fail closed: a classification error refuses
+// the acceptance.
 func (s *TenantService) ClassifyAcceptedInvitation(ctx context.Context, inv *tenantdom.Invitation, m *tenantdom.Membership, now time.Time) error {
 	class, access, err := s.classifyInvitee(ctx, inv.TenantID(), inv.Email(), inv.Access(), now)
 	if err != nil {
@@ -219,19 +224,21 @@ func (s *TenantService) ClassifyAcceptedInvitation(ctx context.Context, inv *ten
 	if err := s.requirePersonalAllowed(ctx, inv.TenantID(), class); err != nil {
 		return err
 	}
+	if err := s.requireWithinTrustCeiling(ctx, inv.TenantID(), class, inv.RoleIDs()); err != nil {
+		if errors.Is(err, accesscontrol.ErrGrantForbidden) {
+			return ErrInvitationNoLongerValid
+		}
+		return err
+	}
 	return ApplyInviteeClassification(inv, m, class, access, now)
 }
 
-// ApplyInviteeClassification applies a classification to an invitation being
-// accepted and its new membership.
-func ApplyInviteeClassification(inv *tenantdom.Invitation, m *tenantdom.Membership,
+// ApplyInviteeClassification applies a classification to the new membership
+// of an invitation being accepted. The invited roles are kept: who may be
+// invited, and to what, was decided when the invitation was created and is
+// re-checked at acceptance (the inviter's authority, the trust ceiling).
+func ApplyInviteeClassification(_ *tenantdom.Invitation, m *tenantdom.Membership,
 	class tenantdom.Classification, access tenantdom.ExternalAccess, now time.Time) error {
-	if class.Kind == tenantdom.MemberKindExternal {
-		inv.LimitRoles(ExternalInviteeRoleIDs(), tenantdom.RoleViewer)
-		if err := m.UpdateRole(tenantdom.RoleViewer); err != nil {
-			return err
-		}
-	}
 	if err := m.Classify(class, access, now); err != nil {
 		return fmt.Errorf("%w (ask the organization for a new invitation)", err)
 	}
@@ -325,4 +332,104 @@ func canonicalMailbox(email string) string {
 		local = strings.ReplaceAll(local, ".", "")
 	}
 	return local + "@" + domain
+}
+
+// externalAccessEndRequired reads Security.external_access_end_required.
+// Fail closed: an unreadable policy requires the end of access.
+func (s *TenantService) externalAccessEndRequired(ctx context.Context, tenantID shared.ID) (bool, error) {
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		return true, err
+	}
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return true, fmt.Errorf("read the end of access policy: %w", err)
+	}
+	return sec.ExternalAccessEndRequired, nil
+}
+
+// requireInvitable applies Security.invitees to an address about to be
+// invited, or whose invitation is being accepted. Fail closed: a domain
+// lookup error refuses.
+func (s *TenantService) requireInvitable(ctx context.Context, tenantID shared.ID, email string) error {
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return fmt.Errorf("read the invitation policy: %w", err)
+	}
+	policy := sec.EffectiveInvitees()
+	if policy == tenantdom.InviteesAny {
+		return nil
+	}
+	held := false
+	if s.classifier != nil {
+		if held, err = s.classifier.HeldBy(ctx, tenantID, email); err != nil {
+			return err
+		}
+	}
+	if held {
+		return nil
+	}
+	if policy == tenantdom.InviteesAllowList {
+		if len(sec.AllowedDomains) > 0 && sec.EmailDomainAllowed(email) {
+			return nil
+		}
+		return ErrEmailDomainNotAllowed
+	}
+	return ErrInviteeNotOnVerifiedDomain
+}
+
+// requireWithinTrustCeiling refuses roles above the ceiling of an active
+// trust with the invitee's home organization: the trust's max_role (viewer
+// or member) is what the two organizations agreed. Without a trust there is
+// no ceiling but owner, which invitations never carry.
+func (s *TenantService) requireWithinTrustCeiling(ctx context.Context, tenantID shared.ID, class tenantdom.Classification, roleIDs []string) error {
+	if class.Kind != tenantdom.MemberKindExternal || !class.Managed() || s.trustPolicy == nil {
+		return nil
+	}
+	ceiling, err := s.trustPolicy.MaxRoleFor(ctx, tenantID, *class.HomeTenantID)
+	if err != nil {
+		return fmt.Errorf("load the trust ceiling: %w", err)
+	}
+	if ceiling == "" {
+		return nil
+	}
+	privileged, err := s.privilegedRoleSet(ctx, tenantID, roleIDs)
+	if err != nil {
+		return err
+	}
+	if privileged {
+		return accesscontrol.ErrExternalRoleCeiling
+	}
+	if ceiling == orgtrust.MaxRoleViewer && !(len(roleIDs) == 1 && strings.EqualFold(roleIDs[0], roledom.ViewerRoleID.String())) {
+		return accesscontrol.ErrExternalViewerCeiling
+	}
+	return nil
+}
+
+// privilegedRoleSet reports whether the roles make their holder privileged:
+// the admin role, full data access, or a privileged permission (members,
+// teams, roles, API keys, secret store, settings).
+func (s *TenantService) privilegedRoleSet(ctx context.Context, tenantID shared.ID, roleIDs []string) (bool, error) {
+	for _, raw := range roleIDs {
+		if strings.EqualFold(raw, roledom.AdminRoleID.String()) || strings.EqualFold(raw, roledom.OwnerRoleID.String()) {
+			return true, nil
+		}
+	}
+	if s.roleService == nil {
+		return false, nil
+	}
+	for _, raw := range roleIDs {
+		r, err := s.roleService.GetRole(ctx, tenantID.String(), raw)
+		if err != nil {
+			return false, err
+		}
+		if permission.IsAboveMember(r.Permissions(), r.HasFullDataAccess()) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

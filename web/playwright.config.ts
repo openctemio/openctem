@@ -60,10 +60,10 @@ export default defineConfig({
   fullyParallel: true,
   workers: isCI ? 1 : undefined,
   forbidOnly: isCI,
-  retries: isCI ? 2 : 0,
+  retries: isCI ? 1 : 0,
 
   reporter: isCI
-    ? [['list'], ['html', { open: 'never' }], ['github']]
+    ? [['list'], ['blob'], ['github']]
     : [['list'], ['html', { open: 'never' }]],
 
   use: {

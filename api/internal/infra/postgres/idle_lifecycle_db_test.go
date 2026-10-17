@@ -9,26 +9,31 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// The idle lifecycle (migration 001347) as the application role: only Free
-// organizations are listed, sign-ins come from active members, the
-// read-only check lifts on a sign-in after the stage started, and every
-// read stays inside its organization. Requires DATABASE_URL.
+// The idle policy as the application role: only organizations an
+// administrator turned the policy on for are listed or ever read-only (an
+// organization with a leftover read-only stage but no policy is neither,
+// owner rule: no organization goes read-only unless an operator chose that), sign-ins come
+// from active members, the read-only check lifts on a sign-in after the stage
+// started, turning the policy off lifts read-only at once, and every read
+// stays inside its organization. Requires DATABASE_URL.
 func TestIdleLifecycleRepository(t *testing.T) {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
 	r := NewIdleLifecycleRepository(&DB{DB: sqlDB})
 	suffix := shared.NewID().String()[28:]
-	free := planTestTenant(t, sqlDB, "idle-free-"+suffix)
-	pro := planTestTenant(t, sqlDB, "idle-pro-"+suffix)
-	owner := planTestUser(t, sqlDB, "idle-owner-"+suffix+"@example.test")
-	member := planTestUser(t, sqlDB, "idle-member-"+suffix+"@example.test")
+	opted := limitsTestTenant(t, sqlDB, "idle-opted-"+suffix)
+	free := limitsTestTenant(t, sqlDB, "idle-free-"+suffix)
+	owner := limitsTestUser(t, sqlDB, "idle-owner-"+suffix+"@example.test")
+	member := limitsTestUser(t, sqlDB, "idle-member-"+suffix+"@example.test")
 	for _, q := range []struct {
 		sql  string
 		args []any
 	}{
-		{`INSERT INTO tenant_plans (tenant_id, plan) VALUES ($1, 'free'), ($2, 'pro')`, []any{free.String(), pro.String()}},
+		// An organization idle for 100 days, with a read-only stage left from
+		// before the policy became opt-in.
+		{`INSERT INTO tenant_idle_lifecycle (tenant_id, stage, stage_changed_at) VALUES ($1, 'read_only', now() - interval '1 day')`, []any{free.String()}},
 		{`INSERT INTO tenant_members (tenant_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active'), ($1, $3, 'member', 'active'), ($4, $2, 'owner', 'active')`,
-			[]any{free.String(), owner.String(), member.String(), pro.String()}},
+			[]any{opted.String(), owner.String(), member.String(), free.String()}},
 		{`UPDATE users SET last_login_at = now() - interval '100 days' WHERE id = $1`, []any{owner.String()}},
 		{`UPDATE users SET last_login_at = now() - interval '95 days' WHERE id = $1`, []any{member.String()}},
 	} {
@@ -37,37 +42,64 @@ func TestIdleLifecycleRepository(t *testing.T) {
 		}
 	}
 
-	list, err := r.FreeWorkspaces(ctx)
-	if err != nil {
+	listed := func() map[shared.ID]lifecycle.Workspace {
+		t.Helper()
+		list, err := r.Workspaces(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[shared.ID]lifecycle.Workspace{}
+		for _, w := range list {
+			out[w.TenantID] = w
+		}
+		return out
+	}
+
+	// Default: the policy is off everywhere.
+	got := listed()
+	for _, id := range []shared.ID{opted, free} {
+		if _, ok := got[id]; ok {
+			t.Fatalf("no organization is under the policy by default: %s", id)
+		}
+	}
+	if ro, _ := r.ReadOnly(ctx, free); ro {
+		t.Fatal("an organization without the policy must never be read-only")
+	}
+	if st, err := r.Status(ctx, free); err != nil || st.PolicyEnabled {
+		t.Fatalf("status: %+v %v", st, err)
+	}
+
+	by := shared.NewID()
+	if err := r.SetPolicy(ctx, opted, lifecycle.Policy{Enabled: true, Reason: "hosted free tier", By: &by, At: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	var got *lifecycle.Workspace
-	for i := range list {
-		if list[i].TenantID == pro {
-			t.Fatal("a Pro organization must not be swept")
-		}
-		if list[i].TenantID == free {
-			got = &list[i]
-		}
+	got = listed()
+	if _, ok := got[free]; ok {
+		t.Fatal("an organization without the policy must not be swept")
 	}
-	if got == nil || got.Stage != lifecycle.StageActive || got.LastSignIn.IsZero() {
-		t.Fatalf("free workspace: %+v", got)
+	w, ok := got[opted]
+	if !ok || w.Stage != lifecycle.StageActive || w.LastSignIn.IsZero() {
+		t.Fatalf("opted-in organization: %+v", w)
 	}
-	if idle := time.Since(got.LastSignIn); idle < 94*24*time.Hour || idle > 96*24*time.Hour {
+	if idle := time.Since(w.LastSignIn); idle < 94*24*time.Hour || idle > 96*24*time.Hour {
 		t.Fatalf("latest member sign-in should be 95 days ago, got %v", idle)
+	}
+	st, err := r.Status(ctx, opted)
+	if err != nil || !st.PolicyEnabled || st.PolicyReason != "hosted free tier" || st.PolicySetAt == nil {
+		t.Fatalf("status: %+v %v", st, err)
 	}
 
 	// Read-only: stage set now, nobody signed in since.
-	if err := r.SetStage(ctx, free, lifecycle.StageReadOnly, time.Now().Add(-time.Minute)); err != nil {
+	if err := r.SetStage(ctx, opted, lifecycle.StageReadOnly, time.Now().Add(-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if ro, _ := r.ReadOnly(ctx, free); !ro {
+	if ro, _ := r.ReadOnly(ctx, opted); !ro {
 		t.Fatal("want read-only")
 	}
-	if ro, _ := r.ReadOnly(ctx, pro); ro {
+	if ro, _ := r.ReadOnly(ctx, free); ro {
 		t.Fatal("another organization must not be read-only")
 	}
-	if rs, _ := r.Recipients(ctx, free); len(rs) != 1 || rs[0] != "idle-owner-"+suffix+"@example.test" {
+	if rs, _ := r.Recipients(ctx, opted); len(rs) != 1 || rs[0] != "idle-owner-"+suffix+"@example.test" {
 		t.Fatalf("recipients (owners and admins only): %v", rs)
 	}
 
@@ -75,32 +107,30 @@ func TestIdleLifecycleRepository(t *testing.T) {
 	if _, err := sqlDB.ExecContext(ctx, `UPDATE users SET last_login_at = now() WHERE id = $1`, member.String()); err != nil {
 		t.Fatal(err)
 	}
-	if ro, _ := r.ReadOnly(ctx, free); ro {
+	if ro, _ := r.ReadOnly(ctx, opted); ro {
 		t.Fatal("a sign-in must lift read-only")
 	}
 
-	// Exempt: back to active, never read-only.
-	if err := r.SetStage(ctx, free, lifecycle.StageDeletionDue, time.Now().Add(time.Minute)); err != nil {
+	// Turning the policy off: back to active, never read-only, not swept.
+	if err := r.SetStage(ctx, opted, lifecycle.StageDeletionDue, time.Now().Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	by := shared.NewID()
-	if err := r.SetExemption(ctx, free, lifecycle.Exemption{Exempt: true, Reason: "partner", By: &by, At: time.Now()}); err != nil {
+	if err := r.SetPolicy(ctx, opted, lifecycle.Policy{Enabled: false, Reason: "customer asked", By: &by, At: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	st, err := r.Status(ctx, free)
-	if err != nil || !st.Exempt || st.Stage != lifecycle.StageActive || st.ExemptReason != "partner" {
-		t.Fatalf("status: %+v %v", st, err)
+	if st, _ = r.Status(ctx, opted); st.PolicyEnabled || st.Stage != lifecycle.StageActive {
+		t.Fatalf("policy off: %+v", st)
 	}
-	if err := r.SetExemption(ctx, free, lifecycle.Exemption{Exempt: false}); err != nil {
-		t.Fatal(err)
+	if ro, _ := r.ReadOnly(ctx, opted); ro {
+		t.Fatal("policy off must lift read-only")
 	}
-	if st, _ = r.Status(ctx, free); st.Exempt {
-		t.Fatal("exemption must be lifted")
+	if _, ok := listed()[opted]; ok {
+		t.Fatal("policy off: not swept")
 	}
-	if err := r.SetStage(ctx, free, lifecycle.Stage("bogus"), time.Now()); err == nil {
+	if err := r.SetStage(ctx, opted, lifecycle.Stage("bogus"), time.Now()); err == nil {
 		t.Fatal("an unknown stage must be refused")
 	}
-	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO tenant_idle_lifecycle (tenant_id, exempt) VALUES ($1, true)`, pro.String()); err == nil {
-		t.Fatal("an exemption without a reason must be refused by the check constraint")
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO tenant_idle_lifecycle (tenant_id, policy_enabled, policy_reason) VALUES ($1, true, '')`, free.String()); err == nil {
+		t.Fatal("an empty reason must be refused by the check constraint")
 	}
 }

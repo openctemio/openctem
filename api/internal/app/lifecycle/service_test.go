@@ -16,14 +16,14 @@ import (
 type fakeRepo struct {
 	list       []lifecycledom.Workspace
 	stages     map[shared.ID]lifecycledom.Stage
-	exemptions map[shared.ID]lifecycledom.Exemption
+	policies   map[shared.ID]lifecycledom.Policy
 	readOnly   map[shared.ID]bool
 	roErr      error
 	roCalls    int
 	recipients []string
 }
 
-func (f *fakeRepo) FreeWorkspaces(context.Context) ([]lifecycledom.Workspace, error) {
+func (f *fakeRepo) Workspaces(context.Context) ([]lifecycledom.Workspace, error) {
 	return f.list, nil
 }
 func (f *fakeRepo) SetStage(_ context.Context, id shared.ID, s lifecycledom.Stage, _ time.Time) error {
@@ -36,11 +36,11 @@ func (f *fakeRepo) SetStage(_ context.Context, id shared.ID, s lifecycledom.Stag
 func (f *fakeRepo) Status(context.Context, shared.ID) (*lifecycledom.Status, error) {
 	return &lifecycledom.Status{Stage: lifecycledom.StageActive}, nil
 }
-func (f *fakeRepo) SetExemption(_ context.Context, id shared.ID, e lifecycledom.Exemption) error {
-	if f.exemptions == nil {
-		f.exemptions = map[shared.ID]lifecycledom.Exemption{}
+func (f *fakeRepo) SetPolicy(_ context.Context, id shared.ID, p lifecycledom.Policy) error {
+	if f.policies == nil {
+		f.policies = map[shared.ID]lifecycledom.Policy{}
 	}
-	f.exemptions[id] = e
+	f.policies[id] = p
 	return nil
 }
 func (f *fakeRepo) ReadOnly(_ context.Context, id shared.ID) (bool, error) {
@@ -80,9 +80,8 @@ func TestSweep_AdvancesAuditsAndNotifies(t *testing.T) {
 	busy := lifecycledom.Workspace{TenantID: shared.NewID(), Name: "Busy", Stage: lifecycledom.StageActive, CreatedAt: created, LastSignIn: now.Add(-days(2))}
 	back := lifecycledom.Workspace{TenantID: shared.NewID(), Name: "Back", Stage: lifecycledom.StageReadOnly, StageChangedAt: now.Add(-days(5)), CreatedAt: created, LastSignIn: now.Add(-time.Hour)}
 	due := lifecycledom.Workspace{TenantID: shared.NewID(), Name: "Due", Stage: lifecycledom.StageFinalWarning, StageChangedAt: now.Add(-days(8)), CreatedAt: created, LastSignIn: now.Add(-days(121))}
-	exempt := lifecycledom.Workspace{TenantID: shared.NewID(), Name: "Exempt", Stage: lifecycledom.StageActive, CreatedAt: created, LastSignIn: now.Add(-days(300)), Exempt: true}
 
-	repo := &fakeRepo{list: []lifecycledom.Workspace{idle61, busy, back, due, exempt}, recipients: []string{"owner@acme.test"}}
+	repo := &fakeRepo{list: []lifecycledom.Workspace{idle61, busy, back, due}, recipients: []string{"owner@acme.test"}}
 	audit := &fakeAudit{}
 	notifier := &fakeNotifier{}
 	op, _ := admin.NewAdminUser("op@platform.test", "Op", admin.AdminRoleSuperAdmin, nil)
@@ -100,9 +99,6 @@ func TestSweep_AdvancesAuditsAndNotifies(t *testing.T) {
 	}
 	if _, touched := repo.stages[busy.TenantID]; touched {
 		t.Fatal("an active organization must not be touched")
-	}
-	if _, touched := repo.stages[exempt.TenantID]; touched {
-		t.Fatal("an exempt active organization must not be touched")
 	}
 	if len(audit.actions) != 3 {
 		t.Fatalf("every stage change is audited: %v", audit.actions)
@@ -147,7 +143,7 @@ func TestReadOnly_CachedAndFailOpen(t *testing.T) {
 	}
 }
 
-func TestSetExemption(t *testing.T) {
+func TestChangePolicy(t *testing.T) {
 	id := shared.NewID()
 	repo := &fakeRepo{}
 	audit := &fakeAudit{}
@@ -155,33 +151,37 @@ func TestSetExemption(t *testing.T) {
 	svc := NewService(repo, audit, adminAudit, nil, nil, nil)
 	op, _ := admin.NewAdminUser("op@platform.test", "Op", admin.AdminRoleOpsAdmin, nil)
 
-	if err := svc.ChangeExemption(context.Background(), nil, id, true, "x", "", ""); err == nil {
+	if err := svc.ChangePolicy(context.Background(), nil, id, true, "x", "", ""); err == nil {
 		t.Fatal("nil actor")
 	}
-	if err := svc.ChangeExemption(context.Background(), op, id, true, "  ", "", ""); !errors.Is(err, ErrInvalidExemption) {
-		t.Fatalf("empty reason: %v", err)
+	for _, enabled := range []bool{true, false} {
+		if err := svc.ChangePolicy(context.Background(), op, id, enabled, "  ", "", ""); !errors.Is(err, ErrInvalidPolicyReason) {
+			t.Fatalf("empty reason (enabled=%v): %v", enabled, err)
+		}
 	}
 	long := make([]rune, 501)
 	for i := range long {
 		long[i] = 'x'
 	}
-	if err := svc.ChangeExemption(context.Background(), op, id, true, string(long), "", ""); !errors.Is(err, ErrInvalidExemption) {
+	if err := svc.ChangePolicy(context.Background(), op, id, true, string(long), "", ""); !errors.Is(err, ErrInvalidPolicyReason) {
 		t.Fatalf("long reason: %v", err)
 	}
-	if len(repo.exemptions) != 0 {
-		t.Fatal("refused exemptions must not be stored")
+	if len(repo.policies) != 0 {
+		t.Fatal("refused changes must not be stored")
 	}
-	if err := svc.ChangeExemption(context.Background(), op, id, true, "design partner", "", ""); err != nil {
+	if err := svc.ChangePolicy(context.Background(), op, id, true, "hosted free tier", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if e := repo.exemptions[id]; !e.Exempt || e.Reason != "design partner" || e.By == nil {
-		t.Fatalf("stored %+v", e)
+	if p := repo.policies[id]; !p.Enabled || p.Reason != "hosted free tier" || p.By == nil {
+		t.Fatalf("stored %+v", p)
 	}
-	if adminAudit.n != 1 || len(audit.actions) != 1 || audit.actions[0] != auditdom.ActionTenantIdleExemptionChanged {
+	if adminAudit.n != 1 || len(audit.actions) != 1 || audit.actions[0] != auditdom.ActionTenantIdlePolicyChanged {
 		t.Fatalf("audit admin=%d tenant=%v", adminAudit.n, audit.actions)
 	}
-	// Lifting needs no reason.
-	if err := svc.ChangeExemption(context.Background(), op, id, false, "", "", ""); err != nil || repo.exemptions[id].Exempt {
-		t.Fatalf("lift: %v %+v", err, repo.exemptions[id])
+	if err := svc.ChangePolicy(context.Background(), op, id, false, "customer asked", "", ""); err != nil || repo.policies[id].Enabled {
+		t.Fatalf("turn off: %v %+v", err, repo.policies[id])
+	}
+	if adminAudit.n != 2 || len(audit.actions) != 2 {
+		t.Fatal("turning the policy off is audited too")
 	}
 }

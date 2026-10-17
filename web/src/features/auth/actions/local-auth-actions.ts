@@ -38,6 +38,8 @@ export interface LocalUser {
 export interface LoginInput {
   email: string
   password: string
+  /** Required after repeated failed sign-ins from the same address. */
+  captchaToken?: string
 }
 
 // Tenant info returned from login
@@ -131,6 +133,8 @@ export interface LoginResult {
   success: boolean
   user?: LocalUser
   error?: string
+  /** The API's error code, e.g. CAPTCHA_REQUIRED. */
+  code?: string
   message?: string
   // Multi-tenant selection
   requiresTenantSelection?: boolean
@@ -321,6 +325,7 @@ export async function loginAction(input: LoginInput): Promise<LoginResult> {
       body: JSON.stringify({
         email: input.email,
         password: input.password,
+        ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
       }),
     })
 
@@ -343,6 +348,7 @@ export async function loginAction(input: LoginInput): Promise<LoginResult> {
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Login failed',
+      code: (error as { code?: unknown } | null)?.code as string | undefined,
     }
   }
 }
@@ -379,8 +385,8 @@ async function completeLogin(
     authProvider: 'local',
   }
 
-  // A platform administrator belongs to no organization: send them to the
-  // admin console (which asks for the TOTP code) instead of onboarding.
+  // A platform administrator belongs to no organization: the sign-in page
+  // points them to the platform console (its own site) instead of onboarding.
   if (loginData.platform_admin) {
     return { success: true, user, platformAdmin: true, tenants: [] }
   }
@@ -1186,4 +1192,85 @@ export async function discoverSignInAction(
     // Discovery is a convenience: sign-in still works without it.
   }
   return { next: 'password', org: '' }
+}
+
+// ============================================
+// ONBOARDING (api RFC-104)
+// ============================================
+
+export interface OnboardingInvitation {
+  ref: string
+  organization_name: string
+  role: string
+  invited_by?: string
+  expires_at: string
+}
+
+export interface OnboardingOrganization {
+  ref: string
+  organization_name: string
+  domain: string
+  /** join: joins at once; request: asks the organization's administrators. */
+  mode: 'join' | 'request'
+  pending: boolean
+}
+
+export interface OnboardingOptions {
+  email_verified: boolean
+  invitations: OnboardingInvitation[]
+  organizations: OnboardingOrganization[]
+  can_create_organization: boolean
+  pending_requests: number
+}
+
+export type OnboardingOptionsResult =
+  | { success: true; options: OnboardingOptions }
+  | { success: false; error: string; sessionExpired?: boolean }
+
+/** The onboarding offers of the signed-in account without an organization. */
+export async function onboardingOptionsAction(): Promise<OnboardingOptionsResult> {
+  const refreshToken = (await cookies()).get(env.auth.refreshCookieName)?.value
+  if (!refreshToken) return { success: false, error: 'session', sessionExpired: true }
+  try {
+    const options = await backendFetch<OnboardingOptions>(authEndpoints.onboardingOptions(), {
+      method: 'POST',
+      // Server-to-server: the refresh token goes in the body.
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+    return { success: true, options }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'error' }
+  }
+}
+
+export type OnboardingAcceptResult =
+  | { success: true; status: 'joined' | 'requested'; organizationName: string }
+  | { success: false; code?: string; error: string }
+
+/**
+ * Takes one offer. When the account joined, the organization is selected at
+ * once (token exchange), so the caller can go straight to the dashboard.
+ */
+export async function onboardingAcceptAction(ref: string): Promise<OnboardingAcceptResult> {
+  const refreshToken = (await cookies()).get(env.auth.refreshCookieName)?.value
+  if (!refreshToken) return { success: false, code: 'SESSION', error: 'session' }
+  try {
+    const res = await backendFetch<{
+      status: 'joined' | 'requested'
+      organization_name: string
+      organization_id?: string
+    }>(authEndpoints.onboardingAccept(), {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken, ref }),
+    })
+    if (res.status === 'joined' && res.organization_id) {
+      const selected = await selectTenantAction(res.organization_id)
+      if (!selected.success)
+        return { success: false, code: 'SELECT_FAILED', error: selected.error ?? 'error' }
+    }
+    return { success: true, status: res.status, organizationName: res.organization_name }
+  } catch (error) {
+    const code = (error as Error & { code?: string }).code
+    return { success: false, code, error: error instanceof Error ? error.message : 'error' }
+  }
 }

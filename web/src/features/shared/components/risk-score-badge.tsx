@@ -3,14 +3,45 @@
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { Loader2 } from 'lucide-react'
 import { getRiskLevel } from '../types'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
+import { useTranslation } from '@/context/i18n-provider'
+
+/**
+ * Freshness of a stored risk score (from the asset API's risk_scored_at and
+ * risk_score_pending): `unscored` = never computed, so the score is not a
+ * real 0; `calculating` = never computed and the first score is queued;
+ * `pending` = scored, and a rescore is queued.
+ */
+export type RiskScoreState = 'scored' | 'pending' | 'calculating' | 'unscored'
+
+/** The freshness state of an asset's stored score; undefined fields = scored. */
+export function riskScoreState(a: {
+  riskScored?: boolean
+  riskScorePending?: boolean
+}): RiskScoreState {
+  if (a.riskScored === false) return a.riskScorePending ? 'calculating' : 'unscored'
+  return a.riskScorePending ? 'pending' : 'scored'
+}
 
 interface RiskScoreBadgeProps {
   score: number
   showScore?: boolean
   size?: 'sm' | 'md' | 'lg'
   className?: string
+  /**
+   * Freshness of the score. A never-scored asset shows "Not yet scored" and a
+   * queued first score "Calculating…", never a fake "0". A queued rescore of
+   * a scored asset keeps the score with a spinner.
+   */
+  state?: RiskScoreState
+}
+
+const badgeSizeClasses = {
+  sm: 'text-xs px-1.5 py-0.5',
+  md: 'text-sm px-2 py-0.5',
+  lg: 'text-base px-2.5 py-1',
 }
 
 export function RiskScoreBadge({
@@ -18,18 +49,51 @@ export function RiskScoreBadge({
   showScore = true,
   size = 'md',
   className,
+  state = 'scored',
 }: RiskScoreBadgeProps) {
+  const { t } = useTranslation()
   const thresholds = useRiskThresholds()
-  const { label, color, textColor } = getRiskLevel(score, thresholds)
+  const level = getRiskLevel(score, thresholds)
+  const label = t(`riskScore.level.${level.key}`, level.label)
 
-  const sizeClasses = {
-    sm: 'text-xs px-1.5 py-0.5',
-    md: 'text-sm px-2 py-0.5',
-    lg: 'text-base px-2.5 py-1',
+  if (state === 'calculating') {
+    return (
+      <Badge
+        variant="outline"
+        className={cn('text-muted-foreground', badgeSizeClasses[size], className)}
+        title={t(
+          'riskScore.calculatingHint',
+          'Its inputs changed; the new score is being computed.'
+        )}
+      >
+        <Loader2 className="mr-1 h-3 w-3 animate-spin" aria-hidden />
+        {t('riskScore.calculating', 'Calculating…')}
+      </Badge>
+    )
+  }
+
+  if (state === 'unscored') {
+    return (
+      <Badge
+        variant="outline"
+        className={cn('text-muted-foreground', badgeSizeClasses[size], className)}
+        title={t('riskScore.notScoredHint', "This asset's risk score has not been computed yet.")}
+      >
+        {t('riskScore.notScored', 'Not yet scored')}
+      </Badge>
+    )
   }
 
   return (
-    <Badge className={cn(color, textColor, sizeClasses[size], className)}>
+    <Badge
+      className={cn(level.color, level.textColor, badgeSizeClasses[size], className)}
+      title={
+        state === 'pending'
+          ? t('riskScore.calculatingHint', 'Its inputs changed; the new score is being computed.')
+          : undefined
+      }
+    >
+      {state === 'pending' && <Loader2 className="mr-1 h-3 w-3 animate-spin" aria-hidden />}
       {showScore ? `${score} - ${label}` : label}
     </Badge>
   )
@@ -54,8 +118,11 @@ export function RiskScoreMeter({
   showTooltip = true,
   className,
 }: RiskScoreMeterProps) {
+  const { t } = useTranslation()
   const thresholds = useRiskThresholds()
-  const { label, color } = getRiskLevel(score, thresholds)
+  const level = getRiskLevel(score, thresholds)
+  const { color } = level
+  const label = t(`riskScore.level.${level.key}`, level.label)
 
   // Map color classes to progress bar colors
   const progressColor = color.replace('bg-', '')
@@ -90,8 +157,12 @@ export function RiskScoreMeter({
       <Tooltip delayDuration={200}>
         <TooltipTrigger asChild>{meter}</TooltipTrigger>
         <TooltipContent side="top">
-          <p className="font-medium">Risk Score: {score}/100</p>
-          <p className="text-xs text-muted-foreground">Level: {label}</p>
+          <p className="font-medium">
+            {t('riskScore.meterTooltip', 'Risk score: {score}/100', { score })}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t('riskScore.levelTooltip', 'Level: {level}', { level: label })}
+          </p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -115,8 +186,11 @@ export function RiskScoreGauge({
   showLabel = true,
   className,
 }: RiskScoreGaugeProps) {
+  const { t } = useTranslation()
   const thresholds = useRiskThresholds()
-  const { label, color } = getRiskLevel(score, thresholds)
+  const level = getRiskLevel(score, thresholds)
+  const { color } = level
+  const label = t(`riskScore.level.${level.key}`, level.label)
 
   const sizeConfig = {
     sm: { diameter: 40, strokeWidth: 4, fontSize: 'text-xs' },

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { parseFindingLens, FINDING_LENSES, DEFAULT_FINDING_LENS } from '../state-lens'
+import {
+  parseFindingLens,
+  FINDING_LENSES,
+  DEFAULT_FINDING_LENS,
+  lensLabelKey,
+  lensDescriptionKey,
+} from '../state-lens'
 import { buildGroupsUrl } from '../../api/use-finding-groups'
 import { buildFindingsQuery } from '../../api/use-findings-api'
 
@@ -33,5 +39,24 @@ describe('findings state lens', () => {
         'http://x'
       ).searchParams.get('branch_only')
     ).toBe('true')
+  })
+})
+
+describe('finding lens labels are localised', () => {
+  it('has an en and a vi label and description for every lens', async () => {
+    const en = (await import('@/lib/i18n/dictionaries/en/findings.json')).default as Record<
+      string,
+      string
+    >
+    const vi = (await import('@/lib/i18n/dictionaries/vi/findings.json')).default as Record<
+      string,
+      string
+    >
+    for (const l of FINDING_LENSES) {
+      for (const key of [lensLabelKey(l.value), lensDescriptionKey(l.value)]) {
+        expect(en[key], key).toBeTruthy()
+        expect(vi[key], key).toBeTruthy()
+      }
+    }
   })
 })

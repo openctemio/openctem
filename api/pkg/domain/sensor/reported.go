@@ -68,6 +68,43 @@ const CapabilityScopeLimits = "scope.limits@1"
 // declares never counts.
 const CapabilityNetConfined = "net.confined@1"
 
+// CapabilityHTTPIdentity is the capability of a sensor whose tools send the
+// job's http_policy User-Agent and headers on every request (sdk-go
+// toolhost.CapabilityHTTPIdentity). A job carrying a program's
+// identification is claimable only by a sensor that reported it.
+const CapabilityHTTPIdentity = "http.identity@1"
+
+// CapabilityReachProbe is the capability of a sensor that serves the
+// polite reach probe (docs/rfcs/RFC-089-reachability-aware-routing.md
+// §4.3): one TCP connect per admitted address and port, no payload,
+// through the sensor's local policy. The platform requests it to learn
+// whether a sensor reaches a job's targets.
+const CapabilityReachProbe = "reach.probe@1"
+
+// ToolReachProbe is the sensor's built-in reach probe (its scanner name).
+// It is a sensor service the platform requests, like validate, not a scan
+// tool tenants choose, so it has no tool catalog row: sensorServiceTools
+// makes it known without one.
+const ToolReachProbe = "reach-probe"
+
+// sensorServiceTools are the built-in tools a sensor reports that the
+// platform knows without a tool catalog row. Without this, Sanitize drops
+// the tool from every report and the manifest logs it as "unknown-tool".
+var sensorServiceTools = []string{ToolReachProbe}
+
+// sensorWideCapabilities are the capabilities a sensor reports for itself,
+// whatever its tools, that the platform gates jobs on. Sanitize keeps only
+// known capabilities, so one missing here is dropped from every report and
+// the jobs that require it wait forever: every sensor-wide capability that
+// dispatch or the command poll checks must be listed.
+var sensorWideCapabilities = []string{
+	CapabilityValidate,
+	CapabilityScopeLimits,
+	CapabilityNetConfined,
+	CapabilityHTTPIdentity,
+	CapabilityReachProbe,
+}
+
 // Tool kinds a sensor reports (sdk-go core.ToolKind).
 const (
 	ToolKindScanner   = "scanner"
@@ -309,7 +346,7 @@ func (in CapabilityReportInput) CatalogCandidates() (tools, capabilities []strin
 }
 
 // Sanitize keeps what is well-formed and known: tools in the tool catalog
-// (knownTools), and capabilities that are in the capability registry
+// (knownTools) or sensor service tools (sensorServiceTools), and capabilities that are in the capability registry
 // (knownCaps), in the OpenCTEM capability taxonomy (ctis/capability), name a
 // known tool, or are "validate" / "validate:<known tool>". Lists are capped and deduplicated, versions and the platform are
 // reduced to safe tokens, and the concurrency is clamped to
@@ -318,6 +355,7 @@ func (in CapabilityReportInput) CatalogCandidates() (tools, capabilities []strin
 // usable.
 func (in CapabilityReportInput) Sanitize(knownTools, knownCaps map[string]bool) CapabilityReport {
 	var out CapabilityReport
+	knownTools = withServiceTools(knownTools)
 	if in.Tools != nil {
 		out.Tools = make([]ReportedTool, 0, min(len(in.Tools), MaxReportedTools))
 		idx := map[string]int{}
@@ -368,6 +406,18 @@ func (in CapabilityReportInput) Sanitize(knownTools, knownCaps map[string]bool) 
 	return out
 }
 
+// withServiceTools is knownTools plus sensorServiceTools, in a copy.
+func withServiceTools(knownTools map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(knownTools)+len(sensorServiceTools))
+	for k, v := range knownTools {
+		out[k] = v
+	}
+	for _, t := range sensorServiceTools {
+		out[t] = true
+	}
+	return out
+}
+
 // sanitizeToolKind keeps a known tool kind; anything else is "".
 func sanitizeToolKind(k string) string {
 	switch k = strings.ToLower(strings.TrimSpace(k)); k {
@@ -398,7 +448,7 @@ func sanitizeToolCapabilities(in []string, knownTools, knownCaps map[string]bool
 }
 
 func knownCapability(c string, knownTools, knownCaps map[string]bool) bool {
-	if knownCaps[c] || knownTools[c] || c == CapabilityValidate || c == CapabilityScopeLimits || c == CapabilityNetConfined {
+	if knownCaps[c] || knownTools[c] || slices.Contains(sensorWideCapabilities, c) {
 		return true
 	}
 	// A capability of the OpenCTEM taxonomy (ctis/capability), as sensors on

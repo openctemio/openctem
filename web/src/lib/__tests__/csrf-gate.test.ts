@@ -15,7 +15,7 @@ import { proxy } from '@/proxy'
 import { POST as refreshPOST } from '@/app/api/auth/refresh/route'
 import { POST as switchTeamPOST } from '@/app/api/auth/switch-team/route'
 import { POST as v1POST, DELETE as v1DELETE } from '@/app/api/v1/[...path]/route'
-import { POST as adminPOST } from '@/app/api/v1/admin/[...path]/route'
+import { POST as adminPOST } from '@console/app/api/v1/admin/[...path]/route'
 import { CSRF_COOKIE, csrfRejection } from '@/lib/server-auth-cookies'
 
 const APP = 'https://app.example.test'

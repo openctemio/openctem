@@ -1,10 +1,11 @@
 /**
- * Per-sensor tool settings (api docs/architecture/sensors.md, "Tool
- * settings"): for each tool of the sensor's current manifest that declares a
- * settings schema, the schema and the values an owner or administrator
- * stored. The values reach the sensor inside each signed scan job of the
- * tool. Reads need sensors:read; saving and resetting need sensors:write.
- * An invalid save answers 422 with every problem by JSON pointer.
+ * Tool settings (api docs/architecture/sensors.md, "Tool settings"): the
+ * organization's defaults per tool (every one of its own sensors) and each
+ * sensor's overrides, for each tool whose manifest declares a settings
+ * schema. The values reach the sensor inside each signed scan job of the
+ * tool. Reads need sensors:read; saving and resetting need sensors:write
+ * (setting an Impact option also needs a recent re-authentication). An
+ * invalid save answers 422 with every problem by JSON pointer.
  */
 
 'use client'
@@ -32,18 +33,43 @@ export interface SensorToolSettings {
   stored_digest?: string
   /** Why stored values no longer validate after a sensor upgrade. */
   problems: ToolSettingsProblem[]
+  /** The organization's defaults this sensor inherits for every key it does not set. */
+  organization_values?: Record<string, unknown>
+  /** Why the organization's defaults do not fit this sensor's tool (its jobs fail). */
+  organization_problems?: ToolSettingsProblem[]
   updated_at?: string
   updated_by?: string
 }
 
+/** Where an effective value comes from; "tenant" is the organization's default. */
+export type ToolSettingSource = 'default' | 'tenant' | 'sensor' | 'scan' | ''
+
 export interface SensorEffectiveToolSetting {
   key: string
   value: unknown
-  source: 'default' | 'sensor' | ''
+  source: ToolSettingSource
   flag?: string
   common?: string
   scope: 'sensor' | 'scan'
   tier?: string
+  /** Every layer that sets the key, lowest first; the last one is in force. */
+  chain?: { source: ToolSettingSource; value: unknown }[]
+}
+
+/** One tool's organization defaults. */
+export interface ToolDefaults {
+  tool: string
+  schema_digest: string
+  /** The reference schema (newest manifest); null when no sensor reports the tool any more. */
+  schema: Record<string, unknown> | null
+  values: Record<string, unknown>
+  stored: boolean
+  /** How many of the organization's own sensors declare settings for the tool. */
+  sensors: number
+  /** Sensors whose tool version refuses the defaults. */
+  problems: { sensor_id: string; sensor_name: string; problems: ToolSettingsProblem[] }[]
+  updated_at?: string
+  updated_by?: string
 }
 
 export interface SensorEffectiveToolSettings {
@@ -81,6 +107,29 @@ export function useSensorEffectiveToolSettings(
     (url: string) => get<SensorEffectiveToolSettings>(url),
     config
   )
+}
+
+export const toolDefaultsPath = '/api/v1/sensors/tool-defaults'
+export const toolDefaultPath = (tool: string) => `${toolDefaultsPath}/${encodeURIComponent(tool)}`
+
+export function useToolDefaults(enabled = true) {
+  const { currentTenant } = useTenant()
+  return useSWR<{ items: ToolDefaults[] }>(
+    currentTenant && enabled ? toolDefaultsPath : null,
+    (url: string) => get<{ items: ToolDefaults[] }>(url),
+    config
+  )
+}
+
+export function saveToolDefaults(
+  tool: string,
+  values: Record<string, unknown>
+): Promise<ToolDefaults> {
+  return put<ToolDefaults>(toolDefaultPath(tool), { values })
+}
+
+export function resetToolDefaults(tool: string): Promise<void> {
+  return del<void>(toolDefaultPath(tool))
 }
 
 export function saveSensorToolSettings(

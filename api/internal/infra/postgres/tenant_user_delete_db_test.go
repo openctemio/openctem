@@ -214,6 +214,40 @@ type schemaSeeder struct {
 // CHECK constraints and formats. Keep it small; everything else is derived
 // from the catalog so new tables are covered without touching this test.
 var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
+	// An instance scan zone (global) needs at least one private range.
+	"instance_scan_zones": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "seed zone", "ranges": "{10.0.0.0/8}"}
+	},
+	// Inserting the asset already queued it (trigger); clear that row so the
+	// seeder's own insert is the one row of the table.
+	"asset_risk_queue": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM asset_risk_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear asset_risk_queue: %v", err)
+		}
+		return nil
+	},
+	"finding_priority_queue": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM finding_priority_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear finding_priority_queue: %v", err)
+		}
+		return nil
+	},
+	// The new owner is a second person (a transfer to oneself is refused).
+	"tenant_ownership_transfers": func(s *schemaSeeder) map[string]any {
+		other := shared.NewID().String()
+		mustExecTx(s.t, s.tx, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'FK Delete Test 2')`, other, "fkdel-"+other+"@example.test")
+		return map[string]any{"from_user_id": s.userID, "to_user_id": other, "status": "pending",
+			"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-04T00:00:00Z"}
+	},
+	// A feature key is a lowercase identifier (CHECK on the column).
+	"tenant_feature_denies": func(*schemaSeeder) map[string]any {
+		return map[string]any{"feature": "pentest"}
+	},
+	// A grant's scopes, reason and window are checked by the table.
+	"support_grants": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scopes": "{findings}", "reason": "seeded support grant", "access_level": "read",
+			"starts_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
+	},
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},
@@ -274,6 +308,17 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"content_packs": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "seed", "version": "1", "kind": "wordlist", "tier": "T0", "status": "active", "source": "upload"}
 	},
+	// Content catalog (RFC-099): an organization package with valid
+	// digests; a request that has no target (uninstall) and no decider yet
+	// (the decider must differ from the requester).
+	"content_packages": func(*schemaSeeder) map[string]any {
+		return map[string]any{"type": "rules", "origin": "organization", "tier": "T0",
+			"manifest_digest": "sha256:" + strings.Repeat("a", 64), "artifact_digest": "sha256:" + strings.Repeat("b", 64),
+			"revoked_at": nil, "revoke_reason": nil, "platform_pack_id": nil}
+	},
+	"content_install_requests": func(*schemaSeeder) map[string]any {
+		return map[string]any{"action": "uninstall", "target_row_id": nil, "status": "pending", "decided_by": nil}
+	},
 	"finding_imports": func(*schemaSeeder) map[string]any {
 		return map[string]any{"filename_sha256": strings.Repeat("ab", 32)}
 	},
@@ -281,6 +326,21 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"finding_fingerprints": func(s *schemaSeeder) map[string]any { return map[string]any{"fingerprint": s.uniq()} },
 	// target_version has a range CHECK.
 	"finding_rekey_runs": func(*schemaSeeder) map[string]any { return map[string]any{"target_version": "2"} },
+	// Ticket links: an issue key (CHECK) and exactly one object (the finding).
+	"ticket_links": func(*schemaSeeder) map[string]any {
+		return map[string]any{"external_key": "SEC-1", "campaign_id": nil, "task_id": nil, "role": "own", "state": "active", "source": "person", "provider": "jira"}
+	},
+	// Lifecycle catalog: a key pattern, a closed status set, a closure reason
+	// only under a closed status, and an object spec (CHECKs, RFC-110).
+	"lifecycle_sub_statuses": func(*schemaSeeder) map[string]any {
+		return map[string]any{"key": "seed_sub", "canonical_status": "new", "closure_reason": nil, "labels": "{}", "archived_at": nil}
+	},
+	"lifecycle_schemes": func(*schemaSeeder) map[string]any {
+		return map[string]any{"key": "seed_scheme", "context": nil, "published_version_id": nil, "archived_at": nil}
+	},
+	"lifecycle_scheme_versions": func(*schemaSeeder) map[string]any {
+		return map[string]any{"state": "draft", "version": 1, "spec": "{}"}
+	},
 	// emoji has a length CHECK.
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
 	// kind is a closed set and redirect_uris must list 1 to 20 URIs (RFC-062).
@@ -318,6 +378,11 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	},
 	// tool and schema_digest have format CHECKs; values must be an object.
 	"sensor_tool_settings": func(*schemaSeeder) map[string]any {
+		return map[string]any{"tool": "nuclei", "values": `{}`,
+			"schema_digest": "sha256:" + strings.Repeat("0", 64)}
+	},
+	// Organization tool defaults: the same CHECKs as sensor_tool_settings.
+	"tenant_tool_settings": func(*schemaSeeder) map[string]any {
 		return map[string]any{"tool": "nuclei", "values": `{}`,
 			"schema_digest": "sha256:" + strings.Repeat("0", 64)}
 	},

@@ -44,8 +44,7 @@ graph TD
 | Repository | `internal/infra/postgres/ci_run_repository.go` |
 | Routes and their chains | `internal/infra/http/routes/ci.go` |
 | Console | `web/src/features/ci-runners`: CI/CD integration page `/ci-cd` (pipelines, runs, coverage; Trust and gate tab, `?tab=setup`; "Connect a pipeline" setup and "Recent refused pipelines" from `GET /api/v1/ci/trust-refusals`); `/ci-runners` and `/runners` redirect to `/ci-cd` |
-| Pipelines: identity, status, fleet rows | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
-| Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
+| Pipelines: identity, status | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
 | Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
 | Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts`, `001144_ci_db_model`, `001145_ci_db_model_validate` |
@@ -57,17 +56,39 @@ graph TD
 
 | Route | Chain |
 |---|---|
-| `POST /api/v1/ci/oidc/exchange` | per-IP token-exchange limit (60/min, shared store) → handler (32 KB body, unknown fields refused) |
+| `POST /api/v1/ci/oidc/exchange` | per-address backstop (600/min) → per pipeline identity limit (60/min per organization + token issuer at one address; claims read unverified, only to pick the bucket) → handler (32 KB body, unknown fields refused). Both in the shared store; see "Exchange rate limit" below |
 | `POST /api/v1/ci/trust-configs/preview` | session tenant chain → `scans` module → `scans:ci:write` → per-person limit (10/min) |
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
 
+### Exchange rate limit
+
+Hosted CI runners put many customers behind one egress address, so one strict
+budget per address let one busy fleet, or an attacker on the same runners,
+throttle every other organization's jobs. The exchange counts instead:
+
+- per address, 600 a minute, before the body is read: the flood backstop;
+- per organization (`tenant_id`) and token issuer (`iss`, read without
+  checking the signature) at that address, 60 a minute. The claims only pick
+  a bucket and grant nothing; invented ids get fresh buckets but stay inside
+  the address backstop. The address is part of the key so that someone who
+  knows an organization's id (it appears in public pipeline files) cannot use
+  up that organization's budget from elsewhere with junk tokens naming it.
+  A request whose body or token cannot be read falls in one bucket per
+  address.
+
+Both need the real client address: behind the built-in gateway and a front
+proxy, set the gateway's `OPENCTEM_TRUSTED_PROXIES` (and
+`OPENCTEM_CLIENT_IP_HEADERS` behind a Cloudflare Tunnel).
+
 Budgets beyond the chains: at most 200 reports per run (`cirun.MaxRunReports`,
 `409`), at most 300 runs per pipeline per hour (`cirun.MaxPipelineRunsPerHour`,
 refused at the exchange and audited `pipeline_rate`), 100,000 recorded
-findings per run.
+findings per run (`cirun.MaxRunFindings`). A run that sights more is marked
+`ci_runs.findings_over_cap` and its gate fails with `too_many_findings`; it is
+never judged on the first 100,000 only. Warn mode and a break-glass still apply
+to it like any other blocking reason.
 | `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
-| `GET /api/v1/fleet` | session tenant chain → `sensors:read` or `scans:ci:read`; the handler lists each mode under its own permission (runner rows also need the `scans` module) |
 
 ## Data model
 
@@ -82,15 +103,27 @@ findings per run.
 - `ci_run_findings`: `(run_id, fingerprint)`; the gate joins it to `findings`
   of the run's asset.
 - Aggregate runs (RFC-051 §4.1, migration `001220`): `ci_runs.aggregate`
-  marks the run shared by the parallel capability jobs of one pipeline run
-  (at most one open per pipeline, external run id, attempt and commit:
-  `idx_ci_runs_aggregate_open`). Its upload tokens are in `ci_run_tokens`
+  marks the run shared by the parallel capability jobs of one pipeline run:
+  one per pipeline, external run id and commit, whatever the attempt
+  (`evidence_union`, `idx_ci_runs_pipeline_run`, migration
+  `ci_run_evidence_union`). It is the only unique index matching these rows:
+  the older attempt-keyed `idx_ci_runs_aggregate_open` covers only runs from
+  before it (`NOT evidence_union`), so concurrent joins fall back to
+  `ON CONFLICT DO NOTHING` instead of a unique violation. A later attempt re-opens it and carries the
+  verdict's failed capabilities (`carried_failed_capabilities`, each cleared
+  only by a report of that capability) and its scanner failure count
+  (`carried_scan_failures`, cleared by the next upload). A re-opened run
+  keeps its verdict for the commit and pull request checks. Its upload tokens are in `ci_run_tokens`
   (`token_hash` primary key, composite FK `(tenant_id, run_id)` to the run,
   cascade; the job id; expiry), one per job exchange; it keeps none in
   `ci_runs.token_hash`. Token lookup reads `ci_runs.token_hash` first, then
   `ci_run_tokens`.
 - `ci_oidc_replay`: `(issuer, jti)`, global. A provider that sends no `jti`
   (Bitbucket, CircleCI, Jenkins) is recorded under `sha256:<token hash>`.
+  Each row keeps the organization, the token's SHA-256, the run it opened or
+  joined and an exchange count (migration `002137`): the same token again
+  (at most `cirun.MaxTokenExchanges` = 5 times) gets a token for that run,
+  added to `ci_run_tokens` (`internal/app/cirun/reexchange.go`).
 - `ci_runs.commit_verified` (migration `001261`): false when the provider
   signs no commit and the run's commit is the job's report; such a commit
   never matches a break-glass.
@@ -101,6 +134,18 @@ findings per run.
   `repository_asset_id`, a business-unit policy `business_unit_id`, each a
   composite FK (cascade); the repository's policy follows it on asset merge
   (the kept repository's own wins). The API keeps `scope_type` + `scope_id`.
+  Per-field layering (RFC-096, migration `ci_gate_policy_layers`): `fields`
+  lists what a business unit or repository policy sets (the rest is
+  inherited; the organization sets all), `locked_fields` (organization and
+  business unit) are fields no layer below may loosen, and a repository
+  policy carries `reason` and an optional `expires_at`. The gate baseline
+  settings (`baseline_on_first_run`, `baseline_grace_days`,
+  `baseline_secrets_block`) are policy fields too. `cirun.Resolve` builds a
+  repository's effective policy with the source of every field; the gate
+  and `GET /api/v1/ci/gate-settings/{id}` both use it.
+- `ci_gate_baselines` and `ci_gate_baseline_findings`: one gate baseline per repository (tenant, repository
+  asset), and the fingerprints it holds. Written only by `PUT /api/v1/ci/gate-baselines/{id}`
+  (`scans:ci:policy`, step-up, audited high); a default-branch run is judged against it only (RFC-051 §6.2).
 - `ci_gate_overrides`: per tenant, composite FK to the repository asset. The
   creator is `created_by` (a user id); its email is read from `users` when the
   override is read and is never stored, and the gate verdict (printed in CI
@@ -150,6 +195,46 @@ touches a finding it cannot attribute to a run).
 - A definition is `<x>`, its executions `<x>_runs` (`ci_pipelines`,
   `ci_runs`). A CI run is not a scan run: it is never dispatched, has its own
   credential and its own verdict, and lives in `ci_runs`, not `scan_runs`.
+
+### Duplicate repository assets (`repomerge`)
+
+One repository could be two assets of a tenant: repository import named it
+`org/repo` and CI `github.com/org/repo`, or a rename or transfer made CI create
+a second asset while the first kept the findings, branches, gate policy and
+coverage expectation. `repomerge` (`internal/tools/repomerge`, in the API image as
+`/app/repomerge`; `internal/infra/postgres/repository_merge.go`) finds, per
+tenant, assets that are one repository:
+
+- the same repository id on the same host (`asset_repositories.repo_id`, host
+  from the web or clone address);
+- `host/path` and `path` whose extension's address is on that host;
+- a CI pipeline keyed by the code host's repository id (GitHub, GitLab,
+  Bitbucket) whose runs sit on another asset than the pipeline does now.
+
+Each group is merged into its oldest asset by the asset merge
+(`mergeAssetReferences`: every reference moves, findings are re-keyed and
+folded, same-named branches are joined, one gate policy and one expectation
+per repository, the kept one first), logged in `asset_merge_log`
+(`repository_identity`), and the kept asset takes the current `host/path`
+name. One transaction per repository, which first locks every asset of the
+group (`FOR UPDATE`): a run, finding or branch written meanwhile either
+commits first and moves with the rest, or waits and fails its foreign key;
+it is never left on a duplicate and lost to its delete. Idempotent.
+
+A repository whose duplicates carry several gate policies is refused
+(`gate_policy_conflict`, listed by the dry run): keeping the wrong one would
+loosen its gate. With `-resolve` it is merged keeping the policy at least as
+strict as every other on every setting (`cirun.StrictestPolicy`); when the
+policies are stricter on different settings it is never merged
+(`gate_policies_incomparable`) and an administrator settles it first.
+
+```
+repomerge                  # dry run, every tenant (read-only connection), aggregate counts only
+repomerge -tenant <id>     # one tenant
+repomerge -apply           # merge
+repomerge -json            # report with asset ids
+repomerge -apply -resolve  # also merge repositories with several gate policies, keeping the strictest
+```
 
 ### Exchange and pipeline flow
 
@@ -203,7 +288,12 @@ A decision made on the platform holds on the next run of the same repository:
   its console summary, SARIF and merge request report and says how many it
   hid. It learns nothing about findings it did not report, and nothing about
   another repository or tenant; a lookup failure returns an empty list, so
-  the job shows everything.
+  the job shows everything. The response stays small whatever the report's
+  size: `known` lists at most 10,000 results (`cirun.MaxKnownInResponse`,
+  lowest indexes first, about 1 MB), `known_total` counts them all and
+  `known_truncated` is true when some were left out. A job that reads only
+  `known` shows the rest of its results, which is safe; the gate judges every
+  finding on the platform either way.
 - **Identity.** The finding is the same when its key is (RFC-043 §4.2): a SAST
   key is the rule, the path and the flagged code, so a line shift keeps the
   decision and a material change to the code is a new finding that is judged
@@ -213,16 +303,47 @@ A decision made on the platform holds on the next run of the same repository:
 ## Invariants
 
 - A run never creates a sensor row and has no heartbeat; offline alerts never
-  see it. Its pipeline is listed in the fleet in runner mode and is never
-  offline and never dispatched.
+  see it. Its pipeline is listed on the CI/CD page (never with the sensors)
+  and is never offline and never dispatched.
 - A pipeline is created only at a verified, admitted exchange, keyed by signed
   immutable ids; branch, job and tool labels never create rows.
-- Every fleet source is tenant-scoped and the runner rows follow the data
-  scope; the fleet handler adds no query of its own.
+- A repository asset is keyed by its code host and the host's immutable
+  repository id (GitHub `repository_id`, GitLab `project_id`, Bitbucket
+  repository UUID), not its name. The exchange finds it in order: the asset of
+  an existing pipeline of that repository id; the asset whose repository
+  extension carries the id on the same host (`asset_repositories.repo_id`,
+  host from its web address; written by repository import from the code
+  host's API and stamped by CI from the signed token); the asset named
+  `host/path`; else a new one. A renamed or transferred repository therefore
+  keeps its asset (findings, branches, baseline, gate policy, expectation,
+  break-glass, owners) and the asset takes the new name when it is free.
+  Repository import uses the same id first and names new assets `host/path`,
+  so import and CI share one asset. Every lookup is tenant-scoped.
+  The id is bound to the host that vouches for it: CI takes the host from
+  the verified issuer (a self-managed GitLab's own host, `github.com` only
+  for GitHub's issuer), and import records an id only for a repository whose
+  address is on the integration's own host (a self-hosted server listing
+  `github.com` addresses imports them without an id or address, so it cannot
+  claim a `github.com` repository). A rename is an `asset.renamed` audit
+  event (old and new name, source `ci` or `repository_import`).
+- Pipeline reads are tenant-scoped and follow the repository data scope.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
+- A pull or merge request run records its findings on its own scope:
+  `pull/<n>` (GitHub, Azure Pipelines, Bitbucket, CircleCI, Jenkins) or
+  `merge-requests/<n>` (GitLab), never on its head branch's name, which the
+  author picks and may equal a real branch (a fork's `main`, `release/1.x`).
+  A fork event records on `fork/pr-<n>`. Runs stored before this rule keep
+  their rows; new uploads to such a run go to the pull request scope.
 - A run's report changes only its repository asset; the baseline branch is
   decided server-side.
+- A pull or merge request is compared with its base branch only when that
+  base is verified and the branch may serve as a baseline; otherwise with the
+  default branch. Verified: GitHub's signed `base_ref`; a GitLab merge
+  request's target branch read from GitLab through the organization's GitLab
+  connection (the token signs none); no other provider. A base branch the job
+  reports (`base_ref` in the exchange) is ignored. A baseline branch is the
+  default branch or a protected one; a name (`release/*`) never qualifies.
 - A finding the run sees only on a non-counting branch is branch-only: left
   out of exposure views until a counting branch sees it
   (`branch-only-findings.md`).
@@ -253,5 +374,24 @@ A decision made on the platform holds on the next run of the same repository:
   baseline-diff,evaluate}`: every session, API-key, console and MCP route
   refuses it, and the run routes refuse every other credential
   (`routes/ci_run_token_scope_db_test.go`). Another run's id answers 404.
-- Refusals are uniform to the caller and detailed in the audit log only after
-  the token verified.
+- Refusals before a trust configuration admitted the token are uniform to the
+  caller (`CI_TOKEN_NOT_TRUSTED`) and detailed in the audit log only after the
+  token verified; refusals after admission tell the pipeline the reason
+  (`CI_TOKEN_<reason>`, no other repository's or owner's data).
+
+## Trust and scope
+
+A trust with `manage_scope` adds the repositories it trusts to scope as repository entries (RFC-054 §17).
+
+- **Code.**
+  - `cirun.ScopePatterns` (`pkg/domain/cirun/scope.go`) derives the patterns.
+  - `internal/app/cirun/scope.go` hands them to `scope.Service.SyncCITrust` (`internal/app/scope/ci_trust.go`).
+    It does so on create, change and delete, as the person saving the trust (`Actor.ScopeWrite` and
+    `Actor.ScopeApprove` come from their permissions).
+  - `scope_target_ci_trusts` holds one link per pattern (`internal/infra/postgres/scope_ci_trust_link_repository.go`).
+- **Runs.** A verified, tenant-bound exchange calls `CITrustSeen`, which records the evidence on the link. It may
+  link an existing equal entry and never creates one.
+- **API.** The trust API answers `manage_scope` and `scope_entries[]`, and the scope API answers `managed_by[]`.
+  `manage_scope` needs `attack_surface:scope:write`.
+- **Dry run.** `ci-trust-scope-plan` (in the API image, read-only) counts per tenant what turning it on would do
+  for trusts saved before the option existed. Nothing turns it on automatically.

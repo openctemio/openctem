@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -20,8 +21,15 @@ type Tenant struct {
 	logoURL     string
 	settings    map[string]any
 	createdBy   string // Keycloak user ID
-	createdAt   time.Time
-	updatedAt   time.Time
+	// initial are the limits, feature denies and idle policy written with the
+	// organization when it is created; never loaded back.
+	initial InitialEntitlements
+	// region is the data region set when the organization was created
+	// (DEPLOYMENT_REGION); empty for organizations from before. Never
+	// changed afterwards.
+	region    string
+	createdAt time.Time
+	updatedAt time.Time
 }
 
 // NewTenant creates a new Tenant entity.
@@ -107,11 +115,30 @@ func (t *Tenant) LogoURL() string {
 	return t.logoURL
 }
 
-// Plan returns the tenant's module configuration.
-// In OSS edition, all tenants have the free plan with unlimited access.
-func (t *Tenant) Plan() Plan {
-	return PlanFree
+// InitialEntitlements are written in the transaction that creates the
+// organization, so it never exists without them: the instance's
+// self-service defaults, or what the control plane provisioned.
+type InitialEntitlements struct {
+	Limits []limits.Limit
+	Denies []limits.FeatureDeny
+	// IdlePolicy turns the idle policy on, with IdleReason.
+	IdlePolicy bool
+	IdleReason string
 }
+
+// InitialLimits returns the limits written with the organization when it is
+// created.
+func (t *Tenant) InitialLimits() []limits.Limit { return t.initial.Limits }
+
+// Initial returns everything written with the organization when it is
+// created.
+func (t *Tenant) Initial() InitialEntitlements { return t.initial }
+
+// SetInitialLimits sets the limits the organization starts with.
+func (t *Tenant) SetInitialLimits(l []limits.Limit) { t.initial.Limits = l }
+
+// SetInitial sets everything the organization starts with.
+func (t *Tenant) SetInitial(in InitialEntitlements) { t.initial = in }
 
 // Settings returns the tenant settings.
 func (t *Tenant) Settings() map[string]any {
@@ -170,12 +197,6 @@ func (t *Tenant) UpdateSlug(slug string) error {
 	return nil
 }
 
-// UpdatePlan updates the tenant's module configuration.
-// In OSS edition, this is a no-op as all tenants have unlimited access.
-func (t *Tenant) UpdatePlan(_ Plan) error {
-	return nil
-}
-
 // SetSetting sets a setting value.
 func (t *Tenant) SetSetting(key string, value any) {
 	if key == "" {
@@ -208,4 +229,16 @@ func GenerateSlug(name string) string {
 		slug = slug[:100]
 	}
 	return slug
+}
+
+// Region is the organization's data region ("" when it predates regions).
+func (t *Tenant) Region() string { return t.region }
+
+// WithRegion sets the region from persistence or at creation; a region once
+// set is never replaced.
+func (t *Tenant) WithRegion(region string) *Tenant {
+	if t.region == "" {
+		t.region = region
+	}
+	return t
 }

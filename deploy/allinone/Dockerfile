@@ -32,6 +32,8 @@
 
 ARG API_IMAGE
 ARG WEB_IMAGE
+# The platform console (web/console, its own image: RFC-022 revision 21).
+ARG CONSOLE_IMAGE
 # Go and Alpine are pinned by digest in the FROM lines below, where Dependabot
 # finds and refreshes them (it does not read ARG defaults). The runtime Alpine
 # must stay the release the web image's node binary is built on
@@ -40,6 +42,7 @@ ARG WEB_IMAGE
 
 FROM ${API_IMAGE} AS api
 FROM ${WEB_IMAGE} AS web
+FROM ${CONSOLE_IMAGE} AS console
 
 # golang-migrate, same version as CI (api-ci.yml). Built in the target
 # platform's own stage, so no arch-specific download URL to get wrong.
@@ -91,8 +94,12 @@ RUN node --version
 # cannot rewrite their own code.
 # web: the standalone Next.js server as built by web/Dockerfile (WORKDIR /app there)
 COPY --from=web --chown=0:0 /app /opt/openctem/web
+# console: the platform console's standalone server (console/server.js)
+COPY --from=console --chown=0:0 /app /opt/openctem/console
 # api: server + admin tool + migrations + configs (WORKDIR /app in api/Dockerfile)
-COPY --from=api --chown=0:0 /app/server /app/bootstrap-admin /opt/openctem/api/
+# (the API image's operator commands are links to the server binary, see
+# api/Dockerfile; this image keeps bootstrap-admin, linked below)
+COPY --from=api --chown=0:0 /app/server /opt/openctem/api/
 COPY --from=api --chown=0:0 /app/migrations /opt/openctem/api/migrations
 COPY --from=api --chown=0:0 /app/configs /opt/openctem/api/configs
 # The OpenAPI spec the API serves at /openapi.yaml (relative to its working dir).
@@ -106,17 +113,21 @@ COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 # The writable paths, owned by the runtime user: /data and /config (see VOLUME
 # below), and the Next.js cache (.next/cache, the only place the web server
 # writes besides /tmp).
-RUN mkdir -p /data/ca /config /certs /opt/openctem/web/.next/cache \
- && chown nextjs:nodejs /data /data/ca /config /opt/openctem/web/.next/cache
+RUN ln -s server /opt/openctem/api/bootstrap-admin \
+ && mkdir -p /data/ca /config /certs /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache \
+ && chown nextjs:nodejs /data /data/ca /config /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache
 
-# The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + entrypoint.sh).
+# The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + admin/ + entrypoint.sh).
+# admin/ holds the console-site snippets the Caddyfile imports (off.* is the default).
 # sensors/ holds the layer-4 sensor routing the Caddyfile imports; this image's
 # Caddy has no layer4 module, so only OPENCTEM_SENSOR_GATEWAY=off applies here.
-COPY --from=gateway Caddyfile planes.caddy /etc/caddy/
+COPY --from=gateway Caddyfile planes.caddy servers.common /etc/caddy/
 COPY --from=gateway --chmod=0755 entrypoint.sh /etc/caddy/
 COPY --from=gateway modes /etc/caddy/modes
 COPY --from=gateway sensors /etc/caddy/sensors
+COPY --from=gateway admin /etc/caddy/admin
 COPY --chmod=0755 supervise.sh /usr/local/bin/openctem-supervise
+COPY --chmod=0644 console-plan.sh /usr/local/bin/openctem-console-plan
 COPY --chmod=0755 healthcheck.sh /usr/local/bin/openctem-healthcheck
 
 ENV GATEWAY=on \
@@ -133,7 +144,10 @@ ENV GATEWAY=on \
     OPENCTEM_CA_EXPORT_DIR=/data/ca \
     OPENCTEM_CERT_DIR=/certs \
     OPENCTEM_API_UPSTREAM=127.0.0.1:8080 \
-    OPENCTEM_WEB_UPSTREAM=127.0.0.1:3000
+    OPENCTEM_WEB_UPSTREAM=127.0.0.1:3000 \
+    OPENCTEM_CONSOLE_UPSTREAM=127.0.0.1:3001 \
+    OPENCTEM_ADMIN_SITE=port \
+    ADMIN_LISTEN_ADDR=127.0.0.1:8081
 
 # /data holds uploaded attachments (STORAGE_LOCAL_PATH), the gateway's internal
 # CA + certificates (and ACME account), and /data/ca/openctem-root-ca.crt, the
@@ -141,9 +155,15 @@ ENV GATEWAY=on \
 # every restart loses attachments and mints a new CA, and sensors stop trusting
 # the gateway.
 VOLUME ["/data"]
-# GATEWAY=on publishes 443 only (80 is an optional http->https redirect, the
-# same as api/deploy/docker-compose.http-redirect.yml). GATEWAY=off: 8080 + 3000.
-EXPOSE 443
+# GATEWAY=on publishes 443 and the platform console's site on 8443
+# (OPENCTEM_ADMIN_SITE=port, private client networks only; 80 is an optional
+# http->https redirect, the same as api/deploy/docker-compose.http-redirect.yml).
+# GATEWAY=off: 8080 (API) and 3000 (web). The console is not started (it
+# listens on loopback only, and only the gateway forwards the client address
+# the API's admin network check needs); OPENCTEM_CONSOLE_STANDALONE=true starts
+# it on 127.0.0.1:3001 for an operator who fronts it in the same network
+# namespace. Never publish 3001.
+EXPOSE 443 8443
 USER nextjs
 WORKDIR /opt/openctem
 
@@ -155,6 +175,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
 ENTRYPOINT ["/sbin/tini", "-g", "--", "/usr/local/bin/openctem-supervise"]
 
 LABEL org.opencontainers.image.title="OpenCTEM (all-in-one)" \
-      org.opencontainers.image.description="OpenCTEM API + web console + gateway in one container; Postgres and Redis external" \
+      org.opencontainers.image.description="OpenCTEM API + web console + platform console + gateway in one container; Postgres and Redis external" \
       org.opencontainers.image.source="https://github.com/openctemio/openctem" \
       org.opencontainers.image.licenses="GPL-3.0-only"

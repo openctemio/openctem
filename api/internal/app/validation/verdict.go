@@ -86,7 +86,7 @@ func actionableVerdict(ev Evidence) (Verdict, bool) {
 // columns the entity round-trip does not carry, so they are written directly.
 //
 // downgradedAt is non-nil ONLY when a still-open finding is being downgraded to
-// validated_fixed; implementations must preserve any existing downgraded_at
+// downgraded; implementations must preserve any existing downgraded_at
 // when it is nil (a later reproducible verdict must not erase the downgrade
 // history the metric depends on).
 //

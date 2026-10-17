@@ -12,10 +12,12 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // Write tools (RFC-062 §10). A write tool runs only for a connection a
@@ -63,7 +65,7 @@ func (h *MCPHandler) buildWriteTools() []mcpTool {
 		Description: "Add an internal comment to a finding (visible to the organization's members, never sent to " +
 			"integrations). On a pentest finding the comment is team-only unless visibility is \"client\", which only " +
 			"the campaign lead or a reviewer may set; the client then reads it. Changes data: the first call returns a " +
-			"link where the user confirms the exact comment and its visibility in OpenCTEM; after they confirm, call " +
+			"link where the user confirms the exact comment and its visibility in " + brand.Name() + "; after they confirm, call " +
 			"again with the same arguments plus confirmation_id.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"finding_id":{"type":"string","description":"finding UUID"},` +
@@ -93,6 +95,14 @@ func parseAddCommentArgs(raw json.RawMessage) (addCommentArgs, error) {
 		return a, toolInputError{"finding_id must be a finding UUID"}
 	}
 	a.Content = strings.TrimSpace(a.Content)
+	// Hidden characters (bidi, zero-width, tag characters, controls) are an
+	// input error, not silently dropped: the person confirms the text and the
+	// stored comment is that same text.
+	norm := strings.ReplaceAll(strings.ReplaceAll(a.Content, "\r\n", "\n"), "\r", "\n")
+	if safetext.Clean(norm) != norm {
+		return a, toolInputError{"content must not contain hidden or control characters (bidirectional, zero-width, tag or control characters)"}
+	}
+	a.Content = norm
 	if a.Content == "" || utf8.RuneCountInString(a.Content) > maxMCPCommentLen {
 		return a, toolInputError{fmt.Sprintf("content is required, at most %d characters", maxMCPCommentLen)}
 	}
@@ -128,7 +138,7 @@ func (h *MCPHandler) prepareAddFindingComment(ctx context.Context, tenantID stri
 		}
 		return "", err
 	}
-	summary := fmt.Sprintf("Add an internal comment to the finding %q (%s severity):\n\n%s", f.Title(), f.Severity(), a.Content)
+	summary := fmt.Sprintf("Add an internal comment to the finding %q (%s severity):\n\n%s", safetext.SingleLine(f.Title(), safetext.MaxTitleRunes), f.Severity(), a.Content)
 	if pentestFinding {
 		visibleToClient := "no (campaign team only)"
 		if vis == vulnerability.CommentVisibilityClient {

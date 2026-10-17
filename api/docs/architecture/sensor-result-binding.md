@@ -28,7 +28,7 @@ and update open findings. It never changes an existing asset: no exposure,
 owner reference, identifiers, name, tags or properties, and no reactivation
 (an active asset only gets its last-seen time; an inactive, stale or archived
 one is not touched). It never reopens a finding a person resolved (status
-`resolved`/`verified` with any `resolution_method` but `scan_verified`); a
+`resolved`/`verified` with any verification but `covered_scan`); a
 finding the scanner auto-resolved still reopens when it is seen again. In a
 tenant whose mode is **quarantine** it never auto-resolves anything; in
 **warn** mode it auto-resolves as before. The response counts what was held
@@ -96,6 +96,34 @@ Also part of group (C):
 - A sensor reads only the reports it sent (`GET /api/v2/sensor/results/{report_id}`).
   The v1 ingest-job and scan-session routes were retired with protocol v1.
 
+## Shared sensors
+
+A shared sensor (scope `instance`, [RFC-100](../rfcs/RFC-100-shared-sensors.md)
+§8) has no tenant. Its results are bound to the job, never to the sensor:
+
+| Request | Outcome |
+|---|---|
+| `PUT`/commit on `/api/v2/sensor/commands/{command_id}/results/…` for a shared job (`is_platform_job`) the sensor holds (`commands.sensor_id`), open or finished within the grace window, with `X-OpenCTEM-Lease-Epoch` equal to the command's `lease_epoch` | Accepted and stored in the **command's** tenant (read from the command row). A tenant named anywhere in the request (query, header, body) is ignored. Written as a bound report (T1): it changes only what its command covers, is never a trusted collector, and evidence says `sensor:platform`. |
+| The same for a job held by another sensor, a tenant job, an old or missing lease epoch, or an unknown id | `404 command-not-found`, nothing stored. |
+| Any route that names no command (`/results/{report_id}` PUT, commit, status, abandon) | `403 scope-denied`: a shared sensor never pushes. |
+
+The same rule holds below the handler:
+
+- `ingest_reports` has no composite (tenant, sensor) key any more; the
+  trigger `trigger_ingest_reports_sensor_binding` (migration
+  `ingest_reports_shared_sensor`) keeps an organization sensor's report in its
+  tenant and stores a shared sensor's report only with a shared job of the
+  report's tenant that the sensor holds.
+- The ingest worker processes a queued report of a shared sensor only while
+  the sensor still holds that job (`QueuedWorkSensor`); otherwise the report
+  fails and is audited as dropped.
+- `Service.Ingest` refuses a shared sensor's report without a command
+  binding.
+
+An organization sensor never posts results for a shared job, even one of its
+own tenant (`OpenCommand` refuses `is_platform_job`), and never receives one
+(the tenant claim predicate).
+
 ## How a report names its command
 
 | Path | Carries the command id | Who sends it today |
@@ -147,7 +175,8 @@ pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
 | What | Where |
 |---|---|
 | Binding, coverage, roles | `api/internal/app/ingest/binding.go` |
-| Gate, quarantine, review, `OpenCommand` (shared with the v2 receiver) | `api/internal/app/ingest/quarantine.go` |
+| Gate, quarantine, review, `OpenCommand` and `OpenSharedCommand` (shared with the v2 receiver) | `api/internal/app/ingest/quarantine.go` |
+| Shared-sensor binding of v2 writes (`bind`) | `api/internal/app/ingest/v2_receiver.go` |
 | Limited asset merge | `api/internal/app/ingest/processor_assets.go` (`mergeInto`) |
 | Trusted collectors, complete reports | `api/internal/app/ingest/collector_trust.go`, `collector_reports.go`, `api/internal/infra/postgres/collector_asset_repository.go` |
 | Human-resolved reopen guard | `api/internal/app/ingest/processor_findings.go` (`withoutHumanResolved`), `api/internal/infra/postgres/finding_human_resolved.go` |

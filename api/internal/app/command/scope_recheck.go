@@ -112,7 +112,7 @@ type recheckKey struct {
 // "top N" port list.
 func jobShapeOf(c *commanddom.Command) scopedom.JobShape {
 	j := sensordom.JobOf(string(c.Type), c.Payload)
-	shape := scopedom.JobShape{Tool: j.Tool, Ports: j.Ports, CustomTemplates: j.CustomTemplates > 0, Interactsh: j.Interactsh}
+	shape := scopedom.JobShape{Tool: j.Tool, Capability: j.Capability, Ports: j.Ports, CustomTemplates: j.CustomTemplates > 0, Interactsh: j.Interactsh}
 	var p struct {
 		Config        map[string]any `json:"config"`
 		ScannerConfig map[string]any `json:"scanner_config"`

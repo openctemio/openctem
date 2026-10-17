@@ -19,6 +19,23 @@ type ExposureRepository struct {
 	db *DB
 }
 
+// exposureSeverityRank orders severities in SQL (info lowest).
+const exposureSeverityRank = `array_position(ARRAY['info','low','medium','high','critical']::text[], %s::text)`
+
+// peakSeverityOf is the higher of two severity expressions.
+func peakSeverityOf(a, b string) string {
+	rank := func(x string) string { return fmt.Sprintf(exposureSeverityRank, x) }
+	return "(CASE WHEN " + rank(a) + " >= " + rank(b) + " THEN " + a + " ELSE " + b + " END)"
+}
+
+// peakSeveritySQL (upsert) and peakSeverityUpdateSQL (update by id, new
+// severity in $3): the stored peak, or the current severity when none, raised
+// to the incoming severity. It never lowers.
+var (
+	peakSeveritySQL       = peakSeverityOf("COALESCE(exposure_events.peak_severity, exposure_events.severity)", "EXCLUDED.severity")
+	peakSeverityUpdateSQL = peakSeverityOf("COALESCE(exposure_events.peak_severity, exposure_events.severity)", "$3::varchar")
+)
+
 // NewExposureRepository creates a new ExposureRepository.
 func NewExposureRepository(db *DB) *ExposureRepository {
 	return &ExposureRepository{db: db}
@@ -146,7 +163,7 @@ func (r *ExposureRepository) Update(ctx context.Context, event *exposure.Exposur
 
 	query := `
 		UPDATE exposure_events
-		SET asset_id = $2, severity = $3, state = $4,
+		SET asset_id = $2, severity = $3, peak_severity = ` + peakSeverityUpdateSQL + `, state = $4,
 		    description = $5, details = $6, fingerprint = $7, last_seen_at = $8,
 		    resolved_at = $9, resolved_by = $10, resolution_notes = $11, updated_at = $12
 		WHERE id = $1 AND tenant_id = $13
@@ -319,6 +336,9 @@ func (r *ExposureRepository) Upsert(ctx context.Context, event *exposure.Exposur
 			-- previously only the timestamps moved so the stored severity froze
 			-- at its first-seen value.
 			severity = EXCLUDED.severity,
+			-- The peak only goes up: the two-approver rule reads it, so a
+			-- re-ingest that lowers severity cannot lift the rule.
+			peak_severity = ` + peakSeveritySQL + `,
 			title = EXCLUDED.title,
 			description = EXCLUDED.description,
 			details = EXCLUDED.details
@@ -490,6 +510,9 @@ func buildExposureBulkUpsert(events []*exposure.ExposureEvent) (string, []any, e
 			-- previously only the timestamps moved so the stored severity froze
 			-- at its first-seen value.
 			severity = EXCLUDED.severity,
+			-- The peak only goes up: the two-approver rule reads it, so a
+			-- re-ingest that lowers severity cannot lift the rule.
+			peak_severity = `+peakSeveritySQL+`,
 			title = EXCLUDED.title,
 			description = EXCLUDED.description,
 			details = EXCLUDED.details
@@ -562,7 +585,7 @@ func (r *ExposureRepository) selectQuery() string {
 		SELECT id, tenant_id, asset_id, event_type, severity,
 		       state, title, description, details, fingerprint, source,
 		       first_seen_at, last_seen_at, resolved_at, resolved_by, resolution_notes,
-		       created_at, updated_at
+		       created_at, updated_at, peak_severity
 		FROM exposure_events
 	`
 }
@@ -602,13 +625,14 @@ func (r *ExposureRepository) doScan(scan func(dest ...any) error) (*exposure.Exp
 		resolutionNotes sql.NullString
 		createdAt       time.Time
 		updatedAt       time.Time
+		peakSeverity    sql.NullString
 	)
 
 	err := scan(
 		&idStr, &tenantIDStr, &assetIDStr, &eventType, &severity,
 		&state, &title, &description, &details, &fingerprint, &source,
 		&firstSeenAt, &lastSeenAt, &resolvedAt, &resolvedByStr, &resolutionNotes,
-		&createdAt, &updatedAt,
+		&createdAt, &updatedAt, &peakSeverity,
 	)
 	if err != nil {
 		return nil, err
@@ -659,7 +683,7 @@ func (r *ExposureRepository) doScan(scan func(dest ...any) error) (*exposure.Exp
 		nullStringValue(resolutionNotes),
 		createdAt,
 		updatedAt,
-	), nil
+	).WithPeakSeverity(exposure.Severity(peakSeverity.String)), nil
 }
 
 func (r *ExposureRepository) buildWhereClause(filter exposure.Filter) (string, []any) {

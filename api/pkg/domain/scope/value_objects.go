@@ -177,8 +177,10 @@ func ValidatePattern(targetType TargetType, pattern string) error {
 		return validateIPAddress(pattern)
 	case TargetTypeIPRange, TargetTypeCIDR:
 		return validateCIDR(pattern)
-	case TargetTypeRepository, TargetTypeProject:
+	case TargetTypeRepository:
 		return validateRepositoryPattern(pattern)
+	case TargetTypeProject:
+		return validateProjectPattern(pattern)
 	case TargetTypeCloudAccount:
 		return validateCloudAccountPattern(pattern)
 	case TargetTypeURL, TargetTypeAPI, TargetTypeWebsite:
@@ -225,8 +227,8 @@ func validateCIDR(pattern string) error {
 	return nil
 }
 
-func validateRepositoryPattern(pattern string) error {
-	// Allow: github.com/org/repo, github.com/org/*, gitlab.com/group/project
+func validateProjectPattern(pattern string) error {
+	// Allow: github.com/org/project, gitlab.com/group/*
 	if !regexp.MustCompile(`^[a-zA-Z0-9.-]+(/[a-zA-Z0-9._*-]+)+$`).MatchString(pattern) {
 		return fmt.Errorf("%w: not a repository path such as github.com/org/repo", ErrInvalidPattern)
 	}
@@ -271,7 +273,9 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 		return pattern == value
 	case TargetTypeIPRange, TargetTypeCIDR:
 		return matchCIDR(pattern, value)
-	case TargetTypeRepository, TargetTypeProject:
+	case TargetTypeRepository:
+		return matchRepository(pattern, value)
+	case TargetTypeProject:
 		return matchWildcard(pattern, value)
 	case TargetTypeCloudAccount:
 		return matchWildcard(pattern, value)
@@ -472,7 +476,7 @@ func MatchesExclusionPattern(exclusionType ExclusionType, pattern, value string)
 	case ExclusionTypeURL:
 		return matchWildcard(pattern, value)
 	case ExclusionTypeRepository:
-		return matchWildcard(pattern, value)
+		return matchRepository(pattern, value)
 	case ExclusionTypePath:
 		// A path exclusion is a web rule (host, path, methods, testing
 		// mode): only Exclusion.Matches can apply it, never the pattern

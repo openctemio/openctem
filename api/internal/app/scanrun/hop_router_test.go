@@ -734,3 +734,31 @@ func (a attrTable) UncoveredTargets(_ context.Context, _ shared.ID, ts []string)
 	}
 	return out, nil
 }
+
+// A repository never becomes a network target of a chained stage: an
+// output stored as a repository is not an input of DNS resolution, and a
+// repository name under another type ("github.com/acme/app",
+// "git@github.com:acme/app") is not a host. Nothing points the stage at
+// the code host.
+func TestHopRouter_RepositoryOutputsYieldNoHost(t *testing.T) {
+	f := newChainFixture(t)
+	f.seed("subs", "acme.com", 0, nil)
+	f.settle("subs", scanrun.StepRunStatusCompleted)
+	f.output("subs", "github.com/acme/app", "repository", "", "")
+	f.output("subs", "gitlab.com/acme/sub/app", "subdomain", "", "")
+	f.output("subs", "git@github.com:acme/app", "subdomain", "", "")
+	f.output("subs", "fine.acme.com", "subdomain", "", "")
+	f.schedule(t)
+	dns := f.commandTargets(t, 0)
+	for _, x := range dns {
+		if strings.Contains(x, "github.com") || strings.Contains(x, "gitlab.com") {
+			t.Fatalf("dnsx was handed %q (targets %v)", x, dns)
+		}
+	}
+	if !contains(dns, "fine.acme.com") {
+		t.Fatalf("dnsx targets = %v", dns)
+	}
+	if p := f.hops.plan(t, f.run.ID, "dns"); p.Skipped[scanrun.ReasonInvalid] != 2 {
+		t.Fatalf("skipped = %v, want the two repository names refused as hosts", p.Skipped)
+	}
+}

@@ -26,6 +26,13 @@ const SensorCapabilityValidate = "validate"
 // exactly this capability, so the two never drift.
 const SensorCapabilityValidateNuclei = "validate:nuclei"
 
+// ReverifyTool is the tool whose findings the template re-verify rung
+// (SensorCapabilityValidateNuclei, KindNuclei) re-checks: its findings' rule
+// ids are the templates the rung re-runs. It is the only tool name the
+// retest and validation paths know; every other tool is retested through
+// the retest handler its sensor reports (retest:<tool>).
+const ReverifyTool = "nuclei"
+
 // CommandCreator is the narrow seam over the command repository used to enqueue
 // a validation job. Implemented by *postgres.CommandRepository.
 type CommandCreator interface {

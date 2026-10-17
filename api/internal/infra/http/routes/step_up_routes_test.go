@@ -80,15 +80,31 @@ var stepUpRoutes = []string{
 	"POST /api/v1/ci/scm-apps/github/installations",
 	"POST /api/v1/ci/scm-apps/gitlab-connections",
 	"PATCH /api/v1/tenants/acme/settings/security",
+	// Risk scoring settings decide every asset's risk band and, with the
+	// ownership floor, finding priorities (docs/architecture/scoring-versions.md).
+	"PATCH /api/v1/tenants/acme/settings/risk-scoring",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
+	// A domain's sign-up policy decides who may join and who must use SSO.
+	"PUT /api/v1/organization/settings/domains/{id}/signup-policy",
 	"DELETE /api/v1/tenants/acme",
+	// Deleting one's own account (RFC-104).
+	"DELETE /api/v1/me/account",
+	"POST /api/v1/organization/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
 	"POST /api/v1/organization/members/{id}/erase",
-	"GET /api/v1/integrations/jira/webhook-secret",
-	"POST /api/v1/integrations/jira/webhook-secret/rotate",
+	// Ownership transfer: the owner asks, the member asked accepts.
+	"POST /api/v1/organization/ownership-transfer",
+	"POST /api/v1/organization/ownership-transfer/approve",
+	"POST /api/v1/integrations/{id}/jira-webhook/secret/rotate",
+	"PUT /api/v1/integrations/{id}/jira-webhook/secret",
 	"GET /api/v1/integrations/github/webhook-secret",
 	"POST /api/v1/integrations/github/webhook-secret/rotate",
+	// A published ticket mapping decides what leaves for the tracker.
+	"POST /api/v1/integrations/ticket-mappings/{id}/publish",
+	"POST /api/v1/integrations/ticket-mappings/{id}/dry-run",
+	// Deleting a profile sends the destination back to the built-in fields.
+	"DELETE /api/v1/integrations/ticket-mappings/{id}",
 	"PATCH /api/v1/attachments/storage-config",
 	// Widening scope (RFC-054 §6): approving an entry, the settings, and
 	// taking an exclusion out of effect.
@@ -117,6 +133,14 @@ var stepUpRoutes = []string{
 	"POST /api/v1/sensors",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
+	// A published finding lifecycle decides which status moves need what
+	// (RFC-110).
+	"POST /api/v1/lifecycles/{id}/versions/1/publish",
+	// Renaming or archiving a scheme and archiving a sub-status change what
+	// the organization's moves mean as much as publishing does.
+	"PATCH /api/v1/lifecycles/{id}",
+	"DELETE /api/v1/lifecycles/{id}",
+	"DELETE /api/v1/lifecycle-sub-statuses/{id}",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -177,13 +201,15 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSCMAppRoutes(router, &handler.SCMAppHandler{}, auth, nil, chain(), logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
-			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil)
+			registerUserRoutes(router, &handler.UserHandler{}, nil, auth, nil, config.AuthProviderLocal)
+			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil, &handler.TicketMappingHandler{})
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
 			registerScannerTemplateRoutes(router, &handler.ScannerTemplateHandler{}, auth, nil, chain())
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
+			registerFindingLifecycleRoutes(router, &handler.FindingLifecycleHandler{}, auth, nil)
 			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
 			scanH := &handler.ScanHandler{}
 			scanH.SetApprovals(&handler.ScanApprovalHandler{})

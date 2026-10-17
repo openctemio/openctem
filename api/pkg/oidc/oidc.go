@@ -52,7 +52,7 @@ type Client struct {
 	mu   sync.Mutex
 	jwks map[string]*jwksEntry
 	// discovery caches the jwks_uri of workload-token issuers (workload.go).
-	discovery map[string]discoveredJWKS
+	discovery map[string]*discoveredJWKS
 }
 
 // NewClient returns a client using httpClient for every request and checkURL

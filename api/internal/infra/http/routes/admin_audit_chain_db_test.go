@@ -51,18 +51,23 @@ import (
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
-// chainSignIns stands in for the normal /login session: each refresh token
-// names one users row.
+// chainSignIns stands in for the account password check: each email signs in
+// with chainPassword.
 type chainSignIns map[string]adminconsole.SignedInUser
 
-func (s chainSignIns) SignedInUser(_ context.Context, token string) (*adminconsole.SignedInUser, error) {
-	u, ok := s[token]
-	if !ok {
-		return nil, errors.New("invalid refresh token")
+// chainPassword is every harness account's password.
+const chainPassword = "Chain-Admin-Pass-1"
+
+func (s chainSignIns) VerifyPassword(_ context.Context, email, password string, _ adminconsole.ClientInfo) (*adminconsole.SignedInUser, error) {
+	u, ok := s[email]
+	if !ok || password != chainPassword {
+		return nil, admin.ErrInvalidCredentials
 	}
 	return &u, nil
 }
-func (s chainSignIns) EndSignIn(context.Context, string) error { return nil }
+func (s chainSignIns) RecordPasswordSuccess(context.Context, shared.ID) {}
+func (s chainSignIns) RecordPasswordFailure(context.Context, shared.ID) {}
+
 func (s chainSignIns) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
 	return shared.ID{}, "", errors.New("not used")
 }
@@ -144,9 +149,13 @@ func newChainHarness(t *testing.T, extra ...func(h *Handlers, db *postgres.DB, c
 		Tenant:              handler.NewTenantHandler(tenantSvc, v, log),
 		AdminAuth:           handler.NewAdminAuthHandler(log),
 		AdminOrganization:   handler.NewAdminOrganizationHandler(orgs, tenantSvc, userRepo, v, log),
-		AdminConsole:        handler.NewAdminConsoleHandler(console, false, "refresh_token", log),
+		AdminConsole:        handler.NewAdminConsoleHandler(console, false, log),
 		AdminAuditChain:     handler.NewAdminAuditChainHandler(auditSvc, console, adminAudit, orgs, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(console, log),
+		// The route-level step-up, wired as the server wires it.
+		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, cl middleware.AdminStepUpClient) error {
+			return console.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: cl.IP, UserAgent: cl.UserAgent})
+		}),
 	}
 	for _, f := range extra {
 		f(&handlers, db, console)
@@ -231,6 +240,9 @@ type consoleAdmin struct {
 	secret string
 	// signInCode is the code that completed the TOTP step.
 	signInCode string
+	// autoStepUp sends a fresh code in the step-up header on every write that
+	// carries none, for tests about something other than the step-up itself.
+	autoStepUp bool
 }
 
 // newAdmin provisions an administrator linked to a users row in no
@@ -256,14 +268,11 @@ func (h *chainHarness) newAdmin(role admin.AdminRole) *consoleAdmin {
 	if err := h.admins.LinkUser(context.Background(), a.ID(), uid); err != nil {
 		h.t.Fatal(err)
 	}
-	refresh := "refresh-" + uid.String()
-	h.signIns[refresh] = adminconsole.SignedInUser{UserID: uid, Email: email, Active: true, PasswordSignIn: true}
+	h.signIns[email] = adminconsole.SignedInUser{UserID: uid, Email: email, Active: true}
 
 	jar, _ := cookiejar.New(nil)
-	base, _ := url.Parse(h.srv.URL + "/")
-	jar.SetCookies(base, []*http.Cookie{{Name: "refresh_token", Value: refresh, Path: "/"}})
 	c := &consoleAdmin{h: h, a: a, userID: uid, jar: jar, client: &http.Client{Jar: jar}}
-	code, body := c.do(http.MethodPost, "/api/v1/admin/auth/session", nil, true)
+	code, body := c.do(http.MethodPost, "/api/v1/admin/auth/login", map[string]string{"email": email, "password": chainPassword}, true)
 	if code != http.StatusOK {
 		h.t.Fatalf("console session: %d %s", code, body)
 	}
@@ -299,6 +308,12 @@ func (c *consoleAdmin) freshCode(next bool) string {
 	return code
 }
 
+// closeStepUpWindow ends the step-up window of the admin's console sessions,
+// so the next protected request needs a code again.
+func (c *consoleAdmin) closeStepUpWindow() {
+	c.h.exec(`UPDATE admin_sessions SET step_up_at = NULL WHERE admin_id = $1`, c.a.ID().String())
+}
+
 // resetReplayGuard lets the test use another code within one 30-second step.
 func (c *consoleAdmin) resetReplayGuard() {
 	c.h.exec(`UPDATE admin_credentials SET mfa_last_step = 0 WHERE admin_id = $1`, c.a.ID().String())
@@ -313,11 +328,19 @@ func (c *consoleAdmin) do(method, path string, body any, csrf bool) (int, string
 	}
 	req, _ := http.NewRequestWithContext(context.Background(), method, c.h.srv.URL+path, r)
 	req.Header.Set("Content-Type", "application/json")
+	// As the console's client does: a code the request body carries goes in
+	// the step-up header too, so the route confirms it once.
+	if code := bodyTOTPCode(body); code != "" {
+		req.Header.Set(middleware.AdminStepUpHeader, code)
+	} else if c.autoStepUp && method != http.MethodGet {
+		c.resetReplayGuard()
+		req.Header.Set(middleware.AdminStepUpHeader, c.freshCode(false))
+	}
 	if csrf && method != http.MethodGet {
 		u, _ := url.Parse(c.h.srv.URL + "/api/v1/admin/")
 		for _, ck := range c.jar.Cookies(u) {
-			if ck.Name == middleware.AdminCSRFCookie {
-				req.Header.Set(middleware.CSRFHeaderName, ck.Value)
+			if ck.Name == middleware.AdminSessionCookie {
+				req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken(ck.Value))
 			}
 		}
 	}
@@ -328,6 +351,23 @@ func (c *consoleAdmin) do(method, path string, body any, csrf bool) (int, string
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(b)
+}
+
+// bodyTOTPCode is the "totp_code" of a JSON request body, or "".
+func bodyTOTPCode(body any) string {
+	if body == nil {
+		return ""
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return ""
+	}
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
+		return ""
+	}
+	code, _ := m["totp_code"].(string)
+	return code
 }
 
 func (c *consoleAdmin) classify(tenantID string) handler.AdminAuditChainStatusResponse {

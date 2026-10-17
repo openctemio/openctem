@@ -18,10 +18,13 @@ type FindingRef struct {
 	Version string
 	// VulnIDs are the finding's vulnerability ids, upper case: its CVE, CVEs,
 	// rule id and typed ids.
-	VulnIDs          []string
-	Status           string
-	Source           string
-	ResolutionMethod string
+	VulnIDs []string
+	Status  string
+	Source  string
+	// ClosureReason and Verification are the finding's closure ("" while
+	// open); a statement's closure is verified by vex_statement.
+	ClosureReason string
+	Verification  string
 	// StatementID is the statement the finding carries now (nil: none).
 	StatementID *shared.ID
 	// VEXAt is when the carried statement was last updated, as recorded.
@@ -56,13 +59,11 @@ func (f *FindingRef) closedByStatement() bool {
 	if f.StatementID == nil {
 		return false
 	}
-	switch f.ResolutionMethod {
-	case ResolutionNotAffected:
-		return f.Status == string(vulnerability.FindingStatusFalsePositive)
-	case ResolutionFixed:
-		return f.Status == string(vulnerability.FindingStatusResolved)
+	if f.Verification != string(vulnerability.VerificationVEXStatement) {
+		return false
 	}
-	return false
+	return f.Status == string(vulnerability.FindingStatusFalsePositive) ||
+		f.Status == string(vulnerability.FindingStatusResolved)
 }
 
 // Effect is what to write on a finding.
@@ -73,11 +74,18 @@ type Effect struct {
 	OldStatus string
 	// Statement is the governing statement (nil: clear the carried one).
 	Statement *Statement
-	// NewStatus is set when the status changes. Resolution and
-	// ResolutionMethod go with it ("" clears them on a reopen).
-	NewStatus        string
-	ResolutionMethod string
-	Resolution       string
+	// NewStatus is set when the status changes. Resolution and the closure
+	// go with it ("" clears them on a reopen).
+	NewStatus     string
+	ClosureReason string
+	Verification  string
+	Resolution    string
+	// RequestFalsePositive asks for a false positive instead of setting it:
+	// a not_affected statement never moves the status itself, it opens the
+	// pending approval request (actor "vex") a second person decides.
+	// ClosureReason and Resolution carry the request's reason and
+	// justification; NewStatus stays empty.
+	RequestFalsePositive bool
 }
 
 // Changes reports whether the effect moves the status.
@@ -89,10 +97,13 @@ func (e *Effect) Changes() bool { return e.NewStatus != "" && e.NewStatus != e.O
 //   - No statement: a finding that carried one loses it; when that
 //     statement had closed it, it reopens (false positive -> new, resolved ->
 //     confirmed, the lifecycle's reopen edges).
-//   - not_affected / fixed: an open, non-human finding is closed (false
-//     positive with vex_not_affected, or resolved with vex_fixed). A finding
-//     closed by another statement switches to this one's closure. A finding a
-//     person closed, or a human-sourced finding, is annotated only.
+//   - fixed: an open, non-human finding is resolved as fixed, verified by
+//     vex_statement. A finding closed by another statement switches to this
+//     one's closure. A finding a person closed, or a human-sourced finding,
+//     is annotated only.
+//   - not_affected: an open, non-human finding gets a pending false positive
+//     request (RequestFalsePositive) and is annotated; the status never
+//     moves without a person's approval.
 //   - affected / under_investigation: annotate; a finding closed by a
 //     statement reopens.
 func Decide(f *FindingRef, w *Statement) *Effect {
@@ -108,12 +119,18 @@ func Decide(f *FindingRef, w *Statement) *Effect {
 		return e
 	}
 	if w.Status.Closes() && !IsHumanSource(f.Source) {
-		target, method := closure(w.Status)
+		target, reason := closure(w)
+		isFP := target == string(vulnerability.FindingStatusFalsePositive)
 		switch {
-		case canAutoClose(f.Status):
-			e.NewStatus, e.ResolutionMethod, e.Resolution = target, method, ResolutionText(w)
-		case byStatement && (f.Status != target || f.ResolutionMethod != method):
-			e.NewStatus, e.ResolutionMethod, e.Resolution = target, method, ResolutionText(w)
+		case isFP && canAutoClose(f.Status):
+			e.RequestFalsePositive = true
+			e.ClosureReason, e.Resolution = reason, ResolutionText(w)
+		case isFP:
+			// A false positive is never written by a statement; a finding
+			// that is not open work is annotated only.
+		case canAutoClose(f.Status), byStatement && (f.Status != target || f.ClosureReason != reason):
+			e.NewStatus, e.ClosureReason, e.Resolution = target, reason, ResolutionText(w)
+			e.Verification = string(vulnerability.VerificationVEXStatement)
 		}
 	} else if byStatement {
 		e.NewStatus = reopenStatus(f.Status)
@@ -125,11 +142,14 @@ func Decide(f *FindingRef, w *Statement) *Effect {
 	return e
 }
 
-func closure(s Status) (status, method string) {
-	if s == StatusFixed {
-		return string(vulnerability.FindingStatusResolved), ResolutionFixed
+// closure is the status and closure reason statement w gives a finding it
+// closes: resolved as fixed, or a false positive for its justification.
+func closure(w *Statement) (status, reason string) {
+	if w.Status == StatusFixed {
+		return string(vulnerability.FindingStatusResolved), string(vulnerability.ClosureReasonFixed)
 	}
-	return string(vulnerability.FindingStatusFalsePositive), ResolutionNotAffected
+	return string(vulnerability.FindingStatusFalsePositive),
+		string(vulnerability.ClosureReasonFromVEXJustification(w.Justification))
 }
 
 func canAutoClose(status string) bool {

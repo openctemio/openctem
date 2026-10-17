@@ -92,6 +92,13 @@ can be taken by that tenant's own eligible sensor. The shared platform pool
 is therefore built new here (W11), and the dead function is removed with
 the old claim path (W12).
 
+> **Update (RFC-100 S5).** The shared-sensor side of W11 shipped: shared
+> sensors claim shared jobs through their own claim path (fair share across
+> organizations, the organization's concurrency limit, the same leases and
+> host keys), and `get_next_platform_job` with its Go wrapper is removed
+> ([sensors.md](../architecture/sensors.md#the-shared-claim-path)). Lanes,
+> tenant pending caps and the sensor breaker of W11 remain.
+
 ### 3.3 Chunking, politeness, chaining
 
 Steps are cut **at step start**: one command per chunk, sizes per stage
@@ -494,7 +501,7 @@ durations keyed by (tenant, tool) behind an exported budget lookup.
 | W8 | api | Stream outputs into the next step: hop router per task ingest, dedup, step completion rule, downstream-first order, per-run buffers, `input: barrier` | W5 | — |
 | W9 | sdk-go → api | Yield: heartbeat action; the SDK releases unstarted targets with a done list; used for verify waits, joins, window close, drain | W4, W5 | **SEC** |
 | W10 | web (+ api) | Run Work panel, Scans → Queue, why waiting, ETA (en + vi) | W2, W3, W5 | — |
-| W11 | api | Shared-pool quotas and a sensor breaker: tenant pending and leased caps, per-sensor claim rate, platform pool lanes (replace the unused platform queue function), admin aggregates | W5 | **SEC** |
+| W11 | api | Shared-pool quotas and a sensor breaker: tenant pending and leased caps, per-sensor claim rate, platform pool lanes (replace the unused platform queue function; the shared-sensor side is RFC-100 S5), admin aggregates | W5 | **SEC** |
 | W12 | api | Every scan plans items: single-scanner scans, retests and validations (class `verify`) on the pool; remove step-start chunking, the scan claim path and `get_next_platform_job`; default on | W5–W8 soak | — |
 | W13 | api | Coalesce identical work across runs (opt-in, tenant-local) | W12 | **SEC** |
 | W14 | api + sdk-go + sensor | Offline expeditions: grant flag, signer TTL exception within the ledger, `held_offline`, outbox binding | W12 | **SEC** |

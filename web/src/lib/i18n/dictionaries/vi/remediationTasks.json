@@ -1,0 +1,17 @@
+{
+  "remediationTasks.priority.critical": "Nghiêm trọng",
+  "remediationTasks.priority.high": "Cao",
+  "remediationTasks.priority.medium": "Trung bình",
+  "remediationTasks.priority.low": "Thấp",
+  "remediationTasks.status.open": "Mở",
+  "remediationTasks.status.in_progress": "Đang thực hiện",
+  "remediationTasks.status.review": "Đang xác minh",
+  "remediationTasks.status.completed": "Hoàn thành",
+  "remediationTasks.status.blocked": "Bị chặn",
+  "remediationTasks.tasks.new": "Tác vụ mới",
+  "remediationTasks.tasks.manageFindings": "Quản lý",
+  "remediationTasks.validator.label": "Nhóm xác minh",
+  "remediationTasks.validator.none": "Không có người xác minh",
+  "remediationTasks.validator.placeholder": "Chọn một nhóm",
+  "remediationTasks.validator.unknown": "Một nhóm"
+}

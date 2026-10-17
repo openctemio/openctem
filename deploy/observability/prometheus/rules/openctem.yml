@@ -212,13 +212,13 @@ groups:
           description: Sensors run without a local policy (policy_none), without a pinned platform CA (pin_none), with tools outside network confinement (network_unenforced) or with a bearer key instead of a key-bound identity (bearer_key). They keep working; the Sensors page flags them.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsunhardened
 
-      - alert: SensorSdkUnsupported
-        expr: sum by (kind) (openctem_sensors_sdk{status="unsupported"}) > 0
+      - alert: SensorSdkAdvisory
+        expr: sum by (kind) (openctem_sensors_sdk{status="advisory"}) > 0
         for: 1h
         labels: {severity: warning, component: api}
         annotations:
-          summary: '{{ $value | humanize }} {{ $labels.kind }} sensor(s) run an SDK below the supported minimum'
-          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsdkunsupported
+          summary: '{{ $value | humanize }} {{ $labels.kind }} sensor(s) run an SDK release with a security advisory'
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsdkadvisory
 
       - alert: CommandQueueStuck
         expr: max(openctem_command_oldest_pending_seconds) > 1800

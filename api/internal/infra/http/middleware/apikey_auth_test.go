@@ -165,3 +165,32 @@ func TestAPIKeyAuth_EnforcesPerKeyRateLimit(t *testing.T) {
 		t.Fatalf("other key throttled: %d", rec.Code)
 	}
 }
+
+func TestAPIKeyRateLimiter_BurstIsCappedHourlyRateKept(t *testing.T) {
+	l := newAPIKeyRateLimiter()
+	allowed := 0
+	for i := 0; i < 100; i++ {
+		if l.allow("k1", 3600) {
+			allowed++
+		}
+	}
+	if allowed != apiKeyBurst {
+		t.Fatalf("burst: got %d immediate requests, want %d", allowed, apiKeyBurst)
+	}
+	// the refill rate is still the hourly budget: 3600/h is 1 per second
+	b := l.buckets["k1"]
+	if got := float64(b.limiter.Limit()); got < 0.99 || got > 1.01 {
+		t.Fatalf("hourly rate changed: %v/s", got)
+	}
+	// a small budget keeps its own size
+	small := newAPIKeyRateLimiter()
+	n := 0
+	for i := 0; i < 20; i++ {
+		if small.allow("k2", 10) {
+			n++
+		}
+	}
+	if n != 10 {
+		t.Fatalf("small budget burst: %d", n)
+	}
+}

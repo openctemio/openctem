@@ -7,11 +7,15 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/openctemio/ctis/addrscope"
+
+	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/jobsign"
 )
 
 // maxResolvedTargets bounds how many targets one scan run may dispatch. Larger
@@ -141,7 +145,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	// Dynamic selectors (wildcard domains, inventory-mode CIDRs) are
 	// expanded from the inventory as it is now; what they add is dispatched
 	// by asset id, like a group member, and gated like one.
-	exp, err := s.expandSelectors(ctx, sc)
+	exp, err := s.expandForResolve(ctx, sc)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +252,11 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	if err := countRefusals(out, gated.Refused); err != nil {
 		return nil, err
 	}
-	gateScannerKinds(sc.ScannerName, out, func(t string) bool { _, ok := types[t]; return ok })
+	typeOf := func(t string) (asset.TypeRef, bool) { ref, ok := types[t]; return ref, ok }
+	gateScannerKinds(sc.ScannerName, out, typeOf)
+	if err := s.gateScannerPaths(ctx, sc.TenantID, sc.ScannerName, out, typeOf); err != nil {
+		return nil, err
+	}
 	for _, t := range out.Targets {
 		if ref, typed := types[t]; typed && ref.Type != "" {
 			if out.TargetTypes == nil {
@@ -328,9 +336,11 @@ func applyTargetsToPayload(payload map[string]any, scanner string, targets []str
 	}
 }
 
-// hasInternalTarget reports whether any target is (or names) a private,
-// loopback, link-local or unspecified address. Such targets must never be
-// routed to shared platform sensors.
+// hasInternalTarget reports whether any target is (or names) an internal
+// address or range (ctis addrscope: private, loopback, link-local, CGNAT,
+// reserved, multicast, and IPv6 forms carrying such an IPv4 address) or an
+// internal suffix. Such targets must never be routed to shared platform
+// sensors.
 func hasInternalTarget(targets []string) bool {
 	for _, t := range targets {
 		if isInternalTarget(t) {
@@ -347,32 +357,36 @@ func isInternalTarget(target string) bool {
 			host = u.Hostname()
 		}
 	}
+	// A range is internal when any of its addresses is, not only its
+	// first one ("8.0.0.0/6" holds 10.0.0.0/8).
 	if p, err := netip.ParsePrefix(host); err == nil {
-		return isInternalAddr(p.Addr())
+		return addrscope.IsInternalPrefix(p)
 	}
 	host = asset.HostOf(host)
 	if a, err := netip.ParseAddr(host); err == nil {
 		return isInternalAddr(a)
 	}
 	lower := strings.ToLower(host)
+	// "2130706433", "0x7f.1": tools that accept inet_aton forms read these
+	// as addresses (127.0.0.1); no real name ends in a numeric label.
+	if jobsign.NumericHost(lower) {
+		return true
+	}
 	return lower == "localhost" || strings.HasSuffix(lower, ".localhost") ||
 		strings.HasSuffix(lower, ".local") || strings.HasSuffix(lower, ".internal")
 }
 
-func isInternalAddr(a netip.Addr) bool {
-	a = a.Unmap()
-	return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() ||
-		a.IsLinkLocalMulticast() || a.IsUnspecified() ||
-		netip.MustParsePrefix("100.64.0.0/10").Contains(a) // carrier-grade NAT
-}
+// isInternalAddr is the one definition shared with sensors (ctis addrscope).
+func isInternalAddr(a netip.Addr) bool { return addrscope.IsInternal(a) }
 
 // gateScannerKinds leaves out of a single-scanner run every typed-in target
 // whose kind the scanner's stage does not take (stage.AcceptsKind), and
-// every range, typed in or from the inventory: a network range never
-// reaches an HTTP prober or a template scanner. Inventory targets are
-// otherwise decided by their stored type (scannerTypeGate). They are
-// counted as incompatible, with the reason.
-func gateScannerKinds(scanner string, out *resolvedTargets, typed func(string) bool) {
+// every range and repository, typed in or from the inventory: a network
+// range never reaches an HTTP prober or a template scanner, a repository
+// never reaches a network tool. Inventory targets are otherwise decided by
+// their stored type (scannerTypeGate). They are counted as incompatible,
+// with the reason.
+func gateScannerKinds(scanner string, out *resolvedTargets, typed func(string) (asset.TypeRef, bool)) {
 	if scanner == "" {
 		return
 	}
@@ -407,4 +421,53 @@ func splitWarnings(split []SplitTarget) []string {
 			sp.Target, sp.Removed, len(sp.Pieces)))
 	}
 	return out
+}
+
+// dropOutOfDataScopeMembers removes from the expansion the members the
+// actor may not act on, and from each selector's matched count.
+func (s *Service) dropOutOfDataScopeMembers(ctx context.Context, sc *scan.Scan, exp *selectorExpansion) error {
+	if len(exp.Members) == 0 {
+		return nil
+	}
+	if s.actScope == nil {
+		return ErrActScopeUnavailable
+	}
+	ids := make([]shared.ID, 0, len(exp.Members))
+	for _, m := range exp.Members {
+		ids = append(ids, m.ID)
+	}
+	d, err := s.actScope.Check(ctx, actscope.Input{TenantID: sc.TenantID, FallbackUser: sc.CreatedBy, AssetIDs: ids})
+	if err != nil {
+		return fmt.Errorf("act-scope check failed: %w", err)
+	}
+	kept := exp.Members[:0]
+	for _, m := range exp.Members {
+		if !d.RefusedAssets[m.ID] {
+			kept = append(kept, m)
+			continue
+		}
+		for i := range exp.Report {
+			if exp.Report[i].Selector == m.Selector && exp.Report[i].Matched > 0 {
+				exp.Report[i].Matched--
+				break
+			}
+		}
+	}
+	exp.Members = kept
+	return nil
+}
+
+// hideOutOfDataScopeKey marks a context whose resolution must drop the
+// inventory names the actor may not act on before anything is counted: a
+// preview never reveals how many names exist beyond the actor's data scope.
+type hideOutOfDataScopeKey struct{}
+
+// expandForResolve expands the selectors, then (hide marked) drops the
+// members the actor may not act on.
+func (s *Service) expandForResolve(ctx context.Context, sc *scan.Scan) (*selectorExpansion, error) {
+	exp, err := s.expandSelectors(ctx, sc)
+	if hide, _ := ctx.Value(hideOutOfDataScopeKey{}).(bool); err != nil || !hide {
+		return exp, err
+	}
+	return exp, s.dropOutOfDataScopeMembers(ctx, sc, exp)
 }

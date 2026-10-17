@@ -20,8 +20,8 @@ import { cn } from '@/lib/utils'
 import { PriorityClassBadge } from '../priority-class-badge'
 import { ScoreBreakdown } from './priority-explanation-card'
 import { useFindingPriorityExplanation } from '../../api/use-finding-priority-explanation'
-import { PRIORITY_CLASS_CONFIG, type FindingDetail } from '../../types'
-import { PriorityClassSla } from '@/features/sla/components/priority-class-sla'
+import { PRIORITY_CLASS_CONFIG, type FindingDetail, type PriorityClass } from '../../types'
+import { PriorityClassSla, usePrioritySlaBasis } from '@/features/sla/components/priority-class-sla'
 import { riskSignals, type RiskSignal, type SignalGroup } from '../../lib/finding-signals'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { useTranslation } from '@/context/i18n-provider'
@@ -116,6 +116,24 @@ function ScoreDetails({ findingId }: { findingId: string }) {
   )
 }
 
+function SlaBasis({
+  priorityClass,
+  assetId,
+  severity,
+}: {
+  priorityClass: PriorityClass
+  assetId?: string
+  severity?: string
+}) {
+  const basis = usePrioritySlaBasis(priorityClass, assetId, severity)
+  if (!basis) return null
+  return (
+    <p className="mt-1 text-xs text-muted-foreground" data-slot="sla-basis">
+      {basis}
+    </p>
+  )
+}
+
 export interface FindingWhyItMattersProps {
   finding: FindingDetail
   /** `compact` for the drawer: one flat list of chips, no group labels. */
@@ -126,12 +144,13 @@ export interface FindingWhyItMattersProps {
 export function FindingWhyItMatters({ finding, compact, className }: FindingWhyItMattersProps) {
   const { t } = useTranslation()
   const [scoreOpen, setScoreOpen] = useState(false)
-  const signals = riskSignals(finding)
+  const signals = riskSignals(finding, t)
   const pc = finding.priorityClass
   if (!pc && signals.length === 0) return null
 
   const cfg = pc ? PRIORITY_CLASS_CONFIG[pc] : undefined
   const reason = finding.priorityClassReason
+  const slaAsset = isLinkableAssetId(finding.assets[0]?.id) ? finding.assets[0].id : undefined
 
   return (
     <section
@@ -149,7 +168,8 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
           <span className="text-sm font-medium">{cfg.description.split(' — ')[0]}</span>
           <PriorityClassSla
             priorityClass={pc}
-            assetId={finding.assets[0]?.id}
+            assetId={slaAsset}
+            severity={finding.severity}
             variant="sentence"
             className="text-sm text-muted-foreground before:content-['·_']"
           />
@@ -161,6 +181,7 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
         </div>
       )}
       {reason && <p className="mt-1.5 text-sm text-muted-foreground">{sentence(reason)}.</p>}
+      {pc && <SlaBasis priorityClass={pc} assetId={slaAsset} severity={finding.severity} />}
       {isAttributionCapped(reason) && (
         <div
           role="note"

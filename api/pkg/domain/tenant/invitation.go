@@ -27,9 +27,35 @@ type Invitation struct {
 	acceptedAt *time.Time
 	createdAt  time.Time
 
+	// groupIDs: teams of the same organization the invitee joins at
+	// acceptance.
+	groupIDs []string
+
 	// access is what an external invitee gets (expiry and its reason); it
 	// becomes the membership's on acceptance.
 	access ExternalAccess
+
+	// invitee, lastSentAt and resendCount: invitation_lifecycle.go.
+	invitee           InviteeInfo
+	lastSentAt        *time.Time
+	resendCount       int
+	loadedResendCount int
+}
+
+// MaxInvitationTeams caps the teams one invitation may add (the column's
+// CHECK says the same).
+const MaxInvitationTeams = 20
+
+// GroupIDs returns the teams the invitee joins at acceptance.
+func (i *Invitation) GroupIDs() []string {
+	out := make([]string, len(i.groupIDs))
+	copy(out, i.groupIDs)
+	return out
+}
+
+// SetGroupIDs records the teams the invitee joins at acceptance.
+func (i *Invitation) SetGroupIDs(ids []string) {
+	i.groupIDs = append([]string(nil), ids...)
 }
 
 // Access returns the access the inviter set for an external invitee.

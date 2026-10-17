@@ -108,5 +108,9 @@
   "nav.item.business-context": "Business context",
   "nav.item.threat-model": "Threat model",
   "nav.item.scope": "Scope",
-  "nav.item.programs": "Programs"
+  "nav.item.programs": "Programs",
+  "nav.item.approvals": "Approvals",
+  "nav.item.fix-plan": "Fix plan",
+  "nav.item.suggestions": "Suggestions",
+  "nav.item.tasks": "Tasks"
 }

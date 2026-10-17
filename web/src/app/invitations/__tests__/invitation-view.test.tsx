@@ -113,16 +113,74 @@ describe('InvitationView', () => {
     expectTokenNeverInAUrl(fetchFn)
   })
 
-  it('declines with the token in the body and forgets it', async () => {
+  it('declines after confirming, with the token in the body, and says so', async () => {
     render(<InvitationView hasSession />)
-    fireEvent.click(await screen.findByRole('button', { name: /decline/i }))
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/'))
+    fireEvent.click(await screen.findByRole('button', { name: /^decline$/i }))
+    const confirm = await screen.findAllByRole('button', { name: /^decline$/i })
+    fireEvent.click(confirm[confirm.length - 1])
+    expect(await screen.findByText('Invitation declined')).toBeInTheDocument()
 
     const decline = (fetchFn.mock.calls as FetchCall[]).find(([u]) =>
       String(u).endsWith('/decline')
     )
     expect(JSON.parse(String(decline?.[1]?.body))).toEqual({ token: TOKEN })
     expect(window.sessionStorage.length).toBe(0)
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('offers decline without a session too', async () => {
+    render(<InvitationView hasSession={false} />)
+    expect(await screen.findByRole('button', { name: /^decline$/i })).toBeInTheDocument()
+  })
+
+  it('shows what accepting gives: roles with risk, teams, outside status, end of access, two-factor', async () => {
+    const rich = {
+      ...preview,
+      invitation: {
+        ...preview.invitation,
+        roles: [
+          {
+            id: 'r1',
+            name: 'Security analyst',
+            slug: 'security-analyst',
+            is_system: false,
+            summary: {
+              risk: 'medium',
+              reasons: [],
+              areas: [{ area: 'findings', level: 'change' }],
+            },
+          },
+        ],
+        teams: [{ id: 'g1', name: 'Red team' }],
+        member_kind: 'external',
+        access_expires_at: '2026-12-31T23:59:59Z',
+        mfa_required: true,
+        mfa_reason: 'outside_privileged',
+      },
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(rich), { status: 200 }))
+    )
+    render(<InvitationView hasSession />)
+    expect(await screen.findByText('Security analyst')).toBeInTheDocument()
+    expect(screen.getByText('Red team')).toBeInTheDocument()
+    expect(screen.getByText(/You join from outside Acme/)).toBeInTheDocument()
+    expect(screen.getByText(/Your access ends on/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/set up two-factor authentication before you can open Acme/)
+    ).toBeInTheDocument()
+  })
+
+  it('says a newcomer without teams sees no data yet', async () => {
+    const plain = { ...preview, invitation: { ...preview.invitation, roles: [], teams: [] } }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(plain), { status: 200 }))
+    )
+    render(<InvitationView hasSession />)
+    expect(await screen.findByText(/No teams yet/)).toBeInTheDocument()
+    expect(screen.getByText('Your access has no end date.')).toBeInTheDocument()
   })
 
   it('without a token says the link is incomplete and calls nothing', async () => {

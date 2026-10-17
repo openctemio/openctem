@@ -14,15 +14,14 @@ const push = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-type Org = { id: string; name: string; slug: string; role?: string; plan?: string }
+type Org = { id: string; name: string; slug: string; role?: string }
 const tenantState = {
   currentTenant: {
     id: '7f3c2a1e-0000-4000-8000-000000000001',
     name: 'ORG tenant',
     slug: 'org-tenant',
     role: 'owner',
-    plan: 'free',
-  } as { id: string; name: string; slug: string; role: string; plan?: string } | null,
+  } as { id: string; name: string; slug: string; role: string } | null,
   tenants: [] as Org[],
   isLoading: false,
   isSwitching: false,
@@ -89,7 +88,7 @@ describe('TeamSwitcher', () => {
     canCreate = false
     totalMembers = 12
     tenantState.isSwitching = false
-    tenantState.tenants = [{ ...org(ORG_ID, 'ORG tenant', 'owner'), plan: 'free' }]
+    tenantState.tenants = [org(ORG_ID, 'ORG tenant', 'owner')]
     tenantState.switchTeam.mockClear()
     tenantState.loadTenants.mockClear()
     memberStats.mockClear()
@@ -106,11 +105,11 @@ describe('TeamSwitcher', () => {
     expect(tenantState.loadTenants).toHaveBeenCalled()
   })
 
-  it('names the organization and its plan on the trigger', () => {
+  it('names the organization on the trigger, with no plan or tier badge', () => {
     renderSwitcher()
     const trigger = screen.getByTestId('team-switcher-trigger')
     expect(trigger).toHaveTextContent('ORG tenant')
-    expect(trigger).toHaveTextContent('Free')
+    expect(trigger).not.toHaveTextContent(/free|pro|enterprise|plan/i)
   })
 
   it('opens the card with a single organization, without a chevron', async () => {
@@ -118,7 +117,8 @@ describe('TeamSwitcher', () => {
     expect(screen.queryByTestId('team-switcher-chevron')).toBeNull()
     const { card } = await openCard()
     expect(within(card).getByText('ORG tenant')).toBeInTheDocument()
-    expect(within(card).getByTestId('org-card-plan')).toHaveTextContent('Free')
+    expect(within(card).queryByTestId('org-card-plan')).toBeNull()
+    expect(card).not.toHaveTextContent(/\bplan\b|enterprise/i)
   })
 
   it('shows the role, the member count linking to members, and the signed-in email', async () => {
@@ -200,10 +200,7 @@ describe('TeamSwitcher', () => {
   })
 
   it('switches with the existing switch logic, marking the current one', async () => {
-    tenantState.tenants = [
-      { ...org(ORG_ID, 'ORG tenant', 'owner'), plan: 'free' },
-      org('t2', 'Second org', 'viewer'),
-    ]
+    tenantState.tenants = [org(ORG_ID, 'ORG tenant', 'owner'), org('t2', 'Second org', 'viewer')]
     renderSwitcher()
     expect(screen.getByTestId('team-switcher-chevron')).toBeInTheDocument()
     const { user, card } = await openCard()

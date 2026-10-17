@@ -53,7 +53,7 @@ func (f *policyFake) UpdateGatePolicy(_ context.Context, _, id shared.ID, _ ciru
 	return f.policies[id], nil
 }
 
-func (f *policyFake) DeleteGatePolicy(context.Context, shared.ID, shared.ID, cirunapp.Actor) error {
+func (f *policyFake) DeleteGatePolicy(context.Context, shared.ID, shared.ID, string, cirunapp.Actor) error {
 	f.changed = append(f.changed, "delete")
 	return f.err
 }

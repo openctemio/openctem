@@ -32,6 +32,13 @@ type GitHubPushEvent struct {
 // "X-Hub-Signature-256: sha256=<hex>" header) is a valid HMAC-SHA256 of body
 // under secret. Constant-time comparison. Returns false on any malformed input.
 func VerifyGitHubSignature(body []byte, sigHeader, secret string) bool {
+	return VerifyHubSignature(body, sigHeader, secret)
+}
+
+// VerifyHubSignature checks a "sha256=<hex>" HMAC-SHA256 signature of the raw
+// body (the X-Hub-Signature format GitHub and Jira both send) in constant
+// time.
+func VerifyHubSignature(body []byte, sigHeader, secret string) bool {
 	const prefix = "sha256="
 	if secret == "" || !strings.HasPrefix(sigHeader, prefix) {
 		return false
