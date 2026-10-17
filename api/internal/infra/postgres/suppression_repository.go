@@ -239,9 +239,7 @@ func (r *SuppressionRepository) liftSuppressionsInTx(
 			}
 			// An accepted risk now held by the covering rule ends when that
 			// rule's acceptance ends.
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE findings SET acceptance_expires_at = `+acceptanceCappedSQL("$3::timestamptz", "findings")+`
-				WHERE tenant_id = $1 AND id = $2 AND status = 'accepted'`,
+			if _, err := tx.ExecContext(ctx, relinkAcceptanceSQL,
 				tenantID.String(), c.id, ruleAcceptanceEnd(cover.ExpiresAt(), time.Now())); err != nil {
 				return 0, fmt.Errorf("re-apply acceptance end: %w", err)
 			}
@@ -896,6 +894,12 @@ func (r *SuppressionRepository) buildRule(
 // ruleAcceptanceEnd is when an acceptance given by a suppression rule ends:
 // the rule's expiry, or the default acceptance length from now when the rule
 // has none (an accepted risk always ends; vulnerability.DefaultAcceptanceDuration).
+// relinkAcceptanceSQL caps the acceptance end of a finding re-linked to a
+// covering rule. It is built once from a constant fragment (no input).
+var relinkAcceptanceSQL = `
+				UPDATE findings SET acceptance_expires_at = ` + acceptanceCappedSQL("$3::timestamptz", "findings") + `
+				WHERE tenant_id = $1 AND id = $2 AND status = 'accepted'`
+
 // acceptanceCappedSQL is the end of an acceptance a suppression rule gives
 // one finding: the rule's end, but never past the cap of that finding's
 // priority (finding_max_acceptance_days: P0 or KEV 30 days, P1 90, P2 180,
