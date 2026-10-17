@@ -56,6 +56,7 @@ type gsHarness struct {
 	cveA, cveB, cveB2, cveP      string
 	componentA, componentB, camp shared.ID
 	vuln                         *finding.VulnerabilityService
+	actions                      *finding.FindingActionsService
 	views                        *savedviewapp.Service
 }
 
@@ -95,6 +96,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	h.vuln = vulnSvc
 
 	actionsSvc := finding.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
+	h.actions = actionsSvc
 	vulnSvc.SetFixApplierCheck(actionsSvc.FixAppliers)
 	actionsSvc.SetDataScope(enforcer)
 
