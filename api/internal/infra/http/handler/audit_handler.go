@@ -36,8 +36,13 @@ func (h *AuditHandler) SetDataScope(e DataScopeEnforcer) *AuditHandler {
 // administrator or holds full data access. Fails closed on a lookup error.
 func (h *AuditHandler) requireFullData(w http.ResponseWriter, r *http.Request) bool {
 	ctx := r.Context()
-	if middleware.IsAdmin(ctx) || h.scope == nil {
+	if middleware.IsAdmin(ctx) {
 		return true
+	}
+	if h.scope == nil { // not wired: fail closed, never open
+		apierror.Forbidden("Audit log access requires full data access").
+			WithDetails(map[string]string{"required": "full data access"}).WriteJSON(w)
+		return false
 	}
 	tid, err := shared.IDFromString(middleware.GetTenantID(ctx))
 	if err != nil {

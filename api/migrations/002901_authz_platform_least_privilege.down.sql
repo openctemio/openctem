@@ -17,4 +17,6 @@ SELECT '00000000-0000-0000-0000-000000000003'::uuid, 'scans:secret_store:write'
 WHERE EXISTS (SELECT 1 FROM roles WHERE id = '00000000-0000-0000-0000-000000000003')
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
+ALTER TABLE integration_notification_extensions ALTER COLUMN include_details DROP NOT NULL;
 ALTER TABLE integration_notification_extensions ALTER COLUMN include_details SET DEFAULT true;
+-- Rows backfilled by the up migration stay: they hold the behaviour those channels had.
