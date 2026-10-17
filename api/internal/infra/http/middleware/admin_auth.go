@@ -5,7 +5,6 @@ package middleware
 
 import (
 	"context"
-	"crypto/subtle"
 	"net/http"
 	"time"
 
@@ -77,8 +76,8 @@ func (m *AdminAuthMiddleware) WithElevation(on bool) *AdminAuthMiddleware {
 }
 
 // authenticateSession accepts a verified console session cookie and, for
-// state-changing methods, requires the double-submit CSRF header to match the
-// admin CSRF cookie.
+// state-changing methods, requires the CSRF header to be that session's
+// token (AdminCSRFToken: bound to the session, whatever cookies are sent).
 func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.AdminUser, *admin.Session, bool) {
 	if m.sessions == nil {
 		return nil, nil, false
@@ -90,10 +89,7 @@ func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.Admin
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 	default:
-		csrf, err := r.Cookie(AdminCSRFCookie)
-		header := r.Header.Get(CSRFHeaderName)
-		if err != nil || csrf.Value == "" || header == "" ||
-			subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(header)) != 1 {
+		if !ValidAdminCSRF(c.Value, r.Header.Get(CSRFHeaderName)) {
 			m.logger.Debug("admin auth: session request failed CSRF check")
 			return nil, nil, false
 		}
