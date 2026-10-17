@@ -562,6 +562,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 			s.cancelStepCommands(ctx, created)
 			return err
 		}
+		if cmd.IsPlatformJob && s.sharedUse != nil {
+			s.sharedUse.ObserveSharedTargets(ctx, run.TenantID, chunkTargets(chunk, run.Context))
+		}
 		created = append(created, cmd)
 	}
 	s.logger.Info("step queued", "step_key", step.StepKey, "commands", len(created),

@@ -332,6 +332,12 @@ type AppConfig struct {
 	Name string
 	Env  string
 	URL  string // Public app URL (used as fallback for sensor config base URL)
+	// ManagedService (MANAGED_SERVICE, default false) marks a hosted,
+	// multi-tenant service. It changes defaults only, never features: the
+	// verified-domain requirement for platform sensors defaults on until an
+	// administrator stores a value in the console
+	// (docs/rfcs/RFC-100-shared-sensors.md §6).
+	ManagedService bool
 	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
 	// to every organization created here and never changed (empty: not
 	// named).
@@ -1353,6 +1359,8 @@ func Load() (*Config, error) {
 			Env:    appEnv(),
 			URL:    getEnv("APP_URL", ""),
 			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
+
+			ManagedService: getEnvBool("MANAGED_SERVICE", false),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{

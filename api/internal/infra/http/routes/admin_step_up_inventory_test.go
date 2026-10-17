@@ -100,6 +100,8 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/scan-approval-policy/":          {stepUpRoute, "scan governance default"},
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":         {stepUpRoute, "platform sensor domain proof"},
 	"PUT /api/v1/admin/settings/shared-sensors/":                {stepUpRoute, "shared sensors on or off for the instance, and the default for organizations"},
+	"PUT /api/v1/admin/settings/shared-sensor-internal-zones/":  {stepUpRoute, "whether shared sensors may scan internal zones"},
+	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":         {stepUpRoute, "shared sensor anomaly alert thresholds"},
 	"PUT /api/v1/admin/settings/shared-sensors/egress":          {stepUpRoute, "egress addresses every organization is told to allowlist"},
 	"PUT /api/v1/admin/program-feed/local-bundle":               {stepUpRoute, "program feed source"},
 	"POST /api/v1/admin/shared-sensors/enrollment-tokens":       {stepUpRoute, "shared sensor enrollment token"},
