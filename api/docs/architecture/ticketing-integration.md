@@ -24,6 +24,11 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   the projects the organization configured for ticketing (default project,
   routing rules, mapping profiles); the issue's current project is checked
   after the tracker resolves the key, so a moved issue cannot slip through.
+- **Task issues** (one issue per remediation task): `POST /api/v1/remediation/tasks/{task_id}/ticket-links`
+  creates the task's issue (title, fix, finding count, deadline, link back; no
+  finding details) in a configured project; the task ticket controller then
+  moves it with the task's state and comments every move with the progress;
+  Done on the issue is a fix claim for the task's open findings (RFC-098 §9).
 - **Inbound** (`POST /hooks/jira-integrations/{integration_id}`): a Jira status
   change updates the finding status (and can trigger a verification scan).
   With a published mapping profile for the issue's project, its inbound
