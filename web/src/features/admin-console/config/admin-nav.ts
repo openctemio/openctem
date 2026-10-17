@@ -10,6 +10,7 @@ import {
   MonitorSmartphone,
   KeyRound,
   LayoutDashboard,
+  LifeBuoy,
   Mail,
   Megaphone,
   Radar,
@@ -82,6 +83,14 @@ export const adminNav: AdminNavSection[] = [
         // Finding people by email is personal data: not for read-only.
         minRole: 'ops_admin',
         keywords: ['accounts', 'people', 'locked', 'sessions', 'support'],
+      },
+      {
+        title: 'Support access',
+        i18nKey: 'admin.nav.supportAccess',
+        url: '/admin/support',
+        icon: LifeBuoy,
+        minRole: 'ops_admin',
+        keywords: ['support', 'grant', 'case', 'help', 'troubleshoot', 'read-only'],
       },
     ],
   },

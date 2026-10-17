@@ -1,0 +1,135 @@
+# Bundled sensor as a shared sensor of the instance
+# (docs/rfcs/RFC-100-shared-sensors.md §7): an optional overlay. The sensor
+# belongs to the instance, not to an organization, and enrolls without anyone
+# approving it, using the single-use token in SENSOR_INSTANCE_ENROLLMENT_TOKEN
+# (setup.sh writes one into .env: octe_ and 49 letters or digits).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.sensor.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.sensor.yml logs sensor
+#     # "Enrolled: shared sensor ..."
+#
+# - sensor-enrollment runs once per `up` after the migrations:
+#   `bootstrap-admin sensor-token -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN`
+#   stores the token's keyed hash (valid one hour, single use, audited in the
+#   console). A value already registered is left alone.
+# - The sensor enrolls on first start with its own key and keeps its identity
+#   in the sensor-data volume; afterwards it ignores the token. Back that
+#   volume up like a credential.
+# - Shared mode (SENSOR_SHARED_MODE=1): every tool runs sandboxed and
+#   network-confined, with a fresh task directory per job, and the sensor
+#   refuses to start without the tool sandbox, network confinement and a
+#   local policy (./sensor/sensor-policy.yaml, which setup.sh copies from
+#   sensor/sensor-policy.example.yaml: public targets only by default).
+#   The platform dispatches shared jobs only to a sensor that advertises
+#   shared.isolation@1, which a sensor image built with the shared-mode SDK
+#   does once it confirms that isolation at runtime. A sensor image without
+#   it (v0.23.0 and older) enrolls but receives no shared job.
+# - What the sandbox needs, and nothing more: the sensor gives each task its
+#   own user, network and mount namespaces as its own non-root user
+#   (unprivileged user namespaces). No capability is added (cap_drop: ALL,
+#   no-new-privileges, read-only root filesystem). The runtime's default
+#   seccomp profile refuses namespace flags without CAP_SYS_ADMIN, so the
+#   sensor runs under sensor/seccomp.json: the sensor release's own profile
+#   (sensor repository docker/seccomp/sensor.json at v0.23.0, sha256
+#   97d0b0a8292012537f2474b6c200ea49bef1239a306bc6e7e8a2afe15a3895a8), which
+#   is Docker's default profile plus clone/unshare with namespace flags. The
+#   tools cannot use that rule: the sensor's per-task seccomp filter refuses
+#   namespace creation to every tool. Keep Docker's default AppArmor profile
+#   (apparmor=unconfined breaks confinement on Ubuntu), and the host must
+#   allow unprivileged user namespaces (the kernel default; on Ubuntu 24.04
+#   the AppArmor userns restriction applies to unconfined processes only).
+#   On a host that cannot confine, the sensor refuses to start and says why.
+# - A shared sensor takes no organization's jobs until a super administrator
+#   turns shared sensors on (Console > System > Platform scanning).
+# - Token expired before the sensor enrolled: put a new value in .env
+#   (octe_ and 49 letters or digits) and run the `up` again.
+#
+# An existing install whose sensor was paired as an organization sensor keeps
+# it: this overlay is new, and a sensor's scope is fixed when it is created.
+# To replace that sensor with a shared one, retire it under Sensors, stop it,
+# and start this overlay (its sensor-data volume is a fresh identity).
+services:
+  sensor-enrollment:
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.9.7}}
+    entrypoint: ["/app/bootstrap-admin"]
+    command:
+      - "sensor-token"
+      - "-from-env"
+      - "SENSOR_INSTANCE_ENROLLMENT_TOKEN"
+      - "-name=${SENSOR_NAME:-bundled-sensor}"
+      - "-reason=bundled sensor of the compose install"
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-openctem}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-openctem}
+      DB_SSLMODE: ${DB_SSLMODE:-require}
+      # The token is stored as the keyed hash the API checks.
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required (openssl rand -hex 32)}
+      SENSOR_KEY_PEPPER: ${SENSOR_KEY_PEPPER:-}
+      SENSOR_INSTANCE_ENROLLMENT_TOKEN: ${SENSOR_INSTANCE_ENROLLMENT_TOKEN:?SENSOR_INSTANCE_ENROLLMENT_TOKEN is required (setup.sh writes it)}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - openctem
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  sensor:
+    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.23.0}
+    environment:
+      # Inside the stack: the API directly (never the gateway).
+      SENSOR_API_URL: http://api:8080
+      SENSOR_NAME: ${SENSOR_NAME:-bundled-sensor}
+      SENSOR_REGION: ${SENSOR_REGION:-default}
+      SENSOR_INSTANCE_ENROLLMENT_TOKEN: ${SENSOR_INSTANCE_ENROLLMENT_TOKEN:?SENSOR_INSTANCE_ENROLLMENT_TOKEN is required (setup.sh writes it)}
+      SENSOR_STATE_DIR: /var/lib/openctem/state
+      SENSOR_CONTENT_DIR: /var/lib/openctem/content
+      SENSOR_OUTBOX_DIR: /var/lib/openctem/outbox
+      # Shared mode: sandbox and network confinement required, a local
+      # policy required, per-job task directories.
+      SENSOR_SHARED_MODE: "1"
+      SENSOR_SANDBOX: required
+      SENSOR_SANDBOX_NETWORK: required
+      SENSOR_LOCAL_POLICY: /etc/openctem/sensor-policy.yaml
+      XDG_CONFIG_HOME: /tmp/.config
+      XDG_CACHE_HOME: /tmp/.cache
+    depends_on:
+      sensor-enrollment:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    networks:
+      - openctem
+    restart: unless-stopped
+    volumes:
+      # The sensor's identity (state/), queued results (outbox/) and scanner
+      # cache (content/). It holds a credential: back it up like one.
+      - sensor-data:/var/lib/openctem
+      # The network owner's local policy, read-only.
+      - ./sensor/sensor-policy.yaml:/etc/openctem/sensor-policy.yaml:ro
+    tmpfs:
+      - /tmp
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./sensor/seccomp.json
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  sensor-data:
