@@ -92,14 +92,14 @@ func (m *mockAttackSurfaceRepo) List(
 	return pagination.Result[*asset.Asset]{}, nil
 }
 
-func (m *mockAttackSurfaceRepo) GetAverageRiskScore(_ context.Context, _ shared.ID) (float64, error) {
+func (m *mockAttackSurfaceRepo) GetAverageRiskScore(_ context.Context, _ shared.ID, _ *shared.DataScope) (float64, error) {
 	if m.avgRiskScoreErr != nil {
 		return 0, m.avgRiskScoreErr
 	}
 	return m.avgRiskScore, nil
 }
 
-func (m *mockAttackSurfaceRepo) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
+func (m *mockAttackSurfaceRepo) GetAssetTypeBreakdown(_ context.Context, _ shared.ID, _ *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
 	if m.breakdownErr != nil {
 		return nil, m.breakdownErr
 	}
