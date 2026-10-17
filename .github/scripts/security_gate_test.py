@@ -390,6 +390,18 @@ class GateTest(unittest.TestCase):
         code, fake = self.run_gate("merge_group", event, routes)
         self.assertEqual((code, fake.writes), (1, []))
 
+    def test_merge_group_ignores_stale_alerts_on_the_pr_merge_ref(self):
+        """The PR merge ref keeps an old analysis; the group's own ref decides."""
+        ref = "refs/heads/gh-readonly-queue/develop/pr-7-abc123"
+        event = {"merge_group": {"head_ref": ref}}
+        routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
+        routes["code-scanning/alerts?ref=refs/pull/7/merge"] = [{"number": 9, "rule": {"security_severity_level": "high"}}]
+        routes["code-scanning/alerts?ref=" + ref] = [{"number": 1, "rule": {"security_severity_level": "low"}}]
+        routes["code-scanning/alerts?ref=refs/heads/develop"] = []
+        self.assertEqual(self.run_gate("merge_group", event, routes)[0], 0)
+        routes["code-scanning/alerts?ref=" + ref] = [{"number": 9, "rule": {"security_severity_level": "high"}}]
+        self.assertEqual(self.run_gate("merge_group", event, routes)[0], 1)
+
     def test_release_pr_evaluates_only_what_it_adds_to_develop(self):
         pr = self.pr(base="main", head_ref="release/v1.2.3")
         routes = self.routes(pr, self.SENSITIVE)  # the full diff carries develop's sensitive change
