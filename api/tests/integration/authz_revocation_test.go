@@ -270,8 +270,10 @@ func TestRevocation_DemotedAdminLosesBypassOnNextRequest(t *testing.T) {
 	}
 }
 
-// H3: RBAC role changes drop the cached membership, so the team-admin gates
-// see the new role on the next request.
+// H3: the Roles API never changes the team role. A system role (owner, admin,
+// member, viewer) is refused on every role-assignment path and the cached
+// membership keeps its role; a custom-role change leaves the team role as it
+// was, so the team-admin gates keep reading the membership's own role.
 func TestRevocation_RoleChangesInvalidateMembershipCache(t *testing.T) {
 	f := newRevFixture(t)
 	owner := f.member("owner", false)
@@ -283,62 +285,33 @@ func TestRevocation_RoleChangesInvalidateMembershipCache(t *testing.T) {
 	}
 	if err := f.roles.SetUserRoles(f.ctx, accesscontrol.SetUserRolesInput{
 		TenantID: f.tenantID, UserID: a, RoleIDs: []string{revViewerRole},
-	}, owner, actx); err != nil {
-		t.Fatalf("SetUserRoles: %v", err)
+	}, owner, actx); !errors.Is(err, accesscontrol.ErrSystemRoleViaRoles) {
+		t.Fatalf("SetUserRoles [viewer]: %v, want ErrSystemRoleViaRoles", err)
 	}
-	if got := f.cachedTeamRole(a); got != "viewer" {
-		t.Fatalf("after SetUserRoles [viewer] the cached team role is %q, want viewer", got)
+	if err := f.roles.RemoveRole(f.ctx, f.tenantID, a, revAdminRole, actx); !errors.Is(err, accesscontrol.ErrSystemRoleViaRoles) {
+		t.Fatalf("RemoveRole admin: %v, want ErrSystemRoleViaRoles", err)
 	}
-
-	b := f.member("admin", false)
-	f.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, b, f.tenantID, revMemberRole)
-	_ = f.cachedTeamRole(b)
-	if err := f.roles.RemoveRole(f.ctx, f.tenantID, b, revAdminRole, actx); err != nil {
-		t.Fatalf("RemoveRole: %v", err)
-	}
-	if got := f.cachedTeamRole(b); got != "member" {
-		t.Fatalf("after RemoveRole admin the cached team role is %q, want member", got)
-	}
-
 	c := f.member("viewer", false)
-	_ = f.cachedTeamRole(c)
 	if err := f.roles.AssignRole(f.ctx, accesscontrol.AssignRoleInput{
 		TenantID: f.tenantID, UserID: c, RoleID: revAdminRole,
-	}, owner, actx); err != nil {
-		t.Fatalf("AssignRole: %v", err)
+	}, owner, actx); !errors.Is(err, accesscontrol.ErrSystemRoleViaRoles) {
+		t.Fatalf("AssignRole admin: %v, want ErrSystemRoleViaRoles", err)
 	}
-	if got := f.cachedTeamRole(c); got != "admin" {
-		t.Fatalf("after AssignRole admin the cached team role is %q, want admin", got)
+	if got := f.cachedTeamRole(a); got != "admin" {
+		t.Fatalf("a refused role change moved the cached team role to %q", got)
 	}
-
-	d := f.member("viewer", false)
-	_ = f.cachedTeamRole(d)
-	if _, err := f.roles.BulkAssignRoleToUsers(f.ctx, accesscontrol.BulkAssignRoleToUsersInput{
-		TenantID: f.tenantID, RoleID: revMemberRole, UserIDs: []string{d},
-	}, owner, actx); err != nil {
-		t.Fatalf("BulkAssignRoleToUsers: %v", err)
-	}
-	if got := f.cachedTeamRole(d); got != "member" {
-		t.Fatalf("after BulkAssign member the cached team role is %q, want member", got)
+	if got := f.cachedTeamRole(c); got != "viewer" {
+		t.Fatalf("a refused role change moved the cached team role to %q", got)
 	}
 
-	// Through the gate itself.
-	users := postgres.NewUserRepository(&postgres.DB{DB: f.db})
-	uid, _ := shared.IDFromString(a)
-	u, err := users.GetByID(f.ctx, uid)
-	if err != nil {
-		t.Fatal(err)
+	custom := f.customRole("rev-keep-team-role", "dashboard:read")
+	if err := f.roles.SetUserRoles(f.ctx, accesscontrol.SetUserRolesInput{
+		TenantID: f.tenantID, UserID: a, RoleIDs: []string{custom},
+	}, owner, actx); err != nil {
+		t.Fatalf("SetUserRoles custom: %v", err)
 	}
-	tid, _ := shared.IDFromString(f.tenantID)
-	gate := middleware.RequireMembership(f.members)(middleware.RequireTeamAdmin()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})))
-	ctx := context.WithValue(f.ctx, middleware.LocalUserKey, u)
-	ctx = context.WithValue(ctx, middleware.TeamIDKey, tid)
-	rec := httptest.NewRecorder()
-	gate.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/tenants/x/invitations", nil).WithContext(ctx))
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("demoted admin through RequireTeamAdmin: %d, want 403", rec.Code)
+	if got := f.cachedTeamRole(a); got != "admin" {
+		t.Fatalf("a custom-role change moved the cached team role to %q, want admin", got)
 	}
 }
 
@@ -348,7 +321,7 @@ func TestRevocation_RemovedPermissionStopsReads(t *testing.T) {
 	f := newRevFixture(t)
 	owner := f.member("owner", false)
 	victim := f.member("viewer", false)
-	assetsRole := f.customRole("rev-assets", "assets:read", "dashboard:read")
+	assetsRole := f.customRole("rev-assets", "assets:write", "dashboard:read")
 	dashRole := f.customRole("rev-dash", "dashboard:read")
 	actx := auditapp.AuditContext{TenantID: f.tenantID, ActorID: owner}
 	if err := f.roles.SetUserRoles(f.ctx, accesscontrol.SetUserRolesInput{
@@ -357,7 +330,7 @@ func TestRevocation_RemovedPermissionStopsReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	tok := f.mint(victim)
-	if code := f.call(tok, http.MethodGet, middleware.Require(permission.AssetsRead)); code != http.StatusOK {
+	if code := f.call(tok, http.MethodGet, middleware.Require(permission.AssetsWrite)); code != http.StatusOK {
 		t.Fatalf("before revocation: %d", code)
 	}
 	if err := f.roles.SetUserRoles(f.ctx, accesscontrol.SetUserRolesInput{
@@ -365,8 +338,8 @@ func TestRevocation_RemovedPermissionStopsReads(t *testing.T) {
 	}, owner, actx); err != nil {
 		t.Fatal(err)
 	}
-	if code := f.call(tok, http.MethodGet, middleware.Require(permission.AssetsRead)); code != http.StatusForbidden {
-		t.Fatalf("old token GET after assets:read was removed: %d, want 403", code)
+	if code := f.call(tok, http.MethodGet, middleware.Require(permission.AssetsWrite)); code != http.StatusForbidden {
+		t.Fatalf("old token GET after assets:write was removed: %d, want 403", code)
 	}
 	if code := f.call(tok, http.MethodGet, middleware.Require(permission.DashboardRead)); code != http.StatusOK {
 		t.Fatalf("old token GET on a still-granted permission: %d, want 200", code)
