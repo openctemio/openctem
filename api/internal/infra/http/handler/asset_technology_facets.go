@@ -3,10 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 )
 
@@ -31,7 +29,7 @@ type AssetTechnologyFacetsResponse struct {
 // @Produce      json
 // @Param        q         query  string  false  "Name contains (case-insensitive, at most 128 characters)"
 // @Param        category  query  string  false  "web_server, framework, language, js_library, cdn, hosting, waf, analytics, security_header or other"
-// @Param        limit     query  int     false  "At most this many (1-100, default 100)"
+// @Param        limit     query  int     false  "At most this many (positive, capped at 100, default 100)"
 // @Success      200  {object}  AssetTechnologyFacetsResponse
 // @Failure      400  {object}  apierror.Error
 // @Security     BearerAuth
@@ -39,14 +37,9 @@ type AssetTechnologyFacetsResponse struct {
 func (h *AssetHandler) ListTechnologyFacets(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
-	limit := assettech.MaxFacets
-	if v := query.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > assettech.MaxFacets {
-			apierror.BadRequest("limit must be between 1 and 100").WriteJSON(w)
-			return
-		}
-		limit = n
+	limit, ok := listLimit(w, r, assettech.MaxFacets, assettech.MaxFacets)
+	if !ok {
+		return
 	}
 	facets, err := h.service.TechnologyFacets(r.Context(), tenantID,
 		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()),
