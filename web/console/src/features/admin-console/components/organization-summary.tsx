@@ -8,8 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DetailField, DetailFieldGrid, RelativeTime } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { PLAN_KEY_LABEL, PLAN_LABEL, isPlanKey, isPlanName } from '@/features/plans/lib/plan-keys'
-import { useTenantPlan } from '../api/use-plans'
+import { useLimitKeyLabel } from '@/features/limits/components/limits-usage-table'
+import { useTenantLimits } from '../api/use-limits'
 import { useAdminAuditLogs } from '../api/use-admin-audit'
 import { AdminActivityTable } from './admin-activity-table'
 import { SSOPostureBadges } from './sso-posture-badges'
@@ -51,7 +51,7 @@ function SummaryCard({
 }
 
 /**
- * Organization 360, Overview tab: who owns it, its size, plan and usage, how
+ * Organization 360, Overview tab: who owns it, its size, limits and usage, how
  * people sign in, and the latest administrator actions on it. Each card leads
  * to the tab where the administrator acts. Nothing from inside the
  * organization (findings, assets) is shown: the console never reads it.
@@ -64,10 +64,13 @@ export function OrganizationSummary({
   onOpenTab: (tab: string) => void
 }) {
   const { t } = useTranslation()
-  const plan = useTenantPlan(org.id)
+  const keyLabel = useLimitKeyLabel()
+  const limits = useTenantLimits(org.id)
   const activity = useAdminAuditLogs({ page: 1, resourceId: org.id, perPage: 5 })
-  const planName = plan.data?.plan ?? org.plan
-  const overLimit = plan.data?.limits?.filter((l) => l.over_limit) ?? []
+  const overLimit = limits.data?.limits?.filter((l) => l.over_limit) ?? []
+  const limitCount =
+    (limits.data?.limits?.filter((l) => l.limit !== undefined && l.limit >= 0).length ?? 0) +
+    (limits.data?.denied_features?.length ?? 0)
 
   return (
     <div className="space-y-5">
@@ -110,20 +113,22 @@ export function OrganizationSummary({
 
         <SummaryCard
           icon={Gauge}
-          title={t('admin.org.summary.plan', 'Plan')}
+          title={t('admin.org.summary.limitsTitle', 'Limits')}
           action={{
             label: t('admin.org.summary.limits', 'Limits and usage'),
-            onClick: () => onOpenTab('plan'),
+            onClick: () => onOpenTab('limits'),
           }}
         >
-          {plan.isLoading ? (
+          {limits.isLoading ? (
             <Skeleton className="h-5 w-24" />
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">
-                {isPlanName(planName) ? PLAN_LABEL[planName] : planName}
+                {limits.data?.applies
+                  ? t('admin.org.summary.limitsSet', '{count} set', { count: limitCount })
+                  : t('admin.org.summary.noLimits', 'None')}
               </span>
-              {plan.data?.over_limit && (
+              {limits.data?.over_limit && (
                 <Badge variant="destructive">
                   {t('admin.org.summary.overLimit', 'Over limit')}
                 </Badge>
@@ -133,9 +138,7 @@ export function OrganizationSummary({
           {overLimit.length > 0 && (
             <p className="mt-1 text-muted-foreground">
               {t('admin.org.summary.atLimit', 'Over the limit: {keys}', {
-                keys: overLimit
-                  .map((l) => (l.key && isPlanKey(l.key) ? PLAN_KEY_LABEL[l.key] : l.key))
-                  .join(', '),
+                keys: overLimit.map((l) => keyLabel(l.key)).join(', '),
               })}
             </p>
           )}

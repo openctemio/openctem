@@ -206,7 +206,7 @@ No new route and no new permission.
 |---|---|
 | Tag selector | `tag:prod` in targets: assets carrying the label, same reader and gate |
 | Scope-entry selector | `scope:<entry id>`: a domain entry expands like its wildcard, a CIDR entry like inventory mode; follows the entry's edits |
-| Plan limit | `scan_targets_per_run` plan key (owner sets Free/Pro numbers); refusal before dispatch |
+| Limit | `scan_targets_per_run` limit key (unlimited by default, set per organization); refusal before dispatch |
 | Notification | `scan.targets_capped` event to the scan's owner when a selector or a stage hits its cap |
 | Resolving only | once DNS checks record and clear resolution state per name |
 | Inventory-mode CIDR above /16 | the validator's sweep cap does not bound an inventory read; lift it for inventory mode, bounded by the per-selector cap |
