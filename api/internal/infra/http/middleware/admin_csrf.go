@@ -32,7 +32,8 @@ func randomAdminCSRFKey() []byte {
 }
 
 // SetAdminCSRFSecret derives the console CSRF key from a server secret
-// shared by every replica (the session-signing secret). Without one, each
+// shared by every replica (the session-signing secret). Without one (outside
+// production, where config validation refuses to start), each
 // process keeps its own random key: tokens then verify only on the process
 // that issued them (single replica).
 func SetAdminCSRFSecret(secret string) {
@@ -63,4 +64,18 @@ func ValidAdminCSRF(sessionToken, header string) bool {
 		return false
 	}
 	return hmac.Equal([]byte(AdminCSRFToken(sessionToken)), []byte(header))
+}
+
+// AdminCSRFKeySnapshot and RestoreAdminCSRFKey let a test that changes the
+// process-wide key put it back.
+func AdminCSRFKeySnapshot() []byte {
+	adminCSRFMu.RLock()
+	defer adminCSRFMu.RUnlock()
+	return append([]byte(nil), adminCSRFKey...)
+}
+
+func RestoreAdminCSRFKey(k []byte) {
+	adminCSRFMu.Lock()
+	adminCSRFKey = append([]byte(nil), k...)
+	adminCSRFMu.Unlock()
 }

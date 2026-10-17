@@ -155,9 +155,7 @@ This installs (if missing) `pip` (Ubuntu/Debian), `pre-commit`, Go, `betterleaks
 
 | Command | Description |
 |---------|-------------|
-| `make assign-plan tenant=<uuid> plan=<plan>` | Assign a plan to an organization |
-| `make list-tenants` | List organizations with their plans |
-| `make list-plans` | List the available plans |
+| `make list-tenants` | List organizations |
 | `make release-branch VERSION=vX.Y.Z` | Build a release branch that merges cleanly into `main` (add `PUSH=--push`) |
 
 ## Tool Installation
