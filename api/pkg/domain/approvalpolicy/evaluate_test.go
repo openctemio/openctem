@@ -196,6 +196,30 @@ func TestEvaluate_ActorRequestHasNoRequester(t *testing.T) {
 	}
 }
 
+func TestEvaluate_ActorMadeNeedsOneMoreSignoff(t *testing.T) {
+	u := ids(4)
+	// A person's peer request needs one sign-off; the same request made by a
+	// ticket actor needs two, so the person who moved the ticket cannot
+	// complete it with one account.
+	byPerson := Evaluate(Policy{}, Request{Kind: KindAccepted, Facts: low, RequesterID: u[0], RequesterCanApprove: true, Approvers: pool(u)})
+	byActor := Evaluate(Policy{}, Request{Kind: KindAccepted, Facts: low, ActorMade: true, Approvers: pool(u)})
+	if byActor.Required != byPerson.Required+1 {
+		t.Fatalf("actor request needs %d, person request %d", byActor.Required, byPerson.Required)
+	}
+	done, err := byActor.Sign(u[1], nil)
+	if err != nil || done {
+		t.Fatalf("one sign-off must not complete an actor request: done=%v err=%v", done, err)
+	}
+	if done, err := byActor.Sign(u[2], []Signoff{{UserID: u[1]}}); err != nil || !done {
+		t.Fatalf("second sign-off completes: done=%v err=%v", done, err)
+	}
+	// Two approvers in the organization cannot satisfy a dual-tier actor request.
+	few := Evaluate(Policy{}, Request{Kind: KindAccepted, Facts: critical, ActorMade: true, Approvers: pool(u[:2])})
+	if few.Satisfiable() {
+		t.Fatalf("3 sign-offs cannot come from 2 approvers")
+	}
+}
+
 func TestSign_Dual(t *testing.T) {
 	u := ids(5) // u0 requester, u1 u2 security pool, u3 u4 others
 	r := Evaluate(Policy{}, Request{Kind: KindAccepted, Facts: critical, RequesterID: u[0], Approvers: pool(u, u[1], u[2]), SecurityPoolConfigured: true})

@@ -70,7 +70,7 @@ func TestVersionCheckRepository_DB(t *testing.T) {
 	}
 
 	feed := func(seq uint64) *releasefeed.Verified {
-		return &releasefeed.Verified{KeySetVersion: 2, Digest: strings.Repeat("a", 64), Feed: releasefeed.Feed{Kind: releasefeed.FeedKind, Sequence: seq, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+		return &releasefeed.Verified{KeyID: "SHA256:test", Digest: strings.Repeat("a", 64), Feed: releasefeed.Feed{Kind: releasefeed.FeedKind, Sequence: seq, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
 			Releases: []releasefeed.Release{{Version: "v1.2.3", PublishedAt: now}}, Advisories: []releasefeed.Advisory{}}}
 	}
 	if ok, err := repo.Apply(ctx, feed(100), "online", later); err != nil || !ok {
@@ -87,13 +87,8 @@ func TestVersionCheckRepository_DB(t *testing.T) {
 	if ok, err := repo.Apply(ctx, feed(100), "import", later); err != nil || !ok {
 		t.Fatalf("the identical feed again: %v %v", ok, err)
 	}
-	older := feed(101)
-	older.KeySetVersion = 1
-	if ok, _ := repo.Apply(ctx, older, "import", later); ok {
-		t.Fatal("a feed under an older key set was stored")
-	}
 	st, _ = repo.Get(ctx)
-	if st.AppliedSequence != 100 || st.KeySetVersion != 2 || st.Origin != "import" || st.FeedDigest != strings.Repeat("a", 64) || st.LastError != "" ||
+	if st.AppliedSequence != 100 || st.Origin != "import" || st.FeedDigest != strings.Repeat("a", 64) || st.LastError != "" ||
 		st.ConsecutiveFailures != 0 || st.Feed == nil || st.Feed.Releases[0].Version != "v1.2.3" {
 		t.Fatalf("stored: %+v", st)
 	}

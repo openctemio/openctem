@@ -54,18 +54,22 @@ export const sensorHttpService = base({
   subType: 'http',
   findingCount: 4,
   tags: ['prod', 'online-store'],
+  technologies: [
+    { name: 'Nginx', version: '1.25.3', category: 'web_server' },
+    { name: 'React', category: 'js_library' },
+    { name: 'jQuery', version: '3.3.1', category: 'js_library' },
+  ],
   metadata: {
     status_code: 200,
     title: 'Example Shop | Home',
     content_type: 'text/html; charset=utf-8',
-    technologies: ['Nginx:1.25.3', 'React', 'jQuery:3.3.1'],
     server: 'nginx/1.25.3',
     port: 443,
     protocol: 'https',
   },
 })
 
-/** Sensor httpx line where httpx fingerprinted nothing: `tech` omitted → null. */
+/** Sensor httpx line where httpx fingerprinted nothing: no technologies. */
 export const sensorHttpServiceNoTech = base({
   id: 'svc-http-2',
   name: 'http://legacy.example.com:8080',
@@ -75,7 +79,6 @@ export const sensorHttpServiceNoTech = base({
     status_code: 403,
     title: '',
     content_type: 'text/html',
-    technologies: null,
     port: 8080,
     protocol: 'http',
   },
@@ -86,6 +89,10 @@ export const sdkLiveHost = base({
   id: 'svc-http-3',
   name: 'www.example.net',
   type: 'service',
+  technologies: [
+    { name: 'Cloudflare', category: 'cdn' },
+    { name: 'HTTP/3', category: 'other' },
+  ],
   metadata: {
     status_code: 301,
     content_length: 162,
@@ -93,7 +100,6 @@ export const sdkLiveHost = base({
     server: 'cloudflare',
     content_type: 'text/html',
     response_time_ms: 87,
-    technologies: ['Cloudflare', 'HTTP/3'],
     cdn: 'cloudflare',
     tls_version: 'tls13',
     ip_addresses: ['203.0.113.24'],
