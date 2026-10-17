@@ -99,7 +99,7 @@ func (h *AdminVersionCheckHandler) Import(w http.ResponseWriter, r *http.Request
 
 func importMessage(code string) string {
 	switch code {
-	case versioncheck.ErrCodeNoRoot:
+	case versioncheck.ErrCodeNoKey:
 		return "This build pins no release feed key, so no feed can be verified"
 	case versioncheck.ErrCodeRollback:
 		return "The file is older than the release information already applied"
@@ -118,7 +118,7 @@ func (h *AdminVersionCheckHandler) audit(r *http.Request, actor *admin.AdminUser
 	details := map[string]any{}
 	if v != nil {
 		details["sequence"] = v.Feed.Sequence
-		details["keyset_version"] = v.KeySetVersion
+		details["key_id"] = v.KeyID
 	}
 	entry := admin.NewAuditLogBuilder(actor, "version_check.feed_imported").
 		Resource("version_check", nil, "release_feed").
