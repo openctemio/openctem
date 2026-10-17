@@ -44,7 +44,11 @@ type GroupService struct {
 	// bindings and roles enable team role bindings (group_role.go).
 	bindings groupdom.RoleBindingRepository
 	roles    *RoleService
-	logger   *logger.Logger
+	// poolLookup and poolStepUp guard edits of the security pool group
+	// (group_security_pool.go).
+	poolLookup SecurityPoolLookup
+	poolStepUp shared.RecentAuthGate
+	logger     *logger.Logger
 }
 
 // NewGroupService creates a new GroupService.
@@ -332,6 +336,9 @@ func (s *GroupService) DeleteGroup(ctx context.Context, groupID string, actx aud
 		return err
 	}
 
+	if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
+		return err
+	}
 	tenantID := g.TenantID().String()
 	groupName := g.Name()
 
@@ -564,6 +571,11 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	if err := s.checkMembershipDelegation(ctx, g, input.UserID, actx.ActorID); err != nil {
 		return nil, err
 	}
+	if !input.creator {
+		if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
+			return nil, err
+		}
+	}
 	// The team's roles go with the membership (decisions G1-G12 R3-R5). The
 	// creator joining their new team carries no roles yet.
 	carriesRoles := false
@@ -729,6 +741,9 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 	// Get group (tenant-scoped) for audit context
 	g, err := s.groupForTenant(ctx, gid, actx.TenantID)
 	if err != nil {
+		return err
+	}
+	if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
 		return err
 	}
 	// Leaving a group oneself only narrows one's own scope; removing someone
