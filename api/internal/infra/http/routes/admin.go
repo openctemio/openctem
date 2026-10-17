@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"net/http"
+
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -114,9 +116,10 @@ func registerAdminRoutes(
 	// The console network check first, on every console route (the
 	// server-wide gate already ran on the raw path; this one sees what was
 	// routed here).
-	var netGate []Middleware
+	// Every console response is no-store (sessions, CSRF tokens, admin data).
+	netGate := []Middleware{consoleNoStore}
 	if h.AdminNetwork != nil {
-		netGate = []Middleware{h.AdminNetwork}
+		netGate = append(netGate, h.AdminNetwork)
 	}
 
 	// Base chain: the network check, then a verified console session (any role).
@@ -749,4 +752,14 @@ func preSession(crossSite Middleware, mws ...Middleware) []Middleware {
 		return mws
 	}
 	return append([]Middleware{crossSite}, mws...)
+}
+
+// consoleNoStore marks every console response no-store: the sign-in and
+// validate responses carry the session's CSRF token, and every other one
+// carries administrators' data. No shared or browser cache may keep them.
+func consoleNoStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }

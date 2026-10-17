@@ -339,8 +339,8 @@ func (c *consoleAdmin) do(method, path string, body any, csrf bool) (int, string
 	if csrf && method != http.MethodGet {
 		u, _ := url.Parse(c.h.srv.URL + "/api/v1/admin/")
 		for _, ck := range c.jar.Cookies(u) {
-			if ck.Name == middleware.AdminCSRFCookie {
-				req.Header.Set(middleware.CSRFHeaderName, ck.Value)
+			if ck.Name == middleware.AdminSessionCookie {
+				req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken(ck.Value))
 			}
 		}
 	}
