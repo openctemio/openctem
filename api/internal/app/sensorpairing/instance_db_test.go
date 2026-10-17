@@ -205,13 +205,19 @@ func TestInstanceEnrollment_RefusedUniformly_DB(t *testing.T) {
 	sink := &auditSink{}
 	expiring := f.issue(sink, 5*time.Minute)
 
+	// Change the last character to a different one: replacing it with a fixed
+	// letter left the token unchanged whenever it already ended in that letter.
+	last := "x"
+	if strings.HasSuffix(expiring, last) {
+		last = "y"
+	}
 	unknown, _ := sensorkey.New(sensorkey.PrefixEnrollmentToken)
 	sensorKey, _ := sensorkey.New(sensorkey.PrefixSensorKey)
 	for name, tok := range map[string]string{
 		"unknown":    unknown,
 		"malformed":  "octe_short",
 		"sensor key": sensorKey,
-		"tampered":   expiring[:len(expiring)-1] + "x",
+		"tampered":   expiring[:len(expiring)-1] + last,
 	} {
 		if err := f.startWithToken(newSensor(3), tok); !errors.Is(err, sensorpairing.ErrEnrollmentRefused) {
 			t.Fatalf("%s token: %v", name, err)
