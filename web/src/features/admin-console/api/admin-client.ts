@@ -1,13 +1,36 @@
 /**
  * Fetch client for the platform admin console. Requests go to the dedicated
  * /api/v1/admin proxy, which forwards only the admin_* cookies. Writes carry
- * the double-submit CSRF header from the readable admin_csrf_ui cookie (distinct
- * from the tenant csrf_token, so both shells can be open in one browser).
+ * the double-submit CSRF header: the console session's token, which the API
+ * returns in the body of the sign-in and validate responses and this module
+ * keeps in memory only (no console secret is ever readable in a cookie: on a
+ * second port of the tenant host the two sites share the host's cookies).
+ * Before a session exists, the sign-in steps echo the page's csrf_token.
  */
 
 export const ADMIN_API = '/api/v1/admin'
-/** The readable copy of the console's CSRF token, scoped to /admin pages. */
-const ADMIN_CSRF_COOKIE = 'admin_csrf_ui'
+/** The page CSRF cookie, echoed only by the sign-in steps before a session exists. */
+const PAGE_CSRF_COOKIE = 'csrf_token'
+
+/** The console session's CSRF token, in memory only. */
+let sessionCsrf: string | null = null
+
+/** Replaces (or, with null, forgets) the console session's CSRF token. */
+export function setAdminCsrfToken(token: string | null) {
+  sessionCsrf = token
+}
+
+/** A csrf_token in a response: top level (validate, TOTP step) or under `admin` (IdP callback). */
+function csrfFrom(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined
+  const top = (data as { csrf_token?: unknown }).csrf_token
+  if (typeof top === 'string' && top) return top
+  const nested = (data as { admin?: { csrf_token?: unknown } }).admin?.csrf_token
+  return typeof nested === 'string' && nested ? nested : undefined
+}
+
+/** Responses that end the console session: the token goes with it. */
+const SESSION_ENDING = new Set(['/auth/logout', '/auth/password'])
 
 /**
  * Protected console actions (identity, privilege and platform-trust changes)
@@ -113,7 +136,7 @@ async function adminRequest<T>(
   const isForm = typeof FormData !== 'undefined' && init.body instanceof FormData
   if (init.body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
   if (method !== 'GET' && method !== 'HEAD') {
-    const csrf = readCookie(ADMIN_CSRF_COOKIE)
+    const csrf = sessionCsrf ?? readCookie(PAGE_CSRF_COOKIE)
     if (csrf) headers['X-CSRF-Token'] = csrf
     if (stepUpCode) headers[ADMIN_STEP_UP_HEADER] = stepUpCode
   }
@@ -131,6 +154,8 @@ async function adminRequest<T>(
     cache: 'no-store',
   })
 
+  if (SESSION_ENDING.has(path) && res.ok) sessionCsrf = null
+  if (res.status === 401 && path === '/auth/validate') sessionCsrf = null
   if (res.status === 204) return undefined as T
   const text = await res.text()
   let data: unknown = undefined
@@ -155,6 +180,8 @@ async function adminRequest<T>(
       body.details
     )
   }
+  const token = csrfFrom(data)
+  if (token) sessionCsrf = token
   return data as T
 }
 
