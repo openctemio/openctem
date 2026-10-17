@@ -38,7 +38,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Pentest (granular) | 12 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write`, `pentest:checklists:manage` (RFC-087) |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
 | Reports | 2 | `reports:read/write` |
-| Content catalog | 2 | `content:read`, `content:install` (RFC-099) |
+| Content catalog | 3 | `content:read`, `content:install`, `content:publish` (RFC-099) |
 | Threat Intel | 2 | `threat_intel:read/write` |
 | AI Triage | 2 | `ai_triage:read/trigger` |
 | CTEM (RFC-004/005) | 12 | `ctem_cycles:*`, `attacker_profiles:*`, `business_services:*`, `compensating_controls:*`, `priority_rules:*`, `verification_checklists:*` |
@@ -372,9 +372,10 @@ create's target validator, exclusions, zone routing) in one call.
 | `POST /installs` · `POST /installs/{ns}/{name}/update` · `/rollback` · `DELETE /installs/{ns}/{name}` · `POST /requests/{id}/approve` · `/reject` | `content:install` + a recent sign-in; nobody approves their own request |
 | `PUT /installs/{ns}/{name}/pin` · `POST /requests/{id}/cancel` (requester only) | `content:install` |
 | `PUT /settings` (approval option) | `settings:write` + a recent sign-in |
+| `POST /private-packages` · `POST /private-packages/{ns}/{name}/{version}/revoke` | `content:publish` + a recent sign-in |
 
-Another organization's installation or request answers 404. Owners and administrators hold both content
-permissions; members and viewers hold `content:read` (migration `002571`). `/api/v1/admin/content-catalog`: any
+Another organization's installation or request answers 404. Owners and administrators hold all three content
+permissions; members and viewers hold `content:read` (migrations `002571`, `002886`). `/api/v1/admin/content-catalog`: any
 platform administrator reads the trust status; `POST /import` needs a super admin, a reason and a fresh console
 authenticator code, and is audited.
 
@@ -807,7 +808,8 @@ authenticate **only** with a **console session** (RFC-022: `/login` password
 sign-in + mandatory TOTP, server-side session in the `admin_session` cookie,
 scoped to `/api/v1/admin`; cookie-authenticated writes must pass the
 `admin_csrf` double-submit check: `admin_csrf` is HttpOnly on `/api/v1/admin`,
-the console pages echo its copy `admin_csrf_ui`, scoped to `/admin`). There are **no admin API keys**: an
+and the console echoes the token it received in the sign-in and validate
+responses and keeps in memory). There are **no admin API keys**: an
 `X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
 so every admin action has passed TOTP. The session resolves to an
 `admin_users` row with a platform role: `super_admin` > `ops_admin` >
@@ -842,11 +844,22 @@ threat-intel sync, AI-client blocks and target mappings. Where a row below
 says "a fresh authenticator code", that is this step-up (a body `totp_code`
 is still accepted and checked the same way).
 
+**Network.** Every `/api/v1/admin` route, the sign-in steps included, answers
+only to `ADMIN_ALLOWED_CIDRS` (default private networks; 403
+`ADMIN_NETWORK_NOT_ALLOWED` otherwise; `middleware.AdminNetworkGate` around the
+whole server).
+
+**Personal data.** A `readonly` administrator sees counts, not people:
+`GET /api/v1/admin/tenants/{tenantId}/users` returns `by_role` counts with an
+empty `data` and `redacted: true`, organizations carry `owner_count` with an
+empty `owner_emails`. Every member-list view is audited
+(`organization.users_view`).
+
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
-| `GET /api/v1/admin/platform-users?q=` | any admin (3+ characters; account-level facts only) |
-| `GET /api/v1/admin/platform-users/{user_id}` | any admin (audited `platform_user.view`) |
+| `GET /api/v1/admin/platform-users?q=` | **ops_admin+** (3+ characters; account-level facts only; people's emails are not for read-only) |
+| `GET /api/v1/admin/platform-users/{user_id}` | **ops_admin+** (audited `platform_user.view`) |
 | `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
 | `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
@@ -927,6 +940,38 @@ password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 
+#### Console security keys and recovery codes (RFC-078)
+
+- **Relying party = the console origin** (`ADMIN_PUBLIC_URL`, default the
+  origin of `APP_URL`). The RP ID is its host and it is the only accepted
+  origin, so an assertion made on the tenant site or a look-alike domain is
+  refused. Off (endpoints answer 403 `WEBAUTHN_UNAVAILABLE`) when no origin is
+  configured.
+- **Second factor.** The sign-in response lists `methods` (`webauthn`, `totp`,
+  `recovery_code`, in that order). `POST /auth/webauthn/session/options` +
+  `POST /auth/webauthn/session` and `POST /auth/recovery` complete a pending
+  session (admin_mfa cookie) like `/auth/mfa`, with the same login rate limit
+  and lockout counting. User verification is required; attestation is not
+  requested; a counter that goes back refuses the assertion and is audited.
+- **Step-up.** `POST /auth/step-up/webauthn/options` + `POST /auth/step-up/webauthn`
+  open the session's five-minute step-up window; the protected action is then
+  retried without a code (route-level and handler-level step-ups both honour
+  the window).
+- **Own factors only.** `GET /auth/factors`; register (`POST
+  /auth/webauthn/credentials/options` takes the route-level step-up, the finish
+  call completes that single-use ceremony), rename, remove (step-up) and new
+  recovery codes (step-up). Every query is keyed on the caller's administrator
+  id. A super admin's reset-credentials removes keys and codes too.
+- **Policy "require security keys"** (`/admin/settings/console-mfa`, super
+  admin + step-up). Turning it on needs a configured relying party and an
+  actor with at least two keys and unused recovery codes. Under the policy an
+  administrator holding a key cannot use TOTP (sign-in or step-up: 403
+  `WEBAUTHN_REQUIRED`), a trusted platform-IdP MFA no longer skips the
+  console factor, the last two keys cannot be removed, and a session of an
+  administrator with fewer than two keys or no recovery codes reaches only the
+  enrollment routes (403 `FACTOR_ENROLLMENT_REQUIRED`). Break-glass
+  administrators keep TOTP.
+
 #### Support access (RFC-063)
 
 A platform administrator never holds standing access to an organization's
@@ -999,7 +1044,7 @@ and certificates are never logged — an IdP update records
 |----------|---------------|
 | `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filters `owner=none\|present`, `plan=free\|pro\|enterprise`; other values 400) |
 | `POST /api/v1/admin/tenants` | **ops_admin+** + **step-up** (audited; creates the owner's account when `owner_email` has none) |
-| `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
+| `GET /api/v1/admin/tenants/{tenantId}/users` | any admin; audited `organization.users_view`; `readonly` gets counts by role only (`redacted: true`) |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** + **step-up**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) (the route's step-up confirms it), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
 | `PUT/POST/PATCH/DELETE` on those SSO resources, and `PUT .../sso/enforcement` | **super_admin** + **step-up** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |

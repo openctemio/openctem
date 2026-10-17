@@ -182,6 +182,18 @@ func (f *fakeConsole) MarkSessionStepUp(_ context.Context, id shared.ID, at time
 	return admin.ErrSessionNotFound
 }
 
+func (f *fakeConsole) ConsumeSessionStepUp(_ context.Context, id shared.ID, notBefore time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, s := range f.sessions {
+		if s.ID == id && s.MFAVerified && s.StepUpAt != nil && !s.StepUpAt.Before(notBefore) {
+			s.StepUpAt = nil
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (f *fakeConsole) TouchSession(_ context.Context, id shared.ID, at time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -564,9 +576,14 @@ func TestIdleSessionExpires(t *testing.T) {
 	ctx := context.Background()
 	_, token := h.enroll(t)
 
-	h.clock = h.clock.Add(20 * time.Minute)
+	h.clock = h.clock.Add(admin.SessionIdleTimeout - time.Minute)
 	if _, err := h.svc.Authenticate(ctx, token); err != nil {
 		t.Fatalf("active use within idle window: %v", err)
+	}
+	// Use keeps it alive past one idle window in total.
+	h.clock = h.clock.Add(admin.SessionIdleTimeout - time.Minute)
+	if _, err := h.svc.Authenticate(ctx, token); err != nil {
+		t.Fatalf("second use within idle window: %v", err)
 	}
 	h.clock = h.clock.Add(admin.SessionIdleTimeout + time.Second)
 	if _, err := h.svc.Authenticate(ctx, token); err == nil {

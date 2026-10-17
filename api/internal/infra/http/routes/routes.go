@@ -285,11 +285,17 @@ type Handlers struct {
 	// AdminScanPolicy: the platform policy for scan approval
 	// (RFC-073), platform default and per organization.
 	AdminScanPolicy *handler.AdminScanPolicyHandler
+	// AdminSharedSensor: shared sensor enrollment tokens (RFC-100).
+	AdminSharedSensor *handler.AdminSharedSensorHandler
 	// ScanGovernance: the organization's scan approval settings (RFC-073).
 	ScanGovernance *handler.ScanGovernanceHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
+	// AdminNetwork refuses console requests from outside ADMIN_ALLOWED_CIDRS
+	// inside the console's routes (behind the server-wide gate). Nil: no
+	// route-level check (route-shape tests).
+	AdminNetwork Middleware
 	// AdminStepUp confirms protected console actions (route-level step-up).
 	// Nil refuses every protected route.
 	AdminStepUp middleware.AdminStepUpConfirmer
@@ -1105,7 +1111,13 @@ func Register(
 	// ==========================================================================
 	// These routes are for OpenCTEM platform administrators only.
 	// They manage shared infrastructure that serves all tenants.
-	registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
+	if h.AdminNetwork == nil {
+		h.AdminNetwork = middleware.RequireAdminNetwork(cfg.AdminPlane.AllowedPrefixes(), log)
+	}
+	// A tenant-plane process (OPENCTEM_PLANE=tenant) has no console routes.
+	if cfg.AdminPlane.ServesConsole() {
+		registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
+	}
 
 	// ==========================================================================
 	// WebSocket Routes (protected with auth)

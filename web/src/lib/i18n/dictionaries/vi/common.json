@@ -87,5 +87,6 @@
   "common.cvss.value.CIA.N": "Không",
   "common.failedToLoad": "Không tải được {title}",
   "common.unexpectedError": "Đã xảy ra lỗi không mong muốn",
-  "common.moreTabs": "Thêm"
+  "common.moreTabs": "Thêm",
+  "common.openFullPage": "Mở trang đầy đủ"
 }

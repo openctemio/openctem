@@ -24,6 +24,9 @@ var (
 	ErrRequestDecided   = fmt.Errorf("%w: the request is no longer pending", shared.ErrConflict)
 	ErrVersionConflict  = fmt.Errorf("%w: this id and version exist with other contents", shared.ErrConflict)
 	ErrStaleImport      = fmt.Errorf("%w: a newer catalog state was applied meanwhile", shared.ErrConflict)
+	ErrIDTaken          = fmt.Errorf("%w: this package id belongs to another publisher on this instance", shared.ErrConflict)
+	ErrAlreadyRevoked   = fmt.Errorf("%w: the version is already revoked", shared.ErrConflict)
+	ErrNamespaceTaken   = fmt.Errorf("%w: this namespace is an organization's; pick another for instance packages", shared.ErrConflict)
 )
 
 // Package is one package version the instance holds.
@@ -53,8 +56,12 @@ type Package struct {
 	RevokedAt          *time.Time
 	RevokeReason       string
 	RevokeSeverity     string
-	CreatedBy          *shared.ID
-	CreatedAt          time.Time
+	// ContentPackID and PlatformPackID are the pack a private package's
+	// artifact became (organization and instance packages).
+	ContentPackID  *shared.ID
+	PlatformPackID *shared.ID
+	CreatedBy      *shared.ID
+	CreatedAt      time.Time
 }
 
 // Revoked reports whether the version is revoked.
@@ -242,6 +249,15 @@ type Repository interface {
 	// DecideRequest moves a pending request to status (or an approved one
 	// to failed, by its approver); ErrRequestDecided otherwise.
 	DecideRequest(ctx context.Context, tenantID, id shared.ID, status RequestStatus, decidedBy *shared.ID, reason string, at time.Time) error
+
+	// CreatePrivate stores an organization (TenantID set) or instance
+	// (origin instance) package version. ErrIDTaken when the id is used by
+	// a package of another origin visible to the same scope;
+	// ErrVersionConflict when the version exists.
+	CreatePrivate(ctx context.Context, p *Package) error
+	// RevokePrivate revokes a private version and the installations of it.
+	// tenantID nil: an instance package.
+	RevokePrivate(ctx context.Context, tenantID *shared.ID, packageID, version, reason string, at time.Time) (*Package, error)
 
 	// InTx runs fn with a repository whose statements share one
 	// transaction (committed when fn returns nil).

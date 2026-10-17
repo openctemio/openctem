@@ -21,6 +21,17 @@ export interface TransitionDecision {
   mode?: 'direct' | 'request' | 'duplicate_picker'
   requires?: string[]
   blocked?: TransitionBlock[]
+  /** The organization sub-status the move lands on; absent: the target's default label. */
+  to_sub_status_id?: string
+  /** The organization's listed move that matched, and its name. */
+  transition?: string
+  name?: string
+  /** The shortest note the move accepts (0 or absent: the platform rule). */
+  note_min_len?: number
+  /** Inputs the move requires (ticket_link, fix_reference, ...). */
+  fields?: string[]
+  /** The closure reason a closed sub-status binds; the move sets it. */
+  closure_reason?: string
 }
 
 export interface FindingTransitions {
@@ -51,11 +62,12 @@ export function useFindingTransitions(findingId: string | null, config?: SWRConf
 /** Dry run: whether each finding may move to `to`, and why not. */
 export async function evaluateFindingTransitions(
   findingIds: string[],
-  to: string
+  to: string,
+  subStatusId?: string
 ): Promise<EvaluatedTransition[]> {
   const res = await post<{ to: string; results: EvaluatedTransition[] }>(
     '/api/v1/findings/transitions/preview',
-    { finding_ids: findingIds, to }
+    { finding_ids: findingIds, to, ...(subStatusId ? { sub_status_id: subStatusId } : {}) }
   )
   return res?.results ?? []
 }

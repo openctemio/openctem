@@ -201,3 +201,19 @@ func nullableString(s string) *string {
 	}
 	return &s
 }
+
+// maxSliceCapHint bounds the capacity hint for a result slice. A page size
+// comes from a request, so it must never size an allocation unchecked.
+const maxSliceCapHint = 1000
+
+// capHint returns n bounded to [0, maxSliceCapHint] for use as the capacity of
+// a slice that is filled from a result set (the slice still grows past it).
+func capHint(n int) int {
+	if n < 0 {
+		return 0
+	}
+	if n > maxSliceCapHint {
+		return maxSliceCapHint
+	}
+	return n
+}

@@ -22,6 +22,8 @@ export interface AdminIdentity {
   max_role?: AdminRole
   /** When the session's elevation ends (absent: not elevated). */
   elevated_until?: string
+  /** The session's CSRF token (sign-in and validate only); kept in memory by admin-client. */
+  csrf_token?: string
 }
 
 export type AdminLoginStatus = 'mfa_required' | 'mfa_enrollment_required'
@@ -90,7 +92,9 @@ export interface AdminOrganization {
   description?: string
   created_at: string
   active_members: number
+  /** Empty for a read-only administrator (personal data); see owner_count. */
   owner_emails: string[]
+  owner_count: number
   saml_enabled: boolean
   active_identity_providers: number
   verified_domains: number
@@ -140,7 +144,10 @@ export interface AdminOrganizationUser {
 }
 
 export interface AdminOrganizationUserList {
+  /** Empty when redacted: a read-only administrator sees counts only. */
   data: AdminOrganizationUser[]
+  by_role: Record<string, number>
+  redacted?: boolean
   total: number
 }
 

@@ -779,18 +779,17 @@ Approval of an elevation by another super admin is a later step.
 
 - The admin session cookie is scoped to `/api/v1/admin`, so it is never sent to
   tenant routes, and the tenant JWT never authenticates admin routes.
-- The CSRF token is HttpOnly on `/api/v1/admin` as well (`admin_csrf`); the
-  console's pages read a copy scoped to `/admin` (`admin_csrf_ui`) to echo it
-  in the `X-CSRF-Token` header, and the older readable copy at `/` is cleared
-  on every sign-in. A script on a tenant page no longer finds the token in
-  `document.cookie`. **Residual risk until the console has its own origin:**
-  paths are not a security boundary inside one origin. A script running on the
-  tenant origin (an XSS past the nonce CSP, or a compromised dependency of the
-  shared bundle) can still send console reads with the session cookie, and can
-  open a console page in a same-origin frame to read the token and send
-  writes, while an administrator has a live console session in that browser
-  (30 minutes idle). Protected writes still need a fresh authenticator code.
-  The admin listener and the console's own origin remove this.
+- The CSRF token is HttpOnly on `/api/v1/admin` as well (`admin_csrf`). The
+  console gets the same token in the body of the responses that open a
+  session (the TOTP step, the identity-provider callback) and of
+  `GET /admin/auth/validate`, keeps it in memory and echoes it in the
+  `X-CSRF-Token` header; no console secret is ever readable in a cookie
+  (revision 21: on a second port of the tenant host both sites share the
+  host's cookies, but a tenant page cannot read the console's responses).
+  Before a session exists, the sign-in steps echo the page's `csrf_token`.
+  The older readable copies (`admin_csrf` at `/`) are cleared on every
+  sign-in. A console session ends after 15 minutes without use (8 hours at
+  most).
 - Server-side sessions: deactivating an admin or resetting credentials deletes
   all of that admin's sessions immediately.
 - All console outcomes (including refused SSO attempts) and credential changes
@@ -831,3 +830,49 @@ Approval of an elevation by another super admin is a later step.
 - An administrator cannot deactivate, demote or delete themselves, so the
   super admin making a change always remains: the platform is never left
   without an active super admin.
+- The console answers only to the client networks in `ADMIN_ALLOWED_CIDRS`
+  (default: loopback, RFC 1918 and IPv6 unique local addresses); any other
+  network gets 403 `ADMIN_NETWORK_NOT_ALLOWED` on every `/api/v1/admin` route,
+  the sign-in steps included. The client address is the TCP peer, or
+  `X-Forwarded-For` from `SERVER_TRUSTED_PROXIES` only. An internet-facing
+  console is an explicit choice (`0.0.0.0/0,::/0`, logged as a warning at
+  start).
+- With `ADMIN_LISTEN_ADDR` set (a loopback or private IP, e.g.
+  `10.0.0.5:8081`; anything else needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`,
+  for a container network with no published port) the console API has its own
+  listener: `/api/v1/admin` is served only there and the main listener
+  answers 404 for it; the admin listener answers 404 for every other route
+  but `/health`. Both share the router and its global middleware, so the
+  console's guards are unchanged; the listener decides where it can be
+  reached (the gateway's admin site, or nowhere outside the host). Any later
+  internal-only surface (the control-plane API) gets its own listener the
+  same way. The split reads the path the way the router does (repeated slashes,
+  `.` and `..` segments, a trailing slash, percent-encoded separators), so
+  `/api/v1//admin/...` is the console on the public listener (404) and
+  `/api/v1/admin/../findings` is not the console on the admin listener (404).
+  The listener speaks plain HTTP on the private network between the web
+  console and the API (the gateway's console site terminates TLS for the
+  browser); where that network is not trusted, TLS goes in front of it.
+- The console has its own origin. The gateway's console site
+  (`OPENCTEM_ADMIN_SITE=port`: `https://<host>:8444`, or `host`: its own DNS
+  name) answers only `OPENCTEM_ADMIN_ALLOWED_CIDRS` (private networks by
+  default) and marks what it forwards `X-OpenCTEM-Plane: admin` (the main site
+  strips that header from clients). With `OPENCTEM_ADMIN_PLANE=separate` the web
+  console serves only the console there (pages, its API proxy to the API's
+  console listener via `ADMIN_API_URL`) and 404 for everything else, and 404
+  for the console on the main site, as the gateway does too. With its own host
+  name the browser isolates the console from the main site completely
+  (cookies, scripts, storage); on a second port of the same host name cookies
+  are still shared by host, so the host-name mode is the recommended one and
+  the port mode is the default only because it needs no DNS. This closes the
+  residual risk of the path-scoped cookies (a script on the main site reaching
+  the console).
+- A verified console sign-in from another address than the administrator's
+  last one is audited (`console.new_network_sign_in`, high) and emailed to
+  every administrator (the system SMTP sender; a WARN line with
+  `alert=new_network_sign_in` otherwise).
+- A read-only administrator sees counts, not people: an organization's member
+  list returns counts by role only (`redacted: true`), organizations show the
+  owner count without owner emails, and the account search
+  (`/platform-users`) is ops_admin+. Every member-list view is audited
+  (`organization.users_view`).

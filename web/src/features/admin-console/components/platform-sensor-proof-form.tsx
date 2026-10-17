@@ -9,12 +9,18 @@
  * list, scan zones and tier ceilings stay either way. A change needs a super
  * admin, a reason and a fresh authenticator code; it is audited and the other
  * administrators are emailed.
+ *
+ * The same card serves another on/off platform scanning setting through
+ * `prefix` (its i18n keys): "Shared sensors may scan internal zones"
+ * (RFC-100 §6.1). `defaultValue` with `stored` false says which deployment
+ * default applies until a value is saved (MANAGED_SERVICE, RFC-100 §6).
  */
 
 import { useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -28,14 +34,27 @@ export interface PlatformSensorProofFormProps {
   required: boolean
   canEdit: boolean
   onSave: (required: boolean, reason: string, code: string) => Promise<void>
+  /** i18n key prefix of the card's texts (default `admin.proof`). */
+  prefix?: string
+  /** False while nothing is stored: the deployment default applies. */
+  stored?: boolean
+  /** The deployment default (shown while nothing is stored). */
+  defaultValue?: boolean
+  /** False when the setting is stored but has no effect yet. */
+  enforced?: boolean
 }
 
 export function PlatformSensorProofForm({
   required,
   canEdit,
   onSave,
+  prefix = 'admin.proof',
+  stored = true,
+  defaultValue,
+  enforced = true,
 }: PlatformSensorProofFormProps) {
   const { t } = useTranslation()
+  const k = (name: string) => `${prefix}.${name}`
   const id = useId()
   const [value, setValue] = useState(required)
   const [reason, setReason] = useState('')
@@ -55,7 +74,7 @@ export function PlatformSensorProofForm({
       setOpen(false)
       setReason('')
       setCode('')
-      toast.success(t('admin.proof.saved'))
+      toast.success(t(k('saved')))
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
         setCodeError(e.message)
@@ -63,7 +82,7 @@ export function PlatformSensorProofForm({
         return
       }
       setOpen(false)
-      toast.error(e instanceof Error ? e.message : t('admin.proof.saveFailed'))
+      toast.error(e instanceof Error ? e.message : t(k('saveFailed')))
     } finally {
       setBusy(false)
     }
@@ -73,15 +92,18 @@ export function PlatformSensorProofForm({
     <>
       <Card>
         <CardHeader>
-          <CardTitle>{t('admin.proof.title')}</CardTitle>
-          <CardDescription>{t('admin.proof.desc')}</CardDescription>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            {t(k('title'))}
+            {!enforced && <Badge variant="outline">{t('admin.platformDefault.notEnforced')}</Badge>}
+          </CardTitle>
+          <CardDescription>{t(k('desc'))}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="flex items-start justify-between gap-4">
             <Label htmlFor={`${id}-switch`} className="grid min-w-0 gap-1 font-normal">
-              <span className="font-medium">{t('admin.proof.label')}</span>
+              <span className="font-medium">{t(k('label'))}</span>
               <span className="text-sm text-muted-foreground">
-                {value ? t('admin.proof.onHint') : t('admin.proof.offHint')}
+                {value ? t(k('onHint')) : t(k('offHint'))}
               </span>
             </Label>
             <Switch
@@ -91,8 +113,20 @@ export function PlatformSensorProofForm({
               disabled={!canEdit || busy}
             />
           </div>
-          <p className="text-sm text-muted-foreground">{t('admin.proof.recommend')}</p>
-          <p className="text-sm text-muted-foreground">{t('admin.proof.alwaysOn')}</p>
+          {!enforced && (
+            <p className="text-sm text-muted-foreground">
+              {t('admin.platformDefault.notEnforcedHint')}
+            </p>
+          )}
+          {!stored && defaultValue !== undefined && (
+            <p className="text-sm text-muted-foreground">
+              {defaultValue
+                ? t('admin.platformDefault.unsetOn')
+                : t('admin.platformDefault.unsetOff')}
+            </p>
+          )}
+          <p className="text-sm text-muted-foreground">{t(k('recommend'))}</p>
+          <p className="text-sm text-muted-foreground">{t(k('alwaysOn'))}</p>
           {canEdit ? (
             <div className="flex justify-end">
               <Button onClick={() => setOpen(true)} disabled={!dirty || busy}>
@@ -110,8 +144,8 @@ export function PlatformSensorProofForm({
         onOpenChange={(o) => {
           if (!busy) setOpen(o)
         }}
-        title={value ? t('admin.proof.confirmOnTitle') : t('admin.proof.confirmOffTitle')}
-        desc={<p>{value ? t('admin.proof.confirmOnDesc') : t('admin.proof.confirmOffDesc')}</p>}
+        title={value ? t(k('confirmOnTitle')) : t(k('confirmOffTitle'))}
+        desc={<p>{value ? t(k('confirmOnDesc')) : t(k('confirmOffDesc'))}</p>}
         disabled={code.trim().length < 6 || !reason.trim()}
         isLoading={busy}
         handleConfirm={() => void save()}
