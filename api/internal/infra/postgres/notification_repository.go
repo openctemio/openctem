@@ -105,7 +105,7 @@ func (r *NotificationRepository) List(
 	defer rows.Close()
 
 	var total int
-	items := make([]*notification.Notification, 0, page.PerPage)
+	items := make([]*notification.Notification, 0, capHint(page.PerPage))
 	for rows.Next() {
 		n, totalCount, err := r.scanNotificationWithTotal(rows)
 		if err != nil {

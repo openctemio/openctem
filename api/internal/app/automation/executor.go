@@ -384,7 +384,7 @@ func (e *WorkflowExecutor) executeDownstream(ctx context.Context, execCtx *Execu
 				if errors.Is(err, errRunCanceled) {
 					return err
 				}
-				e.logger.Error("node execution failed", "node_key", node.NodeKey, "error", err)
+				e.logger.Error("node execution failed", "node_key", logger.SanitizeValue(node.NodeKey), "error", logger.SanitizeError(err))
 				// Continue with other nodes - don't fail the entire workflow for one node
 				// The node is already marked as failed
 			}

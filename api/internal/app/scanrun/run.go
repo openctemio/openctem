@@ -346,7 +346,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			s.settleNoInputs(ctx, stepRun, step.StepKey, noInputs)
 			settledInline = true
 		default:
-			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
+			s.logger.Error("failed to queue step", "step_key", logger.SanitizeValue(step.StepKey), "error", logger.SanitizeError(err))
 			s.failQueuedStep(ctx, stepRun, step.StepKey, err)
 			settledInline = true
 		}
@@ -439,7 +439,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		stepTargets = st
 		if st != nil && st.Refused > 0 {
 			s.logger.Info("step targets the tool cannot scan were left out",
-				"run_id", run.ID.String(), "step_key", step.StepKey, "refused", st.Refused, "reason", st.Reason)
+				"run_id", run.ID.String(), "step_key", logger.SanitizeValue(step.StepKey), "refused", st.Refused, "reason", logger.SanitizeValue(st.Reason))
 		}
 	}
 
@@ -456,7 +456,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	stepTargets = kindGated
 	if stepTargets != nil && stepTargets.Refused > 0 {
 		s.logger.Info("step targets of a kind the stage does not take were left out",
-			"run_id", run.ID.String(), "step_key", step.StepKey, "refused", stepTargets.Refused, "reason", stepTargets.Reason)
+			"run_id", run.ID.String(), "step_key", logger.SanitizeValue(step.StepKey), "refused", stepTargets.Refused, "reason", logger.SanitizeValue(stepTargets.Reason))
 	}
 
 	// Subdomain discovery enumerates from the apex of a wildcard selector,
@@ -1034,7 +1034,7 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 	}
 	// The run id is parsed and the step key cleaned: both come from the
 	// sensor's command result.
-	s.logger.Info("step completed", "run_id", rid.String(), "step_key", logger.SanitizeValue(stepKey),
+	s.logger.Info("step completed", "run_id", logger.SanitizeValue(rid.String()), "step_key", logger.SanitizeValue(stepKey),
 		"findings", findingsCount, "skipped_targets", p.Skipped, "coverage_gaps", p.Gaps)
 
 	// Get the run with step runs
@@ -1110,7 +1110,7 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 
 // OnStepFailed is called when a sensor reports step failure.
 func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error {
-	s.logger.Info("step failed", "run_id", runID, "step_key", stepKey, "error", errorMessage)
+	s.logger.Info("step failed", "run_id", logger.SanitizeValue(runID), "step_key", logger.SanitizeValue(stepKey), "error", logger.SanitizeValue(errorMessage))
 
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
@@ -1568,9 +1568,9 @@ func (s *Service) evaluateQualityGate(ctx context.Context, run *scanrun.Run) *sc
 	severityCounts, err := s.findingRepo.CountBySeverityForScan(ctx, run.TenantID, scanID)
 	if err != nil {
 		s.logger.Warn("failed to get finding counts for quality gate",
-			"error", err,
-			"scan_id", scanID,
-			"run_id", run.ID.String())
+			"error", logger.SanitizeError(err),
+			"scan_id", logger.SanitizeValue(scanID),
+			"run_id", logger.SanitizeValue(run.ID.String()))
 		return nil
 	}
 
