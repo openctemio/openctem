@@ -287,7 +287,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SENSOR_MTLS_CA_DIR` | path | `data/sensor-ca` |  |  | Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys). |
 | `SENSOR_MTLS_CA_KEY_FILE` | path | empty |  |  | Sensor CA private key (PEM). Not the job signer's key. |
 | `SENSOR_MTLS_CERT_TTL` | duration | `168h` |  |  | Lifetime of sensor client certificates, clamped to 1h..720h. |
-| `SENSOR_MTLS_LISTEN_ADDR` | string | `:8443` |  |  | TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it. |
+| `SENSOR_MTLS_LISTEN_ADDR` | string | `:9443` |  |  | TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it. |
 | `SENSOR_MTLS_TRUSTED_PROXIES` | list | empty |  |  | Comma-separated CIDRs whose PROXY protocol v2 header the sensor listener believes: the gateway that passes sensor connections through. |
 | `SENSOR_PUBLIC_HOST` | string | empty |  |  | `host[:port]` sensors dial for protocol v3, for a dedicated sensor host name or port. Unset: the host and port of `SENSOR_PUBLIC_API_URL`, else `APP_URL`. Advertised only while the self-probe passes. |
 | `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` | duration | `24h` |  |  | How often reviewed quarantined sensor results older than the retention are deleted. Pending items are never purged. |
@@ -541,7 +541,11 @@ Read by the bundled Caddy gateway (`api/deploy/gateway`).
 | `OPENCTEM_WEB_UPSTREAM` | string | `web:3000` |  |  | Address of the web console. |
 | `OPENCTEM_SENSOR_GATEWAY` | off \| alpn \| passthrough | `off` |  |  | Sensor protocol v3 routing: `alpn` passes connections that offer the sensor ALPN id to the API's sensor listener; `passthrough` also routes a dedicated sensor host name (`SENSOR_PUBLIC_HOSTNAME`). Needs a TLS mode and the gateway image with the layer4 module. |
 | `SENSOR_PUBLIC_HOSTNAME` | string | empty |  |  | Dedicated DNS name sensors dial for protocol v3 (no port), with `OPENCTEM_SENSOR_GATEWAY=passthrough`. |
-| `SENSOR_MTLS_UPSTREAM` | string | `api:8443` |  |  | Address of the API's sensor listener the gateway passes sensor connections to. |
+| `SENSOR_MTLS_UPSTREAM` | string | `api:9443` |  |  | Address of the API's sensor listener the gateway passes sensor connections to (internal only; sensors dial the gateway's port 443). |
+| `OPENCTEM_ADMIN_SITE` | port \| host \| off | `off` |  |  | The platform console's own site: `port` serves it on `https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT>`, `host` on `https://<OPENCTEM_ADMIN_HOST>` (recommended for production: a separate origin), `off` not at all. The Compose stack sets `port`. |
+| `OPENCTEM_ADMIN_HOST` | string | empty |  |  | The console's own DNS name (no scheme, port or path), with `OPENCTEM_ADMIN_SITE=host`; must differ from `OPENCTEM_HOSTNAME`. |
+| `OPENCTEM_ADMIN_PORT` | int | `8443` |  |  | The console's port, with `OPENCTEM_ADMIN_SITE=port`. Not a security control: change it if it is taken on the host. Must differ from 80, 443 and `GATEWAY_HTTPS_PORT`. |
+| `OPENCTEM_ADMIN_ALLOWED_CIDRS` | string | `127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7` |  |  | Client networks that may reach the console site, space-separated; everyone else gets 403. The Compose stack passes the same list to the API as `ADMIN_ALLOWED_CIDRS`. |
 
 ## Docker Compose stack
 
@@ -559,6 +563,7 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `API_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `UI_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `GATEWAY_BIND` | string | `0.0.0.0` |  |  | Host interface the gateway port is published on. |
+| `OPENCTEM_ADMIN_BIND` | string | empty |  |  | Host interface the console port is published on, with `OPENCTEM_ADMIN_SITE=port` (default `GATEWAY_BIND`). A private or VPN address keeps the console off the public interface; a published container port is not filtered by the host firewall. |
 | `GATEWAY_HTTPS_PORT` | string | `443` |  |  | Published HTTPS port. |
 | `GATEWAY_HTTP_PORT` | string | `80` |  |  | Port published by the overlays. |
 | `TLS_CERT_DIR` | string | `./certs` |  |  | Host directory mounted at `/certs` (mode `files`). |
