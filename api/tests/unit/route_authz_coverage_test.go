@@ -73,6 +73,8 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/scim/v2", "SCIM per-tenant bearer token auth (routes live at /scim/v2, not /api/v1)"},
 	{"/api/v1/scim", "SCIM per-tenant bearer token auth"},
 	{"/api/v1/mcp", "MCP oct_ API-key auth"},
+	{"/api/v1/mcp-access/my-connections", "self: a browser-session user lists and ends only their own MCP connections (the handler filters by the caller); API keys refused"},
+	{"/api/v1/mcp-access/confirmations", "self: the connection's own user approves or denies a write action in their browser session (the handler checks the owner); API keys refused"},
 	{"/.well-known/oauth-protected-resource", "public OAuth Protected Resource Metadata of the MCP endpoint (RFC 9728, RFC-062): static, no tenant data"},
 	{"/.well-known/oauth-authorization-server", "public OAuth authorization server metadata of the MCP endpoint (RFC 8414, RFC-062): static, no tenant data"},
 	{"/oauth/", "OAuth endpoints of the MCP authorization server (RFC-062): public by protocol; authorize only stores a request for the consent page, token and revoke are bound to a PKCE-protected code or a hashed token of the presenting client"},
@@ -409,7 +411,7 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 
 	allowed := func(p string) bool {
 		for _, ap := range allowlistPrefixes {
-			if strings.HasPrefix(p, ap.prefix) {
+			if pathHasPrefix(p, ap.prefix) {
 				return true
 			}
 		}
@@ -477,4 +479,28 @@ func moduleGateOf(e ast.Expr, vars map[string]string) string {
 		return true
 	})
 	return found
+}
+
+// pathHasPrefix matches on a path-segment boundary: "/api/v1/mcp" covers
+// "/api/v1/mcp" and "/api/v1/mcp/...", never "/api/v1/mcp-access/...".
+func pathHasPrefix(p, prefix string) bool {
+	return p == prefix || strings.HasPrefix(p, strings.TrimSuffix(prefix, "/")+"/")
+}
+
+func TestPathHasPrefix_SegmentBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		p, prefix string
+		want      bool
+	}{
+		{"/api/v1/mcp", "/api/v1/mcp", true},
+		{"/api/v1/mcp/tools", "/api/v1/mcp", true},
+		{"/api/v1/mcp-access/connections", "/api/v1/mcp", false},
+		{"/api/v1/scim-tokens", "/api/v1/scim", false},
+		{"/api/v1/scim/Users", "/api/v1/scim", true},
+		{"/api/v1/auth/login", "/api/v1/auth/", true},
+	} {
+		if got := pathHasPrefix(tc.p, tc.prefix); got != tc.want {
+			t.Errorf("pathHasPrefix(%q, %q) = %v, want %v", tc.p, tc.prefix, got, tc.want)
+		}
+	}
 }

@@ -11,7 +11,8 @@ import { EmptyState } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe, formatRelative } from '@/lib/format-date'
 
-import { type McpConnection, scopeLabel } from '../api/connections'
+import { type McpConnection } from '../api/connections'
+import { useMcpLabels } from '../lib/use-mcp-labels'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -40,6 +41,7 @@ export function ConnectionsList({
   emptyDescription,
 }: ConnectionsListProps) {
   const { t } = useTranslation()
+  const { scopeShort } = useMcpLabels()
   const [pending, setPending] = useState<McpConnection | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -60,10 +62,17 @@ export function ConnectionsList({
     setBusy(true)
     try {
       await onRevoke(pending.id)
-      toast.success(`${pending.client_name} disconnected`)
+      toast.success(
+        t('mcp.connections.disconnected', '{name} disconnected', { name: pending.client_name })
+      )
       setPending(null)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not disconnect the application'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('mcp.connections.disconnectFailed', 'Could not disconnect the application')
+        )
+      )
     } finally {
       setBusy(false)
     }
@@ -83,13 +92,15 @@ export function ConnectionsList({
                 {c.client_kind === 'dynamic' ? (
                   <Badge variant="outline" className="gap-1">
                     <ShieldQuestion className="h-3 w-3" aria-hidden />
-                    Unverified
+                    {t('mcp.client.unverified', 'Unverified')}
                   </Badge>
                 ) : c.client_host ? (
-                  <span className="text-muted-foreground text-xs">{c.client_host}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {t('mcp.client.publishedBy', 'Published by {host}', { host: c.client_host })}
+                  </span>
                 ) : (
                   <span className="text-muted-foreground text-xs">
-                    Registered by your organization
+                    {t('mcp.client.registeredByOrg', 'Registered by your organization')}
                   </span>
                 )}
               </div>
@@ -101,20 +112,34 @@ export function ConnectionsList({
               <div className="flex flex-wrap gap-1">
                 {c.scopes.map((s) => (
                   <Badge key={s} variant="secondary" className="text-xs">
-                    {scopeLabel(s)}
+                    {scopeShort(s)}
                   </Badge>
                 ))}
               </div>
               <p className="text-muted-foreground text-xs">
-                Connected {formatDateSafe(c.created_at)} · last used{' '}
-                {c.last_used_at ? formatRelative(c.last_used_at) : 'never'}
-                {c.last_used_ip ? ` from ${c.last_used_ip}` : ''} · ends{' '}
-                {formatDateSafe(c.expires_at)}
+                {[
+                  t('mcp.connections.connectedOn', 'Connected {date}', {
+                    date: formatDateSafe(c.created_at),
+                  }),
+                  c.last_used_at
+                    ? c.last_used_ip
+                      ? t('mcp.connections.lastUsedFrom', 'last used {when} from {ip}', {
+                          when: formatRelative(c.last_used_at),
+                          ip: c.last_used_ip,
+                        })
+                      : t('mcp.connections.lastUsed', 'last used {when}', {
+                          when: formatRelative(c.last_used_at),
+                        })
+                    : t('mcp.connections.neverUsed', 'never used'),
+                  t('mcp.connections.endsOn', 'ends {date}', {
+                    date: formatDateSafe(c.expires_at),
+                  }),
+                ].join(' · ')}
               </p>
             </div>
             <Button variant="outline" size="sm" className="shrink-0" onClick={() => setPending(c)}>
               <Unplug className="mr-2 h-4 w-4" aria-hidden />
-              Disconnect
+              {t('mcp.connections.disconnect', 'Disconnect')}
             </Button>
           </li>
         ))}
@@ -124,17 +149,17 @@ export function ConnectionsList({
         open={pending !== null}
         onOpenChange={(open) => !open && !busy && setPending(null)}
         destructive
-        title={t('confirm.mcpConnection.disconnectTitle', 'Disconnect {name}?', {
+        title={t('mcp.connections.disconnectTitle', 'Disconnect {name}?', {
           name: pending?.client_name ?? '',
         })}
         desc={t(
-          'confirm.mcpConnection.disconnectDesc',
+          'mcp.connections.disconnectDesc',
           'It loses access at once. To use it again, connect it again from the application.'
         )}
         confirmText={
           <>
             {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
-            {t('confirm.mcpConnection.disconnect', 'Disconnect')}
+            {t('mcp.connections.disconnect', 'Disconnect')}
           </>
         }
         isLoading={busy}

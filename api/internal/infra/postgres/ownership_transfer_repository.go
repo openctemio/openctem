@@ -109,9 +109,10 @@ func (r *OwnershipTransferRepository) OwnershipCandidate(ctx context.Context, te
 func lockActiveOwner(ctx context.Context, q otQueryer, tenantID, userID shared.ID) (bool, error) {
 	var one int
 	err := q.QueryRowContext(ctx, `
-		SELECT 1 FROM tenant_members
-		WHERE tenant_id = $1 AND user_id = $2 AND role = 'owner' AND status = 'active'
-		FOR UPDATE`, tenantID.String(), userID.String()).Scan(&one)
+		SELECT 1 FROM tenant_members m
+		JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.tenant_id = $1 AND m.user_id = $2 AND ver.role = 'owner' AND m.status = 'active'
+		FOR UPDATE OF m`, tenantID.String(), userID.String()).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -255,9 +256,11 @@ func (r *OwnershipTransferRepository) AcceptOwnershipTransfer(ctx context.Contex
 	// Lock every membership the change touches, in one statement ordered by
 	// id: the current owner(s) and the new owner.
 	if _, err := tx.ExecContext(ctx, `
-		SELECT id FROM tenant_members
-		WHERE tenant_id = $1 AND (role = 'owner' OR user_id = $2 OR user_id = $3)
-		ORDER BY id FOR UPDATE`, tid, t.FromUserID.String(), t.ToUserID.String()); err != nil {
+		SELECT m.id FROM tenant_members m
+		WHERE m.tenant_id = $1 AND (m.user_id = $2 OR m.user_id = $3 OR EXISTS (
+		      SELECT 1 FROM v_user_effective_role ver
+		       WHERE ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id AND ver.role = 'owner'))
+		ORDER BY m.id FOR UPDATE OF m`, tid, t.FromUserID.String(), t.ToUserID.String()); err != nil {
 		return nil, fmt.Errorf("lock memberships: %w", err)
 	}
 	owner, err := lockActiveOwner(ctx, tx, tenantID, t.FromUserID)

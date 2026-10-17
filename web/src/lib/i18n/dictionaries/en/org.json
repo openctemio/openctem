@@ -276,5 +276,13 @@
   "org.leave.done": "You left {name}",
   "org.leave.failed": "Could not leave the organization",
   "org.region.new": "Data region: {region}. It is fixed for the organization once created.",
-  "org.region.current": "Data region: {region} (fixed)"
+  "org.region.current": "Data region: {region} (fixed)",
+  "org.roles.teamRoleNote": "This is a team role. It is the member’s role in the organization, so it changes on the Members page, and ownership moves with Transfer ownership.",
+  "org.roles.openMembers": "Open the Members page",
+  "org.roles.changeTo": "Change to {role}",
+  "org.roles.changed": "{name} is now {role}",
+  "org.roles.teamRoleUnavailable": "This team role cannot be changed here",
+  "org.roles.manageNote": "Custom roles add permissions on top of the role in the organization.",
+  "org.roles.teamRole": "Role in the organization",
+  "org.roles.ownerLocked": "This person is the owner. Ownership moves with Transfer ownership."
 }

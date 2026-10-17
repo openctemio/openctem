@@ -25,7 +25,7 @@ func (a allowlist) reason(method, path string) string {
 	}
 	best, reason := -1, ""
 	for _, p := range a.prefixes {
-		if strings.HasPrefix(path, p[0]) && len(p[0]) > best {
+		if pathHasPrefix(path, p[0]) && len(p[0]) > best {
 			best, reason = len(p[0]), p[1]
 		}
 	}
@@ -75,4 +75,10 @@ func loadAllowlist(apiRoot string) (allowlist, error) {
 		return a, fmt.Errorf("read only %d allowlist prefixes from %s", len(a.prefixes), authzCoverageFile)
 	}
 	return a, nil
+}
+
+// pathHasPrefix matches on a path-segment boundary, like the coverage gate:
+// "/api/v1/mcp" covers "/api/v1/mcp/..." and not "/api/v1/mcp-access/...".
+func pathHasPrefix(p, prefix string) bool {
+	return p == prefix || strings.HasPrefix(p, strings.TrimSuffix(prefix, "/")+"/")
 }

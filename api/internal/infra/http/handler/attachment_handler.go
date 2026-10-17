@@ -81,6 +81,18 @@ func (h *AttachmentHandler) SetAccessChecker(checker FindingCampaignAccessChecke
 	h.accessChecker = checker
 }
 
+// validAttachmentContext reports whether contextType is one the access
+// checker authorizes: finding, retest, campaign, or empty (a private orphan
+// attachment of the uploader). An unknown type would skip every context check,
+// so Upload, List and LinkToContext refuse it.
+func validAttachmentContext(contextType string) bool {
+	switch contextType {
+	case "", attachmentCtxFinding, attachmentCtxRetest, attachmentCtxCampaign:
+		return true
+	}
+	return false
+}
+
 // verifyContextWrite checks the caller may add evidence to (upload/link into)
 // the given context: finding contexts need the right to edit the finding and
 // a campaign that is not completed or canceled; retest contexts the right to
@@ -217,6 +229,10 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	// Campaign membership check on upload
 	ctxType := r.FormValue("context_type")
 	ctxID := r.FormValue("context_id")
+	if !validAttachmentContext(ctxType) {
+		apierror.BadRequest("context_type must be finding, retest or campaign").WriteJSON(w)
+		return
+	}
 	if err := h.verifyContextWrite(r, ctxType, ctxID); err != nil {
 		writeAttachmentAccessError(w, err)
 		return
@@ -508,6 +524,11 @@ func (h *AttachmentHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !validAttachmentContext(contextType) {
+		apierror.BadRequest("context_type must be finding, retest or campaign").WriteJSON(w)
+		return
+	}
+
 	// Campaign membership check for finding-context attachments
 	if err := h.verifyContextAccess(r, contextType, contextID); err != nil {
 		apierror.NotFound("Attachment not found").WriteJSON(w)
@@ -557,6 +578,10 @@ func (h *AttachmentHandler) LinkToContext(w http.ResponseWriter, r *http.Request
 	// Verify the caller may write to the destination context before linking,
 	// otherwise a user could attach their own evidence onto a finding/campaign
 	// they have no access to.
+	if !validAttachmentContext(req.ContextType) {
+		apierror.BadRequest("context_type must be finding, retest or campaign").WriteJSON(w)
+		return
+	}
 	if err := h.verifyContextWrite(r, req.ContextType, req.ContextID); err != nil {
 		writeAttachmentAccessError(w, err)
 		return
