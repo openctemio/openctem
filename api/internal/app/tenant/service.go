@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -2693,6 +2694,40 @@ func (s *TenantService) UpdateMCPSettings(
 	s.logAudit(ctx, actx, event)
 	out := t.TypedSettings().MCP
 	return &out, nil
+}
+
+// AllowMCPClientHost adds a publisher host to the organization's MCP policy
+// (the hosts whose client metadata documents count as verified) in one
+// settings-section write, and audits the change. A host already listed is
+// left as is (no write, no audit). The host is validated like every policy
+// host; the 50-host cap applies.
+func (s *TenantService) AllowMCPClientHost(ctx context.Context, tenantID, host string, actx auditapp.AuditContext) error {
+	var before, after tenantdom.MCPSettings
+	changed := false
+	_, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionMCP, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().MCP
+		if slices.Contains(before.ClientHosts, host) {
+			changed = false
+			return nil
+		}
+		ms := before
+		ms.ClientHosts = append(slices.Clone(before.ClientHosts), host)
+		if err := t.UpdateMCPSettings(ms); err != nil {
+			return err
+		}
+		after, changed = t.TypedSettings().MCP, true
+		return nil
+	})
+	if err != nil || !changed {
+		return err
+	}
+	actx.TenantID = tenantID
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionMCPSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, after)).
+		WithMessage("AI application publisher approved: "+host).
+		WithMetadata("client_host", host).
+		WithSeverity(audit.SeverityHigh))
+	return nil
 }
 
 // GetScopeSettings returns the tenant's scope settings (RFC-054 §6.3).
