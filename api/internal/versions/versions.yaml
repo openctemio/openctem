@@ -22,7 +22,7 @@
 # The newest released vX.Y.Z tag of this repository (API + web share it); on
 # release/vX.Y.Z, that vX.Y.Z.
 platform:
-  release: v0.10.0
+  release: v0.10.1
 
 # Sensor products: every top-level section other than platform, sdk, ci and
 # chart is one sensor product (api/docs/rfcs/RFC-037 §11). A sensor reports its
