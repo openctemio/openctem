@@ -25,7 +25,7 @@ agent), [sdk-go](https://github.com/openctemio/sdk-go),
   `make generate` at the root to refresh them locally; Web CI type-checks the web
   against the fresh contract and posts the contract diff on the pull request.
 - **Release**: one `vX.Y.Z` tag on `main` releases API + web together (`ghcr.io/openctemio/openctem-api`,
-  `openctem-web`, all-in-one `openctem`, `migrations`, `seed`, `admin-cli`).
+  `openctem-web`, `openctem-console`, all-in-one `openctem`, `openctem-gateway`, `migrations`, `seed`, `admin-cli`).
 
 ---
 
