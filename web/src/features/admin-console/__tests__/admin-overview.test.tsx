@@ -276,7 +276,7 @@ describe('AdminCommandMenu', () => {
 
   it('finds accounts too and opens the one picked', async () => {
     const user = userEvent.setup()
-    await renderMenu('readonly')
+    await renderMenu('ops_admin')
     await user.type(screen.getByRole('combobox'), 'wile')
     const option = await screen.findByRole('option', { name: /Wile E\./ })
     expect(
@@ -284,6 +284,14 @@ describe('AdminCommandMenu', () => {
     ).toBe(true)
     await user.click(option)
     expect(mocks.push).toHaveBeenCalledWith('/admin/users/user-3')
+  })
+
+  it('never searches people for a read-only administrator', async () => {
+    const user = userEvent.setup()
+    await renderMenu('readonly')
+    await user.type(screen.getByRole('combobox'), 'wile')
+    await new Promise((r) => setTimeout(r, 400))
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/platform-users'))).toBe(false)
   })
 
   it('does not query organizations for a one-letter search', async () => {

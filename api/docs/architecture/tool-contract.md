@@ -5,6 +5,11 @@
 > binding), [sensors.md](sensors.md) (manifest, tool contracts),
 > [tool-availability.md](tool-availability.md), [sensor-platform-trust.md](sensor-platform-trust.md).
 
+> **Planned:** [RFC-113](../rfcs/RFC-113-sensor-tool-standard.md) (proposed) makes this contract the only one
+> a sensor tool implements: one runtime path without the legacy scanner bridge, a typed job payload
+> (`ctis/job`), a CTIS `execution` block for outcomes, stop reasons, checkpoints and import cursors,
+> artifact upload and one test package. Nothing below changes until it is built.
+
 **Question it answers:** how does a scan tool tell the platform what it does,
 what it takes and what it produces, and how does the platform decide whether
 to trust it?
