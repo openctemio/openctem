@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorAnomalyThresholds } from '../api/use-scan-policy'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 const FIELDS = [
   ['distinct_domains_per_day', 'domains'],
@@ -46,6 +47,7 @@ export function SharedSensorAnomalyForm({
   const [value, setValue] = useState(thresholds)
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -125,7 +127,7 @@ export function SharedSensorAnomalyForm({
         }}
         title={t('admin.anomaly.confirmTitle')}
         desc={<p>{t('admin.anomaly.confirmDesc')}</p>}
-        disabled={code.trim().length < 6 || !reason.trim()}
+        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim()}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -161,6 +163,7 @@ export function SharedSensorAnomalyForm({
               maxLength={8}
               aria-invalid={!!codeError}
             />
+            <StepUpCodeHint optional={codeOptional} />
             {codeError && <p className="text-sm text-destructive">{codeError}</p>}
           </div>
         </div>
