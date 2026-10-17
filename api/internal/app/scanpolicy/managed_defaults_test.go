@@ -138,8 +138,8 @@ func TestInternalZonesDefaultOffEverywhere(t *testing.T) {
 	if newDefaults(&memDefaults{}, true).SharedSensorsInternalZonesAllowed(ctx) {
 		t.Fatal("MANAGED_SERVICE default must be off")
 	}
-	if InternalZonesEnforced() {
-		t.Fatal("the setting is not enforced until signed zone ranges land")
+	if !InternalZonesEnforced() {
+		t.Fatal("instance scan zones enforce the setting")
 	}
 	if !newDefaults(&memDefaults{zones: boolp(true)}, true).SharedSensorsInternalZonesAllowed(ctx) {
 		t.Fatal("stored on must win over the hosted default")

@@ -345,6 +345,24 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// Instance scan zones (RFC-100 §6.1): any admin reads; a super admin
+	// changes a zone, its shared sensors and its organizations with a fresh
+	// code and a reason (the service records it with the job signer first
+	// and writes the critical audit row).
+	if h.AdminInstanceScanZone != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		z := h.AdminInstanceScanZone
+		router.Group("/api/v1/admin/instance-scan-zones", func(r Router) {
+			r.GET("/", z.List)
+			r.POST("/", z.Create, requireSuper, stepUp("instance_scan_zone.create"))
+			r.GET("/{zone_id}", z.Get)
+			r.PUT("/{zone_id}", z.Update, requireSuper, stepUp("instance_scan_zone.update"))
+			r.DELETE("/{zone_id}", z.Delete, requireSuper, stepUp("instance_scan_zone.delete"))
+			r.PUT("/{zone_id}/sensors", z.SetSensors, requireSuper, stepUp("instance_scan_zone.sensors"))
+			r.PUT("/{zone_id}/organizations", z.SetOrganizations, requireSuper, stepUp("instance_scan_zone.organizations"))
+		}, adminMiddlewares...)
+	}
+
 	// Shared sensors (RFC-100). Fleet (§12): any admin reads the fleet, queue
 	// aggregates and job metadata; a job's targets and logs only through
 	// the audited view with a reason (super or ops admin, rate-limited);

@@ -130,6 +130,7 @@ group_role_bindings
 groups
 ingest_jobs
 ingest_reports
+instance_scan_zone_tenants
 integrations
 ioc_matches
 iocs
