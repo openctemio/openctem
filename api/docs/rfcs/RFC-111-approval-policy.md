@@ -68,7 +68,10 @@ most needs more than accepting it elsewhere.
 
 The **sole member** of an organization (exactly one active person) keeps the existing own-approval path
 (fresh authenticator code, reason, halved acceptance caps, alerts). It is the only way a person approves
-their own request, and it is not a tier: it is refused while a second eligible person exists.
+their own request, and it is not a tier: it is refused while a second active person exists, whether or not
+that person holds the approve permission (taking the permission from the others does not open it). This holds
+for suppression rules too. A rule that matches more open findings than the approval cap is refused as too
+broad: its tier and the asset owners are read from every finding it matches, never a sample.
 
 ### 3.1 Floors and defaults
 
@@ -157,7 +160,11 @@ relaxation.
 A decision is valid for the facts it was made on. When an accepted risk is approved, or a false positive
 is decided by one person, the approval row stores the facts (`decision_facts`) and a moving baseline
 (`facts_baseline`). A controller (every 10 minutes, bounded batches, one transaction per finding)
-compares the baseline with the facts now.
+compares the baseline with the facts now. The batch takes the decisions checked least recently first
+(`last_checked_at`, set on every attempt, a failed one included), so a decision that keeps failing cannot
+hold the batch and starve other organizations. Ending or withdrawing a decision locks its approved request
+and stops when the request is no longer approved or the finding holds a newer approved request: a decision
+made after the change was seen is not undone by it.
 
 **Signals:** `severity_raised`, `priority_raised`, `kev_added`, `epss_crossed` (the score reached the
 threshold), `exploit_validated`, `exposure_raised` (the asset became internet-exposed or a crown jewel).
