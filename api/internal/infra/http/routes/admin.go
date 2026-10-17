@@ -299,6 +299,18 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// Shared sensor enrollment (RFC-100 §7): a super admin issues a
+	// single-use instance enrollment token with a reason and a fresh console
+	// authenticator code (checked in the handler; the service writes the
+	// console audit row).
+	if h.AdminSharedSensor != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/shared-sensors", func(r Router) {
+			r.POST("/enrollment-tokens", h.AdminSharedSensor.CreateInstanceEnrollmentToken, requireSuper,
+				stepUp("shared_sensors.enrollment_token"))
+		}, adminMiddlewares...)
+	}
+
 	// The request-access queue: any admin reads; approving (creates the
 	// organization, requester as owner) or rejecting needs ops_admin+, audited.
 	if h.AccessRequest != nil {
