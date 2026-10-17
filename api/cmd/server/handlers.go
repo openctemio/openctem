@@ -185,6 +185,18 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
 	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
+	adminConsoleSvc.SetFactorChangeNotifier(adminFactorMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
+	// Console security keys (RFC-078): the relying party is the console origin.
+	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
+		rp, err := adminconsole.NewConsoleWebAuthn(adminconsole.WebAuthnConfig{
+			PublicURL: cfg.AdminPublicURL, DisplayName: cfg.Brand.DisplayName() + " Admin",
+		})
+		if err != nil {
+			log.Error("console security keys are off: ADMIN_PUBLIC_URL is not a usable origin", "error", err)
+		} else {
+			adminConsoleSvc.EnableWebAuthn(rp, repos.AdminFactor, repos.PlatformSetting)
+		}
+	}
 	if svc.Signup != nil {
 		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
@@ -732,6 +744,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	wireSharedSensorDefaults(svc, cfg, deps.RedisClient, log)
 	wireFindingApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
 	// A scan window override needs a fresh authenticator code (RFC-067 §8).

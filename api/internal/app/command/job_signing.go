@@ -115,6 +115,11 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 		IssuedAt:      now,
 		ExpiresAt:     expires,
 	}
+	// A job queued for shared sensors is signed for a shared sensor: the
+	// signer applies the shared-job rules, and only a shared sensor runs it.
+	if c.IsPlatformJob {
+		st.SensorScope = jobsign.SensorScopeInstance
+	}
 	env, err := s.jobs.SignJob(ctx, st)
 	if err != nil {
 		outcome := "unavailable"
