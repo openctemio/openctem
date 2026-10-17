@@ -63,6 +63,9 @@ type consoleClient struct {
 	t    *testing.T
 	base string
 	http *http.Client
+	// csrf is the token the console keeps in memory, from the sign-in and
+	// validate responses (never a readable cookie).
+	csrf string
 }
 
 func (c *consoleClient) do(method, path string, body any) (*http.Response, []byte) {
@@ -73,13 +76,9 @@ func (c *consoleClient) do(method, path string, body any) (*http.Response, []byt
 	}
 	req, _ := http.NewRequestWithContext(c.t.Context(), method, c.base+path, &buf)
 	req.Header.Set("Content-Type", "application/json")
-	// Browser behavior: a console page echoes the readable copy of the CSRF
-	// token, which only the console's pages (/admin) can see.
-	u, _ := url.Parse(c.base + "/admin/")
-	for _, ck := range c.http.Jar.Cookies(u) {
-		if ck.Name == middleware.AdminCSRFPageCookie && method != http.MethodGet {
-			req.Header.Set(middleware.CSRFHeaderName, ck.Value)
-		}
+	// Browser behavior: the console echoes the token it keeps in memory.
+	if c.csrf != "" && method != http.MethodGet {
+		req.Header.Set(middleware.CSRFHeaderName, c.csrf)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -88,6 +87,19 @@ func (c *consoleClient) do(method, path string, body any) (*http.Response, []byt
 	defer resp.Body.Close()
 	var out bytes.Buffer
 	_, _ = out.ReadFrom(resp.Body)
+	var withToken struct {
+		CSRFToken string `json:"csrf_token"`
+		Admin     *struct {
+			CSRFToken string `json:"csrf_token"`
+		} `json:"admin"`
+	}
+	if json.Unmarshal(out.Bytes(), &withToken) == nil {
+		if withToken.CSRFToken != "" {
+			c.csrf = withToken.CSRFToken
+		} else if withToken.Admin != nil && withToken.Admin.CSRFToken != "" {
+			c.csrf = withToken.Admin.CSRFToken
+		}
+	}
 	return resp, out.Bytes()
 }
 
@@ -215,10 +227,24 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	if resp, body := c.do("POST", "/api/v1/admin/auth/mfa", map[string]string{"code": code}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("mfa: %d %s", resp.StatusCode, body)
 	}
-	// 4. The session cookie now authenticates, as the right admin.
+	signInToken := c.csrf
+	if signInToken == "" {
+		t.Fatal("the sign-in response carries no csrf_token")
+	}
+	// No console cookie is readable by a page script (the jar holds what a
+	// script could see only on a non-HttpOnly cookie; none at the root).
+	for _, ck := range jar.Cookies(&url.URL{Scheme: "http", Host: strings.TrimPrefix(srv.URL, "http://"), Path: "/"}) {
+		t.Errorf("cookie %s is sent to every page of the host", ck.Name)
+	}
+	// 4. The session cookie now authenticates, as the right admin, and
+	// validate hands the same token back (a reloaded console).
+	c.csrf = ""
 	resp, body = c.do("GET", "/api/v1/admin/auth/validate", nil)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), email) {
 		t.Fatalf("validate with session: %d %s", resp.StatusCode, body)
+	}
+	if c.csrf != signInToken {
+		t.Fatalf("validate csrf_token %q, want the sign-in one %q", c.csrf, signInToken)
 	}
 	// 5. A write without the CSRF header is refused; with it, allowed.
 	var sessionCookie *http.Cookie
