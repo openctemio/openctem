@@ -724,7 +724,8 @@ const runFindingColumns = `f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(
 				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
 				WHERE s.finding_id = f.id AND sr.status = 'approved'
 				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())),
-			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at`
+			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at,
+			NULL::boolean, COALESCE(f.secret_type, ''), COALESCE(f.type_details->'secret'->>'fingerprint', '')`
 
 // RunFindings returns the findings on the run's asset that the run recorded.
 //
@@ -764,6 +765,10 @@ func (r *CIRunRepository) FindingsByFingerprints(ctx context.Context, tenantID, 
 	return scanRunFindings(rows)
 }
 
+// The gate never reads findings.secret_valid: that column was written from
+// the uploaded report, and a fork pull request could report a live secret as
+// dead. The query selects NULL in its place until the platform records its own
+// validation result.
 func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 	defer func() { _ = rows.Close() }()
 	out := []cirun.RunFinding{}
@@ -773,15 +778,21 @@ func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 			id                         string
 			epss                       sql.NullFloat64
 			accExp, firstDet, reopened sql.NullTime
+			secretValid                sql.NullBool
 		)
 		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType, &f.Source, &f.ToolName,
-			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.FixAvailable, &f.Suppressed, &accExp, &firstDet, &reopened); err != nil {
+			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.FixAvailable, &f.Suppressed, &accExp, &firstDet, &reopened,
+			&secretValid, &f.SecretType, &f.SecretFingerprint); err != nil {
 			return nil, err
 		}
 		f.ID, _ = shared.IDFromString(id)
 		if epss.Valid {
 			v := epss.Float64
 			f.EPSSScore = &v
+		}
+		if secretValid.Valid {
+			v := secretValid.Bool
+			f.SecretValid = &v
 		}
 		f.AcceptanceExpiresAt = optTime(accExp)
 		f.FirstDetectedAt = optTime(firstDet)
@@ -1359,6 +1370,41 @@ func (r *CIRunRepository) AssetsWithImageDigest(ctx context.Context, tenantID sh
 		}
 		a.ID, _ = shared.IDFromString(id)
 		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// PromoteSecretFindings makes secret findings of the run's repository
+// organization findings: a secret pushed to any non-fork branch is exposed
+// whether or not the branch merges, so it must not stay hidden as seen only
+// on a branch that is no exposure. Same SLA shift as promoting on a counting
+// branch (promote_branch_only_findings). Returns the ids it changed.
+func (r *CIRunRepository) PromoteSecretFindings(ctx context.Context, tenantID, assetID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		UPDATE findings f
+		SET branch_only = FALSE,
+		    sla_deadline = f.sla_deadline + (NOW() - COALESCE(f.first_detected_at, f.created_at)),
+		    sla_status = CASE WHEN f.sla_deadline IS NULL THEN f.sla_status ELSE 'on_track' END,
+		    updated_at = NOW()
+		WHERE f.tenant_id = $1 AND f.asset_id = $2 AND f.id = ANY($3::uuid[])
+		  AND f.branch_only AND f.finding_type = 'secret'
+		RETURNING f.id::text`, tenantID.String(), assetID.String(), pq.Array(rtIDStrings(ids)))
+	if err != nil {
+		return nil, fmt.Errorf("promote secret findings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		if id, err := shared.IDFromString(s); err == nil {
+			out = append(out, id)
+		}
 	}
 	return out, rows.Err()
 }
