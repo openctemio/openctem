@@ -41,16 +41,27 @@ fixed list the console can group and filter on.
 4. **Only software becomes a component.** A detection is also a software component (CVE matching) only
    when its kind is software and it has a version or a CPE (`IsSoftwareCandidate`). HSTS, Vercel,
    Cloudflare and a versionless nginx are technologies only.
-5. **Rows follow the reconciled set.** Technologies already reconcile per source (RFC-069,
-   `properties.technologies`). Ingest records only the technologies the asset shows after
-   reconciliation, and when reconciliation drops a technology from the asset its row is deleted in the
-   same transaction. A full fingerprint probe that no longer sees a technology therefore removes it.
+5. **One store: the rows are the reconciled set.** Technologies reconcile per source (RFC-069): the
+   per-source elements are the evidence, and the resolved set is written as `asset_technologies` rows
+   in the same transaction (one row per name; when sources disagree on a version, a known version
+   beats none and the higher version wins). `assets.properties.technologies` is retired: never
+   written, never read (a guard test fails on any read). Ingest then adds what the report knew (the
+   tool's category and confidence, the source, the last sighting) to rows that exist; it never adds
+   one. A full fingerprint probe that no longer sees a technology removes it.
+8. **Technologies and software are not duplicates.** The software catalog (`software_products` →
+   `software_versions` → `asset_software`) is the one CVE-matchable entity: packages from SBOM/SCA/CI,
+   installed products, service banners. A technology fingerprint is a fact about the asset with a
+   category; only a versioned or CPE-identified software detection also becomes a component, so the
+   catalog never holds a product per security header or hosting name. Per-endpoint technologies
+   (`web_endpoints.technologies`) stay: they describe one path, not the asset.
 6. **No new findings.** Security headers are recorded as present. Raising a finding for a *missing*
    header needs a probe that reports response headers and a rule; neither exists yet, and a technology
    probe that does not mention a header is not evidence that it is missing.
-7. **Existing data.** A backfill controller fills `asset_technologies` from each asset's
-   `properties.technologies` and removes component links that ingest no longer creates, tenant by tenant in batches of a few
-   hundred assets, without long locks. Only a technology link with no usable version (`CleanVersion` is
+7. **Existing data.** A migration copies each asset's `properties.technologies` into
+   `asset_technologies` (one `INSERT ... SELECT`, no lock on `assets`). A backfill controller then
+   classifies the copied rows, removes the retired key (tags are left alone: a tag carries no origin, so
+   a person's tag cannot be told from one the old converter added; new reports no longer create them)
+   and removes component links that ingest no longer creates, tenant by tenant in batches of 500, without long locks. Only a technology link with no usable version (`CleanVersion` is
    empty) and no CPE is ever removed; a versioned or CPE-backed link stays whatever its category, and
    the delete statement repeats that rule. A link that is an end of a dependency edge is skipped. Every
    deleted link is recorded in `asset_technology_backfill_removed`. The first run is report-only
@@ -60,6 +71,8 @@ fixed list the console can group and filter on.
 
 ## 4. API
 
+- Asset responses (list, single, `/full`) embed `technologies` (name, version, category): at most 20
+  per asset on a list, all of them on one asset.
 - `GET /api/v1/assets/{id}/technologies` (`assets:read`): the asset's technologies with category, kind,
   version, confidence, source, first and last seen. The asset must be the caller's tenant's and in the
   caller's data scope; both misses answer 404.
@@ -104,4 +117,5 @@ kept asset's row for a name. `asset_technology_backfill` records the tenants the
 | PR | Content | State |
 |---|---|---|
 | 1 | model, ingest, read endpoint | #2413 |
-| 2 | backfill and cleanup of non-software component links | open |
+| 2 | backfill and cleanup of non-software component links | #2415 |
+| 3 | one store: rows are the reconciled set, property retired, responses embed technologies | open |

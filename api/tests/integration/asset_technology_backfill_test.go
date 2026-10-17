@@ -94,6 +94,15 @@ func TestAssetTechnologyBackfill(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// ...and the retired property the copy migration reads.
+	// Tags a person may have set, some with the text of a technology.
+	for id, list := range map[shared.ID]string{a: `["HSTS", "Vercel", "nginx", "Next.js:13.4.1"]`, b: `["HSTS"]`} {
+		if _, err := g.r.db.ExecContext(ctx, `UPDATE assets SET properties = jsonb_set(COALESCE(properties, '{}'), '{technologies}', $2::jsonb),
+		       tags = ARRAY['prod', 'HSTS', 'Next.js:13.4.1', 'vercel'] WHERE id = $1`,
+			id.String(), list); err != nil {
+			t.Fatal(err)
+		}
+	}
 	insertTechLink(t, g, g.tn.tenant, a, "hsts", "")
 	insertTechLink(t, g, g.tn.tenant, a, "vercel", "")
 	insertTechLink(t, g, g.tn.tenant, a, "nginx", "")
@@ -123,6 +132,23 @@ func TestAssetTechnologyBackfill(t *testing.T) {
 	}
 	if stats.LinksRemoved != 3 || stats.Technologies != 4 || stats.Classified != 4 {
 		t.Fatalf("stats = %+v, want 4 technologies classified, 3 links removed", stats)
+	}
+	if stats.PropertiesDropped != 1 {
+		t.Fatalf("properties dropped = %d, want 1", stats.PropertiesDropped)
+	}
+	var left int
+	if err := g.r.db.QueryRowContext(ctx, `SELECT count(*) FROM assets WHERE tenant_id = $1 AND properties ? 'technologies'`,
+		g.tn.tenant.String()).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("assets still holding the retired key: %d %v", left, err)
+	}
+	// Tags are never removed: a person's tag with the same text as a
+	// technology ("HSTS", "Next.js:13.4.1", "vercel") survives untouched.
+	var tags string
+	if err := g.r.db.QueryRowContext(ctx, `SELECT array_to_string(tags, ',') FROM assets WHERE id = $1`, a.String()).Scan(&tags); err != nil {
+		t.Fatal(err)
+	}
+	if tags != "prod,HSTS,Next.js:13.4.1,vercel" {
+		t.Fatalf("tags = %q, want them all kept", tags)
 	}
 	// Only the three versionless, CPE-less links go; a versioned link stays
 	// whatever its category (cloudflare:2 is a CDN).

@@ -58,6 +58,8 @@ type Row =
       label: (t: T, locale: string) => string
       /** The keys the row reads; it renders when any has a value. */
       keys: string[]
+      /** Renders when true, for a fact that is not a property. */
+      present?: (asset: Asset) => boolean
       render?: (asset: Asset, t: T) => React.ReactNode
       wide?: boolean
     }
@@ -109,8 +111,9 @@ const TLS: Row = {
 
 const TECH: Row = {
   id: 'technologies',
-  label: (_t, locale) => propertyLabel('technologies', locale),
-  keys: ['technologies'],
+  label: (t) => t('assets.technologies.title', 'Technologies'),
+  keys: [],
+  present: (a) => (a.technologies?.length ?? 0) > 0,
   render: (a) => (
     <ChipRow>
       <TechChips technologies={technologies(a)} max={Infinity} />
@@ -301,7 +304,10 @@ export function useKeyFacts(asset: Asset): KeyFact[] {
         })
         continue
       }
-      if (!row.keys.some((k) => hasPropertyValue(factValue(asset.metadata, k)))) continue
+      if (!(
+        row.present?.(asset) ?? row.keys.some((k) => hasPropertyValue(factValue(asset.metadata, k)))
+      ))
+        continue
       const node = row.render ? row.render(asset, t) : null
       if (node === '' || node === null || node === undefined) continue
       out.push({ id: row.id, label: row.label(t, locale), node, wide: !!row.wide })
@@ -312,7 +318,9 @@ export function useKeyFacts(asset: Asset): KeyFact[] {
 
 /** Whether the asset has at least one key fact (without rendering them). */
 export function hasKeyFacts(asset: Asset): boolean {
-  return rowsFor(asset)
+  const rows = rowsFor(asset)
+  if (rows.some((r) => typeof r !== 'string' && r.present?.(asset))) return true
+  return rows
     .flatMap((r) => (typeof r === 'string' ? [r] : r.keys))
     .some((k) => hasPropertyValue(factValue(asset.metadata, k)))
 }
