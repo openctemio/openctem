@@ -19,4 +19,4 @@ export {
 } from './route-permissions'
 
 // Re-export types for convenience
-export type { SidebarData, NavGroup, NavItem, Team, User } from '@/components/types'
+export type { SidebarData, NavGroup, NavItem, User } from '@/components/types'

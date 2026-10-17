@@ -109,7 +109,7 @@ func (r *certResolver) resolve(ctx context.Context, leaf *x509.Certificate, peer
 
 // MTLSConfig configures the gRPC binding's listener.
 type MTLSConfig struct {
-	// Addr is the listen address (":8443").
+	// Addr is the listen address (":9443").
 	Addr string
 	// Host is the name sensors dial; the server certificate is minted for it.
 	Host string

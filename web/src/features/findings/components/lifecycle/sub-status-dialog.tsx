@@ -143,7 +143,7 @@ export function SubStatusDialog({
         isPlanLimitError(err)
           ? t(
               'findingLifecycle.plan.subStatusesReached',
-              'Your plan allows no more sub-statuses. Archive one, or ask your administrator for more.'
+              'This organization has reached its limit of sub-statuses. Archive one, or ask your administrator for more.'
             )
           : getErrorMessage(
               err,

@@ -34,12 +34,12 @@ var (
 		[]string{"reason"},
 	)
 
-	// PlanLimitRefusalsTotal counts additions refused by a plan limit, by
+	// LimitRefusalsTotal counts additions refused by an organization limit, by
 	// limit key (seats, assets, sensors, api_keys, ci_trusts, ...).
-	PlanLimitRefusalsTotal = promauto.NewCounterVec(
+	LimitRefusalsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "openctem_plan_limit_refusals_total",
-			Help: "Additions refused by a plan limit, by limit key",
+			Name: "openctem_limit_refusals_total",
+			Help: "Additions refused by an organization limit, by limit key",
 		},
 		[]string{"key"},
 	)

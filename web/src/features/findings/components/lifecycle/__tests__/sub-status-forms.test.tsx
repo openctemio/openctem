@@ -126,7 +126,7 @@ describe('SubStatusDialog', () => {
     })
   })
 
-  it('says when the plan allows no more sub-statuses', async () => {
+  it('says when the limit allows no more sub-statuses', async () => {
     create.mockRejectedValue(new ApiClientError('limit', 'PLAN_LIMIT', 403))
     render(
       <SubStatusDialog
@@ -140,7 +140,7 @@ describe('SubStatusDialog', () => {
     )
     await userEvent.type(screen.getByLabelText(/^name$/i), 'Waiting')
     await userEvent.click(screen.getByRole('button', { name: /save sub-status/i }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(/plan allows no more sub-statuses/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/limit of sub-statuses/i)
   })
 })
 
