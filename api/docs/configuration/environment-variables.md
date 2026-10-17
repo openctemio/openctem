@@ -284,7 +284,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `WORKER_HEARTBEAT_TIMEOUT` | duration | `5m` |  |  | No heartbeat for this long marks a sensor inactive. Advised heartbeat intervals stay below half of it. |
 | `SCAN_ZONE_RESOLVER` | string | empty |  |  | DNS resolver scan-zone routing resolves host names with: `system` (the platform's own resolver, which may know internal names) or `host[:port]` of a recursive resolver. Unset: a public resolver when organizations are self-service, otherwise `system`. |
 | `SENSOR_MTLS_CA_CERT_FILE` | path | empty |  |  | Sensor CA certificate (PEM) for protocol v3 client certificates. Set together with `SENSOR_MTLS_CA_KEY_FILE`; unset, the CA is created once in `SENSOR_MTLS_CA_DIR`. |
-| `SENSOR_MTLS_CA_DIR` | path | `data/sensor-ca` |  |  | Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume. |
+| `SENSOR_MTLS_CA_DIR` | path | `data/sensor-ca` |  |  | Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys). |
 | `SENSOR_MTLS_CA_KEY_FILE` | path | empty |  |  | Sensor CA private key (PEM). Not the job signer's key. |
 | `SENSOR_MTLS_CERT_TTL` | duration | `168h` |  |  | Lifetime of sensor client certificates, clamped to 1h..720h. |
 | `SENSOR_MTLS_LISTEN_ADDR` | string | `:8443` |  |  | TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it. |
@@ -472,7 +472,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `SIGNER_LEDGER_T2_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a tier-2 scope change. |
 | `SIGNER_SENSOR_BURST` | string | empty |  |  | `openctem-signer`: burst of `SIGNER_SENSOR_RATE`. |
 | `SIGNER_SENSOR_RATE` | string | empty |  |  | `openctem-signer`: signatures per second allowed per sensor. |
-| `SIGNER_STATE_DIR` | string | empty |  |  | `openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume. |
+| `SIGNER_STATE_DIR` | string | empty |  |  | `openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys). |
 | `SIGNER_TENANT_BURST` | string | empty |  |  | `openctem-signer`: burst of `SIGNER_TENANT_RATE`. |
 | `SIGNER_TENANT_RATE` | string | empty |  |  | `openctem-signer`: signatures per second allowed per organization. |
 
