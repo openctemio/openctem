@@ -20,8 +20,9 @@
 e2e/.env
 e2e/ci/.env
 
-# next.js
+# next.js (the tenant app and the console app)
 /.next/
+/console/.next/
 /out/
 
 # production

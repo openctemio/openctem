@@ -210,10 +210,10 @@ export function LoginForm({
         }
       }
 
-      // Platform administrator: the admin console (it asks for the TOTP code).
+      // Platform administrator: the console is a separate site with its own
+      // sign-in (RFC-022); this app has no console to go to.
       if (result.platformAdmin) {
-        const toConsole = safeRedirectTo === '/admin' || safeRedirectTo.startsWith('/admin/')
-        hardNavigate(toConsole ? safeRedirectTo : '/admin')
+        toast.info(t('auth.login.platformAdminUseConsole'))
         return
       }
 

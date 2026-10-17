@@ -3,7 +3,7 @@
 #
 # Starts the all-in-one image twice against an EXTERNAL Postgres + Redis and
 # waits for Docker's own healthcheck (which covers every process):
-#   GATEWAY=off -> :8080 /health and :3000 /api/health answer
+#   GATEWAY=off -> :8080 /health and :3000 /api/health answer; no console on :3001
 #   GATEWAY=on  -> :443 /health (API) and /login (web) answer through the
 #                  shared gateway (api/deploy/gateway, TLS mode internal),
 #                  /metrics is blocked, 8080/3000 are bound to 127.0.0.1 only
@@ -47,9 +47,11 @@ docker run -d --name "$name-off" "${common[@]}" -e GATEWAY=off "$img" >/dev/null
 wait_healthy "$name-off"
 docker exec "$name-off" wget -qO- http://127.0.0.1:8080/health; echo
 docker exec "$name-off" wget -qO /dev/null http://127.0.0.1:3000/login && echo "  ok    web /login on :3000 -> 200"
+if docker exec "$name-off" wget -q -T 3 -O /dev/null http://127.0.0.1:3001/login 2>/dev/null; then echo "  FAIL  console runs with GATEWAY=off (it would see every client as loopback)" >&2; exit 1; fi
+echo "  ok    no console with GATEWAY=off"
 docker exec "$name-off" sh -c 'wget -qO- http://127.0.0.1:8080/openapi.yaml | grep -q "^paths:"' && echo "  ok    api /openapi.yaml on :8080 -> spec"
 docker exec "$name-off" sh -c 'netstat -ltn 2>/dev/null | grep -E ":(8080|3000|443) " || true'
-docker logs "$name-off" 2>&1 | grep -oE '^\[(supervise|migrate|api|web|gateway)\]' | sort | uniq -c
+docker logs "$name-off" 2>&1 | grep -oE '^\[(supervise|migrate|api|web|console|gateway)\]' | sort | uniq -c
 docker rm -f "$name-off" >/dev/null
 
 echo "== GATEWAY=on"
@@ -63,13 +65,20 @@ docker exec "$name-on" wget -qO- --no-check-certificate --header 'Host: localhos
 expect /health 200 api
 expect /login 200 web
 expect /metrics 404 "blocked by the gateway"
+expect /api/v1/admin/auth/validate 404 "no console API on the main site"
+# The platform console's own site (OPENCTEM_ADMIN_SITE=port): its root, from loopback (an allowed network).
+cstatus() { { docker exec "$name-on" wget -S -q --no-check-certificate --header 'Host: localhost:8443' -O /dev/null "https://127.0.0.1:8443$1" 2>&1 || true; } | awk '/HTTP\//{c=$2} END{print c}'; }
+for p in / /login; do
+  got=$(cstatus "$p")
+  if [ "$got" = 200 ]; then echo "  ok    $p via console site :8443 -> 200"; else echo "  FAIL  $p via console site :8443 -> '$got', want 200" >&2; exit 1; fi
+done
 # Only the gateway is routable; api and web listen on loopback.
 listen=$(docker exec "$name-on" sh -c 'netstat -ltn 2>/dev/null || ss -ltn')
-echo "$listen" | grep -E ':(8080|3000|443|80|2019) ' || true
-if echo "$listen" | grep -E '(0\.0\.0\.0|::):(8080|3000) '; then echo "api/web reachable beyond loopback with GATEWAY=on" >&2; exit 1; fi
+echo "$listen" | grep -E ':(8080|8081|3000|3001|443|8443|80|2019) ' || true
+if echo "$listen" | grep -E '(0\.0\.0\.0|::):(8080|8081|3000|3001) '; then echo "api/web/console reachable beyond loopback with GATEWAY=on" >&2; exit 1; fi
 docker exec "$name-on" test -s /data/ca/openctem-root-ca.crt || { echo "internal CA root not exported to /data/ca" >&2; exit 1; }
 echo "  ok    internal CA root exported to /data/ca/openctem-root-ca.crt"
-docker logs "$name-on" 2>&1 | grep -oE '^\[(supervise|migrate|api|web|gateway)\]' | sort | uniq -c
+docker logs "$name-on" 2>&1 | grep -oE '^\[(supervise|migrate|api|web|console|gateway)\]' | sort | uniq -c
 docker rm -f "$name-on" >/dev/null
 
 echo "== GATEWAY=on without OPENCTEM_HOSTNAME refuses to start"
