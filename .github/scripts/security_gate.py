@@ -376,9 +376,16 @@ def ack_state(gh: GitHub, number: int, labels: set[str], ackers: list[str]) -> t
     return False, f"`{ACK_LABEL}` was added by {actor or 'an unknown user'}, who is not listed under `ackers`"
 
 
-def new_code_scanning_alerts(gh: GitHub, number: int, base_ref: str) -> tuple[list[dict], str]:
-    """Open high/critical alerts on the PR's analysis that are not open on the base branch."""
-    pr = gh.paginate(f"code-scanning/alerts?ref=refs/pull/{number}/merge&state=open", ok404=True)
+def new_code_scanning_alerts(gh: GitHub, number: int, base_ref: str,
+                             analysis_ref: str = "") -> tuple[list[dict], str]:
+    """Open high/critical alerts on the PR's analysis that are not open on the base branch.
+
+    analysis_ref is the ref whose analysis is read: the pull request's merge
+    ref by default, the merge group's own ref in the merge queue. The PR merge
+    ref keeps its last analysis, taken against an older base, so it can still
+    list alerts the base fixed since; a merge group is a fresh commit."""
+    ref = analysis_ref or f"refs/pull/{number}/merge"
+    pr = gh.paginate(f"code-scanning/alerts?ref={ref}&state=open", ok404=True)
     if not pr:
         return [], "no code-scanning analysis of this pull request yet (or none found)"
     base = gh.paginate(f"code-scanning/alerts?ref=refs/heads/{base_ref}&state=open", ok404=True)
@@ -627,10 +634,12 @@ def cmd_gate() -> int:
     config = load_config(pathlib.Path(os.environ.get("SECURITY_PATHS", ".github/security-paths.yml")).read_text())
     gh = GitHub(repo, token, os.environ.get("GITHUB_API_URL", "https://api.github.com"))
 
+    analysis_ref = ""
     if event_name == "pull_request":
         number = int(event["pull_request"]["number"])
     elif event_name == "merge_group":
-        number = merge_group_pr(event["merge_group"]["head_ref"])
+        analysis_ref = event["merge_group"]["head_ref"]
+        number = merge_group_pr(analysis_ref)
     else:
         raise RuntimeError(f"unsupported event {event_name}")
 
@@ -656,7 +665,7 @@ def cmd_gate() -> int:
         r.acked, r.ack_note = ack_state(gh, number, labels, config["ackers"])
         if not r.acked and stale_note:
             r.ack_note = stale_note
-        r.alerts, r.alerts_note = new_code_scanning_alerts(gh, number, pr["base"]["ref"])
+        r.alerts, r.alerts_note = new_code_scanning_alerts(gh, number, pr["base"]["ref"], analysis_ref)
         r.checks = security_checks(gh, pr["head"]["sha"])
 
     body = render(r, repo, server)
