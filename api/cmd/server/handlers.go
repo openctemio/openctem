@@ -274,6 +274,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
+	if svc.Entitlement != nil {
+		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
+	}
 	if svc.DomainVerify != nil {
 		tenantHandler.SetSignupDomainPolicy(svc.DomainVerify)
 		tenantHandler.SetDomainSignupPolicy(svc.DomainVerify, svc.Audit)
@@ -866,8 +869,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
 	}
 	if svc.Entitlement != nil {
-		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
-		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
+		handlers.Limits = handler.NewLimitsHandler(svc.Entitlement, adminConsoleSvc, log)
+		handlers.Limits.SetAccountPortalURL(cfg.AccountPortalURL)
 	}
 	if svc.IdleWorkspaces != nil {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
@@ -878,6 +881,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ScanPolicy != nil {
 		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
 	}
+	// Console > System > Shared sensors (RFC-100 §12): the fleet, queue
+	// aggregates, job metadata, the audited job view and remote actions.
+	handlers.AdminSharedFleet = handler.NewAdminSharedFleetHandler(sensor.NewSharedFleetService(
+		postgres.NewSharedFleetRepository(deps.DB), repos.CommandLog, repos.AdminAuditLog, log), log)
 	// Shared sensor enrollment tokens (RFC-100): super admin, console step-up.
 	if svc.SensorPairing != nil {
 		handlers.AdminSharedSensor = handler.NewAdminSharedSensorHandler(svc.SensorPairing, adminConsoleSvc, log)
@@ -1612,6 +1619,9 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	}
 	if h.Announcement != nil {
 		s.Announcements = h.Announcement.ActiveResponses
+	}
+	if svc.Entitlement != nil {
+		s.LimitsApply = svc.Entitlement.Applies
 	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability

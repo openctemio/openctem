@@ -227,6 +227,9 @@ func TestAdminCSRFTokenDerivation(t *testing.T) {
 		t.Fatal("validation does not follow the session")
 	}
 	// Replicas sharing the secret agree; another secret yields other tokens.
+	// The key is process-wide: restore it so later tests see what they did.
+	prev := middleware.AdminCSRFKeySnapshot()
+	t.Cleanup(func() { middleware.RestoreAdminCSRFKey(prev) })
 	middleware.SetAdminCSRFSecret("replica-shared-secret-0123456789abcdef")
 	shared := middleware.AdminCSRFToken("session-a")
 	middleware.SetAdminCSRFSecret("replica-shared-secret-0123456789abcdef")

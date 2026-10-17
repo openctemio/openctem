@@ -188,27 +188,30 @@ export type AccessRequestList = Schemas['internal_infra_http_handler.AccessReque
 export type ApproveAccessRequestInput = Schemas['internal_infra_http_handler.ApproveAccessRequest']
 export type ApproveAccessRequestResult =
   Schemas['internal_infra_http_handler.ApproveAccessRequestResponse']
-// Plans and limits (console System > Plans and organization plans;
-// the organization Settings > Plan & usage)
-export type PlanDefaultsResponse = Schemas['internal_infra_http_handler.PlanDefaultsResponse']
-export type UpdatePlanDefaultsRequest =
-  Schemas['internal_infra_http_handler.UpdatePlanDefaultsRequest']
-export type PlanSummaryResponse = Schemas['internal_infra_http_handler.PlanSummaryResponse']
-export type PlanEffectiveLimit =
-  Schemas['github_com_openctemio_openctem_api_pkg_domain_plan.Effective']
-export type SetTenantPlanRequest = Schemas['internal_infra_http_handler.SetTenantPlanRequest']
-export type SetPlanOverrideRequest = Schemas['internal_infra_http_handler.SetPlanOverrideRequest']
-// Module entitlements (console System > Plans and an organization's modules)
-export type PlanModulesResponse = Schemas['internal_infra_http_handler.PlanModulesResponse']
-export type UpdatePlanModulesRequest =
-  Schemas['internal_infra_http_handler.UpdatePlanModulesRequest']
+// Limits and feature denies (console System > Limits and an organization's
+// limits and modules; the organization Settings > Usage & limits)
+export type SelfServiceLimitsResponse =
+  Schemas['internal_infra_http_handler.SelfServiceLimitsResponse']
+export type UpdateSelfServiceLimitsRequest =
+  Schemas['internal_infra_http_handler.UpdateSelfServiceLimitsRequest']
+export type AdminLimitsResponse = Schemas['internal_infra_http_handler.AdminLimitsResponse']
+export type EffectiveLimit =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_limits.Effective']
+export type DeniedFeature =
+  Schemas['github_com_openctemio_openctem_api_internal_app_entitlement.DeniedFeature']
+export type SetLimitRequest = Schemas['internal_infra_http_handler.SetLimitRequest']
+export type OrganizationLimitsResponse =
+  Schemas['internal_infra_http_handler.OrganizationLimitsResponse']
+export type OrganizationLimit = Schemas['internal_infra_http_handler.OrganizationLimit']
+export type OrganizationDeniedFeature =
+  Schemas['internal_infra_http_handler.OrganizationDeniedFeature']
 export type AdminTenantModulesResponse =
   Schemas['internal_infra_http_handler.AdminTenantModulesResponse']
 export type ModuleEntitlement =
   Schemas['github_com_openctemio_openctem_api_internal_app_entitlement.ModuleEntitlement']
-export type SetModuleGrantRequest = Schemas['internal_infra_http_handler.SetModuleGrantRequest']
-export type DeleteModuleGrantRequest =
-  Schemas['internal_infra_http_handler.DeleteModuleGrantRequest']
+export type SetFeatureDenyRequest = Schemas['internal_infra_http_handler.SetFeatureDenyRequest']
+export type DeleteFeatureDenyRequest =
+  Schemas['internal_infra_http_handler.DeleteFeatureDenyRequest']
 // Admin console: the sign-up policy (System > Sign-up)
 export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']
 export type UpdateSignupPolicyRequest =

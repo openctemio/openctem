@@ -23,9 +23,9 @@ type Organization struct {
 	ActiveIdentityProviders int
 	VerifiedDomains         int
 	SSOEnforced             bool
-	// Plan is the organization's plan (free, pro, enterprise); one created
-	// before plans has no stored plan and is enterprise.
-	Plan string
+	// LimitsApply: at least one limit or feature deny is set for the
+	// organization (by the operator or a source).
+	LimitsApply bool
 }
 
 // Owner filter values for OrganizationFilter.Owner.
@@ -41,8 +41,6 @@ type OrganizationFilter struct {
 	// Owner is OrganizationOwnerNone (no active owner), OrganizationOwnerPresent
 	// or empty (any).
 	Owner string
-	// Plan keeps organizations on this plan; empty means any.
-	Plan string
 	// IncludeSystem lists the platform system tenant too. It is internal
 	// (seeded data, no members): left out of the list unless asked for.
 	IncludeSystem bool

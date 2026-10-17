@@ -266,7 +266,7 @@ func decodeLifecycleBody(w http.ResponseWriter, r *http.Request, v any) bool {
 func (h *FindingLifecycleHandler) writeError(w http.ResponseWriter, err error) {
 	var invalid *lcapp.ErrInvalidLifecycle
 	switch {
-	case WritePlanLimitError(w, err):
+	case WriteLimitError(w, err):
 	case errors.As(err, &invalid):
 		apierror.ValidationFailed("The lifecycle is not valid", LifecycleValidationResponse{Validation: invalid.Validation}).WriteJSON(w)
 	case errors.Is(err, lc.ErrSubStatusNotFound):
