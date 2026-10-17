@@ -1892,6 +1892,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing = sp
 		s.SensorPairing.SetAudit(s.Audit)
 		s.SensorPairing.SetEvents(s.Sensor)
+		// Shared sensor enrollment (RFC-100) has no tenant: console audit.
+		s.SensorPairing.SetAdminAudit(repos.AdminAuditLog)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
