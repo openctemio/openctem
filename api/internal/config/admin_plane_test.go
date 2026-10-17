@@ -44,6 +44,24 @@ func TestAdminListenAddr(t *testing.T) {
 	}
 }
 
+func TestAdminPlaneProductionNeedsSharedCSRFSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name, env, secret string
+		refuse            bool
+	}{
+		{"production, no secret", EnvProduction, "", true},
+		{"production, secret", EnvProduction, "0123456789abcdef0123456789abcdef", false},
+		{"development, no secret", "development", "", false},
+	} {
+		c := &Config{}
+		c.App.Env = tc.env
+		c.Auth.JWTSecret = tc.secret
+		if got := c.validateAdminPlane() != nil; got != tc.refuse {
+			t.Errorf("%s: refused=%v, want %v", tc.name, got, tc.refuse)
+		}
+	}
+}
+
 // OPENCTEM_PLANE: a tenant process holds no console credentials and opens no
 // console listener; an admin process needs the console role and a private
 // main listener (or the explicit all-interfaces opt-in).

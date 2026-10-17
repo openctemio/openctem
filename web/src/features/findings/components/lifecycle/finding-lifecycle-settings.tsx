@@ -10,7 +10,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { fetcher } from '@/lib/api/client'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { ErrorState, ReadOnlyNotice, SettingsSection } from '@/features/shared'
-import { ORGANIZATION_PLAN_URL } from '@/features/plans/api/use-organization-plan'
+import { ORGANIZATION_LIMITS_URL } from '@/features/limits/api/use-organization-limits'
 import { useLifecycleSubStatuses } from '../../api/use-finding-lifecycles'
 import { planLimit, type PlanLimitRow } from '../../lib/lifecycle'
 import { LifecycleSchemes } from './lifecycle-schemes'
@@ -31,7 +31,7 @@ export function FindingLifecycleSettings() {
   // Plan usage is readable by administrators; only those who may change the
   // lifecycle need it.
   const plan = useSWR<{ limits?: PlanLimitRow[] }>(
-    canWrite ? ORGANIZATION_PLAN_URL : null,
+    canWrite ? ORGANIZATION_LIMITS_URL : null,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -78,7 +78,7 @@ export function FindingLifecycleSettings() {
             title={t('findingLifecycle.subStatus.title', 'Sub-statuses')}
             description={
               subLimit
-                ? t('findingLifecycle.plan.usage', '{used} of {limit} on your plan', {
+                ? t('findingLifecycle.plan.usage', '{used} of {limit} used', {
                     used: subLimit.used,
                     limit: subLimit.limit,
                   })
@@ -104,7 +104,7 @@ export function FindingLifecycleSettings() {
               <p role="status" className="text-sm text-warning">
                 {t(
                   'findingLifecycle.plan.subStatusesReached',
-                  'Your plan allows no more sub-statuses. Archive one, or ask your administrator for more.'
+                  'This organization has reached its limit of sub-statuses. Archive one, or ask your administrator for more.'
                 )}
               </p>
             )}

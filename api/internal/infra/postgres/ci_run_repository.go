@@ -14,7 +14,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -24,7 +24,7 @@ import (
 // table (global by design).
 type CIRunRepository struct {
 	db         *DB
-	planLimits // ci_trusts
+	limitChecks // ci_trusts
 }
 
 var _ cirun.Repository = (*CIRunRepository)(nil)
@@ -89,7 +89,7 @@ func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 
 // CreateTrustConfig inserts a configuration.
 func (r *CIRunRepository) CreateTrustConfig(ctx context.Context, c *cirun.TrustConfig) error {
-	if err := r.checkLimit(ctx, c.TenantID, plan.CITrusts, 1); err != nil {
+	if err := r.checkLimit(ctx, c.TenantID, limits.CITrusts, 1); err != nil {
 		return err
 	}
 	rules, err := json.Marshal(c.Rules)

@@ -11,7 +11,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/apikey"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -19,7 +19,7 @@ import (
 type APIKeyRepository struct {
 	db *DB
 	tokenPepper
-	planLimits // api_keys
+	limitChecks // api_keys
 }
 
 // NewAPIKeyRepository creates a new APIKeyRepository.
@@ -31,7 +31,7 @@ var _ apikey.Repository = (*APIKeyRepository)(nil)
 
 // Create inserts a new API key.
 func (r *APIKeyRepository) Create(ctx context.Context, key *apikey.APIKey) error {
-	if err := r.checkLimit(ctx, key.TenantID(), plan.APIKeys, 1); err != nil {
+	if err := r.checkLimit(ctx, key.TenantID(), limits.APIKeys, 1); err != nil {
 		return err
 	}
 	query := `
