@@ -40,6 +40,16 @@ function resolveBackendApiUrl(): string {
   return url.replace('localhost', '127.0.0.1')
 }
 
+/**
+ * The API's console listener (ADMIN_API_URL, e.g. http://api:8081) for the
+ * platform console's proxy; the main API URL when unset (the console then
+ * shares the API's main listener).
+ */
+function resolveAdminApiUrl(): string {
+  const url = getEnvVar('ADMIN_API_URL', '')
+  return url ? url.replace('localhost', '127.0.0.1') : resolveBackendApiUrl()
+}
+
 // ============================================
 // PUBLIC ENVIRONMENT VARIABLES
 // (Accessible from both client and server)
@@ -50,6 +60,8 @@ export const env = {
   api: {
     /** Backend API URL for server-side fetch (e.g., http://api:8080) - Single source of truth */
     url: resolveBackendApiUrl(),
+    /** The API's console listener, for /api/v1/admin (ADMIN_API_URL). */
+    adminUrl: resolveAdminApiUrl(),
     /**
      * WebSocket base URL for direct backend connection.
      * WebSocket cannot go through Next.js proxy due to HTTP upgrade requirements.

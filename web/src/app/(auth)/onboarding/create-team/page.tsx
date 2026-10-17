@@ -13,7 +13,7 @@
  * action only requires the refresh_token, which both states have.
  *
  * When the installation lets only the platform administrator create
- * organizations (TENANT_CREATION_MODE=admin_only), the form is replaced by a
+ * organizations (the admin_only sign-up policy), the form is replaced by a
  * notice to ask the administrator for access, with sign-out (TeamOnboarding).
  */
 

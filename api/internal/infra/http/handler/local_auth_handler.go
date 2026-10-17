@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/onboarding"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -27,7 +28,9 @@ import (
 
 // LocalAuthHandler handles local authentication requests.
 type LocalAuthHandler struct {
-	authService    *auth.AuthService
+	authService *auth.AuthService
+	// onboarding serves the fork of an account without an organization.
+	onboarding     *onboarding.Service
 	sessionService *auth.SessionService
 	emailService   *auth.EmailService
 	platformAdmin  PlatformAdminChecker
@@ -37,7 +40,7 @@ type LocalAuthHandler struct {
 	validator      *validator.Validator
 	logger         *logger.Logger
 	// signupPolicy answers registration_enabled on /auth/info (the console
-	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
+	// sign-up setting). Nil: SIGNUP_MODE=open from the config.
 	signupPolicy signupdom.PolicySource
 	// captcha, when set (CAPTCHA_TURNSTILE_SECRET), must pass before a
 	// registration is looked at, and before a sign-in after repeated
@@ -61,13 +64,13 @@ const CodeCaptchaFailed apierror.Code = "CAPTCHA_FAILED"
 // SetSignupPolicy wires the platform sign-up policy.
 func (h *LocalAuthHandler) SetSignupPolicy(p signupdom.PolicySource) { h.signupPolicy = p }
 
-// registrationEnabled reports whether anyone may create an account: the
-// self_service sign-up mode.
+// registrationEnabled reports whether some public account sign-up is open
+// (accounts domain or open in the policy in force).
 func (h *LocalAuthHandler) registrationEnabled(r *http.Request) bool {
 	if h.signupPolicy != nil {
-		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
+		return h.signupPolicy.Current(r.Context()).AllowsPublicSignup()
 	}
-	return h.authConfig.SelfServiceTenantCreation()
+	return h.authConfig.SignupOpen()
 }
 
 // CodeSignupNotAvailable is the error code of every sign-up refusal; the web
@@ -80,6 +83,16 @@ const CodeSignupNotAvailable apierror.Code = "SIGNUP_NOT_AVAILABLE"
 func writeSignupNotAvailable(w http.ResponseWriter) {
 	apierror.New(http.StatusForbidden, CodeSignupNotAvailable,
 		"Your organization isn't set up yet. Ask your administrator to invite you.").WriteJSON(w)
+}
+
+// CodeSignupSSORequired is the error code of a sign-up refused because the
+// address's domain requires its organization's SSO. The answer names no
+// organization; the web sends the person through email-first discovery.
+const CodeSignupSSORequired apierror.Code = "SSO_REQUIRED"
+
+func writeSignupSSORequired(w http.ResponseWriter) {
+	apierror.New(http.StatusForbidden, CodeSignupSSORequired,
+		"Your organization requires single sign-on for this address. Sign in with your organization's SSO.").WriteJSON(w)
 }
 
 // NewLocalAuthHandler creates a new LocalAuthHandler.
@@ -331,9 +344,10 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.handleAuthError(w, err)
 		return
 	}
-	if h.loginFailures != nil {
-		_ = h.loginFailures.Reset(r.Context(), ipAddress)
-	}
+	// A success does not clear the address's count: one sprayer signing in
+	// to their own account between attempts must not escape the CAPTCHA.
+	// The count decays with LoginFailureWindow; the account's own failure
+	// state (lockout) is reset by the sign-in itself.
 
 	// Password was right but a second factor is needed: answer with the
 	// challenge only. No cookie is set and no session exists yet.
@@ -1281,6 +1295,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	case WritePlanLimitError(w, err):
 	case errors.Is(err, auth.ErrRegistrationDisabled), errors.Is(err, auth.ErrSignupNotAvailable):
 		writeSignupNotAvailable(w)
+	case errors.Is(err, auth.ErrSignupSSORequired):
+		writeSignupSSORequired(w)
 	case errors.Is(err, auth.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):

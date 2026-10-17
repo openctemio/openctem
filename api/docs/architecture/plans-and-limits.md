@@ -17,8 +17,8 @@ Decided 2026-10-08.
 | `api_keys` | active API keys | 5 |
 | `ci_trusts` | CI trust configurations | 2 |
 | `invites_per_day` | invitations created in the last 24 hours | 20 |
-| `platform_scans_per_day` | platform scans started a day | 10 |
-| `platform_scans_concurrent` | platform scans running at once | 1 |
+| `platform_scans_per_day` | scans started on shared sensors since 00:00 UTC (one per run, however many chunks); enforced when a scan is triggered: an explicit shared-sensor scan over it is refused, `auto` stays on the organization's own sensors, an unreadable limit refuses (RFC-100 §10) | 10 |
+| `platform_scans_concurrent` | shared-sensor jobs queued or running at once; enforced by the shared claim path (RFC-100 S5, not built yet) | 1 |
 | `free_teams_per_user` | Free organizations one person owns (checked when an organization is created) | 1 |
 | `findings` | the organization's findings (a new fingerprint; a re-sighting of an existing finding counts nothing) | unlimited |
 | `lifecycle_sub_statuses` | finding sub-statuses that are not archived ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)) | 3 |

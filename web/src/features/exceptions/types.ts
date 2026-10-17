@@ -64,6 +64,22 @@ export interface SuppressionPreview {
   /** More than `limit` match; an approval closes `limit` of them. */
   capped: boolean
   limit: number
+  /** Of those, the findings on assets the caller's data scope covers. */
+  in_scope_findings: number
+  /** The first few in-scope findings; never findings outside the caller's scope. */
+  sample: SuppressionPreviewFinding[]
+}
+
+/** One finding of a preview sample. */
+export interface SuppressionPreviewFinding {
+  id: string
+  asset_id: string
+  asset_name?: string
+  rule_id?: string
+  file_path?: string
+  title: string
+  severity: string
+  status: string
 }
 
 /** `GET /api/v1/suppressions` list envelope. */

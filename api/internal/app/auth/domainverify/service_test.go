@@ -122,6 +122,8 @@ func TestAddDomain_RejectsSharedDomains(t *testing.T) {
 		"msn.com", "microsoft.com", "onmicrosoft.com",
 		"contoso.onmicrosoft.com", // *.onmicrosoft.com tenant
 		"  YAHOO.COM  ",           // normalization still blocks
+		// Public Suffix List: suffixes and names under shared platforms.
+		"co.uk", "com.vn", "com.au", "github.io", "alice.github.io", "x.vercel.app",
 	}
 	for _, d := range blocked {
 		svc := NewService(newMemRepo(), &mockResolver{}, nil)

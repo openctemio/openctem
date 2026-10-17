@@ -1035,6 +1035,7 @@
   "findings.approvals.requesterFormer": "Cựu thành viên",
   "findings.approvals.actor.ai_triage": "AI phân loại",
   "findings.approvals.actor.vex": "Tuyên bố VEX",
+  "findings.approvals.actor.ticket": "Phiếu liên kết",
   "findings.approvals.action.approve": "Phê duyệt",
   "findings.approvals.action.reject": "Từ chối",
   "findings.approvals.action.cancel": "Hủy yêu cầu",
@@ -1084,5 +1085,9 @@
   "findings.transitionReason.fields_required": "Cần {fields}: hãy đổi từng phát hiện một",
   "findings.transitionReason.note_too_short": "Cần ghi chú ít nhất {n} ký tự",
   "findings.statusSelect.needsNote": "ghi chú từ {n} ký tự",
-  "findings.statusSelect.needs": "cần {what}"
+  "findings.statusSelect.needs": "cần {what}",
+  "findings.approvals.progress": "{collected} / {required} phê duyệt",
+  "findings.approvals.toast.signed": "Đã ghi nhận phê duyệt của bạn",
+  "findings.approvals.toast.signedDesc": "Cần thêm {count} phê duyệt trước khi trạng thái thay đổi.",
+  "findings.approvals.col.tier": "Phê duyệt"
 }

@@ -1035,6 +1035,7 @@
   "findings.approvals.requesterFormer": "Former member",
   "findings.approvals.actor.ai_triage": "AI triage",
   "findings.approvals.actor.vex": "VEX statement",
+  "findings.approvals.actor.ticket": "Linked ticket",
   "findings.approvals.action.approve": "Approve",
   "findings.approvals.action.reject": "Reject",
   "findings.approvals.action.cancel": "Cancel request",
@@ -1084,5 +1085,9 @@
   "findings.transitionReason.fields_required": "Needs {fields}: change these findings one at a time",
   "findings.transitionReason.note_too_short": "Needs a note of at least {n} characters",
   "findings.statusSelect.needsNote": "note of {n}+ characters",
-  "findings.statusSelect.needs": "needs {what}"
+  "findings.statusSelect.needs": "needs {what}",
+  "findings.approvals.progress": "{collected} of {required} approvals",
+  "findings.approvals.toast.signed": "Your approval is recorded",
+  "findings.approvals.toast.signedDesc": "{count} more approval(s) needed before the status changes.",
+  "findings.approvals.col.tier": "Approval"
 }

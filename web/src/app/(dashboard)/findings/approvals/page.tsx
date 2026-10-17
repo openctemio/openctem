@@ -75,6 +75,12 @@ import { useTranslation } from '@/context/i18n-provider'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
 import { closureReasonLabel } from '@/features/findings/lib/closure'
 import { FindingSelfApproveDialog } from '@/features/findings/components/finding-self-approve-dialog'
+import {
+  approveErrorOutcome,
+  approveResultOutcome,
+  tierHelp,
+  tierLabel,
+} from '@/features/findings/lib/approval-policy'
 
 // ============================================
 // CONSTANTS
@@ -101,6 +107,7 @@ const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
 const APPROVAL_ACTOR_LABELS: Record<string, string> = {
   ai_triage: 'AI triage',
   vex: 'VEX statement',
+  ticket: 'Linked ticket',
 }
 
 const APPROVAL_TABS: readonly string[] = ['all', ...APPROVAL_STATUSES]
@@ -152,6 +159,37 @@ function RequesterCell({
         </span>
       )
   }
+}
+
+/** The request's approval tier and, while pending, its sign-off progress. */
+function ApprovalTierCell({ approval }: { approval: ApiApproval }) {
+  const { t } = useTranslation()
+  if (!approval.tier) return <span className="text-sm text-muted-foreground">-</span>
+  const required = approval.approvals_required ?? 0
+  const collected = approval.approvals_collected ?? 0
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <Badge
+        variant="outline"
+        className={cn(
+          'text-xs whitespace-nowrap',
+          (approval.tier === 'security' || approval.tier === 'dual') &&
+            'border-primary/40 text-primary'
+        )}
+        title={tierHelp(t, approval.tier)}
+      >
+        {tierLabel(t, approval.tier)}
+      </Badge>
+      {approval.status === 'pending' && required > 1 && (
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {t('findings.approvals.progress', '{collected} of {required} approvals', {
+            collected,
+            required,
+          })}
+        </span>
+      )}
+    </div>
+  )
 }
 
 // ============================================
@@ -277,22 +315,38 @@ export default function ApprovalsPage() {
     if (!selectedApproval || actionInProgress) return
     setActionInProgress(selectedApproval.id)
     try {
-      await triggerApprove()
-      toast.success(t('findings.approvals.toast.approved', 'Approval request approved'), {
-        description: t(
-          'findings.approvals.toast.approvedDesc',
-          'Finding status will be changed to {status}',
-          { status: getRequestedStatusLabel(t, selectedApproval.requested_status) }
-        ),
-      })
+      // A re-authentication prompt (STEP_UP_REQUIRED) is answered by the API
+      // client, which retries once; a cancelled prompt ends up below.
+      const outcome = approveResultOutcome(await triggerApprove())
+      if (outcome.kind === 'recorded') {
+        toast.success(t('findings.approvals.toast.signed', 'Your approval is recorded'), {
+          description: t(
+            'findings.approvals.toast.signedDesc',
+            '{count} more approval(s) needed before the status changes.',
+            { count: outcome.remaining }
+          ),
+        })
+      } else {
+        toast.success(t('findings.approvals.toast.approved', 'Approval request approved'), {
+          description: t(
+            'findings.approvals.toast.approvedDesc',
+            'Finding status will be changed to {status}',
+            { status: getRequestedStatusLabel(t, selectedApproval.requested_status) }
+          ),
+        })
+      }
       await mutate()
     } catch (err) {
+      const outcome = approveErrorOutcome(t, err)
       toast.error(
-        getErrorMessage(
-          err,
-          t('findings.approvals.toast.approveFailed', 'Failed to approve request')
-        )
+        outcome.kind === 'refused'
+          ? outcome.message
+          : getErrorMessage(
+              err,
+              t('findings.approvals.toast.approveFailed', 'Failed to approve request')
+            )
       )
+      if (outcome.kind === 'refused') await mutate()
     } finally {
       setActionInProgress(null)
       setSelectedApproval(null)
@@ -465,6 +519,12 @@ export default function ApprovalsPage() {
           )
         },
         enableSorting: true,
+      },
+      {
+        id: 'tier',
+        header: t('findings.approvals.col.tier', 'Approval'),
+        cell: ({ row }) => <ApprovalTierCell approval={row.original} />,
+        enableSorting: false,
       },
       {
         id: 'requester',
@@ -826,10 +886,25 @@ export default function ApprovalsPage() {
         open={approveDialogOpen}
         onOpenChange={setApproveDialogOpen}
         title={t('confirm.findingApproval.approveTitle', 'Approve this status change?')}
-        desc={t(
-          'confirm.findingApproval.approveDesc',
-          'The finding moves to the requested status at once.'
-        )}
+        desc={
+          selectedApproval &&
+          (selectedApproval.approvals_required ?? 0) - (selectedApproval.approvals_collected ?? 0) >
+            1
+            ? t(
+                'confirm.findingApproval.approveDescMore',
+                'Your approval is recorded. The finding moves to the requested status once {count} more approval(s) are in.',
+                {
+                  count:
+                    (selectedApproval.approvals_required ?? 0) -
+                    (selectedApproval.approvals_collected ?? 0) -
+                    1,
+                }
+              )
+            : t(
+                'confirm.findingApproval.approveDesc',
+                'The finding moves to the requested status at once.'
+              )
+        }
         confirmText={
           isApproving ? (
             <>

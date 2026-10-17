@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -29,24 +31,42 @@ const (
 
 // AdminConsoleHandler serves platform admin console login (RFC-022).
 type AdminConsoleHandler struct {
-	svc                *adminconsole.Service
-	cookieSecure       bool
-	refreshTokenCookie string
-	logger             *logger.Logger
+	svc          *adminconsole.Service
+	cookieSecure bool
+	logger       *logger.Logger
+
+	// captcha and loginFailures add the same CAPTCHA after repeated failed
+	// sign-ins as the tenant /login (counted per client address, under a
+	// console-only key).
+	captcha       Captcha
+	loginFailures LoginFailureCounter
+}
+
+// SetLoginGuard wires the CAPTCHA and the failed-sign-in counter on the
+// console's /login.
+func (h *AdminConsoleHandler) SetLoginGuard(c Captcha, f LoginFailureCounter) {
+	h.captcha, h.loginFailures = c, f
+}
+
+func consoleFailureKey(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	return "console:" + ip
 }
 
 // NewAdminConsoleHandler creates the handler. cookieSecure mirrors
 // AUTH_COOKIE_SECURE (true in production, behind HTTPS).
-// refreshTokenCookie is the name of the normal sign-in refresh-token cookie
-// (refresh_token): the console session starts from it.
-func NewAdminConsoleHandler(svc *adminconsole.Service, cookieSecure bool, refreshTokenCookie string, log *logger.Logger) *AdminConsoleHandler {
-	if refreshTokenCookie == "" {
-		refreshTokenCookie = "refresh_token"
-	}
-	return &AdminConsoleHandler{
-		svc: svc, cookieSecure: cookieSecure, refreshTokenCookie: refreshTokenCookie,
-		logger: log.With("handler", "admin_console"),
-	}
+func NewAdminConsoleHandler(svc *adminconsole.Service, cookieSecure bool, log *logger.Logger) *AdminConsoleHandler {
+	return &AdminConsoleHandler{svc: svc, cookieSecure: cookieSecure, logger: log.With("handler", "admin_console")}
+}
+
+// AdminConsoleLoginRequest is the console's own first factor: the account's
+// email and password.
+type AdminConsoleLoginRequest struct {
+	Email        string `json:"email"`
+	Password     string `json:"password"`
+	CaptchaToken string `json:"captcha_token,omitempty"`
 }
 
 // AdminLoginResponse tells the client which second step follows.
@@ -117,41 +137,60 @@ func (h *AdminConsoleHandler) clearCookie(w http.ResponseWriter, name, path stri
 	h.setCookie(w, name, "", path, -1, httpOnly)
 }
 
-// StartSession handles POST /api/v1/admin/auth/session. The caller has
-// already signed in on the normal /login page; their refresh-token cookie
-// identifies them. It answers which TOTP step follows and sets the pending
-// admin_mfa cookie.
-// @Summary Open the platform admin console (after /login)
-// @Description Starts a console session for the user signed in on the normal /login page (refresh-token cookie). Only a password sign-in by a user linked to an active platform administrator qualifies; the response says whether to enter a TOTP code or enroll an authenticator first.
+// Login handles POST /api/v1/admin/auth/login: the console's own sign-in,
+// on the console's origin. It answers which TOTP step follows and sets the
+// pending admin_mfa cookie.
+// @Summary Sign in to the platform admin console
+// @Description The administrator's account email and password (the same account and password policy as everywhere, checked with the same lockout), then the console's own second factor. Independent of any tenant sign-in. A wrong password and an unknown email answer the same 401.
 // @Tags Admin Auth
+// @Accept json
 // @Produce json
+// @Param request body AdminConsoleLoginRequest true "Email and password"
 // @Success 200 {object} AdminLoginResponse
-// @Failure 401 {object} apierror.Error "Not signed in"
-// @Failure 403 {object} apierror.Error "Not a platform administrator, or not a password sign-in"
-// @Router /admin/auth/session [post]
-func (h *AdminConsoleHandler) StartSession(w http.ResponseWriter, r *http.Request) {
-	refresh := ""
-	if c, err := r.Cookie(h.refreshTokenCookie); err == nil {
-		refresh = c.Value
+// @Failure 401 {object} apierror.Error "Wrong email or password, or not an active unlocked platform administrator (one answer)"
+// @Failure 403 {object} apierror.Error "CAPTCHA required, or the identity provider sign-in is required"
+// @Router /admin/auth/login [post]
+func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
+	var req AdminConsoleLoginRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
 	}
-	res, err := h.svc.Start(r.Context(), refresh, clientInfo(r))
+	ip := getClientIP(r)
+	key := consoleFailureKey(ip)
+	if captchaNeeded(r.Context(), h.captcha, h.loginFailures, key, h.logger) {
+		ok, cerr := h.captcha.Verify(r.Context(), strings.TrimSpace(req.CaptchaToken), ip)
+		if cerr != nil || !ok {
+			apierror.New(http.StatusForbidden, CodeCaptchaRequired,
+				"Complete the security check and try again.").WriteJSON(w)
+			return
+		}
+	}
+	res, err := h.svc.Start(r.Context(), req.Email, req.Password, clientInfo(r))
 	if err != nil {
 		switch {
-		case errors.Is(err, admin.ErrNotSignedIn):
-			apierror.Unauthorized("Sign in first").WriteJSON(w)
-		case errors.Is(err, admin.ErrPasswordSignInRequired):
-			apierror.Forbidden("Platform administrators sign in with their password, not single sign-on").WriteJSON(w)
+		// A wrong password, an unknown email, a tenant account that is not an
+		// administrator and an inactive or locked one all answer the same, so
+		// the sign-in is not an oracle for a tenant password.
+		case errors.Is(err, admin.ErrInvalidCredentials), errors.Is(err, admin.ErrNotPlatformAdmin), errors.Is(err, admin.ErrAccountLocked):
+			if h.loginFailures != nil && key != "" {
+				if rerr := h.loginFailures.Record(r.Context(), key); rerr != nil {
+					h.logger.Warn("record failed console sign-in", "error", rerr)
+				}
+			}
+			apierror.Unauthorized("Wrong email or password").WriteJSON(w)
 		case errors.Is(err, admin.ErrIdPSignInRequired):
 			apierror.New(http.StatusForbidden, codeIdPSignInRequired,
 				"Sign in to the admin console with the identity provider").WriteJSON(w)
-		case errors.Is(err, admin.ErrNotPlatformAdmin):
-			apierror.Forbidden("This account is not a platform administrator").WriteJSON(w)
 		default:
-			h.logger.Error("admin console start", "error", err)
+			h.logger.Error("admin console sign-in", "error", err)
 			apierror.InternalError(err).WriteJSON(w)
 		}
 		return
 	}
+	// The failure counter is not cleared on success: a success must not reset
+	// the count an attacker is building against the address (the entries decay
+	// with LoginFailureWindow).
 	h.setCookie(w, middleware.AdminMFACookie, res.PendingToken, adminAuthPath, int(admin.PendingMFATTL.Seconds()), true)
 	writeJSON(w, http.StatusOK, AdminLoginResponse{Status: string(res.Status), OTPAuthURI: res.OTPAuthURI, Secret: res.Secret})
 }
@@ -297,24 +336,91 @@ func (h *AdminConsoleHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) 
 
 // Logout handles POST /api/v1/admin/auth/logout.
 // @Summary Admin console logout
-// @Description Ends the caller's console session and the /login session it was opened from (refresh-token cookie), and clears the admin cookies.
+// @Description Ends the caller's console session and clears the admin cookies. No other session is touched.
 // @Tags Admin Auth
 // @Success 204 "No Content"
 // @Router /admin/auth/logout [post]
 func (h *AdminConsoleHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	session, refresh := "", ""
+	session := ""
 	if c, err := r.Cookie(middleware.AdminSessionCookie); err == nil {
 		session = c.Value
 	}
-	if c, err := r.Cookie(h.refreshTokenCookie); err == nil {
-		refresh = c.Value
-	}
-	if err := h.svc.Logout(r.Context(), session, refresh, clientInfo(r)); err != nil {
+	if err := h.svc.Logout(r.Context(), session, clientInfo(r)); err != nil {
 		h.logger.Warn("admin console logout", "error", err)
 	}
 	h.clearCookie(w, middleware.AdminSessionCookie, adminAPIPath, true)
 	h.clearCSRFCookies(w)
 	h.clearCookie(w, middleware.AdminMFACookie, adminAuthPath, true)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// AdminElevateRequest elevates the console session for a while.
+type AdminElevateRequest struct {
+	// Role is ops_admin or super_admin, not above the administrator's own.
+	Role string `json:"role"`
+	// Minutes is 15 to 60.
+	Minutes int `json:"minutes"`
+	// Reason (10 to 500 characters) is kept in the audit log.
+	Reason string `json:"reason"`
+}
+
+// AdminElevateResponse says until when the session acts as the role.
+type AdminElevateResponse struct {
+	Role          string    `json:"role"`
+	ElevatedUntil time.Time `json:"elevated_until"`
+}
+
+// Elevate handles POST /api/v1/admin/auth/elevate.
+// @Summary Elevate the console session for a while
+// @Description Administrators act as read-only until they elevate: a role no higher than their own (ops_admin or super_admin), for 15 to 60 minutes, with a reason; the route takes step-up. Audited at high severity.
+// @Tags Admin Auth
+// @Accept json
+// @Produce json
+// @Param request body AdminElevateRequest true "Elevation"
+// @Success 200 {object} AdminElevateResponse
+// @Failure 400 {object} apierror.Error "Bad role, duration or reason"
+// @Router /admin/auth/elevate [post]
+func (h *AdminConsoleHandler) Elevate(w http.ResponseWriter, r *http.Request) {
+	actor := middleware.MustGetAdminUser(r.Context())
+	var req AdminElevateRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	until, err := h.svc.Elevate(r.Context(), actor, middleware.GetAdminSession(r.Context()), admin.AdminRole(req.Role),
+		time.Duration(req.Minutes)*time.Minute, req.Reason, clientInfo(r))
+	if err != nil {
+		switch {
+		case errors.Is(err, adminconsole.ErrElevationRole), errors.Is(err, adminconsole.ErrElevationDuration), errors.Is(err, adminconsole.ErrElevationReason):
+			apierror.BadRequest(strings.TrimPrefix(err.Error(), "validation error: ")).WriteJSON(w)
+		case errors.Is(err, admin.ErrSessionNotFound):
+			apierror.Unauthorized("console session required").WriteJSON(w)
+		default:
+			h.logger.Error("admin console elevate", "error", err)
+			apierror.InternalError(err).WriteJSON(w)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, AdminElevateResponse{Role: req.Role, ElevatedUntil: until})
+}
+
+// EndElevation handles DELETE /api/v1/admin/auth/elevate.
+// @Summary End the console session's elevation
+// @Description The session acts as read-only again at once.
+// @Tags Admin Auth
+// @Success 204 "No Content"
+// @Router /admin/auth/elevate [delete]
+func (h *AdminConsoleHandler) EndElevation(w http.ResponseWriter, r *http.Request) {
+	actor := middleware.MustGetAdminUser(r.Context())
+	if err := h.svc.EndElevation(r.Context(), actor, middleware.GetAdminSession(r.Context()), clientInfo(r)); err != nil {
+		if errors.Is(err, admin.ErrSessionNotFound) {
+			apierror.Unauthorized("console session required").WriteJSON(w)
+			return
+		}
+		h.logger.Error("admin console end elevation", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

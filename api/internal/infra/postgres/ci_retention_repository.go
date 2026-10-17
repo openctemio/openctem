@@ -5,6 +5,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -99,4 +100,40 @@ func (r *CIRunRepository) PurgeRuns(ctx context.Context, tenantID shared.ID, bef
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// UnjudgedRuns lists up to limit of the tenant's runs still running that
+// started before the time, oldest first (idx_ci_runs_tenant_pipeline narrows
+// by tenant; status filters the rest).
+func (r *CIRunRepository) UnjudgedRuns(ctx context.Context, tenantID shared.ID, before time.Time, limit int) ([]cirun.UnjudgedRun, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, pipeline_id, repository, COALESCE(external_run_id, ''), findings_count, findings_over_cap
+		FROM ci_runs WHERE tenant_id = $1 AND status = 'running' AND created_at < $2
+		ORDER BY created_at LIMIT $3`, tenantID.String(), before, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []cirun.UnjudgedRun{}
+	for rows.Next() {
+		var (
+			id, repo, ext string
+			pid           sql.NullString
+			u             cirun.UnjudgedRun
+		)
+		if err := rows.Scan(&id, &pid, &repo, &ext, &u.FindingsCount, &u.OverCap); err != nil {
+			return nil, err
+		}
+		rid, err := shared.IDFromString(id)
+		if err != nil {
+			continue
+		}
+		u.ID, u.Repository, u.ExternalRunID = rid, repo, ext
+		if pid.Valid {
+			if p, err := shared.IDFromString(pid.String); err == nil {
+				u.PipelineID = &p
+			}
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
