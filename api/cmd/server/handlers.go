@@ -1059,6 +1059,9 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 		// Approvals whose policy tier needs a recent re-authentication.
 		svc.Vulnerability.SetStepUpGate(gate)
 	}
+	if svc.Suppression != nil {
+		svc.Suppression.SetStepUpGate(gate)
+	}
 	if svc.Group != nil {
 		// Edits of the approval policy's security pool group.
 		svc.Group.SetStepUpGate(gate)

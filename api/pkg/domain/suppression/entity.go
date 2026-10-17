@@ -96,6 +96,13 @@ type Rule struct {
 	reviewFlaggedAt *time.Time
 	reviewReason    string
 
+	// Approval policy (RFC-111): the structured reason, the tier and the
+	// number of approvers; collected sign-offs (read only).
+	reasonCode         string
+	tier               string
+	requiredApprovals  int
+	approvalsCollected int
+
 	// Audit
 	createdAt time.Time
 	updatedAt time.Time
@@ -440,4 +447,27 @@ func matchGlob(pattern, path string) bool {
 	// Fallback to standard glob
 	matched, _ := filepath.Match(pattern, path)
 	return matched
+}
+
+// ReasonCode is the structured reason of the rule (a false-positive
+// justification or an accepted-risk reason, the finding closure reason
+// catalog); empty on a rule made before codes were required.
+func (r *Rule) ReasonCode() string { return r.reasonCode }
+
+// Tier and RequiredApprovals are what the approval policy gave the rule
+// (api/docs/rfcs/RFC-111-approval-policy.md); empty / 0 on a rule made
+// before the policy. ApprovalsCollected is how many people signed off.
+func (r *Rule) Tier() string              { return r.tier }
+func (r *Rule) RequiredApprovals() int    { return r.requiredApprovals }
+func (r *Rule) ApprovalsCollected() int   { return r.approvalsCollected }
+func (r *Rule) SetReasonCode(code string) { r.reasonCode = code }
+
+// SetPolicy records the approval policy's evaluation of the rule.
+func (r *Rule) SetPolicy(tier string, required int) {
+	r.tier, r.requiredApprovals = tier, required
+}
+
+// SetPolicyInfo restores the stored policy fields (repositories only).
+func (r *Rule) SetPolicyInfo(reasonCode, tier string, required, collected int) {
+	r.reasonCode, r.tier, r.requiredApprovals, r.approvalsCollected = reasonCode, tier, required, collected
 }
