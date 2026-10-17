@@ -122,9 +122,9 @@ func registerAdminRoutes(
 	}
 
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
-	// per route. /validate needs a verified console session. The console steps (RFC-022) run after the normal /login: the
-	// refresh-token cookie names the user, /session opens a pending console
-	// session and /mfa completes it. They share the tenant login's rate limits.
+	// per route. /validate needs a verified console session. The console signs
+	// in on its own: /login checks the account's email and password and opens
+	// a pending console session, /mfa completes it. No tenant session is read.
 	if h.AdminAuth != nil || h.AdminConsole != nil {
 		consoleRL := newAuthRateLimiter("console")
 		loginRL := consoleRL.LoginMiddleware()
@@ -135,7 +135,7 @@ func registerAdminRoutes(
 				r.GET("/validate", h.AdminAuth.Validate, authed)
 			}
 			if h.AdminConsole != nil {
-				r.POST("/session", h.AdminConsole.StartSession, preSession(crossSite, loginRL)...)
+				r.POST("/login", h.AdminConsole.Login, preSession(crossSite, loginRL)...)
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
 				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)

@@ -160,6 +160,7 @@ R5 PATCH /api/v1/admin/threat-intel/sync/{source}
 R5 PATCH /api/v1/findings/{id}/classify
 R5 PATCH /api/v1/notifications/{id}/read
 R5 PATCH /api/v1/reports/schedules/{id}/toggle
+R5 POST /api/v1/admin/auth/login
 R5 POST /api/v1/admin/auth/logout
 R5 POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline
 R5 POST /api/v1/assets/{id}/activate
