@@ -470,6 +470,24 @@ func (r *TenantRepository) GetMembership(ctx context.Context, userID shared.ID, 
 	return r.scanMembership(r.db.QueryRowContext(ctx, query, userID.String(), tenantID.String()))
 }
 
+// MembershipLabel returns the raw tenant_members.role label of a member. Only
+// the owner-role drift check uses it: every other decision reads the effective
+// role (tools/lint/rawrole).
+func (r *TenantRepository) MembershipLabel(ctx context.Context, tenantID, userID shared.ID) (string, error) {
+	var label string
+	err := r.db.QueryRowContext(ctx,
+		"SELECT role FROM tenant_members WHERE tenant_id = $1 AND user_id = $2",
+		tenantID.String(), userID.String(),
+	).Scan(&label)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", shared.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("read membership label: %w", err)
+	}
+	return label, nil
+}
+
 // GetMembershipByID retrieves a membership by ID.
 // Role is fetched from v_user_effective_role view.
 // Status fields are populated so the service layer can branch on suspension.

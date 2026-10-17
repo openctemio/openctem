@@ -32,13 +32,13 @@ import (
 
 // Finding is one literal with a raw label read, keyed by file and function.
 type Finding struct {
-	File string // base name
+	File string // path relative to the api module, slash-separated
 	Func string // "Type.Method", "func" or "<package>" for a package-level value
 	Line int
 	SQL  string
 }
 
-// Key is the allowlist key: file:Func.
+// Key is the allowlist key: path:Func.
 func (f Finding) Key() string { return f.File + ":" + f.Func }
 
 var (
@@ -102,7 +102,11 @@ func Scan(dir string) ([]Finding, error) {
 		if err != nil {
 			return nil, err
 		}
-		base := filepath.Base(p)
+		rel, rerr := filepath.Rel(filepath.Dir(filepath.Clean(dir)), p)
+		if rerr != nil {
+			return nil, rerr
+		}
+		base := filepath.ToSlash(rel)
 		for _, d := range f.Decls {
 			name := "<package>"
 			if fd, ok := d.(*ast.FuncDecl); ok {

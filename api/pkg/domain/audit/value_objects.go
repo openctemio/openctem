@@ -143,6 +143,10 @@ const (
 	ActionMemberAdded       Action = "member.added"
 	ActionMemberRemoved     Action = "member.removed"
 	ActionMemberRoleChanged Action = "member.role_changed"
+	// ActionOwnerRoleDriftRemoved: the owner removed an owner role row held by a
+	// member whose membership label is not owner (a co-owner planted before
+	// system roles were limited to the membership routes).
+	ActionOwnerRoleDriftRemoved Action = "owner_role_drift_removed"
 	ActionMemberSuspended   Action = "member.suspended"
 	ActionMemberReactivated Action = "member.reactivated"
 	// ActionMemberOffboarded: access stripped, owned work reassigned, the
@@ -720,7 +724,7 @@ func (a Action) IsValid() bool {
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
-		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
+		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged, ActionOwnerRoleDriftRemoved,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
 		ActionAccountDeletionRequested, ActionAccountDeletionCanceled, ActionAccountErased, ActionMemberLeft,
 		ActionMemberAccessChanged,
@@ -842,7 +846,7 @@ func (a Action) Category() string {
 	case ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated:
 		return "tenant"
-	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
+	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged, ActionOwnerRoleDriftRemoved,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
 		ActionMemberAccessChanged,
 		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
@@ -1128,7 +1132,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSensorRevoked, ActionSensorDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionAuditChainRebaselined, ActionMemberDataErased, ActionSuppressionRuleSelfApproved,
-		ActionMemberOwnershipTransferred,
+		ActionMemberOwnershipTransferred, ActionOwnerRoleDriftRemoved,
 		ActionExposureDispositionSelfApproved:
 		return SeverityCritical
 
