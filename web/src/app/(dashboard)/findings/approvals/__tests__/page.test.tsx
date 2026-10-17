@@ -13,7 +13,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { toast } from 'sonner'
 
 // ============================================
 // MOCKS
@@ -47,6 +49,11 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
     isMutating: false,
   })),
   remindApprovers: vi.fn(),
+}))
+
+vi.mock('@/lib/permissions', () => ({
+  Can: ({ children }: { children: React.ReactNode }) => children,
+  Permission: { FindingsApprove: 'findings:approve', FindingsWrite: 'findings:write' },
 }))
 
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'user-1' }) }))
@@ -490,5 +497,90 @@ describe('ApprovalsPage', () => {
       fireEvent.click(screen.getByText('Refresh'))
       expect(mockMutate).toHaveBeenCalled()
     })
+  })
+})
+
+// ============================================
+// APPROVAL POLICY: TIER, PROGRESS, APPROVE RESPONSES
+// ============================================
+
+describe('ApprovalsPage approval policy', () => {
+  type Col = { id?: string; cell?: (c: unknown) => React.ReactNode }
+  const dualRow = {
+    ...mockApprovals[0],
+    id: 'approval-9',
+    requested_status: 'accepted',
+    requested_by: 'user-2',
+    tier: 'dual' as const,
+    risk_class: 'critical' as const,
+    approvals_required: 2,
+    approvals_collected: 1,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockHook({
+      data: { data: [dualRow], total: 1, page: 1, per_page: 20, status_counts: COUNTS },
+    })
+  })
+
+  function cell(id: string, row: unknown) {
+    const col = (captured.columns as Col[]).find((c) => c.id === id)
+    expect(col?.cell).toBeDefined()
+    return render(<div>{col?.cell?.({ row: { original: row } })}</div>)
+  }
+
+  async function approveFromMenu() {
+    const user = userEvent.setup()
+    render(<ApprovalsPage />)
+    const { container } = cell('actions', dualRow)
+    await user.click(within(container).getByRole('button'))
+    await user.click(await screen.findByRole('menuitem', { name: /approve/i }))
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Approve' }))
+  }
+
+  it('shows the tier and the sign-off progress of a pending request', () => {
+    render(<ApprovalsPage />)
+    const { container } = cell('tier', dualRow)
+    expect(container.textContent).toContain('Two approvers')
+    expect(container.textContent).toContain('1 of 2 approvals')
+  })
+
+  it('says how many approvals are still needed after a recorded sign-off', async () => {
+    mockTriggerApprove.mockResolvedValue({
+      ...dualRow,
+      status: 'pending',
+      approvals_required: 3,
+      approvals_collected: 2,
+    })
+    await approveFromMenu()
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Your approval is recorded', {
+        description: '1 more approval(s) needed before the status changes.',
+      })
+    )
+  })
+
+  it('localizes a refusal by the approval policy', async () => {
+    mockTriggerApprove.mockRejectedValue({
+      statusCode: 403,
+      code: 'APPROVER_NOT_ELIGIBLE',
+      details: { reason: 'asset_owner' },
+    })
+    await approveFromMenu()
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "You own this finding's asset, so you cannot approve hiding its risk."
+      )
+    )
+  })
+
+  it('asks for re-authentication when the step-up prompt was dismissed', async () => {
+    mockTriggerApprove.mockRejectedValue({ statusCode: 403, code: 'STEP_UP_REQUIRED' })
+    await approveFromMenu()
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Confirm your identity to approve this request.')
+    )
   })
 })
