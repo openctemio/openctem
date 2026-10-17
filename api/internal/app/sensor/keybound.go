@@ -58,7 +58,7 @@ func (s *SensorService) SigningIdentity(ctx context.Context, keyID string, allow
 	if err != nil || len(k.PublicKey) != ed25519.PublicKeySize {
 		return SensorIdentity{}, nil, errSignedUnauthorized
 	}
-	a, err := s.repo.GetByTenantAndID(ctx, k.TenantID, k.SensorID)
+	a, err := s.keyOwner(ctx, k)
 	if err != nil || a == nil || !a.KeyBound() {
 		return SensorIdentity{}, nil, errSignedUnauthorized
 	}
@@ -68,6 +68,24 @@ func (s *SensorService) SigningIdentity(ctx context.Context, keyID string, allow
 	}
 	kid := k.ID
 	return SensorIdentity{Sensor: a, Paused: paused, signingKeyID: &kid, keyThumbprint: k.Thumbprint}, ed25519.PublicKey(k.PublicKey), nil
+}
+
+// keyOwner loads the sensor a signing key belongs to: one of the key's
+// tenant, or, for a key without a tenant, a shared sensor (scope instance,
+// docs/rfcs/RFC-100-shared-sensors.md), which authenticates without ever
+// getting a tenant context.
+func (s *SensorService) keyOwner(ctx context.Context, k *sensordom.SigningKey) (*sensordom.Sensor, error) {
+	if !k.TenantID.IsZero() {
+		return s.repo.GetByTenantAndID(ctx, k.TenantID, k.SensorID)
+	}
+	a, err := s.repo.GetByID(ctx, k.SensorID)
+	if err != nil {
+		return nil, err
+	}
+	if a == nil || !a.IsShared() || a.TenantID != nil {
+		return nil, errSignedUnauthorized
+	}
+	return a, nil
 }
 
 // UseNonce spends a request nonce of keyID. A nonce seen before (within
