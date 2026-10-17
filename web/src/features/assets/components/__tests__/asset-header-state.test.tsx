@@ -30,9 +30,9 @@ function attribution(overrides: Partial<AssetAttribution>): AssetAttribution {
 }
 
 describe('ClassificationBadges, labelled (asset header)', () => {
-  it('names each value and puts the zone last, so "Internal" never reads as the opposite of "Public"', () => {
+  it('names each value and puts a set zone last', () => {
     const { container } = render(
-      <ClassificationBadges scope="internal" exposure="public" criticality="medium" labelled />
+      <ClassificationBadges scope="cloud" exposure="public" criticality="medium" labelled />
     )
     const text = container.textContent ?? ''
     expect(text).toContain('Criticality:')
@@ -40,8 +40,15 @@ describe('ClassificationBadges, labelled (asset header)', () => {
     expect(text).toContain('Zone:')
     expect(text.indexOf('Criticality:')).toBeLessThan(text.indexOf('Exposure:'))
     expect(text.indexOf('Exposure:')).toBeLessThan(text.indexOf('Zone:'))
-    expect(screen.getByText('Internal')).toBeInTheDocument()
     expect(screen.getByText('Public')).toBeInTheDocument()
+  })
+
+  it('hides the default zone, so a public website never reads "Zone: Internal"', () => {
+    const { container } = render(
+      <ClassificationBadges scope="internal" exposure="public" criticality="medium" labelled />
+    )
+    expect(container.textContent).not.toContain('Zone:')
+    expect(screen.queryByText('Internal')).not.toBeInTheDocument()
   })
 
   it('stays compact without labels (lists)', () => {

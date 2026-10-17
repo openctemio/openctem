@@ -23,10 +23,9 @@ import {
   propertyLabel,
 } from '@/features/asset-types/lib/property-schema'
 import type { AssetClass } from '@/features/asset-types/registry.generated'
-import { technologies, tlsFacts } from '../lib/service-facts'
+import { tlsFacts } from '../lib/service-facts'
 import type { Asset } from '../types/asset.types'
 import { PropertyValue, hasPropertyValue, isWideValue } from './property-value'
-import { TechChips } from './service-cells/tech-chips'
 import { TlsSummary } from './service-cells/tls-summary'
 import { ChipRow } from './service-cells/fact-chip'
 import { cellsForType } from './service-cells/cells-for-type'
@@ -58,8 +57,6 @@ type Row =
       label: (t: T, locale: string) => string
       /** The keys the row reads; it renders when any has a value. */
       keys: string[]
-      /** Renders when true, for a fact that is not a property. */
-      present?: (asset: Asset) => boolean
       render?: (asset: Asset, t: T) => React.ReactNode
       wide?: boolean
     }
@@ -107,18 +104,6 @@ const TLS: Row = {
       </ChipRow>
     )
   },
-}
-
-const TECH: Row = {
-  id: 'technologies',
-  label: (t) => t('assets.technologies.title', 'Technologies'),
-  keys: [],
-  present: (a) => (a.technologies?.length ?? 0) > 0,
-  render: (a) => (
-    <ChipRow>
-      <TechChips technologies={technologies(a)} max={Infinity} />
-    </ChipRow>
-  ),
 }
 
 const LOCATION: Row = {
@@ -223,16 +208,15 @@ const ROWS: Partial<Record<AssetClass, Row[]>> = {
     HOSTING,
     'server',
     TLS,
-    TECH,
     'dns_records',
     'registrar',
     'expires_at',
     'nameservers',
   ],
   ip_address: [NETWORK_OWNER, 'hostname', LOCATION, 'ports', 'is_private'],
-  service: [ENDPOINT, PRODUCT, 'cpe', TLS, HTTP, 'server', TECH, 'banner'],
-  web_endpoint: ['url', HTTP, 'server', TLS, TECH],
-  application: ['url', HTTP, 'server', TLS, TECH],
+  service: [ENDPOINT, PRODUCT, 'cpe', TLS, HTTP, 'server', 'banner'],
+  web_endpoint: ['url', HTTP, 'server', TLS],
+  application: ['url', HTTP, 'server', TLS],
   certificate: [
     'subject_cn',
     'sans',
@@ -304,10 +288,7 @@ export function useKeyFacts(asset: Asset): KeyFact[] {
         })
         continue
       }
-      if (!(
-        row.present?.(asset) ?? row.keys.some((k) => hasPropertyValue(factValue(asset.metadata, k)))
-      ))
-        continue
+      if (!row.keys.some((k) => hasPropertyValue(factValue(asset.metadata, k)))) continue
       const node = row.render ? row.render(asset, t) : null
       if (node === '' || node === null || node === undefined) continue
       out.push({ id: row.id, label: row.label(t, locale), node, wide: !!row.wide })
@@ -318,9 +299,7 @@ export function useKeyFacts(asset: Asset): KeyFact[] {
 
 /** Whether the asset has at least one key fact (without rendering them). */
 export function hasKeyFacts(asset: Asset): boolean {
-  const rows = rowsFor(asset)
-  if (rows.some((r) => typeof r !== 'string' && r.present?.(asset))) return true
-  return rows
+  return rowsFor(asset)
     .flatMap((r) => (typeof r === 'string' ? [r] : r.keys))
     .some((k) => hasPropertyValue(factValue(asset.metadata, k)))
 }

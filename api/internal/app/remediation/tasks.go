@@ -42,14 +42,15 @@ type TaskAssigneeChecker interface {
 
 // TaskService manages remediation tasks.
 type TaskService struct {
-	repo      remediationdom.TaskRepository
-	dataScope *datascope.Enforcer
-	assignees TaskAssigneeChecker
-	audit     TaskAuditLogger
-	claimer   TaskFixClaimer
-	guard     TaskBulkGuard
-	moves     TaskMoveNotifier
-	logger    *logger.Logger
+	repo       remediationdom.TaskRepository
+	dataScope  *datascope.Enforcer
+	assignees  TaskAssigneeChecker
+	audit      TaskAuditLogger
+	claimer    TaskFixClaimer
+	guard      TaskBulkGuard
+	moves      TaskMoveNotifier
+	exceptions TaskExceptionRequester
+	logger     *logger.Logger
 }
 
 // NewTaskService creates the service. Without SetAssigneeChecker naming an
