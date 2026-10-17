@@ -1089,5 +1089,6 @@
   "findings.approvals.progress": "{collected} / {required} phê duyệt",
   "findings.approvals.toast.signed": "Đã ghi nhận phê duyệt của bạn",
   "findings.approvals.toast.signedDesc": "Cần thêm {count} phê duyệt trước khi trạng thái thay đổi.",
-  "findings.approvals.col.tier": "Phê duyệt"
+  "findings.approvals.col.tier": "Phê duyệt",
+  "findings.metrics.totalScopedDescription": "Mọi phát hiện trong phạm vi hiển thị phía trên bảng (một tài sản, một lần quét hoặc một nhóm), ở mọi trạng thái (tab Tất cả)."
 }
