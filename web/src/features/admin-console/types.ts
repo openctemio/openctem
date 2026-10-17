@@ -508,3 +508,61 @@ export interface VersionCheckStatus {
   fixed_in?: string
   stale: boolean
 }
+
+/** GET /admin/system: service health, storage, backup, certificates and version (any admin role, read-only; RFC-114). */
+export interface AdminSystem {
+  services: {
+    name: 'api' | 'postgres' | 'redis' | 'web' | 'gateway' | 'sensors'
+    configured: boolean
+    ok: boolean
+    latency_ms: number
+    code?: 'unreachable' | 'unhealthy' | 'unreadable'
+    /** Connected (online) sensors for the sensors row. */
+    detail?: number
+  }[]
+  storage: {
+    volumes: {
+      name: string
+      ok: boolean
+      total_bytes: number
+      used_bytes: number
+      free_bytes: number
+      free_ratio: number
+      /** 0 ok, 1 warning, 2 critical. */
+      level: number
+    }[]
+    database_bytes: number
+    database_ok: boolean
+  }
+  backup: {
+    reported: boolean
+    last_success_at?: string
+    age_seconds?: number
+    last_failed?: boolean
+    level: number
+  }
+  certificates: {
+    name: string
+    ok: boolean
+    not_after?: string
+    expires_in_seconds?: number
+    level: number
+  }[]
+  version: {
+    running: string
+    channel?: string
+    check?: {
+      enabled: boolean
+      configured: boolean
+      last_attempt_at?: string
+      last_error?: string
+      latest?: string
+      update_available: boolean
+      advisories: number
+      severity?: string
+      stale: boolean
+    }
+  }
+  level: number
+  checked_at: string
+}

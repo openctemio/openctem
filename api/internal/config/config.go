@@ -71,6 +71,9 @@ type Config struct {
 	// AdminAuditSink streams the administrators' audit log off the box.
 	AdminAuditSink AdminAuditSinkConfig
 
+	// System is the platform console's System page and its watcher (RFC-114).
+	System SystemConfig
+
 	// AssetChangeRetentionDays is how long the asset change timeline keeps
 	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
 	AssetChangeRetentionDays int
@@ -86,6 +89,44 @@ type Config struct {
 	// GitHubApp is the deployment's GitHub App that posts CI checks and pull
 	// request comments (RFC-077). Off unless every value is set.
 	GitHubApp GitHubAppConfig
+}
+
+const schemeHTTPS = "https"
+
+// SystemConfig configures the System page (RFC-114). Everything is optional
+// and comes from the operator's environment, never from a request.
+type SystemConfig struct {
+	// StoragePaths is SYSTEM_STORAGE_PATHS, "name=path,name=path". Empty:
+	// the local attachments directory and the sensor CA directory.
+	StoragePaths string
+	// BackupStatusFile is SYSTEM_BACKUP_STATUS_FILE, the backup job's status
+	// file (mounted read-only into the API).
+	BackupStatusFile string
+	// TLSCertFiles is SYSTEM_TLS_CERT_FILES, "name=path,..." of PEM files.
+	TLSCertFiles string
+	// WebHealthURL and GatewayHealthURL are internal health URLs
+	// (SYSTEM_WEB_HEALTH_URL, SYSTEM_GATEWAY_HEALTH_URL), http or https.
+	WebHealthURL     string
+	GatewayHealthURL string
+	// WatchInterval is SYSTEM_WATCH_INTERVAL (default 5m, minimum 1m).
+	WatchInterval time.Duration
+}
+
+// validateSystem accepts only http(s) health URLs and a sane interval.
+func (c *Config) validateSystem() error {
+	for k, v := range map[string]string{"SYSTEM_WEB_HEALTH_URL": c.System.WebHealthURL, "SYSTEM_GATEWAY_HEALTH_URL": c.System.GatewayHealthURL} {
+		if v == "" {
+			continue
+		}
+		u, err := url.Parse(v)
+		if err != nil || (u.Scheme != "http" && u.Scheme != schemeHTTPS) || u.Host == "" || u.User != nil {
+			return fmt.Errorf("%s must be an http(s) URL without credentials", k)
+		}
+	}
+	if c.System.WatchInterval != 0 && c.System.WatchInterval < time.Minute {
+		return fmt.Errorf("SYSTEM_WATCH_INTERVAL must be at least 1m, got %s", c.System.WatchInterval)
+	}
+	return nil
 }
 
 // GitHubAppConfig is the deployment's GitHub App (RFC-077):
@@ -1633,6 +1674,14 @@ func Load() (*Config, error) {
 			Public: getEnvBool("METRICS_PUBLIC", false),
 			Token:  getEnv("METRICS_TOKEN", ""),
 		},
+		System: SystemConfig{
+			StoragePaths:     getEnv("SYSTEM_STORAGE_PATHS", ""),
+			BackupStatusFile: getEnv("SYSTEM_BACKUP_STATUS_FILE", ""),
+			TLSCertFiles:     getEnv("SYSTEM_TLS_CERT_FILES", ""),
+			WebHealthURL:     getEnv("SYSTEM_WEB_HEALTH_URL", ""),
+			GatewayHealthURL: getEnv("SYSTEM_GATEWAY_HEALTH_URL", ""),
+			WatchInterval:    getEnvDuration("SYSTEM_WATCH_INTERVAL", 5*time.Minute),
+		},
 		AssetChangeRetentionDays: getEnvInt("ASSET_CHANGE_RETENTION_DAYS", 400),
 		AuditRetention: AuditRetentionConfig{
 			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
@@ -1893,6 +1942,9 @@ func (c *Config) validateBasic() error {
 		return err
 	}
 	if err := c.validateAdminAuditSink(); err != nil {
+		return err
+	}
+	if err := c.validateSystem(); err != nil {
 		return err
 	}
 	if err := c.validateStorage(); err != nil {
