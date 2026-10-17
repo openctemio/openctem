@@ -321,3 +321,22 @@ export type ContentCatalogSettings = Schemas['internal_infra_http_handler.Conten
 export type ContentTrust = Schemas['internal_infra_http_handler.ContentTrustResponse']
 export type ContentPackagePermissions =
   Schemas['github_com_openctemio_openctem_api_pkg_contentpkg.Permissions']
+
+// Support access (RFC-063): organization grants and console support sessions.
+export type SupportActiveGrant = Schemas['internal_infra_http_handler.SupportActiveGrant']
+export type SupportActiveList = Schemas['internal_infra_http_handler.SupportActiveResponse']
+export type SupportGrant = Schemas['internal_infra_http_handler.SupportGrantResponse']
+export type SupportGrantList = Schemas['internal_infra_http_handler.SupportGrantListResponse']
+export type SupportGrantInput = Schemas['internal_infra_http_handler.SupportGrantRequest']
+export type AdminSupportGrant = Schemas['internal_infra_http_handler.AdminSupportGrantResponse']
+export type AdminSupportGrantList =
+  Schemas['internal_infra_http_handler.AdminSupportGrantListResponse']
+export type AdminSupportSession = Schemas['internal_infra_http_handler.AdminSupportSessionResponse']
+export type AdminSupportFindingList = Schemas['internal_infra_http_handler.AdminSupportFindingList']
+export type AdminSupportAssetList = Schemas['internal_infra_http_handler.AdminSupportAssetList']
+export type SupportFindingView =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_supportaccess.FindingView']
+export type SupportAssetView =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_supportaccess.AssetView']
+export type SupportOverview =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_supportaccess.Overview']
