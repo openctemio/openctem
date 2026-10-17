@@ -17,7 +17,6 @@ import { AdminElevationBar } from './admin-elevation-bar'
 import { AdminConsoleSidebar } from './admin-console-sidebar'
 import { ChangePasswordGate } from './change-password-gate'
 import { VersionCheckBanner } from './version-check-banner'
-import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
 import { adminLogout, useAdminSession } from '../api/use-admin-session'
 import type { AdminIdentity } from '../types'
 
@@ -57,14 +56,15 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
-      // Ends the console session and the /login session it was opened from.
+      // Ends the console session only: the console has its own sign-in.
       await adminLogout()
     } catch {
-      toast.error('Sign-out failed; the session will still expire on its own.')
+      toast.error(
+        t('admin.shell.signOutFailed', 'Sign-out failed; the session will still expire on its own.')
+      )
     }
-    // Clears the /login cookies and navigates (a full load, so no cached
-    // console response survives).
-    await localLogoutAction('/login')
+    // A full load, so no cached console response survives.
+    window.location.replace('/admin/login')
   }
 
   if (error) {
