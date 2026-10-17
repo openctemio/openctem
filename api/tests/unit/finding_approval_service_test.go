@@ -351,8 +351,16 @@ func newApprovalTestService(
 	svc := finding.NewVulnerabilityService(vulnRepo, findingRepo, log)
 	approvalRepo.findings = findingRepo
 	svc.SetApprovalRepository(approvalRepo)
+	// Approvers here re-authenticated recently (the policy asks it of
+	// security and dual tiers; approval_policy tests cover the refusal).
+	svc.SetStepUpGate(steppedUpGate{})
 	return svc
 }
+
+// steppedUpGate answers every step-up check as passed.
+type steppedUpGate struct{}
+
+func (steppedUpGate) RequireRecentAuth(context.Context, string) error { return nil }
 
 // =============================================================================
 // Tests: RequestApproval
@@ -443,7 +451,7 @@ func TestFindingApprovalService_RequestApproval_FindingNotFound(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
 		ClosureReason:   "detection_error",
-		Justification:   "Test justification",
+		Justification:   "Test justification: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	}
 
@@ -470,7 +478,7 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 				FindingID:       shared.NewID().String(),
 				RequestedStatus: "false_positive",
 				ClosureReason:   "detection_error",
-				Justification:   "Test",
+				Justification:   "Test: the input is a fixed constant",
 				RequestedBy:     shared.NewID().String(),
 			},
 		},
@@ -481,7 +489,7 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 				FindingID:       "not-a-uuid",
 				RequestedStatus: "false_positive",
 				ClosureReason:   "detection_error",
-				Justification:   "Test",
+				Justification:   "Test: the input is a fixed constant",
 				RequestedBy:     shared.NewID().String(),
 			},
 		},
@@ -492,7 +500,7 @@ func TestFindingApprovalService_RequestApproval_InvalidIDs(t *testing.T) {
 				FindingID:       shared.NewID().String(),
 				RequestedStatus: "false_positive",
 				ClosureReason:   "detection_error",
-				Justification:   "Test",
+				Justification:   "Test: the input is a fixed constant",
 				RequestedBy:     "not-a-uuid",
 			},
 		},
@@ -530,7 +538,7 @@ func TestFindingApprovalService_ApproveStatus_Success(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
 		ClosureReason:   "detection_error",
-		Justification:   "Known test pattern",
+		Justification:   "Known test pattern: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	}
 	created, err := svc.RequestApproval(context.Background(), requestInput)
@@ -597,7 +605,7 @@ func TestFindingApprovalService_ApproveStatus_AlreadyApproved(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
 		ClosureReason:   "detection_error",
-		Justification:   "Test",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -638,7 +646,7 @@ func TestFindingApprovalService_ApproveStatus_Expired(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "accepted",
 		ClosureReason:   "risk_accepted",
-		Justification:   "Test",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -672,7 +680,7 @@ func TestFindingApprovalService_ApproveStatus_SelfApproval(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
 		ClosureReason:   "detection_error",
-		Justification:   "Test",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -710,7 +718,7 @@ func TestFindingApprovalService_RejectApproval_Expired(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "accepted",
 		ClosureReason:   "risk_accepted",
-		Justification:   "Test",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -746,7 +754,7 @@ func TestFindingApprovalService_RejectApproval_Success(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
 		ClosureReason:   "detection_error",
-		Justification:   "Test",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -865,7 +873,7 @@ func TestFindingApprovalService_ListApprovals_Success(t *testing.T) {
 			FindingID:       findingID.String(),
 			RequestedStatus: "false_positive",
 			ClosureReason:   "detection_error",
-			Justification:   "Test justification",
+			Justification:   "Test justification: the input is a fixed constant",
 			RequestedBy:     requestedBy.String(),
 		})
 		require.NoError(t, err)
@@ -880,7 +888,7 @@ func TestFindingApprovalService_ListApprovals_Success(t *testing.T) {
 		FindingID:       otherFindingID.String(),
 		RequestedStatus: "accepted",
 		ClosureReason:   "risk_accepted",
-		Justification:   "Other tenant",
+		Justification:   "Other tenant: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -934,7 +942,7 @@ func TestFindingApprovalService_ListApprovals_StatusFilterAndCounts(t *testing.T
 		a, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 			TenantID: tenantID.String(), FindingID: findingID.String(),
 			RequestedStatus: "false_positive",
-			ClosureReason:   "detection_error", Justification: "j", RequestedBy: requester.String(),
+			ClosureReason:   "detection_error", Justification: "j: the input is a fixed constant", RequestedBy: requester.String(),
 		})
 		require.NoError(t, err)
 		ids = append(ids, a.ID)
@@ -979,7 +987,7 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 			FindingID:       shared.NewID().String(),
 			RequestedStatus: "false_positive",
 			ClosureReason:   "detection_error",
-			Justification:   "Test",
+			Justification:   "Test: the input is a fixed constant",
 			RequestedBy:     shared.NewID().String(),
 		})
 		assert.Error(t, err)
@@ -1044,7 +1052,7 @@ func TestFindingApprovalService_CancelApproval_Success(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
 		ClosureReason:   "detection_error",
-		Justification:   "Test",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -1081,7 +1089,7 @@ func TestFindingApprovalService_CancelApproval_NotRequester(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
 		ClosureReason:   "detection_error",
-		Justification:   "Test",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -1115,7 +1123,7 @@ func TestFindingApprovalService_CancelApproval_NotPending(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
 		ClosureReason:   "detection_error",
-		Justification:   "Test",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -1158,7 +1166,7 @@ func TestFindingApprovalService_RequestApproval_InvalidStatus(t *testing.T) {
 		FindingID:       findingID.String(),
 		RequestedStatus: "invalid_garbage_status",
 		ClosureReason:   testClosureReason("invalid_garbage_status"),
-		Justification:   "Test justification",
+		Justification:   "Test justification: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	}
 
@@ -1191,7 +1199,7 @@ func TestFindingApprovalService_ApproveStatus_ConcurrentModification(t *testing.
 		FindingID:       findingID.String(),
 		RequestedStatus: "false_positive",
 		ClosureReason:   "detection_error",
-		Justification:   "Test",
+		Justification:   "Test: the input is a fixed constant",
 		RequestedBy:     requestedBy.String(),
 	})
 	require.NoError(t, err)
@@ -1311,7 +1319,7 @@ func TestFindingApprovalService_RequestApproval_DecisionEnd(t *testing.T) {
 	req := func(status string, end *string) (*vulnerability.Approval, error) {
 		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: status, ClosureReason: testClosureReason(status),
-			Justification: "Test", RequestedBy: requestedBy.String(), ExpiresAt: end,
+			Justification: "Test: the input is a fixed constant", RequestedBy: requestedBy.String(), ExpiresAt: end,
 		})
 	}
 	str := func(t time.Time) *string { s := t.Format(time.RFC3339); return &s }
@@ -1343,7 +1351,7 @@ func TestFindingApprovalService_ApproveAccepted_StoresAcceptanceEnd(t *testing.T
 
 	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "accepted", ClosureReason: "risk_accepted",
-		Justification: "Test", RequestedBy: shared.NewID().String(),
+		Justification: "Test: the input is a fixed constant", RequestedBy: shared.NewID().String(),
 	})
 	require.NoError(t, err)
 	// A request from before the end was required has none.
@@ -1379,7 +1387,7 @@ func TestFindingApprovalService_ClosureReason(t *testing.T) {
 	request := func(status, reason string) (*vulnerability.Approval, error) {
 		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: status,
-			ClosureReason: reason, Justification: "why", RequestedBy: shared.NewID().String(),
+			ClosureReason: reason, Justification: "why: the input is a fixed constant", RequestedBy: shared.NewID().String(),
 		})
 	}
 
@@ -1440,7 +1448,7 @@ func TestFindingApprovalService_AcceptanceCapByPriority(t *testing.T) {
 		}
 		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "accepted",
-			ClosureReason: "risk_accepted", Justification: "why", RequestedBy: shared.NewID().String(), ExpiresAt: s,
+			ClosureReason: "risk_accepted", Justification: "why: the input is a fixed constant", RequestedBy: shared.NewID().String(), ExpiresAt: s,
 		})
 	}
 	day := 24 * time.Hour

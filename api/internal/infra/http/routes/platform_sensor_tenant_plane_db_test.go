@@ -1,10 +1,10 @@
 package routes
 
-// Shared platform sensors on the tenant plane (research/67). A platform
-// sensor's row carries some tenant_id (the operator's), but it is never that
-// tenant's sensor: every tenant route on one sensor answers 404 for it, the
-// lists and counts leave it out, and a tenant sees platform scanning only as
-// an aggregated service (GET /api/v1/platform/scanning) with no sensor id,
+// Shared sensors on the tenant plane (docs/rfcs/RFC-100-shared-sensors.md).
+// A shared sensor (scope instance) has no tenant_id and is never a tenant's
+// sensor: every tenant route on one sensor answers 404 for it, the lists and
+// counts leave it out, and a tenant sees shared scanning only as an
+// aggregated service (GET /api/v1/platform/scanning) with no sensor id,
 // name, host, address or version and no other tenant's load. A platform
 // job's command and logs never name the sensor and mask its own addresses
 // and paths.
@@ -79,9 +79,9 @@ func newPlatformPlaneHarness(t *testing.T) *platformPlaneHarness {
 	return h
 }
 
-// platformSensor inserts an online platform sensor whose row carries
-// tenantID, with identifying details a tenant must never see.
-func (h *platformPlaneHarness) platformSensor(tenantID, name, region, health string, tools []string) string {
+// platformSensor inserts an online shared sensor (scope instance, no tenant)
+// with identifying details a tenant must never see.
+func (h *platformPlaneHarness) platformSensor(name, region, health string, tools []string) string {
 	h.t.Helper()
 	id := uuid.NewString()
 	seen := time.Now().Add(-5 * time.Second)
@@ -93,12 +93,14 @@ func (h *platformPlaneHarness) platformSensor(tenantID, name, region, health str
 		return out
 	}())
 	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix,
-	            is_platform_sensor, hostname, ip_address, version, region, capabilities,
+	            scope, hostname, ip_address, version, region, capabilities,
 	            last_seen_at, heartbeat_interval_seconds, heartbeat_due_at, reported_tools, reported_tool_names, reported_at)
-	        VALUES ($1, $2, $3, 'worker', 'active', $4, 'daemon', $5, 'octs_plt', TRUE, $6, '10.9.8.7', 'v9.9.9-secret', $7,
-	            '{dast}', $8, 60, $9, $10::jsonb, $11::text[], $8)`,
-		id, tenantID, name, health, "hash-"+id, name+".plat.internal", region, seen, seen.Add(60*time.Second),
+	        VALUES ($1, NULL, $2, 'worker', 'active', $3, 'daemon', $4, 'octs_plt', 'instance', $5, '10.9.8.7', 'v9.9.9-secret', $6,
+	            '{dast}', $7, 60, $8, $9::jsonb, $10::text[], $7)`,
+		id, name, health, "hash-"+id, name+".plat.internal", region, seen, seen.Add(60*time.Second),
 		string(reported), "{"+strings.Join(tools, ",")+"}")
+	// No tenant delete cascades to it: remove it so no other test sees it.
+	h.t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, id) })
 	return id
 }
 
@@ -120,14 +122,14 @@ func TestPlatformSensors_TenantRoutesNotFound_DB(t *testing.T) {
 	h := newPlatformPlaneHarness(t)
 	operator, other := h.tenant(), h.tenant()
 	admin, otherAdmin := h.member(operator, "admin"), h.member(other, "admin")
-	plat := h.platformSensor(operator, "plat-node-7", "eu", "online", []string{"nuclei"})
+	plat := h.platformSensor("plat-node-7", "eu", "online", []string{"nuclei"})
 	own := h.sensor(operator)
 
 	if len(h.routes) < 15 {
 		t.Fatalf("only %d sensor routes walked: %v", len(h.routes), h.routes)
 	}
-	// Every route on one sensor, read or write, answers 404 for a platform
-	// sensor: to the tenant its row carries and to any other tenant alike.
+	// Every route on one sensor, read or write, answers 404 for a shared
+	// sensor, to every tenant.
 	for _, rt := range h.routes {
 		path := strings.ReplaceAll(strings.ReplaceAll(rt[1], "{id}", plat), "{key_id}", uuid.NewString())
 		for _, u := range []policyUser{admin, otherAdmin} {
@@ -166,10 +168,10 @@ func TestPlatformSensors_TenantRoutesNotFound_DB(t *testing.T) {
 
 func TestPlatformScanning_AggregatedView_DB(t *testing.T) {
 	h := newPlatformPlaneHarness(t)
-	operator, tid, other := h.tenant(), h.tenant(), h.tenant()
+	tid, other := h.tenant(), h.tenant()
 	viewer := h.member(tid, "viewer")
-	eu := h.platformSensor(operator, "plat-eu-1", "eu", "online", []string{"nuclei", "httpx"})
-	h.platformSensor(operator, "plat-us-1", "us", "offline", []string{"subfinder"})
+	eu := h.platformSensor("plat-eu-1", "eu", "online", []string{"nuclei", "httpx"})
+	h.platformSensor("plat-us-1", "us", "offline", []string{"subfinder"})
 	// The organization's own platform jobs and another organization's.
 	h.platformJob(tid, "", "pending", "")
 	h.platformJob(tid, eu, "running", "")
@@ -224,9 +226,9 @@ func TestPlatformScanning_AggregatedView_DB(t *testing.T) {
 
 func TestPlatformJobs_CommandsAndLogsRedacted_DB(t *testing.T) {
 	h := newPlatformPlaneHarness(t)
-	operator, tid := h.tenant(), h.tenant()
+	tid := h.tenant()
 	admin := h.member(tid, "admin")
-	plat := h.platformSensor(operator, "plat-node-9", "eu", "online", []string{"nuclei"})
+	plat := h.platformSensor("plat-node-9", "eu", "online", []string{"nuclei"})
 	job := h.platformJob(tid, plat, "failed", "dial 10.9.8.7:5432 from /opt/sensor/bin: refused")
 	lines, _ := json.Marshal([]map[string]any{{"ts": "2026-10-07T10:00:00Z", "level": "info",
 		"msg": "worker plat-node-9 at 192.168.4.2 wrote /var/lib/sensor/out.json for 93.184.216.34", "source": "/opt/sensor/nuclei",

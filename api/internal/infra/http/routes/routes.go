@@ -164,6 +164,7 @@ type Handlers struct {
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
 	AssetSoftware          *handler.AssetSoftwareHandler          // RFC-066; nil if not initialized
+	AssetTechnology        *handler.AssetTechnologyHandler        // RFC-112; nil if not initialized
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
 	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
 	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
@@ -589,6 +590,7 @@ func Register(
 		registerAssetIdentifierRoutes(router, h.AssetIdentifier, authMiddleware, userSync)
 	}
 	registerAssetSoftwareRoutes(router, h.AssetSoftware, authMiddleware, userSync)
+	registerAssetTechnologyRoutes(router, h.AssetTechnology, authMiddleware, userSync)
 	if h.AssetStateHistory != nil {
 		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync)
 	}
@@ -626,6 +628,7 @@ func Register(
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerSharedSensorsSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
@@ -763,7 +766,7 @@ func Register(
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationTask != nil {
-		registerRemediationTaskRoutes(router, h.RemediationTask, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationSuggest != nil {
 		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))

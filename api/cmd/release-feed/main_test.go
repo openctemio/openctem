@@ -21,26 +21,22 @@ func runOK(t *testing.T, args ...string) string {
 	return out.String()
 }
 
-func TestKeygenKeysetBuildVerify(t *testing.T) {
+func TestKeygenBuildVerify(t *testing.T) {
 	dir := t.TempDir()
 	p := func(n string) string { return filepath.Join(dir, n) }
 
-	rootOut := runOK(t, "keygen", "-out", p("root.key"))
 	onlineOut := runOK(t, "keygen", "-out", p("online.key"))
 	seed, _ := os.ReadFile(p("online.key"))
 	if strings.Contains(onlineOut, strings.TrimSpace(string(seed))) {
 		t.Fatal("keygen printed the private seed")
 	}
-	if st, _ := os.Stat(p("root.key")); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(p("online.key")); st.Mode().Perm() != 0o600 {
 		t.Fatalf("key file mode %v", st.Mode().Perm())
 	}
-	if err := run([]string{"keygen", "-out", p("root.key")}, &bytes.Buffer{}, now); err == nil {
+	if err := run([]string{"keygen", "-out", p("online.key")}, &bytes.Buffer{}, now); err == nil {
 		t.Fatal("keygen overwrote a key")
 	}
-	rootID := regexp.MustCompile(`key id:\s+(\S+)`).FindStringSubmatch(rootOut)[1]
 	onlinePub := regexp.MustCompile(`public key:\s+(\S+)`).FindStringSubmatch(onlineOut)[1]
-
-	runOK(t, "keyset", "-root", p("root.key"), "-online", onlinePub, "-version", "1", "-days", "180", "-out", p("keyset.json"))
 
 	releases := `[
 	  {"tagName":"v0.9.8","publishedAt":"2026-10-15T10:00:00Z","isDraft":false,"isPrerelease":false},
@@ -53,18 +49,22 @@ func TestKeygenKeysetBuildVerify(t *testing.T) {
 	_ = os.WriteFile(p("advisories.json"), []byte(`{"advisories":[{"id":"OCTEM-2026-0001","severity":"high","title":"t","fixed_in":"v0.9.8","published_at":"2026-10-15T10:00:00Z"}]}`), 0o600)
 
 	t.Setenv("TEST_RELEASE_FEED_KEY", strings.TrimSpace(string(seed)))
-	runOK(t, "build", "-keyset", p("keyset.json"), "-key-env", "TEST_RELEASE_FEED_KEY",
+	runOK(t, "build", "-key-env", "TEST_RELEASE_FEED_KEY",
 		"-releases", p("releases.json"), "-advisories", p("advisories.json"), "-out", p("feed.json"))
-	got := runOK(t, "verify", "-root", rootID, p("feed.json"))
+	got := runOK(t, "verify", "-key", onlinePub, p("feed.json"))
 	if !strings.Contains(got, "2 releases, 1 advisories") {
 		t.Fatalf("verify: %s", got)
 	}
-	if err := run([]string{"verify", "-root", "SHA256:" + strings.Repeat("0", 64), p("feed.json")}, &bytes.Buffer{}, now); err == nil {
-		t.Fatal("verified against another root")
+	if err := run([]string{"verify", "-key", strings.Repeat("0", 64), p("feed.json")}, &bytes.Buffer{}, now); err == nil {
+		t.Fatal("verified against another key")
+	}
+	// With no key pinned in this build (and none given), verify refuses.
+	if err := run([]string{"verify", p("feed.json")}, &bytes.Buffer{}, now); err == nil {
+		t.Fatal("verified with no pinned key")
 	}
 	// The file builds with a key file too, and refuses both key sources.
-	runOK(t, "build", "-keyset", p("keyset.json"), "-key", p("online.key"), "-releases", p("releases.json"), "-out", p("feed2.json"))
-	if err := run([]string{"build", "-keyset", p("keyset.json"), "-key", p("online.key"), "-key-env", "TEST_RELEASE_FEED_KEY",
+	runOK(t, "build", "-key", p("online.key"), "-releases", p("releases.json"), "-out", p("feed2.json"))
+	if err := run([]string{"build", "-key", p("online.key"), "-key-env", "TEST_RELEASE_FEED_KEY",
 		"-releases", p("releases.json")}, &bytes.Buffer{}, now); err == nil {
 		t.Fatal("accepted two key sources")
 	}
@@ -76,9 +76,9 @@ func TestBuildRefusals(t *testing.T) {
 	cases := map[string][]string{
 		"days over 45": {"build", "-days", "46"},
 		"foreign repo": {"build", "-repo", "someone/else"},
-		"no key":       {"build", "-keyset", filepath.Join(dir, "empty.json"), "-releases", filepath.Join(dir, "empty.json")},
+		"no key":       {"build", "-releases", filepath.Join(dir, "empty.json")},
 		"unknown":      {"nope"},
-		"keyset days":  {"keyset", "-root", filepath.Join(dir, "missing"), "-days", "181"},
+		"keyset gone":  {"keyset", "-root", filepath.Join(dir, "missing")},
 	}
 	for name, args := range cases {
 		if err := run(args, &bytes.Buffer{}, now); err == nil {
