@@ -71,6 +71,7 @@ services:
       AUTH_PROVIDER: local
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?set AUTH_JWT_SECRET}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY (64 hex characters)}
+      FINGERPRINT_KEY: ${FINGERPRINT_KEY:?set FINGERPRINT_KEY (32+ characters; required outside development)}
       AUTH_REQUIRE_EMAIL_VERIFICATION: 'false'
       # Self-service sign-up needs starting limits; the e2e stack chooses none.
       SELF_SERVICE_START_LIMITS: unlimited
