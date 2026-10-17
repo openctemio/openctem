@@ -1,0 +1,6 @@
+### Security: the platform console answers only to private networks by default
+
+- New `ADMIN_ALLOWED_CIDRS` (comma-separated CIDRs or addresses): every `/api/v1/admin` route, the console sign-in included, refuses other client networks with 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: loopback, RFC 1918 and IPv6 unique local addresses. The client address is the TCP peer or `X-Forwarded-For` from `SERVER_TRUSTED_PROXIES` only.
+- A console sign-in from another address than the administrator's last one is audited (`console.new_network_sign_in`) and emailed to every administrator.
+- A read-only administrator sees counts, not people: organization member lists return counts by role only, organizations show the owner count without emails, and the account search (Console > Users) needs ops_admin or above. Every member-list view is audited (`organization.users_view`).
+- **Upgrade note:** an operator who reaches the console from a public address must set `ADMIN_ALLOWED_CIDRS` before upgrading, to their own address or network (for example `203.0.113.7/32`), or to `0.0.0.0/0,::/0` to keep it open to every network, or the console answers 403. Behind the gateway and the web console, keep them in `SERVER_TRUSTED_PROXIES` (the Compose stack does) so the API sees the real client address.

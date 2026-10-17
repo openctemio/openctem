@@ -79,6 +79,8 @@ export const adminNav: AdminNavSection[] = [
         i18nKey: 'admin.nav.users',
         url: '/admin/users',
         icon: UserSearch,
+        // Finding people by email is personal data: not for read-only.
+        minRole: 'ops_admin',
         keywords: ['accounts', 'people', 'locked', 'sessions', 'support'],
       },
     ],
