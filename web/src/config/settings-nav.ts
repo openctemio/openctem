@@ -22,6 +22,7 @@
 import {
   GitMerge,
   Handshake,
+  Globe,
   Activity,
   Bell,
   Bot,
@@ -187,6 +188,17 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Gauge,
         permission: Permission.TeamUpdate,
         keywords: ['plan', 'limits', 'quota', 'seats', 'usage', 'free', 'pro', 'enterprise'],
+      },
+      {
+        // What the verified SSO domains do to accounts on them (api RFC-104):
+        // read by owners and admins, changed by owners only.
+        id: 'domains',
+        title: 'Domains',
+        description: 'Who may join with your domain, and whether it must use single sign-on.',
+        url: '/settings/domains',
+        icon: Globe,
+        permission: Permission.TeamUpdate,
+        keywords: ['domain', 'join', 'sign up', 'sso required', 'workspace', 'claim'],
       },
       {
         // Two-sided trusts with partner organizations (api RFC-058): read by

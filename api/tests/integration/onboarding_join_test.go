@@ -203,7 +203,7 @@ func TestOnboardingJoinByDomain(t *testing.T) {
 		t.Fatalf("auto policy offers join: %+v", opts)
 	}
 	staleRef := opts.Organizations[0].Ref
-	if res, err := svc.Accept(ctx, cy, staleRef, actx); err != nil || res.Status != "joined" {
+	if res, err := svc.Accept(ctx, cy, staleRef, actx); err != nil || res.Status != "joined" || res.OrganizationID != orgA.String() {
 		t.Fatalf("auto join: %+v %v", res, err)
 	}
 	if m, err := tenants.GetMembership(ctx, cy.ID(), orgA); err != nil || m.Role() != tenantdom.RoleViewer {
