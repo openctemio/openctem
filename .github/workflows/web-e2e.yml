@@ -322,7 +322,7 @@ jobs:
           [ -f report.json ] || exit 0
           flaky="$(jq -r '[.. | objects | select(has("specs")) | .specs[]? | select(.tests[]?.status == "flaky") | .title] | unique | .[]' report.json)"
           if [ -n "$flaky" ]; then
-            { echo "### Flaky e2e tests (passed on retry)"; echo; echo "$flaky" | sed 's/^/- /'; } >> "$GITHUB_STEP_SUMMARY"
+            { echo "### Flaky e2e tests (passed on retry)"; echo; while IFS= read -r t; do echo "- $t"; done <<< "$flaky"; } >> "$GITHUB_STEP_SUMMARY"
             echo "::warning::flaky e2e tests: $(echo "$flaky" | wc -l) (see the run summary)"
           fi
       - name: Upload the merged HTML report

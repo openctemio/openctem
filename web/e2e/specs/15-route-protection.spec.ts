@@ -11,7 +11,7 @@ import { submitSignIn } from '../helpers/auth'
  *      page, the client clears the cookies on the 401 and lands on /login
  *      once: no redirect loop.
  *   3. Public pages and the admin console sign-in open without a session; the
- *      admin console redirects to its own sign-in.
+ *      admin console shell sends a browser without a session to its own sign-in.
  *   4. The CSP nonce still reaches Next.js's scripts, and nothing is blocked.
  *   5. Locale: the cookie wins, Accept-Language is a default, never RTL.
  *
@@ -168,10 +168,13 @@ test('an invitation link from before RFC-041 moves its token into the fragment',
   expect(res.headers()['location']).toMatch(/\/invitations#token=this-token-does-not-exist$/)
 })
 
-test('the admin console redirects to its own sign-in', async ({ request }) => {
-  const res = await request.get('/admin/organizations', { maxRedirects: 0 })
-  expect(res.status()).toBe(307)
-  const location = new URL(res.headers()['location'], cookieUrl())
+test('the admin console sends a browser without a session to its own sign-in', async ({ page }) => {
+  // The page itself is served; the console shell asks the API for the session
+  // and moves the browser to the console sign-in (no cookie stands for a
+  // console session, so the proxy cannot decide it).
+  await page.goto('/admin/organizations')
+  await page.waitForURL(/\/admin\/login/, { timeout: 20_000 })
+  const location = new URL(page.url())
   expect(location.pathname).toBe('/admin/login')
   expect(location.searchParams.get('next')).toBe('/admin/organizations')
 })
