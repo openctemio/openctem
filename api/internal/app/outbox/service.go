@@ -519,10 +519,30 @@ func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, en
 		URL:            entry.URL(),
 		IdempotencyKey: "outbox-" + entry.ID().String(),
 	}
+	// Minimal by default: unless the channel opted in to details, nothing
+	// that names a finding or an asset leaves the platform, only the kind
+	// of event, its severity and a link back to it.
+	if ext := intg.Notification; ext == nil || !ext.IncludeDetails() {
+		msg.Title = minimalTitle(entry)
+		msg.Body = "Open the link to see the details."
+	}
 	if ext := intg.Notification; ext != nil && ext.MessageTemplate() != "" {
 		msg = s.applyTemplate(msg, ext.MessageTemplate())
 	}
 	return msg
+}
+
+// minimalTitle is the title of a message that carries no details: the event
+// type ("new_finding" becomes "New finding") and the severity.
+func minimalTitle(entry *outboxdom.Outbox) string {
+	kind := strings.ReplaceAll(entry.EventType(), "_", " ")
+	if kind != "" {
+		kind = strings.ToUpper(kind[:1]) + kind[1:]
+	}
+	if kind == "" {
+		kind = "Notification"
+	}
+	return kind + " (" + entry.Severity().String() + ")"
 }
 
 // configureClientFromCredentials configures the notification client based on provider type.

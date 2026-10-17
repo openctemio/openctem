@@ -104,14 +104,16 @@ func registerSensorManagementRoutes(
 			r.POST("/{id}/content/refresh", content.RefreshSensor, middleware.Require(permission.SensorsWrite), own)
 		}
 		// Results without a command (RFC-040 §5.3): the tenant policy and
-		// the quarantine review. Accepting applies sensor data to the
+		// the quarantine review. The preview carries asset values and finding
+		// titles from the raw report, so reading it needs sensors:write too
+		// (owners and administrators). Accepting applies sensor data to the
 		// inventory and discarding drops it, so both, like the policy, need
 		// sensors:write (owners and administrators). Before /{id}.
 		if results != nil {
 			r.GET("/result-policy", results.GetPolicy, middleware.Require(permission.SensorsRead))
 			r.PUT("/result-policy", results.UpdatePolicy, middleware.Require(permission.SensorsWrite))
-			r.GET("/quarantined-results", results.List, middleware.Require(permission.SensorsRead))
-			r.GET("/quarantined-results/{qid}", results.Get, middleware.Require(permission.SensorsRead))
+			r.GET("/quarantined-results", results.List, middleware.Require(permission.SensorsWrite))
+			r.GET("/quarantined-results/{qid}", results.Get, middleware.Require(permission.SensorsWrite))
 			r.POST("/quarantined-results/{qid}/approve", results.Accept, middleware.Require(permission.SensorsWrite))
 			r.POST("/quarantined-results/{qid}/reject", results.Discard, middleware.Require(permission.SensorsWrite))
 		}
@@ -155,7 +157,7 @@ func registerSensorManagementRoutes(
 		r.DELETE("/{id}/tool-settings/{tool}", h.ResetToolSettings, middleware.Require(permission.SensorsWrite), own)
 		// Setup checklist (research/26): the sensor's config report, explained
 		// from the platform catalog.
-		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsRead), own)
+		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsWrite), own)
 
 		// Available capabilities for tenant (aggregated from all accessible sensors)
 		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.SensorsRead))
@@ -681,9 +683,9 @@ func registerSecretStoreRoutes(
 		r.GET("/{id}", h.Get, middleware.Require(permission.SecretStoreRead))
 
 		// Write operations
-		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite))
-		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite))
+		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
+		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin())
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete))

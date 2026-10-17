@@ -226,7 +226,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "researcher",
-		Version: 1,
+		Version: 2,
 		Name:    "Researcher",
 		Description: "Tests the bug-bounty programs the organization follows: programs, scans and " +
 			"findings of the programs whose team they belong to. Reports and discusses findings; " +
@@ -238,7 +238,6 @@ var roleTemplates = []RoleTemplate{
 			FindingsRead, FindingsWrite, FindingsComment, FindingsStatus, FindingsTriage, FindingsExport,
 			ScansRead, ScansWrite, ScansExecute,
 			ScanProfilesRead, ScannerTemplatesRead, ScanWorkflowsRead,
-			SensorsRead,
 			ProgramsRead, ProgramsWrite,
 		},
 	},

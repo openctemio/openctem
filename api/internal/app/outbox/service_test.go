@@ -62,10 +62,10 @@ func TestBuildMessageScrubsPrivateProgramNames(t *testing.T) {
 	program := shared.NewID()
 	orgWide := integration.NewIntegrationWithNotification(integration.Reconstruct(shared.NewID(), shared.NewID(), "org", "",
 		integration.CategoryNotification, integration.ProviderSlack, integration.StatusConnected, "", integration.AuthTypeToken,
-		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), nil)
+		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), withDetails())
 	attached := integration.NewIntegrationWithNotification(integration.Reconstruct(shared.NewID(), shared.NewID(), "prog", "",
 		integration.CategoryNotification, integration.ProviderSlack, integration.StatusConnected, "", integration.AuthTypeToken,
-		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), nil)
+		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), withDetails())
 	d := bountyprogram.Delivery{
 		Programs: []bountyprogram.DeliveryProgram{{ID: program, Name: "Hush Corp", Tag: "program:h1:hush"}},
 		Channels: map[shared.ID]map[shared.ID]bool{attached.Integration.ID(): {program: true}},
@@ -80,5 +80,43 @@ func TestBuildMessageScrubsPrivateProgramNames(t *testing.T) {
 	}
 	if m := s.buildMessage(attached, entry, d); m.Title != "Hush Corp: XSS on shop" {
 		t.Fatalf("program channel message scrubbed: %q", m.Title)
+	}
+}
+
+func withDetails() *integration.NotificationExtension {
+	ext := integration.NewNotificationExtension(shared.NewID())
+	ext.SetIncludeDetails(true)
+	return ext
+}
+
+// Minimal by default (A9): a channel that did not opt in to details gets the
+// event type, severity and link, never the finding title or body.
+func TestBuildMessage_MinimalUnlessChannelOptsIn(t *testing.T) {
+	mk := func(ext *integration.NotificationExtension) *integration.IntegrationWithNotification {
+		return integration.NewIntegrationWithNotification(integration.Reconstruct(shared.NewID(), shared.NewID(), "c", "",
+			integration.CategoryNotification, integration.ProviderSlack, integration.StatusConnected, "", integration.AuthTypeToken,
+			"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), ext)
+	}
+	entry := outboxdom.Reconstitute(outboxdom.NewID(), shared.NewID(), "new_finding", "finding", nil,
+		"SQL injection on payroll.example.com", "asset payroll.example.com, CVE-2026-1", outboxdom.SeverityHigh, "https://app.example/findings/1",
+		nil, outboxdom.OutboxStatusPending, 0, 3, "", time.Time{}, nil, "", time.Time{}, time.Time{}, nil)
+	s := &Service{}
+
+	for name, ext := range map[string]*integration.NotificationExtension{
+		"new channel default": integration.NewNotificationExtension(shared.NewID()),
+		"no extension":        nil,
+	} {
+		m := s.buildMessage(mk(ext), entry, bountyprogram.Delivery{})
+		if strings.Contains(m.Title+m.Body, "payroll") || strings.Contains(m.Title+m.Body, "SQL") || strings.Contains(m.Body, "CVE") {
+			t.Errorf("%s leaks details: %q / %q", name, m.Title, m.Body)
+		}
+		if m.Title != "New finding (high)" || m.URL != "https://app.example/findings/1" {
+			t.Errorf("%s: title %q url %q", name, m.Title, m.URL)
+		}
+	}
+
+	m := s.buildMessage(mk(withDetails()), entry, bountyprogram.Delivery{})
+	if m.Title != "SQL injection on payroll.example.com" || !strings.Contains(m.Body, "CVE-2026-1") {
+		t.Errorf("opted-in channel lost details: %q / %q", m.Title, m.Body)
 	}
 }
