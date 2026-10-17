@@ -17,6 +17,7 @@ import {
   Package,
   ShieldCheck,
   Cloud,
+  Server,
   UserCog,
   UserPlus,
   UserSearch,
@@ -179,6 +180,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/scan-approval',
         icon: ShieldCheck,
         keywords: ['scan', 'approval', 'governance', 'second approver', 'policy', 'scope'],
+      },
+      {
+        title: 'Shared sensors',
+        i18nKey: 'admin.nav.sharedSensors',
+        url: '/admin/system/shared-sensors',
+        icon: Server,
+        keywords: ['fleet', 'shared sensors', 'pause', 'retire', 'queue', 'jobs', 'regions'],
       },
       {
         title: 'Platform scanning',
