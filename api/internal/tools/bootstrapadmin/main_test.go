@@ -41,3 +41,24 @@ func TestDatabaseURLFromIPv6Host(t *testing.T) {
 		t.Fatalf("ipv6 host: %v %+v", err, u)
 	}
 }
+
+// With a separate migrator role the CLI connects as it: the app role cannot
+// write admin_users, and the console role cannot create the sign-in account.
+func TestDatabaseURLFromUsesSchemaOwner(t *testing.T) {
+	env := map[string]string{
+		"DB_HOST": "h", "DB_USER": "app", "DB_PASSWORD": "p", "DB_NAME": "n",
+		"DB_ADMIN_USER": "console", "DB_ADMIN_PASSWORD": "x",
+		"DB_MIGRATE_USER": "owner", "DB_MIGRATE_PASSWORD": "c",
+	}
+	u, err := url.Parse(databaseURLFrom(func(k string) string { return env[k] }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := u.User.Password(); u.User.Username() != "owner" || got != "c" {
+		t.Fatalf("credentials = %q / %q", u.User.Username(), got)
+	}
+	delete(env, "DB_MIGRATE_PASSWORD")
+	if got := databaseURLFrom(func(k string) string { return env[k] }); got != "" {
+		t.Fatalf("want empty without DB_MIGRATE_PASSWORD, got %q", got)
+	}
+}
