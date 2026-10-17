@@ -701,7 +701,7 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 			continue
 		} else if err != nil {
 			s.logger.Warn("a first step of the workflow could not be queued",
-				"run_id", run.ID.String(), "step_key", oneLine(step.StepKey), "error", err)
+				"run_id", run.ID.String(), "step_key", logger.SanitizeValue(oneLine(step.StepKey)), "error", logger.SanitizeError(err))
 			if queueErr == nil {
 				queueErr = err
 			}

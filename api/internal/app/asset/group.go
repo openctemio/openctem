@@ -165,7 +165,7 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 		}
 	}
 
-	s.logger.Info("asset group created", "id", group.ID(), "name", input.Name)
+	s.logger.Info("asset group created", "id", group.ID(), "name", logger.SanitizeValue(input.Name))
 	return s.readerView(ctx, tenantID, group)
 }
 
