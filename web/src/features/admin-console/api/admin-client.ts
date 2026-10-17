@@ -5,7 +5,8 @@
  * returns in the body of the sign-in and validate responses and this module
  * keeps in memory only (no console secret is ever readable in a cookie: on a
  * second port of the tenant host the two sites share the host's cookies).
- * Before a session exists, the sign-in steps echo the page's csrf_token.
+ * Before a session exists, the sign-in steps echo the page's csrf_token (as
+ * the global fetch wrapper, src/lib/csrf-client.ts, would).
  */
 
 export const ADMIN_API = '/api/v1/admin'
