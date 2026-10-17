@@ -153,6 +153,23 @@ paging and the caller's role sit beside it. The tool descriptions and the
 server `instructions` say so too. Write actions cannot be triggered by such
 text: they need the person's confirmation outside the AI client.
 
+**Result guard.** One guard (`handler/mcp_guard.go`) runs on every tool result
+and every prompt DATA message, so a new tool cannot forget it:
+
+- hidden text is removed: bidirectional controls, zero-width characters,
+  Unicode tag characters (invisible ASCII), invisible math operators and C0/C1
+  controls (`safetext.Clean`), so the model reads what a person would read;
+- secrets are redacted (`safetext.RedactSecrets`: cloud keys, tokens, JWTs,
+  private key blocks, `password=` values);
+- each string is capped by field kind (titles and names 240 characters,
+  narrative fields such as descriptions, steps, impact and notes 16,000, all
+  others 1,024); a cut field ends with `…`;
+- one result or prompt message is capped at 256 KB; a larger one is the typed
+  error `result_too_large`, asking for a smaller `limit` or a narrower filter.
+
+`explain_finding_priority` (rule names and reasons are written by people in the
+organization) is wrapped like every other tool that carries free text.
+
 ### Errors
 
 A failed call is a normal result with `isError: true` and JSON text
@@ -186,6 +203,18 @@ cut.
 
 ## Security model (the key invariants)
 
+- **MCP requests, never decides**: no tool approves, rejects, accepts a risk,
+  approves a false positive, deletes, launches a scan or changes an integration.
+  A write tool only creates a request that the person confirms in the web
+  console (four-eyes stays there). Tests keep this true: the set of write tools
+  is an allowlist that needs a security review note to extend, no tool name may
+  look like a decision, and `tools/list` is identical for every organization
+  (tool definitions never carry tenant data).
+- **Confirmation text**: the text shown on the confirmation page is cleaned of
+  hidden characters when stored and again when shown, and a comment containing
+  hidden characters is refused (`invalid_argument`), so what the person approves
+  is exactly what is stored.
+
 - **Tenant isolation**: the tenant is taken **solely** from the authenticated
   credential and injected into every tool call. Tools expose **no tenant
   argument**, so a caller cannot widen scope by smuggling a `tenant_id` — a
@@ -202,7 +231,8 @@ cut.
   chain is `[Origin check, 401 challenge, per-IP rate limit, key auth, IP
   allowlist]` (`routes/mcp.go`).
 - **Rate limit**: a per-IP limiter runs before auth, and a per-credential budget
-  after it. Generic list tools clamp to ≤100 rows, pentest lists to ≤50 per page.
+  after it. The budget's burst is capped at 60 requests (the hourly rate is
+  unchanged), so a hijacked assistant cannot spend a whole hour in one burst. Generic list tools clamp to ≤100 rows, pentest lists to ≤50 per page.
 - **Audit**: every `tools/call` and `prompts/get` (success, denied, failure) is
   audited with the tool, ids and enum arguments (free text such as `search` is
   recorded as redacted), result size, user, IP and the OAuth client.
