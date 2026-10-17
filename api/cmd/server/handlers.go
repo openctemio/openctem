@@ -18,7 +18,6 @@ import (
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -453,6 +452,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetSoftware:          handler.NewAssetSoftwareHandler(svc.VulnMatch, repos.Asset, log).SetDataScope(svc.DataScope),
+		AssetTechnology:        handler.NewAssetTechnologyHandler(repos.AssetTechnology, repos.Asset, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
@@ -642,7 +642,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			log),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
-		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
+		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
@@ -681,7 +681,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Platform scanning: the shared platform sensors as a service the
 		// tenant may use, never the sensors themselves.
 		PlatformScanning: handler.NewPlatformScanningHandler(
-			sensor.NewPlatformScanningService(repos.Sensor, app.PlatformSensorsAllowed), log),
+			sensor.NewPlatformScanningService(repos.Sensor, svc.SharedSensorsAllowed), log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
@@ -1028,6 +1028,14 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 	if svc.Scope != nil {
 		svc.Scope.SetStepUpGate(gate)
+	}
+	if svc.Vulnerability != nil {
+		// Approvals whose policy tier needs a recent re-authentication.
+		svc.Vulnerability.SetStepUpGate(gate)
+	}
+	if svc.Group != nil {
+		// Edits of the approval policy's security pool group.
+		svc.Group.SetStepUpGate(gate)
 	}
 	if svc.Sensor != nil {
 		svc.Sensor.SetStepUpGate(gate)
@@ -1437,6 +1445,10 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	if svc.Outbox != nil {
 		ob = svc.Outbox
 	}
+	ciAlerts := cirunapp.NewAdminAlerts(admins, inApp, ob, log)
+	if repos.MemberLifecycle != nil && svc.Email != nil {
+		ciAlerts.SetEmail(repos.MemberLifecycle, svc.Email)
+	}
 	ciSvc := cirunapp.NewService(cirunapp.Deps{
 		Repo:     repos.CIRun,
 		Verifier: verifier,
@@ -1446,7 +1458,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 		Ingester: svc.Ingest,
 		Units:    repos.CIRun,
 		Audit:    audit,
-		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
+		Alerts:   ciAlerts,
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
@@ -1617,6 +1629,9 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, rc
 	// An install state is usable once (all replicas).
 	if rc != nil {
 		s.SetOnceStore(redis.NewWebhookDeliveryStore(rc))
+	}
+	if repos.RepoIdentity != nil {
+		s.SetRepositoryLifecycle(repos.RepoIdentity)
 	}
 	if svc.Encryptor != nil {
 		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)

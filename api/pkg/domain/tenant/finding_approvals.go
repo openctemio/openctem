@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -43,6 +44,47 @@ type FindingApprovalSettings struct {
 	// Raising the share is immediate and clears it.
 	PendingSecondLookPercent *int       `json:"pending_second_look_percent,omitempty"`
 	PendingSecondLookAt      *time.Time `json:"pending_second_look_at,omitempty"`
+	// Policy is the organization's approval policy (RFC-111): tiers by
+	// risk, the security pool, exclusions, caps and what a material change
+	// does. It only adds constraints above the platform floors.
+	Policy approvalpolicy.Policy `json:"policy,omitzero"`
+	// PendingPolicy is a policy that relaxes something, chosen less than
+	// approvalpolicy.RelaxationDelay ago; it takes effect at
+	// PendingPolicyAt. Until then Policy (the stricter of the old and the
+	// new, field by field) applies.
+	PendingPolicy   *approvalpolicy.Policy `json:"pending_policy,omitempty"`
+	PendingPolicyAt *time.Time             `json:"pending_policy_at,omitempty"`
+}
+
+// EffectivePolicy is the approval policy in force at now: a pending policy
+// once its time has come, else the stored one.
+func (s FindingApprovalSettings) EffectivePolicy(now time.Time) approvalpolicy.Policy {
+	if s.PendingPolicy != nil && s.PendingPolicyAt != nil && !now.Before(*s.PendingPolicyAt) {
+		return *s.PendingPolicy
+	}
+	return s.Policy
+}
+
+// SetPolicy chooses a new approval policy at now. A policy that only
+// tightens applies at once and cancels a pending relaxation. A policy that
+// relaxes anything waits approvalpolicy.RelaxationDelay (a stolen
+// administrator session cannot lower the bar and use it in the same
+// sitting); until then the stricter of the current and the new policy
+// applies, so the tightening part of a mixed change takes effect at once.
+// It answers whether the change waits.
+func (s *FindingApprovalSettings) SetPolicy(p approvalpolicy.Policy, now time.Time) (bool, error) {
+	if err := p.Validate(); err != nil {
+		return false, err
+	}
+	next := p.Normalized()
+	current := s.EffectivePolicy(now).Normalized()
+	if !approvalpolicy.Relaxes(current, next) {
+		s.Policy, s.PendingPolicy, s.PendingPolicyAt = next, nil, nil
+		return false, nil
+	}
+	at := now.Add(approvalpolicy.RelaxationDelay).UTC()
+	s.Policy, s.PendingPolicy, s.PendingPolicyAt = approvalpolicy.Stricter(current, next), &next, &at
+	return true, nil
 }
 
 // EffectiveSecondLookPercent is the share in force at now: a pending lower
@@ -104,6 +146,18 @@ func (s *FindingApprovalSettings) SetFPApproval(level string, now time.Time) err
 	return nil
 }
 
+// CancelPending drops every waiting lowering (false-positive level, second
+// look share, relaxing policy) so the values in force at now stay. A change
+// whose time has already come is in force and stays.
+func (s *FindingApprovalSettings) CancelPending(now time.Time) {
+	s.FPApproval = s.EffectiveFPApproval(now)
+	s.SecondLookPercent = s.EffectiveSecondLookPercent(now)
+	s.Policy = s.EffectivePolicy(now)
+	s.PendingFPApproval, s.PendingFPApprovalAt = "", nil
+	s.PendingSecondLookPercent, s.PendingSecondLookAt = nil, nil
+	s.PendingPolicy, s.PendingPolicyAt = nil, nil
+}
+
 // Normalized validates s and returns the cleaned copy.
 func (s FindingApprovalSettings) Normalized() (FindingApprovalSettings, error) {
 	s.BackupContactEmail = strings.ToLower(strings.TrimSpace(s.BackupContactEmail))
@@ -114,6 +168,14 @@ func (s FindingApprovalSettings) Normalized() (FindingApprovalSettings, error) {
 	}
 	if s.PendingFPApproval != "" {
 		if _, err := ParseFPApprovalLevel(s.PendingFPApproval); err != nil {
+			return s, err
+		}
+	}
+	if err := s.Policy.Validate(); err != nil {
+		return s, err
+	}
+	if s.PendingPolicy != nil {
+		if err := s.PendingPolicy.Validate(); err != nil {
 			return s, err
 		}
 	}

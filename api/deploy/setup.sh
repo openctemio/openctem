@@ -88,6 +88,7 @@ if [[ -n "$admin_public" ]]; then
 fi
 set_value DB_SUPERUSER_PASSWORD "$(secret 24)"
 set_value DB_MIGRATE_PASSWORD "$(secret 24)"
+set_value DB_ADMIN_PASSWORD "$(secret 24)"
 set_value DB_PASSWORD "$(secret 24)"
 set_value REDIS_PASSWORD "$(secret 24)"
 set_value APP_ENCRYPTION_KEY "$(secret 32)"
