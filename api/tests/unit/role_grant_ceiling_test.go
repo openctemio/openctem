@@ -180,13 +180,15 @@ func TestGrantCeiling_AdminCannotMakeThemselfOwner(t *testing.T) {
 	ctx := context.Background()
 	tid, aid := f.tenant.String(), f.admin.String()
 
-	wantForbidden(t, "SetUserRoles self -> [owner]", f.svc.SetUserRoles(ctx,
+	wantSystemRole(t, "SetUserRoles self -> [owner]", f.svc.SetUserRoles(ctx,
 		accesscontrol.SetUserRolesInput{TenantID: tid, UserID: aid, RoleIDs: []string{role.OwnerRoleID.String()}}, aid, audit.AuditContext{}))
-	wantForbidden(t, "AssignRole self owner", f.svc.AssignRole(ctx,
+	wantSystemRole(t, "AssignRole self owner", f.svc.AssignRole(ctx,
 		accesscontrol.AssignRoleInput{TenantID: tid, UserID: aid, RoleID: role.OwnerRoleID.String()}, aid, audit.AuditContext{}))
 	_, err := f.svc.BulkAssignRoleToUsers(ctx,
 		accesscontrol.BulkAssignRoleToUsersInput{TenantID: tid, RoleID: role.OwnerRoleID.String(), UserIDs: []string{aid}}, aid, audit.AuditContext{})
-	wantForbidden(t, "BulkAssign owner -> self", err)
+	wantSystemRole(t, "BulkAssign owner -> self", err)
+	// The invitation and create-user path never grants owner either.
+	wantSystemRole(t, "GrantExactRoles self -> [owner]", f.svc.GrantExactRoles(ctx, tid, aid, []string{role.OwnerRoleID.String()}, aid, audit.AuditContext{}))
 
 	if f.repo.has(f.admin, role.OwnerRoleID) {
 		t.Fatal("the admin ended up with the owner role")
@@ -198,7 +200,7 @@ func TestGrantCeiling_AdminCannotGrantRoleAboveTheirOwn(t *testing.T) {
 	ctx := context.Background()
 	tid, aid := f.tenant.String(), f.admin.String()
 
-	wantForbidden(t, "owner to another user", f.svc.AssignRole(ctx,
+	wantSystemRole(t, "owner to another user", f.svc.AssignRole(ctx,
 		accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.OwnerRoleID.String()}, aid, audit.AuditContext{}))
 	wantForbidden(t, "custom role with an owner-only permission", f.svc.AssignRole(ctx,
 		accesscontrol.AssignRoleInput{TenantID: tid, UserID: aid, RoleID: f.analyst.ID().String()}, aid, audit.AuditContext{}))
@@ -223,11 +225,21 @@ func TestGrantCeiling_AdminCannotCreateOrWidenRoleBeyondTheirOwn(t *testing.T) {
 func TestGrantCeiling_AdminCannotChangeOwnersRoles(t *testing.T) {
 	f := newCeilingFixture(t)
 	ctx := context.Background()
-	wantForbidden(t, "admin strips the owner", f.svc.SetUserRoles(ctx,
+	// Custom roles of the owner: only an owner changes them.
+	plain := role.New(f.tenant, "plain", "Plain", "", 10, false, []string{"assets:read"}, role.NewID())
+	f.repo.roles[plain.ID().String()] = plain
+	wantForbidden(t, "admin changes the owner's custom roles", f.svc.SetUserRoles(ctx,
+		accesscontrol.SetUserRolesInput{TenantID: f.tenant.String(), UserID: f.owner.String(), RoleIDs: []string{plain.ID().String()}},
+		f.admin.String(), audit.AuditContext{}))
+	// The owner role itself is not a Roles API matter.
+	wantSystemRole(t, "admin strips the owner", f.svc.SetUserRoles(ctx,
 		accesscontrol.SetUserRolesInput{TenantID: f.tenant.String(), UserID: f.owner.String(), RoleIDs: []string{role.ViewerRoleID.String()}},
 		f.admin.String(), audit.AuditContext{}))
-	wantForbidden(t, "admin removes owner role", f.svc.RemoveRole(ctx, f.tenant.String(), f.owner.String(),
+	wantSystemRole(t, "admin removes owner role", f.svc.RemoveRole(ctx, f.tenant.String(), f.owner.String(),
 		role.OwnerRoleID.String(), audit.AuditContext{ActorID: f.admin.String()}))
+	if !f.repo.has(f.owner, role.OwnerRoleID) {
+		t.Fatal("the owner lost the owner role")
+	}
 }
 
 func TestGrantCeiling_AllowedChanges(t *testing.T) {
@@ -235,29 +247,31 @@ func TestGrantCeiling_AllowedChanges(t *testing.T) {
 	ctx := context.Background()
 	tid := f.tenant.String()
 
-	// An admin may grant roles within their own grants (but not the admin
-	// role itself: only the owner promotes to admin, settings decision B2).
-	if err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.ViewerRoleID.String()},
+	plain := role.New(f.tenant, "plain", "Plain", "", 10, false, []string{"assets:read"}, role.NewID())
+	f.repo.roles[plain.ID().String()] = plain
+	// An admin may grant custom roles within their own grants.
+	if err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: plain.ID().String()},
 		f.admin.String(), audit.AuditContext{}); err != nil {
-		t.Fatalf("admin grants viewer: %v", err)
+		t.Fatalf("admin grants a custom role: %v", err)
 	}
-	// An owner may grant anything, including the owner role and owner-only permissions.
+	// An owner may grant any custom role, owner-only permissions included.
 	if err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: f.analyst.ID().String()},
 		f.owner.String(), audit.AuditContext{}); err != nil {
 		t.Fatalf("owner grants custom role: %v", err)
 	}
-	if err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.OwnerRoleID.String()},
+	// Nobody, the owner included, grants the owner role here.
+	wantSystemRole(t, "owner grants owner", f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.OwnerRoleID.String()},
+		f.owner.String(), audit.AuditContext{}))
+	// The owner's team role is untouched by a custom-role change.
+	if err := f.svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tid, UserID: f.owner.String(), RoleIDs: []string{plain.ID().String()}},
 		f.owner.String(), audit.AuditContext{}); err != nil {
-		t.Fatalf("owner grants owner: %v", err)
+		t.Fatalf("owner edits own custom roles: %v", err)
 	}
-	// The tenant's owner keeps the owner role, even if they try to drop it.
-	err := f.svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tid, UserID: f.owner.String(), RoleIDs: []string{role.AdminRoleID.String()}},
-		f.owner.String(), audit.AuditContext{})
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Fatalf("owner drops own owner role: want validation error, got %v", err)
+	if !f.repo.has(f.owner, role.OwnerRoleID) {
+		t.Fatal("the owner lost the owner role")
 	}
-	// A system path (no actor) still cannot grant owner.
-	wantForbidden(t, "system grant of owner", f.svc.SetUserRoles(ctx,
+	// A system path (no actor) cannot grant owner either.
+	wantSystemRole(t, "system grant of owner", f.svc.SetUserRoles(ctx,
 		accesscontrol.SetUserRolesInput{TenantID: tid, UserID: f.member.String(), RoleIDs: []string{role.OwnerRoleID.String()}}, "", audit.AuditContext{}))
 }
 

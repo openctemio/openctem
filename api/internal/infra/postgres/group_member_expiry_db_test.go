@@ -60,8 +60,14 @@ func TestGroupMembershipExpiry(t *testing.T) {
 		if _, err := db.ExecContext(ctx, `SELECT refresh_access_for_user($1, $2)`, tenantID.String(), u.String()); err != nil {
 			t.Fatalf("refresh access: %v", err)
 		}
-		if n := countAccessRows(ctx, t, db.DB, u); n != 1 {
-			t.Fatalf("user %s sees %d assets before expiry, want 1", u, n)
+		// A membership past its end date grants no scope even before the
+		// controller deletes the row.
+		want := 1
+		if u == expired {
+			want = 0
+		}
+		if n := countAccessRows(ctx, t, db.DB, u); n != want {
+			t.Fatalf("user %s sees %d assets, want %d", u, n, want)
 		}
 	}
 

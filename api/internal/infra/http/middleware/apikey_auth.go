@@ -275,6 +275,11 @@ type apiKeyBucket struct {
 
 const apiKeyBucketIdle = 2 * time.Hour
 
+// apiKeyBurst caps how many requests a key or an MCP grant may make at once.
+// The hourly rate is unchanged; only the bucket depth is, so a hijacked
+// assistant cannot spend a whole hour's budget in one burst.
+const apiKeyBurst = 60
+
 func newAPIKeyRateLimiter() *apiKeyRateLimiter {
 	return &apiKeyRateLimiter{buckets: make(map[string]*apiKeyBucket)}
 }
@@ -301,7 +306,7 @@ func (l *apiKeyRateLimiter) allow(keyID string, perHour int) bool {
 	b, ok := l.buckets[keyID]
 	if !ok || b.perHour != perHour {
 		b = &apiKeyBucket{
-			limiter: rate.NewLimiter(rate.Limit(float64(perHour)/3600.0), perHour),
+			limiter: rate.NewLimiter(rate.Limit(float64(perHour)/3600.0), min(perHour, apiKeyBurst)),
 			perHour: perHour,
 		}
 		l.buckets[keyID] = b

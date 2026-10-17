@@ -471,7 +471,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Asset:  assetHandler,
 		Tenant: tenantHandler,
 		User:   newUserHandler(svc, repos, v, log),
-		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
+		Audit:  handler.NewAuditHandler(svc.Audit, v, log).SetDataScope(svc.DataScope),
 
 		// Assets & Components
 		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
@@ -721,7 +721,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
-		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log),
+		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log).WithDataScope(svc.DataScope),
 
 		// Platform scanning: the shared platform sensors as a service the
 		// tenant may use, never the sensors themselves.

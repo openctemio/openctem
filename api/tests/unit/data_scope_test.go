@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -71,7 +72,7 @@ func (m *mockAccessControlRepo) ListGroupsByAsset(_ context.Context, _ shared.ID
 func (m *mockAccessControlRepo) CountAssetOwners(_ context.Context, _ shared.ID) (int64, error) {
 	return 0, nil
 }
-func (m *mockAccessControlRepo) CountAssetsByGroups(_ context.Context, _ []shared.ID) (map[shared.ID]int, error) {
+func (m *mockAccessControlRepo) CountAssetsByGroups(_ context.Context, _ []shared.ID, _ *shared.DataScope) (map[shared.ID]int, error) {
 	return nil, nil
 }
 func (m *mockAccessControlRepo) ListAssetOwnersByGroupWithDetails(_ context.Context, _ shared.ID, _ *shared.DataScope, _, _ int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
@@ -110,6 +111,14 @@ func (m *mockAccessControlRepo) ListActiveRulesByPriority(_ context.Context, _ s
 func (m *mockAccessControlRepo) BulkCreateAssetOwners(_ context.Context, _ []*accesscontrol.AssetOwner) (int, error) {
 	return 0, nil
 }
+func (m *mockAccessControlRepo) RefreshUserAccessibleAssetsForTenant(_ context.Context, _ shared.ID) error {
+	return nil
+}
+
+func (m *mockAccessControlRepo) ListAssetIDsByScopeRule(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+
 func (m *mockAccessControlRepo) RefreshUserAccessibleAssets(_ context.Context) error {
 	return nil
 }
@@ -597,6 +606,7 @@ func TestGetFindingWithScope_NonAdmin_NoScopeRow_NotFound(t *testing.T) {
 
 	acRepo := &mockAccessControlRepo{canAccessResult: false} // no scope row at all
 	svc.SetAccessControlRepository(acRepo)
+	svc.SetDataScope(datascope.New(scopeRowsFromMock{acRepo}, nil, logger.NewNop()))
 
 	_, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
 	if !errors.Is(err, shared.ErrNotFound) {
@@ -621,6 +631,7 @@ func TestGetFindingWithScope_NonAdmin_HasScope_CanAccess(t *testing.T) {
 		canAccessResult: true, // user can access this asset
 	}
 	svc.SetAccessControlRepository(acRepo)
+	svc.SetDataScope(datascope.New(scopeRowsFromMock{acRepo}, nil, logger.NewNop()))
 
 	f, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
 	if err != nil {
@@ -645,6 +656,7 @@ func TestGetFindingWithScope_NonAdmin_HasScope_Denied(t *testing.T) {
 		canAccessResult: false, // access denied
 	}
 	svc.SetAccessControlRepository(acRepo)
+	svc.SetDataScope(datascope.New(scopeRowsFromMock{acRepo}, nil, logger.NewNop()))
 
 	_, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
 	if err == nil {
@@ -669,6 +681,7 @@ func TestGetFindingWithScope_NonAdmin_AccessCheckError_FailClosed(t *testing.T) 
 		canAccessErr: errors.New("db error"),
 	}
 	svc.SetAccessControlRepository(acRepo)
+	svc.SetDataScope(datascope.New(scopeRowsFromMock{acRepo}, nil, logger.NewNop()))
 
 	_, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
 	if err == nil {

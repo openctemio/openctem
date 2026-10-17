@@ -41,50 +41,43 @@ func wantStepUp(t *testing.T, what string, err error) {
 	}
 }
 
-func TestStepUp_GrantingAdminOrOwnerNeedsRecentAuth(t *testing.T) {
+// The admin role reaches a person only through the membership or an
+// invitation / created account (GrantExactRoles); the Roles API takes custom
+// roles only. Making someone an administrator needs a recent authentication,
+// and the owner role is never granted that way.
+func TestStepUp_GrantingAdminNeedsRecentAuth(t *testing.T) {
 	ctx := context.Background()
-	for name, run := range map[string]func(f *ceilingFixture, rid role.ID) error{
-		"AssignRole": func(f *ceilingFixture, rid role.ID) error {
-			return f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: f.tenant.String(), UserID: f.member.String(), RoleID: rid.String()},
-				f.owner.String(), audit.AuditContext{})
-		},
-		"SetUserRoles": func(f *ceilingFixture, rid role.ID) error {
-			return f.svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: f.tenant.String(), UserID: f.member.String(), RoleIDs: []string{rid.String()}},
-				f.owner.String(), audit.AuditContext{})
-		},
-		"BulkAssign": func(f *ceilingFixture, rid role.ID) error {
-			_, err := f.svc.BulkAssignRoleToUsers(ctx, accesscontrol.BulkAssignRoleToUsersInput{TenantID: f.tenant.String(), RoleID: rid.String(),
-				UserIDs: []string{f.member.String()}}, f.owner.String(), audit.AuditContext{})
-			return err
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			for _, rid := range []role.ID{role.AdminRoleID, role.OwnerRoleID} {
-				f := newCeilingFixture(t)
-				gate := refusingGate()
-				f.svc.SetStepUpGate(gate)
-				wantStepUp(t, name+" "+rid.String(), run(f, rid))
-				if f.repo.has(f.member, rid) {
-					t.Fatalf("%s: the role was granted without a recent authentication", name)
-				}
-				if len(gate.actors) != 1 || gate.actors[0] != f.owner.String() {
-					t.Fatalf("%s: the gate must be asked about the acting owner, got %v", name, gate.actors)
-				}
-
-				// Inside the window the same grant goes through.
-				gate.err = nil
-				if err := run(f, rid); err != nil {
-					t.Fatalf("%s inside the window: %v", name, err)
-				}
-				if !f.repo.has(f.member, rid) {
-					t.Fatalf("%s: role not granted inside the window", name)
-				}
-			}
-		})
+	f := newCeilingFixture(t)
+	gate := refusingGate()
+	f.svc.SetStepUpGate(gate)
+	grant := func() error {
+		return f.svc.GrantExactRoles(ctx, f.tenant.String(), f.member.String(), []string{role.AdminRoleID.String()},
+			f.owner.String(), audit.AuditContext{})
+	}
+	wantStepUp(t, "GrantExactRoles admin", grant())
+	if f.repo.has(f.member, role.AdminRoleID) {
+		t.Fatal("the role was granted without a recent authentication")
+	}
+	if len(gate.actors) != 1 || gate.actors[0] != f.owner.String() {
+		t.Fatalf("the gate must be asked about the acting owner, got %v", gate.actors)
+	}
+	// Inside the window the same grant goes through.
+	gate.err = nil
+	if err := grant(); err != nil {
+		t.Fatalf("inside the window: %v", err)
+	}
+	if !f.repo.has(f.member, role.AdminRoleID) {
+		t.Fatal("role not granted inside the window")
+	}
+	// The owner role is refused outright, window or not.
+	err := f.svc.GrantExactRoles(ctx, f.tenant.String(), f.member.String(), []string{role.OwnerRoleID.String()},
+		f.owner.String(), audit.AuditContext{})
+	if !errors.Is(err, accesscontrol.ErrSystemRoleViaRoles) {
+		t.Fatalf("GrantExactRoles owner: %v", err)
 	}
 }
 
-func TestStepUp_OrdinaryAndSystemGrantsDoNotAsk(t *testing.T) {
+func TestStepUp_OrdinaryGrantsDoNotAsk(t *testing.T) {
 	ctx := context.Background()
 	f := newCeilingFixture(t)
 	gate := refusingGate()
@@ -97,22 +90,17 @@ func TestStepUp_OrdinaryAndSystemGrantsDoNotAsk(t *testing.T) {
 	}
 	// The admin keeps the admin role while gaining another: no promotion.
 	if err := f.svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tid, UserID: f.admin.String(),
-		RoleIDs: []string{role.AdminRoleID.String(), role.ViewerRoleID.String()}}, f.owner.String(), audit.AuditContext{}); err != nil {
+		RoleIDs: []string{f.analyst.ID().String()}}, f.owner.String(), audit.AuditContext{}); err != nil {
 		t.Fatalf("an existing administrator is not a promotion: %v", err)
-	}
-	// A system path (SCIM, SSO, an accepted invitation without an inviter).
-	if err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.AdminRoleID.String()},
-		"", audit.AuditContext{}); err != nil {
-		t.Fatalf("system grant: %v", err)
 	}
 	if len(gate.actors) != 0 {
 		t.Fatalf("the gate was asked for %v", gate.actors)
 	}
-	// A non-owner is refused for the role itself before step-up is asked.
+	// The owner role is refused for anyone, before any step-up is asked.
 	err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.OwnerRoleID.String()},
 		f.admin.String(), audit.AuditContext{})
-	if !errors.Is(err, shared.ErrForbidden) || errors.Is(err, middleware.ErrStepUpRequired) {
-		t.Fatalf("an administrator granting owner must be refused outright, got %v", err)
+	if !errors.Is(err, accesscontrol.ErrSystemRoleViaRoles) || errors.Is(err, middleware.ErrStepUpRequired) {
+		t.Fatalf("granting owner must be refused outright, got %v", err)
 	}
 }
 

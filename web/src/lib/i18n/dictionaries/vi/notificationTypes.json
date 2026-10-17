@@ -15,6 +15,8 @@
   "notificationTypes.finding_new.name": "Phát hiện mới",
   "notificationTypes.finding_status_change.description": "Khi trạng thái của một phát hiện được cập nhật",
   "notificationTypes.finding_status_change.name": "Thay đổi trạng thái phát hiện",
+  "notificationTypes.includeDetails.hint": "Tắt (mặc định): thông báo chỉ gồm loại sự kiện, mức độ và liên kết, không có tên lỗ hổng hay tài sản. Bật: tiêu đề và mô tả lỗ hổng được gửi tới kênh này.",
+  "notificationTypes.includeDetails.label": "Gửi kèm chi tiết trong thông báo",
   "notificationTypes.mcp_access_request.description": "Khi một thành viên xin kết nối một ứng dụng AI mà tổ chức chưa phê duyệt, và kết quả yêu cầu của chính bạn",
   "notificationTypes.mcp_access_request.name": "Yêu cầu ứng dụng AI",
   "notificationTypes.member_invited.description": "Khi có thành viên mới được mời",

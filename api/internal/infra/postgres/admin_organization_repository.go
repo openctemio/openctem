@@ -36,7 +36,8 @@ const adminOrganizationSelect = `
 	         WHERE m.tenant_id = t.id AND m.status = 'active'),
 	       COALESCE((SELECT array_agg(u.email ORDER BY u.email) FROM tenant_members m
 	         JOIN users u ON u.id = m.user_id
-	         WHERE m.tenant_id = t.id AND m.role = 'owner' AND m.status = 'active'), '{}'),
+	         JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+	         WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active'), '{}'),
 	       EXISTS (SELECT 1 FROM saml_providers s WHERE s.tenant_id = t.id AND s.enabled),
 	       (SELECT COUNT(*) FROM tenant_identity_providers p
 	         WHERE p.tenant_id = t.id AND p.is_active),
@@ -49,7 +50,8 @@ const adminOrganizationSelect = `
 
 // adminOrganizationActiveOwner holds when the organization has an active owner.
 const adminOrganizationActiveOwner = `EXISTS (SELECT 1 FROM tenant_members m
-	WHERE m.tenant_id = t.id AND m.role = 'owner' AND m.status = 'active')`
+	JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+	WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active')`
 
 func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, error) {
 	var (
