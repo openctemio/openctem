@@ -92,6 +92,13 @@ can be taken by that tenant's own eligible sensor. The shared platform pool
 is therefore built new here (W11), and the dead function is removed with
 the old claim path (W12).
 
+> **Update (RFC-100 S5).** The shared-sensor side of W11 shipped: shared
+> sensors claim shared jobs through their own claim path (fair share across
+> organizations, the organization's concurrency limit, the same leases and
+> host keys), and `get_next_platform_job` with its Go wrapper is removed
+> ([sensors.md](../architecture/sensors.md#the-shared-claim-path)). Lanes,
+> tenant pending caps and the sensor breaker of W11 remain.
+
 ### 3.3 Chunking, politeness, chaining
 
 Steps are cut **at step start**: one command per chunk, sizes per stage

@@ -29,6 +29,8 @@ var preSessionAuthRoutes = []string{
 	"/api/v1/auth/forgot-password",
 	"/api/v1/auth/reset-password",
 	"/api/v1/auth/create-first-team",
+	"/api/v1/auth/onboarding/options",
+	"/api/v1/auth/onboarding/accept",
 }
 
 func postWith(mux http.Handler, path string, headers map[string]string) *httptest.ResponseRecorder {
@@ -86,7 +88,7 @@ func TestConsoleSignInStepsRefuseCrossSite(t *testing.T) {
 	}, middleware.RejectCrossSiteBrowser(nil, logger.NewNop()))
 	mux := router.(interface{ Handler() http.Handler }).Handler()
 	for _, path := range []string{
-		"/api/v1/admin/auth/session",
+		"/api/v1/admin/auth/login",
 		"/api/v1/admin/auth/mfa",
 		"/api/v1/admin/auth/logout",
 		"/api/v1/admin/auth/idp/start",
