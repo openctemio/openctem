@@ -77,6 +77,9 @@ type ApplyResult struct {
 	Matched  int `json:"matched"`
 	Closed   int `json:"closed"`
 	Reopened int `json:"reopened"`
+	// Requested counts findings a false positive was requested for (a
+	// pending approval, the status unchanged).
+	Requested int `json:"requested"`
 	// FindingIDs whose status moved (at most 100).
 	FindingIDs []string `json:"finding_ids,omitempty"`
 }
@@ -85,6 +88,7 @@ func (r *ApplyResult) add(o ApplyResult) {
 	r.Matched += o.Matched
 	r.Closed += o.Closed
 	r.Reopened += o.Reopened
+	r.Requested += o.Requested
 	for _, id := range o.FindingIDs {
 		if len(r.FindingIDs) < maxAuditedIDs {
 			r.FindingIDs = append(r.FindingIDs, id)
@@ -497,10 +501,11 @@ func (s *Service) reconcile(ctx context.Context, tenantID shared.ID, refs []vexd
 			effects = append(effects, *e)
 		}
 	}
-	moved, err := s.repo.WriteEffects(ctx, tenantID, effects)
+	moved, requested, err := s.repo.WriteEffects(ctx, tenantID, effects)
 	if err != nil {
 		return res, err
 	}
+	res.Requested += len(requested)
 	movedSet := make(map[shared.ID]bool, len(moved))
 	for _, id := range moved {
 		movedSet[id] = true
@@ -548,10 +553,11 @@ func (s *Service) ApplyToFingerprints(ctx context.Context, tenantID shared.ID, f
 			return total.Closed + total.Reopened, err
 		}
 	}
-	if n := total.Closed + total.Reopened; n > 0 {
+	if total.Closed+total.Reopened+total.Requested > 0 {
 		ev := auditapp.NewSuccessEvent(auditdom.ActionVEXStatementApplied, auditdom.ResourceTypeVEXStatement, "").
 			WithMessage("VEX statements applied to newly reported findings").
 			WithMetadata("closed", total.Closed).WithMetadata("reopened", total.Reopened).
+			WithMetadata("requested", total.Requested).
 			WithMetadata("finding_ids", total.FindingIDs)
 		s.logAudit(ctx, auditapp.AuditContext{TenantID: tenantID.String()}, ev)
 	}
@@ -617,6 +623,7 @@ func (s *Service) auditStatement(ctx context.Context, actx auditapp.AuditContext
 		WithMetadata("statement", describe(st)).
 		WithMetadata("closed", res.Closed).
 		WithMetadata("reopened", res.Reopened).
+		WithMetadata("requested", res.Requested).
 		WithMetadata("finding_ids", res.FindingIDs)
 	if before != nil {
 		ev = ev.WithMetadata("before", describe(before))

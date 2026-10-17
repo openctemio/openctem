@@ -134,7 +134,8 @@ a list filter; it never maps one to another.
 - `PlatformStatusTransitions`: the extra moves only the platform makes, each on
   evidence a person does not hand over: a covered scan or a source's own
   "mitigated" state closes open work (`new`/`in_progress` -> `resolved`), a VEX
-  `not_affected` statement marks it `false_positive`, an approved suppression
+  `not_affected` statement does not move it (it opens a pending false-positive
+  request), an approved suppression
   rule gives a new finding, and on approval the open findings it matches
   (`SuppressionApplyFromStatuses`), its disposition, and lifting the rule
   returns them to `new` (`suppression-rules.md`).

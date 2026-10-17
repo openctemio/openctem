@@ -12,6 +12,12 @@
   `vex`, needs one more sign-off) instead of setting `false_positive`. The
   response field `vex.closed` is now `vex.requested`; the audit metadata
   `vex_closed`/`closed` are `vex_requested`/`requested`.
+- **VEX statements** (`POST /api/v1/vex-statements` and `/import`, including
+  findings reported later) no longer write `false_positive` for `not_affected`:
+  they create the same pending request (actor `vex`, one more sign-off, so the
+  uploader alone cannot complete it) and annotate the finding. `fixed` still
+  resolves. The apply result has a new `requested` count and `closed` counts
+  only fixed statements.
 - **Exposures and leaked credentials:** the two-approver rule for accepting or
   dismissing a high or critical exposure reads the highest severity it ever had
   (`exposure_events.peak_severity`, migration `002902`, nullable, no backfill,
