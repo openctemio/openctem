@@ -53,7 +53,7 @@ var Features = []Feature{
 			"registerAssetRoutes", "registerAssetGroupRoutes", "registerAssetTypeRoutes", "registerAssetOwnerRoutes",
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
-			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
+			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerAssetTechnologyRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
 			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes",
 		},
 	},
@@ -183,6 +183,7 @@ var Features = []Feature{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationPlanRoutes", "registerOrganizationSupportAccessRoutes",
 			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
+			"registerSharedSensorsSettingsRoutes",
 		},
 	},
 	{

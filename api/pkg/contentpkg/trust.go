@@ -39,7 +39,11 @@ const (
 
 // KeySetType is the catalog key set: the feed key set format under the
 // catalog's own payload type and kind.
-var KeySetType = feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind}
+var KeySetType = feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind, MaxValidity: MaxKeySetValidity}
+
+// MaxKeySetValidity caps not_after - issued_at of the catalog key set: the
+// catalog's root signs it once a year.
+const MaxKeySetValidity = 365 * 24 * time.Hour
 
 // Origins of a package.
 const (

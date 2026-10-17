@@ -277,6 +277,9 @@ func (h *GroupHandler) handleValidationError(w http.ResponseWriter, err error) {
 }
 
 func (h *GroupHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if writeStepUpError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Group").WriteJSON(w)

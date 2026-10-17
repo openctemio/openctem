@@ -32,8 +32,9 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 	query := `
 		INSERT INTO finding_status_approvals (
 			id, tenant_id, finding_id, requested_status, requested_by,
-			justification, status, expires_at, version, created_at, requested_by_actor, decide_by, closure_reason
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			justification, status, expires_at, version, created_at, requested_by_actor, decide_by, closure_reason,
+			tier, risk_class, required_approvals, policy_eval
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 
 	var requestedBy any
@@ -45,6 +46,7 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 		a.RequestedStatus, requestedBy,
 		a.Justification, string(a.Status), a.ExpiresAt, a.Version, a.CreatedAt,
 		nullString(a.RequestedByActor), a.DecideBy, nullString(a.ClosureReason.String()),
+		nullString(a.Tier), nullString(a.RiskClass), nullRequired(a), nullJSON(a.PolicyEval),
 	)
 	if err != nil {
 		var pqErr *pq.Error
@@ -134,7 +136,7 @@ func (r *FindingApprovalRepository) List(ctx context.Context, tenantID shared.ID
 		total = counts[filter.Status]
 	}
 	args = append(args, page.Limit(), page.Offset())
-	query := r.selectQuery() + " a WHERE " + where +
+	query := r.selectQuery() + " WHERE " + where +
 		fmt.Sprintf(" ORDER BY a.created_at DESC, a.id DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -253,8 +255,11 @@ func (r *FindingApprovalRepository) selectQuery() string {
 		SELECT id, tenant_id, finding_id, requested_status, requested_by,
 			justification, approved_by, approved_at, rejected_by, rejected_at,
 			rejection_reason, status, expires_at, created_at, version, requested_by_actor, decide_by, closure_reason,
-			self_approved, COALESCE(self_approval_reason, ''), single_person
-		FROM finding_status_approvals
+			self_approved, COALESCE(self_approval_reason, ''), single_person,
+			COALESCE(tier, ''), COALESCE(risk_class, ''), COALESCE(required_approvals, -1), policy_eval, decision_facts,
+			(SELECT COUNT(*) FROM approval_signoffs s
+			 WHERE s.tenant_id = a.tenant_id AND s.subject_type = 'finding_approval' AND s.subject_id = a.id)
+		FROM finding_status_approvals a
 	`
 }
 
@@ -279,6 +284,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		actor           sql.NullString
 		decideBy        *time.Time
 		closureReason   sql.NullString
+		required        int
 	)
 
 	err := scanner.Scan(
@@ -286,6 +292,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		&a.Justification, &approvedBy, &approvedAt, &rejectedBy, &rejectedAt,
 		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor, &decideBy, &closureReason,
 		&a.SelfApproved, &a.SelfApprovalReason, &a.SinglePerson,
+		&a.Tier, &a.RiskClass, &required, &a.PolicyEval, &a.DecisionFacts, &a.ApprovalsCollected,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -307,6 +314,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 	a.RejectedAt = rejectedAt
 	a.ExpiresAt = expiresAt
 	a.DecideBy = decideBy
+	a.RequiredApprovals = legacyRequired(required)
 
 	if approvedBy != nil {
 		aid, _ := shared.IDFromString(*approvedBy)
@@ -345,11 +353,11 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 		res, err := tx.ExecContext(ctx, `
 			UPDATE finding_status_approvals SET
 				status = 'approved', approved_by = $3, approved_at = $4, expires_at = $5, version = $6,
-				self_approved = $8, self_approval_reason = $9
+				self_approved = $8, self_approval_reason = $9, decision_facts = COALESCE($10, decision_facts)
 			WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND version = $7
 			  AND (decide_by IS NULL OR decide_by > now())`,
 			a.ID.String(), a.TenantID.String(), a.ApprovedBy.String(), a.ApprovedAt, a.ExpiresAt,
-			a.Version, a.Version-1, a.SelfApproved, nullString(a.SelfApprovalReason))
+			a.Version, a.Version-1, a.SelfApproved, nullString(a.SelfApprovalReason), nullJSON(a.DecisionFacts))
 		if err != nil {
 			return fmt.Errorf("failed to approve request: %w", err)
 		}
@@ -382,11 +390,13 @@ func (r *FindingApprovalRepository) CreateApplied(ctx context.Context, a *vulner
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO finding_status_approvals (
 				id, tenant_id, finding_id, requested_status, requested_by, justification, status,
-				expires_at, version, created_at, closure_reason, approved_by, approved_at, single_person
-			) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, true)`,
+				expires_at, version, created_at, closure_reason, approved_by, approved_at, single_person,
+				tier, risk_class, required_approvals, policy_eval, decision_facts
+			) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, true, $13, $14, $15, $16, $17)`,
 			a.ID.String(), a.TenantID.String(), a.FindingID.String(), a.RequestedStatus, a.RequestedBy.String(),
 			a.Justification, a.ExpiresAt, a.Version, a.CreatedAt, nullString(a.ClosureReason.String()),
-			a.ApprovedBy.String(), a.ApprovedAt); err != nil {
+			a.ApprovedBy.String(), a.ApprovedAt,
+			nullString(a.Tier), nullString(a.RiskClass), nullRequired(a), nullJSON(a.PolicyEval), nullJSON(a.DecisionFacts)); err != nil {
 			return fmt.Errorf("failed to record the decision: %w", err)
 		}
 		return applyApprovedInTx(ctx, tx, a, entry)
