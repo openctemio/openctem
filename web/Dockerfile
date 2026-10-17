@@ -176,7 +176,7 @@ CMD ["node", "console/server.js"]
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS production
 
 # node's shared libraries (see `ldd /usr/local/bin/node` in the node image).
-RUN apk add --no-cache libstdc++ libgcc libatomic
+RUN apk add --no-cache libstdc++ libgcc libatomic && apk upgrade --no-cache zlib
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
 RUN node --version
 

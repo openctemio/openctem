@@ -229,8 +229,8 @@ func (s *SecretStoreService) UpdateCredential(ctx context.Context, input UpdateC
 	}
 
 	s.logger.Info("credential updated",
-		"id", cred.ID.String(),
-		"name", cred.Name,
+		"id", logger.SanitizeValue(cred.ID.String()),
+		"name", logger.SanitizeValue(cred.Name),
 	)
 
 	event := auditapp.NewSuccessEvent(auditdom.ActionCredentialUpdated, auditdom.ResourceTypeToken, cred.ID.String()).
@@ -349,7 +349,7 @@ func (s *SecretStoreService) DeleteCredential(ctx context.Context, tenantID shar
 		return err
 	}
 
-	s.logger.Info("credential deleted", "id", credentialID)
+	s.logger.Info("credential deleted", "id", logger.SanitizeValue(credentialID))
 
 	event := auditapp.NewSuccessEvent(auditdom.ActionCredentialDeleted, auditdom.ResourceTypeToken, credentialID).
 		WithSeverity(auditdom.SeverityHigh).
