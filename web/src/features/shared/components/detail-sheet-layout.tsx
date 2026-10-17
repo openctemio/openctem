@@ -47,7 +47,8 @@
 
 import * as React from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, MoreHorizontal, X } from 'lucide-react'
+import Link from '@/components/link'
+import { ChevronDown, ExternalLink, Maximize2, MoreHorizontal, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -59,6 +60,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Drawer, DrawerContent, DrawerHandle } from '@/components/ui/drawer'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { TAB_CLASS, Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -368,6 +370,12 @@ export interface DetailHeaderProps {
    * revoke, delete) goes in the `⋯` menu. No items, no menu.
    */
   menu?: DetailMenuItem[]
+  /**
+   * The record's own page. Adds an "Open full page" icon button beside the
+   * header icons and the same entry at the top of the `⋯` menu. A real link,
+   * so ctrl/cmd-click and middle-click open it in a new tab.
+   */
+  fullPageHref?: string
   onClose: () => void
 }
 
@@ -379,7 +387,17 @@ export interface DetailHeaderProps {
  */
 const HEADER_ICON_BUTTON = 'relative size-8 after:absolute after:-inset-1.5'
 
-export function DetailHeader({ title, badges, meta, actions, menu, onClose }: DetailHeaderProps) {
+export function DetailHeader({
+  title,
+  badges,
+  meta,
+  actions,
+  menu,
+  fullPageHref,
+  onClose,
+}: DetailHeaderProps) {
+  const { t } = useTranslation()
+  const fullPageLabel = t('common.openFullPage', 'Open full page')
   const parts = (meta ?? []).filter((p) => p !== null && p !== undefined && p !== false && p !== '')
   return (
     <div data-slot="detail-header">
@@ -406,7 +424,21 @@ export function DetailHeader({ title, badges, meta, actions, menu, onClose }: De
           )}
         </div>
         <div className="-me-2 flex shrink-0 items-center gap-3">
-          {menu && menu.length > 0 && (
+          {fullPageHref && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="ghost" size="icon" className={HEADER_ICON_BUTTON}>
+                    <Link href={fullPageHref} aria-label={fullPageLabel}>
+                      <Maximize2 className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{fullPageLabel}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {((menu && menu.length > 0) || fullPageHref) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -419,7 +451,16 @@ export function DetailHeader({ title, badges, meta, actions, menu, onClose }: De
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                {menu.map((item, i) => {
+                {fullPageHref && (
+                  <DropdownMenuItem asChild>
+                    <Link href={fullPageHref}>
+                      <ExternalLink className="h-4 w-4" />
+                      {fullPageLabel}
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {fullPageHref && menu && menu.length > 0 && <DropdownMenuSeparator />}
+                {(menu ?? []).map((item, i) => {
                   const Icon = item.icon
                   return (
                     <React.Fragment key={item.label}>

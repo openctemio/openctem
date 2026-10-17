@@ -554,6 +554,72 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   decision, and a later step may carry targets found after the trigger
   checked the seeds. A refusal or a failed lookup keeps the step on the
   organization's own sensors.
+- **Deployment defaults.** `MANAGED_SERVICE` (environment, default false,
+  read at start-up) marks a hosted multi-tenant service and changes defaults
+  only, never a feature or a stored value (RFC-100 §6):
+
+  | Setting (`platform_settings` key) | Self-hosted default | `MANAGED_SERVICE=true` default |
+  |---|---|---|
+  | Verified domain before platform sensors scan (`platform_sensor_proof`) | off | on |
+  | Shared sensors may scan internal zones (`shared_sensor_internal_zones`) | off | off |
+
+  The internal-zones setting is stored but **not enforced yet**: nothing
+  reads it until instance scan zones and their signed zone ranges land
+  (RFC-100 §6.1). Its GET answers `enforced: false` and the console labels
+  the card "Not enforced yet". Whether a self-hosted install defaults it on
+  is decided when it is wired.
+
+  Once an administrator saves a value in Console > System > Platform
+  scanning, the stored value wins. The GET routes return the value in force,
+  `default` (the deployment default) and `version` (0 while nothing is
+  stored). An unreadable stored value fails closed: proof required,
+  internal zones refused. Turning internal zones on assigns no zone: the
+  administrator still assigns each instance scan zone to organizations.
+  Changes: super admin, reason, fresh authenticator code (route step-up),
+  critical admin audit row, the other administrators emailed
+  (`/api/v1/admin/settings/platform-sensor-proof`,
+  `/api/v1/admin/settings/shared-sensor-internal-zones`).
+- **Anomaly signals.** Three per-organization daily counts
+  (`scanpolicy.Service.Observe*`, counters in Redis, keys carry the
+  organization and the UTC day and expire after 48 hours):
+  distinct registrable domains (eTLD+1, a HyperLogLog estimate, so no target
+  is stored) of every job queued for shared sensors (single scans, zone
+  batches and workflow steps); failed shared jobs (`command.Service.Fail`);
+  targets the platform deny list refused, on any sensor (the scan gate's
+  `logRefusedTarget`). When a count first reaches its threshold that day, one
+  alert: the metric `shared_sensor_anomalies_total{signal}`, a warning log
+  line, an admin audit row `organization.shared_sensor_anomaly` (severity
+  high, the organization as resource, the count and threshold, never a
+  target) and an email to every administrator. Events are counted in
+  `shared_sensor_signal_events_total{signal}`. Metrics are labeled by signal
+  only. Thresholds: `platform_settings['shared_sensor_anomaly_thresholds']`
+  (defaults 25 domains, 50 failures, 5 deny-list hits per day; 0 turns a
+  signal off), `/api/v1/admin/settings/shared-sensor-anomaly`, same gate and
+  audit as above. The signals are detective: nothing that admits or refuses a
+  scan reads them, so a missing or failing Redis loses the signal (logged)
+  and never blocks a scan. The response to an alert is the per-organization
+  deny (`/api/v1/admin/tenants/{id}/shared-sensors`).
+- **Scanner identity.** What the operator publishes so a target's owner can
+  tell where scans come from:
+  - User-Agent. Sensor traffic to the platform and to the services its
+    collectors call carries `<product>/<version> openctem-sdk-go/<version>`
+    (sdk-go `pkg/useragent`). Tools run through the sdk-go tool runtime send
+    `openctem-<tool>/<version>` unless the tool's `http.user_agent` setting
+    (Tool settings, RFC-038) sets another value. A hosted operator sets that
+    setting on shared sensors to a value naming the service and its
+    information page, for example
+    `openctem-scanner/1.0 (+https://scanner.example.com)`.
+  - Reverse DNS. Give every egress address of a shared sensor a PTR record
+    under a name the operator controls (for example
+    `scanner-1.eu.scanner.example.com`), with a matching forward record.
+  - Information page. Serve a page at that name (HTTP and HTTPS) that says
+    the address belongs to a security scanning service, who runs it, the
+    abuse contact, the published list of scanner addresses per region, and
+    how a target owner asks to be excluded (the operator adds the name or
+    range to the platform deny list, `SCOPE_DENY_EXTRA`).
+  - Egress addresses. Keep the scanner egress addresses separate from the
+    API and console addresses, so the reputation of one does not affect the
+    other, and publish them to organizations (RFC-100 §9).
 
 ## Build information
 
