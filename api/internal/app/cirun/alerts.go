@@ -130,7 +130,7 @@ func (j *AlertJob) ReconcileTenant(ctx context.Context, tenantID shared.ID) (Ale
 	for i := range pipes {
 		p := &pipes[i]
 		a := p.Assess(now, j.versions)
-		if p.RetiredAt != nil || (a.Freshness != cirun.FreshnessStale && a.Freshness != cirun.FreshnessArchived) {
+		if p.RetiredAt != nil || p.RepositoryArchivedAt != nil || (a.Freshness != cirun.FreshnessStale && a.Freshness != cirun.FreshnessArchived) {
 			continue
 		}
 		ids, err := j.repo.MarkStaleSourceFindings(ctx, tenantID, p)

@@ -113,7 +113,7 @@ func (s *SensorService) toolSettingsSensor(ctx context.Context, tenantID, sensor
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if a.TenantID == nil || a.IsPlatformSensor {
+	if a.TenantID == nil || a.IsShared() {
 		// Platform sensors are managed from the admin console only.
 		return nil, nil, nil, shared.ErrNotFound
 	}
@@ -403,7 +403,7 @@ func (s *SensorService) ownSensor(ctx context.Context, tenantID, sensorID shared
 	if err != nil {
 		return false, err
 	}
-	return a.TenantID != nil && a.TenantID.Equals(tenantID) && !a.IsPlatformSensor, nil
+	return a.TenantID != nil && a.TenantID.Equals(tenantID) && !a.IsShared(), nil
 }
 
 // ToolSettingsPreview is what a job of a scan with config runs with on a
@@ -474,7 +474,7 @@ func (s *SensorService) CheckScanToolConfig(ctx context.Context, tenantID shared
 	var first error
 	checked := 0
 	for _, a := range sensors {
-		if a.TenantID == nil || a.IsPlatformSensor || !a.TenantID.Equals(tenantID) {
+		if a.TenantID == nil || a.IsShared() || !a.TenantID.Equals(tenantID) {
 			continue
 		}
 		if checked == maxScanConfigSensors {
