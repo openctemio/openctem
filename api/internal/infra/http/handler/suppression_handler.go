@@ -240,6 +240,11 @@ func (h *SuppressionHandler) ListRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rules, err := h.service.ListRules(r.Context(), tenantUUID, filter)
+	if err == nil {
+		// A person sees organization-wide rules and the rules bound to an asset
+		// in their data scope.
+		rules, err = h.service.VisibleRules(r.Context(), tenantUUID, rules)
+	}
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
