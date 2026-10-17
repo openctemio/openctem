@@ -94,6 +94,8 @@ type OAuthService struct {
 	// signupPolicy decides whether a social sign-in may create an account
 	// (signup.Admit). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
+	// signupDomains: per-domain sign-up policy of claimed domains.
+	signupDomains signupdom.DomainPolicySource
 	// invitations answers whether a pending invitation is addressed to an
 	// email (an invited person may sign up with Google/GitHub/Microsoft).
 	invitations InvitationLookup
@@ -113,6 +115,10 @@ type InvitationLookup interface {
 func (s *OAuthService) SetAuditService(a *auditapp.AuditService) { s.audit = a }
 
 func (s *OAuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
+
+// SetSignupDomainPolicy wires the per-domain sign-up policy of claimed
+// domains.
+func (s *OAuthService) SetSignupDomainPolicy(src signupdom.DomainPolicySource) { s.signupDomains = src }
 
 // SetInvitationLookup wires the pending-invitation check.
 func (s *OAuthService) SetInvitationLookup(l InvitationLookup) { s.invitations = l }
@@ -872,11 +878,20 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	// would create one. It may only when the sign-up policy admits it
 	// (signup.Admit): self-service sign-up, or a pending invitation for this
 	// verified email. Otherwise nothing is written (no orphan account).
-	if !signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), signupdom.Identity{
+	facts, err := signupdom.FactsForEmail(ctx, s.signupDomains, userInfo.Email)
+	if err != nil {
+		s.logger.Warn("domain sign-up policy unreadable; OAuth sign-up refused", "provider", provider, "error", err)
+		return nil, ErrSignupNotAvailable
+	}
+	switch signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), facts.Apply(signupdom.Identity{
 		Intent:          signupdom.IntentAccount,
 		InvitedPending:  s.invitedPending(ctx, userInfo.Email),
 		DisposableEmail: disposableEmail(userInfo.Email),
-	}).Admitted() {
+	})) {
+	case signupdom.OutcomeSSORequired:
+		s.logger.Info("OAuth sign-up refused: the domain requires its organization's SSO", "provider", provider)
+		return nil, ErrSignupSSORequired
+	case signupdom.OutcomeNotSetUp:
 		s.logger.Warn("OAuth sign-up refused by the sign-up policy", "provider", provider)
 		return nil, ErrSignupNotAvailable
 	}

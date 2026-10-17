@@ -174,9 +174,13 @@ func (r *ScopeActorRepository) personIDs(ctx context.Context, tenantID shared.ID
 // not count) and that membership is userID's with the owner role. Read at
 // decision time, never cached.
 func (r *ScopeActorRepository) IsSoleActiveOwner(ctx context.Context, tenantID shared.ID, userID string) (bool, error) {
+	return isSoleActiveOwner(ctx, r.db, tenantID, userID)
+}
+
+func isSoleActiveOwner(ctx context.Context, db executor, tenantID shared.ID, userID string) (bool, error) {
 	var members int
 	var soleIsOwner bool
-	err := r.db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		SELECT COUNT(*),
 		       COALESCE(BOOL_AND(m.user_id = $2::uuid AND ver.role = 'owner'), false)
 		FROM tenant_members m

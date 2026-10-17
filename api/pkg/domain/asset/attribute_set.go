@@ -32,7 +32,7 @@ const (
 	// (properties.ip_addresses). Class identity.
 	SetAttrIPAddresses SetAttribute = "ip_addresses"
 	// SetAttrTechnologies: the technologies detected on a host or web
-	// application (properties.technologies). Class software.
+	// application (the asset_technologies rows, RFC-112). Class software.
 	SetAttrTechnologies SetAttribute = "technologies"
 	// SetAttrOpenPorts: the open ports of an IP address ("443/tcp"); the
 	// resolved set is the address's active open_port assets. Class network.
