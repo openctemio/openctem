@@ -29,17 +29,35 @@ const (
 	// ActionFindingApprovalSinglePerson: one person decided a false
 	// positive alone because the organization's level allowed it.
 	ActionFindingApprovalSinglePerson Action = "finding_approval.single_person_decided"
+	// ActionFindingApprovalSigned: one approval of a request that needs
+	// more than one approver (the request stays pending).
+	ActionFindingApprovalSigned Action = "finding_approval.signed"
+	// ActionFindingApprovalRefused: the approval policy refused an approver
+	// (asset owner, assignee, not in the security pool, signed already, or
+	// not enough eligible approvers).
+	ActionFindingApprovalRefused Action = "finding_approval.approval_refused"
+	// Material change (RFC-111 §6): a standing decision whose finding turned
+	// worse was ended (accepted risk), flagged for review, or withdrawn
+	// (one-person false positive). Written by the controller.
+	ActionFindingApprovalMaterialChangeEnded   Action = "finding_approval.material_change_ended"
+	ActionFindingApprovalMaterialChangeFlagged Action = "finding_approval.material_change_flagged"
+	ActionFindingApprovalMaterialChangeRevoked Action = "finding_approval.material_change_revoked"
 )
 
 var _ = registerActions("finding_approval", map[Action]Severity{
-	ActionFindingApprovalRequested:       SeverityMedium,
-	ActionFindingApprovalApproved:        SeverityMedium,
-	ActionFindingApprovalRejected:        SeverityMedium,
-	ActionFindingApprovalCanceled:        SeverityLow,
-	ActionFindingApprovalReminded:        SeverityLow,
-	ActionFindingApprovalExpired:         SeverityLow,
-	ActionFindingApprovalSelfRefused:     SeverityMedium,
-	ActionFindingApprovalSelfApproved:    SeverityHigh,
-	ActionFindingApprovalSettingsChanged: SeverityHigh,
-	ActionFindingApprovalSinglePerson:    SeverityMedium,
+	ActionFindingApprovalRequested:             SeverityMedium,
+	ActionFindingApprovalApproved:              SeverityMedium,
+	ActionFindingApprovalRejected:              SeverityMedium,
+	ActionFindingApprovalCanceled:              SeverityLow,
+	ActionFindingApprovalReminded:              SeverityLow,
+	ActionFindingApprovalExpired:               SeverityLow,
+	ActionFindingApprovalSelfRefused:           SeverityMedium,
+	ActionFindingApprovalSelfApproved:          SeverityHigh,
+	ActionFindingApprovalSettingsChanged:       SeverityHigh,
+	ActionFindingApprovalSinglePerson:          SeverityMedium,
+	ActionFindingApprovalSigned:                SeverityMedium,
+	ActionFindingApprovalRefused:               SeverityMedium,
+	ActionFindingApprovalMaterialChangeEnded:   SeverityHigh,
+	ActionFindingApprovalMaterialChangeFlagged: SeverityMedium,
+	ActionFindingApprovalMaterialChangeRevoked: SeverityHigh,
 })

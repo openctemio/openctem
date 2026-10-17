@@ -42,6 +42,9 @@ var (
 	// sign-up policy does not admit (signup.Admit). The caller has written
 	// nothing; the answer is the same whatever the reason.
 	ErrSignupNotAvailable = errors.New("sign-up is not available")
+	// ErrSignupSSORequired: the address is on a domain whose organization
+	// requires its SSO; nothing was written and the person signs in there.
+	ErrSignupSSORequired = errors.New("sign-up for this address goes through the organization's single sign-on")
 	// ErrTeamURLNotAvailable: the organization URL (slug) cannot be used,
 	// whether another organization has it or it is reserved.
 	ErrTeamURLNotAvailable = fmt.Errorf("%w: this team URL is not available; choose another", shared.ErrValidation)
@@ -103,6 +106,9 @@ type AuthService struct {
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
+	// signupDomains answers the sign-up policy of an address's claimed
+	// domain (sso_required, joinable, block new organizations). Nil: none.
+	signupDomains signupdom.DomainPolicySource
 
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
@@ -435,9 +441,18 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// an unknown, expired or mismatched token, gets the same generic refusal so
 	// the response says nothing about the token.
 	invitationTenantID, invited := s.pendingInvitationFor(ctx, input.InvitationToken, email)
-	if !signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{
+	facts, err := signupdom.FactsForEmail(ctx, s.signupDomains, email)
+	if err != nil {
+		// A claimed domain's sso_required cannot be checked: refuse.
+		s.logger.Warn("domain sign-up policy unreadable; sign-up refused", "error", err)
+		return nil, ErrSignupNotAvailable
+	}
+	switch signupdom.Admit(s.signupPolicyNow(ctx), facts.Apply(signupdom.Identity{
 		Intent: signupdom.IntentAccount, InvitedPending: invited, DisposableEmail: disposableEmail(email),
-	}).Admitted() {
+	})) {
+	case signupdom.OutcomeSSORequired:
+		return nil, ErrSignupSSORequired
+	case signupdom.OutcomeNotSetUp:
 		return nil, ErrSignupNotAvailable
 	}
 
@@ -598,14 +613,14 @@ type LoginResult struct {
 	MFAChallenge *MFAChallengeInfo
 }
 
-// Login authenticates a user and creates a session.
-// Returns a global refresh token and list of tenant memberships.
-// Client should call ExchangeToken to get a tenant-scoped access token.
-func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *LoginResult, err error) {
-	defer func() { recordLoginFailure(err) }()
-
+// authenticatePassword checks an email and password the way every password
+// sign-in does: the same cost whether the account exists or not, the password
+// checked before the account state is revealed, a wrong password counted
+// toward the lockout and audited. It returns the user only when the password
+// is right and the account may sign in; it opens no session.
+func (s *AuthService) authenticatePassword(ctx context.Context, rawEmail, password, ipAddress, userAgent string) (*userdom.User, error) {
 	// Normalize email
-	email := strings.TrimSpace(strings.ToLower(input.Email))
+	email := strings.TrimSpace(strings.ToLower(rawEmail))
 
 	// Get user by email
 	u, err := s.userRepo.GetByEmailForAuth(ctx, email)
@@ -614,7 +629,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 			// Constant-time defense: run a dummy bcrypt verify so the
 			// user-not-found path costs the same as a real (wrong-password)
 			// login, preventing account enumeration via response timing.
-			_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
+			_ = s.passwordHasher.Verify(password, s.dummyPasswordHash())
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
@@ -626,10 +641,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 	// password holder learns why a correct password was refused.
 	passwordHash := u.PasswordHash()
 	if u.AuthProvider() != userdom.AuthProviderLocal || passwordHash == nil {
-		_ = s.passwordHasher.Verify(input.Password, s.dummyPasswordHash())
+		_ = s.passwordHasher.Verify(password, s.dummyPasswordHash())
 		return nil, ErrInvalidCredentials
 	}
-	if err := s.passwordHasher.Verify(input.Password, *passwordHash); err != nil {
+	if err := s.passwordHasher.Verify(password, *passwordHash); err != nil {
 		if u.IsLocked() {
 			// Already locked: do not extend the lockout or audit each guess
 			// against it; the answer is the same as any wrong password.
@@ -641,8 +656,8 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 		// Audit failed login
 		actx := auditapp.AuditContext{
 			ActorEmail: email,
-			ActorIP:    input.IPAddress,
-			UserAgent:  input.UserAgent,
+			ActorIP:    ipAddress,
+			UserAgent:  userAgent,
 		}
 		_ = s.auditService.LogAuthFailed(ctx, actx, "invalid credentials")
 
@@ -655,6 +670,58 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 	}
 	if !u.IsActive() {
 		return nil, ErrAccountSuspended
+	}
+
+	return u, nil
+}
+
+// VerifyConsolePassword is the platform console's own first factor (RFC-022
+// revision 20): the account's password, checked like a sign-in (lockout,
+// enumeration-safe), without opening a /login session or asking the
+// account's own second factor; the console asks its own next. It does not
+// reset the failed-sign-in counter: the caller does that with
+// RecordConsolePasswordSuccess only once the account is known to be an active,
+// unlocked administrator, so a tenant password cannot clear the lockout
+// through the console.
+func (s *AuthService) VerifyConsolePassword(ctx context.Context, email, password, ipAddress, userAgent string) (*userdom.User, error) {
+	u, err := s.authenticatePassword(ctx, email, password, ipAddress, userAgent)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// RecordConsolePasswordSuccess resets the failed-sign-in counter of an account
+// the console has accepted as an active, unlocked administrator.
+func (s *AuthService) RecordConsolePasswordSuccess(ctx context.Context, userID shared.ID) {
+	if err := s.userRepo.RecordSuccessfulLogin(ctx, userID); err != nil {
+		s.logger.Error("failed to reset failed login attempts", "error", err)
+	}
+}
+
+// RecordConsolePasswordFailure counts a refused console sign-in (a correct
+// password the console still turned away) toward the account's lockout.
+func (s *AuthService) RecordConsolePasswordFailure(ctx context.Context, userID shared.ID) {
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		s.logger.Error("failed to load account to record a refused console sign-in", "error", err)
+		return
+	}
+	if u.IsLocked() {
+		return
+	}
+	s.recordPasswordFailure(ctx, u)
+}
+
+// Login authenticates a user and creates a session.
+// Returns a global refresh token and list of tenant memberships.
+// Client should call ExchangeToken to get a tenant-scoped access token.
+func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *LoginResult, err error) {
+	defer func() { recordLoginFailure(err) }()
+
+	u, err := s.authenticatePassword(ctx, input.Email, input.Password, input.IPAddress, input.UserAgent)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if email is verified.
@@ -1800,6 +1867,10 @@ func (s *AuthService) SetSelfServiceLimits(l SelfServiceLimits) { s.selfServiceL
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
+// SetSignupDomainPolicy wires the per-domain sign-up policy of claimed
+// domains.
+func (s *AuthService) SetSignupDomainPolicy(src signupdom.DomainPolicySource) { s.signupDomains = src }
+
 // signupPolicyNow is the sign-up policy in force: the console setting clamped
 // to SIGNUP_MODE when wired, else self_service only under SIGNUP_MODE=open.
 func (s *AuthService) signupPolicyNow(ctx context.Context) signupdom.Policy {
@@ -1815,6 +1886,18 @@ func policyOrConfig(ctx context.Context, src signupdom.PolicySource, cfg config.
 		return signupdom.Policy{Mode: signupdom.ModeSelfService}
 	}
 	return signupdom.Default()
+}
+
+// workspacesBlockedFor reports whether the organization that claims email's
+// domain blocks new organizations for accounts on it. An unreadable policy
+// is an error (the caller refuses).
+func (s *AuthService) workspacesBlockedFor(ctx context.Context, email string) (bool, error) {
+	facts, err := signupdom.FactsForEmail(ctx, s.signupDomains, email)
+	if err != nil {
+		s.logger.Warn("domain sign-up policy unreadable; organization creation refused", "error", err)
+		return false, err
+	}
+	return facts.WorkspacesBlocked, nil
 }
 
 // selfServiceTenantCreation reports whether people may create their own
@@ -1872,6 +1955,10 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	// The account's domain may block new organizations for accounts on it.
+	if blocked, err := s.workspacesBlockedFor(ctx, u.Email()); err != nil || blocked {
+		return nil, ErrTenantCreationDisabled
 	}
 
 	// Check if user already has tenants

@@ -83,3 +83,66 @@ export function savePlatformSensorProof(input: {
 }) {
   return adminFetch<PlatformSensorProof>(PROOF_KEY, { method: 'PUT', body: input })
 }
+
+/**
+ * Shared sensors on this instance (RFC-100 §5): the instance switch (off by
+ * default) and whether organizations without a decision may use them
+ * (null until the administrator chooses; null refuses them; turning the
+ * switch on needs the choice in the same change). `ready` is false while shared sensors cannot be used yet; the
+ * API refuses to turn the switch on until then.
+ */
+export interface SharedSensorsSetting {
+  enabled: boolean
+  new_orgs: boolean | null
+  ready: boolean
+  version: number
+}
+
+const SHARED_KEY = '/settings/shared-sensors'
+
+/** The setting (any administrator reads it). */
+export function useSharedSensorsSetting() {
+  return useSWR<SharedSensorsSetting>(SHARED_KEY, adminFetcher)
+}
+
+/** Super admin, a fresh authenticator code and a reason. */
+export function saveSharedSensorsSetting(input: {
+  enabled: boolean
+  /** Required when enabled is true. */
+  new_orgs: boolean | null
+  version: number
+  reason: string
+  totp_code: string
+}) {
+  return adminFetch<SharedSensorsSetting>(SHARED_KEY, { method: 'PUT', body: input })
+}
+
+/**
+ * Egress addresses of shared sensors (RFC-100 §9): public IP addresses or
+ * CIDR ranges, for every region (`global`) and per region. Organizations
+ * that may use shared sensors see them to allowlist the scanners. The API
+ * refuses private and other internal ranges.
+ */
+export interface SharedSensorsEgress {
+  global: string[]
+  regions: Record<string, string[]>
+  version: number
+}
+
+const EGRESS_KEY = '/settings/shared-sensors/egress'
+
+/** The list (any administrator reads it). */
+export function useSharedSensorsEgress() {
+  return useSWR<SharedSensorsEgress>(EGRESS_KEY, adminFetcher)
+}
+
+/** Super admin, a fresh authenticator code and a reason; replaces the list. */
+export function saveSharedSensorsEgress(input: {
+  global: string[]
+  regions: Record<string, string[]>
+  version: number
+  reason: string
+  totp_code: string
+}) {
+  return adminFetch<SharedSensorsEgress>(EGRESS_KEY, { method: 'PUT', body: input })
+}

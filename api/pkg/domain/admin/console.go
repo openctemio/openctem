@@ -52,6 +52,25 @@ type Session struct {
 	// StepUpAt is when this session last confirmed a protected action with a
 	// fresh code; nil when it never did.
 	StepUpAt *time.Time
+	// ElevatedRole and ElevatedUntil: the role this session acts as until
+	// then (time-boxed elevation); without them, read-only.
+	ElevatedRole  AdminRole
+	ElevatedUntil *time.Time
+}
+
+// Elevation bounds.
+const (
+	ElevationMin = 15 * time.Minute
+	ElevationMax = 60 * time.Minute
+)
+
+// ActingRole is the role the session acts as at now: the elevated role while
+// the elevation lasts, else read-only.
+func (s *Session) ActingRole(now time.Time) AdminRole {
+	if s != nil && s.ElevatedUntil != nil && now.Before(*s.ElevatedUntil) && s.ElevatedRole.IsValid() {
+		return s.ElevatedRole
+	}
+	return AdminRoleReadonly
 }
 
 // SteppedUp reports whether the session confirmed a protected action within
@@ -89,6 +108,9 @@ type ConsoleRepository interface {
 	TouchSession(ctx context.Context, id shared.ID, at time.Time) error
 	// MarkSessionStepUp records a step-up confirmation on a verified session.
 	MarkSessionStepUp(ctx context.Context, id shared.ID, at time.Time) error
+	// SetSessionElevation sets (role non-empty) or ends (role empty) the
+	// time-boxed elevation of a verified session.
+	SetSessionElevation(ctx context.Context, id shared.ID, role AdminRole, until *time.Time, reason string) error
 	DeleteSession(ctx context.Context, id shared.ID) error
 	// DeleteSessionsForAdmin ends every session of one admin.
 	DeleteSessionsForAdmin(ctx context.Context, adminID shared.ID) error
