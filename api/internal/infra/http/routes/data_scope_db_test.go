@@ -234,6 +234,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 		vulnmatchapp.TenantPolicy(postgres.NewTenantRepository(db)), postgres.NewFindingRepository(db), log)
 	vmSvc.SetLinkReader(postgres.NewSoftwareRepository(db))
 	registerAssetSoftwareRoutes(router, handler.NewAssetSoftwareHandler(vmSvc, assetRepo, log).SetDataScope(enforcer), auth, nil)
+	registerAssetTechnologyRoutes(router, handler.NewAssetTechnologyHandler(postgres.NewAssetTechnologyRepository(db), assetRepo, log).SetDataScope(enforcer), auth, nil)
 	// A sub-resource with no scope code of its own: the guard alone covers it.
 	router.Group("/api/v1/assets/{id}/owners", func(r Router) {
 		r.GET("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -357,6 +358,7 @@ func TestDataScope_ByIDReads_OutOfScopeIs404(t *testing.T) {
 		"/api/v1/assets/" + b + "/findings",         // was BYPASS (listed FB)
 		"/api/v1/assets/" + b + "/owners",           // sub-resource without scope code
 		"/api/v1/assets/" + b + "/software",         // RFC-066
+		"/api/v1/assets/" + b + "/technologies",     // RFC-112
 		"/api/v1/findings/" + fb,                    // already honored
 		"/api/v1/findings/" + fb + "/comments",      // was BYPASS (owner's comment)
 		"/api/v1/findings/" + fb + "/dataflows",     // was BYPASS
@@ -378,6 +380,7 @@ func TestDataScope_ByIDReads_OutOfScopeIs404(t *testing.T) {
 		"/api/v1/assets/" + h.assetA.String() + "/findings",
 		"/api/v1/assets/" + h.assetA.String() + "/owners",
 		"/api/v1/assets/" + h.assetA.String() + "/software",
+		"/api/v1/assets/" + h.assetA.String() + "/technologies",
 		"/api/v1/findings/" + h.findingA.String(),
 		"/api/v1/findings/" + h.findingA.String() + "/comments",
 		"/api/v1/exposures/" + h.exposureA.String(),
@@ -402,6 +405,7 @@ func TestDataScope_ByIDReads_AdminAndUnrestrictedUnchanged(t *testing.T) {
 			"/api/v1/assets/" + b + "/findings",
 			"/api/v1/assets/" + b + "/owners",
 			"/api/v1/assets/" + b + "/software",
+			"/api/v1/assets/" + b + "/technologies",
 			"/api/v1/findings/" + fb,
 			"/api/v1/findings/" + fb + "/comments",
 			"/api/v1/exposures/" + h.exposureB.String(),

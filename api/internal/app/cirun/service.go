@@ -168,6 +168,9 @@ type Service struct {
 	scope     ScopeLinker
 	gitlab    GitLabClients
 	identity  RepositoryIdentity
+
+	renameMu   sync.Mutex
+	renameSeen map[string]time.Time
 }
 
 // SetGitLab lets the gate read a GitLab merge request's target branch through
@@ -317,6 +320,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	cfg, refusals := admit(configs, tok, claims, s.now())
 	if cfg == nil {
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
+		s.noteRenamedRepository(ctx, tenantID, issuer, claims, configs)
 		return nil, ErrExchangeRefused
 	}
 	// A repository name stays with the repository id that first reported

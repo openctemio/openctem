@@ -19,4 +19,5 @@
   jobs:
     - RemediationProgressController
     - RemediationTaskController
+    - TaskTicketController
     - RemediationSuggestionController
