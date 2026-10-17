@@ -185,6 +185,12 @@ type RunFinding struct {
 	AcceptanceExpiresAt *time.Time
 	FirstDetectedAt     *time.Time
 	LastReopenedAt      *time.Time
+	// SecretValid is the validation result of a secret finding (nil: not
+	// validated); SecretType its kind; SecretFingerprint the keyed
+	// fingerprint of the secret (the secret's identity across repositories).
+	SecretValid       *bool
+	SecretType        string
+	SecretFingerprint string
 }
 
 // IsVulnerability reports whether the finding is a vulnerability of a

@@ -77,7 +77,7 @@ describe('why a queued task waits', () => {
   it('summarizes each case', () => {
     const t = enTranslate
     expect(placementSummary({ queued: false }, t)).toMatch(/no longer waits/)
-    expect(placementSummary({ queued: true, platform: true }, t)).toMatch(/platform scanning/)
+    expect(placementSummary({ queued: true, platform: true }, t)).toMatch(/shared sensor/)
     expect(placementSummary({ queued: true, job_reasons: ['window_closed'] }, t)).toMatch(/held/)
     expect(placementSummary({ queued: true, eligible: 2, busy: 2, evaluated: 2 }, t)).toMatch(
       /all busy/

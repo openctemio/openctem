@@ -28,6 +28,7 @@ import en_contentCatalog from './en/contentCatalog.json'
 import en_criticality from './en/criticality.json'
 import en_findings from './en/findings.json'
 import en_findingApprovals from './en/findingApprovals.json'
+import en_findingLifecycle from './en/findingLifecycle.json'
 import en_exceptions from './en/exceptions.json'
 import en_exposures from './en/exposures.json'
 import en_help from './en/help.json'
@@ -84,6 +85,7 @@ import vi_contentCatalog from './vi/contentCatalog.json'
 import vi_criticality from './vi/criticality.json'
 import vi_findings from './vi/findings.json'
 import vi_findingApprovals from './vi/findingApprovals.json'
+import vi_findingLifecycle from './vi/findingLifecycle.json'
 import vi_exceptions from './vi/exceptions.json'
 import vi_exposures from './vi/exposures.json'
 import vi_help from './vi/help.json'
@@ -145,6 +147,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   criticality: en_criticality,
   findings: en_findings,
   findingApprovals: en_findingApprovals,
+  findingLifecycle: en_findingLifecycle,
   exceptions: en_exceptions,
   exposures: en_exposures,
   help: en_help,
@@ -204,6 +207,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   criticality: vi_criticality,
   findings: vi_findings,
   findingApprovals: vi_findingApprovals,
+  findingLifecycle: vi_findingLifecycle,
   exceptions: vi_exceptions,
   exposures: vi_exposures,
   help: vi_help,
