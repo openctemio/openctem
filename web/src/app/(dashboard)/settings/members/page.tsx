@@ -497,7 +497,7 @@ export default function UsersPage() {
   const tenantSlug = currentTenant?.slug
   // Peer administrators are the owner's to manage (the API answers 403 to
   // anyone else); their rows show the actions disabled, with the reason.
-  const { isOwner, can, isAtLeast } = usePermissions()
+  const { isOwner, isAtLeast } = usePermissions()
   // Same gate as the old <Can permission={MembersManage} minRole="admin">.
   const canManageMembers = useCanMutate('PATCH /api/v1/tenants/{tenant}/members/{userId}')
   const currentUser = useDisplayUser()

@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"net/http"
+
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -41,12 +43,11 @@ import (
 //	/admin/tenants            any admin         create, first owner: ops_admin+ +
 //	                                            step-up; SSO writes: super_admin +
 //	                                            step-up (audited)
-//	/admin/settings/plans     any admin         super_admin + fresh TOTP code
-//	/admin/settings/plan-modules
-//	                          any admin         super_admin + fresh TOTP code
-//	/admin/tenants/{id}/plan  any admin         ops_admin+ (plan, overrides; audited)
+//	/admin/settings/limits    any admin         super_admin + fresh TOTP code
+//	/admin/tenants/{id}/limits
+//	                          any admin         ops_admin+ (audited)
 //	/admin/tenants/{id}/modules
-//	                          any admin         ops_admin+ (grant/deny; audited)
+//	                          any admin         ops_admin+ + fresh TOTP code (deny; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, admins emailed)
 //	/admin/settings/legal     any admin         super_admin + fresh TOTP code
@@ -56,6 +57,11 @@ import (
 //	                                            (critical audit, password never
 //	                                            returned); test: super_admin,
 //	                                            to the caller's address only
+//	/admin/settings/console-mfa
+//	                          any admin         super_admin + step-up
+//	/admin/auth/factors, webauthn/*, recovery-codes
+//	                          own account only  register, remove and new codes:
+//	                                            step-up
 //	/admin/support            own grants only   open a session: ops_admin+ named in
 //	                                            a live grant + step-up; reads only
 //	                                            through a live session (audited in
@@ -64,6 +70,10 @@ import (
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed, tenant admins told)
+//	/admin/shared-sensors     any admin (fleet,  pause/resume/retire: super_admin +
+//	                          queue, job         fresh TOTP code + reason (critical
+//	                          metadata)          audit); job view: super/ops_admin +
+//	                                            reason (audited high, rate-limited)
 //	/admin/settings/shared-sensors(/egress), /admin/tenants/{id}/shared-sensors
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
@@ -110,9 +120,10 @@ func registerAdminRoutes(
 	// The console network check first, on every console route (the
 	// server-wide gate already ran on the raw path; this one sees what was
 	// routed here).
-	var netGate []Middleware
+	// Every console response is no-store (sessions, CSRF tokens, admin data).
+	netGate := []Middleware{consoleNoStore}
 	if h.AdminNetwork != nil {
-		netGate = []Middleware{h.AdminNetwork}
+		netGate = append(netGate, h.AdminNetwork)
 	}
 
 	// Base chain: the network check, then a verified console session (any role).
@@ -133,6 +144,13 @@ func registerAdminRoutes(
 		return middleware.RequireAdminStepUp(h.AdminStepUp, purpose)
 	}
 
+	// freshStepUp is for adding or replacing a sign-in factor and turning the
+	// factor policy: a fresh code or a single-use security-key confirmation,
+	// never the session's step-up window.
+	freshStepUp := func(purpose string) Middleware {
+		return middleware.RequireAdminFreshStepUp(h.AdminStepUp, purpose)
+	}
+
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
 	// per route. /validate needs a verified console session. The console signs
 	// in on its own: /login checks the account's email and password and opens
@@ -151,6 +169,19 @@ func registerAdminRoutes(
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
 				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
+				// Security keys and recovery codes (RFC-078). The sign-in steps
+				// share the TOTP step's login bucket and pending cookie.
+				r.POST("/webauthn/session/options", h.AdminConsole.WebAuthnLoginOptions, preSession(crossSite, loginRL)...)
+				r.POST("/webauthn/session", h.AdminConsole.WebAuthnLogin, preSession(crossSite, loginRL)...)
+				r.POST("/recovery", h.AdminConsole.RecoveryLogin, preSession(crossSite, loginRL)...)
+				r.GET("/factors", h.AdminConsole.Factors, authed)
+				r.POST("/webauthn/credentials/options", h.AdminConsole.WebAuthnRegisterOptions, authed, freshStepUp("webauthn.register"))
+				r.POST("/webauthn/credentials", h.AdminConsole.WebAuthnRegister, authed)
+				r.PATCH("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRename, authed)
+				r.DELETE("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRemove, authed, stepUp("webauthn.remove"))
+				r.POST("/recovery-codes", h.AdminConsole.GenerateRecoveryCodes, authed, freshStepUp("recovery_codes.generate"))
+				r.POST("/step-up/webauthn/options", h.AdminConsole.WebAuthnStepUpOptions, authed)
+				r.POST("/step-up/webauthn", h.AdminConsole.WebAuthnStepUp, consoleRL.LoginMiddleware(), authed)
 				// Time-boxed elevation: read-only until the session elevates
 				// (a fresh confirmation); ending it is always allowed.
 				r.POST("/elevate", h.AdminConsole.Elevate, authed, stepUp("console.elevate"))
@@ -221,19 +252,14 @@ func registerAdminRoutes(
 		router.GET("/api/v1/admin/operations", h.AdminOperations.Get, adminMiddlewares...)
 	}
 
-	// Plan defaults (Console > System > Plans): any admin reads; a super admin
-	// changes them with a fresh authenticator code (checked in the handler,
-	// audited, the other administrators told).
-	if h.Plan != nil {
-		requireSuperPlans := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
-		router.Group("/api/v1/admin/settings/plans", func(r Router) {
-			r.GET("/", h.Plan.GetDefaults)
-			r.PUT("/", h.Plan.UpdateDefaults, requireSuperPlans, stepUp("settings.plans"))
-		}, adminMiddlewares...)
-		// The modules of each plan (RFC-064): same rule as the plan limits.
-		router.Group("/api/v1/admin/settings/plan-modules", func(r Router) {
-			r.GET("/", h.Plan.GetPlanModules)
-			r.PUT("/", h.Plan.UpdatePlanModules, requireSuperPlans, stepUp("settings.plan_modules"))
+	// Default limits of self-service organizations (Console > System >
+	// Limits): any admin reads; a super admin changes them with a fresh
+	// authenticator code (checked in the handler, audited critical).
+	if h.Limits != nil {
+		requireSuperLimits := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/limits", func(r Router) {
+			r.GET("/", h.Limits.GetSelfServiceDefaults)
+			r.PUT("/", h.Limits.UpdateSelfServiceDefaults, requireSuperLimits, stepUp("settings.limits"))
 		}, adminMiddlewares...)
 	}
 
@@ -248,6 +274,16 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper, stepUp("settings.signup"))
+		}, adminMiddlewares...)
+	}
+
+	// Console MFA policy ("require security keys", RFC-078): any admin reads;
+	// a super admin changes it with a step-up.
+	if h.AdminConsole != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/console-mfa", func(r Router) {
+			r.GET("/", h.AdminConsole.GetMFAPolicy)
+			r.PUT("/", h.AdminConsole.PutMFAPolicy, requireSuper, freshStepUp("settings.console_mfa"))
 		}, adminMiddlewares...)
 	}
 
@@ -297,17 +333,46 @@ func registerAdminRoutes(
 			r.GET("/egress", h.AdminScanPolicy.GetSharedSensorsEgress)
 			r.PUT("/egress", h.AdminScanPolicy.UpdateSharedSensorsEgress, requireSuper, stepUp("settings.shared_sensors_egress"))
 		}, adminMiddlewares...)
+		// Shared sensors may scan internal zones, and the anomaly alert
+		// thresholds (RFC-100 §6, §9): same gate, step-up and audit.
+		router.Group("/api/v1/admin/settings/shared-sensor-internal-zones", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensorInternalZones)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorInternalZones, requireSuper, stepUp("settings.shared_sensor_internal_zones"))
+		}, adminMiddlewares...)
+		router.Group("/api/v1/admin/settings/shared-sensor-anomaly", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensorAnomaly)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorAnomaly, requireSuper, stepUp("settings.shared_sensor_anomaly"))
+		}, adminMiddlewares...)
 	}
 
-	// Shared sensor enrollment (RFC-100 §7): a super admin issues a
-	// single-use instance enrollment token with a reason and a fresh console
-	// authenticator code (checked in the handler; the service writes the
-	// console audit row).
-	if h.AdminSharedSensor != nil {
+	// Shared sensors (RFC-100). Fleet (§12): any admin reads the fleet, queue
+	// aggregates and job metadata; a job's targets and logs only through
+	// the audited view with a reason (super or ops admin, rate-limited);
+	// pause, resume and retire need a super admin, a reason and a fresh code.
+	// Enrollment (§7): a super admin issues a single-use instance enrollment
+	// token with a reason and a fresh console authenticator code (checked in
+	// the handler; the service writes the console audit row). One group:
+	// the prefix can be mounted only once.
+	if h.AdminSharedFleet != nil || h.AdminSharedSensor != nil {
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/shared-sensors", func(r Router) {
-			r.POST("/enrollment-tokens", h.AdminSharedSensor.CreateInstanceEnrollmentToken, requireSuper,
-				stepUp("shared_sensors.enrollment_token"))
+			if f := h.AdminSharedFleet; f != nil {
+				view := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+				if h.AdminSupportRateLimiter != nil {
+					view = append(view, h.AdminSupportRateLimiter.WriteMiddleware())
+				}
+				r.GET("/", f.List)
+				r.GET("/queue", f.Queue)
+				r.GET("/jobs", f.Jobs)
+				r.POST("/jobs/{job_id}/view", f.ViewJob, view...)
+				r.POST("/{sensor_id}/disable", f.Pause, requireSuper, stepUp("shared_sensor.pause"))
+				r.POST("/{sensor_id}/enable", f.Resume, requireSuper, stepUp("shared_sensor.resume"))
+				r.POST("/{sensor_id}/revoke", f.Retire, requireSuper, stepUp("shared_sensor.retire"))
+			}
+			if h.AdminSharedSensor != nil {
+				r.POST("/enrollment-tokens", h.AdminSharedSensor.CreateInstanceEnrollmentToken, requireSuper,
+					stepUp("shared_sensors.enrollment_token"))
+			}
 		}, adminMiddlewares...)
 	}
 
@@ -464,7 +529,7 @@ func registerAdminRoutes(
 			// Creating the first owner (or recovering one) hands an
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
-				with([]Middleware{opsWrite, stepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
+				with([]Middleware{opsWrite, freshStepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
 
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
@@ -498,9 +563,6 @@ func registerAdminRoutes(
 				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, superWrite, stepUp("organization.audit_chain_rebaseline"), scope)
 			}
 
-			// Plan and limits of one organization: any admin reads (with
-			// the over-limit flag); ops_admin+ changes the plan or sets a
-			// per-organization limit (audited by the service).
 			// Idle policy of an organization (off by default): any admin
 			// reads; ops_admin+ turns it on or off (audited by the service).
 			if h.IdleWorkspace != nil {
@@ -508,17 +570,20 @@ func registerAdminRoutes(
 				r.PUT("/{tenantId}/idle/policy", h.IdleWorkspace.SetPolicy, with([]Middleware{opsWrite, scope})...)
 			}
 
-			if h.Plan != nil {
-				r.GET("/{tenantId}/plan", h.Plan.GetTenantPlan, read...)
-				r.PUT("/{tenantId}/plan", h.Plan.SetTenantPlan, with([]Middleware{opsWrite, scope})...)
-				r.PUT("/{tenantId}/plan/overrides/{key}", h.Plan.SetOverride, with([]Middleware{opsWrite, scope})...)
-				r.DELETE("/{tenantId}/plan/overrides/{key}", h.Plan.DeleteOverride, with([]Middleware{opsWrite, scope})...)
-				// Module entitlements of one organization (RFC-064): any admin
-				// reads; ops_admin+ grants a module beyond the plan (a trial, an
-				// add-on) or denies one (audited by the service).
-				r.GET("/{tenantId}/modules", h.Plan.GetTenantModules, read...)
-				r.PUT("/{tenantId}/modules/{module_id}/grant", h.Plan.SetModuleGrant, with([]Middleware{opsWrite, stepUp("organization.module_grant"), scope})...)
-				r.DELETE("/{tenantId}/modules/{module_id}/grant", h.Plan.DeleteModuleGrant, with([]Middleware{opsWrite, stepUp("organization.module_grant"), scope})...)
+			// Limits of one organization: any admin reads (with usage and the
+			// over-limit flag); ops_admin+ sets or removes one (audited by
+			// the service).
+			if h.Limits != nil {
+				r.GET("/{tenantId}/limits", h.Limits.GetTenantLimits, read...)
+				r.PUT("/{tenantId}/limits/{key}", h.Limits.SetTenantLimit, with([]Middleware{opsWrite, scope})...)
+				r.DELETE("/{tenantId}/limits/{key}", h.Limits.DeleteTenantLimit, with([]Middleware{opsWrite, scope})...)
+				// Modules of one organization: any admin reads; ops_admin+
+				// denies one or lifts the deny with a fresh authenticator code
+				// (audited by the service; a denied module keeps read access
+				// for the grace period).
+				r.GET("/{tenantId}/modules", h.Limits.GetTenantModules, read...)
+				r.PUT("/{tenantId}/modules/{module_id}/deny", h.Limits.SetModuleDeny, with([]Middleware{opsWrite, stepUp("organization.module_deny"), scope})...)
+				r.DELETE("/{tenantId}/modules/{module_id}/deny", h.Limits.DeleteModuleDeny, with([]Middleware{opsWrite, stepUp("organization.module_deny"), scope})...)
 			}
 
 			// The organization's scope approval policy (RFC-054 §12.6): any
@@ -710,4 +775,14 @@ func preSession(crossSite Middleware, mws ...Middleware) []Middleware {
 		return mws
 	}
 	return append([]Middleware{crossSite}, mws...)
+}
+
+// consoleNoStore marks every console response no-store: the sign-in and
+// validate responses carry the session's CSRF token, and every other one
+// carries administrators' data. No shared or browser cache may keep them.
+func consoleNoStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }

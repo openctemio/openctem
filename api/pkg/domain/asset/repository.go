@@ -298,11 +298,16 @@ type Filter struct {
 	// Freshness keeps assets whose data is "stale" (an attribute class past
 	// its TTL) or "never" (a passive class that applies was never observed);
 	// docs/architecture/asset-freshness.md. "" = no filter.
-	Freshness        string
-	ParentID         *string             // Filter by parent asset ID
-	IsCrownJewel     *bool               // Filter crown jewel assets
-	SubType          *string             // Filter by sub_type
-	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
+	Freshness string
+	// Technologies keeps assets using any of these technologies (normalised
+	// names, RFC-112); TechnologyCategories keeps assets with a technology
+	// in any of these categories.
+	Technologies         []string
+	TechnologyCategories []string
+	ParentID             *string             // Filter by parent asset ID
+	IsCrownJewel         *bool               // Filter crown jewel assets
+	SubType              *string             // Filter by sub_type
+	PropertiesFilter     map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
 	BusinessUnitIDs []string // Filter by business_units membership (business_unit_assets)
@@ -691,6 +696,8 @@ func (f Filter) IsEmpty() bool {
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
 		f.Freshness == "" &&
+		len(f.Technologies) == 0 &&
+		len(f.TechnologyCategories) == 0 &&
 		f.ParentID == nil &&
 		f.DataScopeUserID == nil &&
 		len(f.PropertiesFilter) == 0 &&

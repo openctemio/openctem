@@ -40,14 +40,27 @@ var adminWriteInventory = map[string]struct {
 	why   string
 }{
 	// Sign-in steps: before a console session exists.
-	"POST /api/v1/admin/auth/login":        {signIn, "first step of the console sign-in"},
-	"POST /api/v1/admin/auth/mfa":          {signIn, "the TOTP step of the sign-in"},
-	"POST /api/v1/admin/auth/logout":       {signIn, "ends the caller's own session"},
-	"POST /api/v1/admin/auth/password":     {signIn, "needs the current password"},
-	"POST /api/v1/admin/auth/elevate":      {stepUpRoute, "elevates the session's role"},
-	"DELETE /api/v1/admin/auth/elevate":    {routine, "drops the session back to read-only"},
-	"POST /api/v1/admin/auth/idp/start":    {signIn, "platform identity provider sign-in"},
-	"POST /api/v1/admin/auth/idp/callback": {signIn, "platform identity provider sign-in"},
+	"POST /api/v1/admin/auth/login":                    {signIn, "first step of the console sign-in"},
+	"POST /api/v1/admin/auth/mfa":                      {signIn, "the TOTP step of the sign-in"},
+	"POST /api/v1/admin/auth/logout":                   {signIn, "ends the caller's own session"},
+	"POST /api/v1/admin/auth/password":                 {signIn, "needs the current password"},
+	"POST /api/v1/admin/auth/elevate":                  {stepUpRoute, "elevates the session's role"},
+	"DELETE /api/v1/admin/auth/elevate":                {routine, "drops the session back to read-only"},
+	"POST /api/v1/admin/auth/idp/start":                {signIn, "platform identity provider sign-in"},
+	"POST /api/v1/admin/auth/idp/callback":             {signIn, "platform identity provider sign-in"},
+	"POST /api/v1/admin/auth/webauthn/session/options": {signIn, "the security-key step of the sign-in"},
+	"POST /api/v1/admin/auth/webauthn/session":         {signIn, "the security-key step of the sign-in"},
+	"POST /api/v1/admin/auth/recovery":                 {signIn, "the recovery-code step of the sign-in"},
+	"POST /api/v1/admin/auth/step-up/webauthn/options": {signIn, "opens a step-up assertion for the caller's own session"},
+	"POST /api/v1/admin/auth/step-up/webauthn":         {signIn, "is the step-up itself (security key)"},
+
+	// The caller's own console factors.
+	"POST /api/v1/admin/auth/webauthn/credentials/options": {stepUpRoute, "adds a sign-in factor"},
+	"POST /api/v1/admin/auth/webauthn/credentials":         {routine, "completes the ceremony its step-up options call opened in this session (single use)"},
+	"PATCH /api/v1/admin/auth/webauthn/credentials/{id}":   {routine, "renames the caller's own key; audited"},
+	"DELETE /api/v1/admin/auth/webauthn/credentials/{id}":  {stepUpRoute, "removes a sign-in factor"},
+	"POST /api/v1/admin/auth/recovery-codes":               {stepUpRoute, "replaces the caller's recovery codes"},
+	"PUT /api/v1/admin/settings/console-mfa/":              {stepUpRoute, "who may sign in to the console, and how"},
 
 	// Support access: opening a support session reads an organization's data
 	// under its grant; ending one only reduces access.
@@ -82,11 +95,10 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline":           {stepUpRoute, "re-signs an organization's audit chain"},
 	"PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy":              {stepUpRoute, "scan governance of an organization"},
 	"PUT /api/v1/admin/tenants/{tenantId}/shared-sensors":                    {stepUpRoute, "whether an organization's scans may run on shared sensors"},
-	"PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":         {stepUpRoute, "module entitlement"},
-	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/grant":      {stepUpRoute, "module entitlement"},
-	"PUT /api/v1/admin/tenants/{tenantId}/plan":                              {routine, "limits only; audited by the service"},
-	"PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}":              {routine, "limits only; audited by the service"},
-	"DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}":           {routine, "limits only; audited by the service"},
+	"PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny":          {stepUpRoute, "module entitlement"},
+	"DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny":       {stepUpRoute, "module entitlement"},
+	"PUT /api/v1/admin/tenants/{tenantId}/limits/{key}":                      {routine, "limits only; audited by the service"},
+	"DELETE /api/v1/admin/tenants/{tenantId}/limits/{key}":                   {routine, "limits only; audited by the service"},
 	"PUT /api/v1/admin/tenants/{tenantId}/idle/policy":                       {routine, "idle policy on or off (read-only at worst, deletes nothing); reason required, audited by the service"},
 	"POST /api/v1/admin/access-requests/{id}/reject":                         {routine, "refuses a request; nothing is created"},
 
@@ -95,11 +107,16 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/email/":                         {stepUpRoute, "platform mail relay"},
 	"POST /api/v1/admin/settings/email/test":                    {routine, "sends a test to the caller's own address"},
 	"PUT /api/v1/admin/settings/legal/":                         {stepUpRoute, "legal pages"},
-	"PUT /api/v1/admin/settings/plans/":                         {stepUpRoute, "default limits"},
-	"PUT /api/v1/admin/settings/plan-modules/":                  {stepUpRoute, "default modules"},
+	"PUT /api/v1/admin/settings/limits/":                        {stepUpRoute, "self-service default limits"},
 	"PUT /api/v1/admin/settings/scan-approval-policy/":          {stepUpRoute, "scan governance default"},
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":         {stepUpRoute, "platform sensor domain proof"},
 	"PUT /api/v1/admin/settings/shared-sensors/":                {stepUpRoute, "shared sensors on or off for the instance, and the default for organizations"},
+	"POST /api/v1/admin/shared-sensors/{sensor_id}/disable":     {stepUpRoute, "stops a shared sensor taking jobs"},
+	"POST /api/v1/admin/shared-sensors/{sensor_id}/enable":      {stepUpRoute, "lets a shared sensor take every organization's jobs again"},
+	"POST /api/v1/admin/shared-sensors/{sensor_id}/revoke":      {stepUpRoute, "revokes a shared sensor for good"},
+	"POST /api/v1/admin/shared-sensors/jobs/{job_id}/view":      {routine, "reads a job's targets and logs; changes nothing; reason required, ops_admin+, rate-limited, audited high before data is returned"},
+	"PUT /api/v1/admin/settings/shared-sensor-internal-zones/":  {stepUpRoute, "whether shared sensors may scan internal zones"},
+	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":         {stepUpRoute, "shared sensor anomaly alert thresholds"},
 	"PUT /api/v1/admin/settings/shared-sensors/egress":          {stepUpRoute, "egress addresses every organization is told to allowlist"},
 	"PUT /api/v1/admin/program-feed/local-bundle":               {stepUpRoute, "program feed source"},
 	"POST /api/v1/admin/shared-sensors/enrollment-tokens":       {stepUpRoute, "shared sensor enrollment token"},
@@ -153,6 +170,22 @@ func inventoryRouter(t *testing.T) (infrahttp.Router, *[]string) {
 // inventoryRouterWith is inventoryRouter with a hook to adjust the handlers.
 func inventoryRouterWith(t *testing.T, adjust func(*Handlers)) (infrahttp.Router, *[]string) {
 	t.Helper()
+	router, purposes, _ := inventoryRouterFull(t, adjust)
+	return router, purposes
+}
+
+// inventoryRouterFresh is inventoryRouter that also reports, per purpose,
+// whether the route asked for a fresh check (no step-up window).
+func inventoryRouterFresh(t *testing.T) (infrahttp.Router, *[]string, map[string]bool) {
+	t.Helper()
+	return inventoryRouterFull(t, nil)
+}
+
+// inventoryRouterFull is the router with an optional hook to adjust the
+// handlers, reporting the purposes asked and whether each asked fresh.
+func inventoryRouterFull(t *testing.T, adjust func(*Handlers)) (infrahttp.Router, *[]string, map[string]bool) {
+	t.Helper()
+	fresh := map[string]bool{}
 	now := time.Now()
 	a := admin.Reconstitute(shared.NewID(), "root@example.com", "Root", admin.AdminRoleSuperAdmin, true,
 		nil, nil, "", 0, nil, nil, "", now, nil, now)
@@ -167,8 +200,9 @@ func inventoryRouterWith(t *testing.T, adjust func(*Handlers)) (infrahttp.Router
 	}
 	h.AdminAuthMiddleware = middleware.NewAdminAuthMiddleware(inventorySessions{a}, logger.NewNop())
 	purposes := &[]string{}
-	h.AdminStepUp = middleware.AdminStepUpFunc(func(_ context.Context, _ *admin.AdminUser, _ *admin.Session, code, purpose string, _ middleware.AdminStepUpClient) error {
+	h.AdminStepUp = middleware.AdminStepUpFunc(func(ctx context.Context, _ *admin.AdminUser, _ *admin.Session, code, purpose string, _ middleware.AdminStepUpClient) error {
 		*purposes = append(*purposes, purpose)
+		fresh[purpose] = admin.FreshStepUpRequired(ctx)
 		if code != "" {
 			t.Errorf("no step-up header was sent, got code %q", code)
 		}
@@ -179,7 +213,30 @@ func inventoryRouterWith(t *testing.T, adjust func(*Handlers)) (infrahttp.Router
 	}
 	router := infrahttp.NewChiRouter()
 	registerAdminRoutes(router, h, nil)
-	return router, purposes
+	return router, purposes, fresh
+}
+
+// Adding a key, replacing recovery codes, turning the factor policy and
+// recovering an organization owner must not ride the step-up window.
+func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
+	router, _, fresh := inventoryRouterFresh(t)
+	handler := router.Handler()
+	for _, c := range []struct{ method, path, purpose string }{
+		{"POST", "/api/v1/admin/auth/webauthn/credentials/options", "webauthn.register"},
+		{"POST", "/api/v1/admin/auth/recovery-codes", "recovery_codes.generate"},
+		{"PUT", "/api/v1/admin/settings/console-mfa/", "settings.console_mfa"},
+		{"POST", "/api/v1/admin/tenants/" + shared.NewID().String() + "/users", "organization.owner_create"},
+	} {
+		req := httptest.NewRequest(c.method, c.path, strings.NewReader(`{}`))
+		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
+		req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
+		req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+		got, asked := fresh[c.purpose]
+		if !asked || !got {
+			t.Errorf("%s %s (%s): fresh check asked=%v fresh=%v", c.method, c.path, c.purpose, asked, got)
+		}
+	}
 }
 
 func adminWrites(t *testing.T, router infrahttp.Router) []string {
@@ -242,7 +299,7 @@ func TestAdminStepUpRoutesRefuseWithoutCode(t *testing.T) {
 		req := httptest.NewRequest(method, path, strings.NewReader(`{}`))
 		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
 		req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
-		req.Header.Set(middleware.CSRFHeaderName, "c")
+		req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
 		func() {
 			// A zero-value handler body may panic on a non-step-up route;
 			// reaching it is the point, the panic is not.
@@ -290,7 +347,7 @@ func TestAdminRoutesRefuseOutsideNetworks(t *testing.T) {
 			req.RemoteAddr = "203.0.113.9:5000"
 			req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
 			req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
-			req.Header.Set(middleware.CSRFHeaderName, "c")
+			req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
 			rec := httptest.NewRecorder()
 			func() {
 				defer func() { _ = recover() }()

@@ -74,7 +74,20 @@ type Service struct {
 	mu       sync.Mutex
 	cached   *signupdom.State
 	cachedAt time.Time
+
+	// startLimits reports whether the starting limits of self-service
+	// organizations are configured; self-service sign-up needs them.
+	startLimits func(ctx context.Context) (bool, error)
 }
+
+// SetStartLimitsCheck wires the check that self-service sign-up has starting
+// limits configured (the entitlement service).
+func (s *Service) SetStartLimitsCheck(f func(ctx context.Context) (bool, error)) { s.startLimits = f }
+
+// ErrStartLimitsRequired refuses turning self-service sign-up on while no
+// starting limits are configured.
+var ErrStartLimitsRequired = errors.New("self-service sign-up needs starting limits first: save them in System > Limits " +
+	"(empty is allowed only by setting SELF_SERVICE_START_LIMITS=unlimited), or turn on the internal entitlements API")
 
 // NewService creates the service. audit, admins and notifier may be nil
 // (tests); production wires all three.
@@ -180,6 +193,15 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, p signupdo
 	p = p.Normalized()
 	if !s.ceiling.Permits(p) {
 		return signupdom.State{}, signupdom.ErrLockedByDeployment
+	}
+	if p.Mode == signupdom.ModeSelfService && s.startLimits != nil {
+		ok, cerr := s.startLimits(ctx)
+		if cerr != nil {
+			return signupdom.State{}, cerr
+		}
+		if !ok {
+			return signupdom.State{}, ErrStartLimitsRequired
+		}
 	}
 	previous, err := s.repo.Get(ctx)
 	if err != nil && !signupdom.IsNotFound(err) {

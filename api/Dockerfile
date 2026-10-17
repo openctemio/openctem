@@ -26,7 +26,7 @@ RUN chmod +x /usr/local/bin/dev-entrypoint.sh
 # Source and SDK mounted via volumes at runtime - no COPY needed
 
 # Expose ports
-EXPOSE 8080 8443 2345
+EXPOSE 8080 9443 2345
 
 # Run entrypoint (migrations + air)
 # Development only, never published: it runs as root so the bind-mounted
@@ -69,6 +69,9 @@ FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine@sha256:f92b6ef800e499660581e
 ARG SWAG_VERSION=v1.16.4
 WORKDIR /app
 ENV GOWORK=off
+# swag type-checks the packages it parses, and with cgo on that compiles
+# net's cgo resolver, which needs a C compiler this image does not have.
+ENV CGO_ENABLED=0
 RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
 COPY go.mod go.sum ./
 RUN go mod download
@@ -201,7 +204,7 @@ LABEL org.opencontainers.image.title="OpenCTEM API" \
 
 USER 1000:1000
 
-EXPOSE 8080 8443
+EXPOSE 8080 9443
 
 # `server -healthcheck` GETs /health on 127.0.0.1:$SERVER_PORT.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

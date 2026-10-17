@@ -41,8 +41,8 @@
 #
 # Sensor protocol v3 gRPC binding (RFC-059): with OPENCTEM_SENSOR_GATEWAY=alpn,
 # a TLS connection that offers the sensor ALPN id openctem-sensor/3 is passed
-# through at layer 4 to the API's mTLS listener on this same port
-# (sensors/alpn.wrappers); passthrough adds a dedicated sensor host name routed
+# through at layer 4 to the API's mTLS listener (api:9443) on the main HTTPS
+# port only (sensors/alpn.wrappers); passthrough adds a dedicated sensor host name routed
 # by SNI (sensors/passthrough.wrappers). Both need the gateway image with the
 # layer4 module (deploy/gateway/Dockerfile). Default off (sensors/off.wrappers).
 # =============================================================================
@@ -60,28 +60,16 @@
 		exclude admin.api
 	}
 
+	# Every listener: the protocols and the client-address rules (servers.common).
 	servers {
-		# Sensors and browsers speak HTTP/1.1 and HTTP/2; no QUIC (UDP) listener.
-		protocols h1 h2
-		# Proxies in front of this gateway whose X-Forwarded-For is believed.
-		# Default: none (127.0.0.1 never connects from outside), so a client
-		# cannot choose its own address. Set only for the `http` mode or an L4/L7
-		# load balancer in front: space-separated CIDRs.
-		trusted_proxies static {$OPENCTEM_TRUSTED_PROXIES:127.0.0.1/32}
-		# Which header such a proxy puts the client's address in, tried in
-		# order (OPENCTEM_CLIENT_IP_HEADERS, checked by the entrypoint):
-		# X-Forwarded-For (default), or Cf-Connecting-Ip behind a Cloudflare
-		# Tunnel, whose edge sets that header to the one visitor address.
-		# Read only when the connecting peer is one of the proxies above;
-		# from any other peer the headers are ignored.
-		client_ip_headers {$OPENCTEM_CLIENT_IP_HEADERS:X-Forwarded-For}
-		# Read X-Forwarded-For right to left: the client is the right-most
-		# entry that is not one of the proxies above. The default (left-most)
-		# is whatever the client typed when the front proxy appends, and
-		# {client_ip} is what this gateway sends the API (see `forwarded`).
-		trusted_proxies_strict
-
-		# Layer-4 routing ahead of TLS (sensor protocol v3); empty when off.
+		import servers.common
+	}
+	# The main HTTPS listener also gets the layer-4 sensor routing ahead of TLS
+	# (sensor protocol v3; empty when off). Only this one: a sensor ALPN hello
+	# on any other port (the console's site) is never passed to the API, so it
+	# cannot step around that site's client-network gate.
+	servers :443 {
+		import servers.common
 		import sensors/{$OPENCTEM_SENSOR_GATEWAY:off}.wrappers
 	}
 

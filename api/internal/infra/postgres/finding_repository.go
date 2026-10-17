@@ -13,7 +13,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -25,7 +25,7 @@ const maxJSONSize = 64 * 1024 * 1024 // 64MB upper bound for marshaled JSON fiel
 // FindingRepository implements vulnerability.FindingRepository using PostgreSQL.
 type FindingRepository struct {
 	db *DB
-	planLimits
+	limitChecks
 }
 
 // NewFindingRepository creates a new FindingRepository.
@@ -121,7 +121,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
-	if err := r.checkLimit(ctx, finding.TenantID(), plan.Findings, 1); err != nil {
+	if err := r.checkLimit(ctx, finding.TenantID(), limits.Findings, 1); err != nil {
 		return err
 	}
 
@@ -143,7 +143,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 
 // CreateInTx persists a new finding within an existing transaction.
 func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding *vulnerability.Finding) error {
-	if err := r.checkLimit(ctx, finding.TenantID(), plan.Findings, 1); err != nil {
+	if err := r.checkLimit(ctx, finding.TenantID(), limits.Findings, 1); err != nil {
 		return err
 	}
 	metadata, err := json.Marshal(finding.Metadata())
@@ -491,11 +491,11 @@ func (r *FindingRepository) refuseOverFindingsLimit(ctx context.Context, finding
 	}
 	refused := map[int]string{}
 	for tenantID, idx := range byTenant {
-		room, herr := r.headroom(ctx, tenantID, plan.Findings)
-		if herr == nil && room == plan.Unlimited {
+		room, herr := r.headroom(ctx, tenantID, limits.Findings)
+		if herr == nil && room == limits.Unlimited {
 			continue
 		}
-		var lim *plan.ErrLimitReached
+		var lim *limits.ErrLimitReached
 		if herr != nil && !errors.As(herr, &lim) {
 			return nil, herr // an invalid key: a programming error
 		}
@@ -527,7 +527,7 @@ func (r *FindingRepository) refuseOverFindingsLimit(ctx context.Context, finding
 			n++
 		}
 		if herr == nil {
-			r.recordRefusals(plan.Findings, n)
+			r.recordRefusals(limits.Findings, n)
 		}
 	}
 	return refused, nil
@@ -1560,7 +1560,7 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 	}
 	defer rows.Close()
 
-	out := make([]vulnerability.ActiveCVE, 0, page.Limit())
+	out := make([]vulnerability.ActiveCVE, 0, capHint(page.Limit()))
 	for rows.Next() {
 		var v vulnerability.ActiveCVE
 		var cvss, epss sql.NullFloat64
@@ -1746,7 +1746,7 @@ func (r *FindingRepository) ListAffectedAssetsByVulnerabilityID(
 	}
 	defer rows.Close()
 
-	out := make([]vulnerability.VulnerabilityAffectedAsset, 0, page.Limit())
+	out := make([]vulnerability.VulnerabilityAffectedAsset, 0, capHint(page.Limit()))
 	for rows.Next() {
 		var a vulnerability.VulnerabilityAffectedAsset
 		if err := rows.Scan(

@@ -680,11 +680,11 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
 | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
+| `GET /api/v1/organization/limits` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (the limits that apply, usage, unavailable features; no operator notes; `docs/architecture/limits.md`) |
 | `GET /api/v1/organization/join-requests` | owner or admin (`RequireAdmin`) + `team:members:read` (the organization's own requests; RFC-104) |
 | `POST /api/v1/organization/join-requests/{request_id}/approve`, `.../reject` | owner or admin + `team:members:write`; approve grants viewer or member only; another organization's request is 404 |
 | `GET /api/v1/organization/settings/domains` | owner or admin (`RequireAdmin`) + `settings:read` (the organization's own domains only) |
 | `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy` | **owner only** (`RequireOwner`) + `settings:write` + **step-up**; a domain of another organization is 404 (RFC-104) |
-| `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
 | `POST /api/v1/organization/leave` | any member (`team:read`) + **step-up**, for themselves in the credential's organization; refused for the only owner (RFC-104) |
 | `DELETE /api/v1/me/account` | the caller's own account + **step-up**; refused while the caller is the only owner of an organization (RFC-104) |
@@ -808,7 +808,8 @@ authenticate **only** with a **console session** (RFC-022: `/login` password
 sign-in + mandatory TOTP, server-side session in the `admin_session` cookie,
 scoped to `/api/v1/admin`; cookie-authenticated writes must pass the
 `admin_csrf` double-submit check: `admin_csrf` is HttpOnly on `/api/v1/admin`,
-the console pages echo its copy `admin_csrf_ui`, scoped to `/admin`). There are **no admin API keys**: an
+and the console echoes the token it received in the sign-in and validate
+responses and keeps in memory). There are **no admin API keys**: an
 `X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
 so every admin action has passed TOTP. The session resolves to an
 `admin_users` row with a platform role: `super_admin` > `ops_admin` >
@@ -878,12 +879,14 @@ empty `owner_emails`. Every member-list view is audited
 | `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin**; writes + **step-up** (audited high; secret never returned) |
 | `GET /api/v1/admin/access-requests` | any admin |
 | `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner and takes **step-up** |
-| `GET /api/v1/admin/settings/plans` | any admin |
-| `PUT /api/v1/admin/settings/plans` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
-| `GET /api/v1/admin/tenants/{tenantId}/plan` | any admin (limits, usage, over-limit flag) |
+| `GET /api/v1/admin/settings/limits` | any admin (self-service default limits, configured sources) |
+| `PUT /api/v1/admin/settings/limits` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical** |
+| `GET /api/v1/admin/tenants/{tenantId}/limits` | any admin (limits with origin and reason, usage, denies, over-limit flag) |
 | `GET /api/v1/admin/tenants/{tenantId}/idle` | any admin (the organization's idle policy and stage) |
 | `PUT /api/v1/admin/tenants/{tenantId}/idle/policy` | **ops_admin+** (turns the idle policy on or off; reason required both ways; audited high; `docs/architecture/idle-workspaces.md`) |
-| `PUT /api/v1/admin/tenants/{tenantId}/plan`, `PUT/DELETE .../plan/overrides/{key}` | **ops_admin+** (audited high; an override needs a reason, an expiry is optional) |
+| `PUT/DELETE /api/v1/admin/tenants/{tenantId}/limits/{key}` | **ops_admin+** (audited high; a reason is required, an expiry is optional; only operator rows) |
+| `GET /api/v1/admin/tenants/{tenantId}/modules` | any admin (each module's state; a deny's origin and reason) |
+| `PUT/DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny` | **ops_admin+** + reason + a fresh authenticator code (audited high; a denied module keeps read access for 30 days) |
 | `GET /api/v1/admin/settings/signup` | any admin |
 | `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
@@ -938,6 +941,38 @@ password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   `password_change_required`; a password-authenticated console session can then
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
+
+#### Console security keys and recovery codes (RFC-078)
+
+- **Relying party = the console origin** (`ADMIN_PUBLIC_URL`, default the
+  origin of `APP_URL`). The RP ID is its host and it is the only accepted
+  origin, so an assertion made on the tenant site or a look-alike domain is
+  refused. Off (endpoints answer 403 `WEBAUTHN_UNAVAILABLE`) when no origin is
+  configured.
+- **Second factor.** The sign-in response lists `methods` (`webauthn`, `totp`,
+  `recovery_code`, in that order). `POST /auth/webauthn/session/options` +
+  `POST /auth/webauthn/session` and `POST /auth/recovery` complete a pending
+  session (admin_mfa cookie) like `/auth/mfa`, with the same login rate limit
+  and lockout counting. User verification is required; attestation is not
+  requested; a counter that goes back refuses the assertion and is audited.
+- **Step-up.** `POST /auth/step-up/webauthn/options` + `POST /auth/step-up/webauthn`
+  open the session's five-minute step-up window; the protected action is then
+  retried without a code (route-level and handler-level step-ups both honour
+  the window).
+- **Own factors only.** `GET /auth/factors`; register (`POST
+  /auth/webauthn/credentials/options` takes the route-level step-up, the finish
+  call completes that single-use ceremony), rename, remove (step-up) and new
+  recovery codes (step-up). Every query is keyed on the caller's administrator
+  id. A super admin's reset-credentials removes keys and codes too.
+- **Policy "require security keys"** (`/admin/settings/console-mfa`, super
+  admin + step-up). Turning it on needs a configured relying party and an
+  actor with at least two keys and unused recovery codes. Under the policy an
+  administrator holding a key cannot use TOTP (sign-in or step-up: 403
+  `WEBAUTHN_REQUIRED`), a trusted platform-IdP MFA no longer skips the
+  console factor, the last two keys cannot be removed, and a session of an
+  administrator with fewer than two keys or no recovery codes reaches only the
+  enrollment routes (403 `FACTOR_ENROLLMENT_REQUIRED`). Break-glass
+  administrators keep TOTP.
 
 #### Support access (RFC-063)
 
@@ -1009,7 +1044,7 @@ and certificates are never logged — an IdP update records
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filters `owner=none\|present`, `plan=free\|pro\|enterprise`; other values 400) |
+| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filter `owner=none\|present`; other values 400; each row says whether limits apply) |
 | `POST /api/v1/admin/tenants` | **ops_admin+** + **step-up** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin; audited `organization.users_view`; `readonly` gets counts by role only (`redacted: true`) |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** + **step-up**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) (the route's step-up confirms it), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |

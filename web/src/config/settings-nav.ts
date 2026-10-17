@@ -22,6 +22,7 @@
 import {
   GitMerge,
   Handshake,
+  LifeBuoy,
   Globe,
   Activity,
   Bell,
@@ -86,6 +87,11 @@ export interface SettingsNavItem {
   badge?: 'Soon'
   /** Extra words the rail filter and ⌘K match on. */
   keywords?: string[]
+  /**
+   * Listed only while a limit or a module deny applies to the organization
+   * (GET /organization/limits says applies). Nothing applies by default.
+   */
+  onlyWhenLimitsApply?: boolean
 }
 
 export interface SettingsNavGroup {
@@ -178,16 +184,17 @@ export const settingsNav: SettingsNavGroup[] = [
         url: '/settings/modules',
         icon: Boxes,
         permission: Permission.TeamUpdate,
-        keywords: ['features', 'plan', 'license', 'enable', 'disable'],
+        keywords: ['features', 'enable', 'disable'],
       },
       {
-        id: 'plan',
-        title: 'Plan & usage',
-        description: 'Your plan, its limits and what this organization uses.',
-        url: '/settings/plan',
+        id: 'limits',
+        title: 'Usage & limits',
+        description: 'The limits that apply to this organization and what it uses.',
+        url: '/settings/limits',
         icon: Gauge,
         permission: Permission.TeamUpdate,
-        keywords: ['plan', 'limits', 'quota', 'seats', 'usage', 'free', 'pro', 'enterprise'],
+        keywords: ['limits', 'quota', 'seats', 'usage'],
+        onlyWhenLimitsApply: true,
       },
       {
         // What the verified SSO domains do to accounts on them (api RFC-104):
@@ -309,6 +316,17 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: ShieldCheck,
         permission: Permission.TeamUpdate,
         keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
+      },
+      {
+        // Time-boxed, read-only, audited access for platform support (api
+        // RFC-063): owners grant, owners and admins revoke and see history.
+        id: 'support-access',
+        title: 'Support access',
+        description: 'Let platform support read your data for a limited time.',
+        url: '/settings/support-access',
+        icon: LifeBuoy,
+        permission: Permission.TeamUpdate,
+        keywords: ['support', 'help', 'troubleshoot', 'grant', 'revoke', 'case'],
       },
       {
         id: 'api-keys',

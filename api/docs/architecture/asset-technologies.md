@@ -44,6 +44,14 @@ asset), read with one query per page (`ListByAssets`).
 `GET /api/v1/assets/{id}/technologies` (`assets:read`, tenant and data scope, 404 on a miss), ordered by
 category and name, at most 500 rows.
 
+## Filtering
+
+`GET /api/v1/assets?technology=nginx,next.js&technology_category=cdn` adds `EXISTS` conditions on
+`asset_technologies` (pinned to the asset's tenant, indexed by `(tenant_id, name_key)` and
+`(tenant_id, category)`) to the scoped list query. `GET /api/v1/assets/technologies` lists the
+options over the assets the caller may list (`dataScopeCondition`, the list's predicate). The
+inventory filter panel has a Technologies section (categories, then searchable technologies).
+
 ## Limits
 
 Name 128 bytes (no control characters, valid UTF-8), version 64 bytes, source 100 bytes, confidence

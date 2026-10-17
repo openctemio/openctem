@@ -22,8 +22,9 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -33,8 +34,8 @@ import (
 // on the shared test database get 0 and are never claimed by this test).
 type testSharedLimits map[string]int
 
-func (l testSharedLimits) Limit(_ context.Context, tenantID shared.ID, key plan.Key) (int, error) {
-	if key != plan.PlatformScansConcurrent {
+func (l testSharedLimits) Limit(_ context.Context, tenantID shared.ID, key limits.Key) (int, error) {
+	if key != limits.PlatformScansConcurrent {
 		return 0, nil
 	}
 	if v, ok := l[tenantID.String()]; ok && v != denied {
@@ -96,7 +97,7 @@ func (h *ctlHarness) pendingSharedJob(tenantID, tool string) string {
 	h.t.Helper()
 	id := h.newCommand(tenantID, "")
 	if _, err := h.db.ExecContext(context.Background(), `
-		UPDATE commands SET is_platform_job = TRUE, payload = jsonb_build_object('scanner', $2::text, 'target', '.'),
+		UPDATE commands SET is_platform_job = TRUE, payload = jsonb_build_object('scanner', $2::text, 'target', 'example.com'),
 		       queued_at = NOW()
 		WHERE id = $1`, id, tool); err != nil {
 		h.t.Fatal(err)
@@ -346,7 +347,10 @@ func TestSharedClaim_V2ClaimsAreSignedForTheCommandsOrganization(t *testing.T) {
 			t.Fatalf("claimed a job of another test: %s", c.ID)
 		}
 		// Signed for this shared sensor, in the command's organization.
-		verifySignedJob(t, c, pub, tenant, a.id)
+		st := verifySignedJobTarget(t, c, pub, tenant, a.id, "example.com")
+		if st.SensorScope != jobsign.SensorScopeInstance {
+			t.Fatalf("statement scope %q, want %q", st.SensorScope, jobsign.SensorScopeInstance)
+		}
 	}
 }
 

@@ -22,6 +22,8 @@ export interface AdminIdentity {
   max_role?: AdminRole
   /** When the session's elevation ends (absent: not elevated). */
   elevated_until?: string
+  /** The session's CSRF token (sign-in and validate only); kept in memory by admin-client. */
+  csrf_token?: string
 }
 
 export type AdminLoginStatus = 'mfa_required' | 'mfa_enrollment_required'
@@ -97,8 +99,8 @@ export interface AdminOrganization {
   active_identity_providers: number
   verified_domains: number
   sso_enforced: boolean
-  /** free | pro | enterprise (enterprise when created before plans). */
-  plan: string
+  /** At least one limit or module deny is set for the organization. */
+  limits_apply: boolean
 }
 
 export interface AdminOrganizationList {

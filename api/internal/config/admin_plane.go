@@ -28,9 +28,35 @@ type AdminPlaneConfig struct {
 	// ADMIN_LISTEN_ALLOW_ALL_INTERFACES
 	ListenAllowAllInterfaces bool
 
+	// Plane is what this process serves (OPENCTEM_PLANE, RFC-022 revision
+	// 21): PlaneAll (the default, one process for everything), PlaneTenant
+	// (never the console) or PlaneAdmin (only the console API). A hosted
+	// deployment runs the same image twice, as tenant and as admin.
+	Plane string
+
 	// allowed is AllowedCIDRs parsed by validateAdminPlane.
 	allowed []netip.Prefix
 }
+
+// The planes a process can serve (OPENCTEM_PLANE).
+const (
+	// PlaneAll serves everything in one process (self-host).
+	PlaneAll = "all"
+	// PlaneTenant never registers the console routes and holds no console
+	// database credentials; it runs the background work.
+	PlaneTenant = "tenant"
+	// PlaneAdmin serves only the console API (and the health probe) on its
+	// main listener, with the console database role, and runs no
+	// background work.
+	PlaneAdmin = "admin"
+)
+
+// ServesConsole reports whether this process serves the console API.
+func (c AdminPlaneConfig) ServesConsole() bool { return c.Plane != PlaneTenant }
+
+// ServesTenant reports whether this process serves the tenant, sensor and
+// public routes and runs the background work.
+func (c AdminPlaneConfig) ServesTenant() bool { return c.Plane != PlaneAdmin }
 
 // DefaultAdminAllowedCIDRs are loopback, the RFC 1918 ranges and IPv6 unique
 // local addresses: an operator on the host, a VPN or the internal network.
@@ -92,6 +118,16 @@ func ParseAdminAllowedCIDRs(entries []string) ([]netip.Prefix, error) {
 }
 
 func (c *Config) validateAdminPlane() error {
+	// The console's CSRF token is signed with a key every replica must share
+	// (the session-signing secret). Without one each process draws its own
+	// random key, and a token issued by one replica fails on the next.
+	if c.IsProduction() && c.Auth.JWTSecret == "" {
+		return fmt.Errorf("the platform console needs a secret shared by every replica for its CSRF tokens: " +
+			"set AUTH_JWT_SECRET (or APP_ENCRYPTION_KEY, from which it is derived)")
+	}
+	if err := c.validatePlane(); err != nil {
+		return err
+	}
 	if c.AdminPlane.ListenAddr != "" {
 		if c.AdminPlane.ListenAddr == c.Server.Addr() {
 			return fmt.Errorf("ADMIN_LISTEN_ADDR must differ from the main listener (%s)", c.Server.Addr())
@@ -126,6 +162,37 @@ func checkAdminListenAddr(addr string, allowAll bool) error {
 	if ip := net.ParseIP(host); ip == nil || !(ip.IsLoopback() || ip.IsPrivate()) {
 		return fmt.Errorf("ADMIN_LISTEN_ADDR %q is not a loopback or private IP address; bind one (for example 10.0.0.5:8081), "+
 			"or set ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true when only a private network reaches it", addr)
+	}
+	return nil
+}
+
+// validatePlane checks OPENCTEM_PLANE against what each plane must and must
+// not have: a tenant process holds no console credentials and opens no
+// console listener; an admin process serves the console on its main listener
+// (a private address unless explicitly allowed) with the console role.
+func (c *Config) validatePlane() error {
+	switch c.AdminPlane.Plane {
+	case "", PlaneAll:
+		c.AdminPlane.Plane = PlaneAll
+	case PlaneTenant:
+		if c.AdminPlane.ListenAddr != "" {
+			return fmt.Errorf("OPENCTEM_PLANE=tenant serves no console: unset ADMIN_LISTEN_ADDR")
+		}
+		if c.Database.AdminUser != "" || c.Database.AdminPassword != "" {
+			return fmt.Errorf("OPENCTEM_PLANE=tenant holds no console database credentials: unset DB_ADMIN_USER and DB_ADMIN_PASSWORD")
+		}
+	case PlaneAdmin:
+		if c.AdminPlane.ListenAddr != "" {
+			return fmt.Errorf("OPENCTEM_PLANE=admin serves the console on its main listener (SERVER_HOST, SERVER_PORT): unset ADMIN_LISTEN_ADDR")
+		}
+		if c.Database.AdminUser == "" {
+			return fmt.Errorf("OPENCTEM_PLANE=admin needs the console database role (DB_ADMIN_USER, DB_ADMIN_PASSWORD)")
+		}
+		if err := checkAdminListenAddr(c.Server.Addr(), c.AdminPlane.ListenAllowAllInterfaces); err != nil {
+			return fmt.Errorf("OPENCTEM_PLANE=admin: the main listener is the console's: %w", err)
+		}
+	default:
+		return fmt.Errorf("OPENCTEM_PLANE=%q is not one of: all, tenant, admin", c.AdminPlane.Plane)
 	}
 	return nil
 }

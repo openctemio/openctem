@@ -16,7 +16,7 @@ admin console and the organization settings.
 
 Read by the API server at start-up (`server`). The server refuses to start when a variable under one of its prefixes is a likely misspelling of a listed name, or when a typed value does not parse; `server -check-config` runs the same checks without starting.
 
-Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `VERSION_CHECK_`.
+Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO_`, `OAUTH_`, `KEYCLOAK_`, `CORS_`, `RATE_LIMIT_`, `SMTP_`, `STORAGE_`, `SENSOR_`, `INGEST_`, `SCOPE_`, `CERT_MONITOR_`, `EASM_`, `ASSET_`, `ADMIN_AUDIT_`, `ADMIN_SESSION_`, `AUDIT_`, `METRICS_`, `MCP_`, `AI_`, `WORKER_`, `PROGRAMFEED_`, `VULNFEED_`, `CAPTCHA_`, `SIGNER_`, `OPENCTEM_HTTPSEC_`, `TENANT_`, `INVITATION_`, `SELF_SERVICE_`, `INTERNAL_API_`, `ACCOUNT_PORTAL_`, `VERSION_CHECK_`.
 
 ### Application
 
@@ -25,6 +25,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
 | `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
+| `MANAGED_SERVICE` | bool | `false` |  |  | Set to  only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
 | `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Unset: not named. |
 
 ### Brand
@@ -283,10 +284,10 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `WORKER_HEARTBEAT_TIMEOUT` | duration | `5m` |  |  | No heartbeat for this long marks a sensor inactive. Advised heartbeat intervals stay below half of it. |
 | `SCAN_ZONE_RESOLVER` | string | empty |  |  | DNS resolver scan-zone routing resolves host names with: `system` (the platform's own resolver, which may know internal names) or `host[:port]` of a recursive resolver. Unset: a public resolver when organizations are self-service, otherwise `system`. |
 | `SENSOR_MTLS_CA_CERT_FILE` | path | empty |  |  | Sensor CA certificate (PEM) for protocol v3 client certificates. Set together with `SENSOR_MTLS_CA_KEY_FILE`; unset, the CA is created once in `SENSOR_MTLS_CA_DIR`. |
-| `SENSOR_MTLS_CA_DIR` | path | `data/sensor-ca` |  |  | Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume. |
+| `SENSOR_MTLS_CA_DIR` | path | `data/sensor-ca` |  |  | Where the sensor CA is created on first start when the two CA files are not set. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys). |
 | `SENSOR_MTLS_CA_KEY_FILE` | path | empty |  |  | Sensor CA private key (PEM). Not the job signer's key. |
 | `SENSOR_MTLS_CERT_TTL` | duration | `168h` |  |  | Lifetime of sensor client certificates, clamped to 1h..720h. |
-| `SENSOR_MTLS_LISTEN_ADDR` | string | `:8443` |  |  | TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it. |
+| `SENSOR_MTLS_LISTEN_ADDR` | string | `:9443` |  |  | TLS 1.3 listener of sensor protocol v3 (gRPC). The gateway passes connections that offer the sensor ALPN id through to it. |
 | `SENSOR_MTLS_TRUSTED_PROXIES` | list | empty |  |  | Comma-separated CIDRs whose PROXY protocol v2 header the sensor listener believes: the gateway that passes sensor connections through. |
 | `SENSOR_PUBLIC_HOST` | string | empty |  |  | `host[:port]` sensors dial for protocol v3, for a dedicated sensor host name or port. Unset: the host and port of `SENSOR_PUBLIC_API_URL`, else `APP_URL`. Advertised only while the self-probe passes. |
 | `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` | duration | `24h` |  |  | How often reviewed quarantined sensor results older than the retention are deleted. Pending items are never purged. |
@@ -358,6 +359,25 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE` | string | `unset` |  |  | `1` opens every private range. Honored only with `APP_ENV=development`: with any other `APP_ENV` (or none) the API refuses to start, because it would open the platform's own network to every organization. Use `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` instead. Any value other than empty, `0` or `1` is refused. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
 
+### Internal entitlements API
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ACCOUNT_PORTAL_URL` | url | empty |  |  | A hosted service's account page (absolute https URL). When set, Settings > Usage & limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link. |
+| `INTERNAL_API_ADDR` | string | empty |  |  | Listen address of the internal entitlements API, for example `10.0.0.5:9443` (a loopback or private IP; any other address, or a hostname, needs `INTERNAL_API_ALLOW_ALL_INTERFACES=true`). Empty (the default) turns it off. It is for the control plane of a hosted service only: expose it on a private network, never through the public gateway. When set, every other `INTERNAL_API_` variable is required. |
+| `INTERNAL_API_ALLOW_ALL_INTERFACES` | bool | `false` |  |  | `true` lets `INTERNAL_API_ADDR` be any address: every interface (`:9443`, `0.0.0.0:9443`, `[::]:9443`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port. |
+| `INTERNAL_API_TLS_CERT` | path | empty |  |  | PEM server certificate of the internal API (TLS 1.3 only). |
+| `INTERNAL_API_TLS_KEY` | path | empty |  | yes | PEM private key of the internal API server certificate. |
+| `INTERNAL_API_CLIENT_CA` | path | empty |  |  | PEM CA bundle the control plane's client certificate must chain to. A connection without a valid client certificate is refused during the handshake. |
+| `INTERNAL_API_JWT_PUBLIC_KEYS` | path | empty |  |  | PEM file with one or more Ed25519 public keys. Every request carries a token signed by one of the matching private keys (`EdDSA`), audience `openctem-core`, at most 5 minutes long, single use (`jti`), with scopes `limits:write`, `orgs:provision` or `usage:read`. List two keys while rotating. |
+| `INTERNAL_API_JWT_ISSUER` | string | `openctem-cloud` |  |  | The `iss` claim the internal API accepts. |
+
+### Organizations
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `SELF_SERVICE_START_LIMITS` | string | empty |  |  | Limits an organization starts with when a person creates it themselves, used until a super admin saves them in Console > System > Limits: a JSON object of limit keys, for example `{"seats":5,"assets":500,"orgs_per_user":1}`, or `unlimited` to choose no limits explicitly. Self-service sign-up (`TENANT_CREATION_MODE=self_service`, or the console sign-up policy) is refused at start and in the console until starting limits are configured here, in the console, or by the internal entitlements API. |
+
 ### Metrics
 
 | Variable | Type | Default | Required | Secret | Description |
@@ -377,6 +397,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 |---|---|---|---|---|---|
 | `ADMIN_ALLOWED_CIDRS` | list | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` |  |  | Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address. |
 | `ADMIN_LISTEN_ADDR` | string | empty |  |  | The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener. |
+| `OPENCTEM_PLANE` | all \| tenant \| admin | `all` |  |  | What this API process serves (RFC-022 revision 21). `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`. |
 | `ADMIN_LISTEN_ALLOW_ALL_INTERFACES` | bool | `false` |  |  | `true` lets `ADMIN_LISTEN_ADDR` be any address: every interface (`:8081`, `0.0.0.0:8081`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port. |
 | `ADMIN_ELEVATION` | string | `required` |  |  | `required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in. |
 
@@ -396,6 +417,17 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `ADMIN_AUDIT_RETENTION_INTERVAL` | duration | `24h` |  |  | How often the controller runs. |
 | `AUDIT_ARCHIVE_DIR` | string | empty |  |  | Directory for the gzip JSONL archives. Empty: nothing is deleted. Back it up like the database. |
 | `AUDIT_RETENTION_DAYS` | int | `365` |  |  | Organization audit entries older than this are archived and deleted, keeping the hash chain verifiable. |
+
+### Authentication
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
+| `ADMIN_PUBLIC_URL` | string | `the origin of APP_URL` |  |  | Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8444` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off. |
+
+### Audit log retention
+
+| Variable | Type | Default | Required | Secret | Description |
+|---|---|---|---|---|---|
 | `ADMIN_SESSION_PURGE_INTERVAL` | duration | `1h` |  |  | How often platform-admin console sessions past their absolute expiry are deleted. |
 | `ASSET_CHANGE_RETENTION_DAYS` | int | `400` |  |  | Days the asset change timeline keeps events. Minimum 30. |
 | `ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY` | bool | `true` |  |  | The asset technology backfill logs the component links it would remove (a count and a sample) instead of deleting them. Set `false` to delete links that have no version and no CPE; each deleted link is recorded. |
@@ -459,7 +491,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `SIGNER_LEDGER_T2_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a tier-2 scope change. |
 | `SIGNER_SENSOR_BURST` | string | empty |  |  | `openctem-signer`: burst of `SIGNER_SENSOR_RATE`. |
 | `SIGNER_SENSOR_RATE` | string | empty |  |  | `openctem-signer`: signatures per second allowed per sensor. |
-| `SIGNER_STATE_DIR` | string | empty |  |  | `openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume. |
+| `SIGNER_STATE_DIR` | string | empty |  |  | `openctem-signer`: directory of the signing log and scope ledger. Keep it on a persistent volume. A relative path is relative to the working directory, so when running from a source checkout point it outside the checkout (the repository ignores /data/ and a push guard rejects committed keys). |
 | `SIGNER_TENANT_BURST` | string | empty |  |  | `openctem-signer`: burst of `SIGNER_TENANT_RATE`. |
 | `SIGNER_TENANT_RATE` | string | empty |  |  | `openctem-signer`: signatures per second allowed per organization. |
 
@@ -509,7 +541,11 @@ Read by the bundled Caddy gateway (`api/deploy/gateway`).
 | `OPENCTEM_WEB_UPSTREAM` | string | `web:3000` |  |  | Address of the web console. |
 | `OPENCTEM_SENSOR_GATEWAY` | off \| alpn \| passthrough | `off` |  |  | Sensor protocol v3 routing: `alpn` passes connections that offer the sensor ALPN id to the API's sensor listener; `passthrough` also routes a dedicated sensor host name (`SENSOR_PUBLIC_HOSTNAME`). Needs a TLS mode and the gateway image with the layer4 module. |
 | `SENSOR_PUBLIC_HOSTNAME` | string | empty |  |  | Dedicated DNS name sensors dial for protocol v3 (no port), with `OPENCTEM_SENSOR_GATEWAY=passthrough`. |
-| `SENSOR_MTLS_UPSTREAM` | string | `api:8443` |  |  | Address of the API's sensor listener the gateway passes sensor connections to. |
+| `SENSOR_MTLS_UPSTREAM` | string | `api:9443` |  |  | Address of the API's sensor listener the gateway passes sensor connections to (internal only; sensors dial the gateway's port 443). |
+| `OPENCTEM_ADMIN_SITE` | port \| host \| off | `off` |  |  | The platform console's own site: `port` serves it on `https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT>`, `host` on `https://<OPENCTEM_ADMIN_HOST>` (recommended for production: a separate origin), `off` not at all. The Compose stack sets `port`. |
+| `OPENCTEM_ADMIN_HOST` | string | empty |  |  | The console's own DNS name (no scheme, port or path), with `OPENCTEM_ADMIN_SITE=host`; must differ from `OPENCTEM_HOSTNAME`. |
+| `OPENCTEM_ADMIN_PORT` | int | `8443` |  |  | The console's port, with `OPENCTEM_ADMIN_SITE=port`. Not a security control: change it if it is taken on the host. Must differ from 80, 443 and `GATEWAY_HTTPS_PORT`. |
+| `OPENCTEM_ADMIN_ALLOWED_CIDRS` | string | `127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7` |  |  | Client networks that may reach the console site, space-separated; everyone else gets 403. The Compose stack passes the same list to the API as `ADMIN_ALLOWED_CIDRS`. |
 
 ## Docker Compose stack
 
@@ -527,6 +563,7 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `API_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `UI_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `GATEWAY_BIND` | string | `0.0.0.0` |  |  | Host interface the gateway port is published on. |
+| `OPENCTEM_ADMIN_BIND` | string | empty |  |  | Host interface the console port is published on, with `OPENCTEM_ADMIN_SITE=port` (default `GATEWAY_BIND`). A private or VPN address keeps the console off the public interface; a published container port is not filtered by the host firewall. |
 | `GATEWAY_HTTPS_PORT` | string | `443` |  |  | Published HTTPS port. |
 | `GATEWAY_HTTP_PORT` | string | `80` |  |  | Port published by the overlays. |
 | `TLS_CERT_DIR` | string | `./certs` |  |  | Host directory mounted at `/certs` (mode `files`). |

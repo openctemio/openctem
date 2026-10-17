@@ -620,6 +620,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     message: 'Only an owner can approve or reject SSO changes.',
   },
+  // Owners and admins see support access; granting is owner only (api RFC-063).
+  '/settings/support-access': {
+    permission: Permission.TeamUpdate,
+    message: 'Only owners and admins can manage support access.',
+  },
   // Owners and admins read domain policies; changes are owner only (api RFC-104).
   '/settings/domains': {
     permission: Permission.TeamUpdate,
@@ -633,8 +638,8 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/modules': {
     permission: Permission.TeamUpdate,
   },
-  // Plan & usage: owners and admins (GET /organization/plan needs admin).
-  '/settings/plan': {
+  // Usage & limits: owners and admins (GET /organization/limits needs admin).
+  '/settings/limits': {
     permission: Permission.TeamUpdate,
   },
   // The user's own notification settings live at /account/notifications
