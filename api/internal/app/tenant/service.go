@@ -872,7 +872,7 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	s.invalidateMembershipCache(ctx, membership.TenantID().String(), membership.UserID().String())
 	s.bumpPermissionVersion(ctx, membership.TenantID().String(), membership.UserID().String())
 
-	s.logger.Info("member role updated", "membership_id", membershipID, "new_role", role)
+	s.logger.Info("member role updated", "membership_id", logger.SanitizeValue(membershipID), "new_role", logger.SanitizeValue(string(role)))
 	if tenantdom.PrivilegeRank(role) > tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) {
 		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
 			fmt.Sprintf("membership role raised from %s to %s", oldRole, role))

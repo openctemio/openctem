@@ -43,6 +43,12 @@ vars:
     type: string
     example: "http://localhost:8080"
     description: "Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment."
+  - name: MANAGED_SERVICE
+    component: api
+    group: "Application"
+    type: bool
+    default: "false"
+    description: "Set to  only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > System > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
   - name: DEPLOYMENT_REGION
     component: api
     group: "Application"
@@ -1538,6 +1544,13 @@ vars:
     group: "Admin console"
     type: string
     description: "The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener."
+  - name: OPENCTEM_PLANE
+    component: api
+    group: "Admin console"
+    type: enum
+    values: [all, tenant, admin]
+    default: "all"
+    description: "What this API process serves (RFC-022 revision 21). `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`."
   - name: ADMIN_LISTEN_ALLOW_ALL_INTERFACES
     component: api
     group: "Admin console"
@@ -1617,6 +1630,13 @@ vars:
     type: int
     default: "365"
     description: "Organization audit entries older than this are archived and deleted, keeping the hash chain verifiable."
+  - name: ADMIN_PUBLIC_URL
+    component: api
+    group: "Authentication"
+    type: string
+    default: "the origin of APP_URL"
+    example: "https://admin.ctem.example.com"
+    description: "Public origin of the platform console (`https://<OPENCTEM_ADMIN_HOST>` or `https://<host>:8444` when the console has its own site). It is the console's WebAuthn relying party: security keys and passkeys registered there are bound to its host, and assertions from any other origin are refused. Changing the host makes registered keys unusable (administrators sign in with TOTP or a recovery code and register again). Empty and no `APP_URL`: console security keys are off."
   - name: ADMIN_SESSION_PURGE_INTERVAL
     component: api
     group: "Audit log retention"

@@ -128,6 +128,19 @@ From a VPS, use an SSH tunnel: `ssh -L 8443:127.0.0.1:8443 you@server`, then
 open `https://localhost:8443/admin`. `./setup.sh <host> --admin-host <name>` puts
 the console on its own host name; `--admin-public` opens it to every network.
 
+### System page and host operations
+
+The platform console has a read-only **System** page (platform administrators
+only): service health, free space of the data volumes and the database size,
+the age of the last backup, certificate expiry, and the running version with
+the version-check result. When free space drops below 20% (warning) or 10%
+(critical), the backup is older than 26 hours, or a certificate is close to
+expiry, the platform administrators are emailed through the system mailer and
+a metric and a log line are written. Backup, restore, upgrade and key rotation
+stay in the Ansible kit's command line over SSH; the kit installs no host web
+console. An operator who wants one can follow the optional recipe in
+[RFC-114](../rfcs/RFC-114-system-page.md), appendix A.
+
 ### Outbound connection: the version check
 
 The version check is **on by default**. Once a day the API downloads one public
