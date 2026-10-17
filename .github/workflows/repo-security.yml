@@ -172,6 +172,9 @@ jobs:
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh
+      # The CodeQL gate: new medium-or-higher alerts fail `CodeQL OK`.
+      - name: CodeQL new-alert gate self-test
+        run: bash .github/scripts/codeql-new-alerts.test.sh
 
   # New or upgraded dependencies a pull request brings in (Go modules, npm,
   # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a
