@@ -562,7 +562,7 @@ the billing page in the UI.
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
 | Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete` |
 
-> Writing the credential store is owner/admin only: its one consumer, a template source, is owner/admin only, so a member could otherwise replace the credential an administrator's source authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002895`).
+> Writing the credential store is owner/admin only: its one consumer, a template source, is owner/admin only, so a member could otherwise replace the credential an administrator's source authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002897`).
 
 > **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
 > leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
@@ -2158,7 +2158,7 @@ lets anyone build a role above their own grants.
 | `sensor-operator` | sensor health, zones and commands; pairing and keys stay with administrators | no |
 | `validation-engineer` | pentest campaigns, simulations, control tests, retests | no |
 | `external-tester` | a vendor tester: only the campaigns they are a member of | no |
-| `researcher` (v2) | bug-bounty researchers: programs, scans and findings of their programs (RFC-065); no sensor access since v2 (migration `002895` removes `sensors:read` from existing copies) | no |
+| `researcher` (v2) | bug-bounty researchers: programs, scans and findings of their programs (RFC-065); no sensor access since v2 (migration `002897` removes `sensors:read` from existing copies) | no |
 | `bounty-triager` | triages researcher reports; never approves or changes program scope | no |
 | `threat-intel-analyst` | attacker profiles, threat intel, external exposures | no |
 | `risk-approver` | GRC: approves risk acceptance and suppressions, compliance | no |
