@@ -15,6 +15,9 @@
 #                                     and ACME HTTP-01 (acme)
 #   docker-compose.plain-http.yml     OPENCTEM_TLS_MODE=http behind your own
 #                                     TLS proxy (explicit opt-in)
+#   docker-compose.sensor.yml         a bundled sensor, enrolled as a shared
+#                                     sensor of the instance with the
+#                                     single-use SENSOR_INSTANCE_ENROLLMENT_TOKEN
 #
 # Never published: API :8080, web :3000, Postgres, Redis.
 # =============================================================================

@@ -33,9 +33,6 @@ const (
 	AdminSessionCookie = "admin_session"
 	AdminMFACookie     = "admin_mfa"
 	AdminCSRFCookie    = "admin_csrf"
-	// AdminCSRFPageCookie is the readable copy of admin_csrf for the console's
-	// pages (path /admin); admin_csrf itself is HttpOnly on /api/v1/admin.
-	AdminCSRFPageCookie = "admin_csrf_ui"
 )
 
 // AdminSessionAuthenticator resolves a console session token to its admin.
@@ -60,6 +57,23 @@ const AdminSessionKey logger.ContextKey = "admin_session"
 var passwordChangeAllowed = map[string]bool{
 	"GET /api/v1/admin/auth/validate":  true,
 	"POST /api/v1/admin/auth/password": true,
+}
+
+// CodeFactorEnrollmentRequired is the error code of the enrollment gate.
+const CodeFactorEnrollmentRequired apierror.Code = "FACTOR_ENROLLMENT_REQUIRED"
+
+// enrollmentAllowed lists what a session held by "require WebAuthn" may call
+// until the administrator complies: who am I, read and register security
+// keys, confirm with a code or key, and generate recovery codes.
+var enrollmentAllowed = map[string]bool{
+	"GET /api/v1/admin/auth/validate":                      true,
+	"POST /api/v1/admin/auth/password":                     true,
+	"GET /api/v1/admin/auth/factors":                       true,
+	"POST /api/v1/admin/auth/webauthn/credentials/options": true,
+	"POST /api/v1/admin/auth/webauthn/credentials":         true,
+	"POST /api/v1/admin/auth/recovery-codes":               true,
+	"POST /api/v1/admin/auth/step-up/webauthn/options":     true,
+	"POST /api/v1/admin/auth/step-up/webauthn":             true,
 }
 
 // AdminAuthMiddleware provides authentication for admin API endpoints.
@@ -140,6 +154,13 @@ func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			!passwordChangeAllowed[r.Method+" "+r.URL.Path] {
 			apierror.New(http.StatusForbidden, CodePasswordChangeRequired,
 				"Change your temporary password before using the console").WriteJSON(w)
+			return
+		}
+		// "require WebAuthn": an administrator who has not registered enough
+		// security keys and recovery codes may only enroll.
+		if sess != nil && sess.EnrollmentRequired && !enrollmentAllowed[r.Method+" "+r.URL.Path] {
+			apierror.New(http.StatusForbidden, CodeFactorEnrollmentRequired,
+				"Register your security keys and recovery codes before using the console").WriteJSON(w)
 			return
 		}
 		// Time-boxed elevation: without a live elevation the administrator

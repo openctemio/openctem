@@ -1,0 +1,28 @@
+# Sensor-local policy of the bundled shared sensor (docker-compose.sensor.yml).
+# Format: the sensor's docs/LOCAL_POLICY.md (apiVersion
+# openctem.io/sensor-policy/v1). setup.sh copies this file to
+# ./sensor/sensor-policy.yaml (mode 0644); edit that copy, then restart the
+# sensor. A shared sensor (SENSOR_SHARED_MODE=1) does not start without a
+# local policy, and refuses every job outside it whatever the platform sends.
+#
+# This default keeps a shared sensor to public targets (no private ranges),
+# the scan, validate and retest jobs, no custom templates, no out-of-band
+# callbacks, and bounded rate and duration.
+
+apiVersion: openctem.io/sensor-policy/v1
+
+targets:
+  # Leave "allow" out: any public target the job names, minus "deny" and the
+  # built-in deny list (loopback, link-local, cloud metadata, CGNAT,
+  # multicast, reserved), which always applies.
+  allow_private: false
+
+checks:
+  allow: [scan, validate, retest, refresh_content]
+
+allow_custom_templates: false
+allow_interactsh: false
+
+rate:
+  max_rps: 100
+  max_job_seconds: 14400

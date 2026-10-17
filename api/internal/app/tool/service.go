@@ -815,9 +815,9 @@ func (s *Service) DeleteCustomTool(ctx context.Context, tenantID, toolID string)
 				"error", err)
 		} else if count > 0 {
 			s.logger.Info("cascade deactivated pipelines before custom tool deletion",
-				"tenant_id", tenantID,
-				"tool_id", toolID,
-				"tool_name", t.Name,
+				"tenant_id", logger.SanitizeValue(tenantID),
+				"tool_id", logger.SanitizeValue(toolID),
+				"tool_name", logger.SanitizeValue(t.Name),
 				"deactivated_count", count,
 				"scan_workflow_ids", scanWorkflowIDs)
 		}
