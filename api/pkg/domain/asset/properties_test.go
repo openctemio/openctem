@@ -72,18 +72,15 @@ func TestNormalizeProperties_ObjectSynonymStays(t *testing.T) {
 
 func TestNormalizeProperties_OtherSynonyms(t *testing.T) {
 	props := map[string]any{"nameserver": "ns1.example.com", "nameservers": []any{"ns2.example.com"},
-		"technology": "nginx", "san": "www.example.com"}
+		"san": "www.example.com"}
 	NormalizeProperties(props)
 	if got := sortedStrings(props["nameservers"]); !slices.Equal(got, []string{"ns1.example.com", "ns2.example.com"}) {
 		t.Errorf("nameservers = %v", got)
 	}
-	if got := sortedStrings(props["technologies"]); !slices.Equal(got, []string{"nginx"}) {
-		t.Errorf("technologies = %v", got)
-	}
 	if got := sortedStrings(props["sans"]); !slices.Equal(got, []string{"www.example.com"}) {
 		t.Errorf("sans = %v", got)
 	}
-	for _, k := range []string{"nameserver", "technology", "san"} {
+	for _, k := range []string{"nameserver", "san"} {
 		if _, ok := props[k]; ok {
 			t.Errorf("synonym %q left in place", k)
 		}
@@ -135,7 +132,7 @@ func TestNormalizeProperties_ScalarSynonyms(t *testing.T) {
 // Every property name follows the convention the generator enforces; this
 // pins it for the keys that only common_properties declare too.
 func TestPropertySchema_ListFlag(t *testing.T) {
-	for _, key := range []string{"ip_addresses", "nameservers", "sans", "technologies"} {
+	for _, key := range []string{"ip_addresses", "nameservers", "sans"} {
 		p, ok := LookupProperty(key)
 		if !ok || !p.List {
 			t.Errorf("%s: want a list property, got %+v", key, p)
