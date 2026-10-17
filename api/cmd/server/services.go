@@ -2091,6 +2091,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)    // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetSoftwareRepository(repos.Software)          // Software inventory capture (RFC-066)
 	s.Ingest.SetTechnologyRepository(repos.AssetTechnology) // Detected technologies (RFC-112)
+	s.Asset.SetTechnologyFacets(repos.AssetTechnology)      // Technology filter options (RFC-112)
 	s.Ingest.SetAttributeReconciler(s.Asset)                // Per-source asset values and sets, incl. open ports (RFC-069)
 	// Inventory vulnerability matching (RFC-066): told by ingest when an
 	// organization's software changes; findings go through the same

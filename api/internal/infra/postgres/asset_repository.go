@@ -1257,6 +1257,22 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, cond)
 	}
 
+	// Technologies (RFC-112): assets using any of the named technologies,
+	// and assets with a technology in any of the categories. Pinned to the
+	// asset's tenant.
+	if len(filter.Technologies) > 0 {
+		conditions = append(conditions, fmt.Sprintf(`EXISTS (SELECT 1 FROM asset_technologies t
+			WHERE t.tenant_id = a.tenant_id AND t.asset_id = a.id AND t.name_key = ANY($%d::text[]))`, argIndex))
+		args = append(args, pq.Array(filter.Technologies))
+		argIndex++
+	}
+	if len(filter.TechnologyCategories) > 0 {
+		conditions = append(conditions, fmt.Sprintf(`EXISTS (SELECT 1 FROM asset_technologies t
+			WHERE t.tenant_id = a.tenant_id AND t.asset_id = a.id AND t.category = ANY($%d::text[]))`, argIndex))
+		args = append(args, pq.Array(filter.TechnologyCategories))
+		argIndex++
+	}
+
 	// Crown jewel filter: the is_crown_jewel column is the only source.
 	if filter.IsCrownJewel != nil {
 		conditions = append(conditions, fmt.Sprintf("a.is_crown_jewel = $%d", argIndex))
