@@ -840,6 +840,11 @@ type SensorSuppressionsResponse struct {
 
 func (h *SuppressionHandler) writeActiveRules(w http.ResponseWriter, r *http.Request, tenantID shared.ID) {
 	rules, err := h.service.ListActiveRules(r.Context(), tenantID)
+	if err == nil {
+		// A person sees organization-wide rules and the rules bound to an asset
+		// in their data scope, never another asset's id or path pattern.
+		rules, err = h.service.VisibleRules(r.Context(), tenantID, rules)
+	}
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

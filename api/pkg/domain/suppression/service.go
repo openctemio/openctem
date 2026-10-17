@@ -611,7 +611,7 @@ func (s *Service) MarkReviewed(ctx context.Context, input MarkReviewedInput) (*R
 	if rule == nil {
 		return nil, nil, "", ErrRuleNotFound
 	}
-	if err := s.assertRuleReach(ctx, rule, false); err != nil {
+	if err := s.assertRuleReach(ctx, rule, true); err != nil {
 		return nil, nil, "", err
 	}
 	flaggedAt, reason := rule.ReviewFlaggedAt(), rule.ReviewReason()
