@@ -106,22 +106,26 @@ func TestAdminConsoleCookieAttributes(t *testing.T) {
 		h := NewAdminConsoleHandler(nil, secure, logger.NewNop())
 
 		rec := httptest.NewRecorder()
-		if err := h.issueSessionCookies(rec, "session-token"); err != nil {
+		token, err := h.issueSessionCookies(rec, "session-token")
+		if err != nil {
 			t.Fatal(err)
 		}
 		check(t, rec, secure, []want{
 			{middleware.AdminSessionCookie, "/api/v1/admin", true, false},
 			{middleware.AdminCSRFCookie, "/api/v1/admin", true, false},
-			{middleware.AdminCSRFPageCookie, "/admin", false, false},
 			{middleware.AdminCSRFCookie, "/", false, true},
 			{middleware.AdminMFACookie, "/api/v1/admin/auth", true, true},
 		})
-		if api, page := find(t, rec, middleware.AdminCSRFCookie, "/api/v1/admin"), find(t, rec, middleware.AdminCSRFPageCookie, "/admin"); api.Value == "" || api.Value != page.Value {
-			t.Errorf("the page copy must carry the same token: %q vs %q", page.Value, api.Value)
+		// The token goes to the response body; the cookie carries the same
+		// value for the API's double-submit check.
+		if api := find(t, rec, middleware.AdminCSRFCookie, "/api/v1/admin"); token == "" || api.Value != token {
+			t.Errorf("the returned token must match the cookie: %q vs %q", token, api.Value)
 		}
+		// No console cookie is readable by a script: on a second port of the
+		// tenant host, the tenant pages share the host's cookies.
 		for _, c := range rec.Result().Cookies() {
-			if c.Path == "/" && c.MaxAge >= 0 {
-				t.Errorf("%s is readable on every page (path /)", c.Name)
+			if c.MaxAge >= 0 && !c.HttpOnly {
+				t.Errorf("%s (path %s) is readable by scripts", c.Name, c.Path)
 			}
 		}
 
@@ -133,7 +137,6 @@ func TestAdminConsoleCookieAttributes(t *testing.T) {
 		h.clearCSRFCookies(rec)
 		check(t, rec, secure, []want{
 			{middleware.AdminCSRFCookie, "/api/v1/admin", true, true},
-			{middleware.AdminCSRFPageCookie, "/admin", false, true},
 			{middleware.AdminCSRFCookie, "/", false, true},
 		})
 	}
