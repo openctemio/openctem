@@ -54,7 +54,7 @@ export function LifecycleSchemes({ catalog, canWrite, limit }: LifecycleSchemesP
       allowed={canWrite && !limitReached}
       reason={
         limitReached
-          ? t('findingLifecycle.plan.schemesReachedShort', 'Your plan allows no more lifecycles')
+          ? t('findingLifecycle.plan.schemesReachedShort', 'Limit of lifecycles reached')
           : t('findingLifecycle.readOnly', 'Needs the Manage Finding Lifecycles permission')
       }
       size="sm"
@@ -75,7 +75,7 @@ export function LifecycleSchemes({ catalog, canWrite, limit }: LifecycleSchemesP
             limit && limit.limit === 0
               ? t(
                   'findingLifecycle.plan.schemesNone',
-                  'Your plan includes sub-statuses only. Custom moves and requirements come with a higher plan.'
+                  'Only sub-statuses are available for this organization. Custom moves and requirements are not.'
                 )
               : t(
                   'findingLifecycle.scheme.emptyHint',
@@ -90,7 +90,7 @@ export function LifecycleSchemes({ catalog, canWrite, limit }: LifecycleSchemesP
             title={t('findingLifecycle.scheme.listTitle', 'Lifecycles')}
             description={
               limit
-                ? t('findingLifecycle.plan.usage', '{used} of {limit} on your plan', {
+                ? t('findingLifecycle.plan.usage', '{used} of {limit} used', {
                     used: limit.used,
                     limit: limit.limit,
                   })

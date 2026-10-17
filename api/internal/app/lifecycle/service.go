@@ -291,3 +291,45 @@ func (s *Service) ChangePolicy(ctx context.Context, actor *admin.AdminUser, tena
 	}
 	return nil
 }
+
+// ControlPlaneActor is the audit actor of a change made by a hosted
+// service's control plane through the internal API.
+const ControlPlaneActor = "control-plane"
+
+// ChangePolicyByControlPlane turns the idle policy on or off for one
+// organization, as the control plane (subject is the calling service). Same
+// rules and audit as ChangePolicy.
+func (s *Service) ChangePolicyByControlPlane(ctx context.Context, tenantID shared.ID, enabled bool, reason, subject, ip string) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || len([]rune(reason)) > maxReasonRunes {
+		return ErrInvalidPolicyReason
+	}
+	now := s.now().UTC()
+	if err := s.repo.SetPolicy(ctx, tenantID, lifecycledom.Policy{Enabled: enabled, Reason: reason, At: now}); err != nil {
+		return err
+	}
+	s.forget(tenantID)
+	if s.adminAudit != nil {
+		entry := admin.NewAuditLogBuilder(nil, actionPolicy).
+			Resource("tenant", &tenantID, "").
+			Context(ip, "").
+			Request("PUT", "", map[string]any{"enabled": enabled, "reason": reason, "subject": subject}).
+			High().
+			Build()
+		entry.AdminEmail = ControlPlaneActor
+		if err := s.adminAudit.Create(ctx, entry); err != nil {
+			s.log.Error("admin audit idle policy", "error", err)
+		}
+	}
+	if s.audit != nil {
+		event := auditapp.NewSuccessEvent(auditdom.ActionTenantIdlePolicyChanged, auditdom.ResourceTypeTenant, tenantID.String()).
+			WithMetadata("enabled", enabled).
+			WithMetadata("reason", reason).
+			WithSeverity(auditdom.SeverityMedium)
+		actx := auditapp.AuditContext{TenantID: tenantID.String(), ActorEmail: ControlPlaneActor}
+		if err := s.audit.LogEvent(ctx, actx, event); err != nil {
+			s.log.Error("audit idle policy", "error", err)
+		}
+	}
+	return nil
+}
