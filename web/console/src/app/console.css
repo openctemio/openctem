@@ -1,0 +1,5 @@
+/* The web app's styles; Tailwind also scans the shared source in ../src, whose
+   components the console renders. */
+@import '../../../src/app/globals.css';
+@source '../../../src';
+@source '..';
