@@ -115,6 +115,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `POST /api/v1/scim-tokens`
 - `PATCH /api/v1/tenants/{tenant}/settings/security`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
+- `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
 - `DELETE /api/v1/me/account`
 - `POST /api/v1/organization/leave`
@@ -678,6 +679,10 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
 | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
+| `GET /api/v1/organization/join-requests` | owner or admin (`RequireAdmin`) + `team:members:read` (the organization's own requests; RFC-104) |
+| `POST /api/v1/organization/join-requests/{request_id}/approve`, `.../reject` | owner or admin + `team:members:write`; approve grants viewer or member only; another organization's request is 404 |
+| `GET /api/v1/organization/settings/domains` | owner or admin (`RequireAdmin`) + `settings:read` (the organization's own domains only) |
+| `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy` | **owner only** (`RequireOwner`) + `settings:write` + **step-up**; a domain of another organization is 404 (RFC-104) |
 | `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
 | `POST /api/v1/organization/leave` | any member (`team:read`) + **step-up**, for themselves in the credential's organization; refused for the only owner (RFC-104) |

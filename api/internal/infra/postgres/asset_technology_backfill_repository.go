@@ -181,6 +181,22 @@ func (r *AssetTechnologyBackfillRepository) DeleteLinks(ctx context.Context, ten
 	return int(n), nil
 }
 
+// DropRetiredProperty removes properties.technologies from at most limit
+// of the tenant's assets. Tags are left alone: a tag carries no origin, so a
+// person's tag cannot be told from one the old recon converter added.
+func (r *AssetTechnologyBackfillRepository) DropRetiredProperty(ctx context.Context, tenantID shared.ID, limit int) (int, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE assets SET properties = properties - 'technologies'
+		 WHERE tenant_id = $1 AND id IN (
+		       SELECT id FROM assets WHERE tenant_id = $1 AND properties ? 'technologies' LIMIT $2)`,
+		tenantID.String(), limit)
+	if err != nil {
+		return 0, fmt.Errorf("drop retired technologies property: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // MarkBackfilled records that a tenant was backfilled at version.
 func (r *AssetTechnologyBackfillRepository) MarkBackfilled(ctx context.Context, tenantID shared.ID, version int, enforced bool, stats assettechapp.BackfillStats) error {
 	_, err := r.db.ExecContext(ctx, `

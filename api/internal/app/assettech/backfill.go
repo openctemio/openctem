@@ -13,7 +13,8 @@ import (
 
 // BackfillVersion is bumped when the backfill must run again for every
 // tenant (a classifier change that should reach stored rows).
-const BackfillVersion = 1
+// Version 2 also removes the retired properties.technologies key.
+const BackfillVersion = 2
 
 // backfillBatch is the assets (or component links) one statement reads or
 // writes: small, so no statement holds row locks for long.
@@ -39,6 +40,8 @@ type BackfillStats struct {
 	Technologies int
 	Classified   int
 	LinksRemoved int
+	// PropertiesDropped: assets the retired key was removed from.
+	PropertiesDropped int
 	// LinksReported: links a report-only run found removable and left alone.
 	LinksReported int
 }
@@ -61,6 +64,10 @@ type BackfillStore interface {
 	// DeleteLinks deletes the tenant's technology links by id, only those
 	// without a usable version and without a CPE, and records each one.
 	DeleteLinks(ctx context.Context, tenantID shared.ID, ids []shared.ID) (int, error)
+	// DropRetiredProperty removes properties.technologies from at most
+	// limit of the tenant's assets and returns how many it changed. Tags are
+	// never touched: nothing marks a tag as one the converter added.
+	DropRetiredProperty(ctx context.Context, tenantID shared.ID, limit int) (int, error)
 	MarkBackfilled(ctx context.Context, tenantID shared.ID, version int, enforced bool, stats BackfillStats) error
 }
 
@@ -174,6 +181,17 @@ func (b *Backfill) RunTenant(ctx context.Context, tenantID shared.ID) (BackfillS
 		}
 		after = links[len(links)-1].ID.String()
 		if len(links) < backfillBatch {
+			break
+		}
+	}
+	// The copy migration moved the values; the key is never read again.
+	for {
+		n, err := b.store.DropRetiredProperty(ctx, tenantID, backfillBatch)
+		if err != nil {
+			return stats, err
+		}
+		stats.PropertiesDropped += n
+		if n < backfillBatch {
 			break
 		}
 	}
