@@ -31,6 +31,11 @@ func TestMCPSettingsValidate(t *testing.T) {
 			t.Errorf("%s accepted", name)
 		}
 	}
+	// The comment-adding write scope can be allowed (its name is not
+	// "<area>.read" or "<area>.write").
+	if err := (&MCPSettings{Scopes: []string{"mcp:findings.read", "mcp:findings.comment"}}).Validate(); err != nil {
+		t.Errorf("comment scope refused: %v", err)
+	}
 	if (MCPSettings{}).RefreshLimitDays() != 90 || (MCPSettings{RefreshDays: 7}).RefreshLimitDays() != 7 {
 		t.Error("refresh limit")
 	}

@@ -21,7 +21,7 @@ const (
 // authorization server's catalog (pkg/domain/mcpoauth), checked where the
 // policy is written; this package cannot import it (permission imports
 // tenant).
-var mcpScopeRe = regexp.MustCompile(`^mcp:[a-z]+\.(read|write)$`)
+var mcpScopeRe = regexp.MustCompile(`^mcp:[a-z]+\.[a-z]+$`)
 
 var mcpHostRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
 
