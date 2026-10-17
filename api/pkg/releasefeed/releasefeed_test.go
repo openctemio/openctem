@@ -3,6 +3,7 @@ package releasefeed
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -20,20 +21,18 @@ func seedKey(b byte) ed25519.PrivateKey {
 }
 
 type fixture struct {
-	root, online ed25519.PrivateKey
-	keySet       []byte
-	trust        Trust
+	online ed25519.PrivateKey
+	trust  Trust
+}
+
+func pubHex(k ed25519.PrivateKey) string {
+	return hex.EncodeToString(k.Public().(ed25519.PublicKey))
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{root: seedKey(1), online: seedKey(2)}
-	ks, err := SignKeySet(f.root, 3, testNow.Add(-time.Hour), testNow.Add(90*24*time.Hour), f.online.Public().(ed25519.PublicKey))
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.keySet = ks
-	f.trust = Trust{Roots: []string{jobsign.KeyID(f.root.Public().(ed25519.PublicKey))}}
+	f := &fixture{online: seedKey(2)}
+	f.trust = Trust{Keys: []string{pubHex(f.online)}}
 	return f
 }
 
@@ -53,7 +52,7 @@ func sampleFeed(seq uint64) Feed {
 
 func (f *fixture) build(t *testing.T, feed Feed) []byte {
 	t.Helper()
-	raw, err := Build(f.keySet, f.online, feed)
+	raw, err := Build(f.online, feed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,23 +65,63 @@ func TestVerify_Valid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.KeySetVersion != 3 || v.Feed.Sequence != 100 || len(v.Feed.Releases) != 2 || len(v.Digest) != 64 {
+	if v.KeyID != jobsign.KeyID(f.online.Public().(ed25519.PublicKey)) || v.Feed.Sequence != 100 || len(v.Feed.Releases) != 2 || len(v.Digest) != 64 {
 		t.Fatalf("verified = %+v", v)
 	}
 }
 
-func TestVerify_NoPinnedRoot(t *testing.T) {
+// With no key pinned nothing verifies: the version check stays inert.
+func TestVerify_InertWithoutKeys(t *testing.T) {
 	f := newFixture(t)
-	if _, err := Verify(f.build(t, sampleFeed(1)), Trust{}, testNow); !errors.Is(err, ErrNoRoot) {
-		t.Fatalf("err = %v, want ErrNoRoot", err)
+	if _, err := Verify(f.build(t, sampleFeed(1)), Trust{}, testNow); !errors.Is(err, ErrNoKey) {
+		t.Fatalf("err = %v, want ErrNoKey", err)
 	}
-	if len(PinnedRoots) != 0 {
-		// A root is pinned in this build: it must be a well-formed key id.
-		for _, r := range PinnedRoots {
-			if !strings.HasPrefix(r, "SHA256:") || len(r) != len("SHA256:")+64 {
-				t.Fatalf("pinned root %q is not a key id", r)
-			}
+	for _, k := range PinnedKeys {
+		if b, err := hex.DecodeString(k); err != nil || len(b) != ed25519.PublicKeySize {
+			t.Fatalf("pinned key %q is not a hex Ed25519 public key", k)
 		}
+	}
+	if len(PinnedKeys) > MaxPinnedKeys {
+		t.Fatalf("%d pinned keys, at most %d", len(PinnedKeys), MaxPinnedKeys)
+	}
+}
+
+// A feed signed by a key that is not pinned is refused.
+func TestVerify_UnpinnedKey(t *testing.T) {
+	f := newFixture(t)
+	raw, err := Build(seedKey(9), sampleFeed(5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(raw, f.trust, testNow); err == nil || !strings.Contains(err.Error(), "not signed by a pinned key") {
+		t.Fatalf("unpinned key: err = %v", err)
+	}
+}
+
+// Rotation: while two keys are pinned, a feed signed by either verifies; once
+// a release pins only the new key, the old key's feed is refused.
+func TestVerify_RotationWithTwoPinnedKeys(t *testing.T) {
+	oldK, newK := seedKey(2), seedKey(3)
+	both := Trust{Keys: []string{pubHex(oldK), pubHex(newK)}}
+	for name, k := range map[string]ed25519.PrivateKey{"old": oldK, "new": newK} {
+		raw, err := Build(k, sampleFeed(10))
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := Verify(raw, both, testNow)
+		if err != nil || v.KeyID != jobsign.KeyID(k.Public().(ed25519.PublicKey)) {
+			t.Fatalf("%s key under both pins: %v %+v", name, err, v)
+		}
+	}
+	rawOld, _ := Build(oldK, sampleFeed(11))
+	if _, err := Verify(rawOld, Trust{Keys: []string{pubHex(newK)}}, testNow); err == nil {
+		t.Fatal("the retired key still verified")
+	}
+	if _, err := Verify(rawOld, Trust{Keys: []string{pubHex(oldK), pubHex(newK), pubHex(seedKey(4))}}, testNow); err == nil {
+		t.Fatal("three pinned keys were accepted")
+	}
+	if _, err := Verify(rawOld, Trust{Keys: []string{"zz"}}, testNow); err == nil {
+		t.Fatal("a malformed pin was accepted")
 	}
 }
 
@@ -122,38 +161,13 @@ func mustPayload(t *testing.T, env json.RawMessage) []byte {
 	return e.Payload
 }
 
-// A feed signed by a key outside the key set, or a key set from another
-// root, is refused.
-func TestVerify_WrongKeys(t *testing.T) {
+// A feed envelope of another payload type (content signed by the same
+// online key) is refused: domain separation.
+func TestVerify_OtherPayloadType(t *testing.T) {
 	f := newFixture(t)
-	stranger := seedKey(9)
-	raw, err := Build(f.keySet, stranger, sampleFeed(5))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Verify(raw, f.trust, testNow); err == nil {
-		t.Fatal("a feed signed outside the key set verified")
-	}
-	other, _ := SignKeySet(stranger, 3, testNow.Add(-time.Hour), testNow.Add(24*time.Hour), f.online.Public().(ed25519.PublicKey))
-	raw, _ = Build(other, f.online, sampleFeed(5))
-	if _, err := Verify(raw, f.trust, testNow); err == nil || !strings.Contains(err.Error(), "pinned root") {
-		t.Fatalf("a key set of another root: err = %v", err)
-	}
-}
-
-// A key set of another feed (same root, other kind) cannot stand in for the
-// release key set, and a feed envelope of another payload type is refused.
-func TestVerify_CrossFeedReplay(t *testing.T) {
-	f := newFixture(t)
-	otherType := feedsign.KeySetType{PayloadType: "application/vnd.openctem.programfeed.keyset+json", Kind: "openctem.programfeed.keyset/v1"}
-	ks, _ := feedsign.SignKeySet(f.root, otherType, 3, testNow.Add(-time.Hour), testNow.Add(24*time.Hour), f.online.Public().(ed25519.PublicKey))
-	raw, _ := Build(ks, f.online, sampleFeed(5))
-	if _, err := Verify(raw, f.trust, testNow); err == nil {
-		t.Fatal("another feed's key set verified as the release key set")
-	}
 	payload, _ := json.Marshal(sampleFeed(5))
 	env, _ := feedsign.Sign(f.online, "application/vnd.openctem.package-index+json", payload)
-	b, _ := json.Marshal(Bundle{Schema: BundleSchema, KeySet: f.keySet, Feed: env})
+	b, _ := json.Marshal(Bundle{Schema: BundleSchema, Feed: env})
 	if _, err := Verify(b, f.trust, testNow); err == nil || !strings.Contains(err.Error(), "payload type") {
 		t.Fatalf("another payload type: err = %v", err)
 	}
@@ -170,10 +184,6 @@ func TestVerify_Rollback(t *testing.T) {
 	trust.MinSequence = 100 // the same feed again is fine
 	if _, err := Verify(raw, trust, testNow); err != nil {
 		t.Fatalf("same sequence: %v", err)
-	}
-	trust.MinKeySetVersion = 4
-	if _, err := Verify(raw, trust, testNow); !errors.Is(err, ErrRollback) {
-		t.Fatalf("older key set: err = %v", err)
 	}
 }
 
@@ -245,7 +255,7 @@ func TestFeedValidate(t *testing.T) {
 			if err := f.Validate(); err == nil {
 				t.Fatal("accepted")
 			}
-			if _, err := Build(newFixture(t).keySet, seedKey(2), f); err == nil {
+			if _, err := Build(seedKey(2), f); err == nil {
 				t.Fatal("the builder signed an invalid feed")
 			}
 		})

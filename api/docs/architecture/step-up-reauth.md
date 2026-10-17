@@ -144,6 +144,7 @@ the web dialog appears and the request is retried.
 |---|---|
 | Making someone an administrator or an owner: `POST /api/v1/users/{id}/roles`, `PUT /api/v1/users/{id}/roles`, `POST /api/v1/roles/{id}/members/bulk` with the admin or owner role, `POST/PATCH /api/v1/tenants/{tenant}/members…` with `admin`, an invitation or a created user with the admin role | `RoleService.authorizeAdminPromotion`, `TenantService.authorizeAdminPromotion` (only when the user does not hold the role yet) |
 | Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
+| Approving a finding false-positive or accepted-risk request whose approval-policy tier is `security` or `dual` (high and critical risk), or any tier when the organization requires it: `POST /api/v1/approvals/{id}/approve` | `VulnerabilityService.signOffApproval` (RFC-111) |
 | Allowing bearer-key sensors again: `PUT /api/v1/sensors/identity-policy` with `bearer_keys_allowed: true` while the organization requires key-bound identity | `SensorService.SetBearerKeysAllowed` (requiring key-bound identity, and re-sending the current value, stay one click) |
 
 The gate judges only the user making the request: a grant authorized
