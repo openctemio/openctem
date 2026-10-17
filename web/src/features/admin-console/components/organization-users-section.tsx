@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -82,7 +83,8 @@ export function OrganizationUsersSection({
   const { data, error, isLoading, mutate } = useOrganizationUsers(tenantId)
   const refresh = () => void mutate()
   const users = data?.data ?? []
-  const hasOwner = users.some((u) => u.role === 'owner')
+  const redacted = !!data?.redacted
+  const hasOwner = users.some((u) => u.role === 'owner') || (data?.by_role?.owner ?? 0) > 0
   const ownersAllSuspended =
     hasOwner && !users.some((u) => u.role === 'owner' && u.status === 'active')
   const canBootstrap = canManage && !isLoading && !error && !hasOwner
@@ -122,6 +124,8 @@ export function OrganizationUsersSection({
       </div>
       {error ? (
         <ErrorState title="users" error={error} onRetry={refresh} />
+      ) : redacted ? (
+        <RedactedMemberCounts byRole={data?.by_role ?? {}} total={data?.total ?? 0} />
       ) : (
         <DataTable
           columns={columns}
@@ -136,5 +140,41 @@ export function OrganizationUsersSection({
         />
       )}
     </section>
+  )
+}
+
+/**
+ * What a read-only administrator sees of an organization's members: how many
+ * there are by role, never who (names and emails are personal data).
+ */
+function RedactedMemberCounts({
+  byRole,
+  total,
+}: {
+  byRole: Record<string, number>
+  total: number
+}) {
+  const { t } = useTranslation()
+  const roles = Object.entries(byRole).sort(([a], [b]) => a.localeCompare(b))
+  return (
+    <div className="rounded-md border p-4 text-sm">
+      <p className="text-muted-foreground">
+        {t(
+          'admin.org.users.redacted',
+          'Your console role sees how many members there are, not who they are. {count} member(s) in total.',
+          { count: total }
+        )}
+      </p>
+      {roles.length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-3">
+          {roles.map(([role, n]) => (
+            <li key={role}>
+              <span className="font-medium">{n}</span>{' '}
+              <span className="text-muted-foreground">{role}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

@@ -1470,9 +1470,10 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	if ctisFinding.Secret.Service != "" {
 		f.SetSecretService(ctisFinding.Secret.Service)
 	}
-	if ctisFinding.Secret.Valid != nil {
-		f.SetSecretValid(ctisFinding.Secret.Valid)
-	}
+	// The reported validity (secret.valid) is deliberately not stored: any
+	// uploader, including a fork pull request, could claim a live secret is
+	// dead and switch off the CI gate and the rotation task. Validity is
+	// recorded only from a validation the platform runs itself.
 	if ctisFinding.Secret.Revoked {
 		revoked := true
 		f.SetSecretRevoked(&revoked)

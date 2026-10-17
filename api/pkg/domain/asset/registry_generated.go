@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "b37a916bad5f5647"
+const RegistryVersion = "ec51d279ad011fda"
 
 // Lenses.
 const (
@@ -362,7 +362,6 @@ var registryTypes = []TypeDefinition{
 			{Name: "content_length", Kind: "int"},
 			{Name: "content_type", Kind: "string", Facet: true},
 			{Name: "server", Kind: "string", Facet: true, Group: true},
-			{Name: "technologies", Kind: "list"},
 			{Name: "cdn", Kind: "string", Facet: true, Group: true},
 			{Name: "cdn_type", Kind: "enum", Values: []string{"cdn", "waf", "cloud"}, Facet: true},
 			{Name: "favicon_mmh3", Kind: "string", Group: true},
@@ -473,7 +472,6 @@ var registryTypes = []TypeDefinition{
 		Attributes: []AttributeDefinition{
 			{Name: "url", Kind: "string"},
 			{Name: "title", Kind: "string"},
-			{Name: "technologies", Kind: "list"},
 			{Name: "server", Kind: "string", Facet: true, Group: true},
 			{Name: "framework", Kind: "string", Facet: true, Group: true},
 			{Name: "authentication", Kind: "string", Facet: true},
@@ -533,7 +531,6 @@ var registryTypes = []TypeDefinition{
 			{Name: "ip_addresses", Kind: "list"},
 			{Name: "url", Kind: "string"},
 			{Name: "title", Kind: "string"},
-			{Name: "technologies", Kind: "list"},
 			{Name: "server", Kind: "string", Facet: true, Group: true},
 			{Name: "cms", Kind: "string", Facet: true, Group: true},
 			{Name: "framework", Kind: "string", Facet: true, Group: true},
@@ -1767,7 +1764,6 @@ var registryProperties = []PropertyDefinition{
 	{Key: "subject_cn", Label: "Subject CN", LabelVI: "CN chủ thể"},
 	{Key: "subnet_id", Label: "Subnet ID", LabelVI: "ID subnet", Format: "code"},
 	{Key: "target_sdk_version", Label: "Target SDK", LabelVI: "SDK mục tiêu"},
-	{Key: "technologies", Label: "Technologies", LabelVI: "Công nghệ", Synonyms: []string{"technology"}, List: true},
 	{Key: "timeout_seconds", Label: "Timeout (s)", LabelVI: "Thời gian chờ (giây)"},
 	{Key: "title", Label: "Page title", LabelVI: "Tiêu đề trang"},
 	{Key: "tls_fingerprint", Label: "Certificate fingerprint", LabelVI: "Dấu vân tay chứng chỉ", Format: "code"},
