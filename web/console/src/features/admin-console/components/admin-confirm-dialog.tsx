@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
+import { StepUpCodeHint, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 
 /** Shortest reason the console accepts for a sensitive action. */
 export const REASON_MIN = 10
@@ -36,6 +37,8 @@ export function stepUpErrorMessage(err: unknown, t: Translate): string {
     return t('admin.confirm.failed', 'The action failed. Try again.')
   if (err.code === 'STEP_UP_REQUIRED')
     return t('admin.confirm.codeRequired', 'Enter a fresh code from your authenticator.')
+  if (err.code === 'WEBAUTHN_REQUIRED')
+    return t('admin.confirm.keyRequired', 'Confirm this action with your security key or passkey.')
   if (err.status === 403)
     return t('admin.confirm.roleRefused', 'Your console role cannot do this. Ask a super admin.')
   return err.message
@@ -88,11 +91,12 @@ export function AdminConfirmDialog({
   const codeId = useId()
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
+  const codeOptional = useStepUpCodeOptional()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const reasonOk = reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX
-  const codeOk = !requireCode || /^\d{6}$/.test(code)
+  const codeOk = !requireCode || stepUpCodeReady(code, codeOptional)
 
   const reset = () => {
     setReason('')
@@ -171,8 +175,9 @@ export function AdminConfirmDialog({
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   className="w-36 font-mono tracking-widest"
-                  required
+                  required={!codeOptional}
                 />
+                <StepUpCodeHint optional={codeOptional} />
               </div>
             )}
             {error && (
