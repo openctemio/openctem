@@ -110,11 +110,15 @@ scheme=https
 case "$admin_site" in
 off) export OPENCTEM_ADMIN_SITE_FILE=off ;;
 port)
-	admin_port="${OPENCTEM_ADMIN_PORT:-8444}"
+	admin_port="${OPENCTEM_ADMIN_PORT:-8443}"
 	case "$admin_port" in
 	'' | *[!0-9]*) die "OPENCTEM_ADMIN_PORT=$admin_port is not a port number" ;;
 	esac
+	[ "$admin_port" -ge 1 ] && [ "$admin_port" -le 65535 ] || die "OPENCTEM_ADMIN_PORT=$admin_port is not a port number"
 	[ "$admin_port" != 443 ] && [ "$admin_port" != 80 ] || die "OPENCTEM_ADMIN_PORT must not be the main site's port"
+	# The console port is published on the same host as the main site
+	# (GATEWAY_HTTPS_PORT, passed by the compose file): the two must differ.
+	[ "$admin_port" != "${GATEWAY_HTTPS_PORT:-443}" ] || die "OPENCTEM_ADMIN_PORT=$admin_port is also GATEWAY_HTTPS_PORT, the main site's published port; pick another console port"
 	if [ "$mode" = http ]; then
 		export OPENCTEM_ADMIN_ADDRESS="http://:$admin_port"
 	else
