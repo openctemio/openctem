@@ -297,6 +297,8 @@ export interface ApiFinding {
   owasp_ids?: string[]
   tags?: string[]
   status: FindingStatus
+  /** The organization's sub-status inside the status (Settings > Finding lifecycle); absent: the status itself. */
+  sub_status_id?: string
   is_triaged: boolean // true if status != "new"
   resolution?: string
   /** Why a closed finding is closed (lib/closure.ts); absent while open. */
@@ -588,6 +590,10 @@ export interface UpdateFindingStatusInput {
   status: FindingStatus
   resolution?: string
   resolved_by?: string
+  /** The sub-status the move lands on; with the current status, a label change inside it. */
+  sub_status_id?: string
+  /** The inputs the organization's lifecycle requires for the move. */
+  fields?: Record<string, string>
 }
 
 export interface UpdateFindingSeverityInput {
