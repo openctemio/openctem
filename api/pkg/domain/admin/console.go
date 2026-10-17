@@ -16,8 +16,10 @@ import (
 const (
 	// SessionTTL is the absolute lifetime of a verified console session.
 	SessionTTL = 8 * time.Hour
-	// SessionIdleTimeout ends a verified session that has not been used.
-	SessionIdleTimeout = 30 * time.Minute
+	// SessionIdleTimeout ends a verified session that has not been used:
+	// 15 minutes, the inactivity bound for the highest authenticator
+	// assurance level (the absolute lifetime above stays under its 12 hours).
+	SessionIdleTimeout = 15 * time.Minute
 	// PendingMFATTL is how long a started console session may wait for its TOTP.
 	PendingMFATTL = 5 * time.Minute
 	// StepUpWindow is how long one step-up confirmation covers the protected

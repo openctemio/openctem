@@ -193,13 +193,7 @@ func (h *AdminConsoleHandler) WebAuthnLogin(w http.ResponseWriter, r *http.Reque
 		h.writeFactorError(w, err, "login")
 		return
 	}
-	if err := h.issueSessionCookies(w, token); err != nil {
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-	writeJSON(w, http.StatusOK, ValidateResponse{
-		ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role()), IsBreakGlass: a.IsBreakGlass(),
-	})
+	h.writeSignedIn(w, token, a)
 }
 
 // RecoveryLogin handles POST /api/v1/admin/auth/recovery.
@@ -223,13 +217,7 @@ func (h *AdminConsoleHandler) RecoveryLogin(w http.ResponseWriter, r *http.Reque
 		h.writeFactorError(w, err, "recovery login")
 		return
 	}
-	if err := h.issueSessionCookies(w, token); err != nil {
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-	writeJSON(w, http.StatusOK, ValidateResponse{
-		ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role()), IsBreakGlass: a.IsBreakGlass(),
-	})
+	h.writeSignedIn(w, token, a)
 }
 
 // Factors handles GET /api/v1/admin/auth/factors.
@@ -477,4 +465,19 @@ func (h *AdminConsoleHandler) PutMFAPolicy(w http.ResponseWriter, r *http.Reques
 	}
 	stored, _, _ := h.svc.MFAPolicy(r.Context())
 	writeJSON(w, http.StatusOK, AdminMFAPolicyResponse{RequireWebAuthn: req.RequireWebAuthn, GraceUntil: stored.GraceUntil, Version: v, WebAuthnEnabled: h.svc.WebAuthnEnabled()})
+}
+
+// writeSignedIn finishes a second-factor sign-in: it sets the session and CSRF
+// cookies and returns the CSRF token in the body, as the password sign-in
+// does, so the console keeps it in memory.
+func (h *AdminConsoleHandler) writeSignedIn(w http.ResponseWriter, token string, a *admin.AdminUser) {
+	csrf, err := h.issueSessionCookies(w, token)
+	if err != nil {
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, ValidateResponse{
+		ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role()), IsBreakGlass: a.IsBreakGlass(),
+		CSRFToken: csrf,
+	})
 }
