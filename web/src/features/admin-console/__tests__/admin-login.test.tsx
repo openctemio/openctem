@@ -2,22 +2,31 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-const start = vi.fn()
+const signIn = vi.fn()
 const verify = vi.fn()
-const logout = vi.fn()
 const idpInfo = vi.fn()
 const idpStart = vi.fn()
 vi.mock('@/features/admin-console/api/use-admin-session', () => ({
-  adminStartSession: (...a: unknown[]) => start(...a),
+  adminSignIn: (...a: unknown[]) => signIn(...a),
   adminVerifyMFA: (...a: unknown[]) => verify(...a),
   adminIdPInfo: (...a: unknown[]) => idpInfo(...a),
   adminIdPStart: (...a: unknown[]) => idpStart(...a),
 }))
-vi.mock('@/features/auth/actions/local-auth-actions', () => ({
-  localLogoutAction: (...a: unknown[]) => logout(...a),
+
+vi.mock('@/features/auth/api/use-auth-providers', () => ({
+  useAuthProviders: (_c: unknown, enabled?: boolean) => ({
+    data: enabled ? { captcha_site_key: 'site' } : undefined,
+  }),
+}))
+vi.mock('@/features/auth/components/turnstile-widget', () => ({
+  TurnstileWidget: ({ onToken }: { onToken: (t: string) => void }) => (
+    <button type="button" onClick={() => onToken('tok')}>
+      solve-captcha
+    </button>
+  ),
 }))
 
-import AdminVerifyPage from '@/app/(admin-console)/admin/login/page'
+import AdminSignInPage from '@/app/(admin-console)/admin/login/page'
 import { AdminApiError } from '@/features/admin-console/api/admin-client'
 
 const originalLocation = window.location
@@ -40,7 +49,7 @@ function stubLocation(search: string) {
   return nav
 }
 
-describe('Admin console verification (after /login)', () => {
+describe('Admin console sign-in (its own, no tenant session)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     idpInfo.mockResolvedValue({ enabled: false })
@@ -49,94 +58,107 @@ describe('Admin console verification (after /login)', () => {
     Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
   })
 
-  it('starts the console session from the /login sign-in and asks for the code', async () => {
+  async function signInWith(email: string, password: string) {
+    const user = userEvent.setup()
+    render(<AdminSignInPage />)
+    await user.type(screen.getByLabelText('Email'), email)
+    await user.type(screen.getByLabelText('Password'), password)
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    return user
+  }
+
+  it('asks for the email and password, then the code', async () => {
     stubLocation('')
-    start.mockResolvedValueOnce({ status: 'mfa_required' })
-    render(<AdminVerifyPage />)
+    signIn.mockResolvedValueOnce({ status: 'mfa_required' })
+    await signInWith('ops@acme.io', 'Secret-pass-1')
+    expect(signIn).toHaveBeenCalledWith('ops@acme.io', 'Secret-pass-1', undefined)
     expect(await screen.findByLabelText('Verification code')).toBeInTheDocument()
-    expect(start).toHaveBeenCalledTimes(1)
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
     expect(screen.queryByRole('img', { name: /QR code/ })).not.toBeInTheDocument()
   })
 
   it('shows the QR code and setup key on first use', async () => {
     stubLocation('')
-    start.mockResolvedValueOnce({
+    signIn.mockResolvedValueOnce({
       status: 'mfa_enrollment_required',
       otpauth_uri: 'otpauth://totp/OpenCTEM%20Admin:ops@acme.io?secret=ABCDEFGH&issuer=OpenCTEM',
       secret: 'ABCDEFGHIJKLMNOP',
     })
-    render(<AdminVerifyPage />)
+    await signInWith('ops@acme.io', 'Secret-pass-1')
     expect(await screen.findByRole('img', { name: /QR code/ })).toBeInTheDocument()
     expect(screen.getByText('ABCD EFGH IJKL MNOP')).toBeInTheDocument()
   })
 
-  it('sends someone who is not signed in to the normal sign-in page', async () => {
-    const nav = stubLocation('?next=/admin/organizations')
-    start.mockRejectedValueOnce(new AdminApiError('Sign in first', 401))
-    render(<AdminVerifyPage />)
-    await vi.waitFor(() =>
-      expect(nav.replace).toHaveBeenCalledWith('/login?redirect=%2Fadmin%2Forganizations')
-    )
+  it('one answer for a wrong password, and the password is cleared', async () => {
+    const nav = stubLocation('')
+    signIn.mockRejectedValueOnce(new AdminApiError('Wrong email or password', 401))
+    await signInWith('ops@acme.io', 'nope')
+    expect(await screen.findByText('Wrong email or password.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Password')).toHaveValue('')
+    expect(nav.replace).not.toHaveBeenCalled()
+    expect(nav.href).not.toHaveBeenCalled()
   })
 
-  it('explains a refusal and offers to switch accounts', async () => {
+  it('shows the security check when the API asks for it and sends its token', async () => {
     stubLocation('')
-    start.mockRejectedValueOnce(
+    signIn.mockRejectedValueOnce(new AdminApiError('check', 403, 'CAPTCHA_REQUIRED'))
+    const user = await signInWith('ops@acme.io', 'Secret-pass-1')
+    await user.click(await screen.findByRole('button', { name: 'solve-captcha' }))
+    signIn.mockResolvedValueOnce({ status: 'mfa_required' })
+    await user.type(screen.getByLabelText('Password'), 'Secret-pass-1')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(signIn).toHaveBeenLastCalledWith('ops@acme.io', 'Secret-pass-1', 'tok')
+  })
+
+  it('explains a refusal from the API', async () => {
+    stubLocation('')
+    signIn.mockRejectedValueOnce(
       new AdminApiError('This account is not a platform administrator', 403)
     )
-    const user = userEvent.setup()
-    render(<AdminVerifyPage />)
+    await signInWith('member@acme.io', 'Secret-pass-1')
     expect(
       await screen.findByText('This account is not a platform administrator')
     ).toBeInTheDocument()
     expect(screen.queryByLabelText('Verification code')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Sign in with a different account' }))
-    expect(logout).toHaveBeenCalledWith('/login?redirect=%2Fadmin')
   })
 
-  it('shows the API error for a wrong code and lets the admin retry', async () => {
+  it('shows the API error for a wrong code and lets the admin retry or start over', async () => {
     stubLocation('')
-    start.mockResolvedValueOnce({ status: 'mfa_required' })
+    signIn.mockResolvedValueOnce({ status: 'mfa_required' })
     verify.mockRejectedValueOnce(new AdminApiError('Invalid or expired verification code', 401))
-    const user = userEvent.setup()
-    render(<AdminVerifyPage />)
+    const user = await signInWith('ops@acme.io', 'Secret-pass-1')
     await user.type(await screen.findByLabelText('Verification code'), '000000')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(await screen.findByText('Invalid or expired verification code')).toBeInTheDocument()
     expect(screen.getByLabelText('Verification code')).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Sign in with a different account' }))
+    expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
 
   it('only follows ?next= into the console (no open redirect)', async () => {
     const nav = stubLocation('?next=https://evil.example')
-    start.mockResolvedValueOnce({ status: 'mfa_required' })
+    signIn.mockResolvedValueOnce({ status: 'mfa_required' })
     verify.mockResolvedValueOnce({
       id: '1',
       email: 'ops@acme.io',
       name: 'Ops',
       role: 'super_admin',
     })
-    const user = userEvent.setup()
-    render(<AdminVerifyPage />)
+    const user = await signInWith('ops@acme.io', 'Secret-pass-1')
     await user.type(await screen.findByLabelText('Verification code'), '123456')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     await vi.waitFor(() => expect(nav.href).toHaveBeenCalled())
     expect(nav.href).toHaveBeenCalledWith('/admin')
   })
 
-  it('offers the administrators identity provider when not signed in', async () => {
+  it('offers the administrators identity provider next to the password form', async () => {
     const nav = stubLocation('?next=/admin/organizations')
-    start.mockRejectedValueOnce(new AdminApiError('Sign in first', 401))
     idpInfo.mockResolvedValueOnce({ enabled: true, display_name: 'Contoso SSO' })
     idpStart.mockResolvedValueOnce({ authorization_url: 'https://idp.example/authorize?x=1' })
     const user = userEvent.setup()
-    render(<AdminVerifyPage />)
+    render(<AdminSignInPage />)
     const button = await screen.findByRole('button', { name: 'Sign in with Contoso SSO' })
-    expect(screen.getByRole('link', { name: 'Sign in with a password' })).toHaveAttribute(
-      'href',
-      '/login?redirect=%2Fadmin%2Forganizations'
-    )
-    expect(nav.replace).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Password')).toBeInTheDocument()
     await user.click(button)
     await vi.waitFor(() =>
       expect(nav.assign).toHaveBeenCalledWith('https://idp.example/authorize?x=1')
@@ -146,11 +168,10 @@ describe('Admin console verification (after /login)', () => {
 
   it('never navigates to a non-http authorization URL', async () => {
     const nav = stubLocation('')
-    start.mockRejectedValueOnce(new AdminApiError('Sign in first', 401))
     idpInfo.mockResolvedValueOnce({ enabled: true, display_name: 'SSO' })
     idpStart.mockResolvedValueOnce({ authorization_url: 'javascript:alert(1)' })
     const user = userEvent.setup()
-    render(<AdminVerifyPage />)
+    render(<AdminSignInPage />)
     await user.click(await screen.findByRole('button', { name: 'Sign in with SSO' }))
     await vi.waitFor(() => expect(idpStart).toHaveBeenCalled())
     expect(nav.assign).not.toHaveBeenCalled()
@@ -158,19 +179,21 @@ describe('Admin console verification (after /login)', () => {
 
   it('points to the identity provider when it is required', async () => {
     stubLocation('')
-    start.mockRejectedValueOnce(
+    idpInfo.mockResolvedValueOnce({ enabled: true, display_name: 'Contoso SSO' })
+    signIn.mockRejectedValueOnce(
       new AdminApiError(
         'Sign in to the admin console with the identity provider',
         403,
         'IDP_SIGN_IN_REQUIRED'
       )
     )
-    idpInfo.mockResolvedValueOnce({ enabled: true, display_name: 'Contoso SSO' })
-    render(<AdminVerifyPage />)
+    await signInWith('ops@acme.io', 'Secret-pass-1')
     expect(
-      await screen.findByText('Sign in to the admin console with the identity provider')
+      await screen.findByText(/Administrators sign in with the identity provider/)
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sign in with Contoso SSO' })).toBeInTheDocument()
+    expect(
+      screen.getAllByRole('button', { name: 'Sign in with Contoso SSO' }).length
+    ).toBeGreaterThan(0)
     expect(screen.queryByLabelText('Verification code')).not.toBeInTheDocument()
   })
 })
