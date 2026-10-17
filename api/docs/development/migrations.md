@@ -35,6 +35,20 @@ PRs (the merge queue renumbers when another PR took the number). Migrations
 are expand-contract safe (`scripts/check-migrations.sh`) and have a working
 down migration.
 
+### Numbers only go up
+
+golang-migrate applies only versions above a database's current one. A
+migration merged with a number below one already applied on some database is
+skipped there without an error. So a migration's number must be above the
+highest on `develop` when it merges (the merge-queue check "Migration
+Versions" enforces it), and a database that did run a higher number from an
+unmerged branch will miss any lower one. When a migration was skipped, do not
+renumber it after the fact: add a repair migration above the head that
+re-applies it idempotently (`CREATE ... IF NOT EXISTS`, `ADD COLUMN IF NOT
+EXISTS`, constraints guarded by a `pg_constraint` lookup, `ON CONFLICT DO
+NOTHING`), with a no-op down. `002894_repair_skipped_migrations` is the
+reference.
+
 ## Migration baseline
 
 [RFC-053](../rfcs/RFC-053-migration-baseline.md). The chain of earlier

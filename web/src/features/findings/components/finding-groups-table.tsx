@@ -290,6 +290,8 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
   filterToggle?: FilterPanelToggleProps
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
+  /** A full-width row under the toolbar (the active context-filter chips). */
+  toolbarBelow?: React.ReactNode
   /** Bump to reload groups and their rows after a change. */
   reloadKey?: number
   /** Called with the groups on screen (e.g. to decide on page-level actions). */
@@ -317,6 +319,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   filterToggle,
   toolbarStart,
   toolbarEnd,
+  toolbarBelow,
   reloadKey = 0,
   onGroupsLoaded,
   emptyMessage,
@@ -601,6 +604,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       filterToggle={filterToggle}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
+      toolbarBelow={toolbarBelow}
       getRowId={(r) => r.id}
       manualPagination
       rowCount={data?.pagination?.total ?? 0}

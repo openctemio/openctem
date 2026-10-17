@@ -51,6 +51,7 @@ import { StatusSelect } from './status-select'
 import { FindingWhyItMatters } from './detail/finding-why-it-matters'
 import { FindingFixCard } from './detail/finding-fix-card'
 import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
+import { FindingAssetName } from './detail/finding-asset-name'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingProvenanceSection } from './detail/finding-provenance-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
@@ -213,7 +214,11 @@ export function FindingDetailDrawer({
         header={
           <DetailHeader
             title={displayTitle(detail, t)}
-            meta={[detail.cve || detail.ruleId, where, asset?.name]}
+            meta={[
+              detail.cve || detail.ruleId,
+              where,
+              <FindingAssetName key="asset" id={asset?.id} name={asset?.name} />,
+            ]}
             menu={menu}
             onClose={() => onOpenChange(false)}
             actions={

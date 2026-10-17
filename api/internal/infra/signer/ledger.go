@@ -107,3 +107,12 @@ func (c *Client) ledgerCall(ctx context.Context, method, path string, in, out an
 	}
 	return nil
 }
+
+// ApplyZone records one instance scan zone change in the signer's zone
+// ledger (docs/rfcs/RFC-100-shared-sensors.md §6.1). A refusal is a
+// *jobsign.RefusalError; any other error means the signer did not answer.
+func (c *Client) ApplyZone(ctx context.Context, ch jobsign.ZoneChange) (jobsign.ZoneChangeResult, error) {
+	var out jobsign.ZoneChangeResult
+	err := c.ledgerCall(ctx, http.MethodPost, jobsign.LedgerZonesPath, ch, &out)
+	return out, err
+}
