@@ -128,17 +128,18 @@ From a VPS, use an SSH tunnel: `ssh -L 8444:127.0.0.1:8444 you@server`, then
 open `https://localhost:8444/admin`. `./setup.sh <host> --admin-host <name>` puts
 the console on its own host name; `--admin-public` opens it to every network.
 
-### Infrastructure console (host)
+### System page and host operations
 
-Hosts set up with the Ansible kit (`openctemio/openctem-ansible`) can add a
-web console for the host itself: disks, services, logs and the journal. It is
-separate from the web console and the platform console, with its own port and
-OS accounts, and it is never behind the tunnel. It is off by default. When it
-is on, it listens on one private address, only admin or VPN networks can reach
-it, and only members of an operators group can sign in, with a password and a
-one-time code. The terminal is off unless sessions are recorded. Design and
-threat model: [RFC-114](../rfcs/RFC-114-infrastructure-console.md); setup:
-the kit's README, section 10.
+The platform console has a read-only **System** page (platform administrators
+only): service health, free space of the data volumes and the database size,
+the age of the last backup, certificate expiry, and the running version with
+the version-check result. When free space drops below 20% (warning) or 10%
+(critical), the backup is older than 26 hours, or a certificate is close to
+expiry, the platform administrators are emailed through the system mailer and
+a metric and a log line are written. Backup, restore, upgrade and key rotation
+stay in the Ansible kit's command line over SSH; the kit installs no host web
+console. An operator who wants one can follow the optional recipe in
+[RFC-114](../rfcs/RFC-114-system-page.md), appendix A.
 
 ### Outbound connection: the version check
 
