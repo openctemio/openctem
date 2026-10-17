@@ -384,6 +384,14 @@ func registerVulnerabilityRoutes(
 		// The sole member's own approval: findings:approve, and the service
 		// checks owner, sole active person, fresh authenticator code, reason.
 		r.POST("/{id}/self-approve", h.SelfApproveApproval, middleware.Require(permission.FindingsApprove))
+		// Group exceptions (RFC-111 §7): read with findings:read, decide
+		// with findings:approve, cancel (the requester) with findings:write;
+		// the service checks every member is in the caller's data scope.
+		r.GET("/batches", h.ListApprovalBatches, middleware.Require(permission.FindingsRead))
+		r.GET("/batches/{id}", h.GetApprovalBatch, middleware.Require(permission.FindingsRead))
+		r.POST("/batches/{id}/approve", h.ApproveApprovalBatch, middleware.Require(permission.FindingsApprove))
+		r.POST("/batches/{id}/reject", h.RejectApprovalBatch, middleware.Require(permission.FindingsApprove))
+		r.POST("/batches/{id}/cancel", h.CancelApprovalBatch, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)
 
 	// The organization's finding approval settings: read with findings:read;

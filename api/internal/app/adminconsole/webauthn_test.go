@@ -386,7 +386,7 @@ func (w *waHarness) userHandle() []byte { return waUser{a: w.admin}.WebAuthnID()
 func (w *waHarness) signInWithKey(t *testing.T, k *virtualKey) (string, error) {
 	t.Helper()
 	ctx := context.Background()
-	res, err := w.svc.Start(ctx, refresh, client)
+	res, err := w.svc.Start(ctx, refresh, password, client)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestWebAuthnRegisterSignInAndMethods(t *testing.T) {
 	}
 
 	// The sign-in offers the key first, then TOTP.
-	res, err := w.svc.Start(ctx, refresh, client)
+	res, err := w.svc.Start(ctx, refresh, password, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +482,7 @@ func TestWebAuthnRefusals(t *testing.T) {
 		_, token := w.enroll(t)
 		k := newVirtualKey(t)
 		w.register(t, token, k, "key")
-		res, _ := w.svc.Start(ctx, refresh, client)
+		res, _ := w.svc.Start(ctx, refresh, password, client)
 		opts, _ := w.svc.BeginWebAuthnLogin(ctx, res.PendingToken)
 		body := k.get(t, opts, w.userHandle())
 		if _, _, err := w.svc.FinishWebAuthnLogin(ctx, res.PendingToken, body, client); err != nil {
@@ -490,7 +490,7 @@ func TestWebAuthnRefusals(t *testing.T) {
 		}
 		// The pending session is gone; a fresh pending session without a new
 		// ceremony cannot reuse the old challenge either.
-		res2, _ := w.svc.Start(ctx, refresh, client)
+		res2, _ := w.svc.Start(ctx, refresh, password, client)
 		if _, _, err := w.svc.FinishWebAuthnLogin(ctx, res2.PendingToken, body, client); !errors.Is(err, admin.ErrInvalidAssertion) {
 			t.Fatalf("replay: %v, want ErrInvalidAssertion", err)
 		}
@@ -501,7 +501,7 @@ func TestWebAuthnRefusals(t *testing.T) {
 		_, token := w.enroll(t)
 		k := newVirtualKey(t)
 		w.register(t, token, k, "key")
-		res, _ := w.svc.Start(ctx, refresh, client)
+		res, _ := w.svc.Start(ctx, refresh, password, client)
 		opts, _ := w.svc.BeginWebAuthnLogin(ctx, res.PendingToken)
 		w.clock = w.clock.Add(admin.CeremonyTTL - time.Second)
 		body := k.get(t, opts, w.userHandle())
@@ -615,7 +615,7 @@ func TestRecoveryCodes(t *testing.T) {
 	if err != nil || len(codes) != admin.RecoveryCodeCount {
 		t.Fatalf("codes %v %v", codes, err)
 	}
-	res, _ := w.svc.Start(ctx, refresh, client)
+	res, _ := w.svc.Start(ctx, refresh, password, client)
 	if res.Methods[len(res.Methods)-1] != MethodRecoveryCode {
 		t.Fatalf("methods %v", res.Methods)
 	}
@@ -629,7 +629,7 @@ func TestRecoveryCodes(t *testing.T) {
 	if _, _, err := w.svc.RecoveryLogin(ctx, res.PendingToken, string(lower), client); err != nil {
 		t.Fatalf("recovery: %v", err)
 	}
-	res, _ = w.svc.Start(ctx, refresh, client)
+	res, _ = w.svc.Start(ctx, refresh, password, client)
 	if _, _, err := w.svc.RecoveryLogin(ctx, res.PendingToken, codes[0], client); !errors.Is(err, admin.ErrInvalidRecoveryCode) {
 		t.Fatalf("reuse: %v", err)
 	}
@@ -680,7 +680,7 @@ func TestRequireWebAuthnPolicyNoLockout(t *testing.T) {
 
 	// The compliant actor: TOTP is refused at sign-in and step-up, the key works.
 	w.clock = w.clock.Add(totp.Period)
-	res, _ := w.svc.Start(ctx, refresh, client)
+	res, _ := w.svc.Start(ctx, refresh, password, client)
 	for _, m := range res.Methods {
 		if m == MethodTOTP {
 			t.Fatalf("TOTP offered under the policy: %v", res.Methods)
@@ -707,13 +707,13 @@ func TestRequireWebAuthnPolicyNoLockout(t *testing.T) {
 
 	// Another administrator without keys: TOTP still opens a session, held on
 	// the enrollment pages.
-	ou := &SignedInUser{UserID: shared.NewID(), Email: "two@acme.io", Name: "Two", Active: true, PasswordSignIn: true}
+	ou := &SignedInUser{UserID: shared.NewID(), Email: "two@acme.io", Name: "Two", Active: true}
 	oa := admin.Reconstitute(shared.NewID(), "two@acme.io", "Two", admin.AdminRoleOpsAdmin, true,
 		&ou.UserID, nil, "", 0, nil, nil, "", w.clock, nil, w.clock)
 	w.admins.byID[oa.ID().String()] = oa
 	w.admins.userLink[ou.UserID.String()] = oa.ID().String()
 	w.accounts.sessions["refresh-two"] = ou
-	res, err = w.svc.Start(ctx, "refresh-two", client)
+	res, err = w.svc.Start(ctx, "refresh-two", password, client)
 	if err != nil || res.Status != StatusMFAEnrollment {
 		t.Fatalf("other start: %+v %v", res, err)
 	}

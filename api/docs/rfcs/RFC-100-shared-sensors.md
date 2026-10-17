@@ -71,8 +71,9 @@ address but should not run it). A level between instance and organization
   every shared sensor.
 - Grants (`sensor_grants`) for an instance sensor have no `tenant_id`; the
   clamp trigger of S0 moves to `scope = 'instance'`.
-- Commands keep `is_platform_job` until S5 renames it to `shared_job`;
-  `platform_sensor_id` becomes `shared_sensor_id`.
+- Commands keep `is_platform_job`. The holder of a shared job is
+  `commands.sensor_id`, like every other job (S5), and
+  `platform_sensor_id` is removed.
 
 ## 4. Mapping to the scope model of hosted CI runners
 
@@ -213,9 +214,13 @@ sensor must not trust any tenant's key set. Design:
   per-organization kill switch (the deny of §5) and anomaly alerts (many
   distinct registrable domains, failure spikes, deny-list hits).
 - **Egress addresses are published to tenants** (G11): the console stores the
-  egress addresses (or ranges) of each region or shared sensor; organization
-  members see them in the shared sensors card so they can allowlist the
-  scanners. No sensor id, name, version or load is shown.
+  egress addresses (or ranges) for every region and per region
+  (`/api/v1/admin/settings/shared-sensors/egress`, super admin, step-up,
+  reason, audited); only public addresses are accepted (ctis `addrscope`
+  refuses every internal range, so the list never discloses the operator's
+  network). Organization members that may use shared sensors see them in the
+  shared sensors card (`egress` in `GET /api/v1/platform/scanning`) so they
+  can allowlist the scanners. No sensor id, name, version or load is shown.
 
 ## 10. Limits
 
@@ -238,12 +243,12 @@ needs them.
 | S2 | `sensors.scope`, nullable `tenant_id`, drop `is_platform_sensor`; scope fixed at creation; a shared sensor's grant limited to scan, validate and retest | in review (#2325) |
 | S3 | access policy (§5) with the instance switch off everywhere: instance setting, per-organization allow or deny, owner opt-out, rollout gate in code | in review |
 | S4 | instance enrollment token, bundled sensor at instance scope | designed |
-| S5 | shared claim path (lanes, fair share, region, untagged switch, approved-only); remove `get_next_platform_job` | designed |
+| S5 | shared claim path (fair share, per-organization concurrency limit, region, untagged switch, isolation capability); remove `get_next_platform_job` ([architecture](../architecture/sensors.md#the-shared-claim-path)); the approved-jobs-only flag waits for the instance signer (S6) | in review |
 | S5a | results of a shared sensor bound to the job it holds under its lease epoch, written into the command's organization; no push ([architecture](../architecture/sensor-result-binding.md#shared-sensors)) | in review |
 | S6 | instance key set and shared-job envelope | designed |
 | S7 | limits enforced at trigger and claim | designed |
 | S8 | console "Shared sensors" fleet page, audited job view with a reason | designed |
-| S9 | tenant view rename, egress addresses, organization opt-out | designed |
+| S9 | tenant view renamed "Shared sensors" / "Organization sensors", egress addresses (console + tenant view), opt-out linked from the card | in review |
 | S10 | instance scan zones assigned to organizations | designed |
 | S11 | per-job isolation and private-range egress drop in sdk-go, used by the sensor | designed |
 | S12 | `MANAGED_SERVICE` defaults, anomaly alerts, scanner identity | designed |
