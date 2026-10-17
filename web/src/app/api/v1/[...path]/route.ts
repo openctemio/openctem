@@ -25,7 +25,7 @@ import { isInSwitchCooldown } from '@/lib/api/switch-cooldown'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
 import { CONDITIONAL_REQUEST_HEADERS, proxyCacheHeaders } from '@/lib/api/proxy-cache-headers'
 import { isBinaryContentType } from '@/lib/api/proxy-binary'
-import { proxyBackendPath } from '@/lib/api/proxy-path'
+import { isConsoleApiPath, proxyBackendPath } from '@/lib/api/proxy-path'
 import {
   accessTokenExpiresSoon,
   limitBodyStream,
@@ -212,6 +212,12 @@ async function proxyRequest(
   // A sensor pointed at the web UI: it must talk to the API directly.
   if (isSensorProtocolPath(params.path)) {
     return NextResponse.json(SENSOR_PROTOCOL_REFUSAL, { status: SENSOR_PROTOCOL_REFUSAL_STATUS })
+  }
+
+  // The platform console is a separate site with its own API proxy: none
+  // here, whatever the spelling of the path.
+  if (isConsoleApiPath(params.path)) {
+    return NextResponse.json({ error: 'NOT_FOUND', code: 'NOT_FOUND' }, { status: 404 })
   }
 
   // Every write here is authenticated by the browser's cookies (the session,

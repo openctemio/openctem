@@ -2018,13 +2018,7 @@ vars:
     component: web
     group: "Web console"
     type: string
-    description: "Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`."
-  - name: OPENCTEM_ADMIN_PLANE
-    component: web
-    group: "Web console"
-    type: string
-    default: "shared"
-    description: "`separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`."
+    description: "Platform console app only (`openctem-console`): internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. The tenant web app never reads it."
   - name: BACKEND_API_URL
     component: web
     group: "Web console"
@@ -2195,6 +2189,12 @@ vars:
     type: string
     default: "web:3000"
     description: "Address of the web console."
+  - name: OPENCTEM_CONSOLE_UPSTREAM
+    component: gateway
+    group: "Gateway"
+    type: string
+    default: "console:3000"
+    description: "Address of the platform console service, which the console's site (`OPENCTEM_ADMIN_SITE`) serves at its root."
   - name: OPENCTEM_SENSOR_GATEWAY
     component: gateway
     group: "Gateway"
@@ -2276,6 +2276,12 @@ vars:
     type: string
     default: "ghcr.io/openctemio/openctem-web"
     description: "Image repository of the web console."
+  - name: CONSOLE_IMAGE
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "ghcr.io/openctemio/openctem-console"
+    description: "Image repository of the platform console."
   - name: MIGRATIONS_IMAGE
     component: compose
     group: "Docker Compose stack"
@@ -2289,6 +2295,12 @@ vars:
     default: "OPENCTEM_VERSION"
     description: "Per-image tag override. Leave unset."
   - name: UI_VERSION
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "OPENCTEM_VERSION"
+    description: "Per-image tag override. Leave unset."
+  - name: CONSOLE_VERSION
     component: compose
     group: "Docker Compose stack"
     type: string
@@ -2385,6 +2397,12 @@ vars:
     type: string
     default: "1g"
     description: "Memory limit of the `web` container."
+  - name: CONSOLE_MEMORY_LIMIT
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "512m"
+    description: "Memory limit of the `console` container."
   - name: GATEWAY_MEMORY_LIMIT
     component: compose
     group: "Docker Compose stack"
