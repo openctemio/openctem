@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -597,6 +598,7 @@ func TestGetFindingWithScope_NonAdmin_NoScopeRow_NotFound(t *testing.T) {
 
 	acRepo := &mockAccessControlRepo{canAccessResult: false} // no scope row at all
 	svc.SetAccessControlRepository(acRepo)
+	svc.SetDataScope(datascope.New(scopeRowsFromMock{acRepo}, nil, logger.NewNop()))
 
 	_, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
 	if !errors.Is(err, shared.ErrNotFound) {
@@ -621,6 +623,7 @@ func TestGetFindingWithScope_NonAdmin_HasScope_CanAccess(t *testing.T) {
 		canAccessResult: true, // user can access this asset
 	}
 	svc.SetAccessControlRepository(acRepo)
+	svc.SetDataScope(datascope.New(scopeRowsFromMock{acRepo}, nil, logger.NewNop()))
 
 	f, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
 	if err != nil {
@@ -645,6 +648,7 @@ func TestGetFindingWithScope_NonAdmin_HasScope_Denied(t *testing.T) {
 		canAccessResult: false, // access denied
 	}
 	svc.SetAccessControlRepository(acRepo)
+	svc.SetDataScope(datascope.New(scopeRowsFromMock{acRepo}, nil, logger.NewNop()))
 
 	_, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
 	if err == nil {
@@ -669,6 +673,7 @@ func TestGetFindingWithScope_NonAdmin_AccessCheckError_FailClosed(t *testing.T) 
 		canAccessErr: errors.New("db error"),
 	}
 	svc.SetAccessControlRepository(acRepo)
+	svc.SetDataScope(datascope.New(scopeRowsFromMock{acRepo}, nil, logger.NewNop()))
 
 	_, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
 	if err == nil {

@@ -35,7 +35,7 @@ func TestDataQualityScorecard_MedianLastSeenCountsInternetExposedAssets(t *testi
 	// Other tenant: must not leak.
 	seedSeen(noise, "public", false, 365)
 
-	sc, err := repo.GetDataQualityScorecard(f.ctx, tenant)
+	sc, err := repo.GetDataQualityScorecard(f.ctx, tenant, nil)
 	if err != nil {
 		t.Fatalf("GetDataQualityScorecard: %v", err)
 	}
