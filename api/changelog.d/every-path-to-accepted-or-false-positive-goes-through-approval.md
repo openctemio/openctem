@@ -14,6 +14,6 @@
   `vex_closed`/`closed` are `vex_requested`/`requested`.
 - **Exposures and leaked credentials:** the two-approver rule for accepting or
   dismissing a high or critical exposure reads the highest severity it ever had
-  (`exposure_events.peak_severity`, migration `002896`, nullable, no backfill,
+  (`exposure_events.peak_severity`, migration `002902`, nullable, no backfill,
   only raised). Re-ingesting the same exposure with a lower severity no longer
   lets one approver accept it alone.
