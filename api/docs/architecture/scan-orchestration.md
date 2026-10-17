@@ -219,9 +219,12 @@ unchanged:
 - `command_host_splits_total` counts the splits.
 A step is runnable when every dependency finished.
 
-Shared platform sensors have no claim path today: the platform queue
-function `get_next_platform_job` has no caller and a tenant-less sensor is
-refused on the command routes.
+Shared jobs (`is_platform_job`) are claimed only by shared sensors, through
+the shared claim path ([sensors.md](sensors.md#the-shared-claim-path),
+[RFC-100](../rfcs/RFC-100-shared-sensors.md) §8): fair share across
+organizations, the organization's `platform_scans_concurrent` limit, and the
+same holder, lease, epoch and host keys as every other job. The old queue
+function `get_next_platform_job` is gone.
 
 [RFC-090](../rfcs/RFC-090-work-pool.md) replaces step-start chunking with a
 work pool: typed items per step in lanes, a claim that cuts a task sized for

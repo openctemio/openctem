@@ -17,8 +17,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/internal/app/onboarding"
 	slaapp "github.com/openctemio/openctem/api/internal/app/sla"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -29,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -56,13 +59,25 @@ type TenantHandler struct {
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
 	logger          *logger.Logger
-	// selfServiceCreation allows POST /tenants (TENANT_CREATION_MODE=
-	// self_service). Off by default: organizations are then created by the
+	// selfServiceCreation allows POST /tenants when no sign-up policy is
+	// wired (SIGNUP_MODE=open). Off by default: organizations are then created by the
 	// platform administrator only.
 	selfServiceCreation bool
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
 	// sign-up setting, read on each request.
 	signupPolicy signupdom.PolicySource
+	// signupDomains: a claimed domain may block new organizations for
+	// accounts on it.
+	signupDomains signupdom.DomainPolicySource
+	// domains, domainAudit: Settings > Domains (domain_signup_policy_handler.go).
+	domains     *domainverify.Service
+	domainAudit *auditsvc.AuditService
+	// domainCapture tells existing accounts on a domain that the
+	// organization now manages it (first time sso_required or
+	// block_new_workspaces turns on). Nil: not sent.
+	domainCapture func(ctx context.Context, vd *verifieddomain.VerifiedDomain)
+	// joinRequests: the organization's inbox of requests to join.
+	joinRequests *onboarding.Service
 	// licenseEvaluator re-evaluates the inventory after a license policy
 	// change (nil: not evaluated until the next package write).
 	licenseEvaluator LicensePolicyEvaluator
@@ -85,7 +100,7 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 }
 
 // SetSelfServiceTenantCreation lets signed-in users create organizations
-// (TENANT_CREATION_MODE=self_service). Without it POST /tenants is refused.
+// (SIGNUP_MODE=open). Without it POST /tenants is refused.
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
 }
@@ -95,7 +110,14 @@ func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
 	h.signupPolicy = p
 }
 
-// selfServiceAllowed reports whether a signed-in user may create an organization.
+// SetSignupDomainPolicy wires the per-domain sign-up policy of claimed
+// domains.
+func (h *TenantHandler) SetSignupDomainPolicy(src signupdom.DomainPolicySource) {
+	h.signupDomains = src
+}
+
+// selfServiceAllowed reports whether a signed-in user may create an
+// organization: the policy in force, and the user's domain does not block it.
 func (h *TenantHandler) selfServiceAllowed(r *http.Request) bool {
 	p := signupdom.Default()
 	switch {
@@ -104,7 +126,16 @@ func (h *TenantHandler) selfServiceAllowed(r *http.Request) bool {
 	case h.selfServiceCreation:
 		p = signupdom.Policy{Mode: signupdom.ModeSelfService}
 	}
-	return signupdom.Admit(p, signupdom.Identity{Intent: signupdom.IntentOrganization}).Admitted()
+	id := signupdom.Identity{Intent: signupdom.IntentOrganization}
+	if u := middleware.GetLocalUser(r.Context()); u != nil {
+		facts, err := signupdom.FactsForEmail(r.Context(), h.signupDomains, u.Email())
+		if err != nil {
+			h.logger.Warn("domain sign-up policy unreadable; organization creation refused", "error", err)
+			return false
+		}
+		id = facts.Apply(id)
+	}
+	return signupdom.Admit(p, id).Admitted()
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -169,14 +200,17 @@ func (h *TenantHandler) SetAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker
 
 // TenantResponse represents a tenant in API responses.
 type TenantResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Slug        string    `json:"slug"`
-	Description string    `json:"description,omitempty"`
-	LogoURL     string    `json:"logo_url,omitempty"`
-	Plan        string    `json:"plan"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description,omitempty"`
+	LogoURL     string `json:"logo_url,omitempty"`
+	Plan        string `json:"plan"`
+	// Region is the organization's data region, fixed at creation; empty
+	// for organizations from before regions were named.
+	Region    string    `json:"region,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // TenantWithRoleResponse represents a tenant with the user's role.
@@ -365,6 +399,7 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 		Description: t.Description(),
 		LogoURL:     t.LogoURL(),
 		Plan:        string(t.Plan()),
+		Region:      t.Region(),
 		CreatedAt:   t.CreatedAt(),
 		UpdatedAt:   t.UpdatedAt(),
 	}
@@ -577,7 +612,7 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		}
 		apierror.BadRequest(msg).WriteJSON(w)
 	default:
-		h.logger.Error("service error", "error", err)
+		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }

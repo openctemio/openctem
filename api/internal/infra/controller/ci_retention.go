@@ -49,3 +49,40 @@ func (c *CIRetentionController) Reconcile(ctx context.Context) (int, error) {
 	res, err := c.job.Run(ctx)
 	return int(res.TokensCleared + res.FindingsPurged + res.RunsPurged), err
 }
+
+// CISweepInterval is how often runs that never got a verdict are concluded.
+const CISweepInterval = 15 * time.Minute
+
+// CISweepJob is what the controller runs (cirunapp.SweepJob).
+type CISweepJob interface {
+	Run(ctx context.Context) (cirunapp.SweepResult, error)
+}
+
+// CISweepController concludes unjudged CI runs on one replica at a time.
+type CISweepController struct {
+	job      CISweepJob
+	interval time.Duration
+}
+
+// NewCISweepController creates the controller; interval <= 0 uses CISweepInterval.
+func NewCISweepController(job CISweepJob, interval time.Duration) *CISweepController {
+	if interval <= 0 {
+		interval = CISweepInterval
+	}
+	return &CISweepController{job: job, interval: interval}
+}
+
+// Name implements Controller.
+func (c *CISweepController) Name() string { return "ci-sweep" }
+
+// Interval implements Controller.
+func (c *CISweepController) Interval() time.Duration { return c.interval }
+
+// Exclusive implements Exclusive: one replica sweeps.
+func (c *CISweepController) Exclusive() bool { return true }
+
+// Reconcile implements Controller.
+func (c *CISweepController) Reconcile(ctx context.Context) (int, error) {
+	res, err := c.job.Run(ctx)
+	return res.Concluded, err
+}

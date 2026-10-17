@@ -452,10 +452,16 @@ Rows that refer to a sensor through `(tenant_id, sensor_id)`:
   `tenant_id` is `NULL` then, and only then (trigger
   `sensor_child_tenant_matches_scope`); a plain foreign key on `sensor_id`
   keeps the cascade on delete.
-- `scan_zone_sensors`, `sensor_tool_settings`, `collector_assets` and
-  `ingest_reports` keep `tenant_id NOT NULL`, so the composite foreign key
-  refuses a shared sensor: it is never a zone member, has no organization's
-  tool settings, collects no assets and pushes no reports.
+- `scan_zone_sensors`, `sensor_tool_settings` and `collector_assets` keep
+  `tenant_id NOT NULL`, so the composite foreign key refuses a shared sensor:
+  it is never a zone member, has no organization's tool settings and collects
+  no assets.
+- `ingest_reports` holds a shared sensor's report of a shared job in the
+  command's organization: a plain foreign key on `sensor_id` and the trigger
+  `trigger_ingest_reports_sensor_binding` keep an organization sensor's
+  reports in its organization and store a shared sensor's report only with a
+  shared job of that organization it holds; a shared sensor pushes nothing
+  ([result binding](sensor-result-binding.md#shared-sensors)).
 
 A shared sensor has no "home" organization. Managing shared sensors belongs to
 the platform admin console (RFC-022); on the tenant plane they do not exist:
@@ -502,14 +508,29 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   404 before the handler runs, reads and writes alike, today's routes and any
   added later. `platform_sensor_tenant_plane_db_test.go` walks the router and
   checks each one.
-- **Platform scanning.** `GET /api/v1/platform/scanning` (sensors:read or
-  scans:read) shows the service, not the sensors: whether the organization may
-  use it (`offered`, the scan trigger's own shared sensor access rule;
-  false says nothing else), each region's state (`available`, `busy`,
-  `unavailable`), the tools online platform sensors run, the organization's
-  own queued and running platform jobs, and the queue limit. No sensor id,
-  name, host, address, version, node count, capacity or other organization's
-  load.
+- **Shared sensors view.** `GET /api/v1/platform/scanning` (sensors:read or
+  scans:read; the "Shared sensors" card on the Sensors page) shows the
+  service, not the sensors: whether the organization may use it (`offered`,
+  the scan trigger's own shared sensor access rule; false says nothing else,
+  not even the egress addresses), each region's state (`available`, `busy`,
+  `unavailable`), the tools online shared sensors run, the organization's own
+  queued and running shared jobs, the queue limit, and the **egress
+  addresses** to allowlist (`egress`: the list for every region first, then
+  one per region). No sensor id, name, host, address, version, node count,
+  capacity or other organization's load. The card links administrators to
+  the owner's opt-out.
+- **Egress addresses.** Console > System > Platform scanning, "Egress
+  addresses" (`GET/PUT /api/v1/admin/settings/shared-sensors/egress`,
+  `platform_settings['shared_sensors_egress']`): IP addresses or CIDR ranges
+  for every region and per region label (sensor region tokens, at most 32
+  regions and 64 entries per list). Only public addresses: any entry that is,
+  or overlaps, an internal range of ctis `addrscope` (private, loopback,
+  link-local, metadata, CGNAT, multicast, IPv6 forms that carry such an IPv4
+  address) is refused with 400, so the list never discloses the operator's
+  internal network. Any administrator reads; a super admin replaces the list
+  with a reason and a route-level step-up (critical admin audit row
+  `platform.shared_sensors_egress_changed`, other administrators emailed).
+  The list is normalized (host bits cleared, duplicates removed, sorted).
 - **Platform jobs.** A command, run task or run stage of a platform job never
   carries a sensor id or name (`platform: true` instead). Text the platform
   sensor wrote (command logs, error message, result, run task error) is read
@@ -1503,6 +1524,77 @@ report's `tool.properties.content` (CTIS `properties` is free-form, no schema
 change). For protocol v2 the tool is part of the report header, stored
 verbatim in `ingest_reports.header`; findings carry the report id as
 `scan_id`. Protocol v1 ingest keeps no report header.
+
+## The shared claim path
+
+A shared sensor (scope `instance`) claims shared jobs (`is_platform_job`) of
+every organization; it is the only way a shared job is handed out
+([RFC-100](../rfcs/RFC-100-shared-sensors.md) §8, RFC-090 W11). Code:
+`internal/infra/postgres/command_shared_claim.go`,
+`internal/app/command/shared_claim.go`, `sensor_control_v2_handler.go`.
+
+**Who.** The authenticated sensor's stored row decides, never a request
+field. It must be an active shared sensor (no tenant) that **reported**
+`shared.isolation@1` (the sdk-go shared isolation profile: per-job sandbox,
+network namespace, egress policy) and accepts unzoned jobs
+(`sensors.accepts_unzoned_jobs`, default true; false keeps a shared sensor
+for zone work only). An organization sensor never takes a shared job
+(`tenantJobPredicate`) and a shared sensor never takes anything else.
+
+**What.** A pending, unheld, unexpired, due, **unzoned** shared job whose
+tool the sensor verified (`effective_tools`), whose required capabilities it
+advertises and whose required features it reported, not refused by it, and
+whose `preferred_region` (payload) is empty or the sensor's `region`. Its
+hosts must be free in its organization: the same host keys, advisory locks
+and settled-host rule as the organization's own sensors, so a shared job and
+an organization sensor's job never take one host at once.
+
+**Order.** Priority class (one class up per 30 minutes waited, never into
+critical), then the organization with the fewest shared jobs in flight
+(fair share), then queue priority and age.
+
+**Limits.** Each organization's `platform_scans_concurrent` limit, read
+through the entitlement service by key: in the claim transaction, per
+organization, a lock on its shared jobs, a count of those in flight, and no
+more than the limit; an organization at its limit is skipped and its jobs
+wait. A limit that cannot be read counts as 0 (fail closed). Without the
+entitlement service the shared claim hands out nothing.
+
+**Access.** The access policy of RFC-100 §5 (`SharedSensorsAllowed`: the
+instance switch, the administrator's decision, the organization's opt-out)
+is applied again at claim time: an organization that lost access or opted
+out after queueing is skipped, and its jobs wait and expire. Without the
+policy wired the shared claim hands out nothing.
+
+**Gates.** Each organization's candidates pass the same gates as an
+organization sensor's claim, in that organization: the shared sensor's grant
+(it has no tenant; without a reader for it, or without the grant, nothing is
+claimed), its manifest and local policy, the scope re-check, scan
+windows, program rules and tool settings. Scans are capped at the sensor's
+free slots.
+
+**Claim.** `commands.sensor_id` is the holder of a shared job, as for every
+job, with a lease and a new lease epoch; the claim is signed for the shared
+sensor in the command's organization (statement `tenant_id` = the command's,
+`sensor_id` = the shared sensor). `commands.platform_sensor_id` is removed.
+
+**Routes.** On `GET /api/v2/sensor/commands` a shared sensor must claim
+(capacity feature, claim-N); a listing poll answers 403 `scope-denied`.
+Claim by id (a replay), start, complete, fail, release and logs work only for
+a shared job it holds; the step runs in the command's organization, read
+from the command. Complete, fail and logs need `X-OpenCTEM-Lease-Epoch`.
+Anything else answers `command-not-found`. Its heartbeat renews the leases
+of the shared jobs it lists and holds, records their progress per
+organization, and lists every other id to cancel; the answer names no
+tenant. The other control routes (manifest, config report, suppressions,
+fingerprints, key renewal, content) still refuse a shared sensor.
+
+**Reapers.** The lease reaper, the stall reaper and the stuck-job recovery
+treat shared jobs like the others. A shared job still queued 60 minutes
+after it was queued, or after it last went back to the queue, expires.
+
+**Gate.** No shared job is created, and none is claimed, until the access
+gate opens (`SharedSensorsAllowed` answers false, RFC-100 §11).
 
 ## Load, capacity and release (RFC-030)
 

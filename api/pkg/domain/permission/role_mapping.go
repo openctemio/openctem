@@ -27,6 +27,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
+		FindingsLifecyclesWrite,
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
@@ -39,6 +40,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		ContentPacksRead, ContentPacksWrite,
+		ContentRead, ContentInstall, ContentPublish,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIPolicy, CIOverride,
 		ScanWindowsManage, ScanWindowsOverride,
@@ -106,6 +108,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
+		FindingsLifecyclesWrite,
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
@@ -118,6 +121,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		ContentPacksRead, ContentPacksWrite,
+		ContentRead, ContentInstall, ContentPublish,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIPolicy, CIOverride,
 		ScanWindowsManage, ScanWindowsOverride,
@@ -174,6 +178,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Core (the audit log is owner/admin only)
 		DashboardRead,
 		SettingsRead,
+		ContentRead,
 		// Assets (read + write, no delete)
 		AssetsRead, AssetsWrite, AssetsImport,
 		AssetGroupsRead, AssetGroupsWrite,
@@ -255,6 +260,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Core (the audit log is owner/admin only)
 		DashboardRead,
 		SettingsRead,
+		ContentRead,
 		// Assets (read only)
 		AssetsRead,
 		AssetGroupsRead,

@@ -304,7 +304,7 @@ func TestInstanceEnrollment_AuditHostFactsSanitized_DB(t *testing.T) {
 	_, err := f.svc.Start(context.Background(), sensorpairing.StartInput{
 		Request: pairing.StartRequest{Protocol: pairing.Version, PublicKey: pairing.Encode(s.pub()),
 			Commitment: pairing.Encode(s.commitment), EnrollmentToken: token,
-			Host: pairing.HostFacts{Hostname: long, OS: "linux\x1b[31m‮", Arch: "amd64\n\r", Product: "p\x00q"}},
+			Host: pairing.HostFacts{Hostname: long, OS: "linux\x1b[31m\u202e", Arch: "amd64\n\r", Product: "p\x00q"}},
 		PublicKey: s.pub(), SourceIP: net.ParseIP("203.0.113.21"),
 	})
 	if err != nil {
@@ -328,7 +328,7 @@ func TestInstanceEnrollment_AuditHostFactsSanitized_DB(t *testing.T) {
 		t.Fatalf("no host facts in the redeem row: %+v", sink.rows)
 	}
 	for k, v := range facts {
-		if len(v) > 128 || strings.ContainsAny(v, "\x1b\x00\n\r‮") {
+		if len(v) > 128 || strings.ContainsAny(v, "\x1b\x00\n\r\u202e") {
 			t.Fatalf("host fact %s not sanitized: %q", k, v)
 		}
 		switch k {

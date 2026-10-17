@@ -122,7 +122,7 @@
   "confirm.discardCloseDesc": "Bạn có thay đổi chưa được lưu. Đóng bây giờ sẽ bỏ các thay đổi đó.",
   "confirm.discardLeaveDesc": "Bạn có thay đổi chưa được lưu. Rời đi bây giờ sẽ bỏ các thay đổi đó.",
   "confirm.discardTitle": "Bỏ các thay đổi của bạn?",
-  "confirm.domainProof.removeDesc": "Các mục thuộc tên miền này không còn hiển thị là đã xác minh. Cảm biến của nền tảng và các kiểm tra xâm nhập sẽ từ chối các tên thuộc nó.",
+  "confirm.domainProof.removeDesc": "Các mục thuộc tên miền này không còn hiển thị là đã xác minh. Sensor dùng chung và các kiểm tra xâm nhập sẽ từ chối các tên thuộc nó.",
   "confirm.domainProof.removeTitle": "Gỡ tên miền {domain}?",
   "confirm.evidence.deleteDesc": "Tệp bị xóa vĩnh viễn. Không thể hoàn tác.",
   "confirm.evidence.deleteTitle": "Xóa tệp bằng chứng \"{name}\"?",
@@ -348,6 +348,9 @@
   "confirm.suppression.previewMany": "Thao tác này sẽ đóng {count} phát hiện đang mở.",
   "confirm.suppression.previewNone": "Hiện không có phát hiện đang mở nào khớp với quy tắc này. Quy tắc sẽ áp dụng cho các phát hiện mới khi chúng xuất hiện.",
   "confirm.suppression.previewOne": "Thao tác này sẽ đóng 1 phát hiện đang mở.",
+  "confirm.suppression.previewOutOfScope": "{count} phát hiện khớp nằm trên tài sản ngoài phạm vi truy cập của bạn nên không được liệt kê.",
+  "confirm.suppression.previewSampleAria": "Các phát hiện khớp với quy tắc này trong phạm vi truy cập của bạn",
+  "confirm.suppression.previewSampleTitle": "Ví dụ trong phạm vi truy cập của bạn ({shown}/{count})",
   "confirm.targetMapping.activate": "Kích hoạt",
   "confirm.targetMapping.activateDesc": "Ánh xạ được dùng lại khi lọc bản quét.",
   "confirm.targetMapping.activateTitle": "Kích hoạt ánh xạ mục tiêu {pair}?",
@@ -379,5 +382,6 @@
   "confirm.verifiedDomain.removeTitle": "Gỡ tên miền {domain}?",
   "confirm.workflowStep.builderDeleteDesc": "Bước này rời khỏi quy trình bạn đang chỉnh sửa và các bước phụ thuộc vào nó mất phụ thuộc đó. Không có gì thay đổi cho tới khi bạn lưu.",
   "confirm.workflowStep.deleteDesc": "Bước này rời khỏi bản nháp và các bước phụ thuộc vào nó mất phụ thuộc đó. Quy trình đã xuất bản không thay đổi cho tới khi bạn xuất bản.",
-  "confirm.workflowStep.deleteTitle": "Xóa bước này?"
+  "confirm.workflowStep.deleteTitle": "Xóa bước này?",
+  "confirm.findingApproval.approveDescMore": "Phê duyệt của bạn được ghi nhận. Phát hiện chuyển sang trạng thái được yêu cầu khi có thêm {count} phê duyệt."
 }

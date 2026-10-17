@@ -21,8 +21,8 @@ func NewTicketLinkRepository(db *DB) *TicketLinkRepository { return &TicketLinkR
 
 var _ ticketlink.Repository = (*TicketLinkRepository)(nil)
 
-const tlCols = `id, tenant_id, integration_id, provider, finding_id, campaign_id, external_id, external_key,
-	project_key, url, role, state, source, created_by, last_status, last_synced_at, sync_error, created_at, updated_at`
+const tlCols = `id, tenant_id, integration_id, provider, finding_id, campaign_id, task_id, external_id, external_key,
+	project_key, url, role, state, source, created_by, last_status, last_pushed_state, last_synced_at, sync_error, created_at, updated_at`
 
 func optID(s sql.NullString) *shared.ID {
 	if !s.Valid {
@@ -39,17 +39,18 @@ func scanTicketLink(s rowScanner) (*ticketlink.Link, error) {
 	var (
 		l            ticketlink.Link
 		id, tid, iid string
-		fid, cid, by sql.NullString
+		fid, cid     sql.NullString
+		taskID, by   sql.NullString
 		synced       sql.NullTime
 	)
-	if err := s.Scan(&id, &tid, &iid, &l.Provider, &fid, &cid, &l.ExternalID, &l.ExternalKey, &l.ProjectKey, &l.URL,
-		&l.Role, &l.State, &l.Source, &by, &l.LastStatus, &synced, &l.SyncError, &l.CreatedAt, &l.UpdatedAt); err != nil {
+	if err := s.Scan(&id, &tid, &iid, &l.Provider, &fid, &cid, &taskID, &l.ExternalID, &l.ExternalKey, &l.ProjectKey, &l.URL,
+		&l.Role, &l.State, &l.Source, &by, &l.LastStatus, &l.LastPushedState, &synced, &l.SyncError, &l.CreatedAt, &l.UpdatedAt); err != nil {
 		return nil, err
 	}
 	l.ID, _ = shared.IDFromString(id)
 	l.TenantID, _ = shared.IDFromString(tid)
 	l.IntegrationID, _ = shared.IDFromString(iid)
-	l.FindingID, l.CampaignID, l.CreatedBy = optID(fid), optID(cid), optID(by)
+	l.FindingID, l.CampaignID, l.TaskID, l.CreatedBy = optID(fid), optID(cid), optID(taskID), optID(by)
 	if synced.Valid {
 		t := synced.Time
 		l.LastSyncedAt = &t
@@ -61,10 +62,10 @@ func scanTicketLink(s rowScanner) (*ticketlink.Link, error) {
 // ErrAlreadyLinked.
 func (r *TicketLinkRepository) Create(ctx context.Context, l *ticketlink.Link) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ticket_links (`+tlCols+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
 		l.ID.String(), l.TenantID.String(), l.IntegrationID.String(), l.Provider, nullID(l.FindingID), nullID(l.CampaignID),
-		l.ExternalID, l.ExternalKey, l.ProjectKey, l.URL, l.Role, l.State, l.Source, nullID(l.CreatedBy),
-		l.LastStatus, l.LastSyncedAt, l.SyncError, l.CreatedAt, l.UpdatedAt)
+		nullID(l.TaskID), l.ExternalID, l.ExternalKey, l.ProjectKey, l.URL, l.Role, l.State, l.Source, nullID(l.CreatedBy),
+		l.LastStatus, l.LastPushedState, l.LastSyncedAt, l.SyncError, l.CreatedAt, l.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ticketlink.ErrAlreadyLinked
@@ -113,10 +114,16 @@ func (r *TicketLinkRepository) ListForFinding(ctx context.Context, tenantID, fin
 		ORDER BY created_at DESC LIMIT 100`, tenantID.String(), findingID.String())
 }
 
-// ListForCampaign lists a remediation task's links (every state, newest first).
+// ListForCampaign lists a campaign's links (every state, newest first).
 func (r *TicketLinkRepository) ListForCampaign(ctx context.Context, tenantID, campaignID shared.ID) ([]*ticketlink.Link, error) {
 	return r.list(ctx, `SELECT `+tlCols+` FROM ticket_links WHERE tenant_id = $1 AND campaign_id = $2
 		ORDER BY created_at DESC LIMIT 100`, tenantID.String(), campaignID.String())
+}
+
+// ListForTask lists a remediation task's links (every state, newest first).
+func (r *TicketLinkRepository) ListForTask(ctx context.Context, tenantID, taskID shared.ID) ([]*ticketlink.Link, error) {
+	return r.list(ctx, `SELECT `+tlCols+` FROM ticket_links WHERE tenant_id = $1 AND task_id = $2
+		ORDER BY created_at DESC LIMIT 100`, tenantID.String(), taskID.String())
 }
 
 // FindByIssue lists the active links of one issue of an integration.
@@ -159,4 +166,58 @@ func (r *TicketLinkRepository) RecordSync(ctx context.Context, tenantID, id shar
 		return ticketlink.ErrNotFound
 	}
 	return nil
+}
+
+// RecordPush stores the state last pushed to the issue and its status after
+// the push, and clears the last error.
+func (r *TicketLinkRepository) RecordPush(ctx context.Context, tenantID, id shared.ID, state, status string, at time.Time) error {
+	if len(state) > 32 {
+		state = state[:32]
+	}
+	if len(status) > 128 {
+		status = status[:128]
+	}
+	res, err := r.db.ExecContext(ctx, `UPDATE ticket_links SET last_pushed_state = $3, last_status = $4, sync_error = '',
+			last_synced_at = $5, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), id.String(), state, status, at)
+	if err != nil {
+		return fmt.Errorf("record ticket link push: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ticketlink.ErrNotFound
+	}
+	return nil
+}
+
+// TaskLinksBehindForPlatform lists active task links (own issues) whose task state
+// differs from the state last pushed, oldest first. The join pairs the task
+// with the link's own tenant.
+func (r *TicketLinkRepository) TaskLinksBehindForPlatform(ctx context.Context, limit int) ([]ticketlink.TaskLinkRef, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT l.tenant_id, l.task_id
+		FROM ticket_links l
+		JOIN remediation_tasks t ON t.tenant_id = l.tenant_id AND t.id = l.task_id
+		WHERE l.task_id IS NOT NULL AND l.state = 'active' AND l.role = 'own'
+		  AND t.state <> l.last_pushed_state
+		ORDER BY l.updated_at
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list task links behind: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []ticketlink.TaskLinkRef
+	for rows.Next() {
+		var tid, taskID string
+		if err := rows.Scan(&tid, &taskID); err != nil {
+			return nil, fmt.Errorf("scan task link: %w", err)
+		}
+		ref := ticketlink.TaskLinkRef{}
+		ref.TenantID, _ = shared.IDFromString(tid)
+		ref.TaskID, _ = shared.IDFromString(taskID)
+		out = append(out, ref)
+	}
+	return out, rows.Err()
 }

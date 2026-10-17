@@ -2,6 +2,7 @@
 
 import { Building2 } from 'lucide-react'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState } from '@/features/shared/components/empty-state'
 
 interface NoOrganizationNoticeProps {
@@ -15,25 +16,20 @@ interface NoOrganizationNoticeProps {
 
 /**
  * Shown instead of the create-team form when the installation lets only the
- * platform administrator create organizations (`TENANT_CREATION_MODE=admin_only`).
+ * platform administrator create organizations (`the admin_only sign-up policy`).
  */
 export function NoOrganizationNotice({
   hasOtherTeams = false,
   className,
 }: NoOrganizationNoticeProps) {
+  const { t } = useTranslation()
   return (
     <EmptyState
       icon={Building2}
       className={className}
-      title={
-        hasOtherTeams
-          ? 'Organizations are created by your administrator'
-          : 'You are not a member of any organization yet'
-      }
+      title={hasOtherTeams ? t('org.onboarding.adminCreatesTitle') : t('org.onboarding.noOrgTitle')}
       description={
-        hasOtherTeams
-          ? 'On this installation only the platform administrator can create organizations. Ask them to create the organization you need.'
-          : 'Ask your administrator to add you to an organization or to send you an invitation. If you received an invitation email, open its link to join.'
+        hasOtherTeams ? t('org.onboarding.adminCreatesDesc') : t('org.onboarding.noOrgDesc')
       }
     />
   )

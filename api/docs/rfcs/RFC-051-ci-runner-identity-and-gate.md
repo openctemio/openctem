@@ -278,6 +278,14 @@ into ONE run and is judged once. Each job sends `aggregate: true`:
   upload.
 - A run, aggregate or not, that no report was uploaded to fails
   (`no_results`): there is nothing to judge.
+- A run whose gate job never ran (pipeline cancelled, gate removed, a rule
+  that skipped it) would stay `running` for ever, with no verdict and nothing
+  blocking a merge. A sweeper (controller `ci-sweep`, every 15 minutes, one
+  replica) concludes each run still running after `MaxRunContinuation` (6 h,
+  the longest a run can still get a token) with the verdict `fail` and the
+  reason `not_judged`. Silence is never a pass; the uploaded findings are
+  kept, and the verdict is audited as `ci_run.evaluated` with
+  `reason: not_judged`. A run judged meanwhile keeps its verdict.
 - The response says `aggregate: true`; a client that asked for an aggregate
   run and does not see it refuses to continue (otherwise its gate would judge
   an empty run).
@@ -304,6 +312,52 @@ upload is audited (`ci_run.results_uploaded`: finding count, tool label, job;
 never finding content). A run
 accepts at most 200 reports (`409` beyond), and a pipeline may start at most
 300 runs an hour (the exchange is refused beyond, audited `pipeline_rate`).
+
+**Retries (`Idempotency-Key`).** An upload may carry an `Idempotency-Key`
+header (1 to 128 printable ASCII characters). The first completed answer
+(`201`) is stored for one hour under tenant + run + the key's hash (the run
+comes from the upload token, so a key never reaches another run or tenant),
+and a retry with the same key and body gets that answer back with
+`Idempotent-Replayed: true`, without ingesting again or counting another
+report. The same key with a different body is `422 IDEMPOTENCY_KEY_REUSED`;
+the same key while the first request is still running is `409` with
+`Retry-After`; the in-flight marker lives at least as long as the run token
+(15 minutes), or until the request deadline when later. A refusal or failure
+releases the key, so the retry runs again; a finished request only overwrites or
+releases the key while the stored record still carries its own body hash.
+The store is the shared Redis; without it, or when it fails, the upload runs
+as it always did (the fingerprints still dedupe findings).
+**Secrets on a branch.** A secret a run finds on any non-fork branch (a pull
+request included) is exposure the moment it is pushed: the finding becomes an
+organization finding at once (no longer hidden as seen only on a branch), and a
+remediation task "Rotate <secret type>" is opened for it (origin `system`, kind
+`rotate`, action key `rotate:secret:<fingerprint>`). The task is per secret
+identity: the same credential found in other repositories or branches joins the
+open task instead of opening another, and a later sighting never opens a second
+one. Removing the secret from the branch does not close it, because history
+keeps it. A fork's run never raises one.
+
+Which secrets page, for the gate and for this task: the finding is a secret, it
+is not validated false, and its rule is not on the allowlist of known generic or
+heuristic scanner rule ids (matched exactly, never by substring).
+"Validated false" comes only from a validation the platform ran itself: the
+validity an uploaded report claims is ignored, because a fork pull request
+could otherwise mark a live secret dead and switch off blocking and rotation.
+At most one active rotation task exists per action (a unique index); a run that
+loses the race joins the existing task. A hard-coded password
+hit therefore does not block every pipeline and does not open a task; it follows
+the policy's severity and modes like any finding. Everything else blocks.
+
+**Renamed repositories.** A repository renamed on its code host keeps its asset
+(the exchange finds it by the code host's repository id). A trust configuration
+that names repositories by pattern no longer admits the new name, and the
+platform does not rewrite it: changing trust stays a manual, audited, step-up
+change. When a verified token comes from a repository that already has a
+pipeline under another name and no configuration admits it, the organization's
+owners and administrators are told, in-app and by e-mail, with the old and new
+name and a link to the trust settings (`/ci-cd?tab=setup`). One alert per
+repository and new name per day.
+
 A secret finding is never stored in clear whatever the runner sends: the
 runner masks it, and the server keeps only a preview of at most four
 characters at each end (`vulnerability.MaskSecretPreview`), redacts the
