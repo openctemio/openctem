@@ -144,10 +144,16 @@ type signoffQueryer interface {
 }
 
 func listSignoffs(ctx context.Context, q signoffQueryer, tenantID shared.ID, subjectType string, subjectID shared.ID) ([]approvalpolicy.Signoff, error) {
+	return listSignoffsSince(ctx, q, tenantID, subjectType, subjectID, time.Time{})
+}
+
+// listSignoffsSince lists the sign-offs made at or after since (a sign-off
+// made before the subject last changed does not count).
+func listSignoffsSince(ctx context.Context, q signoffQueryer, tenantID shared.ID, subjectType string, subjectID shared.ID, since time.Time) ([]approvalpolicy.Signoff, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT user_id::text, security_pool FROM approval_signoffs
-		WHERE tenant_id = $1 AND subject_type = $2 AND subject_id = $3
-		ORDER BY created_at`, tenantID.String(), subjectType, subjectID.String())
+		WHERE tenant_id = $1 AND subject_type = $2 AND subject_id = $3 AND created_at >= $4
+		ORDER BY created_at`, tenantID.String(), subjectType, subjectID.String(), since)
 	if err != nil {
 		return nil, fmt.Errorf("list sign-offs: %w", err)
 	}
@@ -168,13 +174,19 @@ func listSignoffs(ctx context.Context, q signoffQueryer, tenantID shared.ID, sub
 	return out, rows.Err()
 }
 
+// signoffRow is one sign-off to insert.
+type signoffRow struct {
+	userID                             shared.ID
+	securityPool, poolFallback, stepUp bool
+}
+
 // insertSignoff records one sign-off inside tx; a second sign-off by the
 // same person is refused.
-func insertSignoff(ctx context.Context, tx *sql.Tx, tenantID shared.ID, subjectType string, subjectID shared.ID, rec finding.SignoffRecord) error {
+func insertSignoff(ctx context.Context, tx *sql.Tx, tenantID shared.ID, subjectType string, subjectID shared.ID, rec signoffRow) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO approval_signoffs (tenant_id, subject_type, subject_id, user_id, security_pool, pool_fallback, step_up)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		tenantID.String(), subjectType, subjectID.String(), rec.UserID.String(), rec.SecurityPool, rec.PoolFallback, rec.StepUp)
+		tenantID.String(), subjectType, subjectID.String(), rec.userID.String(), rec.securityPool, rec.poolFallback, rec.stepUp)
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) && pqErr.Code == "23505" {
 		return approvalpolicy.NewRefusal(approvalpolicy.CodeApproverNotEligible, approvalpolicy.RefusedAlreadySigned,
@@ -220,7 +232,8 @@ func (r *FindingApprovalRepository) SignOff(ctx context.Context, tenantID, appro
 		if err != nil {
 			return err
 		}
-		if err := insertSignoff(ctx, tx, tenantID, finding.SignoffSubjectFindingApproval, approvalID, rec); err != nil {
+		if err := insertSignoff(ctx, tx, tenantID, finding.SignoffSubjectFindingApproval, approvalID,
+			signoffRow{rec.UserID, rec.SecurityPool, rec.PoolFallback, rec.StepUp}); err != nil {
 			return err
 		}
 		a.ApprovalsCollected = len(prior) + 1
