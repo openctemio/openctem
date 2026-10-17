@@ -321,6 +321,15 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 			r.POST("/", tenantH.LeaveOrganization, middleware.Require(permission.TeamRead), requireStepUp())
 		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 	}
+	if tenantH != nil {
+		// Requests to join by a verified email domain (RFC-104): the
+		// organization's own inbox.
+		router.Group("/api/v1/organization/join-requests", func(r Router) {
+			r.GET("/", tenantH.ListJoinRequests, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
+			r.POST("/{request_id}/approve", tenantH.ApproveJoinRequest, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
+			r.POST("/{request_id}/reject", tenantH.RejectJoinRequest, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
 	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {
 		if localAuth != nil {
 			r.DELETE("/mfa", localAuth.ResetMemberMFA, middleware.RequireAdmin(), requireStepUp())

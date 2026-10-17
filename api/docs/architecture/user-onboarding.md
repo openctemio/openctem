@@ -182,6 +182,51 @@ and applies only while the claim is verified and unambiguous: a lapsed claim
 - An unreadable domain policy refuses the sign-up or the organization
   creation (fail-closed).
 
+### Onboarding fork and join requests
+
+An account with no organization (after sign-up and email verification) is
+offered, in this order:
+
+1. its **pending invitations** (only to the verified address they were sent
+   to);
+2. the organization that claims its **verified email domain**, when that
+   organization set `discoverable` and a join policy (`auto`: join; `approval`:
+   ask to join). An organization that is not discoverable is never revealed,
+   and nothing is offered by domain before the address is verified;
+3. **create an organization**, when the policy in force allows it and the
+   domain does not block it.
+
+Routes (refresh-token authenticated like create-first-team, cross-site
+refused, rate limited):
+
+- `POST /api/v1/auth/onboarding/options` returns the offers. Each carries an
+  opaque `ref`: kind, organization, target and expiry under an HMAC bound to
+  the account (30 minutes; the key is derived from the session secret under
+  its own label). No organization id or slug reaches the client.
+- `POST /api/v1/auth/onboarding/accept` with `{ref}` re-checks everything now
+  (verified address, the same claim still governing the address, still
+  discoverable and joinable, the invitation still pending) and then accepts
+  the invitation (the verified address stands in for the emailed token), joins
+  at once with the domain's role (`auto`, audited `member.joined_by_domain`,
+  admins notified), or creates a **join request** (`approval`). A stale or
+  foreign reference answers 409 `OFFER_UNAVAILABLE`.
+
+Join requests (`organization_join_requests`, migration 002830): one pending
+per person and organization, at most 5 per person per day, expire after 30
+days; decided and expired rows are purged 30 days later
+(`join-request-purge` controller). The organization's inbox:
+
+- `GET /api/v1/organization/join-requests` (owner or admin, `team:members:read`):
+  waiting requests with the requester's email, name and verification;
+- `POST .../join-requests/{id}/approve` `{role}` (owner or admin,
+  `team:members:write`): role `viewer` or `member` only (nobody becomes an
+  administrator by request), creates the membership with no data scope;
+- `POST .../join-requests/{id}/reject`: the requester is not told who decided.
+
+Every query is scoped to the organization (or to the requester); another
+organization's request id answers 404. Audited: `join_request.created`,
+`join_request.approved`, `join_request.rejected`.
+
 ### Request access
 
 When the policy is `admin_only` with `request_access` on, the "not set up"

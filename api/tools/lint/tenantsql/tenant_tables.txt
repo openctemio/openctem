@@ -4,6 +4,7 @@ ai_triage_results
 api_keys
 api_spec_operations
 api_specs
+approval_signoffs
 asset_access_grants
 asset_attribute_freshness
 asset_attribute_set_elements
@@ -24,6 +25,9 @@ asset_services
 asset_software
 asset_software_edges
 asset_state_history
+asset_technologies
+asset_technology_backfill
+asset_technology_backfill_removed
 asset_web_evidence
 asset_web_evidence_orphans
 asset_wildcard_dns
@@ -140,6 +144,7 @@ notification_outbox
 notification_preferences
 notification_state
 notifications
+organization_join_requests
 pentest_campaign_checklist_items
 pentest_campaign_checklists
 pentest_campaign_members
