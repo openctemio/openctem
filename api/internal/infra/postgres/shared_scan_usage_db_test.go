@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 )
 
 // Shared-sensor scans started today count one per run (a run's chunks
@@ -13,7 +13,7 @@ import (
 func TestPlanUsage_SharedScansToday(t *testing.T) {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
-	repo := NewPlanRepository(&DB{DB: sqlDB})
+	repo := NewLimitsRepository(&DB{DB: sqlDB})
 	tenant := seedTestTenant(ctx, t, sqlDB)
 	other := seedTestTenant(ctx, t, sqlDB)
 
@@ -38,7 +38,7 @@ func TestPlanUsage_SharedScansToday(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := usage[plan.PlatformScansPerDay]; got != 2 {
+	if got := usage[limits.PlatformScansPerDay]; got != 2 {
 		t.Errorf("shared scans today = %d, want 2", got)
 	}
 }

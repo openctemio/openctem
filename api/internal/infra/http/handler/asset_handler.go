@@ -567,7 +567,7 @@ func (h *AssetHandler) handleValidationError(w http.ResponseWriter, err error) {
 
 // handleServiceError converts service errors to API errors and writes response.
 func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
-	if WritePlanLimitError(w, err) {
+	if WriteLimitError(w, err) {
 		return
 	}
 	switch {

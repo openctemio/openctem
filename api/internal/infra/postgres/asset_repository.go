@@ -16,7 +16,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -34,7 +34,7 @@ const providerUnsetSentinel = "unset"
 // AssetRepository implements asset.Repository using PostgreSQL.
 type AssetRepository struct {
 	db         *DB
-	planLimits // assets: Create and the new rows of UpsertBatch (ingest)
+	limitChecks // assets: Create and the new rows of UpsertBatch (ingest)
 }
 
 // NewAssetRepository creates a new AssetRepository.
@@ -44,7 +44,7 @@ func NewAssetRepository(db *DB) *AssetRepository {
 
 // Create persists a new asset.
 func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
-	if err := r.checkLimit(ctx, a.TenantID(), plan.Assets, 1); err != nil {
+	if err := r.checkLimit(ctx, a.TenantID(), limits.Assets, 1); err != nil {
 		return err
 	}
 	properties, err := json.Marshal(a.Properties())
@@ -1688,7 +1688,7 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 		return 0, 0, map[string]shared.ID{}, nil
 	}
 	// Ingest over the asset limit is refused as a whole batch with the
-	// limit error (counted in openctem_plan_limit_refusals_total), never
+	// limit error (counted in openctem_limit_refusals_total), never
 	// dropped silently. Updates of assets that already exist count nothing.
 	if err := r.checkNewAssets(ctx, assets); err != nil {
 		return 0, 0, nil, err
@@ -1735,7 +1735,7 @@ func (r *AssetRepository) checkNewAssets(ctx context.Context, assets []*asset.As
 		if err != nil {
 			return fmt.Errorf("count new assets: %w", err)
 		}
-		if err := r.checkLimit(ctx, tenantID, plan.Assets, fresh); err != nil {
+		if err := r.checkLimit(ctx, tenantID, limits.Assets, fresh); err != nil {
 			return err
 		}
 	}

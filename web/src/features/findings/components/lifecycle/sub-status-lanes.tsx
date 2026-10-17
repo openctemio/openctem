@@ -106,7 +106,7 @@ export function SubStatusLanes({
   }
 
   const addReason = limitReached
-    ? t('findingLifecycle.plan.subStatusesReachedShort', 'Your plan allows no more sub-statuses')
+    ? t('findingLifecycle.plan.subStatusesReachedShort', 'Limit of sub-statuses reached')
     : t('findingLifecycle.readOnly', 'Needs the Manage Finding Lifecycles permission')
 
   return (

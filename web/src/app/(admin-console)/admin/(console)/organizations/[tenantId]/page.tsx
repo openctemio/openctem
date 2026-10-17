@@ -18,7 +18,7 @@ import { OrganizationSummary } from '@/features/admin-console/components/organiz
 import { useOrganization } from '@/features/admin-console/api/use-admin-organizations'
 import { useAdmin } from '@/features/admin-console/components/admin-console-shell'
 import { OrganizationAuditChainPanel } from '@/features/admin-console/components/organization-audit-chain-panel'
-import { OrganizationPlanPanel } from '@/features/admin-console/components/organization-plan-panel'
+import { OrganizationLimitsPanel } from '@/features/admin-console/components/organization-limits-panel'
 import { OrganizationModulesPanel } from '@/features/admin-console/components/organization-modules-panel'
 import { OrganizationScanPolicyPanel } from '@/features/admin-console/components/organization-scan-policy-panel'
 import { OrganizationUsersSection } from '@/features/admin-console/components/organization-users-section'
@@ -84,7 +84,7 @@ function OrganizationActivity({ tenantId }: { tenantId: string }) {
   )
 }
 
-const TABS = ['overview', 'users', 'plan', 'sso', 'scope', 'activity', 'audit-chain'] as const
+const TABS = ['overview', 'users', 'limits', 'sso', 'scope', 'activity', 'audit-chain'] as const
 
 export default function AdminOrganizationPage({
   params,
@@ -135,7 +135,7 @@ export default function AdminOrganizationPage({
                   {t('admin.org.tab.overview', 'Overview')}
                 </TabsTrigger>
                 <TabsTrigger value="users">{t('admin.org.tab.users', 'Members')}</TabsTrigger>
-                <TabsTrigger value="plan">{t('admin.org.tab.plan', 'Plan')}</TabsTrigger>
+                <TabsTrigger value="limits">{t('admin.org.tab.limits', 'Limits')}</TabsTrigger>
                 <TabsTrigger value="sso">{t('admin.org.tab.sso', 'Single sign-on')}</TabsTrigger>
                 <TabsTrigger value="scope">{t('admin.org.tab.scope', 'Scope')}</TabsTrigger>
                 <TabsTrigger value="activity">
@@ -161,8 +161,8 @@ export default function AdminOrganizationPage({
               />
             </TabsContent>
 
-            <TabsContent value="plan" className="mt-4 space-y-5">
-              <OrganizationPlanPanel tenantId={org.id} canManage={canManageUsers} />
+            <TabsContent value="limits" className="mt-4 space-y-5">
+              <OrganizationLimitsPanel tenantId={org.id} canManage={canManageUsers} />
               <OrganizationModulesPanel tenantId={org.id} canManage={canManageUsers} />
             </TabsContent>
 

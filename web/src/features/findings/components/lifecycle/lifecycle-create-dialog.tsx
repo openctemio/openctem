@@ -90,7 +90,7 @@ export function LifecycleCreateDialog({
         isPlanLimitError(err)
           ? t(
               'findingLifecycle.plan.schemesReached',
-              'Your plan allows no more lifecycles. Archive one, or ask your administrator for more.'
+              'This organization has reached its limit of lifecycles. Archive one, or ask your administrator for more.'
             )
           : getErrorMessage(
               err,

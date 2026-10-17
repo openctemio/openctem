@@ -4,7 +4,7 @@
  * Type definitions for tenant/team API requests and responses
  */
 
-import type { TenantPlan, TenantRole } from '@/lib/api/user-tenant-types'
+import type { TenantRole } from '@/lib/api/user-tenant-types'
 
 /**
  * Tenant entity from API
@@ -15,7 +15,6 @@ export interface ApiTenant {
   slug: string
   description?: string
   logo_url?: string
-  plan: TenantPlan
   created_at: string
   updated_at: string
 }
@@ -45,7 +44,6 @@ export interface CreateTenantResponse {
   name: string
   slug: string
   description?: string
-  plan: TenantPlan
   created_at: string
 }
 
