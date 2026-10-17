@@ -413,6 +413,16 @@ const (
 	// ActionSSOVerifiedDomainJITChanged: a domain's just-in-time provisioning
 	// (on/off, role) changed (RFC-058).
 	ActionSSOVerifiedDomainJITChanged Action = "sso.verified_domain_jit_changed"
+	// ActionSSOVerifiedDomainSignupPolicyChanged: an owner changed what the
+	// domain claim does to accounts on it (join, discovery, SSO required,
+	// new organizations; RFC-104).
+	ActionSSOVerifiedDomainSignupPolicyChanged Action = "sso.verified_domain_signup_policy_changed"
+	// Joining by a verified email domain (RFC-104): a colleague joined at
+	// once (join policy auto), or asked and an administrator decided.
+	ActionMemberJoinedByDomain Action = "member.joined_by_domain"
+	ActionJoinRequestCreated   Action = "join_request.created"
+	ActionJoinRequestApproved  Action = "join_request.approved"
+	ActionJoinRequestRejected  Action = "join_request.rejected"
 	// A platform administrator's SAML / identity-provider change waits for an
 	// owner of the organization, who approves (applies) or rejects it.
 	ActionSSOChangeRequested Action = "sso.change_requested"
@@ -476,6 +486,11 @@ const (
 	// An approver looked at a rule the platform flagged for review (it had
 	// no end date) and cleared the flag.
 	ActionSuppressionRuleReviewed Action = "suppression_rule.reviewed"
+
+	// Approval policy on rules (RFC-111): one approval of a rule that needs
+	// more (it stays pending), and an approver the policy refused.
+	ActionSuppressionRuleSigned          Action = "suppression_rule.signed"
+	ActionSuppressionRuleApprovalRefused Action = "suppression_rule.approval_refused"
 
 	// Four-eyes dispositions of high and critical exposures.
 	ActionExposureDispositionRequested    Action = "exposure.disposition_requested"
@@ -752,7 +767,8 @@ func (a Action) IsValid() bool {
 		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
-		ActionSSOVerifiedDomainJITChanged,
+		ActionSSOVerifiedDomainJITChanged, ActionSSOVerifiedDomainSignupPolicyChanged,
+		ActionMemberJoinedByDomain, ActionJoinRequestCreated, ActionJoinRequestApproved, ActionJoinRequestRejected,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
 		ActionSCIMGroupMappingsUpdated,
@@ -767,7 +783,7 @@ func (a Action) IsValid() bool {
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
-		ActionSuppressionRuleReviewed,
+		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -898,7 +914,7 @@ func (a Action) Category() string {
 		return "scope"
 	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
 		return "suppression"
-	case ActionSuppressionRuleReviewed:
+	case ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused:
 		return "suppression"
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused:
@@ -1050,7 +1066,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
 		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
-		ResourceTypeFindingApproval:
+		ResourceTypeFindingApproval, ResourceTypeSupportGrant:
 		return true
 	}
 	return isConfigResourceType(r)
@@ -1179,7 +1195,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionSuppressionRuleApproved,
 		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
-		ActionSuppressionRuleReviewed,
+		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
