@@ -95,6 +95,14 @@ secret() { # secret <bytes>: hex from the system CSPRNG
   fi
 }
 
+base62() { # base62 <length>: letters and digits from the system CSPRNG
+  local out=""
+  while (( ${#out} < $1 )); do
+    out+="$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9')"
+  done
+  printf '%s' "${out:0:$1}"
+}
+
 umask 077
 tmp="$(mktemp "$here/.env.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
@@ -126,11 +134,19 @@ set_value REDIS_PASSWORD "$(secret 24)"
 set_value APP_ENCRYPTION_KEY "$(secret 32)"
 set_value FINGERPRINT_KEY "$(secret 32)"
 set_value METRICS_TOKEN "$(secret 32)"
+# The bundled shared sensor's single-use enrollment token
+# (docker-compose.sensor.yml): octe_ and 49 base62 characters.
+set_value SENSOR_INSTANCE_ENROLLMENT_TOKEN "octe_$(base62 49)"
 
 chmod 600 "$tmp"
 mv "$tmp" "$env_file"
 trap - EXIT
 
+# The bundled shared sensor's local policy (docker-compose.sensor.yml): a
+# copy of the example the operator edits; never overwritten.
+if [[ ! -e "$here/sensor/sensor-policy.yaml" && -f "$here/sensor/sensor-policy.example.yaml" ]]; then
+  install -m 0644 "$here/sensor/sensor-policy.example.yaml" "$here/sensor/sensor-policy.yaml"
+fi
 port="${admin_port:-8443}"
 console="https://$host:$port/"
 [[ -z "$admin_host" ]] || console="https://$admin_host/"
@@ -162,4 +178,7 @@ $console_msg
 Next:
   docker compose up -d
   docker compose run --rm api -check-config   # optional preflight
+
+Optional bundled shared sensor (enrolls with SENSOR_INSTANCE_ENROLLMENT_TOKEN):
+  docker compose -f docker-compose.yml -f docker-compose.sensor.yml up -d
 MSG
