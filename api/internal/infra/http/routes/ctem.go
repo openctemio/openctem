@@ -182,6 +182,19 @@ func registerCycleSettingsRoutes(router Router, h *handler.TenantHandler, authMi
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerSharedSensorsSettingsRoutes wires the organization's shared sensor
+// opt-out (RFC-100 §5) under the token singleton /api/v1/organization. Owner
+// or administrator reads; only the owner changes it; audited.
+func registerSharedSensorsSettingsRoutes(router Router, h *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/shared-sensors", func(r Router) {
+		r.GET("/", h.GetSharedSensorsSettings, middleware.RequireAdmin())
+		r.PUT("/", h.UpdateSharedSensorsSettings, middleware.RequireOwner())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerFindingCorrelationSettingsRoutes wires the organization's
 // cross-rule correlation switches (research/134 section 12) under the token
 // singleton /api/v1/organization. Owner/admin only; audited.
