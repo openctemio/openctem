@@ -165,14 +165,57 @@ const maxHierarchyDepth = 64
 func (s *BusinessUnitService) Get(ctx context.Context, tenantID, buID string) (*businessunitdom.BusinessUnit, error) {
 	tid, _ := shared.IDFromString(tenantID)
 	bid, _ := shared.IDFromString(buID)
-	return s.repo.GetByID(ctx, tid, bid)
+	bu, err := s.repo.GetByID(ctx, tid, bid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyScopedStats(ctx, tid, bu); err != nil {
+		return nil, err
+	}
+	return bu, nil
+}
+
+// applyScopedStats replaces the stored rollup counters of units with counts
+// over the assets the caller may see. The stored counters cover every asset
+// of the unit, so a restricted reader would learn how many assets and
+// findings sit outside their scope. The units are changed in memory only.
+func (s *BusinessUnitService) applyScopedStats(ctx context.Context, tid shared.ID, units ...*businessunitdom.BusinessUnit) error {
+	if s.dataScope == nil || len(units) == 0 {
+		return nil
+	}
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return err
+	}
+	if scope == nil {
+		return nil
+	}
+	ids := make([]shared.ID, len(units))
+	for i, u := range units {
+		ids[i] = u.ID()
+	}
+	stats, err := s.repo.ScopedStats(ctx, tid, ids, scope)
+	if err != nil {
+		return err
+	}
+	for _, u := range units {
+		u.ShowStats(stats[u.ID()])
+	}
+	return nil
 }
 
 // List lists BUs.
 func (s *BusinessUnitService) List(ctx context.Context, tenantID string, filter businessunitdom.Filter, page pagination.Pagination) (pagination.Result[*businessunitdom.BusinessUnit], error) {
 	tid, _ := shared.IDFromString(tenantID)
 	filter.TenantID = &tid
-	return s.repo.List(ctx, filter, page)
+	res, err := s.repo.List(ctx, filter, page)
+	if err != nil {
+		return res, err
+	}
+	if err := s.applyScopedStats(ctx, tid, res.Data...); err != nil {
+		return pagination.Result[*businessunitdom.BusinessUnit]{}, err
+	}
+	return res, nil
 }
 
 // UpdateBusinessUnitInput holds input for updating a BU. Criticality,
@@ -218,6 +261,10 @@ func (s *BusinessUnitService) Update(ctx context.Context, input UpdateBusinessUn
 	}
 	if err := s.repo.Update(ctx, bu); err != nil {
 		return nil, fmt.Errorf("failed to update business unit: %w", err)
+	}
+	// Saved first: the response carries the reader's scoped counters.
+	if err := s.applyScopedStats(ctx, tid, bu); err != nil {
+		return nil, err
 	}
 	return bu, nil
 }

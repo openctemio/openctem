@@ -614,8 +614,8 @@
   "findings.importResults.vexStatements": "Tuyên bố VEX",
   "findings.importResults.skipped": "Đã bỏ qua {count} bản ghi.",
   "findings.importResults.vexMatched": "VEX: {count} phát hiện khớp",
-  "findings.importResults.vexWouldClose": ", {count} sẽ được đóng",
-  "findings.importResults.vexStored": ", đã lưu cho {stored}, đã đóng {closed}",
+  "findings.importResults.vexWouldClose": ", {count} sẽ được yêu cầu",
+  "findings.importResults.vexStored": ", đã lưu cho {stored}, {requested} yêu cầu dương tính giả",
   "findings.importResults.vexUnmatchable": "; không thể khớp {count} tuyên bố (không có package URL)",
   "findings.importResults.ingestSummary": "đã tạo {created} phát hiện, cập nhật {updated}, tạo {assets} tài sản",
   "findings.importResults.ingestSkipped": "; bỏ qua {count} máy chủ (ngoài các tài sản bạn có thể thay đổi)",
@@ -1090,5 +1090,9 @@
   "findings.approvals.toast.signed": "Đã ghi nhận phê duyệt của bạn",
   "findings.approvals.toast.signedDesc": "Cần thêm {count} phê duyệt trước khi trạng thái thay đổi.",
   "findings.approvals.col.tier": "Phê duyệt",
-  "findings.metrics.totalScopedDescription": "Mọi phát hiện trong phạm vi hiển thị phía trên bảng (một tài sản, một lần quét hoặc một nhóm), ở mọi trạng thái (tab Tất cả)."
+  "findings.metrics.totalScopedDescription": "Mọi phát hiện trong phạm vi hiển thị phía trên bảng (một tài sản, một lần quét hoặc một nhóm), ở mọi trạng thái (tab Tất cả).",
+  "findings.importResults.vexModeEnforce": "Các tuyên bố not_affected yêu cầu phê duyệt dương tính giả cho các phát hiện đang mở khớp; các phát hiện vẫn mở cho đến khi người khác phê duyệt.",
+  "findings.importResults.vexModeEnforceNoApprove": "Các tuyên bố not_affected được lưu trên các phát hiện khớp; yêu cầu phê duyệt dương tính giả cần quyền phê duyệt.",
+  "findings.importResults.vexModeOff": "Các tuyên bố VEX chỉ được lưu trên các phát hiện khớp.",
+  "findings.importResults.vexModeDryRun": "Các tuyên bố VEX được lưu trên các phát hiện khớp và được đếm; không có yêu cầu phê duyệt dương tính giả nào được tạo (chế độ chạy thử)."
 }

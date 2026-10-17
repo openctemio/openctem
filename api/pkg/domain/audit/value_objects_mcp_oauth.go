@@ -37,11 +37,21 @@ const (
 	ActionMCPActionConfirmed Action = "mcp_action.confirmed"
 	// ActionMCPActionRefused records the person refusing the action.
 	ActionMCPActionRefused Action = "mcp_action.refused"
+	// ActionMCPAccessRequested records a member asking the organization to
+	// approve an application's publisher.
+	ActionMCPAccessRequested Action = "mcp_access_request.created"
+	// ActionMCPAccessApproved records an administrator approving a
+	// publisher from a request; the policy change is audited too.
+	ActionMCPAccessApproved Action = "mcp_access_request.approved"
+	// ActionMCPAccessDenied records an administrator declining a request.
+	ActionMCPAccessDenied Action = "mcp_access_request.denied"
 )
 
 // Resource types of the MCP OAuth actions.
 const (
 	ResourceTypeMCPGrant ResourceType = "mcp_grant"
+	// ResourceTypeMCPAccessRequest is a request to approve a publisher.
+	ResourceTypeMCPAccessRequest ResourceType = "mcp_access_request"
 )
 
 var _ = registerActions("mcp", map[Action]Severity{
@@ -57,8 +67,12 @@ var _ = registerActions("mcp", map[Action]Severity{
 	ActionMCPActionRequested:  SeverityLow,
 	ActionMCPActionConfirmed:  SeverityMedium,
 	ActionMCPActionRefused:    SeverityLow,
+	ActionMCPAccessRequested:  SeverityLow,
+	ActionMCPAccessApproved:   SeverityHigh,
+	ActionMCPAccessDenied:     SeverityLow,
 })
 
 func init() {
 	configResourceTypes[ResourceTypeMCPGrant] = struct{}{}
+	configResourceTypes[ResourceTypeMCPAccessRequest] = struct{}{}
 }

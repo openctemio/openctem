@@ -76,36 +76,62 @@ func TestOnlyOwnerPromotesToAdmin(t *testing.T) {
 	ctx := context.Background()
 	admin := role.AdminRoleID.String()
 
-	t.Run("admin cannot make a member an administrator", func(t *testing.T) {
+	t.Run("the Roles API never grants the admin role, to anyone", func(t *testing.T) {
+		for _, actor := range []string{"admin", "owner"} {
+			f := newCeilingFixture(t)
+			tid, mid := f.tenant.String(), f.member.String()
+			aid := f.admin.String()
+			if actor == "owner" {
+				aid = f.owner.String()
+			}
+			wantSystemRole(t, actor+" AssignRole admin", f.svc.AssignRole(ctx,
+				accesscontrol.AssignRoleInput{TenantID: tid, UserID: mid, RoleID: admin}, aid, audit.AuditContext{}))
+			wantSystemRole(t, actor+" SetUserRoles [admin]", f.svc.SetUserRoles(ctx,
+				accesscontrol.SetUserRolesInput{TenantID: tid, UserID: mid, RoleIDs: []string{admin}}, aid, audit.AuditContext{}))
+			_, err := f.svc.BulkAssignRoleToUsers(ctx,
+				accesscontrol.BulkAssignRoleToUsersInput{TenantID: tid, RoleID: admin, UserIDs: []string{mid}}, aid, audit.AuditContext{})
+			wantSystemRole(t, actor+" BulkAssign admin", err)
+			if f.repo.has(f.member, role.AdminRoleID) {
+				t.Fatal("the member ended up an administrator")
+			}
+		}
+	})
+
+	t.Run("admin cannot make a new account an administrator", func(t *testing.T) {
 		f := newCeilingFixture(t)
-		tid, aid, mid := f.tenant.String(), f.admin.String(), f.member.String()
-		wantForbidden(t, "AssignRole admin", f.svc.AssignRole(ctx,
-			accesscontrol.AssignRoleInput{TenantID: tid, UserID: mid, RoleID: admin}, aid, audit.AuditContext{}))
-		wantForbidden(t, "SetUserRoles [admin]", f.svc.SetUserRoles(ctx,
-			accesscontrol.SetUserRolesInput{TenantID: tid, UserID: mid, RoleIDs: []string{admin}}, aid, audit.AuditContext{}))
-		_, err := f.svc.BulkAssignRoleToUsers(ctx,
-			accesscontrol.BulkAssignRoleToUsersInput{TenantID: tid, RoleID: admin, UserIDs: []string{mid}}, aid, audit.AuditContext{})
-		wantForbidden(t, "BulkAssign admin", err)
-		wantForbidden(t, "GrantExactRoles [admin] (create user)", f.svc.GrantExactRoles(ctx, tid, mid, []string{admin}, aid, audit.AuditContext{}))
+		wantForbidden(t, "GrantExactRoles [admin] (create user)", f.svc.GrantExactRoles(ctx, f.tenant.String(), f.member.String(),
+			[]string{admin}, f.admin.String(), audit.AuditContext{}))
 		if f.repo.has(f.member, role.AdminRoleID) {
 			t.Fatal("the member ended up an administrator")
 		}
 	})
 
-	t.Run("owner may make a member an administrator", func(t *testing.T) {
+	t.Run("owner may make a new account an administrator", func(t *testing.T) {
 		f := newCeilingFixture(t)
-		if err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: f.tenant.String(), UserID: f.member.String(), RoleID: admin},
+		if err := f.svc.GrantExactRoles(ctx, f.tenant.String(), f.member.String(), []string{admin},
 			f.owner.String(), audit.AuditContext{}); err != nil {
 			t.Fatalf("owner grants admin: %v", err)
 		}
 	})
 
-	t.Run("an administrator editing their own set keeps the admin role", func(t *testing.T) {
+	t.Run("an administrator editing their own custom roles keeps the admin role", func(t *testing.T) {
 		f := newCeilingFixture(t)
 		aid := f.admin.String()
+		plain := role.New(f.tenant, "plain", "Plain", "", 10, false, []string{"assets:read"}, role.NewID())
+		f.repo.roles[plain.ID().String()] = plain
 		if err := f.svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: f.tenant.String(), UserID: aid,
-			RoleIDs: []string{admin, role.ViewerRoleID.String()}}, aid, audit.AuditContext{}); err != nil {
-			t.Fatalf("admin keeps own admin role: %v", err)
+			RoleIDs: []string{plain.ID().String()}}, aid, audit.AuditContext{}); err != nil {
+			t.Fatalf("admin edits own custom roles: %v", err)
+		}
+		if !f.repo.has(f.admin, role.AdminRoleID) {
+			t.Fatal("the admin lost the admin role by editing custom roles")
 		}
 	})
+}
+
+func wantSystemRole(t *testing.T, what string, err error) {
+	t.Helper()
+	if !errors.Is(err, accesscontrol.ErrSystemRoleViaRoles) {
+		t.Fatalf("%s: want the system-role refusal, got %v", what, err)
+	}
 }

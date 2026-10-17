@@ -228,7 +228,7 @@ func (h *VEXStatementHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/v1/vex-statements
 // @Summary      Create a VEX statement
-// @Description  States the exploitability of a vulnerability in a package (every version, listed versions or a range), for one asset or every asset. not_affected closes the open findings it covers as false positive, fixed as resolved; affected and under_investigation annotate. Applies to findings reported later too. Human-sourced findings (pentest, manual, bug bounty, red team) are never closed. A statement for every asset needs access to every asset.
+// @Description  States the exploitability of a vulnerability in a package (every version, listed versions or a range), for one asset or every asset. not_affected requests a false positive for the open findings it covers (a pending approval; the status does not change until approvers decide), fixed resolves them; affected and under_investigation annotate. Applies to findings reported later too. Human-sourced findings (pentest, manual, bug bounty, red team) are never closed. A statement for every asset needs access to every asset.
 // @Tags         VEX
 // @Accept       json
 // @Produce      json

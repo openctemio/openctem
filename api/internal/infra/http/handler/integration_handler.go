@@ -1397,7 +1397,7 @@ func (h *IntegrationHandler) CreateNotification(w http.ResponseWriter, r *http.R
 	}
 
 	// Set defaults
-	includeDetails := true
+	includeDetails := false
 	if req.IncludeDetails != nil {
 		includeDetails = *req.IncludeDetails
 	}

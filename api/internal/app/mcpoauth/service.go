@@ -59,11 +59,16 @@ type Service struct {
 	clients       mcpoauth.ClientRepository
 	replay        ReplayCache
 	confirmations mcpoauth.ConfirmationRepository
-	dcrEnabled    bool
-	trustedHosts  []string
-	audit         AuditLogger
-	log           *logger.Logger
-	now           func() time.Time
+	// accessRequests, policyWriter and notifier run access requests;
+	// optional.
+	accessRequests mcpoauth.AccessRequestRepository
+	policyWriter   PolicyWriter
+	notifier       InAppNotifier
+	dcrEnabled     bool
+	trustedHosts   []string
+	audit          AuditLogger
+	log            *logger.Logger
+	now            func() time.Time
 }
 
 // Config wires the service.
@@ -84,6 +89,13 @@ type Config struct {
 	// Confirmations stores write-action confirmations (RFC-062 §10);
 	// without it write tools cannot run.
 	Confirmations mcpoauth.ConfirmationRepository
+	// AccessRequests stores members' requests to approve a publisher;
+	// PolicyWriter applies an approval; Notifier tells administrators and
+	// requesters. Without AccessRequests members cannot request access;
+	// without PolicyWriter nobody can approve.
+	AccessRequests mcpoauth.AccessRequestRepository
+	PolicyWriter   PolicyWriter
+	Notifier       InAppNotifier
 	// DynamicRegistration turns POST /oauth/register on
 	// (MCP_OAUTH_DCR_ENABLED). Deprecated by MCP; off by default.
 	DynamicRegistration bool
@@ -109,8 +121,9 @@ func NewService(c Config) (*Service, error) {
 		fetcher: c.Fetcher, members: c.Members, permissions: c.Permissions, audit: c.Audit,
 		policies: c.Policies, trustedHosts: NormalizeTrustedHosts(c.TrustedClientHosts), connections: c.Connections,
 		clients: c.Clients, dcrEnabled: c.DynamicRegistration, replay: c.Replay,
-		confirmations: c.Confirmations,
-		log:           c.Logger.With("service", "mcp-oauth"), now: time.Now,
+		confirmations:  c.Confirmations,
+		accessRequests: c.AccessRequests, policyWriter: c.PolicyWriter, notifier: c.Notifier,
+		log: c.Logger.With("service", "mcp-oauth"), now: time.Now,
 	}, nil
 }
 
@@ -273,9 +286,16 @@ type ConsentView struct {
 	Verified bool
 	// Blocked is why the organization's policy refuses the application
 	// (BlockedMCPDisabled, BlockedClientNotFound), or "".
-	Blocked   string
-	Scopes    []ScopeView
-	ExpiresAt time.Time
+	Blocked string
+	// Requestable: the application is blocked only because its publisher
+	// is not approved, and members may ask for it.
+	Requestable bool
+	// CanAllow: the caller may approve the publisher right here.
+	CanAllow bool
+	// AccessRequested: a request for the publisher is already waiting.
+	AccessRequested bool
+	Scopes          []ScopeView
+	ExpiresAt       time.Time
 }
 
 // ErrConsentUnavailable is any consent request that cannot be acted on:
@@ -318,6 +338,7 @@ func (s *Service) ConsentRequest(ctx context.Context, requestID, userID, tenantI
 		Verified:     s.verifiedClient(pol, req.Client, tenantID),
 		Blocked:      s.blockedReason(pol, req.Client, tenantID),
 	}
+	s.consentPublisherState(ctx, view, pol, req.Client, tenantID, all, held)
 	for _, sc := range req.Scopes {
 		allowed := allowsScope(pol, sc)
 		view.Scopes = append(view.Scopes, ScopeView{

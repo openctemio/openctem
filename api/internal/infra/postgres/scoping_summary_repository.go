@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scoping"
@@ -12,8 +13,9 @@ import (
 
 // ScopingSummaryRepository computes the Scoping overview in one query.
 //
-// Definitions (tenant-wide; no data scope, like the Program Health
-// scorecards):
+// Definitions (counts of assets and of what hangs off assets follow the
+// caller's data scope; configuration counts - services, units, boundary,
+// profiles, cycles, threat models - are tenant-wide):
 //   - assets: status <> 'archived'. Crown jewels are such assets with
 //     is_crown_jewel. A crown jewel has an owner when an asset_owners row
 //     names a user or group of the tenant (the same test as the inventory's
@@ -43,7 +45,7 @@ const scopingSummaryQuery = `
 WITH live_assets AS (
 	SELECT a.id, a.is_crown_jewel
 	  FROM assets a
-	 WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.status <> 'archived'
+	 WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.status <> 'archived'/*SCOPE*/
 ),
 crown AS (
 	SELECT la.id FROM live_assets la WHERE la.is_crown_jewel
@@ -68,7 +70,7 @@ SELECT
 	(SELECT COUNT(*) FROM business_services bs
 	  WHERE bs.tenant_id = $1
 	    AND EXISTS (SELECT 1 FROM business_service_assets bsa
-	                  JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $1
+	                  JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $1/*SCOPE*/
 	                 WHERE bsa.service_id = bs.id)),
 	(SELECT COUNT(*) FROM business_units bu WHERE bu.tenant_id = $1),
 	(SELECT COUNT(*) FROM live_assets),
@@ -99,7 +101,7 @@ LEFT JOIN focus f ON TRUE
 `
 
 // GetSummary returns the Scoping overview for a tenant.
-func (r *ScopingSummaryRepository) GetSummary(ctx context.Context, tenantID shared.ID) (*scoping.Summary, error) {
+func (r *ScopingSummaryRepository) GetSummary(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*scoping.Summary, error) {
 	var (
 		s                                        scoping.Summary
 		cycleID, cycleName, cycleStatus          sql.NullString
@@ -107,7 +109,15 @@ func (r *ScopingSummaryRepository) GetSummary(ctx context.Context, tenantID shar
 		objectives, criteria, services, excl, ts sql.NullInt64
 		scopeAssets, cycleProfiles               sql.NullInt64
 	)
-	err := r.db.QueryRowContext(ctx, scopingSummaryQuery, tenantID.String()).Scan(
+	query, args := scopingSummaryQuery, []any{tenantID.String()}
+	if scope != nil {
+		cond, scopeArgs := dataScopeCondAt("a.id", scope, 2)
+		query = strings.ReplaceAll(query, "/*SCOPE*/", " AND "+cond)
+		args = append(args, scopeArgs...)
+	} else {
+		query = strings.ReplaceAll(query, "/*SCOPE*/", "")
+	}
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&s.CrownJewels.Total, &s.CrownJewels.WithOwner,
 		&s.BusinessServices.Total, &s.BusinessServices.WithAssets,
 		&s.BusinessUnits.Total,

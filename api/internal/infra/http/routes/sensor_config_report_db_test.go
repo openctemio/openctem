@@ -226,9 +226,13 @@ func TestSensorConfigReport_ManagementReadAndIsolation_DB(t *testing.T) {
 	s := h.newSensor(h.tenantID, "config-report-read")
 	h.putConfigReport(s, configReportBody("2026-10-05T10:00:00Z"))
 	viewer := m.member(h.tenantID, "viewer")
+	// The report names the sensor's host settings: owners and administrators
+	// read it (sensors:write); a viewer holds sensors:read only.
+	m.expect(viewer, http.MethodGet, "/api/v1/sensors/"+s.id+"/config-report", "", http.StatusForbidden)
+	reader := m.member(h.tenantID, "admin")
 
 	var got handler.SensorConfigReportResponse
-	body := m.expect(viewer, http.MethodGet, "/api/v1/sensors/"+s.id+"/config-report", "", http.StatusOK)
+	body := m.expect(reader, http.MethodGet, "/api/v1/sensors/"+s.id+"/config-report", "", http.StatusOK)
 	if strings.Contains(body, configCanary) {
 		t.Fatalf("read leaks a setting value: %s", body)
 	}
@@ -271,15 +275,15 @@ func TestSensorConfigReport_ManagementReadAndIsolation_DB(t *testing.T) {
 	// BOLA: another organization's administrator, an unknown id.
 	outsider := m.member(m.tenant(), "admin")
 	m.expect(outsider, http.MethodGet, "/api/v1/sensors/"+s.id+"/config-report", "", http.StatusNotFound)
-	m.expect(viewer, http.MethodGet, "/api/v1/sensors/01a10b14-0000-7000-8000-000000000000/config-report", "", http.StatusNotFound)
-	m.expect(viewer, http.MethodGet, "/api/v1/sensors/not-a-uuid/config-report", "", http.StatusBadRequest)
+	m.expect(reader, http.MethodGet, "/api/v1/sensors/01a10b14-0000-7000-8000-000000000000/config-report", "", http.StatusNotFound)
+	m.expect(reader, http.MethodGet, "/api/v1/sensors/not-a-uuid/config-report", "", http.StatusBadRequest)
 
 	// An older sensor that heartbeats without a report: a derived checklist.
 	old := h.newSensor(h.tenantID, "config-report-derived")
 	h.heartbeatActions(old, map[string]any{"status": "running", "tools": []any{
 		map[string]any{"name": "semgrep", "installed": false}, map[string]any{"name": "nuclei", "installed": true}}})
 	var derived handler.SensorConfigReportResponse
-	mustJSON(t, m.expect(viewer, http.MethodGet, "/api/v1/sensors/"+old.id+"/config-report", "", http.StatusOK), &derived)
+	mustJSON(t, m.expect(reader, http.MethodGet, "/api/v1/sensors/"+old.id+"/config-report", "", http.StatusOK), &derived)
 	if derived.State != "derived" || derived.DerivedNote == "" || derived.Health != "impaired" || len(derived.Checks) == 0 ||
 		derived.Checks[0].ID != "tool.semgrep.binary" || derived.Checks[0].Status != "fail" {
 		t.Fatalf("derived %+v", derived)
@@ -291,7 +295,7 @@ func TestSensorConfigReport_ManagementReadAndIsolation_DB(t *testing.T) {
 	// Never connected: nothing.
 	idle := h.newSensor(h.tenantID, "config-report-none")
 	var none handler.SensorConfigReportResponse
-	mustJSON(t, m.expect(viewer, http.MethodGet, "/api/v1/sensors/"+idle.id+"/config-report", "", http.StatusOK), &none)
+	mustJSON(t, m.expect(reader, http.MethodGet, "/api/v1/sensors/"+idle.id+"/config-report", "", http.StatusOK), &none)
 	if none.State != "none" || none.Health != "unknown" || len(none.Checks) != 0 || none.Checks == nil {
 		t.Fatalf("none %+v", none)
 	}

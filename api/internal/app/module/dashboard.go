@@ -2,6 +2,7 @@ package module
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -91,20 +92,20 @@ type DashboardStatsRepository interface {
 	// MTTR & Trending
 	// A non-nil scope averages only findings on in-scope assets.
 	GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error)
-	GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error)
+	GetRiskVelocity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, weeks int) ([]RiskVelocityPoint, error)
 
 	// Data Quality Scorecard (RFC-005)
-	GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error)
+	GetDataQualityScorecard(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*DataQualityScorecard, error)
 	// Risk Trend (RFC-005 Gap 4)
 	GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]RiskTrendPoint, error)
 
 	// Executive Summary (Phase 2)
-	GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*ExecutiveSummary, error)
+	GetExecutiveSummary(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*ExecutiveSummary, error)
 	// MTTR Analytics (Phase 2)
 	// A non-nil scope averages only findings on in-scope assets.
 	GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*MTTRAnalytics, error)
 	// Process Metrics (Phase 2)
-	GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProcessMetrics, error)
+	GetProcessMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*ProcessMetrics, error)
 	// CTEM program metrics (MTTD internet-facing, MTTR validated, owner acceptance)
 	GetProgramMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProgramMetrics, error)
 }
@@ -298,17 +299,52 @@ func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.I
 }
 
 // GetRiskVelocity returns weekly new vs resolved finding counts.
+// It follows the viewer like the other dashboard numbers (countScope).
 func (s *DashboardService) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error) {
-	return s.repo.GetRiskVelocity(ctx, tenantID, weeks)
+	scope, _, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.repo.GetRiskVelocity(ctx, tenantID, scope, weeks)
+}
+
+// ErrAggregateRequired: a number that is only kept for the whole organization
+// is shown to a restricted viewer only when they hold dashboard:aggregate.
+var ErrAggregateRequired = fmt.Errorf("%w: these figures cover the whole organization; they need the dashboard:aggregate permission or full data access", shared.ErrForbidden)
+
+// orgWideOnly refuses a restricted viewer without dashboard:aggregate: the
+// figure cannot be computed for their scope.
+func (s *DashboardService) orgWideOnly(ctx context.Context, tenantID shared.ID) error {
+	scope, _, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope.Restricted() {
+		return ErrAggregateRequired
+	}
+	return nil
 }
 
 // GetDataQualityScorecard returns data quality metrics (RFC-005 Gap 5).
+// It follows the viewer like the other dashboard numbers (countScope).
 func (s *DashboardService) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error) {
-	return s.repo.GetDataQualityScorecard(ctx, tenantID)
+	scope, _, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.repo.GetDataQualityScorecard(ctx, tenantID, scope)
 }
 
 // GetRiskTrend returns risk snapshot time-series (RFC-005 Gap 4).
+// The snapshots are computed per organization, so a restricted viewer without
+// dashboard:aggregate gets an empty series, not the organization's history.
 func (s *DashboardService) GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]RiskTrendPoint, error) {
+	if err := s.orgWideOnly(ctx, tenantID); err != nil {
+		if errors.Is(err, ErrAggregateRequired) {
+			return []RiskTrendPoint{}, nil
+		}
+		return nil, err
+	}
 	return s.repo.GetRiskTrend(ctx, tenantID, days)
 }
 
@@ -586,20 +622,36 @@ type OwnerAcceptanceMetric struct {
 }
 
 // GetProgramMetrics returns the CTEM program metrics for a tenant.
+// The figures (cycles, control coverage, time to detect) are kept for the
+// whole organization, so a restricted viewer needs dashboard:aggregate.
 func (s *DashboardService) GetProgramMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProgramMetrics, error) {
+	if err := s.orgWideOnly(ctx, tenantID); err != nil {
+		return nil, err
+	}
 	return s.repo.GetProgramMetrics(ctx, tenantID, days)
 }
 
 // GetProcessMetrics returns process efficiency metrics.
+// It follows the viewer like the other dashboard numbers (countScope).
 func (s *DashboardService) GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProcessMetrics, error) {
-	return s.repo.GetProcessMetrics(ctx, tenantID, days)
+	scope, _, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.repo.GetProcessMetrics(ctx, tenantID, scope, days)
 }
 
 // GetExecutiveSummary returns executive-level metrics for a time period.
-// Layer 2: TopRisks (finding titles and asset names) keeps only in-scope
-// assets for a restricted member; the metrics stay tenant-wide.
+// The totals follow the viewer (countScope): a restricted member without
+// dashboard:aggregate sees their own scope. TopRisks (finding titles and
+// asset names) is row data and keeps only in-scope assets whatever the
+// aggregate permission.
 func (s *DashboardService) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*ExecutiveSummary, error) {
-	sum, err := s.repo.GetExecutiveSummary(ctx, tenantID, days)
+	countScope, _, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	sum, err := s.repo.GetExecutiveSummary(ctx, tenantID, countScope, days)
 	if err != nil || sum == nil {
 		return sum, err
 	}

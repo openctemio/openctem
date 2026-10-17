@@ -176,8 +176,9 @@ func (d *PlatformUserDirectory) Get(ctx context.Context, id shared.ID) (*Platfor
 
 func (d *PlatformUserDirectory) memberships(ctx context.Context, id shared.ID) ([]PlatformUserMembership, error) {
 	rows, err := d.db.QueryContext(ctx, `
-		SELECT t.id::text, t.name, t.slug, m.role, COALESCE(m.status, 'active'), m.joined_at
+		SELECT t.id::text, t.name, t.slug, ver.role, COALESCE(m.status, 'active'), m.joined_at
 		FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id
+		JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1
 		ORDER BY t.name, t.id`, id.String())
 	if err != nil {

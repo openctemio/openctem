@@ -92,6 +92,7 @@
   "confirm.capability.toolCount": "{count} công cụ",
   "confirm.capability.tools": "Công cụ:",
   "confirm.capability.unused": "Năng lực này không được công cụ hay cảm biến nào sử dụng.",
+  "confirm.change": "Thay đổi",
   "confirm.ciPipeline.retire": "Ngừng pipeline",
   "confirm.ciPipeline.retireDesc": "Các phát hiện chỉ do pipeline này báo cáo và không nguồn nào khác thấy kể từ đó được đóng với lý do \"nguồn đã ngừng\". Các phát hiện mà nguồn khác vẫn thấy không bị ảnh hưởng. Mỗi phát hiện đã đóng có thể mở lại, và lần chạy tiếp theo của pipeline sẽ đưa nó trở lại.",
   "confirm.ciPipeline.retireTitle": "Ngừng sử dụng pipeline CI {name}?",
@@ -139,6 +140,7 @@
   "confirm.finding.deleteTitle": "Xóa phát hiện này?",
   "confirm.finding.resolve": "Xử lý",
   "confirm.findingApproval.approveDesc": "Phát hiện chuyển sang trạng thái được yêu cầu ngay lập tức.",
+  "confirm.findingApproval.approveDescMore": "Phê duyệt của bạn được ghi nhận. Phát hiện chuyển sang trạng thái được yêu cầu khi có thêm {count} phê duyệt.",
   "confirm.findingApproval.approveTitle": "Phê duyệt thay đổi trạng thái này?",
   "confirm.findingApproval.cancel": "Hủy yêu cầu",
   "confirm.findingApproval.cancelDesc": "Yêu cầu bị rút lại và phát hiện giữ trạng thái hiện tại. Không thể hoàn tác; hãy yêu cầu lại nếu cần.",
@@ -234,6 +236,8 @@
   "confirm.role.delete": "Xóa vai trò",
   "confirm.role.deleteDesc": "Thành viên có vai trò này mất các quyền của nó ngay lập tức, trừ khi một vai trò khác cấp các quyền đó. Không thể hoàn tác.",
   "confirm.role.deleteTitle": "Xóa vai trò \"{name}\"?",
+  "confirm.role.demoteDesc": "Việc này đổi vai trò của họ trong tổ chức. Họ mất ngay các quyền mà vai trò {role} cấp. Bạn có thể nâng quyền lại trên trang Thành viên.",
+  "confirm.role.demoteTitle": "Đổi {name} từ {role} sang {to}?",
   "confirm.role.removeMemberDesc": "Họ mất ngay các quyền mà vai trò này cấp, trừ khi một vai trò hoặc nhóm khác cũng cấp các quyền đó. Bạn có thể thêm lại họ sau.",
   "confirm.role.removeMemberTitle": "Gỡ {name} khỏi vai trò {role}?",
   "confirm.saml.removeDesc": "Mọi người không thể đăng nhập qua nhà cung cấp danh tính của bạn nữa. Hãy chắc chắn họ có cách đăng nhập khác trước. Không thể hoàn tác.",
@@ -371,6 +375,5 @@
   "confirm.verifiedDomain.removeTitle": "Gỡ tên miền {domain}?",
   "confirm.workflowStep.builderDeleteDesc": "Bước này rời khỏi quy trình bạn đang chỉnh sửa và các bước phụ thuộc vào nó mất phụ thuộc đó. Không có gì thay đổi cho tới khi bạn lưu.",
   "confirm.workflowStep.deleteDesc": "Bước này rời khỏi bản nháp và các bước phụ thuộc vào nó mất phụ thuộc đó. Quy trình đã xuất bản không thay đổi cho tới khi bạn xuất bản.",
-  "confirm.workflowStep.deleteTitle": "Xóa bước này?",
-  "confirm.findingApproval.approveDescMore": "Phê duyệt của bạn được ghi nhận. Phát hiện chuyển sang trạng thái được yêu cầu khi có thêm {count} phê duyệt."
+  "confirm.workflowStep.deleteTitle": "Xóa bước này?"
 }

@@ -89,6 +89,7 @@ func TestAuditHandler_PagesAreOneBased(t *testing.T) {
 				req := httptest.NewRequest(http.MethodGet, c.target+tc.query, nil)
 				ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
 				ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
+				ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
 				req = req.WithContext(ctx)
 				if c.setup != nil {
 					c.setup(req)
@@ -123,6 +124,7 @@ func TestAuditHandler_PagesAreOneBased(t *testing.T) {
 				req := httptest.NewRequest(http.MethodGet, c.target+bad, nil)
 				ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
 				ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
+				ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
 				req = req.WithContext(ctx)
 				if c.setup != nil {
 					c.setup(req)
