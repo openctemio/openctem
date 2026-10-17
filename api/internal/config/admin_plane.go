@@ -92,6 +92,13 @@ func ParseAdminAllowedCIDRs(entries []string) ([]netip.Prefix, error) {
 }
 
 func (c *Config) validateAdminPlane() error {
+	// The console's CSRF token is signed with a key every replica must share
+	// (the session-signing secret). Without one each process draws its own
+	// random key, and a token issued by one replica fails on the next.
+	if c.IsProduction() && c.Auth.JWTSecret == "" {
+		return fmt.Errorf("the platform console needs a secret shared by every replica for its CSRF tokens: " +
+			"set AUTH_JWT_SECRET (or APP_ENCRYPTION_KEY, from which it is derived)")
+	}
 	if c.AdminPlane.ListenAddr != "" {
 		if c.AdminPlane.ListenAddr == c.Server.Addr() {
 			return fmt.Errorf("ADMIN_LISTEN_ADDR must differ from the main listener (%s)", c.Server.Addr())
