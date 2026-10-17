@@ -21,6 +21,36 @@ type AuditHandler struct {
 	service   *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
+	scope     DataScopeEnforcer
+}
+
+// SetDataScope wires the data-scope enforcer. The audit trail names assets and
+// findings (resource names, messages, change diffs), so a caller whose data
+// scope is restricted may read only their own activity.
+func (h *AuditHandler) SetDataScope(e DataScopeEnforcer) *AuditHandler {
+	h.scope = e
+	return h
+}
+
+// requireFullData answers 403 and returns false unless the caller is an
+// administrator or holds full data access. Fails closed on a lookup error.
+func (h *AuditHandler) requireFullData(w http.ResponseWriter, r *http.Request) bool {
+	ctx := r.Context()
+	if middleware.IsAdmin(ctx) || h.scope == nil {
+		return true
+	}
+	tid, err := shared.IDFromString(middleware.GetTenantID(ctx))
+	if err != nil {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return false
+	}
+	sc, err := h.scope.Resolve(ctx, tid)
+	if err != nil || sc.Restricted() {
+		apierror.Forbidden("Audit log access requires full data access").
+			WithDetails(map[string]string{"required": "full data access"}).WriteJSON(w)
+		return false
+	}
+	return true
 }
 
 // NewAuditHandler creates a new audit handler.
@@ -183,6 +213,9 @@ func (h *AuditHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Failure      401  {object}  map[string]string
 // @Router       /audit-logs [get]
 func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
+	if !h.requireFullData(w, r) {
+		return
+	}
 	// Get tenant ID from context (required for tenant-scoped logs)
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == "" {
@@ -294,6 +327,9 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object}  map[string]string
 // @Router       /audit-logs/{id} [get]
 func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
+	if !h.requireFullData(w, r) {
+		return
+	}
 	auditLogID := r.PathValue("id")
 	if auditLogID == "" {
 		apierror.BadRequest("Audit log ID is required").WriteJSON(w)
@@ -340,6 +376,9 @@ func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object}  map[string]string
 // @Router       /audit-logs/resource/{type}/{id} [get]
 func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request) {
+	if !h.requireFullData(w, r) {
+		return
+	}
 	resourceType := r.PathValue("type")
 	resourceID := r.PathValue("id")
 
@@ -397,6 +436,12 @@ func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("id")
 	if userID == "" {
 		apierror.BadRequest("User ID is required").WriteJSON(w)
+		return
+	}
+
+	// Everyone may read their own activity; another user's activity names
+	// objects the caller may not see.
+	if userID != middleware.GetUserID(r.Context()) && !h.requireFullData(w, r) {
 		return
 	}
 
@@ -473,6 +518,9 @@ type AuditStatsResponse struct {
 // @Failure      400  {object}  map[string]string
 // @Router       /audit-logs/stats [get]
 func (h *AuditHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+	if !h.requireFullData(w, r) {
+		return
+	}
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == "" {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
