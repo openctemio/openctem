@@ -30,6 +30,7 @@ import {
   useUrlParam,
   useUrlFilter,
   useUrlFilterList,
+  useUrlSettled,
   pushUrlSearch,
   replaceUrlSearch,
 } from '@/hooks/use-url-param'
@@ -141,7 +142,10 @@ import {
 } from '@/features/findings/components/finding-groups-table'
 import { AutoAssignDialog } from '@/features/findings/components/auto-assign-dialog'
 import type { GroupByDimension } from '@/features/findings/api/use-finding-groups'
-import { FindingContextChips } from '@/features/findings/components/finding-context-chips'
+import {
+  FindingContextChips,
+  hasFindingContextFilters,
+} from '@/features/findings/components/finding-context-chips'
 import { MarkFixedDialog } from '@/features/findings/components/mark-fixed-dialog'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
 import { useCanCreateTicket } from '@/features/findings/hooks/use-can-create-ticket'
@@ -154,6 +158,7 @@ import {
   useFindingStatsApi,
   buildFindingsExportUrl,
   invalidateFindingsCache,
+  type FindingStatsFilters,
 } from '@/features/findings/api/use-findings-api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import type { ApiFinding, FindingApiFilters } from '@/features/findings/api/finding-api.types'
@@ -360,19 +365,27 @@ const PRIORITY_OPTIONS = [
 /**
  * First-load placeholder shaped like the toolbar + table it stands in for. The
  * context chips render in it already (they come from the URL, not the fetch),
- * so they sit in the same toolbar row before and after the rows load.
+ * in the same row under the toolbar as the loaded table puts them, so nothing
+ * moves when the rows arrive.
  */
 function FindingsTableSkeleton({ contextChips }: { contextChips?: ReactNode }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <Skeleton className="h-9 w-24" />
           <Skeleton className="h-9 w-72" />
-          {contextChips}
         </div>
         <Skeleton className="ms-auto h-9 w-24" />
       </div>
+      {contextChips ? (
+        <div
+          data-testid="data-table-toolbar-below"
+          className="-mt-2 flex min-w-0 flex-wrap items-center gap-2"
+        >
+          {contextChips}
+        </div>
+      ) : null}
       <div className="space-y-2 rounded-md border p-3">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-10 w-full" />
@@ -427,6 +440,10 @@ export default function FindingsPage() {
 function FindingsContent() {
   const searchParams = useUrlParams()
   const router = useRouter()
+  // False for the one render a client-side navigation makes before the address
+  // bar holds this page's URL: every URL param read then is the previous
+  // page's. No request is sent until it is true (see useUrlSettled).
+  const urlSettled = useUrlSettled()
   // The page URL uses the API's own filter params (RFC-048), so a page link and
   // the API query are the same words. Old page links are rewritten once below.
   const assetIdFilter = searchParams.get('asset_id')
@@ -734,13 +751,20 @@ function FindingsContent() {
   // The filter the current page number belongs to. While a new filter waits
   // for its page reset (the effect below), the list already asks page 1:
   // asking the old page first sent the list request twice (research/81).
-  const [pagedFilterKey, setPagedFilterKey] = useState(filterKey)
-  const filterChanged = pagedFilterKey !== filterKey
+  // Recorded only once the URL is this page's: a key taken from the previous
+  // page's params would read as a filter change and reset a linked ?page=3.
+  const [pagedFilterKey, setPagedFilterKey] = useState<string | null>(null)
+  const filterChanged = pagedFilterKey !== null && pagedFilterKey !== filterKey
   useEffect(() => {
+    if (!urlSettled) return
+    if (pagedFilterKey === null) {
+      setPagedFilterKey(filterKey)
+      return
+    }
     if (!filterChanged) return
     setPagedFilterKey(filterKey)
     setPage(1)
-  }, [filterChanged, filterKey, setPage])
+  }, [urlSettled, pagedFilterKey, filterChanged, filterKey, setPage])
 
   const apiFilters = useMemo((): FindingApiFilters => {
     const filters: FindingApiFilters = {
@@ -820,22 +844,56 @@ function FindingsContent() {
     return { ...rest, state: 'all' as const }
   }, [apiFilters])
 
-  // The overview strip is page-level: every finding the caller may see (their
-  // data scope applies server-side), whatever the state tab, search or
-  // filters. Filter-aware numbers live in the tab counts and the result bar.
-  // With no filter set, the overview and tab-count requests are the same URL,
-  // so the page loads ONE stats response; neither key holds the state tab, so
+  // The overview strip describes the page's scope: every finding the caller
+  // may see (their data scope applies server-side), narrowed only by the
+  // context filters the page was opened with (an asset, a scan run, a CVE or
+  // rule group's "View", the other group drill-downs). Those are the page's
+  // scope, shown as chips above the table: "Total 114" over an asset's 3
+  // findings contradicted the list. The state tab, search and facet filters
+  // never move the strip; filter-aware numbers live in the tab counts. With no
+  // filter set, the overview and tab-count requests are the same URL, so the
+  // page loads ONE stats response; neither key holds the state tab, so
   // switching tabs sends no stats request (research/81).
   const overviewStatsFilters = useMemo(
-    () => ({ state: 'all' as const, exclude_statuses: HIDDEN_STATUSES }),
-    [HIDDEN_STATUSES]
+    (): FindingStatsFilters => ({
+      state: 'all',
+      exclude_statuses: HIDDEN_STATUSES,
+      asset_id: apiFilters.asset_id,
+      scan_id: apiFilters.scan_id,
+      cve_ids: apiFilters.cve_ids,
+      rule_id: apiFilters.rule_id,
+      families: apiFilters.families,
+      finding_types: apiFilters.finding_types,
+      component_id: apiFilters.component_id,
+      asset_owner_id: apiFilters.asset_owner_id,
+      asset_owner_unassigned: apiFilters.asset_owner_unassigned,
+    }),
+    [HIDDEN_STATUSES, apiFilters]
   )
+  // The context filters as the chips (and the strip's scope) read them.
+  const contextFilterValues = {
+    assetId: assetIdFilter,
+    scanId: scanIdFilter,
+    cveId: cveParam,
+    ruleId: ruleParam,
+    family: familyParam,
+    findingType: findingTypeParam,
+    componentId: componentParam,
+    ownerId: ownerParam,
+    ownerUnassigned,
+  }
+  const hasContextScope = hasFindingContextFilters(contextFilterValues)
+  // keepPreviousData: a filter change keeps the numbers on screen until the
+  // new ones arrive, instead of blanking the strip and the tab counts.
   const {
     data: findingStats,
     isLoading: statsLoading,
     mutate: mutateOverviewStats,
-  } = useFindingStatsApi(overviewStatsFilters)
-  const { data: lensStats, mutate: mutateLensStats } = useFindingStatsApi(lensStatsFilters)
+  } = useFindingStatsApi(overviewStatsFilters, { enabled: urlSettled, keepPreviousData: true })
+  const { data: lensStats, mutate: mutateLensStats } = useFindingStatsApi(lensStatsFilters, {
+    enabled: urlSettled,
+    keepPreviousData: true,
+  })
   const mutateStats = useCallback(
     () => Promise.all([mutateOverviewStats(), mutateLensStats()]),
     [mutateOverviewStats, mutateLensStats]
@@ -848,7 +906,10 @@ function FindingsContent() {
     error,
     isLoading: findingsLoading,
     mutate: mutateFindingsList,
-  } = useFindingsApi(apiFilters, { keepPreviousData: true, enabled: !groupBy && !verifyView })
+  } = useFindingsApi(apiFilters, {
+    keepPreviousData: true,
+    enabled: urlSettled && !groupBy && !verifyView,
+  })
   // Every refresh after a change also reloads the grouped view's groups and rows.
   const mutateFindings = useCallback(() => {
     setGroupsReloadKey((k) => k + 1)
@@ -861,7 +922,7 @@ function FindingsContent() {
   const overview = useMemo(() => findingsOverview(findingStats), [findingStats])
 
   // Initial loading state (only true when we don't have stats yet)
-  const isInitialLoading = statsLoading && !findingStats
+  const isInitialLoading = (!urlSettled || statsLoading) && !findingStats
 
   // Transform API data to UI format
   const findings = useMemo(() => {
@@ -1547,7 +1608,12 @@ function FindingsContent() {
     {
       key: 'total',
       label: 'Total',
-      description: 'Every finding you can see, in every state (the All tab).',
+      description: hasContextScope
+        ? t(
+            'findings.metrics.totalScopedDescription',
+            'Every finding in the scope shown above the table (an asset, a scan or a group), in every state (the All tab).'
+          )
+        : 'Every finding you can see, in every state (the All tab).',
       value: overview.total,
       onClick: () => showOnly(lens === 'all' && onlyFacet('none') ? 'open' : 'all'),
       active: lens === 'all' && onlyFacet('none'),
@@ -1825,30 +1891,20 @@ function FindingsContent() {
   )
 
   // Filters that arrive from elsewhere (an asset, a scan run, a CVE or rule
-  // group) are context, not facets: always shown, inline in the toolbar so they
-  // never add a row above the table. Each chip removes only its own parameter.
+  // group) are context, not facets: always shown, in their own row under the
+  // toolbar (never inside it, where a chip made the toolbar row taller and
+  // moved its end controls). They come from the URL, so the row is there from
+  // the first frame. Each chip removes only its own parameter.
   const removeContextParam = (param: string) =>
     replaceUrlSearch(removeFilterParam(new URLSearchParams(window.location.search), param))
-  const contextFilterValues = {
-    assetId: assetIdFilter,
-    scanId: scanIdFilter,
-    cveId: cveParam,
-    ruleId: ruleParam,
-    family: familyParam,
-    findingType: findingTypeParam,
-    componentId: componentParam,
-    ownerId: ownerParam,
-    ownerUnassigned,
-  }
-  const contextChips = (
+  const contextChips = hasContextScope ? (
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
-  )
+  ) : undefined
 
   const toolbarStart = (
     <>
       {filterButtons}
       {searchBox}
-      {contextChips}
     </>
   )
 
@@ -2075,7 +2131,11 @@ function FindingsContent() {
             </div>
 
             <div className="min-w-0 flex-1 space-y-3">
-              {verifyView ? (
+              {!urlSettled ? (
+                // The render before the address bar holds this page's URL:
+                // nothing here is real yet, and nothing is fetched.
+                <FindingsTableSkeleton />
+              ) : verifyView ? (
                 <FindingGroupsTable
                   {...groupedProps}
                   dimension="cve_id"
@@ -2106,13 +2166,8 @@ function FindingsContent() {
                   onGroupsLoaded={(groups) =>
                     setHasUnassignedGroup(groups.some((g) => g.group_key === 'unassigned'))
                   }
-                  toolbarStart={
-                    <>
-                      {filterButtons}
-                      {searchBox}
-                      {contextChips}
-                    </>
-                  }
+                  toolbarStart={toolbarStart}
+                  toolbarBelow={contextChips}
                   toolbarEnd={
                     <>
                       {lensControl}
@@ -2144,6 +2199,7 @@ function FindingsContent() {
                   showSearch={false}
                   toolbarStart={toolbarStart}
                   toolbarEnd={toolbarEnd}
+                  toolbarBelow={contextChips}
                   getRowId={(f) => f.id}
                   manualPagination
                   rowCount={total}
