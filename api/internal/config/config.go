@@ -1666,6 +1666,7 @@ func Load() (*Config, error) {
 			AllowedCIDRs:             getEnvSlice("ADMIN_ALLOWED_CIDRS", DefaultAdminAllowedCIDRs),
 			ListenAddr:               getEnv("ADMIN_LISTEN_ADDR", ""),
 			ListenAllowAllInterfaces: getEnvBool("ADMIN_LISTEN_ALLOW_ALL_INTERFACES", false),
+			Plane:                    getEnv("OPENCTEM_PLANE", PlaneAll),
 		},
 		AdminElevationRequired: getEnv("ADMIN_ELEVATION", "required") != "off",
 		AdminAuditSink: AdminAuditSinkConfig{
