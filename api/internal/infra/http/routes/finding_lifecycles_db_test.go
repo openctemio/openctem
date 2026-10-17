@@ -21,9 +21,9 @@ func newLifecycleHarness(t *testing.T) *authzPolicyHarness {
 	t.Helper()
 	changeAuditExtraHandlers = func(hs *Handlers, db *postgres.DB) {
 		log := logger.NewNop()
-		limits := entitlementapp.NewService(postgres.NewPlanRepository(db), nil, nil, nil, log)
+		entitlement := entitlementapp.NewService(postgres.NewLimitsRepository(db), nil, log)
 		svc := lcapp.NewService(postgres.NewLifecycleSubStatusRepository(db), postgres.NewLifecycleSchemeRepository(db),
-			limits, auditapp.NewAuditService(postgres.NewAuditRepository(db), log), log)
+			entitlement, auditapp.NewAuditService(postgres.NewAuditRepository(db), log), log)
 		hs.FindingLifecycle = handler.NewFindingLifecycleHandler(svc, log)
 	}
 	t.Cleanup(func() { changeAuditExtraHandlers = nil })
@@ -65,8 +65,8 @@ func (h *authzPolicyHarness) putDraft(u policyUser, path, ifMatch, body string) 
 // scheme, edits the draft with If-Match, cannot publish an invalid one,
 // publishes a valid one and rolls back; another organization sees and
 // changes none of it; the category of a sub-status never changes; a sub-status
-// used by a published version cannot be archived; Free organizations are held
-// to their plan limits; every change is audited.
+// used by a published version cannot be archived; an organization with limits
+// is held to them; every change is audited.
 func TestFindingLifecycles_Routes_DB(t *testing.T) {
 	h := newLifecycleHarness(t)
 	org, other := h.tenant(), h.tenant()
@@ -198,19 +198,22 @@ func TestFindingLifecycles_Routes_DB(t *testing.T) {
 		t.Errorf("publish audit rows = %d, want 3", publishes)
 	}
 
-	// A Free organization: three labels, no scheme.
+	// An organization with limits: three labels, no scheme.
 	free := h.tenant()
 	freeAdmin := h.member(free, "admin")
-	h.exec(`INSERT INTO tenant_plans (tenant_id, plan) VALUES ($1, 'free')`, free)
+	for key, value := range map[string]int{"lifecycle_sub_statuses": 3, "lifecycle_schemes": 0} {
+		h.exec(`INSERT INTO tenant_limits (tenant_id, limit_key, value, reason, set_at, origin)
+			VALUES ($1, $2, $3, 'test', now(), 'operator')`, free, key, value)
+	}
 	for i := range 3 {
 		h.expect(freeAdmin, http.MethodPost, subs, fmt.Sprintf(`{"key":"label_%d","canonical_status":"new","name":"Label %d","color":"gray"}`, i, i), http.StatusCreated)
 	}
 	code, body = h.do(freeAdmin, http.MethodPost, subs, `{"key":"label_4","canonical_status":"new","name":"Label 4","color":"gray"}`)
-	if code != http.StatusForbidden || !jsonHas(body, "code", "PLAN_LIMIT") {
-		t.Fatalf("fourth Free sub-status: %d %s", code, body)
+	if code != http.StatusForbidden || !jsonHas(body, "code", "LIMIT_REACHED") {
+		t.Fatalf("fourth sub-status over the limit: %d %s", code, body)
 	}
 	code, body = h.do(freeAdmin, http.MethodPost, schemes, `{"key":"default","name":"Default"}`)
-	if code != http.StatusForbidden || !jsonHas(body, "code", "PLAN_LIMIT") {
-		t.Fatalf("Free lifecycle scheme: %d %s", code, body)
+	if code != http.StatusForbidden || !jsonHas(body, "code", "LIMIT_REACHED") {
+		t.Fatalf("lifecycle scheme over a limit of 0: %d %s", code, body)
 	}
 }

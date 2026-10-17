@@ -543,6 +543,11 @@ func run() int {
 		}()
 	}
 
+	if err := requireSelfServiceStartLimits(ctx, cfg, services); err != nil {
+		log.Error("refusing to start", "error", err)
+		return 1
+	}
+
 	// ==========================================================================
 	// Start Server
 	// ==========================================================================
@@ -555,6 +560,11 @@ func run() int {
 		if err := handlers.SensorV3.Start(ctx); err != nil {
 			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
 		}
+	}
+	internalAPI, err := startInternalAPI(cfg, repos, services, redisClient, log)
+	if err != nil {
+		log.Error("internal API not started", "error", err)
+		return 1
 	}
 	log.Info("application started", "http_addr", cfg.Server.Addr())
 
@@ -591,6 +601,7 @@ func run() int {
 			log.Error("sensor protocol v3 gRPC binding shutdown", "error", err)
 		}
 	}
+	stopInternalAPI(internalAPI, log)
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error("shutdown error", "error", err)
 		return 1
