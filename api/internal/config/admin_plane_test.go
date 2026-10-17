@@ -43,3 +43,21 @@ func TestAdminListenAddr(t *testing.T) {
 		t.Error("not host:port must fail even with allow-all")
 	}
 }
+
+func TestAdminPlaneProductionNeedsSharedCSRFSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name, env, secret string
+		refuse            bool
+	}{
+		{"production, no secret", EnvProduction, "", true},
+		{"production, secret", EnvProduction, "0123456789abcdef0123456789abcdef", false},
+		{"development, no secret", "development", "", false},
+	} {
+		c := &Config{}
+		c.App.Env = tc.env
+		c.Auth.JWTSecret = tc.secret
+		if got := c.validateAdminPlane() != nil; got != tc.refuse {
+			t.Errorf("%s: refused=%v, want %v", tc.name, got, tc.refuse)
+		}
+	}
+}
