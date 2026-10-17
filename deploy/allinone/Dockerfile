@@ -126,6 +126,7 @@ COPY --from=gateway modes /etc/caddy/modes
 COPY --from=gateway sensors /etc/caddy/sensors
 COPY --from=gateway admin /etc/caddy/admin
 COPY --chmod=0755 supervise.sh /usr/local/bin/openctem-supervise
+COPY --chmod=0644 console-plan.sh /usr/local/bin/openctem-console-plan
 COPY --chmod=0755 healthcheck.sh /usr/local/bin/openctem-healthcheck
 
 ENV GATEWAY=on \
@@ -156,7 +157,11 @@ VOLUME ["/data"]
 # GATEWAY=on publishes 443 and the platform console's site on 8443
 # (OPENCTEM_ADMIN_SITE=port, private client networks only; 80 is an optional
 # http->https redirect, the same as api/deploy/docker-compose.http-redirect.yml).
-# GATEWAY=off: 8080 (API), 3000 (web) and 3001 (console).
+# GATEWAY=off: 8080 (API) and 3000 (web). The console is not started (it
+# listens on loopback only, and only the gateway forwards the client address
+# the API's admin network check needs); OPENCTEM_CONSOLE_STANDALONE=true starts
+# it on 127.0.0.1:3001 for an operator who fronts it in the same network
+# namespace. Never publish 3001.
 EXPOSE 443 8443
 USER nextjs
 WORKDIR /opt/openctem

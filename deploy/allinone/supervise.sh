@@ -15,6 +15,7 @@
 set -euo pipefail
 
 GATEWAY="${GATEWAY:-on}"
+. /usr/local/bin/openctem-console-plan
 case "$GATEWAY" in on|off) ;; *) echo "[supervise] GATEWAY must be on|off, got '$GATEWAY'" >&2; exit 64 ;; esac
 
 # The gateway's entrypoint refuses incomplete TLS settings too; checking here
@@ -139,8 +140,10 @@ start api /opt/openctem/api ./server
 start web /opt/openctem/web env PORT=3000 HOSTNAME="$WEB_HOSTNAME" node server-with-ws.mjs
 # The platform console: its own app on :3001, talking to the API's console
 # listener on loopback (ADMIN_LISTEN_ADDR). None with OPENCTEM_ADMIN_SITE=off.
-if [ "${OPENCTEM_ADMIN_SITE:-port}" != off ]; then
-  start console /opt/openctem/console env PORT=3001 HOSTNAME="$WEB_HOSTNAME" \
+# It always binds to loopback and with GATEWAY=off does not run unless
+# OPENCTEM_CONSOLE_STANDALONE=true (console-plan.sh says why).
+if console_enabled; then
+  start console /opt/openctem/console env PORT=3001 HOSTNAME="$(console_host)" \
     ADMIN_API_URL="${ADMIN_API_URL:-http://${ADMIN_LISTEN_ADDR:-127.0.0.1:8080}}" node console/server.js
 fi
 if [ "$GATEWAY" = on ]; then
