@@ -19,6 +19,8 @@ func TestSoftwareObservations(t *testing.T) {
 		Technologies: []ctis.Technology{
 			{Name: "WordPress", Version: "6.1.1", Confidence: 90},
 			{Name: "nginx", CPE: "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"},
+			{Name: "HSTS", Categories: []string{"Security"}},
+			{Name: "Acme Pages", Version: "3", Categories: []string{"PaaS"}},
 		},
 		Services: []ctis.ServiceInfo{
 			{Port: 22, Protocol: "tcp", Banner: "OpenSSH_8.2p1 Ubuntu-4ubuntu0.5"},
@@ -26,7 +28,9 @@ func TestSoftwareObservations(t *testing.T) {
 		},
 		IdentityHints: &ctis.IdentityHints{OSCPE: "cpe:/o:canonical:ubuntu_linux:20.04"},
 		Properties: ctis.Properties{
-			"technologies": []any{"PHP:7.4.3", "Cloudflare"},
+			// Only a product with a version is a component: a CDN, a
+			// hosting platform, a security header or a bare name is not.
+			"technologies": []any{"PHP:7.4.3", "Cloudflare", "HSTS", "Vercel", "jQuery", "Cloudflare:2"},
 			"server":       "Apache/2.4.6 (CentOS) OpenSSL/1.0.2k-fips",
 		},
 	}
@@ -43,7 +47,6 @@ func TestSoftwareObservations(t *testing.T) {
 		{"MySQL", "5.7.33", "", software.SourceService, "tcp/3306"},
 		{"", "", "cpe:/o:canonical:ubuntu_linux:20.04", software.SourceOS, ""},
 		{"PHP", "7.4.3", "", software.SourceTechnology, ""},
-		{"Cloudflare", "", "", software.SourceTechnology, ""},
 		{"Apache", "2.4.6 (CentOS)", "", software.SourceService, ""},
 		{"OpenSSL", "1.0.2k-fips", "", software.SourceService, ""},
 	}

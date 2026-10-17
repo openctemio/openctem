@@ -71,10 +71,21 @@ func setCoverageFor(attr asset.SetAttribute, kind asset.SourceKind, tool string,
 }
 
 // technologiesOf is the technologies a report asset states, or nil when it
-// states none (not reporting is not "none").
+// states none (not reporting is not "none"): the typed technologies as
+// "Name:version" elements, and the loose properties.technologies list.
 func technologiesOf(a *ctis.Asset) ([]string, bool) {
 	var out []string
-	found := false
+	found := len(a.Technologies) > 0
+	for _, t := range a.Technologies {
+		name, version := strings.TrimSpace(t.Name), strings.TrimSpace(t.Version)
+		switch {
+		case name == "":
+		case version == "":
+			out = append(out, name)
+		default:
+			out = append(out, name+":"+version)
+		}
+	}
 	for _, key := range []string{"technologies", "technology"} {
 		if v, ok := a.Properties[key]; ok {
 			found = true

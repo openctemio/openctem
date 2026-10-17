@@ -108,7 +108,7 @@ func (s *SyncService) LinkExistingIssue(ctx context.Context, tenantID, findingID
 	if !allowed[ticketlink.ProjectOf(key)] {
 		return nil, ErrProjectNotConfigured
 	}
-	l, err := ticketlink.New(tenantID, ii.IntegrationID(), &findingID, nil, key, id,
+	l, err := ticketlink.New(tenantID, ii.IntegrationID(), ticketlink.ForFinding(findingID), key, id,
 		ii.SiteURL(), ticketlink.BrowseURL(ii.SiteURL(), key), ticketlink.RoleOwn, ticketlink.SourcePerson, by)
 	if err != nil {
 		return nil, err
@@ -189,7 +189,7 @@ func (s *SyncService) recordCreatedLink(ctx context.Context, client Client, tena
 	if parent != "" {
 		role = ticketlink.RoleSubtask
 	}
-	l, err := ticketlink.New(tenantID, ii.IntegrationID(), &findingID, nil, res.Key, res.ID,
+	l, err := ticketlink.New(tenantID, ii.IntegrationID(), ticketlink.ForFinding(findingID), res.Key, res.ID,
 		ii.SiteURL(), ticketlink.BrowseURL(ii.SiteURL(), res.Key), role, ticketlink.SourcePlatform, nil)
 	if err == nil {
 		err = s.links.Create(ctx, l)
