@@ -35,6 +35,7 @@ import { AssetFreshnessSection } from './asset-freshness-section'
 import { AssetCoverageSection } from './asset-coverage-section'
 import { AssetTimeline } from './asset-timeline'
 import { useTranslation } from '@/context/i18n-provider'
+import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { RELATED_PREVIEW_ROWS, RelatedAssetsList } from './relationships/related-assets-list'
 import { useRelatedAssets } from '../hooks/use-related-assets'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
@@ -415,6 +416,7 @@ export function AssetDetailSheet<T extends Asset>({
               </>
             }
             menu={menu}
+            fullPageHref={assetDetailHref(asset.id)}
             onClose={() => onOpenChange(false)}
           />
         }
