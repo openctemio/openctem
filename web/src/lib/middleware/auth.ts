@@ -21,7 +21,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
 import { safeInternalHref } from '@/lib/safe-href'
-import { ADMIN_CONSOLE_ROOT, API_PREFIX, LOGIN_PATH, NEXT_PARAM, PUBLIC_ROUTES } from './config'
+import { API_PREFIX, LOGIN_PATH, NEXT_PARAM, PUBLIC_ROUTES } from './config'
 
 /** Reads one cookie's value. */
 export type CookieReader = (name: string) => string | undefined
@@ -44,13 +44,9 @@ export function isApiRoute(pathname: string): boolean {
   return underPrefix(pathname, API_PREFIX)
 }
 
-export function isAdminConsoleRoute(pathname: string): boolean {
-  return underPrefix(pathname, ADMIN_CONSOLE_ROOT) && !isPublicRoute(pathname)
-}
-
 /** A page that needs the tenant session. Default: every page not listed public. */
 export function requiresAuth(pathname: string): boolean {
-  return !isApiRoute(pathname) && !isPublicRoute(pathname) && !isAdminConsoleRoute(pathname)
+  return !isApiRoute(pathname) && !isPublicRoute(pathname)
 }
 
 // ============================================
@@ -138,12 +134,6 @@ function withNext(page: string, next: string | undefined): string {
  */
 export function decideAuth({ pathname, search, cookie }: AuthRequest): AuthDecision {
   if (isApiRoute(pathname) || isPublicRoute(pathname)) return { type: 'allow' }
-
-  // The console's pages carry no session cookie a page request could see
-  // (its session cookie is scoped to its API, and its CSRF token lives in
-  // memory): the console shell asks the API and sends a browser without a
-  // session to the console's sign-in. The console API checks every call.
-  if (isAdminConsoleRoute(pathname)) return { type: 'allow' }
 
   if (hasSessionCookie(cookie)) return { type: 'allow' }
 

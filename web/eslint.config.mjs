@@ -23,7 +23,47 @@ const eslintConfig = defineConfig([
     // fixes.
     ".claude/**",
     ".next.*/**",
+    "console/.next/**",
+    "console/next-env.d.ts",
   ]),
+  // The tenant app and the platform console are separate apps (RFC-022
+  // revision 21): the tenant app never imports console code, and the console
+  // never imports a tenant route (only shared components, hooks and libs).
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    // Tests may drive both apps (the cross-app CSRF gate test); they ship in
+    // neither bundle.
+    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@console/*", "**/console/src/**"],
+              message: "The tenant app must not import platform console code (web/console).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["console/src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/app/*", "!@/app/providers"],
+              message: "The console must not import tenant routes; move shared code out of src/app.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Global rules
   {
     rules: {

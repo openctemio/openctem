@@ -20,7 +20,7 @@ deploy OpenCTEM with Docker Compose or the all-in-one image, follow
 | `api/deploy/docker-compose.yml` | The supported Compose deployment: gateway (one HTTPS port), web, API, PostgreSQL and Redis with TLS, and the one-shot `datastore-tls`, `db-roles` and `migrate` services |
 | `api/deploy/backup.sh` | Backup (`backup`), restore check (`verify`) and restore (`restore <dir> --yes`) of that stack |
 | `api/deploy/gateway/` | Gateway Caddyfile, TLS modes, entrypoint and `smoke-test.sh`. `planes.caddy` is generated from the API's plane table: do not edit it by hand |
-| `deploy/allinone/` | The all-in-one image (`ghcr.io/openctemio/openctem`): API, web and gateway in one container |
+| `deploy/allinone/` | The all-in-one image (`ghcr.io/openctemio/openctem`): API, web, platform console and gateway in one container |
 
 ## Development environment
 
@@ -75,8 +75,9 @@ make allinone
 ```
 
 Release images are built by `.github/workflows/docker-publish.yml` from a
-`vX.Y.Z` tag: `ghcr.io/openctemio/openctem-api`, `openctem-web`, `openctem`
-(all-in-one), `migrations`, `seed` and `admin-cli`.
+`vX.Y.Z` tag: `ghcr.io/openctemio/openctem-api`, `openctem-web`,
+`openctem-console` (the platform console), `openctem` (all-in-one),
+`openctem-gateway`, `migrations`, `seed` and `admin-cli`.
 
 ## Production
 
@@ -106,27 +107,44 @@ the API refuses to start. Recovery is in the
 
 ### Platform console
 
-The platform administration console has its own site and its own API
-listener, reachable only from private networks by default (RFC-022
-revision 20):
+The platform administration console is its own service (`console`, image
+`ghcr.io/openctemio/openctem-console`), served at the **root of its own site**
+and reachable only from private networks by default (RFC-022 revision 21).
+There is no `/admin` path on the main site. Four settings, also taken by
+`setup.sh`:
 
-- the gateway serves it on `https://<OPENCTEM_HOSTNAME>:8443` (`OPENCTEM_ADMIN_SITE=port`,
-  the default) or on its own DNS name (`OPENCTEM_ADMIN_SITE=host`,
-  `OPENCTEM_ADMIN_HOST=admin.example.com`: the stronger choice, since the browser
-  then isolates the console from the main site entirely);
-- only clients in `OPENCTEM_ADMIN_ALLOWED_CIDRS` (space-separated; default
-  loopback, RFC 1918 and IPv6 ULA) get past it; the API checks the same list
-  (`ADMIN_ALLOWED_CIDRS`); set `0.0.0.0/0 ::/0` only for a console you want on
-  the internet;
-- the main site answers 404 for `/admin` and `/api/v1/admin`; the web console
-  (`OPENCTEM_ADMIN_PLANE=separate`) serves only the console on the console site
-  and never on the main one; the API serves the console API only on its
-  internal listener (`ADMIN_LISTEN_ADDR=:8081`, never published), reached by the
-  web console through `ADMIN_API_URL`.
+| Setting | `setup.sh` | Default | Meaning |
+|---------|------------|---------|---------|
+| `OPENCTEM_ADMIN_SITE` | `--admin-site` | `port` | `port`: `https://<OPENCTEM_HOSTNAME>:<OPENCTEM_ADMIN_PORT>/`; `host`: `https://<OPENCTEM_ADMIN_HOST>/`; `off`: no console site |
+| `OPENCTEM_ADMIN_HOST` | `--admin-host` | empty | The console's own DNS name (e.g. `admin.example.com`), host mode |
+| `OPENCTEM_ADMIN_PORT` | `--admin-port` | `8443` | The console's port, port mode; any free port but 80, 443 and `GATEWAY_HTTPS_PORT` |
+| `OPENCTEM_ADMIN_ALLOWED_CIDRS` | `--admin-cidrs`, `--admin-public` | loopback, RFC 1918, IPv6 ULA | Client networks that get past the console site; everyone else gets 403. The API checks the same list (`ADMIN_ALLOWED_CIDRS`) |
 
-From a VPS, use an SSH tunnel: `ssh -L 8443:127.0.0.1:8443 you@server`, then
-open `https://localhost:8443/admin`. `./setup.sh <host> --admin-host <name>` puts
-the console on its own host name; `--admin-public` opens it to every network.
+Optional: `OPENCTEM_ADMIN_BIND` publishes the console port on one interface
+only (a private or VPN address); a published container port is not filtered
+by the host firewall.
+
+**For production, use host mode** (`./setup.sh <host> --admin-host
+admin.example.com`): only a separate host name isolates the console from the
+main site completely in the browser. Port mode is the default because it needs
+no DNS; the port number itself is not a security control (the controls are the
+separate origin, the network allow-list, the console's own sign-in and second
+factor, step-up and the audit log). Never publish the console through a public
+tunnel without an identity-aware access proxy in front of it.
+
+How it is wired: the gateway's console site sends every request to the
+`console` service; the console proxies its API to the API's internal console
+listener (`ADMIN_LISTEN_ADDR=<api>:8081`, never published) through
+`ADMIN_API_URL`. The main site answers 404 for `/api/v1/admin`, the web app has
+no console route and refuses to proxy the console API, and the console has no
+tenant route.
+
+From a VPS, use your VPN or an SSH tunnel: `ssh -L 8443:127.0.0.1:8443
+you@server`, then open `https://localhost:8443/`. A platform identity
+provider's redirect URI is `<console origin>/login/callback`.
+
+The all-in-one image runs the console too: publish `-p 8443:8443` (or set
+`OPENCTEM_ADMIN_SITE=host` and `OPENCTEM_ADMIN_HOST`).
 
 ### System page and host operations
 

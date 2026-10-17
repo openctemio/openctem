@@ -2,20 +2,11 @@
  * Helpers for the Next.js proxy (src/proxy.ts).
  */
 
-export {
-  PUBLIC_ROUTES,
-  API_PREFIX,
-  ADMIN_CONSOLE_ROOT,
-  ADMIN_CONSOLE_LOGIN,
-  LOGIN_PATH,
-  NEXT_PARAM,
-  type PublicRoute,
-} from './config'
+export { PUBLIC_ROUTES, API_PREFIX, LOGIN_PATH, NEXT_PARAM, type PublicRoute } from './config'
 
 export {
   isPublicRoute,
   isApiRoute,
-  isAdminConsoleRoute,
   requiresAuth,
   looksLikeJwt,
   hasSessionCookie,
