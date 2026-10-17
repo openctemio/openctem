@@ -278,10 +278,15 @@ export function VexImportSummary({ result }: { result: VexImportResult }) {
       </div>
       {!result.dry_run && (
         <p className="text-sm">
-          {t('components.vexImport.applied', '{closed} findings closed, {reopened} reopened.', {
-            closed: result.applied.closed,
-            reopened: result.applied.reopened,
-          })}
+          {t(
+            'components.vexImport.applied',
+            '{requested} false positive requests, {closed} findings resolved, {reopened} reopened.',
+            {
+              requested: result.applied.requested,
+              closed: result.applied.closed,
+              reopened: result.applied.reopened,
+            }
+          )}
         </p>
       )}
       {result.items.length > 0 && (

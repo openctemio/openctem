@@ -145,9 +145,9 @@ func TestDecide(t *testing.T) {
 
 	open := ref(product, asset, "1", "CVE-1")
 	e := Decide(open, na)
-	if e == nil || e.NewStatus != "false_positive" || e.ClosureReason != "component_not_present" ||
-		e.Verification != "vex_statement" || e.Statement != na {
-		t.Fatalf("not_affected closes an open finding: %+v", e)
+	if e == nil || e.Changes() || e.NewStatus != "" || !e.RequestFalsePositive || e.ClosureReason != "component_not_present" ||
+		e.Statement != na {
+		t.Fatalf("not_affected requests a false positive, never sets it: %+v", e)
 	}
 	if e := Decide(open, fixed); e == nil || e.NewStatus != "resolved" || e.ClosureReason != "fixed" || e.Verification != "vex_statement" {
 		t.Fatalf("fixed resolves: %+v", e)
@@ -158,12 +158,12 @@ func TestDecide(t *testing.T) {
 
 	human := ref(product, asset, "1", "CVE-1")
 	human.Source = "pentest"
-	if e := Decide(human, na); e == nil || e.Changes() {
+	if e := Decide(human, na); e == nil || e.Changes() || e.RequestFalsePositive {
 		t.Fatalf("a human-sourced finding is never closed: %+v", e)
 	}
 	accepted := ref(product, asset, "1", "CVE-1")
 	accepted.Status = "accepted"
-	if e := Decide(accepted, na); e == nil || e.Changes() {
+	if e := Decide(accepted, na); e == nil || e.Changes() || e.RequestFalsePositive {
 		t.Fatalf("a person's disposition is kept: %+v", e)
 	}
 

@@ -17,7 +17,8 @@ import (
 //   - attack paths: TopAssets keeps only in-scope assets;
 //   - exposure chains: a chain is shown only when every hop is in scope, so
 //     no out-of-scope asset name or id is revealed along the way;
-//   - the Summary blocks stay tenant-wide counts (no row data).
+//   - the exposure-chain summary is recomputed from the chains kept; the
+//     attack-path summary stays a tenant-wide count (no row data, no ids).
 //
 // GetAttackPathScores / GetExposureChains stay unscoped: priority
 // classification (reachability oracle) and threat models depend on the full
@@ -95,6 +96,16 @@ func (s *SurfaceService) ExposureChainsForCaller(ctx context.Context, tenantID s
 		}
 	}
 	res.Chains = chains
+	// The summary follows the rows the caller may see: counts over the whole
+	// graph would show how much exists outside their scope.
+	entries, targets := map[string]struct{}{}, map[string]struct{}{}
+	for _, c := range chains {
+		entries[c.EntryPointID] = struct{}{}
+		targets[c.TargetID] = struct{}{}
+	}
+	res.Summary.TotalChains = len(chains)
+	res.Summary.EntryPoints = len(entries)
+	res.Summary.TargetsAtRisk = len(targets)
 	return res, nil
 }
 
