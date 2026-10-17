@@ -8,7 +8,7 @@ built.
 | Package format, JSON schema, validator (`pkg/contentpkg`) | shipped |
 | Signatures, signed index and revocation list, offline bundle reader and verifier (`pkg/contentpkg`) | shipped |
 | Catalog: tables, offline import, install / update / pin / rollback / uninstall, approval option, audit | shipped |
-| Private catalogs (organization and instance publishing) | designed |
+| Private catalogs (organization and instance publishing, migration 002886) | shipped |
 | First-party packages and the bundle generator (`pkg/contentpkg/firstparty`, `cmd/content-bundle`) | shipped |
 | Console page (Settings > Content catalog, `/settings/content`) | shipped |
 | Installed packs delivered to sensors (desired state) | designed |
@@ -94,6 +94,26 @@ Routes and gates: [authorization matrix](authorization-matrix.md#content-catalog
 - Audit actions: `content_package.installed`, `updated`, `rolled_back`, `uninstalled`, `pinned`, `unpinned`,
   `requested`, `request_approved`, `request_rejected`, `request_canceled`, `content_catalog.settings_updated`.
   Each carries the version, artifact digest and origin; T2 and executable installs are high severity.
+
+## Private catalogs
+
+| | Organization | Instance |
+|---|---|---|
+| Who | a member with `content:publish` and a recent sign-in | a platform super administrator with a reason and a fresh console authenticator code |
+| Route | `POST /api/v1/content/private-packages` (multipart `manifest`, `artifact`) | `POST /api/v1/admin/content-catalog/packages` |
+| Namespace | the organization's slug | any non-reserved namespace not used by the signed catalog |
+| Visible to | that organization only | every organization of the instance |
+| Artifact | becomes one of the organization's content packs (lint, credential scan) | becomes a platform content pack; refused when lint leaves a file out |
+| Statement | signed with the organization's content key | signed with the platform content key |
+| Revoke | `POST /api/v1/content/private-packages/{ns}/{name}/{version}/revoke` | `POST /api/v1/admin/content-catalog/packages/revoke` (`package_id`, `version` in the body) |
+
+- Types: rules, templates and wordlists (the types delivered as packs). The others need their importers first.
+- The declared tier must be at least the tier lint finds; a private package never asks for credentials or data
+  scopes.
+- An id used by another origin in the same view is refused (`ErrIDTaken`); a signed bundle cannot take an id an
+  instance package uses. Revoking a version revokes every installation of it.
+- Audit: `content_package.published`, `content_package.revoked` (organization); admin audit rows
+  `content_catalog.publish`, `content_catalog.revoke` (instance).
 
 ## Console page
 
