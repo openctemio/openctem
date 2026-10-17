@@ -284,7 +284,6 @@ properties:
   content_length: { label: Content length, label_vi: Độ dài nội dung, classes: [service, web_endpoint, application] }
   content_type: { label: Content type, label_vi: Kiểu nội dung, classes: [service, web_endpoint, application] }
   server: { label: HTTP server header, label_vi: Header Server (HTTP), synonyms: [web_server] }
-  technologies: { label: Technologies, label_vi: Công nghệ, synonyms: [technology] }
   cdn: { label: CDN, label_vi: CDN }
   cdn_type: { label: Edge type, label_vi: Loại biên mạng }
   favicon_mmh3: { label: Favicon hash, label_vi: Mã băm favicon, format: code }
@@ -655,7 +654,6 @@ types:
       - { name: content_length, type: int }
       - { name: content_type, type: string, facet: true }
       - { name: server, type: string, facet: true, group: true }
-      - { name: technologies, type: list }
       - { name: cdn, type: string, facet: true, group: true }
       - { name: cdn_type, type: enum, values: [cdn, waf, cloud], facet: true }
       - { name: favicon_mmh3, type: string, group: true }
@@ -739,7 +737,6 @@ types:
     attributes:
       - { name: url, type: string }
       - { name: title, type: string }
-      - { name: technologies, type: list }
       - { name: server, type: string, facet: true, group: true }
       - { name: framework, type: string, facet: true, group: true }
       - { name: authentication, type: string, facet: true }
@@ -761,7 +758,6 @@ types:
       - { name: ip_addresses, type: list }
       - { name: url, type: string }
       - { name: title, type: string }
-      - { name: technologies, type: list }
       - { name: server, type: string, facet: true, group: true }
       - { name: cms, type: string, facet: true, group: true }
       - { name: framework, type: string, facet: true, group: true }

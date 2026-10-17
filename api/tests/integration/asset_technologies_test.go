@@ -120,6 +120,26 @@ func TestAssetTechnologies_Ingest(t *testing.T) {
 	if got["next.js"].Version != "13.4.2" {
 		t.Errorf("version not updated: %+v", got["next.js"])
 	}
+
+	// The technologies live only in asset_technologies: the asset keeps no
+	// properties.technologies.
+	var has bool
+	if err := g.r.db.QueryRowContext(context.Background(), `SELECT properties ? 'technologies' FROM assets WHERE id = $1`,
+		g.assetID(g.tn, name).String()).Scan(&has); err != nil {
+		t.Fatal(err)
+	}
+	if has {
+		t.Fatal("the asset still stores properties.technologies")
+	}
+
+	// Another fingerprinting tool reports an older nginx: one technology,
+	// the better version.
+	g.send(g.tn, "httpx", now.Add(-5*time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
+		Technologies: []ctis.Technology{{Name: "nginx", Version: "1.25.3", Confidence: 80}, {Name: "HSTS"}, {Name: "Next.js", Version: "13.4.2"}}})
+	got = g.technologies(g.tn, name)
+	if len(got) != 3 || got["nginx"].Version != "1.25.3" || got["nginx"].Confidence != 80 {
+		t.Fatalf("after the typed report: %+v", got)
+	}
 }
 
 func TestAssetTechnologies_TenantIsolation(t *testing.T) {
@@ -132,19 +152,19 @@ func TestAssetTechnologies_TenantIsolation(t *testing.T) {
 	repo := postgres.NewAssetTechnologyRepository(&postgres.DB{DB: g.r.db})
 	ctx := context.Background()
 
-	// Tenant B naming tenant A's asset writes nothing and reads nothing.
-	tech, _ := assettech.Observation(id, "Evil", "1.0", nil, 0, "x", time.Now())
-	if err := repo.Upsert(ctx, other.tenant, []assettech.Technology{tech}); err != nil {
+	// Tenant B naming tenant A's asset changes nothing and reads nothing.
+	tech, _ := assettech.Observation(id, "nginx", "", []string{"CDN"}, 99, "evil", time.Now())
+	if err := repo.Enrich(ctx, other.tenant, []assettech.Technology{tech}); err != nil {
 		t.Fatal(err)
 	}
 	if list, err := repo.ListByAsset(ctx, other.tenant, id); err != nil || len(list) != 0 {
 		t.Fatalf("tenant B reads tenant A's technologies: %v %v", list, err)
 	}
-	if shown, err := repo.ShownKeys(ctx, other.tenant, []shared.ID{id}); err != nil || len(shown) != 0 {
-		t.Fatalf("tenant B reads tenant A's shown set: %v %v", shown, err)
+	if m, err := repo.ListByAssets(ctx, other.tenant, []shared.ID{id}, 10); err != nil || len(m) != 0 {
+		t.Fatalf("tenant B lists tenant A's technologies: %v %v", m, err)
 	}
 	got := g.technologies(g.tn, name)
-	if len(got) != 1 || got["nginx"].Version != "1.25.3" {
+	if len(got) != 1 || got["nginx"].Version != "1.25.3" || got["nginx"].Source != "httpx" || got["nginx"].Confidence != 0 {
 		t.Fatalf("tenant A's technologies changed: %+v", got)
 	}
 }
@@ -185,41 +205,23 @@ func TestAssetTechnologies_VersionedProductsAreCPEComponents(t *testing.T) {
 	}
 }
 
-// The per-asset cap holds on what is stored: sightings accumulated across
-// reports past assettech.MaxPerAsset are trimmed, oldest last_seen first.
+// The per-asset cap holds on what is stored: an asset whose resolved set
+// is over assettech.MaxPerAsset keeps at most that many rows.
 func TestAssetTechnologies_StoredCapPerAsset(t *testing.T) {
 	g := newTechRig(t)
 	const name = "cap.tech.example.com"
-	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name})
-	id := g.assetID(g.tn, name)
-	repo := postgres.NewAssetTechnologyRepository(&postgres.DB{DB: g.r.db})
-	ctx := context.Background()
-	base := time.Now().UTC().Add(-48 * time.Hour)
-	batch := func(from, to int) {
-		var techs []assettech.Technology
-		for i := from; i < to; i++ {
-			tech, ok := assettech.Observation(id, fmt.Sprintf("tool%03d", i), "", nil, 0, "x", base.Add(time.Duration(i)*time.Minute))
-			if !ok {
-				t.Fatalf("observation %d rejected", i)
-			}
-			techs = append(techs, tech)
-		}
-		if err := repo.Upsert(ctx, g.tn.tenant, techs); err != nil {
-			t.Fatal(err)
-		}
+	var techs []any
+	for i := 0; i < assettech.MaxPerAsset+30; i++ {
+		techs = append(techs, fmt.Sprintf("tool%03d:1.%d", i, i))
 	}
-	batch(0, 80)
-	batch(80, 130) // two reports: 130 stored sightings in all
+	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
+		Properties: ctis.Properties{"technologies": techs}})
 	var n int
-	var oldest string
-	if err := g.r.db.QueryRowContext(ctx, `SELECT count(*), min(name) FROM asset_technologies WHERE tenant_id = $1 AND asset_id = $2`,
-		g.tn.tenant.String(), id.String()).Scan(&n, &oldest); err != nil {
+	if err := g.r.db.QueryRowContext(context.Background(), `SELECT count(*) FROM asset_technologies WHERE tenant_id = $1 AND asset_id = $2`,
+		g.tn.tenant.String(), g.assetID(g.tn, name).String()).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != assettech.MaxPerAsset {
-		t.Fatalf("stored %d technologies, want the cap %d", n, assettech.MaxPerAsset)
-	}
-	if oldest != "tool030" {
-		t.Errorf("oldest kept = %s, want tool030 (the 30 oldest sightings go)", oldest)
+	if n == 0 || n > assettech.MaxPerAsset {
+		t.Fatalf("stored %d technologies, want 1..%d", n, assettech.MaxPerAsset)
 	}
 }

@@ -29,6 +29,8 @@ var preSessionAuthRoutes = []string{
 	"/api/v1/auth/forgot-password",
 	"/api/v1/auth/reset-password",
 	"/api/v1/auth/create-first-team",
+	"/api/v1/auth/onboarding/options",
+	"/api/v1/auth/onboarding/accept",
 }
 
 func postWith(mux http.Handler, path string, headers map[string]string) *httptest.ResponseRecorder {

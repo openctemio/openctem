@@ -78,3 +78,33 @@ func TestMarkChecked_PendingStaysPending(t *testing.T) {
 		t.Fatal("MarkChecked must stamp last_checked_at")
 	}
 }
+
+// A sign-up policy exists only on a verified, unambiguous SSO claim, and the
+// capture notice is due once, when the policy first manages the domain.
+func TestSignupPolicyOnlyOnVerifiedSSOClaim(t *testing.T) {
+	d, _ := New(shared.NewID(), shared.NewID(), "acme-policy.example", "tok")
+	manage := SignupPolicy{Join: JoinOff, JoinRole: "viewer", BlockNewWorkspaces: true}
+	if _, err := d.ChangeSignupPolicy(manage); err == nil {
+		t.Fatal("a pending EASM row has no sign-up policy")
+	}
+	d.WithPurpose(PurposeSSO)
+	d.MarkVerified(time.Now())
+	notify, err := d.ChangeSignupPolicy(manage)
+	if err != nil || !notify {
+		t.Fatalf("first managing policy must ask for the notice: %v %v", notify, err)
+	}
+	d.MarkCaptureNotified(time.Now())
+	if notify, _ := d.ChangeSignupPolicy(manage); notify {
+		t.Fatal("the notice is sent once")
+	}
+	if _, err := d.ChangeSignupPolicy(SignupPolicy{Join: "everyone", JoinRole: "viewer"}); err == nil {
+		t.Fatal("unknown join policy")
+	}
+	d.WithClaimState(nil, true)
+	if _, err := d.ChangeSignupPolicy(manage); err == nil {
+		t.Fatal("a claim in conflict has no policy")
+	}
+	if DefaultSignupPolicy().Join != JoinOff || (EmailPolicy{Policy: DefaultSignupPolicy()}).Joinable() {
+		t.Fatal("everything is off by default")
+	}
+}

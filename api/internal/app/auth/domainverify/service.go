@@ -67,6 +67,10 @@ type Service struct {
 
 	// claimListener hears SSO claim transitions (RFC-058 home cascade).
 	claimListener ClaimListener
+
+	// ssoReady reports whether an organization has a usable SSO sign-in
+	// (sso_required needs one). Nil: sso_required is refused.
+	ssoReady func(ctx context.Context, tenantID shared.ID) (bool, error)
 }
 
 // NewService creates a Service. When resolver is nil a NetResolver is used.
