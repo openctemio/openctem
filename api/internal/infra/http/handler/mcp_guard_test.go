@@ -30,7 +30,7 @@ const (
 	guardMarker = "INJ-MARKER"
 	// hidden holds a bidi override, a zero-width space, a word joiner, a NUL
 	// and a tag-encoded instruction.
-	guardHiddenLead = "‮​⁠\x00"
+	guardHiddenLead = "\u202e\u200b\u2060\x00"
 	guardAWSKey     = "AKIAIOSFODNN7EXAMPLE"
 )
 
@@ -102,7 +102,7 @@ func TestSafetextClean_StripsTagAndInvisibleRunes(t *testing.T) {
 			t.Errorf("U+%04X not stripped: %q", r, got)
 		}
 	}
-	if got := safetext.Clean("a‍b"); got != "a‍b" {
+	if got := safetext.Clean("a\u200db"); got != "a\u200db" {
 		t.Errorf("ZWJ must be kept: %q", got)
 	}
 }

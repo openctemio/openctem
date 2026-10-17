@@ -243,8 +243,8 @@ func TestAddFindingComment_PentestVisibility(t *testing.T) {
 
 func TestAddCommentRejectsHiddenCharacters(t *testing.T) {
 	for name, content := range map[string]string{
-		"bidi override": "looks fine ‮ gnp.exe",
-		"zero width":    "pass​word",
+		"bidi override": "looks fine \u202e gnp.exe",
+		"zero width":    "pass\u200bword",
 		"tag chars":     "hello \U000E0041\U000E0042",
 		"nul":           "a\x00b",
 	} {
@@ -262,7 +262,7 @@ func TestAddCommentRejectsHiddenCharacters(t *testing.T) {
 
 func TestConfirmationSummaryTitleIsSingleCleanLine(t *testing.T) {
 	f := makePentestFinding(t)
-	f.SetTitle("Real title‮​\nsecond line \U000E0041")
+	f.SetTitle("Real title\u202e\u200b\nsecond line \U000E0041")
 	h := newTestMCPWithPentest(&fakeFindingReader{finding: f}, &fakePentestReader{})
 	h.SetWriteTools(&fakeConfirmer{approved: map[string]string{}}, &fakeCommenter{})
 	args, _ := json.Marshal(map[string]string{"finding_id": wtFinding, "content": "triage note"})

@@ -131,7 +131,7 @@ func TestConfirmationSummaryIsCleaned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dirty := "Add a comment: ‮evil​ text\U000E0041\x00 done"
+	dirty := "Add a comment: \u202eevil\u200b text\U000E0041\x00 done"
 	pending, err := svc.RequestConfirmation(ctx, p, "add_finding_comment", "digest", dirty, mcpoauth.Actor{})
 	if err != nil {
 		t.Fatal(err)
