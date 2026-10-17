@@ -166,7 +166,10 @@ func run() int {
 		}
 		defer closeWithLog(adminDB, "console database pool", log)
 		log.Info("console identity tables use their own database role", "role", cfg.Database.AdminUser)
-		warnIfAppRoleWritesConsoleTables(ctx, db.DB, log)
+	}
+	if err := checkAppRoleConsoleTables(ctx, db.DB, cfg, log); err != nil {
+		log.Error("database role check failed: refusing to start", "error", err)
+		return 1
 	}
 
 	// Fail fast if the DB schema is behind the migrations shipped with this
