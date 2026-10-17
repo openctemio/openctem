@@ -452,9 +452,16 @@ func run() int {
 
 	server := http.NewServer(cfg, log)
 	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache, services.PermCache, services.PermVersion)
+	// An admin-plane process (OPENCTEM_PLANE=admin) serves only the console
+	// API: no sensor binding, no background work (the tenant plane runs it).
+	servesTenant := cfg.AdminPlane.ServesTenant()
+	if !servesTenant {
+		log.Info("serving only the platform console API (OPENCTEM_PLANE=admin)")
+	}
+
 	// Sensor protocol v3 HTTPS binding (RFC-059): ahead of the router, which
 	// would cut its control stream; it carries its own guards.
-	if handlers.SensorV3 != nil {
+	if handlers.SensorV3 != nil && servesTenant {
 		server.MountPrefix(sensortransport.PathPrefix, handlers.SensorV3.HTTPSHandler(handlers.SensorResultsV2.AuthenticateV3))
 		// When the API terminates TLS itself, a ClientHello offering the
 		// sensor ALPN id is served by the gRPC binding on the same port.
@@ -474,60 +481,64 @@ func run() int {
 	}
 
 	// ==========================================================================
-	// Workers
+	// Workers (none on the admin plane)
 	// ==========================================================================
-	workers, err := NewWorkers(&WorkerDeps{
-		Config:   cfg,
-		Log:      log,
-		DB:       db.DB,
-		Repos:    repos,
-		Services: services,
-	})
-	if err != nil {
-		log.Error("failed to initialize workers", "error", err)
-		return 1
-	}
-
-	if err := workers.Start(ctx, log); err != nil {
-		log.Error("failed to start workers", "error", err)
-		return 1
-	}
-
-	// Back-wire the lifecycle worker into the tenant handler so the
-	// dry-run HTTP endpoint and the cron controller share one worker
-	// instance. Handlers are built before workers (see note above);
-	// this call closes that loop.
-	if workers.AssetLifecycleWorker != nil {
-		WireAssetLifecycleWorker(workers.AssetLifecycleWorker)
-	}
-
-	// Seal leaked-credential secrets still stored in plaintext (rows written
-	// before secrets were encrypted, or without a key). Idempotent, batched,
-	// SKIP LOCKED: safe on every start and across replicas.
-	go func() {
-		n, err := postgres.BackfillLeakedCredentialSecrets(ctx, db.DB, services.CredentialSecrets)
+	var workers *Workers
+	if servesTenant {
+		w, err := NewWorkers(&WorkerDeps{
+			Config:   cfg,
+			Log:      log,
+			DB:       db.DB,
+			Repos:    repos,
+			Services: services,
+		})
 		if err != nil {
-			log.Error("leaked credential secret backfill failed", "error", err, "sealed", n)
-			return
+			log.Error("failed to initialize workers", "error", err)
+			return 1
 		}
-		if n > 0 {
-			log.Info("leaked credential secrets sealed", "count", n, "aes_gcm", services.CredentialSecrets.Encrypts())
-		}
-	}()
 
-	// Host keys for commands queued before every command got them at
-	// create (research/130). Idempotent and SKIP LOCKED: safe on every
-	// start and across replicas.
-	go func() {
-		n, err := postgres.BackfillPendingHostKeys(ctx, db.DB)
-		if err != nil {
-			log.Error("pending command host key backfill failed", "error", err, "updated", n)
-			return
+		workers = w
+		if err := workers.Start(ctx, log); err != nil {
+			log.Error("failed to start workers", "error", err)
+			return 1
 		}
-		if n > 0 {
-			log.Info("pending commands given host keys", "count", n)
+
+		// Back-wire the lifecycle worker into the tenant handler so the
+		// dry-run HTTP endpoint and the cron controller share one worker
+		// instance. Handlers are built before workers (see note above);
+		// this call closes that loop.
+		if workers.AssetLifecycleWorker != nil {
+			WireAssetLifecycleWorker(workers.AssetLifecycleWorker)
 		}
-	}()
+
+		// Seal leaked-credential secrets still stored in plaintext (rows written
+		// before secrets were encrypted, or without a key). Idempotent, batched,
+		// SKIP LOCKED: safe on every start and across replicas.
+		go func() {
+			n, err := postgres.BackfillLeakedCredentialSecrets(ctx, db.DB, services.CredentialSecrets)
+			if err != nil {
+				log.Error("leaked credential secret backfill failed", "error", err, "sealed", n)
+				return
+			}
+			if n > 0 {
+				log.Info("leaked credential secrets sealed", "count", n, "aes_gcm", services.CredentialSecrets.Encrypts())
+			}
+		}()
+
+		// Host keys for commands queued before every command got them at
+		// create (research/130). Idempotent and SKIP LOCKED: safe on every
+		// start and across replicas.
+		go func() {
+			n, err := postgres.BackfillPendingHostKeys(ctx, db.DB)
+			if err != nil {
+				log.Error("pending command host key backfill failed", "error", err, "updated", n)
+				return
+			}
+			if n > 0 {
+				log.Info("pending commands given host keys", "count", n)
+			}
+		}()
+	}
 
 	// ==========================================================================
 	// Start Server
@@ -537,7 +548,7 @@ func run() int {
 			log.Error("server error", "error", err)
 		}
 	}()
-	if handlers.SensorV3 != nil {
+	if handlers.SensorV3 != nil && servesTenant {
 		if err := handlers.SensorV3.Start(ctx); err != nil {
 			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
 		}
@@ -560,8 +571,10 @@ func run() int {
 	wsCancel()
 	log.Info("websocket hub stopped")
 
-	// Stop workers
-	workers.Stop(log)
+	// Stop workers (none on the admin plane)
+	if workers != nil {
+		workers.Stop(log)
+	}
 
 	// Flush any buffered new-internet-facing-asset summary so a graceful
 	// restart does not drop it (the DB is still open here).

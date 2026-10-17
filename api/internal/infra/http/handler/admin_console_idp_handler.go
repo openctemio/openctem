@@ -49,6 +49,9 @@ type AdminIdPCallbackResponse struct {
 	OTPAuthURI string            `json:"otpauth_uri,omitempty"`
 	Secret     string            `json:"secret,omitempty"`
 	Admin      *ValidateResponse `json:"admin,omitempty"`
+	// Methods lists the second factors this administrator may use, in order
+	// of preference (webauthn, totp, recovery_code).
+	Methods []string `json:"methods,omitempty"`
 }
 
 // PlatformIdPRequest configures the administrators' identity provider. An
@@ -197,6 +200,7 @@ func (h *AdminConsoleHandler) IdPCallback(w http.ResponseWriter, r *http.Request
 	h.setCookie(w, middleware.AdminMFACookie, res.Second.PendingToken, adminAuthPath, int(admin.PendingMFATTL.Seconds()), true)
 	writeJSON(w, http.StatusOK, AdminIdPCallbackResponse{
 		Status: string(res.Status), OTPAuthURI: res.Second.OTPAuthURI, Secret: res.Second.Secret,
+		Methods: res.Second.Methods,
 	})
 }
 

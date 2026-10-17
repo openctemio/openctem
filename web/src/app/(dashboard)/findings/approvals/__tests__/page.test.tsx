@@ -51,6 +51,49 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
   remindApprovers: vi.fn(),
 }))
 
+// Group exceptions: the pending count and the panel's list.
+const batchState = vi.hoisted(() => ({ pendingTotal: 0 }))
+vi.mock('@/features/findings/api/use-approval-batches', () => ({
+  useApprovalBatches: vi.fn((_page: number, perPage: number) =>
+    perPage === 1
+      ? {
+          data: { data: [], total: batchState.pendingTotal, page: 1, per_page: 1 },
+          mutate: vi.fn(),
+        }
+      : {
+          data: {
+            data: [
+              {
+                id: 'batch-1',
+                source_type: 'task',
+                source_id: 'task-1',
+                source_title: 'Patch OpenSSL on edge hosts',
+                requested_status: 'accepted',
+                tier: 'security',
+                approvals_required: 1,
+                approvals_collected: 0,
+                status: 'pending',
+                decide_by: '2026-10-23T00:00:00Z',
+                member_count: 3,
+              },
+            ],
+            total: 1,
+            page: 1,
+            per_page: 20,
+          },
+          isLoading: false,
+          mutate: vi.fn(),
+        }
+  ),
+  useApprovalBatch: vi.fn(() => ({
+    data: undefined,
+    error: null,
+    isLoading: false,
+    mutate: vi.fn(),
+  })),
+  approvalBatchApi: { approve: vi.fn(), reject: vi.fn(), cancel: vi.fn() },
+}))
+
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
   Permission: { FindingsApprove: 'findings:approve', FindingsWrite: 'findings:write' },
@@ -59,12 +102,12 @@ vi.mock('@/lib/permissions', () => ({
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'user-1' }) }))
 
 // The tab (status) and page live in the URL through useListParams.
-const listState = vi.hoisted(() => ({ status: '', setFilter: vi.fn() }))
+const listState = vi.hoisted(() => ({ status: '', view: '', batch: '', setFilter: vi.fn() }))
 vi.mock('@/hooks/use-list-params', () => ({
   useListParams: () => ({
     page: 1,
     perPage: 20,
-    filters: { status: listState.status },
+    filters: { status: listState.status, view: listState.view, batch: listState.batch },
     pagination: { pageIndex: 0, pageSize: 20 },
     setPagination: vi.fn(),
     setFilter: listState.setFilter,
@@ -582,5 +625,84 @@ describe('ApprovalsPage approval policy', () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('Confirm your identity to approve this request.')
     )
+  })
+})
+
+// ============================================
+// GROUP EXCEPTIONS
+// ============================================
+
+describe('ApprovalsPage group exceptions', () => {
+  type Col = { id?: string; cell?: (c: unknown) => React.ReactNode }
+  const memberRow = {
+    ...mockApprovals[0],
+    id: 'approval-m',
+    batch_id: 'batch-1',
+    status: 'pending' as const,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listState.view = ''
+    batchState.pendingTotal = 2
+    mockHook({
+      data: {
+        data: [memberRow] as unknown as typeof mockApprovals,
+        total: 1,
+        page: 1,
+        per_page: 20,
+        status_counts: COUNTS,
+      },
+    })
+  })
+
+  function cell(id: string, row: unknown) {
+    const col = (captured.columns as Col[]).find((c) => c.id === id)
+    expect(col?.cell).toBeDefined()
+    return render(<div>{col?.cell?.({ row: { original: row } })}</div>)
+  }
+
+  it('a member of a group exception offers no individual decision, only a link to its group', () => {
+    render(<ApprovalsPage />)
+    const { container } = cell('actions', memberRow)
+    expect(within(container).queryByRole('button')).not.toBeInTheDocument()
+    const link = within(container).getByRole('link', { name: /Part of a group exception/ })
+    expect(link).toHaveAttribute('href', '/findings/approvals?view=groups&batch=batch-1')
+  })
+
+  it('a request outside any group keeps its actions menu', () => {
+    render(<ApprovalsPage />)
+    const { container } = cell('actions', { ...memberRow, batch_id: undefined })
+    expect(within(container).getByRole('button')).toBeInTheDocument()
+    expect(within(container).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('counts pending group exceptions on the view switch and switches through the URL', () => {
+    render(<ApprovalsPage />)
+    const tab = screen.getByRole('tab', { name: /Group exceptions/ })
+    expect(tab).toHaveTextContent('2')
+    fireEvent.mouseDown(tab)
+    expect(listState.setFilter).toHaveBeenCalledWith('view', 'groups')
+  })
+
+  it('the groups view lists group exceptions with their task, tier and member count', () => {
+    listState.view = 'groups'
+    render(<ApprovalsPage />)
+    const taskCol = (captured.columns as Col[]).find((c) => c.id === 'task')
+    expect(taskCol).toBeDefined()
+    const row = {
+      id: 'batch-1',
+      source_id: 'task-1',
+      source_title: 'Patch OpenSSL on edge hosts',
+      status: 'pending',
+      tier: 'security',
+      approvals_required: 1,
+      approvals_collected: 0,
+      member_count: 3,
+    }
+    const { container } = cell('task', row)
+    expect(within(container).getByRole('link')).toHaveAttribute('href', '/remediation/tasks/task-1')
+    expect(cell('tier', row).container.textContent).toContain('0 of 1 approvals')
+    expect(cell('members', row).container.textContent).toBe('3')
   })
 })
