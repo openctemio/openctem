@@ -115,3 +115,32 @@ func TestConfirmationFlow(t *testing.T) {
 		t.Fatal("confirmation without a person")
 	}
 }
+
+// What the person approves is what is stored: hidden characters in the
+// summary and in the client name never reach the confirmation page.
+func TestConfirmationSummaryIsCleaned(t *testing.T) {
+	h := newHarness(t)
+	svc := h.withConfirmations()
+	ctx := context.Background()
+	alice := h.member(h.tenant, "owner")
+	tok, oerr := h.exchange(h.approve(alice, h.tenant, authorizeQuery(nil)), verifier, nil)
+	if oerr != nil {
+		t.Fatal(oerr)
+	}
+	p, err := h.principal(tok.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirty := "Add a comment: ‮evil​ text\U000E0041\x00 done"
+	pending, err := svc.RequestConfirmation(ctx, p, "add_finding_comment", "digest", dirty, mcpoauth.Actor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.GetConfirmation(ctx, shared.MustIDFromString(h.tenant), alice, shared.MustIDFromString(pending.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Summary != "Add a comment: evil text done" {
+		t.Fatalf("summary not cleaned: %q", view.Summary)
+	}
+}

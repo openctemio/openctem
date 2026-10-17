@@ -390,9 +390,21 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 		h.writeResult(w, req.ID, toolErrorResult(classifyMCPError(err)))
 		return
 	}
+	// Result guard (mcp_guard.go): a result that did not go through
+	// untrustedResult (counts, aggregates) is cleaned the same way, so no tool
+	// can return unguarded text.
+	if m, ok := result.(map[string]any); !ok || m["untrusted_data"] == nil {
+		result = guardUntrusted(result)
+	}
 	text, mErr := json.Marshal(result)
 	if mErr != nil {
 		h.writeError(w, req.ID, rpcInternalError, "internal error")
+		return
+	}
+	if len(text) > mcpMaxResultBytes {
+		h.logger.Warn("mcp result over cap", "tool", tool.Name, "size", len(text))
+		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultFailure, true, len(text))
+		h.writeResult(w, req.ID, toolErrorResult(mcpError{Code: mcpErrResultTooLarge, Message: mcpResultTooLargeMessage}))
 		return
 	}
 	h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultSuccess, false, len(text))

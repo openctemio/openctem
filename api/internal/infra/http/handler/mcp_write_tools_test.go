@@ -240,3 +240,38 @@ func TestAddFindingComment_PentestVisibility(t *testing.T) {
 		t.Fatal("unknown visibility accepted")
 	}
 }
+
+func TestAddCommentRejectsHiddenCharacters(t *testing.T) {
+	for name, content := range map[string]string{
+		"bidi override": "looks fine ‮ gnp.exe",
+		"zero width":    "pass​word",
+		"tag chars":     "hello \U000E0041\U000E0042",
+		"nul":           "a\x00b",
+	} {
+		args, _ := json.Marshal(map[string]string{"finding_id": wtFinding, "content": content})
+		if _, err := parseAddCommentArgs(args); err == nil {
+			t.Errorf("%s: hidden characters accepted", name)
+		}
+	}
+	args, _ := json.Marshal(map[string]string{"finding_id": wtFinding, "content": "line one\r\nline two"})
+	a, err := parseAddCommentArgs(args)
+	if err != nil || a.Content != "line one\nline two" {
+		t.Fatalf("CRLF should normalize: %q %v", a.Content, err)
+	}
+}
+
+func TestConfirmationSummaryTitleIsSingleCleanLine(t *testing.T) {
+	f := makePentestFinding(t)
+	f.SetTitle("Real title‮​\nsecond line \U000E0041")
+	h := newTestMCPWithPentest(&fakeFindingReader{finding: f}, &fakePentestReader{})
+	h.SetWriteTools(&fakeConfirmer{approved: map[string]string{}}, &fakeCommenter{})
+	args, _ := json.Marshal(map[string]string{"finding_id": wtFinding, "content": "triage note"})
+	summary, err := h.prepareAddFindingComment(context.WithValue(context.Background(), middleware.UserIDKey, wtUser), wtTenant, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasInvisible(summary) || strings.Contains(strings.SplitN(summary, "\n\n", 2)[0], "\n") ||
+		!strings.Contains(summary, "Real title second line") {
+		t.Fatalf("summary title not cleaned: %q", summary)
+	}
+}
