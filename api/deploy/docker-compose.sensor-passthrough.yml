@@ -26,16 +26,16 @@ services:
     environment:
       OPENCTEM_SENSOR_GATEWAY: ${OPENCTEM_SENSOR_GATEWAY:-alpn}
       SENSOR_PUBLIC_HOSTNAME: ${SENSOR_PUBLIC_HOSTNAME:-}
-      SENSOR_MTLS_UPSTREAM: api:8443
+      SENSOR_MTLS_UPSTREAM: api:9443
 
   api:
     expose:
-      - "8443"
+      - "9443"
     environment:
       # Empty: the platform URL's host and port (APP_URL), through the ALPN
       # routing above.
       SENSOR_PUBLIC_HOST: ${SENSOR_PUBLIC_HOST:-}
-      SENSOR_MTLS_LISTEN_ADDR: ":8443"
+      SENSOR_MTLS_LISTEN_ADDR: ":9443"
       # The gateway's PROXY protocol header carries the sensor's address;
       # it is believed from the gateway only.
       SENSOR_MTLS_TRUSTED_PROXIES: ${OPENCTEM_NET_PREFIX:-172.30.80}.10/32
