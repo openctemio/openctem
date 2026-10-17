@@ -74,6 +74,10 @@ type V2Target struct {
 	CommandID string // "" for the unsolicited form
 	ReportID  string
 	UserAgent string
+	// LeaseEpoch is the lease epoch the sensor states it holds CommandID
+	// under (X-OpenCTEM-Lease-Epoch); nil when not sent. A shared sensor
+	// must send it (OpenSharedCommand).
+	LeaseEpoch *int
 }
 
 // Problem returns a *V2ReportError for a problem type.
@@ -125,13 +129,48 @@ func sameCommand(rep *ingestreport.Report, cmd *command.Command) bool {
 	}
 }
 
-// tenantOf is the tenant a sensor reports for: always its own. A sensor with
-// no tenant (platform sensors, which this schema cannot hold) is refused.
+// tenantOf is the tenant an organization sensor reports for: always its
+// own. A shared sensor (no tenant) is refused here: it reports only through
+// a command it holds (bind), never on a route that names no command.
 func tenantOf(s *sensor.Sensor) (shared.ID, error) {
-	if s == nil || s.TenantID == nil || s.TenantID.IsZero() {
+	if s == nil || s.IsShared() || s.TenantID == nil || s.TenantID.IsZero() {
 		return shared.ID{}, problem(protov2.ProblemScopeDenied)
 	}
 	return *s.TenantID, nil
+}
+
+// bind is the tenant and command a write (PUT or commit) is accepted for.
+//
+// An organization sensor writes into its own tenant, for a command of that
+// tenant it holds (openCommand) or none (the unsolicited form, governed by
+// the tenant's result policy).
+//
+// A shared sensor (docs/rfcs/RFC-100-shared-sensors.md §8, RFC-040 §11.2)
+// has no tenant: it may write only the results of a shared job it holds
+// under the lease epoch it states, and they go into the COMMAND's tenant,
+// read from the stored command. Unsolicited results are refused
+// (scope-denied): a shared sensor never pushes.
+func (v *V2Receiver) bind(ctx context.Context, t V2Target) (shared.ID, *command.Command, error) {
+	if t.Sensor == nil || !t.Sensor.IsShared() {
+		tenantID, err := tenantOf(t.Sensor)
+		if err != nil {
+			return shared.ID{}, nil, err
+		}
+		cmd, err := v.openCommand(ctx, tenantID, t)
+		return tenantID, cmd, err
+	}
+	if t.CommandID == "" {
+		return shared.ID{}, nil, problem(protov2.ProblemScopeDenied)
+	}
+	reader, ok := v.commands.(SharedCommandReader)
+	if !ok {
+		return shared.ID{}, nil, problem(protov2.ProblemScopeDenied)
+	}
+	cmd, err := OpenSharedCommand(ctx, reader, t.Sensor, t.CommandID, t.LeaseEpoch, v.now())
+	if err != nil {
+		return shared.ID{}, nil, problem(protov2.ProblemCommandNotFound)
+	}
+	return cmd.TenantID, cmd, nil
 }
 
 // Put stores one segment. seq is the segment number; whole is true for the
@@ -140,11 +179,7 @@ func tenantOf(s *sensor.Sensor) (shared.ID, error) {
 //
 //nolint:cyclop,gocognit,funlen // the RFC-026 §3.3 decision sequence, one check per step
 func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, body V2Body) (*PutResult, error) {
-	tenantID, err := tenantOf(t.Sensor)
-	if err != nil {
-		return nil, err
-	}
-	cmd, err := v.openCommand(ctx, tenantID, t)
+	tenantID, cmd, err := v.bind(ctx, t)
 	if err != nil {
 		return nil, err
 	}
@@ -327,11 +362,7 @@ func (v *V2Receiver) replay(ctx context.Context, rep *ingestreport.Report, exist
 // Commit closes a segmented report (POST .../commit). An identical repeated
 // commit is a replay (created=false).
 func (v *V2Receiver) Commit(ctx context.Context, t V2Target, req protov2.CommitRequest) (*PutResult, error) {
-	tenantID, err := tenantOf(t.Sensor)
-	if err != nil {
-		return nil, err
-	}
-	cmd, err := v.openCommand(ctx, tenantID, t)
+	tenantID, cmd, err := v.bind(ctx, t)
 	if err != nil {
 		return nil, err
 	}
