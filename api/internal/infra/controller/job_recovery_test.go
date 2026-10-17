@@ -85,9 +85,6 @@ func (r *recordingCommandRepo) GetQueuedPlatformJobs(context.Context, int) ([]*c
 	return nil, nil
 }
 
-func (r *recordingCommandRepo) GetNextPlatformJob(context.Context, shared.ID, []string, []string) (*command.Command, error) {
-	return nil, nil
-}
 func (r *recordingCommandRepo) UpdateQueuePriorities(context.Context) (int64, error) { return 0, nil }
 func (r *recordingCommandRepo) GetQueuePosition(context.Context, shared.ID) (*command.QueuePosition, error) {
 	return nil, nil

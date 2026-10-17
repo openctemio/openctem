@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  DeleteAccountCard,
   PasswordCard,
   SessionsCard,
   TwoFactorCard,
@@ -24,6 +25,7 @@ export default function SecurityPage() {
       />
       <TwoFactorCard email={profile?.email} onOtherSessionsSignedOut={() => mutateSessions()} />
       <SessionsCard sessions={sessions} isLoading={isLoading} onChanged={() => mutateSessions()} />
+      <DeleteAccountCard email={profile?.email} />
     </div>
   )
 }

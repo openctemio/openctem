@@ -115,11 +115,15 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `POST /api/v1/scim-tokens`
 - `PATCH /api/v1/tenants/{tenant}/settings/security`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
+- `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
+- `DELETE /api/v1/me/account`
+- `POST /api/v1/organization/leave`
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
 - `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
 - `PATCH /api/v1/attachments/storage-config`
+- `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` (finding lifecycles, RFC-110)
 
 Some changes need it only in one case, decided by the service through the
 same check (`shared.RecentAuthGate`): making someone an administrator or an
@@ -217,6 +221,22 @@ and SBOM import write it.
 > self-verify their own fix (AUTHZ B1, api#505). Migration `000217` backfilled the
 > four granular perms onto every role that already held `findings:write`, so the
 > tightening is honest-not-breaking: nobody lost an action they could perform before.
+
+#### Finding lifecycles (`/api/v1/lifecycle-sub-statuses`, `/api/v1/lifecycles`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/lifecycle-sub-statuses`, `GET /api/v1/lifecycles` · `/{id}` · `/{id}/versions` · `/{id}/versions/{version_id}` | `findings:read` |
+| `POST /api/v1/lifecycle-sub-statuses` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/reactivate` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles` · `PATCH /{id}` · `DELETE /{id}` (archive) · `POST /{id}/versions` · `PUT /{id}/versions/{version_id}` · `POST /{id}/versions/{version_id}/test` | `findings:lifecycles:write` |
+| `POST /api/v1/lifecycles/{id}/versions/{version_id}/publish` | `findings:lifecycles:write` + step-up |
+
+> Organization configuration (no finding data), tenant from the token; another
+> organization's sub-status, lifecycle or version is 404. A lifecycle can only
+> add constraints to the status moves the platform allows
+> ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)); `findings:lifecycles:write`
+> is granted to owners and administrators by default (migration
+> `finding_lifecycles_permission`).
 
 #### Exposures (`/api/v1/exposures`)
 
@@ -659,8 +679,14 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
 | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
+| `GET /api/v1/organization/join-requests` | owner or admin (`RequireAdmin`) + `team:members:read` (the organization's own requests; RFC-104) |
+| `POST /api/v1/organization/join-requests/{request_id}/approve`, `.../reject` | owner or admin + `team:members:write`; approve grants viewer or member only; another organization's request is 404 |
+| `GET /api/v1/organization/settings/domains` | owner or admin (`RequireAdmin`) + `settings:read` (the organization's own domains only) |
+| `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy` | **owner only** (`RequireOwner`) + `settings:write` + **step-up**; a domain of another organization is 404 (RFC-104) |
 | `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
+| `POST /api/v1/organization/leave` | any member (`team:read`) + **step-up**, for themselves in the credential's organization; refused for the only owner (RFC-104) |
+| `DELETE /api/v1/me/account` | the caller's own account + **step-up**; refused while the caller is the only owner of an organization (RFC-104) |
 
 > **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
 > B3). Changing the role of, suspending, reactivating or removing a member who
@@ -792,6 +818,12 @@ Authorization is enforced at the **route layer** in
 `internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
 — not in the handlers.
 
+**Acting role.** With `ADMIN_ELEVATION=required` (default) every request acts
+as `readonly` unless the console session holds a live elevation
+(`POST /api/v1/admin/auth/elevate`, step-up, 15-60 minutes, a role no higher
+than the administrator's own; `DELETE` ends it). Role checks below use that
+acting role, never the stored one.
+
 **Step-up on protected actions.** Every identity, privilege and platform-trust
 change also takes the route-level step-up (`middleware.RequireAdminStepUp`): a
 fresh console authenticator code in the `X-Admin-Step-Up` header, or the
@@ -822,7 +854,7 @@ is still accepted and checked the same way).
 | `GET /api/v1/admin/announcements` | any admin |
 | `POST /api/v1/admin/announcements`, `POST /api/v1/admin/announcements/{announcement_id}/cancel` | **ops_admin+**, `reason` (10-500), audited `announcement.create` / `announcement.cancel` |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
-| `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
+| `POST /api/v1/admin/auth/login`, `/mfa` | public (rate-limited, cross-site guard; the account's email and password, then the console TOTP; no tenant session involved) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
@@ -850,6 +882,8 @@ is still accepted and checked the same way).
 | `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
+| `GET /api/v1/admin/version-check/` | any admin (release feed status: newer releases, advisories affecting the running version; instance-level, no tenant data; `docs/architecture/version-check.md`) |
+| `POST /api/v1/admin/version-check/import` | **super_admin** + **step-up** (offline import of the signed release feed file, verified like a fetched one; audited high) |
 | `GET /api/v1/admin/tenants/{tenantId}/audit-chain` | any admin (classifies the organization's audit hash-chain; read-only) |
 | `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` | **super_admin** + a fresh console TOTP code in the body (step-up; a wrong code counts toward lockout). Refused 409 when a break is unexplained or the chain changed since the reviewed classification. Audited high in `admin_audit_logs` and as `audit.chain_rebaselined` in the organization's log |
 
@@ -872,8 +906,8 @@ role, however high, can reach SSO setup. The SSO **login** flow
 A platform administrator is a `users` account linked to an `admin_users` row
 (`admin_users.user_id`) that holds the role (`super_admin` > `ops_admin` >
 `readonly`), the TOTP second factor and the admin audit trail. It signs in on the
-normal `/login`, then `POST /api/v1/admin/auth/session` (refresh-token cookie)
-and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
+console's own sign-in page: `POST /api/v1/admin/auth/login` (email and
+password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
 
 - **Belongs to no organization.** A trigger on `tenant_members` rejects a
   membership for a linked account (SQLSTATE 23514, surfaced as 409), and an
@@ -893,6 +927,36 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 
+#### Support access (RFC-063)
+
+A platform administrator never holds standing access to an organization's
+data. The only path is a **support grant**: an owner (with a recent
+re-authentication) names one active `ops_admin` or `super_admin` by email,
+for 1 to 72 hours, read-only, with a reason and the data scopes (`findings`,
+`assets`). Owners and admins list and revoke grants under
+`/api/v1/organization/support-access`; every member reads the active ones.
+
+- The named administrator opens a support session from the console
+  (`POST /api/v1/admin/support/grants/{grant_id}/sessions`, route-level
+  step-up); the session is bound to that console session.
+- Reads (`/api/v1/admin/support/sessions/{session_id}/…`) are resolved live on
+  every request: open session, same administrator and console session, grant
+  not revoked and unexpired (server clock), scope granted. Otherwise 403
+  `SUPPORT_GRANT_REQUIRED`. There is no write route.
+- Every read is written to the organization's audit log (`support.accessed`,
+  actor `support:<email>`) and to the admin audit log before data is returned;
+  if either write fails the read is refused.
+- The read model selects an explicit column allow-list (no messages,
+  snippets, descriptions, evidence, secrets or people), is scoped to the
+  grant's organization, and hides private-program assets and their findings.
+- The overview and finding rows carry only the granted scopes' parts: without
+  `assets` there is no asset count and a finding row names no asset.
+- Grant-bypass paths (RFC-063 section 11.5): the console user list, first owner
+  create or recovery and identity provider creation do not need a grant. They
+  write `admin_console.tenant_access` (actor `console:<email>`) to the
+  organization's audit log and email its owners before running; a failed audit
+  write refuses the use.
+
 #### Break-glass administrators and the platform IdP (RFC-022 revision 4)
 
 - **Platform IdP** (`platform_identity_provider`, one OIDC provider, not
@@ -901,7 +965,7 @@ and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   first sign-in by verified email, then bound. No JIT creation. The console TOTP
   is still required after it unless a super admin trusts specific `acr`/`amr`
   values. Organization IdPs still cannot open the console.
-- **Require IdP** refuses the local password path (`/auth/session`) for every
+- **Require IdP** refuses the local password path (`/auth/login`) for every
   administrator except break-glass ones.
 - **Break-glass** administrators are local `super_admin`s that can never be
   bound to the IdP (database `CHECK`), are exempt from "require IdP", and every
@@ -1438,7 +1502,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
 | `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
 | `POST /remediation/campaigns/{id}/resolve` (gate and filter) | `findings:remediation:write` alone could mark findings fixed; an unparseable condition was dropped and a status-only filter counted as scope, widening a resolve to the organization | `RequireAll(findings:remediation:write, findings:fix_apply)`; the filter is parsed strictly (400 on save, 400 on resolve of an old unparseable one), a status alone is not scope, only `active`/`validating` campaigns resolve |
-| `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision or accept needs every finding in scope (a join also every finding of the target task) |
+| `/remediation/suggestions*` (new, RFC-098) | — | listed and read through in-scope findings only (no ids or owner partitions of the others; `hidden_members` counts them; none visible = 404); a decision or accept needs every finding in scope (a join also every finding of the target task); `POST /{id}/approve` is gated on `findings:remediation:read`: without `findings:remediation:write` only an as-is join or task route to the caller (or their group) on assets they own (primary/secondary) is accepted, 403 otherwise |
 | `GET /remediation/actions/{id}` (RFC-098) | — | a restricted member reads an action only when they can see one of its tasks; otherwise 404 |
 | `PATCH /remediation/actions/{id}` (auto-join, RFC-098) | — | needs a caller with no data-scope restriction (the rule acts on findings beyond any scope) |
 | `/remediation/moves*`, `/remediation/tasks/{id}/splits|merges` (RFC-098) | — | every task involved must have all its findings in the caller's scope, and every named finding too (404 otherwise); another tenant's task is 404 |
@@ -1784,7 +1848,7 @@ viewer (1) ┴─ Can only view resources
    session cookies (`/auth/register`, `/login`, `/mfa/*`, `/token`,
    `/refresh`, `/verify-email`, `/forgot-password`, `/reset-password`,
    `/create-first-team`, `/discover`, the OAuth and SSO callbacks, and the
-   console's `/admin/auth/session`, `/mfa`, `/logout`, `/idp/start`,
+   console's `/admin/auth/login`, `/mfa`, `/logout`, `/idp/start`,
    `/idp/callback`) refuse a write a browser sent for another site
    (`RejectCrossSiteBrowser`: an `Origin` that is neither the request's host
    nor in `CORS_ALLOWED_ORIGINS`, `Origin: null`, or no `Origin` with

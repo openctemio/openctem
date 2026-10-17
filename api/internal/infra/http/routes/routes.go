@@ -127,12 +127,14 @@ type Handlers struct {
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
 	ScanWindow    *handler.ScanWindowHandler    // nil if not initialized (no database)
-	ScanWorkflow  *handler.ScanWorkflowHandler  // nil if not initialized (no database)
-	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
-	Tool          *handler.ToolHandler          // nil if not initialized (no database)
-	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
-	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
-	Scan          *handler.ScanHandler          // nil if not initialized (no database)
+	// FindingLifecycle serves sub-statuses and lifecycle schemes (RFC-110); nil without a database.
+	FindingLifecycle *handler.FindingLifecycleHandler
+	ScanWorkflow     *handler.ScanWorkflowHandler // nil if not initialized (no database)
+	ScanProfile      *handler.ScanProfileHandler  // nil if not initialized (no database)
+	Tool             *handler.ToolHandler         // nil if not initialized (no database)
+	ToolCategory     *handler.ToolCategoryHandler // nil if not initialized (no database)
+	Capability       *handler.CapabilityHandler   // nil if not initialized (no database)
+	Scan             *handler.ScanHandler         // nil if not initialized (no database)
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
 	CIAdmin             *handler.CIAdminHandler
@@ -146,6 +148,7 @@ type Handlers struct {
 	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
 	AdminProgramFeed    *handler.AdminProgramFeedHandler    // program feed sources (RFC-065 §16.6)
+	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
@@ -161,6 +164,7 @@ type Handlers struct {
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
 	AssetSoftware          *handler.AssetSoftwareHandler          // RFC-066; nil if not initialized
+	AssetTechnology        *handler.AssetTechnologyHandler        // RFC-112; nil if not initialized
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
 	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
 	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
@@ -310,6 +314,11 @@ type Handlers struct {
 	// SSOChange lists and decides admin-console SSO changes that wait for an
 	// owner's approval (RFC-022). nil if SAML/SSO is not initialized.
 	SSOChange *handler.SSOChangeHandler
+	// SupportAccess is the organization side of support access (RFC-063):
+	// grants, revocation, the active list. nil if not initialized.
+	SupportAccess *handler.SupportAccessHandler
+	// AdminSupport is the console side of support access (RFC-063).
+	AdminSupport *handler.AdminSupportHandler
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
@@ -588,6 +597,7 @@ func Register(
 		registerAssetIdentifierRoutes(router, h.AssetIdentifier, authMiddleware, userSync)
 	}
 	registerAssetSoftwareRoutes(router, h.AssetSoftware, authMiddleware, userSync)
+	registerAssetTechnologyRoutes(router, h.AssetTechnology, authMiddleware, userSync)
 	if h.AssetStateHistory != nil {
 		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync)
 	}
@@ -629,6 +639,7 @@ func Register(
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
+	registerOrganizationSupportAccessRoutes(router, h.SupportAccess, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
@@ -763,7 +774,7 @@ func Register(
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationTask != nil {
-		registerRemediationTaskRoutes(router, h.RemediationTask, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationSuggest != nil {
 		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
@@ -933,6 +944,9 @@ func Register(
 	}
 	if h.ScanWindow != nil {
 		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)
+	}
+	if h.FindingLifecycle != nil {
+		registerFindingLifecycleRoutes(router, h.FindingLifecycle, authMiddleware, userSync)
 	}
 
 	// Initialize trigger rate limiter for scan workflow/scan trigger endpoints
@@ -1317,6 +1331,9 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	if dataScopeGuardMiddleware != nil {
 		middlewares = append(middlewares, dataScopeGuardMiddleware)
 	}
+	// The caller's fresh permissions for rules decided in services (a
+	// finding lifecycle move that needs a permission).
+	middlewares = append(middlewares, middleware.PermissionCheckContext())
 	return middlewares
 }
 

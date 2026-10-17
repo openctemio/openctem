@@ -443,14 +443,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.RemediationRead,
     module: Module.Remediation,
   },
-  '/remediations': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
-  '/remediations/**': {
-    permission: Permission.RemediationRead,
-    module: Module.Remediation,
-  },
   '/automations': {
     permission: Permission.WorkflowsRead,
     module: Module.Workflows,
@@ -787,9 +779,19 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/finding-approvals': {
     permission: Permission.SettingsRead,
   },
+  // Finding lifecycle (RFC-110): findings:read to see, findings:lifecycles:write
+  // to change (publishing also asks for a recent sign-in).
+  '/settings/finding-lifecycle': {
+    permission: Permission.FindingsRead,
+    module: Module.Findings,
+  },
   // License policy (RFC-070): settings:read to see, settings:write to save.
   '/settings/license-policy': {
     permission: Permission.SettingsRead,
+  },
+  // Content catalog (RFC-099): content:read to see; the API gates every change.
+  '/settings/content': {
+    permission: Permission.ContentRead,
   },
   // Asset source precedence (RFC-069): owner/admin on the API.
   '/settings/asset-sources': {
