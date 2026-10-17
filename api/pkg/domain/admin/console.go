@@ -16,14 +16,35 @@ import (
 const (
 	// SessionTTL is the absolute lifetime of a verified console session.
 	SessionTTL = 8 * time.Hour
-	// SessionIdleTimeout ends a verified session that has not been used.
-	SessionIdleTimeout = 30 * time.Minute
+	// SessionIdleTimeout ends a verified session that has not been used:
+	// 15 minutes, the inactivity bound for the highest authenticator
+	// assurance level (the absolute lifetime above stays under its 12 hours).
+	SessionIdleTimeout = 15 * time.Minute
 	// PendingMFATTL is how long a started console session may wait for its TOTP.
 	PendingMFATTL = 5 * time.Minute
 	// StepUpWindow is how long one step-up confirmation covers the protected
 	// actions of the same console session.
 	StepUpWindow = 5 * time.Minute
+	// FreshStepUpWindow is how recent a security-key confirmation must be for
+	// an action that asks for a fresh check (RequireAdminFreshStepUp). The
+	// confirmation is spent by that one action, so it cannot carry a second.
+	FreshStepUpWindow = time.Minute
 )
+
+type freshStepUpKey struct{}
+
+// WithFreshStepUp marks ctx so that the protected-action check accepts only a
+// fresh authenticator code or a just-given, single-use security-key
+// confirmation, never the session's step-up window.
+func WithFreshStepUp(ctx context.Context) context.Context {
+	return context.WithValue(ctx, freshStepUpKey{}, true)
+}
+
+// FreshStepUpRequired reports whether ctx was marked by WithFreshStepUp.
+func FreshStepUpRequired(ctx context.Context) bool {
+	v, _ := ctx.Value(freshStepUpKey{}).(bool)
+	return v
+}
 
 // Credentials are an admin's console second factor. Absent (nil) until the
 // admin first opens the console and is issued a secret to enroll.
@@ -52,6 +73,10 @@ type Session struct {
 	// StepUpAt is when this session last confirmed a protected action with a
 	// fresh code; nil when it never did.
 	StepUpAt *time.Time
+	// EnrollmentRequired is computed on each request, never stored: "require
+	// WebAuthn" is on and this administrator has not registered enough
+	// authenticators and recovery codes yet, so the session may only enroll.
+	EnrollmentRequired bool
 	// ElevatedRole and ElevatedUntil: the role this session acts as until
 	// then (time-boxed elevation); without them, read-only.
 	ElevatedRole  AdminRole
@@ -108,6 +133,10 @@ type ConsoleRepository interface {
 	TouchSession(ctx context.Context, id shared.ID, at time.Time) error
 	// MarkSessionStepUp records a step-up confirmation on a verified session.
 	MarkSessionStepUp(ctx context.Context, id shared.ID, at time.Time) error
+	// ConsumeSessionStepUp atomically clears the session's step-up mark and
+	// reports whether it was set no earlier than notBefore: a security-key
+	// confirmation can pay for one fresh action only.
+	ConsumeSessionStepUp(ctx context.Context, id shared.ID, notBefore time.Time) (bool, error)
 	// SetSessionElevation sets (role non-empty) or ends (role empty) the
 	// time-boxed elevation of a verified session.
 	SetSessionElevation(ctx context.Context, id shared.ID, role AdminRole, until *time.Time, reason string) error

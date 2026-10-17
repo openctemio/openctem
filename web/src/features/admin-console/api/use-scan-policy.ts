@@ -64,6 +64,8 @@ export function saveScanPolicyOrganization(
  */
 export interface PlatformSensorProof {
   required: boolean
+  /** The value while nothing is stored (on for a hosted service). */
+  default: boolean
   version: number
 }
 
@@ -139,6 +141,62 @@ export function saveSharedSensorsSetting(input: {
   totp_code: string
 }) {
   return adminFetch<SharedSensorsSetting>(SHARED_KEY, { method: 'PUT', body: input })
+}
+
+/**
+ * "Shared sensors may scan internal zones" (RFC-100 §6.1). Default off on
+ * every deployment; stored but not enforced until instance scan zones land.
+ */
+export interface SharedSensorInternalZones {
+  allowed: boolean
+  default: boolean
+  /** False while the setting is stored but nothing reads it yet. */
+  enforced: boolean
+  version: number
+}
+
+const INTERNAL_ZONES_KEY = '/settings/shared-sensor-internal-zones'
+
+/** The setting (any administrator reads it). */
+export function useSharedSensorInternalZones() {
+  return useSWR<SharedSensorInternalZones>(INTERNAL_ZONES_KEY, adminFetcher)
+}
+
+/** Super admin, a fresh authenticator code and a reason. */
+export function saveSharedSensorInternalZones(input: {
+  allowed: boolean
+  version: number
+  reason: string
+  totp_code: string
+}) {
+  return adminFetch<SharedSensorInternalZones>(INTERNAL_ZONES_KEY, { method: 'PUT', body: input })
+}
+
+/**
+ * Shared sensor anomaly alert thresholds (RFC-100 §9), per organization per
+ * UTC day; 0 turns a signal off.
+ */
+export interface SharedSensorAnomaly {
+  distinct_domains_per_day: number
+  failures_per_day: number
+  deny_list_hits_per_day: number
+  version: number
+}
+
+export type SharedSensorAnomalyThresholds = Omit<SharedSensorAnomaly, 'version'>
+
+const ANOMALY_KEY = '/settings/shared-sensor-anomaly'
+
+/** The thresholds (any administrator reads them). */
+export function useSharedSensorAnomaly() {
+  return useSWR<SharedSensorAnomaly>(ANOMALY_KEY, adminFetcher)
+}
+
+/** Super admin, a fresh authenticator code and a reason. */
+export function saveSharedSensorAnomaly(
+  input: SharedSensorAnomalyThresholds & { version: number; reason: string; totp_code: string }
+) {
+  return adminFetch<SharedSensorAnomaly>(ANOMALY_KEY, { method: 'PUT', body: input })
 }
 
 /**

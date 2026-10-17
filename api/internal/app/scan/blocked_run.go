@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // A trigger that is refused before anything is dispatched (scope gate, scan
@@ -93,11 +94,11 @@ func (s *Service) recordBlockedRun(ctx context.Context, sc *scan.Scan, input Tri
 	run.ScheduledFor = input.ScheduledFor
 	run.Block(code, message)
 	if err := s.runRepo.Create(ctx, run); err != nil {
-		s.logger.Warn("failed to record blocked run", "scan_id", sc.ID.String(), "code", code, "error", err)
+		s.logger.Warn("failed to record blocked run", "scan_id", logger.SanitizeValue(sc.ID.String()), "code", logger.SanitizeValue(code), "error", logger.SanitizeError(err))
 		return
 	}
 	s.logger.Info("scan trigger refused; recorded as a blocked run",
-		"scan_id", sc.ID.String(), "run_id", run.ID.String(), "code", code)
+		"scan_id", logger.SanitizeValue(sc.ID.String()), "run_id", logger.SanitizeValue(run.ID.String()), "code", logger.SanitizeValue(code))
 }
 
 // blockedRunScanWorkflowID is the template a blocked run points at: the

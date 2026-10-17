@@ -1115,7 +1115,10 @@ func Register(
 	if h.AdminNetwork == nil {
 		h.AdminNetwork = middleware.RequireAdminNetwork(cfg.AdminPlane.AllowedPrefixes(), log)
 	}
-	registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
+	// A tenant-plane process (OPENCTEM_PLANE=tenant) has no console routes.
+	if cfg.AdminPlane.ServesConsole() {
+		registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
+	}
 
 	// ==========================================================================
 	// WebSocket Routes (protected with auth)

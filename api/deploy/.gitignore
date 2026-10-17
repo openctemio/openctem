@@ -2,3 +2,4 @@
 .env
 ca/
 certs/
+sensor/sensor-policy.yaml

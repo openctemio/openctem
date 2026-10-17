@@ -99,6 +99,9 @@ func validate(raw []byte, now time.Time) (*jobsign.Statement, *refusal) {
 	if r := validateTemplates(st.Templates, present["templates"]); r != nil {
 		return st, r
 	}
+	if r := checkShared(st); r != nil {
+		return st, r
+	}
 	if d := st.IssuedAt.Sub(now); d > jobsign.MaxClockSkew || d < -jobsign.MaxClockSkew {
 		return st, refuse(http.StatusBadRequest, ReasonClockSkew, "issued_at is more than %s from the signer clock", jobsign.MaxClockSkew)
 	}

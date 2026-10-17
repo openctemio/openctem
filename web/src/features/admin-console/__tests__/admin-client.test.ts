@@ -3,6 +3,7 @@ import {
   adminFetch,
   AdminApiError,
   ADMIN_STEP_UP_HEADER,
+  setAdminCsrfToken,
   setAdminStepUpPrompt,
 } from '../api/admin-client'
 // Static import: the component tree is heavy to transform, and a dynamic
@@ -13,9 +14,10 @@ describe('adminFetch', () => {
   const fetchMock = vi.fn()
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchMock)
-    document.cookie = 'admin_csrf_ui=csrf-123; path=/'
-    // A tenant CSRF cookie must never be used for admin calls.
-    document.cookie = 'csrf_token=tenant-csrf; path=/'
+    // The console session's token, kept in memory (from sign-in/validate).
+    setAdminCsrfToken('csrf-123')
+    // The page token: echoed only before a console session exists.
+    document.cookie = 'csrf_token=page-csrf; path=/'
   })
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -34,17 +36,53 @@ describe('adminFetch', () => {
     expect(init.credentials).toBe('same-origin')
   })
 
-  it('reads the console page copy of the token, never the HttpOnly API cookie name', async () => {
-    document.cookie = 'admin_csrf_ui=; path=/; max-age=0'
+  it('before a session, the sign-in steps echo the page token, never a console cookie', async () => {
+    setAdminCsrfToken(null)
     document.cookie = 'admin_csrf=api-only; path=/'
-    fetchMock.mockResolvedValueOnce(ok({}))
-    await adminFetch('/tenants/t1/sso/enforcement', { method: 'PUT', body: {} })
-    expect(fetchMock.mock.calls[0][1].headers['X-CSRF-Token']).toBeUndefined()
+    document.cookie = 'admin_csrf_ui=old-copy; path=/'
+    fetchMock.mockResolvedValueOnce(ok({ status: 'mfa_required' }))
+    await adminFetch('/auth/login', { method: 'POST', body: { email: 'a@b.c', password: 'x' } })
+    expect(fetchMock.mock.calls[0][1].headers['X-CSRF-Token']).toBe('page-csrf')
     document.cookie = 'admin_csrf=; path=/; max-age=0'
-    document.cookie = 'admin_csrf_ui=csrf-123; path=/'
+    document.cookie = 'admin_csrf_ui=; path=/; max-age=0'
   })
 
-  it('writes carry the admin CSRF cookie value, not the tenant one', async () => {
+  it('keeps the token from the TOTP step, validate and the IdP callback, in memory only', async () => {
+    setAdminCsrfToken(null)
+    const cookiesBefore = document.cookie
+    fetchMock.mockResolvedValueOnce(ok({ id: '1', csrf_token: 'from-mfa' }))
+    await adminFetch('/auth/mfa', { method: 'POST', body: { code: '123456' } })
+    fetchMock.mockResolvedValueOnce(ok({}))
+    await adminFetch('/tenants', { method: 'POST', body: {} })
+    expect(fetchMock.mock.calls[1][1].headers['X-CSRF-Token']).toBe('from-mfa')
+
+    fetchMock.mockResolvedValueOnce(ok({ id: '1', csrf_token: 'from-validate' }))
+    await adminFetch('/auth/validate')
+    fetchMock.mockResolvedValueOnce(ok({ status: 'signed_in', admin: { csrf_token: 'from-idp' } }))
+    await adminFetch('/auth/idp/callback', { method: 'POST', body: {} })
+    fetchMock.mockResolvedValueOnce(ok({}))
+    await adminFetch('/tenants', { method: 'POST', body: {} })
+    expect(fetchMock.mock.calls[4][1].headers['X-CSRF-Token']).toBe('from-idp')
+    // Never written to a cookie a tenant page on the same host could read.
+    expect(document.cookie).toBe(cookiesBefore)
+  })
+
+  it('forgets the token when the session ends', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await adminFetch('/auth/logout', { method: 'POST' })
+    fetchMock.mockResolvedValueOnce(ok({}))
+    await adminFetch('/auth/login', { method: 'POST', body: {} })
+    expect(fetchMock.mock.calls[1][1].headers['X-CSRF-Token']).toBe('page-csrf')
+
+    setAdminCsrfToken('csrf-123')
+    fetchMock.mockResolvedValueOnce(ok({ code: 'UNAUTHORIZED' }, 401))
+    await expect(adminFetch('/auth/validate')).rejects.toBeInstanceOf(AdminApiError)
+    fetchMock.mockResolvedValueOnce(ok({}))
+    await adminFetch('/auth/login', { method: 'POST', body: {} })
+    expect(fetchMock.mock.calls[3][1].headers['X-CSRF-Token']).toBe('page-csrf')
+  })
+
+  it('writes carry the console session token, not the page one', async () => {
     fetchMock.mockResolvedValueOnce(ok({ enforced: true }))
     await adminFetch('/tenants/t1/sso/enforcement', { method: 'PUT', body: { enforced: true } })
     const [, init] = fetchMock.mock.calls[0]
