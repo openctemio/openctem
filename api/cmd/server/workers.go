@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
@@ -32,6 +35,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -116,6 +120,19 @@ type WorkerDeps struct {
 	DB       *sql.DB
 	Repos    *Repositories
 	Services *Services
+}
+
+// adminAuditSinkForwarder builds the off-box admin audit forwarder for
+// ADMIN_AUDIT_SINK. A destination that cannot be used is an error: an operator
+// who asked for an off-box copy must not silently run without.
+func adminAuditSinkForwarder(cfg config.AdminAuditSinkConfig, repo *postgres.AuditLogRepository, log *logger.Logger) (*auditsink.Forwarder, error) {
+	sink, err := auditsink.New(cfg.URL, auditsink.Options{
+		Secret: cfg.Secret, CAFile: cfg.SyslogCAFile, ClientCert: cfg.SyslogClientCert, ClientKey: cfg.SyslogClientKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return auditsink.NewForwarder(repo, repo, sink, auditsink.Config{HeadInterval: cfg.HeadInterval, Logger: log})
 }
 
 // adminAuditRetentionConfig maps the operator-facing ADMIN_AUDIT_RETENTION_*
@@ -585,6 +602,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "asset-identity-backfill")),
 	))
 
+	// Detected technologies (RFC-112): fill them for assets that predate
+	// them and drop the component links ingest no longer creates.
+	w.ControllerManager.Register(controller.NewAssetTechnologyBackfillController(
+		assettechapp.NewBackfill(repos.AssetTechnologyBackfill,
+			log.With("controller", "asset-technology-backfill"), cfg.Worker.AssetTechnologyBackfillReportOnly),
+	))
+
 	w.ControllerManager.Register(controller.NewScopeReconciliationController(
 		repos.AccessControl,
 		svc.ScopeRule,
@@ -858,6 +882,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
 		))
 	}
+	// Task issues: push each task's state to its tracker issue (move and a
+	// progress comment) when it changed since the last push.
+	if svc != nil && svc.JiraSync != nil && repos.TicketLink != nil {
+		w.ControllerManager.Register(controller.NewTaskTicketController(
+			repos.TicketLink, svc.JiraSync, time.Minute, log.With("controller", "task-tickets"),
+		))
+	}
 	// Remediation suggestions: propose groups and tasks from the remediation
 	// keys (never create them) and send the daily digest.
 	if svc != nil && svc.RemediationSuggest != nil {
@@ -1021,6 +1052,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			"dry_run", arCfg.DryRun,
 			"interval", arCfg.Interval,
 		)
+	}
+
+	// Off-box copy of the administrators' audit log. Off unless a sink is
+	// configured; a bad sink fails the boot, never silently.
+	if cfg.AdminAuditSink.URL != "" {
+		fwd, err := adminAuditSinkForwarder(cfg.AdminAuditSink, repos.AdminAuditLog, log)
+		if err != nil {
+			return nil, fmt.Errorf("admin audit sink: %w", err)
+		}
+		w.ControllerManager.Register(fwd)
+		log.Info("administrators' audit log streamed off the box", "sink", redactSinkURL(cfg.AdminAuditSink.URL))
 	}
 
 	// Audit hash-chain integrity verification. The admin endpoint
@@ -1366,4 +1408,13 @@ func dnsFollowUp(s *easmdnsapp.Service) controller.EASMDNSChecker {
 		return nil
 	}
 	return s
+}
+
+// redactSinkURL keeps the scheme and host of the sink for the log line.
+func redactSinkURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(invalid)"
+	}
+	return fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 }

@@ -513,6 +513,11 @@ func writeResolvedSet(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ref a
 			return fmt.Errorf("write %s: %w", key, err)
 		}
 		a.shown[ref.Attribute] = elements
+		if ref.Attribute == asset.SetAttrTechnologies {
+			if err := pruneAssetTechnologiesTx(ctx, tx, tenantID, ref.AssetID, elements); err != nil {
+				return err
+			}
+		}
 	case asset.SetAttrOpenPorts:
 		want := map[string]bool{}
 		for _, e := range elements {

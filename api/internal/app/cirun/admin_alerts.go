@@ -2,6 +2,8 @@ package cirun
 
 import (
 	"context"
+	"html"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -34,6 +36,10 @@ type AdminAlert struct {
 	Aggregate   string
 	AggregateID *shared.ID
 	Metadata    map[string]any
+	// Email also emails every administrator (when the alerter has a mailer),
+	// with EmailLink, the absolute link to the page to act on.
+	Email     bool
+	EmailLink string
 }
 
 // breakGlassAlert is a break-glass event (created or used): high severity,
@@ -49,14 +55,32 @@ type AdminAlerter interface {
 	AlertAdmins(ctx context.Context, tenantID shared.ID, a AdminAlert)
 }
 
+// AdminEmails lists the e-mail addresses of a tenant's active owners and
+// administrators.
+type AdminEmails interface {
+	ActiveAdminEmails(ctx context.Context, tenantID shared.ID) ([]string, error)
+}
+
+// AdminMailer sends an HTML e-mail through the tenant's own sender or the
+// platform's (*auth.EmailService).
+type AdminMailer interface {
+	SendReport(ctx context.Context, tenantID string, to []string, subject, htmlBody string) error
+}
+
 // AdminAlerts is the AdminAlerter over the member list, the in-app
 // notifications and the notification outbox. Any of them may be nil.
 type AdminAlerts struct {
 	admins AdminLister
 	inApp  InAppNotifier
 	outbox Notifier
+	emails AdminEmails
+	mailer AdminMailer
 	log    *logger.Logger
 }
+
+// SetEmail lets an alert that asks for it (AdminAlert.Email) also reach the
+// administrators by e-mail.
+func (n *AdminAlerts) SetEmail(e AdminEmails, m AdminMailer) { n.emails, n.mailer = e, m }
 
 // NewAdminAlerts creates the alerter.
 func NewAdminAlerts(admins AdminLister, inApp InAppNotifier, ob Notifier, log *logger.Logger) *AdminAlerts {
@@ -85,6 +109,9 @@ func (n *AdminAlerts) AlertAdmins(ctx context.Context, tenantID shared.ID, a Adm
 			}
 		}
 	}
+	if a.Email {
+		n.emailAdmins(ctx, tenantID, a)
+	}
 	if n.outbox != nil {
 		var aggID *uuid.UUID
 		if a.AggregateID != nil {
@@ -98,4 +125,36 @@ func (n *AdminAlerts) AlertAdmins(ctx context.Context, tenantID shared.ID, a Adm
 			n.log.Warn("ci admin alert: enqueue", "event_type", a.EventType, "error", logger.SanitizeError(err))
 		}
 	}
+}
+
+// emailAdmins e-mails the alert to every active owner and administrator,
+// asynchronously: the event it reports already happened and is audited.
+func (n *AdminAlerts) emailAdmins(ctx context.Context, tenantID shared.ID, a AdminAlert) {
+	if n.emails == nil || n.mailer == nil {
+		return
+	}
+	to, err := n.emails.ActiveAdminEmails(ctx, tenantID)
+	if err != nil {
+		n.log.Warn("ci admin alert: list administrator e-mails", "error", logger.SanitizeError(err))
+		return
+	}
+	if len(to) == 0 {
+		return
+	}
+	body := "<p>" + html.EscapeString(a.Body) + "</p>"
+	if a.EmailLink != "" {
+		body += `<p><a href="` + html.EscapeString(a.EmailLink) + `">` + html.EscapeString(a.EmailLink) + "</a></p>"
+	}
+	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	go func() {
+		defer cancel()
+		// One message per administrator: a shared To list would show every
+		// administrator's address to the others, and one bad address would
+		// fail the whole send.
+		for _, addr := range to {
+			if err := n.mailer.SendReport(bg, tenantID.String(), []string{addr}, a.Title, body); err != nil {
+				n.log.Warn("ci admin alert: e-mail not sent", "error", logger.SanitizeError(err))
+			}
+		}
+	}()
 }

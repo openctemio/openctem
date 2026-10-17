@@ -10,10 +10,10 @@ name: Release Feed
 #   is valid 30 days; instances refuse one older than 45);
 #   run it by hand after adding an advisory to .github/release-feed/advisories.json.
 #
-# Inputs: the key set (.github/release-feed/keyset.dsse.json, public, signed
-# offline by the root) and the online key seed (secret
-# RELEASE_FEED_SIGNING_KEY of the release-feed environment). While either is
-# missing the job skips with a warning, so a release never fails on it.
+# Input: the online key seed (secret RELEASE_FEED_SIGNING_KEY of the
+# release-feed environment). The feed is signed directly by that key; its
+# public key is pinned in the binary (releasefeed.PinnedKeys). While the secret
+# is missing the job skips with a warning, so a release never fails on it.
 
 on:
   workflow_call:
@@ -50,8 +50,8 @@ jobs:
         env:
           RELEASE_FEED_SIGNING_KEY: ${{ secrets.RELEASE_FEED_SIGNING_KEY }}
         run: |
-          if [ -z "$RELEASE_FEED_SIGNING_KEY" ] || [ ! -f .github/release-feed/keyset.dsse.json ]; then
-            msg="Release feed not published: the release-feed environment has no RELEASE_FEED_SIGNING_KEY secret or .github/release-feed/keyset.dsse.json is missing (api/docs/architecture/version-check.md#setup-maintainers)."
+          if [ -z "$RELEASE_FEED_SIGNING_KEY" ]; then
+            msg="Release feed not published: the release-feed environment has no RELEASE_FEED_SIGNING_KEY secret (api/docs/architecture/signing-keys.md)."
             echo "::warning::$msg"
             echo "$msg" >> "$GITHUB_STEP_SUMMARY"
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -75,10 +75,10 @@ jobs:
         run: |
           bash ../.github/scripts/release/gh-retry.sh release list -R "$GITHUB_REPOSITORY" \
             --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > "$RUNNER_TEMP/releases.json"
-          go run ./cmd/release-feed build -keyset ../.github/release-feed/keyset.dsse.json \
+          go run ./cmd/release-feed build \
             -key-env RELEASE_FEED_SIGNING_KEY -releases "$RUNNER_TEMP/releases.json" \
             -advisories ../.github/release-feed/advisories.json -out "$RUNNER_TEMP/openctem-releases.json"
-          # Verified against the roots pinned in this checkout, as an instance would.
+          # Verified against the keys pinned in this checkout, as an instance would.
           go run ./cmd/release-feed verify "$RUNNER_TEMP/openctem-releases.json" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload to the latest release

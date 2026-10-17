@@ -714,6 +714,17 @@ func registerAssetSoftwareRoutes(router Router, h *handler.AssetSoftwareHandler,
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerAssetTechnologyRoutes registers the technologies detected on an
+// asset (RFC-112).
+func registerAssetTechnologyRoutes(router Router, h *handler.AssetTechnologyHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/assets/{id}/technologies", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerEASMLookalikeRoutes registers passive lookalike-domain monitoring
 // (RFC-083): scope permissions, behind the attack_surface module.
 func registerEASMLookalikeRoutes(
