@@ -58,6 +58,11 @@ import (
 //	                                            (critical audit, password never
 //	                                            returned); test: super_admin,
 //	                                            to the caller's address only
+//	/admin/settings/console-mfa
+//	                          any admin         super_admin + step-up
+//	/admin/auth/factors, webauthn/*, recovery-codes
+//	                          own account only  register, remove and new codes:
+//	                                            step-up
 //	/admin/support            own grants only   open a session: ops_admin+ named in
 //	                                            a live grant + step-up; reads only
 //	                                            through a live session (audited in
@@ -136,6 +141,13 @@ func registerAdminRoutes(
 		return middleware.RequireAdminStepUp(h.AdminStepUp, purpose)
 	}
 
+	// freshStepUp is for adding or replacing a sign-in factor and turning the
+	// factor policy: a fresh code or a single-use security-key confirmation,
+	// never the session's step-up window.
+	freshStepUp := func(purpose string) Middleware {
+		return middleware.RequireAdminFreshStepUp(h.AdminStepUp, purpose)
+	}
+
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
 	// per route. /validate needs a verified console session. The console signs
 	// in on its own: /login checks the account's email and password and opens
@@ -154,6 +166,19 @@ func registerAdminRoutes(
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
 				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
+				// Security keys and recovery codes (RFC-078). The sign-in steps
+				// share the TOTP step's login bucket and pending cookie.
+				r.POST("/webauthn/session/options", h.AdminConsole.WebAuthnLoginOptions, preSession(crossSite, loginRL)...)
+				r.POST("/webauthn/session", h.AdminConsole.WebAuthnLogin, preSession(crossSite, loginRL)...)
+				r.POST("/recovery", h.AdminConsole.RecoveryLogin, preSession(crossSite, loginRL)...)
+				r.GET("/factors", h.AdminConsole.Factors, authed)
+				r.POST("/webauthn/credentials/options", h.AdminConsole.WebAuthnRegisterOptions, authed, freshStepUp("webauthn.register"))
+				r.POST("/webauthn/credentials", h.AdminConsole.WebAuthnRegister, authed)
+				r.PATCH("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRename, authed)
+				r.DELETE("/webauthn/credentials/{id}", h.AdminConsole.WebAuthnRemove, authed, stepUp("webauthn.remove"))
+				r.POST("/recovery-codes", h.AdminConsole.GenerateRecoveryCodes, authed, freshStepUp("recovery_codes.generate"))
+				r.POST("/step-up/webauthn/options", h.AdminConsole.WebAuthnStepUpOptions, authed)
+				r.POST("/step-up/webauthn", h.AdminConsole.WebAuthnStepUp, consoleRL.LoginMiddleware(), authed)
 				// Time-boxed elevation: read-only until the session elevates
 				// (a fresh confirmation); ending it is always allowed.
 				r.POST("/elevate", h.AdminConsole.Elevate, authed, stepUp("console.elevate"))
@@ -254,6 +279,16 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// Console MFA policy ("require security keys", RFC-078): any admin reads;
+	// a super admin changes it with a step-up.
+	if h.AdminConsole != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/console-mfa", func(r Router) {
+			r.GET("/", h.AdminConsole.GetMFAPolicy)
+			r.PUT("/", h.AdminConsole.PutMFAPolicy, requireSuper, freshStepUp("settings.console_mfa"))
+		}, adminMiddlewares...)
+	}
+
 	// Platform e-mail (Console > System > E-mail, RFC-079): any admin reads;
 	// a super admin changes it with a fresh authenticator code and sends the
 	// test message (to their own address only).
@@ -299,6 +334,16 @@ func registerAdminRoutes(
 			// Egress addresses organizations see to allowlist the scanners.
 			r.GET("/egress", h.AdminScanPolicy.GetSharedSensorsEgress)
 			r.PUT("/egress", h.AdminScanPolicy.UpdateSharedSensorsEgress, requireSuper, stepUp("settings.shared_sensors_egress"))
+		}, adminMiddlewares...)
+		// Shared sensors may scan internal zones, and the anomaly alert
+		// thresholds (RFC-100 §6, §9): same gate, step-up and audit.
+		router.Group("/api/v1/admin/settings/shared-sensor-internal-zones", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensorInternalZones)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorInternalZones, requireSuper, stepUp("settings.shared_sensor_internal_zones"))
+		}, adminMiddlewares...)
+		router.Group("/api/v1/admin/settings/shared-sensor-anomaly", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetSharedSensorAnomaly)
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorAnomaly, requireSuper, stepUp("settings.shared_sensor_anomaly"))
 		}, adminMiddlewares...)
 	}
 
@@ -467,7 +512,7 @@ func registerAdminRoutes(
 			// Creating the first owner (or recovering one) hands an
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
-				with([]Middleware{opsWrite, stepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
+				with([]Middleware{opsWrite, freshStepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
 
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
