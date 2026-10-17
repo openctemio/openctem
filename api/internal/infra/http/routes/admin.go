@@ -64,7 +64,7 @@ import (
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed, tenant admins told)
-//	/admin/settings/shared-sensors, /admin/tenants/{id}/shared-sensors
+//	/admin/settings/shared-sensors(/egress), /admin/tenants/{id}/shared-sensors
 //	                          any admin         super_admin + fresh TOTP code +
 //	                                            reason (critical audit, admins
 //	                                            emailed); switch-on refused until
@@ -126,9 +126,9 @@ func registerAdminRoutes(
 	}
 
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
-	// per route. /validate needs a verified console session. The console steps (RFC-022) run after the normal /login: the
-	// refresh-token cookie names the user, /session opens a pending console
-	// session and /mfa completes it. They share the tenant login's rate limits.
+	// per route. /validate needs a verified console session. The console signs
+	// in on its own: /login checks the account's email and password and opens
+	// a pending console session, /mfa completes it. No tenant session is read.
 	if h.AdminAuth != nil || h.AdminConsole != nil {
 		consoleRL := newAuthRateLimiter("console")
 		loginRL := consoleRL.LoginMiddleware()
@@ -139,7 +139,7 @@ func registerAdminRoutes(
 				r.GET("/validate", h.AdminAuth.Validate, authed)
 			}
 			if h.AdminConsole != nil {
-				r.POST("/session", h.AdminConsole.StartSession, preSession(crossSite, loginRL)...)
+				r.POST("/login", h.AdminConsole.Login, preSession(crossSite, loginRL)...)
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
 				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
@@ -285,6 +285,9 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/shared-sensors", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetSharedSensors)
 			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensors, requireSuper, stepUp("settings.shared_sensors"))
+			// Egress addresses organizations see to allowlist the scanners.
+			r.GET("/egress", h.AdminScanPolicy.GetSharedSensorsEgress)
+			r.PUT("/egress", h.AdminScanPolicy.UpdateSharedSensorsEgress, requireSuper, stepUp("settings.shared_sensors_egress"))
 		}, adminMiddlewares...)
 	}
 

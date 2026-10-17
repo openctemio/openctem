@@ -13,12 +13,14 @@ package assettech
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
 )
 
 // Bounds on what a producer may store. Sensors and imports are untrusted:
@@ -52,17 +54,20 @@ type Technology struct {
 	LastSeen   time.Time
 }
 
-// Repository stores asset technologies. Every method is tenant-scoped.
+// Repository reads asset technologies and adds what reports know about
+// them. Every method is tenant-scoped. The rows themselves are written by
+// set reconciliation (the asset's resolved technologies set).
 type Repository interface {
-	// Upsert records technologies seen on assets: a known (asset, key)
-	// keeps its first_seen; last_seen, version, category, confidence and
-	// source take the newer sighting's values when it has them.
-	Upsert(ctx context.Context, tenantID shared.ID, techs []Technology) error
 	// ListByAsset is an asset's technologies, ordered by category and name.
 	ListByAsset(ctx context.Context, tenantID, assetID shared.ID) ([]Technology, error)
-	// ShownKeys is, for each asset, the keys of the technologies the asset
-	// currently shows (its reconciled properties.technologies).
-	ShownKeys(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]map[string]bool, error)
+	// ListByAssets is, for each of the tenant's assets, at most perAsset of
+	// its technologies, ordered by category and name.
+	ListByAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, perAsset int) (map[shared.ID][]Technology, error)
+	// Enrich adds what a report knew about technologies the assets already
+	// show (the tool's category, confidence, source, last seen). It never
+	// adds a technology and never changes a name or version: set
+	// reconciliation decides those.
+	Enrich(ctx context.Context, tenantID shared.ID, techs []Technology) error
 }
 
 // Observation builds a technology from a producer's values: it trims,
@@ -103,8 +108,82 @@ func Key(name string) string {
 	return strings.Join(strings.Fields(strings.ToLower(name)), " ")
 }
 
+// Element is the stored form of a technology: "Name" or "Name:version",
+// the name with single spaces and the version cleaned. It is "" when the
+// name is unusable.
+func Element(name, version string) string {
+	name = strings.Join(strings.Fields(strings.TrimSpace(name)), " ")
+	if Key(name) == "" {
+		return ""
+	}
+	if v := CleanVersion(version); v != "" {
+		return name + ":" + v
+	}
+	return name
+}
+
+// Collapse turns a reconciled set of elements into one element per key, in
+// stored form, sorted by key. Two sources that report different versions
+// of one product give one technology: a known version beats none, and the
+// higher version wins.
+func Collapse(elements []string) []string {
+	best := map[string]string{}
+	for _, e := range elements {
+		name, version := Split(e)
+		el := Element(name, version)
+		if el == "" {
+			continue
+		}
+		k := Key(name)
+		prev, ok := best[k]
+		if !ok || preferElement(el, prev) {
+			best[k] = el
+		}
+	}
+	keys := make([]string, 0, len(best))
+	for k := range best {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, best[k])
+	}
+	return out
+}
+
+// preferElement reports whether stored element a beats b for one key: the
+// better version, then (same version, other spelling) the smaller string,
+// so the choice never depends on input order.
+func preferElement(a, b string) bool {
+	_, va := Split(a)
+	_, vb := Split(b)
+	if va == vb {
+		return a < b
+	}
+	return preferVersion(va, vb)
+}
+
+// preferVersion reports whether version a beats version b (a != b).
+func preferVersion(a, b string) bool {
+	switch {
+	case b == "":
+		return true
+	case a == "":
+		return false
+	}
+	va, okA := vulnmatch.ParseVersion(a)
+	vb, okB := vulnmatch.ParseVersion(b)
+	if okA && okB {
+		if c := va.Compare(vb); c != 0 {
+			return c > 0
+		}
+	}
+	return a > b
+}
+
 // ElementKey is the key of a stored technology element ("Name" or
-// "Name:version", the reconciled properties.technologies form).
+// "Name:version", the reconciled set's form).
 func ElementKey(element string) string {
 	name, _ := Split(element)
 	return Key(name)

@@ -222,11 +222,11 @@ func TestRunDue_RefusedAnswers(t *testing.T) {
 		body   func(t *testing.T) []byte
 		code   string
 	}{
-		"http error": {http.StatusNotFound, func(*testing.T) []byte { return nil }, ErrCodeHTTPStatus},
-		"oversize":   {http.StatusOK, func(*testing.T) []byte { return bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1) }, ErrCodeTooLarge},
-		"garbage":    {http.StatusOK, func(*testing.T) []byte { return []byte("<html>") }, ErrCodeInvalid},
+		"http error":   {http.StatusNotFound, func(*testing.T) []byte { return nil }, ErrCodeHTTPStatus},
+		"oversize":     {http.StatusOK, func(*testing.T) []byte { return bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1) }, ErrCodeTooLarge},
+		"garbage":      {http.StatusOK, func(*testing.T) []byte { return []byte("<html>") }, ErrCodeInvalid},
 		"unpinned key": {http.StatusOK, func(t *testing.T) []byte { return other.feed(t, 5, t0, "v0.9.8") }, ErrCodeInvalid},
-		"expired":    {http.StatusOK, func(t *testing.T) []byte { return k.feed(t, 5, t0.Add(-31*24*time.Hour), "v0.9.8") }, ErrCodeExpired},
+		"expired":      {http.StatusOK, func(t *testing.T) []byte { return k.feed(t, 5, t0.Add(-31*24*time.Hour), "v0.9.8") }, ErrCodeExpired},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

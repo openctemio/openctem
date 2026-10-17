@@ -37,9 +37,9 @@ import (
 
 // Format constants (must match the builder, cmd/release-feed).
 const (
-	BundleSchema      = "openctem.io/release-bundle/v1"
-	FeedPayloadType   = "application/vnd.openctem.release-feed+json"
-	FeedKind          = "openctem.io/release-feed/v1"
+	BundleSchema    = "openctem.io/release-bundle/v1"
+	FeedPayloadType = "application/vnd.openctem.release-feed+json"
+	FeedKind        = "openctem.io/release-feed/v1"
 	// FileName is the published file.
 	FileName = "openctem-releases.json"
 )

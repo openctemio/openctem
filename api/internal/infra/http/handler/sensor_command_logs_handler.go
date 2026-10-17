@@ -41,13 +41,28 @@ var commandLogBatchesDropped = promauto.NewCounterVec(prometheus.CounterOpts{
 // 400 invalid-request, 413 content-too-large and 422 too-many-items for a
 // malformed batch. Every 4xx is final for the batch.
 func (h *SensorControlV2Handler) CommandLogs(w http.ResponseWriter, r *http.Request) {
-	s := sensorForV2(w, r)
+	s := controlSensorForV2(w, r)
 	if s == nil {
 		return
 	}
 	commandID, err := shared.IDFromString(chi.URLParam(r, "command_id"))
 	if err != nil || protov2.ValidateUUID(chi.URLParam(r, "command_id")) != nil {
 		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
+		return
+	}
+	// A shared sensor writes the logs of a shared job it holds, under the
+	// lease epoch it states, into the command's tenant.
+	if s.IsShared() && leaseEpochHeader(r) == nil {
+		protov2.NewProblem(protov2.ProblemCommandNotFound).Write(w)
+		return
+	}
+	tenant, ok := h.commandTenant(w, r, s, commandID.String())
+	if !ok {
+		return
+	}
+	tenantID, err := shared.IDFromString(tenant)
+	if err != nil {
+		h.internal(w, "logs", err)
 		return
 	}
 	var req protov2.LogsRequest
@@ -67,7 +82,7 @@ func (h *SensorControlV2Handler) CommandLogs(w http.ResponseWriter, r *http.Requ
 		lines[i] = commandlog.RawLine{TS: l.TS, Level: l.Level, Msg: l.Msg, Source: l.Source, Fields: l.Fields}
 	}
 	res, err := h.commands.logs.Append(r.Context(), commandlog.AppendInput{
-		TenantID: *s.TenantID, SensorID: s.ID, CommandID: commandID, Seq: req.Seq, Lines: lines,
+		TenantID: tenantID, SensorID: s.ID, CommandID: commandID, Seq: req.Seq, Lines: lines,
 		StatedEpoch: leaseEpochHeader(r),
 	})
 	switch {

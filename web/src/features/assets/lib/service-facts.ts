@@ -161,31 +161,14 @@ export function parseTechnology(raw: string): Technology {
 }
 
 /**
- * The technologies fingerprinted on the asset.
- *
- * - `null`: nothing fingerprinted this asset (no `technologies` key): "not
- *   collected".
- * - `[]`: a probe ran and found none. The sensor writes `technologies: null`
- *   when httpx reported no technology, so a present-but-empty key counts as
- *   "no technologies".
+ * The technologies fingerprinted on the asset (`asset.technologies`, from
+ * the asset API; RFC-112), or `null` when none were detected: "not
+ * collected".
  */
-export function technologies(asset: Pick<Asset, 'metadata'>): Technology[] | null {
-  const v = prop(asset, 'technologies')
-  if (v === undefined) return null
-  // Scanners write "name:version" strings; some integrations write
-  // { name, version } objects. Both are a technology, never "none found".
-  const list = Array.isArray(v)
-    ? v.map((x) => {
-        if (x && typeof x === 'object' && typeof (x as { name?: unknown }).name === 'string') {
-          const { name, version } = x as { name: string; version?: unknown }
-          return typeof version === 'string' && version.trim()
-            ? `${name.trim()}:${version.trim()}`
-            : name.trim()
-        }
-        return typeof x === 'string' ? x.trim() : ''
-      })
-    : strList(v)
-  return uniq(list.filter(Boolean)).map(parseTechnology)
+export function technologies(asset: Pick<Asset, 'technologies'>): Technology[] | null {
+  const list = asset.technologies
+  if (!list || list.length === 0) return null
+  return list.map((t) => (t.version ? { name: t.name, version: t.version } : { name: t.name }))
 }
 
 export function formatTechnology(t: Technology): string {

@@ -18,6 +18,11 @@ type NewTaskRecord struct {
 	Related []shared.ID
 	Source  JoinSource
 	ActorID *shared.ID
+	// OneActive makes the create fail with ErrActiveTaskExists when the action
+	// already has an open or in-progress task (concurrent creators of the same
+	// action are serialized on the action row). Other creators, such as a split
+	// or a route accept, may open several tasks on one action and leave it false.
+	OneActive bool
 	// EventData is stored on the "created" timeline entry.
 	EventData map[string]any
 }
