@@ -9,51 +9,48 @@ package routes
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 )
 
-// TestAuthz170F1_DeleteForeignScopeRule: a scope rule on groupOut (created by
-// an administrator) is deleted by the restricted lead. DeleteRule checks
-// neither the rule-delegation cap nor the group cap, and the cleanup removes
-// the rule-assigned assets from that team.
-func TestAuthz170F1_DeleteForeignScopeRule(t *testing.T) {
+// TestAuthz170F1_ReactivateGroupWidensOwnScope: an administrator turns off a
+// team (groupOut, holding assetOut) to cut its members' access. A restricted
+// lead who is a member of that team turns it back on with PUT /groups/{id}
+// and regains assetOut. UpdateGroup never applies the cap.
+func TestAuthz170F1_ReactivateGroupWidensOwnScope(t *testing.T) {
 	h := newSDHarness(t)
-	rules := "/api/v1/groups/" + h.groupOut + "/scope-rules"
-	out := h.expect(h.admin, true, http.MethodPost, rules, map[string]any{
-		"name": "admin rule", "rule_type": "tag_match", "match_tags": []string{"bu-out"}, "match_logic": "any",
-		"ownership_type": "secondary",
-	}, http.StatusCreated)
-	id := jsonField(out, "id")
-	if id == "" {
-		t.Fatalf("could not create the admin's rule: %s", out)
+	// The lead is a legitimate member of groupIn (assetIn) and of groupOut.
+	h.exec(`INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member'), ($3, $2, 'member')`,
+		h.groupIn, h.lead, h.groupOut)
+	h.exec(`SELECT refresh_access_for_user($1, $2)`, h.tenant, h.lead)
+	// The administrator deactivates groupOut: the trigger drops the lead's assetOut row.
+	h.exec(`UPDATE groups SET is_active = FALSE WHERE id = $1`, h.groupOut)
+	if n := h.count(`SELECT COUNT(*) FROM user_accessible_assets WHERE user_id = $1 AND asset_id = $2`, h.lead, h.assetOut); n != 0 {
+		t.Fatalf("precondition: lead still holds assetOut after deactivation (%d rows)", n)
 	}
-	status, body := h.do(h.lead, false, http.MethodDelete, rules+"/"+id, nil)
+
+	status, body := h.do(h.lead, false, http.MethodPut, "/api/v1/groups/"+h.groupOut, map[string]any{"is_active": true})
 	if status < 400 {
-		t.Errorf("restricted lead deleted another team's scope rule: DELETE = %d (%.200s)", status, body)
+		t.Errorf("restricted lead reactivated a team holding an asset outside their scope: PUT = %d (%.200s)", status, body)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM user_accessible_assets WHERE user_id = $1 AND asset_id = $2`, h.lead, h.assetOut); n != 0 {
+		t.Errorf("restricted lead widened their own scope to assetOut by reactivating the team (%d rows)", n)
 	}
 }
 
-// TestAuthz170F1_GroupAssetCountTenantWide: GET /groups shows asset_count
-// over every asset of the team, including assets outside the reader's scope
-// (the asset-group counters were fixed, access-group counters were not).
-func TestAuthz170F1_GroupAssetCountTenantWide(t *testing.T) {
+// TestAuthz170F1_DeactivateForeignGroup: the same lead deactivates another
+// business unit's team (groupOut, whose asset they cannot see), revoking
+// every member's access. RemoveMember/UnassignAsset refuse this with the
+// cap; UpdateGroup does not.
+func TestAuthz170F1_DeactivateForeignGroup(t *testing.T) {
 	h := newSDHarness(t)
-	_, body := h.do(h.lead, false, http.MethodGet, "/api/v1/groups/"+h.groupOut, nil)
-	if strings.Contains(body, `"asset_count":1`) {
-		t.Errorf("restricted lead sees asset_count 1 for a team whose only asset is outside their scope: %.300s", body)
-	}
-}
+	h.exec(`INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member')`, h.groupOut, h.peer)
+	h.exec(`SELECT refresh_access_for_user($1, $2)`, h.tenant, h.peer)
 
-func jsonField(body, key string) string {
-	i := strings.Index(body, `"`+key+`":"`)
-	if i < 0 {
-		return ""
+	status, body := h.do(h.lead, false, http.MethodPut, "/api/v1/groups/"+h.groupOut, map[string]any{"is_active": false})
+	if status < 400 {
+		t.Errorf("restricted lead deactivated a team holding an asset outside their scope: PUT = %d (%.200s)", status, body)
 	}
-	rest := body[i+len(key)+4:]
-	j := strings.IndexByte(rest, '"')
-	if j < 0 {
-		return ""
+	if n := h.count(`SELECT COUNT(*) FROM user_accessible_assets WHERE user_id = $1 AND asset_id = $2`, h.peer, h.assetOut); n != 1 {
+		t.Errorf("peer lost access to assetOut through the lead's change (%d rows)", n)
 	}
-	return rest[:j]
 }

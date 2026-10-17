@@ -347,6 +347,14 @@ func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeyd
 		return nil, apikeydom.ErrAPIKeyNotFound
 	}
 
+	// A key without a user (a legacy organization key) is refused: it has no
+	// member whose data scope it could carry, so it would otherwise read
+	// every asset of the tenant. Migration revokes the remaining ones.
+	if key.UserID() == nil {
+		s.logger.Debug("api key rejected: key has no user", "key_id", key.ID().String())
+		return nil, apikeydom.ErrAPIKeyNotFound
+	}
+
 	// Member-lifecycle gate: a user-scoped key must belong to a still-active
 	// member. This makes member suspension/removal revoke the key immediately —
 	// otherwise a removed member keeps API access until the key's own expiry.
