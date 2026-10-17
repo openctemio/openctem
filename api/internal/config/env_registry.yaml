@@ -236,6 +236,17 @@ vars:
     type: string
     default: "openctem"
     description: "Database name."
+  - name: DB_ADMIN_PASSWORD
+    component: api
+    group: "Database (PostgreSQL)"
+    type: string
+    secret: true
+    description: "Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`."
+  - name: DB_ADMIN_USER
+    component: api
+    group: "Database (PostgreSQL)"
+    type: string
+    description: "Role the platform console's identity tables (administrators, console sessions and credentials, the platform identity provider) are written with, through a second small pool. The least-privilege bootstrap (`admin_user`) creates it and takes write on those tables away from `DB_USER`. Unset: one role, as before."
   - name: DB_PASSWORD
     component: api
     group: "Database (PostgreSQL)"
@@ -1522,23 +1533,61 @@ vars:
     type: int
     default: "10000"
     description: "Rows per delete transaction."
+  - name: ADMIN_ALLOWED_CIDRS
+    component: api
+    group: "Admin console"
+    type: list
+    default: "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    description: "Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address."
+  - name: ADMIN_LISTEN_ADDR
+    component: api
+    group: "Admin console"
+    type: string
+    description: "The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener."
+  - name: ADMIN_LISTEN_ALLOW_ALL_INTERFACES
+    component: api
+    group: "Admin console"
+    type: bool
+    default: "false"
+    description: "`true` lets `ADMIN_LISTEN_ADDR` be any address: every interface (`:8081`, `0.0.0.0:8081`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port."
+  - name: ADMIN_ELEVATION
+    component: api
+    group: "Admin console"
+    type: string
+    default: "required"
+    description: "`required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in."
   - name: ADMIN_AUDIT_SINK
     component: api
     group: "Audit log retention"
     type: string
-    description: "Streams the platform administrators' audit log off the box: every row with its hash-chain position and hash (no request body), and the chain head every `ADMIN_AUDIT_SINK_HEAD_INTERVAL`. `https://collector/path` (one JSON object per POST, `Authorization: Bearer ADMIN_AUDIT_SINK_TOKEN`, no redirects), `syslog+tls://host:6514`, `syslog+tcp://host:514`, `syslog+udp://host:514` (RFC 5424) or `file:///path` (JSON lines, 0600). A destination that cannot be used stops the start-up. Empty: off."
-  - name: ADMIN_AUDIT_SINK_TOKEN
+    description: "Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off."
+  - name: ADMIN_AUDIT_SINK_SECRET
     component: api
     group: "Audit log retention"
     type: string
     secret: true
-    description: "Bearer token sent to an `https://` `ADMIN_AUDIT_SINK`."
+    description: "HMAC-SHA256 key that signs each request to an `https://` `ADMIN_AUDIT_SINK` (`X-OpenCTEM-Signature`, `X-OpenCTEM-Timestamp`, `X-OpenCTEM-Batch-Id`). At least 32 bytes, required for https, refused for other destinations. Never logged."
+  - name: ADMIN_AUDIT_SINK_SYSLOG_CA_FILE
+    component: api
+    group: "Audit log retention"
+    type: path
+    description: "PEM bundle that replaces the system roots when verifying a `syslog+tls://` `ADMIN_AUDIT_SINK`."
+  - name: ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT
+    component: api
+    group: "Audit log retention"
+    type: path
+    description: "PEM client certificate presented to a `syslog+tls://` `ADMIN_AUDIT_SINK` (mutual TLS), so the collector can accept only this sender. Set together with `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY`."
+  - name: ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY
+    component: api
+    group: "Audit log retention"
+    type: path
+    description: "PEM private key of `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT`."
   - name: ADMIN_AUDIT_SINK_HEAD_INTERVAL
     component: api
     group: "Audit log retention"
     type: duration
     default: "15m"
-    description: "How often the administrators' audit chain head (position and hash) is sent to `ADMIN_AUDIT_SINK`. A later re-signing of the chain cannot match a head already sent."
+    description: "How often the administrators' audit chain head (position and hash) and the chain verification state are sent to `ADMIN_AUDIT_SINK` when no row is new. A later re-signing of the chain cannot match a head already sent."
   - name: ADMIN_AUDIT_RETENTION_DAYS
     component: api
     group: "Audit log retention"
@@ -1586,6 +1635,12 @@ vars:
     type: int
     default: "400"
     description: "Days the asset change timeline keeps events. Minimum 30."
+  - name: ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY
+    component: api
+    group: "Audit log retention"
+    type: bool
+    default: "true"
+    description: "The asset technology backfill logs the component links it would remove (a count and a sample) instead of deleting them. Set `false` to delete links that have no version and no CPE; each deleted link is recorded."
   - name: INVITATION_PURGE_INTERVAL
     component: api
     group: "Audit log retention"
@@ -1866,6 +1921,17 @@ vars:
     group: "Administration tools"
     type: string
     description: "`openctem-signer`: signatures per second allowed per organization."
+  - name: ADMIN_API_URL
+    component: web
+    group: "Web console"
+    type: string
+    description: "Internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`."
+  - name: OPENCTEM_ADMIN_PLANE
+    component: web
+    group: "Web console"
+    type: string
+    default: "shared"
+    description: "`separate`: the platform console has its own origin. Requests the gateway's console site marks `X-OpenCTEM-Plane: admin` reach only the console (anything else 404, `/` goes to `/admin`), and the main site answers 404 for the console. `shared`: one origin for both. Compose: `separate`."
   - name: BACKEND_API_URL
     component: web
     group: "Web console"

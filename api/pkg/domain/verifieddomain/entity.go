@@ -70,8 +70,11 @@ type VerifiedDomain struct {
 	// jitDisabled / jitRole: per-domain just-in-time provisioning (jit.go).
 	jitDisabled bool
 	jitRole     string
-	createdAt   time.Time
-	updatedAt   time.Time
+	// signup is the domain's sign-up policy (signup_policy.go).
+	signup            SignupPolicy
+	captureNotifiedAt *time.Time
+	createdAt         time.Time
+	updatedAt         time.Time
 }
 
 // New creates a pending VerifiedDomain. The domain is normalized and validated;

@@ -139,8 +139,10 @@ decision := lifecycle.Apply(compiled, platform, facts, actor, from, to) // can o
 
 Order: tenant and data scope → canonical edge → platform invariants → tenant layer. The tenant layer:
 
-1. finds the scheme's transition for `(from sub-status, to)`; with `listed_only` a move that is not listed
-   is blocked (`not_in_lifecycle`);
+1. finds the scheme's transitions for `(from place, to)`. A move onto a specific sub-status always needs a
+   listed transition; under `canonical_plus_listed` a canonical move to the target's default label (and a
+   reset to the current status's default label) stays available unlisted; under `listed_only` every move
+   must be listed. Otherwise the move is blocked (`not_in_lifecycle`);
 2. evaluates the transition's `when`; when it matches, every guard adds its requirement or block;
 3. never clears a block, never removes a requirement, and changes the mode only from `direct` to
    `request`.
@@ -215,7 +217,8 @@ data with optional per-language names.
 | 1 | Schema: catalog, schemes, versions, `findings.sub_status_id` with its foreign key and reset trigger; domain catalog types and repository | in review |
 | 2 | Pure engine layer: spec compiler, validator, guards, scheme selection, property test, fuzz | in review |
 | 3 | Catalog and schemes API (versions, validate, publish with step-up, roll back), permission `findings:lifecycles:write`, plan limits | in review |
-| 4 | The tenant layer wired into every status path (sub-status changes only as engine-decided, audited moves); `PATCH /status` with `sub_status_id` and `fields`; finding resource and filter; simulate; timeline | designed |
-| 5 | Settings → Findings → Lifecycle | designed |
+| 4 | The tenant layer wired into every status path (sub-status changes only as engine-decided, audited moves); `PATCH /status` with `sub_status_id` and `fields`; the finding resource; the allowed moves and the dry run; the timeline | in review |
+| 4b | Sub-statuses and fields on approval requests; the list filter by sub-status; simulate | designed |
+| 5 | Settings → Findings → Finding lifecycle (sub-status lanes, draft editor, check, publish with step-up, version history and roll back) | in review |
 | 6 | Drawer, list and bulk with sub-statuses | designed |
 | 7 | Templates, extra approval steps, ticket mapping by sub-status, flow report | designed |

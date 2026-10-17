@@ -343,7 +343,7 @@ func (r *FindingCorrelationRepository) release(ctx context.Context, tenant, memb
 	t := findingTransition{Source: "correlation", Reason: why, ActorName: "system: finding correlation",
 		Message: "Released from its correlation: a detection of its own again"}
 	if by != nil {
-		t.ActorType, t.ActorID, t.ActorName = "user", *by, ""
+		t.ActorType, t.ActorID, t.ActorName = actorTypeUser, *by, ""
 	}
 	if err := setFindingTransition(ctx, tx, t); err != nil {
 		return false, err
@@ -654,3 +654,6 @@ func (r *FindingCorrelationRepository) upsertPointsByID(ctx context.Context, ten
 	}
 	return nil
 }
+
+// actorTypeUser is the transition actor type of a person.
+const actorTypeUser = "user"

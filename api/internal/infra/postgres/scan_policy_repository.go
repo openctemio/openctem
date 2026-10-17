@@ -370,3 +370,63 @@ func (r *ScanPolicyRepository) GetAnomalyThresholds(ctx context.Context) (scanpo
 func (r *ScanPolicyRepository) SetAnomalyThresholds(ctx context.Context, t scanpolicy.AnomalyThresholds, expectedVersion int, by string, at time.Time) (int, error) {
 	return r.putPlatformSetting(ctx, scanpolicy.AnomalyThresholdsSettingKey, t, expectedVersion, by, at)
 }
+
+var _ scanpolicy.SharedSensorsEgressStore = (*ScanPolicyRepository)(nil)
+
+// GetSharedSensorsEgress returns the shared sensor egress list, or
+// scanpolicy.ErrNotFound when nothing is stored.
+func (r *ScanPolicyRepository) GetSharedSensorsEgress(ctx context.Context) (scanpolicy.SharedSensorsEgress, int, error) {
+	var raw []byte
+	var version int
+	err := r.db.QueryRowContext(ctx, `SELECT value, version FROM platform_settings WHERE key = $1`,
+		scanpolicy.SharedSensorsEgressKey).Scan(&raw, &version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return scanpolicy.SharedSensorsEgress{}, 0, scanpolicy.ErrNotFound
+	}
+	if err != nil {
+		return scanpolicy.SharedSensorsEgress{}, 0, fmt.Errorf("get shared sensor egress: %w", err)
+	}
+	var v scanpolicy.SharedSensorsEgress
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return scanpolicy.SharedSensorsEgress{}, 0, fmt.Errorf("decode shared sensor egress: invalid value")
+	}
+	return v, version, nil
+}
+
+// SetSharedSensorsEgress stores the list when the stored version is
+// expectedVersion (0: nothing stored yet), and returns the new version.
+func (r *ScanPolicyRepository) SetSharedSensorsEgress(ctx context.Context, v scanpolicy.SharedSensorsEgress, expectedVersion int, by string, at time.Time) (int, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return 0, err
+	}
+	version, err := r.setPlatformSetting(ctx, scanpolicy.SharedSensorsEgressKey, raw, expectedVersion, by, at)
+	if err != nil {
+		return 0, fmt.Errorf("set shared sensor egress: %w", err)
+	}
+	return version, nil
+}
+
+// setPlatformSetting writes one console-owned platform setting with an
+// optimistic version check (0: nothing stored yet).
+func (r *ScanPolicyRepository) setPlatformSetting(ctx context.Context, key string, raw []byte, expectedVersion int, by string, at time.Time) (int, error) {
+	var version int
+	var err error
+	if expectedVersion == 0 {
+		err = r.db.QueryRowContext(ctx, `
+			INSERT INTO platform_settings (key, value, version, source, updated_by, updated_at)
+			VALUES ($1, $2, 1, 'console', $3, $4)
+			ON CONFLICT (key) DO NOTHING
+			RETURNING version`, key, raw, by, at).Scan(&version)
+	} else {
+		err = r.db.QueryRowContext(ctx, `
+			UPDATE platform_settings
+			   SET value = $2, version = version + 1, source = 'console', updated_by = $3, updated_at = $4
+			 WHERE key = $1 AND version = $5
+			RETURNING version`, key, raw, by, at, expectedVersion).Scan(&version)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, scanpolicy.ErrVersionConflict
+	}
+	return version, err
+}

@@ -164,6 +164,7 @@ type Handlers struct {
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
 	AssetSoftware          *handler.AssetSoftwareHandler          // RFC-066; nil if not initialized
+	AssetTechnology        *handler.AssetTechnologyHandler        // RFC-112; nil if not initialized
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
 	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
 	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
@@ -286,11 +287,17 @@ type Handlers struct {
 	AdminScanPolicy *handler.AdminScanPolicyHandler
 	// AdminInstanceScanZone serves instance scan zones (RFC-100 §6.1).
 	AdminInstanceScanZone *handler.AdminInstanceScanZoneHandler
+	// AdminSharedSensor: shared sensor enrollment tokens (RFC-100).
+	AdminSharedSensor *handler.AdminSharedSensorHandler
 	// ScanGovernance: the organization's scan approval settings (RFC-073).
 	ScanGovernance *handler.ScanGovernanceHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
 	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
+	// AdminNetwork refuses console requests from outside ADMIN_ALLOWED_CIDRS
+	// inside the console's routes (behind the server-wide gate). Nil: no
+	// route-level check (route-shape tests).
+	AdminNetwork Middleware
 	// AdminStepUp confirms protected console actions (route-level step-up).
 	// Nil refuses every protected route.
 	AdminStepUp middleware.AdminStepUpConfirmer
@@ -313,6 +320,11 @@ type Handlers struct {
 	// SSOChange lists and decides admin-console SSO changes that wait for an
 	// owner's approval (RFC-022). nil if SAML/SSO is not initialized.
 	SSOChange *handler.SSOChangeHandler
+	// SupportAccess is the organization side of support access (RFC-063):
+	// grants, revocation, the active list. nil if not initialized.
+	SupportAccess *handler.SupportAccessHandler
+	// AdminSupport is the console side of support access (RFC-063).
+	AdminSupport *handler.AdminSupportHandler
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
@@ -591,6 +603,7 @@ func Register(
 		registerAssetIdentifierRoutes(router, h.AssetIdentifier, authMiddleware, userSync)
 	}
 	registerAssetSoftwareRoutes(router, h.AssetSoftware, authMiddleware, userSync)
+	registerAssetTechnologyRoutes(router, h.AssetTechnology, authMiddleware, userSync)
 	if h.AssetStateHistory != nil {
 		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync)
 	}
@@ -632,6 +645,7 @@ func Register(
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
+	registerOrganizationSupportAccessRoutes(router, h.SupportAccess, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
@@ -766,7 +780,7 @@ func Register(
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationTask != nil {
-		registerRemediationTaskRoutes(router, h.RemediationTask, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
+		registerRemediationTaskRoutes(router, h.RemediationTask, h.JiraWebhook, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.RemediationSuggest != nil {
 		registerRemediationSuggestionRoutes(router, h.RemediationSuggest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
@@ -1099,6 +1113,9 @@ func Register(
 	// ==========================================================================
 	// These routes are for OpenCTEM platform administrators only.
 	// They manage shared infrastructure that serves all tenants.
+	if h.AdminNetwork == nil {
+		h.AdminNetwork = middleware.RequireAdminNetwork(cfg.AdminPlane.AllowedPrefixes(), log)
+	}
 	registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
 
 	// ==========================================================================
@@ -1323,6 +1340,9 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	if dataScopeGuardMiddleware != nil {
 		middlewares = append(middlewares, dataScopeGuardMiddleware)
 	}
+	// The caller's fresh permissions for rules decided in services (a
+	// finding lifecycle move that needs a permission).
+	middlewares = append(middlewares, middleware.PermissionCheckContext())
 	return middlewares
 }
 

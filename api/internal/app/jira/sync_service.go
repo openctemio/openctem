@@ -200,6 +200,11 @@ type SyncService struct {
 	// links stores ticket link records (nil → URL strings only).
 	links ticketlink.Repository
 
+	// taskAccess and taskReader serve task issues; webBase links back.
+	taskAccess TaskAccess
+	taskReader TaskReader
+	webBase    string
+
 	// profiles renders published ticket mapping profiles (nil → built-in
 	// fields and status sync only).
 	profiles ProfileSource
@@ -896,8 +901,7 @@ func (s *SyncService) applyToLinked(ctx context.Context, tenantID shared.ID, pay
 		return nil
 	}
 
-	ticketURL := deriveJiraTicketURL(payload.Issue)
-	ids, err := s.linkedFindings(ctx, tenantID, ticketURL)
+	ids, err := s.linkedFindingsOf(ctx, tenantID, payload, newJiraStatus)
 	if err != nil {
 		return err
 	}

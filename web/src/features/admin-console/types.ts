@@ -18,6 +18,10 @@ export interface AdminIdentity {
   is_break_glass?: boolean
   /** The session may only change the temporary password. */
   password_change_required?: boolean
+  /** The administrator's own role: the most the session may elevate to. `role` is what it acts as now. */
+  max_role?: AdminRole
+  /** When the session's elevation ends (absent: not elevated). */
+  elevated_until?: string
 }
 
 export type AdminLoginStatus = 'mfa_required' | 'mfa_enrollment_required'
@@ -86,7 +90,9 @@ export interface AdminOrganization {
   description?: string
   created_at: string
   active_members: number
+  /** Empty for a read-only administrator (personal data); see owner_count. */
   owner_emails: string[]
+  owner_count: number
   saml_enabled: boolean
   active_identity_providers: number
   verified_domains: number
@@ -136,7 +142,10 @@ export interface AdminOrganizationUser {
 }
 
 export interface AdminOrganizationUserList {
+  /** Empty when redacted: a read-only administrator sees counts only. */
   data: AdminOrganizationUser[]
+  by_role: Record<string, number>
+  redacted?: boolean
   total: number
 }
 
@@ -475,7 +484,7 @@ export type VersionCheckErrorCode =
   | 'rollback'
   | 'conflict'
   | 'expired'
-  | 'no_root'
+  | 'no_key'
 
 /** GET /admin/version-check/: what the release feed says about this instance. */
 export interface VersionCheckStatus {
