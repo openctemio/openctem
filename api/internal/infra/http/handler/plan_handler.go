@@ -317,6 +317,8 @@ func PlanLimitMessage(lim *plan.ErrLimitReached) string {
 		plan.Seats: "seats", plan.Assets: "assets", plan.Sensors: "sensors", plan.APIKeys: "API keys",
 		plan.CITrusts: "CI trust configurations", plan.InvitesPerDay: "invitations a day",
 		plan.FreeTeamsPerUser: "Free organizations per person", plan.Findings: "findings",
+		plan.PlatformScansPerDay: "shared sensor scans a day", plan.PlatformScansConcurrent: "shared sensor jobs at a time",
+		plan.LifecycleSubStatuses: "finding sub-statuses", plan.LifecycleSchemes: "finding lifecycles",
 	}[lim.Key]
 	if label == "" {
 		label = string(lim.Key)

@@ -50,3 +50,19 @@ func TestSetSecretFields_FingerprintIsKeyedByServerSecret(t *testing.T) {
 		t.Fatal("fingerprint is derivable from the tenant id alone")
 	}
 }
+
+// A report cannot set a secret's validity: a fork pull request could claim a
+// live secret is dead and switch off the CI gate and its rotation task.
+func TestSetSecretFieldsIgnoresReportedValidity(t *testing.T) {
+	no := false
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceSecret, "betterleaks",
+		vulnerability.SeverityHigh, "Stripe key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := NewFindingProcessor(nil, nil, nil, logger.NewNop())
+	p.setSecretFields(f, &ctis.Finding{Secret: &ctis.SecretDetails{SecretType: "api_key", Valid: &no}})
+	if f.SecretValid() != nil {
+		t.Fatalf("reported secret.valid stored: %v", *f.SecretValid())
+	}
+}

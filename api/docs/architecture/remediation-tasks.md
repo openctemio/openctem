@@ -98,6 +98,14 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   `task_route` creates a task under the existing action; `join` adds the findings to the target task (the caller
   must see all of that task's findings). Edits: `title`, `exclude_finding_ids` (remembered in
   `remediation_key_exclusions`), `owners` per partition index, `deadline`, `auto_join`.
+- Asset owners without `findings:remediation:write` reach the same route with `findings:remediation:read` and
+  accept as the owner (`AcceptInput.AsOwner`, `owner_accept.go`): only a `join` into a task assigned to them or
+  to one of their groups, or a `task_route` whose every partition owner is them or one of their groups; only as
+  it is (no title, removed findings, owners, deadline or auto-join, since removed findings are remembered for
+  everyone); every finding in their data scope (no hidden members) and on an asset they own as primary or
+  secondary owner, directly or through a group (`asset_owners`, joined through `assets.tenant_id`). A new fix
+  (`new_group`) stays with `findings:remediation:write`. The audit event carries `as_owner`. Owning an asset is
+  not a scope grant: the data scope check applies on top.
 - Findings that closed or joined another task since the suggestion are left out and returned in `dropped`; with
   none left the accept answers 400.
 - `POST /api/v1/remediation/suggestions/approve` accepts up to 50 suggestions (5000 findings) as they are, each
@@ -125,6 +133,12 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   a `remediation_task_changed` entry on every finding (left and joined). Findings not in the source are skipped
   and reported. A detach records `remediation_key_exclusions` (reason `detached`) for the source's key.
 - Undo = the reverse move with the versions the response returns.
+- Tracker comments: after the move is stored, `TaskService` calls `TaskMoveNotifier.TaskMembersMoved` (set with
+  `SetMoveNotifier`; `internal/app/remediation/move_notify.go`) once per move, split, detach and once per merge
+  source, with a `TaskMoveEvent`. `Comments()` (`pkg/domain/remediation/move.go`) words one comment per task
+  touched from counts and task titles only. The task ticket integration implements the notifier for tasks with
+  an active issue; it must not block the request and logs its own failures. Not wired in `cmd/server` until then
+  (listed in the wiring guard's optional setters with that reason).
 
 ## Mark fixed and regressions
 
@@ -137,6 +151,33 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 - A finding of a `done` or `closed_unverified` task that reopens is moved, at the next recompute, into a new
   task `Regression: <title>` with the same fix, owner, campaign and manual deadline and `regression_of` set;
   the closed task keeps its state (`regressed` timeline entry) and its history.
+
+## Exception on a task (group exception)
+
+"No maintenance window until 1 December" is one decision about the task's open findings (RFC-111 §7,
+`internal/app/remediation/exception.go`, `internal/app/finding/approval_batch.go`,
+`internal/infra/postgres/approval_batch_repository.go`):
+
+- `POST /api/v1/remediation/tasks/{task_id}/exception/preview` and `POST .../exception`
+  (`findings:remediation:write` + `findings:write`; every finding of the task in the caller's scope, as for any
+  change of the task), body `requested_status` (`accepted` or `false_positive`), `closure_reason`,
+  `justification` (the note), `expires_at` (accepted), `approved` (over the bulk ceiling). At most 500 open
+  findings; one pending exception per task (409).
+- The preview lists each open finding with its tier and end; findings that cannot make the move or already
+  have a pending request are left out with the reason. The exception takes the **highest member tier** (never
+  below `peer`), the union of the members' exclusions (the owners of any member's asset) and only approvers
+  eligible for every member. Each member's acceptance ends at the requested end or **its own cap** when
+  shorter (`shortened`).
+- The request is one `approval_batches` row plus one pending finding request per member (`batch_id`), in one
+  transaction; audit `remediation_task.exception_requested`; the eligible approvers are told in-app.
+- Decided once under `/api/v1/approvals/batches`: list and read (`findings:read`, every member in scope),
+  `POST /{id}/approve` and `/reject` (`findings:approve`), `/cancel` (the requester, `findings:write`). The
+  policy is evaluated again at decision time; the last required approval applies every member (each with its
+  own end, cut to its cap now if that is shorter) in one transaction; a member whose finding moved meanwhile is
+  canceled, the others still apply. A member request cannot be decided alone (409 `BATCH_MEMBER`). Pending
+  exceptions expire at their decision deadline with the hourly job.
+- Afterwards each member is an ordinary decision: its own expiry and material-change check. Findings that join
+  the task later are not covered.
 
 ## Console
 

@@ -367,3 +367,96 @@ func TestCIRunReportSlotsAndVerdictGuard(t *testing.T) {
 		t.Fatalf("stored run: %+v %v", got, err)
 	}
 }
+
+// Repository events change only the tenant's own pipelines of that
+// repository id, and the archived flag is set once and clears.
+func TestRepositoryLifecyclePipelines(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	lc := NewRepositoryIdentityRepository(&DB{DB: db})
+	pipes := NewCIRunRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	other := seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	otherAsset := seedTestAsset(ctx, t, db, other)
+	ins := func(tid, aid shared.ID) shared.ID {
+		id := shared.NewID()
+		if _, err := db.ExecContext(ctx, `INSERT INTO ci_pipelines (id, tenant_id, provider, issuer, external_repo_id, workflow_path, repository_asset_id, repository_name)
+			VALUES ($1, $2, 'github', $3, '77', '.github/workflows/a.yml', $4, 'github.com/acme/old')`,
+			id.String(), tid.String(), cirun.GitHubIssuer, aid.String()); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	mine, theirs := ins(tenant, asset), ins(other, otherAsset)
+	name := func(tid, id shared.ID) (string, bool) {
+		p, err := pipes.GetPipeline(ctx, tid, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.RepositoryName, p.RepositoryArchivedAt != nil
+	}
+	if n, err := lc.RenamePipelineRepository(ctx, tenant, "github", cirun.GitHubIssuer, "77", "github.com/acme/new"); err != nil || n != 1 {
+		t.Fatalf("rename: %d %v", n, err)
+	}
+	if got, _ := name(tenant, mine); got != "github.com/acme/new" {
+		t.Fatalf("own pipeline name = %q", got)
+	}
+	if got, _ := name(other, theirs); got != "github.com/acme/old" {
+		t.Fatalf("another tenant's pipeline was renamed: %q", got)
+	}
+	if n, err := lc.SetPipelinesRepositoryArchived(ctx, tenant, "github", cirun.GitHubIssuer, "77", true); err != nil || n != 1 {
+		t.Fatalf("archive: %d %v", n, err)
+	}
+	if _, arch := name(tenant, mine); !arch {
+		t.Fatal("pipeline not flagged archived")
+	}
+	if _, arch := name(other, theirs); arch {
+		t.Fatal("another tenant's pipeline was archived")
+	}
+	if n, _ := lc.SetPipelinesRepositoryArchived(ctx, tenant, "github", cirun.GitHubIssuer, "77", true); n != 0 {
+		t.Fatalf("archiving twice changed %d rows", n)
+	}
+	if n, err := lc.SetPipelinesRepositoryArchived(ctx, tenant, "github", cirun.GitHubIssuer, "77", false); err != nil || n != 1 {
+		t.Fatalf("unarchive: %d %v", n, err)
+	}
+	if _, arch := name(tenant, mine); arch {
+		t.Fatal("pipeline still archived")
+	}
+}
+
+// UnjudgedRuns lists only the tenant's own runs that are still running and
+// older than the cutoff.
+func TestCIRunRepositoryUnjudgedRuns(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	repo := NewCIRunRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	other := seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	otherAsset := seedTestAsset(ctx, t, db, other)
+	now := time.Now().UTC()
+	mk := func(tid, aid shared.ID, age time.Duration) *cirun.Run {
+		_, hash, _ := cirun.NewToken()
+		exp := now.Add(time.Hour)
+		r := &cirun.Run{ID: shared.NewID(), TenantID: tid, RepositoryAssetID: aid, Provider: cirun.ProviderGitHub,
+			Issuer: cirun.GitHubIssuer, Repository: "github.com/acme/api", Branch: "main", CommitSHA: "abcdef1234567",
+			Status: cirun.StatusRunning, TokenHash: hash, TokenExpiresAt: &exp, CreatedAt: now.Add(-age), UpdatedAt: now}
+		if err := repo.CreateRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	old, fresh, foreign := mk(tenant, asset, 7*time.Hour), mk(tenant, asset, time.Hour), mk(other, otherAsset, 7*time.Hour)
+	done := mk(tenant, asset, 8*time.Hour)
+	if err := repo.SaveVerdict(ctx, tenant, done.ID, cirun.VerdictPass, []byte(`{}`), now, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.UnjudgedRuns(ctx, tenant, now.Add(-6*time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != old.ID {
+		t.Fatalf("got %+v, want only the old running run %s (not fresh %s, foreign %s)", got, old.ID, fresh.ID, foreign.ID)
+	}
+}
