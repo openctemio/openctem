@@ -431,7 +431,6 @@ class LargePullRequestTest(unittest.TestCase):
             pathlib.Path(d, name).parent.mkdir(parents=True, exist_ok=True)
             pathlib.Path(d, name).write_text(body)
         self.git(d, "add", "."); self.git(d, "commit", "-qm", "base")
-        base = self.git(d, "rev-parse", "HEAD")
         self.git(d, "checkout", "-q", "-b", "feature")
         pathlib.Path(d, "api/pkg/httpsec/ssrf.go").write_text(f"package httpsec\n{sensitive_line}\n")
         pathlib.Path(d, "api/pkg/x.go").write_text("package pkg\nvar c = &tls.Config{InsecureSkipVerify: true}\n")
