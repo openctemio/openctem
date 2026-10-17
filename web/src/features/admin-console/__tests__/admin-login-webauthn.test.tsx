@@ -5,14 +5,16 @@ import userEvent from '@testing-library/user-event'
 const start = vi.fn()
 const verify = vi.fn()
 vi.mock('@/features/admin-console/api/use-admin-session', () => ({
-  adminStartSession: (...a: unknown[]) => start(...a),
+  adminSignIn: (...a: unknown[]) => start(...a),
   adminVerifyMFA: (...a: unknown[]) => verify(...a),
   adminIdPInfo: () => Promise.resolve({ enabled: false }),
   adminIdPStart: vi.fn(),
 }))
-vi.mock('@/features/auth/actions/local-auth-actions', () => ({ localLogoutAction: vi.fn() }))
+vi.mock('@/features/auth/api/use-auth-providers', () => ({
+  useAuthProviders: () => ({ data: undefined }),
+}))
 
-import AdminVerifyPage from '@/app/(admin-console)/admin/login/page'
+import AdminSignInPage from '@/app/(admin-console)/admin/login/page'
 import { AdminApiError } from '@/features/admin-console/api/admin-client'
 
 const originalLocation = window.location
@@ -32,6 +34,15 @@ function stubLocation() {
     },
   })
   return href
+}
+
+/** Renders the page and signs in with a password, which opens the second step. */
+async function renderSignedIn() {
+  const u = userEvent.setup()
+  render(<AdminSignInPage />)
+  await u.type(screen.getByLabelText('Email'), 'admin@example.com')
+  await u.type(screen.getByLabelText('Password'), 'Secret-pass-1')
+  await u.click(screen.getByRole('button', { name: 'Continue' }))
 }
 
 const fetchMock = vi.fn()
@@ -69,7 +80,7 @@ describe('console sign-in: security key first', () => {
       .mockResolvedValueOnce(json(ADMIN))
     credGet.mockResolvedValueOnce({ toJSON: () => ({ id: 'cred-1', type: 'public-key' }) })
 
-    render(<AdminVerifyPage />)
+    await renderSignedIn()
     const button = await screen.findByRole('button', { name: 'Use security key or passkey' })
     expect(button).toHaveFocus()
     expect(screen.getByRole('button', { name: 'Use authenticator app' })).toBeInTheDocument()
@@ -94,7 +105,7 @@ describe('console sign-in: security key first', () => {
     fetchMock.mockResolvedValueOnce(json({ publicKey: { challenge: 'AQ' } }))
     credGet.mockRejectedValueOnce(new DOMException('cancelled', 'NotAllowedError'))
 
-    render(<AdminVerifyPage />)
+    await renderSignedIn()
     await user.click(await screen.findByRole('button', { name: 'Use security key or passkey' }))
     expect(await screen.findByText(/closed or timed out/)).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -113,7 +124,7 @@ describe('console sign-in: security key first', () => {
     })
     fetchMock.mockResolvedValueOnce(json(ADMIN))
 
-    render(<AdminVerifyPage />)
+    await renderSignedIn()
     await user.click(await screen.findByRole('button', { name: 'Use a recovery code' }))
     await user.type(screen.getByLabelText('Recovery code'), 'abcd-efgh-ijkl')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
@@ -129,7 +140,7 @@ describe('console sign-in: security key first', () => {
     fetchMock.mockResolvedValueOnce(
       json({ message: 'Invalid or already used recovery code', code: 'UNAUTHORIZED' }, 401)
     )
-    render(<AdminVerifyPage />)
+    await renderSignedIn()
     await user.click(await screen.findByRole('button', { name: 'Use a recovery code' }))
     await user.type(screen.getByLabelText('Recovery code'), 'used-code')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
@@ -145,7 +156,7 @@ describe('console sign-in: security key first', () => {
     verify.mockRejectedValueOnce(
       new AdminApiError('Use your security key or passkey', 403, 'WEBAUTHN_REQUIRED')
     )
-    render(<AdminVerifyPage />)
+    await renderSignedIn()
     await user.type(await screen.findByLabelText('Verification code'), '123456')
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(
@@ -163,7 +174,7 @@ describe('console sign-in: security key first', () => {
       status: 'mfa_required',
       methods: ['webauthn', 'totp', 'recovery_code'],
     })
-    render(<AdminVerifyPage />)
+    await renderSignedIn()
     expect(await screen.findByLabelText('Verification code')).toBeInTheDocument()
   })
 })
