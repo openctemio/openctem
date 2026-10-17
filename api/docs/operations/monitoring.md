@@ -589,3 +589,29 @@ chat id, or a deleted Slack webhook.
 
 An alert rule fails to evaluate (Prometheus "Rules" page shows the error).
 Fix the rule and run `deploy/observability/test/check-config.sh`.
+
+## Built-in System page (no monitoring stack needed)
+
+The platform console's **System** page (`/admin/system`, every platform
+administrator role, read-only) shows service health, free space of the
+configured data volumes, the database size, the last successful backup,
+certificate expiry and the running version. A watcher checks the same values
+every `SYSTEM_WATCH_INTERVAL` (5 minutes), sets the metrics below, and emails
+the active platform administrators through the system SMTP sender when a check
+gets worse (a standing warning is mailed again after 24 hours). Without SMTP
+the WARN log line (`alert=system_storage`, `system_backup`, `system_cert`) and
+the metrics are the alert.
+
+| Check | Warning | Critical |
+|---|---|---|
+| Free space of a `SYSTEM_STORAGE_PATHS` volume | below 20% | below 10% |
+| Last successful backup (`SYSTEM_BACKUP_STATUS_FILE`) | older than 26 h | - |
+| Certificate (the sensor CA and `SYSTEM_TLS_CERT_FILES`) | within 30 days | within 7 days |
+
+Metrics: `openctem_system_storage_free_ratio{volume}`,
+`openctem_system_storage_level{volume}`, `openctem_system_database_bytes`,
+`openctem_system_backup_age_seconds`, `openctem_system_backup_level`,
+`openctem_system_certificate_expiry_seconds{name}`,
+`openctem_system_certificate_level{name}` (levels: 0 ok, 1 warning, 2 critical).
+The page holds no action: backup, restore, upgrade and key rotation stay in the
+kit's command line (RFC-114).
