@@ -57,7 +57,7 @@ func TestCrownJewelReads_UseTheColumn(t *testing.T) {
 		}
 	}
 
-	s, err := NewDashboardRepository(db).GetExecutiveSummary(ctx, tenantID, 30)
+	s, err := NewDashboardRepository(db).GetExecutiveSummary(ctx, tenantID, nil, 30)
 	if err != nil {
 		t.Fatalf("executive summary: %v", err)
 	}
