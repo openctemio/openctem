@@ -184,6 +184,23 @@ Details: [api-keys.md](./api-keys.md).
 > for the whole organization, so it is owner/admin only (owner decision
 > 2026-10-02); members keep creating, editing and linking assets.
 
+#### AI applications (MCP) (`/api/v1/mcp-access`, `/api/v1/oauth/requests`)
+
+API keys are refused on both prefixes; the tenant is the session's. Design: `mcp-authorization.md`.
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/oauth/requests/{id}`, `POST /{id}/approve`, `/{id}/deny` | any member, on a consent request they claimed (404 otherwise); the grant never exceeds what they hold |
+| `POST /api/v1/oauth/requests/{id}/access-request` | any active member, on a consent request they claimed and only when the application is blocked because its publisher is not approved; at most 5 new requests per member per day, 50 waiting per organization (429); audited |
+| `POST /api/v1/oauth/requests/{id}/allow-publisher` | `settings:write` + a recent sign-in; adds the publisher host of that consent request to the caller's organization policy; audited |
+| `GET`/`PUT /api/v1/mcp-access/settings` | `settings:read` / `settings:write` + a recent sign-in; audited |
+| `GET /api/v1/mcp-access/requests` | `settings:read` (the organization's waiting requests; requester name, no e-mail or IP) |
+| `POST /api/v1/mcp-access/requests/{id}/approve` | `settings:write` + a recent sign-in (loosens the policy); another organization's request is 404; audited |
+| `POST /api/v1/mcp-access/requests/{id}/deny` | `settings:write` (tightens nothing, no step-up); 404 across organizations; audited |
+| `GET`/`POST`/`DELETE /api/v1/mcp-access/clients` | `settings:read` / `settings:write` + a recent sign-in |
+| `GET`/`DELETE /api/v1/mcp-access/connections` | owner or administrator (`RequireAdmin`) |
+| `GET`/`DELETE /api/v1/mcp-access/my-connections` | any member, own connections only |
+
 #### Components (`/api/v1/components`)
 
 | Endpoint | Permission Required |
