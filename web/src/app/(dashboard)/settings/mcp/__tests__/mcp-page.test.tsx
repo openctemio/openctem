@@ -4,23 +4,16 @@ import userEvent from '@testing-library/user-event'
 import MCPSettingsPage from '../page'
 
 const mockCreate = vi.fn()
-const replace = vi.fn()
 let perms = new Set<string>()
 let role = 'member'
-let tabParam: string | null = null
+const setTabParam = (tab: string | null) =>
+  window.history.replaceState(null, '', tab ? `/settings/mcp?tab=${tab}` : '/settings/mcp')
 
 vi.mock('@/features/api-keys/api/use-api-keys', () => ({
   useCreateApiKey: () => ({ trigger: mockCreate, isMutating: false }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }))
-vi.mock('next/navigation', () => ({ useRouter: () => ({ replace }) }))
-vi.mock('@/hooks/use-url-param', () => ({
-  useUrlParams: () => ({
-    get: (k: string) => (k === 'tab' ? tabParam : null),
-    toString: () => (tabParam ? `tab=${tabParam}` : ''),
-  }),
-}))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
   Permission: {
@@ -60,7 +53,7 @@ describe('AI assistants settings page', () => {
     vi.clearAllMocks()
     perms = new Set(['integrations:api_keys:write'])
     role = 'member'
-    tabParam = null
+    setTabParam(null)
   })
 
   it('shows a member only how to connect, with a link to their connections', () => {
@@ -77,7 +70,7 @@ describe('AI assistants settings page', () => {
   it('gives administrators the tabs, the waiting count and the tab from the URL', () => {
     perms = new Set(['integrations:api_keys:write', 'settings:read', 'settings:write'])
     role = 'owner'
-    tabParam = 'policy'
+    setTabParam('policy')
     render(<MCPSettingsPage />)
     const tabs = screen.getAllByRole('tab').map((t) => t.textContent)
     expect(tabs).toEqual(['Connect', 'Applications2', 'Connections', 'Policy'])
@@ -85,8 +78,21 @@ describe('AI assistants settings page', () => {
     expect(screen.getByText('policy card')).toBeInTheDocument()
   })
 
+  it('renders the clicked tab on the first click and keeps the URL in step', async () => {
+    perms = new Set(['integrations:api_keys:write', 'settings:read', 'settings:write'])
+    role = 'owner'
+    render(<MCPSettingsPage />)
+    expect(screen.queryByText('policy card')).toBeNull()
+    await userEvent.click(screen.getByRole('tab', { name: 'Policy' }))
+    expect(screen.getByText('policy card')).toBeInTheDocument()
+    expect(window.location.search).toBe('?tab=policy')
+    await userEvent.click(screen.getByRole('tab', { name: 'Connect' }))
+    expect(screen.queryByText('policy card')).toBeNull()
+    expect(window.location.search).toBe('')
+  })
+
   it('ignores a tab the caller may not see', () => {
-    tabParam = 'connections'
+    setTabParam('connections')
     render(<MCPSettingsPage />)
     expect(screen.queryByText('No connected applications')).toBeNull()
     expect(screen.getByText(/oct_YOUR_KEY_HERE/)).toBeInTheDocument()

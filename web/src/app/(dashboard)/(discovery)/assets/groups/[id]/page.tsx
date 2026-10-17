@@ -2,7 +2,7 @@
 
 import { use, useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { useUrlParams } from '@/hooks/use-url-param'
+import { replaceUrlSearch, useUrlParams } from '@/hooks/use-url-param'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -162,10 +162,9 @@ function AssetGroupDetailContent({ params }: PageProps) {
       } else {
         params.set('tab', tab)
       }
-      const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
-      router.replace(newUrl, { scroll: false })
+      replaceUrlSearch(params)
     },
-    [searchParams, router]
+    [searchParams]
   )
   // The assets table owns its checkboxes; this mirrors the ticked ids for the
   // bulk remove, and bumping selectionEpoch clears the table's copy.

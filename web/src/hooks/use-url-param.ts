@@ -12,7 +12,37 @@ import { usePathname } from 'next/navigation'
  */
 const URL_PARAMS_CHANGED = 'openctem:url-params-changed'
 
+/**
+ * Make history writes made by anyone else visible to the store.
+ *
+ * The framework router (router.replace/push, <Link>) changes the query string
+ * through history.replaceState/pushState and never emits our event, so a page
+ * that READ with these hooks and WROTE with the router kept its old snapshot
+ * until something else re-rendered it: a tab needed a second click.
+ * Wrapping the two history methods once makes every writer notify the store,
+ * whatever API it used. The notice is deferred a microtask because the router
+ * calls them while React is committing, where an update cannot be scheduled
+ * synchronously, and it is sent only when the address actually changed.
+ */
+let historyPatched = false
+function patchHistory() {
+  if (historyPatched || typeof window === 'undefined') return
+  historyPatched = true
+  for (const method of ['pushState', 'replaceState'] as const) {
+    const original = window.history[method]
+    window.history[method] = function (this: History, ...args: Parameters<History[typeof method]>) {
+      const before = window.location.href
+      const result = original.apply(this, args)
+      if (window.location.href !== before) {
+        queueMicrotask(() => window.dispatchEvent(new Event(URL_PARAMS_CHANGED)))
+      }
+      return result
+    }
+  }
+}
+
 function subscribeToUrl(cb: () => void) {
+  patchHistory()
   window.addEventListener('popstate', cb)
   window.addEventListener(URL_PARAMS_CHANGED, cb)
   return () => {
