@@ -751,6 +751,22 @@ type AssignRoleInput struct {
 	RoleID   string `json:"role_id" validate:"required,uuid"`
 }
 
+// ErrSystemRoleViaRoles is returned when the Roles API is asked to grant or
+// take away one of the four system roles. The team role (owner, admin, member,
+// viewer) is the membership's role: it changes only through the member's role
+// (PATCH /api/v1/tenants/{tenant}/members/{id}) and ownership transfer, so the
+// membership label and the role set can never disagree. The owner role is
+// never granted by a role assignment at all.
+var ErrSystemRoleViaRoles = fmt.Errorf("%w: the owner, admin, member and viewer roles are the member's team role; change it on the Members page (PATCH /api/v1/tenants/{tenant}/members/{id}), and use Transfer ownership to hand over ownership", shared.ErrValidation)
+
+// refuseSystemRole rejects a system role id on the Roles API paths.
+func refuseSystemRole(id roledom.ID) error {
+	if roledom.IsSystemRoleID(id) {
+		return ErrSystemRoleViaRoles
+	}
+	return nil
+}
+
 // AssignRole assigns a role to a user.
 func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, assignedBy string, actx auditapp.AuditContext) error {
 	tid, err := roledom.ParseID(input.TenantID)
@@ -766,6 +782,9 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	rid, err := roledom.ParseID(input.RoleID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
+	}
+	if err := refuseSystemRole(rid); err != nil {
+		return err
 	}
 
 	// Verify role exists and is available for tenant
@@ -848,6 +867,9 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 	if err != nil {
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
+	if err := refuseSystemRole(rid); err != nil {
+		return err
+	}
 
 	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
@@ -864,7 +886,7 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 	if err := actor.mayRevoke(r); err != nil {
 		return err
 	}
-	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, rid != roledom.OwnerRoleID); err != nil {
+	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
 		return err
 	}
 
@@ -896,11 +918,21 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 type SetUserRolesInput struct {
 	TenantID string   `json:"-"`
 	UserID   string   `json:"user_id" validate:"required,uuid"`
-	RoleIDs  []string `json:"role_ids" validate:"required,min=1"`
+	RoleIDs  []string `json:"role_ids" validate:"required"`
 }
 
-// SetUserRoles replaces all roles for a user.
+// SetUserRoles replaces the user's custom roles. It refuses the four system
+// roles (see ErrSystemRoleViaRoles) and keeps the system role the user
+// already holds, so a custom-role change never touches the team role.
 func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput, assignedBy string, actx auditapp.AuditContext) error {
+	return s.setUserRoles(ctx, input, assignedBy, actx, false)
+}
+
+// setUserRoles is SetUserRoles. With exact set (a membership just created by
+// an invitation or an administrator), the given roles become the complete
+// set, system roles included, except the owner role, which is never granted
+// here.
+func (s *RoleService) setUserRoles(ctx context.Context, input SetUserRolesInput, assignedBy string, actx auditapp.AuditContext, exact bool) error {
 	tid, err := roledom.ParseID(input.TenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -924,11 +956,17 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 	roleIDs := make([]roledom.ID, 0, len(input.RoleIDs))
 	roleNames := make([]string, 0, len(input.RoleIDs))
 	granted := make([]*roledom.Role, 0, len(input.RoleIDs))
-	keepsOwner := false
 	for _, ridStr := range input.RoleIDs {
 		rid, err := roledom.ParseID(ridStr)
 		if err != nil {
 			return fmt.Errorf("%w: invalid role id format: %s", shared.ErrValidation, ridStr)
+		}
+		if exact {
+			if rid == roledom.OwnerRoleID {
+				return ErrSystemRoleViaRoles
+			}
+		} else if err := refuseSystemRole(rid); err != nil {
+			return err
 		}
 
 		// Verify role exists and is available for tenant
@@ -947,10 +985,6 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		if err := s.capExternalTarget(ctx, assignedBy, tid, uid, r); err != nil {
 			return err
 		}
-		if rid == roledom.OwnerRoleID {
-			keepsOwner = true
-		}
-
 		roleIDs = append(roleIDs, rid)
 		roleNames = append(roleNames, r.Name())
 		granted = append(granted, r)
@@ -959,7 +993,7 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, roleIDs); err != nil {
 		return err
 	}
-	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, keepsOwner); err != nil {
+	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, !exact); err != nil {
 		return err
 	}
 
@@ -973,6 +1007,14 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 	for _, r := range currentRoles {
 		held[r.ID()] = true
 		currentRoleNames = append(currentRoleNames, r.Name())
+		if !exact && roledom.IsSystemRoleID(r.ID()) {
+			// The team role stays: only the membership changes it.
+			if !slices.Contains(roleIDs, r.ID()) {
+				roleIDs = append(roleIDs, r.ID())
+				roleNames = append(roleNames, r.Name())
+			}
+			continue
+		}
 		if !slices.Contains(roleIDs, r.ID()) {
 			if err := actor.mayRevoke(r); err != nil {
 				return err
@@ -1045,6 +1087,9 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 	rid, err := roledom.ParseID(input.RoleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
+	}
+	if err := refuseSystemRole(rid); err != nil {
+		return nil, err
 	}
 
 	// Verify role exists and is available for tenant

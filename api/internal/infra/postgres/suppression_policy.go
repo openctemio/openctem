@@ -152,7 +152,8 @@ func (r *SuppressionRepository) RulePolicyInputs(ctx context.Context, rule *supp
 		SELECT DISTINCT tm.user_id::text
 		FROM tenant_members tm
 		WHERE tm.tenant_id = $1 AND tm.status = 'active'
-		  AND (tm.role IN ('owner', 'admin')
+		  AND ((SELECT ver.role FROM v_user_effective_role ver
+		        WHERE ver.tenant_id = tm.tenant_id AND ver.user_id = tm.user_id) IN ('owner', 'admin')
 		       OR EXISTS (SELECT 1 FROM v_user_role_grants ur
 		                  JOIN role_permissions rp ON rp.role_id = ur.role_id
 		                  WHERE ur.tenant_id = tm.tenant_id AND ur.user_id = tm.user_id AND rp.permission_id = $2))`,

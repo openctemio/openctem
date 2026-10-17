@@ -50,7 +50,8 @@ func ReadAdminOverview(ctx context.Context, db opsQuerier, now time.Time) (Admin
 	var c AdminOverviewCounts
 
 	const noOwner = `NOT EXISTS (SELECT 1 FROM tenant_members m
-		WHERE m.tenant_id = t.id AND m.role = 'owner' AND m.status = 'active')`
+		JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active')`
 
 	// The platform system tenant is internal (seeded, never has an owner):
 	// it is neither an organization to count nor one that needs an owner.

@@ -98,29 +98,46 @@ func TestPeerAdminRoleChange_OwnerOnly(t *testing.T) {
 		}
 	}
 
-	// An administrator cannot change a peer administrator's role set.
-	forbidden("SetUserRoles peer -> [viewer]", svc.SetUserRoles(ctx,
-		accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{viewerRole}}, admin, audit.AuditContext{}))
-	forbidden("RemoveRole admin from peer", svc.RemoveRole(ctx, tenantID, peer, adminRole, audit.AuditContext{ActorID: admin}))
-	forbidden("AssignRole member to peer", svc.AssignRole(ctx,
-		accesscontrol.AssignRoleInput{TenantID: tenantID, UserID: peer, RoleID: memberRole}, admin, audit.AuditContext{}))
+	// A custom role of the tenant, to show the peer rules on the Roles API.
+	customRole := "00000000-0000-4000-8000-0000000000c1"
+	if _, err := db.ExecContext(ctx, `INSERT INTO roles (id, tenant_id, slug, name, is_system, hierarchy_level, has_full_data_access)
+		VALUES ($1, $2, 'peer-test', 'Peer test', false, 10, false)`, customRole, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM roles WHERE id = $1`, customRole) })
+	refusedSystem := func(what string, err error) {
+		t.Helper()
+		if !errors.Is(err, accesscontrol.ErrSystemRoleViaRoles) {
+			t.Fatalf("%s: want the system-role refusal, got %v", what, err)
+		}
+	}
+
+	// An administrator cannot change a peer administrator's custom roles.
+	forbidden("SetUserRoles peer -> [custom]", svc.SetUserRoles(ctx,
+		accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{customRole}}, admin, audit.AuditContext{}))
+	forbidden("AssignRole custom to peer", svc.AssignRole(ctx,
+		accesscontrol.AssignRoleInput{TenantID: tenantID, UserID: peer, RoleID: customRole}, admin, audit.AuditContext{}))
+	// The system roles are not a Roles API matter, for anyone.
+	refusedSystem("RemoveRole admin from peer", svc.RemoveRole(ctx, tenantID, peer, adminRole, audit.AuditContext{ActorID: admin}))
+	refusedSystem("SetUserRoles peer -> [viewer]", svc.SetUserRoles(ctx,
+		accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{viewerRole}}, owner, audit.AuditContext{}))
 	if got := rolesOf(peer); !slices.Equal(got, []string{"admin"}) {
 		t.Fatalf("peer admin's roles changed: %v", got)
 	}
 
 	// An administrator still manages members and viewers.
-	if err := svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: viewer, RoleIDs: []string{memberRole}},
+	if err := svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: viewer, RoleIDs: []string{customRole}},
 		admin, audit.AuditContext{}); err != nil {
 		t.Fatalf("admin re-roles a viewer: %v", err)
 	}
 
-	// The owner changes an administrator's role set.
-	if err := svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{memberRole}},
+	// The owner changes an administrator's custom roles; the team role stays.
+	if err := svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{customRole}},
 		owner, audit.AuditContext{}); err != nil {
-		t.Fatalf("owner demotes an admin: %v", err)
+		t.Fatalf("owner edits an admin's custom roles: %v", err)
 	}
-	if got := rolesOf(peer); !slices.Equal(got, []string{"member"}) {
-		t.Fatalf("peer roles after owner demotion: %v", got)
+	if got := rolesOf(peer); !slices.Equal(got, []string{"admin", "peer-test"}) {
+		t.Fatalf("peer roles after the owner's change: %v", got)
 	}
 }
 
