@@ -174,3 +174,33 @@ export function saveSharedSensorAnomaly(
 ) {
   return adminFetch<SharedSensorAnomaly>(ANOMALY_KEY, { method: 'PUT', body: input })
 }
+
+/**
+ * Egress addresses of shared sensors (RFC-100 §9): public IP addresses or
+ * CIDR ranges, for every region (`global`) and per region. Organizations
+ * that may use shared sensors see them to allowlist the scanners. The API
+ * refuses private and other internal ranges.
+ */
+export interface SharedSensorsEgress {
+  global: string[]
+  regions: Record<string, string[]>
+  version: number
+}
+
+const EGRESS_KEY = '/settings/shared-sensors/egress'
+
+/** The list (any administrator reads it). */
+export function useSharedSensorsEgress() {
+  return useSWR<SharedSensorsEgress>(EGRESS_KEY, adminFetcher)
+}
+
+/** Super admin, a fresh authenticator code and a reason; replaces the list. */
+export function saveSharedSensorsEgress(input: {
+  global: string[]
+  regions: Record<string, string[]>
+  version: number
+  reason: string
+  totp_code: string
+}) {
+  return adminFetch<SharedSensorsEgress>(EGRESS_KEY, { method: 'PUT', body: input })
+}

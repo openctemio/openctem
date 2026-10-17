@@ -2,13 +2,17 @@
 // OpenCTEM releases and security advisories an instance compares with its own
 // version (docs/rfcs/RFC-105-version-check-and-usage-telemetry.md).
 //
-// One file carries a key set signed by an offline root and the feed signed by
-// an online key of that key set (the shared signed-feed format, pkg/feedsign).
-// Verification: a root pinned in this release, the key set version never
-// below the one applied, the feed sequence never below the one applied, the
-// feed not expired and valid for at most 45 days, every field bounded and
-// every link under our own hosts. The feed is information only: nothing is
-// downloaded or run because of it.
+// The feed is one DSSE envelope (the shared signed-feed envelope, pkg/feedsign)
+// signed directly by one online Ed25519 key whose public key is pinned in this
+// release (PinnedKeys, two entries at most so a rotation can overlap).
+// Verification: a pinned key signed it, the feed sequence never below the one
+// applied, the feed not expired and valid for at most 45 days, every field
+// bounded and every link under our own hosts. The feed is information only:
+// nothing is downloaded or run because of it.
+//
+// The feed has its own DSSE payload type (FeedPayloadType), so the same online
+// key may also sign other content (the content catalog) without a signature
+// over one ever being valid as the other.
 package releasefeed
 
 import (
@@ -28,15 +32,14 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/openctemio/openctem/api/pkg/feedsign"
+	"github.com/openctemio/openctem/api/pkg/jobsign"
 )
 
 // Format constants (must match the builder, cmd/release-feed).
 const (
-	BundleSchema      = "openctem.io/release-bundle/v1"
-	KeySetPayloadType = "application/vnd.openctem.release-keyset+json"
-	KeySetKind        = "openctem.io/release-keyset/v1"
-	FeedPayloadType   = "application/vnd.openctem.release-feed+json"
-	FeedKind          = "openctem.io/release-feed/v1"
+	BundleSchema    = "openctem.io/release-bundle/v1"
+	FeedPayloadType = "application/vnd.openctem.release-feed+json"
+	FeedKind        = "openctem.io/release-feed/v1"
 	// FileName is the published file.
 	FileName = "openctem-releases.json"
 )
@@ -45,6 +48,7 @@ const (
 const (
 	MaxBundleBytes  = 256 << 10
 	MaxFeedValidity = 45 * 24 * time.Hour
+	MaxPinnedKeys   = 2
 	MaxReleases     = 200
 	MaxAdvisories   = 200
 	MaxTitle        = 200
@@ -54,18 +58,16 @@ const (
 // Severities of an advisory, lowest first.
 var Severities = []string{"low", "medium", "high", "critical"}
 
-// PinnedRoots are the key ids ("SHA256:<hex>") of the offline roots this
-// release trusts for the release feed. Empty: nothing verifies and the
+// PinnedKeys are the Ed25519 public keys (hex, 64 characters) this release
+// trusts to sign the release feed: the online key, plus the next one while a
+// rotation overlaps (at most MaxPinnedKeys). Empty: nothing verifies and the
 // version check stays inert. Changed only by a reviewed commit, never by
 // configuration.
-var PinnedRoots = []string{}
-
-// KeySetType is the release feed key set.
-var KeySetType = feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind}
+var PinnedKeys = []string{}
 
 // Errors a caller tells apart.
 var (
-	ErrNoRoot   = errors.New("no release feed root is pinned in this build")
+	ErrNoKey    = errors.New("no release feed key is pinned in this build")
 	ErrRollback = errors.New("older than the release feed already applied")
 	ErrExpired  = errors.New("the release feed has expired")
 )
@@ -99,33 +101,54 @@ type Feed struct {
 	Advisories []Advisory `json:"advisories"`
 }
 
-// Bundle is the published file: the key set and the feed envelopes.
+// Bundle is the published file: the signed feed envelope.
 type Bundle struct {
 	Schema string          `json:"schema"`
-	KeySet json.RawMessage `json:"keyset"`
 	Feed   json.RawMessage `json:"feed"`
 }
 
 // Trust is what an instance pins and has applied.
 type Trust struct {
-	Roots            []string
-	MinKeySetVersion uint64
-	MinSequence      uint64
+	// Keys are the pinned public keys, hex (releasefeed.PinnedKeys in production).
+	Keys        []string
+	MinSequence uint64
 }
 
 // Verified is a feed that passed every check. Digest is the SHA-256 (hex)
 // of the signed feed payload: an instance accepts the same sequence again
 // only with the same digest.
 type Verified struct {
-	Feed          Feed
-	KeySetVersion uint64
-	Digest        string
+	Feed Feed
+	// KeyID is the id (jobsign.KeyID) of the pinned key that signed it.
+	KeyID  string
+	Digest string
+}
+
+// pinnedKeys decodes the pinned keys; a malformed or surplus entry is an
+// error (a bad pin must not silently verify less than intended).
+func pinnedKeys(hexKeys []string) ([]ed25519.PublicKey, error) {
+	if len(hexKeys) > MaxPinnedKeys {
+		return nil, fmt.Errorf("release feed: more than %d pinned keys", MaxPinnedKeys)
+	}
+	out := make([]ed25519.PublicKey, 0, len(hexKeys))
+	for _, h := range hexKeys {
+		b, err := hex.DecodeString(h)
+		if err != nil || len(b) != ed25519.PublicKeySize {
+			return nil, errors.New("release feed: a pinned key is not a hex Ed25519 public key")
+		}
+		out = append(out, b)
+	}
+	return out, nil
 }
 
 // Verify checks a published file at now and returns its feed.
 func Verify(raw []byte, t Trust, now time.Time) (*Verified, error) {
-	if len(t.Roots) == 0 {
-		return nil, ErrNoRoot
+	if len(t.Keys) == 0 {
+		return nil, ErrNoKey
+	}
+	keys, err := pinnedKeys(t.Keys)
+	if err != nil {
+		return nil, err
 	}
 	if len(raw) == 0 || len(raw) > MaxBundleBytes {
 		return nil, fmt.Errorf("release feed: empty or over %d bytes", MaxBundleBytes)
@@ -137,26 +160,22 @@ func Verify(raw []byte, t Trust, now time.Time) (*Verified, error) {
 	if b.Schema != BundleSchema {
 		return nil, fmt.Errorf("release feed: schema %q", b.Schema)
 	}
-	var (
-		ks      *feedsign.KeySet
-		lastErr error
-	)
-	for _, root := range t.Roots {
-		k, err := feedsign.VerifyKeySet(b.KeySet, KeySetType, root, t.MinKeySetVersion, now)
-		if err == nil {
-			ks = k
+	env, err := feedsign.Open(b.Feed, FeedPayloadType, MaxBundleBytes)
+	if err != nil {
+		return nil, fmt.Errorf("release feed: %w", err)
+	}
+	var signer ed25519.PublicKey
+	for _, k := range keys {
+		if feedsign.VerifiedBy(env, k) {
+			signer = k
 			break
 		}
-		lastErr = err
 	}
-	if ks == nil {
-		if errors.Is(lastErr, feedsign.ErrKeySetRollback) {
-			return nil, fmt.Errorf("%w: %w", ErrRollback, lastErr)
-		}
-		return nil, fmt.Errorf("release feed: %w", lastErr)
+	if signer == nil {
+		return nil, errors.New("release feed: not signed by a pinned key")
 	}
 	var f Feed
-	if err := feedsign.VerifyWith(ks, b.Feed, FeedPayloadType, MaxBundleBytes, &f); err != nil {
+	if err := feedsign.DecodeStrict(env.Payload, &f); err != nil {
 		return nil, fmt.Errorf("release feed: %w", err)
 	}
 	if err := f.Validate(); err != nil {
@@ -171,12 +190,8 @@ func Verify(raw []byte, t Trust, now time.Time) (*Verified, error) {
 	if !f.ExpiresAt.After(now) {
 		return nil, fmt.Errorf("%w at %s", ErrExpired, f.ExpiresAt.UTC().Format(time.RFC3339))
 	}
-	env, err := feedsign.Open(b.Feed, FeedPayloadType, MaxBundleBytes)
-	if err != nil {
-		return nil, fmt.Errorf("release feed: %w", err)
-	}
 	sum := sha256.Sum256(env.Payload)
-	return &Verified{Feed: f, KeySetVersion: ks.Version, Digest: hex.EncodeToString(sum[:])}, nil
+	return &Verified{Feed: f, KeyID: jobsign.KeyID(signer), Digest: hex.EncodeToString(sum[:])}, nil
 }
 
 var (
@@ -267,9 +282,9 @@ func checkURL(raw string) error {
 	return fmt.Errorf("link host %q is not allowed", u.Host)
 }
 
-// Build signs f with an online key of the key set and returns the file to
-// publish (the builder and tests; an instance never holds a feed key).
-func Build(keySet []byte, online ed25519.PrivateKey, f Feed) ([]byte, error) {
+// Build signs f with the online key and returns the file to publish (the
+// builder and tests; an instance never holds a feed key).
+func Build(online ed25519.PrivateKey, f Feed) ([]byte, error) {
 	f.Kind = FeedKind
 	if err := f.Validate(); err != nil {
 		return nil, err
@@ -282,7 +297,7 @@ func Build(keySet []byte, online ed25519.PrivateKey, f Feed) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := json.MarshalIndent(Bundle{Schema: BundleSchema, KeySet: keySet, Feed: env}, "", "  ")
+	out, err := json.MarshalIndent(Bundle{Schema: BundleSchema, Feed: env}, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -290,9 +305,4 @@ func Build(keySet []byte, online ed25519.PrivateKey, f Feed) ([]byte, error) {
 		return nil, fmt.Errorf("release feed: over %d bytes", MaxBundleBytes)
 	}
 	return out, nil
-}
-
-// SignKeySet signs a release feed key set with the offline root.
-func SignKeySet(root ed25519.PrivateKey, version uint64, issuedAt, notAfter time.Time, online ...ed25519.PublicKey) ([]byte, error) {
-	return feedsign.SignKeySet(root, KeySetType, version, issuedAt, notAfter, online...)
 }

@@ -78,7 +78,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-060](RFC-060-tool-network-confinement-and-overrides.md) | Tool network confinement, verified built-ins and the tool override surface | Proposed (owner 2026-10-08: "the tool SDK must be secure", and "a developer must be able to override fields such as the User-Agent; support flexibility as much as possible") |
 | [RFC-061](RFC-061-content-packs.md) | Content packs — templates, rules, wordlists and signatures as a contract | Proposed (owner 2026-10-08: "a developer writes a tool and wants to point it at templates or rules other than the default: default + custom, custom only, or another source; it must be flexible and there must be a contract the platform understands". And: "should the tool check for updates before running, or should the platform push them? Think through every use case") |
 | [RFC-062](RFC-062-mcp-authorization.md) | MCP authorization — OAuth 2.1 for AI clients | Accepted, implemented (PRs 1–7 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
-| [RFC-063](RFC-063-support-access.md) | Support access — customer-granted, time-boxed, visible | Proposed (decisions SU1–SU10 recommended; delegated to the platform team, 2026-10-08) |
+| [RFC-063](RFC-063-support-access.md) | Support access — customer-granted, time-boxed, visible | Partially implemented (read-only grants and console support sessions, §11, 2026-10-16); read and write, emergency access and the tenant-tab frame are Proposed |
 | [RFC-064](RFC-064-modules-entitlements-preferences.md) | Modules — entitlements, preferences and one registry | Accepted (decisions MD1–MD12 delegated to the platform team, 2026-10-09) |
 | [RFC-065](RFC-065-bug-bounty-programs.md) | Bug-bounty programs, authorization sources and the Researcher role | Proposed (2026-10-09); P0 in review; P1 designed (§12–§14, owner delegated 2026-10-09); private programs and the public program monitor added 2026-10-10 (§15–§16, owner direction), §15 in implementation |
 | [RFC-066](RFC-066-inventory-vulnerability-matching.md) | Inventory vulnerability matching | Accepted (2026-10-09; decisions O1–O10 adopted as recommended, §11; data model revised by the owner the same day: shared software catalog, matching once per version, §5–§7; feed moved out of the platform into a signed-bundle collector, §5.5, O12). |
@@ -120,6 +120,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-105](RFC-105-version-check-and-usage-telemetry.md) | Version check and usage telemetry | Accepted (2026-10-16). |
 | [RFC-110](RFC-110-tenant-lifecycles.md) | Tenant lifecycles (sub-statuses and lifecycle schemes for findings) | Accepted (2026-10-16). |
 | [RFC-111](RFC-111-approval-policy.md) | Approval policy (one evaluator for false positives, accepted risks, suppressions and group exceptions) | Accepted (2026-10-16). |
+| [RFC-112](RFC-112-asset-technologies.md) | Asset technologies (detected technology fingerprint per asset) | Accepted (2026-10-16). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

@@ -26,7 +26,7 @@ describe('run timeline helpers', () => {
   })
 
   it('never names a platform sensor', () => {
-    expect(eventActor({ platform: true, sensor_id: 'abcdef1234' })).toBe('Platform scanning')
+    expect(eventActor({ platform: true, sensor_id: 'abcdef1234' })).toBe('Shared sensors')
     expect(eventActor({ platform: false, sensor_id: 'abcdef1234' })).toBe('Sensor abcdef12')
     expect(eventActor({ platform: false })).toBeNull()
   })
@@ -62,7 +62,7 @@ describe('RunTimeline', () => {
     })
     fresh(<RunTimeline runId="r1" />)
     expect(await screen.findByText('Failed')).toBeInTheDocument()
-    expect(screen.getByText('Platform scanning')).toBeInTheDocument()
+    expect(screen.getByText('Shared sensors')).toBeInTheDocument()
     expect(screen.getByText(/scanner exited 2/)).toBeInTheDocument()
     expect(screen.getByText(/Waiting for a sensor: 1 task/)).toBeInTheDocument()
     expect(getMock).toHaveBeenCalledWith('/api/v1/scan-runs/r1/events')

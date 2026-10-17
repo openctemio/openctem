@@ -23,10 +23,9 @@ import {
   propertyLabel,
 } from '@/features/asset-types/lib/property-schema'
 import type { AssetClass } from '@/features/asset-types/registry.generated'
-import { technologies, tlsFacts } from '../lib/service-facts'
+import { tlsFacts } from '../lib/service-facts'
 import type { Asset } from '../types/asset.types'
 import { PropertyValue, hasPropertyValue, isWideValue } from './property-value'
-import { TechChips } from './service-cells/tech-chips'
 import { TlsSummary } from './service-cells/tls-summary'
 import { ChipRow } from './service-cells/fact-chip'
 import { cellsForType } from './service-cells/cells-for-type'
@@ -105,17 +104,6 @@ const TLS: Row = {
       </ChipRow>
     )
   },
-}
-
-const TECH: Row = {
-  id: 'technologies',
-  label: (_t, locale) => propertyLabel('technologies', locale),
-  keys: ['technologies'],
-  render: (a) => (
-    <ChipRow>
-      <TechChips technologies={technologies(a)} max={Infinity} />
-    </ChipRow>
-  ),
 }
 
 const LOCATION: Row = {
@@ -220,16 +208,15 @@ const ROWS: Partial<Record<AssetClass, Row[]>> = {
     HOSTING,
     'server',
     TLS,
-    TECH,
     'dns_records',
     'registrar',
     'expires_at',
     'nameservers',
   ],
   ip_address: [NETWORK_OWNER, 'hostname', LOCATION, 'ports', 'is_private'],
-  service: [ENDPOINT, PRODUCT, 'cpe', TLS, HTTP, 'server', TECH, 'banner'],
-  web_endpoint: ['url', HTTP, 'server', TLS, TECH],
-  application: ['url', HTTP, 'server', TLS, TECH],
+  service: [ENDPOINT, PRODUCT, 'cpe', TLS, HTTP, 'server', 'banner'],
+  web_endpoint: ['url', HTTP, 'server', TLS],
+  application: ['url', HTTP, 'server', TLS],
   certificate: [
     'subject_cn',
     'sans',
