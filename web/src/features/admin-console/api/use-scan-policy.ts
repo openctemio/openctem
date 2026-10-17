@@ -85,6 +85,30 @@ export function savePlatformSensorProof(input: {
 }
 
 /**
+ * A single-use shared sensor enrollment token (RFC-100 §7). The token is
+ * returned once and never shown again.
+ */
+export interface SharedSensorEnrollmentToken {
+  id: string
+  token: string
+  name: string
+  expires_at: string
+}
+
+/** Super admin, a fresh authenticator code and a reason. */
+export function createSharedSensorEnrollmentToken(input: {
+  name: string
+  ttl_minutes: number
+  reason: string
+  totp_code: string
+}) {
+  return adminFetch<SharedSensorEnrollmentToken>('/shared-sensors/enrollment-tokens', {
+    method: 'POST',
+    body: input,
+  })
+}
+
+/**
  * Shared sensors on this instance (RFC-100 §5): the instance switch (off by
  * default) and whether organizations without a decision may use them
  * (null until the administrator chooses; null refuses them; turning the

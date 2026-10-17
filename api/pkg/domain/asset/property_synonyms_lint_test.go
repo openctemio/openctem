@@ -31,8 +31,11 @@ var synonymKeyAllowed = map[string][]string{
 	// details that happen to use the same words.
 	"internal/infra/controller/sensor_health.go": {"ip_address"},
 	"internal/app/sensor/service.go":             {"ip"},
-	"internal/app/ingest/identity_backfill.go":   {"ip"},
-	"pkg/domain/credential/import.go":            {"ip_address"},
+	// The console audit row keeps the sensor's host facts (hostname, os,
+	// arch...) under the names the pairing request uses.
+	"internal/app/sensorpairing/instance.go":   {"os"},
+	"internal/app/ingest/identity_backfill.go": {"ip"},
+	"pkg/domain/credential/import.go":          {"ip_address"},
 	// The CTIS technical service and certificate blocks: objects stored
 	// under the common keys `service` and `certificate`, not top-level
 	// properties, so their field names are the CTIS ones.
