@@ -93,7 +93,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "assets:read",
 		MCP:        []string{"list_assets"},
-		Jobs:       []string{"AssetIdentityBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "AssetRiskScoreController", "AssetRiskReconcileController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
+		Jobs:       []string{"AssetIdentityBackfillController", "AssetTechnologyBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "AssetRiskScoreController", "AssetRiskReconcileController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
 	},
 	{
 		ID: ModuleFindings, Slug: "findings", Name: "Findings",
@@ -496,7 +496,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "remediation closes findings"},
 		},
 		Routes: []string{"/api/v1/remediation/campaigns", "/api/v1/remediation/tasks", "/api/v1/remediation/suggestions", "/api/v1/remediation/actions", "/api/v1/remediation/moves"},
-		Jobs:   []string{"RemediationProgressController", "RemediationTaskController", "RemediationSuggestionController"},
+		Jobs:   []string{"RemediationProgressController", "RemediationTaskController", "TaskTicketController", "RemediationSuggestionController"},
 	},
 	{
 		ID: ModuleSuppressions, Slug: "suppressions", Name: "Suppressions",
