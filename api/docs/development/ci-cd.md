@@ -136,8 +136,11 @@ the **base** commit, so a pull request cannot loosen the rules it is judged by,
 and no code from the pull request runs in the gate job (the diff is read as
 data). Fork pull requests get a read-only token: the verdict is in the check and
 the job summary, and the label and comment are skipped. The gate fails closed
-on any API error, on more than 3000 changed files and on a merge-queue branch it
-cannot parse. A pull request can still edit `security-gate.yml` itself, which is
+on any API or git error and on a merge-queue branch it cannot parse. The API
+lists at most 3000 changed files, so a pull request of 3000 files or more (a
+release branch far ahead of `main`) is diffed with git instead: the gate fetches
+the base and head commits into its base checkout, never checks them out or runs
+anything from them, and evaluates the same rules and ack digest on that list. A pull request can still edit `security-gate.yml` itself, which is
 the residual risk of any check defined in the repository; such a change is
 `ci-release` sensitive and needs the ack like any other.
 
