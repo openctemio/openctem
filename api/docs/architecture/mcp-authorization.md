@@ -54,6 +54,7 @@ and is neither the public origin nor one of `CORS_ALLOWED_ORIGINS`
 | `mcp:assets.read` | `assets:read` |
 | `mcp:compliance.read` | `compliance:frameworks:read` |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` |
+| `mcp:findings.comment` (write) | `findings:comment`; never offered up front, only through an `insufficient_scope` challenge, only when the organization policy lists it, and every call is confirmed by the person (below) |
 
 A test fails when an MCP tool or prompt needs a permission no scope covers.
 
@@ -192,7 +193,7 @@ organization settings (`tenant.MCPSettings`), audited as
 | `enabled` | on | off: every MCP request of the organization (tokens and `oct_` keys) and every consent is refused |
 | `any_client` | off | off: only verified applications. Verified = registered by this organization (or by the platform operator), or a metadata document whose host is in `client_hosts` or in `MCP_OAUTH_TRUSTED_CLIENT_HOSTS`. On: any application, unverified ones marked |
 | `client_hosts` | none | host names (no scheme, path or wildcard), at most 50 |
-| `scopes` | all read scopes | the scopes members may grant |
+| `scopes` | all read scopes | the scopes members may grant; the write scope `mcp:findings.comment` only when listed |
 | `api_keys_allowed` | on | off: `oct_` keys are `403` on the MCP endpoint (`middleware.MCPKeyPolicyGate`); still valid on the REST API |
 | `refresh_days` | 90 | a connection ends this many days after the person approved it |
 | `require_dpop` | off | only DPoP-bound tokens (below) |
@@ -204,12 +205,46 @@ request (a token of a blocked application stops working; scopes the policy no
 longer allows stop counting). Another organization's registered application
 is never usable. A policy that cannot be read refuses the request.
 
+## Access requests (shipped)
+
+A consent blocked only because the application's publisher is not approved
+(`blocked = client_not_allowed`, a metadata-document client) offers a way
+out instead of a dead end:
+
+- **Member:** "Request access" (`POST /api/v1/oauth/requests/{id}/access-request`).
+  The server takes the publisher host (the metadata document's host), the
+  application name, its client id and the requested scopes from the stored
+  authorization request the member claimed; the member supplies nothing.
+  One waiting request per organization and host (`mcp_access_requests`,
+  migration `002902_mcp_access_requests`): repeats bump a counter and merge
+  scopes. At most 5 new requests per member per 24 hours and 50 waiting per
+  organization (429). Owners and administrators get one in-app notification
+  (`mcp_access_request`) per new request. Audited `mcp_access_request.created`.
+- **Administrator** (`settings:write`): Settings, AI assistants (MCP),
+  Applications lists waiting requests (`GET /api/v1/mcp-access/requests`,
+  `settings:read`; requester name, request count, requested scopes). Approve
+  (`POST .../{id}/approve`, recent sign-in) adds the host to the policy's
+  `client_hosts` in one settings-section write (audited
+  `mcp_settings.updated` with the diff, and `mcp_access_request.approved`);
+  decline (`POST .../{id}/deny`) only closes the request
+  (`mcp_access_request.denied`). The requester is notified either way.
+- **Administrator on the consent page:** the response carries `can_allow`;
+  "Allow <host>" (`POST /api/v1/oauth/requests/{id}/allow-publisher`,
+  `settings:write` + recent sign-in) approves the publisher and closes any
+  waiting request for it, then the administrator continues connecting.
+
+The consent response also carries `requestable` and `access_requested`.
+Every query is scoped to the session's organization; a request id of
+another organization answers 404, and a host is only ever added to the
+caller's own policy. Self-registered (dynamic) clients have no publisher to
+approve and stay behind `any_client`.
+
 ## Connected applications (shipped)
 
 | Who | Where | API |
 |---|---|---|
 | Everyone | My account, Connected applications (`/account/connected-apps`) | `GET /api/v1/mcp-access/my-connections`, `DELETE /api/v1/mcp-access/my-connections/{id}` |
-| Owners and administrators | Settings, AI access (MCP) (`/settings/mcp`): policy and every connection of the organization, with the person | `GET /api/v1/mcp-access/connections`, `DELETE /api/v1/mcp-access/connections/{id}` (`RequireAdmin`) |
+| Owners and administrators | Settings, AI assistants (MCP) (`/settings/mcp`), tabs Applications, Connections and Policy: approved publishers, waiting requests, registered applications, every connection of the organization with the person, and the policy | `GET /api/v1/mcp-access/connections`, `DELETE /api/v1/mcp-access/connections/{id}` (`RequireAdmin`) |
 | Platform administrators | Console, System, AI applications (`/admin/system/ai-applications`): every client with active connections and organization counts (no tenant data); block or unblock (ops_admin+, audited `mcp_client.blocked` / `mcp_client.unblocked`) | `GET /api/v1/admin/mcp-clients`, `POST /api/v1/admin/mcp-clients/{id}/block`, `…/unblock` |
 
 A row shows the application, where it is published (or that the

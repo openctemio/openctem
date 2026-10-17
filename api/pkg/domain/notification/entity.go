@@ -86,6 +86,10 @@ const (
 	// TypeFindingApproval tells the members who may approve it that a
 	// finding false-positive or accepted-risk request waits for a decision.
 	TypeFindingApproval = "finding_approval"
+	// TypeMCPAccessRequest tells administrators that a member asks to
+	// connect an AI application the organization has not approved, and
+	// the requester how it was decided.
+	TypeMCPAccessRequest = "mcp_access_request"
 	// TypeFindingApprovalDigest is the daily digest of finding requests
 	// waiting for an approver (muting it opts out of the digest, in-app and
 	// email).
@@ -298,7 +302,7 @@ func IsValidType(t string) bool {
 		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending,
 		TypeMemberLifecycle, TypeCISecurity, TypeSensorSecurity, TypeScopeChange,
 		TypeScanWindowOverride, TypeScanApproval, TypeAttackSurfaceDigest, TypeCoverageGap,
-		TypeFindingApproval, TypeFindingApprovalDigest:
+		TypeFindingApproval, TypeFindingApprovalDigest, TypeMCPAccessRequest:
 		return true
 	}
 	return false
