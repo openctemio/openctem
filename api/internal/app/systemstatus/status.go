@@ -190,16 +190,27 @@ type Collector struct {
 	d   Deps
 }
 
+// newProbeClient builds the health-probe client. It ignores proxy
+// environment variables (probes target internal services and must not be
+// routed through, or leak to, an outbound proxy), never follows redirects
+// and times out after probeTimeout.
+func newProbeClient() *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = nil
+	return &http.Client{
+		Transport:     tr,
+		Timeout:       probeTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
 // New creates a collector.
 func New(cfg Config, d Deps) *Collector {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
 	if d.HTTP == nil {
-		d.HTTP = &http.Client{
-			Timeout:       probeTimeout,
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		}
+		d.HTTP = newProbeClient()
 	}
 	return &Collector{cfg: cfg, d: d}
 }

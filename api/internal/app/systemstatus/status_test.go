@@ -237,3 +237,34 @@ func mustJSON(t *testing.T, v any) string {
 	}
 	return string(b)
 }
+
+func TestWatcherIsExclusive(t *testing.T) {
+	if !(&Watcher{}).Exclusive() {
+		t.Fatal("watcher must run on one replica only")
+	}
+}
+
+func TestProbeClientIgnoresProxyAndRedirects(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	t.Setenv("http_proxy", "http://127.0.0.1:1")
+	c := newProbeClient()
+	if c.Timeout != probeTimeout {
+		t.Fatalf("timeout = %v", c.Timeout)
+	}
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok || tr.Proxy != nil {
+		t.Fatal("probe transport must not use a proxy")
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid/", nil)
+	if c.CheckRedirect(req, nil) != http.ErrUseLastResponse {
+		t.Fatal("redirects must not be followed")
+	}
+	// A reachable target still works although the env proxy is unreachable.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+	defer srv.Close()
+	resp, err := c.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("get via env proxy path: %v", err)
+	}
+	_ = resp.Body.Close()
+}
