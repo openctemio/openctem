@@ -21,6 +21,7 @@ import type {
   CreateRepositoryAssetInput,
   UpdateRepositoryExtensionInput,
   RepoVisibility,
+  AssetTechnologyBrief,
 } from '../types'
 
 /**
@@ -153,6 +154,7 @@ interface BackendAsset {
     scan_refusal_code?: string
   }
   risk_score: number // 0-100
+  technologies?: { name: string; version?: string; category: string }[]
   risk_scored_at?: string // absent = never scored (with risk_score_pending present)
   risk_score_pending?: boolean // a rescore is queued
   finding_count: number
@@ -245,6 +247,11 @@ function transformAsset(backend: BackendAsset): Asset {
     syncStatus: backend.sync_status || undefined,
     lastSyncedAt: backend.last_synced_at || undefined,
     metadata: backend.properties || {},
+    technologies: backend.technologies?.map((t) => ({
+      name: t.name,
+      version: t.version || undefined,
+      category: t.category as AssetTechnologyBrief['category'],
+    })),
     tags: backend.tags || [],
     primaryOwner: backend.primary_owner
       ? {

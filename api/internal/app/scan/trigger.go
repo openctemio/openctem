@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // =============================================================================
@@ -828,9 +829,9 @@ func (s *Service) scannerPayload(
 	scannerConfig map[string]any, runContext map[string]any,
 	targets []string, templates []EmbeddedTemplate,
 ) map[string]any {
-	// A "targets" list in the scan's settings (a quick scan mirrors its
-	// typed targets there) becomes the job's gated targets: as typed it
-	// would carry what the gate left out, excluded names and whole ranges
+	// A "targets" list in the scan's settings (older scans stored a quick
+	// scan's typed targets there) becomes the job's gated targets: as typed
+	// it would carry what the gate left out, excluded names and whole ranges
 	// included.
 	if len(targets) > 0 {
 		scannerConfig = batchScannerConfig(scannerConfig, targets)
@@ -1116,7 +1117,7 @@ func (s *Service) decideSensorRouting(ctx context.Context, sc *scan.Scan, target
 			return sensorRouting{}, err
 		}
 		s.logger.Warn("sensor selection failed; job queued for tenant sensors",
-			"error", err, "scan_id", sc.ID.String())
+			"error", logger.SanitizeError(err), "scan_id", sc.ID.String())
 		return sensorRouting{
 			Routing: sensorRoutingTenant,
 			Warning: "sensor selection failed; the job is queued for tenant sensors only",
@@ -1142,33 +1143,97 @@ func (s *Service) decideWorkflowRouting(ctx context.Context, sc *scan.Scan, targ
 	case sc.SensorPreference == scan.SensorPreferencePlatform:
 		return s.decideSensorRouting(ctx, sc, targets, nil)
 	}
-	if s.sensorSelector == nil || sc.HasAssetGroup() || hasInternalTarget(targets) {
+	if s.sensorSelector == nil {
 		return sensorRouting{Routing: sensorRoutingTenant}, nil
+	}
+	refusal, err := s.platformTargetRefusal(ctx, sc.TenantID, targets, sc.HasAssetGroup())
+	if err != nil {
+		s.logger.Warn("shared sensor target check failed; run kept on tenant sensors",
+			"error", err, "scan_id", sc.ID.String())
+		return sensorRouting{Routing: sensorRoutingTenant,
+			Warning: "target proof lookup failed; the run is queued for tenant sensors only"}, nil
+	}
+	// The targets pass, the tenant may use shared sensors and is within
+	// today's limit: each step decides (auto); otherwise the run stays on
+	// the tenant's sensors.
+	if refusal == nil && s.mayUseShared(ctx, sc.TenantID) {
+		return sensorRouting{Routing: sensorRoutingAuto}, nil
+	}
+	return sensorRouting{Routing: sensorRoutingTenant}, nil
+}
+
+// mayUseShared reports whether the tenant may send one more scan to shared
+// sensors now: access allowed and within today's limit.
+func (s *Service) mayUseShared(ctx context.Context, tenantID shared.ID) bool {
+	if canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, tenantID); !canUse {
+		return false
+	}
+	return s.sharedLimitRefusal(ctx, tenantID) == nil
+}
+
+// platformTargetRefusal is the one target check for shared platform
+// sensors, used by the scan trigger and by every workflow step dispatch
+// (PlatformTargetRefusal):
+//   - never asset groups or internal targets (RFC-023 D14);
+//   - with the operator's proof requirement, every target at or under a
+//     verified domain of the tenant (RFC-054 §8.1), because platform sensors
+//     probe from the platform's own addresses;
+//   - never bug-bounty program targets, in any proof mode (RFC-065 §8).
+//
+// refusal is the validation error naming the first rule that fails (nil
+// when the targets may go to shared sensors); err is a failed lookup, which
+// callers treat as a refusal (fail closed).
+func (s *Service) platformTargetRefusal(ctx context.Context, tenantID shared.ID, targets []string, assetGroup bool) (refusal, err error) {
+	if assetGroup || hasInternalTarget(targets) {
+		return shared.NewDomainError(codePlatformRefused,
+			"shared platform sensors never scan asset groups or internal targets; scan them on your own sensors, or scan only public targets",
+			shared.ErrValidation), nil
+	}
+	// A name that resolves inside is an internal target too. The resolved
+	// addresses are not named: on a multi-tenant install they may come from
+	// the platform's own DNS.
+	resolvesInside, err := s.namesResolvingInternal(ctx, targets)
+	if errors.Is(err, errTooManyNames) {
+		return shared.NewDomainError(codePlatformRefused,
+			fmt.Sprintf("shared platform sensors check every host name first, and this job has more than %d; scan it on your own sensors or split it", maxSharedNameLookups),
+			shared.ErrValidation), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(resolvesInside) > 0 {
+		listed := resolvesInside[:min(len(resolvesInside), maxListedRefusals)]
+		msg := "shared platform sensors never scan internal targets, and these names resolve to internal addresses: " + strings.Join(listed, ", ")
+		if len(resolvesInside) > len(listed) {
+			msg += fmt.Sprintf(" and %d more", len(resolvesInside)-len(listed))
+		}
+		return shared.NewDomainError(codePlatformRefused, msg, shared.ErrValidation), nil
 	}
 	if s.platformNeedsProof(ctx) {
-		unproven, err := s.unverified(ctx, sc.TenantID, targets)
+		unproven, err := s.unverified(ctx, tenantID, targets)
 		if err != nil {
-			s.logger.Warn("target proof lookup failed; run kept on tenant sensors",
-				"error", err, "scan_id", sc.ID.String())
-			return sensorRouting{Routing: sensorRoutingTenant,
-				Warning: "target proof lookup failed; the run is queued for tenant sensors only"}, nil
+			return nil, err
 		}
-		if len(unproven) > 0 {
-			return sensorRouting{Routing: sensorRoutingTenant}, nil
+		if refusal := proofError("platform sensors probe only verified domains", unproven); refusal != nil {
+			return refusal, nil
 		}
 	}
-	// Bug-bounty program targets stay on the tenant's sensors (RFC-065 §8).
-	if programOnly, err := s.programOnly(ctx, sc.TenantID, targets); err != nil || len(programOnly) > 0 {
-		if err != nil {
-			s.logger.Warn("program target lookup failed; run kept on tenant sensors",
-				"error", err, "scan_id", sc.ID.String())
-		}
-		return sensorRouting{Routing: sensorRoutingTenant}, nil
+	programOnly, err := s.programOnly(ctx, tenantID, targets)
+	if err != nil {
+		return nil, err
 	}
-	if canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID); !canUse {
-		return sensorRouting{Routing: sensorRoutingTenant}, nil
+	return programRefusal(programOnly), nil
+}
+
+// PlatformTargetRefusal is platformTargetRefusal for a workflow step about
+// to be queued for shared sensors: nil only when every target of the step
+// may go there. A failed lookup is returned as the error (fail closed).
+func (s *Service) PlatformTargetRefusal(ctx context.Context, tenantID shared.ID, targets []string, assetGroup bool) error {
+	refusal, err := s.platformTargetRefusal(ctx, tenantID, targets, assetGroup)
+	if err != nil {
+		return err
 	}
-	return sensorRouting{Routing: sensorRoutingAuto}, nil
+	return refusal
 }
 
 // shouldUsePlatformSensor determines whether to route this scan to shared
@@ -1181,57 +1246,34 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	if sc.RunOnTenantRunner || sc.SensorPreference == scan.SensorPreferenceTenant {
 		return false, nil
 	}
-	internal := sc.HasAssetGroup() || hasInternalTarget(targets)
-
-	// Platform sensors probe from the platform's addresses: with the
-	// operator's proof requirement every target must be at or under a
-	// verified domain of the tenant (RFC-054 §8.1).
-	var unproven []string
-	if s.platformNeedsProof(ctx) && !internal {
-		var err error
-		if unproven, err = s.unverified(ctx, sc.TenantID, targets); err != nil {
-			return false, err
-		}
-	}
-	// Bug-bounty program targets never go to platform sensors, in any proof
-	// mode (RFC-065 §8).
-	var programOnly []string
-	if !internal {
-		var err error
-		if programOnly, err = s.programOnly(ctx, sc.TenantID, targets); err != nil {
-			return false, err
-		}
+	refusal, err := s.platformTargetRefusal(ctx, sc.TenantID, targets, sc.HasAssetGroup())
+	if err != nil {
+		return false, err
 	}
 
 	// If explicitly set to platform only, the tenant must be allowed and the
-	// targets must be public.
+	// targets must pass the shared check.
 	if sc.SensorPreference == scan.SensorPreferencePlatform {
-		if internal {
-			return false, shared.NewDomainError("PLATFORM_SENSOR_REFUSED",
-				"sensor_preference is 'platform', but shared platform sensors never scan asset groups or internal targets; set sensor_preference to 'tenant' or 'auto', or scan only public targets",
-				shared.ErrValidation)
-		}
-		if err := proofError("platform sensors probe only verified domains", unproven); err != nil {
-			return false, err
-		}
-		if err := programRefusal(programOnly); err != nil {
-			return false, err
+		if refusal != nil {
+			return false, refusal
 		}
 		if s.sensorSelector != nil {
 			canUse, reason := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID)
 			if !canUse {
-				return false, shared.NewDomainError("PLATFORM_SENSOR_REFUSED",
+				return false, shared.NewDomainError(codePlatformRefused,
 					fmt.Sprintf("sensor_preference is 'platform', but platform sensors are not available to this tenant: %s", reason),
 					shared.ErrValidation)
 			}
 		}
+		if err := s.sharedLimitRefusal(ctx, sc.TenantID); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 
-	// Auto: tenant sensors first. Shared sensors only if the tenant may use them,
-	// nothing in the scan is internal and every target is proven where the
-	// operator requires it; otherwise the job waits.
-	if s.sensorSelector == nil || internal || len(unproven) > 0 || len(programOnly) > 0 {
+	// Auto: tenant sensors first. Shared sensors only if the tenant may use them
+	// and the targets pass the shared check; otherwise the job waits.
+	if s.sensorSelector == nil || refusal != nil {
 		return false, nil
 	}
 	result, err := s.sensorSelector.SelectSensor(ctx, SelectSensorRequest{
@@ -1247,8 +1289,8 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	if (result.Sensor != nil && !result.IsPlatform) || result.TenantBusy {
 		return false, nil
 	}
-	canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID)
-	return canUse, nil
+	// Over today's limit the job waits for the organization's own sensors.
+	return s.mayUseShared(ctx, sc.TenantID), nil
 }
 
 // calculateInitialPriority calculates the initial queue priority for a platform job.
@@ -1482,6 +1524,9 @@ type groupScanMember struct {
 	MatchValues []string
 	// Type is the stored (type, sub_type) the scanner type gate reads.
 	Type asset.TypeRef
+	// Selector is the typed selector that expanded to this member, for
+	// selector members.
+	Selector string
 }
 
 // groupScanMemberPage is the keyset page size for group members; the

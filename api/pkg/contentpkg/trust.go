@@ -39,7 +39,11 @@ const (
 
 // KeySetType is the catalog key set: the feed key set format under the
 // catalog's own payload type and kind.
-var KeySetType = feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind}
+var KeySetType = feedsign.KeySetType{PayloadType: KeySetPayloadType, Kind: KeySetKind, MaxValidity: MaxKeySetValidity}
+
+// MaxKeySetValidity caps not_after - issued_at of the catalog key set: the
+// catalog's root signs it once a year.
+const MaxKeySetValidity = 365 * 24 * time.Hour
 
 // Origins of a package.
 const (
@@ -324,3 +328,9 @@ func Sign(priv ed25519.PrivateKey, payloadType string, v any) ([]byte, error) {
 	}
 	return feedsign.Sign(priv, payloadType, payload)
 }
+
+// PinnedRoots are the key ids of the offline catalog roots this release
+// trusts. Empty until the first root is generated: until then only roots
+// an operator adds (CONTENT_TRUST_ROOT_KEY_IDS) verify, and without one
+// every import is refused.
+var PinnedRoots = []string{}

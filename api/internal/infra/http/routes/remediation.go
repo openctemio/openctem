@@ -39,6 +39,7 @@ func registerRemediationCampaignRoutes(
 func registerRemediationTaskRoutes(
 	router Router,
 	h *handler.RemediationTaskHandler,
+	jiraHandler *handler.JiraWebhookHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	moduleGate Middleware,
@@ -58,6 +59,16 @@ func registerRemediationTaskRoutes(
 		// Marking the task fixed is a fix claim on each of its findings: the
 		// task write plus findings:fix_apply.
 		r.POST("/{task_id}/resolve", h.Resolve, middleware.RequireAll(permission.RemediationWrite, permission.FindingsFixApply))
+		// One exception over the task's open findings (RFC-111 §7): the task
+		// write plus findings:write (it requests a finding disposition).
+		r.POST("/{task_id}/exception/preview", h.PreviewException, middleware.RequireAll(permission.RemediationWrite, permission.FindingsWrite))
+		r.POST("/{task_id}/exception", h.RequestException, middleware.RequireAll(permission.RemediationWrite, permission.FindingsWrite))
+		// The task's tracker issue (one per task): list, create. Creating it
+		// is a change of the task (every member in the caller's scope).
+		if jiraHandler != nil {
+			r.GET("/{task_id}/ticket-links", jiraHandler.ListTaskTicketLinks, middleware.Require(permission.RemediationRead))
+			r.POST("/{task_id}/ticket-links", jiraHandler.CreateTaskIssue, middleware.Require(permission.RemediationWrite))
+		}
 	}, tenantMiddlewares...)
 
 	// Moves of findings between tasks (or out of any task).
@@ -89,7 +100,9 @@ func registerRemediationSuggestionRoutes(
 		r.GET("/{id}/members", h.Members, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))
 		r.POST("/{id}/reject", h.Dismiss, middleware.Require(permission.RemediationWrite))
 		r.POST("/{id}/reopen", h.Reopen, middleware.Require(permission.RemediationWrite))
-		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.RemediationWrite))
+		// Read is enough to reach it: without write the service lets an asset
+		// owner accept only their own join or task route, as it is.
+		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.RemediationRead))
 		r.POST("/approve", h.BulkApprove, middleware.Require(permission.RemediationWrite))
 	}, tenantMiddlewares...)
 

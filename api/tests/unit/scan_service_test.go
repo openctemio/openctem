@@ -582,9 +582,6 @@ func (m *mockCommandRepo) CountQueuedPlatformJobs(_ context.Context) (int, error
 func (m *mockCommandRepo) GetQueuedPlatformJobs(_ context.Context, _ int) ([]*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) GetNextPlatformJob(_ context.Context, _ shared.ID, _ []string, _ []string) (*commanddom.Command, error) {
-	return nil, nil
-}
 func (m *mockCommandRepo) UpdateQueuePriorities(_ context.Context) (int64, error) { return 0, nil }
 func (m *mockCommandRepo) RecoverStuckJobs(_ context.Context, _, _ int) (int64, error) {
 	return 0, nil

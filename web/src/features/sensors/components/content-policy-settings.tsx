@@ -1,5 +1,6 @@
 'use client'
 
+import { useDocsHref } from '@/context/brand-provider'
 import { useState } from 'react'
 import { Info, Lock, Save } from 'lucide-react'
 import { toast } from 'sonner'
@@ -220,6 +221,7 @@ function PolicyForm({
  * Read-only without sensors:write.
  */
 export function ContentPolicySettings() {
+  const docsHref = useDocsHref()
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.SensorsWrite)
   const { data, error, isLoading, mutate } = useContentPolicy()
@@ -247,7 +249,7 @@ export function ContentPolicySettings() {
             <p>
               {t('sensors.contentPolicy.sourceNote')}{' '}
               <a
-                href={DOCS.scanning.scannerContent}
+                href={docsHref(DOCS.scanning.scannerContent)}
                 target="_blank"
                 rel="noreferrer"
                 className="underline underline-offset-2"

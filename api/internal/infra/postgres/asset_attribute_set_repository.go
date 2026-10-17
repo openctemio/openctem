@@ -2,7 +2,8 @@ package postgres
 
 // Per-source elements of set-valued asset attributes (RFC-069 §13,
 // docs/architecture/asset-attribute-reconciliation.md): IP addresses and
-// technologies (resolved into assets.properties) and open ports (resolved
+// technologies (resolved into assets.properties for addresses, into
+// asset_technologies for technologies) and open ports (resolved
 // into the status of the address's open_port assets).
 
 import (
@@ -18,6 +19,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -195,8 +197,17 @@ func (st *setApplyState) resolve(ctx context.Context, tx *sql.Tx, ref asset.SetR
 		prev = priorOf(o, a)
 	}
 	res := asset.ResolveSet(ref.Attribute, rows, a.shown[ref.Attribute], st.dropped[ref], st.in.Policy, st.now)
+	if ref.Attribute == asset.SetAttrTechnologies {
+		// One technology per name (RFC-112): two sources reporting two
+		// versions of a product show one, with the better version.
+		res.Elements = assettech.Collapse(res.Elements)
+	}
 	added, removed := asset.DiffSets(prev, res.Elements)
-	if err := writeResolvedSet(ctx, tx, st.tenantID, ref, a, res.Elements, st.now); err != nil {
+	seen := st.now
+	if observed && !o.ObservedAt.IsZero() && o.ObservedAt.Before(seen) {
+		seen = o.ObservedAt
+	}
+	if err := writeResolvedSet(ctx, tx, st.tenantID, ref, a, res.Elements, st.now, seen); err != nil {
 		return err
 	}
 	if len(added) == 0 && len(removed) == 0 {
@@ -383,7 +394,7 @@ func lockSetAssets(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []st
 
 func lockSetAssetRows(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string) (map[shared.ID]*setAsset, map[string]*setAsset, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, name, COALESCE(properties -> 'ip_addresses', 'null'::jsonb), COALESCE(properties -> 'technologies', 'null'::jsonb)
+		SELECT id, name, COALESCE(properties -> 'ip_addresses', 'null'::jsonb), `+shownTechnologiesSQL+`
 		  FROM assets
 		 WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
 		 ORDER BY id
@@ -406,7 +417,7 @@ func lockSetAssetRows(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids [
 		}
 		a := &setAsset{name: name, ports: map[string]portAsset{}, shown: map[asset.SetAttribute][]string{
 			asset.SetAttrIPAddresses:  normalizedJSONSet(asset.SetAttrIPAddresses, ips),
-			asset.SetAttrTechnologies: normalizedJSONSet(asset.SetAttrTechnologies, techs),
+			asset.SetAttrTechnologies: assettech.Collapse(normalizedJSONSet(asset.SetAttrTechnologies, techs)),
 		}}
 		out[aid] = a
 		byName[name] = a
@@ -493,12 +504,22 @@ func normalizedJSONSet(attr asset.SetAttribute, raw []byte) []string {
 	return uniqueStrings(out)
 }
 
-// writeResolvedSet makes the asset show elements: the property for IP
-// addresses and technologies (unchanged when equal), the status of the
-// open_port assets for open ports.
-func writeResolvedSet(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ref asset.SetRef, a *setAsset, elements []string, now time.Time) error {
+// writeResolvedSet makes the asset show elements (unchanged when equal):
+// the property for IP addresses, the asset_technologies rows for
+// technologies, the status of the open_port assets for open ports.
+// seen is when the deciding observation saw the set (new technologies are
+// first seen then).
+func writeResolvedSet(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ref asset.SetRef, a *setAsset, elements []string, now, seen time.Time) error {
 	switch ref.Attribute {
-	case asset.SetAttrIPAddresses, asset.SetAttrTechnologies:
+	case asset.SetAttrTechnologies:
+		if equalStrings(a.shown[ref.Attribute], elements) {
+			return nil
+		}
+		if err := writeAssetTechnologiesTx(ctx, tx, tenantID, ref.AssetID, elements, seen); err != nil {
+			return err
+		}
+		a.shown[ref.Attribute] = elements
+	case asset.SetAttrIPAddresses:
 		if equalStrings(a.shown[ref.Attribute], elements) {
 			return nil
 		}

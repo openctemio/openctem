@@ -1163,6 +1163,14 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 		nullString(finding.Verification().String()), // $43
 	}
 	args = append(args, findingTypeArgs(finding)...) // $44…
+	// The organization sub-status (RFC-110) travels with the row; the
+	// database drops it when the status moved without a new one.
+	args = append(args, nullID(finding.SubStatusID()))
+	query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
+		fmt.Sprintf(",\n\t\t\tsub_status_id = $%d\n\t\tWHERE id = $1 AND tenant_id = $20", len(args)), 1)
+	if !strings.Contains(query, "sub_status_id = $") {
+		return errors.New("finding update: the sub-status column was not bound")
+	}
 	result, err := r.db.execStatusWrite(ctx, query, args...)
 
 	if err != nil {
@@ -1263,6 +1271,35 @@ func (r *FindingRepository) GetByWorkItemURI(ctx context.Context, tenantID share
 		return nil, fmt.Errorf("failed to get finding by work item URI: %w", err)
 	}
 	return finding, nil
+}
+
+// ListIDsByWorkItemURI returns the ids of every finding of the tenant linked
+// to the work item URI (a ticket may track several findings), oldest first,
+// at most limit. Served by the partial GIN index on work_item_uris.
+func (r *FindingRepository) ListIDsByWorkItemURI(ctx context.Context, tenantID shared.ID, uri string, limit int) ([]shared.ID, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id FROM findings WHERE tenant_id = $1 AND work_item_uris IS NOT NULL AND work_item_uris @> ARRAY[$2]::text[]
+		 ORDER BY created_at, id LIMIT $3`, tenantID.String(), uri, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list findings by work item URI: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	ids := make([]shared.ID, 0, 4)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan finding id: %w", err)
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse finding id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // List retrieves findings matching the filter with pagination.
@@ -2342,7 +2379,7 @@ func (r *FindingRepository) selectQuery() string {
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
-			status, resolution, closure_reason, verification, observation_state, validation_outcome, resolved_at, resolved_by,
+			status, resolution, closure_reason, verification, observation_state, validation_outcome, sub_status_id, resolved_at, resolved_by,
 			assigned_to, assigned_at, assigned_by,
 			verified_at, verified_by,
 			sla_deadline, sla_status,
@@ -2423,6 +2460,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		verification        sql.NullString
 		observationState    sql.NullString
 		validationOutcome   sql.NullString
+		subStatusID         sql.NullString
 		resolvedAt          sql.NullTime
 		resolvedBy          sql.NullString
 		assignedTo          sql.NullString
@@ -2513,7 +2551,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&startColumn, &endColumn, &snippet, &contextSnippet, &contextStartLine,
 		&title, &description, &message,
 		&severity, &cvssScore, &cvssVector, &cveID, pq.Array(&cweIDs), pq.Array(&owaspIDs), pq.Array(&tags),
-		&status, &resolution, &closureReason, &verification, &observationState, &validationOutcome, &resolvedAt, &resolvedBy,
+		&status, &resolution, &closureReason, &verification, &observationState, &validationOutcome, &subStatusID, &resolvedAt, &resolvedBy,
 		&assignedTo, &assignedAt, &assignedBy,
 		&verifiedAt, &verifiedBy,
 		&slaDeadline, &slaStatus,
@@ -2548,7 +2586,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		snippet, contextSnippet, int(contextStartLine.Int64),
 		title, description, message,
 		severity, cvssScore, cvssVector, cveID, cweIDs, owaspIDs, tags,
-		status, resolution, closureReason, verification, observationState, validationOutcome, resolvedAt, resolvedBy,
+		status, resolution, closureReason, verification, observationState, validationOutcome, subStatusID, resolvedAt, resolvedBy,
 		assignedTo, assignedAt, assignedBy,
 		verifiedAt, verifiedBy,
 		slaDeadline, slaStatus,
@@ -2625,6 +2663,7 @@ type findingRow struct {
 	verification        sql.NullString
 	observationState    sql.NullString
 	validationOutcome   sql.NullString
+	subStatusID         sql.NullString
 	resolvedAt          sql.NullTime
 	resolvedBy          sql.NullString
 	assignedTo          sql.NullString
@@ -2900,6 +2939,7 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		Verification:        nullStringValue(row.verification),
 		ObservationState:    nullStringValue(row.observationState),
 		ValidationOutcome:   nullStringValue(row.validationOutcome),
+		SubStatusID:         parseNullID(row.subStatusID),
 		ResolvedAt:          nullTimeValue(row.resolvedAt),
 		ResolvedBy:          parseNullID(row.resolvedBy),
 		AssignedTo:          parseNullID(row.assignedTo),
@@ -3903,7 +3943,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
-			status, resolution, closure_reason, verification, observation_state, validation_outcome, resolved_at, resolved_by,
+			status, resolution, closure_reason, verification, observation_state, validation_outcome, sub_status_id, resolved_at, resolved_by,
 			assigned_to, assigned_at, assigned_by,
 			verified_at, verified_by,
 			sla_deadline, sla_status,
